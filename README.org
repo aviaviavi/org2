@@ -7,6 +7,8 @@ As originally described in https://avi.press/posts/2024-01-15-standalone-org.htm
 ** Goals
 
 - A comprehensive org mode successor, decoupled from Emacs.
+- Formalize the org spec and simplify it where possible. 
+- Be a drop-in replacement for org mode. Most org users should be able to migrate it to it seemlessly.
 - Build and support full featured org mode experiences in any text editor or any platform.
 - Work towards a formal specification of the Org format.
 - Support a thriving plug-in ecosystem that leverages more popular development environments.
