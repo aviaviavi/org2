@@ -1,0 +1,21 @@
+* Org2
+
+A from-scratch success to org mode. Org2 is intended be used in any text editor and any platform.
+
+As originally described in https://avi.press/posts/2024-01-15-standalone-org.html.
+
+** Goals
+
+- A comprehensive org mode successor, decoupled from Emacs.
+- Build and support full featured org mode experiences in any text editor or any platform.
+- Work towards a formal specification of the Org format.
+- Support a thriving plugin ecosystem that leverages more popular development environments.
+
+** Contributing and Project Status
+
+This project is currently just an idea. I haven't written any code yet and won't have time to for the forseeable future. If you're interested in contributing, please reach out. Especially if you are someone getting into open source for the first time -- I'd be open to mentoring the right person who has the potential to get this project off the ground with a little help.
+
+
+
+
+
