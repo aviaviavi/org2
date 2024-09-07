@@ -1,6 +1,6 @@
 * Org2
-#+attr_html: :width 200px
-[[./logo.png][org2-logo]]
+#+attr_html: :width 100px
+[[./logo.png][org2logo]]{:width 100}
 
 A from-scratch successor to org mode. Org2 is intended be used in any text editor and any platform.
 
@@ -9,15 +9,13 @@ As originally described in https://avi.press/posts/2024-01-15-standalone-org.htm
 ** Goals
 
 - A comprehensive org mode successor, decoupled from Emacs.
-- Formalize the org spec and simplify it where possible. 
-- Be a drop-in replacement for org mode. Most org users should be able to migrate it to it seemlessly.
 - Build and support full featured org mode experiences in any text editor or any platform.
 - Work towards a formal specification of the Org format.
 - Support a thriving plug-in ecosystem that leverages more popular development environments.
 
 ** Contributing and Project Status
 
-This project is currently just an idea. If you're interested in contributing, please reach out. Especially if you are someone getting into open source for the first time -- I'd be open to mentoring the right person who has the potential to get this project off the ground with a little help.
+This project is currently just an idea. I haven't written any code yet and won't have time to for the foreseeable future. If you're interested in contributing, please reach out. Especially if you are someone getting into open source for the first time -- I'd be open to mentoring the right person who has the potential to get this project off the ground with a little help.
 
 
 
