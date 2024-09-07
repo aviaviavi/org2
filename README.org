@@ -1,6 +1,6 @@
 * Org2
 #+attr_html: :width 100px
-[[./logo.png][org2logo]]{:width 100}
+[[./logo.png]]
 
 A from-scratch successor to org mode. Org2 is intended be used in any text editor and any platform.
 
