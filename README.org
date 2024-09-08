@@ -15,7 +15,7 @@ As originally described in https://avi.press/posts/2024-01-15-standalone-org.htm
 
 ** Contributing and Project Status
 
-This project is currently just an idea. I haven't written any code yet and won't have time to for the foreseeable future. If you're interested in contributing, please reach out. Especially if you are someone getting into open source for the first time -- I'd be open to mentoring the right person who has the potential to get this project off the ground with a little help.
+This project is in the very early stages of development. If you're interested in contributing, please reach out. Especially if you are someone getting into open source for the first time -- I'd be open to mentoring the right person who has the potential to get this project off the ground with a little help.
 
 
 
