@@ -13,6 +13,10 @@ As originally described in https://avi.press/posts/2024-01-15-standalone-org.htm
 - Work towards a formal specification of the Org format.
 - Support a thriving plug-in ecosystem that leverages more popular development environments.
 
+** Spec
+
+- v0 (draft): [[./spec/v0/SPEC.md]]
+
 ** Contributing and Project Status
 
 This project is in the very early stages of development. If you're interested in contributing, please reach out. Especially if you are someone getting into open source for the first time -- I'd be open to mentoring the right person who has the potential to get this project off the ground with a little help.
