@@ -4,6 +4,7 @@
   "title": "Org2 Canonical AST (v0)",
   "type": "object",
   "additionalProperties": false,
+
   "required": ["type", "version", "children"],
   "properties": {
     "type": {
@@ -23,6 +24,8 @@
       "oneOf": [
         { "$ref": "#/$defs/Headline" },
         { "$ref": "#/$defs/Paragraph" },
+        { "$ref": "#/$defs/List" },
+        { "$ref": "#/$defs/ListItem" },
         { "$ref": "#/$defs/Text" }
       ]
     },
@@ -52,6 +55,31 @@
         "children": {
           "type": "array",
           "items": { "$ref": "#/$defs/Inline" }
+        }
+      }
+    },
+    "List": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "ordered", "items"],
+      "properties": {
+        "type": { "const": "List" },
+        "ordered": { "type": "boolean" },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ListItem" }
+        }
+      }
+    },
+    "ListItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "children"],
+      "properties": {
+        "type": { "const": "ListItem" },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Node" }
         }
       }
     },
