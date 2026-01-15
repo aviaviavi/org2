@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://avi.press/org2/spec/v0/canonical-ast.schema.json",
+  "title": "Org2 Canonical AST (v0)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "version", "children"],
+  "properties": {
+    "type": {
+      "const": "Document"
+    },
+    "version": {
+      "type": "string",
+      "const": "0"
+    },
+    "children": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Node" }
+    }
+  },
+  "$defs": {
+    "Node": {
+      "oneOf": [
+        { "$ref": "#/$defs/Headline" },
+        { "$ref": "#/$defs/Paragraph" },
+        { "$ref": "#/$defs/Text" }
+      ]
+    },
+    "Headline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "level", "title", "children"],
+      "properties": {
+        "type": { "const": "Headline" },
+        "level": { "type": "integer", "minimum": 1 },
+        "title": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Inline" }
+        },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Node" }
+        }
+      }
+    },
+    "Paragraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "children"],
+      "properties": {
+        "type": { "const": "Paragraph" },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Inline" }
+        }
+      }
+    },
+    "Text": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "Text" },
+        "value": { "type": "string" }
+      }
+    },
+    "Inline": {
+      "oneOf": [
+        { "$ref": "#/$defs/Text" }
+      ]
+    }
+  }
+}
