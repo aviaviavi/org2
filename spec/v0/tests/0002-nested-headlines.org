@@ -1,0 +1,10 @@
+* A
+** B
+
+B paragraph.
+
+** C
+
+* D
+
+D paragraph.
