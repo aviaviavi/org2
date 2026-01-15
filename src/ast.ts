@@ -8,6 +8,17 @@ export type ParagraphNode = {
   children: InlineNode[];
 };
 
+export type ListItemNode = {
+  type: "ListItem";
+  children: Node[];
+};
+
+export type ListNode = {
+  type: "List";
+  ordered: boolean;
+  items: ListItemNode[];
+};
+
 export type HeadlineNode = {
   type: "Headline";
   level: number;
@@ -17,7 +28,7 @@ export type HeadlineNode = {
 
 export type InlineNode = TextNode;
 
-export type Node = HeadlineNode | ParagraphNode | TextNode;
+export type Node = HeadlineNode | ParagraphNode | ListNode | ListItemNode | TextNode;
 
 export type DocumentNode = {
   type: "Document";

@@ -107,6 +107,10 @@ function validateAgainstSchema(ctx, schemaNode, value, pointer) {
       if (actual !== "string") {
         throw new Error(`${pointer}: expected string, got ${actual}`);
       }
+    } else if (t === "boolean") {
+      if (actual !== "boolean") {
+        throw new Error(`${pointer}: expected boolean, got ${actual}`);
+      }
     } else {
       throw new Error(`${pointer}: unsupported schema type ${t}`);
     }

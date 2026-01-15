@@ -1,4 +1,4 @@
-import type { DocumentNode, HeadlineNode, Node, ParagraphNode, TextNode } from "./ast.js";
+import type { DocumentNode, HeadlineNode, ListItemNode, ListNode, Node, ParagraphNode, TextNode } from "./ast.js";
 
 export type ParseError = {
   message: string;
@@ -22,6 +22,10 @@ function text(value: string): TextNode {
 function paragraphFromLines(lines: string[]): ParagraphNode {
   const joined = lines.join("\n");
   return { type: "Paragraph", children: [text(joined)] };
+}
+
+function paragraphFromText(value: string): ParagraphNode {
+  return { type: "Paragraph", children: [text(value)] };
 }
 
 function isBlank(line: string): boolean {
@@ -53,6 +57,33 @@ function getChildrenArray(node: DocumentNode | HeadlineNode): Node[] {
   return node.children;
 }
 
+type ParsedListItem = {
+  ordered: boolean;
+  content: string;
+};
+
+function parseListItemLine(line: string): ParsedListItem | null {
+  const unordered = /^([+-])(\s+)(.*)$/.exec(line);
+  if (unordered) {
+    const ws = unordered[2];
+    if (ws !== " ") return null;
+    const content = unordered[3];
+    if (content.length === 0) return null;
+    return { ordered: false, content };
+  }
+
+  const ordered = /^(\d+)([.)])(\s+)(.*)$/.exec(line);
+  if (ordered) {
+    const ws = ordered[3];
+    if (ws !== " ") return null;
+    const content = ordered[4];
+    if (content.length === 0) return null;
+    return { ordered: true, content };
+  }
+
+  return null;
+}
+
 export function parseOrgToCanonicalAst(input: string): DocumentNode {
   if (input.includes("\r\n")) {
     fail(makeError("Unsupported line endings: CRLF", 1, 1));
@@ -63,6 +94,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
   const headlineStack: HeadlineNode[] = [];
 
   let paragraphLines: string[] = [];
+  let currentList: ListNode | null = null;
 
   function currentContainer(): DocumentNode | HeadlineNode {
     return headlineStack.length > 0 ? headlineStack[headlineStack.length - 1] : doc;
@@ -74,6 +106,33 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
     const node = paragraphFromLines(paragraphLines);
     getChildrenArray(currentContainer()).push(node);
     paragraphLines = [];
+  }
+
+  function endList(): void {
+    currentList = null;
+  }
+
+  function ensureList(ordered: boolean): ListNode {
+    if (currentList && currentList.ordered === ordered) return currentList;
+
+    const list: ListNode = {
+      type: "List",
+      ordered,
+      items: [],
+    };
+
+    getChildrenArray(currentContainer()).push(list);
+    currentList = list;
+    return list;
+  }
+
+  function addListItem(ordered: boolean, content: string): void {
+    const list = ensureList(ordered);
+    const item: ListItemNode = {
+      type: "ListItem",
+      children: [paragraphFromText(content)],
+    };
+    list.items.push(item);
   }
 
   const lines = input.split("\n");
@@ -88,6 +147,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
 
     if (line.startsWith("*")) {
       flushParagraph();
+      endList();
 
       const { level, title } = parseHeadline(line, lineNumber);
 
@@ -109,6 +169,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
 
     if (isBlank(line)) {
       flushParagraph();
+      endList();
       continue;
     }
 
@@ -116,6 +177,14 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
       fail(makeError("Unsupported construct: tab character", lineNumber, line.indexOf("\t") + 1));
     }
 
+    const listItem = parseListItemLine(line);
+    if (listItem) {
+      flushParagraph();
+      addListItem(listItem.ordered, listItem.content);
+      continue;
+    }
+
+    endList();
     paragraphLines.push(line);
   }
 

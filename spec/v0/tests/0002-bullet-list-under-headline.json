@@ -1,0 +1,37 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Headline",
+      "level": 1,
+      "title": [{ "type": "Text", "value": "Shopping" }],
+      "children": [
+        {
+          "type": "List",
+          "ordered": false,
+          "items": [
+            {
+              "type": "ListItem",
+              "children": [
+                {
+                  "type": "Paragraph",
+                  "children": [{ "type": "Text", "value": "apples" }]
+                }
+              ]
+            },
+            {
+              "type": "ListItem",
+              "children": [
+                {
+                  "type": "Paragraph",
+                  "children": [{ "type": "Text", "value": "bananas" }]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
