@@ -1,0 +1,26 @@
+export type TextNode = {
+  type: "Text";
+  value: string;
+};
+
+export type ParagraphNode = {
+  type: "Paragraph";
+  children: InlineNode[];
+};
+
+export type HeadlineNode = {
+  type: "Headline";
+  level: number;
+  title: InlineNode[];
+  children: Node[];
+};
+
+export type InlineNode = TextNode;
+
+export type Node = HeadlineNode | ParagraphNode | TextNode;
+
+export type DocumentNode = {
+  type: "Document";
+  version: "0";
+  children: Node[];
+};
