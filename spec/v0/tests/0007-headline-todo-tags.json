@@ -1,0 +1,14 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Headline",
+      "level": 1,
+      "todo": "TODO",
+      "tags": ["infra"],
+      "title": [{ "type": "Text", "value": "Fix CI" }],
+      "children": []
+    }
+  ]
+}

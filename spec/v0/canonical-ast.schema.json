@@ -36,6 +36,11 @@
       "properties": {
         "type": { "const": "Headline" },
         "level": { "type": "integer", "minimum": 1 },
+        "todo": { "type": "string" },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
         "title": {
           "type": "array",
           "items": { "$ref": "#/$defs/Inline" }

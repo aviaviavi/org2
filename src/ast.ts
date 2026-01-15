@@ -22,6 +22,8 @@ export type ListNode = {
 export type HeadlineNode = {
   type: "Headline";
   level: number;
+  todo?: string;
+  tags?: string[];
   title: InlineNode[];
   children: Node[];
 };
