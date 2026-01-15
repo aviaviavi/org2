@@ -1,0 +1,22 @@
+{
+  "name": "tree-sitter-org2",
+  "version": "0.0.1",
+  "description": "Tree-sitter grammar scaffold for Org2 (non-normative)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/avi/org2"
+  },
+  "main": "index.js",
+  "files": [
+    "grammar.js",
+    "queries/",
+    "test/"
+  ],
+  "scripts": {
+    "test": "tree-sitter test"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.22.6"
+  }
+}
