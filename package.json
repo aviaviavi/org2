@@ -5,7 +5,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "parse": "node dist/parse.js",
-    "fixtures": "node tools/fixture-runner.mjs"
+    "fixtures": "node tools/fixture-runner.mjs",
+    "test": "npm run fixtures"
   },
   "devDependencies": {
     "@types/node": "^22.10.7",

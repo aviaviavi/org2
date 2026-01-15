@@ -203,15 +203,7 @@ function deepEqual(a, b) {
   return false;
 }
 
-function parseOrgViaCli(repoRoot, orgPath) {
-  const parseEntrypoint = path.join(repoRoot, "dist", "parse.js");
-
-  if (!fs.existsSync(parseEntrypoint)) {
-    throw new Error(
-      `Parser not built. Expected ${normalizePath(parseEntrypoint)}. Run: npm install && npm run build`,
-    );
-  }
-
+function parseOrgViaCli(parseEntrypoint, orgPath) {
   const raw = execFileSync(process.execPath, [parseEntrypoint, orgPath], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -220,18 +212,69 @@ function parseOrgViaCli(repoRoot, orgPath) {
   return JSON.parse(raw);
 }
 
+function printHelp() {
+  console.log("Usage: node tools/fixture-runner.mjs [--schema-only | --e2e]");
+  console.log("\nModes:");
+  console.log("  (default)       Auto: run e2e if parser is available, otherwise schema-only");
+  console.log("  --schema-only   Validate fixture pairs + JSON schema only");
+  console.log("  --e2e           Also parse each .org fixture via dist/parse.js and compare to sibling .json");
+}
+
+function parseArgs(argv) {
+  const args = new Set(argv);
+
+  if (args.has("--help") || args.has("-h")) {
+    return { help: true };
+  }
+
+  const known = new Set(["--schema-only", "--e2e"]);
+  for (const arg of args) {
+    if (!known.has(arg)) {
+      return { error: `Unknown argument: ${arg}` };
+    }
+  }
+
+  if (args.has("--schema-only") && args.has("--e2e")) {
+    return { error: "--schema-only and --e2e are mutually exclusive" };
+  }
+
+  if (args.has("--schema-only")) return { mode: "schema-only" };
+  if (args.has("--e2e")) return { mode: "e2e" };
+  return { mode: "auto" };
+}
+
 function main() {
   const repoRoot = process.cwd();
   const specV0Dir = path.join(repoRoot, "spec", "v0");
   const schemaPath = path.join(specV0Dir, "canonical-ast.schema.json");
   const testsDir = path.join(specV0Dir, "tests");
 
-  const args = process.argv.slice(2);
-  const endToEnd = args.includes("--e2e") || args.includes("--parse");
-  if (args.includes("--help") || args.includes("-h")) {
-    console.log("Usage: node tools/fixture-runner.mjs [--e2e]");
-    console.log("\n--e2e: also parse each .org fixture via dist/parse.js and compare to sibling .json");
+  const parsedArgs = parseArgs(process.argv.slice(2));
+  if (parsedArgs.help) {
+    printHelp();
+    process.exitCode = 0;
     return;
+  }
+
+  if (parsedArgs.error) {
+    console.error(`ERROR: ${parsedArgs.error}`);
+    printHelp();
+    process.exitCode = 2;
+    return;
+  }
+
+  const parseEntrypoint = path.join(repoRoot, "dist", "parse.js");
+  const hasParser = fs.existsSync(parseEntrypoint);
+
+  const endToEnd =
+    parsedArgs.mode === "e2e" ? hasParser : parsedArgs.mode === "auto" ? hasParser : false;
+
+  if (parsedArgs.mode === "e2e" && !hasParser) {
+    console.log(
+      `SKIP: e2e requested but parser not available (expected ${normalizePath(
+        parseEntrypoint,
+      )}). Running schema-only.`,
+    );
   }
 
   if (!fs.existsSync(schemaPath) || !fs.existsSync(testsDir)) {
@@ -281,7 +324,7 @@ function main() {
     if (endToEnd) {
       let parsed;
       try {
-        parsed = parseOrgViaCli(repoRoot, pair.orgPath);
+        parsed = parseOrgViaCli(parseEntrypoint, pair.orgPath);
       } catch (err) {
         fail(`Parse failed: ${pair.orgPath}: ${err.message}`);
         continue;
