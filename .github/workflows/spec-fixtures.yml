@@ -14,5 +14,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Validate spec v0 fixtures
-        run: node tools/fixture-runner.mjs
+      - name: Install deps
+        run: npm ci
+      - name: Build reference parser
+        run: npm run build
+      - name: Validate spec v0 fixtures (schema + e2e)
+        run: node tools/fixture-runner.mjs --e2e
