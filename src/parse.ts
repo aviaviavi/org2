@@ -13,7 +13,9 @@ function usage(): never {
 
 function main() {
   const filePath = process.argv[2];
-  if (!filePath) usage();
+  if (!filePath) {
+    usage();
+  }
 
   const input = fs.readFileSync(filePath, "utf8");
   const ast = parseOrgToCanonicalAst(input);
