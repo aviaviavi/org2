@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -175,11 +176,63 @@ function collectFixturePairs(testsDir) {
   return pairs;
 }
 
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (typeof a !== typeof b) return false;
+  if (a === null || b === null) return a === b;
+
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b)) return false;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) {
+      if (!deepEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+
+  if (typeof a === "object") {
+    const aKeys = Object.keys(a).sort();
+    const bKeys = Object.keys(b).sort();
+    if (!deepEqual(aKeys, bKeys)) return false;
+    for (const key of aKeys) {
+      if (!deepEqual(a[key], b[key])) return false;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+function parseOrgViaCli(repoRoot, orgPath) {
+  const parseEntrypoint = path.join(repoRoot, "dist", "parse.js");
+
+  if (!fs.existsSync(parseEntrypoint)) {
+    throw new Error(
+      `Parser not built. Expected ${normalizePath(parseEntrypoint)}. Run: npm install && npm run build`,
+    );
+  }
+
+  const raw = execFileSync(process.execPath, [parseEntrypoint, orgPath], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  return JSON.parse(raw);
+}
+
 function main() {
   const repoRoot = process.cwd();
   const specV0Dir = path.join(repoRoot, "spec", "v0");
   const schemaPath = path.join(specV0Dir, "canonical-ast.schema.json");
   const testsDir = path.join(specV0Dir, "tests");
+
+  const args = process.argv.slice(2);
+  const endToEnd = args.includes("--e2e") || args.includes("--parse");
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log("Usage: node tools/fixture-runner.mjs [--e2e]");
+    console.log("\n--e2e: also parse each .org fixture via dist/parse.js and compare to sibling .json");
+    return;
+  }
 
   if (!fs.existsSync(schemaPath) || !fs.existsSync(testsDir)) {
     console.log(
@@ -225,6 +278,28 @@ function main() {
       continue;
     }
 
+    if (endToEnd) {
+      let parsed;
+      try {
+        parsed = parseOrgViaCli(repoRoot, pair.orgPath);
+      } catch (err) {
+        fail(`Parse failed: ${pair.orgPath}: ${err.message}`);
+        continue;
+      }
+
+      if (!deepEqual(parsed, jsonValue)) {
+        fail(`E2E mismatch: ${pair.orgPath} did not match ${pair.jsonPath}`);
+        continue;
+      }
+
+      try {
+        validateAgainstSchema(ctx, ctx.schema, parsed, "$ (parsed)");
+      } catch (err) {
+        fail(`Schema validation failed (parsed): ${pair.orgPath}: ${err.message}`);
+        continue;
+      }
+    }
+
     okCount += 1;
   }
 
@@ -233,7 +308,8 @@ function main() {
     return;
   }
 
-  console.log(`OK: validated ${okCount} fixture(s) against schema`);
+  const suffix = endToEnd ? " (schema + e2e parse)" : " (schema only)";
+  console.log(`OK: validated ${okCount} fixture(s)${suffix}`);
 }
 
 main();
