@@ -60,3 +60,34 @@ Fixtures live in `tests/`:
 - `NNNN-*.json` is the canonical AST output
 
 Implementations SHOULD run these fixtures as golden tests.
+
+## Headlines (subheadings)
+
+### Headline syntax
+
+A **headline line** is a line that matches:
+
+- One or more `*` characters at the start of the line.
+- Exactly one space after the `*` run.
+- A non-empty title string after that space.
+
+A headline line produces a `Headline` node with:
+
+- `level`: the number of `*` characters.
+- `title`: an array of inline nodes (v0: a single `Text` node containing the title string).
+
+### Headline nesting
+
+Headlines form a tree via their `children` arrays.
+
+When a headline of level `L` is parsed:
+
+- It becomes a child of the nearest preceding headline whose level is **strictly less than** `L`.
+- If there is no preceding headline with level `< L`, the headline becomes a direct child of the `Document`.
+- All subsequent non-headline nodes (e.g. paragraphs) attach to the most recent headline (at any level) until a new headline changes the current container.
+
+### Level skips
+
+Level skips are allowed and deterministic.
+
+For example, a level-3 headline (`***`) immediately after a level-1 headline (`*`) becomes a child of that level-1 headline; no implicit level-2 headline nodes are created.

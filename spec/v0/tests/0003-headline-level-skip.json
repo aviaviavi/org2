@@ -1,0 +1,35 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Headline",
+      "level": 1,
+      "title": [{ "type": "Text", "value": "A" }],
+      "children": [
+        {
+          "type": "Headline",
+          "level": 3,
+          "title": [{ "type": "Text", "value": "C" }],
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [{ "type": "Text", "value": "C paragraph." }]
+            }
+          ]
+        },
+        {
+          "type": "Headline",
+          "level": 2,
+          "title": [{ "type": "Text", "value": "B" }],
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [{ "type": "Text", "value": "B paragraph." }]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
