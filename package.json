@@ -6,6 +6,7 @@
     "build": "tsc -p tsconfig.json",
     "parse": "node dist/parse.js",
     "fixtures": "node tools/fixture-runner.mjs",
+    "pretest": "npm run build",
     "test": "npm run fixtures"
   },
   "devDependencies": {
