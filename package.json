@@ -1,0 +1,13 @@
+{
+  "name": "org2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "parse": "node dist/parse.js",
+    "fixtures": "node tools/fixture-runner.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}
