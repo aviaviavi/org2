@@ -112,3 +112,35 @@ When a headline of level `L` is parsed:
 Level skips are allowed and deterministic.
 
 For example, a level-3 headline (`***`) immediately after a level-1 headline (`*`) becomes a child of that level-1 headline; no implicit level-2 headline nodes are created.
+
+## Property drawers (syntax only)
+
+Property drawers are supported as a structural syntax element.
+
+Property inheritance and other property semantics are out of scope for v0.
+
+### Property drawer syntax
+
+A property drawer is a block consisting of:
+
+- A start line exactly equal to `:PROPERTIES:`
+- Zero or more property lines
+- An end line exactly equal to `:END:`
+
+Property drawers produce a `PropertyDrawer` node.
+
+### Property line syntax
+
+A property line MUST match:
+
+- A leading `:`
+- A non-empty key (no whitespace, no `:`)
+- A `:`
+- Optionally a single space
+- The value (possibly empty)
+
+Example:
+
+- `:ID: abc123` produces `{ key: "ID", value: "abc123" }`
+
+Property drawers may appear as children of `Headline` nodes (and implementations MAY also support them at document level).
