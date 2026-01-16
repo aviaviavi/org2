@@ -1,0 +1,3 @@
+#+begin_src sh :results output :foo bar
+echo hi
+#+end_src
