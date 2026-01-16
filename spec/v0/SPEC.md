@@ -144,3 +144,40 @@ Example:
 - `:ID: abc123` produces `{ key: "ID", value: "abc123" }`
 
 Property drawers may appear as children of `Headline` nodes (and implementations MAY also support them at document level).
+
+## SOURCE blocks (#+begin_src / #+end_src)
+
+Source blocks are supported as a structural syntax element.
+
+Executing source blocks and interpreting header args (babel semantics) are out of scope for v0.
+
+### SOURCE block syntax
+
+A source block is a block consisting of:
+
+- A begin line matching `#+begin_src` (case-insensitive), with optional indentation.
+- Zero or more body lines (treated as raw text).
+- An end line matching `#+end_src` (case-insensitive), with optional indentation.
+
+The parser MUST treat the body as raw text until it encounters an end marker line.
+
+### Lossless capture
+
+A `SrcBlock` node MUST capture enough information to reproduce the exact original bytes of:
+
+- The begin marker line (indentation, keyword spelling, and all bytes after the keyword).
+- The block body (all bytes between the end of the begin marker line and the start of the end marker line).
+- The end marker line (indentation, keyword spelling, and all bytes after the keyword).
+
+In v0, the canonical AST captures begin/end marker lines as:
+
+- `begin.indent`, `begin.keywordRaw`, `begin.afterKeywordRaw`
+- `end.indent`, `end.keywordRaw`, `end.afterKeywordRaw`
+
+### Unterminated blocks
+
+If a begin marker is not terminated by a matching end marker before end-of-file, the parser MUST emit a `SrcBlock` node with:
+
+- `terminated: false`
+- `end` omitted
+- `bodyRaw` containing all remaining bytes until end-of-file

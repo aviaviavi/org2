@@ -18,6 +18,20 @@ export type PropertyDrawerNode = {
   properties: PropertyNode[];
 };
 
+export type SrcBlockLine = {
+  indent: string;
+  keywordRaw: string;
+  afterKeywordRaw: string;
+};
+
+export type SrcBlockNode = {
+  type: "SrcBlock";
+  terminated: boolean;
+  begin: SrcBlockLine;
+  bodyRaw: string;
+  end?: SrcBlockLine;
+};
+
 export type ListItemNode = {
   type: "ListItem";
   children: Node[];
@@ -40,7 +54,14 @@ export type HeadlineNode = {
 
 export type InlineNode = TextNode;
 
-export type Node = HeadlineNode | ParagraphNode | ListNode | ListItemNode | PropertyDrawerNode | TextNode;
+export type Node =
+  | HeadlineNode
+  | ParagraphNode
+  | ListNode
+  | ListItemNode
+  | PropertyDrawerNode
+  | SrcBlockNode
+  | TextNode;
 
 export type DocumentNode = {
   type: "Document";

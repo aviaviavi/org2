@@ -1,0 +1,21 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "SrcBlock",
+      "terminated": true,
+      "begin": {
+        "indent": "",
+        "keywordRaw": "begin_src",
+        "afterKeywordRaw": " sh :results output :foo bar"
+      },
+      "bodyRaw": "echo hi",
+      "end": {
+        "indent": "",
+        "keywordRaw": "end_src",
+        "afterKeywordRaw": ""
+      }
+    }
+  ]
+}

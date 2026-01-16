@@ -1,0 +1,16 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "SrcBlock",
+      "terminated": false,
+      "begin": {
+        "indent": "",
+        "keywordRaw": "begin_src",
+        "afterKeywordRaw": ""
+      },
+      "bodyRaw": "hi"
+    }
+  ]
+}
