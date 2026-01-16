@@ -1,0 +1,104 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Org2",
+  "scopeName": "source.org2",
+  "patterns": [
+    { "include": "#directives" },
+    { "include": "#blocks" },
+    { "include": "#headlines" },
+    { "include": "#drawers" },
+    { "include": "#lists" },
+    { "include": "#checkboxes" },
+    { "include": "#links" }
+  ],
+  "repository": {
+    "directives": {
+      "patterns": [
+        {
+          "name": "keyword.other.directive.org2",
+          "match": "^(?:\\s*)#\\+[A-Za-z0-9_\\-]+(?::\\s+.*)?$"
+        }
+      ]
+    },
+    "blocks": {
+      "patterns": [
+        {
+          "name": "meta.block.org2",
+          "begin": "^(?:\\s*)#\\+begin_[A-Za-z0-9_\\-]+.*$",
+          "beginCaptures": {
+            "0": { "name": "keyword.other.block.begin.org2" }
+          },
+          "end": "^(?:\\s*)#\\+end_[A-Za-z0-9_\\-]+.*$",
+          "endCaptures": {
+            "0": { "name": "keyword.other.block.end.org2" }
+          },
+          "patterns": [
+            { "name": "text.plain.org2", "match": ".+" }
+          ]
+        }
+      ]
+    },
+    "headlines": {
+      "patterns": [
+        {
+          "name": "markup.heading.org2",
+          "match": "^(\\*+)\\s+(.+)$",
+          "captures": {
+            "1": { "name": "punctuation.definition.heading.org2" },
+            "2": { "name": "entity.name.section.org2" }
+          }
+        }
+      ]
+    },
+    "drawers": {
+      "patterns": [
+        {
+          "name": "meta.drawer.org2",
+          "begin": "^(?:\\s*):([A-Za-z0-9_\\-]+):\\s*$",
+          "beginCaptures": {
+            "0": { "name": "keyword.other.drawer.begin.org2" },
+            "1": { "name": "support.constant.drawer.name.org2" }
+          },
+          "end": "^(?:\\s*):END:\\s*$",
+          "endCaptures": {
+            "0": { "name": "keyword.other.drawer.end.org2" }
+          },
+          "patterns": [
+            {
+              "name": "meta.property.org2",
+              "match": "^(?:\\s*):([A-Za-z0-9_\\-]+):\\s*(.*)$",
+              "captures": {
+                "1": { "name": "variable.other.property.org2" },
+                "2": { "name": "string.unquoted.org2" }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "lists": {
+      "patterns": [
+        {
+          "name": "punctuation.definition.list.org2",
+          "match": "^(?:\\s*)(?:[-+]|\\d+[.)])(?=\\s)"
+        }
+      ]
+    },
+    "checkboxes": {
+      "patterns": [
+        {
+          "name": "constant.other.checkbox.org2",
+          "match": "\\[(?: |X|-)\\]"
+        }
+      ]
+    },
+    "links": {
+      "patterns": [
+        {
+          "name": "markup.underline.link.org2",
+          "match": "\\[\\[[^\\]]+\\](?:\\[[^\\]]*\\])?\\]"
+        }
+      ]
+    }
+  }
+}

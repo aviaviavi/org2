@@ -1,0 +1,34 @@
+{
+  "name": "org2-vscode",
+  "displayName": "Org2",
+  "description": "Org2 language support (syntax highlighting)",
+  "version": "0.0.1",
+  "publisher": "org2",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aviaviavi/org2"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "org2",
+        "aliases": ["Org2", "org2"],
+        "extensions": [".org2"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "org2",
+        "scopeName": "source.org2",
+        "path": "./syntaxes/org2.tmLanguage.json"
+      }
+    ]
+  }
+}
