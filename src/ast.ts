@@ -8,6 +8,16 @@ export type ParagraphNode = {
   children: InlineNode[];
 };
 
+export type PropertyNode = {
+  key: string;
+  value: string;
+};
+
+export type PropertyDrawerNode = {
+  type: "PropertyDrawer";
+  properties: PropertyNode[];
+};
+
 export type ListItemNode = {
   type: "ListItem";
   children: Node[];
@@ -30,7 +40,7 @@ export type HeadlineNode = {
 
 export type InlineNode = TextNode;
 
-export type Node = HeadlineNode | ParagraphNode | ListNode | ListItemNode | TextNode;
+export type Node = HeadlineNode | ParagraphNode | ListNode | ListItemNode | PropertyDrawerNode | TextNode;
 
 export type DocumentNode = {
   type: "Document";

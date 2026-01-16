@@ -1,0 +1,36 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Headline",
+      "level": 1,
+      "title": [
+        {
+          "type": "Text",
+          "value": "With properties"
+        }
+      ],
+      "children": [
+        {
+          "type": "PropertyDrawer",
+          "properties": [
+            {
+              "key": "ID",
+              "value": "abc123"
+            }
+          ]
+        },
+        {
+          "type": "Paragraph",
+          "children": [
+            {
+              "type": "Text",
+              "value": "Body text"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

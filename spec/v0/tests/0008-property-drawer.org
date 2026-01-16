@@ -1,0 +1,6 @@
+* With properties
+:PROPERTIES:
+:ID: abc123
+:END:
+
+Body text
