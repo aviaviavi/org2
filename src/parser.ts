@@ -8,6 +8,7 @@ import type {
   PropertyDrawerNode,
   SrcBlockLine,
   SrcBlockNode,
+  TableNode,
   TextNode,
 } from "./ast.js";
 
@@ -182,6 +183,11 @@ type ParseSrcBlockResult = {
   nextLineIndex: number;
 };
 
+type ParseTableResult = {
+  table: TableNode;
+  nextLineIndex: number;
+};
+
 function parseSrcBlockLine(line: string, lineNumber: number): SrcBlockLine | null {
   const match = /^(\s*)#\+([^\s]+)(.*)$/.exec(line);
   if (!match) return null;
@@ -242,6 +248,48 @@ function parseSrcBlock(lines: string[], startLineIndex: number): ParseSrcBlockRe
     },
     nextLineIndex: lines.length,
   };
+}
+
+function isTableLineWithIndent(line: string, indent: string): boolean {
+  if (!line.startsWith(indent)) return false;
+  const rest = line.slice(indent.length);
+  if (!rest.startsWith("|")) return false;
+  const trimmedEnd = rest.trimEnd();
+  return trimmedEnd.endsWith("|");
+}
+
+function isTableHlineRow(rest: string): boolean {
+  const trimmed = rest.trim();
+  return /^\|[-+]+\|$/.test(trimmed);
+}
+
+function parseTableRowCells(rest: string): string[] {
+  const trimmedEnd = rest.trimEnd();
+  const core = trimmedEnd.slice(1, -1);
+  return core.split("|");
+}
+
+function parseTable(lines: string[], startLineIndex: number, indent: string): ParseTableResult {
+  const rows: TableNode["rows"] = [];
+
+  for (let i = startLineIndex; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+
+    if (!isTableLineWithIndent(line, indent)) {
+      return { table: { type: "Table", rows }, nextLineIndex: i };
+    }
+
+    const rest = line.slice(indent.length);
+
+    if (isTableHlineRow(rest)) {
+      rows.push({ type: "TableHline" });
+      continue;
+    }
+
+    rows.push({ type: "TableRow", cells: parseTableRowCells(rest) });
+  }
+
+  return { table: { type: "Table", rows }, nextLineIndex: lines.length };
 }
 
 export function parseOrgToCanonicalAst(input: string): DocumentNode {
@@ -317,6 +365,16 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
 
         fail(makeError("Unsupported construct: directive", lineNumber, 1));
       }
+    }
+
+    if (isTableLineWithIndent(line, "")) {
+      flushParagraph();
+      endList();
+
+      const { table, nextLineIndex } = parseTable(lines, i, "");
+      getChildrenArray(currentContainer()).push(table);
+      i = nextLineIndex;
+      continue;
     }
 
     if (line.startsWith("*")) {
@@ -409,6 +467,14 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
           flushItemParagraph();
           const { block, nextLineIndex } = parseSrcBlock(lines, i);
           item.children.push(block);
+          i = nextLineIndex;
+          continue;
+        }
+
+        if (isTableLineWithIndent(contLine, " ".repeat(listItem.indentColumn))) {
+          flushItemParagraph();
+          const { table, nextLineIndex } = parseTable(lines, i, " ".repeat(listItem.indentColumn));
+          item.children.push(table);
           i = nextLineIndex;
           continue;
         }

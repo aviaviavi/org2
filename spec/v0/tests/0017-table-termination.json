@@ -1,0 +1,18 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Table",
+      "rows": [{ "type": "TableRow", "cells": ["a", "b"] }]
+    },
+    {
+      "type": "Paragraph",
+      "children": [{ "type": "Text", "value": "Paragraph." }]
+    },
+    {
+      "type": "Table",
+      "rows": [{ "type": "TableRow", "cells": ["c", "d"] }]
+    }
+  ]
+}
