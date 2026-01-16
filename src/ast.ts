@@ -32,6 +32,20 @@ export type SrcBlockNode = {
   end?: SrcBlockLine;
 };
 
+export type TableRowNode = {
+  type: "TableRow";
+  cells: string[];
+};
+
+export type TableHlineNode = {
+  type: "TableHline";
+};
+
+export type TableNode = {
+  type: "Table";
+  rows: (TableRowNode | TableHlineNode)[];
+};
+
 export type ListItemNode = {
   type: "ListItem";
   children: Node[];
@@ -61,6 +75,7 @@ export type Node =
   | ListItemNode
   | PropertyDrawerNode
   | SrcBlockNode
+  | TableNode
   | TextNode;
 
 export type DocumentNode = {

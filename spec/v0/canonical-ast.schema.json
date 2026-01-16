@@ -28,6 +28,7 @@
         { "$ref": "#/$defs/ListItem" },
         { "$ref": "#/$defs/PropertyDrawer" },
         { "$ref": "#/$defs/SrcBlock" },
+        { "$ref": "#/$defs/Table" },
         { "$ref": "#/$defs/Text" }
       ]
     },
@@ -145,6 +146,41 @@
         "terminated": { "const": false },
         "begin": { "$ref": "#/$defs/SrcBlockLine" },
         "bodyRaw": { "type": "string" }
+      }
+    },
+    "Table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "rows"],
+      "properties": {
+        "type": { "const": "Table" },
+        "rows": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/TableRow" }
+        }
+      }
+    },
+    "TableRow": {
+      "oneOf": [{ "$ref": "#/$defs/TableDataRow" }, { "$ref": "#/$defs/TableHline" }]
+    },
+    "TableDataRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "cells"],
+      "properties": {
+        "type": { "const": "TableRow" },
+        "cells": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "TableHline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "TableHline" }
       }
     },
     "Text": {
