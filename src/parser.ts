@@ -1,6 +1,7 @@
 import type {
   DocumentNode,
   HeadlineNode,
+  InlineNode,
   ListItemNode,
   ListNode,
   Node,
@@ -10,6 +11,8 @@ import type {
   SrcBlockNode,
   TableNode,
   TextNode,
+  TimestampNode,
+  TimestampRangeNode,
 } from "./ast.js";
 
 export type ParseError = {
@@ -31,13 +34,119 @@ function text(value: string): TextNode {
   return { type: "Text", value };
 }
 
+function timestamp(active: boolean, raw: string): TimestampNode {
+  return { type: "Timestamp", active, raw };
+}
+
+function timestampRange(start: TimestampNode, separatorRaw: string, end: TimestampNode): TimestampRangeNode {
+  return {
+    type: "TimestampRange",
+    start,
+    separatorRaw,
+    end,
+  };
+}
+
+function isTimestampDatePrefix(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}/.test(value);
+}
+
+type ParsedTimestampAt = {
+  node: TimestampNode;
+  endIndex: number;
+};
+
+function parseTimestampAt(value: string, startIndex: number): ParsedTimestampAt | null {
+  const opener = value[startIndex];
+  if (opener !== "<" && opener !== "[") return null;
+
+  const closer = opener === "<" ? ">" : "]";
+  const closeIndex = value.indexOf(closer, startIndex + 1);
+  if (closeIndex === -1) return null;
+
+  const inner = value.slice(startIndex + 1, closeIndex);
+  if (!isTimestampDatePrefix(inner)) return null;
+
+  const raw = value.slice(startIndex, closeIndex + 1);
+  return {
+    node: timestamp(opener === "<", raw),
+    endIndex: closeIndex + 1,
+  };
+}
+
+type ParsedTimestampRangeAt = {
+  node: TimestampNode | TimestampRangeNode;
+  endIndex: number;
+};
+
+function parseTimestampOrRangeAt(value: string, startIndex: number): ParsedTimestampRangeAt | null {
+  const first = parseTimestampAt(value, startIndex);
+  if (!first) return null;
+
+  const afterFirst = first.endIndex;
+
+  // Try to parse `<...>--<...>` (with optional whitespace around `--`).
+  let i = afterFirst;
+  while (i < value.length && value[i] === " ") i += 1;
+
+  if (value.slice(i, i + 2) !== "--") {
+    return { node: first.node, endIndex: first.endIndex };
+  }
+
+  i += 2;
+  while (i < value.length && value[i] === " ") i += 1;
+
+  const secondStart = i;
+  const second = parseTimestampAt(value, secondStart);
+  if (!second) {
+    return { node: first.node, endIndex: first.endIndex };
+  }
+
+  const sepRaw = value.slice(afterFirst, secondStart);
+  return {
+    node: timestampRange(first.node, sepRaw, second.node),
+    endIndex: second.endIndex,
+  };
+}
+
+function parseInlinesFromText(value: string): InlineNode[] {
+  const out: InlineNode[] = [];
+
+  let i = 0;
+  let lastTextStart = 0;
+
+  while (i < value.length) {
+    const parsed = parseTimestampOrRangeAt(value, i);
+    if (!parsed) {
+      i += 1;
+      continue;
+    }
+
+    if (lastTextStart < i) {
+      out.push(text(value.slice(lastTextStart, i)));
+    }
+
+    out.push(parsed.node);
+
+    i = parsed.endIndex;
+    lastTextStart = i;
+  }
+
+  if (lastTextStart < value.length) {
+    out.push(text(value.slice(lastTextStart)));
+  }
+
+  if (out.length === 0) return [text(value)];
+  return out;
+}
+
 function paragraphFromLines(lines: string[]): ParagraphNode {
   const joined = lines.join("\n");
-  return { type: "Paragraph", children: [text(joined)] };
+  return { type: "Paragraph", children: parseInlinesFromText(joined) };
 }
 
 function paragraphFromText(value: string): ParagraphNode {
-  return { type: "Paragraph", children: [text(value)] };
+  return { type: "Paragraph", children: parseInlinesFromText(value) };
 }
 
 function isBlank(line: string): boolean {
@@ -392,7 +501,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
         level,
         ...(todo ? { todo } : {}),
         ...(tags ? { tags } : {}),
-        title: [text(title)],
+        title: parseInlinesFromText(title),
         children: [],
       };
 

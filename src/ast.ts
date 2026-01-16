@@ -3,6 +3,19 @@ export type TextNode = {
   value: string;
 };
 
+export type TimestampNode = {
+  type: "Timestamp";
+  active: boolean;
+  raw: string;
+};
+
+export type TimestampRangeNode = {
+  type: "TimestampRange";
+  start: TimestampNode;
+  separatorRaw: string;
+  end: TimestampNode;
+};
+
 export type ParagraphNode = {
   type: "Paragraph";
   children: InlineNode[];
@@ -66,7 +79,7 @@ export type HeadlineNode = {
   children: Node[];
 };
 
-export type InlineNode = TextNode;
+export type InlineNode = TextNode | TimestampNode | TimestampRangeNode;
 
 export type Node =
   | HeadlineNode
