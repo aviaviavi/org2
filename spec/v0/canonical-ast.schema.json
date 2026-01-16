@@ -26,6 +26,7 @@
         { "$ref": "#/$defs/Paragraph" },
         { "$ref": "#/$defs/List" },
         { "$ref": "#/$defs/ListItem" },
+        { "$ref": "#/$defs/PropertyDrawer" },
         { "$ref": "#/$defs/Text" }
       ]
     },
@@ -86,6 +87,27 @@
           "type": "array",
           "items": { "$ref": "#/$defs/Node" }
         }
+      }
+    },
+    "PropertyDrawer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "properties"],
+      "properties": {
+        "type": { "const": "PropertyDrawer" },
+        "properties": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Property" }
+        }
+      }
+    },
+    "Property": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "value"],
+      "properties": {
+        "key": { "type": "string" },
+        "value": { "type": "string" }
       }
     },
     "Text": {

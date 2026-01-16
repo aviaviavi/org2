@@ -1,4 +1,13 @@
-import type { DocumentNode, HeadlineNode, ListItemNode, ListNode, Node, ParagraphNode, TextNode } from "./ast.js";
+import type {
+  DocumentNode,
+  HeadlineNode,
+  ListItemNode,
+  ListNode,
+  Node,
+  ParagraphNode,
+  PropertyDrawerNode,
+  TextNode,
+} from "./ast.js";
 
 export type ParseError = {
   message: string;
@@ -91,6 +100,54 @@ type ParsedListItem = {
   content: string;
 };
 
+type ParsePropertyDrawerResult = {
+  drawer: PropertyDrawerNode;
+  nextLineIndex: number;
+};
+
+function parsePropertyDrawer(lines: string[], startLineIndex: number): ParsePropertyDrawerResult {
+  const startLineNumber = startLineIndex + 1;
+
+  if (lines[startLineIndex] !== ":PROPERTIES:") {
+    fail(makeError("Invalid property drawer; expected :PROPERTIES:", startLineNumber, 1));
+  }
+
+  const properties: PropertyDrawerNode["properties"] = [];
+
+  for (let i = startLineIndex + 1; i < lines.length; i += 1) {
+    const lineNumber = i + 1;
+    const line = lines[i];
+
+    if (line === ":END:") {
+      return {
+        drawer: { type: "PropertyDrawer", properties },
+        nextLineIndex: i + 1,
+      };
+    }
+
+    if (isBlank(line)) {
+      fail(makeError("Invalid property drawer; blank lines are not allowed", lineNumber, 1));
+    }
+
+    const match = /^:([^:\s]+):(\s*)(.*)$/.exec(line);
+    if (!match) {
+      fail(makeError("Invalid property drawer line; expected :KEY: VALUE", lineNumber, 1));
+    }
+
+    const key = match[1];
+    const ws = match[2];
+    const rawValue = match[3];
+
+    if (ws !== " " && ws !== "") {
+      fail(makeError("Invalid property drawer line; only a single space is allowed after :KEY:", lineNumber, key.length + 3));
+    }
+
+    properties.push({ key, value: rawValue });
+  }
+
+  fail(makeError("Invalid property drawer; missing :END:", startLineNumber, 1));
+}
+
 function parseListItemLine(line: string): ParsedListItem | null {
   const unordered = /^([+-])(\s+)(.*)$/.exec(line);
   if (unordered) {
@@ -166,7 +223,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
 
   const lines = input.split("\n");
 
-  for (let i = 0; i < lines.length; i += 1) {
+  for (let i = 0; i < lines.length; ) {
     const lineNumber = i + 1;
     const line = lines[i];
 
@@ -195,12 +252,24 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
 
       getChildrenArray(currentContainer()).push(node);
       headlineStack.push(node);
+      i += 1;
+      continue;
+    }
+
+    if (line === ":PROPERTIES:") {
+      flushParagraph();
+      endList();
+
+      const { drawer, nextLineIndex } = parsePropertyDrawer(lines, i);
+      getChildrenArray(currentContainer()).push(drawer);
+      i = nextLineIndex;
       continue;
     }
 
     if (isBlank(line)) {
       flushParagraph();
       endList();
+      i += 1;
       continue;
     }
 
@@ -212,11 +281,13 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
     if (listItem) {
       flushParagraph();
       addListItem(listItem.ordered, listItem.content);
+      i += 1;
       continue;
     }
 
     endList();
     paragraphLines.push(line);
+    i += 1;
   }
 
   flushParagraph();
