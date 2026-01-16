@@ -32,7 +32,10 @@ function isBlank(line: string): boolean {
   return line.trim().length === 0;
 }
 
-function parseHeadline(line: string, lineNumber: number): { level: number; title: string } {
+function parseHeadline(
+  line: string,
+  lineNumber: number,
+): { level: number; title: string; todo?: string; tags?: string[] } {
   const match = /^(\*+)(\s+)(.*)$/.exec(line);
   if (!match) {
     fail(makeError("Invalid headline; expected one or more '*' followed by a space", lineNumber, 1));
@@ -40,17 +43,43 @@ function parseHeadline(line: string, lineNumber: number): { level: number; title
 
   const stars = match[1];
   const ws = match[2];
-  const title = match[3];
+  const raw = match[3];
 
   if (ws !== " ") {
     fail(makeError("Invalid headline; only a single space is allowed after '*'", lineNumber, stars.length + 1));
   }
 
-  if (title.length === 0) {
+  if (raw.length === 0) {
     fail(makeError("Invalid headline; title cannot be empty", lineNumber, stars.length + 2));
   }
 
-  return { level: stars.length, title };
+  let todo;
+  let tags;
+  let rest = raw;
+
+  {
+    const parts = rest.split(/\s+/);
+    const last = parts[parts.length - 1] ?? "";
+
+    if (last.startsWith(":") && /^:(?:[^\s:]+:)+$/.test(last)) {
+      const parsed = last.split(":").filter((t) => t.length > 0);
+      if (parsed.length > 0) {
+        tags = parsed;
+        rest = rest.slice(0, rest.length - last.length).trimEnd();
+      }
+    }
+  }
+
+  if (rest.startsWith("TODO ")) {
+    todo = "TODO";
+    rest = rest.slice("TODO ".length);
+  }
+
+  if (rest.length === 0) {
+    fail(makeError("Invalid headline; title cannot be empty", lineNumber, stars.length + 2));
+  }
+
+  return { level: stars.length, title: rest, todo, tags };
 }
 
 function getChildrenArray(node: DocumentNode | HeadlineNode): Node[] {
@@ -149,7 +178,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
       flushParagraph();
       endList();
 
-      const { level, title } = parseHeadline(line, lineNumber);
+      const { level, title, todo, tags } = parseHeadline(line, lineNumber);
 
       while (headlineStack.length > 0 && headlineStack[headlineStack.length - 1].level >= level) {
         headlineStack.pop();
@@ -158,6 +187,8 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
       const node: HeadlineNode = {
         type: "Headline",
         level,
+        ...(todo ? { todo } : {}),
+        ...(tags ? { tags } : {}),
         title: [text(title)],
         children: [],
       };
