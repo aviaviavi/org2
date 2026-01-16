@@ -27,6 +27,7 @@
         { "$ref": "#/$defs/List" },
         { "$ref": "#/$defs/ListItem" },
         { "$ref": "#/$defs/PropertyDrawer" },
+        { "$ref": "#/$defs/SrcBlock" },
         { "$ref": "#/$defs/Text" }
       ]
     },
@@ -108,6 +109,42 @@
       "properties": {
         "key": { "type": "string" },
         "value": { "type": "string" }
+      }
+    },
+    "SrcBlock": {
+      "oneOf": [{ "$ref": "#/$defs/SrcBlockTerminated" }, { "$ref": "#/$defs/SrcBlockUnterminated" }]
+    },
+    "SrcBlockLine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["indent", "keywordRaw", "afterKeywordRaw"],
+      "properties": {
+        "indent": { "type": "string" },
+        "keywordRaw": { "type": "string" },
+        "afterKeywordRaw": { "type": "string" }
+      }
+    },
+    "SrcBlockTerminated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "terminated", "begin", "bodyRaw", "end"],
+      "properties": {
+        "type": { "const": "SrcBlock" },
+        "terminated": { "const": true },
+        "begin": { "$ref": "#/$defs/SrcBlockLine" },
+        "bodyRaw": { "type": "string" },
+        "end": { "$ref": "#/$defs/SrcBlockLine" }
+      }
+    },
+    "SrcBlockUnterminated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "terminated", "begin", "bodyRaw"],
+      "properties": {
+        "type": { "const": "SrcBlock" },
+        "terminated": { "const": false },
+        "begin": { "$ref": "#/$defs/SrcBlockLine" },
+        "bodyRaw": { "type": "string" }
       }
     },
     "Text": {
