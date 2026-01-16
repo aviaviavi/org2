@@ -1,0 +1,41 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "List",
+      "ordered": false,
+      "items": [
+        {
+          "type": "ListItem",
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [
+                {
+                  "type": "Text",
+                  "value": "item"
+                }
+              ]
+            },
+            {
+              "type": "SrcBlock",
+              "terminated": true,
+              "begin": {
+                "indent": "  ",
+                "keywordRaw": "begin_src",
+                "afterKeywordRaw": " sh"
+              },
+              "bodyRaw": "  echo hi",
+              "end": {
+                "indent": "  ",
+                "keywordRaw": "end_src",
+                "afterKeywordRaw": ""
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -6,6 +6,8 @@ import type {
   Node,
   ParagraphNode,
   PropertyDrawerNode,
+  SrcBlockLine,
+  SrcBlockNode,
   TextNode,
 } from "./ast.js";
 
@@ -98,6 +100,7 @@ function getChildrenArray(node: DocumentNode | HeadlineNode): Node[] {
 type ParsedListItem = {
   ordered: boolean;
   content: string;
+  indentColumn: number;
 };
 
 type ParsePropertyDrawerResult = {
@@ -155,7 +158,7 @@ function parseListItemLine(line: string): ParsedListItem | null {
     if (ws !== " ") return null;
     const content = unordered[3];
     if (content.length === 0) return null;
-    return { ordered: false, content };
+    return { ordered: false, content, indentColumn: unordered[1].length + ws.length };
   }
 
   const ordered = /^(\d+)([.)])(\s+)(.*)$/.exec(line);
@@ -164,10 +167,81 @@ function parseListItemLine(line: string): ParsedListItem | null {
     if (ws !== " ") return null;
     const content = ordered[4];
     if (content.length === 0) return null;
-    return { ordered: true, content };
+    return {
+      ordered: true,
+      content,
+      indentColumn: ordered[1].length + ordered[2].length + ws.length,
+    };
   }
 
   return null;
+}
+
+type ParseSrcBlockResult = {
+  block: SrcBlockNode;
+  nextLineIndex: number;
+};
+
+function parseSrcBlockLine(line: string, lineNumber: number): SrcBlockLine | null {
+  const match = /^(\s*)#\+([^\s]+)(.*)$/.exec(line);
+  if (!match) return null;
+
+  const indent = match[1];
+  const keywordRaw = match[2];
+  const afterKeywordRaw = match[3];
+
+  if (indent.includes("\t") || afterKeywordRaw.includes("\t")) {
+    fail(makeError("Unsupported construct: tab character", lineNumber, line.indexOf("\t") + 1));
+  }
+
+  return { indent, keywordRaw, afterKeywordRaw };
+}
+
+function isBeginSrc(line: SrcBlockLine): boolean {
+  return line.keywordRaw.toLowerCase() === "begin_src";
+}
+
+function isEndSrc(line: SrcBlockLine): boolean {
+  return line.keywordRaw.toLowerCase() === "end_src";
+}
+
+function parseSrcBlock(lines: string[], startLineIndex: number): ParseSrcBlockResult {
+  const startLineNumber = startLineIndex + 1;
+  const begin = parseSrcBlockLine(lines[startLineIndex] ?? "", startLineNumber);
+  if (!begin || !isBeginSrc(begin)) {
+    fail(makeError("Invalid source block; expected #+begin_src", startLineNumber, 1));
+  }
+
+  for (let i = startLineIndex + 1; i < lines.length; i += 1) {
+    const lineNumber = i + 1;
+    const line = lines[i] ?? "";
+
+    const parsed = parseSrcBlockLine(line, lineNumber);
+    if (parsed && isEndSrc(parsed)) {
+      const bodyLines = lines.slice(startLineIndex + 1, i);
+      return {
+        block: {
+          type: "SrcBlock",
+          terminated: true,
+          begin,
+          bodyRaw: bodyLines.join("\n"),
+          end: parsed,
+        },
+        nextLineIndex: i + 1,
+      };
+    }
+  }
+
+  const bodyLines = lines.slice(startLineIndex + 1);
+  return {
+    block: {
+      type: "SrcBlock",
+      terminated: false,
+      begin,
+      bodyRaw: bodyLines.join("\n"),
+    },
+    nextLineIndex: lines.length,
+  };
 }
 
 export function parseOrgToCanonicalAst(input: string): DocumentNode {
@@ -212,13 +286,14 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
     return list;
   }
 
-  function addListItem(ordered: boolean, content: string): void {
+  function addListItem(ordered: boolean, content: string): ListItemNode {
     const list = ensureList(ordered);
     const item: ListItemNode = {
       type: "ListItem",
       children: [paragraphFromText(content)],
     };
     list.items.push(item);
+    return item;
   }
 
   const lines = input.split("\n");
@@ -227,8 +302,21 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
     const lineNumber = i + 1;
     const line = lines[i];
 
-    if (line.startsWith("#+")) {
-      fail(makeError("Unsupported construct: directive", lineNumber, 1));
+    {
+      const directive = parseSrcBlockLine(line, lineNumber);
+      if (directive) {
+        if (isBeginSrc(directive)) {
+          flushParagraph();
+          endList();
+
+          const { block, nextLineIndex } = parseSrcBlock(lines, i);
+          getChildrenArray(currentContainer()).push(block);
+          i = nextLineIndex;
+          continue;
+        }
+
+        fail(makeError("Unsupported construct: directive", lineNumber, 1));
+      }
     }
 
     if (line.startsWith("*")) {
@@ -280,8 +368,65 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
     const listItem = parseListItemLine(line);
     if (listItem) {
       flushParagraph();
-      addListItem(listItem.ordered, listItem.content);
+      const item = addListItem(listItem.ordered, listItem.content);
       i += 1;
+
+      let itemParagraphLines: string[] = [];
+
+      function flushItemParagraph(): void {
+        if (itemParagraphLines.length === 0) return;
+        item.children.push(paragraphFromLines(itemParagraphLines));
+        itemParagraphLines = [];
+      }
+
+      while (i < lines.length) {
+        const contLineNumber = i + 1;
+        const contLine = lines[i] ?? "";
+
+        if (isBlank(contLine)) {
+          flushItemParagraph();
+          break;
+        }
+
+        if (contLine.startsWith("*")) {
+          flushItemParagraph();
+          break;
+        }
+
+        const maybeNextItem = parseListItemLine(contLine);
+        if (maybeNextItem) {
+          flushItemParagraph();
+          break;
+        }
+
+        if (!contLine.startsWith(" ".repeat(listItem.indentColumn))) {
+          flushItemParagraph();
+          break;
+        }
+
+        const directive = parseSrcBlockLine(contLine, contLineNumber);
+        if (directive && isBeginSrc(directive)) {
+          flushItemParagraph();
+          const { block, nextLineIndex } = parseSrcBlock(lines, i);
+          item.children.push(block);
+          i = nextLineIndex;
+          continue;
+        }
+
+        if (contLine.includes("\t")) {
+          fail(
+            makeError(
+              "Unsupported construct: tab character",
+              contLineNumber,
+              contLine.indexOf("\t") + 1,
+            ),
+          );
+        }
+
+        itemParagraphLines.push(contLine.slice(listItem.indentColumn));
+        i += 1;
+      }
+
       continue;
     }
 

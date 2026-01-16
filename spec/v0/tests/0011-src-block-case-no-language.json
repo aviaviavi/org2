@@ -1,0 +1,21 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "SrcBlock",
+      "terminated": true,
+      "begin": {
+        "indent": "",
+        "keywordRaw": "BEGIN_SRC",
+        "afterKeywordRaw": ""
+      },
+      "bodyRaw": "x",
+      "end": {
+        "indent": "",
+        "keywordRaw": "END_SRC",
+        "afterKeywordRaw": ""
+      }
+    }
+  ]
+}
