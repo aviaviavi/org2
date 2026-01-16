@@ -1,0 +1,14 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Paragraph",
+      "children": [
+        { "type": "Text", "value": "Meeting on " },
+        { "type": "Timestamp", "active": true, "raw": "<2026-01-16 Fri>" },
+        { "type": "Text", "value": "." }
+      ]
+    }
+  ]
+}

@@ -192,9 +192,32 @@
         "value": { "type": "string" }
       }
     },
+    "Timestamp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "active", "raw"],
+      "properties": {
+        "type": { "const": "Timestamp" },
+        "active": { "type": "boolean" },
+        "raw": { "type": "string" }
+      }
+    },
+    "TimestampRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "start", "separatorRaw", "end"],
+      "properties": {
+        "type": { "const": "TimestampRange" },
+        "start": { "$ref": "#/$defs/Timestamp" },
+        "separatorRaw": { "type": "string" },
+        "end": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
     "Inline": {
       "oneOf": [
-        { "$ref": "#/$defs/Text" }
+        { "$ref": "#/$defs/Text" },
+        { "$ref": "#/$defs/Timestamp" },
+        { "$ref": "#/$defs/TimestampRange" }
       ]
     }
   }
