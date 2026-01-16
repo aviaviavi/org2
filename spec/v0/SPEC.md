@@ -220,3 +220,47 @@ If a begin marker is not terminated by a matching end marker before end-of-file,
 - `terminated: false`
 - `end` omitted
 - `bodyRaw` containing all remaining bytes until end-of-file
+
+## Timestamps (dates)
+
+Org2 v0 supports capturing Org-mode timestamp/date syntax in a **lossless** form.
+
+Timestamp semantics (agenda scheduling, recurrence evaluation, and normalizing day-of-week strings) are out of scope for v0.
+
+### Timestamp syntax
+
+A **timestamp** is an inline construct with one of two delimiters:
+
+- **Active**: `<...>`
+- **Inactive**: `[...]`
+
+A timestamp MUST begin (inside the delimiters) with a date prefix:
+
+- `YYYY-MM-DD` (exactly 4 digits, `-`, 2 digits, `-`, 2 digits)
+
+All bytes inside the delimiters after the date prefix are treated as raw content (may include day-of-week, time, repeaters, warnings, etc.).
+
+Examples:
+
+- `<2026-01-16 Fri>`
+- `[2026-01-16 Fri]`
+- `<2026-01-16 Fri 13:45>`
+- `<2026-01-16 Fri 10:00-11:00>`
+- `<2026-01-16 Fri +1w -2d>`
+
+### Timestamp ranges
+
+Org supports expressing ranges between two timestamps.
+
+In v0, a **timestamp range** is captured as a single inline node containing:
+
+- `start`: a `Timestamp`
+- `separatorRaw`: the exact bytes between the end of the start timestamp and the beginning of the end timestamp
+- `end`: a `Timestamp`
+
+The reference parser recognizes ranges when two timestamps are separated by `--`, optionally with spaces.
+
+Examples:
+
+- `<2026-01-16 Fri>--<2026-01-18 Sun>`
+- `<2026-01-16 Fri> -- <2026-01-18 Sun>`

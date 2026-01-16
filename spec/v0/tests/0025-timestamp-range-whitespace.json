@@ -1,0 +1,19 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Paragraph",
+      "children": [
+        { "type": "Text", "value": "Trip " },
+        {
+          "type": "TimestampRange",
+          "start": { "type": "Timestamp", "active": true, "raw": "<2026-01-16 Fri>" },
+          "separatorRaw": " -- ",
+          "end": { "type": "Timestamp", "active": true, "raw": "<2026-01-18 Sun>" }
+        },
+        { "type": "Text", "value": "." }
+      ]
+    }
+  ]
+}
