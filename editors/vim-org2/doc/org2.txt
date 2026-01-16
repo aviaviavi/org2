@@ -1,0 +1,42 @@
+*org2*  Org2 filetype support for Vim
+
+CONTENTS                                                *org2-contents*
+
+  1. Overview .......................................... |org2-overview|
+  2. Folding ........................................... |org2-folding|
+  3. Syntax ............................................ |org2-syntax|
+
+
+1. Overview                                              *org2-overview*
+
+This plugin provides minimal Org2 support:
+
+- Filetype detection for *.org2
+- Syntax highlighting
+- Folding by heading level
+
+
+2. Folding                                                *org2-folding*
+
+The plugin sets:
+
+  foldmethod=expr
+  foldexpr=org2#foldexpr(v:lnum)
+
+Normal mode mapping:
+
+  <Tab>    Toggle fold for the current item.
+
+If the cursor is not on a heading, <Tab> will use the closest heading above.
+
+
+3. Syntax                                                  *org2-syntax*
+
+Headings are highlighted with separate syntax groups per level:
+
+  org2Heading1 .. org2Heading8
+
+These are linked to common Vim highlight groups by default.
+
+
+vim:tw=78:ts=8:ft=help:norl:
