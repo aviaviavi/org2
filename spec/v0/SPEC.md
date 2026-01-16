@@ -12,7 +12,7 @@ The primary goal of v0 is to define a **lossless, round-trippable parse** of Org
 - Normative fixtures: `.org` input → `.json` AST output
 
 **Out of scope (explicit, non-normative for v0)**
-- TODO workflow semantics
+- TODO workflow semantics (syntax may be parsed, semantics are out of scope)
 - Agenda behavior
 - Clocking
 - Property inheritance
@@ -75,6 +75,27 @@ A headline line produces a `Headline` node with:
 
 - `level`: the number of `*` characters.
 - `title`: an array of inline nodes (v0: a single `Text` node containing the title string).
+
+### TODO keywords (syntax only)
+
+A headline title MAY begin with a TODO keyword.
+
+In v0, the only supported TODO keyword is `TODO`.
+
+Example:
+- `* TODO Fix bug` produces a `Headline` with `todo: "TODO"` and `title: "Fix bug"`.
+
+TODO workflow semantics are out of scope for v0.
+
+### Tags (syntax only)
+
+A headline title MAY end with a tag group:
+- tag group syntax is `:tag1:tag2:`
+- it MUST appear at the end of the headline
+- tags MUST NOT contain whitespace
+
+Example:
+- `* Plan release :ops:launch:` produces `tags: ["ops", "launch"]` and `title: "Plan release"`.
 
 ### Headline nesting
 
