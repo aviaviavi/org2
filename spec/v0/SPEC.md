@@ -151,6 +151,45 @@ Source blocks are supported as a structural syntax element.
 
 Executing source blocks and interpreting header args (babel semantics) are out of scope for v0.
 
+## Tables (pipe tables)
+
+Org2 v0 supports Org-mode style **pipe tables**.
+
+### Table row syntax
+
+A **table row line** is a line that:
+
+- Begins with `|` (optionally after indentation spaces), and
+- Ends with `|` (ignoring trailing whitespace).
+
+The bytes between pipes are treated as **raw cell strings**.
+
+A table row line produces a `TableRow` node with:
+
+- `cells`: an array of strings, where each string is the raw byte sequence between separators.
+
+Examples:
+
+- `|a|b|` → `cells: ["a", "b"]`
+- `| a | b |` → `cells: [" a ", " b "]`
+- `||` → `cells: [""]`
+- `|a||b|` → `cells: ["a", "", "b"]`
+
+### Hline row syntax
+
+A **table hline row line** is a table row line where, after trimming leading/trailing whitespace, the line matches:
+
+- `|` followed by one or more `-` or `+` characters, followed by `|`
+
+Example:
+- `|---+---|` produces a `TableHline` node.
+
+### Table grouping and termination
+
+A `Table` node spans one or more consecutive table row lines and/or hline row lines.
+
+The parser MUST terminate a `Table` at the first subsequent line that is not a table row line.
+
 ### SOURCE block syntax
 
 A source block is a block consisting of:
