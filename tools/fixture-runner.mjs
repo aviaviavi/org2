@@ -216,6 +216,13 @@ function parseOrgViaCli(parseEntrypoint, orgPath) {
   return JSON.parse(raw);
 }
 
+function printAstViaCli(printEntrypoint, jsonPath) {
+  return execFileSync(process.execPath, [printEntrypoint, jsonPath], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
 function printHelp() {
   console.log("Usage: node tools/fixture-runner.mjs [--schema-only | --e2e]");
   console.log("\nModes:");
@@ -268,10 +275,14 @@ function main() {
   }
 
   const parseEntrypoint = path.join(repoRoot, "dist", "parse.js");
+  const printEntrypoint = path.join(repoRoot, "dist", "print.js");
   const hasParser = fs.existsSync(parseEntrypoint);
+  const hasPrinter = fs.existsSync(printEntrypoint);
 
   const endToEnd =
     parsedArgs.mode === "e2e" ? hasParser : parsedArgs.mode === "auto" ? hasParser : false;
+
+  const canPrint = endToEnd && hasPrinter;
 
   if (parsedArgs.mode === "e2e" && !hasParser) {
     console.log(
@@ -344,6 +355,23 @@ function main() {
       } catch (err) {
         fail(`Schema validation failed (parsed): ${pair.orgPath}: ${err.message}`);
         continue;
+      }
+
+      // Optional printer validation: only run for timestamp fixtures for now.
+      if (canPrint && /timestamp/.test(pair.base)) {
+        let printed;
+        try {
+          printed = printAstViaCli(printEntrypoint, pair.jsonPath);
+        } catch (err) {
+          fail(`Print failed: ${pair.jsonPath}: ${err.message}`);
+          continue;
+        }
+
+        const orgRaw = fs.readFileSync(pair.orgPath, "utf8");
+        if (printed !== orgRaw) {
+          fail(`E2E print mismatch: ${pair.jsonPath} did not round-trip to ${pair.orgPath}`);
+          continue;
+        }
       }
     }
 

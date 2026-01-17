@@ -5,6 +5,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "parse": "node dist/parse.js",
+    "print": "node dist/print.js",
     "fixtures": "node tools/fixture-runner.mjs",
     "pretest": "npm run build",
     "test": "npm run fixtures"
