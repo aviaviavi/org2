@@ -26,8 +26,11 @@
         { "$ref": "#/$defs/Paragraph" },
         { "$ref": "#/$defs/List" },
         { "$ref": "#/$defs/ListItem" },
+        { "$ref": "#/$defs/KeywordLine" },
+        { "$ref": "#/$defs/Planning" },
         { "$ref": "#/$defs/PropertyDrawer" },
         { "$ref": "#/$defs/SrcBlock" },
+        { "$ref": "#/$defs/Block" },
         { "$ref": "#/$defs/Table" },
         { "$ref": "#/$defs/Text" }
       ]
@@ -91,6 +94,31 @@
         }
       }
     },
+    "KeywordLine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "raw", "indent", "keyRaw", "valueRaw"],
+      "properties": {
+        "type": { "const": "KeywordLine" },
+        "raw": { "type": "string" },
+        "indent": { "type": "string" },
+        "keyRaw": { "type": "string" },
+        "valueRaw": { "type": "string" }
+      }
+    },
+    "Planning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "kind", "raw"],
+      "properties": {
+        "type": { "const": "Planning" },
+        "kind": { "type": "string", "enum": ["SCHEDULED", "DEADLINE"] },
+        "raw": { "type": "string" },
+        "timestamp": {
+          "oneOf": [{ "$ref": "#/$defs/Timestamp" }, { "$ref": "#/$defs/TimestampRange" }]
+        }
+      }
+    },
     "PropertyDrawer": {
       "type": "object",
       "additionalProperties": false,
@@ -143,6 +171,34 @@
       "required": ["type", "terminated", "begin", "bodyRaw"],
       "properties": {
         "type": { "const": "SrcBlock" },
+        "terminated": { "const": false },
+        "begin": { "$ref": "#/$defs/SrcBlockLine" },
+        "bodyRaw": { "type": "string" }
+      }
+    },
+    "Block": {
+      "oneOf": [{ "$ref": "#/$defs/BlockTerminated" }, { "$ref": "#/$defs/BlockUnterminated" }]
+    },
+    "BlockTerminated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "kind", "terminated", "begin", "bodyRaw", "end"],
+      "properties": {
+        "type": { "const": "Block" },
+        "kind": { "type": "string", "enum": ["example", "quote", "verse", "center"] },
+        "terminated": { "const": true },
+        "begin": { "$ref": "#/$defs/SrcBlockLine" },
+        "bodyRaw": { "type": "string" },
+        "end": { "$ref": "#/$defs/SrcBlockLine" }
+      }
+    },
+    "BlockUnterminated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "kind", "terminated", "begin", "bodyRaw"],
+      "properties": {
+        "type": { "const": "Block" },
+        "kind": { "type": "string", "enum": ["example", "quote", "verse", "center"] },
         "terminated": { "const": false },
         "begin": { "$ref": "#/$defs/SrcBlockLine" },
         "bodyRaw": { "type": "string" }
@@ -213,12 +269,25 @@
         "end": { "$ref": "#/$defs/Timestamp" }
       }
     },
+    "Link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "format", "raw", "targetRaw"],
+      "properties": {
+        "type": { "const": "Link" },
+        "format": { "type": "string", "enum": ["bracket", "plain"] },
+        "raw": { "type": "string" },
+        "targetRaw": { "type": "string" },
+        "descriptionRaw": { "type": "string" }
+      }
+    },
     "Inline": {
       "oneOf": [
         { "$ref": "#/$defs/Text" },
         { "$ref": "#/$defs/Timestamp" },
         { "$ref": "#/$defs/TimestampRange" },
-        { "$ref": "#/$defs/Emphasis" }
+        { "$ref": "#/$defs/Emphasis" },
+        { "$ref": "#/$defs/Link" }
       ]
     },
     "Emphasis": {

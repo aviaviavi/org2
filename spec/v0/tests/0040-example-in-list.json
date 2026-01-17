@@ -1,0 +1,37 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "List",
+      "ordered": false,
+      "items": [
+        {
+          "type": "ListItem",
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [{ "type": "Text", "value": "item" }]
+            },
+            {
+              "type": "Block",
+              "kind": "example",
+              "terminated": true,
+              "begin": {
+                "indent": "  ",
+                "keywordRaw": "begin_example",
+                "afterKeywordRaw": ""
+              },
+              "bodyRaw": "  body",
+              "end": {
+                "indent": "  ",
+                "keywordRaw": "end_example",
+                "afterKeywordRaw": ""
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

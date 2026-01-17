@@ -1,0 +1,22 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Block",
+      "kind": "quote",
+      "terminated": true,
+      "begin": {
+        "indent": "",
+        "keywordRaw": "begin_quote",
+        "afterKeywordRaw": ""
+      },
+      "bodyRaw": "hello",
+      "end": {
+        "indent": "",
+        "keywordRaw": "end_quote",
+        "afterKeywordRaw": ""
+      }
+    }
+  ]
+}

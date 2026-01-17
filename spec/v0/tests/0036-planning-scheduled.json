@@ -1,0 +1,16 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Planning",
+      "kind": "SCHEDULED",
+      "raw": "SCHEDULED: <2026-01-17 Sat>",
+      "timestamp": {
+        "type": "Timestamp",
+        "active": true,
+        "raw": "<2026-01-17 Sat>"
+      }
+    }
+  ]
+}
