@@ -217,8 +217,23 @@
       "oneOf": [
         { "$ref": "#/$defs/Text" },
         { "$ref": "#/$defs/Timestamp" },
-        { "$ref": "#/$defs/TimestampRange" }
+        { "$ref": "#/$defs/TimestampRange" },
+        { "$ref": "#/$defs/Emphasis" }
       ]
+    },
+    "Emphasis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "kind", "marker", "content"],
+      "properties": {
+        "type": { "const": "Emphasis" },
+        "kind": {
+          "type": "string",
+          "enum": ["bold", "italic", "underline", "strike", "verbatim", "code"]
+        },
+        "marker": { "type": "string" },
+        "content": { "type": "string" }
+      }
     }
   }
 }
