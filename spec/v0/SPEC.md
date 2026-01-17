@@ -304,3 +304,74 @@ For v0, “word character” means ASCII `[A-Za-z0-9]`.
 ### Nesting
 
 Nesting is not supported in v0. Any marker bytes inside `content` are treated as plain text.
+
+## Links (v0)
+
+Org2 v0 supports a limited subset of Org links as inline nodes.
+
+### Bracket links
+
+A **bracket link** is an inline construct with the form:
+
+- `[[TARGET]]`
+- `[[TARGET][DESCRIPTION]]`
+
+The canonical AST emits a `Link` inline node with:
+
+- `format: "bracket"`
+- `raw`: the exact matched bytes (including brackets)
+- `targetRaw`: the raw target payload
+- `descriptionRaw` (optional): the raw description payload
+
+### Plain URLs
+
+A **plain URL** is recognized when it begins with `http://` or `https://` and extends until the next whitespace.
+
+To reduce accidental captures, the reference parser trims common trailing punctuation characters from the URL.
+
+## Keyword lines (#+KEY: VALUE)
+
+Org2 v0 supports capturing file-level keyword/metadata lines as explicit nodes.
+
+A **keyword line** matches:
+
+- Optional indentation
+- `#+`
+- a key token (captured as `keyRaw`)
+- `:`
+- the remainder of the line (captured as `valueRaw`, including any leading space)
+
+Keyword lines produce a `KeywordLine` node with a lossless `raw` field.
+
+## Planning lines (SCHEDULED:/DEADLINE:)
+
+Org2 v0 recognizes planning lines as explicit nodes:
+
+- `SCHEDULED: ...`
+- `DEADLINE: ...`
+
+Planning lines produce a `Planning` node with:
+
+- `kind`: `SCHEDULED` or `DEADLINE`
+- `raw`: the exact original line
+- `timestamp` (optional): the first timestamp or timestamp range found in the remainder
+
+Planning semantics are out of scope for v0.
+
+## Common blocks (example/quote/verse/center)
+
+Org2 v0 supports parsing common block types as a lossless structural node.
+
+Recognized begin/end pairs (case-insensitive keyword matching is NOT required in v0 for these blocks):
+
+- `#+begin_example` / `#+end_example`
+- `#+begin_quote` / `#+end_quote`
+- `#+begin_verse` / `#+end_verse`
+- `#+begin_center` / `#+end_center`
+
+Each produces a `Block` node with:
+
+- `kind`: one of `example|quote|verse|center`
+- `terminated`: whether a matching end marker was found
+- `begin` / `end`: captured as `indent`, `keywordRaw`, `afterKeywordRaw`
+- `bodyRaw`: raw bytes between begin and end lines

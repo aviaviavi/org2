@@ -1,0 +1,17 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Paragraph",
+      "children": [
+        {
+          "type": "Link",
+          "format": "bracket",
+          "raw": "[[file:README.org]]",
+          "targetRaw": "file:README.org"
+        }
+      ]
+    }
+  ]
+}

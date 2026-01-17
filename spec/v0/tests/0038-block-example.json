@@ -1,0 +1,22 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Block",
+      "kind": "example",
+      "terminated": true,
+      "begin": {
+        "indent": "",
+        "keywordRaw": "begin_example",
+        "afterKeywordRaw": ""
+      },
+      "bodyRaw": "hello",
+      "end": {
+        "indent": "",
+        "keywordRaw": "end_example",
+        "afterKeywordRaw": ""
+      }
+    }
+  ]
+}

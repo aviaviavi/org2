@@ -1,9 +1,13 @@
 import type {
+  BlockNode,
   DocumentNode,
+  EmphasisNode,
   HeadlineNode,
   InlineNode,
-  EmphasisNode,
+  KeywordLineNode,
+  LinkNode,
   ParagraphNode,
+  PlanningNode,
   TextNode,
   TimestampNode,
   TimestampRangeNode,
@@ -25,6 +29,10 @@ function printEmphasis(node: EmphasisNode): string {
   return `${node.marker}${node.content}${node.marker}`;
 }
 
+function printLink(node: LinkNode): string {
+  return node.raw;
+}
+
 function printInline(node: InlineNode): string {
   switch (node.type) {
     case "Text":
@@ -35,6 +43,8 @@ function printInline(node: InlineNode): string {
       return printTimestampRange(node);
     case "Emphasis":
       return printEmphasis(node);
+    case "Link":
+      return printLink(node);
     default: {
       const _exhaustive: never = node;
       return _exhaustive;
@@ -60,6 +70,34 @@ function printHeadline(node: HeadlineNode): string {
   return `${stars} ${todo}${title}${tags}`;
 }
 
+function printKeywordLine(node: KeywordLineNode): string {
+  return node.raw;
+}
+
+function printPlanning(node: PlanningNode): string {
+  return node.raw;
+}
+
+function directiveLineToRaw(indent: string, keywordRaw: string, afterKeywordRaw: string): string {
+  return `${indent}#+${keywordRaw}${afterKeywordRaw}`;
+}
+
+function printBlock(node: BlockNode): string {
+  const begin = directiveLineToRaw(node.begin.indent, node.begin.keywordRaw, node.begin.afterKeywordRaw);
+
+  if (!node.terminated || !node.end) {
+    return [begin, node.bodyRaw].filter((l) => l.length > 0).join("\n");
+  }
+
+  const end = directiveLineToRaw(node.end.indent, node.end.keywordRaw, node.end.afterKeywordRaw);
+
+  if (node.bodyRaw.length === 0) {
+    return `${begin}\n${end}`;
+  }
+
+  return `${begin}\n${node.bodyRaw}\n${end}`;
+}
+
 export function printCanonicalAstToOrg(doc: DocumentNode): string {
   if (doc.type !== "Document" || doc.version !== "0") {
     throw new Error("Unsupported AST: expected Document v0");
@@ -74,6 +112,15 @@ export function printCanonicalAstToOrg(doc: DocumentNode): string {
         break;
       case "Headline":
         lines.push(printHeadline(child));
+        break;
+      case "KeywordLine":
+        lines.push(printKeywordLine(child));
+        break;
+      case "Planning":
+        lines.push(printPlanning(child));
+        break;
+      case "Block":
+        lines.push(printBlock(child));
         break;
       default:
         throw new Error(`Unsupported node in printer v0: ${child.type}`);

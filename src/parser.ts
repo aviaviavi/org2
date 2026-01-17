@@ -1,13 +1,19 @@
 import type {
+  BlockKind,
+  BlockNode,
   DocumentNode,
   EmphasisKind,
   EmphasisNode,
   HeadlineNode,
   InlineNode,
+  KeywordLineNode,
+  LinkNode,
   ListItemNode,
   ListNode,
   Node,
   ParagraphNode,
+  PlanningKind,
+  PlanningNode,
   PropertyDrawerNode,
   SrcBlockLine,
   SrcBlockNode,
@@ -56,6 +62,10 @@ function emphasis(kind: EmphasisKind, marker: string, content: string): Emphasis
     marker,
     content,
   };
+}
+
+function link(node: Omit<LinkNode, "type">): LinkNode {
+  return { type: "Link", ...node };
 }
 
 function isTimestampDatePrefix(value: string): boolean {
@@ -181,6 +191,71 @@ function parseEmphasisAt(value: string, startIndex: number): ParsedEmphasisAt | 
   return null;
 }
 
+type ParsedLinkAt = {
+  node: LinkNode;
+  endIndex: number;
+};
+
+function parseBracketLinkAt(value: string, startIndex: number): ParsedLinkAt | null {
+  if (value.slice(startIndex, startIndex + 2) !== "[[") return null;
+
+  const closeIndex = value.indexOf("]]", startIndex + 2);
+  if (closeIndex === -1) return null;
+
+  const raw = value.slice(startIndex, closeIndex + 2);
+  const inner = value.slice(startIndex + 2, closeIndex);
+
+  const splitIndex = inner.indexOf("][");
+  if (splitIndex === -1) {
+    return {
+      node: link({
+        format: "bracket",
+        raw,
+        targetRaw: inner,
+      }),
+      endIndex: closeIndex + 2,
+    };
+  }
+
+  return {
+    node: link({
+      format: "bracket",
+      raw,
+      targetRaw: inner.slice(0, splitIndex),
+      descriptionRaw: inner.slice(splitIndex + 2),
+    }),
+    endIndex: closeIndex + 2,
+  };
+}
+
+function parsePlainUrlAt(value: string, startIndex: number): ParsedLinkAt | null {
+  const rest = value.slice(startIndex);
+  const match = /^(https?:\/\/[^\s]+)/.exec(rest);
+  if (!match) return null;
+
+  let url = match[1] ?? "";
+
+  // Avoid swallowing common trailing punctuation.
+  while (/[),.!?;:]$/.test(url)) {
+    url = url.slice(0, -1);
+  }
+
+  if (url.length === 0) return null;
+
+  return {
+    node: link({
+      format: "plain",
+      raw: url,
+      targetRaw: url,
+    }),
+    endIndex: startIndex + url.length,
+  };
+}
+
+function parseLinkAt(value: string, startIndex: number): ParsedLinkAt | null {
+  return parseBracketLinkAt(value, startIndex) ?? parsePlainUrlAt(value, startIndex);
+}
+
 function parseInlinesFromText(value: string): InlineNode[] {
   const out: InlineNode[] = [];
 
@@ -196,6 +271,18 @@ function parseInlinesFromText(value: string): InlineNode[] {
 
       out.push(parsedTimestamp.node);
       i = parsedTimestamp.endIndex;
+      lastTextStart = i;
+      continue;
+    }
+
+    const parsedLink = parseLinkAt(value, i);
+    if (parsedLink) {
+      if (lastTextStart < i) {
+        out.push(text(value.slice(lastTextStart, i)));
+      }
+
+      out.push(parsedLink.node);
+      i = parsedLink.endIndex;
       lastTextStart = i;
       continue;
     }
@@ -234,6 +321,55 @@ function paragraphFromText(value: string): ParagraphNode {
 
 function isBlank(line: string): boolean {
   return line.trim().length === 0;
+}
+
+function parseKeywordLine(line: string, lineNumber: number): KeywordLineNode | null {
+  const match = /^(\s*)#\+([^:\s]+):(.*)$/.exec(line);
+  if (!match) return null;
+
+  const indent = match[1] ?? "";
+  const keyRaw = match[2] ?? "";
+  const valueRaw = match[3] ?? "";
+
+  if (indent.includes("\t") || valueRaw.includes("\t")) {
+    fail(makeError("Unsupported construct: tab character", lineNumber, line.indexOf("\t") + 1));
+  }
+
+  return {
+    type: "KeywordLine",
+    raw: line,
+    indent,
+    keyRaw,
+    valueRaw,
+  };
+}
+
+function parsePlanningLine(line: string): PlanningNode | null {
+  const match = /^(SCHEDULED|DEADLINE):(.*)$/.exec(line);
+  if (!match) return null;
+
+  const kind = match[1] as PlanningKind;
+
+  // Find the first timestamp/range in the remainder, if any.
+  const after = match[2] ?? "";
+  let ts;
+
+  for (let i = 0; i < after.length; i += 1) {
+    const ch = after[i];
+    if (ch !== "<" && ch !== "[") continue;
+    const parsed = parseTimestampOrRangeAt(after, i);
+    if (parsed) {
+      ts = parsed.node;
+      break;
+    }
+  }
+
+  return {
+    type: "Planning",
+    kind,
+    raw: line,
+    ...(ts ? { timestamp: ts } : {}),
+  };
 }
 
 function parseHeadline(
@@ -403,6 +539,66 @@ function isEndSrc(line: SrcBlockLine): boolean {
   return line.keywordRaw.toLowerCase() === "end_src";
 }
 
+function getBlockKindFromBegin(line: SrcBlockLine): BlockKind | null {
+  const key = line.keywordRaw.toLowerCase();
+  if (key === "begin_example") return "example";
+  if (key === "begin_quote") return "quote";
+  if (key === "begin_verse") return "verse";
+  if (key === "begin_center") return "center";
+  return null;
+}
+
+function isEndBlockForKind(line: SrcBlockLine, kind: BlockKind): boolean {
+  const key = line.keywordRaw.toLowerCase();
+  return key === `end_${kind}`;
+}
+
+type ParseBlockResult = {
+  block: BlockNode;
+  nextLineIndex: number;
+};
+
+function parseBlock(lines: string[], startLineIndex: number, kind: BlockKind): ParseBlockResult {
+  const beginLineNumber = startLineIndex + 1;
+  const begin = parseSrcBlockLine(lines[startLineIndex] ?? "", beginLineNumber);
+  if (!begin) {
+    fail(makeError("Invalid block; expected #+begin_...", beginLineNumber, 1));
+  }
+
+  for (let i = startLineIndex + 1; i < lines.length; i += 1) {
+    const lineNumber = i + 1;
+    const line = lines[i] ?? "";
+
+    const parsed = parseSrcBlockLine(line, lineNumber);
+    if (parsed && isEndBlockForKind(parsed, kind)) {
+      const bodyLines = lines.slice(startLineIndex + 1, i);
+      return {
+        block: {
+          type: "Block",
+          kind,
+          terminated: true,
+          begin,
+          bodyRaw: bodyLines.join("\n"),
+          end: parsed,
+        },
+        nextLineIndex: i + 1,
+      };
+    }
+  }
+
+  const bodyLines = lines.slice(startLineIndex + 1);
+  return {
+    block: {
+      type: "Block",
+      kind,
+      terminated: false,
+      begin,
+      bodyRaw: bodyLines.join("\n"),
+    },
+    nextLineIndex: lines.length,
+  };
+}
+
 function parseSrcBlock(lines: string[], startLineIndex: number): ParseSrcBlockResult {
   const startLineNumber = startLineIndex + 1;
   const begin = parseSrcBlockLine(lines[startLineIndex] ?? "", startLineNumber);
@@ -543,6 +739,24 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
     const line = lines[i];
 
     {
+      const keyword = parseKeywordLine(line, lineNumber);
+      if (keyword) {
+        flushParagraph();
+        endList();
+        getChildrenArray(currentContainer()).push(keyword);
+        i += 1;
+        continue;
+      }
+
+      const planning = parsePlanningLine(line);
+      if (planning) {
+        flushParagraph();
+        endList();
+        getChildrenArray(currentContainer()).push(planning);
+        i += 1;
+        continue;
+      }
+
       const directive = parseSrcBlockLine(line, lineNumber);
       if (directive) {
         if (isBeginSrc(directive)) {
@@ -550,6 +764,17 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
           endList();
 
           const { block, nextLineIndex } = parseSrcBlock(lines, i);
+          getChildrenArray(currentContainer()).push(block);
+          i = nextLineIndex;
+          continue;
+        }
+
+        const kind = getBlockKindFromBegin(directive);
+        if (kind) {
+          flushParagraph();
+          endList();
+
+          const { block, nextLineIndex } = parseBlock(lines, i, kind);
           getChildrenArray(currentContainer()).push(block);
           i = nextLineIndex;
           continue;
@@ -661,6 +886,17 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
           item.children.push(block);
           i = nextLineIndex;
           continue;
+        }
+
+        if (directive) {
+          const kind = getBlockKindFromBegin(directive);
+          if (kind) {
+            flushItemParagraph();
+            const { block, nextLineIndex } = parseBlock(lines, i, kind);
+            item.children.push(block);
+            i = nextLineIndex;
+            continue;
+          }
         }
 
         if (isTableLineWithIndent(contLine, " ".repeat(listItem.indentColumn))) {
