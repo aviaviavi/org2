@@ -25,9 +25,34 @@ export type EmphasisNode = {
   content: string;
 };
 
+export type LinkNode = {
+  type: "Link";
+  format: "bracket" | "plain";
+  raw: string;
+  targetRaw: string;
+  descriptionRaw?: string;
+};
+
 export type ParagraphNode = {
   type: "Paragraph";
   children: InlineNode[];
+};
+
+export type KeywordLineNode = {
+  type: "KeywordLine";
+  raw: string;
+  indent: string;
+  keyRaw: string;
+  valueRaw: string;
+};
+
+export type PlanningKind = "SCHEDULED" | "DEADLINE";
+
+export type PlanningNode = {
+  type: "Planning";
+  kind: PlanningKind;
+  raw: string;
+  timestamp?: TimestampNode | TimestampRangeNode;
 };
 
 export type PropertyNode = {
@@ -48,6 +73,17 @@ export type SrcBlockLine = {
 
 export type SrcBlockNode = {
   type: "SrcBlock";
+  terminated: boolean;
+  begin: SrcBlockLine;
+  bodyRaw: string;
+  end?: SrcBlockLine;
+};
+
+export type BlockKind = "example" | "quote" | "verse" | "center";
+
+export type BlockNode = {
+  type: "Block";
+  kind: BlockKind;
   terminated: boolean;
   begin: SrcBlockLine;
   bodyRaw: string;
@@ -88,15 +124,18 @@ export type HeadlineNode = {
   children: Node[];
 };
 
-export type InlineNode = TextNode | TimestampNode | TimestampRangeNode | EmphasisNode;
+export type InlineNode = TextNode | TimestampNode | TimestampRangeNode | EmphasisNode | LinkNode;
 
 export type Node =
   | HeadlineNode
   | ParagraphNode
   | ListNode
   | ListItemNode
+  | KeywordLineNode
+  | PlanningNode
   | PropertyDrawerNode
   | SrcBlockNode
+  | BlockNode
   | TableNode
   | TextNode;
 

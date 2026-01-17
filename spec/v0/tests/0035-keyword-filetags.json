@@ -1,0 +1,13 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "KeywordLine",
+      "raw": "#+FILETAGS: :a:b:",
+      "indent": "",
+      "keyRaw": "FILETAGS",
+      "valueRaw": " :a:b:"
+    }
+  ]
+}
