@@ -4,11 +4,14 @@
   "scopeName": "source.org2",
   "patterns": [
     { "include": "#directives" },
+    { "include": "#planning" },
     { "include": "#blocks" },
     { "include": "#headlines" },
     { "include": "#drawers" },
     { "include": "#lists" },
     { "include": "#checkboxes" },
+    { "include": "#timestamps" },
+    { "include": "#emphasis" },
     { "include": "#links" }
   ],
   "repository": {
@@ -17,6 +20,14 @@
         {
           "name": "keyword.other.directive.org2",
           "match": "^(?:\\s*)#\\+[A-Za-z0-9_\\-]+(?::\\s+.*)?$"
+        }
+      ]
+    },
+    "planning": {
+      "patterns": [
+        {
+          "name": "keyword.other.planning.org2",
+          "match": "^(?:\\s*)(?:SCHEDULED|DEADLINE):.*$"
         }
       ]
     },
@@ -33,6 +44,9 @@
             "0": { "name": "keyword.other.block.end.org2" }
           },
           "patterns": [
+            { "include": "#timestamps" },
+            { "include": "#emphasis" },
+            { "include": "#links" },
             { "name": "text.plain.org2", "match": ".+" }
           ]
         }
@@ -92,11 +106,47 @@
         }
       ]
     },
+    "timestamps": {
+      "patterns": [
+        {
+          "name": "constant.other.timestamp.org2",
+          "match": "<\\d{4}-\\d{2}-\\d{2}[^>]*>"
+        },
+        {
+          "name": "constant.other.timestamp.org2",
+          "match": "\\[\\d{4}-\\d{2}-\\d{2}[^\\]]*\\]"
+        }
+      ]
+    },
+    "emphasis": {
+      "patterns": [
+        {
+          "name": "markup.bold.org2",
+          "match": "(^|[^0-9A-Za-z])\\*[^*\\s][^*]*[^*\\s]\\*"
+        },
+        {
+          "name": "markup.italic.org2",
+          "match": "(^|[^0-9A-Za-z])\\/[^\\/\\s][^\\/]*[^\\/\\s]\\/"
+        },
+        {
+          "name": "markup.underline.org2",
+          "match": "(^|[^0-9A-Za-z])_[^_\\s][^_]*[^_\\s]_"
+        },
+        {
+          "name": "markup.strikethrough.org2",
+          "match": "(^|[^0-9A-Za-z])\\+[^\\+\\s][^\\+]*[^\\+\\s]\\+"
+        }
+      ]
+    },
     "links": {
       "patterns": [
         {
           "name": "markup.underline.link.org2",
           "match": "\\[\\[[^\\]]+\\](?:\\[[^\\]]*\\])?\\]"
+        },
+        {
+          "name": "markup.underline.link.org2",
+          "match": "https?:\\/\\/\\S+"
         }
       ]
     }
