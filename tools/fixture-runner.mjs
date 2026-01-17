@@ -357,8 +357,8 @@ function main() {
         continue;
       }
 
-      // Optional printer validation: only run for timestamp fixtures for now.
-      if (canPrint && /timestamp/.test(pair.base)) {
+      // Optional printer validation: only run for selected fixtures for now.
+      if (canPrint && /(timestamp|emphasis)/.test(pair.base)) {
         let printed;
         try {
           printed = printAstViaCli(printEntrypoint, pair.jsonPath);

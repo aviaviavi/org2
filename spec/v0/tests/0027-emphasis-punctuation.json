@@ -1,0 +1,16 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Paragraph",
+      "children": [
+        { "type": "Text", "value": "Wait (" },
+        { "type": "Emphasis", "kind": "bold", "marker": "*", "content": "bold" },
+        { "type": "Text", "value": ")! Also: " },
+        { "type": "Emphasis", "kind": "italic", "marker": "/", "content": "italic" },
+        { "type": "Text", "value": "!" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Paragraph",
+      "children": [
+        { "type": "Text", "value": "word*no*word * spaced * *trail*word" }
+      ]
+    }
+  ]
+}

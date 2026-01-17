@@ -264,3 +264,43 @@ Examples:
 
 - `<2026-01-16 Fri>--<2026-01-18 Sun>`
 - `<2026-01-16 Fri> -- <2026-01-18 Sun>`
+
+## Inline emphasis (bold/italic/underline/strike/verbatim/code)
+
+Org2 v0 supports a limited, “80% coverage” subset of Org inline emphasis.
+
+### Markers
+
+The following emphasis markers are recognized:
+
+- `*...*` → `kind: "bold"`
+- `/.../` → `kind: "italic"`
+- `_..._` → `kind: "underline"`
+- `+...+` → `kind: "strike"`
+- `=...=` → `kind: "verbatim"`
+- `~...~` → `kind: "code"`
+
+Each emphasized span produces an `Emphasis` inline node:
+
+- `type: "Emphasis"`
+- `kind`: one of the above
+- `marker`: the opening/closing marker character
+- `content`: the raw inner bytes (v0: a string; no inline children)
+
+### Boundary rules (v0)
+
+Emphasis is only recognized when it is bounded such that it is unlikely to match “inside words”.
+
+An emphasis span starting at byte index `i` with marker `M` is valid iff:
+
+- Opening marker `M` is preceded by a boundary (start-of-string, whitespace, or non-word character).
+- The byte after opening marker is not whitespace.
+- A matching closing marker `M` exists later on the same line.
+- The byte before the closing marker is not whitespace.
+- The byte after the closing marker is a boundary (end-of-string, whitespace, or non-word character).
+
+For v0, “word character” means ASCII `[A-Za-z0-9]`.
+
+### Nesting
+
+Nesting is not supported in v0. Any marker bytes inside `content` are treated as plain text.

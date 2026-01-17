@@ -16,6 +16,15 @@ export type TimestampRangeNode = {
   end: TimestampNode;
 };
 
+export type EmphasisKind = "bold" | "italic" | "underline" | "strike" | "verbatim" | "code";
+
+export type EmphasisNode = {
+  type: "Emphasis";
+  kind: EmphasisKind;
+  marker: string;
+  content: string;
+};
+
 export type ParagraphNode = {
   type: "Paragraph";
   children: InlineNode[];
@@ -79,7 +88,7 @@ export type HeadlineNode = {
   children: Node[];
 };
 
-export type InlineNode = TextNode | TimestampNode | TimestampRangeNode;
+export type InlineNode = TextNode | TimestampNode | TimestampRangeNode | EmphasisNode;
 
 export type Node =
   | HeadlineNode

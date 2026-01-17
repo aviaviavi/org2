@@ -1,0 +1,24 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Paragraph",
+      "children": [
+        { "type": "Text", "value": "This is " },
+        { "type": "Emphasis", "kind": "bold", "marker": "*", "content": "bold" },
+        { "type": "Text", "value": ", " },
+        { "type": "Emphasis", "kind": "italic", "marker": "/", "content": "italic" },
+        { "type": "Text", "value": ", " },
+        { "type": "Emphasis", "kind": "underline", "marker": "_", "content": "underline" },
+        { "type": "Text", "value": ", " },
+        { "type": "Emphasis", "kind": "strike", "marker": "+", "content": "strike" },
+        { "type": "Text", "value": ", " },
+        { "type": "Emphasis", "kind": "verbatim", "marker": "=", "content": "verbatim" },
+        { "type": "Text", "value": ", and " },
+        { "type": "Emphasis", "kind": "code", "marker": "~", "content": "code" },
+        { "type": "Text", "value": "." }
+      ]
+    }
+  ]
+}
