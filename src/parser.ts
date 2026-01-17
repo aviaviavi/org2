@@ -1,5 +1,7 @@
 import type {
   DocumentNode,
+  EmphasisKind,
+  EmphasisNode,
   HeadlineNode,
   InlineNode,
   ListItemNode,
@@ -44,6 +46,15 @@ function timestampRange(start: TimestampNode, separatorRaw: string, end: Timesta
     start,
     separatorRaw,
     end,
+  };
+}
+
+function emphasis(kind: EmphasisKind, marker: string, content: string): EmphasisNode {
+  return {
+    type: "Emphasis",
+    kind,
+    marker,
+    content,
   };
 }
 
@@ -109,6 +120,67 @@ function parseTimestampOrRangeAt(value: string, startIndex: number): ParsedTimes
   };
 }
 
+function isWordChar(ch: string): boolean {
+  return /^[A-Za-z0-9]$/.test(ch);
+}
+
+function isWhitespace(ch: string): boolean {
+  return ch === " " || ch === "\n";
+}
+
+function isBoundaryChar(ch: string | undefined): boolean {
+  if (ch === undefined) return true;
+  if (isWhitespace(ch)) return true;
+  return !isWordChar(ch);
+}
+
+type ParsedEmphasisAt = {
+  node: EmphasisNode;
+  endIndex: number;
+};
+
+const EMPHASIS_MARKERS: Array<{ marker: string; kind: EmphasisKind }> = [
+  { marker: "*", kind: "bold" },
+  { marker: "/", kind: "italic" },
+  { marker: "_", kind: "underline" },
+  { marker: "+", kind: "strike" },
+  { marker: "=", kind: "verbatim" },
+  { marker: "~", kind: "code" },
+];
+
+function parseEmphasisAt(value: string, startIndex: number): ParsedEmphasisAt | null {
+  const opener = value[startIndex];
+  const rule = EMPHASIS_MARKERS.find((r) => r.marker === opener);
+  if (!rule) return null;
+
+  const prev = startIndex > 0 ? value[startIndex - 1] : undefined;
+  const next = startIndex + 1 < value.length ? value[startIndex + 1] : undefined;
+
+  if (!isBoundaryChar(prev)) return null;
+  if (next === undefined || isWhitespace(next)) return null;
+
+  // Find the first matching closer that satisfies boundary rules.
+  for (let closeIndex = startIndex + 1; closeIndex < value.length; closeIndex += 1) {
+    if (value[closeIndex] !== opener) continue;
+
+    const beforeClose = closeIndex > startIndex + 1 ? value[closeIndex - 1] : undefined;
+    const afterClose = closeIndex + 1 < value.length ? value[closeIndex + 1] : undefined;
+
+    if (beforeClose === undefined || isWhitespace(beforeClose)) continue;
+    if (!isBoundaryChar(afterClose)) continue;
+
+    const content = value.slice(startIndex + 1, closeIndex);
+    if (content.includes("\n")) continue;
+
+    return {
+      node: emphasis(rule.kind, opener, content),
+      endIndex: closeIndex + 1,
+    };
+  }
+
+  return null;
+}
+
 function parseInlinesFromText(value: string): InlineNode[] {
   const out: InlineNode[] = [];
 
@@ -116,20 +188,31 @@ function parseInlinesFromText(value: string): InlineNode[] {
   let lastTextStart = 0;
 
   while (i < value.length) {
-    const parsed = parseTimestampOrRangeAt(value, i);
-    if (!parsed) {
-      i += 1;
+    const parsedTimestamp = parseTimestampOrRangeAt(value, i);
+    if (parsedTimestamp) {
+      if (lastTextStart < i) {
+        out.push(text(value.slice(lastTextStart, i)));
+      }
+
+      out.push(parsedTimestamp.node);
+      i = parsedTimestamp.endIndex;
+      lastTextStart = i;
       continue;
     }
 
-    if (lastTextStart < i) {
-      out.push(text(value.slice(lastTextStart, i)));
+    const parsedEmphasis = parseEmphasisAt(value, i);
+    if (parsedEmphasis) {
+      if (lastTextStart < i) {
+        out.push(text(value.slice(lastTextStart, i)));
+      }
+
+      out.push(parsedEmphasis.node);
+      i = parsedEmphasis.endIndex;
+      lastTextStart = i;
+      continue;
     }
 
-    out.push(parsed.node);
-
-    i = parsed.endIndex;
-    lastTextStart = i;
+    i += 1;
   }
 
   if (lastTextStart < value.length) {

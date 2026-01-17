@@ -2,6 +2,7 @@ import type {
   DocumentNode,
   HeadlineNode,
   InlineNode,
+  EmphasisNode,
   ParagraphNode,
   TextNode,
   TimestampNode,
@@ -20,6 +21,10 @@ function printTimestampRange(node: TimestampRangeNode): string {
   return `${printTimestamp(node.start)}${node.separatorRaw}${printTimestamp(node.end)}`;
 }
 
+function printEmphasis(node: EmphasisNode): string {
+  return `${node.marker}${node.content}${node.marker}`;
+}
+
 function printInline(node: InlineNode): string {
   switch (node.type) {
     case "Text":
@@ -28,6 +33,8 @@ function printInline(node: InlineNode): string {
       return printTimestamp(node);
     case "TimestampRange":
       return printTimestampRange(node);
+    case "Emphasis":
+      return printEmphasis(node);
     default: {
       const _exhaustive: never = node;
       return _exhaustive;

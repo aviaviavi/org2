@@ -1,0 +1,1 @@
+This is *bold*, /italic/, _underline_, +strike+, =verbatim=, and ~code~.
