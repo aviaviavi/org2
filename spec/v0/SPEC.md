@@ -74,7 +74,7 @@ A **headline line** is a line that matches:
 A headline line produces a `Headline` node with:
 
 - `level`: the number of `*` characters.
-- `title`: an array of inline nodes (v0: a single `Text` node containing the title string).
+- `title`: an array of inline nodes, parsed using the same inline rules as paragraphs (timestamps, links, emphasis, etc.).
 
 ### TODO keywords (syntax only)
 
