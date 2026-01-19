@@ -1,0 +1,13 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Table",
+      "rows": [
+        { "type": "TableRow", "cells": [" a ", " b "] },
+        { "type": "TableRow", "cells": [" c ", " d "] }
+      ]
+    }
+  ]
+}
