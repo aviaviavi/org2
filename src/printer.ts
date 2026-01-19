@@ -4,6 +4,7 @@ import type {
   EmphasisNode,
   HeadlineNode,
   InlineNode,
+  DirectiveLineNode,
   KeywordLineNode,
   LinkNode,
   ParagraphNode,
@@ -74,6 +75,10 @@ function printKeywordLine(node: KeywordLineNode): string {
   return node.raw;
 }
 
+function printDirectiveLine(node: DirectiveLineNode): string {
+  return node.raw;
+}
+
 function printPlanning(node: PlanningNode): string {
   return node.raw;
 }
@@ -115,6 +120,9 @@ export function printCanonicalAstToOrg(doc: DocumentNode): string {
         break;
       case "KeywordLine":
         lines.push(printKeywordLine(child));
+        break;
+      case "DirectiveLine":
+        lines.push(printDirectiveLine(child));
         break;
       case "Planning":
         lines.push(printPlanning(child));

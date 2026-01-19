@@ -1,0 +1,48 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "KeywordLine",
+      "raw": "#+attr_html: :width 300",
+      "indent": "",
+      "keyRaw": "attr_html",
+      "valueRaw": " :width 300"
+    },
+    {
+      "type": "DirectiveLine",
+      "raw": "#+foo bar baz",
+      "indent": "",
+      "keywordRaw": "foo",
+      "afterKeywordRaw": " bar baz"
+    },
+    {
+      "type": "Headline",
+      "level": 1,
+      "title": [
+        {
+          "type": "Text",
+          "value": "H1"
+        }
+      ],
+      "children": [
+        {
+          "type": "DirectiveLine",
+          "raw": "#+bar_qux quux",
+          "indent": "",
+          "keywordRaw": "bar_qux",
+          "afterKeywordRaw": " quux"
+        },
+        {
+          "type": "Paragraph",
+          "children": [
+            {
+              "type": "Text",
+              "value": "A paragraph."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
