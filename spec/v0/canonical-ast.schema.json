@@ -28,6 +28,7 @@
         { "$ref": "#/$defs/ListItem" },
         { "$ref": "#/$defs/KeywordLine" },
         { "$ref": "#/$defs/DirectiveLine" },
+        { "$ref": "#/$defs/CommentLine" },
         { "$ref": "#/$defs/Planning" },
         { "$ref": "#/$defs/PropertyDrawer" },
         { "$ref": "#/$defs/SrcBlock" },
@@ -117,6 +118,17 @@
         "indent": { "type": "string" },
         "keywordRaw": { "type": "string" },
         "afterKeywordRaw": { "type": "string" }
+      }
+    },
+    "CommentLine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "raw", "indent", "bodyRaw"],
+      "properties": {
+        "type": { "const": "CommentLine" },
+        "raw": { "type": "string" },
+        "indent": { "type": "string" },
+        "bodyRaw": { "type": "string" }
       }
     },
     "Planning": {

@@ -1,6 +1,7 @@
 import type {
   BlockKind,
   BlockNode,
+  CommentLineNode,
   DocumentNode,
   EmphasisKind,
   EmphasisNode,
@@ -341,6 +342,25 @@ function parseKeywordLine(line: string, lineNumber: number): KeywordLineNode | n
     indent,
     keyRaw,
     valueRaw,
+  };
+}
+
+function parseCommentLine(line: string, lineNumber: number): CommentLineNode | null {
+  const match = /^(\s*)#(?!\+)(.*)$/.exec(line);
+  if (!match) return null;
+
+  const indent = match[1] ?? "";
+  const bodyRaw = match[2] ?? "";
+
+  if (indent.includes("\t") || bodyRaw.includes("\t")) {
+    fail(makeError("Unsupported construct: tab character", lineNumber, line.indexOf("\t") + 1));
+  }
+
+  return {
+    type: "CommentLine",
+    raw: line,
+    indent,
+    bodyRaw,
   };
 }
 
@@ -772,6 +792,15 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
         flushParagraph();
         endList();
         getChildrenArray(currentContainer()).push(planning);
+        i += 1;
+        continue;
+      }
+
+      const comment = parseCommentLine(line, lineNumber);
+      if (comment) {
+        flushParagraph();
+        endList();
+        getChildrenArray(currentContainer()).push(comment);
         i += 1;
         continue;
       }
