@@ -1,0 +1,43 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Headline",
+      "level": 1,
+      "title": [
+        {
+          "type": "Text",
+          "value": "Plan "
+        },
+        {
+          "type": "Emphasis",
+          "kind": "bold",
+          "marker": "*",
+          "content": "bold"
+        },
+        {
+          "type": "Text",
+          "value": " "
+        },
+        {
+          "type": "Timestamp",
+          "active": true,
+          "raw": "<2026-01-16 Fri>"
+        },
+        {
+          "type": "Text",
+          "value": " "
+        },
+        {
+          "type": "Link",
+          "format": "bracket",
+          "raw": "[[file:foo][desc]]",
+          "targetRaw": "file:foo",
+          "descriptionRaw": "desc"
+        }
+      ],
+      "children": []
+    }
+  ]
+}
