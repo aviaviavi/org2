@@ -16,6 +16,7 @@ import type {
   PlanningKind,
   PlanningNode,
   PropertyDrawerNode,
+  DrawerNode,
   SrcBlockLine,
   SrcBlockNode,
   TableNode,
@@ -457,6 +458,11 @@ type ParsePropertyDrawerResult = {
   nextLineIndex: number;
 };
 
+type ParseDrawerResult = {
+  drawer: DrawerNode;
+  nextLineIndex: number;
+};
+
 function parsePropertyDrawer(lines: string[], startLineIndex: number): ParsePropertyDrawerResult {
   const startLineNumber = startLineIndex + 1;
 
@@ -498,6 +504,59 @@ function parsePropertyDrawer(lines: string[], startLineIndex: number): ParseProp
   }
 
   fail(makeError("Invalid property drawer; missing :END:", startLineNumber, 1));
+}
+
+function parseDrawer(lines: string[], startLineIndex: number): ParseDrawerResult {
+  const startLineNumber = startLineIndex + 1;
+  const start = lines[startLineIndex] ?? "";
+
+  const match = /^(\s*):([^:\s]+):$/.exec(start);
+  if (!match) {
+    fail(makeError("Invalid drawer; expected :NAME:", startLineNumber, 1));
+  }
+
+  const indent = match[1] ?? "";
+  const nameRaw = match[2] ?? "";
+
+  if (indent.includes("\t")) {
+    fail(makeError("Unsupported construct: tab character", startLineNumber, start.indexOf("\t") + 1));
+  }
+
+  for (let i = startLineIndex + 1; i < lines.length; i += 1) {
+    const lineNumber = i + 1;
+    const line = lines[i] ?? "";
+
+    if (line === ":END:") {
+      const bodyLines = lines.slice(startLineIndex + 1, i);
+      return {
+        drawer: {
+          type: "Drawer",
+          nameRaw,
+          indent,
+          terminated: true,
+          bodyRaw: bodyLines.join("\n"),
+          endRaw: line,
+        },
+        nextLineIndex: i + 1,
+      };
+    }
+
+    if (line.includes("\t")) {
+      fail(makeError("Unsupported construct: tab character", lineNumber, line.indexOf("\t") + 1));
+    }
+  }
+
+  const bodyLines = lines.slice(startLineIndex + 1);
+  return {
+    drawer: {
+      type: "Drawer",
+      nameRaw,
+      indent,
+      terminated: false,
+      bodyRaw: bodyLines.join("\n"),
+    },
+    nextLineIndex: lines.length,
+  };
 }
 
 function parseListItemLine(line: string): ParsedListItem | null {
@@ -886,6 +945,21 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
       getChildrenArray(currentContainer()).push(drawer);
       i = nextLineIndex;
       continue;
+    }
+
+    {
+      const matchDrawerStart = /^(\s*):([^:\s]+):$/.exec(line);
+      const isDrawerStart = matchDrawerStart && matchDrawerStart[2] !== "END";
+
+      if (isDrawerStart) {
+        flushParagraph();
+        endList();
+
+        const { drawer, nextLineIndex } = parseDrawer(lines, i);
+        getChildrenArray(currentContainer()).push(drawer);
+        i = nextLineIndex;
+        continue;
+      }
     }
 
     if (isBlank(line)) {

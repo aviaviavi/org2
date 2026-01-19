@@ -31,6 +31,7 @@
         { "$ref": "#/$defs/CommentLine" },
         { "$ref": "#/$defs/Planning" },
         { "$ref": "#/$defs/PropertyDrawer" },
+        { "$ref": "#/$defs/Drawer" },
         { "$ref": "#/$defs/SrcBlock" },
         { "$ref": "#/$defs/Block" },
         { "$ref": "#/$defs/Table" },
@@ -163,6 +164,34 @@
       "properties": {
         "key": { "type": "string" },
         "value": { "type": "string" }
+      }
+    },
+    "Drawer": {
+      "oneOf": [{ "$ref": "#/$defs/DrawerTerminated" }, { "$ref": "#/$defs/DrawerUnterminated" }]
+    },
+    "DrawerTerminated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "nameRaw", "indent", "terminated", "bodyRaw", "endRaw"],
+      "properties": {
+        "type": { "const": "Drawer" },
+        "nameRaw": { "type": "string" },
+        "indent": { "type": "string" },
+        "terminated": { "const": true },
+        "bodyRaw": { "type": "string" },
+        "endRaw": { "type": "string" }
+      }
+    },
+    "DrawerUnterminated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "nameRaw", "indent", "terminated", "bodyRaw"],
+      "properties": {
+        "type": { "const": "Drawer" },
+        "nameRaw": { "type": "string" },
+        "indent": { "type": "string" },
+        "terminated": { "const": false },
+        "bodyRaw": { "type": "string" }
       }
     },
     "SrcBlock": {
