@@ -26,9 +26,14 @@ endfunction
 function! org2#toggle_current_item_fold() abort
   let l:save = getcurpos()
 
-  " Prefer toggling the fold for the current heading; otherwise use the
-  " closest heading above the cursor.
-  let l:heading_lnum = search('^\*\+\s', 'bnW')
+  " Toggle the fold for the current heading line; otherwise use the closest
+  " heading above the cursor.
+  if getline('.') =~# '^\*\+\s'
+    let l:heading_lnum = line('.')
+  else
+    let l:heading_lnum = search('^\*\+\s', 'bnW')
+  endif
+
   if l:heading_lnum == 0
     return
   endif

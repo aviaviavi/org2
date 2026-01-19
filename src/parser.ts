@@ -638,12 +638,30 @@ function parseSrcBlock(lines: string[], startLineIndex: number): ParseSrcBlockRe
   };
 }
 
-function isTableLineWithIndent(line: string, indent: string): boolean {
-  if (!line.startsWith(indent)) return false;
-  const rest = line.slice(indent.length);
-  if (!rest.startsWith("|")) return false;
+type TableLineMatch = {
+  rest: string;
+  indentLen: number;
+};
+
+function matchTableLine(line: string, indent: string): TableLineMatch | null {
+  if (indent.length > 0) {
+    if (!line.startsWith(indent)) return null;
+    const rest = line.slice(indent.length);
+    if (!rest.startsWith("|")) return null;
+    const trimmedEnd = rest.trimEnd();
+    if (!trimmedEnd.endsWith("|")) return null;
+    return { rest, indentLen: indent.length };
+  }
+
+  // At document level, tables may be preceded by indentation spaces.
+  const match = /^( *)(\|.*)$/.exec(line);
+  if (!match) return null;
+
+  const rest = match[2] ?? "";
   const trimmedEnd = rest.trimEnd();
-  return trimmedEnd.endsWith("|");
+  if (!trimmedEnd.endsWith("|")) return null;
+
+  return { rest, indentLen: (match[1] ?? "").length };
 }
 
 function isTableHlineRow(rest: string): boolean {
@@ -663,11 +681,12 @@ function parseTable(lines: string[], startLineIndex: number, indent: string): Pa
   for (let i = startLineIndex; i < lines.length; i += 1) {
     const line = lines[i] ?? "";
 
-    if (!isTableLineWithIndent(line, indent)) {
+    const matched = matchTableLine(line, indent);
+    if (!matched) {
       return { table: { type: "Table", rows }, nextLineIndex: i };
     }
 
-    const rest = line.slice(indent.length);
+    const rest = matched.rest;
 
     if (isTableHlineRow(rest)) {
       rows.push({ type: "TableHline" });
@@ -784,7 +803,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
       }
     }
 
-    if (isTableLineWithIndent(line, "")) {
+    if (matchTableLine(line, "")) {
       flushParagraph();
       endList();
 
@@ -899,7 +918,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
           }
         }
 
-        if (isTableLineWithIndent(contLine, " ".repeat(listItem.indentColumn))) {
+        if (matchTableLine(contLine, " ".repeat(listItem.indentColumn))) {
           flushItemParagraph();
           const { table, nextLineIndex } = parseTable(lines, i, " ".repeat(listItem.indentColumn));
           item.children.push(table);
