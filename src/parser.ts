@@ -365,14 +365,19 @@ function parseCommentLine(line: string, lineNumber: number): CommentLineNode | n
   };
 }
 
-function parsePlanningLine(line: string): PlanningNode | null {
-  const match = /^(SCHEDULED|DEADLINE):(.*)$/.exec(line);
+function parsePlanningLine(line: string, lineNumber: number): PlanningNode | null {
+  const match = /^(\s*)(SCHEDULED|DEADLINE):(.*)$/.exec(line);
   if (!match) return null;
 
-  const kind = match[1] as PlanningKind;
+  const indent = match[1] ?? "";
+  const kind = match[2] as PlanningKind;
+
+  if (indent.includes("\t")) {
+    fail(makeError("Unsupported construct: tab character", lineNumber, line.indexOf("\t") + 1));
+  }
 
   // Find the first timestamp/range in the remainder, if any.
-  const after = match[2] ?? "";
+  const after = match[3] ?? "";
   let ts;
 
   for (let i = 0; i < after.length; i += 1) {
@@ -847,7 +852,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
         continue;
       }
 
-      const planning = parsePlanningLine(line);
+      const planning = parsePlanningLine(line, lineNumber);
       if (planning) {
         flushParagraph();
         endList();
