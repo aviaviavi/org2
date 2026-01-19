@@ -19,7 +19,7 @@
       {
         "id": "org2",
         "aliases": ["Org2", "org2"],
-        "extensions": [".org2"],
+        "extensions": [".org", ".org2"],
         "configuration": "./language-configuration.json"
       }
     ],
