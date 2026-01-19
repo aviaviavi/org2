@@ -1,0 +1,22 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Block",
+      "kind": "comment",
+      "terminated": true,
+      "begin": {
+        "indent": "",
+        "keywordRaw": "begin_comment",
+        "afterKeywordRaw": ""
+      },
+      "bodyRaw": "this is inside",
+      "end": {
+        "indent": "",
+        "keywordRaw": "end_comment",
+        "afterKeywordRaw": ""
+      }
+    }
+  ]
+}

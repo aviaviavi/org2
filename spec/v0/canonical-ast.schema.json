@@ -210,7 +210,7 @@
       "required": ["type", "kind", "terminated", "begin", "bodyRaw", "end"],
       "properties": {
         "type": { "const": "Block" },
-        "kind": { "type": "string", "enum": ["example", "quote", "verse", "center"] },
+        "kind": { "type": "string", "enum": ["example", "quote", "verse", "center", "comment"] },
         "terminated": { "const": true },
         "begin": { "$ref": "#/$defs/SrcBlockLine" },
         "bodyRaw": { "type": "string" },
@@ -223,7 +223,7 @@
       "required": ["type", "kind", "terminated", "begin", "bodyRaw"],
       "properties": {
         "type": { "const": "Block" },
-        "kind": { "type": "string", "enum": ["example", "quote", "verse", "center"] },
+        "kind": { "type": "string", "enum": ["example", "quote", "verse", "center", "comment"] },
         "terminated": { "const": false },
         "begin": { "$ref": "#/$defs/SrcBlockLine" },
         "bodyRaw": { "type": "string" }
