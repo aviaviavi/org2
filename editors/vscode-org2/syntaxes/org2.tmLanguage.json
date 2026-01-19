@@ -3,11 +3,13 @@
   "name": "Org2",
   "scopeName": "source.org2",
   "patterns": [
+    { "include": "#comments" },
     { "include": "#directives" },
     { "include": "#planning" },
     { "include": "#blocks" },
     { "include": "#headlines" },
     { "include": "#drawers" },
+    { "include": "#tables" },
     { "include": "#lists" },
     { "include": "#checkboxes" },
     { "include": "#timestamps" },
@@ -15,6 +17,14 @@
     { "include": "#links" }
   ],
   "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.org2",
+          "match": "^(?:\\s*)#(?!\\+).*$"
+        }
+      ]
+    },
     "directives": {
       "patterns": [
         {
@@ -27,7 +37,7 @@
       "patterns": [
         {
           "name": "keyword.other.planning.org2",
-          "match": "^(?:\\s*)(?:SCHEDULED|DEADLINE):.*$"
+          "match": "^(?:\\s*)(?:SCHEDULED|DEADLINE|CLOSED):.*$"
         }
       ]
     },
@@ -56,10 +66,12 @@
       "patterns": [
         {
           "name": "markup.heading.org2",
-          "match": "^(\\*+)\\s+(.+)$",
+          "match": "^(\\*+)\\s+(?:(TODO)\\s+)?(.+?)(\\s+(:[^\n:]+:)+)?$",
           "captures": {
             "1": { "name": "punctuation.definition.heading.org2" },
-            "2": { "name": "entity.name.section.org2" }
+            "2": { "name": "keyword.other.todo.org2" },
+            "3": { "name": "entity.name.section.org2" },
+            "4": { "name": "entity.other.attribute-name.tag.org2" }
           }
         }
       ]
@@ -87,6 +99,18 @@
               }
             }
           ]
+        }
+      ]
+    },
+    "tables": {
+      "patterns": [
+        {
+          "name": "meta.table.org2",
+          "match": "^(?:\\s*)\\|.*\\|\\s*$"
+        },
+        {
+          "name": "meta.table.separator.org2",
+          "match": "^(?:\\s*)\\|[-+|]+\\|\\s*$"
         }
       ]
     },
