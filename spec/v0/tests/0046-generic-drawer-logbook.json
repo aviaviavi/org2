@@ -1,0 +1,26 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Headline",
+      "level": 1,
+      "title": [
+        {
+          "type": "Text",
+          "value": "H"
+        }
+      ],
+      "children": [
+        {
+          "type": "Drawer",
+          "nameRaw": "LOGBOOK",
+          "terminated": true,
+          "indent": "",
+          "bodyRaw": "foo",
+          "endRaw": ":END:"
+        }
+      ]
+    }
+  ]
+}

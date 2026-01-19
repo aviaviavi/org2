@@ -119,6 +119,14 @@ Property drawers are supported as a structural syntax element.
 
 Property inheritance and other property semantics are out of scope for v0.
 
+## Generic drawers
+
+Generic drawers are supported as a structural syntax element.
+
+A **drawer** begins with a line of the form `:NAME:` (where `NAME` contains no whitespace or `:`) and ends with a line exactly equal to `:END:`.
+
+Generic drawers MUST be represented as `Drawer` nodes and preserved losslessly.
+
 ### Property drawer syntax
 
 A property drawer is a block consisting of:
@@ -158,6 +166,14 @@ Such lines MUST be represented as `DirectiveLine` nodes and preserved losslessly
 A **comment line** is any line that begins with `#` but does not begin with `#+`.
 
 Comment lines MUST be represented as `CommentLine` nodes and preserved losslessly.
+
+## Comment blocks
+
+Comment blocks are supported as a block syntax element.
+
+A **comment block** begins with `#+begin_comment` and ends with `#+end_comment`.
+
+Comment blocks MUST be represented as `Block` nodes with `kind: "comment"` and preserved losslessly.
 
 ## SOURCE blocks (#+begin_src / #+end_src)
 
