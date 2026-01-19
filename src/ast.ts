@@ -56,6 +56,13 @@ export type DirectiveLineNode = {
   afterKeywordRaw: string;
 };
 
+export type CommentLineNode = {
+  type: "CommentLine";
+  raw: string;
+  indent: string;
+  bodyRaw: string;
+};
+
 export type PlanningKind = "SCHEDULED" | "DEADLINE";
 
 export type PlanningNode = {
@@ -143,6 +150,7 @@ export type Node =
   | ListItemNode
   | KeywordLineNode
   | DirectiveLineNode
+  | CommentLineNode
   | PlanningNode
   | PropertyDrawerNode
   | SrcBlockNode
