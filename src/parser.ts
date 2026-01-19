@@ -799,7 +799,17 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
           continue;
         }
 
-        fail(makeError("Unsupported construct: directive", lineNumber, 1));
+        flushParagraph();
+        endList();
+        getChildrenArray(currentContainer()).push({
+          type: "DirectiveLine",
+          raw: line,
+          indent: directive.indent,
+          keywordRaw: directive.keywordRaw,
+          afterKeywordRaw: directive.afterKeywordRaw,
+        });
+        i += 1;
+        continue;
       }
     }
 
@@ -908,6 +918,14 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
         }
 
         if (directive) {
+          if (isBeginSrc(directive)) {
+            flushItemParagraph();
+            const { block, nextLineIndex } = parseSrcBlock(lines, i);
+            item.children.push(block);
+            i = nextLineIndex;
+            continue;
+          }
+
           const kind = getBlockKindFromBegin(directive);
           if (kind) {
             flushItemParagraph();
@@ -916,6 +934,17 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
             i = nextLineIndex;
             continue;
           }
+
+          flushItemParagraph();
+          item.children.push({
+            type: "DirectiveLine",
+            raw: contLine,
+            indent: directive.indent,
+            keywordRaw: directive.keywordRaw,
+            afterKeywordRaw: directive.afterKeywordRaw,
+          });
+          i += 1;
+          continue;
         }
 
         if (matchTableLine(contLine, " ".repeat(listItem.indentColumn))) {

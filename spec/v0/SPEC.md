@@ -145,6 +145,14 @@ Example:
 
 Property drawers may appear as children of `Headline` nodes (and implementations MAY also support them at document level).
 
+## Directives (unknown #+... lines)
+
+Org2 v0 supports preserving directive lines that begin with `#+` but are not otherwise recognized as:
+- keyword lines (`#+KEY: VALUE`), or
+- structural blocks (e.g. `#+begin_src` ... `#+end_src`)
+
+Such lines MUST be represented as `DirectiveLine` nodes and preserved losslessly.
+
 ## SOURCE blocks (#+begin_src / #+end_src)
 
 Source blocks are supported as a structural syntax element.
