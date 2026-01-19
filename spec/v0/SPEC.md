@@ -119,6 +119,14 @@ Property drawers are supported as a structural syntax element.
 
 Property inheritance and other property semantics are out of scope for v0.
 
+## Generic drawers
+
+Generic drawers are supported as a structural syntax element.
+
+A **drawer** begins with a line of the form `:NAME:` (where `NAME` contains no whitespace or `:`) and ends with a line exactly equal to `:END:`.
+
+Generic drawers MUST be represented as `Drawer` nodes and preserved losslessly.
+
 ### Property drawer syntax
 
 A property drawer is a block consisting of:
