@@ -1,9 +1,11 @@
 {
   "name": "org2-vscode",
   "displayName": "Org2",
-  "description": "Org2 language support (syntax highlighting)",
+  "description": "Org2 language support (syntax highlighting + folding)",
   "version": "0.0.1",
   "publisher": "org2",
+  "main": "./extension.js",
+  "activationEvents": ["onLanguage:org2"],
   "repository": {
     "type": "git",
     "url": "https://github.com/aviaviavi/org2"
