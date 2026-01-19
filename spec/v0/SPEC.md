@@ -153,6 +153,12 @@ Org2 v0 supports preserving directive lines that begin with `#+` but are not oth
 
 Such lines MUST be represented as `DirectiveLine` nodes and preserved losslessly.
 
+## Comment lines
+
+A **comment line** is any line that begins with `#` but does not begin with `#+`.
+
+Comment lines MUST be represented as `CommentLine` nodes and preserved losslessly.
+
 ## SOURCE blocks (#+begin_src / #+end_src)
 
 Source blocks are supported as a structural syntax element.
