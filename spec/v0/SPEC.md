@@ -159,6 +159,14 @@ A **comment line** is any line that begins with `#` but does not begin with `#+`
 
 Comment lines MUST be represented as `CommentLine` nodes and preserved losslessly.
 
+## Comment blocks
+
+Comment blocks are supported as a block syntax element.
+
+A **comment block** begins with `#+begin_comment` and ends with `#+end_comment`.
+
+Comment blocks MUST be represented as `Block` nodes with `kind: "comment"` and preserved losslessly.
+
 ## SOURCE blocks (#+begin_src / #+end_src)
 
 Source blocks are supported as a structural syntax element.

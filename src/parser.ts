@@ -565,6 +565,7 @@ function getBlockKindFromBegin(line: SrcBlockLine): BlockKind | null {
   if (key === "begin_quote") return "quote";
   if (key === "begin_verse") return "verse";
   if (key === "begin_center") return "center";
+  if (key === "begin_comment") return "comment";
   return null;
 }
 
