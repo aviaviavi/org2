@@ -46,6 +46,16 @@ export type KeywordLineNode = {
   valueRaw: string;
 };
 
+// A non-block `#+...` line that does not match `#+KEY: VALUE`.
+// This is used for lossless preservation of unknown directives.
+export type DirectiveLineNode = {
+  type: "DirectiveLine";
+  raw: string;
+  indent: string;
+  keywordRaw: string;
+  afterKeywordRaw: string;
+};
+
 export type PlanningKind = "SCHEDULED" | "DEADLINE";
 
 export type PlanningNode = {
@@ -132,6 +142,7 @@ export type Node =
   | ListNode
   | ListItemNode
   | KeywordLineNode
+  | DirectiveLineNode
   | PlanningNode
   | PropertyDrawerNode
   | SrcBlockNode
