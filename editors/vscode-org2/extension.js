@@ -87,6 +87,33 @@ function activate(context) {
   };
 
   context.subscriptions.push(vscode.languages.registerFoldingRangeProvider(selector, provider));
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.debugFoldingRanges', () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showInformationMessage('Org2: no active editor');
+        return;
+      }
+      const doc = editor.document;
+      const ranges = provideFoldingRanges(doc);
+      const preview = ranges
+        .slice(0, 12)
+        .map((r) => `[${r.start + 1}-${r.end + 1}]`)
+        .join(' ');
+
+      vscode.window.showInformationMessage(
+        `Org2: folding ranges=${ranges.length}${preview ? ' ' + preview : ''}`
+      );
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.toggleFoldHere', () => {
+      // Use the built-in fold toggle at the cursor.
+      vscode.commands.executeCommand('editor.toggleFold');
+    })
+  );
 }
 
 function deactivate() {}
