@@ -37,11 +37,26 @@
         "editor.foldingStrategy": "auto"
       }
     },
+    "commands": [
+      {
+        "command": "org2.toggleFoldHere",
+        "title": "Org2: Toggle Fold Here"
+      },
+      {
+        "command": "org2.debugFoldingRanges",
+        "title": "Org2: Debug Folding Ranges"
+      }
+    ],
     "keybindings": [
       {
-        "key": "tab",
-        "command": "editor.toggleFold",
-        "when": "editorTextFocus && !editorHasSelection && editorLangId == 'org2'"
+        "key": "ctrl+alt+o",
+        "command": "org2.toggleFoldHere",
+        "when": "editorTextFocus && editorLangId == 'org2'"
+      },
+      {
+        "key": "ctrl+alt+d",
+        "command": "org2.debugFoldingRanges",
+        "when": "editorTextFocus && editorLangId == 'org2'"
       }
     ]
   }
