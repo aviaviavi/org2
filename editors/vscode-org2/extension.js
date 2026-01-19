@@ -78,7 +78,7 @@ function provideFoldingRanges(document) {
 }
 
 function activate(context) {
-  const selector = [{ language: 'org2' }];
+  const selector = [{ language: 'org2' }, { language: 'org' }];
 
   const provider = {
     provideFoldingRanges(document) {

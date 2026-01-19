@@ -5,7 +5,7 @@
   "version": "0.0.1",
   "publisher": "org2",
   "main": "./extension.js",
-  "activationEvents": ["onLanguage:org2"],
+  "activationEvents": ["onLanguage:org2", "onLanguage:org"],
   "repository": {
     "type": "git",
     "url": "https://github.com/aviaviavi/org2"
