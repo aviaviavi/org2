@@ -96,7 +96,7 @@ export type SrcBlockNode = {
   end?: SrcBlockLine;
 };
 
-export type BlockKind = "example" | "quote" | "verse" | "center";
+export type BlockKind = "example" | "quote" | "verse" | "center" | "comment";
 
 export type BlockNode = {
   type: "Block";
