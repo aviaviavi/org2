@@ -31,6 +31,7 @@
         { "$ref": "#/$defs/CommentLine" },
         { "$ref": "#/$defs/Planning" },
         { "$ref": "#/$defs/PropertyDrawer" },
+        { "$ref": "#/$defs/Drawer" },
         { "$ref": "#/$defs/SrcBlock" },
         { "$ref": "#/$defs/Block" },
         { "$ref": "#/$defs/Table" },
@@ -165,6 +166,34 @@
         "value": { "type": "string" }
       }
     },
+    "Drawer": {
+      "oneOf": [{ "$ref": "#/$defs/DrawerTerminated" }, { "$ref": "#/$defs/DrawerUnterminated" }]
+    },
+    "DrawerTerminated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "nameRaw", "indent", "terminated", "bodyRaw", "endRaw"],
+      "properties": {
+        "type": { "const": "Drawer" },
+        "nameRaw": { "type": "string" },
+        "indent": { "type": "string" },
+        "terminated": { "const": true },
+        "bodyRaw": { "type": "string" },
+        "endRaw": { "type": "string" }
+      }
+    },
+    "DrawerUnterminated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "nameRaw", "indent", "terminated", "bodyRaw"],
+      "properties": {
+        "type": { "const": "Drawer" },
+        "nameRaw": { "type": "string" },
+        "indent": { "type": "string" },
+        "terminated": { "const": false },
+        "bodyRaw": { "type": "string" }
+      }
+    },
     "SrcBlock": {
       "oneOf": [{ "$ref": "#/$defs/SrcBlockTerminated" }, { "$ref": "#/$defs/SrcBlockUnterminated" }]
     },
@@ -210,7 +239,7 @@
       "required": ["type", "kind", "terminated", "begin", "bodyRaw", "end"],
       "properties": {
         "type": { "const": "Block" },
-        "kind": { "type": "string", "enum": ["example", "quote", "verse", "center"] },
+        "kind": { "type": "string", "enum": ["example", "quote", "verse", "center", "comment"] },
         "terminated": { "const": true },
         "begin": { "$ref": "#/$defs/SrcBlockLine" },
         "bodyRaw": { "type": "string" },
@@ -223,7 +252,7 @@
       "required": ["type", "kind", "terminated", "begin", "bodyRaw"],
       "properties": {
         "type": { "const": "Block" },
-        "kind": { "type": "string", "enum": ["example", "quote", "verse", "center"] },
+        "kind": { "type": "string", "enum": ["example", "quote", "verse", "center", "comment"] },
         "terminated": { "const": false },
         "begin": { "$ref": "#/$defs/SrcBlockLine" },
         "bodyRaw": { "type": "string" }
