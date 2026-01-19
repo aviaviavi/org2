@@ -31,6 +31,18 @@
         "scopeName": "source.org2",
         "path": "./syntaxes/org2.tmLanguage.json"
       }
+    ],
+    "configurationDefaults": {
+      "[org2]": {
+        "editor.foldingStrategy": "auto"
+      }
+    },
+    "keybindings": [
+      {
+        "key": "tab",
+        "command": "editor.toggleFold",
+        "when": "editorTextFocus && !editorHasSelection && editorLangId == 'org2'"
+      }
     ]
   }
 }
