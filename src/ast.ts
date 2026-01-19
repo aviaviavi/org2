@@ -82,6 +82,15 @@ export type PropertyDrawerNode = {
   properties: PropertyNode[];
 };
 
+export type DrawerNode = {
+  type: "Drawer";
+  nameRaw: string;
+  indent: string;
+  terminated: boolean;
+  bodyRaw: string;
+  endRaw?: string;
+};
+
 export type SrcBlockLine = {
   indent: string;
   keywordRaw: string;
@@ -96,7 +105,7 @@ export type SrcBlockNode = {
   end?: SrcBlockLine;
 };
 
-export type BlockKind = "example" | "quote" | "verse" | "center";
+export type BlockKind = "example" | "quote" | "verse" | "center" | "comment";
 
 export type BlockNode = {
   type: "Block";
@@ -153,6 +162,7 @@ export type Node =
   | CommentLineNode
   | PlanningNode
   | PropertyDrawerNode
+  | DrawerNode
   | SrcBlockNode
   | BlockNode
   | TableNode
