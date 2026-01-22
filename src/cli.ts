@@ -158,6 +158,7 @@ async function main(): Promise<void> {
   let files: string[] = [];
   let days = 1;
   let today = getTodayString();
+  let verboseErrors = false;
 
   // Parse arguments
   let i = 0;
@@ -195,13 +196,18 @@ async function main(): Promise<void> {
         today = args[i];
         i++;
       }
+    } else if (arg === "--verbose" || arg === "--verbose-errors") {
+      verboseErrors = true;
+      i++;
     } else {
       i++;
     }
   }
 
   if (command !== "agenda") {
-    console.error("Usage: org2 agenda [--dir DIR] [--files FILE ...] [--days N] [--today YYYY-MM-DD]");
+    console.error(
+      "Usage: org2 agenda [--dir DIR] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--verbose-errors]",
+    );
     process.exit(1);
   }
 
@@ -215,9 +221,9 @@ async function main(): Promise<void> {
     // Collect all .org files in dir
     const entries = fs.readdirSync(dir);
     for (const entry of entries) {
-      if (entry.endsWith(".org")) {
-        files.push(path.join(dir, entry));
-      }
+      if (!entry.endsWith(".org")) continue;
+      if (entry.startsWith(".#")) continue; // Emacs lockfile
+      files.push(path.join(dir, entry));
     }
   }
 
@@ -228,16 +234,25 @@ async function main(): Promise<void> {
 
   // Process files
   const allItems: ScheduledItem[] = [];
+  let skippedFileCount = 0;
 
   for (const filePath of files) {
     try {
       const content = fs.readFileSync(filePath, "utf8");
-      const ast = parseOrgToCanonicalAst(content);
+      const normalized = content.replace(/\r\n/g, "\n");
+      const ast = parseOrgToCanonicalAst(normalized);
       const items = findScheduledItems(ast, filePath, startDate, endDate);
       allItems.push(...items);
     } catch (err) {
-      console.error(`Error processing ${filePath}:`, err instanceof Error ? err.message : err);
+      skippedFileCount += 1;
+      if (verboseErrors) {
+        console.error(`Error processing ${filePath}:`, err instanceof Error ? err.message : err);
+      }
     }
+  }
+
+  if (skippedFileCount > 0 && !verboseErrors) {
+    console.error(`Skipped ${skippedFileCount} file(s) due to parse errors (use --verbose-errors to see details).`);
   }
 
   // Sort by date
