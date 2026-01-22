@@ -194,7 +194,7 @@ async function main(): Promise<void> {
   let command = "";
   let dir = "";
   let files: string[] = [];
-  let days = 1;
+  let days = 7;
   let today = getTodayString();
   let recursive = false;
   let includeOverdue = true;
