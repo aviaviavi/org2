@@ -276,9 +276,10 @@
     "TableDataRow": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "cells"],
+      "required": ["type", "indent", "cells"],
       "properties": {
         "type": { "const": "TableRow" },
+        "indent": { "type": "string" },
         "cells": {
           "type": "array",
           "items": { "type": "string" }
@@ -288,9 +289,11 @@
     "TableHline": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type"],
+      "required": ["type", "indent", "raw"],
       "properties": {
-        "type": { "const": "TableHline" }
+        "type": { "const": "TableHline" },
+        "indent": { "type": "string" },
+        "raw": { "type": "string" }
       }
     },
     "Text": {

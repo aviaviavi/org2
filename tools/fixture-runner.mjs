@@ -358,7 +358,7 @@ function main() {
       }
 
       // Optional printer validation: only run for fixtures with printer coverage.
-      if (canPrint && /(timestamp|emphasis|link|keyword|planning|\d+-block-)/.test(pair.base)) {
+      if (canPrint && /(timestamp|emphasis|link|keyword|planning|list|table|drawer|block|comment)/.test(pair.base)) {
         let printed;
         try {
           printed = printAstViaCli(printEntrypoint, pair.jsonPath);
