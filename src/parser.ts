@@ -1148,6 +1148,47 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
                     const nextNestedUnindentedLine = contNestedLine.slice(nextNestedLeadingSpaces);
                     const nextNestedItem = parseListItemLine(nextNestedUnindentedLine);
                     if (nextNestedItem) {
+                      const nextNestedItemIndentColumn = nextNestedLeadingSpaces + nextNestedItem.indentColumn;
+
+                      // Deeper nesting (nested list under this nested list item)
+                      if (nextNestedItemIndentColumn > nestedItemIndentColumn) {
+                        if (nestedItemParaLines.length > 0) {
+                          nestedListItem.children.push(paragraphFromLines(nestedItemParaLines));
+                          nestedItemParaLines = [];
+                        }
+
+                        const deeperList: ListNode = {
+                          type: "List",
+                          ordered: nextNestedItem.ordered,
+                          items: [],
+                        };
+                        nestedListItem.children.push(deeperList);
+
+                        while (i < lines.length) {
+                          const deeperLine = lines[i] ?? "";
+                          if (isBlank(deeperLine) || deeperLine.startsWith("*")) break;
+
+                          const deeperLeadingSpaces = deeperLine.match(/^(\s*)/)?.[1]?.length ?? 0;
+                          const deeperUnindentedLine = deeperLine.slice(deeperLeadingSpaces);
+                          const deeperItem = parseListItemLine(deeperUnindentedLine);
+                          if (!deeperItem) break;
+
+                          const deeperItemIndentColumn = deeperLeadingSpaces + deeperItem.indentColumn;
+                          if (deeperItemIndentColumn < nextNestedItemIndentColumn) break;
+                          if (deeperList.ordered != deeperItem.ordered) break;
+
+                          const deeperListItem: ListItemNode = {
+                            type: "ListItem",
+                            children: [paragraphFromText(deeperItem.content)],
+                          };
+                          deeperList.items.push(deeperListItem);
+                          i += 1;
+                        }
+
+                        continue;
+                      }
+
+                      // Same-level nested item; end current nested item
                       if (nestedItemParaLines.length > 0) {
                         nestedListItem.children.push(paragraphFromLines(nestedItemParaLines));
                         nestedItemParaLines = [];

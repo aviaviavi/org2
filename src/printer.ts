@@ -121,37 +121,61 @@ function printTable(node: TableNode): string {
   }).join("\n");
 }
 
-function printListItem(node: ListItemNode, indent: string = ""): string {
-  const childLines = node.children.map((child) => {
+function printListItem(node: ListItemNode, continuationIndent: string): string {
+  const out: string[] = [];
+
+  for (let childIndex = 0; childIndex < node.children.length; childIndex += 1) {
+    const child = node.children[childIndex]!;
+
     if (child.type === "List") {
-      return printList(child, indent + "  ");
-    } else {
-      const printed = printNode(child);
-      // Indent continuation lines
-      const lines = printed.split("\n");
-      return lines.map((line, idx) => (idx === 0 ? line : indent + line)).join("\n");
+      out.push(printList(child, continuationIndent));
+      continue;
     }
-  });
-  return childLines.join("\n");
+
+    const printed = printNode(child);
+    const lines = printed.split("\n");
+
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+      const line = lines[lineIndex]!;
+      const isFirstLineOfFirstChild = childIndex === 0 && lineIndex === 0;
+
+      if (isFirstLineOfFirstChild) {
+        out.push(line);
+      } else if (line.startsWith(continuationIndent)) {
+        out.push(line);
+      } else {
+        out.push(continuationIndent + line);
+      }
+    }
+  }
+
+  return out.join("\n");
 }
 
 function printList(node: ListNode, indent: string = ""): string {
   const items = node.items.map((item, index) => {
     const marker = node.ordered ? `${index + 1}.` : "-";
-    const content = printListItem(item, indent);
-    // For list items with multiple lines, indent continuation lines
+
+    // Checkbox support is optional depending on AST version.
+    const checkbox = (item as any).checkbox as undefined | "unchecked" | "checked" | "checkedLower";
+    let checkboxStr = "";
+    if (checkbox === "unchecked") checkboxStr = " [ ]";
+    if (checkbox === "checked") checkboxStr = " [X]";
+    if (checkbox === "checkedLower") checkboxStr = " [x]";
+
+    const continuationIndent = indent + " ".repeat(marker.length + checkboxStr.length + 1);
+    const content = printListItem(item, continuationIndent);
+
     const lines = content.split("\n");
-    const firstLine = `${indent}${marker} ${lines[0]}`;
+    const firstLine = `${indent}${marker}${checkboxStr} ${lines[0]}`;
     const restLines = lines.slice(1).map((line) => {
-      // If the line is already indented (nested list), keep it as-is
-      // Otherwise, indent it to align with the marker position
-      if (line.startsWith(indent + "  ")) {
-        return line;
-      }
-      return line.startsWith(indent) ? line : indent + line;
+      if (line.startsWith(continuationIndent)) return line;
+      return continuationIndent + line;
     });
+
     return [firstLine, ...restLines].join("\n");
   });
+
   return items.join("\n");
 }
 
@@ -182,7 +206,7 @@ function printNode(node: any): string {
     case "List":
       return printList(node);
     case "ListItem":
-      return printListItem(node);
+      return printListItem(node, "");
     case "Text":
       return printText(node);
     default:
