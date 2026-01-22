@@ -141,11 +141,10 @@ function formatOutput(items: ScheduledItem[]): string {
     const dayItems = byDate.get(date)!;
     for (const item of dayItems) {
       const status = item.todo || "ITEM";
-      const statusPad = status.padEnd(6);
-      output += `  ${statusPad}  ${item.headline}\n`;
-      output += `            ${item.kind}: ${item.filePath}\n`;
-      output += "\n";
+      output += `  [${status}] ${item.headline} (${item.kind}) ${item.filePath}\n`;
     }
+
+    output += "\n";
   }
 
   return output;
