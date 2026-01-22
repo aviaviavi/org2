@@ -1,0 +1,7 @@
+This is a normal paragraph.
+With multiple lines.
+
+Some random text line: that doesn't match any pattern.
+Another line with special chars @#$%.
+
+And back to normal.
