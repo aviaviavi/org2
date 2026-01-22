@@ -1,0 +1,71 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "List",
+      "ordered": false,
+      "items": [
+        {
+          "type": "ListItem",
+          "checkbox": "unchecked",
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [
+                {
+                  "type": "Text",
+                  "value": "Unchecked item"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "ListItem",
+          "checkbox": "checked",
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [
+                {
+                  "type": "Text",
+                  "value": "Checked item"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "ListItem",
+          "checkbox": "checked",
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [
+                {
+                  "type": "Text",
+                  "value": "Checked lowercase"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "ListItem",
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [
+                {
+                  "type": "Text",
+                  "value": "Regular item without checkbox"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

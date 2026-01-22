@@ -1,0 +1,5 @@
+- [ ] Parent task
+  - [X] Completed subtask
+  - [ ] Incomplete subtask
+- [X] Done parent
+  - [ ] A nested item

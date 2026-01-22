@@ -135,6 +135,7 @@ export type TableNode = {
 
 export type ListItemNode = {
   type: "ListItem";
+  checkbox?: "unchecked" | "checked";
   children: Node[];
 };
 

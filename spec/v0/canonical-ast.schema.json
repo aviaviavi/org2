@@ -91,6 +91,10 @@
       "required": ["type", "children"],
       "properties": {
         "type": { "const": "ListItem" },
+        "checkbox": {
+          "type": "string",
+          "enum": ["unchecked", "checked"]
+        },
         "children": {
           "type": "array",
           "items": { "$ref": "#/$defs/Node" }

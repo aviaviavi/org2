@@ -1,0 +1,99 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "List",
+      "ordered": false,
+      "items": [
+        {
+          "type": "ListItem",
+          "checkbox": "unchecked",
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [
+                {
+                  "type": "Text",
+                  "value": "Parent task"
+                }
+              ]
+            },
+            {
+              "type": "List",
+              "ordered": false,
+              "items": [
+                {
+                  "type": "ListItem",
+                  "checkbox": "checked",
+                  "children": [
+                    {
+                      "type": "Paragraph",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "value": "Completed subtask"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "ListItem",
+                  "checkbox": "unchecked",
+                  "children": [
+                    {
+                      "type": "Paragraph",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "value": "Incomplete subtask"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "ListItem",
+          "checkbox": "checked",
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [
+                {
+                  "type": "Text",
+                  "value": "Done parent"
+                }
+              ]
+            },
+            {
+              "type": "List",
+              "ordered": false,
+              "items": [
+                {
+                  "type": "ListItem",
+                  "checkbox": "unchecked",
+                  "children": [
+                    {
+                      "type": "Paragraph",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "value": "A nested item"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
