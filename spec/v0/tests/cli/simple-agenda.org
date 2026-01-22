@@ -1,0 +1,11 @@
+* TODO Task for today
+SCHEDULED: <2026-01-21 Wed>
+
+* TODO Task for tomorrow
+SCHEDULED: <2026-01-22 Thu>
+
+* TODO Task next week
+SCHEDULED: <2026-01-28 Wed>
+
+* DONE Already completed
+SCHEDULED: <2026-01-15 Thu>
