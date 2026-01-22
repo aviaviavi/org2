@@ -365,37 +365,63 @@ function parseCommentLine(line: string, lineNumber: number): CommentLineNode | n
   };
 }
 
-function parsePlanningLine(line: string, lineNumber: number): PlanningNode | null {
-  const match = /^(\s*)(SCHEDULED|DEADLINE):(.*)$/.exec(line);
-  if (!match) return null;
+function parsePlanningLine(line: string, lineNumber: number): PlanningNode[] | null {
+  // Check if line starts with optional indentation followed by a planning keyword
+  const initialMatch = /^(\s*)(SCHEDULED|DEADLINE):/.exec(line);
+  if (!initialMatch) return null;
 
-  const indent = match[1] ?? "";
-  const kind = match[2] as PlanningKind;
+  const indent = initialMatch[1] ?? "";
 
   if (indent.includes("\t")) {
     fail(makeError("Unsupported construct: tab character", lineNumber, line.indexOf("\t") + 1));
   }
 
-  // Find the first timestamp/range in the remainder, if any.
-  const after = match[3] ?? "";
-  let ts;
-
-  for (let i = 0; i < after.length; i += 1) {
-    const ch = after[i];
-    if (ch !== "<" && ch !== "[") continue;
-    const parsed = parseTimestampOrRangeAt(after, i);
-    if (parsed) {
-      ts = parsed.node;
-      break;
+  // Parse all planning keywords from the line
+  const planningNodes: PlanningNode[] = [];
+  
+  // Find all occurrences of SCHEDULED: or DEADLINE: in the line
+  let pos = 0;
+  while (true) {
+    const keywordMatch = /(SCHEDULED|DEADLINE):/.exec(line.slice(pos));
+    if (!keywordMatch) break;
+    
+    const kind = keywordMatch[1] as PlanningKind;
+    const startPos = pos + keywordMatch.index;
+    const afterKeywordPos = startPos + keywordMatch[0].length;
+    
+    // Extract the portion from this keyword to the start of the next keyword or end of line
+    let endPos = line.length;
+    const nextKeywordMatch = /(SCHEDULED|DEADLINE):/.exec(line.slice(afterKeywordPos));
+    if (nextKeywordMatch) {
+      endPos = afterKeywordPos + nextKeywordMatch.index;
     }
+    
+    const after = line.slice(afterKeywordPos, endPos).trim();
+
+    // Find the first timestamp/range in the remainder, if any.
+    let ts;
+    for (let i = 0; i < after.length; i += 1) {
+      const ch = after[i];
+      if (ch !== "<" && ch !== "[") continue;
+      const parsed = parseTimestampOrRangeAt(after, i);
+      if (parsed) {
+        ts = parsed.node;
+        break;
+      }
+    }
+
+    planningNodes.push({
+      type: "Planning",
+      kind,
+      raw: line,
+      ...(ts ? { timestamp: ts } : {}),
+    });
+    
+    // Move position to after this keyword for next iteration
+    pos = afterKeywordPos;
   }
 
-  return {
-    type: "Planning",
-    kind,
-    raw: line,
-    ...(ts ? { timestamp: ts } : {}),
-  };
+  return planningNodes.length > 0 ? planningNodes : null;
 }
 
 function parseHeadline(
@@ -856,7 +882,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
       if (planning) {
         flushParagraph();
         endList();
-        getChildrenArray(currentContainer()).push(planning);
+        getChildrenArray(currentContainer()).push(...planning);
         i += 1;
         continue;
       }
