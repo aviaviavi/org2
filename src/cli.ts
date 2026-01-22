@@ -196,9 +196,14 @@ async function main(): Promise<void> {
   let files: string[] = [];
   let days = 7;
   let today = getTodayString();
+  let format: "text" | "json" = "text";
   let recursive = false;
   let includeOverdue = true;
   let verboseErrors = false;
+
+  let archiveFile = "";
+  let archivePos = "";
+  let archiveApply = false;
 
   // Parse arguments
   let i = 0;
@@ -207,6 +212,9 @@ async function main(): Promise<void> {
 
     if (arg === "agenda") {
       command = "agenda";
+      i++;
+    } else if (arg === "archive") {
+      command = "archive";
       i++;
     } else if (arg === "--dir") {
       i++;
@@ -218,6 +226,12 @@ async function main(): Promise<void> {
       i++;
       // Collect all following non-flag arguments as files
       while (i < args.length && !args[i].startsWith("--")) {
+        files.push(args[i]);
+        i++;
+      }
+    } else if (arg === "--file") {
+      i++;
+      if (i < args.length) {
         files.push(args[i]);
         i++;
       }
@@ -236,6 +250,15 @@ async function main(): Promise<void> {
         today = args[i];
         i++;
       }
+    } else if (arg === "--format") {
+      i++;
+      if (i < args.length) {
+        const v = args[i];
+        if (v === "text" || v === "json") {
+          format = v;
+        }
+        i++;
+      }
     } else if (arg === "--recursive") {
       recursive = true;
       i++;
@@ -245,6 +268,21 @@ async function main(): Promise<void> {
     } else if (arg === "--overdue") {
       includeOverdue = true;
       i++;
+    } else if (arg === "--archive-file") {
+      i++;
+      if (i < args.length) {
+        archiveFile = args[i];
+        i++;
+      }
+    } else if (arg === "--pos") {
+      i++;
+      if (i < args.length) {
+        archivePos = args[i];
+        i++;
+      }
+    } else if (arg === "--apply" || arg === "--in-place") {
+      archiveApply = true;
+      i++;
     } else if (arg === "--verbose" || arg === "--verbose-errors") {
       verboseErrors = true;
       i++;
@@ -253,13 +291,91 @@ async function main(): Promise<void> {
     }
   }
 
-  if (command !== "agenda") {
+  if (command !== "agenda" && command !== "archive") {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--no-overdue] [--verbose-errors]",
+    );
+    console.error(
+      "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--apply]",
     );
     process.exit(1);
   }
 
+  if (command === "archive") {
+    if (files.length !== 1) {
+      console.error("Error: archive requires exactly one --files <file>");
+      process.exit(1);
+    }
+    if (!archivePos) {
+      console.error("Error: archive requires --pos LINE[:COL]");
+      process.exit(1);
+    }
+
+    const sourcePath = files[0]!;
+    const raw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
+    const posLine = parseInt(archivePos.split(":")[0]!, 10);
+    if (!Number.isFinite(posLine) || posLine < 1) {
+      console.error(`Error: invalid --pos ${archivePos}`);
+      process.exit(1);
+    }
+
+    const defaultArchivePath = sourcePath.endsWith(".org") ? `${sourcePath}_archive` : `${sourcePath}.archive`;
+    const archivePath = archiveFile || defaultArchivePath;
+
+    const lines = raw.split("\n");
+    let headlineLineIndex = -1;
+    for (let idx = Math.min(posLine - 1, lines.length - 1); idx >= 0; idx -= 1) {
+      const line = lines[idx] ?? "";
+      if (/^\*+\s+/.test(line)) {
+        headlineLineIndex = idx;
+        break;
+      }
+    }
+
+    if (headlineLineIndex === -1) {
+      console.error("Error: no headline found at or above --pos");
+      process.exit(1);
+    }
+
+    const headlineLine = lines[headlineLineIndex] ?? "";
+    const levelMatch = /^(\*+)\s+/.exec(headlineLine);
+    const level = levelMatch ? levelMatch[1].length : 1;
+
+    let endIndexExclusive = lines.length;
+    for (let idx = headlineLineIndex + 1; idx < lines.length; idx += 1) {
+      const line = lines[idx] ?? "";
+      const m = /^(\*+)\s+/.exec(line);
+      if (m && m[1].length <= level) {
+        endIndexExclusive = idx;
+        break;
+      }
+    }
+
+    const subtreeLines = lines.slice(headlineLineIndex, endIndexExclusive);
+    const remainingLines = [...lines.slice(0, headlineLineIndex), ...lines.slice(endIndexExclusive)];
+
+    const subtreeText = subtreeLines.join("\n").trimEnd() + "\n";
+    const newSourceText = remainingLines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+
+    if (!archiveApply) {
+      process.stdout.write(
+        `Would archive subtree starting at ${sourcePath}:${headlineLineIndex + 1} to ${archivePath}\n` +
+          `Subtree first line: ${headlineLine}\n` +
+          `Use --apply to write changes.\n`,
+      );
+      return;
+    }
+
+    const existingArchive = fs.existsSync(archivePath) ? fs.readFileSync(archivePath, "utf8").replace(/\r\n/g, "\n") : "";
+    const archiveOut = existingArchive.trimEnd() + "\n\n" + subtreeText;
+
+    fs.writeFileSync(sourcePath, newSourceText, "utf8");
+    fs.writeFileSync(archivePath, archiveOut, "utf8");
+    process.stdout.write(`Archived to ${archivePath}\n`);
+    return;
+  }
+
+  // agenda
   // Determine files to process
   if (!dir && files.length === 0) {
     console.error("Error: provide either --dir or --files");
@@ -314,13 +430,53 @@ async function main(): Promise<void> {
   }
 
   if (skippedFileCount > 0 && !verboseErrors) {
-    console.error(`Skipped ${skippedFileCount} file(s) due to parse errors (use --verbose-errors to see details).`);
+    console.error(
+      `Skipped ${skippedFileCount} file(s) due to parse errors (use --verbose-errors to see details).`,
+    );
   }
 
   // Sort by date
   allItems.sort((a, b) => a.date.localeCompare(b.date));
 
-  // Output
+  if (format === "json") {
+    const startIso = startDate.toISOString().slice(0, 10);
+    const endIso = endDate.toISOString().slice(0, 10);
+
+    const overdue = allItems.filter((it) => it.date < startIso);
+    const upcoming = allItems.filter((it) => it.date >= startIso);
+
+    const group = (items: ScheduledItem[]) => {
+      const byDate: Record<string, ScheduledItem[]> = {};
+      for (const item of items) {
+        (byDate[item.date] ??= []).push(item);
+      }
+      return Object.keys(byDate)
+        .sort()
+        .map((date) => ({
+          date,
+          weekday: formatDateHeader(date).split(" ").slice(1).join(" "),
+          items: (byDate[date] ?? []).map((it) => ({
+            todo: it.todo,
+            headline: it.headline,
+            kind: it.kind,
+            file: it.filePath,
+            line: it.lineNumber,
+          })),
+        }));
+    };
+
+    const payload = {
+      range: { start: startIso, end: endIso, days },
+      overdue: group(overdue),
+      days: group(upcoming),
+      skippedFiles: skippedFileCount,
+    };
+
+    process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+    return;
+  }
+
+  // Output text
   const output = formatOutput(allItems, startDate);
   process.stdout.write(output);
 }
