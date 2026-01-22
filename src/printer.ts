@@ -57,6 +57,35 @@ function printParagraph(node: ParagraphNode): string {
   return node.children.map(printInline).join("");
 }
 
+function printNode(node: any): string {
+  switch (node.type) {
+    case "Paragraph":
+      return printParagraph(node);
+    case "Headline":
+      return printHeadline(node);
+    case "KeywordLine":
+      return printKeywordLine(node);
+    case "DirectiveLine":
+      return printDirectiveLine(node);
+    case "Planning":
+      return printPlanning(node);
+    case "Block":
+      return printBlock(node);
+    case "CommentLine":
+      return node.raw;
+    case "PropertyDrawer":
+    case "Drawer":
+    case "SrcBlock":
+    case "Table":
+    case "List":
+    case "ListItem":
+      // These nodes have raw representations or need special handling
+      return node.raw ?? "";
+    default:
+      throw new Error(`Unsupported node in printer: ${node.type}`);
+  }
+}
+
 function printHeadline(node: HeadlineNode): string {
   const stars = "*".repeat(node.level);
 
@@ -68,7 +97,32 @@ function printHeadline(node: HeadlineNode): string {
       ? ` :${node.tags.map((t) => `${t}:`).join("")}`
       : "";
 
-  return `${stars} ${todo}${title}${tags}`;
+  const headlineLine = `${stars} ${todo}${title}${tags}`;
+  
+  // Print children if any
+  if (!node.children || node.children.length === 0) {
+    return headlineLine;
+  }
+
+  const childLines: string[] = [];
+  let lastRaw: string | undefined;
+  for (const child of node.children) {
+    // Deduplicate consecutive Planning nodes with the same raw value
+    if (child.type === "Planning" && child.raw === lastRaw) {
+      // Skip this node since it's a duplicate of the previous planning line
+      continue;
+    }
+    
+    if (child.type === "Planning") {
+      lastRaw = child.raw;
+    } else {
+      lastRaw = undefined;
+    }
+    
+    childLines.push(printNode(child));
+  }
+
+  return [headlineLine, ...childLines].join("\n");
 }
 
 function printKeywordLine(node: KeywordLineNode): string {
