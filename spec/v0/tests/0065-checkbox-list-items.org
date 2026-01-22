@@ -1,4 +1,4 @@
 - [ ] Unchecked item
 - [X] Checked item
-- [x] Checked lowercase
+- [X] Checked lowercase
 - Regular item without checkbox
