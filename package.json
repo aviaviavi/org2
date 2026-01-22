@@ -2,13 +2,18 @@
   "name": "org2",
   "private": true,
   "type": "module",
+  "bin": {
+    "org2": "dist/cli.js"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "parse": "node dist/parse.js",
     "print": "node dist/print.js",
+    "org2": "node dist/cli.js",
     "fixtures": "node tools/fixture-runner.mjs",
+    "cli-test": "node tools/cli-test-runner.mjs",
     "pretest": "npm run build",
-    "test": "npm run fixtures"
+    "test": "npm run fixtures && npm run cli-test"
   },
   "devDependencies": {
     "@types/node": "^22.10.7",
