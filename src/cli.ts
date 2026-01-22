@@ -111,9 +111,18 @@ function findScheduledItems(
 }
 
 function formatDateHeader(dateStr: string): string {
-  const date = new Date(dateStr);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!match) return dateStr;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+
+  // Compute weekday deterministically without local timezone effects.
+  const dateUtc = new Date(Date.UTC(year, month - 1, day));
+
   const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-  const dayName = days[date.getDay()];
+  const dayName = days[dateUtc.getUTCDay()];
   return `${dateStr} ${dayName}`;
 }
 
