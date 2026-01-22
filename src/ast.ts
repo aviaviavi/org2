@@ -63,7 +63,7 @@ export type CommentLineNode = {
   bodyRaw: string;
 };
 
-export type PlanningKind = "SCHEDULED" | "DEADLINE";
+export type PlanningKind = "SCHEDULED" | "DEADLINE" | "CLOSED";
 
 export type PlanningNode = {
   type: "Planning";
