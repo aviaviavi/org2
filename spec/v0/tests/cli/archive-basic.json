@@ -1,0 +1,60 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "KeywordLine",
+      "raw": "#+title: archive basic",
+      "indent": "",
+      "keyRaw": "title",
+      "valueRaw": " archive basic"
+    },
+    {
+      "type": "Headline",
+      "level": 1,
+      "todo": "TODO",
+      "title": [
+        {
+          "type": "Text",
+          "value": "Parent"
+        }
+      ],
+      "children": [
+        {
+          "type": "Headline",
+          "level": 2,
+          "todo": "TODO",
+          "title": [
+            {
+              "type": "Text",
+              "value": "Child"
+            }
+          ],
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [
+                {
+                  "type": "Text",
+                  "value": "Some body text."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "Headline",
+      "level": 1,
+      "todo": "TODO",
+      "title": [
+        {
+          "type": "Text",
+          "value": "Next"
+        }
+      ],
+      "children": []
+    }
+  ]
+}
