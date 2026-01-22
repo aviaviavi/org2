@@ -1,0 +1,2 @@
+This has *bold text* and [[https://example.com][a link]].
+Also /italic/ with a plain URL https://example.org here.

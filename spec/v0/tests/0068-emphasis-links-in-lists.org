@@ -1,0 +1,3 @@
+- This is *bold* in a list
+- Visit [[https://example.com][the site]] for more
+- /Italic text/ with https://example.org url
