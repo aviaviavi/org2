@@ -118,11 +118,14 @@ export type BlockNode = {
 
 export type TableRowNode = {
   type: "TableRow";
+  indent: string;
   cells: string[];
 };
 
 export type TableHlineNode = {
   type: "TableHline";
+  indent: string;
+  raw: string;
 };
 
 export type TableNode = {

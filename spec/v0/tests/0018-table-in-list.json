@@ -11,13 +11,32 @@
           "children": [
             {
               "type": "Paragraph",
-              "children": [{ "type": "Text", "value": "Item" }]
+              "children": [
+                {
+                  "type": "Text",
+                  "value": "Item"
+                }
+              ]
             },
             {
               "type": "Table",
               "rows": [
-                { "type": "TableRow", "cells": ["a", "b"] },
-                { "type": "TableRow", "cells": ["c", "d"] }
+                {
+                  "type": "TableRow",
+                  "indent": "  ",
+                  "cells": [
+                    "a",
+                    "b"
+                  ]
+                },
+                {
+                  "type": "TableRow",
+                  "indent": "  ",
+                  "cells": [
+                    "c",
+                    "d"
+                  ]
+                }
               ]
             }
           ]
