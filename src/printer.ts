@@ -121,20 +121,35 @@ function printTable(node: TableNode): string {
   }).join("\n");
 }
 
-function printListItem(node: ListItemNode): string {
-  const childLines = node.children.map((child) => printNode(child));
+function printListItem(node: ListItemNode, indent: string = ""): string {
+  const childLines = node.children.map((child) => {
+    if (child.type === "List") {
+      return printList(child, indent + "  ");
+    } else {
+      const printed = printNode(child);
+      // Indent continuation lines
+      const lines = printed.split("\n");
+      return lines.map((line, idx) => (idx === 0 ? line : indent + line)).join("\n");
+    }
+  });
   return childLines.join("\n");
 }
 
-function printList(node: ListNode): string {
+function printList(node: ListNode, indent: string = ""): string {
   const items = node.items.map((item, index) => {
     const marker = node.ordered ? `${index + 1}.` : "-";
-    const content = printListItem(item);
+    const content = printListItem(item, indent);
     // For list items with multiple lines, indent continuation lines
     const lines = content.split("\n");
-    const firstLine = `${marker} ${lines[0]}`;
-    // For continuation lines, preserve their indentation as-is from the AST
-    const restLines = lines.slice(1);
+    const firstLine = `${indent}${marker} ${lines[0]}`;
+    const restLines = lines.slice(1).map((line) => {
+      // If the line is already indented (nested list), keep it as-is
+      // Otherwise, indent it to align with the marker position
+      if (line.startsWith(indent + "  ")) {
+        return line;
+      }
+      return line.startsWith(indent) ? line : indent + line;
+    });
     return [firstLine, ...restLines].join("\n");
   });
   return items.join("\n");
