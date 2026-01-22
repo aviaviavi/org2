@@ -1,0 +1,57 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Headline",
+      "level": 1,
+      "title": [
+        {
+          "type": "Text",
+          "value": "Completed Task"
+        }
+      ],
+      "children": [
+        {
+          "type": "Planning",
+          "kind": "SCHEDULED",
+          "raw": "SCHEDULED: <2026-01-22 Wed> DEADLINE: <2026-01-29 Wed> CLOSED: [2026-01-28 Tue]",
+          "timestamp": {
+            "type": "Timestamp",
+            "active": true,
+            "raw": "<2026-01-22 Wed>"
+          }
+        },
+        {
+          "type": "Planning",
+          "kind": "DEADLINE",
+          "raw": "SCHEDULED: <2026-01-22 Wed> DEADLINE: <2026-01-29 Wed> CLOSED: [2026-01-28 Tue]",
+          "timestamp": {
+            "type": "Timestamp",
+            "active": true,
+            "raw": "<2026-01-29 Wed>"
+          }
+        },
+        {
+          "type": "Planning",
+          "kind": "CLOSED",
+          "raw": "SCHEDULED: <2026-01-22 Wed> DEADLINE: <2026-01-29 Wed> CLOSED: [2026-01-28 Tue]",
+          "timestamp": {
+            "type": "Timestamp",
+            "active": false,
+            "raw": "[2026-01-28 Tue]"
+          }
+        },
+        {
+          "type": "Paragraph",
+          "children": [
+            {
+              "type": "Text",
+              "value": "Task is done."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
