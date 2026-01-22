@@ -1,0 +1,22 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Block",
+      "kind": "center",
+      "terminated": true,
+      "begin": {
+        "indent": "",
+        "keywordRaw": "begin_center",
+        "afterKeywordRaw": ""
+      },
+      "bodyRaw": "Centered text\nAnother centered line",
+      "end": {
+        "indent": "",
+        "keywordRaw": "end_center",
+        "afterKeywordRaw": ""
+      }
+    }
+  ]
+}

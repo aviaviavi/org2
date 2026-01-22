@@ -1,0 +1,5 @@
+* Heading
+
+#+begin_center
+centered content
+#+end_center

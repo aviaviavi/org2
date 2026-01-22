@@ -1,0 +1,4 @@
+#+begin_center
+Centered text
+Another centered line
+#+end_center

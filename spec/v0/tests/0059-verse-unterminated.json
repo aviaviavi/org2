@@ -1,0 +1,17 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Block",
+      "kind": "verse",
+      "terminated": false,
+      "begin": {
+        "indent": "",
+        "keywordRaw": "begin_verse",
+        "afterKeywordRaw": ""
+      },
+      "bodyRaw": "verse text"
+    }
+  ]
+}
