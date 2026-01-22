@@ -1035,8 +1035,183 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
 
         const maybeNextItem = parseListItemLine(contLine);
         if (maybeNextItem) {
+          // Same or less indented list item, end current item
           flushItemParagraph();
           break;
+        }
+        
+        // Check if this is a nested list item by stripping indentation
+        const leadingSpaces = contLine.match(/^(\s*)/)?.[1]?.length ?? 0;
+        if (leadingSpaces > 0) {
+          const unindentedLine = contLine.slice(leadingSpaces);
+          const maybeNestedItem = parseListItemLine(unindentedLine);
+          
+          if (maybeNestedItem) {
+            // Check if this is a nested list item (more indented than current)
+            const nestedIndentColumn = leadingSpaces + maybeNestedItem.indentColumn;
+            if (nestedIndentColumn > listItem.indentColumn) {
+              flushItemParagraph();
+              // Parse nested list items
+              let nestedList: ListNode | null = null;
+              let nestedItemParaLines: string[] = [];
+              
+              while (i < lines.length) {
+                const nestedLineNumber = i + 1;
+                const nestedLine = lines[i] ?? "";
+                
+                if (isBlank(nestedLine)) {
+                  if (nestedItemParaLines.length > 0) {
+                    // This shouldn't happen in normal flow, but handle it
+                    nestedItemParaLines = [];
+                  }
+                  break;
+                }
+                
+                if (nestedLine.startsWith("*")) {
+                  break;
+                }
+                
+                const nestedLeadingSpaces = nestedLine.match(/^(\s*)/)?.[1]?.length ?? 0;
+                if (nestedLeadingSpaces === 0) {
+                  // Not indented, so not a nested item
+                  break;
+                }
+                
+                const nestedUnindentedLine = nestedLine.slice(nestedLeadingSpaces);
+                const nestedItem = parseListItemLine(nestedUnindentedLine);
+                
+                if (!nestedItem) {
+                  // Not a list item
+                  if (nestedLeadingSpaces >= listItem.indentColumn) {
+                    // Still within indentation, treat as continuation
+                    nestedItemParaLines.push(nestedLine.slice(listItem.indentColumn));
+                    i += 1;
+                    continue;
+                  } else {
+                    break;
+                  }
+                }
+                
+                const nestedItemIndentColumn = nestedLeadingSpaces + nestedItem.indentColumn;
+                
+                // Check nesting consistency
+                if (!nestedList) {
+                  nestedList = {
+                    type: "List",
+                    ordered: nestedItem.ordered,
+                    items: [],
+                  };
+                  item.children.push(nestedList);
+                }
+                
+                if (nestedList.ordered !== nestedItem.ordered) {
+                  break;
+                }
+                
+                // Flush any accumulated para lines before adding new item
+                if (nestedItemParaLines.length > 0) {
+                  // This shouldn't normally happen, but handle it
+                  nestedItemParaLines = [];
+                }
+                
+                // Add nested item
+                const nestedListItem: ListItemNode = {
+                  type: "ListItem",
+                  children: [paragraphFromText(nestedItem.content)],
+                };
+                nestedList.items.push(nestedListItem);
+                i += 1;
+                
+                // Process nested item's continuation lines
+                while (i < lines.length) {
+                  const contNestedLineNumber = i + 1;
+                  const contNestedLine = lines[i] ?? "";
+                  
+                  if (isBlank(contNestedLine)) {
+                    if (nestedItemParaLines.length > 0) {
+                      nestedListItem.children.push(paragraphFromLines(nestedItemParaLines));
+                      nestedItemParaLines = [];
+                    }
+                    break;
+                  }
+                  
+                  if (contNestedLine.startsWith("*")) {
+                    if (nestedItemParaLines.length > 0) {
+                      nestedListItem.children.push(paragraphFromLines(nestedItemParaLines));
+                      nestedItemParaLines = [];
+                    }
+                    break;
+                  }
+                  
+                  const nextNestedLeadingSpaces = contNestedLine.match(/^(\s*)/)?.[1]?.length ?? 0;
+                  if (nextNestedLeadingSpaces > 0) {
+                    const nextNestedUnindentedLine = contNestedLine.slice(nextNestedLeadingSpaces);
+                    const nextNestedItem = parseListItemLine(nextNestedUnindentedLine);
+                    if (nextNestedItem) {
+                      const nextNestedItemIndentColumn = nextNestedLeadingSpaces + nextNestedItem.indentColumn;
+
+                      // Deeper nesting (nested list under this nested list item)
+                      if (nextNestedItemIndentColumn > nestedItemIndentColumn) {
+                        if (nestedItemParaLines.length > 0) {
+                          nestedListItem.children.push(paragraphFromLines(nestedItemParaLines));
+                          nestedItemParaLines = [];
+                        }
+
+                        const deeperList: ListNode = {
+                          type: "List",
+                          ordered: nextNestedItem.ordered,
+                          items: [],
+                        };
+                        nestedListItem.children.push(deeperList);
+
+                        while (i < lines.length) {
+                          const deeperLine = lines[i] ?? "";
+                          if (isBlank(deeperLine) || deeperLine.startsWith("*")) break;
+
+                          const deeperLeadingSpaces = deeperLine.match(/^(\s*)/)?.[1]?.length ?? 0;
+                          const deeperUnindentedLine = deeperLine.slice(deeperLeadingSpaces);
+                          const deeperItem = parseListItemLine(deeperUnindentedLine);
+                          if (!deeperItem) break;
+
+                          const deeperItemIndentColumn = deeperLeadingSpaces + deeperItem.indentColumn;
+                          if (deeperItemIndentColumn < nextNestedItemIndentColumn) break;
+                          if (deeperList.ordered != deeperItem.ordered) break;
+
+                          const deeperListItem: ListItemNode = {
+                            type: "ListItem",
+                            children: [paragraphFromText(deeperItem.content)],
+                          };
+                          deeperList.items.push(deeperListItem);
+                          i += 1;
+                        }
+
+                        continue;
+                      }
+
+                      // Same-level nested item; end current nested item
+                      if (nestedItemParaLines.length > 0) {
+                        nestedListItem.children.push(paragraphFromLines(nestedItemParaLines));
+                        nestedItemParaLines = [];
+                      }
+                      break;
+                    }
+                  }
+                  
+                  if (!contNestedLine.startsWith(" ".repeat(nestedItemIndentColumn))) {
+                    if (nestedItemParaLines.length > 0) {
+                      nestedListItem.children.push(paragraphFromLines(nestedItemParaLines));
+                      nestedItemParaLines = [];
+                    }
+                    break;
+                  }
+                  
+                  nestedItemParaLines.push(contNestedLine.slice(nestedItemIndentColumn));
+                  i += 1;
+                }
+              }
+              continue;
+            }
+          }
         }
 
         if (!contLine.startsWith(" ".repeat(listItem.indentColumn))) {

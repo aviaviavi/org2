@@ -1,0 +1,108 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "List",
+      "ordered": true,
+      "items": [
+        {
+          "type": "ListItem",
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [
+                {
+                  "type": "Text",
+                  "value": "First ordered"
+                }
+              ]
+            },
+            {
+              "type": "List",
+              "ordered": false,
+              "items": [
+                {
+                  "type": "ListItem",
+                  "children": [
+                    {
+                      "type": "Paragraph",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "value": "Unordered nested"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "ListItem",
+                  "children": [
+                    {
+                      "type": "Paragraph",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "value": "Another unordered"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "ListItem",
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [
+                {
+                  "type": "Text",
+                  "value": "Second ordered"
+                }
+              ]
+            },
+            {
+              "type": "List",
+              "ordered": true,
+              "items": [
+                {
+                  "type": "ListItem",
+                  "children": [
+                    {
+                      "type": "Paragraph",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "value": "Nested ordered"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "ListItem",
+                  "children": [
+                    {
+                      "type": "Paragraph",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "value": "More nested ordered"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
