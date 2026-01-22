@@ -373,16 +373,17 @@ A **keyword line** matches:
 
 Keyword lines produce a `KeywordLine` node with a lossless `raw` field.
 
-## Planning lines (SCHEDULED:/DEADLINE:)
+## Planning lines (SCHEDULED:/DEADLINE:/CLOSED:)
 
 Org2 v0 recognizes planning lines as explicit nodes:
 
 - `SCHEDULED: ...`
 - `DEADLINE: ...`
+- `CLOSED: ...`
 
 Planning lines produce a `Planning` node with:
 
-- `kind`: `SCHEDULED` or `DEADLINE`
+- `kind`: `SCHEDULED`, `DEADLINE`, or `CLOSED`
 - `raw`: the exact original line
 - `timestamp` (optional): the first timestamp or timestamp range found in the remainder
 

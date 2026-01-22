@@ -1,0 +1,2 @@
+#+begin_verse
+verse text

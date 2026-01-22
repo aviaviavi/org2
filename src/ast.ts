@@ -63,7 +63,7 @@ export type CommentLineNode = {
   bodyRaw: string;
 };
 
-export type PlanningKind = "SCHEDULED" | "DEADLINE";
+export type PlanningKind = "SCHEDULED" | "DEADLINE" | "CLOSED";
 
 export type PlanningNode = {
   type: "Planning";
@@ -118,11 +118,14 @@ export type BlockNode = {
 
 export type TableRowNode = {
   type: "TableRow";
+  indent: string;
   cells: string[];
 };
 
 export type TableHlineNode = {
   type: "TableHline";
+  indent: string;
+  raw: string;
 };
 
 export type TableNode = {

@@ -1,0 +1,4 @@
+- item
+  #+begin_verse
+  verse body
+  #+end_verse

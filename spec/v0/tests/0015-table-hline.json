@@ -5,9 +5,27 @@
     {
       "type": "Table",
       "rows": [
-        { "type": "TableRow", "cells": ["a", "b"] },
-        { "type": "TableHline" },
-        { "type": "TableRow", "cells": ["c", "d"] }
+        {
+          "type": "TableRow",
+          "indent": "",
+          "cells": [
+            "a",
+            "b"
+          ]
+        },
+        {
+          "type": "TableHline",
+          "indent": "",
+          "raw": "|---+---|"
+        },
+        {
+          "type": "TableRow",
+          "indent": "",
+          "cells": [
+            "c",
+            "d"
+          ]
+        }
       ]
     }
   ]
