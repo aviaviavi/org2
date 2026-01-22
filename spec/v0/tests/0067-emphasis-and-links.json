@@ -1,0 +1,56 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Paragraph",
+      "children": [
+        {
+          "type": "Text",
+          "value": "This has "
+        },
+        {
+          "type": "Emphasis",
+          "kind": "bold",
+          "marker": "*",
+          "content": "bold text"
+        },
+        {
+          "type": "Text",
+          "value": " and "
+        },
+        {
+          "type": "Link",
+          "format": "bracket",
+          "raw": "[[https://example.com][a link]]",
+          "targetRaw": "https://example.com",
+          "descriptionRaw": "a link"
+        },
+        {
+          "type": "Text",
+          "value": ".\nAlso "
+        },
+        {
+          "type": "Emphasis",
+          "kind": "italic",
+          "marker": "/",
+          "content": "italic"
+        },
+        {
+          "type": "Text",
+          "value": " with a plain URL "
+        },
+        {
+          "type": "Link",
+          "format": "plain",
+          "raw": "https://example.org",
+          "targetRaw": "https://example.org"
+        },
+        {
+          "type": "Text",
+          "value": " here."
+        }
+      ]
+    }
+  ]
+}

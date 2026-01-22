@@ -1,0 +1,91 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "List",
+      "ordered": false,
+      "items": [
+        {
+          "type": "ListItem",
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [
+                {
+                  "type": "Text",
+                  "value": "This is "
+                },
+                {
+                  "type": "Emphasis",
+                  "kind": "bold",
+                  "marker": "*",
+                  "content": "bold"
+                },
+                {
+                  "type": "Text",
+                  "value": " in a list"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "ListItem",
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [
+                {
+                  "type": "Text",
+                  "value": "Visit "
+                },
+                {
+                  "type": "Link",
+                  "format": "bracket",
+                  "raw": "[[https://example.com][the site]]",
+                  "targetRaw": "https://example.com",
+                  "descriptionRaw": "the site"
+                },
+                {
+                  "type": "Text",
+                  "value": " for more"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "ListItem",
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [
+                {
+                  "type": "Emphasis",
+                  "kind": "italic",
+                  "marker": "/",
+                  "content": "Italic text"
+                },
+                {
+                  "type": "Text",
+                  "value": " with "
+                },
+                {
+                  "type": "Link",
+                  "format": "plain",
+                  "raw": "https://example.org",
+                  "targetRaw": "https://example.org"
+                },
+                {
+                  "type": "Text",
+                  "value": " url"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
