@@ -798,13 +798,14 @@ function parseTable(lines: string[], startLineIndex: number, indent: string): Pa
     }
 
     const rest = matched.rest;
+    const lineIndent = " ".repeat(matched.indentLen);
 
     if (isTableHlineRow(rest)) {
-      rows.push({ type: "TableHline" });
+      rows.push({ type: "TableHline", indent: lineIndent, raw: rest });
       continue;
     }
 
-    rows.push({ type: "TableRow", cells: parseTableRowCells(rest) });
+    rows.push({ type: "TableRow", indent: lineIndent, cells: parseTableRowCells(rest) });
   }
 
   return { table: { type: "Table", rows }, nextLineIndex: lines.length };
