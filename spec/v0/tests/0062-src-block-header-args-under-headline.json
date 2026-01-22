@@ -1,0 +1,28 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Headline",
+      "level": 1,
+      "title": [{ "type": "Text", "value": "Heading" }],
+      "children": [
+        {
+          "type": "SrcBlock",
+          "terminated": true,
+          "begin": {
+            "indent": "",
+            "keywordRaw": "begin_src",
+            "afterKeywordRaw": " ruby :session :wrap \"text\""
+          },
+          "bodyRaw": "puts \"hello\"",
+          "end": {
+            "indent": "",
+            "keywordRaw": "end_src",
+            "afterKeywordRaw": ""
+          }
+        }
+      ]
+    }
+  ]
+}

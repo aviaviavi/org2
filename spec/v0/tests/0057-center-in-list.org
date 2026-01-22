@@ -1,0 +1,4 @@
+- item
+  #+begin_center
+  centered body
+  #+end_center

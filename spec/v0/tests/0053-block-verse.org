@@ -1,0 +1,4 @@
+#+begin_verse
+Some poem here
+Multiple lines of verse
+#+end_verse
