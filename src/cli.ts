@@ -104,6 +104,13 @@ function findScheduledItems(
   return items;
 }
 
+function formatDateHeader(dateStr: string): string {
+  const date = new Date(dateStr);
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const dayName = days[date.getDay()];
+  return `${dateStr} ${dayName}`;
+}
+
 function formatOutput(items: ScheduledItem[]): string {
   if (items.length === 0) {
     return "No scheduled items in range.\n";
@@ -122,16 +129,26 @@ function formatOutput(items: ScheduledItem[]): string {
   const dates = Array.from(byDate.keys()).sort();
 
   let output = "";
-  for (const date of dates) {
-    output += `\n${date}\n`;
-    for (const item of byDate.get(date)!) {
-      const status = item.todo ? `[${item.todo}] ` : "";
-      output += `  ${status}${item.headline}\n`;
-      output += `    ${item.kind} in ${item.filePath}\n`;
+  for (let i = 0; i < dates.length; i++) {
+    const date = dates[i];
+    const dateHeader = formatDateHeader(date);
+    const separator = "═".repeat(dateHeader.length + 2);
+
+    output += `\n${separator}\n`;
+    output += ` ${dateHeader}\n`;
+    output += `${separator}\n\n`;
+
+    const dayItems = byDate.get(date)!;
+    for (const item of dayItems) {
+      const status = item.todo || "ITEM";
+      const statusPad = status.padEnd(6);
+      output += `  ${statusPad}  ${item.headline}\n`;
+      output += `            ${item.kind}: ${item.filePath}\n`;
+      output += "\n";
     }
   }
 
-  return output + "\n";
+  return output;
 }
 
 async function main(): Promise<void> {

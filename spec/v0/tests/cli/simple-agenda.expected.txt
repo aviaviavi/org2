@@ -1,9 +1,16 @@
 
-2026-01-21
-  [TODO] Task for today
-    SCHEDULED in spec/v0/tests/cli/simple-agenda.org
+════════════════════
+ 2026-01-21 Tuesday
+════════════════════
 
-2026-01-22
-  [TODO] Task for tomorrow
-    SCHEDULED in spec/v0/tests/cli/simple-agenda.org
+  TODO    Task for today
+            SCHEDULED: spec/v0/tests/cli/simple-agenda.org
+
+
+══════════════════════
+ 2026-01-22 Wednesday
+══════════════════════
+
+  TODO    Task for tomorrow
+            SCHEDULED: spec/v0/tests/cli/simple-agenda.org
 
