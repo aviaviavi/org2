@@ -1,0 +1,33 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Paragraph",
+      "children": [
+        {
+          "type": "Text",
+          "value": "This is a normal paragraph.\nWith multiple lines."
+        }
+      ]
+    },
+    {
+      "type": "Paragraph",
+      "children": [
+        {
+          "type": "Text",
+          "value": "Some random text line: that doesn't match any pattern.\nAnother line with special chars @#$%."
+        }
+      ]
+    },
+    {
+      "type": "Paragraph",
+      "children": [
+        {
+          "type": "Text",
+          "value": "And back to normal."
+        }
+      ]
+    }
+  ]
+}
