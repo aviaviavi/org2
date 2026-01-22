@@ -50,7 +50,8 @@ function findScheduledItems(
   ast: DocumentNode,
   filePath: string,
   startDate: Date,
-  endDate: Date
+  endDate: Date,
+  includeOverdue: boolean
 ): ScheduledItem[] {
   const items: ScheduledItem[] = [];
 
@@ -69,8 +70,13 @@ function findScheduledItems(
 
               if (dateStr) {
                 const itemDate = parseIsoDate(dateStr);
-                // Check if within range (inclusive)
-                if (itemDate >= startDate && itemDate <= endDate) {
+                const inRange = itemDate >= startDate && itemDate <= endDate;
+                const isOverdue = itemDate < startDate;
+                if ((includeOverdue && isOverdue) || inRange) {
+                  const todo = headline.todo;
+                  if (!todo) continue;
+                  if (todo === "DONE" || todo === "CANCELLED" || todo === "CANCELED") continue;
+
                   const titleText = headline.title
                     .filter((t) => t.type === "Text")
                     .map((t) => t.value)
@@ -80,7 +86,7 @@ function findScheduledItems(
                     filePath,
                     lineNumber: 0, // Line numbers not tracked in AST, using 0
                     headline: titleText,
-                    todo: headline.todo,
+                    todo,
                     date: dateStr,
                     kind: planning.kind,
                   });
@@ -111,10 +117,33 @@ function formatDateHeader(dateStr: string): string {
   return `${dateStr} ${dayName}`;
 }
 
-function formatOutput(items: ScheduledItem[]): string {
+function formatSectionHeader(title: string): string {
+  const separator = "═".repeat(title.length + 2);
+  return `\n${separator}\n ${title}\n${separator}\n\n`;
+}
+
+function formatOutput(items: ScheduledItem[], startDate: Date): string {
   if (items.length === 0) {
     return "No scheduled items in range.\n";
   }
+
+  const startIso = startDate.toISOString().slice(0, 10);
+  const overdueItems = items.filter((it) => it.date < startIso).sort((a, b) => a.date.localeCompare(b.date));
+  const upcomingItems = items.filter((it) => it.date >= startIso).sort((a, b) => a.date.localeCompare(b.date));
+
+  let output = "";
+
+  if (overdueItems.length > 0) {
+    output += formatSectionHeader(`OVERDUE (before ${startIso})`);
+    output += formatByDate(overdueItems);
+  }
+
+  output += formatByDate(upcomingItems);
+  return output;
+}
+
+function formatByDate(items: ScheduledItem[]): string {
+  if (items.length === 0) return "";
 
   // Group by date
   const byDate = new Map<string, ScheduledItem[]>();
@@ -158,6 +187,8 @@ async function main(): Promise<void> {
   let files: string[] = [];
   let days = 1;
   let today = getTodayString();
+  let recursive = false;
+  let includeOverdue = true;
   let verboseErrors = false;
 
   // Parse arguments
@@ -196,6 +227,15 @@ async function main(): Promise<void> {
         today = args[i];
         i++;
       }
+    } else if (arg === "--recursive") {
+      recursive = true;
+      i++;
+    } else if (arg === "--no-overdue") {
+      includeOverdue = false;
+      i++;
+    } else if (arg === "--overdue") {
+      includeOverdue = true;
+      i++;
     } else if (arg === "--verbose" || arg === "--verbose-errors") {
       verboseErrors = true;
       i++;
@@ -206,7 +246,7 @@ async function main(): Promise<void> {
 
   if (command !== "agenda") {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--no-overdue] [--verbose-errors]",
     );
     process.exit(1);
   }
@@ -218,13 +258,26 @@ async function main(): Promise<void> {
   }
 
   if (dir && files.length === 0) {
-    // Collect all .org files in dir
-    const entries = fs.readdirSync(dir);
-    for (const entry of entries) {
-      if (!entry.endsWith(".org")) continue;
-      if (entry.startsWith(".#")) continue; // Emacs lockfile
-      files.push(path.join(dir, entry));
-    }
+    const listOrgFiles = (dirPath: string): string[] => {
+      const out: string[] = [];
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dirPath, entry.name);
+        if (entry.isDirectory()) {
+          if (!recursive) continue;
+          if (entry.name.startsWith(".")) continue;
+          out.push(...listOrgFiles(fullPath));
+          continue;
+        }
+        if (!entry.isFile()) continue;
+        if (!entry.name.endsWith(".org")) continue;
+        if (entry.name.startsWith(".#")) continue; // Emacs lockfile
+        out.push(fullPath);
+      }
+      return out;
+    };
+
+    files = listOrgFiles(dir);
   }
 
   // Parse date range
@@ -241,7 +294,7 @@ async function main(): Promise<void> {
       const content = fs.readFileSync(filePath, "utf8");
       const normalized = content.replace(/\r\n/g, "\n");
       const ast = parseOrgToCanonicalAst(normalized);
-      const items = findScheduledItems(ast, filePath, startDate, endDate);
+      const items = findScheduledItems(ast, filePath, startDate, endDate, includeOverdue);
       allItems.push(...items);
     } catch (err) {
       skippedFileCount += 1;
@@ -259,7 +312,7 @@ async function main(): Promise<void> {
   allItems.sort((a, b) => a.date.localeCompare(b.date));
 
   // Output
-  const output = formatOutput(allItems);
+  const output = formatOutput(allItems, startDate);
   process.stdout.write(output);
 }
 
