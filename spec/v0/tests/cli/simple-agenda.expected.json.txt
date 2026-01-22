@@ -1,0 +1,37 @@
+{
+  "range": {
+    "start": "2026-01-21",
+    "end": "2026-01-22",
+    "days": 2
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-01-21",
+      "weekday": "Wednesday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Task for today",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/simple-agenda.org",
+          "line": 0
+        }
+      ]
+    },
+    {
+      "date": "2026-01-22",
+      "weekday": "Thursday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Task for tomorrow",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/simple-agenda.org",
+          "line": 0
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}

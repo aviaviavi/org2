@@ -1,0 +1,3 @@
+Would archive subtree starting at spec/v0/tests/cli/archive-basic.org:4 to spec/v0/tests/cli/archive-basic.org_archive
+Subtree first line: ** TODO Child
+Use --apply to write changes.
