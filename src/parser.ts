@@ -501,8 +501,8 @@ function parsePropertyDrawer(lines: string[], startLineIndex: number): ParseProp
     const ws = match[2];
     const rawValue = match[3];
 
-    if (ws.includes("\t")) {
-      fail(makeError("Unsupported construct: tab character", lineNumber, key.length + 3));
+    if (ws !== " " && ws !== "") {
+      fail(makeError("Invalid property drawer line; only a single space is allowed after :KEY:", lineNumber, key.length + 3));
     }
 
     properties.push({ key, value: rawValue });
