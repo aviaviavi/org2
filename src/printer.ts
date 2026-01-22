@@ -121,14 +121,14 @@ function printTable(node: TableNode): string {
   }).join("\n");
 }
 
-function printListItem(node: ListItemNode, continuationIndent: string): string {
+function printListItem(node: ListItemNode, continuationIndent: string, nestedListIndent: string): string {
   const out: string[] = [];
 
   for (let childIndex = 0; childIndex < node.children.length; childIndex += 1) {
     const child = node.children[childIndex]!;
 
     if (child.type === "List") {
-      out.push(printList(child, continuationIndent));
+      out.push(printList(child, nestedListIndent));
       continue;
     }
 
@@ -163,12 +163,14 @@ function printList(node: ListNode, indent: string = ""): string {
     if (checkbox === "checked") checkboxStr = " [X]";
     if (checkbox === "checkedLower") checkboxStr = " [x]";
 
+    const nestedListIndent = indent + " ".repeat(marker.length + 1);
     const continuationIndent = indent + " ".repeat(marker.length + checkboxStr.length + 1);
-    const content = printListItem(item, continuationIndent);
+    const content = printListItem(item, continuationIndent, nestedListIndent);
 
     const lines = content.split("\n");
     const firstLine = `${indent}${marker}${checkboxStr} ${lines[0]}`;
     const restLines = lines.slice(1).map((line) => {
+      if (line.startsWith(nestedListIndent)) return line;
       if (line.startsWith(continuationIndent)) return line;
       return continuationIndent + line;
     });
@@ -206,7 +208,7 @@ function printNode(node: any): string {
     case "List":
       return printList(node);
     case "ListItem":
-      return printListItem(node, "");
+      return printListItem(node, "", "");
     case "Text":
       return printText(node);
     default:
