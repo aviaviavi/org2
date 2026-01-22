@@ -138,7 +138,7 @@
       "required": ["type", "kind", "raw"],
       "properties": {
         "type": { "const": "Planning" },
-        "kind": { "type": "string", "enum": ["SCHEDULED", "DEADLINE"] },
+        "kind": { "type": "string", "enum": ["SCHEDULED", "DEADLINE", "CLOSED"] },
         "raw": { "type": "string" },
         "timestamp": {
           "oneOf": [{ "$ref": "#/$defs/Timestamp" }, { "$ref": "#/$defs/TimestampRange" }]
@@ -276,9 +276,10 @@
     "TableDataRow": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "cells"],
+      "required": ["type", "indent", "cells"],
       "properties": {
         "type": { "const": "TableRow" },
+        "indent": { "type": "string" },
         "cells": {
           "type": "array",
           "items": { "type": "string" }
@@ -288,9 +289,11 @@
     "TableHline": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type"],
+      "required": ["type", "indent", "raw"],
       "properties": {
-        "type": { "const": "TableHline" }
+        "type": { "const": "TableHline" },
+        "indent": { "type": "string" },
+        "raw": { "type": "string" }
       }
     },
     "Text": {

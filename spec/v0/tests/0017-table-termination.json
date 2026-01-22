@@ -4,15 +4,38 @@
   "children": [
     {
       "type": "Table",
-      "rows": [{ "type": "TableRow", "cells": ["a", "b"] }]
+      "rows": [
+        {
+          "type": "TableRow",
+          "indent": "",
+          "cells": [
+            "a",
+            "b"
+          ]
+        }
+      ]
     },
     {
       "type": "Paragraph",
-      "children": [{ "type": "Text", "value": "Paragraph." }]
+      "children": [
+        {
+          "type": "Text",
+          "value": "Paragraph."
+        }
+      ]
     },
     {
       "type": "Table",
-      "rows": [{ "type": "TableRow", "cells": ["c", "d"] }]
+      "rows": [
+        {
+          "type": "TableRow",
+          "indent": "",
+          "cells": [
+            "c",
+            "d"
+          ]
+        }
+      ]
     }
   ]
 }

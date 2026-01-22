@@ -1,0 +1,29 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Headline",
+      "level": 1,
+      "title": [{ "type": "Text", "value": "Heading" }],
+      "children": [
+        {
+          "type": "Block",
+          "kind": "verse",
+          "terminated": true,
+          "begin": {
+            "indent": "",
+            "keywordRaw": "begin_verse",
+            "afterKeywordRaw": ""
+          },
+          "bodyRaw": "verse content",
+          "end": {
+            "indent": "",
+            "keywordRaw": "end_verse",
+            "afterKeywordRaw": ""
+          }
+        }
+      ]
+    }
+  ]
+}
