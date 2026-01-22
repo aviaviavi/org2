@@ -367,7 +367,7 @@ function parseCommentLine(line: string, lineNumber: number): CommentLineNode | n
 
 function parsePlanningLine(line: string, lineNumber: number): PlanningNode[] | null {
   // Check if line starts with optional indentation followed by a planning keyword
-  const initialMatch = /^(\s*)(SCHEDULED|DEADLINE):/.exec(line);
+  const initialMatch = /^(\s*)(SCHEDULED|DEADLINE|CLOSED):/.exec(line);
   if (!initialMatch) return null;
 
   const indent = initialMatch[1] ?? "";
@@ -379,10 +379,10 @@ function parsePlanningLine(line: string, lineNumber: number): PlanningNode[] | n
   // Parse all planning keywords from the line
   const planningNodes: PlanningNode[] = [];
   
-  // Find all occurrences of SCHEDULED: or DEADLINE: in the line
+  // Find all occurrences of SCHEDULED:, DEADLINE:, or CLOSED: in the line
   let pos = 0;
   while (true) {
-    const keywordMatch = /(SCHEDULED|DEADLINE):/.exec(line.slice(pos));
+    const keywordMatch = /(SCHEDULED|DEADLINE|CLOSED):/.exec(line.slice(pos));
     if (!keywordMatch) break;
     
     const kind = keywordMatch[1] as PlanningKind;
@@ -391,7 +391,7 @@ function parsePlanningLine(line: string, lineNumber: number): PlanningNode[] | n
     
     // Extract the portion from this keyword to the start of the next keyword or end of line
     let endPos = line.length;
-    const nextKeywordMatch = /(SCHEDULED|DEADLINE):/.exec(line.slice(afterKeywordPos));
+    const nextKeywordMatch = /(SCHEDULED|DEADLINE|CLOSED):/.exec(line.slice(afterKeywordPos));
     if (nextKeywordMatch) {
       endPos = afterKeywordPos + nextKeywordMatch.index;
     }

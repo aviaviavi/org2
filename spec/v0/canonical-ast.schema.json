@@ -138,7 +138,7 @@
       "required": ["type", "kind", "raw"],
       "properties": {
         "type": { "const": "Planning" },
-        "kind": { "type": "string", "enum": ["SCHEDULED", "DEADLINE"] },
+        "kind": { "type": "string", "enum": ["SCHEDULED", "DEADLINE", "CLOSED"] },
         "raw": { "type": "string" },
         "timestamp": {
           "oneOf": [{ "$ref": "#/$defs/Timestamp" }, { "$ref": "#/$defs/TimestampRange" }]
