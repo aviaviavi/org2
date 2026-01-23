@@ -1313,3 +1313,15 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
   flushParagraph();
   return doc;
 }
+
+// Re-export AST types for LSP and other modules
+export type {
+  DocumentNode,
+  HeadlineNode,
+  Node,
+  ListNode,
+  BlockNode,
+  SrcBlockNode,
+  ListItemNode,
+  InlineNode,
+} from "./ast.js";

@@ -10,6 +10,7 @@
     "parse": "node dist/parse.js",
     "print": "node dist/print.js",
     "org2": "node dist/cli.js",
+    "lsp": "node dist/lsp.js",
     "fixtures": "node tools/fixture-runner.mjs",
     "cli-test": "node tools/cli-test-runner.mjs",
     "conformance-report": "node tools/conformance-report.mjs",
