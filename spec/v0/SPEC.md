@@ -412,6 +412,23 @@ A **plain URL** is recognized when it begins with `http://` or `https://` and ex
 
 To reduce accidental captures, the reference parser trims common trailing punctuation characters from the URL.
 
+### Parsing order (deterministic disambiguation)
+
+When parsing inline content, the parser applies transformations in a deterministic order to avoid ambiguities:
+
+1. **Timestamps** are recognized first (both active and inactive)
+2. **Bracket links** are recognized next (before emphasis)
+3. **Plain URLs** are recognized (before emphasis)
+4. **Emphasis** markers are recognized last, respecting boundary rules
+
+This order ensures that:
+- Links take precedence over emphasis (e.g., `[[url][*text*]]` parses as a link, not emphasis within a link)
+- URLs are not split by emphasis markers
+- Timestamps are not confused with emphasis markers
+- Boundary rules are consistently applied
+
+Within emphasis parsing, all marker types (`*`, `/`, `_`, `+`, `=`, `~`) are processed with equal priority, processing left-to-right as they appear on the line.
+
 ## Keyword lines (#+KEY: VALUE)
 
 Org2 v0 supports capturing file-level keyword/metadata lines as explicit nodes.
