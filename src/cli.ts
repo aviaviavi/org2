@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { parseOrgToCanonicalAst } from "./parser.js";
+import { findConfigFile, loadConfig, resolveFilesFromConfig } from "./config.js";
 import type {
   DocumentNode,
   HeadlineNode,
@@ -131,6 +132,34 @@ function formatSectionHeader(title: string): string {
   return `\n${separator}\n ${title}\n${separator}\n\n`;
 }
 
+/**
+ * Generate unified diff format for archive output.
+ */
+function formatArchiveDiff(
+  sourcePath: string,
+  archivePath: string,
+  subtreeText: string
+): string {
+  let diff = `--- ${sourcePath}\n`;
+  diff += `+++ ${archivePath}\n`;
+
+  // Show what's being removed from source
+  const subtreeLines = subtreeText.split("\n");
+
+  diff += `@@ archive @@\n`;
+  diff += `--- ${sourcePath} (removed lines)\n`;
+  for (const line of subtreeLines) {
+    if (line) diff += `- ${line}\n`;
+  }
+
+  diff += `\n+++ ${archivePath} (appended lines)\n`;
+  for (const line of subtreeLines) {
+    if (line) diff += `+ ${line}\n`;
+  }
+
+  return diff;
+}
+
 function formatOutput(items: ScheduledItem[], startDate: Date): string {
   if (items.length === 0) {
     return "No scheduled items in range.\n";
@@ -204,6 +233,7 @@ async function main(): Promise<void> {
   let archiveFile = "";
   let archivePos = "";
   let archiveApply = false;
+  let archiveFormat: "text" | "diff" = "text";
 
   // Parse arguments
   let i = 0;
@@ -254,7 +284,9 @@ async function main(): Promise<void> {
       i++;
       if (i < args.length) {
         const v = args[i];
-        if (v === "text" || v === "json") {
+        if (command === "archive" && (v === "text" || v === "diff")) {
+          archiveFormat = v as "text" | "diff";
+        } else if (command === "agenda" && (v === "text" || v === "json")) {
           format = v;
         }
         i++;
@@ -296,7 +328,7 @@ async function main(): Promise<void> {
       "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--no-overdue] [--verbose-errors]",
     );
     console.error(
-      "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--apply]",
+      "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff] [--apply]",
     );
     process.exit(1);
   }
@@ -357,6 +389,13 @@ async function main(): Promise<void> {
     const subtreeText = subtreeLines.join("\n").trimEnd() + "\n";
     const newSourceText = remainingLines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
 
+    // Handle --format diff
+    if (archiveFormat === "diff") {
+      const diffOutput = formatArchiveDiff(sourcePath, archivePath, subtreeText);
+      process.stdout.write(diffOutput);
+      return;
+    }
+
     if (!archiveApply) {
       process.stdout.write(
         `Would archive subtree starting at ${sourcePath}:${headlineLineIndex + 1} to ${archivePath}\n` +
@@ -378,8 +417,28 @@ async function main(): Promise<void> {
   // agenda
   // Determine files to process
   if (!dir && files.length === 0) {
-    console.error("Error: provide either --dir or --files");
-    process.exit(1);
+    // Try to load from config
+    const configPath = findConfigFile(process.cwd());
+    if (configPath) {
+      try {
+        const config = loadConfig(configPath);
+        const configDir = path.dirname(configPath);
+        files = resolveFilesFromConfig(config, configDir);
+
+        if (files.length === 0) {
+          console.error(
+            `Error: config found at ${configPath} but no matching files for patterns: ${config.agendaFiles?.join(", ") || "*.org"}`,
+          );
+          process.exit(1);
+        }
+      } catch (err) {
+        console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    } else {
+      console.error("Error: provide either --dir, --files, or org2.json config");
+      process.exit(1);
+    }
   }
 
   if (dir && files.length === 0) {
@@ -466,6 +525,7 @@ async function main(): Promise<void> {
     };
 
     const payload = {
+      $schema: "org2:agenda:v1",
       range: { start: startIso, end: endIso, days },
       overdue: group(overdue),
       days: group(upcoming),

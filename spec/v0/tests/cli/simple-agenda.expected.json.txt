@@ -1,4 +1,5 @@
 {
+  "$schema": "org2:agenda:v1",
   "range": {
     "start": "2026-01-21",
     "end": "2026-01-22",
