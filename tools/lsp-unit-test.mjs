@@ -1,16 +1,21 @@
 #!/usr/bin/env node
 
 /**
- * LSP Unit Test - validates documentSymbol and foldingRange outputs
+ * LSP Unit Test - validates basic LSP-derived computations.
+ *
+ * Note: This is not part of `npm test` yet; it’s a lightweight sanity check.
  */
 
-import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, "..");
+
+const require = createRequire(import.meta.url);
+const { parseOrgToCanonicalAst } = require(path.join(PROJECT_ROOT, "dist", "parser.js"));
 
 // Test fixture 1: Simple headlines
 const fixture1 = `* First Headline
@@ -50,64 +55,39 @@ const fixture3 = `* Main Topic
 - Item 3
 `;
 
+function getHeadlineTitles(content) {
+  const ast = parseOrgToCanonicalAst(content);
+  const headlines = ast.children.filter((n) => n.type === "Headline");
+  return headlines.map((h) => ({ level: h.level, title: h.title }));
+}
+
 function testDocumentSymbol(content, name) {
   console.log(`\nTesting documentSymbol with: ${name}`);
-  console.log("Content:");
-  console.log(content);
-
-  try {
-    // Parse the org file to extract symbols
-    const parseCmd = `cd ${PROJECT_ROOT} && node -e "
-const { parseOrgToCanonicalAst } = require('./dist/parser.js');
-const fs = require('fs');
-const ast = parseOrgToCanonicalAst(\`${content.replace(/`/g, "\\`")}\`);
-console.log(JSON.stringify(ast, null, 2));
-"`;
-
-    const ast = JSON.parse(
-      execSync(`cd ${PROJECT_ROOT} && node -e "
-const { parseOrgToCanonicalAst } = require('./dist/parser.js');
-const content = JSON.parse(process.argv[1]);
-const ast = parseOrgToCanonicalAst(content);
-const headlines = ast.children.filter(n => n.type === 'Headline');
-console.log(JSON.stringify(headlines.map(h => ({ level: h.level, title: h.title })), null, 2));
-"`, [JSON.stringify(content)])
-    );
-
-    console.log("Extracted headlines:");
-    console.log(JSON.stringify(ast, null, 2));
-    console.log("✓ documentSymbol test passed");
-  } catch (e) {
-    console.error("✗ documentSymbol test failed:", e.message);
+  const symbols = getHeadlineTitles(content);
+  if (!Array.isArray(symbols) || symbols.length === 0) {
+    console.error("✗ documentSymbol test failed: no headlines found");
     return false;
   }
+  console.log("Headlines:");
+  console.log(JSON.stringify(symbols, null, 2));
+  console.log("✓ documentSymbol test passed");
   return true;
 }
 
 function testFoldingRange(content, name) {
   console.log(`\nTesting foldingRange with: ${name}`);
-  console.log("Content:");
-  console.log(content);
+  const ast = parseOrgToCanonicalAst(content);
+  const lineCount = content.split("\n").length;
+  const headlineCount = ast.children.filter((n) => n.type === "Headline").length;
 
-  try {
-    // Check that parser can handle the content
-    const parseCmd = `cd ${PROJECT_ROOT} && node -e "
-const { parseOrgToCanonicalAst } = require('./dist/parser.js');
-const content = JSON.parse(process.argv[1]);
-const ast = parseOrgToCanonicalAst(content);
-const lines = content.split('\\n');
-console.log('Lines: ' + lines.length);
-console.log('Headlines: ' + ast.children.filter(n => n.type === 'Headline').length);
-"`;
-
-    const result = execSync(parseCmd, [JSON.stringify(content)]).toString();
-    console.log("Parse result:");
-    console.log(result);
-    console.log("✓ foldingRange test passed");
-  } catch (e) {
-    console.error("✗ foldingRange test failed:", e.message);
+  if (lineCount <= 0 || headlineCount <= 0) {
+    console.error("✗ foldingRange test failed: unexpected counts");
     return false;
   }
+
+  console.log(`Lines: ${lineCount}`);
+  console.log(`Headlines: ${headlineCount}`);
+  console.log("✓ foldingRange test passed");
   return true;
 }
 
