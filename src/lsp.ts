@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 
-import * as fs from "node:fs";
-import * as readline from "node:readline";
 import {
   parseOrgToCanonicalAst,
   DocumentNode,
@@ -36,7 +34,7 @@ interface TextDocument {
 interface DocumentSymbol {
   name: string;
   detail?: string;
-  kind: number; // SymbolKind
+  kind: number;
   range: Range;
   selectionRange: Range;
   children?: DocumentSymbol[];
@@ -57,39 +55,11 @@ interface Diagnostic {
 
 // Symbol kinds
 const SymbolKind = {
-  File: 1,
-  Module: 2,
-  Namespace: 3,
-  Package: 4,
-  Class: 5,
-  Method: 6,
-  Property: 7,
-  Field: 8,
-  Constructor: 9,
-  Enum: 10,
-  Interface: 11,
-  Function: 12,
-  Variable: 13,
-  Constant: 14,
-  String: 15,
-  Number: 16,
-  Boolean: 17,
-  Array: 18,
-  Object: 19,
-  Key: 20,
-  Null: 21,
-  EnumMember: 22,
   Struct: 23,
-  Event: 24,
-  Operator: 25,
-  TypeParameter: 26,
 };
 
 const DiagnosticSeverity = {
   Error: 1,
-  Warning: 2,
-  Information: 3,
-  Hint: 4,
 };
 
 // ============================================================================
@@ -98,15 +68,9 @@ const DiagnosticSeverity = {
 
 class LineTracker {
   private lines: string[];
-  private lineOffsets: number[] = [];
 
   constructor(text: string) {
     this.lines = text.split("\n");
-    let offset = 0;
-    for (const line of this.lines) {
-      this.lineOffsets.push(offset);
-      offset += line.length + 1; // +1 for newline
-    }
   }
 
   getLinesCount(): number {
@@ -120,18 +84,6 @@ class LineTracker {
   getLineLength(lineNum: number): number {
     return this.lines[lineNum]?.length || 0;
   }
-
-  findLineWithContent(pattern: string | RegExp, startLine = 0): number {
-    for (let i = startLine; i < this.lines.length; i++) {
-      const line = this.lines[i];
-      if (typeof pattern === "string") {
-        if (line.includes(pattern)) return i;
-      } else {
-        if (pattern.test(line)) return i;
-      }
-    }
-    return -1;
-  }
 }
 
 // ============================================================================
@@ -140,17 +92,12 @@ class LineTracker {
 
 class LSPServer {
   private documents: Map<string, TextDocument> = new Map();
-  private messageId = 0;
   private initialized = false;
 
   async start(): Promise<void> {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-      terminal: false,
-    });
-
     let buffer = "";
+
+    process.stdin.setEncoding("utf-8");
 
     const processData = () => {
       while (buffer.includes("\r\n\r\n")) {
@@ -163,7 +110,6 @@ class LSPServer {
 
         const contentLength = parseInt(lengthMatch[1], 10);
         if (buffer.length < contentLength) {
-          // Put data back
           buffer = headers + "\r\n\r\n" + buffer;
           break;
         }
@@ -175,18 +121,23 @@ class LSPServer {
           const message = JSON.parse(content);
           this.handleMessage(message);
         } catch (e) {
-          this.sendError(0, -32700, "Parse error");
+          this.sendError(null, -32700, "Parse error");
         }
       }
     };
 
-    rl.on("line", (line: string) => {
-      buffer += line + "\n";
+    process.stdin.on("data", (chunk: string) => {
+      buffer += chunk;
       processData();
     });
 
-    rl.on("close", () => {
+    process.stdin.on("end", () => {
       process.exit(0);
+    });
+
+    process.stdin.on("error", (err) => {
+      process.stderr.write(`stdin error: ${err}\n`);
+      process.exit(1);
     });
   }
 
@@ -198,7 +149,7 @@ class LSPServer {
         this.initialized = true;
         this.sendResponse(id, {
           capabilities: {
-            textDocumentSync: 1, // Full
+            textDocumentSync: 1,
             documentSymbolProvider: true,
             foldingRangeProvider: true,
           },
@@ -228,14 +179,11 @@ class LSPServer {
         if (doc) {
           for (const change of contentChanges) {
             if (change.range) {
-              // Incremental change
               const { start, end } = change.range;
-              const lines = doc.text.split("\n");
               const startOffset = this.positionToOffset(doc.text, start);
               const endOffset = this.positionToOffset(doc.text, end);
               doc.text = doc.text.substring(0, startOffset) + change.text + doc.text.substring(endOffset);
             } else {
-              // Full document change
               doc.text = change.text;
             }
           }
@@ -274,7 +222,6 @@ class LSPServer {
           this.sendResponse(id, []);
         }
       } else {
-        // Unknown method
         this.sendError(id, -32601, "Method not found");
       }
     } catch (e: any) {
@@ -296,13 +243,8 @@ class LSPServer {
     } else if (node.type === "Headline") {
       const headline = node as HeadlineNode;
       const titleText = this.inlineNodesToText(headline.title);
-
-      // Find the line this headline starts on by searching for the title text
-      // This is a heuristic since AST doesn't store line info
       const headlineMarker = "*".repeat(headline.level) + " ";
-      const searchText = headlineMarker + titleText;
 
-      // Find first line that matches headline pattern
       let headlineLine = 0;
       for (let i = 0; i < tracker.getLinesCount(); i++) {
         const line = tracker.getLine(i);
@@ -312,11 +254,7 @@ class LSPServer {
         }
       }
 
-      // Find the end line (where this section ends)
       let endLine = headlineLine;
-      let nextHeadlineFound = false;
-
-      // Look for next headline at same or lower level
       for (let i = headlineLine + 1; i < tracker.getLinesCount(); i++) {
         const line = tracker.getLine(i);
         const match = line.match(/^(\*+) /);
@@ -324,13 +262,12 @@ class LSPServer {
           const nextLevel = match[1].length;
           if (nextLevel <= headline.level) {
             endLine = i - 1;
-            nextHeadlineFound = true;
             break;
           }
         }
       }
 
-      if (!nextHeadlineFound) {
+      if (endLine === headlineLine) {
         endLine = tracker.getLinesCount() - 1;
       }
 
@@ -350,7 +287,6 @@ class LSPServer {
         children: [],
       };
 
-      // Extract child headlines
       const childSymbols: DocumentSymbol[] = [];
       for (const child of headline.children || []) {
         if (child.type === "Headline") {
@@ -383,7 +319,6 @@ class LSPServer {
       const titleText = this.inlineNodesToText(headline.title);
       const headlineMarker = "*".repeat(headline.level) + " ";
 
-      // Find the line this headline starts on
       let headlineLine = 0;
       for (let i = 0; i < tracker.getLinesCount(); i++) {
         const line = tracker.getLine(i);
@@ -393,7 +328,6 @@ class LSPServer {
         }
       }
 
-      // Find the end line
       let endLine = headlineLine;
       for (let i = headlineLine + 1; i < tracker.getLinesCount(); i++) {
         const line = tracker.getLine(i);
@@ -408,17 +342,7 @@ class LSPServer {
       }
 
       if (endLine === headlineLine) {
-        // Check if there are non-headline children
-        for (let i = headlineLine + 1; i < tracker.getLinesCount(); i++) {
-          const line = tracker.getLine(i);
-          if (line.match(/^(\*+) /)) {
-            endLine = i - 1;
-            break;
-          }
-        }
-        if (endLine === headlineLine) {
-          endLine = tracker.getLinesCount() - 1;
-        }
+        endLine = tracker.getLinesCount() - 1;
       }
 
       if (endLine > headlineLine) {
@@ -429,19 +353,27 @@ class LSPServer {
         });
       }
 
-      // Process children
       for (const child of headline.children || []) {
         this.extractFoldingRanges(child, text, ranges, tracker);
       }
     } else if (node.type === "SrcBlock" || node.type === "Block") {
       const block = node as any;
       if (block.terminated) {
-        // Find begin and end lines
         const beginKeyword = node.type === "SrcBlock" ? "BEGIN_SRC" : `BEGIN_${block.kind.toUpperCase()}`;
         const endKeyword = node.type === "SrcBlock" ? "END_SRC" : `END_${block.kind.toUpperCase()}`;
 
-        const beginLine = tracker.findLineWithContent(beginKeyword);
-        const endLine = tracker.findLineWithContent(endKeyword, beginLine + 1);
+        let beginLine = -1;
+        let endLine = -1;
+        for (let i = 0; i < tracker.getLinesCount(); i++) {
+          const line = tracker.getLine(i);
+          if (line.includes(beginKeyword) && beginLine < 0) {
+            beginLine = i;
+          }
+          if (line.includes(endKeyword) && beginLine >= 0) {
+            endLine = i;
+            break;
+          }
+        }
 
         if (beginLine >= 0 && endLine > beginLine) {
           ranges.push({
@@ -452,9 +384,7 @@ class LSPServer {
         }
       }
     } else if (node.type === "List") {
-      // Find the first and last list item lines
       const list = node as ListNode;
-      // Since we don't have precise line tracking, we'll estimate
       const firstItemMarker = list.ordered ? /^\s*\d+\./ : /^\s*[-*+]/;
       let startLine = -1;
       let endLine = -1;
@@ -476,7 +406,6 @@ class LSPServer {
       }
     }
 
-    // Process children for other node types
     if (node.children) {
       for (const child of node.children) {
         this.extractFoldingRanges(child, text, ranges, tracker);
@@ -495,8 +424,7 @@ class LSPServer {
     try {
       parseOrgToCanonicalAst(doc.text);
     } catch (e: any) {
-      // Parser errors - would create diagnostics here
-      // For now, best-effort parsing
+      // Parser errors would go here
     }
 
     this.sendNotification("textDocument/publishDiagnostics", {
@@ -520,7 +448,7 @@ class LSPServer {
     const lines = text.split("\n");
     let offset = 0;
     for (let i = 0; i < pos.line; i++) {
-      offset += (lines[i]?.length || 0) + 1; // +1 for newline
+      offset += (lines[i]?.length || 0) + 1;
     }
     offset += pos.character;
     return offset;
@@ -543,7 +471,7 @@ class LSPServer {
         message,
       },
     };
-    if (id !== null) {
+    if (id !== null && id !== undefined) {
       response.id = id;
     }
     this.sendMessage(response);
@@ -560,14 +488,11 @@ class LSPServer {
 
   private sendMessage(message: any): void {
     const content = JSON.stringify(message);
-    const headers = `Content-Length: ${Buffer.byteLength(content, "utf8")}\r\n\r\n`;
+    const contentLength = Buffer.byteLength(content, "utf8");
+    const headers = `Content-Length: ${contentLength}\r\n\r\n`;
     process.stdout.write(headers + content);
   }
 }
-
-// ============================================================================
-// Main
-// ============================================================================
 
 async function main() {
   const server = new LSPServer();
@@ -575,6 +500,6 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error("Fatal error:", e);
+  process.stderr.write(`Fatal error: ${e.message}\n`);
   process.exit(1);
 });
