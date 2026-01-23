@@ -156,7 +156,6 @@ function printList(node: ListNode, indent: string = ""): string {
   const items = node.items.map((item, index) => {
     const marker = node.ordered ? `${index + 1}.` : "-";
 
-    // Checkbox support is optional depending on AST version.
     const checkbox = (item as any).checkbox as undefined | "unchecked" | "checked" | "checkedLower";
     let checkboxStr = "";
     if (checkbox === "unchecked") checkboxStr = " [ ]";

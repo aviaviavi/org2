@@ -482,6 +482,7 @@ type ParsedListItem = {
   ordered: boolean;
   content: string;
   indentColumn: number;
+  checkbox?: "unchecked" | "checked";
 };
 
 type ParsePropertyDrawerResult = {
@@ -595,21 +596,40 @@ function parseListItemLine(line: string): ParsedListItem | null {
   if (unordered) {
     const ws = unordered[2];
     if (ws !== " ") return null;
-    const content = unordered[3];
+    let content = unordered[3];
     if (content.length === 0) return null;
-    return { ordered: false, content, indentColumn: unordered[1].length + ws.length };
+    
+    // Check for checkbox syntax: [ ] or [X] or [x]
+    let checkbox: "unchecked" | "checked" | undefined;
+    const checkboxMatch = /^\[([ Xx])\]\s+(.*)$/.exec(content);
+    if (checkboxMatch) {
+      checkbox = checkboxMatch[1] === " " ? "unchecked" : "checked";
+      content = checkboxMatch[2];
+    }
+    
+    return { ordered: false, content, indentColumn: unordered[1].length + ws.length, checkbox };
   }
 
   const ordered = /^(\d+)([.)])(\s+)(.*)$/.exec(line);
   if (ordered) {
     const ws = ordered[3];
     if (ws !== " ") return null;
-    const content = ordered[4];
+    let content = ordered[4];
     if (content.length === 0) return null;
+    
+    // Check for checkbox syntax: [ ] or [X] or [x]
+    let checkbox: "unchecked" | "checked" | undefined;
+    const checkboxMatch = /^\[([ Xx])\]\s+(.*)$/.exec(content);
+    if (checkboxMatch) {
+      checkbox = checkboxMatch[1] === " " ? "unchecked" : "checked";
+      content = checkboxMatch[2];
+    }
+    
     return {
       ordered: true,
       content,
       indentColumn: ordered[1].length + ordered[2].length + ws.length,
+      checkbox,
     };
   }
 
@@ -853,10 +873,11 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
     return list;
   }
 
-  function addListItem(ordered: boolean, content: string): ListItemNode {
+  function addListItem(ordered: boolean, content: string, checkbox?: "unchecked" | "checked"): ListItemNode {
     const list = ensureList(ordered);
     const item: ListItemNode = {
       type: "ListItem",
+      ...(checkbox && { checkbox }),
       children: [paragraphFromText(content)],
     };
     list.items.push(item);
@@ -1008,7 +1029,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
     const listItem = parseListItemLine(line);
     if (listItem) {
       flushParagraph();
-      const item = addListItem(listItem.ordered, listItem.content);
+      const item = addListItem(listItem.ordered, listItem.content, listItem.checkbox);
       i += 1;
 
       let itemParagraphLines: string[] = [];
@@ -1117,6 +1138,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
                 // Add nested item
                 const nestedListItem: ListItemNode = {
                   type: "ListItem",
+                  ...(nestedItem.checkbox && { checkbox: nestedItem.checkbox }),
                   children: [paragraphFromText(nestedItem.content)],
                 };
                 nestedList.items.push(nestedListItem);
