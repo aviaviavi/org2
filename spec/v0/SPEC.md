@@ -253,21 +253,31 @@ If a begin marker is not terminated by a matching end marker before end-of-file,
 
 ## Lists
 
-Org2 v0 supports both **bullet lists** and **ordered lists** with full nesting support.
+Org2 v0 supports both **bullet lists** and **ordered lists** with full nesting support and optional checkbox markers.
 
 ### List syntax
 
 A **list item line** matches one of:
 
-- `- ` followed by content (bullet list)
-- `+ ` followed by content (bullet list, alternative marker)
-- `<digits>.` or `<digits>)` followed by space and content (ordered list)
+- `- ` followed by optional checkbox and content (bullet list)
+- `+ ` followed by optional checkbox and content (bullet list, alternative marker)
+- `<digits>.` or `<digits>)` followed by space, optional checkbox, and content (ordered list)
 
 Examples:
 - `- apples` → unordered list item with content "apples"
-- `+ oranges` → unordered list item with content "oranges"
+- `- [ ] unchecked task` → unordered list item with unchecked checkbox
+- `- [X] completed task` → unordered list item with checked checkbox (both `[X]` and `[x]` are recognized)
 - `1. first` → ordered list item with content "first"
-- `1) second` → ordered list item with content "second"
+- `1) [x] done` → ordered list item with checked checkbox
+
+### Checkbox syntax
+
+A **checkbox** is an optional marker that appears at the start of list item content:
+
+- `[ ]` → unchecked, creates `checkbox: "unchecked"` on the `ListItem`
+- `[X]` or `[x]` → checked, creates `checkbox: "checked"` on the `ListItem`
+
+The checkbox MUST be followed by a space and then the item content.
 
 ### Nested lists
 
@@ -277,15 +287,15 @@ Nested lists MAY have a different `ordered` value than their parent (e.g., an or
 
 Example:
 ```
-- Parent
-  - Child 1
-  - Child 2
+- [ ] Parent task
+  - [X] Completed subtask
+  - [ ] Incomplete subtask
 - Another parent
   1. Nested ordered
   2. More nested
 ```
 
-Produces nested `List` nodes where `Child 1` and `Child 2` are items of a nested unordered list under the first parent, and the nested ordered items are under the second parent.
+Produces nested `List` nodes where the subtasks are items of a nested unordered list under the first parent, and the nested ordered items are under the second parent.
 
 ### Nesting rules
 
