@@ -12,6 +12,7 @@
     "org2": "node dist/cli.js",
     "fixtures": "node tools/fixture-runner.mjs",
     "cli-test": "node tools/cli-test-runner.mjs",
+    "conformance-report": "node tools/conformance-report.mjs",
     "pretest": "npm run build",
     "test": "npm run fixtures && npm run cli-test"
   },
