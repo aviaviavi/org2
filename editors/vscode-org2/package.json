@@ -13,9 +13,7 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": [
-    "Programming Languages"
-  ],
+  "categories": ["Programming Languages"],
   "contributes": {
     "languages": [
       {
@@ -45,6 +43,10 @@
       {
         "command": "org2.debugFoldingRanges",
         "title": "Org2: Debug Folding Ranges"
+      },
+      {
+        "command": "org2.debugListLinks",
+        "title": "Org2: Debug List Links"
       }
     ],
     "keybindings": [
