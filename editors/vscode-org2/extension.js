@@ -6,6 +6,16 @@ const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
 const propertiesBeginRe = /^\s*:PROPERTIES:\s*$/i;
 const drawerEndRe = /^\s*:END:\s*$/i;
 
+function findTopLevelHeadingLines(document) {
+  const starts = [];
+  for (let i = 0; i < document.lineCount; i++) {
+    const text = document.lineAt(i).text;
+    const m = headingRe.exec(text);
+    if (m && m[1].length === 1) starts.push(i);
+  }
+  return starts;
+}
+
 function findPropertyDrawerStartLines(document) {
   const starts = [];
   const lineCount = document.lineCount;
@@ -156,7 +166,7 @@ function provideDocumentLinks(document) {
   const links = [];
 
   // Org2 links: [[url]] or [[url][desc]]
-  const org2LinkRe = /\[\[([^\]\n]+)\](?:\[([^\]\n]*)\])?\]/g;
+  const org2LinkRe = /\[\[([^\]\n]+?)\](?:\[([^\]\n]*)\])?\]\]/g;
   const bareUrlRe = /\bhttps?:\/\/[^\s<>()\[\]{}]+/g;
 
   for (let line = 0; line < document.lineCount; line++) {
@@ -173,6 +183,7 @@ function provideDocumentLinks(document) {
         const target = resolveOrg2LinkTarget(targetUrl, document);
         if (!target) continue;
 
+        // Keep range as the whole link token. This is what VS Code expects for ctrl/cmd+click.
         links.push(new vscode.DocumentLink(new vscode.Range(line, start, line, end), target));
       }
     }
@@ -200,26 +211,77 @@ function activate(context) {
 
   context.subscriptions.push(vscode.languages.registerDocumentLinkProvider(selector, linkProvider));
 
-  // Fold :PROPERTIES: drawers by default (once per document URI).
-  const foldedPropertyDrawersForDoc = new Set();
+  // Render [[url][desc]] links as "desc" (best-effort) using decorations.
+  // Note: VS Code decorations cannot truly replace/collapse text width, so we hide
+  // the underlying link token and draw the description as a prefix.
+  const org2LinkDescDecoration = vscode.window.createTextEditorDecorationType({
+    color: 'rgba(0,0,0,0)',
+    textDecoration: 'none',
+  });
 
-  const maybeFoldPropertyDrawers = async (editor) => {
+  function updateLinkDecorations(editor) {
+    if (!editor) return;
+    const doc = editor.document;
+    if (!doc) return;
+    if (doc.languageId !== 'org2' && doc.languageId !== 'org') return;
+
+    const options = [];
+    // Only match described links: [[url][desc]]
+    const org2LinkDescRe = /\[\[([^\]\n]+?)\]\[([^\]\n]*)\]\]/g;
+
+    for (let line = 0; line < doc.lineCount; line++) {
+      const text = doc.lineAt(line).text;
+      org2LinkDescRe.lastIndex = 0;
+      let m;
+      while ((m = org2LinkDescRe.exec(text)) !== null) {
+        const start = m.index;
+        const end = m.index + m[0].length;
+        const rawUrl = m[1];
+        const desc = m[2] || '';
+
+        if (!desc.trim()) continue;
+
+        const target = resolveOrg2LinkTarget(rawUrl, doc);
+        const hover = target
+          ? new vscode.MarkdownString(`[${desc}](${target.toString(true)})`)
+          : new vscode.MarkdownString(desc);
+        hover.isTrusted = true;
+
+        options.push({
+          range: new vscode.Range(line, start, line, end),
+          hoverMessage: hover,
+          renderOptions: {
+            before: {
+              contentText: desc,
+              color: new vscode.ThemeColor('textLink.foreground'),
+              textDecoration: 'underline',
+            },
+          },
+        });
+      }
+    }
+
+    editor.setDecorations(org2LinkDescDecoration, options);
+  }
+
+  // Fold headings + :PROPERTIES: drawers by default (once per document URI).
+  const autoFoldedForDoc = new Set();
+
+  const maybeAutoFold = async (editor) => {
     if (!editor) return;
     const doc = editor.document;
     if (!doc) return;
     if (doc.languageId !== 'org2' && doc.languageId !== 'org') return;
 
     const key = doc.uri.toString();
-    if (foldedPropertyDrawersForDoc.has(key)) return;
+    if (autoFoldedForDoc.has(key)) return;
 
-    const startLines = findPropertyDrawerStartLines(doc);
-    if (startLines.length === 0) {
-      foldedPropertyDrawersForDoc.add(key);
-      return;
-    }
+    const startLines = [...findTopLevelHeadingLines(doc), ...findPropertyDrawerStartLines(doc)];
 
     // Mark before folding to avoid repeated attempts on rapid focus changes.
-    foldedPropertyDrawersForDoc.add(key);
+    autoFoldedForDoc.add(key);
+
+    if (startLines.length === 0) return;
 
     // Defer folding slightly to allow VS Code to compute folding ranges.
     setTimeout(() => {
@@ -229,12 +291,33 @@ function activate(context) {
 
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor((editor) => {
-      maybeFoldPropertyDrawers(editor);
+      maybeAutoFold(editor);
+      updateLinkDecorations(editor);
     })
   );
 
   // Also attempt folding for already-visible editors at activation.
-  vscode.window.visibleTextEditors.forEach((ed) => maybeFoldPropertyDrawers(ed));
+  vscode.window.visibleTextEditors.forEach((ed) => {
+    maybeAutoFold(ed);
+    updateLinkDecorations(ed);
+  });
+
+  context.subscriptions.push(
+    vscode.workspace.onDidOpenTextDocument((doc) => {
+      const editor = vscode.window.visibleTextEditors.find((e) => e.document === doc);
+      if (editor) {
+        maybeAutoFold(editor);
+        updateLinkDecorations(editor);
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeTextDocument((e) => {
+      const editor = vscode.window.visibleTextEditors.find((ed) => ed.document === e.document);
+      if (editor) updateLinkDecorations(editor);
+    })
+  );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.debugFoldingRanges', () => {
@@ -253,6 +336,29 @@ function activate(context) {
       vscode.window.showInformationMessage(
         `Org2: folding ranges=${ranges.length}${preview ? ' ' + preview : ''}`
       );
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.debugListLinks', () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showInformationMessage('Org2: no active editor');
+        return;
+      }
+      const doc = editor.document;
+      const links = provideDocumentLinks(doc);
+
+      const out = vscode.window.createOutputChannel('Org2');
+      out.appendLine(`Found ${links.length} links in ${doc.uri.toString()}`);
+      for (const l of links) {
+        out.appendLine(
+          `- L${l.range.start.line + 1}:${l.range.start.character}-${l.range.end.character} -> ${
+            l.target ? l.target.toString(true) : '(no target)'
+          }`
+        );
+      }
+      out.show(true);
     })
   );
 
