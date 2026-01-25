@@ -1,11 +1,11 @@
 {
   "name": "org2-vscode",
   "displayName": "Org2",
-  "description": "Org2 language support (syntax highlighting + folding)",
+  "description": "Org2 language support (syntax highlighting + folding + agenda)",
   "version": "0.0.1",
   "publisher": "org2",
   "main": "./extension.js",
-  "activationEvents": ["onLanguage:org2", "onLanguage:org"],
+  "activationEvents": ["onLanguage:org2", "onLanguage:org", "onCommand:org2.openAgenda"],
   "repository": {
     "type": "git",
     "url": "https://github.com/aviaviavi/org2"
@@ -37,6 +37,22 @@
     },
     "commands": [
       {
+        "command": "org2.openAgenda",
+        "title": "Org2: Open Agenda"
+      },
+      {
+        "command": "org2.refreshAgenda",
+        "title": "Org2: Refresh Agenda"
+      },
+      {
+        "command": "org2.pickAgendaFilter",
+        "title": "Org2: Agenda Filter"
+      },
+      {
+        "command": "org2.openAgendaItem",
+        "title": "Org2: Open Agenda Item"
+      },
+      {
         "command": "org2.toggleFoldHere",
         "title": "Org2: Toggle Fold Here"
       },
@@ -49,6 +65,68 @@
         "title": "Org2: Debug List Links"
       }
     ],
+    "views": {
+      "explorer": [
+        {
+          "id": "org2Agenda",
+          "name": "Org2 Agenda"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "org2.refreshAgenda",
+          "when": "view == org2Agenda",
+          "group": "navigation"
+        },
+        {
+          "command": "org2.pickAgendaFilter",
+          "when": "view == org2Agenda",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Org2",
+      "properties": {
+        "org2.agenda.command": {
+          "type": "string",
+          "default": "org2",
+          "description": "Command used to run org2 (e.g., 'org2' if installed on PATH, or 'node' with org2.agenda.args)."
+        },
+        "org2.agenda.args": {
+          "type": "array",
+          "default": [],
+          "items": { "type": "string" },
+          "description": "Extra args prefixed when calling org2 (advanced; useful for 'node /path/to/dist/cli.js')."
+        },
+        "org2.agenda.scope": {
+          "type": "string",
+          "enum": ["workspace", "files"],
+          "default": "workspace",
+          "description": "Where to read org files from. 'workspace' scans the workspace folder; 'files' uses org2.agenda.files."
+        },
+        "org2.agenda.files": {
+          "type": "array",
+          "default": [],
+          "items": { "type": "string" },
+          "description": "List of org/org2 files (absolute or workspace-relative) to include when scope='files'."
+        },
+        "org2.agenda.days": {
+          "type": "number",
+          "default": 7,
+          "minimum": 1,
+          "maximum": 365,
+          "description": "Default agenda window (in days) for the 'Next N days' filter."
+        },
+        "org2.agenda.includeOverdue": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include overdue items in the agenda view."
+        }
+      }
+    },
     "keybindings": [
       {
         "key": "ctrl+alt+o",
