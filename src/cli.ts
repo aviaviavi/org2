@@ -335,7 +335,7 @@ async function main(): Promise<void> {
 
   if (command === "archive") {
     if (files.length !== 1) {
-      console.error("Error: archive requires exactly one --files <file>");
+      console.error("Error: archive requires exactly one file via --file/--files");
       process.exit(1);
     }
     if (!archivePos) {

@@ -2,6 +2,7 @@
 
 import {
   parseOrgToCanonicalAst,
+  parseOrgWithDiagnostics,
   DocumentNode,
   HeadlineNode,
   Node,
@@ -9,6 +10,7 @@ import {
   BlockNode,
   SrcBlockNode,
   ListItemNode,
+  type ParseError,
 } from "./parser.js";
 
 // ============================================================================
@@ -197,13 +199,9 @@ class LSPServer {
         const { textDocument } = params;
         const doc = this.documents.get(textDocument.uri);
         if (doc) {
-          try {
-            const ast = parseOrgToCanonicalAst(doc.text);
-            const symbols = this.extractSymbols(ast, doc.text);
-            this.sendResponse(id, symbols);
-          } catch (e) {
-            this.sendResponse(id, []);
-          }
+          const result = parseOrgWithDiagnostics(doc.text);
+          const symbols = this.extractSymbols(result.ast, doc.text);
+          this.sendResponse(id, symbols);
         } else {
           this.sendResponse(id, []);
         }
@@ -211,13 +209,9 @@ class LSPServer {
         const { textDocument } = params;
         const doc = this.documents.get(textDocument.uri);
         if (doc) {
-          try {
-            const ast = parseOrgToCanonicalAst(doc.text);
-            const ranges = this.extractFoldingRanges(ast, doc.text);
-            this.sendResponse(id, ranges);
-          } catch (e) {
-            this.sendResponse(id, []);
-          }
+          const result = parseOrgWithDiagnostics(doc.text);
+          const ranges = this.extractFoldingRanges(result.ast, doc.text);
+          this.sendResponse(id, ranges);
         } else {
           this.sendResponse(id, []);
         }
@@ -419,13 +413,25 @@ class LSPServer {
     const doc = this.documents.get(uri);
     if (!doc) return;
 
-    const diagnostics: Diagnostic[] = [];
+    // Parse and collect diagnostics
+    const result = parseOrgWithDiagnostics(doc.text);
+    const diagnostics: Diagnostic[] = result.diagnostics.map((parseErr) => {
+      // Convert ParseError to LSP Diagnostic
+      // LSP uses 0-based line/column indexing
+      const lspLine = Math.max(0, parseErr.line - 1);
+      const lspColumn = Math.max(0, parseErr.column - 1);
 
-    try {
-      parseOrgToCanonicalAst(doc.text);
-    } catch (e: any) {
-      // Parser errors would go here
-    }
+      return {
+        range: {
+          start: { line: lspLine, character: lspColumn },
+          // Highlight to end of line or a reasonable distance
+          end: { line: lspLine, character: Math.max(lspColumn + 20, lspColumn) },
+        },
+        severity: DiagnosticSeverity.Error,
+        message: parseErr.message,
+        code: "org2-parser",
+      };
+    });
 
     this.sendNotification("textDocument/publishDiagnostics", {
       uri,

@@ -1314,6 +1314,44 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
   return doc;
 }
 
+/**
+ * Result of parsing with diagnostics collection
+ */
+export interface ParseResult {
+  ast: DocumentNode;
+  diagnostics: ParseError[];
+}
+
+/**
+ * Parse org content and collect errors as diagnostics instead of throwing
+ * Useful for LSP and editor integrations that need to report errors without failing
+ */
+export function parseOrgWithDiagnostics(input: string): ParseResult {
+  const diagnostics: ParseError[] = [];
+
+  try {
+    const ast = parseOrgToCanonicalAst(input);
+    return { ast, diagnostics };
+  } catch (error: any) {
+    // Extract line:column from error message format: "LINE:COL MESSAGE"
+    const message = error.message || String(error);
+    const match = message.match(/^(\d+):(\d+)\s+(.*)/);
+
+    if (match) {
+      const line = parseInt(match[1], 10);
+      const column = parseInt(match[2], 10);
+      const msg = match[3];
+      diagnostics.push({ message: msg, line, column });
+    } else {
+      // Fallback if error format doesn't match expected pattern
+      diagnostics.push({ message, line: 1, column: 1 });
+    }
+
+    // Return empty document when parsing fails
+    return { ast: { type: "Document", version: "0", children: [] }, diagnostics };
+  }
+}
+
 // Re-export AST types for LSP and other modules
 export type {
   DocumentNode,
