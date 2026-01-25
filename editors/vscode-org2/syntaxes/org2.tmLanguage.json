@@ -81,7 +81,7 @@
               "name": "comment.line.number-sign.org2"
             },
             "3": {
-              "name": "entity.name.type.language.org2"
+              "name": "comment.line.number-sign.org2"
             }
           },
           "end": "^(\\s*)(#\\+end_src)\\b.*$",
@@ -110,7 +110,7 @@
               "name": "comment.line.number-sign.org2"
             },
             "3": {
-              "name": "entity.name.type.language.org2"
+              "name": "comment.line.number-sign.org2"
             }
           },
           "end": "^(\\s*)(#\\+end_src)\\b.*$",
@@ -139,7 +139,7 @@
               "name": "comment.line.number-sign.org2"
             },
             "3": {
-              "name": "entity.name.type.language.org2"
+              "name": "comment.line.number-sign.org2"
             }
           },
           "end": "^(\\s*)(#\\+end_src)\\b.*$",
@@ -168,7 +168,7 @@
               "name": "comment.line.number-sign.org2"
             },
             "3": {
-              "name": "entity.name.type.language.org2"
+              "name": "comment.line.number-sign.org2"
             }
           },
           "end": "^(\\s*)(#\\+end_src)\\b.*$",
@@ -197,7 +197,7 @@
               "name": "comment.line.number-sign.org2"
             },
             "3": {
-              "name": "entity.name.type.language.org2"
+              "name": "comment.line.number-sign.org2"
             }
           },
           "end": "^(\\s*)(#\\+end_src)\\b.*$",
@@ -226,7 +226,7 @@
               "name": "comment.line.number-sign.org2"
             },
             "3": {
-              "name": "entity.name.type.language.org2"
+              "name": "comment.line.number-sign.org2"
             }
           },
           "end": "^(\\s*)(#\\+end_src)\\b.*$",
@@ -255,7 +255,7 @@
               "name": "comment.line.number-sign.org2"
             },
             "3": {
-              "name": "entity.name.type.language.org2"
+              "name": "comment.line.number-sign.org2"
             }
           },
           "end": "^(\\s*)(#\\+end_src)\\b.*$",
@@ -284,7 +284,7 @@
               "name": "comment.line.number-sign.org2"
             },
             "3": {
-              "name": "entity.name.type.language.org2"
+              "name": "comment.line.number-sign.org2"
             }
           },
           "end": "^(\\s*)(#\\+end_src)\\b.*$",
@@ -313,7 +313,7 @@
               "name": "comment.line.number-sign.org2"
             },
             "3": {
-              "name": "entity.name.type.language.org2"
+              "name": "comment.line.number-sign.org2"
             }
           },
           "end": "^(\\s*)(#\\+end_src)\\b.*$",
@@ -342,7 +342,7 @@
               "name": "comment.line.number-sign.org2"
             },
             "3": {
-              "name": "entity.name.type.language.org2"
+              "name": "comment.line.number-sign.org2"
             }
           },
           "end": "^(\\s*)(#\\+end_src)\\b.*$",
@@ -371,7 +371,7 @@
               "name": "comment.line.number-sign.org2"
             },
             "3": {
-              "name": "entity.name.type.language.org2"
+              "name": "comment.line.number-sign.org2"
             }
           },
           "end": "^(\\s*)(#\\+end_src)\\b.*$",
@@ -400,7 +400,7 @@
               "name": "comment.line.number-sign.org2"
             },
             "3": {
-              "name": "entity.name.type.language.org2"
+              "name": "comment.line.number-sign.org2"
             }
           },
           "end": "^(\\s*)(#\\+end_src)\\b.*$",
@@ -420,6 +420,42 @@
         },
         {
           "name": "meta.block.src.org2",
+          "begin": "^(\\s*)(#\\+begin_org2)\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_org2)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#timestamps"
+            },
+            {
+              "include": "#emphasis"
+            },
+            {
+              "include": "#links"
+            },
+            {
+              "name": "text.plain.org2",
+              "match": ".+"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.org2",
           "begin": "^(\\s*)(#\\+begin_src)\\s+([A-Za-z0-9_\\-]+)\\b.*$",
           "beginCaptures": {
             "0": {
@@ -429,7 +465,7 @@
               "name": "comment.line.number-sign.org2"
             },
             "3": {
-              "name": "entity.name.type.language.org2"
+              "name": "comment.line.number-sign.org2"
             }
           },
           "end": "^(\\s*)(#\\+end_src)\\b.*$",
@@ -695,16 +731,8 @@
           }
         },
         {
-          "name": "meta.list.ordered.marker.org2",
-          "match": "^(?:\\s*)(\\d+)([.)])(?=\\s)",
-          "captures": {
-            "1": {
-              "name": "constant.numeric.list.org2"
-            },
-            "2": {
-              "name": "punctuation.separator.list.org2"
-            }
-          }
+          "name": "constant.numeric.list.org2",
+          "match": "^(?:\\s*)\\d+[.)](?=\\s)"
         }
       ]
     },

@@ -157,7 +157,7 @@ Property drawers may appear as children of =Headline= nodes (and implementations
 
 Org2 v0 supports preserving directive lines that begin with =#+= but are not otherwise recognized as:
 - keyword lines (=#+KEY: VALUE=), or
-- structural blocks (e.g. =#+begin_src= ... =#+end_src=)
+- structural blocks (e.g. =#+begin_src= ... =#+end_src=, or =#+begin_org2= ... =#+end_org2=)
 
 Such lines MUST be represented as =DirectiveLine= nodes and preserved losslessly.
 
@@ -178,6 +178,8 @@ Comment blocks MUST be represented as =Block= nodes with =kind: "comment"= and p
 * SOURCE blocks (#+begin_src / #+end_src)
 
 Source blocks are supported as a structural syntax element.
+
+=#+begin_org2= / =#+end_org2= are supported as a *shorthand alias* for an Org2 source block (equivalent to =#+begin_src org2= / =#+end_src= for the purposes of parsing in v0).
 
 Executing source blocks and interpreting header args (babel semantics) are out of scope for v0.
 
@@ -224,9 +226,9 @@ The parser MUST terminate a =Table= at the first subsequent line that is not a t
 
 A source block is a block consisting of:
 
-- A begin line matching =#+begin_src= (case-insensitive), with optional indentation.
+- A begin line matching =#+begin_src= or =#+begin_org2= (case-insensitive), with optional indentation.
 - Zero or more body lines (treated as raw text).
-- An end line matching =#+end_src= (case-insensitive), with optional indentation.
+- An end line matching =#+end_src= or =#+end_org2= (case-insensitive), with optional indentation.
 
 The parser MUST treat the body as raw text until it encounters an end marker line.
 
