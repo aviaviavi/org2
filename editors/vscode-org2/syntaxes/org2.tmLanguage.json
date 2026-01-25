@@ -45,6 +45,23 @@
     "blocks": {
       "patterns": [
         {
+          "name": "meta.block.src.json.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+(json)\\b.*$",
+          "beginCaptures": {
+            "0": { "name": "comment.line.number-sign.org2" },
+            "2": { "name": "comment.line.number-sign.org2" },
+            "3": { "name": "entity.name.type.language.org2" }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": { "name": "comment.line.number-sign.org2" },
+            "2": { "name": "comment.line.number-sign.org2" }
+          },
+          "patterns": [
+            { "include": "source.json" }
+          ]
+        },
+        {
           "name": "meta.block.org2",
           "begin": "^(?:\\s*)#\\+begin_[A-Za-z0-9_\\-]+.*$",
           "beginCaptures": {
@@ -190,8 +207,19 @@
     "lists": {
       "patterns": [
         {
-          "name": "punctuation.definition.list.org2",
-          "match": "^(?:\\s*)(?:[-+*]|\\d+[.)])(?=\\s)"
+          "name": "punctuation.definition.list.bullet.org2",
+          "match": "^(?:\\s*)([-+*])(?=\\s)",
+          "captures": {
+            "1": { "name": "punctuation.definition.list.org2" }
+          }
+        },
+        {
+          "name": "meta.list.ordered.marker.org2",
+          "match": "^(?:\\s*)(\\d+)([.)])(?=\\s)",
+          "captures": {
+            "1": { "name": "constant.numeric.list.org2" },
+            "2": { "name": "punctuation.separator.list.org2" }
+          }
         }
       ]
     },
