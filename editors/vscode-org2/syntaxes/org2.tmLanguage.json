@@ -3,19 +3,45 @@
   "name": "Org2",
   "scopeName": "source.org2",
   "patterns": [
-    { "include": "#comments" },
-    { "include": "#directives" },
-    { "include": "#planning" },
-    { "include": "#blocks" },
-    { "include": "#headlines" },
-    { "include": "#drawers" },
-    { "include": "#propertyLines" },
-    { "include": "#tables" },
-    { "include": "#lists" },
-    { "include": "#checkboxes" },
-    { "include": "#timestamps" },
-    { "include": "#emphasis" },
-    { "include": "#links" }
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#directives"
+    },
+    {
+      "include": "#planning"
+    },
+    {
+      "include": "#blocks"
+    },
+    {
+      "include": "#headlines"
+    },
+    {
+      "include": "#drawers"
+    },
+    {
+      "include": "#propertyLines"
+    },
+    {
+      "include": "#tables"
+    },
+    {
+      "include": "#lists"
+    },
+    {
+      "include": "#checkboxes"
+    },
+    {
+      "include": "#timestamps"
+    },
+    {
+      "include": "#emphasis"
+    },
+    {
+      "include": "#links"
+    }
   ],
   "repository": {
     "comments": {
@@ -45,20 +71,456 @@
     "blocks": {
       "patterns": [
         {
+          "name": "meta.block.src.json.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+(json)\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.json"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.yaml.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:yaml|yml))\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.yaml"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.toml.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+(toml)\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.toml"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.shell.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:sh|bash|zsh|fish))\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.shell"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.javascript.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:js|javascript))\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.js"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.typescript.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:ts|typescript))\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.ts"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.python.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+(python)\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.python"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.go.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+(go)\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.go"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.rust.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+(rust)\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.rust"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.sql.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:sql|postgresql))\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.sql"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.html.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+(html)\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "text.html.basic"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.css.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+(css)\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.css"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.org2",
+          "begin": "^(\\s*)(#\\+begin_org2)\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_org2)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#timestamps"
+            },
+            {
+              "include": "#emphasis"
+            },
+            {
+              "include": "#links"
+            },
+            {
+              "name": "text.plain.org2",
+              "match": ".+"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+([A-Za-z0-9_\\-]+)\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#timestamps"
+            },
+            {
+              "include": "#emphasis"
+            },
+            {
+              "include": "#links"
+            },
+            {
+              "name": "text.plain.org2",
+              "match": ".+"
+            }
+          ]
+        },
+        {
           "name": "meta.block.org2",
           "begin": "^(?:\\s*)#\\+begin_[A-Za-z0-9_\\-]+.*$",
           "beginCaptures": {
-            "0": { "name": "keyword.other.block.begin.org2" }
+            "0": {
+              "name": "keyword.other.block.begin.org2"
+            }
           },
           "end": "^(?:\\s*)#\\+end_[A-Za-z0-9_\\-]+.*$",
           "endCaptures": {
-            "0": { "name": "keyword.other.block.end.org2" }
+            "0": {
+              "name": "keyword.other.block.end.org2"
+            }
           },
           "patterns": [
-            { "include": "#timestamps" },
-            { "include": "#emphasis" },
-            { "include": "#links" },
-            { "name": "text.plain.org2", "match": ".+" }
+            {
+              "include": "#timestamps"
+            },
+            {
+              "include": "#emphasis"
+            },
+            {
+              "include": "#links"
+            },
+            {
+              "name": "text.plain.org2",
+              "match": ".+"
+            }
           ]
         }
       ]
@@ -69,70 +531,126 @@
           "name": "markup.heading.1.org2",
           "match": "^(\\*)\\s+(?:(TODO|DONE|CANCELLED|WAITING|HOLD|NEXT)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
           "captures": {
-            "1": { "name": "punctuation.definition.heading.org2" },
-            "2": { "name": "keyword.other.todo.org2" },
-            "3": { "name": "entity.name.section.org2" },
-            "4": { "name": "entity.other.attribute-name.tag.org2" }
+            "1": {
+              "name": "punctuation.definition.heading.org2"
+            },
+            "2": {
+              "name": "keyword.other.todo.org2"
+            },
+            "3": {
+              "name": "entity.name.section.org2"
+            },
+            "4": {
+              "name": "entity.other.attribute-name.tag.org2"
+            }
           }
         },
         {
           "name": "markup.heading.2.org2",
           "match": "^(\\*\\*)\\s+(?:(TODO|DONE|CANCELLED|WAITING|HOLD|NEXT)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
           "captures": {
-            "1": { "name": "punctuation.definition.heading.org2" },
-            "2": { "name": "keyword.other.todo.org2" },
-            "3": { "name": "entity.name.section.org2" },
-            "4": { "name": "entity.other.attribute-name.tag.org2" }
+            "1": {
+              "name": "punctuation.definition.heading.org2"
+            },
+            "2": {
+              "name": "keyword.other.todo.org2"
+            },
+            "3": {
+              "name": "entity.name.section.org2"
+            },
+            "4": {
+              "name": "entity.other.attribute-name.tag.org2"
+            }
           }
         },
         {
           "name": "markup.heading.3.org2",
           "match": "^(\\*\\*\\*)\\s+(?:(TODO|DONE|CANCELLED|WAITING|HOLD|NEXT)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
           "captures": {
-            "1": { "name": "punctuation.definition.heading.org2" },
-            "2": { "name": "keyword.other.todo.org2" },
-            "3": { "name": "entity.name.section.org2" },
-            "4": { "name": "entity.other.attribute-name.tag.org2" }
+            "1": {
+              "name": "punctuation.definition.heading.org2"
+            },
+            "2": {
+              "name": "keyword.other.todo.org2"
+            },
+            "3": {
+              "name": "entity.name.section.org2"
+            },
+            "4": {
+              "name": "entity.other.attribute-name.tag.org2"
+            }
           }
         },
         {
           "name": "markup.heading.4.org2",
           "match": "^(\\*\\*\\*\\*)\\s+(?:(TODO|DONE|CANCELLED|WAITING|HOLD|NEXT)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
           "captures": {
-            "1": { "name": "punctuation.definition.heading.org2" },
-            "2": { "name": "keyword.other.todo.org2" },
-            "3": { "name": "entity.name.section.org2" },
-            "4": { "name": "entity.other.attribute-name.tag.org2" }
+            "1": {
+              "name": "punctuation.definition.heading.org2"
+            },
+            "2": {
+              "name": "keyword.other.todo.org2"
+            },
+            "3": {
+              "name": "entity.name.section.org2"
+            },
+            "4": {
+              "name": "entity.other.attribute-name.tag.org2"
+            }
           }
         },
         {
           "name": "markup.heading.5.org2",
           "match": "^(\\*\\*\\*\\*\\*)\\s+(?:(TODO|DONE|CANCELLED|WAITING|HOLD|NEXT)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
           "captures": {
-            "1": { "name": "punctuation.definition.heading.org2" },
-            "2": { "name": "keyword.other.todo.org2" },
-            "3": { "name": "entity.name.section.org2" },
-            "4": { "name": "entity.other.attribute-name.tag.org2" }
+            "1": {
+              "name": "punctuation.definition.heading.org2"
+            },
+            "2": {
+              "name": "keyword.other.todo.org2"
+            },
+            "3": {
+              "name": "entity.name.section.org2"
+            },
+            "4": {
+              "name": "entity.other.attribute-name.tag.org2"
+            }
           }
         },
         {
           "name": "markup.heading.6.org2",
           "match": "^(\\*\\*\\*\\*\\*\\*)\\s+(?:(TODO|DONE|CANCELLED|WAITING|HOLD|NEXT)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
           "captures": {
-            "1": { "name": "punctuation.definition.heading.org2" },
-            "2": { "name": "keyword.other.todo.org2" },
-            "3": { "name": "entity.name.section.org2" },
-            "4": { "name": "entity.other.attribute-name.tag.org2" }
+            "1": {
+              "name": "punctuation.definition.heading.org2"
+            },
+            "2": {
+              "name": "keyword.other.todo.org2"
+            },
+            "3": {
+              "name": "entity.name.section.org2"
+            },
+            "4": {
+              "name": "entity.other.attribute-name.tag.org2"
+            }
           }
         },
         {
           "name": "markup.heading.org2",
           "match": "^(\\*{7,})\\s+(?:(TODO|DONE|CANCELLED|WAITING|HOLD|NEXT)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
           "captures": {
-            "1": { "name": "punctuation.definition.heading.org2" },
-            "2": { "name": "keyword.other.todo.org2" },
-            "3": { "name": "entity.name.section.org2" },
-            "4": { "name": "entity.other.attribute-name.tag.org2" }
+            "1": {
+              "name": "punctuation.definition.heading.org2"
+            },
+            "2": {
+              "name": "keyword.other.todo.org2"
+            },
+            "3": {
+              "name": "entity.name.section.org2"
+            },
+            "4": {
+              "name": "entity.other.attribute-name.tag.org2"
+            }
           }
         }
       ]
@@ -143,20 +661,30 @@
           "name": "meta.drawer.org2",
           "begin": "^(?:\\s*):([A-Za-z0-9_\\-]+):\\s*$",
           "beginCaptures": {
-            "0": { "name": "keyword.other.drawer.begin.org2" },
-            "1": { "name": "support.constant.drawer.name.org2" }
+            "0": {
+              "name": "keyword.other.drawer.begin.org2"
+            },
+            "1": {
+              "name": "support.constant.drawer.name.org2"
+            }
           },
           "end": "^(?:\\s*):END:\\s*$",
           "endCaptures": {
-            "0": { "name": "keyword.other.drawer.end.org2" }
+            "0": {
+              "name": "keyword.other.drawer.end.org2"
+            }
           },
           "patterns": [
             {
               "name": "meta.property.org2",
               "match": "^(?:\\s*):([A-Za-z0-9_\\-]+):\\s*(.*)$",
               "captures": {
-                "1": { "name": "variable.other.property.org2" },
-                "2": { "name": "string.unquoted.org2" }
+                "1": {
+                  "name": "variable.other.property.org2"
+                },
+                "2": {
+                  "name": "string.unquoted.org2"
+                }
               }
             }
           ]
@@ -169,8 +697,12 @@
           "name": "meta.property.org2",
           "match": "^(?:\\s*):([A-Za-z0-9_\\-]+):\\s*(.*)$",
           "captures": {
-            "1": { "name": "variable.other.property.org2" },
-            "2": { "name": "string.unquoted.org2" }
+            "1": {
+              "name": "variable.other.property.org2"
+            },
+            "2": {
+              "name": "string.unquoted.org2"
+            }
           }
         }
       ]
@@ -190,8 +722,21 @@
     "lists": {
       "patterns": [
         {
-          "name": "punctuation.definition.list.org2",
-          "match": "^(?:\\s*)(?:[-+*]|\\d+[.)])(?=\\s)"
+          "name": "punctuation.definition.list.bullet.org2",
+          "match": "^(?:\\s*)([-+*])(?=\\s)",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.list.org2"
+            }
+          }
+        },
+        {
+          "name": "constant.numeric.list.org2",
+          "match": "^(?:\\s*)\\d+[.)](?=\\s)"
+        },
+        {
+          "name": "constant.numeric.list.org2",
+          "match": "(?<![0-9A-Za-z])\\d+[.)](?=\\s)"
         }
       ]
     },
