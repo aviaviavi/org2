@@ -65,8 +65,68 @@
     "headlines": {
       "patterns": [
         {
+          "name": "markup.heading.1.org2",
+          "match": "^(\\*)\\s+(?:(TODO)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
+          "captures": {
+            "1": { "name": "punctuation.definition.heading.org2" },
+            "2": { "name": "keyword.other.todo.org2" },
+            "3": { "name": "entity.name.section.org2" },
+            "4": { "name": "entity.other.attribute-name.tag.org2" }
+          }
+        },
+        {
+          "name": "markup.heading.2.org2",
+          "match": "^(\\*\\*)\\s+(?:(TODO)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
+          "captures": {
+            "1": { "name": "punctuation.definition.heading.org2" },
+            "2": { "name": "keyword.other.todo.org2" },
+            "3": { "name": "entity.name.section.org2" },
+            "4": { "name": "entity.other.attribute-name.tag.org2" }
+          }
+        },
+        {
+          "name": "markup.heading.3.org2",
+          "match": "^(\\*\\*\\*)\\s+(?:(TODO)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
+          "captures": {
+            "1": { "name": "punctuation.definition.heading.org2" },
+            "2": { "name": "keyword.other.todo.org2" },
+            "3": { "name": "entity.name.section.org2" },
+            "4": { "name": "entity.other.attribute-name.tag.org2" }
+          }
+        },
+        {
+          "name": "markup.heading.4.org2",
+          "match": "^(\\*\\*\\*\\*)\\s+(?:(TODO)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
+          "captures": {
+            "1": { "name": "punctuation.definition.heading.org2" },
+            "2": { "name": "keyword.other.todo.org2" },
+            "3": { "name": "entity.name.section.org2" },
+            "4": { "name": "entity.other.attribute-name.tag.org2" }
+          }
+        },
+        {
+          "name": "markup.heading.5.org2",
+          "match": "^(\\*\\*\\*\\*\\*)\\s+(?:(TODO)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
+          "captures": {
+            "1": { "name": "punctuation.definition.heading.org2" },
+            "2": { "name": "keyword.other.todo.org2" },
+            "3": { "name": "entity.name.section.org2" },
+            "4": { "name": "entity.other.attribute-name.tag.org2" }
+          }
+        },
+        {
+          "name": "markup.heading.6.org2",
+          "match": "^(\\*\\*\\*\\*\\*\\*)\\s+(?:(TODO)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
+          "captures": {
+            "1": { "name": "punctuation.definition.heading.org2" },
+            "2": { "name": "keyword.other.todo.org2" },
+            "3": { "name": "entity.name.section.org2" },
+            "4": { "name": "entity.other.attribute-name.tag.org2" }
+          }
+        },
+        {
           "name": "markup.heading.org2",
-          "match": "^(\\*+)\\s+(?:(TODO)\\s+)?(.+?)(\\s+(:[^\n:]+:)+)?$",
+          "match": "^(\\*{7,})\\s+(?:(TODO)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
           "captures": {
             "1": { "name": "punctuation.definition.heading.org2" },
             "2": { "name": "keyword.other.todo.org2" },
