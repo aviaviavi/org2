@@ -1,5 +1,6 @@
 const vscode = require('vscode');
 const path = require('path');
+const cp = require('child_process');
 
 const headingRe = /^(\*+)\s+/;
 const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
@@ -192,6 +193,239 @@ function provideDocumentLinks(document) {
   return links;
 }
 
+class Org2AgendaGroup {
+  constructor(label, date, weekday, isOverdue, items) {
+    this.label = label;
+    this.date = date;
+    this.weekday = weekday;
+    this.isOverdue = isOverdue;
+    this.items = items || [];
+  }
+}
+
+class Org2AgendaItem {
+  constructor({ todo, headline, kind, file, line, date }) {
+    this.todo = todo || '';
+    this.headline = headline || '';
+    this.kind = kind || '';
+    this.file = file;
+    this.line = typeof line === 'number' ? line : 0;
+    this.date = date;
+  }
+}
+
+class Org2AgendaProvider {
+  constructor(context) {
+    this.context = context;
+    this._onDidChangeTreeData = new vscode.EventEmitter();
+    this.onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+    this.filter = { type: 'next', days: 7 };
+    this.groups = [];
+    this.lastError = undefined;
+  }
+
+  refresh() {
+    this._onDidChangeTreeData.fire();
+  }
+
+  async load() {
+    try {
+      this.lastError = undefined;
+      this.groups = await fetchAgendaGroups(this.context, this.filter);
+    } catch (e) {
+      this.lastError = e;
+      this.groups = [];
+    }
+    this.refresh();
+  }
+
+  getTreeItem(element) {
+    if (element instanceof Org2AgendaGroup) {
+      const item = new vscode.TreeItem(element.label, vscode.TreeItemCollapsibleState.Expanded);
+      item.contextValue = element.isOverdue ? 'org2AgendaGroupOverdue' : 'org2AgendaGroup';
+      item.tooltip = `${element.weekday || ''} ${element.date || ''}`.trim();
+      return item;
+    }
+
+    if (element instanceof Org2AgendaItem) {
+      const label = `${element.todo ? element.todo + ' ' : ''}${element.headline}`.trim() || '(untitled)';
+      const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
+      item.description = element.kind;
+      item.contextValue = 'org2AgendaItem';
+      item.command = {
+        command: 'org2.openAgendaItem',
+        title: 'Open',
+        arguments: [element],
+      };
+      item.tooltip = `${element.file}:${element.line + 1}`;
+      return item;
+    }
+
+    // Error sentinel
+    const errItem = new vscode.TreeItem('Org2 agenda: failed to load', vscode.TreeItemCollapsibleState.None);
+    errItem.description = this.lastError ? String(this.lastError.message || this.lastError) : '';
+    return errItem;
+  }
+
+  async getChildren(element) {
+    if (!element) {
+      if (this.lastError) return [this.lastError];
+      return this.groups;
+    }
+
+    if (element instanceof Org2AgendaGroup) {
+      return element.items;
+    }
+
+    return [];
+  }
+}
+
+function execFileAsync(cmd, args, opts) {
+  return new Promise((resolve, reject) => {
+    cp.execFile(cmd, args, { ...opts, maxBuffer: 1024 * 1024 * 20 }, (err, stdout, stderr) => {
+      if (err) {
+        err.stdout = stdout;
+        err.stderr = stderr;
+        reject(err);
+        return;
+      }
+      resolve({ stdout, stderr });
+    });
+  });
+}
+
+function getWorkspaceRoot() {
+  const wf = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
+  return wf ? wf.uri.fsPath : undefined;
+}
+
+function resolveAgendaFiles(scopeFiles, cwd) {
+  const out = [];
+  for (const f of scopeFiles || []) {
+    if (!f) continue;
+    const s = String(f);
+    const abs = path.isAbsolute(s) ? s : path.resolve(cwd, s);
+    out.push(abs);
+  }
+  return out;
+}
+
+async function fetchAgendaGroups(context, filter) {
+  const cwd = getWorkspaceRoot() || process.cwd();
+
+  const cfg = vscode.workspace.getConfiguration('org2');
+  const cmd = cfg.get('agenda.command', 'org2');
+  const extraArgs = cfg.get('agenda.args', []);
+  const scope = cfg.get('agenda.scope', 'workspace');
+  const files = cfg.get('agenda.files', []);
+  const includeOverdue = cfg.get('agenda.includeOverdue', true);
+  const defaultDays = cfg.get('agenda.days', 7);
+
+  const days = filter && filter.type === 'today' ? 1 : (filter && filter.type === 'next' ? filter.days : defaultDays);
+
+  const args = [...extraArgs, 'agenda'];
+  if (scope === 'files') {
+    const resolved = resolveAgendaFiles(files, cwd);
+    if (resolved.length === 0) {
+      vscode.window.showWarningMessage("Org2 agenda: org2.agenda.files is empty (set scope to 'workspace' or configure files).");
+    }
+    if (resolved.length > 0) args.push('--files', ...resolved);
+  } else {
+    args.push('--dir', cwd, '--recursive');
+  }
+
+  args.push('--days', String(days), '--format', 'json');
+  if (!includeOverdue) args.push('--no-overdue');
+
+  // Helpful default in this monorepo: if 'org2' isn't on PATH, run via `node <repo>/dist/cli.js`.
+  // Only used when the extension lives under the org2 repo.
+  let finalCmd = cmd;
+  let finalArgs = args;
+  if (cmd === 'org2') {
+    const maybeRepoRoot = path.resolve(context.extensionPath, '..', '..');
+    const devCli = path.join(maybeRepoRoot, 'dist', 'cli.js');
+    if (!vscode.workspace.getConfiguration('org2').get('agenda.args', []).length) {
+      try {
+        // If dist/cli.js exists and org2 binary is missing, we'll fall back.
+        // Do a quick check by trying to resolve the file.
+        require('fs').accessSync(devCli);
+        finalCmd = process.execPath;
+        finalArgs = [devCli, ...args];
+      } catch (_) {
+        // ignore; assume org2 is on PATH
+      }
+    }
+  }
+
+  const { stdout } = await execFileAsync(finalCmd, finalArgs, { cwd });
+
+  let data;
+  try {
+    data = JSON.parse(stdout);
+  } catch (e) {
+    const err = new Error('Org2 agenda: failed to parse JSON output.');
+    err.cause = e;
+    throw err;
+  }
+
+  const groups = [];
+  const pushDay = (d, isOverdue) => {
+    const items = (d.items || []).map(
+      (it) =>
+        new Org2AgendaItem({
+          ...it,
+          date: d.date,
+        })
+    );
+    const label = `${d.weekday || ''} ${d.date || ''}`.trim();
+    groups.push(new Org2AgendaGroup(isOverdue ? `Overdue: ${label}` : label, d.date, d.weekday, isOverdue, items));
+  };
+
+  if (Array.isArray(data.overdue)) {
+    for (const d of data.overdue) pushDay(d, true);
+  }
+  if (Array.isArray(data.days)) {
+    for (const d of data.days) pushDay(d, false);
+  }
+
+  return groups;
+}
+
+async function openAgendaItem(item) {
+  if (!item || !item.file) return;
+
+  const cwd = getWorkspaceRoot() || process.cwd();
+  const abs = path.isAbsolute(item.file) ? item.file : path.resolve(cwd, item.file);
+
+  const uri = vscode.Uri.file(abs);
+  const doc = await vscode.workspace.openTextDocument(uri);
+  const editor = await vscode.window.showTextDocument(doc, { preview: true });
+
+  const line = Math.max(0, item.line || 0);
+  const pos = new vscode.Position(line, 0);
+  editor.selection = new vscode.Selection(pos, pos);
+  editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+}
+
+async function pickAgendaFilter(provider) {
+  const cfg = vscode.workspace.getConfiguration('org2');
+  const defaultDays = cfg.get('agenda.days', 7);
+
+  const pick = await vscode.window.showQuickPick(
+    [
+      { label: 'Today', value: { type: 'today', days: 1 } },
+      { label: `Next ${defaultDays} days`, value: { type: 'next', days: defaultDays } },
+    ],
+    { placeHolder: 'Org2 agenda filter' }
+  );
+
+  if (!pick) return;
+  provider.filter = pick.value;
+  await provider.load();
+}
+
 function activate(context) {
   const selector = [{ language: 'org2' }, { language: 'org' }];
 
@@ -210,6 +444,42 @@ function activate(context) {
   };
 
   context.subscriptions.push(vscode.languages.registerDocumentLinkProvider(selector, linkProvider));
+
+  // Agenda view
+  const agendaProvider = new Org2AgendaProvider(context);
+  const agendaView = vscode.window.createTreeView('org2Agenda', {
+    treeDataProvider: agendaProvider,
+    showCollapseAll: true,
+  });
+  context.subscriptions.push(agendaView);
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.openAgenda', async () => {
+      await vscode.commands.executeCommand('workbench.view.explorer');
+      await agendaProvider.load();
+      if (agendaProvider.groups[0]) {
+        agendaView.reveal(agendaProvider.groups[0], { focus: true, expand: true }).catch(() => {});
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.refreshAgenda', async () => {
+      await agendaProvider.load();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.pickAgendaFilter', async () => {
+      await pickAgendaFilter(agendaProvider);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.openAgendaItem', async (item) => {
+      await openAgendaItem(item);
+    })
+  );
 
   // Render [[url][desc]] links as "desc" (best-effort) using decorations.
   // Note: VS Code decorations cannot truly replace/collapse text width, so we hide
