@@ -662,11 +662,13 @@ function parseSrcBlockLine(line: string, lineNumber: number): SrcBlockLine | nul
 }
 
 function isBeginSrc(line: SrcBlockLine): boolean {
-  return line.keywordRaw.toLowerCase() === "begin_src";
+  const key = line.keywordRaw.toLowerCase();
+  return key === "begin_src" || key === "begin_org2";
 }
 
 function isEndSrc(line: SrcBlockLine): boolean {
-  return line.keywordRaw.toLowerCase() === "end_src";
+  const key = line.keywordRaw.toLowerCase();
+  return key === "end_src" || key === "end_org2";
 }
 
 function getBlockKindFromBegin(line: SrcBlockLine): BlockKind | null {
@@ -734,7 +736,7 @@ function parseSrcBlock(lines: string[], startLineIndex: number): ParseSrcBlockRe
   const startLineNumber = startLineIndex + 1;
   const begin = parseSrcBlockLine(lines[startLineIndex] ?? "", startLineNumber);
   if (!begin || !isBeginSrc(begin)) {
-    fail(makeError("Invalid source block; expected #+begin_src", startLineNumber, 1));
+    fail(makeError("Invalid source block; expected #+begin_src or #+begin_org2", startLineNumber, 1));
   }
 
   for (let i = startLineIndex + 1; i < lines.length; i += 1) {
