@@ -1,16 +1,62 @@
 #!/usr/bin/env node
 
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
 const testDir = "spec/v0/tests/cli";
-const testFiles = fs.readdirSync(testDir).filter((f) => f.endsWith(".org"));
+const entries = fs.readdirSync(testDir);
+
+const orgFiles = entries.filter((f) => f.endsWith(".org"));
+const cmdFiles = entries.filter((f) => f.endsWith(".cmd.txt"));
 
 let passed = 0;
 let failed = 0;
 
-for (const orgFile of testFiles) {
+// Error/exit-code based tests (shell command in .cmd.txt)
+for (const cmdFile of cmdFiles) {
+  const basename = cmdFile.replace(/\.cmd\.txt$/, "");
+
+  const cmd = fs.readFileSync(path.join(testDir, cmdFile), "utf8").trim();
+  const expectedStderrPath = path.join(testDir, `${basename}.expected.stderr.txt`);
+  const expectedCodePath = path.join(testDir, `${basename}.expected.code.txt`);
+
+  if (!fs.existsSync(expectedStderrPath)) {
+    console.log(`⊘ ${basename} (missing expected stderr file)`);
+    continue;
+  }
+
+  const expectedStderr = fs.readFileSync(expectedStderrPath, "utf8");
+  const expectedCode = fs.existsSync(expectedCodePath)
+    ? Number(fs.readFileSync(expectedCodePath, "utf8").trim())
+    : 1;
+
+  const result = spawnSync(`node dist/cli.js ${cmd}`, {
+    shell: true,
+    encoding: "utf8",
+  });
+
+  const actualCode = result.status ?? 0;
+  const actualStderr = result.stderr ?? "";
+
+  if (actualCode !== expectedCode || actualStderr !== expectedStderr) {
+    console.log(`✗ ${basename}`);
+    if (actualCode !== expectedCode) {
+      console.log(`Expected exit code: ${expectedCode}`);
+      console.log(`Got exit code:      ${actualCode}`);
+    }
+    console.log("Expected stderr:");
+    console.log(expectedStderr);
+    console.log("Got stderr:");
+    console.log(actualStderr);
+    failed++;
+  } else {
+    console.log(`✓ ${basename}`);
+    passed++;
+  }
+}
+
+for (const orgFile of orgFiles) {
   const basename = orgFile.replace(/\.org$/, "");
   const filePath = path.join(testDir, orgFile);
 
