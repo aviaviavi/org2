@@ -733,6 +733,10 @@
         {
           "name": "constant.numeric.list.org2",
           "match": "^(?:\\s*)\\d+[.)](?=\\s)"
+        },
+        {
+          "name": "constant.numeric.list.org2",
+          "match": "(?<![0-9A-Za-z])\\d+[.)](?=\\s)"
         }
       ]
     },
