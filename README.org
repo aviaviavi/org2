@@ -15,7 +15,7 @@ As originally described in https://avi.press/posts/2024-01-15-standalone-org.htm
 
 ** Spec
 
-- v0 (draft): [[./spec/v0/SPEC.md]]
+- v0 (draft): [[./spec/v0/SPEC.org]]
 
 ** Contributing and Project Status
 

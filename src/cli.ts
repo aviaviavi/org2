@@ -174,6 +174,10 @@ function formatOutput(items: ScheduledItem[], startDate: Date): string {
   if (overdueItems.length > 0) {
     output += formatSectionHeader(`OVERDUE (before ${startIso})`);
     output += formatByDate(overdueItems);
+
+    if (upcomingItems.length > 0) {
+      output += formatSectionHeader(`UPCOMING (from ${startIso})`);
+    }
   }
 
   output += formatByDate(upcomingItems);
