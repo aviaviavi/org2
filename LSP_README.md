@@ -41,7 +41,7 @@ Content-Length: 87
   - `textDocument/didOpen` - Open document
   - `textDocument/didChange` - Document changes (full sync)
   - `textDocument/didClose` - Close document
-  - `textDocument/publishDiagnostics` - Send diagnostics (framework ready)
+  - `textDocument/publishDiagnostics` - Parser error diagnostics with line/column info
 
 - ✅ **Code Navigation**
   - `textDocument/documentSymbol` - Extract headlines and structure
@@ -57,12 +57,13 @@ Content-Length: 87
 
 ### Future Enhancements
 
-- `textDocument/completion` - Autocompletion for keywords
-- `textDocument/hover` - Tooltip information
+- `textDocument/completion` - Autocompletion for keywords, links
+- `textDocument/hover` - Tooltip information for links, timestamps
 - `textDocument/definition` - Go to definition for links
-- `textDocument/references` - Find references
-- `textDocument/rename` - Rename symbols
-- `textDocument/codeAction` - Code actions
+- `textDocument/references` - Find all references to a headline
+- `textDocument/rename` - Rename headlines and update references
+- `textDocument/codeAction` - Quick fixes for common issues
+- `textDocument/formatting` - Code formatting
 
 ## Editor Integration Examples
 
@@ -112,7 +113,35 @@ if executable('npm')
 endif
 ```
 
+## Diagnostics
+
+The LSP server provides real-time error diagnostics as you type. Parser errors are immediately reported with:
+
+- **Line and column information** (1-indexed in org-mode convention, converted to 0-indexed LSP format)
+- **Clear error messages** (e.g., "Invalid headline; expected one or more '*' followed by a space")
+- **Severity level** (currently all parser errors are reported as errors)
+
+Supported errors include:
+- Invalid headline syntax
+- Unsupported line endings (CRLF)
+- Invalid keyword lines or property drawers
+- Mismatched block markers
+- Tab characters in restricted contexts
+
+The diagnostics are non-fatal — even if there are parse errors, the LSP server continues to provide:
+- Document symbols (headlines that could be parsed before the error)
+- Folding ranges (structure elements that were parsed successfully)
+
+This allows editors to provide a good user experience while editing files with syntax errors.
+
 ## Testing
+
+### Run the Diagnostics Test
+
+```bash
+node test-diagnostics.mjs        # Parser diagnostics
+node test-lsp-diagnostics.mjs    # Full LSP integration
+```
 
 ### Run the Feature Tests
 
@@ -153,6 +182,12 @@ EOF
 - **Streaming I/O**: Efficient stdin/stdout handling
 - **Parser integration**: Uses org2's `parseOrgToCanonicalAst`
 
+### Diagnostics Collection
+- Parser errors are caught and converted to LSP Diagnostic objects
+- Error location (line:column) is preserved through the exception message
+- When parsing fails, an empty document is returned with all collected errors
+- This ensures graceful degradation without crashing the server
+
 ### Line Tracking
 - AST nodes are mapped to source lines using pattern matching
 - Headlines are identified by their marker level (*, **, etc.)
@@ -163,13 +198,14 @@ EOF
 - Linear scan for line tracking (room for optimization)
 - Full document sync (not incremental)
 - Memory-efficient JSON-RPC message handling
+- Error handling is non-blocking (errors don't interrupt other operations)
 
 ## Limitations
 
 1. **Line Information**: The org2 AST doesn't store position info, so ranges are reconstructed from source
 2. **Incremental Sync**: Only full document sync is implemented (not incremental changes)
-3. **Diagnostics**: Parser error reporting is not detailed (line/column extraction needed)
-4. **Search**: Linear search for node positions (could use indexing)
+3. **Search**: Linear search for node positions (could use indexing for large files)
+4. **Error Recovery**: Parser stops on first error (could implement error recovery for partial parsing)
 
 ## Contributing
 
