@@ -21,6 +21,113 @@ As originally described in https://avi.press/posts/2024-01-15-standalone-org.htm
 
 This project is in the very early stages of development. If you're interested in contributing, please reach out. Especially if you are someone getting into open source for the first time -- I'd be open to mentoring the right person who has the potential to get this project off the ground with a little help.
 
+** CLI usage (local)
+
+Org2 ships a small CLI (currently: =agenda= and =archive=) that you can run from a local checkout.
+
+*** Install / setup
+
+#+begin_src sh
+cd /Users/avi/clawd/org2
+npm install
+npm run build
+#+end_src
+
+You can invoke the CLI in a few equivalent ways:
+
+- =npm run org2 -- <command> [...args]= (recommended for local development)
+- =node dist/cli.js <command> [...args]=
+- =npm link= (optional) to get a global =org2= command
+
+*** Agenda (testing workflows)
+
+The agenda command scans one or more =.org= files for scheduled items and prints either human-readable text or JSON.
+
+#+begin_src sh
+# Run against a directory of .org files
+npm run org2 -- agenda --dir /path/to/org/files --recursive
+
+# Run against explicit files
+npm run org2 -- agenda --files /path/to/a.org /path/to/b.org
+
+# Control the date range
+npm run org2 -- agenda --dir /path/to/org --today 2026-01-25 --days 7
+
+# JSON output (useful for tests/automation)
+npm run org2 -- agenda --dir /path/to/org --format json
+
+# Exclude overdue items from output
+npm run org2 -- agenda --dir /path/to/org --no-overdue
+
+# Show parse errors instead of silently skipping broken files
+npm run org2 -- agenda --dir /path/to/org --verbose-errors
+#+end_src
+
+Notes:
+- If a file fails to parse, the CLI will skip it (use =--verbose-errors= to see why).
+- By default, overdue items are included; use =--no-overdue= to hide them.
+
+*** Running against local data with =org2.json=
+
+If you don’t pass =--dir= or =--files=, the CLI will look for an =org2.json= config file in the current directory (or up to 10 parents).
+
+1) Create an =org2.json= in the root of your notes repo (or anywhere you plan to run the command from):
+
+#+begin_src json
+{
+  "agendaFiles": ["*.org", "notes/**/*.org"],
+  "recursive": true,
+  "ignorePatterns": [".git/**", "node_modules/**", ".#*"]
+}
+#+end_src
+
+2) Run agenda with no paths:
+
+If you want to run =org2= from your notes repo without typing a long path, you can do:
+
+#+begin_src sh
+# in the org2 checkout
+cd /Users/avi/clawd/org2
+npm link
+
+# in your notes repo
+cd /path/to/your/notes
+org2 agenda --format json
+#+end_src
+
+Or, without =npm link=, call the CLI via an absolute path:
+
+#+begin_src sh
+cd /path/to/your/notes
+# org2.json will be discovered automatically
+/path/to/org2-repo/node_modules/.bin/org2 agenda --format json
+
+# or from the org2 checkout:
+cd /Users/avi/clawd/org2
+npm run org2 -- agenda --format json
+#+end_src
+
+Tip: for a reproducible “fixture” when testing agenda output, create a small folder with a couple =.org= files (for example =./tmp/agenda-fixture/=) and run:
+
+#+begin_src sh
+npm run org2 -- agenda --dir ./tmp/agenda-fixture --today 2026-01-25 --days 14 --format json
+#+end_src
+
+*** Archive (quick smoke tests)
+
+The archive command moves the subtree at a given position into an archive file.
+
+#+begin_src sh
+# Show what would happen (no writes)
+npm run org2 -- archive --file /path/to/notes.org --pos 42
+
+# Show a diff
+npm run org2 -- archive --file /path/to/notes.org --pos 42 --format diff
+
+# Apply changes in-place
+npm run org2 -- archive --file /path/to/notes.org --pos 42 --apply
+#+end_src
+
 ** Tools
 
 See [[./tools/README.md]] for the fixture runner and reference parser.
