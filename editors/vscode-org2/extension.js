@@ -203,6 +203,12 @@ class Org2AgendaGroup {
   }
 }
 
+class Org2AgendaSeparator {
+  constructor(label) {
+    this.label = label;
+  }
+}
+
 class Org2AgendaItem {
   constructor({ todo, headline, kind, file, line, date }) {
     this.todo = todo || '';
@@ -248,6 +254,12 @@ class Org2AgendaProvider {
       return item;
     }
 
+    if (element instanceof Org2AgendaSeparator) {
+      const item = new vscode.TreeItem(element.label, vscode.TreeItemCollapsibleState.None);
+      item.contextValue = 'org2AgendaSeparator';
+      return item;
+    }
+
     if (element instanceof Org2AgendaItem) {
       const label = `${element.todo ? element.todo + ' ' : ''}${element.headline}`.trim() || '(untitled)';
       const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
@@ -276,6 +288,10 @@ class Org2AgendaProvider {
 
     if (element instanceof Org2AgendaGroup) {
       return element.items;
+    }
+
+    if (element instanceof Org2AgendaSeparator) {
+      return [];
     }
 
     return [];
@@ -383,10 +399,18 @@ async function fetchAgendaGroups(context, filter) {
     groups.push(new Org2AgendaGroup(isOverdue ? `Overdue: ${label}` : label, d.date, d.weekday, isOverdue, items));
   };
 
-  if (Array.isArray(data.overdue)) {
+  const hasOverdue = Array.isArray(data.overdue) && data.overdue.length > 0;
+  const hasUpcoming = Array.isArray(data.days) && data.days.length > 0;
+
+  if (hasOverdue) {
     for (const d of data.overdue) pushDay(d, true);
   }
-  if (Array.isArray(data.days)) {
+
+  if (hasOverdue && hasUpcoming) {
+    groups.push(new Org2AgendaSeparator('──────── Upcoming ────────'));
+  }
+
+  if (hasUpcoming) {
     for (const d of data.days) pushDay(d, false);
   }
 
