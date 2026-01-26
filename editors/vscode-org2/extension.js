@@ -333,21 +333,23 @@ function resolveOrg2Command(context, args) {
   const cmd = cfg.get('agenda.command', 'org2');
   const extraArgs = cfg.get('agenda.args', []);
 
-  // Helpful default in this monorepo: if 'org2' isn't on PATH, run via `node <repo>/dist/cli.js`.
-  // Only used when the extension lives under the org2 repo.
   let finalCmd = cmd;
   let finalArgs = [...extraArgs, ...args];
-  if (cmd === 'org2') {
+
+  // Helpful default for local development: if this extension is checked out inside
+  // the org2 repo, run the repo-local CLI instead of relying on a global PATH install.
+  if (cmd === 'org2' && !(cfg.get('agenda.args', []).length)) {
+    const fs = require('fs');
+
     const maybeRepoRoot = path.resolve(context.extensionPath, '..', '..');
-    const devCli = path.join(maybeRepoRoot, 'dist', 'cli.js');
-    if (!cfg.get('agenda.args', []).length) {
-      try {
-        require('fs').accessSync(devCli);
-        finalCmd = process.execPath;
-        finalArgs = [devCli, ...args];
-      } catch (_) {
-        // ignore
-      }
+    const repoCli = path.join(maybeRepoRoot, 'dist', 'cli.js');
+
+    try {
+      fs.accessSync(repoCli);
+      finalCmd = process.execPath;
+      finalArgs = [repoCli, ...args];
+    } catch (_) {
+      // If not in-repo, fall back to PATH `org2`.
     }
   }
 
