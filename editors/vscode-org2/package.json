@@ -132,6 +132,11 @@
           "type": "boolean",
           "default": true,
           "description": "Include overdue items in the agenda view."
+        },
+        "org2.formatOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-format Org tables on save (runs `org2 fmt --stdin` and replaces the document)."
         }
       }
     },

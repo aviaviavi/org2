@@ -810,7 +810,10 @@ function isTableHlineRow(rest: string): boolean {
 function parseTableRowCells(rest: string): string[] {
   const trimmedEnd = rest.trimEnd();
   const core = trimmedEnd.slice(1, -1);
-  return core.split("|");
+  // Org mode effectively treats leading/trailing whitespace in cells as insignificant.
+  // Store cells in canonical form with whitespace stripped so formatting/alignment isn't
+  // prevented by stray spaces.
+  return core.split("|").map((c) => c.trim());
 }
 
 function parseTable(lines: string[], startLineIndex: number, indent: string): ParseTableResult {

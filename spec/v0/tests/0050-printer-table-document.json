@@ -9,24 +9,24 @@
           "type": "TableRow",
           "indent": "",
           "cells": [
-            " x ",
-            " y "
+            "x",
+            "y"
           ]
         },
         {
           "type": "TableRow",
           "indent": "",
           "cells": [
-            " 1 ",
-            " 2 "
+            "1",
+            "2"
           ]
         },
         {
           "type": "TableRow",
           "indent": "",
           "cells": [
-            " 3 ",
-            " 4 "
+            "3",
+            "4"
           ]
         }
       ]
