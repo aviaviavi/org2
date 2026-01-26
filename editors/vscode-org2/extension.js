@@ -328,12 +328,36 @@ function resolveAgendaFiles(scopeFiles, cwd) {
   return out;
 }
 
+function resolveOrg2Command(context, args) {
+  const cfg = vscode.workspace.getConfiguration('org2');
+  const cmd = cfg.get('agenda.command', 'org2');
+  const extraArgs = cfg.get('agenda.args', []);
+
+  // Helpful default in this monorepo: if 'org2' isn't on PATH, run via `node <repo>/dist/cli.js`.
+  // Only used when the extension lives under the org2 repo.
+  let finalCmd = cmd;
+  let finalArgs = [...extraArgs, ...args];
+  if (cmd === 'org2') {
+    const maybeRepoRoot = path.resolve(context.extensionPath, '..', '..');
+    const devCli = path.join(maybeRepoRoot, 'dist', 'cli.js');
+    if (!cfg.get('agenda.args', []).length) {
+      try {
+        require('fs').accessSync(devCli);
+        finalCmd = process.execPath;
+        finalArgs = [devCli, ...args];
+      } catch (_) {
+        // ignore
+      }
+    }
+  }
+
+  return { cmd: finalCmd, args: finalArgs };
+}
+
 async function fetchAgendaGroups(context, filter) {
   const cwd = getWorkspaceRoot() || process.cwd();
 
   const cfg = vscode.workspace.getConfiguration('org2');
-  const cmd = cfg.get('agenda.command', 'org2');
-  const extraArgs = cfg.get('agenda.args', []);
   const scope = cfg.get('agenda.scope', 'workspace');
   const files = cfg.get('agenda.files', []);
   const includeOverdue = cfg.get('agenda.includeOverdue', true);
@@ -341,7 +365,7 @@ async function fetchAgendaGroups(context, filter) {
 
   const days = filter && filter.type === 'today' ? 1 : (filter && filter.type === 'next' ? filter.days : defaultDays);
 
-  const args = [...extraArgs, 'agenda'];
+  const args = ['agenda'];
   if (scope === 'files') {
     const resolved = resolveAgendaFiles(files, cwd);
     if (resolved.length === 0) {
@@ -355,26 +379,7 @@ async function fetchAgendaGroups(context, filter) {
   args.push('--days', String(days), '--format', 'json');
   if (!includeOverdue) args.push('--no-overdue');
 
-  // Helpful default in this monorepo: if 'org2' isn't on PATH, run via `node <repo>/dist/cli.js`.
-  // Only used when the extension lives under the org2 repo.
-  let finalCmd = cmd;
-  let finalArgs = args;
-  if (cmd === 'org2') {
-    const maybeRepoRoot = path.resolve(context.extensionPath, '..', '..');
-    const devCli = path.join(maybeRepoRoot, 'dist', 'cli.js');
-    if (!vscode.workspace.getConfiguration('org2').get('agenda.args', []).length) {
-      try {
-        // If dist/cli.js exists and org2 binary is missing, we'll fall back.
-        // Do a quick check by trying to resolve the file.
-        require('fs').accessSync(devCli);
-        finalCmd = process.execPath;
-        finalArgs = [devCli, ...args];
-      } catch (_) {
-        // ignore; assume org2 is on PATH
-      }
-    }
-  }
-
+  const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
   const { stdout } = await execFileAsync(finalCmd, finalArgs, { cwd });
 
   let data;
@@ -502,6 +507,63 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.openAgendaItem', async (item) => {
       await openAgendaItem(item);
+    })
+  );
+
+  async function runTodoCli(action, status) {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) return;
+
+    const doc = editor.document;
+    if (!doc || doc.uri.scheme !== 'file') {
+      vscode.window.showWarningMessage('Org2: todo status requires a file-backed document.');
+      return;
+    }
+
+    if (doc.isDirty) {
+      const ok = await doc.save();
+      if (!ok) {
+        vscode.window.showWarningMessage('Org2: could not save file before updating todo status.');
+        return;
+      }
+    }
+
+    const line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
+
+    const args = ['todo', action, '--file', doc.uri.fsPath, '--line', String(line), '--format', 'json', '--apply'];
+    if (action === 'set' && status) args.push('--status', status);
+
+    const cwd = getWorkspaceRoot() || process.cwd();
+    const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
+
+    try {
+      await execFileAsync(finalCmd, finalArgs, { cwd });
+      // Reload from disk to show changes made by the CLI.
+      await vscode.commands.executeCommand('workbench.action.files.revert');
+    } catch (e) {
+      vscode.window.showErrorMessage(`Org2: todo update failed: ${String(e && e.message ? e.message : e)}`);
+    }
+  }
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.toggleTodo', async () => {
+      await runTodoCli('toggle');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.setTodoStatus', async () => {
+      const pick = await vscode.window.showQuickPick(
+        [
+          { label: 'TODO', value: 'todo' },
+          { label: 'IN_PROGRESS', value: 'in_progress' },
+          { label: 'DONE', value: 'done' },
+          { label: 'CANCELED', value: 'canceled' },
+        ],
+        { placeHolder: 'Org2: set todo status' }
+      );
+      if (!pick) return;
+      await runTodoCli('set', pick.value);
     })
   );
 

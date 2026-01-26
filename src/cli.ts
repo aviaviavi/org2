@@ -5,6 +5,7 @@ import path from "node:path";
 import process from "node:process";
 import { parseOrgToCanonicalAst } from "./parser.js";
 import { findConfigFile, loadConfig, resolveFilesFromConfig } from "./config.js";
+import { updateTodoInFile, type TodoStatus } from "./todo.js";
 import type {
   DocumentNode,
   HeadlineNode,
@@ -239,6 +240,15 @@ async function main(): Promise<void> {
   let archiveApply = false;
   let archiveFormat: "text" | "diff" = "text";
 
+  // Todo status editing
+  let todoAction: "set" | "toggle" = "toggle";
+  let todoFile = "";
+  let todoLine = 0;
+  let todoStatus: TodoStatus | "" = "";
+  let todoApply = false;
+  let todoFormat: "text" | "json" = "json";
+  let todoNow = ""; // ISO string
+
   // Parse arguments
   let i = 0;
   while (i < args.length) {
@@ -250,6 +260,17 @@ async function main(): Promise<void> {
     } else if (arg === "archive") {
       command = "archive";
       i++;
+    } else if (arg === "todo") {
+      command = "todo";
+      i++;
+      // Optional subcommand: set|toggle (default toggle)
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        const sub = args[i]!
+        if (sub === "set" || sub === "toggle") {
+          todoAction = sub;
+          i++;
+        }
+      }
     } else if (arg === "--dir") {
       i++;
       if (i < args.length) {
@@ -266,7 +287,29 @@ async function main(): Promise<void> {
     } else if (arg === "--file") {
       i++;
       if (i < args.length) {
-        files.push(args[i]);
+        if (command === "todo") {
+          todoFile = args[i]!;
+        } else {
+          files.push(args[i]!);
+        }
+        i++;
+      }
+    } else if (arg === "--line") {
+      i++;
+      if (i < args.length) {
+        todoLine = parseInt(args[i]!, 10);
+        i++;
+      }
+    } else if (arg === "--status") {
+      i++;
+      if (i < args.length) {
+        todoStatus = args[i] as TodoStatus;
+        i++;
+      }
+    } else if (arg === "--now") {
+      i++;
+      if (i < args.length) {
+        todoNow = args[i]!;
         i++;
       }
     } else if (arg === "--days") {
@@ -292,6 +335,8 @@ async function main(): Promise<void> {
           archiveFormat = v as "text" | "diff";
         } else if (command === "agenda" && (v === "text" || v === "json")) {
           format = v;
+        } else if (command === "todo" && (v === "text" || v === "json")) {
+          todoFormat = v;
         }
         i++;
       }
@@ -317,7 +362,11 @@ async function main(): Promise<void> {
         i++;
       }
     } else if (arg === "--apply" || arg === "--in-place") {
-      archiveApply = true;
+      if (command === "todo") {
+        todoApply = true;
+      } else {
+        archiveApply = true;
+      }
       i++;
     } else if (arg === "--verbose" || arg === "--verbose-errors") {
       verboseErrors = true;
@@ -327,14 +376,75 @@ async function main(): Promise<void> {
     }
   }
 
-  if (command !== "agenda" && command !== "archive") {
+  if (command !== "agenda" && command !== "archive" && command !== "todo") {
     console.error(
       "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff] [--apply]",
     );
+    console.error(
+      "       org2 todo [set|toggle] --file FILE --line N [--status todo|in_progress|done|canceled] [--now ISO] [--format text|json] [--apply]",
+    );
     process.exit(1);
+  }
+
+  if (command === "todo") {
+    if (!todoFile) {
+      console.error("Error: todo requires --file FILE");
+      process.exit(1);
+    }
+    if (!Number.isFinite(todoLine) || todoLine < 1) {
+      console.error("Error: todo requires --line N (1-based)");
+      process.exit(1);
+    }
+
+    if (todoAction === "set") {
+      if (!todoStatus || (todoStatus !== "todo" && todoStatus !== "in_progress" && todoStatus !== "done" && todoStatus !== "canceled")) {
+        console.error("Error: todo set requires --status todo|in_progress|done|canceled");
+        process.exit(1);
+      }
+    }
+
+    let nowDate: Date | undefined;
+    if (todoNow) {
+      const d = new Date(todoNow);
+      if (isNaN(d.getTime())) {
+        console.error(`Error: invalid --now ${todoNow}`);
+        process.exit(1);
+      }
+      nowDate = d;
+    }
+
+    const res = updateTodoInFile({
+      filePath: todoFile,
+      lineNumber: todoLine,
+      ...(todoAction === "toggle" ? { toggle: true } : { status: todoStatus as TodoStatus }),
+      ...(nowDate ? { now: nowDate } : {}),
+      apply: todoApply,
+    });
+
+    if (todoFormat === "text") {
+      process.stdout.write(res.text + (res.text.endsWith("\n") ? "" : "\n"));
+    } else {
+      process.stdout.write(
+        JSON.stringify(
+          {
+            file: res.filePath,
+            headingLine: res.headingLineNumber,
+            oldStatus: res.oldStatus,
+            newStatus: res.newStatus,
+            ...(res.closedAt ? { closedAt: res.closedAt } : {}),
+            applied: todoApply,
+            changed: res.changed,
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+    }
+
+    return;
   }
 
   if (command === "archive") {

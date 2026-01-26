@@ -19,6 +19,7 @@ for (const cmdFile of cmdFiles) {
 
   const cmd = fs.readFileSync(path.join(testDir, cmdFile), "utf8").trim();
   const expectedStderrPath = path.join(testDir, `${basename}.expected.stderr.txt`);
+  const expectedStdoutPath = path.join(testDir, `${basename}.expected.stdout.txt`);
   const expectedCodePath = path.join(testDir, `${basename}.expected.code.txt`);
 
   if (!fs.existsSync(expectedStderrPath)) {
@@ -27,6 +28,7 @@ for (const cmdFile of cmdFiles) {
   }
 
   const expectedStderr = fs.readFileSync(expectedStderrPath, "utf8");
+  const expectedStdout = fs.existsSync(expectedStdoutPath) ? fs.readFileSync(expectedStdoutPath, "utf8") : null;
   const expectedCode = fs.existsSync(expectedCodePath)
     ? Number(fs.readFileSync(expectedCodePath, "utf8").trim())
     : 1;
@@ -37,13 +39,22 @@ for (const cmdFile of cmdFiles) {
   });
 
   const actualCode = result.status ?? 0;
+  const actualStdout = result.stdout ?? "";
   const actualStderr = result.stderr ?? "";
 
-  if (actualCode !== expectedCode || actualStderr !== expectedStderr) {
+  const stdoutOk = expectedStdout === null ? true : actualStdout === expectedStdout;
+
+  if (actualCode !== expectedCode || actualStderr !== expectedStderr || !stdoutOk) {
     console.log(`✗ ${basename}`);
     if (actualCode !== expectedCode) {
       console.log(`Expected exit code: ${expectedCode}`);
       console.log(`Got exit code:      ${actualCode}`);
+    }
+    if (expectedStdout !== null && actualStdout !== expectedStdout) {
+      console.log("Expected stdout:");
+      console.log(expectedStdout);
+      console.log("Got stdout:");
+      console.log(actualStdout);
     }
     console.log("Expected stderr:");
     console.log(expectedStderr);
