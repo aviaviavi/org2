@@ -9,16 +9,16 @@
           "type": "TableRow",
           "indent": "  ",
           "cells": [
-            " a ",
-            " b "
+            "a",
+            "b"
           ]
         },
         {
           "type": "TableRow",
           "indent": "    ",
           "cells": [
-            " c ",
-            " d "
+            "c",
+            "d"
           ]
         }
       ]
