@@ -1,0 +1,184 @@
+#+title: Org2 Roam (Org-roam-inspired) — v0 (non-normative draft)
+
+This document proposes an *80/20 org-roam-style* feature set for Org2.
+The goal is to support:
+- *Dailies* (fast capture)
+- *Fast node insertion* (create/find + insert link)
+- *Backlinks* (show what links to the current node)
+- *A SQLite cache* (derived index; source of truth remains plain files)
+
+We explicitly *do not* target graph UI, fancy buffers, or advanced completion UIs in v0.
+
+* Terminology
+
+Org-roam defines a “node” as any *file* or *headline* with an ID.
+In Org2, we should support the same concept.
+
+- *File node*: a file-level node with an ID
+- *Headline node*: a headline with an ID
+
+A node’s *canonical identifier* is a UUID string (lowercase) in one of these forms:
+- =xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx= (recommended)
+
+* Link syntax (Roam links)
+
+For v0, Org2 should standardize on ID links for internal roam linking.
+
+** Internal link format
+
+Use Org’s ID link convention:
+- =[[id:<uuid>][Optional Title]]=  (preferred)
+- =id:<uuid>=                     (also acceptable, but printer should prefer bracket form)
+
+*Rationale:* org-roam uses ID links for computing relationships.
+
+** Non-ID links
+
+Non-ID links are allowed but are out of scope for backlink computation.
+
+* Node identity in files
+
+We need a file-level UUID that can be read/written without requiring Emacs.
+
+** File ID storage
+
+Option A (org-ish): A top-level property drawer immediately at the start of file:
+
+:PROPERTIES:
+:ID: <uuid>
+:END:
+#+title: ...
+
+Option B (keyword):
+- =#+id: <uuid>= (new Org2 keyword)
+
+Proposal: support *both* for reading, but *print/write* as Option A (drawer) for consistency with headline drawers and with the existing Org2 property-drawer support.
+
+** Headline ID storage
+
+Use existing property drawer support:
+
+* Title
+:PROPERTIES:
+:ID: <uuid>
+:END:
+
+* Database (SQLite) — derived cache
+
+Org-roam uses SQLite as an aggressive cache. We should do the same.
+
+** Goals
+- Derived index only; can be deleted and rebuilt.
+- Incremental updates on save (editor integration) + a manual rebuild.
+
+** Storage location
+- Default: =<org2-root>/.org2/roam.db= (or alongside existing org2 state)
+- Configurable via =org2.json=.
+
+** Core tables (minimal)
+
+*** =files=
+- =path TEXT PRIMARY KEY= (normalized absolute path)
+- =mtime_ms INTEGER NOT NULL=
+- =size_bytes INTEGER NOT NULL=
+- =file_id TEXT= (uuid)
+- =title TEXT= (best-effort from =#+title:=, else filename)
+
+*** =nodes=
+Nodes include file nodes and headline nodes.
+- =id TEXT PRIMARY KEY= (uuid)
+- =type TEXT NOT NULL= ('file'|'headline')
+- =file_path TEXT NOT NULL= (FK files.path)
+- =headline_line INTEGER= (1-indexed; NULL for file nodes)
+- =title TEXT NOT NULL=
+
+*** =links=
+- =src_id TEXT NOT NULL= (FK nodes.id)
+- =dest_id TEXT NOT NULL= (FK nodes.id)
+- =src_file_path TEXT NOT NULL=
+- =src_line INTEGER NOT NULL= (line where link occurs)
+- =src_context TEXT= (optional snippet for preview)
+- UNIQUE(src_id, dest_id, src_file_path, src_line)
+
+*** =backlinks=
+Optionally a view:
+- =SELECT dest_id as node_id, src_id, src_file_path, src_line, src_context FROM links=
+
+** Indexes
+- =CREATE INDEX links_dest_id ON links(dest_id)=
+- =CREATE INDEX nodes_file_path ON nodes(file_path)=
+
+* Dailies
+
+** Feature set
+- “Open today” (create if missing)
+- “Open date”
+- “Capture into today” (append at end or under a heading)
+- Backlink filtering knobs (e.g., hide daily nodes when showing backlinks) — optional
+
+** File naming
+Default daily path:
+- =<org2-root>/dailies/YYYY-MM-DD.org= (or configurable)
+
+We already have Org2 semantics for filenames and Org2 parsing; daily files are normal Org2 files.
+
+** Daily file metadata
+- Ensure file has a file-level ID (so backlinks can include daily notes as nodes)
+- Ensure =#+title:= is set to =YYYY-MM-DD= (or =<weekday>, YYYY-MM-DD=)
+
+* Fast node insertion
+
+Inspired by:
+- org-roam-node-find
+- org-roam-node-insert
+
+** UX goals (VS Code + Vim)
+- Search by title (substring) across cached nodes
+- If no match, create a new file node with that title
+- Insert link at cursor to chosen/created node
+
+** Minimal CLI surface
+
+Proposed commands:
+
+- =org2 roam index [--root DIR] [--db PATH]=
+  - (re)build DB
+
+- =org2 roam daily [today|date YYYY-MM-DD] [--root DIR]=
+  - prints the daily file path; with =--create= creates file+id+title
+
+- =org2 roam node insert --title "..." --file FILE --line N [--create]=
+  - ensures a node exists (create file node if needed)
+  - prints updated file text or applies in-place
+
+- =org2 roam backlinks --id <uuid> [--json]=
+  - returns backlink list (src title, src file, line, context)
+
+We can iterate on exact CLI shapes; key is having stable primitives the editors can call.
+
+* Backlinks
+
+** Computation
+- Only count =id:= links.
+- Determine =src_id= as the nearest enclosing node:
+  - If link occurs under a headline with an ID → that headline node
+  - Else if file has a file ID → file node
+  - Else: no src_id (skip) or create implicit file node (not recommended)
+
+** Presentation
+- Minimal: list of (source title, file path, line number, short context snippet)
+- Editor UI:
+  - VS Code: a “Backlinks” view that opens a quick-pick list
+  - Vim: a command that echoes a list or opens a scratch buffer
+
+* Non-goals
+- Graph visualization
+- Complex roam buffer widgets (unlinked refs, ref-links, etc.)
+- Full org-id compatibility beyond basic =:ID:= drawers
+
+* Open questions
+
+1) Do we want headline nodes in v0, or only file nodes + links? (I think headline nodes are worth it; they’re in org-roam’s core model.)
+2) Should we add an Org2 keyword =#+id:=, or stick to drawers only?
+3) Where should DB live by default: project-local =.org2/roam.db= vs global =~/.org2/roam.db=?
+4) For daily backlinks: default include or exclude? (org-roam allows filtering; I’d default to include, but allow an “exclude tag daily” style filter.)
