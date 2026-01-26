@@ -113,7 +113,12 @@
           "type": "string",
           "enum": ["workspace", "files"],
           "default": "workspace",
-          "description": "Where to read org files from. 'workspace' scans the workspace folder; 'files' uses org2.agenda.files."
+          "description": "Where to read org files from. 'workspace' scans org2.agenda.dir (or the workspace folder if unset); 'files' uses org2.agenda.files."
+        },
+        "org2.agenda.dir": {
+          "type": "string",
+          "default": "",
+          "description": "Root directory to scan when scope='workspace'. If empty, uses the VS Code workspace folder. Useful when your org files live outside the workspace."
         },
         "org2.agenda.files": {
           "type": "array",
