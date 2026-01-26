@@ -74,10 +74,11 @@
     {
       "type": "Headline",
       "level": 1,
+      "todo": "DONE",
       "title": [
         {
           "type": "Text",
-          "value": "DONE Already completed"
+          "value": "Already completed"
         }
       ],
       "children": [

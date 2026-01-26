@@ -462,9 +462,14 @@ function parseHeadline(
     }
   }
 
-  if (rest.startsWith("TODO ")) {
-    todo = "TODO";
-    rest = rest.slice("TODO ".length);
+  // Todo keyword (Org2 supports a small set).
+  for (const kw of ["TODO", "IN_PROGRESS", "DONE", "CANCELED", "CANCELLED"] as const) {
+    const prefix = `${kw} `;
+    if (rest.startsWith(prefix)) {
+      todo = kw;
+      rest = rest.slice(prefix.length);
+      break;
+    }
   }
 
   if (rest.length === 0) {
