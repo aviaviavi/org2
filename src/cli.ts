@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { parseOrgToCanonicalAst } from "./parser.js";
+import { printCanonicalAstToOrg } from "./printer.js";
 import { findConfigFile, loadConfig, resolveFilesFromConfig } from "./config.js";
 import { updateTodoInFile, type TodoStatus } from "./todo.js";
 import type {
@@ -249,6 +250,10 @@ async function main(): Promise<void> {
   let todoFormat: "text" | "json" = "json";
   let todoNow = ""; // ISO string
 
+  // Formatter
+  let fmtStdin = false;
+  let fmtApply = false;
+
   // Parse arguments
   let i = 0;
   while (i < args.length) {
@@ -259,6 +264,9 @@ async function main(): Promise<void> {
       i++;
     } else if (arg === "archive") {
       command = "archive";
+      i++;
+    } else if (arg === "fmt" || arg === "format") {
+      command = "fmt";
       i++;
     } else if (arg === "todo") {
       command = "todo";
@@ -361,11 +369,16 @@ async function main(): Promise<void> {
         archivePos = args[i];
         i++;
       }
+    } else if (arg === "--stdin") {
+      fmtStdin = true;
+      i++;
     } else if (arg === "--apply" || arg === "--in-place") {
       if (command === "todo") {
         todoApply = true;
-      } else {
+      } else if (command === "archive") {
         archiveApply = true;
+      } else if (command === "fmt") {
+        fmtApply = true;
       }
       i++;
     } else if (arg === "--verbose" || arg === "--verbose-errors") {
@@ -376,7 +389,7 @@ async function main(): Promise<void> {
     }
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "todo") {
+  if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "fmt") {
     console.error(
       "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--no-overdue] [--verbose-errors]",
     );
@@ -385,6 +398,9 @@ async function main(): Promise<void> {
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE --line N [--status todo|in_progress|done|canceled] [--now ISO] [--format text|json] [--apply]",
+    );
+    console.error(
+      "       org2 fmt [--stdin] [--file FILE|--files FILE ...] [--apply]",
     );
     process.exit(1);
   }
@@ -442,6 +458,42 @@ async function main(): Promise<void> {
           2,
         ) + "\n",
       );
+    }
+
+    return;
+  }
+
+  if (command === "fmt") {
+    const formatOne = (rawIn: string): string => {
+      const ast = parseOrgToCanonicalAst(rawIn.replace(/\r\n/g, "\n"));
+      return printCanonicalAstToOrg(ast);
+    };
+
+    if (fmtStdin) {
+      const stdinRaw = fs.readFileSync(0, "utf8");
+      process.stdout.write(formatOne(stdinRaw));
+      return;
+    }
+
+    if (files.length === 0) {
+      console.error("Error: fmt requires --stdin or at least one file via --file/--files");
+      process.exit(1);
+    }
+
+    if (!fmtApply) {
+      if (files.length !== 1) {
+        console.error("Error: fmt without --apply requires exactly one file (use --apply for multiple)");
+        process.exit(1);
+      }
+      const raw = fs.readFileSync(files[0]!, "utf8");
+      process.stdout.write(formatOne(raw));
+      return;
+    }
+
+    for (const file of files) {
+      const raw = fs.readFileSync(file, "utf8");
+      const out = formatOne(raw);
+      fs.writeFileSync(file, out, "utf8");
     }
 
     return;

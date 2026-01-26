@@ -112,13 +112,42 @@ function printSrcBlock(node: SrcBlockNode): string {
 }
 
 function printTable(node: TableNode): string {
-  return node.rows.map((row) => {
-    if (row.type === "TableHline") {
-      return `${row.indent}${row.raw}`;
+  const tableRows = node.rows.filter((r) => r.type === "TableRow") as Array<Extract<TableNode["rows"][number], { type: "TableRow" }>>;
+
+  const colCount = tableRows.reduce((max, r) => Math.max(max, r.cells.length), 0);
+  const widths: number[] = Array.from({ length: colCount }, () => 0);
+
+  for (const r of tableRows) {
+    for (let i = 0; i < colCount; i += 1) {
+      const cell = (r.cells[i] ?? "");
+      widths[i] = Math.max(widths[i] ?? 0, cell.length);
     }
-    // TableRow
-    return `${row.indent}|${row.cells.join("|")}|`;
-  }).join("\n");
+  }
+
+  const printRow = (indent: string, cells: string[]): string => {
+    const parts: string[] = [];
+    for (let i = 0; i < colCount; i += 1) {
+      const cell = cells[i] ?? "";
+      parts.push(` ${cell.padEnd(widths[i] ?? 0, " ")} `);
+    }
+    return `${indent}|${parts.join("|")}|`;
+  };
+
+  const printHline = (indent: string): string => {
+    // Each column gets 2 extra chars for the surrounding spaces.
+    const segments = widths.map((w) => "-".repeat(w + 2));
+    return `${indent}|${segments.join("+")}|`;
+  };
+
+  return node.rows
+    .map((row) => {
+      if (row.type === "TableHline") {
+        // Re-generate hlines deterministically based on observed column widths.
+        return printHline(row.indent);
+      }
+      return printRow(row.indent, row.cells);
+    })
+    .join("\n");
 }
 
 function printListItem(node: ListItemNode, continuationIndent: string, nestedListIndent: string): string {
