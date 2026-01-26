@@ -356,10 +356,18 @@ function resolveOrg2Command(context, args) {
   return { cmd: finalCmd, args: finalArgs };
 }
 
-async function fetchAgendaGroups(context, filter) {
-  const cwd = getWorkspaceRoot() || process.cwd();
-
+function getAgendaRootDir() {
   const cfg = vscode.workspace.getConfiguration('org2');
+  const configured = String(cfg.get('agenda.dir', '') || '').trim();
+  if (configured) return configured;
+  return getWorkspaceRoot() || process.cwd();
+}
+
+async function fetchAgendaGroups(context, filter) {
+  const cfg = vscode.workspace.getConfiguration('org2');
+  const cwd = getWorkspaceRoot() || process.cwd();
+  const agendaRoot = getAgendaRootDir();
+
   const scope = cfg.get('agenda.scope', 'workspace');
   const files = cfg.get('agenda.files', []);
   const includeOverdue = cfg.get('agenda.includeOverdue', true);
@@ -369,20 +377,20 @@ async function fetchAgendaGroups(context, filter) {
 
   const args = ['agenda'];
   if (scope === 'files') {
-    const resolved = resolveAgendaFiles(files, cwd);
+    const resolved = resolveAgendaFiles(files, agendaRoot);
     if (resolved.length === 0) {
       vscode.window.showWarningMessage("Org2 agenda: org2.agenda.files is empty (set scope to 'workspace' or configure files).");
     }
     if (resolved.length > 0) args.push('--files', ...resolved);
   } else {
-    args.push('--dir', cwd, '--recursive');
+    args.push('--dir', agendaRoot, '--recursive');
   }
 
   args.push('--days', String(days), '--format', 'json');
   if (!includeOverdue) args.push('--no-overdue');
 
   const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
-  const { stdout } = await execFileAsync(finalCmd, finalArgs, { cwd });
+  const { stdout } = await execFileAsync(finalCmd, finalArgs, { cwd: agendaRoot });
 
   let data;
   try {
