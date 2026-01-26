@@ -43,3 +43,48 @@ function! org2#toggle_current_item_fold() abort
 
   call setpos('.', l:save)
 endfunction
+
+function! org2#todo_toggle() abort
+  if &modifiable == 0
+    return
+  endif
+
+  if empty(expand('%:p'))
+    echoerr 'Org2: buffer has no file path'
+    return
+  endif
+
+  " Save first so the CLI operates on the latest content.
+  silent! write
+
+  let l:file = expand('%:p')
+  let l:lnum = line('.')
+
+  let l:cmd = 'org2 todo toggle --file ' . shellescape(l:file) . ' --line ' . l:lnum . ' --apply --format json'
+  call system(l:cmd)
+
+  " Reload changes written by the CLI.
+  silent! edit!
+endfunction
+
+function! org2#todo_set(status) abort
+  if &modifiable == 0
+    return
+  endif
+
+  if empty(expand('%:p'))
+    echoerr 'Org2: buffer has no file path'
+    return
+  endif
+
+  silent! write
+
+  let l:file = expand('%:p')
+  let l:lnum = line('.')
+  let l:status = a:status
+
+  let l:cmd = 'org2 todo set --file ' . shellescape(l:file) . ' --line ' . l:lnum . ' --status ' . shellescape(l:status) . ' --apply --format json'
+  call system(l:cmd)
+
+  silent! edit!
+endfunction
