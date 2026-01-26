@@ -5,7 +5,7 @@
   "version": "0.0.1",
   "publisher": "org2",
   "main": "./extension.js",
-  "activationEvents": ["onLanguage:org2", "onLanguage:org", "onCommand:org2.openAgenda"],
+  "activationEvents": ["onLanguage:org2", "onLanguage:org", "onCommand:org2.openAgenda", "onCommand:org2.toggleTodo", "onCommand:org2.setTodoStatus"],
   "repository": {
     "type": "git",
     "url": "https://github.com/aviaviavi/org2"
@@ -51,6 +51,14 @@
       {
         "command": "org2.openAgendaItem",
         "title": "Org2: Open Agenda Item"
+      },
+      {
+        "command": "org2.toggleTodo",
+        "title": "Org2: Toggle Todo Status"
+      },
+      {
+        "command": "org2.setTodoStatus",
+        "title": "Org2: Set Todo Status"
       },
       {
         "command": "org2.toggleFoldHere",
