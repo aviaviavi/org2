@@ -336,38 +336,20 @@ function resolveOrg2Command(context, args) {
   let finalCmd = cmd;
   let finalArgs = [...extraArgs, ...args];
 
-  // Helpful defaults for local development:
-  // 1) If this extension is checked out inside the org2 repo, run the repo-local CLI.
-  // 2) If the user is running from the clawd workspace (~/clawd/org2), prefer that CLI
-  //    for newer subcommands (fmt/todo) even when an older `org2` exists on PATH.
+  // Helpful default for local development: if this extension is checked out inside
+  // the org2 repo, run the repo-local CLI instead of relying on a global PATH install.
   if (cmd === 'org2' && !(cfg.get('agenda.args', []).length)) {
     const fs = require('fs');
-    const os = require('os');
 
     const maybeRepoRoot = path.resolve(context.extensionPath, '..', '..');
     const repoCli = path.join(maybeRepoRoot, 'dist', 'cli.js');
 
-    const clawdCli = path.join(os.homedir(), 'clawd', 'org2', 'dist', 'cli.js');
-
-    const wantsNewSubcommand = args && args.length > 0 && (args[0] === 'fmt' || args[0] === 'todo');
-
-    const tryUseCli = (cliPath) => {
-      try {
-        fs.accessSync(cliPath);
-        finalCmd = process.execPath;
-        finalArgs = [cliPath, ...args];
-        return true;
-      } catch (_) {
-        return false;
-      }
-    };
-
-    // Prefer repo-local CLI first.
-    if (!tryUseCli(repoCli)) {
-      // For fmt/todo specifically, fall back to the clawd workspace CLI if present.
-      if (wantsNewSubcommand) {
-        tryUseCli(clawdCli);
-      }
+    try {
+      fs.accessSync(repoCli);
+      finalCmd = process.execPath;
+      finalArgs = [repoCli, ...args];
+    } catch (_) {
+      // If not in-repo, fall back to PATH `org2`.
     }
   }
 
