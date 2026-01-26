@@ -88,3 +88,28 @@ function! org2#todo_set(status) abort
 
   silent! edit!
 endfunction
+
+function! org2#format_buffer() abort
+  if &modifiable == 0
+    return
+  endif
+
+  let l:input = join(getline(1, '$'), "\n") . "\n"
+  let l:out = system('org2 fmt --stdin', l:input)
+
+  if v:shell_error != 0
+    echoerr 'Org2: format failed'
+    return
+  endif
+
+  let l:lines = split(l:out, "\n", 1)
+  " Drop trailing empty line from the split (buffer always has a final newline)
+  if len(l:lines) > 0 && l:lines[-1] ==# ''
+    call remove(l:lines, -1)
+  endif
+
+  call setline(1, l:lines)
+  if line('$') > len(l:lines)
+    execute (len(l:lines) + 1) . ',$delete _'
+  endif
+endfunction

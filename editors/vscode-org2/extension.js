@@ -474,6 +474,89 @@ function activate(context) {
 
   context.subscriptions.push(vscode.languages.registerDocumentLinkProvider(selector, linkProvider));
 
+  async function formatOrg2Text(text) {
+    const cwd = getWorkspaceRoot() || process.cwd();
+    const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, ['fmt', '--stdin']);
+
+    return new Promise((resolve, reject) => {
+      const child = cp.spawn(finalCmd, finalArgs, { cwd });
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout.on('data', (d) => {
+        stdout += d.toString('utf8');
+      });
+      child.stderr.on('data', (d) => {
+        stderr += d.toString('utf8');
+      });
+      child.on('error', (err) => {
+        reject(err);
+      });
+      child.on('close', (code) => {
+        if (code !== 0) {
+          const e = new Error(`org2 fmt failed (code=${code})`);
+          e.stderr = stderr;
+          reject(e);
+          return;
+        }
+        resolve(stdout);
+      });
+
+      child.stdin.end(text, 'utf8');
+    });
+  }
+
+  const formattingProvider = {
+    async provideDocumentFormattingEdits(document) {
+      const text = document.getText();
+      try {
+        const formatted = await formatOrg2Text(text);
+        const fullRange = new vscode.Range(
+          0,
+          0,
+          document.lineCount ? document.lineCount - 1 : 0,
+          document.lineCount ? document.lineAt(document.lineCount - 1).text.length : 0
+        );
+        return [vscode.TextEdit.replace(fullRange, formatted)];
+      } catch (err) {
+        const msg = err && err.stderr ? String(err.stderr).trim() : (err instanceof Error ? err.message : String(err));
+        vscode.window.showWarningMessage(`Org2: format failed: ${msg}`);
+        return [];
+      }
+    },
+  };
+
+  context.subscriptions.push(vscode.languages.registerDocumentFormattingEditProvider(selector, formattingProvider));
+
+  context.subscriptions.push(
+    vscode.workspace.onWillSaveTextDocument((e) => {
+      const doc = e.document;
+      if (!doc) return;
+      if (doc.languageId !== 'org2' && doc.languageId !== 'org') return;
+
+      const cfg = vscode.workspace.getConfiguration('org2');
+      const enabled = cfg.get('formatOnSave', true);
+      if (!enabled) return;
+
+      e.waitUntil(
+        (async () => {
+          try {
+            const formatted = await formatOrg2Text(doc.getText());
+            const fullRange = new vscode.Range(
+              0,
+              0,
+              doc.lineCount ? doc.lineCount - 1 : 0,
+              doc.lineCount ? doc.lineAt(doc.lineCount - 1).text.length : 0
+            );
+            return [vscode.TextEdit.replace(fullRange, formatted)];
+          } catch (_) {
+            return [];
+          }
+        })()
+      );
+    })
+  );
+
   // Agenda view
   const agendaProvider = new Org2AgendaProvider(context);
   const agendaView = vscode.window.createTreeView('org2Agenda', {
