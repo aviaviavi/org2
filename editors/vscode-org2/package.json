@@ -110,6 +110,13 @@
           "group": "navigation"
         }
       ],
+      "view/item/context": [
+        {
+          "command": "org2.setScheduled",
+          "when": "view == org2Agenda && viewItem == org2AgendaItem",
+          "group": "navigation@10"
+        }
+      ],
       "editor/context": [
         {
           "command": "org2.toggleTodo",
