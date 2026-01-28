@@ -638,6 +638,60 @@ function activate(context) {
     }
   }
 
+  async function runPlanCli(kind) {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) return;
+
+    const doc = editor.document;
+    if (!doc || doc.uri.scheme !== 'file') {
+      vscode.window.showWarningMessage('Org2: planning update requires a file-backed document.');
+      return;
+    }
+
+    const date = await vscode.window.showInputBox({
+      prompt: `Org2: set ${kind.toUpperCase()} (YYYY-MM-DD)`,
+      placeHolder: 'YYYY-MM-DD',
+      validateInput: (v) => (/^\d{4}-\d{2}-\d{2}$/.test((v || '').trim()) ? undefined : 'Expected YYYY-MM-DD'),
+    });
+    if (!date) return;
+
+    if (doc.isDirty) {
+      const ok = await doc.save();
+      if (!ok) {
+        vscode.window.showWarningMessage('Org2: could not save file before updating planning.');
+        return;
+      }
+    }
+
+    const line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
+
+    const args = [
+      'plan',
+      'set',
+      '--file',
+      doc.uri.fsPath,
+      '--line',
+      String(line),
+      '--kind',
+      kind,
+      '--date',
+      String(date).trim(),
+      '--format',
+      'json',
+      '--apply',
+    ];
+
+    const cwd = getWorkspaceRoot() || process.cwd();
+    const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
+
+    try {
+      await execFileAsync(finalCmd, finalArgs, { cwd });
+      await vscode.commands.executeCommand('workbench.action.files.revert');
+    } catch (e) {
+      vscode.window.showErrorMessage(`Org2: planning update failed: ${String(e && e.message ? e.message : e)}`);
+    }
+  }
+
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.toggleTodo', async () => {
       await runTodoCli('toggle');
@@ -657,6 +711,18 @@ function activate(context) {
       );
       if (!pick) return;
       await runTodoCli('set', pick.value);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.setScheduled', async () => {
+      await runPlanCli('scheduled');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.setDeadline', async () => {
+      await runPlanCli('deadline');
     })
   );
 
