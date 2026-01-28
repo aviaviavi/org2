@@ -603,34 +603,67 @@ function activate(context) {
     })
   );
 
-  async function runTodoCli(action, status) {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) return;
+  function resolveAgendaItemPath(item) {
+    const agendaRoot = getAgendaRootDir();
+    const s = String(item && item.file ? item.file : '');
+    if (!s) return undefined;
+    return path.isAbsolute(s) ? s : path.resolve(agendaRoot, s);
+  }
 
-    const doc = editor.document;
-    if (!doc || doc.uri.scheme !== 'file') {
-      vscode.window.showWarningMessage('Org2: todo status requires a file-backed document.');
-      return;
-    }
-
-    if (doc.isDirty) {
-      const ok = await doc.save();
-      if (!ok) {
-        vscode.window.showWarningMessage('Org2: could not save file before updating todo status.');
-        return;
+  function findOpenDocumentForPath(absPath) {
+    if (!absPath) return undefined;
+    const needle = path.resolve(absPath);
+    for (const d of vscode.workspace.textDocuments || []) {
+      if (d && d.uri && d.uri.scheme === 'file') {
+        const p = path.resolve(d.uri.fsPath);
+        if (p === needle) return d;
       }
     }
+    return undefined;
+  }
 
-    const line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
+  async function runTodoCli(action, status, item) {
+    let filePath;
+    let line;
 
-    const args = ['todo', action, '--file', doc.uri.fsPath, '--line', String(line), '--format', 'json', '--apply'];
+    if (item && item.file) {
+      filePath = resolveAgendaItemPath(item);
+      line = typeof item.line === 'number' ? item.line + 1 : 1;
+
+      const openDoc = findOpenDocumentForPath(filePath);
+      if (openDoc && openDoc.isDirty) {
+        vscode.window.showWarningMessage('Org2: please save the file before updating todo status from the agenda.');
+        return;
+      }
+    } else {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+
+      const doc = editor.document;
+      if (!doc || doc.uri.scheme !== 'file') {
+        vscode.window.showWarningMessage('Org2: todo status requires a file-backed document.');
+        return;
+      }
+
+      if (doc.isDirty) {
+        const ok = await doc.save();
+        if (!ok) {
+          vscode.window.showWarningMessage('Org2: could not save file before updating todo status.');
+          return;
+        }
+      }
+
+      filePath = doc.uri.fsPath;
+      line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
+    }
+
+    const args = ['todo', action, '--file', String(filePath), '--line', String(line), '--format', 'json', '--apply'];
     if (action === 'set' && status) args.push('--status', status);
 
-    const cwd = getWorkspaceRoot() || process.cwd();
     const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
 
     try {
-      await execFileAsync(finalCmd, finalArgs, { cwd });
+      await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
       // Reload from disk to show changes made by the CLI.
       await vscode.commands.executeCommand('workbench.action.files.revert');
     } catch (e) {
@@ -727,8 +760,8 @@ function activate(context) {
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.toggleTodo', async () => {
-      await runTodoCli('toggle');
+    vscode.commands.registerCommand('org2.toggleTodo', async (item) => {
+      await runTodoCli('toggle', undefined, item);
     })
   );
 
