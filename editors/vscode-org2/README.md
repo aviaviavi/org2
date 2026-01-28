@@ -21,6 +21,17 @@ The extension attempts to render described links of the form `[[url][desc]]` so 
 
 Limitation: VS Code decorations cannot truly replace/collapse the underlying text width, so the original `[[url][desc]]` token is hidden (transparent) and `desc` is drawn as a prefix. This means the line still takes up the original character width even though you only see `desc`.
 
+## TODO status editing (MVP)
+
+The extension can toggle/set TODO keywords on the current headline via the `org2` CLI.
+
+- Command: **Org2: Toggle Todo Status** (`org2.toggleTodo`)
+- Command: **Org2: Set Todo Status** (`org2.setTodoStatus`)
+- Default keybinding: `ctrl+alt+t`
+- Also available in the editor right-click context menu.
+
+Implementation detail: the extension saves the file (if needed), runs `org2 todo toggle|set --file ... --line ... --apply`, then reverts the buffer to pick up the on-disk edits.
+
 ## Agenda (MVP)
 
 The extension can show an *agenda* view powered by the `org2` CLI.

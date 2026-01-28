@@ -109,6 +109,18 @@
           "when": "view == org2Agenda",
           "group": "navigation"
         }
+      ],
+      "editor/context": [
+        {
+          "command": "org2.toggleTodo",
+          "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
+          "group": "navigation@10"
+        },
+        {
+          "command": "org2.setTodoStatus",
+          "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
+          "group": "navigation@11"
+        }
       ]
     },
     "configuration": {
@@ -165,12 +177,17 @@
       {
         "key": "ctrl+alt+o",
         "command": "org2.toggleFoldHere",
-        "when": "editorTextFocus && editorLangId == 'org2'"
+        "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+alt+t",
+        "command": "org2.toggleTodo",
+        "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+alt+d",
         "command": "org2.debugFoldingRanges",
-        "when": "editorTextFocus && editorLangId == 'org2'"
+        "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')"
       }
     ]
   }
