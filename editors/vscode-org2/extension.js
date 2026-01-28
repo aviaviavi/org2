@@ -671,14 +671,58 @@ function activate(context) {
     }
   }
 
-  async function runPlanCli(kind) {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) return;
+  function resolveAgendaItemPath(item) {
+    const agendaRoot = getAgendaRootDir();
+    const s = String(item && item.file ? item.file : '');
+    if (!s) return undefined;
+    return path.isAbsolute(s) ? s : path.resolve(agendaRoot, s);
+  }
 
-    const doc = editor.document;
-    if (!doc || doc.uri.scheme !== 'file') {
-      vscode.window.showWarningMessage('Org2: planning update requires a file-backed document.');
-      return;
+  function findOpenDocumentForPath(absPath) {
+    if (!absPath) return undefined;
+    const needle = path.resolve(absPath);
+    for (const d of vscode.workspace.textDocuments || []) {
+      if (d && d.uri && d.uri.scheme === 'file') {
+        const p = path.resolve(d.uri.fsPath);
+        if (p === needle) return d;
+      }
+    }
+    return undefined;
+  }
+
+  async function runPlanCli(kind, item) {
+    let filePath;
+    let line;
+
+    if (item && item.file) {
+      filePath = resolveAgendaItemPath(item);
+      line = typeof item.line === 'number' ? item.line + 1 : 1;
+
+      const openDoc = findOpenDocumentForPath(filePath);
+      if (openDoc && openDoc.isDirty) {
+        vscode.window.showWarningMessage('Org2: please save the file before updating planning from the agenda.');
+        return;
+      }
+    } else {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+
+      const doc = editor.document;
+      if (!doc || doc.uri.scheme !== 'file') {
+        vscode.window.showWarningMessage('Org2: planning update requires a file-backed document.');
+        return;
+      }
+
+      if (doc.isDirty) {
+        const ok = await doc.save();
+        if (!ok) {
+          vscode.window.showWarningMessage('Org2: could not save file before updating planning.');
+          return;
+        }
+      }
+
+      filePath = doc.uri.fsPath;
+      line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
     }
 
     const date = await vscode.window.showInputBox({
@@ -688,21 +732,11 @@ function activate(context) {
     });
     if (!date) return;
 
-    if (doc.isDirty) {
-      const ok = await doc.save();
-      if (!ok) {
-        vscode.window.showWarningMessage('Org2: could not save file before updating planning.');
-        return;
-      }
-    }
-
-    const line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
-
     const args = [
       'plan',
       'set',
       '--file',
-      doc.uri.fsPath,
+      String(filePath),
       '--line',
       String(line),
       '--kind',
@@ -718,7 +752,7 @@ function activate(context) {
     const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
 
     try {
-      await execFileAsync(finalCmd, finalArgs, { cwd });
+      await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
       await vscode.commands.executeCommand('workbench.action.files.revert');
     } catch (e) {
       vscode.window.showErrorMessage(`Org2: planning update failed: ${String(e && e.message ? e.message : e)}`);
@@ -748,8 +782,8 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.setScheduled', async () => {
-      await runPlanCli('scheduled');
+    vscode.commands.registerCommand('org2.setScheduled', async (item) => {
+      await runPlanCli('scheduled', item);
     })
   );
 
