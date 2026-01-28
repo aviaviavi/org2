@@ -7,6 +7,7 @@ import { parseOrgToCanonicalAst } from "./parser.js";
 import { printCanonicalAstToOrg } from "./printer.js";
 import { findConfigFile, loadConfig, resolveFilesFromConfig } from "./config.js";
 import { updateTodoInFile, type TodoStatus } from "./todo.js";
+import { planningKindFromArg, updatePlanningInFile, type PlanningKindArg } from "./planning.js";
 import type {
   DocumentNode,
   HeadlineNode,
@@ -250,6 +251,15 @@ async function main(): Promise<void> {
   let todoFormat: "text" | "json" = "json";
   let todoNow = ""; // ISO string
 
+  // Planning editing
+  let planAction: "set" = "set";
+  let planFile = "";
+  let planLine = 0;
+  let planKind: PlanningKindArg | "" = "";
+  let planDate = ""; // YYYY-MM-DD
+  let planApply = false;
+  let planFormat: "text" | "json" = "json";
+
   // Formatter
   let fmtStdin = false;
   let fmtApply = false;
@@ -279,6 +289,17 @@ async function main(): Promise<void> {
           i++;
         }
       }
+    } else if (arg === "plan" || arg === "planning") {
+      command = "plan";
+      i++;
+      // Optional subcommand (reserved; currently only 'set')
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        const sub = args[i]!;
+        if (sub === "set") {
+          planAction = "set";
+          i++;
+        }
+      }
     } else if (arg === "--dir") {
       i++;
       if (i < args.length) {
@@ -297,6 +318,8 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "todo") {
           todoFile = args[i]!;
+        } else if (command === "plan") {
+          planFile = args[i]!;
         } else {
           files.push(args[i]!);
         }
@@ -305,7 +328,12 @@ async function main(): Promise<void> {
     } else if (arg === "--line") {
       i++;
       if (i < args.length) {
-        todoLine = parseInt(args[i]!, 10);
+        const n = parseInt(args[i]!, 10);
+        if (command === "todo") {
+          todoLine = n;
+        } else if (command === "plan") {
+          planLine = n;
+        }
         i++;
       }
     } else if (arg === "--status") {
@@ -335,6 +363,18 @@ async function main(): Promise<void> {
         today = args[i];
         i++;
       }
+    } else if (arg === "--kind") {
+      i++;
+      if (i < args.length) {
+        planKind = args[i] as PlanningKindArg;
+        i++;
+      }
+    } else if (arg === "--date") {
+      i++;
+      if (i < args.length) {
+        planDate = args[i]!;
+        i++;
+      }
     } else if (arg === "--format") {
       i++;
       if (i < args.length) {
@@ -345,6 +385,8 @@ async function main(): Promise<void> {
           format = v;
         } else if (command === "todo" && (v === "text" || v === "json")) {
           todoFormat = v;
+        } else if (command === "plan" && (v === "text" || v === "json")) {
+          planFormat = v;
         }
         i++;
       }
@@ -375,6 +417,8 @@ async function main(): Promise<void> {
     } else if (arg === "--apply" || arg === "--in-place") {
       if (command === "todo") {
         todoApply = true;
+      } else if (command === "plan") {
+        planApply = true;
       } else if (command === "archive") {
         archiveApply = true;
       } else if (command === "fmt") {
@@ -389,7 +433,7 @@ async function main(): Promise<void> {
     }
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "fmt") {
+  if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "plan" && command !== "fmt") {
     console.error(
       "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--no-overdue] [--verbose-errors]",
     );
@@ -398,6 +442,9 @@ async function main(): Promise<void> {
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE --line N [--status todo|in_progress|done|canceled] [--now ISO] [--format text|json] [--apply]",
+    );
+    console.error(
+      "       org2 plan set --file FILE --line N --kind scheduled|deadline --date YYYY-MM-DD [--format text|json] [--apply]",
     );
     console.error(
       "       org2 fmt [--stdin] [--file FILE|--files FILE ...] [--apply]",
@@ -452,6 +499,54 @@ async function main(): Promise<void> {
             newStatus: res.newStatus,
             ...(res.closedAt ? { closedAt: res.closedAt } : {}),
             applied: todoApply,
+            changed: res.changed,
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+    }
+
+    return;
+  }
+
+  if (command === "plan") {
+    if (!planFile) {
+      console.error("Error: plan requires --file FILE");
+      process.exit(1);
+    }
+    if (!Number.isFinite(planLine) || planLine < 1) {
+      console.error("Error: plan requires --line N (1-based)");
+      process.exit(1);
+    }
+    if (!planKind || (planKind !== "scheduled" && planKind !== "deadline")) {
+      console.error("Error: plan requires --kind scheduled|deadline");
+      process.exit(1);
+    }
+    if (!planDate) {
+      console.error("Error: plan requires --date YYYY-MM-DD");
+      process.exit(1);
+    }
+
+    const res = updatePlanningInFile({
+      filePath: planFile,
+      lineNumber: planLine,
+      kind: planningKindFromArg(planKind as PlanningKindArg),
+      date: planDate,
+      apply: planApply,
+    });
+
+    if (planFormat === "text") {
+      process.stdout.write(res.text + (res.text.endsWith("\n") ? "" : "\n"));
+    } else {
+      process.stdout.write(
+        JSON.stringify(
+          {
+            file: res.filePath,
+            headingLine: res.headingLineNumber,
+            kind: res.kind,
+            date: res.date,
+            applied: planApply,
             changed: res.changed,
           },
           null,
