@@ -21,13 +21,21 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Programming Languages"],
+  "categories": [
+    "Programming Languages"
+  ],
   "contributes": {
     "languages": [
       {
         "id": "org2",
-        "aliases": ["Org2", "org2"],
-        "extensions": [".org", ".org2"],
+        "aliases": [
+          "Org2",
+          "org2"
+        ],
+        "extensions": [
+          ".org",
+          ".org2"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -120,6 +128,11 @@
           "command": "org2.toggleTodo",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@11"
+        },
+        {
+          "command": "org2.setDeadline",
+          "when": "view == org2Agenda && viewItem == org2AgendaItem",
+          "group": "navigation@12"
         }
       ],
       "editor/context": [
@@ -132,6 +145,16 @@
           "command": "org2.setTodoStatus",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@11"
+        },
+        {
+          "command": "org2.setScheduled",
+          "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
+          "group": "navigation@12"
+        },
+        {
+          "command": "org2.setDeadline",
+          "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
+          "group": "navigation@13"
         }
       ]
     },
@@ -146,12 +169,17 @@
         "org2.agenda.args": {
           "type": "array",
           "default": [],
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Extra args prefixed when calling org2 (advanced; useful for 'node /path/to/dist/cli.js')."
         },
         "org2.agenda.scope": {
           "type": "string",
-          "enum": ["workspace", "files"],
+          "enum": [
+            "workspace",
+            "files"
+          ],
           "default": "workspace",
           "description": "Where to read org files from. 'workspace' scans org2.agenda.dir (or the workspace folder if unset); 'files' uses org2.agenda.files."
         },
@@ -163,7 +191,9 @@
         "org2.agenda.files": {
           "type": "array",
           "default": [],
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "List of org/org2 files (absolute or workspace-relative) to include when scope='files'."
         },
         "org2.agenda.days": {

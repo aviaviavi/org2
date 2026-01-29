@@ -671,25 +671,6 @@ function activate(context) {
     }
   }
 
-  function resolveAgendaItemPath(item) {
-    const agendaRoot = getAgendaRootDir();
-    const s = String(item && item.file ? item.file : '');
-    if (!s) return undefined;
-    return path.isAbsolute(s) ? s : path.resolve(agendaRoot, s);
-  }
-
-  function findOpenDocumentForPath(absPath) {
-    if (!absPath) return undefined;
-    const needle = path.resolve(absPath);
-    for (const d of vscode.workspace.textDocuments || []) {
-      if (d && d.uri && d.uri.scheme === 'file') {
-        const p = path.resolve(d.uri.fsPath);
-        if (p === needle) return d;
-      }
-    }
-    return undefined;
-  }
-
   async function runPlanCli(kind, item) {
     let filePath;
     let line;
@@ -788,8 +769,8 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.setDeadline', async () => {
-      await runPlanCli('deadline');
+    vscode.commands.registerCommand('org2.setDeadline', async (item) => {
+      await runPlanCli('deadline', item);
     })
   );
 
