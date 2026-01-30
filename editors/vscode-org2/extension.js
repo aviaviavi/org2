@@ -740,6 +740,65 @@ function activate(context) {
     }
   }
 
+  async function runArchiveCli(item) {
+    let filePath;
+    let line;
+
+    if (item && item.file) {
+      filePath = resolveAgendaItemPath(item);
+      line = typeof item.line === 'number' ? item.line + 1 : 1;
+
+      const openDoc = findOpenDocumentForPath(filePath);
+      if (openDoc && openDoc.isDirty) {
+        vscode.window.showWarningMessage('Org2: please save the file before archiving from the agenda.');
+        return;
+      }
+    } else {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+
+      const doc = editor.document;
+      if (!doc || doc.uri.scheme !== 'file') {
+        vscode.window.showWarningMessage('Org2: archiving requires a file-backed document.');
+        return;
+      }
+
+      if (doc.isDirty) {
+        const ok = await doc.save();
+        if (!ok) {
+          vscode.window.showWarningMessage('Org2: could not save file before archiving.');
+          return;
+        }
+      }
+
+      filePath = doc.uri.fsPath;
+      line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
+    }
+
+    const ok = await vscode.window.showWarningMessage(
+      `Org2: archive subtree at line ${line}? (This will edit the file on disk)`,
+      { modal: true },
+      'Archive'
+    );
+    if (ok !== 'Archive') return;
+
+    const args = ['archive', '--file', String(filePath), '--pos', String(line), '--apply'];
+    const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
+
+    try {
+      await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
+      await vscode.commands.executeCommand('workbench.action.files.revert');
+    } catch (e) {
+      vscode.window.showErrorMessage(`Org2: archive failed: ${String(e && e.message ? e.message : e)}`);
+    }
+  }
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.archiveSubtree', async (item) => {
+      await runArchiveCli(item);
+    })
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.toggleTodo', async (item) => {
       await runTodoCli('toggle', undefined, item);
