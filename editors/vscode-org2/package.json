@@ -12,7 +12,8 @@
     "onCommand:org2.toggleTodo",
     "onCommand:org2.setTodoStatus",
     "onCommand:org2.setScheduled",
-    "onCommand:org2.setDeadline"
+    "onCommand:org2.setDeadline",
+    "onCommand:org2.archiveSubtree"
   ],
   "repository": {
     "type": "git",
@@ -85,6 +86,10 @@
         "title": "Org2: Set DEADLINE"
       },
       {
+        "command": "org2.archiveSubtree",
+        "title": "Org2: Archive Subtree"
+      },
+      {
         "command": "org2.toggleFoldHere",
         "title": "Org2: Toggle Fold Here"
       },
@@ -133,6 +138,11 @@
           "command": "org2.setDeadline",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@12"
+        },
+        {
+          "command": "org2.archiveSubtree",
+          "when": "view == org2Agenda && viewItem == org2AgendaItem",
+          "group": "navigation@13"
         }
       ],
       "editor/context": [
@@ -155,6 +165,11 @@
           "command": "org2.setDeadline",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@13"
+        },
+        {
+          "command": "org2.archiveSubtree",
+          "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
+          "group": "navigation@14"
         }
       ]
     },
