@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "bin": {
-    "org2": "dist/cli.js"
+    "org2": "dist/cli.js",
+    "org2-lsp": "dist/lsp.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -275,6 +275,9 @@ async function main(): Promise<void> {
     } else if (arg === "archive") {
       command = "archive";
       i++;
+    } else if (arg === "lsp") {
+      command = "lsp";
+      i++;
     } else if (arg === "fmt" || arg === "format") {
       command = "fmt";
       i++;
@@ -433,7 +436,7 @@ async function main(): Promise<void> {
     }
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "plan" && command !== "fmt") {
+  if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "plan" && command !== "fmt" && command !== "lsp") {
     console.error(
       "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--no-overdue] [--verbose-errors]",
     );
@@ -449,7 +452,17 @@ async function main(): Promise<void> {
     console.error(
       "       org2 fmt [--stdin] [--file FILE|--files FILE ...] [--apply]",
     );
+    console.error(
+      "       org2 lsp  # start the org2 Language Server (stdio)",
+    );
     process.exit(1);
+  }
+
+  if (command === "lsp") {
+    // The LSP server runs over stdio and expects to own stdin/stdout.
+    // Importing this module starts the server.
+    await import("./lsp.js");
+    return;
   }
 
   if (command === "todo") {
