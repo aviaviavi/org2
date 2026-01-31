@@ -23,7 +23,9 @@ This project is in the very early stages of development. If you're interested in
 
 ** CLI usage (local)
 
-Org2 ships a small CLI (currently: =agenda= and =archive=) that you can run from a local checkout.
+Org2 ships a small CLI that you can run from a local checkout.
+
+Right now the CLI is primarily focused on *reading/planning workflows* (like =agenda=) plus a handful of experimental editing commands used by the VSCode extension. The exact set of commands changes quickly, so treat it as unstable and prefer =org2 --help= for the authoritative list.
 
 *** Install / setup
 
@@ -113,19 +115,16 @@ Tip: for a reproducible “fixture” when testing agenda output, create a small
 npm run org2 -- agenda --dir ./tmp/agenda-fixture --today 2026-01-25 --days 14 --format json
 #+end_src
 
-*** Archive (quick smoke tests)
+*** Other CLI commands (brief)
 
-The archive command moves the subtree at a given position into an archive file.
+Org2 also includes additional commands that are mostly used internally by editor integrations (for example, marking TODO states, setting SCHEDULED/DEADLINE dates, formatting, and the LSP server).
+
+Rather than documenting them here (they change often), run:
 
 #+begin_src sh
-# Show what would happen (no writes)
-npm run org2 -- archive --file /path/to/notes.org --pos 42
-
-# Show a diff
-npm run org2 -- archive --file /path/to/notes.org --pos 42 --format diff
-
-# Apply changes in-place
-npm run org2 -- archive --file /path/to/notes.org --pos 42 --apply
+npm run org2 -- --help
+# or
+node dist/cli.js --help
 #+end_src
 
 ** Tools
