@@ -1,0 +1,8 @@
+* DONE Finish it
+:PROPERTIES:
+:CLOSED_AT: <2026-01-21 Wed 12:34>
+:END:
+:LOGBOOK:
+- State "DONE" from "IN_PROGRESS" <2026-01-21 Wed 12:34>
+:END:
+More
