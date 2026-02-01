@@ -411,7 +411,17 @@ async function main(): Promise<void> {
     } else if (arg === "--pos") {
       i++;
       if (i < args.length) {
-        archivePos = args[i];
+        const rawPos = args[i]!;
+        // For editor integrations it's convenient to pass LINE[:COL].
+        // - archive uses the full string
+        // - todo/plan only use the line component
+        if (command === "archive") {
+          archivePos = rawPos;
+        } else if (command === "todo") {
+          todoLine = parseInt(rawPos.split(":")[0]!, 10);
+        } else if (command === "plan") {
+          planLine = parseInt(rawPos.split(":")[0]!, 10);
+        }
         i++;
       }
     } else if (arg === "--stdin") {
@@ -444,10 +454,10 @@ async function main(): Promise<void> {
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff] [--apply]",
     );
     console.error(
-      "       org2 todo [set|toggle] --file FILE --line N [--status todo|in_progress|done|canceled] [--now ISO] [--format text|json] [--apply]",
+      "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--format text|json] [--apply]",
     );
     console.error(
-      "       org2 plan set --file FILE --line N --kind scheduled|deadline --date YYYY-MM-DD [--format text|json] [--apply]",
+      "       org2 plan set --file FILE (--line N | --pos LINE[:COL]) --kind scheduled|deadline --date YYYY-MM-DD [--format text|json] [--apply]",
     );
     console.error(
       "       org2 fmt [--stdin] [--file FILE|--files FILE ...] [--apply]",
@@ -471,7 +481,7 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     if (!Number.isFinite(todoLine) || todoLine < 1) {
-      console.error("Error: todo requires --line N (1-based)");
+      console.error("Error: todo requires --line N (1-based) or --pos LINE[:COL]");
       process.exit(1);
     }
 
@@ -529,7 +539,7 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     if (!Number.isFinite(planLine) || planLine < 1) {
-      console.error("Error: plan requires --line N (1-based)");
+      console.error("Error: plan requires --line N (1-based) or --pos LINE[:COL]");
       process.exit(1);
     }
     if (!planKind || (planKind !== "scheduled" && planKind !== "deadline")) {
