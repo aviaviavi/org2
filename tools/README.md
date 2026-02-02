@@ -34,3 +34,14 @@ Notes:
   - every `spec/v0/tests/*.org` has a sibling `*.json` fixture (and vice versa)
   - each `*.json` conforms to `spec/v0/canonical-ast.schema.json`
 - With `--e2e` it also parses `.org` → AST using the reference parser and compares it to the sibling `*.json` (exact match).
+
+## GitHub issue view workaround
+
+`gh issue view` can fail for issues that reference GitHub Projects (classic). Use this REST-based workaround:
+
+```bash
+cd /path/to/org2
+node tools/gh-issue-view.mjs aviaviavi/org2#76
+# or
+node tools/gh-issue-view.mjs 76 --repo aviaviavi/org2
+```
