@@ -227,6 +227,17 @@
           "type": "boolean",
           "default": true,
           "description": "Auto-format Org tables on save (runs `org2 fmt --stdin` and replaces the document)."
+        },
+        "org2.folding.autoFoldMaxHeadingLevel": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0,
+          "description": "Auto-fold headings up to this level (1 = top-level only, 2 = fold level 1-2 headings, 0 = disable auto-folding headings)."
+        },
+        "org2.folding.autoFoldPropertyDrawers": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-fold :PROPERTIES: drawers when a document is opened (once per file)."
         }
       }
     },
