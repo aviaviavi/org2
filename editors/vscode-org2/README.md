@@ -32,6 +32,16 @@ The extension can toggle/set TODO keywords on the current headline via the `org2
 
 Implementation detail: the extension saves the file (if needed), runs `org2 todo toggle|set --file ... --line ... --apply`, then reverts the buffer to pick up the on-disk edits.
 
+## Planning + archiving (MVP)
+
+The extension can edit planning keywords and archive subtrees via the `org2` CLI.
+
+- Command: **Org2: Set Scheduled** (`org2.setScheduled`) → prompts for `YYYY-MM-DD`
+- Command: **Org2: Set Deadline** (`org2.setDeadline`) → prompts for `YYYY-MM-DD`
+- Command: **Org2: Archive Subtree** (`org2.archiveSubtree`) → confirmation modal
+
+Implementation detail: the extension saves the file (if needed), runs the relevant `org2 plan set ... --apply` / `org2 archive ... --apply`, then reverts the buffer to pick up on-disk edits.
+
 ## Agenda (MVP)
 
 The extension can show an *agenda* view powered by the `org2` CLI.
