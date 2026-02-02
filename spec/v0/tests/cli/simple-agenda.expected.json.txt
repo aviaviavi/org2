@@ -29,7 +29,7 @@
           "headline": "Task for tomorrow",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/simple-agenda.org",
-          "line": 0
+          "line": 3
         }
       ]
     }
