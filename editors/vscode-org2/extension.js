@@ -7,12 +7,14 @@ const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
 const propertiesBeginRe = /^\s*:PROPERTIES:\s*$/i;
 const drawerEndRe = /^\s*:END:\s*$/i;
 
-function findTopLevelHeadingLines(document) {
+function findHeadingLinesUpToLevel(document, maxLevel) {
+  if (typeof maxLevel !== 'number' || maxLevel <= 0) return [];
+
   const starts = [];
   for (let i = 0; i < document.lineCount; i++) {
     const text = document.lineAt(i).text;
     const m = headingRe.exec(text);
-    if (m && m[1].length === 1) starts.push(i);
+    if (m && m[1].length <= maxLevel) starts.push(i);
   }
   return starts;
 }
@@ -898,7 +900,14 @@ function activate(context) {
     const key = doc.uri.toString();
     if (autoFoldedForDoc.has(key)) return;
 
-    const startLines = [...findTopLevelHeadingLines(doc), ...findPropertyDrawerStartLines(doc)];
+    const cfg = vscode.workspace.getConfiguration('org2');
+    const maxLevel = cfg.get('folding.autoFoldMaxHeadingLevel', 1);
+    const foldPropertyDrawers = cfg.get('folding.autoFoldPropertyDrawers', true);
+
+    const startLines = [
+      ...findHeadingLinesUpToLevel(doc, maxLevel),
+      ...(foldPropertyDrawers ? findPropertyDrawerStartLines(doc) : []),
+    ];
 
     // Mark before folding to avoid repeated attempts on rapid focus changes.
     autoFoldedForDoc.add(key);
