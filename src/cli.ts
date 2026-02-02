@@ -43,11 +43,99 @@ function getTodayString(): string {
 
 interface ScheduledItem {
   filePath: string;
+  // 0-based (VS Code uses 0-based positions)
   lineNumber: number;
   headline: string;
   todo: string | undefined;
   date: string;
   kind: string;
+}
+
+function parseHeadlineLine(line: string): { todo?: string; title: string } | null {
+  const m = /^(\*+)\s+(.*)$/.exec(line);
+  if (!m) return null;
+
+  let rest = m[2] ?? "";
+  rest = rest.trimEnd();
+
+  // Strip tags suffix: " ... :tag:tag:" (very rough, but good enough for agenda titles)
+  rest = rest.replace(/\s+:[^\s:]+(?::[^\s:]+)*:\s*$/, "");
+
+  const pieces = rest.trim().split(/\s+/);
+  const first = pieces[0] ?? "";
+
+  // Heuristic: TODO keywords are usually uppercase-ish.
+  if (/^[A-Z][A-Z0-9_-]*$/.test(first) && pieces.length > 1) {
+    return { todo: first, title: rest.slice(first.length).trimStart() };
+  }
+
+  return { title: rest };
+}
+
+function findScheduledItemsInText(
+  content: string,
+  filePath: string,
+  startDate: Date,
+  endDate: Date,
+  includeOverdue: boolean
+): ScheduledItem[] {
+  const items: ScheduledItem[] = [];
+  const lines = content.split("\n");
+
+  let current: { todo?: string; title: string; lineNumber: number } | null = null;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+
+    // Headline line
+    if (/^(\*+)\s+/.test(line)) {
+      const parsed = parseHeadlineLine(line);
+      if (parsed) {
+        current = { ...parsed, lineNumber: i };
+      } else {
+        current = null;
+      }
+      continue;
+    }
+
+    // Planning line(s) belong to the most recent headline.
+    if (!current) continue;
+
+    // Skip non-todo headlines.
+    const todo = current.todo;
+    if (!todo) continue;
+    if (todo === "DONE" || todo === "CANCELLED" || todo === "CANCELED") continue;
+
+    // Match multiple planning tokens on a single line.
+    // Example: "SCHEDULED: <2026-02-01 Sun> DEADLINE: <...>"
+    const planningRe = /(SCHEDULED|DEADLINE|CLOSED):\s*([<[].*?[>\]])/g;
+    planningRe.lastIndex = 0;
+
+    let m: RegExpExecArray | null;
+    while ((m = planningRe.exec(line)) !== null) {
+      const kind = m[1] ?? "";
+      const tsRaw = m[2] ?? "";
+      const dateStr = extractDateFromTimestamp(tsRaw);
+      if (!dateStr) continue;
+
+      const itemDate = parseIsoDate(dateStr);
+      const inRange = itemDate >= startDate && itemDate <= endDate;
+      const isOverdue = itemDate < startDate;
+
+      if (!((includeOverdue && isOverdue) || inRange)) continue;
+
+      items.push({
+        filePath,
+        lineNumber: current.lineNumber,
+        headline: current.title,
+        todo,
+        date: dateStr,
+        kind,
+      });
+    }
+  }
+
+  return items;
 }
 
 function findScheduledItems(
@@ -761,8 +849,11 @@ async function main(): Promise<void> {
     try {
       const content = fs.readFileSync(filePath, "utf8");
       const normalized = content.replace(/\r\n/g, "\n");
-      const ast = parseOrgToCanonicalAst(normalized);
-      const items = findScheduledItems(ast, filePath, startDate, endDate, includeOverdue);
+
+      // Agenda intentionally uses a lightweight line-based scan so we can provide
+      // stable 0-based line numbers for editor integrations (VS Code agenda → open file).
+      // The canonical parser does not currently preserve source locations.
+      const items = findScheduledItemsInText(normalized, filePath, startDate, endDate, includeOverdue);
       allItems.push(...items);
     } catch (err) {
       skippedFileCount += 1;
