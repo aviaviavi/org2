@@ -1,0 +1,1 @@
+id get --file "spec/v0/tests/cli/id-get-basic.input.txt"

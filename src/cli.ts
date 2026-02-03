@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import crypto from "node:crypto";
 import { parseOrgToCanonicalAst } from "./parser.js";
 import { printCanonicalAstToOrg } from "./printer.js";
 import { findConfigFile, loadConfig, resolveFilesFromConfig } from "./config.js";
@@ -352,6 +353,14 @@ async function main(): Promise<void> {
   let fmtStdin = false;
   let fmtApply = false;
 
+  // IDs (Roam)
+  let idAction: "get" | "ensure" = "get";
+  let idFile = "";
+  let idLine = 0;
+  let idApply = false;
+  let idFormat: "text" | "json" = "text";
+  let idForced = "";
+
   // Parse arguments
   let i = 0;
   while (i < args.length) {
@@ -391,6 +400,17 @@ async function main(): Promise<void> {
           i++;
         }
       }
+    } else if (arg === "id") {
+      command = "id";
+      i++;
+      // Optional subcommand: get|ensure (default get)
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        const sub = args[i]!;
+        if (sub === "get" || sub === "ensure") {
+          idAction = sub;
+          i++;
+        }
+      }
     } else if (arg === "--dir") {
       i++;
       if (i < args.length) {
@@ -411,6 +431,8 @@ async function main(): Promise<void> {
           todoFile = args[i]!;
         } else if (command === "plan") {
           planFile = args[i]!;
+        } else if (command === "id") {
+          idFile = args[i]!;
         } else {
           files.push(args[i]!);
         }
@@ -424,6 +446,8 @@ async function main(): Promise<void> {
           todoLine = n;
         } else if (command === "plan") {
           planLine = n;
+        } else if (command === "id") {
+          idLine = n;
         }
         i++;
       }
@@ -466,6 +490,12 @@ async function main(): Promise<void> {
         planDate = args[i]!;
         i++;
       }
+    } else if (arg === "--id") {
+      i++;
+      if (i < args.length) {
+        idForced = args[i]!;
+        i++;
+      }
     } else if (arg === "--format") {
       i++;
       if (i < args.length) {
@@ -478,6 +508,8 @@ async function main(): Promise<void> {
           todoFormat = v;
         } else if (command === "plan" && (v === "text" || v === "json")) {
           planFormat = v;
+        } else if (command === "id" && (v === "text" || v === "json")) {
+          idFormat = v;
         }
         i++;
       }
@@ -502,13 +534,15 @@ async function main(): Promise<void> {
         const rawPos = args[i]!;
         // For editor integrations it's convenient to pass LINE[:COL].
         // - archive uses the full string
-        // - todo/plan only use the line component
+        // - todo/plan/id only use the line component
         if (command === "archive") {
           archivePos = rawPos;
         } else if (command === "todo") {
           todoLine = parseInt(rawPos.split(":")[0]!, 10);
         } else if (command === "plan") {
           planLine = parseInt(rawPos.split(":")[0]!, 10);
+        } else if (command === "id") {
+          idLine = parseInt(rawPos.split(":")[0]!, 10);
         }
         i++;
       }
@@ -524,6 +558,8 @@ async function main(): Promise<void> {
         archiveApply = true;
       } else if (command === "fmt") {
         fmtApply = true;
+      } else if (command === "id") {
+        idApply = true;
       }
       i++;
     } else if (arg === "--verbose" || arg === "--verbose-errors") {
@@ -534,7 +570,7 @@ async function main(): Promise<void> {
     }
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "plan" && command !== "fmt" && command !== "lsp") {
+  if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id") {
     console.error(
       "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--no-overdue] [--verbose-errors]",
     );
@@ -546,6 +582,9 @@ async function main(): Promise<void> {
     );
     console.error(
       "       org2 plan set --file FILE (--line N | --pos LINE[:COL]) --kind scheduled|deadline --date YYYY-MM-DD [--format text|json] [--apply]",
+    );
+    console.error(
+      "       org2 id [get|ensure] --file FILE [--line N|--pos LINE[:COL]] [--id UUID] [--format text|json] [--apply]",
     );
     console.error(
       "       org2 fmt [--stdin] [--file FILE|--files FILE ...] [--apply]",
@@ -560,6 +599,130 @@ async function main(): Promise<void> {
     // The LSP server runs over stdio and expects to own stdin/stdout.
     // Importing this module starts the server.
     await import("./lsp.js");
+    return;
+  }
+
+  if (command === "id") {
+    if (!idFile) {
+      console.error("Error: id requires --file FILE");
+      process.exit(1);
+    }
+
+    const raw = fs.readFileSync(idFile, "utf8").replace(/\r\n/g, "\n");
+    const lines = raw.split("\n");
+
+    const getFileId = (): { id: string; line: number } | null => {
+      // Accept `#+id: <uuid>` anywhere near top, but prefer a file-level property drawer.
+      for (let j = 0; j < Math.min(lines.length, 30); j += 1) {
+        const l = lines[j] ?? "";
+        const m = /^#\+id:\s*(\S+)\s*$/i.exec(l.trim());
+        if (m) return { id: m[1]!, line: j + 1 };
+      }
+
+      // Look for a top-of-file :PROPERTIES: drawer.
+      // Allow leading blank lines and comments.
+      let idx = 0;
+      while (idx < lines.length) {
+        const l = (lines[idx] ?? "").trim();
+        if (l === "" || l.startsWith("#")) {
+          idx += 1;
+          continue;
+        }
+        break;
+      }
+
+      if ((lines[idx] ?? "").trim() !== ":PROPERTIES:") return null;
+
+      for (let j = idx + 1; j < lines.length; j += 1) {
+        const l = (lines[j] ?? "").trim();
+        if (l === ":END:") return null;
+        const m = /^:ID:\s*(\S+)\s*$/.exec(l);
+        if (m) return { id: m[1]!, line: j + 1 };
+      }
+
+      return null;
+    };
+
+    const existing = getFileId();
+
+    if (idAction === "get") {
+      if (!existing) {
+        console.error("Error: no file-level ID found");
+        process.exit(1);
+      }
+
+      if (idFormat === "json") {
+        process.stdout.write(
+          JSON.stringify(
+            {
+              id: existing.id,
+              kind: "file",
+              file: idFile,
+              line: existing.line,
+            },
+            null,
+            2,
+          ) + "\n",
+        );
+      } else {
+        process.stdout.write(existing.id + "\n");
+      }
+
+      return;
+    }
+
+    // ensure
+    if (existing) {
+      if (idFormat === "json") {
+        process.stdout.write(
+          JSON.stringify(
+            {
+              id: existing.id,
+              kind: "file",
+              file: idFile,
+              line: existing.line,
+              applied: idApply,
+              changed: false,
+            },
+            null,
+            2,
+          ) + "\n",
+        );
+      } else {
+        process.stdout.write(existing.id + "\n");
+      }
+      return;
+    }
+
+    const newId = idForced || crypto.randomUUID();
+    const header = `:PROPERTIES:\n:ID: ${newId}\n:END:\n\n`;
+    const out = header + raw.replace(/^\n+/, "");
+
+    if (idApply) {
+      fs.writeFileSync(idFile, out, "utf8");
+    }
+
+    if (idFormat === "json") {
+      process.stdout.write(
+        JSON.stringify(
+          {
+            id: newId,
+            kind: "file",
+            file: idFile,
+            line: 2,
+            applied: idApply,
+            changed: true,
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+    } else if (idApply) {
+      process.stdout.write(newId + "\n");
+    } else {
+      process.stdout.write(out);
+    }
+
     return;
   }
 
