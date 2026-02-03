@@ -106,7 +106,7 @@ function findScheduledItemsInText(
     const todo = current.todo;
     if (!todo) continue;
 
-    const isDoneLike = todo === "DONE" || todo === "CANCELLED" || todo === "CANCELED";
+    const isDoneLike = todo === "DONE" || todo === "CANCELLED";
     const isProgLike = todo === "PROG" || todo === "IN_PROGRESS";
 
     // Match multiple planning tokens on a single line.
@@ -176,7 +176,7 @@ function findScheduledItems(
                 const todo = headline.todo;
                 if (!todo) continue;
 
-                const isDoneLike = todo === "DONE" || todo === "CANCELLED" || todo === "CANCELED";
+                const isDoneLike = todo === "DONE" || todo === "CANCELLED";
                 const isProgLike = todo === "PROG" || todo === "IN_PROGRESS";
 
                 if (isDoneLike && isOverdue) continue;
