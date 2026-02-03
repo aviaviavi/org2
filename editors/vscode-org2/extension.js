@@ -1060,18 +1060,68 @@ function activate(context) {
         }
       }
 
-      // For now we use the file-level ID drawer (top-of-file). This is enough to
-      // create stable links between notes, and works well with dailies.
-      await ensureFileHasTopLevelId(doc);
+      const cursorLine = editor.selection.active.line;
+      const findHeadingTitleAtOrAboveLine = (line0) => {
+        const start = Math.min(Math.max(Number(line0) || 0, 0), doc.lineCount - 1);
+        for (let i = start; i >= 0; i -= 1) {
+          const text = doc.lineAt(i).text;
+          const m = headingRe.exec(text);
+          if (m) return text.replace(/^\*+\s+/, '').trim();
+        }
+        return null;
+      };
 
-      const id = findFileLevelIdInText(doc.getText());
-      if (!id) {
-        vscode.window.showWarningMessage('Org2: could not find an :ID: property in the file-level drawer.');
+      // Prefer headline-level IDs (at/above cursor) if we're in a heading context;
+      // fall back to file-level IDs.
+      const args = [
+        'id',
+        'ensure',
+        '--file',
+        String(doc.uri.fsPath),
+        '--line',
+        String(cursorLine + 1),
+        '--apply',
+        '--format',
+        'json',
+      ];
+      const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
+
+      let out;
+      try {
+        out = await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
+      } catch (e) {
+        vscode.window.showErrorMessage(`Org2: failed to ensure ID: ${String(e && e.message ? e.message : e)}`);
         return;
       }
 
-      const title = path.basename(doc.uri.fsPath).replace(/\.(org2|org)$/i, '');
-      const link = `[[id:${id}][${title}]]`;
+      let payload;
+      try {
+        payload = JSON.parse(String(out || '').trim());
+      } catch (e) {
+        vscode.window.showErrorMessage('Org2: failed to parse org2 id ensure output.');
+        return;
+      }
+
+      const id = typeof payload.id === 'string' ? payload.id : '';
+      if (!/^([0-9a-fA-F-]{36})$/.test(id)) {
+        vscode.window.showErrorMessage('Org2: org2 id ensure did not return a valid UUID.');
+        return;
+      }
+
+      const kind = payload.kind === 'headline' ? 'headline' : 'file';
+      const title =
+        kind === 'headline'
+          ? findHeadingTitleAtOrAboveLine(cursorLine) || path.basename(doc.uri.fsPath).replace(/\.(org2|org)$/i, '')
+          : path.basename(doc.uri.fsPath).replace(/\.(org2|org)$/i, '');
+
+      const link = `[[id:${id.toLowerCase()}][${title}]]`;
+
+      // If we inserted an ID, the CLI wrote to disk. Refresh the editor view.
+      try {
+        await vscode.commands.executeCommand('workbench.action.files.revert');
+      } catch (e) {
+        // ignore
+      }
 
       await vscode.env.clipboard.writeText(link);
       vscode.window.showInformationMessage('Org2: copied ID link to clipboard.');
