@@ -13,7 +13,11 @@
     "onCommand:org2.setTodoStatus",
     "onCommand:org2.setScheduled",
     "onCommand:org2.setDeadline",
-    "onCommand:org2.archiveSubtree"
+    "onCommand:org2.archiveSubtree",
+    "onCommand:org2.roamDailiesGotoToday",
+    "onCommand:org2.roamDailiesGotoYesterday",
+    "onCommand:org2.roamDailiesGotoTomorrow",
+    "onCommand:org2.roamDailiesGotoDate"
   ],
   "repository": {
     "type": "git",
@@ -88,6 +92,22 @@
       {
         "command": "org2.archiveSubtree",
         "title": "Org2: Archive Subtree"
+      },
+      {
+        "command": "org2.roamDailiesGotoToday",
+        "title": "Org2: Roam Dailies — Go to Today"
+      },
+      {
+        "command": "org2.roamDailiesGotoYesterday",
+        "title": "Org2: Roam Dailies — Go to Yesterday"
+      },
+      {
+        "command": "org2.roamDailiesGotoTomorrow",
+        "title": "Org2: Roam Dailies — Go to Tomorrow"
+      },
+      {
+        "command": "org2.roamDailiesGotoDate",
+        "title": "Org2: Roam Dailies — Go to Date"
       },
       {
         "command": "org2.toggleFoldHere",
@@ -202,6 +222,11 @@
           "type": "string",
           "default": "",
           "description": "Root directory to scan when scope='workspace'. If empty, uses the VS Code workspace folder. Useful when your org files live outside the workspace."
+        },
+        "org2.roam.dailiesDir": {
+          "type": "string",
+          "default": "",
+          "description": "Root directory for Org2 Roam dailies files (YYYY-MM-DD.org2). If empty, falls back to org2.agenda.dir, then the VS Code workspace folder."
         },
         "org2.agenda.files": {
           "type": "array",

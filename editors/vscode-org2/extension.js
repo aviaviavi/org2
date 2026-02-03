@@ -365,6 +365,126 @@ function getAgendaRootDir() {
   return getWorkspaceRoot() || process.cwd();
 }
 
+function getRoamDailiesRootDir() {
+  const cfg = vscode.workspace.getConfiguration('org2');
+  const configured = String(cfg.get('roam.dailiesDir', '') || '').trim();
+  if (configured) return configured;
+  return getAgendaRootDir();
+}
+
+function formatDateYYYYMMDD(d) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function randomUuid() {
+  try {
+    const crypto = require('crypto');
+    return crypto.randomUUID();
+  } catch (_) {
+    // Fallback: not expected on modern Node, but keep safe.
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+}
+
+function computeFileLevelPropertiesDrawerEdit(text) {
+  // Ensures a top-of-file :PROPERTIES: drawer with an :ID: entry.
+  // Only the file-level drawer (before first heading) counts.
+
+  const lines = String(text || '').split(/\r?\n/);
+
+  const headingLineIdx = lines.findIndex((l) => headingRe.test(l));
+  const scanEnd = headingLineIdx === -1 ? lines.length : headingLineIdx;
+
+  let propsStart = -1;
+  let propsEnd = -1;
+
+  for (let i = 0; i < scanEnd; i++) {
+    if (propertiesBeginRe.test(lines[i])) {
+      propsStart = i;
+      for (let j = i + 1; j < scanEnd; j++) {
+        if (drawerEndRe.test(lines[j])) {
+          propsEnd = j;
+          break;
+        }
+      }
+      break;
+    }
+  }
+
+  const idLineRe = /^\s*:ID:\s+.+$/i;
+
+  if (propsStart !== -1 && propsEnd !== -1) {
+    // Drawer exists; ensure :ID: line in it.
+    for (let i = propsStart + 1; i < propsEnd; i++) {
+      if (idLineRe.test(lines[i])) {
+        return { changed: false, text };
+      }
+    }
+
+    const uuid = randomUuid();
+    lines.splice(propsStart + 1, 0, `:ID: ${uuid}`);
+    return { changed: true, text: lines.join('\n') };
+  }
+
+  // No drawer: insert at top (after leading blank lines / comments).
+  let insertAt = 0;
+  while (insertAt < lines.length && lines[insertAt].trim() === '') insertAt++;
+
+  const uuid = randomUuid();
+  const drawer = [':PROPERTIES:', `:ID: ${uuid}`, ':END:', ''];
+  lines.splice(insertAt, 0, ...drawer);
+
+  return { changed: true, text: lines.join('\n') };
+}
+
+async function ensureFileHasTopLevelId(doc) {
+  if (!doc || doc.uri.scheme !== 'file') return;
+
+  const before = doc.getText();
+  const { changed, text: after } = computeFileLevelPropertiesDrawerEdit(before);
+  if (!changed) return;
+
+  const fullRange = new vscode.Range(
+    0,
+    0,
+    doc.lineCount ? doc.lineCount - 1 : 0,
+    doc.lineCount ? doc.lineAt(doc.lineCount - 1).text.length : 0
+  );
+
+  const edit = new vscode.WorkspaceEdit();
+  edit.replace(doc.uri, fullRange, after);
+  await vscode.workspace.applyEdit(edit);
+  await doc.save();
+}
+
+async function openRoamDailyForDateString(dateStr) {
+  const root = getRoamDailiesRootDir();
+  const fileName = `${dateStr}.org2`;
+  const absPath = path.join(root, fileName);
+  const uri = vscode.Uri.file(absPath);
+
+  // Ensure directory exists.
+  try {
+    await vscode.workspace.fs.createDirectory(vscode.Uri.file(root));
+  } catch (_) {
+    // ignore
+  }
+
+  // Create file if missing.
+  try {
+    await vscode.workspace.fs.stat(uri);
+  } catch (_) {
+    await vscode.workspace.fs.writeFile(uri, Buffer.from(`* ${dateStr}\n`, 'utf8'));
+  }
+
+  const doc = await vscode.workspace.openTextDocument(uri);
+  await ensureFileHasTopLevelId(doc);
+  await vscode.window.showTextDocument(doc, { preview: false });
+}
+
 async function fetchAgendaGroups(context, filter) {
   const cfg = vscode.workspace.getConfiguration('org2');
   const cwd = getWorkspaceRoot() || process.cwd();
@@ -798,6 +918,41 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.archiveSubtree', async (item) => {
       await runArchiveCli(item);
+    })
+  );
+
+  // Roam dailies navigation (open or create YYYY-MM-DD.org2)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.roamDailiesGotoToday', async () => {
+      await openRoamDailyForDateString(formatDateYYYYMMDD(new Date()));
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.roamDailiesGotoYesterday', async () => {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      await openRoamDailyForDateString(formatDateYYYYMMDD(d));
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.roamDailiesGotoTomorrow', async () => {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      await openRoamDailyForDateString(formatDateYYYYMMDD(d));
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.roamDailiesGotoDate', async () => {
+      const date = await vscode.window.showInputBox({
+        prompt: 'Org2: Roam dailies — go to date (YYYY-MM-DD)',
+        placeHolder: 'YYYY-MM-DD',
+        validateInput: (v) => (/^\d{4}-\d{2}-\d{2}$/.test((v || '').trim()) ? undefined : 'Expected YYYY-MM-DD'),
+      });
+      if (!date) return;
+      await openRoamDailyForDateString(String(date).trim());
     })
   );
 
