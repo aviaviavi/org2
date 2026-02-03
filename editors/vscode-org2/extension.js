@@ -1158,6 +1158,19 @@ function activate(context) {
     })
   );
 
+  // If folding-related configuration changes, allow auto-folding to run again.
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (
+        e.affectsConfiguration('org2.folding.autoFoldMaxHeadingLevel') ||
+        e.affectsConfiguration('org2.folding.autoFoldPropertyDrawers')
+      ) {
+        autoFoldedForDoc.clear();
+        vscode.window.visibleTextEditors.forEach((ed) => maybeAutoFold(ed));
+      }
+    })
+  );
+
   // Also attempt folding for already-visible editors at activation.
   vscode.window.visibleTextEditors.forEach((ed) => {
     maybeAutoFold(ed);
@@ -1178,6 +1191,21 @@ function activate(context) {
     vscode.workspace.onDidChangeTextDocument((e) => {
       const editor = vscode.window.visibleTextEditors.find((ed) => ed.document === e.document);
       if (editor) updateLinkDecorations(editor);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.rerunAutoFold', () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showInformationMessage('Org2: no active editor');
+        return;
+      }
+      const doc = editor.document;
+      if (!doc) return;
+
+      autoFoldedForDoc.delete(doc.uri.toString());
+      maybeAutoFold(editor);
     })
   );
 
