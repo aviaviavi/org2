@@ -18,6 +18,7 @@
     "onCommand:org2.roamDailiesGotoYesterday",
     "onCommand:org2.roamDailiesGotoTomorrow",
     "onCommand:org2.roamDailiesGotoDate",
+    "onCommand:org2.roamCopyIdLink",
     "onCommand:org2.roamOpenId",
     "onCommand:org2.rerunAutoFold"
   ],
@@ -110,6 +111,10 @@
       {
         "command": "org2.roamDailiesGotoDate",
         "title": "Org2: Roam Dailies — Go to Date"
+      },
+      {
+        "command": "org2.roamCopyIdLink",
+        "title": "Org2: Roam — Copy ID Link"
       },
       {
         "command": "org2.roamOpenId",
