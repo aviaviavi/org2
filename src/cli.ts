@@ -377,6 +377,10 @@ async function main(): Promise<void> {
   let backlinksId = "";
   let backlinksFormat: "text" | "json" = "text";
 
+  // Query (Roam)
+  let queryId = "";
+  let queryFormat: "text" | "json" = "text";
+
   // Parse arguments
   let i = 0;
   while (i < args.length) {
@@ -429,6 +433,9 @@ async function main(): Promise<void> {
       }
     } else if (arg === "backlinks") {
       command = "backlinks";
+      i++;
+    } else if (arg === "query") {
+      command = "query";
       i++;
     } else if (arg === "--dir") {
       i++;
@@ -516,6 +523,8 @@ async function main(): Promise<void> {
           idForced = args[i]!;
         } else if (command === "backlinks") {
           backlinksId = args[i]!;
+        } else if (command === "query") {
+          queryId = args[i]!;
         }
         i++;
       }
@@ -535,6 +544,8 @@ async function main(): Promise<void> {
           idFormat = v;
         } else if (command === "backlinks" && (v === "text" || v === "json")) {
           backlinksFormat = v;
+        } else if (command === "query" && (v === "text" || v === "json")) {
+          queryFormat = v;
         }
         i++;
       }
@@ -595,7 +606,7 @@ async function main(): Promise<void> {
     }
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks") {
+  if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query") {
     console.error(
       "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--no-overdue] [--verbose-errors]",
     );
@@ -613,6 +624,9 @@ async function main(): Promise<void> {
     );
     console.error(
       "       org2 backlinks --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
+    );
+    console.error(
+      "       org2 query --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
     );
     console.error(
       "       org2 fmt [--stdin] [--file FILE|--files FILE ...] [--apply]",
@@ -860,6 +874,214 @@ async function main(): Promise<void> {
 
     for (const b of backlinks) {
       process.stdout.write(`${b.srcTitle} (${b.srcId ?? ""}) ${b.file}:${b.line + 1} ${b.context}\n`);
+    }
+
+    return;
+  }
+
+  if (command === "query") {
+    if (!queryId) {
+      console.error("Error: query requires --id UUID");
+      process.exit(1);
+    }
+
+    const needle = queryId.toLowerCase();
+
+    // Determine files to search (same logic as backlinks/agenda)
+    if (!dir && files.length === 0) {
+      const configPath = findConfigFile(process.cwd());
+      if (configPath) {
+        try {
+          const config = loadConfig(configPath);
+          const configDir = path.dirname(configPath);
+          files = resolveFilesFromConfig(config, configDir);
+
+          if (files.length === 0) {
+            console.error(
+              `Error: config found at ${configPath} but no matching files for patterns: ${config.agendaFiles?.join(", ") || "*.org"}`,
+            );
+            process.exit(1);
+          }
+        } catch (err) {
+          console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`);
+          process.exit(1);
+        }
+      } else {
+        console.error("Error: provide either --dir, --files, or org2.json config");
+        process.exit(1);
+      }
+    }
+
+    if (dir && files.length === 0) {
+      const listOrgFiles = (dirPath: string): string[] => {
+        const out: string[] = [];
+        const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dirPath, entry.name);
+          if (entry.isDirectory()) {
+            if (!recursive) continue;
+            if (entry.name.startsWith(".")) continue;
+            out.push(...listOrgFiles(fullPath));
+            continue;
+          }
+          if (!entry.isFile()) continue;
+          if (!(entry.name.endsWith(".org") || entry.name.endsWith(".org2"))) continue;
+          if (entry.name.startsWith(".#")) continue;
+          out.push(fullPath);
+        }
+        return out;
+      };
+
+      files = listOrgFiles(dir);
+    }
+
+    type QueryHit = {
+      kind: "file" | "headline";
+      id: string;
+      file: string;
+      line: number; // 0-based
+      title: string;
+      headingLine?: number; // 0-based
+    };
+
+    const hits: QueryHit[] = [];
+    let skippedFileCount = 0;
+
+    const findFileTitle = (lines: string[]): string | null => {
+      for (let j = 0; j < Math.min(lines.length, 50); j += 1) {
+        const m = /^#\+title:\s*(.*?)\s*$/i.exec((lines[j] ?? "").trim());
+        if (m) return m[1] || null;
+      }
+      return null;
+    };
+
+    const parseHeadlineTitle = (headlineLine: string): string => {
+      // "** TODO My title" → "My title"
+      const raw = headlineLine.trim().replace(/^\*+\s+/, "");
+      return raw.replace(/^(TODO|IN_PROGRESS|DONE|CANCELLED|CANCELED)\s+/, "");
+    };
+
+    for (const filePath of files) {
+      try {
+        const raw = fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
+        const lines = raw.split("\n");
+
+        let inProps = false;
+        let propsStart = -1; // 0-based
+
+        for (let j = 0; j < lines.length; j += 1) {
+          const l = (lines[j] ?? "").trim();
+
+          if (l === ":PROPERTIES:") {
+            inProps = true;
+            propsStart = j;
+            continue;
+          }
+          if (l === ":END:") {
+            inProps = false;
+            propsStart = -1;
+            continue;
+          }
+
+          if (!inProps) continue;
+
+          const m = /^:ID:\s*(\S+)\s*$/.exec(l);
+          if (!m) continue;
+
+          const found = (m[1] ?? "").toLowerCase();
+          if (found !== needle) continue;
+
+          // Determine whether this is file-level or headline-level by checking if
+          // the drawer is at the top of file (allowing leading blanks/comments).
+          let idx = 0;
+          while (idx < lines.length) {
+            const t = (lines[idx] ?? "").trim();
+            if (t === "" || t.startsWith("#")) {
+              idx += 1;
+              continue;
+            }
+            break;
+          }
+
+          const isFile = propsStart === idx;
+
+          if (isFile) {
+            hits.push({
+              kind: "file",
+              id: found,
+              file: filePath,
+              line: j,
+              title: findFileTitle(lines) ?? path.basename(filePath),
+            });
+          } else {
+            // Find the headline for this drawer by scanning upward.
+            let headlineLine = -1;
+            let headlineText = "";
+            for (let k = propsStart - 1; k >= 0; k -= 1) {
+              const s = lines[k] ?? "";
+              if (/^\*+\s+/.test(s)) {
+                headlineLine = k;
+                headlineText = s;
+                break;
+              }
+            }
+
+            hits.push({
+              kind: "headline",
+              id: found,
+              file: filePath,
+              line: j,
+              headingLine: headlineLine >= 0 ? headlineLine : undefined,
+              title: headlineText ? parseHeadlineTitle(headlineText) : path.basename(filePath),
+            });
+          }
+        }
+      } catch (err) {
+        skippedFileCount += 1;
+        if (verboseErrors) {
+          console.error(`Error processing ${filePath}:`, err instanceof Error ? err.message : err);
+        }
+      }
+    }
+
+    if (skippedFileCount > 0 && !verboseErrors) {
+      console.error(
+        `Skipped ${skippedFileCount} file(s) due to parse errors (use --verbose-errors to see details).`,
+      );
+    }
+
+    hits.sort((a, b) => (a.file + ":" + a.line).localeCompare(b.file + ":" + b.line));
+
+    if (queryFormat === "json") {
+      process.stdout.write(
+        JSON.stringify(
+          {
+            $schema: "org2:query:v1",
+            id: needle,
+            results: hits.map((h) => ({
+              kind: h.kind,
+              id: h.id,
+              file: h.file,
+              line: h.line,
+              title: h.title,
+              ...(h.headingLine !== undefined ? { headingLine: h.headingLine } : {}),
+            })),
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+      return;
+    }
+
+    if (hits.length === 0) {
+      process.stdout.write("No matches found.\n");
+      return;
+    }
+
+    for (const h of hits) {
+      // Print 1-based line for humans
+      process.stdout.write(`${h.kind} ${h.title} ${h.file}:${h.line + 1}\n`);
     }
 
     return;
