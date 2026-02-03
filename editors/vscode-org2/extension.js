@@ -1,5 +1,6 @@
 const vscode = require('vscode');
 const path = require('path');
+const fs = require('fs');
 const cp = require('child_process');
 
 const headingRe = /^(\*+)\s+/;
@@ -144,6 +145,15 @@ function provideFoldingRanges(document) {
 function resolveOrg2LinkTarget(rawUrl, document) {
   const url = (rawUrl || '').trim();
   if (!url) return undefined;
+
+  // Org Roam id: links (id:<uuid>) → dispatch to our command.
+  // VS Code's default URL handler can't open these.
+  const idMatch = /^id:([0-9a-fA-F-]{36})$/.exec(url);
+  if (idMatch) {
+    const id = idMatch[1].toLowerCase();
+    const payload = encodeURIComponent(JSON.stringify([id]));
+    return vscode.Uri.parse(`command:org2.roamOpenId?${payload}`);
+  }
 
   // Heuristic: if it looks like it has a scheme, let VS Code/URI parser handle it.
   // Examples: https://..., http://..., mailto:..., file:..., vscode:...
@@ -483,6 +493,47 @@ async function openRoamDailyForDateString(dateStr) {
   const doc = await vscode.workspace.openTextDocument(uri);
   await ensureFileHasTopLevelId(doc);
   await vscode.window.showTextDocument(doc, { preview: false });
+}
+
+async function* walkFiles(dir) {
+  let entries;
+  try {
+    entries = await fs.promises.readdir(dir, { withFileTypes: true });
+  } catch (_) {
+    return;
+  }
+
+  for (const ent of entries) {
+    if (!ent) continue;
+    if (ent.name === '.git' || ent.name === 'node_modules' || ent.name === '.next') continue;
+
+    const abs = path.join(dir, ent.name);
+    if (ent.isDirectory()) {
+      yield* walkFiles(abs);
+    } else if (ent.isFile()) {
+      if (abs.endsWith('.org') || abs.endsWith('.org2')) yield abs;
+    }
+  }
+}
+
+async function findFirstIdMatchInDir(rootDir, id) {
+  const idRe = new RegExp(`^\\s*:ID:\\s*${id}\\s*$`, 'i');
+
+  for await (const filePath of walkFiles(rootDir)) {
+    let text;
+    try {
+      text = await fs.promises.readFile(filePath, 'utf8');
+    } catch (_) {
+      continue;
+    }
+
+    const lines = text.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      if (idRe.test(lines[i])) return { filePath, line: i };
+    }
+  }
+
+  return undefined;
 }
 
 async function fetchAgendaGroups(context, filter) {
@@ -953,6 +1004,31 @@ function activate(context) {
       });
       if (!date) return;
       await openRoamDailyForDateString(String(date).trim());
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.roamOpenId', async (id) => {
+      const raw = (typeof id === 'string' ? id : '').trim();
+      const m = /^([0-9a-fA-F-]{36})$/.exec(raw);
+      if (!m) {
+        vscode.window.showWarningMessage('Org2: invalid id link (expected UUID).');
+        return;
+      }
+
+      const root = getAgendaRootDir();
+      const found = await findFirstIdMatchInDir(root, m[1].toLowerCase());
+      if (!found) {
+        vscode.window.showWarningMessage(`Org2: ID not found: ${m[1]}`);
+        return;
+      }
+
+      const uri = vscode.Uri.file(found.filePath);
+      const doc = await vscode.workspace.openTextDocument(uri);
+      const editor = await vscode.window.showTextDocument(doc, { preview: true });
+      const pos = new vscode.Position(found.line, 0);
+      editor.selection = new vscode.Selection(pos, pos);
+      editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
     })
   );
 
