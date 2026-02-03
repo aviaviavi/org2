@@ -18,7 +18,8 @@
     "onCommand:org2.roamDailiesGotoYesterday",
     "onCommand:org2.roamDailiesGotoTomorrow",
     "onCommand:org2.roamDailiesGotoDate",
-    "onCommand:org2.roamOpenId"
+    "onCommand:org2.roamOpenId",
+    "onCommand:org2.rerunAutoFold"
   ],
   "repository": {
     "type": "git",
@@ -113,6 +114,10 @@
       {
         "command": "org2.roamOpenId",
         "title": "Org2: Roam — Open ID Link"
+      },
+      {
+        "command": "org2.rerunAutoFold",
+        "title": "Org2: Re-run Auto-Fold"
       },
       {
         "command": "org2.toggleFoldHere",
