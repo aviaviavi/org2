@@ -7,14 +7,14 @@ const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
 const propertiesBeginRe = /^\s*:PROPERTIES:\s*$/i;
 const drawerEndRe = /^\s*:END:\s*$/i;
 
-function findHeadingLinesUpToLevel(document, maxLevel) {
-  if (typeof maxLevel !== 'number' || maxLevel <= 0) return [];
+function findHeadingLinesAtLevel(document, level) {
+  if (typeof level !== 'number' || level <= 0) return [];
 
   const starts = [];
   for (let i = 0; i < document.lineCount; i++) {
     const text = document.lineAt(i).text;
     const m = headingRe.exec(text);
-    if (m && m[1].length <= maxLevel) starts.push(i);
+    if (m && m[1].length === level) starts.push(i);
   }
   return starts;
 }
@@ -1060,7 +1060,7 @@ function activate(context) {
     const foldPropertyDrawers = cfg.get('folding.autoFoldPropertyDrawers', true);
 
     const startLines = [
-      ...findHeadingLinesUpToLevel(doc, maxLevel),
+      ...findHeadingLinesAtLevel(doc, maxLevel),
       ...(foldPropertyDrawers ? findPropertyDrawerStartLines(doc) : []),
     ];
 
