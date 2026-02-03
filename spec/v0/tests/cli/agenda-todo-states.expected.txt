@@ -1,0 +1,31 @@
+
+═════════════════════════════
+ OVERDUE (before 2026-01-21)
+═════════════════════════════
+
+
+═════════════════════
+ 2026-01-15 Thursday
+═════════════════════
+
+  [PROG] In progress and overdue (should show) (SCHEDULED) spec/v0/tests/cli/agenda-todo-states.org
+
+
+════════════════════════════
+ UPCOMING (from 2026-01-21)
+════════════════════════════
+
+
+══════════════════════
+ 2026-01-21 Wednesday
+══════════════════════
+
+  [TODO] Normal todo today (SCHEDULED) spec/v0/tests/cli/agenda-todo-states.org
+
+
+═════════════════════
+ 2026-01-22 Thursday
+═════════════════════
+
+  [DONE] Done but upcoming (should show) (SCHEDULED) spec/v0/tests/cli/agenda-todo-states.org
+
