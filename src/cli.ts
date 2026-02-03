@@ -105,7 +105,9 @@ function findScheduledItemsInText(
     // Skip non-todo headlines.
     const todo = current.todo;
     if (!todo) continue;
-    if (todo === "DONE" || todo === "CANCELLED" || todo === "CANCELED") continue;
+
+    const isDoneLike = todo === "DONE" || todo === "CANCELLED" || todo === "CANCELED";
+    const isProgLike = todo === "PROG" || todo === "IN_PROGRESS";
 
     // Match multiple planning tokens on a single line.
     // Example: "SCHEDULED: <2026-02-01 Sun> DEADLINE: <...>"
@@ -123,7 +125,12 @@ function findScheduledItemsInText(
       const inRange = itemDate >= startDate && itemDate <= endDate;
       const isOverdue = itemDate < startDate;
 
-      if (!((includeOverdue && isOverdue) || inRange)) continue;
+      // TODO state filtering:
+      // - DONE/CANCELLED: only show if not overdue (regardless of includeOverdue)
+      // - PROG (and IN_PROGRESS): always show (even if overdue / includeOverdue=false)
+      // - Everything else: show inRange, and show overdue only if includeOverdue
+      if (isDoneLike && isOverdue) continue;
+      if (!(inRange || (isProgLike && isOverdue) || (!isDoneLike && includeOverdue && isOverdue))) continue;
 
       items.push({
         filePath,
@@ -165,25 +172,29 @@ function findScheduledItems(
                 const itemDate = parseIsoDate(dateStr);
                 const inRange = itemDate >= startDate && itemDate <= endDate;
                 const isOverdue = itemDate < startDate;
-                if ((includeOverdue && isOverdue) || inRange) {
-                  const todo = headline.todo;
-                  if (!todo) continue;
-                  if (todo === "DONE" || todo === "CANCELLED" || todo === "CANCELED") continue;
 
-                  const titleText = headline.title
-                    .filter((t) => t.type === "Text")
-                    .map((t) => t.value)
-                    .join("");
+                const todo = headline.todo;
+                if (!todo) continue;
 
-                  items.push({
-                    filePath,
-                    lineNumber: 0, // Line numbers not tracked in AST, using 0
-                    headline: titleText,
-                    todo,
-                    date: dateStr,
-                    kind: planning.kind,
-                  });
-                }
+                const isDoneLike = todo === "DONE" || todo === "CANCELLED" || todo === "CANCELED";
+                const isProgLike = todo === "PROG" || todo === "IN_PROGRESS";
+
+                if (isDoneLike && isOverdue) continue;
+                if (!(inRange || (isProgLike && isOverdue) || (!isDoneLike && includeOverdue && isOverdue))) continue;
+
+                const titleText = headline.title
+                  .filter((t) => t.type === "Text")
+                  .map((t) => t.value)
+                  .join("");
+
+                items.push({
+                  filePath,
+                  lineNumber: 0, // Line numbers not tracked in AST, using 0
+                  headline: titleText,
+                  todo,
+                  date: dateStr,
+                  kind: planning.kind,
+                });
               }
             }
           }

@@ -1,0 +1,14 @@
+* TODO Normal todo today
+SCHEDULED: <2026-01-21 Wed>
+
+* DONE Done but upcoming (should show)
+SCHEDULED: <2026-01-22 Thu>
+
+* DONE Done and overdue (should NOT show)
+SCHEDULED: <2026-01-15 Thu>
+
+* CANCELLED Cancelled and overdue (should NOT show)
+SCHEDULED: <2026-01-10 Sat>
+
+* PROG In progress and overdue (should show)
+SCHEDULED: <2026-01-15 Thu>
