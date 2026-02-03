@@ -9,6 +9,7 @@ import { printCanonicalAstToOrg } from "./printer.js";
 import { findConfigFile, loadConfig, resolveFilesFromConfig } from "./config.js";
 import { updateTodoInFile, type TodoStatus } from "./todo.js";
 import { planningKindFromArg, updatePlanningInFile, type PlanningKindArg } from "./planning.js";
+import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import type {
   DocumentNode,
   HeadlineNode,
@@ -372,6 +373,10 @@ async function main(): Promise<void> {
   let idFormat: "text" | "json" = "text";
   let idForced = "";
 
+  // Backlinks (Roam)
+  let backlinksId = "";
+  let backlinksFormat: "text" | "json" = "text";
+
   // Parse arguments
   let i = 0;
   while (i < args.length) {
@@ -422,6 +427,9 @@ async function main(): Promise<void> {
           i++;
         }
       }
+    } else if (arg === "backlinks") {
+      command = "backlinks";
+      i++;
     } else if (arg === "--dir") {
       i++;
       if (i < args.length) {
@@ -504,7 +512,11 @@ async function main(): Promise<void> {
     } else if (arg === "--id") {
       i++;
       if (i < args.length) {
-        idForced = args[i]!;
+        if (command === "id") {
+          idForced = args[i]!;
+        } else if (command === "backlinks") {
+          backlinksId = args[i]!;
+        }
         i++;
       }
     } else if (arg === "--format") {
@@ -521,6 +533,8 @@ async function main(): Promise<void> {
           planFormat = v;
         } else if (command === "id" && (v === "text" || v === "json")) {
           idFormat = v;
+        } else if (command === "backlinks" && (v === "text" || v === "json")) {
+          backlinksFormat = v;
         }
         i++;
       }
@@ -581,7 +595,7 @@ async function main(): Promise<void> {
     }
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id") {
+  if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks") {
     console.error(
       "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--no-overdue] [--verbose-errors]",
     );
@@ -596,6 +610,9 @@ async function main(): Promise<void> {
     );
     console.error(
       "       org2 id [get|ensure] --file FILE [--line N|--pos LINE[:COL]] [--id UUID] [--format text|json] [--apply]",
+    );
+    console.error(
+      "       org2 backlinks --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
     );
     console.error(
       "       org2 fmt [--stdin] [--file FILE|--files FILE ...] [--apply]",
@@ -732,6 +749,117 @@ async function main(): Promise<void> {
       process.stdout.write(newId + "\n");
     } else {
       process.stdout.write(out);
+    }
+
+    return;
+  }
+
+  if (command === "backlinks") {
+    if (!backlinksId) {
+      console.error("Error: backlinks requires --id UUID");
+      process.exit(1);
+    }
+
+    // Determine files to search (same as agenda)
+    if (!dir && files.length === 0) {
+      const configPath = findConfigFile(process.cwd());
+      if (configPath) {
+        try {
+          const config = loadConfig(configPath);
+          const configDir = path.dirname(configPath);
+          files = resolveFilesFromConfig(config, configDir);
+
+          if (files.length === 0) {
+            console.error(
+              `Error: config found at ${configPath} but no matching files for patterns: ${config.agendaFiles?.join(", ") || "*.org"}`,
+            );
+            process.exit(1);
+          }
+        } catch (err) {
+          console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`);
+          process.exit(1);
+        }
+      } else {
+        console.error("Error: provide either --dir, --files, or org2.json config");
+        process.exit(1);
+      }
+    }
+
+    if (dir && files.length === 0) {
+      const listOrgFiles = (dirPath: string): string[] => {
+        const out: string[] = [];
+        const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dirPath, entry.name);
+          if (entry.isDirectory()) {
+            if (!recursive) continue;
+            if (entry.name.startsWith(".")) continue;
+            out.push(...listOrgFiles(fullPath));
+            continue;
+          }
+          if (!entry.isFile()) continue;
+          if (!(entry.name.endsWith(".org") || entry.name.endsWith(".org2"))) continue;
+          if (entry.name.startsWith(".#")) continue;
+          out.push(fullPath);
+        }
+        return out;
+      };
+
+      files = listOrgFiles(dir);
+    }
+
+    const backlinks: Backlink[] = [];
+    let skippedFileCount = 0;
+
+    for (const filePath of files) {
+      try {
+        const content = fs.readFileSync(filePath, "utf8");
+        backlinks.push(...findBacklinksInText(content, filePath, backlinksId));
+      } catch (err) {
+        skippedFileCount += 1;
+        if (verboseErrors) {
+          console.error(`Error processing ${filePath}:`, err instanceof Error ? err.message : err);
+        }
+      }
+    }
+
+    if (skippedFileCount > 0 && !verboseErrors) {
+      console.error(
+        `Skipped ${skippedFileCount} file(s) due to parse errors (use --verbose-errors to see details).`,
+      );
+    }
+
+    // Stable sort for tests/readability
+    backlinks.sort((a, b) => (a.file + ":" + a.line).localeCompare(b.file + ":" + b.line));
+
+    if (backlinksFormat === "json") {
+      process.stdout.write(
+        JSON.stringify(
+          {
+            $schema: "org2:backlinks:v1",
+            id: backlinksId.toLowerCase(),
+            backlinks: backlinks.map((b) => ({
+              srcId: b.srcId,
+              srcTitle: b.srcTitle,
+              file: b.file,
+              line: b.line,
+              context: b.context,
+            })),
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+      return;
+    }
+
+    if (backlinks.length === 0) {
+      process.stdout.write("No backlinks found.\n");
+      return;
+    }
+
+    for (const b of backlinks) {
+      process.stdout.write(`${b.srcTitle} (${b.srcId ?? ""}) ${b.file}:${b.line + 1} ${b.context}\n`);
     }
 
     return;
