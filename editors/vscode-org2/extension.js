@@ -450,6 +450,40 @@ function computeFileLevelPropertiesDrawerEdit(text) {
   return { changed: true, text: lines.join('\n') };
 }
 
+function findFileLevelIdInText(text) {
+  const lines = String(text || '').split(/\r?\n/);
+
+  const headingLineIdx = lines.findIndex((l) => headingRe.test(l));
+  const scanEnd = headingLineIdx === -1 ? lines.length : headingLineIdx;
+
+  let propsStart = -1;
+  let propsEnd = -1;
+
+  for (let i = 0; i < scanEnd; i++) {
+    if (propertiesBeginRe.test(lines[i])) {
+      propsStart = i;
+      for (let j = i + 1; j < scanEnd; j++) {
+        if (drawerEndRe.test(lines[j])) {
+          propsEnd = j;
+          break;
+        }
+      }
+      break;
+    }
+  }
+
+  if (propsStart === -1 || propsEnd === -1) return undefined;
+
+  for (let i = propsStart + 1; i < propsEnd; i++) {
+    const m = /^\s*:ID:\s*(.+?)\s*$/i.exec(lines[i]);
+    if (!m) continue;
+    const id = (m[1] || '').trim();
+    if (id) return id.toLowerCase();
+  }
+
+  return undefined;
+}
+
 async function ensureFileHasTopLevelId(doc) {
   if (!doc || doc.uri.scheme !== 'file') return;
 
@@ -1004,6 +1038,43 @@ function activate(context) {
       });
       if (!date) return;
       await openRoamDailyForDateString(String(date).trim());
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.roamCopyIdLink', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+
+      const doc = editor.document;
+      if (!doc || doc.uri.scheme !== 'file') {
+        vscode.window.showWarningMessage('Org2: copying an ID link requires a file-backed document.');
+        return;
+      }
+
+      if (doc.isDirty) {
+        const ok = await doc.save();
+        if (!ok) {
+          vscode.window.showWarningMessage('Org2: could not save file before copying ID link.');
+          return;
+        }
+      }
+
+      // For now we use the file-level ID drawer (top-of-file). This is enough to
+      // create stable links between notes, and works well with dailies.
+      await ensureFileHasTopLevelId(doc);
+
+      const id = findFileLevelIdInText(doc.getText());
+      if (!id) {
+        vscode.window.showWarningMessage('Org2: could not find an :ID: property in the file-level drawer.');
+        return;
+      }
+
+      const title = path.basename(doc.uri.fsPath).replace(/\.(org2|org)$/i, '');
+      const link = `[[id:${id}][${title}]]`;
+
+      await vscode.env.clipboard.writeText(link);
+      vscode.window.showInformationMessage('Org2: copied ID link to clipboard.');
     })
   );
 
