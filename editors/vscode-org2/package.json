@@ -257,7 +257,7 @@
           "type": "number",
           "default": 1,
           "minimum": 0,
-          "description": "Auto-fold headings up to this level (1 = top-level only, 2 = fold level 1-2 headings, 0 = disable auto-folding headings)."
+          "description": "Auto-fold headings at this exact level (1 = fold top-level sections, 2 = fold level-2 sections, 0 = disable auto-folding headings)."
         },
         "org2.folding.autoFoldPropertyDrawers": {
           "type": "boolean",
