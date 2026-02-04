@@ -20,6 +20,7 @@
     "onCommand:org2.roamDailiesGotoDate",
     "onCommand:org2.roamCopyIdLink",
     "onCommand:org2.roamOpenId",
+    "onCommand:org2.roamShowBacklinks",
     "onCommand:org2.rerunAutoFold"
   ],
   "repository": {
@@ -121,6 +122,10 @@
         "title": "Org2: Roam — Open ID Link"
       },
       {
+        "command": "org2.roamShowBacklinks",
+        "title": "Org2: Roam — Show Backlinks"
+      },
+      {
         "command": "org2.rerunAutoFold",
         "title": "Org2: Re-run Auto-Fold"
       },
@@ -205,6 +210,11 @@
           "command": "org2.archiveSubtree",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@14"
+        },
+        {
+          "command": "org2.roamShowBacklinks",
+          "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
+          "group": "navigation@15"
         }
       ]
     },
