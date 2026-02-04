@@ -4,6 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import crypto from "node:crypto";
+import os from "node:os";
+import { spawnSync } from "node:child_process";
 import { parseOrgToCanonicalAst } from "./parser.js";
 import { printCanonicalAstToOrg } from "./printer.js";
 import { findConfigFile, loadConfig, resolveFilesFromConfig } from "./config.js";
@@ -375,7 +377,7 @@ async function main(): Promise<void> {
   let idFile = "";
   let idLine = 0;
   let idApply = false;
-  let idFormat: "text" | "json" = "text";
+  let idFormat: "text" | "json" | "diff" = "text";
   let idForced = "";
 
   // Backlinks (Roam)
@@ -545,7 +547,7 @@ async function main(): Promise<void> {
           todoFormat = v;
         } else if (command === "plan" && (v === "text" || v === "json")) {
           planFormat = v;
-        } else if (command === "id" && (v === "text" || v === "json")) {
+        } else if (command === "id" && (v === "text" || v === "json" || v === "diff")) {
           idFormat = v;
         } else if (command === "backlinks" && (v === "text" || v === "json")) {
           backlinksFormat = v;
@@ -625,7 +627,7 @@ async function main(): Promise<void> {
       "       org2 plan set --file FILE (--line N | --pos LINE[:COL]) --kind scheduled|deadline --date YYYY-MM-DD [--format text|json] [--apply]",
     );
     console.error(
-      "       org2 id [get|ensure] --file FILE [--line N|--pos LINE[:COL]] [--id UUID] [--format text|json] [--apply]",
+      "       org2 id [get|ensure] --file FILE [--line N|--pos LINE[:COL]] [--id UUID] [--format text|json|diff] [--apply]", 
     );
     console.error(
       "       org2 backlinks --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
@@ -657,6 +659,33 @@ async function main(): Promise<void> {
 
     const raw = fs.readFileSync(idFile, "utf8").replace(/\r\n/g, "\n");
     const lines = raw.split("\n");
+
+    const unifiedDiff = (before: string, after: string): string => {
+      let tmpDir: string | null = null;
+      try {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-id-diff-"));
+        const aPath = path.join(tmpDir, "before.org2");
+        const bPath = path.join(tmpDir, "after.org2");
+        fs.writeFileSync(aPath, before, "utf8");
+        fs.writeFileSync(bPath, after, "utf8");
+
+        const res = spawnSync("diff", ["-u", aPath, bPath], { encoding: "utf8" });
+        // diff(1): 0=identical, 1=different, >1=error
+        if (res.status !== 0 && res.status !== 1) {
+          throw new Error(res.stderr || `diff exited with status ${res.status}`);
+        }
+
+        // Replace temp paths with the real filename for readability.
+        return (res.stdout || "").split(aPath).join(idFile).split(bPath).join(idFile);
+      } finally {
+        if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    };
+
+    if (idAction === "get" && idFormat === "diff") {
+      console.error("Error: org2 id get does not support --format diff");
+      process.exit(1);
+    }
 
     const getHeadlineIdAtOrAboveLine = (
       line1: number,
@@ -796,6 +825,8 @@ async function main(): Promise<void> {
               2,
             ) + "\n",
           );
+        } else if (idFormat === "diff") {
+          if (headlineRes.changed && !idApply) process.stdout.write(unifiedDiff(raw, headlineRes.outText));
         } else if (idApply || !headlineRes.changed) {
           process.stdout.write(headlineRes.id + "\n");
         } else {
@@ -913,6 +944,8 @@ async function main(): Promise<void> {
           2,
         ) + "\n",
       );
+    } else if (idFormat === "diff") {
+      if (!idApply) process.stdout.write(unifiedDiff(raw, out));
     } else if (idApply) {
       process.stdout.write(newId + "\n");
     } else {
