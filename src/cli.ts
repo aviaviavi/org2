@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import { parseOrgToCanonicalAst } from "./parser.js";
 import { printCanonicalAstToOrg } from "./printer.js";
 import { findConfigFile, loadConfig, resolveFilesFromConfig } from "./config.js";
-import { updateTodoInFile, type TodoStatus } from "./todo.js";
+import { updateTodoInText, type TodoStatus } from "./todo.js";
 import { planningKindFromArg, updatePlanningInFile, type PlanningKindArg } from "./planning.js";
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import type {
@@ -356,7 +356,7 @@ async function main(): Promise<void> {
   let todoLine = 0;
   let todoStatus: TodoStatus | "" = "";
   let todoApply = false;
-  let todoFormat: "text" | "json" = "json";
+  let todoFormat: "text" | "json" | "diff" = "json";
   let todoNow = ""; // ISO string
 
   // Planning editing
@@ -543,8 +543,8 @@ async function main(): Promise<void> {
           archiveFormat = v as "text" | "diff";
         } else if (command === "agenda" && (v === "text" || v === "json")) {
           format = v;
-        } else if (command === "todo" && (v === "text" || v === "json")) {
-          todoFormat = v;
+        } else if (command === "todo" && (v === "text" || v === "json" || v === "diff")) {
+          todoFormat = v as "text" | "json" | "diff";
         } else if (command === "plan" && (v === "text" || v === "json")) {
           planFormat = v;
         } else if (command === "id" && (v === "text" || v === "json" || v === "diff")) {
@@ -621,7 +621,7 @@ async function main(): Promise<void> {
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff] [--apply]",
     );
     console.error(
-      "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--format text|json] [--apply]",
+      "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--format text|json|diff] [--apply]",
     );
     console.error(
       "       org2 plan set --file FILE (--line N | --pos LINE[:COL]) --kind scheduled|deadline --date YYYY-MM-DD [--format text|json] [--apply]",
@@ -1301,13 +1301,43 @@ async function main(): Promise<void> {
       nowDate = d;
     }
 
-    const res = updateTodoInFile({
+    const beforeRaw = fs.readFileSync(todoFile, "utf8").replace(/\r\n/g, "\n");
+
+    const res = updateTodoInText(beforeRaw, {
       filePath: todoFile,
       lineNumber: todoLine,
       ...(todoAction === "toggle" ? { toggle: true } : { status: todoStatus as TodoStatus }),
       ...(nowDate ? { now: nowDate } : {}),
-      apply: todoApply,
     });
+
+    if (todoApply) {
+      fs.writeFileSync(todoFile, res.text, "utf8");
+    }
+
+    if (todoFormat === "diff") {
+      if (!res.changed) return;
+
+      let tmpDir: string | null = null;
+      try {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-todo-diff-"));
+        const aPath = path.join(tmpDir, "before.org2");
+        const bPath = path.join(tmpDir, "after.org2");
+        fs.writeFileSync(aPath, beforeRaw, "utf8");
+        fs.writeFileSync(bPath, res.text, "utf8");
+
+        const diffRes = spawnSync("diff", ["-u", aPath, bPath], { encoding: "utf8" });
+        // diff(1): 0=identical, 1=different, >1=error
+        if (diffRes.status !== 0 && diffRes.status !== 1) {
+          throw new Error(diffRes.stderr || `diff exited with status ${diffRes.status}`);
+        }
+
+        const out = (diffRes.stdout || "").split(aPath).join(todoFile).split(bPath).join(todoFile);
+        process.stdout.write(out);
+      } finally {
+        if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+      return;
+    }
 
     if (todoFormat === "text") {
       process.stdout.write(res.text + (res.text.endsWith("\n") ? "" : "\n"));
