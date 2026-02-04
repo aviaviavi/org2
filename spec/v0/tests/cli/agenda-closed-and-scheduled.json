@@ -1,0 +1,39 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Headline",
+      "level": 1,
+      "todo": "DONE",
+      "title": [
+        {
+          "type": "Text",
+          "value": "Chronosphere response"
+        }
+      ],
+      "children": [
+        {
+          "type": "Planning",
+          "kind": "CLOSED",
+          "raw": "CLOSED: [2026-01-21 Wed 14:41] SCHEDULED: <2026-01-21 Wed>",
+          "timestamp": {
+            "type": "Timestamp",
+            "active": false,
+            "raw": "[2026-01-21 Wed 14:41]"
+          }
+        },
+        {
+          "type": "Planning",
+          "kind": "SCHEDULED",
+          "raw": "CLOSED: [2026-01-21 Wed 14:41] SCHEDULED: <2026-01-21 Wed>",
+          "timestamp": {
+            "type": "Timestamp",
+            "active": true,
+            "raw": "<2026-01-21 Wed>"
+          }
+        }
+      ]
+    }
+  ]
+}
