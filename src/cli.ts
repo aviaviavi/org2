@@ -118,6 +118,9 @@ function findScheduledItemsInText(
     let m: RegExpExecArray | null;
     while ((m = planningRe.exec(line)) !== null) {
       const kind = m[1] ?? "";
+      // CLOSED is metadata for completed tasks; don't create a separate agenda entry.
+      if (kind === "CLOSED") continue;
+
       const tsRaw = m[2] ?? "";
       const dateStr = extractDateFromTimestamp(tsRaw);
       if (!dateStr) continue;
@@ -187,6 +190,8 @@ function findScheduledItems(
                   .filter((t) => t.type === "Text")
                   .map((t) => t.value)
                   .join("");
+
+                if (planning.kind === "CLOSED") continue;
 
                 items.push({
                   filePath,
@@ -652,6 +657,155 @@ async function main(): Promise<void> {
 
     const raw = fs.readFileSync(idFile, "utf8").replace(/\r\n/g, "\n");
     const lines = raw.split("\n");
+
+    const getHeadlineIdAtOrAboveLine = (
+      line1: number,
+    ):
+      | { id: string; idLine1: number; headingLine1: number; changed: boolean; outText: string }
+      | null => {
+      if (!line1 || line1 < 1) return null;
+
+      const startIdx = Math.min(Math.max(line1 - 1, 0), lines.length - 1);
+
+      let headingIdx = -1;
+      let headingLevel = 0;
+      for (let idx = startIdx; idx >= 0; idx -= 1) {
+        const m = /^(\*+)\s+/.exec(lines[idx] ?? "");
+        if (m) {
+          headingIdx = idx;
+          headingLevel = m[1]!.length;
+          break;
+        }
+      }
+
+      if (headingIdx === -1) return null;
+
+      // Search within this subtree (until the next heading at same-or-higher level).
+      let subtreeEnd = lines.length;
+      for (let idx = headingIdx + 1; idx < lines.length; idx += 1) {
+        const m = /^(\*+)\s+/.exec(lines[idx] ?? "");
+        if (m && m[1]!.length <= headingLevel) {
+          subtreeEnd = idx;
+          break;
+        }
+      }
+
+      const idLineRe = /^\s*:ID:\s*(\S+)\s*$/;
+
+      // Best-effort: allow blank lines between heading and drawer.
+      let scanStart = headingIdx + 1;
+      while (scanStart < subtreeEnd && (lines[scanStart] ?? "").trim() === "") scanStart += 1;
+
+      // If there's a :PROPERTIES: drawer, use/extend it.
+      if (((lines[scanStart] ?? "").trim() || "").toUpperCase() === ":PROPERTIES:") {
+        let drawerEnd = -1;
+        for (let j = scanStart + 1; j < subtreeEnd; j += 1) {
+          const t = (lines[j] ?? "").trim();
+          const m = idLineRe.exec(t);
+          if (m) {
+            return {
+              id: m[1]!,
+              idLine1: j + 1,
+              headingLine1: headingIdx + 1,
+              changed: false,
+              outText: raw,
+            };
+          }
+          if (t.toUpperCase() === ":END:") {
+            drawerEnd = j;
+            break;
+          }
+        }
+
+        if (drawerEnd !== -1 && idAction === "ensure") {
+          const newId = idForced || crypto.randomUUID();
+          lines.splice(scanStart + 1, 0, `:ID: ${newId}`);
+          const outText = lines.join("\n");
+          return {
+            id: newId,
+            idLine1: scanStart + 2,
+            headingLine1: headingIdx + 1,
+            changed: true,
+            outText,
+          };
+        }
+
+        return null;
+      }
+
+      // No drawer: insert one directly under the heading.
+      if (idAction === "ensure") {
+        const newId = idForced || crypto.randomUUID();
+        const drawer = [":PROPERTIES:", `:ID: ${newId}`, ":END:", ""];
+        lines.splice(headingIdx + 1, 0, ...drawer);
+        const outText = lines.join("\n");
+        return {
+          id: newId,
+          idLine1: headingIdx + 3,
+          headingLine1: headingIdx + 1,
+          changed: true,
+          outText,
+        };
+      }
+
+      return null;
+    };
+
+    if (idLine > 0) {
+      const headlineRes = getHeadlineIdAtOrAboveLine(idLine);
+      if (headlineRes) {
+        if (idAction === "get") {
+          if (idFormat === "json") {
+            process.stdout.write(
+              JSON.stringify(
+                {
+                  id: headlineRes.id,
+                  kind: "headline",
+                  file: idFile,
+                  line: headlineRes.idLine1,
+                  headingLine: headlineRes.headingLine1,
+                },
+                null,
+                2,
+              ) + "\n",
+            );
+          } else {
+            process.stdout.write(headlineRes.id + "\n");
+          }
+          return;
+        }
+
+        // ensure
+        if (headlineRes.changed && idApply) {
+          fs.writeFileSync(idFile, headlineRes.outText, "utf8");
+        }
+
+        if (idFormat === "json") {
+          process.stdout.write(
+            JSON.stringify(
+              {
+                id: headlineRes.id,
+                kind: "headline",
+                file: idFile,
+                line: headlineRes.idLine1,
+                headingLine: headlineRes.headingLine1,
+                applied: idApply,
+                changed: headlineRes.changed,
+              },
+              null,
+              2,
+            ) + "\n",
+          );
+        } else if (idApply || !headlineRes.changed) {
+          process.stdout.write(headlineRes.id + "\n");
+        } else {
+          process.stdout.write(headlineRes.outText);
+        }
+
+        return;
+      }
+      // If no heading context found (or malformed drawer), fall back to file-level.
+    }
 
     const getFileId = (): { id: string; line: number } | null => {
       // Accept `#+id: <uuid>` anywhere near top, but prefer a file-level property drawer.
