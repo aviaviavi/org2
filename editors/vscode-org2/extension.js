@@ -1129,6 +1129,119 @@ function activate(context) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('org2.roamShowBacklinks', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+
+      const doc = editor.document;
+      if (!doc || doc.uri.scheme !== 'file') {
+        vscode.window.showWarningMessage('Org2: showing backlinks requires a file-backed document.');
+        return;
+      }
+
+      if (doc.isDirty) {
+        const ok = await doc.save();
+        if (!ok) {
+          vscode.window.showWarningMessage('Org2: could not save file before loading backlinks.');
+          return;
+        }
+      }
+
+      const cursorLine = editor.selection.active.line;
+      const ensureArgs = [
+        'id',
+        'ensure',
+        '--file',
+        String(doc.uri.fsPath),
+        '--line',
+        String(cursorLine + 1),
+        '--apply',
+        '--format',
+        'json',
+      ];
+      const { cmd: ensureCmd, args: ensureFinalArgs } = resolveOrg2Command(context, ensureArgs);
+
+      let ensureOut;
+      try {
+        ensureOut = await execFileAsync(ensureCmd, ensureFinalArgs, { cwd: getAgendaRootDir() });
+      } catch (e) {
+        vscode.window.showErrorMessage(`Org2: failed to ensure ID: ${String(e && e.message ? e.message : e)}`);
+        return;
+      }
+
+      let ensurePayload;
+      try {
+        ensurePayload = JSON.parse(String((ensureOut && ensureOut.stdout) || '').trim());
+      } catch (e) {
+        vscode.window.showErrorMessage('Org2: failed to parse org2 id ensure output.');
+        return;
+      }
+
+      const id = typeof ensurePayload.id === 'string' ? ensurePayload.id : '';
+      if (!/^([0-9a-fA-F-]{36})$/.test(id)) {
+        vscode.window.showErrorMessage('Org2: org2 id ensure did not return a valid UUID.');
+        return;
+      }
+
+      // If we inserted an ID, the CLI wrote to disk. Refresh the editor view.
+      try {
+        await vscode.commands.executeCommand('workbench.action.files.revert');
+      } catch (_) {
+        // ignore
+      }
+
+      const backlinksArgs = ['backlinks', '--id', id.toLowerCase(), '--dir', getAgendaRootDir(), '--recursive', '--format', 'json'];
+      const { cmd: backlinksCmd, args: backlinksFinalArgs } = resolveOrg2Command(context, backlinksArgs);
+
+      let backlinksOut;
+      try {
+        backlinksOut = await execFileAsync(backlinksCmd, backlinksFinalArgs, { cwd: getAgendaRootDir() });
+      } catch (e) {
+        vscode.window.showErrorMessage(`Org2: failed to load backlinks: ${String(e && e.message ? e.message : e)}`);
+        return;
+      }
+
+      let payload;
+      try {
+        payload = JSON.parse(String((backlinksOut && backlinksOut.stdout) || '').trim());
+      } catch (e) {
+        vscode.window.showErrorMessage('Org2: failed to parse org2 backlinks output.');
+        return;
+      }
+
+      const backlinks = Array.isArray(payload.backlinks) ? payload.backlinks : [];
+      if (backlinks.length === 0) {
+        vscode.window.showInformationMessage('Org2: no backlinks found.');
+        return;
+      }
+
+      const picks = backlinks.map((b) => {
+        const file = String(b.file || '');
+        const line0 = typeof b.line === 'number' ? b.line : 0;
+        const label = String(b.srcTitle || '(untitled)');
+        const desc = `${path.basename(file)}:${line0 + 1}`;
+        const detail = String(b.context || '').trim();
+        return { label, description: desc, detail, file, line0 };
+      });
+
+      const pick = await vscode.window.showQuickPick(picks, {
+        placeHolder: `Org2: backlinks (${picks.length})`,
+        matchOnDescription: true,
+        matchOnDetail: true,
+      });
+      if (!pick) return;
+
+      const uri = vscode.Uri.file(String(pick.file));
+      const targetDoc = await vscode.workspace.openTextDocument(uri);
+      const targetEditor = await vscode.window.showTextDocument(targetDoc, { preview: true });
+
+      const pos = new vscode.Position(Math.max(0, pick.line0 || 0), 0);
+      targetEditor.selection = new vscode.Selection(pos, pos);
+      targetEditor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('org2.roamOpenId', async (id) => {
       const raw = (typeof id === 'string' ? id : '').trim();
       const m = /^([0-9a-fA-F-]{36})$/.exec(raw);
