@@ -389,6 +389,11 @@ async function main(): Promise<void> {
   let queryId = "";
   let queryFormat: "text" | "json" = "text";
 
+  // Roam meta
+  let roamAction: "db-sync" = "db-sync";
+  let roamFormat: "text" | "json" = "text";
+  let roamApply = false;
+
   // Parse arguments
   let i = 0;
   while (i < args.length) {
@@ -451,6 +456,17 @@ async function main(): Promise<void> {
     } else if (arg === "query") {
       command = "query";
       i++;
+    } else if (arg === "roam") {
+      command = "roam";
+      i++;
+      // Optional subcommand: db-sync (default db-sync)
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        const sub = args[i]!;
+        if (sub === "db-sync") {
+          roamAction = "db-sync";
+          i++;
+        }
+      }
     } else if (arg === "--dir") {
       i++;
       if (i < args.length) {
@@ -560,6 +576,8 @@ async function main(): Promise<void> {
           backlinksFormat = v;
         } else if (command === "query" && (v === "text" || v === "json")) {
           queryFormat = v;
+        } else if (command === "roam" && (v === "text" || v === "json")) {
+          roamFormat = v;
         }
         i++;
       }
@@ -610,6 +628,8 @@ async function main(): Promise<void> {
         fmtApply = true;
       } else if (command === "id") {
         idApply = true;
+      } else if (command === "roam") {
+        roamApply = true;
       }
       i++;
     } else if (arg === "--verbose" || arg === "--verbose-errors") {
@@ -646,12 +666,15 @@ async function main(): Promise<void> {
       "       org2 fmt [--stdin] [--file FILE|--files FILE ...] [--apply]",
     );
     console.error(
+      "       org2 roam db-sync --dir DIR [--recursive] [--format text|json] [--apply]",
+    );
+    console.error(
       "       org2 lsp  # start the org2 Language Server (stdio)",
     );
     process.exit(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query") {
+  if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
     console.error(
       "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--no-overdue] [--verbose-errors]",
     );
@@ -686,6 +709,129 @@ async function main(): Promise<void> {
     // The LSP server runs over stdio and expects to own stdin/stdout.
     // Importing this module starts the server.
     await import("./lsp.js");
+    return;
+  }
+
+  if (command === "roam") {
+    if (roamAction !== "db-sync") {
+      console.error("Error: org2 roam requires a subcommand (db-sync)");
+      process.exit(1);
+    }
+
+    if (!dir) {
+      console.error("Error: org2 roam db-sync requires --dir DIR");
+      process.exit(1);
+    }
+
+    const listOrgFiles = (rootDir: string, recursiveScan: boolean): string[] => {
+      const out: string[] = [];
+
+      const walk = (d: string): void => {
+        let entries: fs.Dirent[];
+        try {
+          entries = fs.readdirSync(d, { withFileTypes: true });
+        } catch {
+          return;
+        }
+
+        for (const ent of entries) {
+          const full = path.join(d, ent.name);
+          if (ent.isDirectory()) {
+            // Skip common noisy directories
+            if (ent.name === ".git" || ent.name === "node_modules" || ent.name === ".org2") continue;
+            if (recursiveScan) walk(full);
+            continue;
+          }
+
+          if (!ent.isFile()) continue;
+          if (full.endsWith(".org") || full.endsWith(".org2")) out.push(full);
+        }
+      };
+
+      walk(rootDir);
+      return out;
+    };
+
+    const hasFileId = (text: string): boolean => {
+      const norm = text.replace(/\r\n/g, "\n");
+      const top = norm.split("\n").slice(0, 80);
+
+      // Accept a #+id keyword anywhere near the top (read-only compat).
+      for (const l of top) {
+        if (/^#\+id:\s*\S+/i.test(l.trim())) return true;
+      }
+
+      let i = 0;
+      while (i < top.length && (top[i] ?? "").trim() === "") i += 1;
+      if ((top[i] ?? "").trim() !== ":PROPERTIES:") return false;
+
+      for (let j = i + 1; j < top.length; j += 1) {
+        const l = (top[j] ?? "").trim();
+        if (l === ":END:") break;
+        if (/^:ID:\s*\S+/.test(l)) return true;
+      }
+
+      return false;
+    };
+
+    const allFiles = listOrgFiles(dir, recursive);
+    const missing: string[] = [];
+
+    for (const filePath of allFiles) {
+      try {
+        const raw = fs.readFileSync(filePath, "utf8");
+        if (!hasFileId(raw)) missing.push(filePath);
+      } catch {
+        // ignore unreadable
+      }
+    }
+
+    let applied = 0;
+    if (roamApply) {
+      for (const filePath of missing) {
+        try {
+          const raw = fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
+          // Double-check before mutating.
+          if (hasFileId(raw)) continue;
+
+          const newId = crypto.randomUUID();
+          const header = `:PROPERTIES:\n:ID: ${newId}\n:END:\n\n`;
+          const out = header + raw.replace(/^\n+/, "");
+          fs.writeFileSync(filePath, out, "utf8");
+          applied += 1;
+        } catch {
+          // ignore write errors
+        }
+      }
+    }
+
+    if (roamFormat === "json") {
+      process.stdout.write(
+        JSON.stringify(
+          {
+            action: "db-sync",
+            dir,
+            recursive,
+            scanned: allFiles.length,
+            missingFileIdCount: missing.length,
+            missingFileIds: missing,
+            applied: roamApply,
+            appliedCount: applied,
+          },
+          null,
+          2
+        ) + "\n"
+      );
+    } else {
+      for (const filePath of missing) {
+        process.stdout.write(filePath + "\n");
+      }
+      console.error(
+        `org2 roam db-sync: scanned ${allFiles.length} file(s); ${missing.length} missing file-level IDs` +
+          (roamApply ? `; applied IDs to ${applied} file(s)` : "")
+      );
+    }
+
     return;
   }
 
