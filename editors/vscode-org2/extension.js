@@ -590,7 +590,9 @@ async function fetchAgendaGroups(context, filter) {
     }
     if (resolved.length > 0) args.push('--files', ...resolved);
   } else {
-    args.push('--dir', agendaRoot, '--recursive');
+    const recursive = cfg.get('agenda.recursive', true);
+    args.push('--dir', agendaRoot);
+    if (recursive) args.push('--recursive');
   }
 
   args.push('--days', String(days), '--format', 'json');

@@ -248,6 +248,11 @@
           "default": "",
           "description": "Root directory to scan when scope='workspace'. If empty, uses the VS Code workspace folder. Useful when your org files live outside the workspace."
         },
+        "org2.agenda.recursive": {
+          "type": "boolean",
+          "default": true,
+          "description": "When scope='workspace', recursively scan org2.agenda.dir for .org/.org2 files. If false, scans only the top-level directory."
+        },
         "org2.roam.dailiesDir": {
           "type": "string",
           "default": "",
