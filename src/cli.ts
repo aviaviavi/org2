@@ -344,6 +344,7 @@ async function main(): Promise<void> {
   let recursive = false;
   let includeOverdue = true;
   let verboseErrors = false;
+  let help = false;
 
   let archiveFile = "";
   let archivePos = "";
@@ -392,6 +393,12 @@ async function main(): Promise<void> {
   let i = 0;
   while (i < args.length) {
     const arg = args[i];
+
+    if (arg === "--help" || arg === "-h") {
+      help = true;
+      i++;
+      continue;
+    }
 
     if (arg === "agenda") {
       command = "agenda";
@@ -611,6 +618,37 @@ async function main(): Promise<void> {
     } else {
       i++;
     }
+  }
+
+  if (help) {
+    console.error(
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--no-overdue] [--verbose-errors]",
+    );
+    console.error(
+      "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff] [--apply]",
+    );
+    console.error(
+      "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--format text|json|diff] [--apply]",
+    );
+    console.error(
+      "       org2 plan set --file FILE (--line N | --pos LINE[:COL]) --kind scheduled|deadline --date YYYY-MM-DD [--format text|json|diff] [--apply]",
+    );
+    console.error(
+      "       org2 id [get|ensure] --file FILE [--line N|--pos LINE[:COL]] [--id UUID] [--format text|json|diff] [--apply]",
+    );
+    console.error(
+      "       org2 backlinks --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
+    );
+    console.error(
+      "       org2 query --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
+    );
+    console.error(
+      "       org2 fmt [--stdin] [--file FILE|--files FILE ...] [--apply]",
+    );
+    console.error(
+      "       org2 lsp  # start the org2 Language Server (stdio)",
+    );
+    process.exit(0);
   }
 
   if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query") {
