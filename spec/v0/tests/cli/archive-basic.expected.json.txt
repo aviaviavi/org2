@@ -1,0 +1,11 @@
+{
+  "kind": "archive",
+  "apply": false,
+  "sourcePath": "spec/v0/tests/cli/archive-basic.org",
+  "archivePath": "spec/v0/tests/cli/archive-basic.org_archive",
+  "headlineLine1": 4,
+  "headline": "** TODO Child",
+  "subtreeText": "** TODO Child\nSome body text.\n",
+  "newSourceText": "#+title: archive basic\n\n* TODO Parent\n* TODO Next\n",
+  "diff": "--- spec/v0/tests/cli/archive-basic.org\n+++ spec/v0/tests/cli/archive-basic.org_archive\n@@ archive @@\n--- spec/v0/tests/cli/archive-basic.org (removed lines)\n- ** TODO Child\n- Some body text.\n\n+++ spec/v0/tests/cli/archive-basic.org_archive (appended lines)\n+ ** TODO Child\n+ Some body text.\n"
+}
