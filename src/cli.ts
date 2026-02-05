@@ -349,7 +349,7 @@ async function main(): Promise<void> {
   let archiveFile = "";
   let archivePos = "";
   let archiveApply = false;
-  let archiveFormat: "text" | "diff" = "text";
+  let archiveFormat: "text" | "diff" | "json" = "text";
 
   // Todo status editing
   let todoAction: "set" | "toggle" = "toggle";
@@ -546,8 +546,8 @@ async function main(): Promise<void> {
       i++;
       if (i < args.length) {
         const v = args[i];
-        if (command === "archive" && (v === "text" || v === "diff")) {
-          archiveFormat = v as "text" | "diff";
+        if (command === "archive" && (v === "text" || v === "diff" || v === "json")) {
+          archiveFormat = v as "text" | "diff" | "json";
         } else if (command === "agenda" && (v === "text" || v === "json")) {
           format = v;
         } else if (command === "todo" && (v === "text" || v === "json" || v === "diff")) {
@@ -625,7 +625,7 @@ async function main(): Promise<void> {
       "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--no-overdue] [--verbose-errors]",
     );
     console.error(
-      "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff] [--apply]",
+      "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--format text|json|diff] [--apply]",
@@ -656,7 +656,7 @@ async function main(): Promise<void> {
       "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--no-overdue] [--verbose-errors]",
     );
     console.error(
-      "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff] [--apply]",
+      "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--format text|json|diff] [--apply]",
@@ -1574,6 +1574,48 @@ async function main(): Promise<void> {
     if (archiveFormat === "diff") {
       const diffOutput = formatArchiveDiff(sourcePath, archivePath, subtreeText);
       process.stdout.write(diffOutput);
+      return;
+    }
+
+    // Handle --format json (safe-edit primitive)
+    if (archiveFormat === "json") {
+      if (!archiveApply) {
+        const payload = {
+          kind: "archive",
+          apply: false,
+          sourcePath,
+          archivePath,
+          headlineLine1: headlineLineIndex + 1,
+          headline: headlineLine,
+          subtreeText,
+          newSourceText,
+          diff: formatArchiveDiff(sourcePath, archivePath, subtreeText),
+        };
+        process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+        return;
+      }
+
+      const existingArchive = fs.existsSync(archivePath)
+        ? fs.readFileSync(archivePath, "utf8").replace(/\r\n/g, "\n")
+        : "";
+      const archiveOut = existingArchive.trimEnd() + "\n\n" + subtreeText;
+
+      fs.writeFileSync(sourcePath, newSourceText, "utf8");
+      fs.writeFileSync(archivePath, archiveOut, "utf8");
+
+      const payload = {
+        kind: "archive",
+        apply: true,
+        wrote: true,
+        sourcePath,
+        archivePath,
+        headlineLine1: headlineLineIndex + 1,
+        headline: headlineLine,
+        subtreeText,
+        newSourceText,
+        diff: formatArchiveDiff(sourcePath, archivePath, subtreeText),
+      };
+      process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
       return;
     }
 
