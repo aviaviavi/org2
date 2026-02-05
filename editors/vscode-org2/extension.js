@@ -989,14 +989,39 @@ function activate(context) {
     );
     if (ok !== 'Archive') return;
 
-    const args = ['archive', '--file', String(filePath), '--pos', String(line), '--apply'];
-    const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
+    // Preview the edit as a diff, then ask before applying.
+    const previewArgs = ['archive', '--file', String(filePath), '--pos', String(line), '--format', 'diff'];
+    const { cmd: previewCmd, args: previewFinalArgs } = resolveOrg2Command(context, previewArgs);
 
     try {
+      const { stdout } = await execFileAsync(previewCmd, previewFinalArgs, { cwd: getAgendaRootDir() });
+      const diffText = String(stdout || '').trimEnd();
+
+      if (!diffText) {
+        vscode.window.showInformationMessage('Org2: nothing to archive.');
+        return;
+      }
+
+      const doc = await vscode.workspace.openTextDocument({ language: 'diff', content: diffText + '\n' });
+      await vscode.window.showTextDocument(doc, { preview: true, preserveFocus: false });
+
+      const applyOk = await vscode.window.showWarningMessage(
+        `Org2: apply archive edit at line ${line}?`,
+        { modal: true },
+        'Apply'
+      );
+      if (applyOk !== 'Apply') return;
+
+      const applyArgs = ['archive', '--file', String(filePath), '--pos', String(line), '--apply'];
+      const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, applyArgs);
       await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
       await vscode.commands.executeCommand('workbench.action.files.revert');
     } catch (e) {
-      vscode.window.showErrorMessage(`Org2: archive failed: ${String(e && e.message ? e.message : e)}`);
+      const stderr = e && e.stderr ? String(e.stderr).trim() : '';
+      const extra = stderr ? `\n${stderr}` : '';
+      vscode.window.showErrorMessage(
+        `Org2: archive failed: ${String(e && e.message ? e.message : e)}${extra}`
+      );
     }
   }
 
