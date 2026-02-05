@@ -305,9 +305,7 @@ class LSPServer {
     if (!node) return ranges;
 
     if (node.type === "Document") {
-      for (const child of node.children || []) {
-        this.extractFoldingRanges(child, text, ranges, tracker);
-      }
+      // Document itself does not contribute a folding range; recurse via the generic children-walk below.
     } else if (node.type === "Headline") {
       const headline = node as HeadlineNode;
       const titleText = this.inlineNodesToText(headline.title);
@@ -347,9 +345,6 @@ class LSPServer {
         });
       }
 
-      for (const child of headline.children || []) {
-        this.extractFoldingRanges(child, text, ranges, tracker);
-      }
     } else if (node.type === "SrcBlock" || node.type === "Block") {
       const block = node as any;
       if (block.terminated) {
