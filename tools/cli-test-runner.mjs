@@ -77,6 +77,9 @@ for (const orgFile of orgFiles) {
     const expectedArchiveDiffPath = path.join(testDir, `${basename}.expected.diff.txt`);
     const hasExpectedDiff = fs.existsSync(expectedArchiveDiffPath);
 
+    const expectedArchiveJsonPath = path.join(testDir, `${basename}.expected.json.txt`);
+    const hasExpectedJson = fs.existsSync(expectedArchiveJsonPath);
+
     try {
       const output = execSync(`node dist/cli.js archive --file "${filePath}" --pos 4`, { encoding: "utf8" });
       if (output !== expectedArchive) {
@@ -101,6 +104,26 @@ for (const orgFile of orgFiles) {
           console.log(expectedDiff);
           console.log("Got:");
           console.log(diffOut);
+          failed++;
+          continue;
+        }
+      }
+
+      if (hasExpectedJson) {
+        const expectedJson = fs.readFileSync(expectedArchiveJsonPath, "utf8");
+        const jsonOut = execSync(`node dist/cli.js archive --file "${filePath}" --pos 4 --format json`, {
+          encoding: "utf8",
+        });
+
+        const normalizedOut = JSON.stringify(JSON.parse(jsonOut), null, 2) + "\n";
+        const normalizedExpected = JSON.stringify(JSON.parse(expectedJson), null, 2) + "\n";
+
+        if (normalizedOut !== normalizedExpected) {
+          console.log(`✗ ${basename} (json)`);
+          console.log("Expected:");
+          console.log(normalizedExpected);
+          console.log("Got:");
+          console.log(normalizedOut);
           failed++;
           continue;
         }
