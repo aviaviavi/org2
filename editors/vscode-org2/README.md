@@ -7,9 +7,9 @@ Minimal VS Code language support for Org2.
 - File association for `*.org` and `*.org2`
 - Syntax highlighting (headings, directives, blocks, drawers, properties, planning keywords, lists, checkboxes, timestamps, emphasis, links, tables)
 - Folding provider for headings, list items, and `:PROPERTIES:` drawers
-- Auto-fold on open/activation:
-  - folds level-1 headings (`* Heading`)
-  - folds `:PROPERTIES:` drawers
+- Auto-fold on open/activation (configurable):
+  - `org2.folding.autoFoldMaxHeadingLevel` (number; default 1; 0 = off)
+  - `org2.folding.autoFoldPropertyDrawers` (boolean; default true)
 - Clickable links (via VS Code document links):
   - `[[url]]`
   - `[[url][desc]]`
@@ -38,9 +38,12 @@ The extension can edit planning keywords and archive subtrees via the `org2` CLI
 
 - Command: **Org2: Set Scheduled** (`org2.setScheduled`) → prompts for `YYYY-MM-DD`
 - Command: **Org2: Set Deadline** (`org2.setDeadline`) → prompts for `YYYY-MM-DD`
-- Command: **Org2: Archive Subtree** (`org2.archiveSubtree`) → confirmation modal
+- Command: **Org2: Archive Subtree** (`org2.archiveSubtree`) → shows a diff preview, then asks for confirmation
 
-Implementation detail: the extension saves the file (if needed), runs the relevant `org2 plan set ... --apply` / `org2 archive ... --apply`, then reverts the buffer to pick up on-disk edits.
+Implementation detail: the extension saves the file (if needed).
+- Planning edits run `org2 plan set ... --apply`.
+- Archiving runs `org2 archive ... --format diff` first to generate a preview, then `org2 archive ... --apply` if confirmed.
+Afterward, the extension reverts the buffer to pick up the on-disk edits.
 
 ## Agenda (MVP)
 
@@ -62,6 +65,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.files`: list of files when scope=`files`
 - `org2.agenda.days`: default window (used for “Next N days”)
 - `org2.agenda.includeOverdue`: include overdue items
+- `org2.agenda.recursive`: when scope=`workspace`, whether to scan recursively (default true)
 - `org2.agenda.command`: command used to run org2 (default: `org2`)
 - `org2.agenda.args`: extra args prefixed before `agenda` (advanced)
 
