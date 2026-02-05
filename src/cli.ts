@@ -392,6 +392,7 @@ async function main(): Promise<void> {
   // Roam meta
   let roamAction: "db-sync" = "db-sync";
   let roamFormat: "text" | "json" = "text";
+  let roamApply = false;
 
   // Parse arguments
   let i = 0;
@@ -627,6 +628,8 @@ async function main(): Promise<void> {
         fmtApply = true;
       } else if (command === "id") {
         idApply = true;
+      } else if (command === "roam") {
+        roamApply = true;
       }
       i++;
     } else if (arg === "--verbose" || arg === "--verbose-errors") {
@@ -663,10 +666,7 @@ async function main(): Promise<void> {
       "       org2 fmt [--stdin] [--file FILE|--files FILE ...] [--apply]",
     );
     console.error(
-      "       org2 roam db-sync --dir DIR [--recursive] [--format text|json]",
-    );
-    console.error(
-      "       org2 roam db-sync --dir DIR [--recursive] [--format text|json]",
+      "       org2 roam db-sync --dir DIR [--recursive] [--format text|json] [--apply]",
     );
     console.error(
       "       org2 lsp  # start the org2 Language Server (stdio)",
@@ -786,6 +786,25 @@ async function main(): Promise<void> {
       }
     }
 
+    let applied = 0;
+    if (roamApply) {
+      for (const filePath of missing) {
+        try {
+          const raw = fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
+          // Double-check before mutating.
+          if (hasFileId(raw)) continue;
+
+          const newId = crypto.randomUUID();
+          const header = `:PROPERTIES:\n:ID: ${newId}\n:END:\n\n`;
+          const out = header + raw.replace(/^\n+/, "");
+          fs.writeFileSync(filePath, out, "utf8");
+          applied += 1;
+        } catch {
+          // ignore write errors
+        }
+      }
+    }
+
     if (roamFormat === "json") {
       process.stdout.write(
         JSON.stringify(
@@ -796,6 +815,8 @@ async function main(): Promise<void> {
             scanned: allFiles.length,
             missingFileIdCount: missing.length,
             missingFileIds: missing,
+            applied: roamApply,
+            appliedCount: applied,
           },
           null,
           2
@@ -806,7 +827,8 @@ async function main(): Promise<void> {
         process.stdout.write(filePath + "\n");
       }
       console.error(
-        `org2 roam db-sync: scanned ${allFiles.length} file(s); ${missing.length} missing file-level IDs`
+        `org2 roam db-sync: scanned ${allFiles.length} file(s); ${missing.length} missing file-level IDs` +
+          (roamApply ? `; applied IDs to ${applied} file(s)` : "")
       );
     }
 
