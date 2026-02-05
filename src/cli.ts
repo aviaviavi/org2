@@ -390,9 +390,12 @@ async function main(): Promise<void> {
   let queryFormat: "text" | "json" = "text";
 
   // Roam meta
-  let roamAction: "db-sync" = "db-sync";
+  let roamAction: "db-sync" | "node" = "db-sync";
+  let roamNodeAction: "new" = "new";
   let roamFormat: "text" | "json" = "text";
   let roamApply = false;
+  let roamTitle = "";
+  let roamIdForced = "";
 
   // Parse arguments
   let i = 0;
@@ -459,12 +462,24 @@ async function main(): Promise<void> {
     } else if (arg === "roam") {
       command = "roam";
       i++;
-      // Optional subcommand: db-sync (default db-sync)
+      // Optional subcommands:
+      // - db-sync (default)
+      // - node new
       if (i < args.length && !args[i]!.startsWith("--")) {
         const sub = args[i]!;
         if (sub === "db-sync") {
           roamAction = "db-sync";
           i++;
+        } else if (sub === "node") {
+          roamAction = "node";
+          i++;
+          if (i < args.length && !args[i]!.startsWith("--")) {
+            const sub2 = args[i]!;
+            if (sub2 === "new") {
+              roamNodeAction = "new";
+              i++;
+            }
+          }
         }
       }
     } else if (arg === "--dir") {
@@ -546,6 +561,14 @@ async function main(): Promise<void> {
         planDate = args[i]!;
         i++;
       }
+    } else if (arg === "--title") {
+      i++;
+      if (i < args.length) {
+        if (command === "roam") {
+          roamTitle = args[i]!;
+        }
+        i++;
+      }
     } else if (arg === "--id") {
       i++;
       if (i < args.length) {
@@ -555,6 +578,8 @@ async function main(): Promise<void> {
           backlinksId = args[i]!;
         } else if (command === "query") {
           queryId = args[i]!;
+        } else if (command === "roam") {
+          roamIdForced = args[i]!;
         }
         i++;
       }
@@ -669,6 +694,9 @@ async function main(): Promise<void> {
       "       org2 roam db-sync --dir DIR [--recursive] [--format text|json] [--apply]",
     );
     console.error(
+      "       org2 roam node new --dir DIR --title TITLE [--id UUID] [--format text|json] [--apply]",
+    );
+    console.error(
       "       org2 lsp  # start the org2 Language Server (stdio)",
     );
     process.exit(0);
@@ -700,6 +728,12 @@ async function main(): Promise<void> {
       "       org2 fmt [--stdin] [--file FILE|--files FILE ...] [--apply]",
     );
     console.error(
+      "       org2 roam db-sync --dir DIR [--recursive] [--format text|json] [--apply]",
+    );
+    console.error(
+      "       org2 roam node new --dir DIR --title TITLE [--id UUID] [--format text|json] [--apply]",
+    );
+    console.error(
       "       org2 lsp  # start the org2 Language Server (stdio)",
     );
     process.exit(1);
@@ -713,14 +747,77 @@ async function main(): Promise<void> {
   }
 
   if (command === "roam") {
-    if (roamAction !== "db-sync") {
-      console.error("Error: org2 roam requires a subcommand (db-sync)");
+    if (!dir) {
+      console.error("Error: org2 roam requires --dir DIR");
       process.exit(1);
     }
 
-    if (!dir) {
-      console.error("Error: org2 roam db-sync requires --dir DIR");
-      process.exit(1);
+    if (roamAction === "node") {
+      if (roamNodeAction !== "new") {
+        console.error("Error: org2 roam node requires a subcommand (new)");
+        process.exit(1);
+      }
+
+      if (!roamTitle) {
+        console.error("Error: org2 roam node new requires --title TITLE");
+        process.exit(1);
+      }
+
+      const slugify = (s: string): string => {
+        return s
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+/, "")
+          .replace(/-+$/, "")
+          .replace(/-+/g, "-")
+          .slice(0, 80);
+      };
+
+      const slug = slugify(roamTitle) || "node";
+      const filePath = path.join(dir, `${slug}.org2`);
+      const newId = roamIdForced || crypto.randomUUID();
+
+      const content = `#+TITLE: ${roamTitle}\n\n:PROPERTIES:\n:ID: ${newId}\n:END:\n\n`;
+
+      if (roamApply) {
+        // Make this command idempotent so it can be safely re-run.
+        // If the file exists and already matches, treat as success.
+        if (fs.existsSync(filePath)) {
+          const existing = fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
+          if (existing !== content) {
+            console.error(`Error: file already exists with different contents: ${filePath}`);
+            process.exit(1);
+          }
+        } else {
+          fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(filePath, content, "utf8");
+        }
+      } else {
+        console.error("Error: org2 roam node new is mutating; pass --apply to write the file");
+        process.exit(1);
+      }
+
+      if (roamFormat === "json") {
+        process.stdout.write(
+          JSON.stringify(
+            {
+              action: "node-new",
+              dir,
+              title: roamTitle,
+              file: filePath,
+              id: newId,
+              applied: true,
+            },
+            null,
+            2,
+          ) + "\n",
+        );
+      } else {
+        process.stdout.write(filePath + "\n");
+      }
+
+      return;
     }
 
     const listOrgFiles = (rootDir: string, recursiveScan: boolean): string[] => {

@@ -1,0 +1,1 @@
+roam node new --dir /tmp/org2-cli-test-roam-node-new --title "My Node" --id 00000000-0000-0000-0000-000000000001 --format json --apply
