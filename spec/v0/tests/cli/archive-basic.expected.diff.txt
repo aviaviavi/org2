@@ -1,0 +1,10 @@
+--- spec/v0/tests/cli/archive-basic.org
++++ spec/v0/tests/cli/archive-basic.org_archive
+@@ archive @@
+--- spec/v0/tests/cli/archive-basic.org (removed lines)
+- ** TODO Child
+- Some body text.
+
++++ spec/v0/tests/cli/archive-basic.org_archive (appended lines)
++ ** TODO Child
++ Some body text.
