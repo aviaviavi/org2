@@ -1123,7 +1123,7 @@ function activate(context) {
 
       let payload;
       try {
-        payload = JSON.parse(String(out || '').trim());
+        payload = JSON.parse(String((out && out.stdout) || '').trim());
       } catch (e) {
         vscode.window.showErrorMessage('Org2: failed to parse org2 id ensure output.');
         return;
