@@ -74,19 +74,40 @@ for (const orgFile of orgFiles) {
   // Archive tests
   if (basename.startsWith("archive-")) {
     const expectedArchive = fs.readFileSync(path.join(testDir, `${basename}.expected.txt`), "utf8");
+    const expectedArchiveDiffPath = path.join(testDir, `${basename}.expected.diff.txt`);
+    const hasExpectedDiff = fs.existsSync(expectedArchiveDiffPath);
+
     try {
       const output = execSync(`node dist/cli.js archive --file "${filePath}" --pos 4`, { encoding: "utf8" });
       if (output !== expectedArchive) {
-        console.log(`✗ ${basename}`);
+        console.log(`✗ ${basename} (text)`);
         console.log("Expected:");
         console.log(expectedArchive);
         console.log("Got:");
         console.log(output);
         failed++;
-      } else {
-        console.log(`✓ ${basename}`);
-        passed++;
+        continue;
       }
+
+      if (hasExpectedDiff) {
+        const expectedDiff = fs.readFileSync(expectedArchiveDiffPath, "utf8");
+        const diffOut = execSync(`node dist/cli.js archive --file "${filePath}" --pos 4 --format diff`, {
+          encoding: "utf8",
+        });
+
+        if (diffOut !== expectedDiff) {
+          console.log(`✗ ${basename} (diff)`);
+          console.log("Expected:");
+          console.log(expectedDiff);
+          console.log("Got:");
+          console.log(diffOut);
+          failed++;
+          continue;
+        }
+      }
+
+      console.log(`✓ ${basename}`);
+      passed++;
     } catch (err) {
       console.log(`✗ ${basename} (error)`);
       console.error(err instanceof Error ? err.message : err);
