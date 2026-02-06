@@ -1278,16 +1278,55 @@ function activate(context) {
       }
 
       const root = getAgendaRootDir();
-      const found = await findFirstIdMatchInDir(root, m[1].toLowerCase());
-      if (!found) {
-        vscode.window.showWarningMessage(`Org2: ID not found: ${m[1]}`);
-        return;
+      const uuid = m[1].toLowerCase();
+
+      // Prefer the CLI query (supports file-level + headline IDs, and can return multiple matches).
+      let results = [];
+      try {
+        const queryArgs = ['query', '--id', uuid, '--dir', root, '--recursive', '--format', 'json'];
+        const { cmd: queryCmd, args: queryFinalArgs } = resolveOrg2Command(context, queryArgs);
+        const { stdout: queryOut } = await execFileAsync(queryCmd, queryFinalArgs, { cwd: root });
+        const payload = JSON.parse(String(queryOut || '').trim());
+        results = Array.isArray(payload.results) ? payload.results : [];
+      } catch (_) {
+        // Ignore and fall back to scan-based lookup below.
       }
 
-      const uri = vscode.Uri.file(found.filePath);
+      // Fallback: slow scan for :ID: lines (kept for robustness if the CLI query fails).
+      if (!results.length) {
+        const found = await findFirstIdMatchInDir(root, uuid);
+        if (!found) {
+          vscode.window.showWarningMessage(`Org2: ID not found: ${m[1]}`);
+          return;
+        }
+        results = [{ file: found.filePath, line: found.line, title: path.basename(found.filePath) }];
+      }
+
+      const picks = results.map((r) => {
+        const file = String(r.file || '');
+        const line0 = typeof r.line === 'number' ? r.line : 0;
+        const title = String(r.title || path.basename(file) || '(untitled)');
+        return {
+          label: title,
+          description: `${path.basename(file)}:${line0 + 1}`,
+          file,
+          line0,
+        };
+      });
+
+      const pick =
+        picks.length === 1
+          ? picks[0]
+          : await vscode.window.showQuickPick(picks, {
+              placeHolder: `Org2: open ID (${picks.length} matches)`,
+              matchOnDescription: true,
+            });
+      if (!pick) return;
+
+      const uri = vscode.Uri.file(String(pick.file));
       const doc = await vscode.workspace.openTextDocument(uri);
       const editor = await vscode.window.showTextDocument(doc, { preview: true });
-      const pos = new vscode.Position(found.line, 0);
+      const pos = new vscode.Position(Math.max(0, pick.line0 || 0), 0);
       editor.selection = new vscode.Selection(pos, pos);
       editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
     })
