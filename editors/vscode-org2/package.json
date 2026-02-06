@@ -19,6 +19,7 @@
     "onCommand:org2.roamDailiesGotoTomorrow",
     "onCommand:org2.roamDailiesGotoDate",
     "onCommand:org2.roamCopyIdLink",
+    "onCommand:org2.roamInsertBacklink",
     "onCommand:org2.roamOpenId",
     "onCommand:org2.roamShowBacklinks",
     "onCommand:org2.roamDbSync",
@@ -117,6 +118,10 @@
       {
         "command": "org2.roamCopyIdLink",
         "title": "Org2: Roam — Copy ID Link"
+      },
+      {
+        "command": "org2.roamInsertBacklink",
+        "title": "Org2: Roam — Insert Backlink (ID Link)"
       },
       {
         "command": "org2.roamOpenId",

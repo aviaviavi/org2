@@ -1156,6 +1156,90 @@ function activate(context) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('org2.roamInsertBacklink', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+
+      const doc = editor.document;
+      if (!doc || doc.uri.scheme !== 'file') {
+        vscode.window.showWarningMessage('Org2: inserting a backlink requires a file-backed document.');
+        return;
+      }
+
+      if (doc.isDirty) {
+        const ok = await doc.save();
+        if (!ok) {
+          vscode.window.showWarningMessage('Org2: could not save file before inserting backlink.');
+          return;
+        }
+      }
+
+      const id = await vscode.window.showInputBox({
+        prompt: 'Org2: Roam — insert backlink (id:...)',
+        placeHolder: 'UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)',
+        validateInput: (v) => {
+          const s = String(v || '').trim();
+          return /^([0-9a-fA-F-]{36})$/.test(s) ? undefined : 'Expected a UUID';
+        },
+      });
+      if (!id) return;
+
+      const title = await vscode.window.showInputBox({
+        prompt: 'Org2: Roam — backlink title',
+        placeHolder: 'Link text',
+        value: '',
+      });
+      if (title === undefined) return;
+
+      const cursor = editor.selection.active;
+      const pos = `${cursor.line + 1}:${cursor.character}`;
+
+      const args = [
+        'roam',
+        'link',
+        'insert-backlink',
+        '--file',
+        String(doc.uri.fsPath),
+        '--pos',
+        String(pos),
+        '--id',
+        String(id).trim().toLowerCase(),
+        '--title',
+        String(title),
+        '--format',
+        'json',
+        '--apply',
+      ];
+
+      const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
+
+      let out;
+      try {
+        out = await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
+      } catch (e) {
+        vscode.window.showErrorMessage(`Org2: failed to insert backlink: ${String(e && e.message ? e.message : e)}`);
+        return;
+      }
+
+      try {
+        JSON.parse(String((out && out.stdout) || '').trim());
+      } catch (e) {
+        vscode.window.showErrorMessage('Org2: failed to parse org2 roam link output.');
+        return;
+      }
+
+      // CLI wrote to disk; refresh the editor view.
+      try {
+        await vscode.commands.executeCommand('workbench.action.files.revert');
+      } catch (e) {
+        // ignore
+      }
+
+      vscode.window.showInformationMessage('Org2: inserted backlink.');
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('org2.roamShowBacklinks', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) return;
