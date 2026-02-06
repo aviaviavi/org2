@@ -239,13 +239,18 @@ class LSPServer {
       const titleText = this.inlineNodesToText(headline.title);
       const headlineMarker = "*".repeat(headline.level) + " ";
 
-      let headlineLine = 0;
+      let headlineLine = -1;
       for (let i = 0; i < tracker.getLinesCount(); i++) {
         const line = tracker.getLine(i);
         if (line.includes(headlineMarker) && (titleText === "" || line.includes(titleText))) {
           headlineLine = i;
           break;
         }
+      }
+
+      if (headlineLine < 0) {
+        // Could not map this AST node back to a stable line; skip producing a symbol.
+        return symbols;
       }
 
       let endLine = headlineLine;
@@ -311,13 +316,19 @@ class LSPServer {
       const titleText = this.inlineNodesToText(headline.title);
       const headlineMarker = "*".repeat(headline.level) + " ";
 
-      let headlineLine = 0;
+      let headlineLine = -1;
       for (let i = 0; i < tracker.getLinesCount(); i++) {
         const line = tracker.getLine(i);
         if (line.includes(headlineMarker) && (titleText === "" || line.includes(titleText))) {
           headlineLine = i;
           break;
         }
+      }
+
+      if (headlineLine < 0) {
+        // Could not map this AST node back to a stable line; skip producing a folding range.
+        // (Otherwise we'd accidentally fold from the top of the file.)
+        return ranges;
       }
 
       let endLine = headlineLine;
