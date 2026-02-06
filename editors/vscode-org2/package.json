@@ -21,6 +21,7 @@
     "onCommand:org2.roamCopyIdLink",
     "onCommand:org2.roamOpenId",
     "onCommand:org2.roamShowBacklinks",
+    "onCommand:org2.roamDbSync",
     "onCommand:org2.rerunAutoFold"
   ],
   "repository": {
@@ -124,6 +125,10 @@
       {
         "command": "org2.roamShowBacklinks",
         "title": "Org2: Roam — Show Backlinks"
+      },
+      {
+        "command": "org2.roamDbSync",
+        "title": "Org2: Roam — DB Sync (Ensure File IDs)"
       },
       {
         "command": "org2.rerunAutoFold",
