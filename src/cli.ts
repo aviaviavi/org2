@@ -390,7 +390,7 @@ async function main(): Promise<void> {
   let queryFormat: "text" | "json" = "text";
 
   // Roam meta
-  let roamAction: "db-sync" | "node" | "link" = "db-sync";
+  let roamAction: "db-sync" | "backlinks" | "node" | "link" = "db-sync";
   let roamNodeAction: "new" = "new";
   let roamLinkAction: "insert-backlink" = "insert-backlink";
   let roamFormat: "text" | "json" = "text";
@@ -475,6 +475,9 @@ async function main(): Promise<void> {
         const sub = args[i]!;
         if (sub === "db-sync") {
           roamAction = "db-sync";
+          i++;
+        } else if (sub === "backlinks") {
+          roamAction = "backlinks";
           i++;
         } else if (sub === "node") {
           roamAction = "node";
@@ -603,6 +606,8 @@ async function main(): Promise<void> {
         } else if (command === "roam") {
           if (roamAction === "link") {
             roamLinkId = args[i]!;
+          } else if (roamAction === "backlinks") {
+            backlinksId = args[i]!;
           } else {
             roamIdForced = args[i]!;
           }
@@ -627,6 +632,12 @@ async function main(): Promise<void> {
           backlinksFormat = v;
         } else if (command === "query" && (v === "text" || v === "json")) {
           queryFormat = v;
+        } else if (
+          command === "roam" &&
+          roamAction === "backlinks" &&
+          (v === "text" || v === "json")
+        ) {
+          backlinksFormat = v;
         } else if (command === "roam" && (v === "text" || v === "json")) {
           roamFormat = v;
         }
@@ -722,6 +733,9 @@ async function main(): Promise<void> {
       "       org2 roam db-sync --dir DIR [--recursive] [--format text|json] [--apply]",
     );
     console.error(
+      "       org2 roam backlinks --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
+    );
+    console.error(
       "       org2 roam node new --dir DIR --title TITLE [--id UUID] [--format text|json] [--apply]",
       "       org2 roam link insert-backlink --file FILE --pos LINE[:COL] --id UUID --title TITLE [--format text|json] [--apply]",
     );
@@ -760,6 +774,9 @@ async function main(): Promise<void> {
       "       org2 roam db-sync --dir DIR [--recursive] [--format text|json] [--apply]",
     );
     console.error(
+      "       org2 roam backlinks --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
+    );
+    console.error(
       "       org2 roam node new --dir DIR --title TITLE [--id UUID] [--format text|json] [--apply]",
       "       org2 roam link insert-backlink --file FILE --pos LINE[:COL] --id UUID --title TITLE [--format text|json] [--apply]",
     );
@@ -774,6 +791,12 @@ async function main(): Promise<void> {
     // Importing this module starts the server.
     await import("./lsp.js");
     return;
+  }
+
+  // Treat `org2 roam backlinks ...` as a namespaced alias for `org2 backlinks ...`.
+  // This lets editor integrations stay under `roam` while sharing the same implementation.
+  if (command === "roam" && roamAction === "backlinks") {
+    command = "backlinks";
   }
 
   if (command === "roam") {
