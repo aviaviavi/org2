@@ -1240,6 +1240,24 @@ function activate(context) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('org2.openFileAt', async (file, line0) => {
+      try {
+        const abs = path.isAbsolute(String(file || '')) ? String(file || '') : path.resolve(getWorkspaceRoot() || process.cwd(), String(file || ''));
+        const uri = vscode.Uri.file(abs);
+        const doc = await vscode.workspace.openTextDocument(uri);
+        const editor = await vscode.window.showTextDocument(doc, { preview: true });
+
+        const line = Math.max(0, Number(line0) || 0);
+        const pos = new vscode.Position(line, 0);
+        editor.selection = new vscode.Selection(pos, pos);
+        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+      } catch (e) {
+        vscode.window.showErrorMessage(`Org2: failed to open file: ${String(e && e.message ? e.message : e)}`);
+      }
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('org2.roamShowBacklinks', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) return;
@@ -1328,10 +1346,16 @@ function activate(context) {
 
       const rootDir = getAgendaRootDir();
 
-      const picks = backlinks.map((b) => {
+      const lines = [];
+      lines.push(`#+TITLE: Backlinks (${backlinks.length})`);
+      lines.push('');
+      lines.push(`* Backlinks for id:${id.toLowerCase()}`);
+      lines.push('');
+
+      for (const b of backlinks) {
         const file = String(b.file || '');
         const line0 = typeof b.line === 'number' ? b.line : 0;
-        const label = String(b.srcTitle || '(untitled)');
+        const srcTitle = String(b.srcTitle || '(untitled)');
 
         let relPath = path.basename(file);
         try {
@@ -1343,29 +1367,32 @@ function activate(context) {
           // ignore
         }
 
+        const payload = encodeURIComponent(JSON.stringify([file, line0]));
+        const cmdUrl = `command:org2.openFileAt?${payload}`;
+
         const srcId = typeof b.srcId === 'string' ? b.srcId : '';
         const shortId = /^([0-9a-fA-F-]{36})$/.test(srcId) ? srcId.slice(0, 8).toLowerCase() : '';
-        const desc = `${relPath}:${line0 + 1}${shortId ? ` • ${shortId}` : ''}`;
+        const meta = `${relPath}:${line0 + 1}${shortId ? ` • ${shortId}` : ''}`;
+
+        lines.push(`- [[${cmdUrl}][${srcTitle}]] :: ${meta}`);
 
         const contextText = String(b.context || '').trim();
-        const detail = `${contextText}${srcId ? `${contextText ? '\n' : ''}id:${srcId.toLowerCase()}` : ''}`;
-        return { label, description: desc, detail, file, line0 };
-      });
+        if (contextText) {
+          for (const ln of contextText.split(/\r?\n/)) {
+            lines.push(`  ${ln}`);
+          }
+        }
 
-      const pick = await vscode.window.showQuickPick(picks, {
-        placeHolder: `Org2: backlinks (${picks.length})`,
-        matchOnDescription: true,
-        matchOnDetail: true,
-      });
-      if (!pick) return;
+        if (srcId) {
+          lines.push(`  id:${srcId.toLowerCase()}`);
+        }
 
-      const uri = vscode.Uri.file(String(pick.file));
-      const targetDoc = await vscode.workspace.openTextDocument(uri);
-      const targetEditor = await vscode.window.showTextDocument(targetDoc, { preview: true });
+        lines.push('');
+      }
 
-      const pos = new vscode.Position(Math.max(0, pick.line0 || 0), 0);
-      targetEditor.selection = new vscode.Selection(pos, pos);
-      targetEditor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+      const content = lines.join('\n');
+      const viewDoc = await vscode.workspace.openTextDocument({ language: 'org2', content });
+      await vscode.window.showTextDocument(viewDoc, { preview: true });
     })
   );
 
