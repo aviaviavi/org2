@@ -390,12 +390,17 @@ async function main(): Promise<void> {
   let queryFormat: "text" | "json" = "text";
 
   // Roam meta
-  let roamAction: "db-sync" | "node" = "db-sync";
+  let roamAction: "db-sync" | "node" | "link" = "db-sync";
   let roamNodeAction: "new" = "new";
+  let roamLinkAction: "insert-backlink" = "insert-backlink";
   let roamFormat: "text" | "json" = "text";
   let roamApply = false;
   let roamTitle = "";
   let roamIdForced = "";
+  let roamLinkFile = "";
+  let roamLinkPos = "";
+  let roamLinkId = "";
+  let roamLinkTitle = "";
 
   // Parse arguments
   let i = 0;
@@ -465,6 +470,7 @@ async function main(): Promise<void> {
       // Optional subcommands:
       // - db-sync (default)
       // - node new
+      // - link insert-backlink
       if (i < args.length && !args[i]!.startsWith("--")) {
         const sub = args[i]!;
         if (sub === "db-sync") {
@@ -477,6 +483,16 @@ async function main(): Promise<void> {
             const sub2 = args[i]!;
             if (sub2 === "new") {
               roamNodeAction = "new";
+              i++;
+            }
+          }
+        } else if (sub === "link") {
+          roamAction = "link";
+          i++;
+          if (i < args.length && !args[i]!.startsWith("--")) {
+            const sub2 = args[i]!;
+            if (sub2 === "insert-backlink") {
+              roamLinkAction = "insert-backlink";
               i++;
             }
           }
@@ -504,6 +520,8 @@ async function main(): Promise<void> {
           planFile = args[i]!;
         } else if (command === "id") {
           idFile = args[i]!;
+        } else if (command === "roam" && roamAction === "link") {
+          roamLinkFile = args[i]!;
         } else {
           files.push(args[i]!);
         }
@@ -565,7 +583,11 @@ async function main(): Promise<void> {
       i++;
       if (i < args.length) {
         if (command === "roam") {
-          roamTitle = args[i]!;
+          if (roamAction === "link") {
+            roamLinkTitle = args[i]!;
+          } else {
+            roamTitle = args[i]!;
+          }
         }
         i++;
       }
@@ -579,7 +601,11 @@ async function main(): Promise<void> {
         } else if (command === "query") {
           queryId = args[i]!;
         } else if (command === "roam") {
-          roamIdForced = args[i]!;
+          if (roamAction === "link") {
+            roamLinkId = args[i]!;
+          } else {
+            roamIdForced = args[i]!;
+          }
         }
         i++;
       }
@@ -636,6 +662,8 @@ async function main(): Promise<void> {
           planLine = parseInt(rawPos.split(":")[0]!, 10);
         } else if (command === "id") {
           idLine = parseInt(rawPos.split(":")[0]!, 10);
+        } else if (command === "roam" && roamAction === "link") {
+          roamLinkPos = rawPos;
         }
         i++;
       }
@@ -695,6 +723,7 @@ async function main(): Promise<void> {
     );
     console.error(
       "       org2 roam node new --dir DIR --title TITLE [--id UUID] [--format text|json] [--apply]",
+      "       org2 roam link insert-backlink --file FILE --pos LINE[:COL] --id UUID --title TITLE [--format text|json] [--apply]",
     );
     console.error(
       "       org2 lsp  # start the org2 Language Server (stdio)",
@@ -732,6 +761,7 @@ async function main(): Promise<void> {
     );
     console.error(
       "       org2 roam node new --dir DIR --title TITLE [--id UUID] [--format text|json] [--apply]",
+      "       org2 roam link insert-backlink --file FILE --pos LINE[:COL] --id UUID --title TITLE [--format text|json] [--apply]",
     );
     console.error(
       "       org2 lsp  # start the org2 Language Server (stdio)",
@@ -747,9 +777,90 @@ async function main(): Promise<void> {
   }
 
   if (command === "roam") {
-    if (!dir) {
+    if (roamAction !== "link" && !dir) {
       console.error("Error: org2 roam requires --dir DIR");
       process.exit(1);
+    }
+
+    if (roamAction === "link") {
+      if (roamLinkAction !== "insert-backlink") {
+        console.error("Error: org2 roam link requires a subcommand (insert-backlink)");
+        process.exit(1);
+      }
+      if (!roamLinkFile) {
+        console.error("Error: org2 roam link insert-backlink requires --file FILE");
+        process.exit(1);
+      }
+      if (!roamLinkPos) {
+        console.error("Error: org2 roam link insert-backlink requires --pos LINE[:COL]");
+        process.exit(1);
+      }
+      if (!roamLinkId) {
+        console.error("Error: org2 roam link insert-backlink requires --id UUID");
+        process.exit(1);
+      }
+      if (!roamLinkTitle) {
+        console.error("Error: org2 roam link insert-backlink requires --title TITLE");
+        process.exit(1);
+      }
+
+      const raw = fs.readFileSync(roamLinkFile, "utf8").replace(/\r\n/g, "\n");
+      const [lineRaw, colRaw] = roamLinkPos.split(":");
+      const line1 = parseInt(lineRaw, 10);
+      if (!Number.isFinite(line1) || line1 < 1) {
+        console.error(`Error: invalid --pos ${roamLinkPos}`);
+        process.exit(1);
+      }
+      let col: number | null = null;
+      if (colRaw !== undefined) {
+        const c = parseInt(colRaw, 10);
+        if (!Number.isFinite(c) || c < 0) {
+          console.error(`Error: invalid --pos ${roamLinkPos}`);
+          process.exit(1);
+        }
+        col = c;
+      }
+
+      const lines = raw.split("\n");
+      const lineIndex = line1 - 1;
+      if (lineIndex >= lines.length) {
+        console.error(`Error: --pos line out of range: ${roamLinkPos}`);
+        process.exit(1);
+      }
+
+      const lineText = lines[lineIndex] ?? "";
+      const linkText = `[[id:${roamLinkId}][${roamLinkTitle}]]`;
+      const insertCol = col === null ? lineText.length : Math.min(col, lineText.length);
+      lines[lineIndex] = lineText.slice(0, insertCol) + linkText + lineText.slice(insertCol);
+
+      const outText = lines.join("\n");
+      const changed = outText !== raw;
+
+      if (roamApply) {
+        fs.writeFileSync(roamLinkFile, outText, "utf8");
+      }
+
+      if (roamFormat === "json") {
+        process.stdout.write(
+          JSON.stringify(
+            {
+              action: "link-insert-backlink",
+              file: roamLinkFile,
+              id: roamLinkId,
+              title: roamLinkTitle,
+              pos: roamLinkPos,
+              applied: roamApply,
+              changed,
+            },
+            null,
+            2,
+          ) + "\n",
+        );
+      } else {
+        process.stdout.write(outText + (outText.endsWith("\n") ? "" : "\n"));
+      }
+
+      return;
     }
 
     if (roamAction === "node") {
