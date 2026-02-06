@@ -1269,6 +1269,90 @@ function activate(context) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('org2.roamDbSync', async () => {
+      const root = getAgendaRootDir();
+      if (!root) {
+        vscode.window.showWarningMessage('Org2: no agenda root dir configured (set org2.agenda.dir or open a workspace).');
+        return;
+      }
+
+      const cfg = vscode.workspace.getConfiguration('org2');
+      const recursive = cfg.get('agenda.recursive', true) ? true : false;
+
+      const previewArgs = ['roam', 'db-sync', '--dir', root, '--format', 'json'];
+      if (recursive) previewArgs.push('--recursive');
+
+      const { cmd: previewCmd, args: previewFinalArgs } = resolveOrg2Command(context, previewArgs);
+
+      let previewOut;
+      try {
+        previewOut = await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: 'Org2: Roam DB Sync (scan)', cancellable: false },
+          async () => await execFileAsync(previewCmd, previewFinalArgs, { cwd: root })
+        );
+      } catch (e) {
+        const stderr = e && e.stderr ? String(e.stderr).trim() : '';
+        const extra = stderr ? `\n${stderr}` : '';
+        vscode.window.showErrorMessage(`Org2: roam db-sync scan failed: ${String(e && e.message ? e.message : e)}${extra}`);
+        return;
+      }
+
+      let payload;
+      try {
+        payload = JSON.parse(String((previewOut && previewOut.stdout) || '').trim());
+      } catch (e) {
+        vscode.window.showErrorMessage('Org2: failed to parse org2 roam db-sync output.');
+        return;
+      }
+
+      const missing = Array.isArray(payload.missingFileIds) ? payload.missingFileIds : [];
+      if (missing.length === 0) {
+        vscode.window.showInformationMessage('Org2: roam db-sync — all scanned files already have file-level IDs.');
+        return;
+      }
+
+      const listText = missing.map((p) => String(p)).join('\n') + '\n';
+      const doc = await vscode.workspace.openTextDocument({ language: 'text', content: listText });
+      await vscode.window.showTextDocument(doc, { preview: true, preserveFocus: false });
+
+      const ok = await vscode.window.showWarningMessage(
+        `Org2: add file-level IDs to ${missing.length} file(s)? (This will edit files on disk)`,
+        { modal: true },
+        'Apply'
+      );
+      if (ok !== 'Apply') return;
+
+      const applyArgs = ['roam', 'db-sync', '--dir', root, '--format', 'json', '--apply'];
+      if (recursive) applyArgs.push('--recursive');
+      const { cmd: applyCmd, args: applyFinalArgs } = resolveOrg2Command(context, applyArgs);
+
+      let applyOut;
+      try {
+        applyOut = await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: 'Org2: Roam DB Sync (apply)', cancellable: false },
+          async () => await execFileAsync(applyCmd, applyFinalArgs, { cwd: root })
+        );
+      } catch (e) {
+        const stderr = e && e.stderr ? String(e.stderr).trim() : '';
+        const extra = stderr ? `\n${stderr}` : '';
+        vscode.window.showErrorMessage(`Org2: roam db-sync apply failed: ${String(e && e.message ? e.message : e)}${extra}`);
+        return;
+      }
+
+      let applyPayload;
+      try {
+        applyPayload = JSON.parse(String((applyOut && applyOut.stdout) || '').trim());
+      } catch (e) {
+        vscode.window.showErrorMessage('Org2: failed to parse org2 roam db-sync apply output.');
+        return;
+      }
+
+      const appliedCount = typeof applyPayload.appliedCount === 'number' ? applyPayload.appliedCount : 0;
+      vscode.window.showInformationMessage(`Org2: roam db-sync — applied IDs to ${appliedCount} file(s).`);
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('org2.roamOpenId', async (id) => {
       const raw = (typeof id === 'string' ? id : '').trim();
       const m = /^([0-9a-fA-F-]{36})$/.exec(raw);
