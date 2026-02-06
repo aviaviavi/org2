@@ -1301,7 +1301,7 @@ function activate(context) {
         // ignore
       }
 
-      const backlinksArgs = ['backlinks', '--id', id.toLowerCase(), '--dir', getAgendaRootDir(), '--recursive', '--format', 'json'];
+      const backlinksArgs = ['roam', 'backlinks', '--id', id.toLowerCase(), '--dir', getAgendaRootDir(), '--recursive', '--format', 'json'];
       const { cmd: backlinksCmd, args: backlinksFinalArgs } = resolveOrg2Command(context, backlinksArgs);
 
       let backlinksOut;
