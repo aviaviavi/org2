@@ -1326,12 +1326,29 @@ function activate(context) {
         return;
       }
 
+      const rootDir = getAgendaRootDir();
+
       const picks = backlinks.map((b) => {
         const file = String(b.file || '');
         const line0 = typeof b.line === 'number' ? b.line : 0;
         const label = String(b.srcTitle || '(untitled)');
-        const desc = `${path.basename(file)}:${line0 + 1}`;
-        const detail = String(b.context || '').trim();
+
+        let relPath = path.basename(file);
+        try {
+          const rel = path.relative(rootDir, file);
+          if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) {
+            relPath = rel;
+          }
+        } catch (_) {
+          // ignore
+        }
+
+        const srcId = typeof b.srcId === 'string' ? b.srcId : '';
+        const shortId = /^([0-9a-fA-F-]{36})$/.test(srcId) ? srcId.slice(0, 8).toLowerCase() : '';
+        const desc = `${relPath}:${line0 + 1}${shortId ? ` • ${shortId}` : ''}`;
+
+        const contextText = String(b.context || '').trim();
+        const detail = `${contextText}${srcId ? `${contextText ? '\n' : ''}id:${srcId.toLowerCase()}` : ''}`;
         return { label, description: desc, detail, file, line0 };
       });
 
