@@ -421,17 +421,20 @@ class LSPServer {
 
     // Parse and collect diagnostics
     const result = parseOrgWithDiagnostics(doc.text);
+    const tracker = new LineTracker(doc.text);
+
     const diagnostics: Diagnostic[] = result.diagnostics.map((parseErr) => {
       // Convert ParseError to LSP Diagnostic
       // LSP uses 0-based line/column indexing
       const lspLine = Math.max(0, parseErr.line - 1);
       const lspColumn = Math.max(0, parseErr.column - 1);
+      const endChar = tracker.getLineLength(lspLine);
 
       return {
         range: {
           start: { line: lspLine, character: lspColumn },
-          // Highlight to end of line or a reasonable distance
-          end: { line: lspLine, character: Math.max(lspColumn + 20, lspColumn) },
+          // Highlight from error column to end-of-line (keeps it visible without guessing a width).
+          end: { line: lspLine, character: Math.max(lspColumn, endChar) },
         },
         severity: DiagnosticSeverity.Error,
         message: parseErr.message,
