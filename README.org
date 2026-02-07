@@ -2,9 +2,11 @@
 #+attr_html: :width 100px
 [[./logo.png]]
 
-A from-scratch successor to org mode. Org2 is intended be used in any text editor and any platform.
+A from-scratch successor to Org Mode, built to be editor-agnostic and platform-agnostic.
 
 As originally described in https://avi.press/posts/2024-01-15-standalone-org.html.
+
+Current development is workflow-driven: small, user-facing slices (especially CLI + VS Code integration) are implemented incrementally and validated in real daily use.
 
 ** Goals
 
@@ -19,7 +21,15 @@ As originally described in https://avi.press/posts/2024-01-15-standalone-org.htm
 
 ** Contributing and Project Status
 
-This project is in the very early stages of development. If you're interested in contributing, please reach out. Especially if you are someone getting into open source for the first time -- I'd be open to mentoring the right person who has the potential to get this project off the ground with a little help.
+Org2 is active but still early: the spec and tooling are evolving quickly.
+
+The current collaboration model is Avi + OpenClaw iterating in tight loops:
+- pick a small workflow pain point,
+- land a focused CLI/editor improvement,
+- validate with tests and day-to-day usage,
+- repeat.
+
+External contributions are welcome, but the most reliable way to track direction is by following issues/PRs and the shipped workflow improvements rather than expecting long-lived stable APIs right now.
 
 ** CLI usage (local)
 
