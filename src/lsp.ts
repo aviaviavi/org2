@@ -13,6 +13,10 @@ import {
   type ParseError,
 } from "./parser.js";
 
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
 // ============================================================================
 // LSP Types (minimal subset)
 // ============================================================================
@@ -53,6 +57,11 @@ interface Diagnostic {
   severity: number;
   message: string;
   code?: string;
+}
+
+interface Location {
+  uri: string;
+  range: Range;
 }
 
 // Symbol kinds
@@ -154,6 +163,7 @@ class LSPServer {
             textDocumentSync: 1,
             documentSymbolProvider: true,
             foldingRangeProvider: true,
+            definitionProvider: true,
           },
           serverInfo: {
             name: "org2-lsp",
@@ -215,6 +225,22 @@ class LSPServer {
         } else {
           this.sendResponse(id, []);
         }
+      } else if (method === "textDocument/definition") {
+        const { textDocument, position } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, null);
+          return;
+        }
+
+        const target = this.extractLinkTargetAtPosition(doc.text, position);
+        if (!target) {
+          this.sendResponse(id, null);
+          return;
+        }
+
+        const location = this.resolveDefinitionLocation(doc.uri, target);
+        this.sendResponse(id, location ? [location] : null);
       } else {
         this.sendError(id, -32601, "Method not found");
       }
@@ -413,6 +439,55 @@ class LSPServer {
     }
 
     return ranges;
+  }
+
+  private extractLinkTargetAtPosition(text: string, pos: Position): string | null {
+    const lines = text.split("\n");
+    const line = lines[pos.line] ?? "";
+    const char = Math.max(0, Math.min(pos.character, line.length));
+
+    const openIdx = line.lastIndexOf("[[", char);
+    if (openIdx < 0) return null;
+
+    const closeIdx = line.indexOf("]]", char);
+    if (closeIdx < 0) return null;
+
+    const inside = line.slice(openIdx + 2, closeIdx);
+
+    // Handle both [[target]] and [[target][desc]]
+    const target = inside.split("][")[0]?.trim() ?? "";
+    if (!target) return null;
+    return target;
+  }
+
+  private resolveDefinitionLocation(sourceUri: string, target: string): Location | null {
+    // Only support file links for now (minimal MVP).
+    // Examples:
+    //   file:notes.org2
+    //   file:./notes.org2
+    //   ./notes.org2
+    let fileTarget = target;
+    if (fileTarget.startsWith("file:")) fileTarget = fileTarget.slice("file:".length);
+
+    // Ignore non-file link types (id:, http:, etc)
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(fileTarget)) return null;
+
+    if (!sourceUri.startsWith("file://")) return null;
+
+    const sourcePath = fileURLToPath(sourceUri);
+    const baseDir = path.dirname(sourcePath);
+    const absPath = path.resolve(baseDir, fileTarget);
+
+    if (!fs.existsSync(absPath)) return null;
+
+    const uri = pathToFileURL(absPath).toString();
+    return {
+      uri,
+      range: {
+        start: { line: 0, character: 0 },
+        end: { line: 0, character: 0 },
+      },
+    };
   }
 
   private publishDiagnostics(uri: string): void {
