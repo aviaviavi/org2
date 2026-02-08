@@ -2054,7 +2054,7 @@ async function main(): Promise<void> {
           continue;
         }
         if (!entry.isFile()) continue;
-        if (!entry.name.endsWith(".org")) continue;
+        if (!(entry.name.endsWith(".org") || entry.name.endsWith(".org2"))) continue;
         if (entry.name.startsWith(".#")) continue; // Emacs lockfile
         out.push(fullPath);
       }
