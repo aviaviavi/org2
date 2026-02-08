@@ -105,37 +105,33 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
 
 ## Keyboard shortcuts
 
-Current defaults:
+Default direct bindings:
 
 - `ctrl+alt+t` → `Org2: Toggle Todo Status`
 - `ctrl+alt+o` → `Org2: Toggle Fold Here`
 - `ctrl+alt+d` → `Org2: Debug Folding Ranges`
 
+Power keymap (enabled by default via `org2.keymap.power: true`):
+
+- Prefix chord: `cmd+;` on macOS, `ctrl+;` on Linux/Windows
+- Then one mnemonic key:
+  - `a` → Open Agenda
+  - `r` → Refresh Agenda
+  - `t` → Toggle TODO
+  - `s` → Set SCHEDULED
+  - `d` → Set DEADLINE
+  - `x` → Archive Subtree
+  - `l` → Roam Copy ID Link
+  - `b` → Roam Show Backlinks
+  - `i` → Roam Insert Backlink
+  - `g` → Roam Open ID
+  - `n` → Roam Dailies: Today
+
 All defaults are scoped to `org`/`org2` editors.
 
-### Suggested custom shortcuts (optional)
+### VSCodeVim note
 
-If you want faster Roam/planning flow, add entries like these in VS Code keybindings JSON:
-
-```json
-[
-  {
-    "key": "ctrl+alt+s",
-    "command": "org2.setScheduled",
-    "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')"
-  },
-  {
-    "key": "ctrl+alt+l",
-    "command": "org2.roamCopyIdLink",
-    "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')"
-  },
-  {
-    "key": "ctrl+alt+b",
-    "command": "org2.roamShowBacklinks",
-    "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')"
-  }
-]
-```
+The power keymap uses `cmd/ctrl` chords (not bare leader keys), so it remains reliable even when VSCodeVim is enabled in normal mode.
 
 ## Debugging
 
