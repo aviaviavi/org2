@@ -11,6 +11,10 @@
     "onCommand:org2.openAgenda",
     "onCommand:org2.toggleTodo",
     "onCommand:org2.setTodoStatus",
+    "onCommand:org2.setTodoTODO",
+    "onCommand:org2.setTodoInProgress",
+    "onCommand:org2.setTodoDone",
+    "onCommand:org2.setTodoCanceled",
     "onCommand:org2.setScheduled",
     "onCommand:org2.setDeadline",
     "onCommand:org2.archiveSubtree",
@@ -86,6 +90,22 @@
       {
         "command": "org2.setTodoStatus",
         "title": "Org2: Set Todo Status"
+      },
+      {
+        "command": "org2.setTodoTODO",
+        "title": "Org2: Set Todo Status — TODO"
+      },
+      {
+        "command": "org2.setTodoInProgress",
+        "title": "Org2: Set Todo Status — IN_PROGRESS"
+      },
+      {
+        "command": "org2.setTodoDone",
+        "title": "Org2: Set Todo Status — DONE"
+      },
+      {
+        "command": "org2.setTodoCanceled",
+        "title": "Org2: Set Todo Status — CANCELED"
       },
       {
         "command": "org2.setScheduled",
@@ -343,6 +363,30 @@
         "key": "ctrl+; t",
         "mac": "cmd+; t",
         "command": "org2.toggleTodo",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; 1",
+        "mac": "cmd+; 1",
+        "command": "org2.setTodoTODO",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; 2",
+        "mac": "cmd+; 2",
+        "command": "org2.setTodoInProgress",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; 3",
+        "mac": "cmd+; 3",
+        "command": "org2.setTodoDone",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; 4",
+        "mac": "cmd+; 4",
+        "command": "org2.setTodoCanceled",
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {

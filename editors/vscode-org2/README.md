@@ -84,6 +84,10 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
 - TODO + planning
   - `Org2: Toggle Todo Status` (`org2.toggleTodo`)
   - `Org2: Set Todo Status` (`org2.setTodoStatus`)
+  - `Org2: Set Todo Status — TODO` (`org2.setTodoTODO`)
+  - `Org2: Set Todo Status — IN_PROGRESS` (`org2.setTodoInProgress`)
+  - `Org2: Set Todo Status — DONE` (`org2.setTodoDone`)
+  - `Org2: Set Todo Status — CANCELED` (`org2.setTodoCanceled`)
   - `Org2: Set SCHEDULED` (`org2.setScheduled`)
   - `Org2: Set DEADLINE` (`org2.setDeadline`)
   - `Org2: Archive Subtree` (`org2.archiveSubtree`)
@@ -118,6 +122,10 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
   - `a` → Open Agenda
   - `r` → Refresh Agenda
   - `t` → Toggle TODO
+  - `1` → Set TODO
+  - `2` → Set IN_PROGRESS
+  - `3` → Set DONE
+  - `4` → Set CANCELED
   - `s` → Set SCHEDULED
   - `d` → Set DEADLINE
   - `x` → Archive Subtree

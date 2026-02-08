@@ -1567,6 +1567,30 @@ function activate(context) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('org2.setTodoTODO', async () => {
+      await runTodoCli('set', 'todo');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.setTodoInProgress', async () => {
+      await runTodoCli('set', 'in_progress');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.setTodoDone', async () => {
+      await runTodoCli('set', 'done');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.setTodoCanceled', async () => {
+      await runTodoCli('set', 'canceled');
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('org2.setScheduled', async (item) => {
       await runPlanCli('scheduled', item);
     })
