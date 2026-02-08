@@ -303,6 +303,11 @@
           "type": "boolean",
           "default": true,
           "description": "Auto-fold :PROPERTIES: drawers when a document is opened (once per file)."
+        },
+        "org2.keymap.power": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Org2 power keymap chords (macOS: cmd+; then key, Linux/Windows: ctrl+; then key) for Org/Org2 editors."
         }
       }
     },
@@ -321,6 +326,72 @@
         "key": "ctrl+alt+d",
         "command": "org2.debugFoldingRanges",
         "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; a",
+        "mac": "cmd+; a",
+        "command": "org2.openAgenda",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; r",
+        "mac": "cmd+; r",
+        "command": "org2.refreshAgenda",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; t",
+        "mac": "cmd+; t",
+        "command": "org2.toggleTodo",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; s",
+        "mac": "cmd+; s",
+        "command": "org2.setScheduled",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; d",
+        "mac": "cmd+; d",
+        "command": "org2.setDeadline",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; x",
+        "mac": "cmd+; x",
+        "command": "org2.archiveSubtree",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; l",
+        "mac": "cmd+; l",
+        "command": "org2.roamCopyIdLink",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; b",
+        "mac": "cmd+; b",
+        "command": "org2.roamShowBacklinks",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; i",
+        "mac": "cmd+; i",
+        "command": "org2.roamInsertBacklink",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; g",
+        "mac": "cmd+; g",
+        "command": "org2.roamOpenId",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; n",
+        "mac": "cmd+; n",
+        "command": "org2.roamDailiesGotoToday",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       }
     ]
   }
