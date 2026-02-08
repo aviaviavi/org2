@@ -73,6 +73,70 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 
 Agenda items are clickable; clicking opens the source file at the line reported by the org2 CLI.
 
+## Command reference (VS Code)
+
+Quick command palette index (`Cmd/Ctrl+Shift+P`):
+
+- Agenda
+  - `Org2: Open Agenda` (`org2.openAgenda`)
+  - `Org2: Refresh Agenda` (`org2.refreshAgenda`)
+  - `Org2: Agenda Filter` (`org2.pickAgendaFilter`)
+- TODO + planning
+  - `Org2: Toggle Todo Status` (`org2.toggleTodo`)
+  - `Org2: Set Todo Status` (`org2.setTodoStatus`)
+  - `Org2: Set SCHEDULED` (`org2.setScheduled`)
+  - `Org2: Set DEADLINE` (`org2.setDeadline`)
+  - `Org2: Archive Subtree` (`org2.archiveSubtree`)
+- Roam
+  - `Org2: Roam Dailies — Go to Today` (`org2.roamDailiesGotoToday`)
+  - `Org2: Roam Dailies — Go to Yesterday` (`org2.roamDailiesGotoYesterday`)
+  - `Org2: Roam Dailies — Go to Tomorrow` (`org2.roamDailiesGotoTomorrow`)
+  - `Org2: Roam Dailies — Go to Date` (`org2.roamDailiesGotoDate`)
+  - `Org2: Roam — Copy ID Link` (`org2.roamCopyIdLink`)
+  - `Org2: Roam — Insert Backlink (ID Link)` (`org2.roamInsertBacklink`)
+  - `Org2: Roam — Open ID Link` (`org2.roamOpenId`)
+  - `Org2: Roam — Show Backlinks` (`org2.roamShowBacklinks`)
+  - `Org2: Roam — DB Sync (Ensure File IDs)` (`org2.roamDbSync`)
+- Folding + debug
+  - `Org2: Re-run Auto-Fold` (`org2.rerunAutoFold`)
+  - `Org2: Toggle Fold Here` (`org2.toggleFoldHere`)
+  - `Org2: Debug Folding Ranges` (`org2.debugFoldingRanges`)
+  - `Org2: Debug List Links` (`org2.debugListLinks`)
+
+## Keyboard shortcuts
+
+Current defaults:
+
+- `ctrl+alt+t` → `Org2: Toggle Todo Status`
+- `ctrl+alt+o` → `Org2: Toggle Fold Here`
+- `ctrl+alt+d` → `Org2: Debug Folding Ranges`
+
+All defaults are scoped to `org`/`org2` editors.
+
+### Suggested custom shortcuts (optional)
+
+If you want faster Roam/planning flow, add entries like these in VS Code keybindings JSON:
+
+```json
+[
+  {
+    "key": "ctrl+alt+s",
+    "command": "org2.setScheduled",
+    "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')"
+  },
+  {
+    "key": "ctrl+alt+l",
+    "command": "org2.roamCopyIdLink",
+    "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')"
+  },
+  {
+    "key": "ctrl+alt+b",
+    "command": "org2.roamShowBacklinks",
+    "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')"
+  }
+]
+```
+
 ## Debugging
 
 - `Org2: Debug Folding Ranges`
