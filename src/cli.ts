@@ -363,7 +363,7 @@ async function main(): Promise<void> {
   let todoLogbookFlagSet = false;
 
   // Planning editing
-  let planAction: "set" = "set";
+  let planAction: "set" | "today" = "set";
   let planFile = "";
   let planLine = 0;
   let planKind: PlanningKindArg | "" = "";
@@ -441,11 +441,11 @@ async function main(): Promise<void> {
     } else if (arg === "plan" || arg === "planning") {
       command = "plan";
       i++;
-      // Optional subcommand (reserved; currently only 'set')
+      // Optional subcommand: set|today (default set)
       if (i < args.length && !args[i]!.startsWith("--")) {
         const sub = args[i]!;
-        if (sub === "set") {
-          planAction = "set";
+        if (sub === "set" || sub === "today") {
+          planAction = sub;
           i++;
         }
       }
@@ -724,6 +724,7 @@ async function main(): Promise<void> {
     );
     console.error(
       "       org2 plan set --file FILE (--line N | --pos LINE[:COL]) --kind scheduled|deadline --date YYYY-MM-DD [--format text|json|diff] [--apply]",
+      "       org2 plan today --file FILE (--line N | --pos LINE[:COL]) --kind scheduled|deadline [--format text|json|diff] [--apply]",
     );
     console.error(
       "       org2 id [get|ensure] --file FILE [--line N|--pos LINE[:COL]] [--id UUID] [--format text|json|diff] [--apply]",
@@ -765,6 +766,7 @@ async function main(): Promise<void> {
     );
     console.error(
       "       org2 plan set --file FILE (--line N | --pos LINE[:COL]) --kind scheduled|deadline --date YYYY-MM-DD [--format text|json|diff] [--apply]",
+      "       org2 plan today --file FILE (--line N | --pos LINE[:COL]) --kind scheduled|deadline [--format text|json|diff] [--apply]",
     );
     console.error(
       "       org2 id [get|ensure] --file FILE [--line N|--pos LINE[:COL]] [--id UUID] [--format text|json|diff] [--apply]", 
@@ -1817,8 +1819,12 @@ async function main(): Promise<void> {
       console.error("Error: plan requires --kind scheduled|deadline");
       process.exit(1);
     }
+    if (planAction === "today") {
+      planDate = today;
+    }
+
     if (!planDate) {
-      console.error("Error: plan requires --date YYYY-MM-DD");
+      console.error("Error: plan requires --date YYYY-MM-DD (or use `plan today`)");
       process.exit(1);
     }
 
