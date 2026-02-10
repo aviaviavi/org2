@@ -95,6 +95,17 @@ function findPlanningBlockEnd(lines: string[], headingIndex: number, endExclusiv
   return i;
 }
 
+function upsertClosedPlanning(lines: string[], headingIndex: number, endExclusive: number, closedAt: string): void {
+  const planningEnd = findPlanningBlockEnd(lines, headingIndex, endExclusive);
+  for (let i = headingIndex + 1; i < planningEnd; i++) {
+    if (/^CLOSED:\s/.test(lines[i] ?? "")) {
+      lines[i] = `CLOSED: ${closedAt}`;
+      return;
+    }
+  }
+  lines.splice(planningEnd, 0, `CLOSED: ${closedAt}`);
+}
+
 function findDrawer(lines: string[], start: number, endExclusive: number, name: string): { start: number; end: number; terminated: boolean } | null {
   const begin = `:${name}:`;
   for (let i = start; i < endExclusive; i++) {
@@ -213,25 +224,16 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
     let closedAt: string | undefined;
     if (targetStatus === "done" || targetStatus === "canceled") {
       closedAt = stamp;
+      upsertClosedPlanning(lines, headingIndex, endExclusive + 4, closedAt);
 
-      if (!props || !props.terminated) {
-        const created = ensurePropertyDrawer(lines, afterPlanning);
-        // drawer indices shift; treat end as created.end
-        props = { start: created.start, end: created.end, terminated: true };
-        insertAfterProps = created.end + 1;
-      }
+      // Ensure logbook insertion stays after planning lines.
+      const afterPlanning2 = findPlanningBlockEnd(lines, headingIndex, endExclusive + 8);
+      insertAfterProps = Math.max(insertAfterProps, afterPlanning2);
 
-      // Update drawer end index after any edits.
-      if (props) {
-        // Re-find because splice may have moved.
-        const props2 = findDrawer(lines, afterPlanning, endExclusive + 4, "PROPERTIES");
-        if (props2 && props2.terminated) {
-          upsertProperty(lines, props2.start, props2.end, "CLOSED_AT", closedAt);
-          const props3 = findDrawer(lines, afterPlanning, endExclusive + 8, "PROPERTIES");
-          if (props3 && props3.terminated) {
-            insertAfterProps = props3.end + 1;
-          }
-        }
+      // Re-find props in case line insert shifted indices.
+      const props2 = findDrawer(lines, afterPlanning2, endExclusive + 12, "PROPERTIES");
+      if (props2 && props2.terminated) {
+        insertAfterProps = props2.end + 1;
       }
     }
 
