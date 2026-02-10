@@ -1,0 +1,1 @@
+todo set --file "spec/v0/tests/cli/todo-config-logbook/input.txt" --line 1 --status done --now 2026-01-21T12:34:00 --format text
