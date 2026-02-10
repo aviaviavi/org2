@@ -865,10 +865,8 @@ function activate(context) {
           };
           const nextSel = new vscode.Selection(clampPos(previousSelection.start), clampPos(previousSelection.end));
           editorAfter.selection = nextSel;
-          editorAfter.revealRange(
-            new vscode.Range(nextSel.active, nextSel.active),
-            vscode.TextEditorRevealType.InCenterIfOutsideViewport
-          );
+          // Avoid forcing a reveal here; revealing after a CLI apply+refresh can
+          // unexpectedly expand folds around the cursor in some navigation flows.
         }
       }
       return;
