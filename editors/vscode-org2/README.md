@@ -27,6 +27,7 @@ The extension can toggle/set TODO keywords on the current headline via the `org2
 
 - Command: **Org2: Toggle Todo Status** (`org2.toggleTodo`)
 - Command: **Org2: Set Todo Status** (`org2.setTodoStatus`)
+- Direct commands: `org2.setTodoTODO`, `org2.setTodoInProgress`, `org2.setTodoDone`, `org2.setTodoCanceled`
 - Default keybinding: `ctrl+alt+t`
 - Also available in the editor right-click context menu.
 
@@ -37,7 +38,9 @@ Implementation detail: the extension saves the file (if needed), runs `org2 todo
 The extension can edit planning keywords and archive subtrees via the `org2` CLI.
 
 - Command: **Org2: Set Scheduled** (`org2.setScheduled`) → prompts for `YYYY-MM-DD`
+- Command: **Org2: Set Scheduled to Today** (`org2.setScheduledToday`) → no date prompt
 - Command: **Org2: Set Deadline** (`org2.setDeadline`) → prompts for `YYYY-MM-DD`
+- Command: **Org2: Set Deadline to Today** (`org2.setDeadlineToday`) → no date prompt
 - Command: **Org2: Archive Subtree** (`org2.archiveSubtree`) → shows a diff preview, then asks for confirmation
 
 Implementation detail: the extension saves the file (if needed).
@@ -85,8 +88,14 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
 - TODO + planning
   - `Org2: Toggle Todo Status` (`org2.toggleTodo`)
   - `Org2: Set Todo Status` (`org2.setTodoStatus`)
+  - `Org2: Set Todo → TODO` (`org2.setTodoTODO`)
+  - `Org2: Set Todo → IN_PROGRESS` (`org2.setTodoInProgress`)
+  - `Org2: Set Todo → DONE` (`org2.setTodoDone`)
+  - `Org2: Set Todo → CANCELED` (`org2.setTodoCanceled`)
   - `Org2: Set SCHEDULED` (`org2.setScheduled`)
+  - `Org2: Set SCHEDULED to Today` (`org2.setScheduledToday`)
   - `Org2: Set DEADLINE` (`org2.setDeadline`)
+  - `Org2: Set DEADLINE to Today` (`org2.setDeadlineToday`)
   - `Org2: Archive Subtree` (`org2.archiveSubtree`)
 - Roam
   - `Org2: Roam Dailies — Go to Today` (`org2.roamDailiesGotoToday`)
@@ -116,8 +125,10 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
 
 - Prefix chord: `cmd+;` on macOS, `ctrl+;` on Linux/Windows
 - Then one mnemonic key (or namespace chord):
-  - `s` → Set SCHEDULED
-  - `d` → Set DEADLINE
+  - `s` → Set SCHEDULED (prompt)
+  - `s t` → Set SCHEDULED to Today
+  - `d` → Set DEADLINE (prompt)
+  - `d t` → Set DEADLINE to Today
   - `x` → Archive Subtree
   - `1` → Fold to heading level 1 (`editor.foldLevel1`)
   - `2` → Fold to heading level 2 (`editor.foldLevel2`)
@@ -150,6 +161,8 @@ All defaults are scoped to `org`/`org2` editors.
 ### VSCodeVim note
 
 The power keymap uses `cmd/ctrl` chords (not bare leader keys), so it remains reliable even when VSCodeVim is enabled in normal mode.
+
+Optional folded-navigation helper: set `org2.vim.visibleLineNavigation: true` to remap `j/k` to VS Code `cursorDown/cursorUp` in Org/Org2 buffers while VSCodeVim Normal mode is active. This makes movement follow *visible* lines across folds.
 
 ## Debugging
 

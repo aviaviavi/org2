@@ -909,7 +909,7 @@ function activate(context) {
     }
   }
 
-  async function runPlanCli(kind, item) {
+  async function runPlanCli(kind, item, options) {
     let filePath;
     let line;
 
@@ -944,24 +944,29 @@ function activate(context) {
       line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
     }
 
-    const date = await vscode.window.showInputBox({
-      prompt: `Org2: set ${kind.toUpperCase()} (YYYY-MM-DD)`,
-      placeHolder: 'YYYY-MM-DD',
-      validateInput: (v) => (/^\d{4}-\d{2}-\d{2}$/.test((v || '').trim()) ? undefined : 'Expected YYYY-MM-DD'),
-    });
-    if (!date) return;
+    const useToday = options && options.useToday ? true : false;
+
+    let date = '';
+    if (!useToday) {
+      const input = await vscode.window.showInputBox({
+        prompt: `Org2: set ${kind.toUpperCase()} (YYYY-MM-DD)`,
+        placeHolder: 'YYYY-MM-DD',
+        validateInput: (v) => (/^\d{4}-\d{2}-\d{2}$/.test((v || '').trim()) ? undefined : 'Expected YYYY-MM-DD'),
+      });
+      if (!input) return;
+      date = String(input).trim();
+    }
 
     const args = [
       'plan',
-      'set',
+      useToday ? 'today' : 'set',
       '--file',
       String(filePath),
       '--line',
       String(line),
       '--kind',
       kind,
-      '--date',
-      String(date).trim(),
+      ...(useToday ? [] : ['--date', date]),
       '--format',
       'json',
       '--apply',
@@ -1579,27 +1584,40 @@ function activate(context) {
     })
   );
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand('org2.setTodoStatus', async (args) => {
-      const requested = String(args && args.status ? args.status : '').trim().toLowerCase();
-      if (requested === 'todo' || requested === 'in_progress' || requested === 'done' || requested === 'canceled') {
-        await runTodoCli('set', requested);
-        return;
-      }
+  const applySetTodoStatus = async (status, item) => {
+    const requested = String(status || '').trim().toLowerCase();
+    if (requested === 'todo' || requested === 'in_progress' || requested === 'done' || requested === 'canceled') {
+      await runTodoCli('set', requested, item);
+      return;
+    }
 
-      const pick = await vscode.window.showQuickPick(
-        [
-          { label: 'TODO', value: 'todo' },
-          { label: 'IN_PROGRESS', value: 'in_progress' },
-          { label: 'DONE', value: 'done' },
-          { label: 'CANCELED', value: 'canceled' },
-        ],
-        { placeHolder: 'Org2: set todo status' }
-      );
-      if (!pick) return;
-      await runTodoCli('set', pick.value);
+    const pick = await vscode.window.showQuickPick(
+      [
+        { label: 'TODO', value: 'todo' },
+        { label: 'IN_PROGRESS', value: 'in_progress' },
+        { label: 'DONE', value: 'done' },
+        { label: 'CANCELED', value: 'canceled' },
+      ],
+      { placeHolder: 'Org2: set todo status' }
+    );
+    if (!pick) return;
+    await runTodoCli('set', pick.value, item);
+  };
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.setTodoStatus', async (argOrItem, maybeItem) => {
+      const requested = argOrItem && typeof argOrItem === 'object' && Object.prototype.hasOwnProperty.call(argOrItem, 'status')
+        ? argOrItem.status
+        : '';
+      const item = requested ? maybeItem : argOrItem;
+      await applySetTodoStatus(requested, item);
     })
   );
+
+  context.subscriptions.push(vscode.commands.registerCommand('org2.setTodoTODO', async (item) => applySetTodoStatus('todo', item)));
+  context.subscriptions.push(vscode.commands.registerCommand('org2.setTodoInProgress', async (item) => applySetTodoStatus('in_progress', item)));
+  context.subscriptions.push(vscode.commands.registerCommand('org2.setTodoDone', async (item) => applySetTodoStatus('done', item)));
+  context.subscriptions.push(vscode.commands.registerCommand('org2.setTodoCanceled', async (item) => applySetTodoStatus('canceled', item)));
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.setScheduled', async (item) => {
@@ -1610,6 +1628,18 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.setDeadline', async (item) => {
       await runPlanCli('deadline', item);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.setScheduledToday', async (item) => {
+      await runPlanCli('scheduled', item, { useToday: true });
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.setDeadlineToday', async (item) => {
+      await runPlanCli('deadline', item, { useToday: true });
     })
   );
 
