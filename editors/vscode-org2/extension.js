@@ -871,10 +871,35 @@ function activate(context) {
 
     const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
 
+    const activeEditorBefore = item ? undefined : vscode.window.activeTextEditor;
+    const activeUriBefore = activeEditorBefore && activeEditorBefore.document ? activeEditorBefore.document.uri.toString() : '';
+    const selectionBefore =
+      activeEditorBefore && activeEditorBefore.selection
+        ? new vscode.Selection(activeEditorBefore.selection.start, activeEditorBefore.selection.end)
+        : undefined;
+
     try {
       await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
       // Reload from disk to show changes made by the CLI.
       await vscode.commands.executeCommand('workbench.action.files.revert');
+
+      // Preserve cursor/selection for editor-triggered TODO commands.
+      if (selectionBefore && activeUriBefore) {
+        const editorAfter = vscode.window.activeTextEditor;
+        if (editorAfter && editorAfter.document && editorAfter.document.uri.toString() === activeUriBefore) {
+          const maxLine = Math.max(0, editorAfter.document.lineCount - 1);
+          const clampPos = (pos) => {
+            const line = Math.min(Math.max(pos.line, 0), maxLine);
+            const maxChar = editorAfter.document.lineAt(line).text.length;
+            const ch = Math.min(Math.max(pos.character, 0), maxChar);
+            return new vscode.Position(line, ch);
+          };
+
+          const nextSel = new vscode.Selection(clampPos(selectionBefore.start), clampPos(selectionBefore.end));
+          editorAfter.selection = nextSel;
+          editorAfter.revealRange(new vscode.Range(nextSel.active, nextSel.active), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+        }
+      }
     } catch (e) {
       vscode.window.showErrorMessage(`Org2: todo update failed: ${String(e && e.message ? e.message : e)}`);
     }

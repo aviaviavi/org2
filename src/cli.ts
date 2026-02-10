@@ -359,6 +359,7 @@ async function main(): Promise<void> {
   let todoApply = false;
   let todoFormat: "text" | "json" | "diff" = "json";
   let todoNow = ""; // ISO string
+  let todoLogbook = false;
 
   // Planning editing
   let planAction: "set" = "set";
@@ -555,6 +556,11 @@ async function main(): Promise<void> {
         todoNow = args[i]!;
         i++;
       }
+    } else if (arg === "--logbook") {
+      if (command === "todo") {
+        todoLogbook = true;
+      }
+      i++;
     } else if (arg === "--days") {
       i++;
       if (i < args.length) {
@@ -712,7 +718,7 @@ async function main(): Promise<void> {
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
     );
     console.error(
-      "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--format text|json|diff] [--apply]",
+      "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
     );
     console.error(
       "       org2 plan set --file FILE (--line N | --pos LINE[:COL]) --kind scheduled|deadline --date YYYY-MM-DD [--format text|json|diff] [--apply]",
@@ -753,7 +759,7 @@ async function main(): Promise<void> {
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
     );
     console.error(
-      "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--format text|json|diff] [--apply]",
+      "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
     );
     console.error(
       "       org2 plan set --file FILE (--line N | --pos LINE[:COL]) --kind scheduled|deadline --date YYYY-MM-DD [--format text|json|diff] [--apply]",
@@ -1723,6 +1729,7 @@ async function main(): Promise<void> {
       lineNumber: todoLine,
       ...(todoAction === "toggle" ? { toggle: true } : { status: todoStatus as TodoStatus }),
       ...(nowDate ? { now: nowDate } : {}),
+      ...(todoLogbook ? { logbook: true } : {}),
     });
 
     if (todoApply) {
