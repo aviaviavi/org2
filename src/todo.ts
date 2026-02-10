@@ -152,6 +152,7 @@ export type UpdateTodoOptions = {
   status?: TodoStatus;
   toggle?: boolean;
   now?: Date;
+  logbook?: boolean;
 };
 
 export function computeToggleStatus(current: TodoStatus): TodoStatus {
@@ -196,7 +197,7 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
 
   const { endExclusive } = computeSubtreeRange(lines, headingIndex);
 
-  // Ensure logbook, always log state changes when status differs.
+  // Optionally write state transition logbook entries.
   if (oldStatus !== targetStatus) {
     // Figure insertion base: after planning block and property drawer if present.
     const afterPlanning = findPlanningBlockEnd(lines, headingIndex, endExclusive);
@@ -234,19 +235,21 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
       }
     }
 
-    // Ensure LOGBOOK drawer
-    let logbook = findDrawer(lines, insertAfterProps, endExclusive + 10, "LOGBOOK");
-    if (!logbook || !logbook.terminated) {
-      const created = ensureLogbookDrawer(lines, insertAfterProps);
-      logbook = { start: created.start, end: created.end, terminated: true };
-    }
+    if (opts.logbook) {
+      // Ensure LOGBOOK drawer
+      let logbook = findDrawer(lines, insertAfterProps, endExclusive + 10, "LOGBOOK");
+      if (!logbook || !logbook.terminated) {
+        const created = ensureLogbookDrawer(lines, insertAfterProps);
+        logbook = { start: created.start, end: created.end, terminated: true };
+      }
 
-    // Insert log entry before :END:
-    // Find end again (may have shifted)
-    const log2 = findDrawer(lines, insertAfterProps, endExclusive + 20, "LOGBOOK");
-    if (log2 && log2.terminated) {
-      const entry = `- State \"${newKeyword}\" from \"${keywordFromStatus(oldStatus)}\" ${stamp}`;
-      lines.splice(log2.end, 0, entry);
+      // Insert log entry before :END:
+      // Find end again (may have shifted)
+      const log2 = findDrawer(lines, insertAfterProps, endExclusive + 20, "LOGBOOK");
+      if (log2 && log2.terminated) {
+        const entry = `- State \"${newKeyword}\" from \"${keywordFromStatus(oldStatus)}\" ${stamp}`;
+        lines.splice(log2.end, 0, entry);
+      }
     }
 
     return {

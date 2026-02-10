@@ -30,7 +30,7 @@ The extension can toggle/set TODO keywords on the current headline via the `org2
 - Default keybinding: `ctrl+alt+t`
 - Also available in the editor right-click context menu.
 
-Implementation detail: the extension saves the file (if needed), runs `org2 todo toggle|set --file ... --line ... --apply`, then reverts the buffer to pick up the on-disk edits.
+Implementation detail: the extension saves the file (if needed), runs `org2 todo toggle|set --file ... --line ... --apply` (no LOGBOOK unless explicitly opted in on the CLI), then reverts the buffer to pick up the on-disk edits while restoring the prior cursor/selection position.
 
 ## Planning + archiving (MVP)
 
