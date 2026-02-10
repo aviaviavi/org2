@@ -866,8 +866,12 @@ function activate(context) {
       line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
     }
 
+    const cfg = vscode.workspace.getConfiguration('org2');
+    const writeTodoLogbook = cfg.get('todo.writeTransitionLogbook', false) ? true : false;
+
     const args = ['todo', action, '--file', String(filePath), '--line', String(line), '--format', 'json', '--apply'];
     if (action === 'set' && status) args.push('--status', status);
+    if (writeTodoLogbook) args.push('--logbook');
 
     const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
 
