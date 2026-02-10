@@ -61,6 +61,20 @@
     {
       "type": "Headline",
       "level": 1,
+      "todo": "CANCELED",
+      "title": [{ "type": "Text", "value": "Canceled and overdue (should NOT show)" }],
+      "children": [
+        {
+          "type": "Planning",
+          "kind": "SCHEDULED",
+          "raw": "SCHEDULED: <2026-01-09 Fri>",
+          "timestamp": { "type": "Timestamp", "active": true, "raw": "<2026-01-09 Fri>" }
+        }
+      ]
+    },
+    {
+      "type": "Headline",
+      "level": 1,
       "title": [{ "type": "Text", "value": "PROG In progress and overdue (should show)" }],
       "children": [
         {

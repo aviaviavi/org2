@@ -1,0 +1,5 @@
+* CANCELED Canceled overdue should be hidden
+SCHEDULED: <2026-01-10 Sat>
+
+* TODO Active today should show
+SCHEDULED: <2026-01-21 Wed>
