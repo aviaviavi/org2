@@ -1,5 +1,3 @@
 * DONE Finish it
-:PROPERTIES:
-:CLOSED_AT: <2026-01-21 Wed 12:34>
-:END:
+CLOSED: <2026-01-21 Wed 12:34>
 More
