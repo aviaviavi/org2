@@ -1551,7 +1551,13 @@ function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.setTodoStatus', async () => {
+    vscode.commands.registerCommand('org2.setTodoStatus', async (args) => {
+      const requested = String(args && args.status ? args.status : '').trim().toLowerCase();
+      if (requested === 'todo' || requested === 'in_progress' || requested === 'done' || requested === 'canceled') {
+        await runTodoCli('set', requested);
+        return;
+      }
+
       const pick = await vscode.window.showQuickPick(
         [
           { label: 'TODO', value: 'todo' },
