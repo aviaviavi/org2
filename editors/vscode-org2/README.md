@@ -115,20 +115,27 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
 
 - Prefix chord: `cmd+;` on macOS, `ctrl+;` on Linux/Windows
 - Then one mnemonic key (or namespace chord):
-  - `a` → Open Agenda
-  - `r` → Refresh Agenda
   - `s` → Set SCHEDULED
   - `d` → Set DEADLINE
   - `x` → Archive Subtree
-  - `l` → Roam Copy ID Link
-  - `b` → Roam Show Backlinks
-  - `i` → Roam Insert Backlink
-  - `g` → Roam Open ID
-  - `n` → Roam Dailies: Today
   - `1` → Fold to heading level 1 (`editor.foldLevel1`)
   - `2` → Fold to heading level 2 (`editor.foldLevel2`)
   - `3` → Fold to heading level 3 (`editor.foldLevel3`)
   - `4` → Fold to heading level 4 (`editor.foldLevel4`)
+- Agenda namespace (`cmd/ctrl+; a ...`):
+  - `a o` → Open Agenda
+  - `a r` → Refresh Agenda
+  - `a f` → Agenda Filter
+- Roam namespace (`cmd/ctrl+; r ...`):
+  - `r b` → Roam Show Backlinks
+  - `r l` → Roam Copy ID Link
+  - `r i` → Roam Insert Backlink
+  - `r o` → Roam Open ID
+  - `r t` → Roam Dailies: Today
+  - `r y` → Roam Dailies: Yesterday
+  - `r m` → Roam Dailies: Tomorrow
+  - `r d` → Roam Dailies: Go to Date
+  - `r s` → Roam DB Sync
 - TODO namespace (`cmd/ctrl+; t ...`):
   - `t t` → Set TODO
   - `t i` → Set IN_PROGRESS
