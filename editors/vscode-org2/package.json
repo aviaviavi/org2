@@ -351,6 +351,60 @@
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
+        "key": "ctrl+; r b",
+        "mac": "cmd+; r b",
+        "command": "org2.roamShowBacklinks",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; r l",
+        "mac": "cmd+; r l",
+        "command": "org2.roamCopyIdLink",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; r i",
+        "mac": "cmd+; r i",
+        "command": "org2.roamInsertBacklink",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; r o",
+        "mac": "cmd+; r o",
+        "command": "org2.roamOpenId",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; r t",
+        "mac": "cmd+; r t",
+        "command": "org2.roamDailiesGotoToday",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; r y",
+        "mac": "cmd+; r y",
+        "command": "org2.roamDailiesGotoYesterday",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; r m",
+        "mac": "cmd+; r m",
+        "command": "org2.roamDailiesGotoTomorrow",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; r d",
+        "mac": "cmd+; r d",
+        "command": "org2.roamDailiesGotoDate",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; r s",
+        "mac": "cmd+; r s",
+        "command": "org2.roamDbSync",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
         "key": "ctrl+; t t",
         "mac": "cmd+; t t",
         "command": "org2.setTodoStatus",
@@ -426,36 +480,6 @@
         "key": "ctrl+; x",
         "mac": "cmd+; x",
         "command": "org2.archiveSubtree",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
-      },
-      {
-        "key": "ctrl+; l",
-        "mac": "cmd+; l",
-        "command": "org2.roamCopyIdLink",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
-      },
-      {
-        "key": "ctrl+; b",
-        "mac": "cmd+; b",
-        "command": "org2.roamShowBacklinks",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
-      },
-      {
-        "key": "ctrl+; i",
-        "mac": "cmd+; i",
-        "command": "org2.roamInsertBacklink",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
-      },
-      {
-        "key": "ctrl+; g",
-        "mac": "cmd+; g",
-        "command": "org2.roamOpenId",
-        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
-      },
-      {
-        "key": "ctrl+; n",
-        "mac": "cmd+; n",
-        "command": "org2.roamDailiesGotoToday",
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       }
     ]
