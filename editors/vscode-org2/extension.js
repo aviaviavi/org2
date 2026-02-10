@@ -831,6 +831,56 @@ function activate(context) {
     return undefined;
   }
 
+  async function refreshFileFromDisk(filePath, options) {
+    const opts = options || {};
+    const targetUri = vscode.Uri.file(filePath);
+    const activeEditor = vscode.window.activeTextEditor;
+    const isActiveTarget = !!(
+      activeEditor &&
+      activeEditor.document &&
+      activeEditor.document.uri &&
+      activeEditor.document.uri.scheme === 'file' &&
+      path.resolve(activeEditor.document.uri.fsPath) === path.resolve(filePath)
+    );
+
+    if (isActiveTarget) {
+      const previousSelection = opts.selection || activeEditor.selection;
+      try {
+        // Revert only the target editor to avoid global side-effects.
+        await vscode.commands.executeCommand('workbench.action.files.revertResource', targetUri);
+      } catch {
+        // Fallback for older VS Code versions.
+        await vscode.commands.executeCommand('workbench.action.files.revert');
+      }
+
+      if (previousSelection) {
+        const editorAfter = vscode.window.activeTextEditor;
+        if (editorAfter && editorAfter.document && editorAfter.document.uri.toString() === targetUri.toString()) {
+          const maxLine = Math.max(0, editorAfter.document.lineCount - 1);
+          const clampPos = (pos) => {
+            const line = Math.min(Math.max(pos.line, 0), maxLine);
+            const maxChar = editorAfter.document.lineAt(line).text.length;
+            const ch = Math.min(Math.max(pos.character, 0), maxChar);
+            return new vscode.Position(line, ch);
+          };
+          const nextSel = new vscode.Selection(clampPos(previousSelection.start), clampPos(previousSelection.end));
+          editorAfter.selection = nextSel;
+          editorAfter.revealRange(
+            new vscode.Range(nextSel.active, nextSel.active),
+            vscode.TextEditorRevealType.InCenterIfOutsideViewport
+          );
+        }
+      }
+      return;
+    }
+
+    try {
+      await vscode.commands.executeCommand('workbench.action.files.revertResource', targetUri);
+    } catch {
+      await vscode.commands.executeCommand('workbench.action.files.revert');
+    }
+  }
+
   async function runTodoCli(action, status, item) {
     let filePath;
     let line;
@@ -884,26 +934,11 @@ function activate(context) {
 
     try {
       await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
-      // Reload from disk to show changes made by the CLI.
-      await vscode.commands.executeCommand('workbench.action.files.revert');
-
-      // Preserve cursor/selection for editor-triggered TODO commands.
-      if (selectionBefore && activeUriBefore) {
-        const editorAfter = vscode.window.activeTextEditor;
-        if (editorAfter && editorAfter.document && editorAfter.document.uri.toString() === activeUriBefore) {
-          const maxLine = Math.max(0, editorAfter.document.lineCount - 1);
-          const clampPos = (pos) => {
-            const line = Math.min(Math.max(pos.line, 0), maxLine);
-            const maxChar = editorAfter.document.lineAt(line).text.length;
-            const ch = Math.min(Math.max(pos.character, 0), maxChar);
-            return new vscode.Position(line, ch);
-          };
-
-          const nextSel = new vscode.Selection(clampPos(selectionBefore.start), clampPos(selectionBefore.end));
-          editorAfter.selection = nextSel;
-          editorAfter.revealRange(new vscode.Range(nextSel.active, nextSel.active), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
-        }
-      }
+      // Reload target file only (avoid global revert side-effects).
+      await refreshFileFromDisk(filePath, {
+        selection: selectionBefore,
+        activeUri: activeUriBefore,
+      });
     } catch (e) {
       vscode.window.showErrorMessage(`Org2: todo update failed: ${String(e && e.message ? e.message : e)}`);
     }
@@ -977,7 +1012,7 @@ function activate(context) {
 
     try {
       await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
-      await vscode.commands.executeCommand('workbench.action.files.revert');
+      await refreshFileFromDisk(filePath);
     } catch (e) {
       vscode.window.showErrorMessage(`Org2: planning update failed: ${String(e && e.message ? e.message : e)}`);
     }
