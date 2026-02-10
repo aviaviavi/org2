@@ -5,6 +5,9 @@ export interface Org2Config {
   agendaFiles?: string[];
   recursive?: boolean;
   ignorePatterns?: string[];
+  todo?: {
+    writeTransitionLogbook?: boolean;
+  };
 }
 
 export function findConfigFile(startDir: string): string | null {
