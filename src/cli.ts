@@ -360,6 +360,7 @@ async function main(): Promise<void> {
   let todoFormat: "text" | "json" | "diff" = "json";
   let todoNow = ""; // ISO string
   let todoLogbook = false;
+  let todoLogbookFlagSet = false;
 
   // Planning editing
   let planAction: "set" = "set";
@@ -559,6 +560,7 @@ async function main(): Promise<void> {
     } else if (arg === "--logbook") {
       if (command === "todo") {
         todoLogbook = true;
+        todoLogbookFlagSet = true;
       }
       i++;
     } else if (arg === "--days") {
@@ -1722,6 +1724,24 @@ async function main(): Promise<void> {
       nowDate = d;
     }
 
+    let todoLogbookEffective = todoLogbook;
+    if (!todoLogbookFlagSet) {
+      const configPath = findConfigFile(path.dirname(path.resolve(todoFile)));
+      if (configPath) {
+        try {
+          const config = loadConfig(configPath);
+          if (config.todo?.writeTransitionLogbook === true) {
+            todoLogbookEffective = true;
+          }
+        } catch (err) {
+          console.error(
+            `Error: failed to load config from ${configPath}: ${err instanceof Error ? err.message : String(err)}`
+          );
+          process.exit(1);
+        }
+      }
+    }
+
     const beforeRaw = fs.readFileSync(todoFile, "utf8").replace(/\r\n/g, "\n");
 
     const res = updateTodoInText(beforeRaw, {
@@ -1729,7 +1749,7 @@ async function main(): Promise<void> {
       lineNumber: todoLine,
       ...(todoAction === "toggle" ? { toggle: true } : { status: todoStatus as TodoStatus }),
       ...(nowDate ? { now: nowDate } : {}),
-      ...(todoLogbook ? { logbook: true } : {}),
+      ...(todoLogbookEffective ? { logbook: true } : {}),
     });
 
     if (todoApply) {

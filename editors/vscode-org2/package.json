@@ -101,39 +101,39 @@
       },
       {
         "command": "org2.roamDailiesGotoToday",
-        "title": "Org2: Roam Dailies — Go to Today"
+        "title": "Org2: Roam Dailies \u2014 Go to Today"
       },
       {
         "command": "org2.roamDailiesGotoYesterday",
-        "title": "Org2: Roam Dailies — Go to Yesterday"
+        "title": "Org2: Roam Dailies \u2014 Go to Yesterday"
       },
       {
         "command": "org2.roamDailiesGotoTomorrow",
-        "title": "Org2: Roam Dailies — Go to Tomorrow"
+        "title": "Org2: Roam Dailies \u2014 Go to Tomorrow"
       },
       {
         "command": "org2.roamDailiesGotoDate",
-        "title": "Org2: Roam Dailies — Go to Date"
+        "title": "Org2: Roam Dailies \u2014 Go to Date"
       },
       {
         "command": "org2.roamCopyIdLink",
-        "title": "Org2: Roam — Copy ID Link"
+        "title": "Org2: Roam \u2014 Copy ID Link"
       },
       {
         "command": "org2.roamInsertBacklink",
-        "title": "Org2: Roam — Insert Backlink (ID Link)"
+        "title": "Org2: Roam \u2014 Insert Backlink (ID Link)"
       },
       {
         "command": "org2.roamOpenId",
-        "title": "Org2: Roam — Open ID Link"
+        "title": "Org2: Roam \u2014 Open ID Link"
       },
       {
         "command": "org2.roamShowBacklinks",
-        "title": "Org2: Roam — Show Backlinks"
+        "title": "Org2: Roam \u2014 Show Backlinks"
       },
       {
         "command": "org2.roamDbSync",
-        "title": "Org2: Roam — DB Sync (Ensure File IDs)"
+        "title": "Org2: Roam \u2014 DB Sync (Ensure File IDs)"
       },
       {
         "command": "org2.rerunAutoFold",
@@ -292,6 +292,11 @@
           "type": "boolean",
           "default": true,
           "description": "Auto-format Org tables on save (runs `org2 fmt --stdin` and replaces the document)."
+        },
+        "org2.todo.writeTransitionLogbook": {
+          "type": "boolean",
+          "default": false,
+          "description": "When enabled, TODO status updates from VS Code pass `--logbook` to org2 so state transitions are recorded in a LOGBOOK drawer."
         },
         "org2.folding.autoFoldMaxHeadingLevel": {
           "type": "number",
