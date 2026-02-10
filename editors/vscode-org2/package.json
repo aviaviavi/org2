@@ -340,9 +340,55 @@
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
-        "key": "ctrl+; t",
-        "mac": "cmd+; t",
-        "command": "org2.toggleTodo",
+        "key": "ctrl+; t t",
+        "mac": "cmd+; t t",
+        "command": "org2.setTodoStatus",
+        "args": { "status": "todo" },
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; t i",
+        "mac": "cmd+; t i",
+        "command": "org2.setTodoStatus",
+        "args": { "status": "in_progress" },
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; t d",
+        "mac": "cmd+; t d",
+        "command": "org2.setTodoStatus",
+        "args": { "status": "done" },
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; t c",
+        "mac": "cmd+; t c",
+        "command": "org2.setTodoStatus",
+        "args": { "status": "canceled" },
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; 1",
+        "mac": "cmd+; 1",
+        "command": "editor.foldLevel1",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; 2",
+        "mac": "cmd+; 2",
+        "command": "editor.foldLevel2",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; 3",
+        "mac": "cmd+; 3",
+        "command": "editor.foldLevel3",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; 4",
+        "mac": "cmd+; 4",
+        "command": "editor.foldLevel4",
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
