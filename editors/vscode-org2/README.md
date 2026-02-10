@@ -115,8 +115,6 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
 
 - Prefix chord: `cmd+;` on macOS, `ctrl+;` on Linux/Windows
 - Then one mnemonic key (or namespace chord):
-  - `a` → Open Agenda
-  - `r` → Refresh Agenda
   - `s` → Set SCHEDULED
   - `d` → Set DEADLINE
   - `x` → Archive Subtree
@@ -129,6 +127,10 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
   - `2` → Fold to heading level 2 (`editor.foldLevel2`)
   - `3` → Fold to heading level 3 (`editor.foldLevel3`)
   - `4` → Fold to heading level 4 (`editor.foldLevel4`)
+- Agenda namespace (`cmd/ctrl+; a ...`):
+  - `a o` → Open Agenda
+  - `a r` → Refresh Agenda
+  - `a f` → Agenda Filter
 - TODO namespace (`cmd/ctrl+; t ...`):
   - `t t` → Set TODO
   - `t i` → Set IN_PROGRESS
