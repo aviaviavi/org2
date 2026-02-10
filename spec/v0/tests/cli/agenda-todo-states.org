@@ -10,5 +10,8 @@ SCHEDULED: <2026-01-15 Thu>
 * CANCELLED Cancelled and overdue (should NOT show)
 SCHEDULED: <2026-01-10 Sat>
 
+* CANCELED Canceled and overdue (should NOT show)
+SCHEDULED: <2026-01-09 Fri>
+
 * PROG In progress and overdue (should show)
 SCHEDULED: <2026-01-15 Thu>
