@@ -864,7 +864,19 @@ function activate(context) {
             return new vscode.Position(line, ch);
           };
           const nextSel = new vscode.Selection(clampPos(previousSelection.start), clampPos(previousSelection.end));
-          editorAfter.selection = nextSel;
+          const sel = editorAfter.selection;
+          const selectionChanged =
+            !sel ||
+            !sel.start ||
+            !sel.end ||
+            !sel.start.isEqual(nextSel.start) ||
+            !sel.end.isEqual(nextSel.end);
+
+          // Avoid no-op selection writes: in folded files, even setting the same
+          // selection can trigger unwanted auto-expansion in some VS Code flows.
+          if (selectionChanged) {
+            editorAfter.selection = nextSel;
+          }
           // Avoid forcing a reveal here; revealing after a CLI apply+refresh can
           // unexpectedly expand folds around the cursor in some navigation flows.
         }
