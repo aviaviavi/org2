@@ -1008,9 +1008,19 @@ function activate(context) {
     const cwd = getWorkspaceRoot() || process.cwd();
     const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
 
+    const activeEditorBefore = item ? undefined : vscode.window.activeTextEditor;
+    const activeUriBefore = activeEditorBefore && activeEditorBefore.document ? activeEditorBefore.document.uri.toString() : '';
+    const selectionBefore =
+      activeEditorBefore && activeEditorBefore.selection
+        ? new vscode.Selection(activeEditorBefore.selection.start, activeEditorBefore.selection.end)
+        : undefined;
+
     try {
       await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
-      await refreshFileFromDisk(filePath);
+      await refreshFileFromDisk(filePath, {
+        selection: selectionBefore,
+        activeUri: activeUriBefore,
+      });
     } catch (e) {
       vscode.window.showErrorMessage(`Org2: planning update failed: ${String(e && e.message ? e.message : e)}`);
     }
