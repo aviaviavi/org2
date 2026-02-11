@@ -55,7 +55,11 @@ Current reality:
 **** Org Mode parity areas (broader)
 - Export/publishing pipeline parity: *Planned*
 - Org crypt (encrypted sections/workflows): *Planned*
-- Capture/refile/clocking ecosystem parity: *Planned*
+- Recurring tasks / repeaters: *Planned*
+- Habits: *Planned*
+- Clocking + effort/properties for time tracking: *Planned*
+- Capture templates / quick capture flow: *Planned*
+- Refile workflows parity: *Planned*
 - Advanced agenda customization parity: *Planned*
 - Mature extensibility/plugin ecosystem: *Planned*
 
