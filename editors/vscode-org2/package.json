@@ -388,7 +388,7 @@
           "type": "string",
           "enum": ["default", "center", "outside", "none"],
           "default": "none",
-          "description": "Reveal behavior specifically when opening items from the agenda. Default none avoids forced reveal calls (helps preserve folded context); set to outside/default/center if you prefer automatic recentering."
+          "description": "Reveal behavior specifically when opening items from the agenda. Default none avoids forced reveal calls (helps preserve folded context); default inherits org2.editor.navigationReveal, while outside/center force agenda-specific recentering."
         },
         "org2.folding.autoFoldMaxHeadingLevel": {
           "type": "number",
