@@ -941,6 +941,7 @@ function activate(context) {
 
     const cfg = vscode.workspace.getConfiguration('org2');
     const writeTodoLogbook = cfg.get('todo.writeTransitionLogbook', false) ? true : false;
+    const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
 
     const args = ['todo', action, '--file', String(filePath), '--line', String(line), '--format', 'json', '--apply'];
     if (action === 'set' && status) args.push('--status', status);
@@ -959,7 +960,7 @@ function activate(context) {
       await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
       // Reload target file only (avoid global revert side-effects).
       await refreshFileFromDisk(filePath, {
-        selection: selectionBefore,
+        selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
         activeUri: activeUriBefore,
       });
     } catch (e) {
@@ -1002,6 +1003,8 @@ function activate(context) {
       line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
     }
 
+    const cfg = vscode.workspace.getConfiguration('org2');
+    const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const useToday = options && options.useToday ? true : false;
 
     let date = '';
@@ -1043,7 +1046,7 @@ function activate(context) {
     try {
       await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
       await refreshFileFromDisk(filePath, {
-        selection: selectionBefore,
+        selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
         activeUri: activeUriBefore,
       });
     } catch (e) {

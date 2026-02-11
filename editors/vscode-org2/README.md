@@ -31,7 +31,7 @@ The extension can toggle/set TODO keywords on the current headline via the `org2
 - Default keybinding: `ctrl+alt+t`
 - Also available in the editor right-click context menu.
 
-Implementation detail: the extension saves the file (if needed), runs `org2 todo toggle|set --file ... --line ... --apply` (and adds `--logbook` when `org2.todo.writeTransitionLogbook` is enabled), then reverts the buffer to pick up the on-disk edits while restoring the prior cursor/selection position.
+Implementation detail: the extension saves the file (if needed), runs `org2 todo toggle|set --file ... --line ... --apply` (and adds `--logbook` when `org2.todo.writeTransitionLogbook` is enabled), then reverts the buffer to pick up the on-disk edits. By default it restores the prior cursor/selection; this can be disabled with `org2.editor.restoreSelectionAfterCliApply` if your setup still auto-expands folds.
 
 ## Planning + archiving (MVP)
 
@@ -72,6 +72,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.command`: command used to run org2 (default: `org2`)
 - `org2.agenda.args`: extra args prefixed before `agenda` (advanced)
 - `org2.todo.writeTransitionLogbook`: when true, TODO status updates include `--logbook` (default false)
+- `org2.editor.restoreSelectionAfterCliApply`: when true (default), TODO/planning apply commands restore your prior selection after file refresh; set false to minimize fold auto-expansion side-effects in some VS Code setups.
 
 ### Click-through
 
