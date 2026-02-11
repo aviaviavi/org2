@@ -75,6 +75,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.editor.restoreSelectionAfterCliApply`: when true (default), TODO/planning apply commands restore your prior selection after file refresh; set false to minimize fold auto-expansion side-effects in some VS Code setups.
 - `org2.editor.refreshAfterCliApply`: when true (default), TODO/planning apply commands force a targeted file refresh from disk; set false to rely on VS Code file watching and avoid refresh-related fold churn.
 - `org2.editor.skipRefreshWhenInSync`: when true (default) and refresh-after-apply is enabled, the extension skips explicit refresh if the open editor already matches on-disk content after CLI apply.
+- `org2.editor.navigationReveal`: controls reveal behavior after Org2 navigation commands (agenda/backlinks/open-file/open-id). `default` (default) uses normal VS Code reveal, `center` preserves old center-on-jump behavior, and `none` skips forced reveals to reduce fold auto-expansion side-effects.
 
 ### Click-through
 
