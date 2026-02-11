@@ -641,13 +641,25 @@ async function fetchAgendaGroups(context, filter) {
   return groups;
 }
 
-function revealNavigationPosition(editor, pos) {
+function revealNavigationPosition(editor, pos, source) {
   if (!editor || !pos) return;
   const cfg = vscode.workspace.getConfiguration('org2');
-  const mode = String(cfg.get('editor.navigationReveal', 'default') || 'default').toLowerCase();
+  const isAgendaSource = String(source || '').toLowerCase() === 'agenda';
+  const modeSetting = isAgendaSource ? 'editor.navigationRevealFromAgenda' : 'editor.navigationReveal';
+  const modeDefault = isAgendaSource ? 'none' : 'outside';
+  let mode = String(cfg.get(modeSetting, modeDefault) || modeDefault).toLowerCase();
+
+  // Agenda-specific reveal supports inheriting the non-agenda navigation setting
+  // to avoid duplicating preferences.
+  if (isAgendaSource && mode === 'default') {
+    mode = String(cfg.get('editor.navigationReveal', 'outside') || 'outside').toLowerCase();
+  }
+
   if (mode === 'none') return;
 
-  const revealType = mode === 'center' ? vscode.TextEditorRevealType.InCenter : vscode.TextEditorRevealType.Default;
+  let revealType = vscode.TextEditorRevealType.Default;
+  if (mode === 'center') revealType = vscode.TextEditorRevealType.InCenter;
+  if (mode === 'outside') revealType = vscode.TextEditorRevealType.InCenterIfOutsideViewport;
   editor.revealRange(new vscode.Range(pos, pos), revealType);
 }
 
@@ -664,7 +676,7 @@ async function openAgendaItem(item) {
   const line = Math.max(0, item.line || 0);
   const pos = new vscode.Position(line, 0);
   editor.selection = new vscode.Selection(pos, pos);
-  revealNavigationPosition(editor, pos);
+  revealNavigationPosition(editor, pos, 'agenda');
 }
 
 async function pickAgendaFilter(provider) {
