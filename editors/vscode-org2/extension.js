@@ -641,6 +641,16 @@ async function fetchAgendaGroups(context, filter) {
   return groups;
 }
 
+function revealNavigationPosition(editor, pos) {
+  if (!editor || !pos) return;
+  const cfg = vscode.workspace.getConfiguration('org2');
+  const mode = String(cfg.get('editor.navigationReveal', 'default') || 'default').toLowerCase();
+  if (mode === 'none') return;
+
+  const revealType = mode === 'center' ? vscode.TextEditorRevealType.InCenter : vscode.TextEditorRevealType.Default;
+  editor.revealRange(new vscode.Range(pos, pos), revealType);
+}
+
 async function openAgendaItem(item) {
   if (!item || !item.file) return;
 
@@ -654,7 +664,7 @@ async function openAgendaItem(item) {
   const line = Math.max(0, item.line || 0);
   const pos = new vscode.Position(line, 0);
   editor.selection = new vscode.Selection(pos, pos);
-  editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+  revealNavigationPosition(editor, pos);
 }
 
 async function pickAgendaFilter(provider) {
@@ -1380,7 +1390,7 @@ function activate(context) {
         const line = Math.max(0, Number(line0) || 0);
         const pos = new vscode.Position(line, 0);
         editor.selection = new vscode.Selection(pos, pos);
-        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+        revealNavigationPosition(editor, pos);
       } catch (e) {
         vscode.window.showErrorMessage(`Org2: failed to open file: ${String(e && e.message ? e.message : e)}`);
       }
@@ -1670,7 +1680,7 @@ function activate(context) {
       const editor = await vscode.window.showTextDocument(doc, { preview: true });
       const pos = new vscode.Position(Math.max(0, pick.line0 || 0), 0);
       editor.selection = new vscode.Selection(pos, pos);
-      editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+      revealNavigationPosition(editor, pos);
     })
   );
 
