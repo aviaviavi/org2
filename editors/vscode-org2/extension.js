@@ -1012,6 +1012,12 @@ function activate(context) {
           allowGlobalFallback: allowGlobalRefreshFallback,
         });
       }
+
+      // If this was invoked from an agenda row action, refresh the agenda view so
+      // TODO/status edits are reflected immediately.
+      if (item instanceof Org2AgendaItem) {
+        await agendaProvider.load();
+      }
     } catch (e) {
       vscode.window.showErrorMessage(`Org2: todo update failed: ${String(e && e.message ? e.message : e)}`);
     }
