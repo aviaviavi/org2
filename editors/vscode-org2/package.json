@@ -373,6 +373,11 @@
           "default": true,
           "description": "When refresh-after-apply is enabled, skip explicit refresh if the open editor already matches on-disk content after CLI apply (reduces unnecessary fold churn)."
         },
+        "org2.editor.refreshNonActiveOpenFiles": {
+          "type": "boolean",
+          "default": false,
+          "description": "When refresh-after-apply runs for an agenda-targeted file that is open but not active, also refresh that non-active editor if it is currently visible. Disabled by default to avoid fold churn in background editor groups."
+        },
         "org2.editor.allowGlobalRefreshFallback": {
           "type": "boolean",
           "default": false,

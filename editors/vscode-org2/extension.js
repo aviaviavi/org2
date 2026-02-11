@@ -853,6 +853,17 @@ function activate(context) {
     return undefined;
   }
 
+  function isPathVisibleInAnyEditor(absPath) {
+    if (!absPath) return false;
+    const needle = path.resolve(absPath);
+    for (const ed of vscode.window.visibleTextEditors || []) {
+      if (!ed || !ed.document || !ed.document.uri || ed.document.uri.scheme !== 'file') continue;
+      const p = path.resolve(ed.document.uri.fsPath);
+      if (p === needle) return true;
+    }
+    return false;
+  }
+
   async function isOpenDocumentSyncedWithDisk(filePath) {
     const openDoc = findOpenDocumentForPath(filePath);
     if (!openDoc || openDoc.isDirty) return false;
@@ -937,6 +948,24 @@ function activate(context) {
       return;
     }
 
+    const refreshNonActiveOpenFiles = opts.refreshNonActiveOpenFiles === true;
+    const openDoc = findOpenDocumentForPath(filePath);
+    if (!openDoc) {
+      // Nothing open for this file; let file watching refresh on open and avoid
+      // unnecessary revert dispatch that can cause side-effects in other editors.
+      return;
+    }
+
+    if (!refreshNonActiveOpenFiles) {
+      // Default safe mode: do not touch non-active editors after CLI apply.
+      return;
+    }
+
+    if (!isPathVisibleInAnyEditor(filePath)) {
+      // Even when enabled, only refresh if the file is currently visible.
+      return;
+    }
+
     try {
       await vscode.commands.executeCommand('workbench.action.files.revertResource', targetUri);
     } catch {
@@ -986,6 +1015,7 @@ function activate(context) {
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
+    const refreshNonActiveOpenFiles = cfg.get('editor.refreshNonActiveOpenFiles', false) ? true : false;
     const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
 
     const args = ['todo', action, '--file', String(filePath), '--line', String(line), '--format', 'json', '--apply'];
@@ -1009,6 +1039,7 @@ function activate(context) {
           selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
           activeUri: activeUriBefore,
           skipIfInSync: skipRefreshWhenInSync,
+          refreshNonActiveOpenFiles,
           allowGlobalFallback: allowGlobalRefreshFallback,
         });
       }
@@ -1056,6 +1087,7 @@ function activate(context) {
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
+    const refreshNonActiveOpenFiles = cfg.get('editor.refreshNonActiveOpenFiles', false) ? true : false;
     const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
     const useToday = options && options.useToday ? true : false;
 
@@ -1102,6 +1134,7 @@ function activate(context) {
           selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
           activeUri: activeUriBefore,
           skipIfInSync: skipRefreshWhenInSync,
+          refreshNonActiveOpenFiles,
           allowGlobalFallback: allowGlobalRefreshFallback,
         });
       }
