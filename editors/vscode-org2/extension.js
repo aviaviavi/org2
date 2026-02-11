@@ -855,7 +855,20 @@ function activate(context) {
 
       if (previousSelection) {
         const editorAfter = vscode.window.activeTextEditor;
-        if (editorAfter && editorAfter.document && editorAfter.document.uri.toString() === targetUri.toString()) {
+        const activeUriBefore = String(opts.activeUri || '');
+        const shouldRestoreSelection =
+          !activeUriBefore ||
+          // Only restore if the same target editor was active when the command started.
+          // If focus changed while CLI work was running, avoid forcing selection writes
+          // into an editor the user is no longer actively navigating.
+          activeUriBefore === targetUri.toString();
+
+        if (
+          shouldRestoreSelection &&
+          editorAfter &&
+          editorAfter.document &&
+          editorAfter.document.uri.toString() === targetUri.toString()
+        ) {
           const maxLine = Math.max(0, editorAfter.document.lineCount - 1);
           const clampPos = (pos) => {
             const line = Math.min(Math.max(pos.line, 0), maxLine);
