@@ -373,6 +373,11 @@
           "default": true,
           "description": "When refresh-after-apply is enabled, skip explicit refresh if the open editor already matches on-disk content after CLI apply (reduces unnecessary fold churn)."
         },
+        "org2.editor.allowGlobalRefreshFallback": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow fallback to global `workbench.action.files.revert` when target-file `revertResource` is unavailable. Keep disabled to avoid global refresh side-effects (including fold churn in other editors)."
+        },
         "org2.editor.navigationReveal": {
           "type": "string",
           "enum": ["default", "center", "none"],
