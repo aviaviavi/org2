@@ -27,23 +27,26 @@ The extension can toggle/set TODO keywords on the current headline via the `org2
 
 - Command: **Org2: Toggle Todo Status** (`org2.toggleTodo`)
 - Command: **Org2: Set Todo Status** (`org2.setTodoStatus`)
+- Direct commands: `org2.setTodoTODO`, `org2.setTodoInProgress`, `org2.setTodoDone`, `org2.setTodoCanceled`
 - Default keybinding: `ctrl+alt+t`
 - Also available in the editor right-click context menu.
 
-Implementation detail: the extension saves the file (if needed), runs `org2 todo toggle|set --file ... --line ... --apply` (and adds `--logbook` when `org2.todo.writeTransitionLogbook` is enabled), then reverts the buffer to pick up the on-disk edits while restoring the prior cursor/selection position.
+Implementation detail: the extension saves the file (if needed), runs `org2 todo toggle|set --file ... --line ... --apply` (and adds `--logbook` when `org2.todo.writeTransitionLogbook` is enabled), then refreshes the buffer from disk. By default it restores the prior cursor/selection; this can be disabled with `org2.editor.restoreSelectionAfterCliApply` if your setup still auto-expands folds. You can also disable the explicit refresh (`org2.editor.refreshAfterCliApply`) to rely on VS Code file watching and avoid refresh-triggered fold churn. With refresh enabled, `org2.editor.skipRefreshWhenInSync` (default true) avoids unnecessary `revertResource` calls when the open document already matches disk after CLI apply, and `org2.editor.allowGlobalRefreshFallback` (default false) controls whether Org2 may fall back to global `workbench.action.files.revert` on older VS Code builds.
 
 ## Planning + archiving (MVP)
 
 The extension can edit planning keywords and archive subtrees via the `org2` CLI.
 
 - Command: **Org2: Set Scheduled** (`org2.setScheduled`) → prompts for `YYYY-MM-DD`
+- Command: **Org2: Set Scheduled to Today** (`org2.setScheduledToday`) → no date prompt
 - Command: **Org2: Set Deadline** (`org2.setDeadline`) → prompts for `YYYY-MM-DD`
+- Command: **Org2: Set Deadline to Today** (`org2.setDeadlineToday`) → no date prompt
 - Command: **Org2: Archive Subtree** (`org2.archiveSubtree`) → shows a diff preview, then asks for confirmation
 
 Implementation detail: the extension saves the file (if needed).
 - Planning edits run `org2 plan set ... --apply`.
 - Archiving runs `org2 archive ... --format diff` first to generate a preview, then `org2 archive ... --apply` if confirmed.
-Afterward, the extension reverts the buffer to pick up the on-disk edits.
+Afterward, the extension refreshes the buffer from disk (unless `org2.editor.refreshAfterCliApply` is disabled).
 
 ## Agenda (MVP)
 
@@ -69,6 +72,11 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.command`: command used to run org2 (default: `org2`)
 - `org2.agenda.args`: extra args prefixed before `agenda` (advanced)
 - `org2.todo.writeTransitionLogbook`: when true, TODO status updates include `--logbook` (default false)
+- `org2.editor.restoreSelectionAfterCliApply`: when true (default), TODO/planning apply commands restore your prior selection after file refresh; set false to minimize fold auto-expansion side-effects in some VS Code setups.
+- `org2.editor.refreshAfterCliApply`: when true (default), TODO/planning apply commands force a targeted file refresh from disk; set false to rely on VS Code file watching and avoid refresh-related fold churn.
+- `org2.editor.skipRefreshWhenInSync`: when true (default) and refresh-after-apply is enabled, the extension skips explicit refresh if the open editor already matches on-disk content after CLI apply.
+- `org2.editor.allowGlobalRefreshFallback`: when false (default), Org2 will not fall back to global `workbench.action.files.revert` if target-file `revertResource` is unavailable; enable only if you need compatibility with older VS Code builds and accept broader refresh side-effects.
+- `org2.editor.navigationReveal`: controls reveal behavior after Org2 navigation commands (agenda/backlinks/open-file/open-id). `default` (default) uses normal VS Code reveal, `center` preserves old center-on-jump behavior, and `none` skips forced reveals to reduce fold auto-expansion side-effects.
 
 ### Click-through
 
@@ -85,8 +93,14 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
 - TODO + planning
   - `Org2: Toggle Todo Status` (`org2.toggleTodo`)
   - `Org2: Set Todo Status` (`org2.setTodoStatus`)
+  - `Org2: Set Todo → TODO` (`org2.setTodoTODO`)
+  - `Org2: Set Todo → IN_PROGRESS` (`org2.setTodoInProgress`)
+  - `Org2: Set Todo → DONE` (`org2.setTodoDone`)
+  - `Org2: Set Todo → CANCELED` (`org2.setTodoCanceled`)
   - `Org2: Set SCHEDULED` (`org2.setScheduled`)
+  - `Org2: Set SCHEDULED to Today` (`org2.setScheduledToday`)
   - `Org2: Set DEADLINE` (`org2.setDeadline`)
+  - `Org2: Set DEADLINE to Today` (`org2.setDeadlineToday`)
   - `Org2: Archive Subtree` (`org2.archiveSubtree`)
 - Roam
   - `Org2: Roam Dailies — Go to Today` (`org2.roamDailiesGotoToday`)
@@ -116,8 +130,10 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
 
 - Prefix chord: `cmd+;` on macOS, `ctrl+;` on Linux/Windows
 - Then one mnemonic key (or namespace chord):
-  - `s` → Set SCHEDULED
-  - `d` → Set DEADLINE
+  - `s` → Set SCHEDULED (prompt)
+  - `s t` → Set SCHEDULED to Today
+  - `d` → Set DEADLINE (prompt)
+  - `d t` → Set DEADLINE to Today
   - `x` → Archive Subtree
   - `1` → Fold to heading level 1 (`editor.foldLevel1`)
   - `2` → Fold to heading level 2 (`editor.foldLevel2`)
@@ -150,6 +166,8 @@ All defaults are scoped to `org`/`org2` editors.
 ### VSCodeVim note
 
 The power keymap uses `cmd/ctrl` chords (not bare leader keys), so it remains reliable even when VSCodeVim is enabled in normal mode.
+
+Optional folded-navigation helper: set `org2.vim.visibleLineNavigation: true` to remap `j/k` to VS Code `cursorDown/cursorUp` in Org/Org2 buffers while VSCodeVim Normal mode is active. This makes movement follow *visible* lines across folds.
 
 ## Debugging
 

@@ -1,0 +1,1 @@
+plan today --file "spec/v0/tests/cli/plan-today-basic.input.txt" --pos 1 --kind deadline --today 2026-02-10 --format text

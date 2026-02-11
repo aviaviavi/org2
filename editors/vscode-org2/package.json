@@ -11,8 +11,14 @@
     "onCommand:org2.openAgenda",
     "onCommand:org2.toggleTodo",
     "onCommand:org2.setTodoStatus",
+    "onCommand:org2.setTodoTODO",
+    "onCommand:org2.setTodoInProgress",
+    "onCommand:org2.setTodoDone",
+    "onCommand:org2.setTodoCanceled",
     "onCommand:org2.setScheduled",
+    "onCommand:org2.setScheduledToday",
     "onCommand:org2.setDeadline",
+    "onCommand:org2.setDeadlineToday",
     "onCommand:org2.archiveSubtree",
     "onCommand:org2.roamDailiesGotoToday",
     "onCommand:org2.roamDailiesGotoYesterday",
@@ -88,12 +94,36 @@
         "title": "Org2: Set Todo Status"
       },
       {
+        "command": "org2.setTodoTODO",
+        "title": "Org2: Set Todo → TODO"
+      },
+      {
+        "command": "org2.setTodoInProgress",
+        "title": "Org2: Set Todo → IN_PROGRESS"
+      },
+      {
+        "command": "org2.setTodoDone",
+        "title": "Org2: Set Todo → DONE"
+      },
+      {
+        "command": "org2.setTodoCanceled",
+        "title": "Org2: Set Todo → CANCELED"
+      },
+      {
         "command": "org2.setScheduled",
         "title": "Org2: Set SCHEDULED"
       },
       {
+        "command": "org2.setScheduledToday",
+        "title": "Org2: Set SCHEDULED to Today"
+      },
+      {
         "command": "org2.setDeadline",
         "title": "Org2: Set DEADLINE"
+      },
+      {
+        "command": "org2.setDeadlineToday",
+        "title": "Org2: Set DEADLINE to Today"
       },
       {
         "command": "org2.archiveSubtree",
@@ -175,24 +205,54 @@
       ],
       "view/item/context": [
         {
-          "command": "org2.setScheduled",
+          "command": "org2.setTodoTODO",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@10"
         },
         {
-          "command": "org2.toggleTodo",
+          "command": "org2.setTodoInProgress",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@11"
         },
         {
-          "command": "org2.setDeadline",
+          "command": "org2.setTodoDone",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@12"
         },
         {
-          "command": "org2.archiveSubtree",
+          "command": "org2.setTodoCanceled",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@13"
+        },
+        {
+          "command": "org2.toggleTodo",
+          "when": "view == org2Agenda && viewItem == org2AgendaItem",
+          "group": "navigation@14"
+        },
+        {
+          "command": "org2.setScheduled",
+          "when": "view == org2Agenda && viewItem == org2AgendaItem",
+          "group": "navigation@15"
+        },
+        {
+          "command": "org2.setScheduledToday",
+          "when": "view == org2Agenda && viewItem == org2AgendaItem",
+          "group": "navigation@16"
+        },
+        {
+          "command": "org2.setDeadline",
+          "when": "view == org2Agenda && viewItem == org2AgendaItem",
+          "group": "navigation@17"
+        },
+        {
+          "command": "org2.setDeadlineToday",
+          "when": "view == org2Agenda && viewItem == org2AgendaItem",
+          "group": "navigation@18"
+        },
+        {
+          "command": "org2.archiveSubtree",
+          "when": "view == org2Agenda && viewItem == org2AgendaItem",
+          "group": "navigation@19"
         }
       ],
       "editor/context": [
@@ -298,6 +358,32 @@
           "default": false,
           "description": "When enabled, TODO status updates from VS Code pass `--logbook` to org2 so state transitions are recorded in a LOGBOOK drawer."
         },
+        "org2.editor.restoreSelectionAfterCliApply": {
+          "type": "boolean",
+          "default": true,
+          "description": "Restore the previous selection after TODO/planning commands apply and refresh the file from disk. Disable this if your setup still auto-expands folds around the cursor."
+        },
+        "org2.editor.refreshAfterCliApply": {
+          "type": "boolean",
+          "default": true,
+          "description": "Force a post-apply disk refresh (`revertResource`) after TODO/planning commands. Disable to rely on VS Code file watching and avoid refresh-related fold churn entirely."
+        },
+        "org2.editor.skipRefreshWhenInSync": {
+          "type": "boolean",
+          "default": true,
+          "description": "When refresh-after-apply is enabled, skip explicit refresh if the open editor already matches on-disk content after CLI apply (reduces unnecessary fold churn)."
+        },
+        "org2.editor.allowGlobalRefreshFallback": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow fallback to global `workbench.action.files.revert` when target-file `revertResource` is unavailable. Keep disabled to avoid global refresh side-effects (including fold churn in other editors)."
+        },
+        "org2.editor.navigationReveal": {
+          "type": "string",
+          "enum": ["default", "center", "none"],
+          "default": "default",
+          "description": "Reveal behavior after Org2 navigation commands (agenda/backlinks/open-file/open-id): default uses normal VS Code reveal, center preserves prior centering behavior, none avoids forced reveal to reduce fold auto-expansion."
+        },
         "org2.folding.autoFoldMaxHeadingLevel": {
           "type": "number",
           "default": 1,
@@ -313,6 +399,11 @@
           "type": "boolean",
           "default": true,
           "description": "Enable Org2 power keymap chords (macOS: cmd+; then key, Linux/Windows: ctrl+; then key) for Org/Org2 editors."
+        },
+        "org2.vim.visibleLineNavigation": {
+          "type": "boolean",
+          "default": false,
+          "description": "When VSCodeVim is active in Normal mode, remap j/k in Org/Org2 editors to VS Code cursorDown/cursorUp so folded sections navigate by visible lines."
         }
       }
     },
@@ -331,6 +422,16 @@
         "key": "ctrl+alt+d",
         "command": "org2.debugFoldingRanges",
         "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "j",
+        "command": "cursorDown",
+        "when": "editorTextFocus && config.org2.vim.visibleLineNavigation && vim.active && vim.mode == 'Normal' && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "k",
+        "command": "cursorUp",
+        "when": "editorTextFocus && config.org2.vim.visibleLineNavigation && vim.active && vim.mode == 'Normal' && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
         "key": "ctrl+; a o",
@@ -471,9 +572,21 @@
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
+        "key": "ctrl+; s t",
+        "mac": "cmd+; s t",
+        "command": "org2.setScheduledToday",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
         "key": "ctrl+; d",
         "mac": "cmd+; d",
         "command": "org2.setDeadline",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; d t",
+        "mac": "cmd+; d t",
+        "command": "org2.setDeadlineToday",
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
