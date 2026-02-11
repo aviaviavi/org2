@@ -942,6 +942,7 @@ function activate(context) {
     const cfg = vscode.workspace.getConfiguration('org2');
     const writeTodoLogbook = cfg.get('todo.writeTransitionLogbook', false) ? true : false;
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
+    const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
 
     const args = ['todo', action, '--file', String(filePath), '--line', String(line), '--format', 'json', '--apply'];
     if (action === 'set' && status) args.push('--status', status);
@@ -958,11 +959,13 @@ function activate(context) {
 
     try {
       await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
-      // Reload target file only (avoid global revert side-effects).
-      await refreshFileFromDisk(filePath, {
-        selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
-        activeUri: activeUriBefore,
-      });
+      if (refreshAfterCliApply) {
+        // Reload target file only (avoid global revert side-effects).
+        await refreshFileFromDisk(filePath, {
+          selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
+          activeUri: activeUriBefore,
+        });
+      }
     } catch (e) {
       vscode.window.showErrorMessage(`Org2: todo update failed: ${String(e && e.message ? e.message : e)}`);
     }
@@ -1005,6 +1008,7 @@ function activate(context) {
 
     const cfg = vscode.workspace.getConfiguration('org2');
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
+    const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
     const useToday = options && options.useToday ? true : false;
 
     let date = '';
@@ -1045,10 +1049,12 @@ function activate(context) {
 
     try {
       await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
-      await refreshFileFromDisk(filePath, {
-        selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
-        activeUri: activeUriBefore,
-      });
+      if (refreshAfterCliApply) {
+        await refreshFileFromDisk(filePath, {
+          selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
+          activeUri: activeUriBefore,
+        });
+      }
     } catch (e) {
       vscode.window.showErrorMessage(`Org2: planning update failed: ${String(e && e.message ? e.message : e)}`);
     }
