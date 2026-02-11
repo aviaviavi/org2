@@ -854,6 +854,7 @@ function activate(context) {
 
   async function refreshFileFromDisk(filePath, options) {
     const opts = options || {};
+    const allowGlobalFallback = opts.allowGlobalFallback === true;
     if (opts.skipIfInSync && (await isOpenDocumentSyncedWithDisk(filePath))) {
       return;
     }
@@ -874,8 +875,10 @@ function activate(context) {
         // Revert only the target editor to avoid global side-effects.
         await vscode.commands.executeCommand('workbench.action.files.revertResource', targetUri);
       } catch {
-        // Fallback for older VS Code versions.
-        await vscode.commands.executeCommand('workbench.action.files.revert');
+        if (allowGlobalFallback) {
+          // Optional fallback for older VS Code versions.
+          await vscode.commands.executeCommand('workbench.action.files.revert');
+        }
       }
 
       if (previousSelection) {
@@ -925,7 +928,9 @@ function activate(context) {
     try {
       await vscode.commands.executeCommand('workbench.action.files.revertResource', targetUri);
     } catch {
-      await vscode.commands.executeCommand('workbench.action.files.revert');
+      if (allowGlobalFallback) {
+        await vscode.commands.executeCommand('workbench.action.files.revert');
+      }
     }
   }
 
@@ -969,6 +974,7 @@ function activate(context) {
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
+    const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
 
     const args = ['todo', action, '--file', String(filePath), '--line', String(line), '--format', 'json', '--apply'];
     if (action === 'set' && status) args.push('--status', status);
@@ -991,6 +997,7 @@ function activate(context) {
           selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
           activeUri: activeUriBefore,
           skipIfInSync: skipRefreshWhenInSync,
+          allowGlobalFallback: allowGlobalRefreshFallback,
         });
       }
     } catch (e) {
@@ -1037,6 +1044,7 @@ function activate(context) {
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
+    const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
     const useToday = options && options.useToday ? true : false;
 
     let date = '';
@@ -1082,6 +1090,7 @@ function activate(context) {
           selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
           activeUri: activeUriBefore,
           skipIfInSync: skipRefreshWhenInSync,
+          allowGlobalFallback: allowGlobalRefreshFallback,
         });
       }
     } catch (e) {
