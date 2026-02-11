@@ -641,6 +641,16 @@ async function fetchAgendaGroups(context, filter) {
   return groups;
 }
 
+function revealNavigationPosition(editor, pos) {
+  if (!editor || !pos) return;
+  const cfg = vscode.workspace.getConfiguration('org2');
+  const mode = String(cfg.get('editor.navigationReveal', 'default') || 'default').toLowerCase();
+  if (mode === 'none') return;
+
+  const revealType = mode === 'center' ? vscode.TextEditorRevealType.InCenter : vscode.TextEditorRevealType.Default;
+  editor.revealRange(new vscode.Range(pos, pos), revealType);
+}
+
 async function openAgendaItem(item) {
   if (!item || !item.file) return;
 
@@ -654,7 +664,7 @@ async function openAgendaItem(item) {
   const line = Math.max(0, item.line || 0);
   const pos = new vscode.Position(line, 0);
   editor.selection = new vscode.Selection(pos, pos);
-  editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+  revealNavigationPosition(editor, pos);
 }
 
 async function pickAgendaFilter(provider) {
@@ -831,6 +841,99 @@ function activate(context) {
     return undefined;
   }
 
+  async function isOpenDocumentSyncedWithDisk(filePath) {
+    const openDoc = findOpenDocumentForPath(filePath);
+    if (!openDoc || openDoc.isDirty) return false;
+    try {
+      const diskText = await fs.promises.readFile(filePath, 'utf8');
+      return openDoc.getText() === diskText;
+    } catch {
+      return false;
+    }
+  }
+
+  async function refreshFileFromDisk(filePath, options) {
+    const opts = options || {};
+    const allowGlobalFallback = opts.allowGlobalFallback === true;
+    if (opts.skipIfInSync && (await isOpenDocumentSyncedWithDisk(filePath))) {
+      return;
+    }
+
+    const targetUri = vscode.Uri.file(filePath);
+    const activeEditor = vscode.window.activeTextEditor;
+    const isActiveTarget = !!(
+      activeEditor &&
+      activeEditor.document &&
+      activeEditor.document.uri &&
+      activeEditor.document.uri.scheme === 'file' &&
+      path.resolve(activeEditor.document.uri.fsPath) === path.resolve(filePath)
+    );
+
+    if (isActiveTarget) {
+      const previousSelection = opts.selection || activeEditor.selection;
+      try {
+        // Revert only the target editor to avoid global side-effects.
+        await vscode.commands.executeCommand('workbench.action.files.revertResource', targetUri);
+      } catch {
+        if (allowGlobalFallback) {
+          // Optional fallback for older VS Code versions.
+          await vscode.commands.executeCommand('workbench.action.files.revert');
+        }
+      }
+
+      if (previousSelection) {
+        const editorAfter = vscode.window.activeTextEditor;
+        const activeUriBefore = String(opts.activeUri || '');
+        const shouldRestoreSelection =
+          !activeUriBefore ||
+          // Only restore if the same target editor was active when the command started.
+          // If focus changed while CLI work was running, avoid forcing selection writes
+          // into an editor the user is no longer actively navigating.
+          activeUriBefore === targetUri.toString();
+
+        if (
+          shouldRestoreSelection &&
+          editorAfter &&
+          editorAfter.document &&
+          editorAfter.document.uri.toString() === targetUri.toString()
+        ) {
+          const maxLine = Math.max(0, editorAfter.document.lineCount - 1);
+          const clampPos = (pos) => {
+            const line = Math.min(Math.max(pos.line, 0), maxLine);
+            const maxChar = editorAfter.document.lineAt(line).text.length;
+            const ch = Math.min(Math.max(pos.character, 0), maxChar);
+            return new vscode.Position(line, ch);
+          };
+          const nextSel = new vscode.Selection(clampPos(previousSelection.start), clampPos(previousSelection.end));
+          const sel = editorAfter.selection;
+          const selectionChanged =
+            !sel ||
+            !sel.start ||
+            !sel.end ||
+            !sel.start.isEqual(nextSel.start) ||
+            !sel.end.isEqual(nextSel.end);
+
+          // Avoid no-op selection writes: in folded files, even setting the same
+          // selection can trigger unwanted auto-expansion in some VS Code flows.
+          if (selectionChanged) {
+            editorAfter.selection = nextSel;
+          }
+          // Avoid forcing a reveal here; revealing after a CLI apply+refresh can
+          // unexpectedly expand folds around the cursor in some navigation flows.
+        }
+      }
+      return;
+    }
+
+    try {
+      await vscode.commands.executeCommand('workbench.action.files.revertResource', targetUri);
+    } catch {
+      if (allowGlobalFallback) {
+        await vscode.commands.executeCommand('workbench.action.files.revert');
+      }
+    }
+  }
+
   async function runTodoCli(action, status, item) {
     let filePath;
     let line;
@@ -868,6 +971,10 @@ function activate(context) {
 
     const cfg = vscode.workspace.getConfiguration('org2');
     const writeTodoLogbook = cfg.get('todo.writeTransitionLogbook', false) ? true : false;
+    const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
+    const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
+    const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
+    const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
 
     const args = ['todo', action, '--file', String(filePath), '--line', String(line), '--format', 'json', '--apply'];
     if (action === 'set' && status) args.push('--status', status);
@@ -884,32 +991,21 @@ function activate(context) {
 
     try {
       await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
-      // Reload from disk to show changes made by the CLI.
-      await vscode.commands.executeCommand('workbench.action.files.revert');
-
-      // Preserve cursor/selection for editor-triggered TODO commands.
-      if (selectionBefore && activeUriBefore) {
-        const editorAfter = vscode.window.activeTextEditor;
-        if (editorAfter && editorAfter.document && editorAfter.document.uri.toString() === activeUriBefore) {
-          const maxLine = Math.max(0, editorAfter.document.lineCount - 1);
-          const clampPos = (pos) => {
-            const line = Math.min(Math.max(pos.line, 0), maxLine);
-            const maxChar = editorAfter.document.lineAt(line).text.length;
-            const ch = Math.min(Math.max(pos.character, 0), maxChar);
-            return new vscode.Position(line, ch);
-          };
-
-          const nextSel = new vscode.Selection(clampPos(selectionBefore.start), clampPos(selectionBefore.end));
-          editorAfter.selection = nextSel;
-          editorAfter.revealRange(new vscode.Range(nextSel.active, nextSel.active), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
-        }
+      if (refreshAfterCliApply) {
+        // Reload target file only (avoid global revert side-effects).
+        await refreshFileFromDisk(filePath, {
+          selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
+          activeUri: activeUriBefore,
+          skipIfInSync: skipRefreshWhenInSync,
+          allowGlobalFallback: allowGlobalRefreshFallback,
+        });
       }
     } catch (e) {
       vscode.window.showErrorMessage(`Org2: todo update failed: ${String(e && e.message ? e.message : e)}`);
     }
   }
 
-  async function runPlanCli(kind, item) {
+  async function runPlanCli(kind, item, options) {
     let filePath;
     let line;
 
@@ -944,24 +1040,34 @@ function activate(context) {
       line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
     }
 
-    const date = await vscode.window.showInputBox({
-      prompt: `Org2: set ${kind.toUpperCase()} (YYYY-MM-DD)`,
-      placeHolder: 'YYYY-MM-DD',
-      validateInput: (v) => (/^\d{4}-\d{2}-\d{2}$/.test((v || '').trim()) ? undefined : 'Expected YYYY-MM-DD'),
-    });
-    if (!date) return;
+    const cfg = vscode.workspace.getConfiguration('org2');
+    const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
+    const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
+    const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
+    const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
+    const useToday = options && options.useToday ? true : false;
+
+    let date = '';
+    if (!useToday) {
+      const input = await vscode.window.showInputBox({
+        prompt: `Org2: set ${kind.toUpperCase()} (YYYY-MM-DD)`,
+        placeHolder: 'YYYY-MM-DD',
+        validateInput: (v) => (/^\d{4}-\d{2}-\d{2}$/.test((v || '').trim()) ? undefined : 'Expected YYYY-MM-DD'),
+      });
+      if (!input) return;
+      date = String(input).trim();
+    }
 
     const args = [
       'plan',
-      'set',
+      useToday ? 'today' : 'set',
       '--file',
       String(filePath),
       '--line',
       String(line),
       '--kind',
       kind,
-      '--date',
-      String(date).trim(),
+      ...(useToday ? [] : ['--date', date]),
       '--format',
       'json',
       '--apply',
@@ -970,9 +1076,23 @@ function activate(context) {
     const cwd = getWorkspaceRoot() || process.cwd();
     const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
 
+    const activeEditorBefore = item ? undefined : vscode.window.activeTextEditor;
+    const activeUriBefore = activeEditorBefore && activeEditorBefore.document ? activeEditorBefore.document.uri.toString() : '';
+    const selectionBefore =
+      activeEditorBefore && activeEditorBefore.selection
+        ? new vscode.Selection(activeEditorBefore.selection.start, activeEditorBefore.selection.end)
+        : undefined;
+
     try {
       await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
-      await vscode.commands.executeCommand('workbench.action.files.revert');
+      if (refreshAfterCliApply) {
+        await refreshFileFromDisk(filePath, {
+          selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
+          activeUri: activeUriBefore,
+          skipIfInSync: skipRefreshWhenInSync,
+          allowGlobalFallback: allowGlobalRefreshFallback,
+        });
+      }
     } catch (e) {
       vscode.window.showErrorMessage(`Org2: planning update failed: ${String(e && e.message ? e.message : e)}`);
     }
@@ -1279,7 +1399,7 @@ function activate(context) {
         const line = Math.max(0, Number(line0) || 0);
         const pos = new vscode.Position(line, 0);
         editor.selection = new vscode.Selection(pos, pos);
-        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+        revealNavigationPosition(editor, pos);
       } catch (e) {
         vscode.window.showErrorMessage(`Org2: failed to open file: ${String(e && e.message ? e.message : e)}`);
       }
@@ -1569,7 +1689,7 @@ function activate(context) {
       const editor = await vscode.window.showTextDocument(doc, { preview: true });
       const pos = new vscode.Position(Math.max(0, pick.line0 || 0), 0);
       editor.selection = new vscode.Selection(pos, pos);
-      editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+      revealNavigationPosition(editor, pos);
     })
   );
 
@@ -1579,27 +1699,40 @@ function activate(context) {
     })
   );
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand('org2.setTodoStatus', async (args) => {
-      const requested = String(args && args.status ? args.status : '').trim().toLowerCase();
-      if (requested === 'todo' || requested === 'in_progress' || requested === 'done' || requested === 'canceled') {
-        await runTodoCli('set', requested);
-        return;
-      }
+  const applySetTodoStatus = async (status, item) => {
+    const requested = String(status || '').trim().toLowerCase();
+    if (requested === 'todo' || requested === 'in_progress' || requested === 'done' || requested === 'canceled') {
+      await runTodoCli('set', requested, item);
+      return;
+    }
 
-      const pick = await vscode.window.showQuickPick(
-        [
-          { label: 'TODO', value: 'todo' },
-          { label: 'IN_PROGRESS', value: 'in_progress' },
-          { label: 'DONE', value: 'done' },
-          { label: 'CANCELED', value: 'canceled' },
-        ],
-        { placeHolder: 'Org2: set todo status' }
-      );
-      if (!pick) return;
-      await runTodoCli('set', pick.value);
+    const pick = await vscode.window.showQuickPick(
+      [
+        { label: 'TODO', value: 'todo' },
+        { label: 'IN_PROGRESS', value: 'in_progress' },
+        { label: 'DONE', value: 'done' },
+        { label: 'CANCELED', value: 'canceled' },
+      ],
+      { placeHolder: 'Org2: set todo status' }
+    );
+    if (!pick) return;
+    await runTodoCli('set', pick.value, item);
+  };
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.setTodoStatus', async (argOrItem, maybeItem) => {
+      const requested = argOrItem && typeof argOrItem === 'object' && Object.prototype.hasOwnProperty.call(argOrItem, 'status')
+        ? argOrItem.status
+        : '';
+      const item = requested ? maybeItem : argOrItem;
+      await applySetTodoStatus(requested, item);
     })
   );
+
+  context.subscriptions.push(vscode.commands.registerCommand('org2.setTodoTODO', async (item) => applySetTodoStatus('todo', item)));
+  context.subscriptions.push(vscode.commands.registerCommand('org2.setTodoInProgress', async (item) => applySetTodoStatus('in_progress', item)));
+  context.subscriptions.push(vscode.commands.registerCommand('org2.setTodoDone', async (item) => applySetTodoStatus('done', item)));
+  context.subscriptions.push(vscode.commands.registerCommand('org2.setTodoCanceled', async (item) => applySetTodoStatus('canceled', item)));
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.setScheduled', async (item) => {
@@ -1610,6 +1743,18 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.setDeadline', async (item) => {
       await runPlanCli('deadline', item);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.setScheduledToday', async (item) => {
+      await runPlanCli('scheduled', item, { useToday: true });
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.setDeadlineToday', async (item) => {
+      await runPlanCli('deadline', item, { useToday: true });
     })
   );
 
