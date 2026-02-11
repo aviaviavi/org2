@@ -380,9 +380,15 @@
         },
         "org2.editor.navigationReveal": {
           "type": "string",
-          "enum": ["default", "center", "none"],
-          "default": "default",
-          "description": "Reveal behavior after Org2 navigation commands (agenda/backlinks/open-file/open-id): default uses normal VS Code reveal, center preserves prior centering behavior, none avoids forced reveal to reduce fold auto-expansion."
+          "enum": ["default", "center", "outside", "none"],
+          "default": "outside",
+          "description": "Reveal behavior after Org2 non-agenda navigation commands (backlinks/open-file/open-id): outside is default and only recenters when target is offscreen, default uses normal VS Code reveal, center always recenters, none avoids forced reveal to reduce fold auto-expansion."
+        },
+        "org2.editor.navigationRevealFromAgenda": {
+          "type": "string",
+          "enum": ["default", "center", "outside", "none"],
+          "default": "none",
+          "description": "Reveal behavior specifically when opening items from the agenda. Default none avoids forced reveal calls (helps preserve folded context); set to outside/default/center if you prefer automatic recentering."
         },
         "org2.folding.autoFoldMaxHeadingLevel": {
           "type": "number",
