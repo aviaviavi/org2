@@ -31,7 +31,7 @@ The extension can toggle/set TODO keywords on the current headline via the `org2
 - Default keybinding: `ctrl+alt+t`
 - Also available in the editor right-click context menu.
 
-Implementation detail: the extension saves the file (if needed), runs `org2 todo toggle|set --file ... --line ... --apply` (and adds `--logbook` when `org2.todo.writeTransitionLogbook` is enabled), then refreshes the buffer from disk. By default it restores the prior cursor/selection; this can be disabled with `org2.editor.restoreSelectionAfterCliApply` if your setup still auto-expands folds. You can also disable the explicit refresh (`org2.editor.refreshAfterCliApply`) to rely on VS Code file watching and avoid refresh-triggered fold churn.
+Implementation detail: the extension saves the file (if needed), runs `org2 todo toggle|set --file ... --line ... --apply` (and adds `--logbook` when `org2.todo.writeTransitionLogbook` is enabled), then refreshes the buffer from disk. By default it restores the prior cursor/selection; this can be disabled with `org2.editor.restoreSelectionAfterCliApply` if your setup still auto-expands folds. You can also disable the explicit refresh (`org2.editor.refreshAfterCliApply`) to rely on VS Code file watching and avoid refresh-triggered fold churn. With refresh enabled, `org2.editor.skipRefreshWhenInSync` (default true) avoids unnecessary `revertResource` calls when the open document already matches disk after CLI apply.
 
 ## Planning + archiving (MVP)
 
@@ -74,6 +74,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.todo.writeTransitionLogbook`: when true, TODO status updates include `--logbook` (default false)
 - `org2.editor.restoreSelectionAfterCliApply`: when true (default), TODO/planning apply commands restore your prior selection after file refresh; set false to minimize fold auto-expansion side-effects in some VS Code setups.
 - `org2.editor.refreshAfterCliApply`: when true (default), TODO/planning apply commands force a targeted file refresh from disk; set false to rely on VS Code file watching and avoid refresh-related fold churn.
+- `org2.editor.skipRefreshWhenInSync`: when true (default) and refresh-after-apply is enabled, the extension skips explicit refresh if the open editor already matches on-disk content after CLI apply.
 
 ### Click-through
 

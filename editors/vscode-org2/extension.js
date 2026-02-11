@@ -831,8 +831,23 @@ function activate(context) {
     return undefined;
   }
 
+  async function isOpenDocumentSyncedWithDisk(filePath) {
+    const openDoc = findOpenDocumentForPath(filePath);
+    if (!openDoc || openDoc.isDirty) return false;
+    try {
+      const diskText = await fs.promises.readFile(filePath, 'utf8');
+      return openDoc.getText() === diskText;
+    } catch {
+      return false;
+    }
+  }
+
   async function refreshFileFromDisk(filePath, options) {
     const opts = options || {};
+    if (opts.skipIfInSync && (await isOpenDocumentSyncedWithDisk(filePath))) {
+      return;
+    }
+
     const targetUri = vscode.Uri.file(filePath);
     const activeEditor = vscode.window.activeTextEditor;
     const isActiveTarget = !!(
@@ -943,6 +958,7 @@ function activate(context) {
     const writeTodoLogbook = cfg.get('todo.writeTransitionLogbook', false) ? true : false;
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
+    const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
 
     const args = ['todo', action, '--file', String(filePath), '--line', String(line), '--format', 'json', '--apply'];
     if (action === 'set' && status) args.push('--status', status);
@@ -964,6 +980,7 @@ function activate(context) {
         await refreshFileFromDisk(filePath, {
           selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
           activeUri: activeUriBefore,
+          skipIfInSync: skipRefreshWhenInSync,
         });
       }
     } catch (e) {
@@ -1009,6 +1026,7 @@ function activate(context) {
     const cfg = vscode.workspace.getConfiguration('org2');
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
+    const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
     const useToday = options && options.useToday ? true : false;
 
     let date = '';
@@ -1053,6 +1071,7 @@ function activate(context) {
         await refreshFileFromDisk(filePath, {
           selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
           activeUri: activeUriBefore,
+          skipIfInSync: skipRefreshWhenInSync,
         });
       }
     } catch (e) {
