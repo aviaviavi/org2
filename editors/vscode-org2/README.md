@@ -77,7 +77,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.editor.skipRefreshWhenInSync`: when true (default) and refresh-after-apply is enabled, the extension skips explicit refresh if the open editor already matches on-disk content after CLI apply.
 - `org2.editor.allowGlobalRefreshFallback`: when false (default), Org2 will not fall back to global `workbench.action.files.revert` if target-file `revertResource` is unavailable; enable only if you need compatibility with older VS Code builds and accept broader refresh side-effects.
 - `org2.editor.navigationReveal`: controls reveal behavior after Org2 non-agenda navigation commands (backlinks/open-file/open-id). `outside` (default) only recenters when the target is offscreen, `default` uses normal VS Code reveal, `center` always recenters, and `none` skips forced reveals to reduce fold auto-expansion side-effects.
-- `org2.editor.navigationRevealFromAgenda`: controls reveal behavior when opening agenda items. `none` (default) avoids forced reveal calls to minimize fold churn, while `outside`/`default`/`center` opt into progressively stronger recentering.
+- `org2.editor.navigationRevealFromAgenda`: controls reveal behavior when opening agenda items. `none` (default) avoids forced reveal calls to minimize fold churn; `default` inherits `org2.editor.navigationReveal`; `outside`/`center` apply agenda-specific recentering.
 
 ### Click-through
 

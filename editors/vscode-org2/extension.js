@@ -647,7 +647,14 @@ function revealNavigationPosition(editor, pos, source) {
   const isAgendaSource = String(source || '').toLowerCase() === 'agenda';
   const modeSetting = isAgendaSource ? 'editor.navigationRevealFromAgenda' : 'editor.navigationReveal';
   const modeDefault = isAgendaSource ? 'none' : 'outside';
-  const mode = String(cfg.get(modeSetting, modeDefault) || modeDefault).toLowerCase();
+  let mode = String(cfg.get(modeSetting, modeDefault) || modeDefault).toLowerCase();
+
+  // Agenda-specific reveal supports inheriting the non-agenda navigation setting
+  // to avoid duplicating preferences.
+  if (isAgendaSource && mode === 'default') {
+    mode = String(cfg.get('editor.navigationReveal', 'outside') || 'outside').toLowerCase();
+  }
+
   if (mode === 'none') return;
 
   let revealType = vscode.TextEditorRevealType.Default;
