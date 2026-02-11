@@ -28,33 +28,49 @@ Current reality:
 - CLI + VS Code workflows are the most actively developed and validated surfaces.
 - APIs/flags/behavior can still change between iterations.
 
-*** What works today (high level)
+*** Org Mode feature status (high-level)
 
-- Core file structures for daily workflows:
-  - headings, drawers/properties, planning lines, TODO keywords
-  - links, lists/checkboxes, timestamps, tables (basic usage)
-- CLI workflows:
-  - agenda
-  - TODO set/toggle
-  - planning edits (=plan set= and =plan today=)
-  - subtree archive
-  - IDs/backlinks/query helpers
-  - roam utilities (=db-sync=, =node new=, backlink insertion)
-  - formatting and LSP server entrypoint
-- Editor integrations:
-  - VS Code extension (MVP, actively developed)
-  - Vim/Neovim plugin (minimal: syntax + folding)
+Status legend:
+- *Available now*: usable today in the current CLI/editor workflow.
+- *In progress*: implemented in part, but still evolving.
+- *Planned*: intended direction, not implemented yet.
+- *Not started*: no meaningful implementation yet.
 
-*** What is not complete yet
+**** Core syntax + structure
+- Headlines / hierarchy: *Available now*
+- Drawers + PROPERTIES: *Available now*
+- Planning lines (SCHEDULED/DEADLINE/CLOSED): *Available now*
+- TODO keywords + state transitions: *Available now*
+- Lists + checkboxes: *Available now* (basic)
+- Timestamps: *Available now* (basic)
+- Tables: *Available now* (basic)
+- Links (including ID links): *Available now*
 
-Most classic Org Mode surface area is still missing or incomplete. In particular, Org2 does *not* yet aim for full parity on areas like:
-- rich export/publishing parity,
-- Babel execution workflows,
-- capture/refile/clocking ecosystems,
-- advanced agenda customization from mature Org setups,
-- broad editor feature parity beyond current MVP integrations.
+**** Task/planning workflows
+- Agenda (CLI + VS Code panel): *Available now*
+- TODO set/toggle from CLI/editor: *Available now*
+- Set SCHEDULED/DEADLINE (including “today” fast paths): *Available now*
+- Archive subtree: *Available now* (MVP)
+- Roam-ish ID/backlink workflows: *In progress*
 
-If you need stability and broad, long-established Org Mode behavior today, treat Org2 as experimental.
+**** Language/tooling
+- Formatter (=org2 fmt=): *In progress*
+- LSP entrypoint (=org2 lsp=): *In progress*
+- Formal Org2 spec (v0 draft): *In progress*
+
+**** Org Mode parity areas (broader)
+- Export/publishing pipeline parity: *Planned*
+- Babel-style code execution workflows: *Planned*
+- Capture/refile/clocking ecosystem parity: *Planned*
+- Advanced agenda customization parity: *Planned*
+- Mature extensibility/plugin ecosystem: *Planned*
+
+**** Editor support maturity
+- VS Code: *In progress* (primary integration target)
+- Vim/Neovim: *In progress* (minimal plugin)
+- Other editors: *Not started*
+
+If you need full, stable, mature Org Mode parity today, treat Org2 as experimental for now.
 
 ** Editor Support
 
