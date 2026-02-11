@@ -19,17 +19,82 @@ Current development is workflow-driven: small, user-facing slices (especially CL
 
 - v0 (draft): [[./spec/v0/SPEC.org]]
 
-** Contributing and Project Status
+** Project Status
 
-Org2 is active but still early: the spec and tooling are evolving quickly.
+Org2 is active, but still *early alpha*. It is not yet a drop-in replacement for full GNU Org Mode.
 
-The current collaboration model is Avi + OpenClaw iterating in tight loops:
-- pick a small workflow pain point,
-- land a focused CLI/editor improvement,
-- validate with tests and day-to-day usage,
-- repeat.
+Current reality:
+- The parser/spec/tooling are evolving quickly.
+- CLI + VS Code workflows are the most actively developed and validated surfaces.
+- APIs/flags/behavior can still change between iterations.
 
-External contributions are welcome, but the most reliable way to track direction is by following issues/PRs and the shipped workflow improvements rather than expecting long-lived stable APIs right now.
+*** Org Mode feature status (high-level)
+
+**** Core syntax + structure
+- Headlines / hierarchy: *Available now*
+- Drawers + PROPERTIES: *Available now*
+- Planning lines (SCHEDULED/DEADLINE/CLOSED): *Available now*
+- TODO keywords + state transitions: *Available now*
+- Lists + checkboxes: *Available now* (basic)
+- Timestamps: *Available now* (basic)
+- Tables: *Available now* (basic)
+- Links (including ID links): *Available now*
+
+**** Task/planning workflows
+- Agenda (CLI + VS Code panel): *Available now*
+- TODO set/toggle from CLI/editor: *Available now*
+- Set SCHEDULED/DEADLINE (including “today” fast paths): *Available now*
+- Archive subtree: *Available now* (MVP)
+- Roam-ish ID/backlink workflows: *In progress*
+
+**** Language/tooling
+- Formatter (=org2 fmt=): *In progress*
+- LSP entrypoint (=org2 lsp=): *In progress*
+- Formal Org2 spec (v0 draft): *In progress*
+
+**** Org Mode parity areas (broader)
+- Export/publishing pipeline parity: *Planned*
+- Org crypt (encrypted sections/workflows): *Planned*
+- Recurring tasks / repeaters: *Planned*
+- Habits: *Planned*
+- Clocking + effort/properties for time tracking: *Planned*
+- Capture templates / quick capture flow: *Planned*
+- Refile workflows parity: *Planned*
+- Advanced agenda customization parity: *Planned*
+- Mature extensibility/plugin ecosystem: *Planned*
+
+**** Editor support maturity
+- VS Code: *In progress* (primary integration target)
+- Vim/Neovim: *In progress* (minimal plugin)
+- Other editors: *Planned*
+
+If you need full, stable, mature Org Mode parity today, treat Org2 as experimental for now.
+
+** Editor Support
+
+Current editor status:
+
+- *VS Code* (=editors/vscode-org2/=): primary integration target right now.
+  - Provides language support + folding + agenda + TODO/planning/archive + roam commands via CLI-backed actions.
+  - Usable for daily workflows, but still evolving quickly.
+- *Vim/Neovim* (=editors/vim-org2/=): minimal support.
+  - Filetype + syntax + heading fold toggles.
+  - Not feature-parity with VS Code integration.
+- *Other editors*: no first-class integration yet.
+
+** Contributing
+
+Contributions are welcome.
+
+Fastest way to help:
+- start from active issues/PRs,
+- pick a small workflow slice,
+- keep changes focused and test-backed.
+
+For local development:
+- build + run CLI tests,
+- verify the workflow end-to-end (especially for editor-facing changes),
+- include clear behavior notes in PRs because the surface is still evolving.
 
 ** CLI usage (local)
 
@@ -40,7 +105,7 @@ Right now the CLI is primarily focused on *reading/planning workflows* (like =ag
 *** Install / setup
 
 #+begin_src sh
-cd /Users/avi/clawd/org2
+cd /path/to/org2
 npm install
 npm run build
 #+end_src
@@ -99,7 +164,7 @@ If you want to run =org2= from your notes repo without typing a long path, you c
 
 #+begin_src sh
 # in the org2 checkout
-cd /Users/avi/clawd/org2
+cd /path/to/org2
 npm link
 
 # in your notes repo
@@ -115,7 +180,7 @@ cd /path/to/your/notes
 /path/to/org2-repo/node_modules/.bin/org2 agenda --format json
 
 # or from the org2 checkout:
-cd /Users/avi/clawd/org2
+cd /path/to/org2
 npm run org2 -- agenda --format json
 #+end_src
 
