@@ -358,6 +358,11 @@
           "default": false,
           "description": "When enabled, TODO status updates from VS Code pass `--logbook` to org2 so state transitions are recorded in a LOGBOOK drawer."
         },
+        "org2.editor.restoreSelectionAfterCliApply": {
+          "type": "boolean",
+          "default": true,
+          "description": "Restore the previous selection after TODO/planning commands apply and refresh the file from disk. Disable this if your setup still auto-expands folds around the cursor."
+        },
         "org2.folding.autoFoldMaxHeadingLevel": {
           "type": "number",
           "default": 1,
