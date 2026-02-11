@@ -34,7 +34,6 @@ Status legend:
 - *Available now*: usable today in the current CLI/editor workflow.
 - *In progress*: implemented in part, but still evolving.
 - *Planned*: intended direction, not implemented yet.
-- *Not started*: no meaningful implementation yet.
 
 **** Core syntax + structure
 - Headlines / hierarchy: *Available now*
@@ -68,7 +67,7 @@ Status legend:
 **** Editor support maturity
 - VS Code: *In progress* (primary integration target)
 - Vim/Neovim: *In progress* (minimal plugin)
-- Other editors: *Not started*
+- Other editors: *Planned*
 
 If you need full, stable, mature Org Mode parity today, treat Org2 as experimental for now.
 
