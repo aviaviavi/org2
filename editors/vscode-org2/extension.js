@@ -664,13 +664,9 @@ async function fetchAgendaGroups(context, filter) {
   const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
   const { stdout } = await execFileAsync(finalCmd, finalArgs, { cwd: agendaRoot });
 
-  let data;
-  try {
-    data = JSON.parse(stdout);
-  } catch (e) {
-    const err = new Error('Org2 agenda: failed to parse JSON output.');
-    err.cause = e;
-    throw err;
+  const data = parseCliJsonPayload(stdout);
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('Org2 agenda: failed to parse JSON output.');
   }
 
   const groups = [];
@@ -1724,10 +1720,8 @@ function activate(context) {
         return;
       }
 
-      let payload;
-      try {
-        payload = JSON.parse(String((previewOut && previewOut.stdout) || '').trim());
-      } catch (e) {
+      const payload = parseCliJsonPayload((previewOut && previewOut.stdout) || '');
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
         vscode.window.showErrorMessage('Org2: failed to parse org2 roam db-sync output.');
         return;
       }
@@ -1766,10 +1760,8 @@ function activate(context) {
         return;
       }
 
-      let applyPayload;
-      try {
-        applyPayload = JSON.parse(String((applyOut && applyOut.stdout) || '').trim());
-      } catch (e) {
+      const applyPayload = parseCliJsonPayload((applyOut && applyOut.stdout) || '');
+      if (!applyPayload || typeof applyPayload !== 'object' || Array.isArray(applyPayload)) {
         vscode.window.showErrorMessage('Org2: failed to parse org2 roam db-sync apply output.');
         return;
       }
@@ -1797,7 +1789,8 @@ function activate(context) {
         const queryArgs = ['query', '--id', uuid, '--dir', root, '--recursive', '--format', 'json'];
         const { cmd: queryCmd, args: queryFinalArgs } = resolveOrg2Command(context, queryArgs);
         const { stdout: queryOut } = await execFileAsync(queryCmd, queryFinalArgs, { cwd: root });
-        const payload = JSON.parse(String(queryOut || '').trim());
+        const payload = parseCliJsonPayload(queryOut || '');
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('invalid query payload');
         results = Array.isArray(payload.results) ? payload.results : [];
       } catch (_) {
         // Ignore and fall back to scan-based lookup below.
