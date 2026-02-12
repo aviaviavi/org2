@@ -40,24 +40,36 @@ function agendaStatusBucket(todoKeyword) {
   return 'custom';
 }
 
-function agendaTreeItemLabel(todoKeyword, headline) {
+function agendaStatusCue(statusBucket) {
+  if (statusBucket === 'todo') return '[T]';
+  if (statusBucket === 'inProgress') return '[~]';
+  if (statusBucket === 'done') return '[✓]';
+  if (statusBucket === 'canceled') return '[×]';
+  if (statusBucket === 'custom') return '[?]';
+  return '[·]';
+}
+
+function agendaTreeItemLabel(todoKeyword, headline, statusBucket) {
   const todo = String(todoKeyword || '').trim();
   const title = String(headline || '').trim();
+  const bucket = statusBucket || agendaStatusBucket(todoKeyword);
+  const cue = agendaStatusCue(bucket);
 
   if (!todo && !title) {
-    return { label: '(untitled)', highlights: [] };
+    return { label: `${cue} (untitled)`, highlights: [] };
   }
 
   if (!todo) {
-    return { label: title, highlights: [] };
+    return { label: `${cue} ${title}`, highlights: [] };
   }
 
-  const label = `${todo}${title ? ` ${title}` : ''}`;
-  // Highlight only the status keyword segment so it is visibly differentiated
-  // in the row itself without making the whole row noisy.
+  const body = `${todo}${title ? ` ${title}` : ''}`;
+  const label = `${cue} ${body}`;
+  // Keep the cue readable but highlight only the TODO keyword segment.
+  const todoStart = cue.length + 1;
   return {
     label,
-    highlights: [[0, todo.length]],
+    highlights: [[todoStart, todoStart + todo.length]],
   };
 }
 
@@ -70,6 +82,7 @@ function agendaFileLabel(filePath) {
 module.exports = {
   agendaFileLabel,
   agendaStatusBucket,
+  agendaStatusCue,
   agendaTreeItemLabel,
   agendaUrgencyFromDate,
 };
