@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   agendaFileLabel,
   agendaStatusBucket,
+  agendaStatusCue,
   agendaTreeItemLabel,
   agendaUrgencyFromDate,
 } = require('../agendaVisuals');
@@ -30,26 +31,35 @@ test('agendaStatusBucket maps common TODO states', () => {
   assert.equal(agendaStatusBucket(''), 'none');
 });
 
-test('agendaTreeItemLabel highlights TODO keyword segment when present', () => {
+test('agendaStatusCue provides compact non-color status cues', () => {
+  assert.equal(agendaStatusCue('todo'), '[T]');
+  assert.equal(agendaStatusCue('inProgress'), '[~]');
+  assert.equal(agendaStatusCue('done'), '[✓]');
+  assert.equal(agendaStatusCue('canceled'), '[×]');
+  assert.equal(agendaStatusCue('custom'), '[?]');
+  assert.equal(agendaStatusCue('none'), '[·]');
+});
+
+test('agendaTreeItemLabel adds cue and highlights TODO keyword segment', () => {
   assert.deepEqual(agendaTreeItemLabel('TODO', 'Write tests'), {
-    label: 'TODO Write tests',
-    highlights: [[0, 4]],
+    label: '[T] TODO Write tests',
+    highlights: [[4, 8]],
   });
 
   assert.deepEqual(agendaTreeItemLabel('SOMEDAY', 'Refactor parser'), {
-    label: 'SOMEDAY Refactor parser',
-    highlights: [[0, 7]],
+    label: '[?] SOMEDAY Refactor parser',
+    highlights: [[4, 11]],
   });
 });
 
-test('agendaTreeItemLabel handles missing/custom status readably', () => {
+test('agendaTreeItemLabel handles missing status and title readably', () => {
   assert.deepEqual(agendaTreeItemLabel('', 'Plain scheduled note'), {
-    label: 'Plain scheduled note',
+    label: '[·] Plain scheduled note',
     highlights: [],
   });
 
   assert.deepEqual(agendaTreeItemLabel('', ''), {
-    label: '(untitled)',
+    label: '[·] (untitled)',
     highlights: [],
   });
 });

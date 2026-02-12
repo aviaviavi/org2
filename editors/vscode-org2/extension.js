@@ -2,7 +2,7 @@ const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
 const cp = require('child_process');
-const { agendaFileLabel, agendaStatusBucket, agendaTreeItemLabel, agendaUrgencyFromDate } = require('./agendaVisuals');
+const { agendaFileLabel, agendaStatusBucket, agendaStatusCue, agendaTreeItemLabel, agendaUrgencyFromDate } = require('./agendaVisuals');
 
 const headingRe = /^(\*+)\s+/;
 const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
@@ -244,11 +244,30 @@ function getAgendaUrgencyThemeColor(urgency) {
 }
 
 function getAgendaStatusThemeColor(statusBucket) {
-  if (statusBucket === 'todo') return 'charts.yellow';
-  if (statusBucket === 'inProgress') return 'charts.blue';
-  if (statusBucket === 'done') return 'charts.green';
-  if (statusBucket === 'canceled') return 'disabledForeground';
+  if (statusBucket === 'todo') return 'list.warningForeground';
+  if (statusBucket === 'inProgress') return 'list.highlightForeground';
+  if (statusBucket === 'done') return 'gitDecoration.addedResourceForeground';
+  if (statusBucket === 'canceled') return 'gitDecoration.deletedResourceForeground';
+  if (statusBucket === 'custom') return 'editorInfo.foreground';
   return 'descriptionForeground';
+}
+
+function getAgendaStatusFallbackColor(statusBucket) {
+  if (statusBucket === 'todo') return '#d19a66';
+  if (statusBucket === 'inProgress') return '#61afef';
+  if (statusBucket === 'done') return '#7fbf7f';
+  if (statusBucket === 'canceled') return '#9da5b4';
+  if (statusBucket === 'custom') return '#c5c9d1';
+  return '#9da5b4';
+}
+
+function getAgendaStatusStageLabel(statusBucket) {
+  if (statusBucket === 'todo') return 'Planned';
+  if (statusBucket === 'inProgress') return 'In progress';
+  if (statusBucket === 'done') return 'Completed';
+  if (statusBucket === 'canceled') return 'Canceled';
+  if (statusBucket === 'custom') return 'Custom';
+  return 'No status';
 }
 
 class Org2AgendaProvider {
@@ -292,7 +311,7 @@ class Org2AgendaProvider {
     }
 
     if (element instanceof Org2AgendaItem) {
-      const rowLabel = agendaTreeItemLabel(element.todo, element.headline);
+      const rowLabel = agendaTreeItemLabel(element.todo, element.headline, element.statusBucket);
       const item = new vscode.TreeItem(rowLabel.label, vscode.TreeItemCollapsibleState.None);
       if (rowLabel.highlights.length) {
         item.label = { label: rowLabel.label, highlights: rowLabel.highlights };
@@ -311,7 +330,10 @@ class Org2AgendaProvider {
       };
 
       const statusColor = getAgendaStatusThemeColor(element.statusBucket);
-      const statusLabel = element.todo ? `${element.todo} (${element.statusBucket})` : '(no todo keyword)';
+      const statusFallback = getAgendaStatusFallbackColor(element.statusBucket);
+      const statusCue = agendaStatusCue(element.statusBucket);
+      const statusStage = getAgendaStatusStageLabel(element.statusBucket);
+      const statusKeyword = element.todo ? element.todo : '(no todo keyword)';
       const urgencyLabel = element.urgency || 'unknown';
       item.tooltip = new vscode.MarkdownString(
         [
@@ -319,7 +341,7 @@ class Org2AgendaProvider {
           '',
           `- File: ${element.file || '(unknown file)'}:${element.line + 1}`,
           `- Schedule urgency: ${urgencyLabel}`,
-          `- TODO status: <span style="color:var(--vscode-${statusColor.replace('.', '-')});">${statusLabel}</span>`,
+          `- TODO status: ${statusCue} <span style="color:var(--vscode-${statusColor.replace('.', '-')}, ${statusFallback});">${statusKeyword}</span> · ${statusStage}`,
         ].join('\n')
       );
       item.tooltip.supportHtml = true;
