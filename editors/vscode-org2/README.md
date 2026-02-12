@@ -86,7 +86,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
   - overdue → error color
   - due today → warning color
   - coming up → deemphasized/neutral color
-- TODO status uses a distinct stage color in the item tooltip:
+- TODO status is visually differentiated in-row (keyword highlight) and uses a distinct stage color in the item tooltip:
   - TODO/open/backlog → yellow
   - in progress/waiting/blocked/next → blue
   - done/completed → green

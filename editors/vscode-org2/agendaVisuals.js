@@ -40,6 +40,27 @@ function agendaStatusBucket(todoKeyword) {
   return 'custom';
 }
 
+function agendaTreeItemLabel(todoKeyword, headline) {
+  const todo = String(todoKeyword || '').trim();
+  const title = String(headline || '').trim();
+
+  if (!todo && !title) {
+    return { label: '(untitled)', highlights: [] };
+  }
+
+  if (!todo) {
+    return { label: title, highlights: [] };
+  }
+
+  const label = `${todo}${title ? ` ${title}` : ''}`;
+  // Highlight only the status keyword segment so it is visibly differentiated
+  // in the row itself without making the whole row noisy.
+  return {
+    label,
+    highlights: [[0, todo.length]],
+  };
+}
+
 function agendaFileLabel(filePath) {
   const s = String(filePath || '').trim();
   if (!s) return '(unknown file)';
@@ -49,5 +70,6 @@ function agendaFileLabel(filePath) {
 module.exports = {
   agendaFileLabel,
   agendaStatusBucket,
+  agendaTreeItemLabel,
   agendaUrgencyFromDate,
 };
