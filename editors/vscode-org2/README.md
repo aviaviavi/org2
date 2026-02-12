@@ -79,6 +79,21 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.editor.navigationReveal`: controls reveal behavior after Org2 non-agenda navigation commands (backlinks/open-file/open-id). `outside` (default) only recenters when the target is offscreen, `default` uses normal VS Code reveal, `center` always recenters, and `none` skips forced reveals to reduce fold auto-expansion side-effects.
 - `org2.editor.navigationRevealFromAgenda`: controls reveal behavior when opening agenda items. `none` (default) avoids forced reveal calls to minimize fold churn; `default` inherits `org2.editor.navigationReveal`; `outside`/`center` apply agenda-specific recentering.
 
+### Agenda visuals
+
+- Each agenda item now shows its source filename in the item description.
+- Agenda items use a minimal urgency color dot:
+  - overdue → error color
+  - due today → warning color
+  - coming up → deemphasized/neutral color
+- TODO status uses a distinct stage color in the item tooltip:
+  - TODO/open/backlog → yellow
+  - in progress/waiting/blocked/next → blue
+  - done/completed → green
+  - canceled/cancelled → disabled/muted
+
+All colors are theme-aware (`ThemeColor`) and fall back to neutral defaults when status/date is missing.
+
 ### Click-through
 
 Agenda items are clickable; clicking opens the source file at the line reported by the org2 CLI.
