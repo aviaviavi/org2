@@ -1007,7 +1007,10 @@ function activate(context) {
     );
 
     if (isActiveTarget) {
-      const previousSelection = opts.selection || activeEditor.selection;
+      const hasSelectionSnapshot = Object.prototype.hasOwnProperty.call(opts, 'selection');
+      // Respect explicit "do not restore" from callers (selection: undefined).
+      // Fall back to current active selection only when no selection option was provided.
+      const previousSelection = hasSelectionSnapshot ? opts.selection : activeEditor.selection;
       try {
         // Revert only the target editor to avoid global side-effects.
         await vscode.commands.executeCommand('workbench.action.files.revertResource', targetUri);
