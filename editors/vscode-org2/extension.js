@@ -988,6 +988,18 @@ function activate(context) {
     }
   }
 
+  function parseChangedFlagFromCliJson(stdout) {
+    if (typeof stdout !== 'string' || !stdout.trim()) return undefined;
+    try {
+      const payload = JSON.parse(stdout);
+      if (!payload || typeof payload !== 'object') return undefined;
+      if (!Object.prototype.hasOwnProperty.call(payload, 'changed')) return undefined;
+      return payload.changed === true;
+    } catch {
+      return undefined;
+    }
+  }
+
   async function refreshFileFromDisk(filePath, options) {
     const opts = options || {};
     const allowGlobalFallback = opts.allowGlobalFallback === true;
@@ -1144,8 +1156,9 @@ function activate(context) {
         : undefined;
 
     try {
-      await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
-      if (refreshAfterCliApply) {
+      const { stdout } = await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
+      const changed = parseChangedFlagFromCliJson(stdout);
+      if (refreshAfterCliApply && changed !== false) {
         // Reload target file only (avoid global revert side-effects).
         await refreshFileFromDisk(filePath, {
           selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
@@ -1240,8 +1253,9 @@ function activate(context) {
         : undefined;
 
     try {
-      await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
-      if (refreshAfterCliApply) {
+      const { stdout } = await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
+      const changed = parseChangedFlagFromCliJson(stdout);
+      if (refreshAfterCliApply && changed !== false) {
         await refreshFileFromDisk(filePath, {
           selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
           activeUri: activeUriBefore,

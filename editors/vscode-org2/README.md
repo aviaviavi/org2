@@ -31,7 +31,7 @@ The extension can toggle/set TODO keywords on the current headline via the `org2
 - Default keybinding: `ctrl+alt+t`
 - Also available in the editor right-click context menu.
 
-Implementation detail: the extension saves the file (if needed), runs `org2 todo toggle|set --file ... --line ... --apply` (and adds `--logbook` when `org2.todo.writeTransitionLogbook` is enabled), then refreshes the buffer from disk. By default it restores the prior cursor/selection; this can be disabled with `org2.editor.restoreSelectionAfterCliApply` if your setup still auto-expands folds. You can also disable the explicit refresh (`org2.editor.refreshAfterCliApply`) to rely on VS Code file watching and avoid refresh-triggered fold churn. With refresh enabled, `org2.editor.refreshNonActiveOpenFiles` (default false) opts into refreshing non-active editors only when the target file is currently visible, `org2.editor.skipRefreshWhenInSync` (default true) avoids unnecessary `revertResource` calls when the open document already matches disk after CLI apply, and `org2.editor.allowGlobalRefreshFallback` (default false) controls whether Org2 may fall back to global `workbench.action.files.revert` on older VS Code builds.
+Implementation detail: the extension saves the file (if needed), runs `org2 todo toggle|set --file ... --line ... --apply` (and adds `--logbook` when `org2.todo.writeTransitionLogbook` is enabled), then refreshes the buffer from disk when the CLI reports an actual change. By default it restores the prior cursor/selection; this can be disabled with `org2.editor.restoreSelectionAfterCliApply` if your setup still auto-expands folds. You can also disable the explicit refresh (`org2.editor.refreshAfterCliApply`) to rely on VS Code file watching and avoid refresh-triggered fold churn. With refresh enabled, `org2.editor.refreshNonActiveOpenFiles` (default false) opts into refreshing non-active editors only when the target file is currently visible, `org2.editor.skipRefreshWhenInSync` (default true) avoids unnecessary `revertResource` calls when the open document already matches disk after CLI apply, and `org2.editor.allowGlobalRefreshFallback` (default false) controls whether Org2 may fall back to global `workbench.action.files.revert` on older VS Code builds.
 
 ## Planning + archiving (MVP)
 
@@ -46,7 +46,7 @@ The extension can edit planning keywords and archive subtrees via the `org2` CLI
 Implementation detail: the extension saves the file (if needed).
 - Planning edits run `org2 plan set ... --apply`.
 - Archiving runs `org2 archive ... --format diff` first to generate a preview, then `org2 archive ... --apply` if confirmed.
-Afterward, the extension refreshes the buffer from disk (unless `org2.editor.refreshAfterCliApply` is disabled).
+Afterward, the extension refreshes the buffer from disk when the CLI reports a change (unless `org2.editor.refreshAfterCliApply` is disabled).
 
 ## Agenda (MVP)
 
