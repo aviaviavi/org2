@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const cp = require('child_process');
 const { agendaFileLabel, agendaStatusBucket, agendaStatusCue, agendaTreeItemLabel, agendaUrgencyFromDate } = require('./agendaVisuals');
+const { parseCliJsonPayload, parseChangedFlagFromCliJson } = require('./cliJson');
 
 const headingRe = /^(\*+)\s+/;
 const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
@@ -1009,47 +1010,7 @@ function activate(context) {
       }
     }
   }
-  function parseCliJsonPayload(stdout) {
-    const text = String(stdout || '').trim();
-    if (!text) return undefined;
-
-    const parseJson = (value) => {
-      try {
-        return JSON.parse(value);
-      } catch {
-        return undefined;
-      }
-    };
-
-    // Common case: stdout is pure JSON.
-    const direct = parseJson(text);
-    if (typeof direct !== 'undefined') return direct;
-
-    // Some org2 invocations can emit extra informational lines before JSON.
-    // Parse trailing JSON lines and accept the last valid payload.
-    const lines = text
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .reverse();
-
-    for (const line of lines) {
-      const looksJsonObject = line.startsWith('{') && line.endsWith('}');
-      const looksJsonArray = line.startsWith('[') && line.endsWith(']');
-      if (!looksJsonObject && !looksJsonArray) continue;
-
-      const parsed = parseJson(line);
-      if (typeof parsed !== 'undefined') return parsed;
-    }
-
-    return undefined;
-  }
-
-  function parseChangedFlagFromCliJson(stdout) {
-    const payload = parseCliJsonPayload(stdout);
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined;
-    return typeof payload.changed === 'boolean' ? payload.changed : undefined;
-  }
+  // CLI JSON parsing helpers are imported from ./cliJson.
 
   async function runTodoCli(action, status, item) {
     let filePath;
