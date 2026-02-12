@@ -1402,6 +1402,17 @@ function activate(context) {
         return null;
       };
 
+      const cfg = vscode.workspace.getConfiguration('org2');
+      const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
+      const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
+      const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
+      const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
+
+      const activeUriBefore = editor.document ? editor.document.uri.toString() : '';
+      const selectionBefore = editor.selection
+        ? new vscode.Selection(editor.selection.start, editor.selection.end)
+        : undefined;
+
       // Prefer headline-level IDs (at/above cursor) if we're in a heading context;
       // fall back to file-level IDs.
       const args = [
@@ -1447,11 +1458,15 @@ function activate(context) {
 
       const link = `[[id:${id.toLowerCase()}][${title}]]`;
 
-      // If we inserted an ID, the CLI wrote to disk. Refresh the editor view.
-      try {
-        await vscode.commands.executeCommand('workbench.action.files.revert');
-      } catch (e) {
-        // ignore
+      const changed = parseChangedFlagFromCliJson((out && out.stdout) || '');
+      if (refreshAfterCliApply && changed !== false) {
+        await refreshFileFromDisk(doc.uri.fsPath, {
+          selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
+          activeUri: activeUriBefore,
+          refreshNonActiveOpenFiles: false,
+          skipIfInSync: skipRefreshWhenInSync,
+          allowGlobalFallback: allowGlobalRefreshFallback,
+        });
       }
 
       await vscode.env.clipboard.writeText(link);
@@ -1498,6 +1513,17 @@ function activate(context) {
       const cursor = editor.selection.active;
       const pos = `${cursor.line + 1}:${cursor.character}`;
 
+      const cfg = vscode.workspace.getConfiguration('org2');
+      const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
+      const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
+      const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
+      const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
+
+      const activeUriBefore = editor.document ? editor.document.uri.toString() : '';
+      const selectionBefore = editor.selection
+        ? new vscode.Selection(editor.selection.start, editor.selection.end)
+        : undefined;
+
       const args = [
         'roam',
         'link',
@@ -1532,11 +1558,15 @@ function activate(context) {
         return;
       }
 
-      // CLI wrote to disk; refresh the editor view.
-      try {
-        await vscode.commands.executeCommand('workbench.action.files.revert');
-      } catch (e) {
-        // ignore
+      const changed = parseChangedFlagFromCliJson((out && out.stdout) || '');
+      if (refreshAfterCliApply && changed !== false) {
+        await refreshFileFromDisk(doc.uri.fsPath, {
+          selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
+          activeUri: activeUriBefore,
+          refreshNonActiveOpenFiles: false,
+          skipIfInSync: skipRefreshWhenInSync,
+          allowGlobalFallback: allowGlobalRefreshFallback,
+        });
       }
 
       vscode.window.showInformationMessage('Org2: inserted backlink.');
@@ -1580,6 +1610,17 @@ function activate(context) {
         }
       }
 
+      const cfg = vscode.workspace.getConfiguration('org2');
+      const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
+      const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
+      const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
+      const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
+
+      const activeUriBefore = editor.document ? editor.document.uri.toString() : '';
+      const selectionBefore = editor.selection
+        ? new vscode.Selection(editor.selection.start, editor.selection.end)
+        : undefined;
+
       const ensureArgs = [
         'id',
         'ensure',
@@ -1613,11 +1654,15 @@ function activate(context) {
         return;
       }
 
-      // If we inserted an ID, the CLI wrote to disk. Refresh the editor view.
-      try {
-        await vscode.commands.executeCommand('workbench.action.files.revert');
-      } catch (_) {
-        // ignore
+      const ensureChanged = parseChangedFlagFromCliJson((ensureOut && ensureOut.stdout) || '');
+      if (refreshAfterCliApply && ensureChanged !== false) {
+        await refreshFileFromDisk(doc.uri.fsPath, {
+          selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
+          activeUri: activeUriBefore,
+          refreshNonActiveOpenFiles: false,
+          skipIfInSync: skipRefreshWhenInSync,
+          allowGlobalFallback: allowGlobalRefreshFallback,
+        });
       }
 
       const backlinksArgs = ['roam', 'backlinks', '--id', id.toLowerCase(), '--dir', getAgendaRootDir(), '--recursive', '--format', 'json'];
