@@ -1010,6 +1010,44 @@ function activate(context) {
     }
   }
 
+  function parseChangedFlagFromCliJson(stdout) {
+    const text = String(stdout || '').trim();
+    if (!text) return undefined;
+
+    const readChanged = (obj) => {
+      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return undefined;
+      return typeof obj.changed === 'boolean' ? obj.changed : undefined;
+    };
+
+    // Common case: stdout is pure JSON.
+    try {
+      const changed = readChanged(JSON.parse(text));
+      if (typeof changed === 'boolean') return changed;
+    } catch {
+      // Fall through to line-by-line parsing.
+    }
+
+    // Some org2 invocations can emit extra informational lines before JSON.
+    // Parse trailing JSON lines and accept the last explicit boolean `changed`.
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .reverse();
+
+    for (const line of lines) {
+      if (!(line.startsWith('{') && line.endsWith('}'))) continue;
+      try {
+        const changed = readChanged(JSON.parse(line));
+        if (typeof changed === 'boolean') return changed;
+      } catch {
+        // Ignore non-JSON lines.
+      }
+    }
+
+    return undefined;
+  }
+
   async function runTodoCli(action, status, item) {
     let filePath;
     let line;
@@ -1066,8 +1104,10 @@ function activate(context) {
         : undefined;
 
     try {
-      await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
-      if (refreshAfterCliApply) {
+      const { stdout } = await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
+      const changed = parseChangedFlagFromCliJson(stdout);
+
+      if (refreshAfterCliApply && changed !== false) {
         // Reload target file only (avoid global revert side-effects).
         await refreshFileFromDisk(filePath, {
           selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
@@ -1079,7 +1119,7 @@ function activate(context) {
 
       // If this was invoked from an agenda row action, refresh the agenda view so
       // TODO/status edits are reflected immediately.
-      if (item instanceof Org2AgendaItem) {
+      if (item instanceof Org2AgendaItem && changed !== false) {
         await agendaProvider.load();
       }
     } catch (e) {
@@ -1166,14 +1206,21 @@ function activate(context) {
         : undefined;
 
     try {
-      await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
-      if (refreshAfterCliApply) {
+      const { stdout } = await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
+      const changed = parseChangedFlagFromCliJson(stdout);
+
+      if (refreshAfterCliApply && changed !== false) {
         await refreshFileFromDisk(filePath, {
           selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
           activeUri: activeUriBefore,
           skipIfInSync: skipRefreshWhenInSync,
           allowGlobalFallback: allowGlobalRefreshFallback,
         });
+      }
+
+      // Keep agenda rows in sync after agenda-invoked planning updates.
+      if (item instanceof Org2AgendaItem && changed !== false) {
+        await agendaProvider.load();
       }
     } catch (e) {
       vscode.window.showErrorMessage(`Org2: planning update failed: ${String(e && e.message ? e.message : e)}`);
@@ -1215,6 +1262,19 @@ function activate(context) {
       line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
     }
 
+    const cfg = vscode.workspace.getConfiguration('org2');
+    const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
+    const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
+    const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
+    const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
+
+    const activeEditorBefore = item ? undefined : vscode.window.activeTextEditor;
+    const activeUriBefore = activeEditorBefore && activeEditorBefore.document ? activeEditorBefore.document.uri.toString() : '';
+    const selectionBefore =
+      activeEditorBefore && activeEditorBefore.selection
+        ? new vscode.Selection(activeEditorBefore.selection.start, activeEditorBefore.selection.end)
+        : undefined;
+
     const ok = await vscode.window.showWarningMessage(
       `Org2: archive subtree at line ${line}? (This will edit the file on disk)`,
       { modal: true },
@@ -1248,7 +1308,20 @@ function activate(context) {
       const applyArgs = ['archive', '--file', String(filePath), '--pos', String(line), '--apply'];
       const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, applyArgs);
       await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
-      await vscode.commands.executeCommand('workbench.action.files.revert');
+
+      if (refreshAfterCliApply) {
+        await refreshFileFromDisk(filePath, {
+          selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
+          activeUri: activeUriBefore,
+          skipIfInSync: skipRefreshWhenInSync,
+          allowGlobalFallback: allowGlobalRefreshFallback,
+        });
+      }
+
+      // Keep agenda rows in sync after agenda-invoked archive edits.
+      if (item instanceof Org2AgendaItem) {
+        await agendaProvider.load();
+      }
     } catch (e) {
       const stderr = e && e.stderr ? String(e.stderr).trim() : '';
       const extra = stderr ? `\n${stderr}` : '';
