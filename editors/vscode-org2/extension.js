@@ -2,7 +2,7 @@ const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
 const cp = require('child_process');
-const { agendaFileLabel, agendaStatusBucket, agendaUrgencyFromDate } = require('./agendaVisuals');
+const { agendaFileLabel, agendaStatusBucket, agendaTreeItemLabel, agendaUrgencyFromDate } = require('./agendaVisuals');
 
 const headingRe = /^(\*+)\s+/;
 const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
@@ -292,8 +292,11 @@ class Org2AgendaProvider {
     }
 
     if (element instanceof Org2AgendaItem) {
-      const label = `${element.todo ? element.todo + ' ' : ''}${element.headline}`.trim() || '(untitled)';
-      const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
+      const rowLabel = agendaTreeItemLabel(element.todo, element.headline);
+      const item = new vscode.TreeItem(rowLabel.label, vscode.TreeItemCollapsibleState.None);
+      if (rowLabel.highlights.length) {
+        item.label = { label: rowLabel.label, highlights: rowLabel.highlights };
+      }
 
       const parts = [element.fileLabel];
       if (element.kind) parts.push(element.kind);
