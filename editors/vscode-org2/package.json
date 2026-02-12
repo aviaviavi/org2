@@ -368,6 +368,11 @@
           "default": true,
           "description": "Force a post-apply disk refresh (`revertResource`) after TODO/planning commands. Disable to rely on VS Code file watching and avoid refresh-related fold churn entirely."
         },
+        "org2.editor.refreshNonActiveOpenFiles": {
+          "type": "boolean",
+          "default": false,
+          "description": "When refresh-after-apply is enabled, also refresh matching non-active editors if (and only if) the target file is currently visible in an editor group. Keep disabled to minimize fold churn in background tabs."
+        },
         "org2.editor.skipRefreshWhenInSync": {
           "type": "boolean",
           "default": true,

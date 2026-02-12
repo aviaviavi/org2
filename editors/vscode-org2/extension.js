@@ -906,6 +906,18 @@ function activate(context) {
     return undefined;
   }
 
+  function isPathVisibleInAnyEditor(absPath) {
+    if (!absPath) return false;
+    const needle = path.resolve(absPath);
+    for (const editor of vscode.window.visibleTextEditors || []) {
+      if (editor && editor.document && editor.document.uri && editor.document.uri.scheme === 'file') {
+        const p = path.resolve(editor.document.uri.fsPath);
+        if (p === needle) return true;
+      }
+    }
+    return false;
+  }
+
   async function isOpenDocumentSyncedWithDisk(filePath) {
     const openDoc = findOpenDocumentForPath(filePath);
     if (!openDoc || openDoc.isDirty) return false;
@@ -920,6 +932,7 @@ function activate(context) {
   async function refreshFileFromDisk(filePath, options) {
     const opts = options || {};
     const allowGlobalFallback = opts.allowGlobalFallback === true;
+    const refreshNonActiveOpenFiles = opts.refreshNonActiveOpenFiles === true;
     if (opts.skipIfInSync && (await isOpenDocumentSyncedWithDisk(filePath))) {
       return;
     }
@@ -990,6 +1003,19 @@ function activate(context) {
       return;
     }
 
+    // Skip non-active refresh by default; this avoids churn in folded tabs that
+    // users are not currently viewing. If enabled, only refresh when the target
+    // file is visible in an editor group.
+    if (!refreshNonActiveOpenFiles) {
+      return;
+    }
+    if (!findOpenDocumentForPath(filePath)) {
+      return;
+    }
+    if (!isPathVisibleInAnyEditor(filePath)) {
+      return;
+    }
+
     try {
       await vscode.commands.executeCommand('workbench.action.files.revertResource', targetUri);
     } catch {
@@ -1038,6 +1064,7 @@ function activate(context) {
     const writeTodoLogbook = cfg.get('todo.writeTransitionLogbook', false) ? true : false;
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
+    const refreshNonActiveOpenFiles = cfg.get('editor.refreshNonActiveOpenFiles', false) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
     const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
 
@@ -1061,6 +1088,7 @@ function activate(context) {
         await refreshFileFromDisk(filePath, {
           selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
           activeUri: activeUriBefore,
+          refreshNonActiveOpenFiles,
           skipIfInSync: skipRefreshWhenInSync,
           allowGlobalFallback: allowGlobalRefreshFallback,
         });
@@ -1108,6 +1136,7 @@ function activate(context) {
     const cfg = vscode.workspace.getConfiguration('org2');
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
+    const refreshNonActiveOpenFiles = cfg.get('editor.refreshNonActiveOpenFiles', false) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
     const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
     const useToday = options && options.useToday ? true : false;
@@ -1154,6 +1183,7 @@ function activate(context) {
         await refreshFileFromDisk(filePath, {
           selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
           activeUri: activeUriBefore,
+          refreshNonActiveOpenFiles,
           skipIfInSync: skipRefreshWhenInSync,
           allowGlobalFallback: allowGlobalRefreshFallback,
         });
