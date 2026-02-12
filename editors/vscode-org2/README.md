@@ -46,7 +46,7 @@ The extension can edit planning keywords and archive subtrees via the `org2` CLI
 Implementation detail: the extension saves the file (if needed).
 - Planning edits run `org2 plan set ... --apply`.
 - Archiving runs `org2 archive ... --format diff` first to generate a preview, then `org2 archive ... --apply` if confirmed.
-Afterward, the extension refreshes the buffer from disk (unless `org2.editor.refreshAfterCliApply` is disabled).
+Afterward, the extension refreshes the edited file from disk (unless `org2.editor.refreshAfterCliApply` is disabled). Agenda-invoked archive edits also refresh the agenda view immediately.
 
 ## Agenda (MVP)
 
@@ -72,8 +72,8 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.command`: command used to run org2 (default: `org2`)
 - `org2.agenda.args`: extra args prefixed before `agenda` (advanced)
 - `org2.todo.writeTransitionLogbook`: when true, TODO status updates include `--logbook` (default false)
-- `org2.editor.restoreSelectionAfterCliApply`: when true (default), TODO/planning apply commands restore your prior selection after file refresh; set false to minimize fold auto-expansion side-effects in some VS Code setups.
-- `org2.editor.refreshAfterCliApply`: when true (default), TODO/planning apply commands force a targeted file refresh from disk only when CLI output reports an actual change; set false to rely on VS Code file watching and avoid refresh-related fold churn.
+- `org2.editor.restoreSelectionAfterCliApply`: when true (default), TODO/planning/archive apply commands restore your prior selection after file refresh; set false to minimize fold auto-expansion side-effects in some VS Code setups.
+- `org2.editor.refreshAfterCliApply`: when true (default), TODO/planning/archive apply commands force a targeted file refresh from disk (`todo`/`plan` only refresh when CLI output reports an actual change); set false to rely on VS Code file watching and avoid refresh-related fold churn.
 - `org2.editor.skipRefreshWhenInSync`: when true (default) and refresh-after-apply is enabled, the extension skips explicit refresh if the open editor already matches on-disk content after CLI apply.
 - `org2.editor.allowGlobalRefreshFallback`: when false (default), Org2 will not fall back to global `workbench.action.files.revert` if target-file `revertResource` is unavailable; enable only if you need compatibility with older VS Code builds and accept broader refresh side-effects.
 - `org2.editor.navigationReveal`: controls reveal behavior after Org2 non-agenda navigation commands (backlinks/open-file/open-id). `outside` (default) only recenters when the target is offscreen, `default` uses normal VS Code reveal, `center` always recenters, and `none` skips forced reveals to reduce fold auto-expansion side-effects.

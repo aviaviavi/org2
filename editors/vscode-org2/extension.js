@@ -1262,6 +1262,19 @@ function activate(context) {
       line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
     }
 
+    const cfg = vscode.workspace.getConfiguration('org2');
+    const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
+    const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
+    const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
+    const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
+
+    const activeEditorBefore = item ? undefined : vscode.window.activeTextEditor;
+    const activeUriBefore = activeEditorBefore && activeEditorBefore.document ? activeEditorBefore.document.uri.toString() : '';
+    const selectionBefore =
+      activeEditorBefore && activeEditorBefore.selection
+        ? new vscode.Selection(activeEditorBefore.selection.start, activeEditorBefore.selection.end)
+        : undefined;
+
     const ok = await vscode.window.showWarningMessage(
       `Org2: archive subtree at line ${line}? (This will edit the file on disk)`,
       { modal: true },
@@ -1295,7 +1308,20 @@ function activate(context) {
       const applyArgs = ['archive', '--file', String(filePath), '--pos', String(line), '--apply'];
       const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, applyArgs);
       await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
-      await vscode.commands.executeCommand('workbench.action.files.revert');
+
+      if (refreshAfterCliApply) {
+        await refreshFileFromDisk(filePath, {
+          selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
+          activeUri: activeUriBefore,
+          skipIfInSync: skipRefreshWhenInSync,
+          allowGlobalFallback: allowGlobalRefreshFallback,
+        });
+      }
+
+      // Keep agenda rows in sync after agenda-invoked archive edits.
+      if (item instanceof Org2AgendaItem) {
+        await agendaProvider.load();
+      }
     } catch (e) {
       const stderr = e && e.stderr ? String(e.stderr).trim() : '';
       const extra = stderr ? `\n${stderr}` : '';

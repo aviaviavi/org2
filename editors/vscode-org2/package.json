@@ -361,12 +361,12 @@
         "org2.editor.restoreSelectionAfterCliApply": {
           "type": "boolean",
           "default": true,
-          "description": "Restore the previous selection after TODO/planning commands apply and refresh the file from disk. Disable this if your setup still auto-expands folds around the cursor."
+          "description": "Restore the previous selection after TODO/planning/archive commands apply and refresh the file from disk. Disable this if your setup still auto-expands folds around the cursor."
         },
         "org2.editor.refreshAfterCliApply": {
           "type": "boolean",
           "default": true,
-          "description": "Force a post-apply disk refresh (`revertResource`) after TODO/planning commands when CLI output reports an actual change. Disable to rely on VS Code file watching and avoid refresh-related fold churn entirely."
+          "description": "Force a post-apply disk refresh (`revertResource`) after TODO/planning/archive commands. TODO/planning only refresh when CLI output reports an actual change. Disable to rely on VS Code file watching and avoid refresh-related fold churn entirely."
         },
         "org2.editor.skipRefreshWhenInSync": {
           "type": "boolean",
