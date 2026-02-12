@@ -715,10 +715,11 @@ function setCursorIfChanged(editor, pos) {
   return true;
 }
 
-function findVisibleEditorForUri(uri) {
+function findVisibleEditorForUri(uri, preferredViewColumn) {
   const target = uri && uri.toString ? uri.toString() : '';
   if (!target) return undefined;
 
+  const matches = [];
   for (const editor of vscode.window.visibleTextEditors || []) {
     if (
       editor &&
@@ -726,11 +727,18 @@ function findVisibleEditorForUri(uri) {
       editor.document.uri &&
       editor.document.uri.toString() === target
     ) {
-      return editor;
+      matches.push(editor);
     }
   }
 
-  return undefined;
+  if (!matches.length) return undefined;
+
+  if (preferredViewColumn != null) {
+    const preferred = matches.find((editor) => editor && editor.viewColumn === preferredViewColumn);
+    if (preferred) return preferred;
+  }
+
+  return matches[0];
 }
 
 async function showFileInEditor(uri, options) {
@@ -744,13 +752,22 @@ async function showFileInEditor(uri, options) {
     return active;
   }
 
-  const visible = findVisibleEditorForUri(uri);
+  const requestedViewColumn = options && Object.prototype.hasOwnProperty.call(options, 'viewColumn')
+    ? options.viewColumn
+    : undefined;
+  const preferredViewColumn = requestedViewColumn != null
+    ? requestedViewColumn
+    : (active && active.viewColumn != null ? active.viewColumn : undefined);
+
+  const visible = findVisibleEditorForUri(uri, preferredViewColumn);
   if (visible) {
     const showOptions = {
       preview: true,
       ...(options || {}),
-      viewColumn: visible.viewColumn,
     };
+    if (!Object.prototype.hasOwnProperty.call(showOptions, 'viewColumn')) {
+      showOptions.viewColumn = visible.viewColumn;
+    }
     return await vscode.window.showTextDocument(visible.document, showOptions);
   }
 
