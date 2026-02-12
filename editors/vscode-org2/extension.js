@@ -1010,6 +1010,44 @@ function activate(context) {
     }
   }
 
+  function parseChangedFlagFromCliJson(stdout) {
+    const text = String(stdout || '').trim();
+    if (!text) return undefined;
+
+    const readChanged = (obj) => {
+      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return undefined;
+      return typeof obj.changed === 'boolean' ? obj.changed : undefined;
+    };
+
+    // Common case: stdout is pure JSON.
+    try {
+      const changed = readChanged(JSON.parse(text));
+      if (typeof changed === 'boolean') return changed;
+    } catch {
+      // Fall through to line-by-line parsing.
+    }
+
+    // Some org2 invocations can emit extra informational lines before JSON.
+    // Parse trailing JSON lines and accept the last explicit boolean `changed`.
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .reverse();
+
+    for (const line of lines) {
+      if (!(line.startsWith('{') && line.endsWith('}'))) continue;
+      try {
+        const changed = readChanged(JSON.parse(line));
+        if (typeof changed === 'boolean') return changed;
+      } catch {
+        // Ignore non-JSON lines.
+      }
+    }
+
+    return undefined;
+  }
+
   async function runTodoCli(action, status, item) {
     let filePath;
     let line;
@@ -1066,8 +1104,10 @@ function activate(context) {
         : undefined;
 
     try {
-      await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
-      if (refreshAfterCliApply) {
+      const { stdout } = await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
+      const changed = parseChangedFlagFromCliJson(stdout);
+
+      if (refreshAfterCliApply && changed !== false) {
         // Reload target file only (avoid global revert side-effects).
         await refreshFileFromDisk(filePath, {
           selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
@@ -1079,7 +1119,7 @@ function activate(context) {
 
       // If this was invoked from an agenda row action, refresh the agenda view so
       // TODO/status edits are reflected immediately.
-      if (item instanceof Org2AgendaItem) {
+      if (item instanceof Org2AgendaItem && changed !== false) {
         await agendaProvider.load();
       }
     } catch (e) {
@@ -1166,8 +1206,10 @@ function activate(context) {
         : undefined;
 
     try {
-      await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
-      if (refreshAfterCliApply) {
+      const { stdout } = await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
+      const changed = parseChangedFlagFromCliJson(stdout);
+
+      if (refreshAfterCliApply && changed !== false) {
         await refreshFileFromDisk(filePath, {
           selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
           activeUri: activeUriBefore,
