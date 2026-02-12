@@ -1261,7 +1261,10 @@ function activate(context) {
       const applyArgs = ['archive', '--file', String(filePath), '--pos', String(line), '--apply'];
       const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, applyArgs);
       await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
-      await vscode.commands.executeCommand('workbench.action.files.revert');
+      await refreshFileFromDisk(filePath, {
+        refreshNonActiveOpenFiles: true,
+        allowGlobalFallback: false,
+      });
     } catch (e) {
       const stderr = e && e.stderr ? String(e.stderr).trim() : '';
       const extra = stderr ? `\n${stderr}` : '';
@@ -1387,9 +1390,11 @@ function activate(context) {
 
       const link = `[[id:${id.toLowerCase()}][${title}]]`;
 
-      // If we inserted an ID, the CLI wrote to disk. Refresh the editor view.
+      // If we inserted an ID, the CLI wrote to disk. Refresh only the target file.
       try {
-        await vscode.commands.executeCommand('workbench.action.files.revert');
+        await refreshFileFromDisk(doc.uri.fsPath, {
+          allowGlobalFallback: false,
+        });
       } catch (e) {
         // ignore
       }
@@ -1472,9 +1477,11 @@ function activate(context) {
         return;
       }
 
-      // CLI wrote to disk; refresh the editor view.
+      // CLI wrote to disk; refresh only the target file.
       try {
-        await vscode.commands.executeCommand('workbench.action.files.revert');
+        await refreshFileFromDisk(doc.uri.fsPath, {
+          allowGlobalFallback: false,
+        });
       } catch (e) {
         // ignore
       }
@@ -1557,9 +1564,11 @@ function activate(context) {
         return;
       }
 
-      // If we inserted an ID, the CLI wrote to disk. Refresh the editor view.
+      // If we inserted an ID, the CLI wrote to disk. Refresh only the target file.
       try {
-        await vscode.commands.executeCommand('workbench.action.files.revert');
+        await refreshFileFromDisk(doc.uri.fsPath, {
+          allowGlobalFallback: false,
+        });
       } catch (_) {
         // ignore
       }
