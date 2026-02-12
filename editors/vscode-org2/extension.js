@@ -2,6 +2,7 @@ const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
 const cp = require('child_process');
+const { agendaFileLabel, agendaStatusBucket, agendaUrgencyFromDate } = require('./agendaVisuals');
 
 const headingRe = /^(\*+)\s+/;
 const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
@@ -222,14 +223,32 @@ class Org2AgendaSeparator {
 }
 
 class Org2AgendaItem {
-  constructor({ todo, headline, kind, file, line, date }) {
+  constructor({ todo, headline, kind, file, line, date, urgency }) {
     this.todo = todo || '';
     this.headline = headline || '';
     this.kind = kind || '';
     this.file = file;
+    this.fileLabel = agendaFileLabel(file);
     this.line = typeof line === 'number' ? line : 0;
     this.date = date;
+    this.urgency = urgency || agendaUrgencyFromDate(date);
+    this.statusBucket = agendaStatusBucket(todo);
   }
+}
+
+function getAgendaUrgencyThemeColor(urgency) {
+  if (urgency === 'overdue') return 'errorForeground';
+  if (urgency === 'today') return 'list.warningForeground';
+  if (urgency === 'upcoming') return 'list.deemphasizedForeground';
+  return 'descriptionForeground';
+}
+
+function getAgendaStatusThemeColor(statusBucket) {
+  if (statusBucket === 'todo') return 'charts.yellow';
+  if (statusBucket === 'inProgress') return 'charts.blue';
+  if (statusBucket === 'done') return 'charts.green';
+  if (statusBucket === 'canceled') return 'disabledForeground';
+  return 'descriptionForeground';
 }
 
 class Org2AgendaProvider {
@@ -275,14 +294,32 @@ class Org2AgendaProvider {
     if (element instanceof Org2AgendaItem) {
       const label = `${element.todo ? element.todo + ' ' : ''}${element.headline}`.trim() || '(untitled)';
       const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
-      item.description = element.kind;
+
+      const parts = [element.fileLabel];
+      if (element.kind) parts.push(element.kind);
+      item.description = parts.join(' · ');
+
+      item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor(getAgendaUrgencyThemeColor(element.urgency)));
       item.contextValue = 'org2AgendaItem';
       item.command = {
         command: 'org2.openAgendaItem',
         title: 'Open',
         arguments: [element],
       };
-      item.tooltip = `${element.file}:${element.line + 1}`;
+
+      const statusColor = getAgendaStatusThemeColor(element.statusBucket);
+      const statusLabel = element.todo ? `${element.todo} (${element.statusBucket})` : '(no todo keyword)';
+      const urgencyLabel = element.urgency || 'unknown';
+      item.tooltip = new vscode.MarkdownString(
+        [
+          `**${element.headline || '(untitled)'}**`,
+          '',
+          `- File: ${element.file || '(unknown file)'}:${element.line + 1}`,
+          `- Schedule urgency: ${urgencyLabel}`,
+          `- TODO status: <span style="color:var(--vscode-${statusColor.replace('.', '-')});">${statusLabel}</span>`,
+        ].join('\n')
+      );
+      item.tooltip.supportHtml = true;
       return item;
     }
 
@@ -612,11 +649,13 @@ async function fetchAgendaGroups(context, filter) {
 
   const groups = [];
   const pushDay = (d, isOverdue) => {
+    const dayUrgency = isOverdue ? 'overdue' : agendaUrgencyFromDate(d.date);
     const items = (d.items || []).map(
       (it) =>
         new Org2AgendaItem({
           ...it,
           date: d.date,
+          urgency: dayUrgency,
         })
     );
     const label = `${d.weekday || ''} ${d.date || ''}`.trim();
