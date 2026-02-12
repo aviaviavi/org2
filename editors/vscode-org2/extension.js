@@ -705,6 +705,16 @@ function revealNavigationPosition(editor, pos, source) {
   editor.revealRange(new vscode.Range(pos, pos), revealType);
 }
 
+function setCursorIfChanged(editor, pos) {
+  if (!editor || !pos) return false;
+  const sel = editor.selection;
+  if (sel && sel.start && sel.end && sel.start.isEqual(pos) && sel.end.isEqual(pos)) {
+    return false;
+  }
+  editor.selection = new vscode.Selection(pos, pos);
+  return true;
+}
+
 async function openAgendaItem(item) {
   if (!item || !item.file) return;
 
@@ -717,8 +727,9 @@ async function openAgendaItem(item) {
 
   const line = Math.max(0, item.line || 0);
   const pos = new vscode.Position(line, 0);
-  editor.selection = new vscode.Selection(pos, pos);
-  revealNavigationPosition(editor, pos, 'agenda');
+  if (setCursorIfChanged(editor, pos)) {
+    revealNavigationPosition(editor, pos, 'agenda');
+  }
 }
 
 async function pickAgendaFilter(provider) {
@@ -1452,8 +1463,9 @@ function activate(context) {
 
         const line = Math.max(0, Number(line0) || 0);
         const pos = new vscode.Position(line, 0);
-        editor.selection = new vscode.Selection(pos, pos);
-        revealNavigationPosition(editor, pos);
+        if (setCursorIfChanged(editor, pos)) {
+          revealNavigationPosition(editor, pos);
+        }
       } catch (e) {
         vscode.window.showErrorMessage(`Org2: failed to open file: ${String(e && e.message ? e.message : e)}`);
       }
@@ -1742,8 +1754,9 @@ function activate(context) {
       const doc = await vscode.workspace.openTextDocument(uri);
       const editor = await vscode.window.showTextDocument(doc, { preview: true });
       const pos = new vscode.Position(Math.max(0, pick.line0 || 0), 0);
-      editor.selection = new vscode.Selection(pos, pos);
-      revealNavigationPosition(editor, pos);
+      if (setCursorIfChanged(editor, pos)) {
+        revealNavigationPosition(editor, pos);
+      }
     })
   );
 
