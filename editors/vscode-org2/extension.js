@@ -990,14 +990,33 @@ function activate(context) {
 
   function parseChangedFlagFromCliJson(stdout) {
     if (typeof stdout !== 'string' || !stdout.trim()) return undefined;
-    try {
-      const payload = JSON.parse(stdout);
-      if (!payload || typeof payload !== 'object') return undefined;
-      if (!Object.prototype.hasOwnProperty.call(payload, 'changed')) return undefined;
-      return payload.changed === true;
-    } catch {
-      return undefined;
+
+    const parseChanged = (text) => {
+      try {
+        const payload = JSON.parse(text);
+        if (!payload || typeof payload !== 'object') return undefined;
+        if (!Object.prototype.hasOwnProperty.call(payload, 'changed')) return undefined;
+        return typeof payload.changed === 'boolean' ? payload.changed : undefined;
+      } catch {
+        return undefined;
+      }
+    };
+
+    const trimmed = stdout.trim();
+    const fromWhole = parseChanged(trimmed);
+    if (typeof fromWhole === 'boolean') return fromWhole;
+
+    const lines = trimmed
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      const changed = parseChanged(lines[i]);
+      if (typeof changed === 'boolean') return changed;
     }
+
+    return undefined;
   }
 
   async function refreshFileFromDisk(filePath, options) {
