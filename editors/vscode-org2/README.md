@@ -86,13 +86,19 @@ The extension can show an *agenda* view powered by the `org2` CLI.
   - overdue → error color
   - due today → warning color
   - coming up → deemphasized/neutral color
-- TODO status is visually differentiated in-row (keyword highlight) and uses a distinct stage color in the item tooltip:
-  - TODO/open/backlog → yellow
-  - in progress/waiting/blocked/next → blue
-  - done/completed → green
-  - canceled/cancelled → disabled/muted
+- TODO status is visually differentiated with **both** color and a compact non-color cue prefix:
+  - `[T]` planned (TODO/open/backlog)
+  - `[~]` in progress (in_progress/doing/started/waiting/blocked/next)
+  - `[✓]` completed (done/completed)
+  - `[×]` canceled (canceled/cancelled)
+  - `[?]` custom keyword, `[·]` no keyword
+- Status color now uses semantic VS Code theme tokens (with fallback palette in tooltip rendering):
+  - planned → `list.warningForeground`
+  - in progress → `list.highlightForeground`
+  - completed → `gitDecoration.addedResourceForeground`
+  - canceled → `gitDecoration.deletedResourceForeground`
 
-All colors are theme-aware (`ThemeColor`) and fall back to neutral defaults when status/date is missing.
+All visuals remain theme-aware (`ThemeColor`) and keep urgency dots for schedule urgency.
 
 ### Click-through
 
