@@ -715,6 +715,24 @@ function setCursorIfChanged(editor, pos) {
   return true;
 }
 
+function findVisibleEditorForUri(uri) {
+  const target = uri && uri.toString ? uri.toString() : '';
+  if (!target) return undefined;
+
+  for (const editor of vscode.window.visibleTextEditors || []) {
+    if (
+      editor &&
+      editor.document &&
+      editor.document.uri &&
+      editor.document.uri.toString() === target
+    ) {
+      return editor;
+    }
+  }
+
+  return undefined;
+}
+
 async function showFileInEditor(uri, options) {
   const active = vscode.window.activeTextEditor;
   if (
@@ -724,6 +742,16 @@ async function showFileInEditor(uri, options) {
     active.document.uri.toString() === uri.toString()
   ) {
     return active;
+  }
+
+  const visible = findVisibleEditorForUri(uri);
+  if (visible) {
+    const showOptions = {
+      preview: true,
+      ...(options || {}),
+      viewColumn: visible.viewColumn,
+    };
+    return await vscode.window.showTextDocument(visible.document, showOptions);
   }
 
   const doc = await vscode.workspace.openTextDocument(uri);
