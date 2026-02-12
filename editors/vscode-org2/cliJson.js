@@ -6,8 +6,17 @@ function tryParseJson(value) {
   }
 }
 
+function normalizeCliOutput(stdout) {
+  return String(stdout ?? '')
+    .replace(/\uFEFF/g, '') // strip UTF-8 BOM if present
+    .replace(/\x00/g, '') // strip stray null bytes from CLI/PTY output
+    .replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, '') // strip ANSI CSI sequences
+    .replace(/\u001B\][^\u0007]*(?:\u0007|\u001B\\)/g, '') // strip ANSI OSC sequences
+    .trim();
+}
+
 function parseCliJsonPayload(stdout) {
-  const text = String(stdout || '').trim();
+  const text = normalizeCliOutput(stdout);
   if (!text) return undefined;
 
   // Common case: stdout is pure JSON.

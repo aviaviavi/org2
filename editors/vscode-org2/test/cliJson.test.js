@@ -7,6 +7,16 @@ test('parseCliJsonPayload parses direct JSON output', () => {
   assert.deepEqual(parseCliJsonPayload('{"changed":false,"id":"abc"}'), { changed: false, id: 'abc' });
 });
 
+test('parseCliJsonPayload parses direct JSON output wrapped in ANSI color codes', () => {
+  const stdout = '\u001b[32m{"changed":true,"id":"ansi"}\u001b[0m';
+  assert.deepEqual(parseCliJsonPayload(stdout), { changed: true, id: 'ansi' });
+});
+
+test('parseCliJsonPayload parses direct JSON output prefixed by UTF-8 BOM', () => {
+  const stdout = '\uFEFF{"changed":false,"id":"bom"}';
+  assert.deepEqual(parseCliJsonPayload(stdout), { changed: false, id: 'bom' });
+});
+
 test('parseCliJsonPayload parses trailing compact JSON line after noisy output', () => {
   const stdout = ['info: syncing roam db', 'warn: slow filesystem', '{"changed":true,"id":"xyz"}'].join('\n');
   assert.deepEqual(parseCliJsonPayload(stdout), { changed: true, id: 'xyz' });
