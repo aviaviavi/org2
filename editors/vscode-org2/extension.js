@@ -715,6 +715,21 @@ function setCursorIfChanged(editor, pos) {
   return true;
 }
 
+async function showFileInEditor(uri, options) {
+  const active = vscode.window.activeTextEditor;
+  if (
+    active &&
+    active.document &&
+    active.document.uri &&
+    active.document.uri.toString() === uri.toString()
+  ) {
+    return active;
+  }
+
+  const doc = await vscode.workspace.openTextDocument(uri);
+  return await vscode.window.showTextDocument(doc, options || { preview: true });
+}
+
 async function openAgendaItem(item) {
   if (!item || !item.file) return;
 
@@ -722,8 +737,7 @@ async function openAgendaItem(item) {
   const abs = path.isAbsolute(item.file) ? item.file : path.resolve(cwd, item.file);
 
   const uri = vscode.Uri.file(abs);
-  const doc = await vscode.workspace.openTextDocument(uri);
-  const editor = await vscode.window.showTextDocument(doc, { preview: true });
+  const editor = await showFileInEditor(uri, { preview: true });
 
   const line = Math.max(0, item.line || 0);
   const pos = new vscode.Position(line, 0);
@@ -1495,8 +1509,7 @@ function activate(context) {
       try {
         const abs = path.isAbsolute(String(file || '')) ? String(file || '') : path.resolve(getWorkspaceRoot() || process.cwd(), String(file || ''));
         const uri = vscode.Uri.file(abs);
-        const doc = await vscode.workspace.openTextDocument(uri);
-        const editor = await vscode.window.showTextDocument(doc, { preview: true });
+        const editor = await showFileInEditor(uri, { preview: true });
 
         const line = Math.max(0, Number(line0) || 0);
         const pos = new vscode.Position(line, 0);
@@ -1790,8 +1803,7 @@ function activate(context) {
       if (!pick) return;
 
       const uri = vscode.Uri.file(String(pick.file));
-      const doc = await vscode.workspace.openTextDocument(uri);
-      const editor = await vscode.window.showTextDocument(doc, { preview: true });
+      const editor = await showFileInEditor(uri, { preview: true });
       const pos = new vscode.Position(Math.max(0, pick.line0 || 0), 0);
       if (setCursorIfChanged(editor, pos)) {
         revealNavigationPosition(editor, pos);
