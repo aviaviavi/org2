@@ -55,6 +55,110 @@ interface ScheduledItem {
   kind: string;
 }
 
+type AgendaStatusBucket = "todo" | "in_progress" | "done" | "canceled" | "custom";
+
+type AgendaStatusFilter = Set<AgendaStatusBucket> | null;
+
+const AGENDA_STATUS_ALLOWED_HINT =
+  "all, active, actionable, open, todo, in_progress, done, canceled, closed, custom";
+
+function agendaStatusBucketForKeyword(todo: string | undefined): AgendaStatusBucket | null {
+  const key = String(todo || "").trim().toUpperCase();
+  if (!key) return null;
+
+  if (key === "DONE" || key === "COMPLETED") return "done";
+  if (key === "CANCELED" || key === "CANCELLED") return "canceled";
+  if (["PROG", "IN_PROGRESS", "DOING", "STARTED", "WAITING", "BLOCKED", "NEXT"].includes(key)) {
+    return "in_progress";
+  }
+  if (["TODO", "OPEN", "BACKLOG"].includes(key)) return "todo";
+
+  return "custom";
+}
+
+function parseAgendaStatusFilterArgs(rawArgs: string[]): {
+  filter: AgendaStatusFilter;
+  invalid: string[];
+} {
+  if (rawArgs.length === 0) return { filter: null, invalid: [] };
+
+  const selected = new Set<AgendaStatusBucket>();
+  const invalid: string[] = [];
+  let sawAll = false;
+
+  const addToken = (tokenRaw: string): void => {
+    const token = tokenRaw.trim().toLowerCase();
+    if (!token) return;
+
+    if (token === "all") {
+      sawAll = true;
+      return;
+    }
+
+    if (token === "active") {
+      selected.add("todo");
+      selected.add("in_progress");
+      return;
+    }
+
+    if (token === "actionable") {
+      selected.add("todo");
+      selected.add("in_progress");
+      selected.add("custom");
+      return;
+    }
+
+    if (token === "open" || token === "todo") {
+      selected.add("todo");
+      return;
+    }
+
+    if (token === "in_progress" || token === "in-progress" || token === "inprogress" || token === "prog") {
+      selected.add("in_progress");
+      return;
+    }
+
+    if (token === "done") {
+      selected.add("done");
+      return;
+    }
+
+    if (token === "canceled" || token === "cancelled") {
+      selected.add("canceled");
+      return;
+    }
+
+    if (token === "closed") {
+      selected.add("done");
+      selected.add("canceled");
+      return;
+    }
+
+    if (token === "custom") {
+      selected.add("custom");
+      return;
+    }
+
+    invalid.push(tokenRaw.trim());
+  };
+
+  for (const raw of rawArgs) {
+    for (const token of String(raw).split(",")) {
+      addToken(token);
+    }
+  }
+
+  if (invalid.length > 0) {
+    return { filter: selected.size > 0 ? selected : null, invalid };
+  }
+
+  if (sawAll || selected.size === 0) {
+    return { filter: null, invalid: [] };
+  }
+
+  return { filter: selected, invalid: [] };
+}
+
 function parseHeadlineLine(line: string): { todo?: string; title: string } | null {
   const m = /^(\*+)\s+(.*)$/.exec(line);
   if (!m) return null;
@@ -81,7 +185,8 @@ function findScheduledItemsInText(
   filePath: string,
   startDate: Date,
   endDate: Date,
-  includeOverdue: boolean
+  includeOverdue: boolean,
+  statusFilter: AgendaStatusFilter
 ): ScheduledItem[] {
   const items: ScheduledItem[] = [];
   const lines = content.split("\n");
@@ -108,6 +213,9 @@ function findScheduledItemsInText(
     // Skip non-todo headlines.
     const todo = current.todo;
     if (!todo) continue;
+
+    const todoBucket = agendaStatusBucketForKeyword(todo);
+    if (statusFilter && (!todoBucket || !statusFilter.has(todoBucket))) continue;
 
     const isDoneLike = todo === "DONE" || todo === "CANCELLED" || todo === "CANCELED";
     const isProgLike = todo === "PROG" || todo === "IN_PROGRESS";
@@ -157,7 +265,8 @@ function findScheduledItems(
   filePath: string,
   startDate: Date,
   endDate: Date,
-  includeOverdue: boolean
+  includeOverdue: boolean,
+  statusFilter: AgendaStatusFilter
 ): ScheduledItem[] {
   const items: ScheduledItem[] = [];
 
@@ -181,6 +290,9 @@ function findScheduledItems(
 
                 const todo = headline.todo;
                 if (!todo) continue;
+
+                const todoBucket = agendaStatusBucketForKeyword(todo);
+                if (statusFilter && (!todoBucket || !statusFilter.has(todoBucket))) continue;
 
                 const isDoneLike = todo === "DONE" || todo === "CANCELLED" || todo === "CANCELED";
                 const isProgLike = todo === "PROG" || todo === "IN_PROGRESS";
@@ -343,6 +455,7 @@ async function main(): Promise<void> {
   let format: "text" | "json" = "text";
   let recursive = false;
   let includeOverdue = true;
+  let agendaStatusFiltersRaw: string[] = [];
   let verboseErrors = false;
   let help = false;
 
@@ -548,7 +661,11 @@ async function main(): Promise<void> {
     } else if (arg === "--status") {
       i++;
       if (i < args.length) {
-        todoStatus = args[i] as TodoStatus;
+        if (command === "agenda") {
+          agendaStatusFiltersRaw.push(args[i]!);
+        } else {
+          todoStatus = args[i] as TodoStatus;
+        }
         i++;
       }
     } else if (arg === "--now") {
@@ -714,7 +831,7 @@ async function main(): Promise<void> {
 
   if (help) {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -756,7 +873,7 @@ async function main(): Promise<void> {
 
   if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -2097,6 +2214,14 @@ async function main(): Promise<void> {
     files = listOrgFiles(dir);
   }
 
+  const parsedAgendaStatus = parseAgendaStatusFilterArgs(agendaStatusFiltersRaw);
+  if (parsedAgendaStatus.invalid.length > 0) {
+    console.error(
+      `Error: invalid agenda --status value(s): ${parsedAgendaStatus.invalid.join(", ")}. Allowed: ${AGENDA_STATUS_ALLOWED_HINT}`,
+    );
+    process.exit(1);
+  }
+
   // Parse date range
   const startDate = parseIsoDate(today);
   const endDate = new Date(startDate);
@@ -2114,7 +2239,14 @@ async function main(): Promise<void> {
       // Agenda intentionally uses a lightweight line-based scan so we can provide
       // stable 0-based line numbers for editor integrations (VS Code agenda → open file).
       // The canonical parser does not currently preserve source locations.
-      const items = findScheduledItemsInText(normalized, filePath, startDate, endDate, includeOverdue);
+      const items = findScheduledItemsInText(
+        normalized,
+        filePath,
+        startDate,
+        endDate,
+        includeOverdue,
+        parsedAgendaStatus.filter,
+      );
       allItems.push(...items);
     } catch (err) {
       skippedFileCount += 1;

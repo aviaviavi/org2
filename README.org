@@ -42,6 +42,7 @@ Current reality:
 
 **** Task/planning workflows
 - Agenda (CLI + VS Code panel): *Available now*
+- Agenda status filtering (CLI + VS Code): *Available now* (MVP)
 - TODO set/toggle from CLI/editor: *Available now*
 - Set SCHEDULED/DEADLINE (including “today” fast paths): *Available now*
 - Archive subtree: *Available now* (MVP)
@@ -135,6 +136,9 @@ npm run org2 -- agenda --dir /path/to/org --format json
 
 # Exclude overdue items from output
 npm run org2 -- agenda --dir /path/to/org --no-overdue
+
+# Filter by TODO status buckets (advanced agenda customization)
+npm run org2 -- agenda --dir /path/to/org --status active
 
 # Show parse errors instead of silently skipping broken files
 npm run org2 -- agenda --dir /path/to/org --verbose-errors

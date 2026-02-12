@@ -348,6 +348,23 @@
           "default": true,
           "description": "Include overdue items in the agenda view."
         },
+        "org2.agenda.statusFilter": {
+          "type": "string",
+          "enum": [
+            "all",
+            "active",
+            "actionable",
+            "open",
+            "todo",
+            "in_progress",
+            "done",
+            "canceled",
+            "closed",
+            "custom"
+          ],
+          "default": "all",
+          "description": "Filter agenda rows by TODO state bucket before rendering. all=everything, active=todo+in_progress, actionable=active+custom, closed=done+canceled."
+        },
         "org2.formatOnSave": {
           "type": "boolean",
           "default": true,
