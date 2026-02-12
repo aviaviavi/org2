@@ -1507,14 +1507,11 @@ function activate(context) {
         }
       }
 
-      const cursorLine = editor.selection.active.line;
       const ensureArgs = [
         'id',
         'ensure',
         '--file',
         String(doc.uri.fsPath),
-        '--line',
-        String(cursorLine + 1),
         '--apply',
         '--format',
         'json',

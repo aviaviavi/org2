@@ -1,0 +1,1 @@
+roam db-sync --dir "$(d=$(mktemp -d); touch "$d/a.org" "$d/b.org2"; echo "$d")" --recursive --format json | node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync(0,"utf8")); process.stdout.write(`${p.scanned}:${p.missingFileIdCount}\n`);'
