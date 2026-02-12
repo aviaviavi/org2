@@ -1217,6 +1217,11 @@ function activate(context) {
           allowGlobalFallback: allowGlobalRefreshFallback,
         });
       }
+
+      // Keep agenda rows in sync after agenda-invoked planning updates.
+      if (item instanceof Org2AgendaItem && changed !== false) {
+        await agendaProvider.load();
+      }
     } catch (e) {
       vscode.window.showErrorMessage(`Org2: planning update failed: ${String(e && e.message ? e.message : e)}`);
     }
