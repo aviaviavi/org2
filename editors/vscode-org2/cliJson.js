@@ -25,6 +25,20 @@ function parseCliJsonPayload(stdout) {
     if (typeof parsed !== 'undefined') return parsed;
   }
 
+  // Parse JSON block when noisy logs appear *after* JSON output.
+  // Try line-bounded blocks from the bottom up so we prefer the latest JSON payload.
+  const lines = text.split(/\r?\n/);
+  for (let start = lines.length - 1; start >= 0; start--) {
+    const firstChar = lines[start].trimStart()[0];
+    if (firstChar !== '{' && firstChar !== '[') continue;
+
+    for (let end = lines.length - 1; end >= start; end--) {
+      const candidate = lines.slice(start, end + 1).join('\n').trim();
+      const parsed = tryParseJson(candidate);
+      if (typeof parsed !== 'undefined') return parsed;
+    }
+  }
+
   return undefined;
 }
 

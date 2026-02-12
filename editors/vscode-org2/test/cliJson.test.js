@@ -28,9 +28,22 @@ test('parseCliJsonPayload parses trailing multi-line JSON array block', () => {
   assert.deepEqual(parseCliJsonPayload(stdout), [{ line: 10 }, { line: 20 }]);
 });
 
+test('parseCliJsonPayload parses compact JSON line when noisy output follows it', () => {
+  const stdout = ['info: sync start', '{"changed":false,"id":"abc"}', 'info: sync complete'].join('\n');
+
+  assert.deepEqual(parseCliJsonPayload(stdout), { changed: false, id: 'abc' });
+});
+
+test('parseCliJsonPayload parses multi-line JSON block when noisy output follows it', () => {
+  const stdout = ['trace: before', '{', '  "changed": true,', '  "id": "xyz"', '}', 'trace: after'].join('\n');
+
+  assert.deepEqual(parseCliJsonPayload(stdout), { changed: true, id: 'xyz' });
+});
+
 test('parseChangedFlagFromCliJson returns changed flag only when explicit boolean', () => {
   assert.equal(parseChangedFlagFromCliJson('{"changed":true}'), true);
   assert.equal(parseChangedFlagFromCliJson('{"changed":false}'), false);
+  assert.equal(parseChangedFlagFromCliJson(['note: before', '{"changed":false}', 'note: after'].join('\n')), false);
   assert.equal(parseChangedFlagFromCliJson('{"changed":"false"}'), undefined);
   assert.equal(parseChangedFlagFromCliJson('[{"changed":false}]'), undefined);
   assert.equal(parseChangedFlagFromCliJson('not json at all'), undefined);
