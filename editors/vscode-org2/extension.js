@@ -917,6 +917,17 @@ function activate(context) {
     return undefined;
   }
 
+  function isPathVisibleInAnyEditor(absPath) {
+    if (!absPath) return false;
+    const needle = path.resolve(absPath);
+    for (const editor of vscode.window.visibleTextEditors || []) {
+      const doc = editor && editor.document;
+      if (!doc || !doc.uri || doc.uri.scheme !== 'file') continue;
+      if (path.resolve(doc.uri.fsPath) === needle) return true;
+    }
+    return false;
+  }
+
   async function isOpenDocumentSyncedWithDisk(filePath) {
     const openDoc = findOpenDocumentForPath(filePath);
     if (!openDoc || openDoc.isDirty) return false;
@@ -998,6 +1009,16 @@ function activate(context) {
           // unexpectedly expand folds around the cursor in some navigation flows.
         }
       }
+      return;
+    }
+
+    // Non-active target refresh is opt-in to avoid fold churn in background files.
+    if (opts.refreshNonActiveOpenFiles !== true) {
+      return;
+    }
+
+    // If target is not open/visible, rely on VS Code file watching instead of forcing refresh.
+    if (!findOpenDocumentForPath(filePath) || !isPathVisibleInAnyEditor(filePath)) {
       return;
     }
 
@@ -1087,6 +1108,7 @@ function activate(context) {
     const writeTodoLogbook = cfg.get('todo.writeTransitionLogbook', false) ? true : false;
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
+    const refreshNonActiveOpenFiles = cfg.get('editor.refreshNonActiveOpenFiles', false) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
     const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
 
@@ -1112,6 +1134,7 @@ function activate(context) {
         await refreshFileFromDisk(filePath, {
           selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
           activeUri: activeUriBefore,
+          refreshNonActiveOpenFiles,
           skipIfInSync: skipRefreshWhenInSync,
           allowGlobalFallback: allowGlobalRefreshFallback,
         });
@@ -1165,6 +1188,7 @@ function activate(context) {
     const cfg = vscode.workspace.getConfiguration('org2');
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
+    const refreshNonActiveOpenFiles = cfg.get('editor.refreshNonActiveOpenFiles', false) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
     const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
     const useToday = options && options.useToday ? true : false;
@@ -1213,6 +1237,7 @@ function activate(context) {
         await refreshFileFromDisk(filePath, {
           selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
           activeUri: activeUriBefore,
+          refreshNonActiveOpenFiles,
           skipIfInSync: skipRefreshWhenInSync,
           allowGlobalFallback: allowGlobalRefreshFallback,
         });
@@ -1265,6 +1290,7 @@ function activate(context) {
     const cfg = vscode.workspace.getConfiguration('org2');
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
+    const refreshNonActiveOpenFiles = cfg.get('editor.refreshNonActiveOpenFiles', false) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
     const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
 
@@ -1313,6 +1339,7 @@ function activate(context) {
         await refreshFileFromDisk(filePath, {
           selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
           activeUri: activeUriBefore,
+          refreshNonActiveOpenFiles,
           skipIfInSync: skipRefreshWhenInSync,
           allowGlobalFallback: allowGlobalRefreshFallback,
         });
