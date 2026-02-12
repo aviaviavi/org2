@@ -1009,26 +1009,24 @@ function activate(context) {
       }
     }
   }
-
-  function parseChangedFlagFromCliJson(stdout) {
+  function parseCliJsonPayload(stdout) {
     const text = String(stdout || '').trim();
     if (!text) return undefined;
 
-    const readChanged = (obj) => {
-      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return undefined;
-      return typeof obj.changed === 'boolean' ? obj.changed : undefined;
+    const parseJson = (value) => {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return undefined;
+      }
     };
 
     // Common case: stdout is pure JSON.
-    try {
-      const changed = readChanged(JSON.parse(text));
-      if (typeof changed === 'boolean') return changed;
-    } catch {
-      // Fall through to line-by-line parsing.
-    }
+    const direct = parseJson(text);
+    if (typeof direct !== 'undefined') return direct;
 
     // Some org2 invocations can emit extra informational lines before JSON.
-    // Parse trailing JSON lines and accept the last explicit boolean `changed`.
+    // Parse trailing JSON lines and accept the last valid payload.
     const lines = text
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -1036,16 +1034,21 @@ function activate(context) {
       .reverse();
 
     for (const line of lines) {
-      if (!(line.startsWith('{') && line.endsWith('}'))) continue;
-      try {
-        const changed = readChanged(JSON.parse(line));
-        if (typeof changed === 'boolean') return changed;
-      } catch {
-        // Ignore non-JSON lines.
-      }
+      const looksJsonObject = line.startsWith('{') && line.endsWith('}');
+      const looksJsonArray = line.startsWith('[') && line.endsWith(']');
+      if (!looksJsonObject && !looksJsonArray) continue;
+
+      const parsed = parseJson(line);
+      if (typeof parsed !== 'undefined') return parsed;
     }
 
     return undefined;
+  }
+
+  function parseChangedFlagFromCliJson(stdout) {
+    const payload = parseCliJsonPayload(stdout);
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined;
+    return typeof payload.changed === 'boolean' ? payload.changed : undefined;
   }
 
   async function runTodoCli(action, status, item) {
@@ -1435,11 +1438,8 @@ function activate(context) {
         vscode.window.showErrorMessage(`Org2: failed to ensure ID: ${String(e && e.message ? e.message : e)}`);
         return;
       }
-
-      let payload;
-      try {
-        payload = JSON.parse(String((out && out.stdout) || '').trim());
-      } catch (e) {
+      const payload = parseCliJsonPayload((out && out.stdout) || '');
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
         vscode.window.showErrorMessage('Org2: failed to parse org2 id ensure output.');
         return;
       }
@@ -1550,10 +1550,8 @@ function activate(context) {
         vscode.window.showErrorMessage(`Org2: failed to insert backlink: ${String(e && e.message ? e.message : e)}`);
         return;
       }
-
-      try {
-        JSON.parse(String((out && out.stdout) || '').trim());
-      } catch (e) {
+      const linkPayload = parseCliJsonPayload((out && out.stdout) || '');
+      if (!linkPayload || typeof linkPayload !== 'object' || Array.isArray(linkPayload)) {
         vscode.window.showErrorMessage('Org2: failed to parse org2 roam link output.');
         return;
       }
@@ -1639,11 +1637,8 @@ function activate(context) {
         vscode.window.showErrorMessage(`Org2: failed to ensure ID: ${String(e && e.message ? e.message : e)}`);
         return;
       }
-
-      let ensurePayload;
-      try {
-        ensurePayload = JSON.parse(String((ensureOut && ensureOut.stdout) || '').trim());
-      } catch (e) {
+      const ensurePayload = parseCliJsonPayload((ensureOut && ensureOut.stdout) || '');
+      if (!ensurePayload || typeof ensurePayload !== 'object' || Array.isArray(ensurePayload)) {
         vscode.window.showErrorMessage('Org2: failed to parse org2 id ensure output.');
         return;
       }
@@ -1675,11 +1670,8 @@ function activate(context) {
         vscode.window.showErrorMessage(`Org2: failed to load backlinks: ${String(e && e.message ? e.message : e)}`);
         return;
       }
-
-      let payload;
-      try {
-        payload = JSON.parse(String((backlinksOut && backlinksOut.stdout) || '').trim());
-      } catch (e) {
+      const payload = parseCliJsonPayload((backlinksOut && backlinksOut.stdout) || '');
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
         vscode.window.showErrorMessage('Org2: failed to parse org2 backlinks output.');
         return;
       }
