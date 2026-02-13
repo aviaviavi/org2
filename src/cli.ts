@@ -922,6 +922,7 @@ async function main(): Promise<void> {
   // Formatter
   let fmtStdin = false;
   let fmtApply = false;
+  let fmtCheck = false;
 
   // IDs (Roam)
   let idAction: "get" | "ensure" = "get";
@@ -1349,6 +1350,11 @@ async function main(): Promise<void> {
     } else if (arg === "--stdin") {
       fmtStdin = true;
       i++;
+    } else if (arg === "--check") {
+      if (command === "fmt") {
+        fmtCheck = true;
+      }
+      i++;
     } else if (arg === "--apply" || arg === "--in-place") {
       if (command === "todo") {
         todoApply = true;
@@ -1396,7 +1402,7 @@ async function main(): Promise<void> {
       "       org2 query --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
     );
     console.error(
-      "       org2 fmt [--stdin] [--file FILE|--files FILE ...] [--apply]",
+      "       org2 fmt [--stdin] [--file FILE|--files FILE ...] [--check] [--apply]",
     );
     console.error(
       "       org2 roam db-sync --dir DIR [--recursive] [--format text|json] [--apply]",
@@ -1438,7 +1444,7 @@ async function main(): Promise<void> {
       "       org2 query --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
     );
     console.error(
-      "       org2 fmt [--stdin] [--file FILE|--files FILE ...] [--apply]",
+      "       org2 fmt [--stdin] [--file FILE|--files FILE ...] [--check] [--apply]",
     );
     console.error(
       "       org2 roam db-sync --dir DIR [--recursive] [--format text|json] [--apply]",
@@ -2555,6 +2561,10 @@ async function main(): Promise<void> {
     };
 
     if (fmtStdin) {
+      if (fmtCheck) {
+        console.error("Error: fmt --check does not support --stdin");
+        process.exit(1);
+      }
       const stdinRaw = fs.readFileSync(0, "utf8");
       process.stdout.write(formatOne(stdinRaw));
       return;
@@ -2563,6 +2573,23 @@ async function main(): Promise<void> {
     if (files.length === 0) {
       console.error("Error: fmt requires --stdin or at least one file via --file/--files");
       process.exit(1);
+    }
+
+    if (fmtCheck) {
+      const changedFiles: string[] = [];
+      for (const file of files) {
+        const raw = fs.readFileSync(file, "utf8");
+        const out = formatOne(raw);
+        if (out !== raw.replace(/\r\n/g, "\n")) {
+          changedFiles.push(file);
+        }
+      }
+
+      if (changedFiles.length > 0) {
+        process.stdout.write(changedFiles.join("\n") + "\n");
+        process.exit(1);
+      }
+      return;
     }
 
     if (!fmtApply) {
