@@ -643,6 +643,7 @@ async function fetchAgendaGroups(context, filter) {
   const statusFilter = String(cfg.get('agenda.statusFilter', 'all') || 'all').trim().toLowerCase();
   const kindFilter = String(cfg.get('agenda.kindFilter', 'all') || 'all').trim().toLowerCase();
   const matchFilter = String(cfg.get('agenda.matchFilter', '') || '').trim();
+  const tagFilter = String(cfg.get('agenda.tagFilter', '') || '').trim();
   const defaultDays = cfg.get('agenda.days', 7);
 
   const days = filter && filter.type === 'today' ? 1 : (filter && filter.type === 'next' ? filter.days : defaultDays);
@@ -665,6 +666,7 @@ async function fetchAgendaGroups(context, filter) {
   if (statusFilter && statusFilter !== 'all') args.push('--status', statusFilter);
   if (kindFilter && kindFilter !== 'all') args.push('--kind', kindFilter);
   if (matchFilter) args.push('--match', matchFilter);
+  if (tagFilter) args.push('--tag', tagFilter);
 
   const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
   const { stdout } = await execFileAsync(finalCmd, finalArgs, { cwd: agendaRoot });

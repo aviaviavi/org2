@@ -380,6 +380,11 @@
           "default": "",
           "description": "Filter agenda rows by headline text (case-insensitive). Supports comma-separated terms; a row matches when any term is present."
         },
+        "org2.agenda.tagFilter": {
+          "type": "string",
+          "default": "",
+          "description": "Filter agenda rows by headline tags (case-insensitive exact tag match). Supports comma-separated tags; a row matches when any tag is present."
+        },
         "org2.formatOnSave": {
           "type": "boolean",
           "default": true,
