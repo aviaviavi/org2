@@ -44,6 +44,7 @@ Current reality:
 - Agenda (CLI + VS Code panel): *Available now*
 - Agenda status filtering (CLI + VS Code): *Available now* (MVP)
 - Agenda planning-kind filtering (CLI + VS Code): *Available now* (MVP)
+- Agenda time-bucket filtering (CLI + VS Code): *Available now* (MVP)
 - Agenda text matching filter (CLI + VS Code): *Available now* (MVP)
 - Agenda tag filter (CLI + VS Code): *Available now* (MVP)
 - Agenda TODO keyword filter (CLI + VS Code): *Available now* (MVP)
@@ -148,6 +149,9 @@ npm run org2 -- agenda --dir /path/to/org --status active
 # Filter by planning kind (SCHEDULED vs DEADLINE)
 npm run org2 -- agenda --dir /path/to/org --kind deadline
 
+# Filter by time bucket (overdue, today, upcoming)
+npm run org2 -- agenda --dir /path/to/org --when today
+
 # Filter by headline text (case-insensitive, comma-separated OR terms)
 npm run org2 -- agenda --dir /path/to/org --match "release,retro"
 
@@ -170,6 +174,7 @@ npm run org2 -- agenda --dir /path/to/org --verbose-errors
 Notes:
 - If a file fails to parse, the CLI will skip it (use =--verbose-errors= to see why).
 - By default, overdue items are included; use =--no-overdue= to hide them.
+- =--when= filters by schedule bucket relative to =--today=: =overdue=, =today=, =upcoming=.
 - =--match= checks agenda headline text only, case-insensitively.
 - =--tag= checks agenda headline tags only, case-insensitively (exact tag match).
 - =--todo= checks exact TODO keywords only, case-insensitively.
