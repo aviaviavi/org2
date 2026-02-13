@@ -1,0 +1,8 @@
+{
+  "$schema": "org2:fmt-apply:v1",
+  "changed": false,
+  "processedFiles": [
+    "spec/v0/tests/cli/fmt-basic.expected.stdout.txt"
+  ],
+  "changedFiles": []
+}

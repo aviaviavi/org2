@@ -1,0 +1,10 @@
+{
+  "$schema": "org2:fmt-apply:v1",
+  "changed": true,
+  "processedFiles": [
+    "spec/v0/tests/cli/fmt-apply-json-dirty.tmp.txt"
+  ],
+  "changedFiles": [
+    "spec/v0/tests/cli/fmt-apply-json-dirty.tmp.txt"
+  ]
+}
