@@ -52,6 +52,7 @@ Current reality:
 - Agenda source-file filtering (CLI + VS Code): *Available now* (MVP)
 - Agenda sort-order filtering (CLI + VS Code): *Available now* (MVP)
 - Agenda row-limit filtering (CLI + VS Code): *Available now* (MVP)
+- Agenda explicit date-range bounds (CLI + VS Code): *Available now* (MVP)
 - TODO set/toggle from CLI/editor: *Available now*
 - Set SCHEDULED/DEADLINE (including “today” fast paths): *Available now*
 - Archive subtree: *Available now* (MVP)
@@ -140,6 +141,9 @@ npm run org2 -- agenda --files /path/to/a.org /path/to/b.org
 # Control the date range
 npm run org2 -- agenda --dir /path/to/org --today 2026-01-25 --days 7
 
+# Explicitly bound the date range (start/end)
+npm run org2 -- agenda --dir /path/to/org --from 2026-01-25 --to 2026-02-01
+
 # JSON output (useful for tests/automation)
 npm run org2 -- agenda --dir /path/to/org --format json
 
@@ -203,6 +207,8 @@ Notes:
 - =--exclude-file= hides rows whose source file path contains any term.
 - =--sort= reorders rows within each date bucket (always date-first overall sorting).
 - =--limit= caps total rendered rows after sorting (across overdue + upcoming).
+- =--from= overrides agenda start date (default: =--today= / current date).
+- =--to= overrides agenda end date (default: start + =--days - 1=).
 
 *** Running against local data with =org2.json=
 

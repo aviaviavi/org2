@@ -1,0 +1,1 @@
+agenda --files "spec/v0/tests/cli/simple-agenda.org" --from 2026-01-28 --to 2026-01-22
