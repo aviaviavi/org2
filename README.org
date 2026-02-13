@@ -56,6 +56,7 @@ Current reality:
 - TODO set/toggle from CLI/editor: *Available now*
 - Set SCHEDULED/DEADLINE (including “today” fast paths): *Available now*
 - Archive subtree: *Available now* (MVP)
+- Roam node creation (CLI + VS Code command): *Available now* (MVP)
 - Roam-ish ID/backlink workflows: *In progress*
 
 **** Language/tooling
