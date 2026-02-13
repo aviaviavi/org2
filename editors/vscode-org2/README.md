@@ -127,6 +127,7 @@ Agenda items are clickable; clicking opens the source file at the line reported 
 - `Org2: Formatter — Check Workspace Drift` runs `org2 fmt --dir <agenda-root> --recursive --check --format json` and reports drift in the `Org2 Formatter` output channel. If `org2.formatter.configFile` is set, it uses `org2 fmt --config <path> --check --format json` instead. When configured, it also passes `--file-match <org2.formatter.fileFilter>` and/or `--exclude-file <org2.formatter.excludeFileFilter>`.
 - `Org2: Formatter — Apply Workspace Formatting` first runs the same drift check, previews the file list, then asks for confirmation before applying `org2 fmt --dir <agenda-root> --recursive --apply --format json` (or `org2 fmt --config <path> --apply --format json` when `org2.formatter.configFile` is set), with the same optional workspace file filters (fallback: plain `--apply` for older CLIs).
 - `Org2: Formatter — Check Current File Drift` runs `org2 fmt --file <active-file> --format json` (prompts to save first when needed) and reports drift in the same output channel (fallback: `--check --format json` for older CLIs).
+- `Org2: Formatter — Preview Current File Diff` uses `org2 fmt --file <active-file> --format json` to open a side-by-side VS Code diff against formatted output without mutating the file (fallback: plain `org2 fmt --file <active-file>` output for older CLIs).
 - `Org2: Formatter — Apply Current File Formatting` previews current-file drift via the same JSON payload, asks for confirmation, then runs `org2 fmt --file <active-file> --apply --format json` (fallback: plain `--apply` for older CLIs).
 
 ## Command reference (VS Code)
@@ -139,6 +140,7 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
   - `Org2: Formatter — Check Workspace Drift` (`org2.formatWorkspaceCheck`)
   - `Org2: Formatter — Apply Workspace Formatting` (`org2.formatWorkspaceApply`)
   - `Org2: Formatter — Check Current File Drift` (`org2.formatCurrentFileCheck`)
+  - `Org2: Formatter — Preview Current File Diff` (`org2.formatCurrentFilePreviewDiff`)
   - `Org2: Formatter — Apply Current File Formatting` (`org2.formatCurrentFileApply`)
   - `Org2: Agenda Filter` (`org2.pickAgendaFilter`)
 - TODO + planning
