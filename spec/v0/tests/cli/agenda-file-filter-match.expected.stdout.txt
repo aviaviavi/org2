@@ -1,0 +1,25 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-01-21",
+    "end": "2026-01-21",
+    "days": 1
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-01-21",
+      "weekday": "Wednesday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Alpha roadmap",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-file-filter-alpha.input.txt",
+          "line": 0
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}

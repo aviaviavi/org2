@@ -49,6 +49,7 @@ Current reality:
 - Agenda tag filter (CLI + VS Code): *Available now* (MVP)
 - Agenda TODO keyword filter (CLI + VS Code): *Available now* (MVP)
 - Agenda exclusion filters (CLI + VS Code): *Available now* (MVP)
+- Agenda source-file filtering (CLI + VS Code): *Available now* (MVP)
 - TODO set/toggle from CLI/editor: *Available now*
 - Set SCHEDULED/DEADLINE (including “today” fast paths): *Available now*
 - Archive subtree: *Available now* (MVP)
@@ -167,6 +168,12 @@ npm run org2 -- agenda --dir /path/to/org --exclude-tag "someday,maybe"
 # Exclude rows with exact TODO keywords (case-insensitive, comma-separated OR terms)
 npm run org2 -- agenda --dir /path/to/org --exclude-todo "done,canceled"
 
+# Keep only rows whose source file path contains any term (case-insensitive)
+npm run org2 -- agenda --dir /path/to/org --file-match "projects,work"
+
+# Hide rows whose source file path contains any term (case-insensitive)
+npm run org2 -- agenda --dir /path/to/org --exclude-file "archive,personal"
+
 # Show parse errors instead of silently skipping broken files
 npm run org2 -- agenda --dir /path/to/org --verbose-errors
 #+end_src
@@ -180,6 +187,8 @@ Notes:
 - =--todo= checks exact TODO keywords only, case-insensitively.
 - =--exclude-tag= hides rows with matching headline tags.
 - =--exclude-todo= hides rows with matching TODO keywords.
+- =--file-match= keeps rows whose source file path contains any term.
+- =--exclude-file= hides rows whose source file path contains any term.
 
 *** Running against local data with =org2.json=
 
