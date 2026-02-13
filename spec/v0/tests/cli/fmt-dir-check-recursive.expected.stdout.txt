@@ -1,0 +1,2 @@
+spec/v0/tests/cli/fmt-dir-check-fixture/sub/nested-dirty.org
+spec/v0/tests/cli/fmt-dir-check-fixture/top-dirty.org
