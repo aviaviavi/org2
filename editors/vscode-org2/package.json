@@ -11,6 +11,8 @@
     "onCommand:org2.openAgenda",
     "onCommand:org2.formatWorkspaceCheck",
     "onCommand:org2.formatWorkspaceApply",
+    "onCommand:org2.formatCurrentFileCheck",
+    "onCommand:org2.formatCurrentFileApply",
     "onCommand:org2.toggleTodo",
     "onCommand:org2.setTodoStatus",
     "onCommand:org2.setTodoTODO",
@@ -86,6 +88,14 @@
       {
         "command": "org2.formatWorkspaceApply",
         "title": "Org2: Formatter — Apply Workspace Formatting"
+      },
+      {
+        "command": "org2.formatCurrentFileCheck",
+        "title": "Org2: Formatter — Check Current File Drift"
+      },
+      {
+        "command": "org2.formatCurrentFileApply",
+        "title": "Org2: Formatter — Apply Current File Formatting"
       },
       {
         "command": "org2.pickAgendaFilter",

@@ -62,6 +62,7 @@ Current reality:
 - Formatter drift detection (=org2 fmt --check=): *Available now* (MVP)
 - Formatter directory scans (=org2 fmt --dir ... --recursive=): *Available now* (MVP)
 - Formatter workspace apply command (VS Code): *Available now* (MVP)
+- Formatter current-file check/apply commands (VS Code): *Available now* (MVP)
 - Formatter (=org2 fmt=): *In progress*
 - LSP entrypoint (=org2 lsp=): *In progress*
 - Formal Org2 spec (v0 draft): *In progress*
