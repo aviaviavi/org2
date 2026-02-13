@@ -56,11 +56,14 @@ interface ScheduledItem {
 }
 
 type AgendaStatusBucket = "todo" | "in_progress" | "done" | "canceled" | "custom";
+type AgendaPlanningKind = "SCHEDULED" | "DEADLINE";
 
 type AgendaStatusFilter = Set<AgendaStatusBucket> | null;
+type AgendaPlanningFilter = Set<AgendaPlanningKind> | null;
 
 const AGENDA_STATUS_ALLOWED_HINT =
   "all, active, actionable, open, todo, in_progress, done, canceled, closed, custom";
+const AGENDA_KIND_ALLOWED_HINT = "all, scheduled, deadline";
 
 function agendaStatusBucketForKeyword(todo: string | undefined): AgendaStatusBucket | null {
   const key = String(todo || "").trim().toUpperCase();
@@ -159,6 +162,55 @@ function parseAgendaStatusFilterArgs(rawArgs: string[]): {
   return { filter: selected, invalid: [] };
 }
 
+function parseAgendaKindFilterArgs(rawArgs: string[]): {
+  filter: AgendaPlanningFilter;
+  invalid: string[];
+} {
+  if (rawArgs.length === 0) return { filter: null, invalid: [] };
+
+  const selected = new Set<AgendaPlanningKind>();
+  const invalid: string[] = [];
+  let sawAll = false;
+
+  const addToken = (tokenRaw: string): void => {
+    const token = tokenRaw.trim().toLowerCase();
+    if (!token) return;
+
+    if (token === "all") {
+      sawAll = true;
+      return;
+    }
+
+    if (token === "scheduled") {
+      selected.add("SCHEDULED");
+      return;
+    }
+
+    if (token === "deadline") {
+      selected.add("DEADLINE");
+      return;
+    }
+
+    invalid.push(tokenRaw.trim());
+  };
+
+  for (const raw of rawArgs) {
+    for (const token of String(raw).split(",")) {
+      addToken(token);
+    }
+  }
+
+  if (invalid.length > 0) {
+    return { filter: selected.size > 0 ? selected : null, invalid };
+  }
+
+  if (sawAll || selected.size === 0) {
+    return { filter: null, invalid: [] };
+  }
+
+  return { filter: selected, invalid: [] };
+}
+
 function parseHeadlineLine(line: string): { todo?: string; title: string } | null {
   const m = /^(\*+)\s+(.*)$/.exec(line);
   if (!m) return null;
@@ -186,7 +238,8 @@ function findScheduledItemsInText(
   startDate: Date,
   endDate: Date,
   includeOverdue: boolean,
-  statusFilter: AgendaStatusFilter
+  statusFilter: AgendaStatusFilter,
+  planningFilter: AgendaPlanningFilter
 ): ScheduledItem[] {
   const items: ScheduledItem[] = [];
   const lines = content.split("\n");
@@ -230,6 +283,7 @@ function findScheduledItemsInText(
       const kind = m[1] ?? "";
       // CLOSED is metadata for completed tasks; don't create a separate agenda entry.
       if (kind === "CLOSED") continue;
+      if (planningFilter && !planningFilter.has(kind as AgendaPlanningKind)) continue;
 
       const tsRaw = m[2] ?? "";
       const dateStr = extractDateFromTimestamp(tsRaw);
@@ -266,7 +320,8 @@ function findScheduledItems(
   startDate: Date,
   endDate: Date,
   includeOverdue: boolean,
-  statusFilter: AgendaStatusFilter
+  statusFilter: AgendaStatusFilter,
+  planningFilter: AgendaPlanningFilter
 ): ScheduledItem[] {
   const items: ScheduledItem[] = [];
 
@@ -306,6 +361,7 @@ function findScheduledItems(
                   .join("");
 
                 if (planning.kind === "CLOSED") continue;
+                if (planningFilter && !planningFilter.has(planning.kind as AgendaPlanningKind)) continue;
 
                 items.push({
                   filePath,
@@ -456,6 +512,7 @@ async function main(): Promise<void> {
   let recursive = false;
   let includeOverdue = true;
   let agendaStatusFiltersRaw: string[] = [];
+  let agendaKindFiltersRaw: string[] = [];
   let verboseErrors = false;
   let help = false;
 
@@ -698,7 +755,11 @@ async function main(): Promise<void> {
     } else if (arg === "--kind") {
       i++;
       if (i < args.length) {
-        planKind = args[i] as PlanningKindArg;
+        if (command === "agenda") {
+          agendaKindFiltersRaw.push(args[i]!);
+        } else {
+          planKind = args[i] as PlanningKindArg;
+        }
         i++;
       }
     } else if (arg === "--date") {
@@ -831,7 +892,7 @@ async function main(): Promise<void> {
 
   if (help) {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -873,7 +934,7 @@ async function main(): Promise<void> {
 
   if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -2222,6 +2283,14 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const parsedAgendaKind = parseAgendaKindFilterArgs(agendaKindFiltersRaw);
+  if (parsedAgendaKind.invalid.length > 0) {
+    console.error(
+      `Error: invalid agenda --kind value(s): ${parsedAgendaKind.invalid.join(", ")}. Allowed: ${AGENDA_KIND_ALLOWED_HINT}`,
+    );
+    process.exit(1);
+  }
+
   // Parse date range
   const startDate = parseIsoDate(today);
   const endDate = new Date(startDate);
@@ -2246,6 +2315,7 @@ async function main(): Promise<void> {
         endDate,
         includeOverdue,
         parsedAgendaStatus.filter,
+        parsedAgendaKind.filter,
       );
       allItems.push(...items);
     } catch (err) {

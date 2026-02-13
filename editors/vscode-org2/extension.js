@@ -641,6 +641,7 @@ async function fetchAgendaGroups(context, filter) {
   const files = cfg.get('agenda.files', []);
   const includeOverdue = cfg.get('agenda.includeOverdue', true);
   const statusFilter = String(cfg.get('agenda.statusFilter', 'all') || 'all').trim().toLowerCase();
+  const kindFilter = String(cfg.get('agenda.kindFilter', 'all') || 'all').trim().toLowerCase();
   const defaultDays = cfg.get('agenda.days', 7);
 
   const days = filter && filter.type === 'today' ? 1 : (filter && filter.type === 'next' ? filter.days : defaultDays);
@@ -661,6 +662,7 @@ async function fetchAgendaGroups(context, filter) {
   args.push('--days', String(days), '--format', 'json');
   if (!includeOverdue) args.push('--no-overdue');
   if (statusFilter && statusFilter !== 'all') args.push('--status', statusFilter);
+  if (kindFilter && kindFilter !== 'all') args.push('--kind', kindFilter);
 
   const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
   const { stdout } = await execFileAsync(finalCmd, finalArgs, { cwd: agendaRoot });
