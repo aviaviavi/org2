@@ -343,6 +343,13 @@
           "maximum": 365,
           "description": "Default agenda window (in days) for the 'Next N days' filter."
         },
+        "org2.agenda.limit": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 5000,
+          "description": "Maximum number of agenda rows to render after sorting (0 = no limit)."
+        },
         "org2.agenda.includeOverdue": {
           "type": "boolean",
           "default": true,
