@@ -68,6 +68,7 @@ Current reality:
 - Formatter config-driven target discovery (=org2 fmt --config PATH=): *Available now* (MVP)
 - Formatter workspace apply command (VS Code): *Available now* (MVP)
 - Formatter current-file check/apply commands (VS Code): *Available now* (MVP)
+- Formatter current-file diff preview command (VS Code): *Available now* (MVP)
 - Formatter (=org2 fmt=): *In progress*
 - LSP entrypoint (=org2 lsp=): *In progress*
 - Formal Org2 spec (v0 draft): *In progress*
@@ -287,6 +288,9 @@ npm run org2 -- fmt --dir /path/to/org --recursive --check --format json
 # Preview single-file formatter output as JSON (safe-edit style)
 npm run org2 -- fmt --file /path/to/file.org --format json
 
+# Format stdin and emit JSON (changed + formattedText)
+cat /path/to/file.org | npm run org2 -- fmt --stdin --format json
+
 # Check formatting drift using org2.json agendaFiles/ignorePatterns
 npm run org2 -- fmt --check --config /path/to/org2.json
 
@@ -306,7 +310,7 @@ Notes:
 - =fmt --check --format json= emits =changed= plus =checkedFiles=/=changedFiles= arrays while preserving exit code semantics (0 clean, 1 drift).
 - =fmt --file ... --format json= emits a single-file preview payload with =formattedText= and =changed= (without mutating files).
 - =fmt --check= does not support =--stdin=.
-- =fmt --stdin= does not support =--format json=.
+- =fmt --stdin --format json= emits =changed= plus =formattedText=.
 - =fmt --apply --format json= emits =changed= plus =processedFiles=/=changedFiles= arrays.
 - =fmt --config PATH= resolves files from =org2.json= (=agendaFiles= + =ignorePatterns=) before formatter path filters.
 - =fmt --dir= scans top-level files by default; add =--recursive= to include subdirectories.
