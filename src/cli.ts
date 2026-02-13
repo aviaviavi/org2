@@ -2608,13 +2608,23 @@ async function main(): Promise<void> {
       );
     };
 
+    const emitFmtApplyJson = (processedFiles: string[], changedFiles: string[]): void => {
+      process.stdout.write(
+        JSON.stringify(
+          {
+            $schema: "org2:fmt-apply:v1",
+            changed: changedFiles.length > 0,
+            processedFiles,
+            changedFiles,
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+    };
+
     const parsedFmtFile = parseAgendaFileFilterArgs(fmtFileFiltersRaw);
     const parsedFmtExcludeFile = parseAgendaExcludeFileFilterArgs(fmtExcludeFileFiltersRaw);
-
-    if (fmtFormat === "json" && fmtApply) {
-      console.error("Error: fmt --format json does not support --apply");
-      process.exit(1);
-    }
 
     if (fmtStdin) {
       if (fmtConfigPath) {
@@ -2747,10 +2757,19 @@ async function main(): Promise<void> {
       return;
     }
 
+    const changedFiles: string[] = [];
     for (const file of fmtFiles) {
       const raw = fs.readFileSync(file, "utf8");
+      const normalizedRaw = raw.replace(/\r\n/g, "\n");
       const out = formatOne(raw);
-      fs.writeFileSync(file, out, "utf8");
+      if (out !== normalizedRaw) {
+        fs.writeFileSync(file, out, "utf8");
+        changedFiles.push(file);
+      }
+    }
+
+    if (fmtFormat === "json") {
+      emitFmtApplyJson(fmtFiles, changedFiles);
     }
 
     return;

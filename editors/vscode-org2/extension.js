@@ -921,6 +921,41 @@ function activate(context) {
     }
   }
 
+  function isFormatterApplyJsonUnsupported(stderr, stdout) {
+    const text = `${String(stderr || '')}\n${String(stdout || '')}`.toLowerCase();
+    if (!text.includes('--format')) return false;
+    if (text.includes('does not support --apply')) return true;
+    if (text.includes('does not support --format json')) return true;
+    if (text.includes('unknown option') && text.includes('--format')) return true;
+    if (text.includes('invalid value for --format')) return true;
+    return false;
+  }
+
+  async function applyFormatting(args, cwd) {
+    const argsWithFormat = [...args, '--format', 'json'];
+    const { cmd: jsonCmd, args: jsonArgs } = resolveOrg2Command(context, argsWithFormat);
+
+    try {
+      const { stdout, stderr } = await execFileAsync(jsonCmd, jsonArgs, { cwd });
+      const parsedJson = parseFormatterCheckJson(stdout);
+      if (parsedJson) {
+        return { changedFiles: parsedJson.changedFiles, stderr: String(stderr || '').trim() };
+      }
+      return { changedFiles: parseFormatterChangedFiles(stdout), stderr: String(stderr || '').trim() };
+    } catch (err) {
+      const stdout = String((err && err.stdout) || '');
+      const stderr = String((err && err.stderr) || '');
+      if (!isFormatterApplyJsonUnsupported(stderr, stdout)) {
+        const msg = stderr.trim() || (err instanceof Error ? err.message : String(err));
+        throw new Error(`Org2 formatter apply failed: ${msg}`);
+      }
+    }
+
+    const { cmd: fallbackCmd, args: fallbackArgs } = resolveOrg2Command(context, args);
+    const { stdout, stderr } = await execFileAsync(fallbackCmd, fallbackArgs, { cwd });
+    return { changedFiles: parseFormatterChangedFiles(stdout), stderr: String(stderr || '').trim() };
+  }
+
   function getWorkspaceFormatterPathFilters(root) {
     const cfg = vscode.workspace.getConfiguration('org2');
     const fileFilter = String(cfg.get('formatter.fileFilter', '') || '').trim();
@@ -1117,20 +1152,22 @@ function activate(context) {
     applyArgs.push('--apply');
     if (pathFilters.fileFilter) applyArgs.push('--file-match', pathFilters.fileFilter);
     if (pathFilters.excludeFileFilter) applyArgs.push('--exclude-file', pathFilters.excludeFileFilter);
-    const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, applyArgs);
-
     try {
-      await execFileAsync(finalCmd, finalArgs, { cwd: root });
+      const applyResult = await applyFormatting(applyArgs, root);
+      const appliedFiles = applyResult.changedFiles.length > 0 ? applyResult.changedFiles : changedFiles;
       formatterOutput.appendLine('');
-      formatterOutput.appendLine(`Applied formatter to ${changedFiles.length} file(s).`);
+      formatterOutput.appendLine(`Applied formatter to ${appliedFiles.length} file(s).`);
+      if (applyResult.stderr) {
+        formatterOutput.appendLine('');
+        formatterOutput.appendLine(applyResult.stderr);
+      }
       formatterOutput.show(true);
       vscode.window.showInformationMessage(
-        `Org2: formatted ${changedFiles.length} workspace file(s). See "Org2 Formatter" output.`
+        `Org2: formatted ${appliedFiles.length} workspace file(s). See "Org2 Formatter" output.`
       );
     } catch (err) {
-      const stderr = String((err && err.stderr) || '').trim();
-      const msg = stderr || (err instanceof Error ? err.message : String(err));
-      vscode.window.showErrorMessage(`Org2 formatter apply failed: ${msg}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(msg);
     }
   }
 
@@ -1186,10 +1223,9 @@ function activate(context) {
 
     const cwd = getWorkspaceRoot() || path.dirname(target.filePath) || process.cwd();
     const applyArgs = ['fmt', '--file', target.filePath, '--apply'];
-    const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, applyArgs);
 
     try {
-      await execFileAsync(finalCmd, finalArgs, { cwd });
+      const applyResult = await applyFormatting(applyArgs, cwd);
 
       if (refreshAfterCliApply) {
         await refreshFileFromDisk(target.filePath, {
@@ -1200,17 +1236,21 @@ function activate(context) {
         });
       }
 
-      const changedCount = Math.max(1, changedFiles.length);
+      const appliedFiles = applyResult.changedFiles.length > 0 ? applyResult.changedFiles : changedFiles;
+      const changedCount = Math.max(1, appliedFiles.length);
       formatterOutput.appendLine('');
       formatterOutput.appendLine(`Applied formatter to ${changedCount} file(s).`);
+      if (applyResult.stderr) {
+        formatterOutput.appendLine('');
+        formatterOutput.appendLine(applyResult.stderr);
+      }
       formatterOutput.show(true);
       vscode.window.showInformationMessage(
         `Org2: formatted ${displayPath}. See "Org2 Formatter" output.`
       );
     } catch (err) {
-      const stderr = String((err && err.stderr) || '').trim();
-      const msg = stderr || (err instanceof Error ? err.message : String(err));
-      vscode.window.showErrorMessage(`Org2 formatter apply failed: ${msg}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(msg);
     }
   }
 
