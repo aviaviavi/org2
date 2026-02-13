@@ -126,8 +126,8 @@ Agenda items are clickable; clicking opens the source file at the line reported 
 
 - `Org2: Formatter — Check Workspace Drift` runs `org2 fmt --dir <agenda-root> --recursive --check --format json` and reports drift in the `Org2 Formatter` output channel. If `org2.formatter.configFile` is set, it uses `org2 fmt --config <path> --check --format json` instead. When configured, it also passes `--file-match <org2.formatter.fileFilter>` and/or `--exclude-file <org2.formatter.excludeFileFilter>`.
 - `Org2: Formatter — Apply Workspace Formatting` first runs the same drift check, previews the file list, then asks for confirmation before applying `org2 fmt --dir <agenda-root> --recursive --apply` (or `org2 fmt --config <path> --apply` when `org2.formatter.configFile` is set), with the same optional workspace file filters.
-- `Org2: Formatter — Check Current File Drift` runs `org2 fmt --file <active-file> --check --format json` (prompts to save first when needed) and reports drift in the same output channel.
-- `Org2: Formatter — Apply Current File Formatting` previews current-file drift, asks for confirmation, then runs `org2 fmt --file <active-file> --apply`.
+- `Org2: Formatter — Check Current File Drift` runs `org2 fmt --file <active-file> --format json` (prompts to save first when needed) and reports drift in the same output channel (fallback: `--check --format json` for older CLIs).
+- `Org2: Formatter — Apply Current File Formatting` previews current-file drift via the same JSON payload, asks for confirmation, then runs `org2 fmt --file <active-file> --apply`.
 
 ## Command reference (VS Code)
 
