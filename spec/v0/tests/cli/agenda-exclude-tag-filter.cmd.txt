@@ -1,0 +1,1 @@
+agenda --files "spec/v0/tests/cli/agenda-exclude-filters.input.txt" --today 2026-01-21 --days 2 --format json --exclude-tag "personal,SOMEDAY"
