@@ -809,9 +809,8 @@ function activate(context) {
 
   context.subscriptions.push(vscode.languages.registerDocumentLinkProvider(selector, linkProvider));
 
-  async function formatOrg2Text(text) {
-    const cwd = getWorkspaceRoot() || process.cwd();
-    const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, ['fmt', '--stdin']);
+  async function runFmtWithStdin(args, text, cwd) {
+    const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
 
     return new Promise((resolve, reject) => {
       const child = cp.spawn(finalCmd, finalArgs, { cwd });
@@ -831,14 +830,37 @@ function activate(context) {
         if (code !== 0) {
           const e = new Error(`org2 fmt failed (code=${code})`);
           e.stderr = stderr;
+          e.stdout = stdout;
+          e.code = code;
           reject(e);
           return;
         }
-        resolve(stdout);
+        resolve({ stdout, stderr });
       });
 
       child.stdin.end(text, 'utf8');
     });
+  }
+
+  async function formatOrg2Text(text) {
+    const cwd = getWorkspaceRoot() || process.cwd();
+
+    try {
+      const jsonResult = await runFmtWithStdin(['fmt', '--stdin', '--format', 'json'], text, cwd);
+      const parsedJson = parseFormatterStdinJson(jsonResult.stdout);
+      if (parsedJson) {
+        return parsedJson.formattedText;
+      }
+    } catch (err) {
+      const stdout = String((err && err.stdout) || '');
+      const stderr = String((err && err.stderr) || '');
+      if (!isFormatterStdinJsonUnsupported(stderr, stdout)) {
+        throw err;
+      }
+    }
+
+    const fallback = await runFmtWithStdin(['fmt', '--stdin'], text, cwd);
+    return fallback.stdout;
   }
 
   const formatterOutput = vscode.window.createOutputChannel('Org2 Formatter');
@@ -883,9 +905,28 @@ function activate(context) {
 
       const changed = typeof parsed.changed === 'boolean' ? parsed.changed : undefined;
       const file = typeof parsed.file === 'string' ? parsed.file.trim() : '';
+      const formattedText = typeof parsed.formattedText === 'string' ? parsed.formattedText : undefined;
       if (typeof changed !== 'boolean' || !file) return undefined;
 
-      return { file, changed };
+      return { file, changed, formattedText };
+    } catch {
+      return undefined;
+    }
+  }
+
+  function parseFormatterStdinJson(stdout) {
+    const text = String(stdout || '').trim();
+    if (!text) return undefined;
+
+    try {
+      const parsed = JSON.parse(text);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+
+      const changed = typeof parsed.changed === 'boolean' ? parsed.changed : undefined;
+      const formattedText = typeof parsed.formattedText === 'string' ? parsed.formattedText : undefined;
+      if (typeof changed !== 'boolean' || typeof formattedText !== 'string') return undefined;
+
+      return { changed, formattedText };
     } catch {
       return undefined;
     }
@@ -919,6 +960,15 @@ function activate(context) {
       const msg = stderr.trim() || (err instanceof Error ? err.message : String(err));
       throw new Error(`Org2 formatter check failed: ${msg}`);
     }
+  }
+
+  function isFormatterStdinJsonUnsupported(stderr, stdout) {
+    const text = `${String(stderr || '')}\n${String(stdout || '')}`.toLowerCase();
+    if (!text.includes('--format')) return false;
+    if (text.includes('does not support --format json')) return true;
+    if (text.includes('unknown option') && text.includes('--format')) return true;
+    if (text.includes('invalid value for --format')) return true;
+    return false;
   }
 
   function isFormatterApplyJsonUnsupported(stderr, stdout) {
@@ -1005,7 +1055,7 @@ function activate(context) {
     if (!doc || !doc.isDirty) return true;
 
     const confirm = await vscode.window.showWarningMessage(
-      'Org2: save this file before running formatter check/apply?',
+      'Org2: save this file before running formatter check/apply/preview?',
       { modal: true },
       'Save and Continue'
     );
@@ -1040,6 +1090,35 @@ function activate(context) {
     }
 
     return getFormattingDrift(['fmt', '--file', filePath, '--check'], cwd);
+  }
+
+  async function getCurrentFileFormattingPreview(filePath) {
+    const cwd = getWorkspaceRoot() || path.dirname(filePath) || process.cwd();
+    const previewArgs = ['fmt', '--file', filePath, '--format', 'json'];
+    const { cmd: previewCmd, args: previewFinalArgs } = resolveOrg2Command(context, previewArgs);
+
+    try {
+      const { stdout, stderr } = await execFileAsync(previewCmd, previewFinalArgs, { cwd });
+      const parsed = parseFormatterPreviewJson(stdout);
+      if (parsed && typeof parsed.formattedText === 'string') {
+        return {
+          changed: parsed.changed,
+          formattedText: parsed.formattedText,
+          stderr: String(stderr || '').trim(),
+        };
+      }
+    } catch {
+      // Fallback for older CLI versions that don't support fmt preview JSON.
+    }
+
+    const { cmd: fallbackCmd, args: fallbackArgs } = resolveOrg2Command(context, ['fmt', '--file', filePath]);
+    const { stdout, stderr } = await execFileAsync(fallbackCmd, fallbackArgs, { cwd });
+    const currentText = fs.readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n');
+    return {
+      changed: stdout !== currentText,
+      formattedText: stdout,
+      stderr: String(stderr || '').trim(),
+    };
   }
 
   function renderFormatterDriftReport(changedFiles, stderr, headerText) {
@@ -1104,6 +1183,46 @@ function activate(context) {
       vscode.window.showWarningMessage(
         `Org2: formatting drift in ${changedCount} file(s). See "Org2 Formatter" output.`
       );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(msg);
+    }
+  }
+
+  async function previewCurrentFileFormattingDiff() {
+    const target = getActiveFormatterTarget();
+    if (!target) return;
+
+    if (!(await ensureFormatterTargetSaved(target.doc))) return;
+
+    const displayPath = path.basename(target.filePath);
+
+    try {
+      const preview = await getCurrentFileFormattingPreview(target.filePath);
+      if (!preview.changed) {
+        vscode.window.showInformationMessage(`Org2: ${displayPath} has no formatter drift.`);
+        return;
+      }
+
+      const formattedDoc = await vscode.workspace.openTextDocument({
+        language: target.doc.languageId === 'org' ? 'org' : 'org2',
+        content: preview.formattedText,
+      });
+
+      await vscode.commands.executeCommand(
+        'vscode.diff',
+        target.doc.uri,
+        formattedDoc.uri,
+        `Org2 Formatter Preview: ${displayPath} (formatted)`
+      );
+
+      if (preview.stderr) {
+        formatterOutput.clear();
+        formatterOutput.appendLine(`Org2 formatter preview: ${displayPath}`);
+        formatterOutput.appendLine('');
+        formatterOutput.appendLine(preview.stderr);
+        formatterOutput.show(true);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       vscode.window.showErrorMessage(msg);
@@ -1344,6 +1463,12 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.formatCurrentFileCheck', async () => {
       await checkCurrentFileFormattingDrift();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.formatCurrentFilePreviewDiff', async () => {
+      await previewCurrentFileFormattingDiff();
     })
   );
 

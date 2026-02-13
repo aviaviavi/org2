@@ -1,0 +1,5 @@
+{
+  "$schema": "org2:fmt-stdin:v1",
+  "changed": false,
+  "formattedText": "| a      | b   |\n| longer | c   |\n|--------+-----|\n| x      | yyy |\n"
+}

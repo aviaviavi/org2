@@ -2623,6 +2623,20 @@ async function main(): Promise<void> {
       );
     };
 
+    const emitFmtStdinJson = (formattedText: string, changed: boolean): void => {
+      process.stdout.write(
+        JSON.stringify(
+          {
+            $schema: "org2:fmt-stdin:v1",
+            changed,
+            formattedText,
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+    };
+
     const parsedFmtFile = parseAgendaFileFilterArgs(fmtFileFiltersRaw);
     const parsedFmtExcludeFile = parseAgendaExcludeFileFilterArgs(fmtExcludeFileFiltersRaw);
 
@@ -2635,10 +2649,6 @@ async function main(): Promise<void> {
         console.error("Error: fmt --stdin cannot be combined with --file-match/--exclude-file");
         process.exit(1);
       }
-      if (fmtFormat === "json") {
-        console.error("Error: fmt --stdin does not support --format json");
-        process.exit(1);
-      }
       if (fmtCheck) {
         console.error("Error: fmt --check does not support --stdin");
         process.exit(1);
@@ -2648,7 +2658,15 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       const stdinRaw = fs.readFileSync(0, "utf8");
-      process.stdout.write(formatOne(stdinRaw));
+      const normalizedStdinRaw = stdinRaw.replace(/\r\n/g, "\n");
+      const formattedText = formatOne(stdinRaw);
+
+      if (fmtFormat === "json") {
+        emitFmtStdinJson(formattedText, formattedText !== normalizedStdinRaw);
+        return;
+      }
+
+      process.stdout.write(formattedText);
       return;
     }
 
