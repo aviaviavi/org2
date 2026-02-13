@@ -844,14 +844,20 @@ function activate(context) {
   const formatterOutput = vscode.window.createOutputChannel('Org2 Formatter');
   context.subscriptions.push(formatterOutput);
 
-  async function checkWorkspaceFormattingDrift() {
-    const root = getAgendaRootDir();
+  function parseFormatterChangedFiles(stdout) {
+    return String(stdout || '')
+      .split(/\r?\n/)
+      .map((line) => String(line || '').trim())
+      .filter(Boolean);
+  }
+
+  async function getWorkspaceFormattingDrift(root) {
     const args = ['fmt', '--dir', root, '--recursive', '--check'];
     const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
 
     try {
       await execFileAsync(finalCmd, finalArgs, { cwd: root });
-      vscode.window.showInformationMessage('Org2: workspace formatter check passed.');
+      return { changedFiles: [], stderr: '' };
     } catch (err) {
       const exitCodeRaw = err && err.code !== undefined ? Number(err.code) : NaN;
       const exitCode = Number.isFinite(exitCodeRaw) ? exitCodeRaw : null;
@@ -859,29 +865,98 @@ function activate(context) {
       const stderr = String((err && err.stderr) || '');
 
       if (exitCode === 1) {
-        const changedFiles = stdout
-          .split(/\r?\n/)
-          .map((line) => String(line || '').trim())
-          .filter(Boolean);
-
-        formatterOutput.clear();
-        formatterOutput.appendLine(`Org2 formatter drift check: ${changedFiles.length} file(s) need formatting.`);
-        for (const file of changedFiles) {
-          formatterOutput.appendLine(file);
-        }
-        if (stderr.trim()) {
-          formatterOutput.appendLine('');
-          formatterOutput.appendLine(stderr.trim());
-        }
-        formatterOutput.show(true);
-        vscode.window.showWarningMessage(
-          `Org2: formatting drift in ${changedFiles.length} file(s). See \"Org2 Formatter\" output.`
-        );
-        return;
+        return { changedFiles: parseFormatterChangedFiles(stdout), stderr: stderr.trim() };
       }
 
       const msg = stderr.trim() || (err instanceof Error ? err.message : String(err));
-      vscode.window.showErrorMessage(`Org2: formatter check failed: ${msg}`);
+      throw new Error(`Org2 formatter check failed: ${msg}`);
+    }
+  }
+
+  function renderFormatterDriftReport(changedFiles, stderr, headerText) {
+    formatterOutput.clear();
+    formatterOutput.appendLine(headerText);
+    for (const file of changedFiles) {
+      formatterOutput.appendLine(file);
+    }
+    if (stderr && String(stderr).trim()) {
+      formatterOutput.appendLine('');
+      formatterOutput.appendLine(String(stderr).trim());
+    }
+    formatterOutput.show(true);
+  }
+
+  async function checkWorkspaceFormattingDrift() {
+    const root = getAgendaRootDir();
+
+    try {
+      const { changedFiles, stderr } = await getWorkspaceFormattingDrift(root);
+      if (changedFiles.length === 0) {
+        vscode.window.showInformationMessage('Org2: workspace formatter check passed.');
+        return;
+      }
+
+      renderFormatterDriftReport(
+        changedFiles,
+        stderr,
+        `Org2 formatter drift check: ${changedFiles.length} file(s) need formatting.`
+      );
+      vscode.window.showWarningMessage(
+        `Org2: formatting drift in ${changedFiles.length} file(s). See \"Org2 Formatter\" output.`
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(msg);
+    }
+  }
+
+  async function applyWorkspaceFormatting() {
+    const root = getAgendaRootDir();
+
+    let changedFiles = [];
+    try {
+      const drift = await getWorkspaceFormattingDrift(root);
+      changedFiles = drift.changedFiles;
+
+      if (changedFiles.length === 0) {
+        vscode.window.showInformationMessage('Org2: workspace already formatted.');
+        return;
+      }
+
+      renderFormatterDriftReport(
+        changedFiles,
+        drift.stderr,
+        `Org2 formatter apply preview: ${changedFiles.length} file(s) will be formatted.`
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(msg);
+      return;
+    }
+
+    const confirm = await vscode.window.showWarningMessage(
+      `Org2: format ${changedFiles.length} workspace file(s) now?`,
+      { modal: true },
+      'Format Workspace'
+    );
+
+    if (confirm !== 'Format Workspace') return;
+
+    const applyArgs = ['fmt', '--dir', root, '--recursive', '--apply'];
+    const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, applyArgs);
+
+    try {
+      await execFileAsync(finalCmd, finalArgs, { cwd: root });
+      formatterOutput.appendLine('');
+      formatterOutput.appendLine(`Applied formatter to ${changedFiles.length} file(s).`);
+      formatterOutput.show(true);
+      vscode.window.showInformationMessage(
+        `Org2: formatted ${changedFiles.length} workspace file(s). See \"Org2 Formatter\" output.`
+      );
+    } catch (err) {
+      const stderr = String((err && err.stderr) || '').trim();
+      const msg = stderr || (err instanceof Error ? err.message : String(err));
+      vscode.window.showErrorMessage(`Org2 formatter apply failed: ${msg}`);
     }
   }
 
@@ -963,6 +1038,12 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.formatWorkspaceCheck', async () => {
       await checkWorkspaceFormattingDrift();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.formatWorkspaceApply', async () => {
+      await applyWorkspaceFormatting();
     })
   );
 
