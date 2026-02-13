@@ -648,6 +648,8 @@ async function fetchAgendaGroups(context, filter) {
   const todoKeywordFilter = String(cfg.get('agenda.todoKeywordFilter', '') || '').trim();
   const excludeTagFilter = String(cfg.get('agenda.excludeTagFilter', '') || '').trim();
   const excludeTodoKeywordFilter = String(cfg.get('agenda.excludeTodoKeywordFilter', '') || '').trim();
+  const fileFilter = String(cfg.get('agenda.fileFilter', '') || '').trim();
+  const excludeFileFilter = String(cfg.get('agenda.excludeFileFilter', '') || '').trim();
   const defaultDays = cfg.get('agenda.days', 7);
 
   const days = filter && filter.type === 'today' ? 1 : (filter && filter.type === 'next' ? filter.days : defaultDays);
@@ -675,6 +677,8 @@ async function fetchAgendaGroups(context, filter) {
   if (todoKeywordFilter) args.push('--todo', todoKeywordFilter);
   if (excludeTagFilter) args.push('--exclude-tag', excludeTagFilter);
   if (excludeTodoKeywordFilter) args.push('--exclude-todo', excludeTodoKeywordFilter);
+  if (fileFilter) args.push('--file-match', fileFilter);
+  if (excludeFileFilter) args.push('--exclude-file', excludeFileFilter);
 
   const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
   const { stdout } = await execFileAsync(finalCmd, finalArgs, { cwd: agendaRoot });

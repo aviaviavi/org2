@@ -76,6 +76,8 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.todoKeywordFilter`: filter by exact TODO keyword (case-insensitive; comma-separated keywords use OR matching)
 - `org2.agenda.excludeTagFilter`: exclude rows by headline tags (case-insensitive exact tag match; comma-separated tags use OR matching)
 - `org2.agenda.excludeTodoKeywordFilter`: exclude rows by exact TODO keyword (case-insensitive; comma-separated keywords use OR matching)
+- `org2.agenda.fileFilter`: keep rows whose source file path contains any comma-separated term (case-insensitive substring match)
+- `org2.agenda.excludeFileFilter`: hide rows whose source file path contains any comma-separated term (case-insensitive substring match)
 - `org2.agenda.recursive`: when scope=`workspace`, whether to scan recursively (default true)
 - `org2.agenda.command`: command used to run org2 (default: `org2`)
 - `org2.agenda.args`: extra args prefixed before `agenda` (advanced)

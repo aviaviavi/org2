@@ -1,0 +1,1 @@
+agenda --files "spec/v0/tests/cli/agenda-file-filter-alpha.input.txt" "spec/v0/tests/cli/agenda-file-filter-beta.input.txt" --today 2026-01-21 --days 1 --format json --file-match alpha,beta --exclude-file beta
