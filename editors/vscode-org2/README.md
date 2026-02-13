@@ -165,9 +165,10 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
   - `Org2: Roam — New Node` (`org2.roamNodeNew`)
   - `Org2: Roam — Copy ID Link` (`org2.roamCopyIdLink`)
   - `Org2: Roam — Insert Backlink (ID Link)` (`org2.roamInsertBacklink`)
-  - `Org2: Roam — Open ID Link` (`org2.roamOpenId`)
+  - `Org2: Roam — Open ID (Prompt/Link)` (`org2.roamOpenId`)
   - `Org2: Roam — Show Backlinks` (`org2.roamShowBacklinks`)
   - `Org2: Roam — DB Sync (Ensure File IDs)` (`org2.roamDbSync`)
+  - Open-ID input accepts raw UUIDs, `id:UUID`, and full `[[id:UUID][desc]]` text; when invoked without an argument it prompts.
 - Folding + debug
   - `Org2: Re-run Auto-Fold` (`org2.rerunAutoFold`)
   - `Org2: Toggle Fold Here` (`org2.toggleFoldHere`)

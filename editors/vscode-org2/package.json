@@ -185,7 +185,7 @@
       },
       {
         "command": "org2.roamOpenId",
-        "title": "Org2: Roam \u2014 Open ID Link"
+        "title": "Org2: Roam \u2014 Open ID (Prompt/Link)"
       },
       {
         "command": "org2.roamShowBacklinks",
