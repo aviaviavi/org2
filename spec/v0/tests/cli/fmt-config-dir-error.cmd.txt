@@ -1,1 +1,1 @@
-fmt --check --config spec/v0/tests/cli/fmt-config-fixture/org2.json --dir spec/v0/tests/cli/fmt-dir-check-fixture
+fmt --check --config spec/v0/tests/cli/fmt-config-fixture/org2.config --dir spec/v0/tests/cli/fmt-dir-check-fixture
