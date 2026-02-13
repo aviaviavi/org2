@@ -119,10 +119,12 @@ All visuals remain theme-aware (`ThemeColor`) and keep urgency dots for schedule
 
 Agenda items are clickable; clicking opens the source file at the line reported by the org2 CLI.
 
-### Workspace formatter commands
+### Formatter commands
 
 - `Org2: Formatter — Check Workspace Drift` runs `org2 fmt --dir <agenda-root> --recursive --check` and reports drift in the `Org2 Formatter` output channel.
 - `Org2: Formatter — Apply Workspace Formatting` first runs the same drift check, previews the file list, then asks for confirmation before applying `org2 fmt --dir <agenda-root> --recursive --apply`.
+- `Org2: Formatter — Check Current File Drift` runs `org2 fmt --file <active-file> --check` (prompts to save first when needed) and reports drift in the same output channel.
+- `Org2: Formatter — Apply Current File Formatting` previews current-file drift, asks for confirmation, then runs `org2 fmt --file <active-file> --apply`.
 
 ## Command reference (VS Code)
 
@@ -133,6 +135,8 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
   - `Org2: Refresh Agenda` (`org2.refreshAgenda`)
   - `Org2: Formatter — Check Workspace Drift` (`org2.formatWorkspaceCheck`)
   - `Org2: Formatter — Apply Workspace Formatting` (`org2.formatWorkspaceApply`)
+  - `Org2: Formatter — Check Current File Drift` (`org2.formatCurrentFileCheck`)
+  - `Org2: Formatter — Apply Current File Formatting` (`org2.formatCurrentFileApply`)
   - `Org2: Agenda Filter` (`org2.pickAgendaFilter`)
 - TODO + planning
   - `Org2: Toggle Todo Status` (`org2.toggleTodo`)

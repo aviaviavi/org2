@@ -851,12 +851,11 @@ function activate(context) {
       .filter(Boolean);
   }
 
-  async function getWorkspaceFormattingDrift(root) {
-    const args = ['fmt', '--dir', root, '--recursive', '--check'];
+  async function getFormattingDrift(args, cwd) {
     const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
 
     try {
-      await execFileAsync(finalCmd, finalArgs, { cwd: root });
+      await execFileAsync(finalCmd, finalArgs, { cwd });
       return { changedFiles: [], stderr: '' };
     } catch (err) {
       const exitCodeRaw = err && err.code !== undefined ? Number(err.code) : NaN;
@@ -871,6 +870,56 @@ function activate(context) {
       const msg = stderr.trim() || (err instanceof Error ? err.message : String(err));
       throw new Error(`Org2 formatter check failed: ${msg}`);
     }
+  }
+
+  async function getWorkspaceFormattingDrift(root) {
+    return getFormattingDrift(['fmt', '--dir', root, '--recursive', '--check'], root);
+  }
+
+  function getActiveFormatterTarget() {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !editor.document) {
+      vscode.window.showWarningMessage('Org2: open an org/org2 file first.');
+      return undefined;
+    }
+
+    const doc = editor.document;
+    if (doc.languageId !== 'org2' && doc.languageId !== 'org') {
+      vscode.window.showWarningMessage('Org2: formatter commands require an org/org2 editor.');
+      return undefined;
+    }
+
+    if (!doc.uri || doc.uri.scheme !== 'file') {
+      vscode.window.showWarningMessage('Org2: formatter commands require a file-backed document.');
+      return undefined;
+    }
+
+    return { editor, doc, filePath: path.resolve(doc.uri.fsPath) };
+  }
+
+  async function ensureFormatterTargetSaved(doc) {
+    if (!doc || !doc.isDirty) return true;
+
+    const confirm = await vscode.window.showWarningMessage(
+      'Org2: save this file before running formatter check/apply?',
+      { modal: true },
+      'Save and Continue'
+    );
+
+    if (confirm !== 'Save and Continue') return false;
+
+    const ok = await doc.save();
+    if (!ok) {
+      vscode.window.showWarningMessage('Org2: could not save file before running formatter command.');
+      return false;
+    }
+
+    return true;
+  }
+
+  async function getCurrentFileFormattingDrift(filePath) {
+    const cwd = getWorkspaceRoot() || path.dirname(filePath) || process.cwd();
+    return getFormattingDrift(['fmt', '--file', filePath, '--check'], cwd);
   }
 
   function renderFormatterDriftReport(changedFiles, stderr, headerText) {
@@ -902,7 +951,37 @@ function activate(context) {
         `Org2 formatter drift check: ${changedFiles.length} file(s) need formatting.`
       );
       vscode.window.showWarningMessage(
-        `Org2: formatting drift in ${changedFiles.length} file(s). See \"Org2 Formatter\" output.`
+        `Org2: formatting drift in ${changedFiles.length} file(s). See "Org2 Formatter" output.`
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(msg);
+    }
+  }
+
+  async function checkCurrentFileFormattingDrift() {
+    const target = getActiveFormatterTarget();
+    if (!target) return;
+
+    if (!(await ensureFormatterTargetSaved(target.doc))) return;
+
+    const displayPath = path.basename(target.filePath);
+
+    try {
+      const { changedFiles, stderr } = await getCurrentFileFormattingDrift(target.filePath);
+      if (changedFiles.length === 0) {
+        vscode.window.showInformationMessage(`Org2: ${displayPath} has no formatter drift.`);
+        return;
+      }
+
+      const changedCount = Math.max(1, changedFiles.length);
+      renderFormatterDriftReport(
+        changedFiles,
+        stderr,
+        `Org2 formatter drift check: ${displayPath} needs formatting.`
+      );
+      vscode.window.showWarningMessage(
+        `Org2: formatting drift in ${changedCount} file(s). See "Org2 Formatter" output.`
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -951,7 +1030,87 @@ function activate(context) {
       formatterOutput.appendLine(`Applied formatter to ${changedFiles.length} file(s).`);
       formatterOutput.show(true);
       vscode.window.showInformationMessage(
-        `Org2: formatted ${changedFiles.length} workspace file(s). See \"Org2 Formatter\" output.`
+        `Org2: formatted ${changedFiles.length} workspace file(s). See "Org2 Formatter" output.`
+      );
+    } catch (err) {
+      const stderr = String((err && err.stderr) || '').trim();
+      const msg = stderr || (err instanceof Error ? err.message : String(err));
+      vscode.window.showErrorMessage(`Org2 formatter apply failed: ${msg}`);
+    }
+  }
+
+  async function applyCurrentFileFormatting() {
+    const target = getActiveFormatterTarget();
+    if (!target) return;
+
+    if (!(await ensureFormatterTargetSaved(target.doc))) return;
+
+    const displayPath = path.basename(target.filePath);
+
+    let changedFiles = [];
+    try {
+      const drift = await getCurrentFileFormattingDrift(target.filePath);
+      changedFiles = drift.changedFiles;
+
+      if (changedFiles.length === 0) {
+        vscode.window.showInformationMessage(`Org2: ${displayPath} is already formatted.`);
+        return;
+      }
+
+      renderFormatterDriftReport(
+        changedFiles,
+        drift.stderr,
+        `Org2 formatter apply preview: ${displayPath} will be formatted.`
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(msg);
+      return;
+    }
+
+    const confirm = await vscode.window.showWarningMessage(
+      `Org2: format ${displayPath} now?`,
+      { modal: true },
+      'Format File'
+    );
+
+    if (confirm !== 'Format File') return;
+
+    const cfg = vscode.workspace.getConfiguration('org2');
+    const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
+    const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
+    const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
+    const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
+
+    const activeEditorBefore = vscode.window.activeTextEditor;
+    const activeUriBefore = activeEditorBefore && activeEditorBefore.document ? activeEditorBefore.document.uri.toString() : '';
+    const selectionBefore =
+      activeEditorBefore && activeEditorBefore.selection
+        ? new vscode.Selection(activeEditorBefore.selection.start, activeEditorBefore.selection.end)
+        : undefined;
+
+    const cwd = getWorkspaceRoot() || path.dirname(target.filePath) || process.cwd();
+    const applyArgs = ['fmt', '--file', target.filePath, '--apply'];
+    const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, applyArgs);
+
+    try {
+      await execFileAsync(finalCmd, finalArgs, { cwd });
+
+      if (refreshAfterCliApply) {
+        await refreshFileFromDisk(target.filePath, {
+          selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
+          activeUri: activeUriBefore,
+          skipIfInSync: skipRefreshWhenInSync,
+          allowGlobalFallback: allowGlobalRefreshFallback,
+        });
+      }
+
+      const changedCount = Math.max(1, changedFiles.length);
+      formatterOutput.appendLine('');
+      formatterOutput.appendLine(`Applied formatter to ${changedCount} file(s).`);
+      formatterOutput.show(true);
+      vscode.window.showInformationMessage(
+        `Org2: formatted ${displayPath}. See "Org2 Formatter" output.`
       );
     } catch (err) {
       const stderr = String((err && err.stderr) || '').trim();
@@ -1044,6 +1203,18 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.formatWorkspaceApply', async () => {
       await applyWorkspaceFormatting();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.formatCurrentFileCheck', async () => {
+      await checkCurrentFileFormattingDrift();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.formatCurrentFileApply', async () => {
+      await applyCurrentFileFormatting();
     })
   );
 
