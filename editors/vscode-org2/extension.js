@@ -841,6 +841,50 @@ function activate(context) {
     });
   }
 
+  const formatterOutput = vscode.window.createOutputChannel('Org2 Formatter');
+  context.subscriptions.push(formatterOutput);
+
+  async function checkWorkspaceFormattingDrift() {
+    const root = getAgendaRootDir();
+    const args = ['fmt', '--dir', root, '--recursive', '--check'];
+    const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
+
+    try {
+      await execFileAsync(finalCmd, finalArgs, { cwd: root });
+      vscode.window.showInformationMessage('Org2: workspace formatter check passed.');
+    } catch (err) {
+      const exitCodeRaw = err && err.code !== undefined ? Number(err.code) : NaN;
+      const exitCode = Number.isFinite(exitCodeRaw) ? exitCodeRaw : null;
+      const stdout = String((err && err.stdout) || '');
+      const stderr = String((err && err.stderr) || '');
+
+      if (exitCode === 1) {
+        const changedFiles = stdout
+          .split(/\r?\n/)
+          .map((line) => String(line || '').trim())
+          .filter(Boolean);
+
+        formatterOutput.clear();
+        formatterOutput.appendLine(`Org2 formatter drift check: ${changedFiles.length} file(s) need formatting.`);
+        for (const file of changedFiles) {
+          formatterOutput.appendLine(file);
+        }
+        if (stderr.trim()) {
+          formatterOutput.appendLine('');
+          formatterOutput.appendLine(stderr.trim());
+        }
+        formatterOutput.show(true);
+        vscode.window.showWarningMessage(
+          `Org2: formatting drift in ${changedFiles.length} file(s). See \"Org2 Formatter\" output.`
+        );
+        return;
+      }
+
+      const msg = stderr.trim() || (err instanceof Error ? err.message : String(err));
+      vscode.window.showErrorMessage(`Org2: formatter check failed: ${msg}`);
+    }
+  }
+
   const formattingProvider = {
     async provideDocumentFormattingEdits(document) {
       const text = document.getText();
@@ -913,6 +957,12 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.refreshAgenda', async () => {
       await agendaProvider.load();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.formatWorkspaceCheck', async () => {
+      await checkWorkspaceFormattingDrift();
     })
   );
 
