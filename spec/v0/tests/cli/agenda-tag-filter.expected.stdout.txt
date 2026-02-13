@@ -1,0 +1,38 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-01-21",
+    "end": "2026-01-22",
+    "days": 2
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-01-21",
+      "weekday": "Wednesday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Ship docs",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-tag-filter.input.txt",
+          "line": 0
+        }
+      ]
+    },
+    {
+      "date": "2026-01-22",
+      "weekday": "Thursday",
+      "items": [
+        {
+          "todo": "IN_PROGRESS",
+          "headline": "Prep retro",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-tag-filter.input.txt",
+          "line": 6
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}
