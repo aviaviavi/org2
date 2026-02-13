@@ -68,6 +68,8 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.files`: list of files when scope=`files`
 - `org2.agenda.days`: default window (used for “Next N days”)
 - `org2.agenda.includeOverdue`: include overdue items
+- `org2.agenda.statusFilter`: filter by TODO state bucket (`all`, `active`, `actionable`, `open`, `todo`, `in_progress`, `done`, `canceled`, `closed`, `custom`)
+- `org2.agenda.kindFilter`: filter by planning kind (`all`, `scheduled`, `deadline`)
 - `org2.agenda.recursive`: when scope=`workspace`, whether to scan recursively (default true)
 - `org2.agenda.command`: command used to run org2 (default: `org2`)
 - `org2.agenda.args`: extra args prefixed before `agenda` (advanced)

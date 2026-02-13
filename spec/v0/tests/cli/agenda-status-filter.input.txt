@@ -1,0 +1,17 @@
+* TODO Ship MVP filter
+SCHEDULED: <2026-01-21 Wed>
+
+* IN_PROGRESS Build extension wiring
+DEADLINE: <2026-01-22 Thu>
+
+* WAITING Review feedback
+SCHEDULED: <2026-01-22 Thu>
+
+* DONE Already wrapped
+SCHEDULED: <2026-01-21 Wed>
+
+* CANCELED Skip this
+SCHEDULED: <2026-01-22 Thu>
+
+* SOMEDAY Custom bucket item
+SCHEDULED: <2026-01-21 Wed>
