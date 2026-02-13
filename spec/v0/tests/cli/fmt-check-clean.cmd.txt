@@ -1,0 +1,1 @@
+fmt --check --file spec/v0/tests/cli/fmt-basic.expected.stdout.txt

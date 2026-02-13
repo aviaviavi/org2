@@ -1,0 +1,1 @@
+spec/v0/tests/cli/fmt-check-dirty.input.txt
