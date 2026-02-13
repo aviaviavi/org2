@@ -82,6 +82,8 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.excludeTodoKeywordFilter`: exclude rows by exact TODO keyword (case-insensitive; comma-separated keywords use OR matching)
 - `org2.agenda.fileFilter`: keep rows whose source file path contains any comma-separated term (case-insensitive substring match)
 - `org2.agenda.excludeFileFilter`: hide rows whose source file path contains any comma-separated term (case-insensitive substring match)
+- `org2.formatter.fileFilter`: limit workspace formatter check/apply commands to files whose paths contain any comma-separated term (case-insensitive substring match)
+- `org2.formatter.excludeFileFilter`: exclude files from workspace formatter check/apply commands when paths contain any comma-separated term (case-insensitive substring match)
 - `org2.agenda.sortBy`: optional per-day sort order (`default`, or comma-separated keys like `file,headline,todo,kind,line`)
 - `org2.agenda.recursive`: when scope=`workspace`, whether to scan recursively (default true)
 - `org2.agenda.command`: command used to run org2 (default: `org2`)
@@ -121,8 +123,8 @@ Agenda items are clickable; clicking opens the source file at the line reported 
 
 ### Formatter commands
 
-- `Org2: Formatter — Check Workspace Drift` runs `org2 fmt --dir <agenda-root> --recursive --check` and reports drift in the `Org2 Formatter` output channel.
-- `Org2: Formatter — Apply Workspace Formatting` first runs the same drift check, previews the file list, then asks for confirmation before applying `org2 fmt --dir <agenda-root> --recursive --apply`.
+- `Org2: Formatter — Check Workspace Drift` runs `org2 fmt --dir <agenda-root> --recursive --check` and reports drift in the `Org2 Formatter` output channel. When configured, it also passes `--file-match <org2.formatter.fileFilter>` and/or `--exclude-file <org2.formatter.excludeFileFilter>`.
+- `Org2: Formatter — Apply Workspace Formatting` first runs the same drift check, previews the file list, then asks for confirmation before applying `org2 fmt --dir <agenda-root> --recursive --apply` (with the same optional workspace file filters).
 - `Org2: Formatter — Check Current File Drift` runs `org2 fmt --file <active-file> --check` (prompts to save first when needed) and reports drift in the same output channel.
 - `Org2: Formatter — Apply Current File Formatting` previews current-file drift, asks for confirmation, then runs `org2 fmt --file <active-file> --apply`.
 

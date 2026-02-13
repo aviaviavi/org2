@@ -61,6 +61,7 @@ Current reality:
 **** Language/tooling
 - Formatter drift detection (=org2 fmt --check=): *Available now* (MVP)
 - Formatter directory scans (=org2 fmt --dir ... --recursive=): *Available now* (MVP)
+- Formatter file-path filters (=org2 fmt --file-match/--exclude-file=): *Available now* (MVP)
 - Formatter workspace apply command (VS Code): *Available now* (MVP)
 - Formatter current-file check/apply commands (VS Code): *Available now* (MVP)
 - Formatter (=org2 fmt=): *In progress*
@@ -278,12 +279,17 @@ npm run org2 -- fmt --dir /path/to/org --recursive --check
 
 # Apply formatting across a directory tree
 npm run org2 -- fmt --dir /path/to/org --recursive --apply
+
+# Filter directory checks/applies by file path substring
+npm run org2 -- fmt --dir /path/to/org --recursive --check --file-match projects,work
+npm run org2 -- fmt --dir /path/to/org --recursive --apply --exclude-file archive,tmp
 #+end_src
 
 Notes:
 - =fmt --check= is intended for CI/pre-commit-style drift detection.
 - =fmt --check= does not support =--stdin=.
 - =fmt --dir= scans top-level files by default; add =--recursive= to include subdirectories.
+- =--file-match= and =--exclude-file= use case-insensitive path substring matching and support comma-separated terms.
 
 *** Other CLI commands (brief)
 
