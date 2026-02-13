@@ -126,6 +126,7 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
 - Agenda
   - `Org2: Open Agenda` (`org2.openAgenda`)
   - `Org2: Refresh Agenda` (`org2.refreshAgenda`)
+  - `Org2: Formatter — Check Workspace Drift` (`org2.formatWorkspaceCheck`)
   - `Org2: Agenda Filter` (`org2.pickAgendaFilter`)
 - TODO + planning
   - `Org2: Toggle Todo Status` (`org2.toggleTodo`)

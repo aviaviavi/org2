@@ -865,6 +865,35 @@ function compareAgendaItems(a: ScheduledItem, b: ScheduledItem, sortOrder: Agend
   return a.kind.localeCompare(b.kind);
 }
 
+function listOrgLikeFiles(rootDir: string, recursiveScan: boolean): string[] {
+  const out: string[] = [];
+
+  const walk = (d: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const ent of entries) {
+      const full = path.join(d, ent.name);
+      if (ent.isDirectory()) {
+        // Skip common noisy directories
+        if (ent.name === ".git" || ent.name === "node_modules" || ent.name === ".org2") continue;
+        if (recursiveScan) walk(full);
+        continue;
+      }
+
+      if (!ent.isFile()) continue;
+      if (full.endsWith(".org") || full.endsWith(".org2")) out.push(full);
+    }
+  };
+
+  walk(rootDir);
+  return out;
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -1402,7 +1431,7 @@ async function main(): Promise<void> {
       "       org2 query --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
     );
     console.error(
-      "       org2 fmt [--stdin] [--file FILE|--files FILE ...] [--check] [--apply]",
+      "       org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]",
     );
     console.error(
       "       org2 roam db-sync --dir DIR [--recursive] [--format text|json] [--apply]",
@@ -1444,7 +1473,7 @@ async function main(): Promise<void> {
       "       org2 query --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
     );
     console.error(
-      "       org2 fmt [--stdin] [--file FILE|--files FILE ...] [--check] [--apply]",
+      "       org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]",
     );
     console.error(
       "       org2 roam db-sync --dir DIR [--recursive] [--format text|json] [--apply]",
@@ -1630,35 +1659,6 @@ async function main(): Promise<void> {
       return;
     }
 
-    const listOrgFiles = (rootDir: string, recursiveScan: boolean): string[] => {
-      const out: string[] = [];
-
-      const walk = (d: string): void => {
-        let entries: fs.Dirent[];
-        try {
-          entries = fs.readdirSync(d, { withFileTypes: true });
-        } catch {
-          return;
-        }
-
-        for (const ent of entries) {
-          const full = path.join(d, ent.name);
-          if (ent.isDirectory()) {
-            // Skip common noisy directories
-            if (ent.name === ".git" || ent.name === "node_modules" || ent.name === ".org2") continue;
-            if (recursiveScan) walk(full);
-            continue;
-          }
-
-          if (!ent.isFile()) continue;
-          if (full.endsWith(".org") || full.endsWith(".org2")) out.push(full);
-        }
-      };
-
-      walk(rootDir);
-      return out;
-    };
-
     const hasFileId = (text: string): boolean => {
       const norm = text.replace(/\r\n/g, "\n");
       const top = norm.split("\n").slice(0, 80);
@@ -1681,7 +1681,7 @@ async function main(): Promise<void> {
       return false;
     };
 
-    const allFiles = listOrgFiles(dir, recursive);
+    const allFiles = listOrgLikeFiles(dir, recursive);
     const missing: string[] = [];
 
     for (const filePath of allFiles) {
@@ -2565,19 +2565,45 @@ async function main(): Promise<void> {
         console.error("Error: fmt --check does not support --stdin");
         process.exit(1);
       }
+      if (dir || files.length > 0) {
+        console.error("Error: fmt --stdin cannot be combined with --dir/--file/--files");
+        process.exit(1);
+      }
       const stdinRaw = fs.readFileSync(0, "utf8");
       process.stdout.write(formatOne(stdinRaw));
       return;
     }
 
-    if (files.length === 0) {
-      console.error("Error: fmt requires --stdin or at least one file via --file/--files");
+    const fmtFiles: string[] = [];
+    const seenFmtFiles = new Set<string>();
+    const addFmtFile = (filePath: string): void => {
+      const dedupeKey = path.resolve(filePath);
+      if (seenFmtFiles.has(dedupeKey)) return;
+      seenFmtFiles.add(dedupeKey);
+      fmtFiles.push(filePath);
+    };
+
+    for (const file of files) {
+      addFmtFile(file);
+    }
+
+    if (dir) {
+      const scanned = listOrgLikeFiles(dir, recursive);
+      for (const filePath of scanned) {
+        addFmtFile(filePath);
+      }
+    }
+
+    fmtFiles.sort((a, b) => a.localeCompare(b));
+
+    if (fmtFiles.length === 0) {
+      console.error("Error: fmt requires --stdin, --dir DIR, or at least one file via --file/--files");
       process.exit(1);
     }
 
     if (fmtCheck) {
       const changedFiles: string[] = [];
-      for (const file of files) {
+      for (const file of fmtFiles) {
         const raw = fs.readFileSync(file, "utf8");
         const out = formatOne(raw);
         if (out !== raw.replace(/\r\n/g, "\n")) {
@@ -2593,16 +2619,16 @@ async function main(): Promise<void> {
     }
 
     if (!fmtApply) {
-      if (files.length !== 1) {
-        console.error("Error: fmt without --apply requires exactly one file (use --apply for multiple)");
+      if (fmtFiles.length !== 1) {
+        console.error("Error: fmt without --apply requires exactly one file (use --check/--apply for multiple)");
         process.exit(1);
       }
-      const raw = fs.readFileSync(files[0]!, "utf8");
+      const raw = fs.readFileSync(fmtFiles[0]!, "utf8");
       process.stdout.write(formatOne(raw));
       return;
     }
 
-    for (const file of files) {
+    for (const file of fmtFiles) {
       const raw = fs.readFileSync(file, "utf8");
       const out = formatOne(raw);
       fs.writeFileSync(file, out, "utf8");
