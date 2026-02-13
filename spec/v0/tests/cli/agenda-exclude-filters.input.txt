@@ -1,0 +1,14 @@
+* TODO Ship docs :work:
+SCHEDULED: <2026-01-21 Wed>
+
+* DONE Filed taxes :personal:
+SCHEDULED: <2026-01-21 Wed>
+
+* CANCELED Cancel trip :travel:
+DEADLINE: <2026-01-22 Thu>
+
+* IN_PROGRESS Build feature :work:someday:
+DEADLINE: <2026-01-22 Thu>
+
+* TODO Planning sync :team:
+SCHEDULED: <2026-01-22 Thu>
