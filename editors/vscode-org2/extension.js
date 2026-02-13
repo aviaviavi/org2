@@ -873,6 +873,24 @@ function activate(context) {
     }
   }
 
+  function parseFormatterPreviewJson(stdout) {
+    const text = String(stdout || '').trim();
+    if (!text) return undefined;
+
+    try {
+      const parsed = JSON.parse(text);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+
+      const changed = typeof parsed.changed === 'boolean' ? parsed.changed : undefined;
+      const file = typeof parsed.file === 'string' ? parsed.file.trim() : '';
+      if (typeof changed !== 'boolean' || !file) return undefined;
+
+      return { file, changed };
+    } catch {
+      return undefined;
+    }
+  }
+
   async function getFormattingDrift(args, cwd) {
     const argsWithFormat = [...args, '--format', 'json'];
     const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, argsWithFormat);
@@ -970,6 +988,22 @@ function activate(context) {
 
   async function getCurrentFileFormattingDrift(filePath) {
     const cwd = getWorkspaceRoot() || path.dirname(filePath) || process.cwd();
+    const previewArgs = ['fmt', '--file', filePath, '--format', 'json'];
+    const { cmd: previewCmd, args: previewFinalArgs } = resolveOrg2Command(context, previewArgs);
+
+    try {
+      const { stdout, stderr } = await execFileAsync(previewCmd, previewFinalArgs, { cwd });
+      const parsed = parseFormatterPreviewJson(stdout);
+      if (parsed) {
+        return {
+          changedFiles: parsed.changed ? [parsed.file] : [],
+          stderr: String(stderr || '').trim(),
+        };
+      }
+    } catch {
+      // Fallback to --check for older CLI versions that don't support fmt preview JSON.
+    }
+
     return getFormattingDrift(['fmt', '--file', filePath, '--check'], cwd);
   }
 

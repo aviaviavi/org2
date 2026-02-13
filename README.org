@@ -63,6 +63,7 @@ Current reality:
 - Formatter directory scans (=org2 fmt --dir ... --recursive=): *Available now* (MVP)
 - Formatter file-path filters (=org2 fmt --file-match/--exclude-file=): *Available now* (MVP)
 - Formatter structured check output (=org2 fmt --check --format json=): *Available now* (MVP)
+- Formatter single-file JSON preview (=org2 fmt --file ... --format json=): *Available now* (MVP)
 - Formatter config-driven target discovery (=org2 fmt --config PATH=): *Available now* (MVP)
 - Formatter workspace apply command (VS Code): *Available now* (MVP)
 - Formatter current-file check/apply commands (VS Code): *Available now* (MVP)
@@ -282,6 +283,9 @@ npm run org2 -- fmt --dir /path/to/org --recursive --check
 # Check formatting drift as machine-readable JSON
 npm run org2 -- fmt --dir /path/to/org --recursive --check --format json
 
+# Preview single-file formatter output as JSON (safe-edit style)
+npm run org2 -- fmt --file /path/to/file.org --format json
+
 # Check formatting drift using org2.json agendaFiles/ignorePatterns
 npm run org2 -- fmt --check --config /path/to/org2.json
 
@@ -296,7 +300,9 @@ npm run org2 -- fmt --dir /path/to/org --recursive --apply --exclude-file archiv
 Notes:
 - =fmt --check= is intended for CI/pre-commit-style drift detection.
 - =fmt --check --format json= emits =changed= plus =checkedFiles=/=changedFiles= arrays while preserving exit code semantics (0 clean, 1 drift).
+- =fmt --file ... --format json= emits a single-file preview payload with =formattedText= and =changed= (without mutating files).
 - =fmt --check= does not support =--stdin=.
+- =fmt --stdin= and =fmt --apply= do not support =--format json=.
 - =fmt --config PATH= resolves files from =org2.json= (=agendaFiles= + =ignorePatterns=) before formatter path filters.
 - =fmt --dir= scans top-level files by default; add =--recursive= to include subdirectories.
 - =--file-match= and =--exclude-file= use case-insensitive path substring matching and support comma-separated terms.
