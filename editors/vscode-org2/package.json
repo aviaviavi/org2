@@ -421,6 +421,11 @@
           "default": "",
           "description": "Exclude agenda rows by source file path (case-insensitive substring match). Supports comma-separated terms; a row is hidden when its file path contains any term."
         },
+        "org2.agenda.sortBy": {
+          "type": "string",
+          "default": "default",
+          "description": "Sort agenda rows within each date by one or more keys (`file`, `headline`, `todo`, `kind`, `line`). Supports comma-separated values; use `default` for existing ordering."
+        },
         "org2.formatOnSave": {
           "type": "boolean",
           "default": true,
