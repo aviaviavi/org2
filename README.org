@@ -51,6 +51,7 @@ Current reality:
 - Agenda exclusion filters (CLI + VS Code): *Available now* (MVP)
 - Agenda source-file filtering (CLI + VS Code): *Available now* (MVP)
 - Agenda sort-order filtering (CLI + VS Code): *Available now* (MVP)
+- Agenda row-limit filtering (CLI + VS Code): *Available now* (MVP)
 - TODO set/toggle from CLI/editor: *Available now*
 - Set SCHEDULED/DEADLINE (including “today” fast paths): *Available now*
 - Archive subtree: *Available now* (MVP)
@@ -181,6 +182,9 @@ npm run org2 -- agenda --dir /path/to/org --exclude-file "archive,personal"
 # Sort rows within each day (comma-separated sort keys: file, headline, todo, kind, line)
 npm run org2 -- agenda --dir /path/to/org --sort "file,headline"
 
+# Limit total rows after sorting (across overdue + upcoming sections)
+npm run org2 -- agenda --dir /path/to/org --limit 25
+
 # Show parse errors instead of silently skipping broken files
 npm run org2 -- agenda --dir /path/to/org --verbose-errors
 #+end_src
@@ -198,6 +202,7 @@ Notes:
 - =--file-match= keeps rows whose source file path contains any term.
 - =--exclude-file= hides rows whose source file path contains any term.
 - =--sort= reorders rows within each date bucket (always date-first overall sorting).
+- =--limit= caps total rendered rows after sorting (across overdue + upcoming).
 
 *** Running against local data with =org2.json=
 

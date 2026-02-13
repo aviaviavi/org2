@@ -888,6 +888,7 @@ async function main(): Promise<void> {
   let agendaFileFiltersRaw: string[] = [];
   let agendaExcludeFileFiltersRaw: string[] = [];
   let agendaSortRaw: string[] = [];
+  let agendaLimitRaw = "";
   let verboseErrors = false;
   let help = false;
 
@@ -1217,6 +1218,14 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--limit") {
+      i++;
+      if (i < args.length) {
+        if (command === "agenda") {
+          agendaLimitRaw = args[i]!;
+        }
+        i++;
+      }
     } else if (arg === "--date") {
       i++;
       if (i < args.length) {
@@ -1347,7 +1356,7 @@ async function main(): Promise<void> {
 
   if (help) {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -1389,7 +1398,7 @@ async function main(): Promise<void> {
 
   if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -2770,6 +2779,21 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  let agendaLimit: number | null = null;
+  if (agendaLimitRaw.trim().length > 0) {
+    const rawLimit = agendaLimitRaw.trim();
+    if (!/^\d+$/.test(rawLimit)) {
+      console.error(`Error: invalid agenda --limit value: ${agendaLimitRaw}. Expected a positive integer.`);
+      process.exit(1);
+    }
+    const parsedLimit = Number.parseInt(rawLimit, 10);
+    if (!Number.isFinite(parsedLimit) || parsedLimit < 1) {
+      console.error(`Error: invalid agenda --limit value: ${agendaLimitRaw}. Expected a positive integer.`);
+      process.exit(1);
+    }
+    agendaLimit = parsedLimit;
+  }
+
   // Parse date range
   const startDate = parseIsoDate(today);
   const endDate = new Date(startDate);
@@ -2824,12 +2848,14 @@ async function main(): Promise<void> {
   // Sort by date first, then optional user-selected tie-breakers.
   allItems.sort((a, b) => compareAgendaItems(a, b, parsedAgendaSort.sortOrder));
 
+  const outputItems = agendaLimit ? allItems.slice(0, agendaLimit) : allItems;
+
   if (format === "json") {
     const startIso = startDate.toISOString().slice(0, 10);
     const endIso = endDate.toISOString().slice(0, 10);
 
-    const overdue = allItems.filter((it) => it.date < startIso);
-    const upcoming = allItems.filter((it) => it.date >= startIso);
+    const overdue = outputItems.filter((it) => it.date < startIso);
+    const upcoming = outputItems.filter((it) => it.date >= startIso);
 
     const group = (items: ScheduledItem[]) => {
       const byDate: Record<string, ScheduledItem[]> = {};
@@ -2864,7 +2890,7 @@ async function main(): Promise<void> {
   }
 
   // Output text
-  const output = formatOutput(allItems, startDate);
+  const output = formatOutput(outputItems, startDate);
   process.stdout.write(output);
 }
 
