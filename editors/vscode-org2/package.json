@@ -29,6 +29,7 @@
     "onCommand:org2.roamDailiesGotoYesterday",
     "onCommand:org2.roamDailiesGotoTomorrow",
     "onCommand:org2.roamDailiesGotoDate",
+    "onCommand:org2.roamNodeNew",
     "onCommand:org2.roamCopyIdLink",
     "onCommand:org2.roamInsertBacklink",
     "onCommand:org2.roamOpenId",
@@ -171,6 +172,10 @@
         "title": "Org2: Roam Dailies \u2014 Go to Date"
       },
       {
+        "command": "org2.roamNodeNew",
+        "title": "Org2: Roam \u2014 New Node"
+      },
+      {
         "command": "org2.roamCopyIdLink",
         "title": "Org2: Roam \u2014 Copy ID Link"
       },
@@ -310,6 +315,11 @@
           "command": "org2.roamShowBacklinks",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@15"
+        },
+        {
+          "command": "org2.roamNodeNew",
+          "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
+          "group": "navigation@16"
         }
       ]
     },
@@ -352,6 +362,11 @@
           "type": "string",
           "default": "",
           "description": "Root directory for Org2 Roam dailies files (YYYY-MM-DD.org2). If empty, falls back to org2.agenda.dir, then the VS Code workspace folder."
+        },
+        "org2.roam.nodesDir": {
+          "type": "string",
+          "default": "",
+          "description": "Directory for Org2 Roam node creation (`org2 roam node new`). Absolute paths are used directly; relative paths are resolved against org2.agenda.dir (or workspace root). If empty, uses org2.agenda.dir/workspace root."
         },
         "org2.agenda.files": {
           "type": "array",
@@ -643,6 +658,12 @@
         "key": "ctrl+; r d",
         "mac": "cmd+; r d",
         "command": "org2.roamDailiesGotoDate",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; r n",
+        "mac": "cmd+; r n",
+        "command": "org2.roamNodeNew",
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {

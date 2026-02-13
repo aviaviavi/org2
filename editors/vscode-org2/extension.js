@@ -444,6 +444,14 @@ function getRoamDailiesRootDir() {
   return getAgendaRootDir();
 }
 
+function getRoamNodesRootDir() {
+  const cfg = vscode.workspace.getConfiguration('org2');
+  const configured = String(cfg.get('roam.nodesDir', '') || '').trim();
+  if (!configured) return getAgendaRootDir();
+  if (path.isAbsolute(configured)) return configured;
+  return path.resolve(getAgendaRootDir(), configured);
+}
+
 function formatDateYYYYMMDD(d) {
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -1961,6 +1969,59 @@ function activate(context) {
       });
       if (!date) return;
       await openRoamDailyForDateString(String(date).trim());
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.roamNodeNew', async () => {
+      const titleRaw = await vscode.window.showInputBox({
+        prompt: 'Org2: Roam — new node title',
+        placeHolder: 'Node title',
+        validateInput: (v) => (String(v || '').trim() ? undefined : 'Title is required'),
+      });
+      if (titleRaw === undefined) return;
+
+      const title = String(titleRaw || '').trim();
+      if (!title) {
+        vscode.window.showWarningMessage('Org2: node title is required.');
+        return;
+      }
+
+      const root = getRoamNodesRootDir();
+      const args = ['roam', 'node', 'new', '--dir', root, '--title', title, '--format', 'json', '--apply'];
+      const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
+
+      let out;
+      try {
+        out = await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: 'Org2: Creating roam node', cancellable: false },
+          async () => await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() })
+        );
+      } catch (e) {
+        const stderr = e && e.stderr ? String(e.stderr).trim() : '';
+        const extra = stderr ? `\n${stderr}` : '';
+        vscode.window.showErrorMessage(`Org2: failed to create roam node: ${String(e && e.message ? e.message : e)}${extra}`);
+        return;
+      }
+
+      let payload;
+      try {
+        payload = JSON.parse(String((out && out.stdout) || '').trim());
+      } catch (e) {
+        vscode.window.showErrorMessage('Org2: failed to parse org2 roam node output.');
+        return;
+      }
+
+      const file = typeof payload.file === 'string' ? payload.file : '';
+      if (!file) {
+        vscode.window.showErrorMessage('Org2: roam node output missing file path.');
+        return;
+      }
+
+      const uri = vscode.Uri.file(file);
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc, { preview: false });
+      vscode.window.showInformationMessage(`Org2: created roam node ${path.basename(file)}.`);
     })
   );
 
