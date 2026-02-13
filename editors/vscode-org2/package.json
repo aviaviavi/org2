@@ -391,6 +391,11 @@
           "default": "",
           "description": "Filter agenda rows by headline text (case-insensitive). Supports comma-separated terms; a row matches when any term is present."
         },
+        "org2.agenda.excludeMatchFilter": {
+          "type": "string",
+          "default": "",
+          "description": "Exclude agenda rows by headline text (case-insensitive). Supports comma-separated terms; a row is hidden when any term is present."
+        },
         "org2.agenda.tagFilter": {
           "type": "string",
           "default": "",
