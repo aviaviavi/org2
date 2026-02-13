@@ -87,6 +87,8 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.formatter.configFile`: optional `org2.json` path for workspace formatter commands; when set, workspace check/apply uses `org2 fmt --config <path>` instead of scanning `org2.agenda.dir` recursively
 - `org2.agenda.sortBy`: optional per-day sort order (`default`, or comma-separated keys like `file,headline,todo,kind,line`)
 - `org2.agenda.recursive`: when scope=`workspace`, whether to scan recursively (default true)
+- `org2.roam.dailiesDir`: optional root directory for Roam dailies (`YYYY-MM-DD.org2`); defaults to `org2.agenda.dir`/workspace root
+- `org2.roam.nodesDir`: optional directory for `Org2: Roam — New Node`; absolute paths are used directly, relative paths resolve against `org2.agenda.dir`/workspace root
 - `org2.agenda.command`: command used to run org2 (default: `org2`)
 - `org2.agenda.args`: extra args prefixed before `agenda` (advanced)
 - `org2.todo.writeTransitionLogbook`: when true, TODO status updates include `--logbook` (default false)
@@ -160,6 +162,7 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
   - `Org2: Roam Dailies — Go to Yesterday` (`org2.roamDailiesGotoYesterday`)
   - `Org2: Roam Dailies — Go to Tomorrow` (`org2.roamDailiesGotoTomorrow`)
   - `Org2: Roam Dailies — Go to Date` (`org2.roamDailiesGotoDate`)
+  - `Org2: Roam — New Node` (`org2.roamNodeNew`)
   - `Org2: Roam — Copy ID Link` (`org2.roamCopyIdLink`)
   - `Org2: Roam — Insert Backlink (ID Link)` (`org2.roamInsertBacklink`)
   - `Org2: Roam — Open ID Link` (`org2.roamOpenId`)
@@ -205,6 +208,7 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
   - `r y` → Roam Dailies: Yesterday
   - `r m` → Roam Dailies: Tomorrow
   - `r d` → Roam Dailies: Go to Date
+  - `r n` → Roam New Node
   - `r s` → Roam DB Sync
 - TODO namespace (`cmd/ctrl+; t ...`):
   - `t t` → Set TODO
