@@ -1,0 +1,1 @@
+Error: fmt --format json is only supported with --check
