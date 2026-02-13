@@ -652,6 +652,7 @@ async function fetchAgendaGroups(context, filter) {
   const fileFilter = String(cfg.get('agenda.fileFilter', '') || '').trim();
   const excludeFileFilter = String(cfg.get('agenda.excludeFileFilter', '') || '').trim();
   const sortBy = String(cfg.get('agenda.sortBy', 'default') || 'default').trim().toLowerCase();
+  const agendaLimit = Number(cfg.get('agenda.limit', 0) || 0);
   const defaultDays = cfg.get('agenda.days', 7);
 
   const days = filter && filter.type === 'today' ? 1 : (filter && filter.type === 'next' ? filter.days : defaultDays);
@@ -683,6 +684,7 @@ async function fetchAgendaGroups(context, filter) {
   if (fileFilter) args.push('--file-match', fileFilter);
   if (excludeFileFilter) args.push('--exclude-file', excludeFileFilter);
   if (sortBy && sortBy !== 'default') args.push('--sort', sortBy);
+  if (Number.isFinite(agendaLimit) && agendaLimit > 0) args.push('--limit', String(Math.floor(agendaLimit)));
 
   const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
   const { stdout } = await execFileAsync(finalCmd, finalArgs, { cwd: agendaRoot });
