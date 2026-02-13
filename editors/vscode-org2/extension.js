@@ -8,6 +8,30 @@ const headingRe = /^(\*+)\s+/;
 const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
 const propertiesBeginRe = /^\s*:PROPERTIES:\s*$/i;
 const drawerEndRe = /^\s*:END:\s*$/i;
+const uuidSource = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
+const uuidExactRe = new RegExp(`^(${uuidSource})$`);
+const roamIdSchemeRe = new RegExp(`^id:(${uuidSource})$`, 'i');
+const roamIdLinkRe = new RegExp(`^\\[\\[id:(${uuidSource})(?:\\]\\[[^\\]\\n]*\\])?\\]\\]$`, 'i');
+const roamUuidAnywhereRe = new RegExp(`(${uuidSource})`, 'i');
+
+function extractRoamUuid(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const direct = uuidExactRe.exec(raw);
+  if (direct) return direct[1].toLowerCase();
+
+  const idScheme = roamIdSchemeRe.exec(raw);
+  if (idScheme) return idScheme[1].toLowerCase();
+
+  const idLink = roamIdLinkRe.exec(raw);
+  if (idLink) return idLink[1].toLowerCase();
+
+  const any = roamUuidAnywhereRe.exec(raw);
+  if (any) return any[1].toLowerCase();
+
+  return '';
+}
 
 function findHeadingLinesAtLevel(document, level) {
   if (typeof level !== 'number' || level <= 0) return [];
@@ -149,7 +173,7 @@ function resolveOrg2LinkTarget(rawUrl, document) {
 
   // Org Roam id: links (id:<uuid>) → dispatch to our command.
   // VS Code's default URL handler can't open these.
-  const idMatch = /^id:([0-9a-fA-F-]{36})$/.exec(url);
+  const idMatch = roamIdSchemeRe.exec(url);
   if (idMatch) {
     const id = idMatch[1].toLowerCase();
     const payload = encodeURIComponent(JSON.stringify([id]));
@@ -2436,15 +2460,35 @@ function activate(context) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.roamOpenId', async (id) => {
-      const raw = (typeof id === 'string' ? id : '').trim();
-      const m = /^([0-9a-fA-F-]{36})$/.exec(raw);
-      if (!m) {
-        vscode.window.showWarningMessage('Org2: invalid id link (expected UUID).');
+      const initial = typeof id === 'string' ? String(id) : '';
+      let uuid = extractRoamUuid(initial);
+
+      if (!uuid) {
+        const editor = vscode.window.activeTextEditor;
+        const selectionText =
+          editor && editor.selection && !editor.selection.isEmpty
+            ? editor.document.getText(editor.selection)
+            : '';
+        uuid = extractRoamUuid(selectionText);
+      }
+
+      if (!uuid) {
+        const input = await vscode.window.showInputBox({
+          prompt: 'Org2: Roam — open ID link',
+          placeHolder: 'UUID, id:UUID, or [[id:UUID][title]]',
+          value: initial,
+          validateInput: (v) => (extractRoamUuid(v) ? undefined : 'Expected UUID or id:UUID link'),
+        });
+        if (input === undefined) return;
+        uuid = extractRoamUuid(input);
+      }
+
+      if (!uuid) {
+        vscode.window.showWarningMessage('Org2: invalid ID input (expected UUID or id:UUID link).');
         return;
       }
 
       const root = getAgendaRootDir();
-      const uuid = m[1].toLowerCase();
 
       // Prefer the CLI query (supports file-level + headline IDs, and can return multiple matches).
       let results = [];
@@ -2462,7 +2506,7 @@ function activate(context) {
       if (!results.length) {
         const found = await findFirstIdMatchInDir(root, uuid);
         if (!found) {
-          vscode.window.showWarningMessage(`Org2: ID not found: ${m[1]}`);
+          vscode.window.showWarningMessage(`Org2: ID not found: ${uuid}`);
           return;
         }
         results = [{ file: found.filePath, line: found.line, title: path.basename(found.filePath) }];
