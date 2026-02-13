@@ -1,0 +1,14 @@
+* TODO Old task
+SCHEDULED: <2026-01-20 Tue>
+
+* IN_PROGRESS Old in progress task
+DEADLINE: <2026-01-20 Tue>
+
+* TODO Today task
+SCHEDULED: <2026-01-21 Wed>
+
+* TODO Upcoming task
+DEADLINE: <2026-01-22 Thu>
+
+* DONE Done overdue should stay hidden
+SCHEDULED: <2026-01-20 Tue>
