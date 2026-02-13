@@ -468,6 +468,16 @@
           "default": "default",
           "description": "Sort agenda rows within each date by one or more keys (`file`, `headline`, `todo`, `kind`, `line`). Supports comma-separated values; use `default` for existing ordering."
         },
+        "org2.formatter.fileFilter": {
+          "type": "string",
+          "default": "",
+          "description": "Limit workspace formatter check/apply commands to files whose paths contain any comma-separated term (case-insensitive substring match)."
+        },
+        "org2.formatter.excludeFileFilter": {
+          "type": "string",
+          "default": "",
+          "description": "Exclude files from workspace formatter check/apply commands when paths contain any comma-separated term (case-insensitive substring match)."
+        },
         "org2.formatOnSave": {
           "type": "boolean",
           "default": true,

@@ -1,0 +1,1 @@
+Error: fmt --stdin cannot be combined with --file-match/--exclude-file

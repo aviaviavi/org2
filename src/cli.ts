@@ -952,6 +952,8 @@ async function main(): Promise<void> {
   let fmtStdin = false;
   let fmtApply = false;
   let fmtCheck = false;
+  let fmtFileFiltersRaw: string[] = [];
+  let fmtExcludeFileFiltersRaw: string[] = [];
 
   // IDs (Roam)
   let idAction: "get" | "ensure" = "get";
@@ -1247,6 +1249,8 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "agenda") {
           agendaFileFiltersRaw.push(args[i]!);
+        } else if (command === "fmt") {
+          fmtFileFiltersRaw.push(args[i]!);
         }
         i++;
       }
@@ -1255,6 +1259,8 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "agenda") {
           agendaExcludeFileFiltersRaw.push(args[i]!);
+        } else if (command === "fmt") {
+          fmtExcludeFileFiltersRaw.push(args[i]!);
         }
         i++;
       }
@@ -1431,7 +1437,7 @@ async function main(): Promise<void> {
       "       org2 query --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
     );
     console.error(
-      "       org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]",
+      "       org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--check] [--apply]",
     );
     console.error(
       "       org2 roam db-sync --dir DIR [--recursive] [--format text|json] [--apply]",
@@ -1473,7 +1479,7 @@ async function main(): Promise<void> {
       "       org2 query --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
     );
     console.error(
-      "       org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]",
+      "       org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--check] [--apply]",
     );
     console.error(
       "       org2 roam db-sync --dir DIR [--recursive] [--format text|json] [--apply]",
@@ -2560,7 +2566,14 @@ async function main(): Promise<void> {
       return printCanonicalAstToOrg(ast);
     };
 
+    const parsedFmtFile = parseAgendaFileFilterArgs(fmtFileFiltersRaw);
+    const parsedFmtExcludeFile = parseAgendaExcludeFileFilterArgs(fmtExcludeFileFiltersRaw);
+
     if (fmtStdin) {
+      if (parsedFmtFile || parsedFmtExcludeFile) {
+        console.error("Error: fmt --stdin cannot be combined with --file-match/--exclude-file");
+        process.exit(1);
+      }
       if (fmtCheck) {
         console.error("Error: fmt --check does not support --stdin");
         process.exit(1);
@@ -2577,6 +2590,9 @@ async function main(): Promise<void> {
     const fmtFiles: string[] = [];
     const seenFmtFiles = new Set<string>();
     const addFmtFile = (filePath: string): void => {
+      if (!matchesAgendaFileFilter(filePath, parsedFmtFile)) return;
+      if (!matchesAgendaExcludeFileFilter(filePath, parsedFmtExcludeFile)) return;
+
       const dedupeKey = path.resolve(filePath);
       if (seenFmtFiles.has(dedupeKey)) return;
       seenFmtFiles.add(dedupeKey);
@@ -2597,7 +2613,7 @@ async function main(): Promise<void> {
     fmtFiles.sort((a, b) => a.localeCompare(b));
 
     if (fmtFiles.length === 0) {
-      console.error("Error: fmt requires --stdin, --dir DIR, or at least one file via --file/--files");
+      console.error("Error: fmt found no matching files (provide --stdin, --dir DIR, or at least one file via --file/--files; check --file-match/--exclude-file filters)");
       process.exit(1);
     }
 
