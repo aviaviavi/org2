@@ -44,6 +44,7 @@ Current reality:
 - Agenda (CLI + VS Code panel): *Available now*
 - Agenda status filtering (CLI + VS Code): *Available now* (MVP)
 - Agenda planning-kind filtering (CLI + VS Code): *Available now* (MVP)
+- Agenda text matching filter (CLI + VS Code): *Available now* (MVP)
 - TODO set/toggle from CLI/editor: *Available now*
 - Set SCHEDULED/DEADLINE (including “today” fast paths): *Available now*
 - Archive subtree: *Available now* (MVP)
@@ -144,6 +145,9 @@ npm run org2 -- agenda --dir /path/to/org --status active
 # Filter by planning kind (SCHEDULED vs DEADLINE)
 npm run org2 -- agenda --dir /path/to/org --kind deadline
 
+# Filter by headline text (case-insensitive, comma-separated OR terms)
+npm run org2 -- agenda --dir /path/to/org --match "release,retro"
+
 # Show parse errors instead of silently skipping broken files
 npm run org2 -- agenda --dir /path/to/org --verbose-errors
 #+end_src
@@ -151,6 +155,7 @@ npm run org2 -- agenda --dir /path/to/org --verbose-errors
 Notes:
 - If a file fails to parse, the CLI will skip it (use =--verbose-errors= to see why).
 - By default, overdue items are included; use =--no-overdue= to hide them.
+- =--match= checks agenda headline text only, case-insensitively.
 
 *** Running against local data with =org2.json=
 

@@ -1,0 +1,8 @@
+* TODO Ship MVP filter
+SCHEDULED: <2026-01-21 Wed>
+
+* IN_PROGRESS Build extension wiring
+DEADLINE: <2026-01-22 Thu>
+
+* TODO Write changelog
+SCHEDULED: <2026-01-22 Thu>

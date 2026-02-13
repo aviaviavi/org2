@@ -70,6 +70,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.includeOverdue`: include overdue items
 - `org2.agenda.statusFilter`: filter by TODO state bucket (`all`, `active`, `actionable`, `open`, `todo`, `in_progress`, `done`, `canceled`, `closed`, `custom`)
 - `org2.agenda.kindFilter`: filter by planning kind (`all`, `scheduled`, `deadline`)
+- `org2.agenda.matchFilter`: filter by headline text (case-insensitive; comma-separated terms use OR matching)
 - `org2.agenda.recursive`: when scope=`workspace`, whether to scan recursively (default true)
 - `org2.agenda.command`: command used to run org2 (default: `org2`)
 - `org2.agenda.args`: extra args prefixed before `agenda` (advanced)
