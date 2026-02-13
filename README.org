@@ -59,6 +59,7 @@ Current reality:
 - Roam-ish ID/backlink workflows: *In progress*
 
 **** Language/tooling
+- Formatter drift detection (=org2 fmt --check=): *Available now* (MVP)
 - Formatter (=org2 fmt=): *In progress*
 - LSP entrypoint (=org2 lsp=): *In progress*
 - Formal Org2 spec (v0 draft): *In progress*
@@ -255,6 +256,24 @@ Tip: for a reproducible “fixture” when testing agenda output, create a small
 #+begin_src sh
 npm run org2 -- agenda --dir ./tmp/agenda-fixture --today 2026-01-25 --days 14 --format json
 #+end_src
+
+*** Formatter (=fmt=) quick examples
+
+#+begin_src sh
+# Print formatted output for one file
+npm run org2 -- fmt --file /path/to/file.org
+
+# Apply formatting in place (supports multiple files)
+npm run org2 -- fmt --file /path/to/file.org --apply
+npm run org2 -- fmt --files /path/to/a.org /path/to/b.org --apply
+
+# Check formatting drift (exit 1 + print changed files)
+npm run org2 -- fmt --files /path/to/a.org /path/to/b.org --check
+#+end_src
+
+Notes:
+- =fmt --check= is intended for CI/pre-commit-style drift detection.
+- =fmt --check= does not support =--stdin=.
 
 *** Other CLI commands (brief)
 
