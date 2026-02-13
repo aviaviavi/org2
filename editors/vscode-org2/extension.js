@@ -653,6 +653,8 @@ async function fetchAgendaGroups(context, filter) {
   const excludeFileFilter = String(cfg.get('agenda.excludeFileFilter', '') || '').trim();
   const sortBy = String(cfg.get('agenda.sortBy', 'default') || 'default').trim().toLowerCase();
   const agendaLimit = Number(cfg.get('agenda.limit', 0) || 0);
+  const startDate = String(cfg.get('agenda.startDate', '') || '').trim();
+  const endDate = String(cfg.get('agenda.endDate', '') || '').trim();
   const defaultDays = cfg.get('agenda.days', 7);
 
   const days = filter && filter.type === 'today' ? 1 : (filter && filter.type === 'next' ? filter.days : defaultDays);
@@ -671,6 +673,8 @@ async function fetchAgendaGroups(context, filter) {
   }
 
   args.push('--days', String(days), '--format', 'json');
+  if (startDate) args.push('--from', startDate);
+  if (endDate) args.push('--to', endDate);
   if (!includeOverdue) args.push('--no-overdue');
   if (statusFilter && statusFilter !== 'all') args.push('--status', statusFilter);
   if (kindFilter && kindFilter !== 'all') args.push('--kind', kindFilter);

@@ -343,6 +343,16 @@
           "maximum": 365,
           "description": "Default agenda window (in days) for the 'Next N days' filter."
         },
+        "org2.agenda.startDate": {
+          "type": "string",
+          "default": "",
+          "description": "Optional agenda start date override (YYYY-MM-DD). When set, this replaces the CLI --today anchor for agenda range calculations."
+        },
+        "org2.agenda.endDate": {
+          "type": "string",
+          "default": "",
+          "description": "Optional agenda end date override (YYYY-MM-DD). When set, this replaces the default days-based end date for agenda range calculations."
+        },
         "org2.agenda.limit": {
           "type": "number",
           "default": 0,
