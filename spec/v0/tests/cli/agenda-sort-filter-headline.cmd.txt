@@ -1,0 +1,1 @@
+agenda --files "spec/v0/tests/cli/agenda-sort-filter.input.txt" --today 2026-01-21 --days 1 --format json --sort headline
