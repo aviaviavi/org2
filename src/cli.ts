@@ -2593,11 +2593,26 @@ async function main(): Promise<void> {
       );
     };
 
+    const emitFmtPreviewJson = (file: string, formattedText: string, changed: boolean): void => {
+      process.stdout.write(
+        JSON.stringify(
+          {
+            $schema: "org2:fmt-preview:v1",
+            file,
+            changed,
+            formattedText,
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+    };
+
     const parsedFmtFile = parseAgendaFileFilterArgs(fmtFileFiltersRaw);
     const parsedFmtExcludeFile = parseAgendaExcludeFileFilterArgs(fmtExcludeFileFiltersRaw);
 
-    if (fmtFormat === "json" && !fmtCheck) {
-      console.error("Error: fmt --format json is only supported with --check");
+    if (fmtFormat === "json" && fmtApply) {
+      console.error("Error: fmt --format json does not support --apply");
       process.exit(1);
     }
 
@@ -2608,6 +2623,10 @@ async function main(): Promise<void> {
       }
       if (parsedFmtFile || parsedFmtExcludeFile) {
         console.error("Error: fmt --stdin cannot be combined with --file-match/--exclude-file");
+        process.exit(1);
+      }
+      if (fmtFormat === "json") {
+        console.error("Error: fmt --stdin does not support --format json");
         process.exit(1);
       }
       if (fmtCheck) {
@@ -2715,8 +2734,16 @@ async function main(): Promise<void> {
         console.error("Error: fmt without --apply requires exactly one file (use --check/--apply for multiple)");
         process.exit(1);
       }
-      const raw = fs.readFileSync(fmtFiles[0]!, "utf8");
-      process.stdout.write(formatOne(raw));
+      const targetFile = fmtFiles[0]!;
+      const raw = fs.readFileSync(targetFile, "utf8");
+      const out = formatOne(raw);
+
+      if (fmtFormat === "json") {
+        emitFmtPreviewJson(targetFile, out, out !== raw.replace(/\r\n/g, "\n"));
+        return;
+      }
+
+      process.stdout.write(out);
       return;
     }
 

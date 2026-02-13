@@ -1,0 +1,1 @@
+Error: fmt --stdin does not support --format json
