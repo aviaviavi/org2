@@ -1,0 +1,1 @@
+Error: fmt --config cannot be combined with --dir/--file/--files

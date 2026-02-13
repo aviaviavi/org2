@@ -478,6 +478,11 @@
           "default": "",
           "description": "Exclude files from workspace formatter check/apply commands when paths contain any comma-separated term (case-insensitive substring match)."
         },
+        "org2.formatter.configFile": {
+          "type": "string",
+          "default": "",
+          "description": "Optional org2.json path for workspace formatter commands. When set, workspace check/apply uses `org2 fmt --config <path>` instead of scanning `org2.agenda.dir` recursively."
+        },
         "org2.formatOnSave": {
           "type": "boolean",
           "default": true,

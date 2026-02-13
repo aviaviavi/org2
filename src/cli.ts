@@ -953,6 +953,7 @@ async function main(): Promise<void> {
   let fmtApply = false;
   let fmtCheck = false;
   let fmtFormat: "text" | "json" = "text";
+  let fmtConfigPath = "";
   let fmtFileFiltersRaw: string[] = [];
   let fmtExcludeFileFiltersRaw: string[] = [];
 
@@ -1265,6 +1266,14 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--config") {
+      i++;
+      if (i < args.length) {
+        if (command === "fmt") {
+          fmtConfigPath = args[i]!;
+        }
+        i++;
+      }
     } else if (arg === "--sort") {
       i++;
       if (i < args.length) {
@@ -1440,7 +1449,7 @@ async function main(): Promise<void> {
       "       org2 query --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
     );
     console.error(
-      "       org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--check] [--apply] [--format text|json]",
+      "       org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--config PATH] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--check] [--apply] [--format text|json]",
     );
     console.error(
       "       org2 roam db-sync --dir DIR [--recursive] [--format text|json] [--apply]",
@@ -1482,7 +1491,7 @@ async function main(): Promise<void> {
       "       org2 query --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
     );
     console.error(
-      "       org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--check] [--apply] [--format text|json]",
+      "       org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--config PATH] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--check] [--apply] [--format text|json]",
     );
     console.error(
       "       org2 roam db-sync --dir DIR [--recursive] [--format text|json] [--apply]",
@@ -2593,6 +2602,10 @@ async function main(): Promise<void> {
     }
 
     if (fmtStdin) {
+      if (fmtConfigPath) {
+        console.error("Error: fmt --stdin cannot be combined with --config");
+        process.exit(1);
+      }
       if (parsedFmtFile || parsedFmtExcludeFile) {
         console.error("Error: fmt --stdin cannot be combined with --file-match/--exclude-file");
         process.exit(1);
@@ -2610,8 +2623,21 @@ async function main(): Promise<void> {
       return;
     }
 
+    if (fmtConfigPath && (dir || files.length > 0)) {
+      console.error("Error: fmt --config cannot be combined with --dir/--file/--files");
+      process.exit(1);
+    }
+
     const fmtFiles: string[] = [];
     const seenFmtFiles = new Set<string>();
+
+    const normalizeFmtPathFromConfig = (resolvedPath: string): string => {
+      const rel = path.relative(process.cwd(), resolvedPath);
+      if (!rel) return resolvedPath;
+      if (rel === ".." || rel.startsWith(`..${path.sep}`)) return resolvedPath;
+      return rel;
+    };
+
     const addFmtFile = (filePath: string): void => {
       if (!matchesAgendaFileFilter(filePath, parsedFmtFile)) return;
       if (!matchesAgendaExcludeFileFilter(filePath, parsedFmtExcludeFile)) return;
@@ -2633,10 +2659,29 @@ async function main(): Promise<void> {
       }
     }
 
+    if (fmtConfigPath) {
+      const configPathResolved = path.resolve(fmtConfigPath);
+
+      try {
+        const cfg = loadConfig(configPathResolved);
+        const configDir = path.dirname(configPathResolved);
+        const resolvedFromConfig = resolveFilesFromConfig(cfg, configDir);
+
+        for (const resolvedFile of resolvedFromConfig) {
+          addFmtFile(normalizeFmtPathFromConfig(resolvedFile));
+        }
+      } catch (err) {
+        console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    }
+
     fmtFiles.sort((a, b) => a.localeCompare(b));
 
     if (fmtFiles.length === 0) {
-      console.error("Error: fmt found no matching files (provide --stdin, --dir DIR, or at least one file via --file/--files; check --file-match/--exclude-file filters)");
+      console.error(
+        "Error: fmt found no matching files (provide --stdin, --dir DIR, --config PATH, or at least one file via --file/--files; check --file-match/--exclude-file filters)",
+      );
       process.exit(1);
     }
 

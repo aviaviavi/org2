@@ -903,15 +903,25 @@ function activate(context) {
     }
   }
 
-  function getWorkspaceFormatterPathFilters() {
+  function getWorkspaceFormatterPathFilters(root) {
     const cfg = vscode.workspace.getConfiguration('org2');
     const fileFilter = String(cfg.get('formatter.fileFilter', '') || '').trim();
     const excludeFileFilter = String(cfg.get('formatter.excludeFileFilter', '') || '').trim();
-    return { fileFilter, excludeFileFilter };
+    const configFileRaw = String(cfg.get('formatter.configFile', '') || '').trim();
+    const configFile = configFileRaw
+      ? (path.isAbsolute(configFileRaw) ? configFileRaw : path.resolve(root || process.cwd(), configFileRaw))
+      : '';
+    return { fileFilter, excludeFileFilter, configFile };
   }
 
   async function getWorkspaceFormattingDrift(root, pathFilters = {}) {
-    const args = ['fmt', '--dir', root, '--recursive', '--check'];
+    const args = ['fmt'];
+    if (pathFilters.configFile) {
+      args.push('--config', pathFilters.configFile);
+    } else {
+      args.push('--dir', root, '--recursive');
+    }
+    args.push('--check');
     if (pathFilters.fileFilter) args.push('--file-match', pathFilters.fileFilter);
     if (pathFilters.excludeFileFilter) args.push('--exclude-file', pathFilters.excludeFileFilter);
     return getFormattingDrift(args, root);
@@ -978,7 +988,7 @@ function activate(context) {
 
   async function checkWorkspaceFormattingDrift() {
     const root = getAgendaRootDir();
-    const pathFilters = getWorkspaceFormatterPathFilters();
+    const pathFilters = getWorkspaceFormatterPathFilters(root);
 
     try {
       const { changedFiles, stderr } = await getWorkspaceFormattingDrift(root, pathFilters);
@@ -1033,7 +1043,7 @@ function activate(context) {
 
   async function applyWorkspaceFormatting() {
     const root = getAgendaRootDir();
-    const pathFilters = getWorkspaceFormatterPathFilters();
+    const pathFilters = getWorkspaceFormatterPathFilters(root);
 
     let changedFiles = [];
     try {
@@ -1064,7 +1074,13 @@ function activate(context) {
 
     if (confirm !== 'Format Workspace') return;
 
-    const applyArgs = ['fmt', '--dir', root, '--recursive', '--apply'];
+    const applyArgs = ['fmt'];
+    if (pathFilters.configFile) {
+      applyArgs.push('--config', pathFilters.configFile);
+    } else {
+      applyArgs.push('--dir', root, '--recursive');
+    }
+    applyArgs.push('--apply');
     if (pathFilters.fileFilter) applyArgs.push('--file-match', pathFilters.fileFilter);
     if (pathFilters.excludeFileFilter) applyArgs.push('--exclude-file', pathFilters.excludeFileFilter);
     const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, applyArgs);
