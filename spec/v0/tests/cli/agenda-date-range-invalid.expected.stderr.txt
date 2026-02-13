@@ -1,0 +1,1 @@
+Error: invalid agenda date range: --to 2026-01-22 is before --from 2026-01-28.
