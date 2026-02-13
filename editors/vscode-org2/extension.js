@@ -851,12 +851,39 @@ function activate(context) {
       .filter(Boolean);
   }
 
-  async function getFormattingDrift(args, cwd) {
-    const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
+  function parseFormatterCheckJson(stdout) {
+    const text = String(stdout || '').trim();
+    if (!text) return undefined;
 
     try {
-      await execFileAsync(finalCmd, finalArgs, { cwd });
-      return { changedFiles: [], stderr: '' };
+      const parsed = JSON.parse(text);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+
+      const changed = typeof parsed.changed === 'boolean' ? parsed.changed : undefined;
+      const changedFilesRaw = Array.isArray(parsed.changedFiles) ? parsed.changedFiles : undefined;
+      if (typeof changed !== 'boolean' || !changedFilesRaw) return undefined;
+
+      const changedFiles = changedFilesRaw
+        .map((v) => (typeof v === 'string' ? v.trim() : String(v || '').trim()))
+        .filter(Boolean);
+
+      return { changed, changedFiles };
+    } catch {
+      return undefined;
+    }
+  }
+
+  async function getFormattingDrift(args, cwd) {
+    const argsWithFormat = [...args, '--format', 'json'];
+    const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, argsWithFormat);
+
+    try {
+      const { stdout, stderr } = await execFileAsync(finalCmd, finalArgs, { cwd });
+      const parsedJson = parseFormatterCheckJson(stdout);
+      if (parsedJson) {
+        return { changedFiles: parsedJson.changedFiles, stderr: String(stderr || '').trim() };
+      }
+      return { changedFiles: parseFormatterChangedFiles(stdout), stderr: String(stderr || '').trim() };
     } catch (err) {
       const exitCodeRaw = err && err.code !== undefined ? Number(err.code) : NaN;
       const exitCode = Number.isFinite(exitCodeRaw) ? exitCodeRaw : null;
@@ -864,6 +891,10 @@ function activate(context) {
       const stderr = String((err && err.stderr) || '');
 
       if (exitCode === 1) {
+        const parsedJson = parseFormatterCheckJson(stdout);
+        if (parsedJson) {
+          return { changedFiles: parsedJson.changedFiles, stderr: stderr.trim() };
+        }
         return { changedFiles: parseFormatterChangedFiles(stdout), stderr: stderr.trim() };
       }
 

@@ -952,6 +952,7 @@ async function main(): Promise<void> {
   let fmtStdin = false;
   let fmtApply = false;
   let fmtCheck = false;
+  let fmtFormat: "text" | "json" = "text";
   let fmtFileFiltersRaw: string[] = [];
   let fmtExcludeFileFiltersRaw: string[] = [];
 
@@ -1330,6 +1331,8 @@ async function main(): Promise<void> {
           todoFormat = v as "text" | "json" | "diff";
         } else if (command === "plan" && (v === "text" || v === "json" || v === "diff")) {
           planFormat = v as "text" | "json" | "diff";
+        } else if (command === "fmt" && (v === "text" || v === "json")) {
+          fmtFormat = v;
         } else if (command === "id" && (v === "text" || v === "json" || v === "diff")) {
           idFormat = v;
         } else if (command === "backlinks" && (v === "text" || v === "json")) {
@@ -1437,7 +1440,7 @@ async function main(): Promise<void> {
       "       org2 query --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
     );
     console.error(
-      "       org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--check] [--apply]",
+      "       org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--check] [--apply] [--format text|json]",
     );
     console.error(
       "       org2 roam db-sync --dir DIR [--recursive] [--format text|json] [--apply]",
@@ -1479,7 +1482,7 @@ async function main(): Promise<void> {
       "       org2 query --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
     );
     console.error(
-      "       org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--check] [--apply]",
+      "       org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--check] [--apply] [--format text|json]",
     );
     console.error(
       "       org2 roam db-sync --dir DIR [--recursive] [--format text|json] [--apply]",
@@ -2566,8 +2569,28 @@ async function main(): Promise<void> {
       return printCanonicalAstToOrg(ast);
     };
 
+    const emitFmtCheckJson = (checkedFiles: string[], changedFiles: string[]): void => {
+      process.stdout.write(
+        JSON.stringify(
+          {
+            $schema: "org2:fmt-check:v1",
+            changed: changedFiles.length > 0,
+            checkedFiles,
+            changedFiles,
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+    };
+
     const parsedFmtFile = parseAgendaFileFilterArgs(fmtFileFiltersRaw);
     const parsedFmtExcludeFile = parseAgendaExcludeFileFilterArgs(fmtExcludeFileFiltersRaw);
+
+    if (fmtFormat === "json" && !fmtCheck) {
+      console.error("Error: fmt --format json is only supported with --check");
+      process.exit(1);
+    }
 
     if (fmtStdin) {
       if (parsedFmtFile || parsedFmtExcludeFile) {
@@ -2625,6 +2648,14 @@ async function main(): Promise<void> {
         if (out !== raw.replace(/\r\n/g, "\n")) {
           changedFiles.push(file);
         }
+      }
+
+      if (fmtFormat === "json") {
+        emitFmtCheckJson(fmtFiles, changedFiles);
+        if (changedFiles.length > 0) {
+          process.exit(1);
+        }
+        return;
       }
 
       if (changedFiles.length > 0) {
