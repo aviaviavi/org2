@@ -686,6 +686,7 @@ async function fetchAgendaGroups(context, filter) {
   const files = cfg.get('agenda.files', []);
   const includeOverdue = cfg.get('agenda.includeOverdue', true);
   const statusFilter = String(cfg.get('agenda.statusFilter', 'all') || 'all').trim().toLowerCase();
+  const excludeStatusFilter = String(cfg.get('agenda.excludeStatusFilter', 'all') || 'all').trim().toLowerCase();
   const kindFilter = String(cfg.get('agenda.kindFilter', 'all') || 'all').trim().toLowerCase();
   const excludeKindFilter = String(cfg.get('agenda.excludeKindFilter', 'all') || 'all').trim().toLowerCase();
   const whenFilter = String(cfg.get('agenda.whenFilter', 'all') || 'all').trim().toLowerCase();
@@ -725,6 +726,7 @@ async function fetchAgendaGroups(context, filter) {
   if (endDate) args.push('--to', endDate);
   if (!includeOverdue) args.push('--no-overdue');
   if (statusFilter && statusFilter !== 'all') args.push('--status', statusFilter);
+  if (excludeStatusFilter && excludeStatusFilter !== 'all') args.push('--exclude-status', excludeStatusFilter);
   if (kindFilter && kindFilter !== 'all') args.push('--kind', kindFilter);
   if (excludeKindFilter && excludeKindFilter !== 'all') args.push('--exclude-kind', excludeKindFilter);
   if (whenFilter && whenFilter !== 'all') args.push('--when', whenFilter);
