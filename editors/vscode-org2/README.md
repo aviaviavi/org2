@@ -15,6 +15,7 @@ Minimal VS Code language support for Org2.
   - `[[url][desc]]`
   - bare `https://...` URLs
 - LSP hover tooltips for Org links, TODO keywords, and planning keywords (`SCHEDULED:` / `DEADLINE:`)
+- LSP rename for Org ID links (`[[id:...]]`) and `:ID:` property values
 
 ## Link rendering note (best-effort)
 
