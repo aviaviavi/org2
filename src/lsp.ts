@@ -126,6 +126,18 @@ interface SelectionRange {
   parent?: SelectionRange;
 }
 
+interface SemanticToken {
+  line: number;
+  startChar: number;
+  length: number;
+  tokenType: number;
+  tokenModifiers: number;
+}
+
+interface SemanticTokens {
+  data: number[];
+}
+
 interface CodeAction {
   title: string;
   kind?: string;
@@ -169,6 +181,17 @@ const DocumentHighlightKind = {
 
 const CodeActionKind = {
   QuickFix: "quickfix",
+};
+
+const SemanticTokenType = {
+  Keyword: 0,
+  Property: 1,
+  String: 2,
+};
+
+const SEMANTIC_TOKEN_LEGEND = {
+  tokenTypes: ["keyword", "property", "string"],
+  tokenModifiers: [] as string[],
 };
 
 const DiagnosticSeverity = {
@@ -289,6 +312,10 @@ class LSPServer {
             documentFormattingProvider: true,
             documentRangeFormattingProvider: true,
             selectionRangeProvider: true,
+            semanticTokensProvider: {
+              legend: SEMANTIC_TOKEN_LEGEND,
+              full: true,
+            },
           },
           serverInfo: {
             name: "org2-lsp",
@@ -512,6 +539,16 @@ class LSPServer {
 
         const selectionRanges = this.getSelectionRanges(doc.text, Array.isArray(positions) ? positions : []);
         this.sendResponse(id, selectionRanges);
+      } else if (method === "textDocument/semanticTokens/full") {
+        const { textDocument } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, { data: [] });
+          return;
+        }
+
+        const semanticTokens = this.getSemanticTokens(doc.text);
+        this.sendResponse(id, semanticTokens);
       } else if (method === "workspace/symbol") {
         const query = String(params?.query || "").trim();
         const symbols = this.findWorkspaceSymbols(query);
@@ -1102,6 +1139,120 @@ class LSPServer {
     }
 
     return selection ?? { range: documentRange };
+  }
+
+  private getSemanticTokens(text: string): SemanticTokens {
+    const lines = text.split("\n");
+    const tokens: SemanticToken[] = [];
+    const seen = new Set<string>();
+
+    const addToken = (line: number, startChar: number, length: number, tokenType: number) => {
+      if (length <= 0 || startChar < 0) {
+        return;
+      }
+      const key = `${line}:${startChar}:${length}:${tokenType}`;
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      tokens.push({
+        line,
+        startChar,
+        length,
+        tokenType,
+        tokenModifiers: 0,
+      });
+    };
+
+    const todoKeywords = new Set([
+      "TODO",
+      "NEXT",
+      "WAITING",
+      "IN_PROGRESS",
+      "DONE",
+      "CANCELED",
+      "CANCELLED",
+      "OPEN",
+      "BACKLOG",
+      "BLOCKED",
+      "STARTED",
+      "DOING",
+      "CLOSED",
+    ]);
+
+    for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
+      const line = lines[lineNumber] ?? "";
+
+      const headingTodoMatch = line.match(/^(\*+\s+)([A-Z][A-Z0-9_-]*)\b/);
+      if (headingTodoMatch) {
+        const keyword = (headingTodoMatch[2] || "").toUpperCase();
+        if (todoKeywords.has(keyword)) {
+          addToken(lineNumber, headingTodoMatch[1].length, keyword.length, SemanticTokenType.Keyword);
+        }
+      }
+
+      const planningKeywordRegex = /(SCHEDULED:|DEADLINE:|CLOSED:)/g;
+      let planningMatch: RegExpExecArray | null;
+      while ((planningMatch = planningKeywordRegex.exec(line)) !== null) {
+        const keyword = planningMatch[1] || "";
+        addToken(lineNumber, planningMatch.index, keyword.length, SemanticTokenType.Keyword);
+      }
+
+      const propertyMatch = line.match(/^(\s*)(:[A-Za-z0-9_@#%+.-]+:)/);
+      if (propertyMatch) {
+        const startChar = (propertyMatch[1] || "").length;
+        const propertyKey = propertyMatch[2] || "";
+        addToken(lineNumber, startChar, propertyKey.length, SemanticTokenType.Property);
+      }
+
+      const linkRegex = /\[\[([^\]\n]+?)\](?:\[[^\]\n]*\])?\]/g;
+      let linkMatch: RegExpExecArray | null;
+      while ((linkMatch = linkRegex.exec(line)) !== null) {
+        const rawTarget = linkMatch[1] || "";
+        if (!rawTarget.trim()) {
+          continue;
+        }
+
+        const targetOffsetInMatch = linkMatch[0].indexOf(rawTarget);
+        const targetStartChar = targetOffsetInMatch >= 0 ? linkMatch.index + targetOffsetInMatch : linkMatch.index + 2;
+        addToken(lineNumber, targetStartChar, rawTarget.length, SemanticTokenType.String);
+      }
+    }
+
+    return {
+      data: this.encodeSemanticTokens(tokens),
+    };
+  }
+
+  private encodeSemanticTokens(tokens: SemanticToken[]): number[] {
+    const sorted = [...tokens].sort((a, b) => {
+      if (a.line !== b.line) {
+        return a.line - b.line;
+      }
+      if (a.startChar !== b.startChar) {
+        return a.startChar - b.startChar;
+      }
+      if (a.length !== b.length) {
+        return a.length - b.length;
+      }
+      return a.tokenType - b.tokenType;
+    });
+
+    const data: number[] = [];
+    let previousLine = 0;
+    let previousStartChar = 0;
+
+    for (const token of sorted) {
+      const deltaLine = token.line - previousLine;
+      const deltaStart = deltaLine === 0 ? token.startChar - previousStartChar : token.startChar;
+
+      data.push(deltaLine, deltaStart, token.length, token.tokenType, token.tokenModifiers);
+
+      previousLine = token.line;
+      previousStartChar = token.startChar;
+    }
+
+    return data;
   }
 
   private getWordRangeAtPosition(lines: string[], position: Position): Range | null {
