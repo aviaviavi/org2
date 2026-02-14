@@ -168,6 +168,7 @@ type AgendaPlanningKind = "SCHEDULED" | "DEADLINE";
 type AgendaWhenBucket = "overdue" | "today" | "upcoming";
 
 type AgendaStatusFilter = Set<AgendaStatusBucket> | null;
+type AgendaExcludeStatusFilter = Set<AgendaStatusBucket> | null;
 type AgendaPlanningFilter = Set<AgendaPlanningKind> | null;
 type AgendaExcludePlanningFilter = Set<AgendaPlanningKind> | null;
 type AgendaWhenFilter = Set<AgendaWhenBucket> | null;
@@ -286,6 +287,13 @@ function parseAgendaStatusFilterArgs(rawArgs: string[]): {
   }
 
   return { filter: selected, invalid: [] };
+}
+
+function parseAgendaExcludeStatusFilterArgs(rawArgs: string[]): {
+  filter: AgendaExcludeStatusFilter;
+  invalid: string[];
+} {
+  return parseAgendaStatusFilterArgs(rawArgs);
 }
 
 function parseAgendaKindFilterArgs(rawArgs: string[]): {
@@ -611,6 +619,16 @@ function matchesAgendaPriorityFilter(priority: string | undefined, priorityFilte
   return priorityFilter.has(normalized);
 }
 
+function matchesAgendaExcludeStatusFilter(
+  todo: string | undefined,
+  excludeStatusFilter: AgendaExcludeStatusFilter,
+): boolean {
+  if (!excludeStatusFilter || excludeStatusFilter.size === 0) return true;
+  const bucket = agendaStatusBucketForKeyword(todo);
+  if (!bucket) return true;
+  return !excludeStatusFilter.has(bucket);
+}
+
 function matchesAgendaExcludeKindFilter(
   kind: AgendaPlanningKind,
   excludeKindFilter: AgendaExcludePlanningFilter,
@@ -741,6 +759,7 @@ function findScheduledItemsInText(
   endDate: Date,
   includeOverdue: boolean,
   statusFilter: AgendaStatusFilter,
+  excludeStatusFilter: AgendaExcludeStatusFilter,
   planningFilter: AgendaPlanningFilter,
   excludePlanningFilter: AgendaExcludePlanningFilter,
   whenFilter: AgendaWhenFilter,
@@ -781,6 +800,7 @@ function findScheduledItemsInText(
 
     const todoBucket = agendaStatusBucketForKeyword(todo);
     if (statusFilter && (!todoBucket || !statusFilter.has(todoBucket))) continue;
+    if (!matchesAgendaExcludeStatusFilter(todo, excludeStatusFilter)) continue;
     if (!matchesAgendaTextFilter(current.title, textFilter)) continue;
     if (!matchesAgendaExcludeTextFilter(current.title, excludeTextFilter)) continue;
     if (!matchesAgendaTagFilter(current.tags, tagFilter)) continue;
@@ -847,6 +867,7 @@ function findScheduledItems(
   endDate: Date,
   includeOverdue: boolean,
   statusFilter: AgendaStatusFilter,
+  excludeStatusFilter: AgendaExcludeStatusFilter,
   planningFilter: AgendaPlanningFilter,
   excludePlanningFilter: AgendaExcludePlanningFilter,
   whenFilter: AgendaWhenFilter,
@@ -881,6 +902,7 @@ function findScheduledItems(
 
               const todoBucket = agendaStatusBucketForKeyword(todo);
               if (statusFilter && (!todoBucket || !statusFilter.has(todoBucket))) continue;
+              if (!matchesAgendaExcludeStatusFilter(todo, excludeStatusFilter)) continue;
 
               const isDoneLike = todo === "DONE" || todo === "CANCELLED" || todo === "CANCELED";
               const isProgLike = todo === "PROG" || todo === "IN_PROGRESS";
@@ -1138,6 +1160,7 @@ async function main(): Promise<void> {
   let recursive = false;
   let includeOverdue = true;
   let agendaStatusFiltersRaw: string[] = [];
+  let agendaExcludeStatusFiltersRaw: string[] = [];
   let agendaKindFiltersRaw: string[] = [];
   let agendaExcludeKindFiltersRaw: string[] = [];
   let agendaWhenFiltersRaw: string[] = [];
@@ -1369,6 +1392,14 @@ async function main(): Promise<void> {
           agendaStatusFiltersRaw.push(args[i]!);
         } else {
           todoStatus = args[i] as TodoStatus;
+        }
+        i++;
+      }
+    } else if (arg === "--exclude-status") {
+      i++;
+      if (i < args.length) {
+        if (command === "agenda") {
+          agendaExcludeStatusFiltersRaw.push(args[i]!);
         }
         i++;
       }
@@ -1686,7 +1717,7 @@ async function main(): Promise<void> {
 
   if (help) {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -1728,7 +1759,7 @@ async function main(): Promise<void> {
 
   if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -3233,6 +3264,14 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const parsedAgendaExcludeStatus = parseAgendaExcludeStatusFilterArgs(agendaExcludeStatusFiltersRaw);
+  if (parsedAgendaExcludeStatus.invalid.length > 0) {
+    console.error(
+      `Error: invalid agenda --exclude-status value(s): ${parsedAgendaExcludeStatus.invalid.join(", ")}. Allowed: ${AGENDA_STATUS_ALLOWED_HINT}`,
+    );
+    process.exit(1);
+  }
+
   const parsedAgendaKind = parseAgendaKindFilterArgs(agendaKindFiltersRaw);
   if (parsedAgendaKind.invalid.length > 0) {
     console.error(
@@ -3362,6 +3401,7 @@ async function main(): Promise<void> {
         endDate,
         includeOverdue,
         parsedAgendaStatus.filter,
+        parsedAgendaExcludeStatus.filter,
         parsedAgendaKind.filter,
         parsedAgendaExcludeKind.filter,
         parsedAgendaWhen.filter,

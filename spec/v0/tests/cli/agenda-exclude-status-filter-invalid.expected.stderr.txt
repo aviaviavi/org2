@@ -1,0 +1,1 @@
+Error: invalid agenda --exclude-status value(s): bananas. Allowed: all, active, actionable, open, todo, in_progress, done, canceled, closed, custom
