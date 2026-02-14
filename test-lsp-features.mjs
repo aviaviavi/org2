@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Test LSP documentSymbol and foldingRange features
+ * Test LSP feature coverage (symbols, folding, highlights, rename)
  */
 
 import { spawn } from "node:child_process";
@@ -85,6 +85,8 @@ async function testLSPFeatures() {
 
   return new Promise((resolve) => {
     setTimeout(() => {
+      const renameLinkPos = findPosition(testOrgContent, "id:abc-123");
+
       // Test 1: Initialize
       console.log("Test 1: Initialize");
       sendMessage(server, {
@@ -177,17 +179,16 @@ async function testLSPFeatures() {
               }
               console.log();
 
-              // Test 5: PrepareRename (ID link target)
-              console.log("Test 5: PrepareRename");
-              const renameLinkPos = findPosition(testOrgContent, "id:abc-123");
+              // Test 5: DocumentHighlight (ID link + declaration in same document)
+              console.log("Test 5: DocumentHighlight");
               if (!renameLinkPos) {
-                console.log("✗ Could not find rename test token\n");
+                console.log("✗ Could not find documentHighlight test token\n");
                 testsFailed++;
               } else {
                 sendMessage(server, {
                   jsonrpc: "2.0",
                   id: 4,
-                  method: "textDocument/prepareRename",
+                  method: "textDocument/documentHighlight",
                   params: {
                     textDocument: { uri: "file:///test.org" },
                     position: { line: renameLinkPos.line, character: renameLinkPos.character + 4 },
@@ -196,71 +197,108 @@ async function testLSPFeatures() {
               }
 
               setTimeout(() => {
-                const prepareResponse = allResponses.find((r) => r.id === 4);
-                if (prepareResponse && prepareResponse.result && prepareResponse.result.placeholder) {
-                  console.log(`✓ PrepareRename placeholder: ${prepareResponse.result.placeholder}`);
-                  testsPassed++;
+                const highlightResponse = allResponses.find((r) => r.id === 4);
+                const highlights = Array.isArray(highlightResponse?.result) ? highlightResponse.result : null;
+                if (highlights) {
+                  const hasRead = highlights.some((h) => h?.kind === 2);
+                  const hasWrite = highlights.some((h) => h?.kind === 3);
+                  if (highlights.length >= 3 && hasRead && hasWrite) {
+                    console.log(`✓ DocumentHighlight returned ${highlights.length} highlights (read + write)`);
+                    testsPassed++;
+                  } else {
+                    console.log(`✗ DocumentHighlight missing expected highlight kinds: ${JSON.stringify(highlights)}`);
+                    testsFailed++;
+                  }
                 } else {
-                  console.log("✗ PrepareRename failed\n");
+                  console.log("✗ DocumentHighlight failed\n");
                   testsFailed++;
                 }
                 console.log();
 
-                // Test 6: Rename (ID links + declaration)
-                console.log("Test 6: Rename");
+                // Test 6: PrepareRename (ID link target)
+                console.log("Test 6: PrepareRename");
                 if (!renameLinkPos) {
-                  console.log("✗ Rename skipped (missing token position)\n");
+                  console.log("✗ Could not find rename test token\n");
                   testsFailed++;
                 } else {
                   sendMessage(server, {
                     jsonrpc: "2.0",
                     id: 5,
-                    method: "textDocument/rename",
+                    method: "textDocument/prepareRename",
                     params: {
                       textDocument: { uri: "file:///test.org" },
                       position: { line: renameLinkPos.line, character: renameLinkPos.character + 4 },
-                      newName: "xyz-789",
                     },
                   });
                 }
 
                 setTimeout(() => {
-                  const renameResponse = allResponses.find((r) => r.id === 5);
-                  const edits = renameResponse?.result?.changes?.["file:///test.org"];
-                  if (Array.isArray(edits)) {
-                    const hasLinkEdit = edits.some((edit) => edit?.newText === "id:xyz-789");
-                    const hasDefinitionEdit = edits.some((edit) => edit?.newText === "xyz-789");
-                    if (hasLinkEdit && hasDefinitionEdit && edits.length >= 3) {
-                      console.log(`✓ Rename produced ${edits.length} edits (links + declaration)`);
-                      testsPassed++;
-                    } else {
-                      console.log(`✗ Rename edits missing expected replacements: ${JSON.stringify(edits)}`);
-                      testsFailed++;
-                    }
+                  const prepareResponse = allResponses.find((r) => r.id === 5);
+                  if (prepareResponse && prepareResponse.result && prepareResponse.result.placeholder) {
+                    console.log(`✓ PrepareRename placeholder: ${prepareResponse.result.placeholder}`);
+                    testsPassed++;
                   } else {
-                    console.log("✗ Rename failed\n");
+                    console.log("✗ PrepareRename failed\n");
                     testsFailed++;
                   }
                   console.log();
 
-                  // Shutdown
-                  console.log("Shutting down...");
-                  sendMessage(server, {
-                    jsonrpc: "2.0",
-                    id: 999,
-                    method: "shutdown",
-                    params: {},
-                  });
+                  // Test 7: Rename (ID links + declaration)
+                  console.log("Test 7: Rename");
+                  if (!renameLinkPos) {
+                    console.log("✗ Rename skipped (missing token position)\n");
+                    testsFailed++;
+                  } else {
+                    sendMessage(server, {
+                      jsonrpc: "2.0",
+                      id: 6,
+                      method: "textDocument/rename",
+                      params: {
+                        textDocument: { uri: "file:///test.org" },
+                        position: { line: renameLinkPos.line, character: renameLinkPos.character + 4 },
+                        newName: "xyz-789",
+                      },
+                    });
+                  }
 
                   setTimeout(() => {
-                    server.kill();
+                    const renameResponse = allResponses.find((r) => r.id === 6);
+                    const edits = renameResponse?.result?.changes?.["file:///test.org"];
+                    if (Array.isArray(edits)) {
+                      const hasLinkEdit = edits.some((edit) => edit?.newText === "id:xyz-789");
+                      const hasDefinitionEdit = edits.some((edit) => edit?.newText === "xyz-789");
+                      if (hasLinkEdit && hasDefinitionEdit && edits.length >= 3) {
+                        console.log(`✓ Rename produced ${edits.length} edits (links + declaration)`);
+                        testsPassed++;
+                      } else {
+                        console.log(`✗ Rename edits missing expected replacements: ${JSON.stringify(edits)}`);
+                        testsFailed++;
+                      }
+                    } else {
+                      console.log("✗ Rename failed\n");
+                      testsFailed++;
+                    }
+                    console.log();
 
-                    console.log("\n=== Test Summary ===");
-                    console.log(`Passed: ${testsPassed}`);
-                    console.log(`Failed: ${testsFailed}`);
+                    // Shutdown
+                    console.log("Shutting down...");
+                    sendMessage(server, {
+                      jsonrpc: "2.0",
+                      id: 999,
+                      method: "shutdown",
+                      params: {},
+                    });
 
-                    resolve(testsFailed === 0);
-                  }, 200);
+                    setTimeout(() => {
+                      server.kill();
+
+                      console.log("\n=== Test Summary ===");
+                      console.log(`Passed: ${testsPassed}`);
+                      console.log(`Failed: ${testsFailed}`);
+
+                      resolve(testsFailed === 0);
+                    }, 200);
+                  }, 300);
                 }, 300);
               }, 300);
             }, 300);
