@@ -85,6 +85,16 @@ interface CompletionItem {
   sortText?: string;
 }
 
+interface MarkupContent {
+  kind: "markdown" | "plaintext";
+  value: string;
+}
+
+interface Hover {
+  contents: MarkupContent;
+  range?: Range;
+}
+
 type ReferenceQuery =
   | {
       kind: "id";
@@ -205,6 +215,7 @@ class LSPServer {
             referencesProvider: true,
             workspaceSymbolProvider: true,
             documentLinkProvider: true,
+            hoverProvider: true,
             completionProvider: {
               triggerCharacters: [" ", ":", "<"],
             },
@@ -311,6 +322,16 @@ class LSPServer {
         const includeDeclaration = Boolean(context?.includeDeclaration);
         const references = this.findReferenceLocations(doc.uri, query, includeDeclaration);
         this.sendResponse(id, references);
+      } else if (method === "textDocument/hover") {
+        const { textDocument, position } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, null);
+          return;
+        }
+
+        const hover = this.getHover(doc.uri, doc.text, position);
+        this.sendResponse(id, hover);
       } else if (method === "textDocument/completion") {
         const { textDocument, position } = params;
         const doc = this.documents.get(textDocument.uri);
@@ -664,6 +685,182 @@ class LSPServer {
     return Array.from(completions.values());
   }
 
+  private getHover(sourceUri: string, text: string, position: Position): Hover | null {
+    const link = this.extractLinkAtPosition(text, position);
+    if (link) {
+      return this.getLinkHover(sourceUri, link.target, link.range);
+    }
+
+    const todoHover = this.getTodoKeywordHover(text, position);
+    if (todoHover) {
+      return todoHover;
+    }
+
+    const planningHover = this.getPlanningKeywordHover(text, position);
+    if (planningHover) {
+      return planningHover;
+    }
+
+    return null;
+  }
+
+  private getLinkHover(sourceUri: string, target: string, range: Range): Hover {
+    const normalizedTarget = target.trim();
+
+    if (normalizedTarget.toLowerCase().startsWith("id:")) {
+      const normalizedId = this.normalizeIdValue(normalizedTarget);
+      const location = this.resolveIdDefinitionLocation(sourceUri, normalizedTarget);
+      const details = [`**Org ID link** \`id:${normalizedId}\``];
+
+      if (location) {
+        details.push(`Resolves to \`${this.formatLocationForHover(location)}\`.`);
+      } else {
+        details.push("Target ID not found in open/workspace Org files.");
+      }
+
+      return {
+        range,
+        contents: {
+          kind: "markdown",
+          value: details.join("\n\n"),
+        },
+      };
+    }
+
+    const resolvedPath = this.normalizeFileLinkPath(sourceUri, normalizedTarget);
+    if (resolvedPath) {
+      const exists = fs.existsSync(resolvedPath);
+      const details = [`**Org file link** \`${normalizedTarget}\``, `Resolves to \`${this.formatPathForHover(resolvedPath)}\`.`];
+
+      if (!exists) {
+        details.push("Target file does not exist yet.");
+      }
+
+      return {
+        range,
+        contents: {
+          kind: "markdown",
+          value: details.join("\n\n"),
+        },
+      };
+    }
+
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(normalizedTarget)) {
+      return {
+        range,
+        contents: {
+          kind: "markdown",
+          value: `**External link**\n\n\`${normalizedTarget}\``,
+        },
+      };
+    }
+
+    return {
+      range,
+      contents: {
+        kind: "markdown",
+        value: `**Org link target**\n\n\`${normalizedTarget}\``,
+      },
+    };
+  }
+
+  private getTodoKeywordHover(text: string, position: Position): Hover | null {
+    const lines = text.split("\n");
+    const line = lines[position.line] ?? "";
+    const match = line.match(/^(\*+\s+)([A-Z][A-Z0-9_-]*)\b/);
+    if (!match) {
+      return null;
+    }
+
+    const keyword = match[2];
+    const startChar = match[1].length;
+    const endChar = startChar + keyword.length;
+    if (position.character < startChar || position.character >= endChar) {
+      return null;
+    }
+
+    return {
+      range: {
+        start: { line: position.line, character: startChar },
+        end: { line: position.line, character: endChar },
+      },
+      contents: {
+        kind: "markdown",
+        value: `**TODO keyword** \`${keyword}\`\n\nStatus bucket: \`${this.todoKeywordBucket(keyword)}\``,
+      },
+    };
+  }
+
+  private getPlanningKeywordHover(text: string, position: Position): Hover | null {
+    const lines = text.split("\n");
+    const line = lines[position.line] ?? "";
+    const planningKeywords = [
+      { keyword: "SCHEDULED:", description: "Planned start date for agenda scheduling." },
+      { keyword: "DEADLINE:", description: "Due date used for overdue and urgency tracking." },
+    ];
+
+    for (const item of planningKeywords) {
+      const startChar = line.indexOf(item.keyword);
+      if (startChar < 0) {
+        continue;
+      }
+      const endChar = startChar + item.keyword.length;
+      if (position.character < startChar || position.character >= endChar) {
+        continue;
+      }
+      return {
+        range: {
+          start: { line: position.line, character: startChar },
+          end: { line: position.line, character: endChar },
+        },
+        contents: {
+          kind: "markdown",
+          value: `**${item.keyword}**\n\n${item.description}`,
+        },
+      };
+    }
+
+    return null;
+  }
+
+  private todoKeywordBucket(keyword: string): "active" | "closed" | "custom" {
+    const normalized = keyword.trim().toUpperCase();
+
+    if (normalized === "TODO" || normalized === "NEXT" || normalized === "WAITING" || normalized === "IN_PROGRESS") {
+      return "active";
+    }
+
+    if (normalized === "DONE" || normalized === "CANCELLED" || normalized === "CANCELED" || normalized === "CLOSED") {
+      return "closed";
+    }
+
+    return "custom";
+  }
+
+  private formatLocationForHover(location: Location): string {
+    const filePath = this.filePathFromUri(location.uri);
+    if (!filePath) {
+      return location.uri;
+    }
+    return `${this.formatPathForHover(filePath)}:${location.range.start.line + 1}`;
+  }
+
+  private formatPathForHover(filePath: string): string {
+    const absolutePath = path.resolve(filePath);
+    const candidateRoots = [...this.workspaceRoots]
+      .map((root) => path.resolve(root))
+      .sort((a, b) => b.length - a.length);
+
+    for (const root of candidateRoots) {
+      if (absolutePath === root || absolutePath.startsWith(`${root}${path.sep}`)) {
+        const relative = path.relative(root, absolutePath);
+        return relative || path.basename(absolutePath);
+      }
+    }
+
+    return absolutePath;
+  }
+
   private formatOrgTimestamp(date: Date, active: boolean): string {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -674,22 +871,38 @@ class LSPServer {
   }
 
   private extractLinkTargetAtPosition(text: string, pos: Position): string | null {
+    return this.extractLinkAtPosition(text, pos)?.target ?? null;
+  }
+
+  private extractLinkAtPosition(text: string, pos: Position): { target: string; range: Range } | null {
     const lines = text.split("\n");
     const line = lines[pos.line] ?? "";
     const char = Math.max(0, Math.min(pos.character, line.length));
 
-    const openIdx = line.lastIndexOf("[[", char);
-    if (openIdx < 0) return null;
+    const linkRegex = /\[\[([^\]\n]+?)\](?:\[[^\]\n]*\])?\]/g;
+    let match: RegExpExecArray | null;
+    while ((match = linkRegex.exec(line)) !== null) {
+      const startChar = match.index;
+      const endChar = startChar + match[0].length;
+      if (char < startChar || char >= endChar) {
+        continue;
+      }
 
-    const closeIdx = line.indexOf("]]", char);
-    if (closeIdx < 0) return null;
+      const target = (match[1] || "").trim();
+      if (!target) {
+        return null;
+      }
 
-    const inside = line.slice(openIdx + 2, closeIdx);
+      return {
+        target,
+        range: {
+          start: { line: pos.line, character: startChar },
+          end: { line: pos.line, character: endChar },
+        },
+      };
+    }
 
-    // Handle both [[target]] and [[target][desc]]
-    const target = inside.split("][")[0]?.trim() ?? "";
-    if (!target) return null;
-    return target;
+    return null;
   }
 
   private extractDocumentLinks(sourceUri: string, text: string): DocumentLink[] {
