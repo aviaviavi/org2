@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Test LSP feature coverage (symbols, folding, highlights, rename)
+ * Test LSP feature coverage (symbols, folding, highlights, rename, code actions)
  */
 
 import { spawn } from "node:child_process";
@@ -36,6 +36,8 @@ Final content.
 Link one: [[id:abc-123][target]]
 Link two: [[id:abc-123]]
 `;
+
+const quickFixOrgContent = "* Quickfix Playground\r\n\tTabbed line\r\n";
 
 function findPosition(haystack, needle) {
   const index = haystack.indexOf(needle);
@@ -280,24 +282,96 @@ async function testLSPFeatures() {
                     }
                     console.log();
 
-                    // Shutdown
-                    console.log("Shutting down...");
+                    // Test 8: CodeAction quick fixes (CRLF + tabs)
+                    console.log("Test 8: CodeAction");
                     sendMessage(server, {
                       jsonrpc: "2.0",
-                      id: 999,
-                      method: "shutdown",
-                      params: {},
+                      method: "textDocument/didOpen",
+                      params: {
+                        textDocument: {
+                          uri: "file:///quickfix.org",
+                          languageId: "org",
+                          version: 1,
+                          text: quickFixOrgContent,
+                        },
+                      },
                     });
 
                     setTimeout(() => {
-                      server.kill();
+                      sendMessage(server, {
+                        jsonrpc: "2.0",
+                        id: 7,
+                        method: "textDocument/codeAction",
+                        params: {
+                          textDocument: { uri: "file:///quickfix.org" },
+                          range: {
+                            start: { line: 0, character: 0 },
+                            end: { line: 1, character: 5 },
+                          },
+                          context: {
+                            diagnostics: [
+                              {
+                                range: {
+                                  start: { line: 0, character: 0 },
+                                  end: { line: 0, character: 0 },
+                                },
+                                severity: 1,
+                                message: "Unsupported line endings: CRLF",
+                                code: "org2-parser",
+                              },
+                              {
+                                range: {
+                                  start: { line: 1, character: 0 },
+                                  end: { line: 1, character: 1 },
+                                },
+                                severity: 1,
+                                message: "Unsupported construct: tab character",
+                                code: "org2-parser",
+                              },
+                            ],
+                          },
+                        },
+                      });
 
-                      console.log("\n=== Test Summary ===");
-                      console.log(`Passed: ${testsPassed}`);
-                      console.log(`Failed: ${testsFailed}`);
+                      setTimeout(() => {
+                        const codeActionResponse = allResponses.find((r) => r.id === 7);
+                        const actions = Array.isArray(codeActionResponse?.result) ? codeActionResponse.result : null;
+                        if (actions) {
+                          const hasCrLfFix = actions.some((action) => action?.title?.includes("CRLF"));
+                          const hasTabFix = actions.some((action) => action?.title?.includes("tab"));
+                          if (hasCrLfFix && hasTabFix) {
+                            console.log(`✓ CodeAction returned quick fixes (${actions.length})`);
+                            testsPassed++;
+                          } else {
+                            console.log(`✗ CodeAction missing expected quick fixes: ${JSON.stringify(actions)}`);
+                            testsFailed++;
+                          }
+                        } else {
+                          console.log("✗ CodeAction failed\n");
+                          testsFailed++;
+                        }
+                        console.log();
 
-                      resolve(testsFailed === 0);
-                    }, 200);
+                        // Shutdown
+                        console.log("Shutting down...");
+                        sendMessage(server, {
+                          jsonrpc: "2.0",
+                          id: 999,
+                          method: "shutdown",
+                          params: {},
+                        });
+
+                        setTimeout(() => {
+                          server.kill();
+
+                          console.log("\n=== Test Summary ===");
+                          console.log(`Passed: ${testsPassed}`);
+                          console.log(`Failed: ${testsFailed}`);
+
+                          resolve(testsFailed === 0);
+                        }, 200);
+                      }, 300);
+                    }, 300);
                   }, 300);
                 }, 300);
               }, 300);

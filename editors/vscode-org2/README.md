@@ -17,6 +17,7 @@ Minimal VS Code language support for Org2.
 - LSP hover tooltips for Org links, TODO keywords, and planning keywords (`SCHEDULED:` / `DEADLINE:`)
 - LSP document highlights for in-file ID/file references under cursor
 - LSP rename for Org ID links (`[[id:...]]`) and `:ID:` property values
+- LSP quick-fix code actions for parser whitespace issues (CRLF line endings and tab characters)
 
 ## Link rendering note (best-effort)
 
