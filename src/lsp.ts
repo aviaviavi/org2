@@ -109,6 +109,14 @@ interface WorkspaceEdit {
   changes?: Record<string, TextEdit[]>;
 }
 
+interface CodeAction {
+  title: string;
+  kind?: string;
+  diagnostics?: Diagnostic[];
+  isPreferred?: boolean;
+  edit?: WorkspaceEdit;
+}
+
 interface RenameTarget {
   kind: "id";
   targetId: string;
@@ -140,6 +148,10 @@ const DocumentHighlightKind = {
   Text: 1,
   Read: 2,
   Write: 3,
+};
+
+const CodeActionKind = {
+  QuickFix: "quickfix",
 };
 
 const DiagnosticSeverity = {
@@ -249,6 +261,9 @@ class LSPServer {
             },
             completionProvider: {
               triggerCharacters: [" ", ":", "<"],
+            },
+            codeActionProvider: {
+              codeActionKinds: [CodeActionKind.QuickFix],
             },
           },
           serverInfo: {
@@ -423,6 +438,16 @@ class LSPServer {
 
         const completions = this.getCompletions(doc.text, position);
         this.sendResponse(id, completions);
+      } else if (method === "textDocument/codeAction") {
+        const { textDocument, context } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, []);
+          return;
+        }
+
+        const actions = this.getCodeActions(doc.uri, doc.text, context);
+        this.sendResponse(id, actions);
       } else if (method === "workspace/symbol") {
         const query = String(params?.query || "").trim();
         const symbols = this.findWorkspaceSymbols(query);
@@ -764,6 +789,65 @@ class LSPServer {
     }
 
     return Array.from(completions.values());
+  }
+
+  private getCodeActions(sourceUri: string, text: string, context: any): CodeAction[] {
+    const actions: CodeAction[] = [];
+    const diagnostics = Array.isArray(context?.diagnostics) ? (context.diagnostics as Diagnostic[]) : [];
+
+    const parserDiagnostics = diagnostics.filter((diag) => String(diag?.code || "") === "org2-parser");
+    const fullRange = this.getFullDocumentRange(text);
+
+    if (text.includes("\r\n")) {
+      actions.push({
+        title: "Org2: Convert CRLF line endings to LF",
+        kind: CodeActionKind.QuickFix,
+        diagnostics: parserDiagnostics.filter((diag) => String(diag?.message || "").includes("Unsupported line endings: CRLF")),
+        isPreferred: true,
+        edit: {
+          changes: {
+            [sourceUri]: [
+              {
+                range: fullRange,
+                newText: text.replace(/\r\n/g, "\n"),
+              },
+            ],
+          },
+        },
+      });
+    }
+
+    if (text.includes("\t")) {
+      actions.push({
+        title: "Org2: Replace tab characters with two spaces",
+        kind: CodeActionKind.QuickFix,
+        diagnostics: parserDiagnostics.filter((diag) =>
+          String(diag?.message || "").includes("Unsupported construct: tab character")
+        ),
+        edit: {
+          changes: {
+            [sourceUri]: [
+              {
+                range: fullRange,
+                newText: text.replace(/\t/g, "  "),
+              },
+            ],
+          },
+        },
+      });
+    }
+
+    return actions;
+  }
+
+  private getFullDocumentRange(text: string): Range {
+    const lines = text.split("\n");
+    const endLine = Math.max(0, lines.length - 1);
+    const endCharacter = lines[endLine]?.length ?? 0;
+    return {
+      start: { line: 0, character: 0 },
+      end: { line: endLine, character: endCharacter },
+    };
   }
 
   private getDocumentHighlights(sourceUri: string, text: string, position: Position): DocumentHighlight[] {
