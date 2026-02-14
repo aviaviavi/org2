@@ -104,6 +104,7 @@ class LineTracker {
 class LSPServer {
   private documents: Map<string, TextDocument> = new Map();
   private initialized = false;
+  private workspaceRoots: string[] = [];
 
   async start(): Promise<void> {
     let buffer = "";
@@ -158,6 +159,7 @@ class LSPServer {
     try {
       if (method === "initialize") {
         this.initialized = true;
+        this.workspaceRoots = this.extractWorkspaceRoots(params);
         this.sendResponse(id, {
           capabilities: {
             textDocumentSync: 1,
@@ -461,7 +463,12 @@ class LSPServer {
   }
 
   private resolveDefinitionLocation(sourceUri: string, target: string): Location | null {
-    // Only support file links for now (minimal MVP).
+    const idLocation = this.resolveIdDefinitionLocation(sourceUri, target);
+    if (idLocation) {
+      return idLocation;
+    }
+
+    // File links
     // Examples:
     //   file:notes.org2
     //   file:./notes.org2
@@ -469,7 +476,7 @@ class LSPServer {
     let fileTarget = target;
     if (fileTarget.startsWith("file:")) fileTarget = fileTarget.slice("file:".length);
 
-    // Ignore non-file link types (id:, http:, etc)
+    // Ignore non-file link types (http:, mailto:, etc)
     if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(fileTarget)) return null;
 
     if (!sourceUri.startsWith("file://")) return null;
@@ -488,6 +495,182 @@ class LSPServer {
         end: { line: 0, character: 0 },
       },
     };
+  }
+
+  private resolveIdDefinitionLocation(sourceUri: string, target: string): Location | null {
+    if (!target.toLowerCase().startsWith("id:")) return null;
+
+    const targetId = this.normalizeIdValue(target);
+    if (!targetId) return null;
+
+    for (const doc of this.documents.values()) {
+      const line = this.findIdLine(doc.text, targetId);
+      if (line >= 0) {
+        return {
+          uri: doc.uri,
+          range: {
+            start: { line, character: 0 },
+            end: { line, character: 0 },
+          },
+        };
+      }
+    }
+
+    for (const root of this.buildDefinitionSearchRoots(sourceUri)) {
+      for (const filePath of this.walkOrgFiles(root)) {
+        if (!fs.existsSync(filePath)) continue;
+        let text = "";
+        try {
+          text = fs.readFileSync(filePath, "utf8");
+        } catch {
+          continue;
+        }
+        const line = this.findIdLine(text, targetId);
+        if (line >= 0) {
+          return {
+            uri: pathToFileURL(filePath).toString(),
+            range: {
+              start: { line, character: 0 },
+              end: { line, character: 0 },
+            },
+          };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private buildDefinitionSearchRoots(sourceUri: string): string[] {
+    const roots = new Set<string>();
+
+    for (const root of this.workspaceRoots) {
+      roots.add(root);
+    }
+
+    if (sourceUri.startsWith("file://")) {
+      const sourcePath = fileURLToPath(sourceUri);
+      roots.add(path.dirname(sourcePath));
+    }
+
+    return Array.from(roots);
+  }
+
+  private findIdLine(text: string, targetId: string): number {
+    const lines = text.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const lineId = this.extractIdFromLine(lines[i]);
+      if (lineId && lineId === targetId) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  private extractIdFromLine(line: string): string | null {
+    const match = line.match(/^\s*:ID:\s*(\S+)\s*$/i);
+    if (!match) return null;
+    return this.normalizeIdValue(match[1]);
+  }
+
+  private normalizeIdValue(value: string): string {
+    let normalized = value.trim();
+    if (normalized.toLowerCase().startsWith("id:")) {
+      normalized = normalized.slice(3);
+    }
+    return normalized.toLowerCase();
+  }
+
+  private walkOrgFiles(rootPath: string): string[] {
+    if (!rootPath || !fs.existsSync(rootPath)) {
+      return [];
+    }
+
+    const files: string[] = [];
+    const stack = [rootPath];
+
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      let stat: fs.Stats;
+      try {
+        stat = fs.statSync(current);
+      } catch {
+        continue;
+      }
+
+      if (stat.isFile()) {
+        if (this.isOrgFile(current)) {
+          files.push(current);
+        }
+        continue;
+      }
+
+      if (!stat.isDirectory()) {
+        continue;
+      }
+
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(current, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+
+      entries.sort((a, b) => a.name.localeCompare(b.name));
+      for (let i = entries.length - 1; i >= 0; i--) {
+        const entry = entries[i];
+        if (entry.isDirectory() && this.shouldSkipDirectory(entry.name)) {
+          continue;
+        }
+        stack.push(path.join(current, entry.name));
+      }
+    }
+
+    return files;
+  }
+
+  private shouldSkipDirectory(name: string): boolean {
+    return name === ".git" || name === "node_modules" || name === "dist";
+  }
+
+  private isOrgFile(filePath: string): boolean {
+    return filePath.endsWith(".org") || filePath.endsWith(".org2") || filePath.endsWith(".org_archive");
+  }
+
+  private extractWorkspaceRoots(params: any): string[] {
+    const roots = new Set<string>();
+
+    const addFileUri = (uri: string | undefined) => {
+      if (!uri || !uri.startsWith("file://")) {
+        return;
+      }
+      try {
+        roots.add(fileURLToPath(uri));
+      } catch {
+        // Ignore malformed URI values.
+      }
+    };
+
+    const addPath = (rootPath: string | undefined) => {
+      if (!rootPath) return;
+      roots.add(path.resolve(rootPath));
+    };
+
+    if (params && Array.isArray(params.workspaceFolders)) {
+      for (const folder of params.workspaceFolders) {
+        addFileUri(folder?.uri);
+      }
+    }
+
+    if (params?.rootUri) {
+      addFileUri(params.rootUri);
+    }
+
+    if (params?.rootPath) {
+      addPath(params.rootPath);
+    }
+
+    return Array.from(roots);
   }
 
   private publishDiagnostics(uri: string): void {
