@@ -163,7 +163,8 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
   - `Org2: Roam Dailies — Go to Tomorrow` (`org2.roamDailiesGotoTomorrow`)
   - `Org2: Roam Dailies — Go to Date` (`org2.roamDailiesGotoDate`)
   - `Org2: Roam — New Node` (`org2.roamNodeNew`)
-  - `Org2: Roam — Copy ID Link` (`org2.roamCopyIdLink`)
+  - `Org2: Roam — Copy ID Link (Current Heading/File)` (`org2.roamCopyIdLink`)
+  - `Org2: Roam — Copy ID Link (Prompt/Link)` (`org2.roamCopyIdLinkById`)
   - `Org2: Roam — Insert Backlink (Prompt/Link)` (`org2.roamInsertBacklink`)
   - `Org2: Roam — Open ID (Prompt/Link)` (`org2.roamOpenId`)
   - `Org2: Roam — Show Backlinks (Current Heading/File)` (`org2.roamShowBacklinks`)
@@ -172,6 +173,7 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
   - `Org2: Roam — Open Backlink Source (Prompt/Link)` (`org2.roamOpenBacklinkById`)
   - `Org2: Roam — DB Sync (Ensure File IDs)` (`org2.roamDbSync`)
   - Open-ID input accepts raw UUIDs, `id:UUID`, and full `[[id:UUID][desc]]` text; when invoked without an argument it prompts.
+  - Copy ID Link (Prompt/Link) accepts raw UUIDs, `id:UUID`, and `[[id:UUID][desc]]` input (or selected text), and reuses `[[id:...][desc]]` link text or `org2 query --id` as the copied link title.
   - Insert-Backlink target input accepts the same UUID/id-link formats, and pre-fills the backlink title from an `[[id:...][desc]]` target (or from `org2 query --id` when possible).
   - Show Backlinks now scopes to the current heading when possible (falls back to file-level IDs when no heading context exists).
   - Show Backlinks (Prompt/Link) accepts raw UUIDs, `id:UUID`, and `[[id:UUID][desc]]` input (or selected text), then opens a backlinks report for that explicit target ID.
@@ -211,7 +213,8 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
 - Roam namespace (`cmd/ctrl+; r ...`):
   - `r b` → Roam Show Backlinks
   - `r h` → Roam Show Backlinks (Prompt/Link)
-  - `r l` → Roam Copy ID Link
+  - `r l` → Roam Copy ID Link (Current Heading/File)
+  - `r c` → Roam Copy ID Link (Prompt/Link)
   - `r i` → Roam Insert Backlink
   - `r o` → Roam Open ID
   - `r p` → Roam Open Backlink Source (Current Heading/File)
