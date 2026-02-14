@@ -169,6 +169,7 @@ type AgendaWhenBucket = "overdue" | "today" | "upcoming";
 
 type AgendaStatusFilter = Set<AgendaStatusBucket> | null;
 type AgendaPlanningFilter = Set<AgendaPlanningKind> | null;
+type AgendaExcludePlanningFilter = Set<AgendaPlanningKind> | null;
 type AgendaWhenFilter = Set<AgendaWhenBucket> | null;
 type AgendaMatchFilter = string[] | null;
 type AgendaExcludeMatchFilter = string[] | null;
@@ -334,6 +335,13 @@ function parseAgendaKindFilterArgs(rawArgs: string[]): {
   }
 
   return { filter: selected, invalid: [] };
+}
+
+function parseAgendaExcludeKindFilterArgs(rawArgs: string[]): {
+  filter: AgendaExcludePlanningFilter;
+  invalid: string[];
+} {
+  return parseAgendaKindFilterArgs(rawArgs);
 }
 
 function parseAgendaWhenFilterArgs(rawArgs: string[]): {
@@ -603,6 +611,14 @@ function matchesAgendaPriorityFilter(priority: string | undefined, priorityFilte
   return priorityFilter.has(normalized);
 }
 
+function matchesAgendaExcludeKindFilter(
+  kind: AgendaPlanningKind,
+  excludeKindFilter: AgendaExcludePlanningFilter,
+): boolean {
+  if (!excludeKindFilter || excludeKindFilter.size === 0) return true;
+  return !excludeKindFilter.has(kind);
+}
+
 function matchesAgendaExcludeTagFilter(tags: string[], excludeTagFilter: AgendaExcludeTagFilter): boolean {
   if (!excludeTagFilter || excludeTagFilter.length === 0) return true;
 
@@ -726,6 +742,7 @@ function findScheduledItemsInText(
   includeOverdue: boolean,
   statusFilter: AgendaStatusFilter,
   planningFilter: AgendaPlanningFilter,
+  excludePlanningFilter: AgendaExcludePlanningFilter,
   whenFilter: AgendaWhenFilter,
   textFilter: AgendaMatchFilter,
   excludeTextFilter: AgendaExcludeMatchFilter,
@@ -787,6 +804,7 @@ function findScheduledItemsInText(
       // CLOSED is metadata for completed tasks; don't create a separate agenda entry.
       if (kind === "CLOSED") continue;
       if (planningFilter && !planningFilter.has(kind as AgendaPlanningKind)) continue;
+      if (!matchesAgendaExcludeKindFilter(kind as AgendaPlanningKind, excludePlanningFilter)) continue;
 
       const tsRaw = m[2] ?? "";
       const wantsOverdue = whenFilter ? whenFilter.has("overdue") : includeOverdue;
@@ -830,6 +848,7 @@ function findScheduledItems(
   includeOverdue: boolean,
   statusFilter: AgendaStatusFilter,
   planningFilter: AgendaPlanningFilter,
+  excludePlanningFilter: AgendaExcludePlanningFilter,
   whenFilter: AgendaWhenFilter,
   textFilter: AgendaMatchFilter,
   excludeTextFilter: AgendaExcludeMatchFilter,
@@ -882,6 +901,7 @@ function findScheduledItems(
               if (!matchesAgendaExcludePriorityFilter(priority, excludePriorityFilter)) continue;
               if (planning.kind === "CLOSED") continue;
               if (planningFilter && !planningFilter.has(planning.kind as AgendaPlanningKind)) continue;
+              if (!matchesAgendaExcludeKindFilter(planning.kind as AgendaPlanningKind, excludePlanningFilter)) continue;
 
               for (const dateStr of agendaDates) {
                 const itemDate = parseIsoDate(dateStr);
@@ -1119,6 +1139,7 @@ async function main(): Promise<void> {
   let includeOverdue = true;
   let agendaStatusFiltersRaw: string[] = [];
   let agendaKindFiltersRaw: string[] = [];
+  let agendaExcludeKindFiltersRaw: string[] = [];
   let agendaWhenFiltersRaw: string[] = [];
   let agendaMatchFiltersRaw: string[] = [];
   let agendaExcludeMatchFiltersRaw: string[] = [];
@@ -1404,6 +1425,14 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--exclude-kind") {
+      i++;
+      if (i < args.length) {
+        if (command === "agenda") {
+          agendaExcludeKindFiltersRaw.push(args[i]!);
+        }
+        i++;
+      }
     } else if (arg === "--when") {
       i++;
       if (i < args.length) {
@@ -1657,7 +1686,7 @@ async function main(): Promise<void> {
 
   if (help) {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -1699,7 +1728,7 @@ async function main(): Promise<void> {
 
   if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -3212,6 +3241,14 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const parsedAgendaExcludeKind = parseAgendaExcludeKindFilterArgs(agendaExcludeKindFiltersRaw);
+  if (parsedAgendaExcludeKind.invalid.length > 0) {
+    console.error(
+      `Error: invalid agenda --exclude-kind value(s): ${parsedAgendaExcludeKind.invalid.join(", ")}. Allowed: ${AGENDA_KIND_ALLOWED_HINT}`,
+    );
+    process.exit(1);
+  }
+
   const parsedAgendaWhen = parseAgendaWhenFilterArgs(agendaWhenFiltersRaw);
   if (parsedAgendaWhen.invalid.length > 0) {
     console.error(
@@ -3326,6 +3363,7 @@ async function main(): Promise<void> {
         includeOverdue,
         parsedAgendaStatus.filter,
         parsedAgendaKind.filter,
+        parsedAgendaExcludeKind.filter,
         parsedAgendaWhen.filter,
         parsedAgendaMatch,
         parsedAgendaExcludeMatch,
