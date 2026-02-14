@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Test LSP feature coverage (symbols, folding, highlights, rename, code actions, formatting, selection ranges)
+ * Test LSP feature coverage (symbols, folding, highlights, rename, code actions, formatting, selection ranges, signature help)
  */
 
 import { spawn } from "node:child_process";
@@ -40,6 +40,7 @@ Link two: [[id:abc-123]]
 const quickFixOrgContent = "* Quickfix Playground\r\n\tTabbed line\r\n";
 const formattingOrgContent = "| a  |b|\n| longer | c |\n|---+---|\n| x | yyy |\n";
 const rangeFormattingOrgContent = "* Keep\nBody.\n\n| a|bb |\n|longer| c|\n|--+--|\n|x|yyy|\n\n* Tail\nunchanged\n";
+const signatureHelpOrgContent = "* Signature Playground\nSCHEDULED: <2026-02-14 Sat>\nDEADLINE: [2026-02-15 Sun]\n";
 const expectedFormattedTableSnippet = "| a      | b   |";
 const expectedRangeFormattedSnippet = "| a      | bb  |";
 
@@ -102,6 +103,8 @@ async function testLSPFeatures() {
   return new Promise((resolve) => {
     setTimeout(() => {
       const renameLinkPos = findPosition(testOrgContent, "id:abc-123");
+      const scheduledKeywordPos = findPosition(signatureHelpOrgContent, "SCHEDULED:");
+      const deadlineKeywordPos = findPosition(signatureHelpOrgContent, "DEADLINE:");
 
       // Test 1: Initialize
       console.log("Test 1: Initialize");
@@ -114,11 +117,12 @@ async function testLSPFeatures() {
 
       setTimeout(() => {
         const initResponse = allResponses.find((r) => r.id === 1);
-        if (initResponse && initResponse.result && initResponse.result.capabilities) {
-          console.log("✓ Initialize response received\n");
+        const capabilities = initResponse?.result?.capabilities;
+        if (capabilities && capabilities.signatureHelpProvider) {
+          console.log("✓ Initialize response received (signatureHelp advertised)\n");
           testsPassed++;
         } else {
-          console.log("✗ Initialize failed\n");
+          console.log("✗ Initialize failed or signatureHelp capability missing\n");
           testsFailed++;
         }
 
@@ -512,24 +516,100 @@ async function testLSPFeatures() {
                                   }
                                   console.log();
 
-                                  // Shutdown
-                                  console.log("Shutting down...");
+                                  // Test 12: SignatureHelp (planning keyword timestamp hints)
+                                  console.log("Test 12: SignatureHelp");
                                   sendMessage(server, {
                                     jsonrpc: "2.0",
-                                    id: 999,
-                                    method: "shutdown",
-                                    params: {},
+                                    method: "textDocument/didOpen",
+                                    params: {
+                                      textDocument: {
+                                        uri: "file:///signature-help.org",
+                                        languageId: "org",
+                                        version: 1,
+                                        text: signatureHelpOrgContent,
+                                      },
+                                    },
                                   });
 
                                   setTimeout(() => {
-                                    server.kill();
+                                    if (!scheduledKeywordPos || !deadlineKeywordPos) {
+                                      console.log("✗ SignatureHelp skipped (missing planning keyword positions)\n");
+                                      testsFailed++;
+                                    } else {
+                                      sendMessage(server, {
+                                        jsonrpc: "2.0",
+                                        id: 11,
+                                        method: "textDocument/signatureHelp",
+                                        params: {
+                                          textDocument: { uri: "file:///signature-help.org" },
+                                          position: {
+                                            line: scheduledKeywordPos.line,
+                                            character: scheduledKeywordPos.character + "SCHEDULED: <2026".length,
+                                          },
+                                        },
+                                      });
 
-                                    console.log("\n=== Test Summary ===");
-                                    console.log(`Passed: ${testsPassed}`);
-                                    console.log(`Failed: ${testsFailed}`);
+                                      sendMessage(server, {
+                                        jsonrpc: "2.0",
+                                        id: 12,
+                                        method: "textDocument/signatureHelp",
+                                        params: {
+                                          textDocument: { uri: "file:///signature-help.org" },
+                                          position: {
+                                            line: deadlineKeywordPos.line,
+                                            character: deadlineKeywordPos.character + "DEADLINE: [2026".length,
+                                          },
+                                        },
+                                      });
+                                    }
 
-                                    resolve(testsFailed === 0);
-                                  }, 200);
+                                    setTimeout(() => {
+                                      const scheduledSignatureResponse = allResponses.find((r) => r.id === 11);
+                                      const deadlineSignatureResponse = allResponses.find((r) => r.id === 12);
+
+                                      const scheduledSignatures = scheduledSignatureResponse?.result?.signatures;
+                                      const deadlineSignatures = deadlineSignatureResponse?.result?.signatures;
+
+                                      const scheduledOk =
+                                        Array.isArray(scheduledSignatures) &&
+                                        scheduledSignatures.length >= 2 &&
+                                        scheduledSignatureResponse?.result?.activeSignature === 0;
+                                      const deadlineOk =
+                                        Array.isArray(deadlineSignatures) &&
+                                        deadlineSignatures.length >= 2 &&
+                                        deadlineSignatureResponse?.result?.activeSignature === 1;
+
+                                      if (scheduledOk && deadlineOk) {
+                                        console.log("✓ SignatureHelp returned planning timestamp signatures (active + inactive)");
+                                        testsPassed++;
+                                      } else {
+                                        console.log(
+                                          `✗ SignatureHelp missing expected signature variants: scheduled=${JSON.stringify(scheduledSignatureResponse)}, deadline=${JSON.stringify(deadlineSignatureResponse)}`
+                                        );
+                                        testsFailed++;
+                                      }
+                                      console.log();
+
+                                      // Shutdown
+                                      console.log("Shutting down...");
+                                      sendMessage(server, {
+                                        jsonrpc: "2.0",
+                                        id: 999,
+                                        method: "shutdown",
+                                        params: {},
+                                      });
+
+                                      setTimeout(() => {
+                                        server.kill();
+
+                                        console.log("\n=== Test Summary ===");
+                                        console.log(`Passed: ${testsPassed}`);
+                                        console.log(`Failed: ${testsFailed}`);
+
+                                        resolve(testsFailed === 0);
+                                      }, 200);
+                                    }, 300);
+                                  }, 300);
                                 }, 300);
                               }, 300);
                             }, 300);
