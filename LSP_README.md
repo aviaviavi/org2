@@ -66,10 +66,12 @@ Content-Length: 87
     - Renames `[[id:...]]` link targets
     - Renames matching `:ID:` property values
     - Returns workspace edits across open + workspace Org files
+  - `textDocument/codeAction` - Quick fixes for parser-only whitespace issues
+    - Convert CRLF documents to LF line endings
+    - Replace tab characters with two spaces
 
 ### Future Enhancements
 
-- `textDocument/codeAction` - Quick fixes for common issues
 - `textDocument/formatting` - Code formatting
 
 ## Editor Integration Examples
