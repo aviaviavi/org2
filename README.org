@@ -48,6 +48,7 @@ Current reality:
 - Agenda text matching filter (CLI + VS Code): *Available now* (MVP)
 - Agenda tag filter (CLI + VS Code): *Available now* (MVP)
 - Agenda TODO keyword filter (CLI + VS Code): *Available now* (MVP)
+- Agenda priority filter (CLI + VS Code): *Available now* (MVP)
 - Agenda exclusion filters (CLI + VS Code): *Available now* (MVP)
 - Agenda source-file filtering (CLI + VS Code): *Available now* (MVP)
 - Agenda sort-order filtering (CLI + VS Code): *Available now* (MVP)
@@ -191,11 +192,17 @@ npm run org2 -- agenda --dir /path/to/org --tag "work,urgent"
 # Filter by exact TODO keywords (case-insensitive, comma-separated OR terms)
 npm run org2 -- agenda --dir /path/to/org --todo "waiting,done"
 
+# Filter by headline priority markers (case-insensitive; accepts A,B or [#A],[#B])
+npm run org2 -- agenda --dir /path/to/org --priority "a,[#b]"
+
 # Exclude rows with tags (case-insensitive exact tag match, comma-separated OR terms)
 npm run org2 -- agenda --dir /path/to/org --exclude-tag "someday,maybe"
 
 # Exclude rows with exact TODO keywords (case-insensitive, comma-separated OR terms)
 npm run org2 -- agenda --dir /path/to/org --exclude-todo "done,canceled"
+
+# Exclude rows with headline priority markers (case-insensitive; accepts A,B or [#A],[#B])
+npm run org2 -- agenda --dir /path/to/org --exclude-priority "c"
 
 # Keep only rows whose source file path contains any term (case-insensitive)
 npm run org2 -- agenda --dir /path/to/org --file-match "projects,work"
@@ -221,8 +228,10 @@ Notes:
 - =--exclude-match= hides rows whose headline text matches any provided term.
 - =--tag= checks agenda headline tags only, case-insensitively (exact tag match).
 - =--todo= checks exact TODO keywords only, case-insensitively.
+- =--priority= checks Org headline priority markers (for example =A=, =B=, or =[#A]= tokens).
 - =--exclude-tag= hides rows with matching headline tags.
 - =--exclude-todo= hides rows with matching TODO keywords.
+- =--exclude-priority= hides rows with matching Org priority markers.
 - =--file-match= keeps rows whose source file path contains any term.
 - =--exclude-file= hides rows whose source file path contains any term.
 - =--sort= reorders rows within each date bucket (always date-first overall sorting).
