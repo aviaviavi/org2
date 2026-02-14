@@ -20,6 +20,7 @@ Minimal VS Code language support for Org2.
 - LSP quick-fix code actions for parser whitespace issues (CRLF line endings and tab characters)
 - LSP document formatting (`textDocument/formatting`) for canonical Org table/layout alignment
 - LSP range formatting (`textDocument/rangeFormatting`) for selection-scoped canonical Org cleanup
+- LSP selection ranges (`textDocument/selectionRange`) for nested semantic expand-selection behavior
 
 ## Link rendering note (best-effort)
 
