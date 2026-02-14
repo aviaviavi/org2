@@ -11,8 +11,21 @@ const drawerEndRe = /^\s*:END:\s*$/i;
 const uuidSource = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
 const uuidExactRe = new RegExp(`^(${uuidSource})$`);
 const roamIdSchemeRe = new RegExp(`^id:(${uuidSource})$`, 'i');
-const roamIdLinkRe = new RegExp(`^\\[\\[id:(${uuidSource})(?:\\]\\[[^\\]\\n]*\\])?\\]\\]$`, 'i');
+const roamIdLinkPartsRe = new RegExp(`^\\[\\[id:(${uuidSource})\\](?:\\[([^\\]\\n]*)\\])?\\]\\]$`, 'i');
 const roamUuidAnywhereRe = new RegExp(`(${uuidSource})`, 'i');
+
+function parseRoamIdLink(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  const link = roamIdLinkPartsRe.exec(raw);
+  if (!link) return null;
+
+  return {
+    id: String(link[1] || '').toLowerCase(),
+    title: String(link[2] || '').trim(),
+  };
+}
 
 function extractRoamUuid(value) {
   const raw = String(value || '').trim();
@@ -24,8 +37,8 @@ function extractRoamUuid(value) {
   const idScheme = roamIdSchemeRe.exec(raw);
   if (idScheme) return idScheme[1].toLowerCase();
 
-  const idLink = roamIdLinkRe.exec(raw);
-  if (idLink) return idLink[1].toLowerCase();
+  const idLink = parseRoamIdLink(raw);
+  if (idLink) return idLink.id;
 
   const any = roamUuidAnywhereRe.exec(raw);
   if (any) return any[1].toLowerCase();
@@ -2155,23 +2168,58 @@ function activate(context) {
         }
       }
 
-      const id = await vscode.window.showInputBox({
-        prompt: 'Org2: Roam — insert backlink (id:...)',
-        placeHolder: 'UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)',
-        validateInput: (v) => {
-          const s = String(v || '').trim();
-          return /^([0-9a-fA-F-]{36})$/.test(s) ? undefined : 'Expected a UUID';
-        },
-      });
-      if (!id) return;
+      const root = getAgendaRootDir();
+      const selected = editor.selection && !editor.selection.isEmpty ? doc.getText(editor.selection) : '';
+      const initialIdInput = extractRoamUuid(selected) ? String(selected).trim() : '';
 
-      const title = await vscode.window.showInputBox({
+      const idInput = await vscode.window.showInputBox({
+        prompt: 'Org2: Roam — insert backlink target',
+        placeHolder: 'UUID, id:UUID, or [[id:UUID][title]]',
+        value: initialIdInput,
+        validateInput: (v) => (extractRoamUuid(v) ? undefined : 'Expected UUID or id:UUID link'),
+      });
+      if (idInput === undefined) return;
+
+      const id = extractRoamUuid(idInput);
+      if (!id) {
+        vscode.window.showWarningMessage('Org2: invalid ID input (expected UUID or id:UUID link).');
+        return;
+      }
+
+      const parsedLink = parseRoamIdLink(idInput);
+      let suggestedTitle = parsedLink && parsedLink.title ? parsedLink.title : '';
+
+      if (!suggestedTitle) {
+        try {
+          const queryArgs = ['query', '--id', id, '--dir', root, '--recursive', '--format', 'json'];
+          const { cmd: queryCmd, args: queryFinalArgs } = resolveOrg2Command(context, queryArgs);
+          const { stdout: queryOut } = await execFileAsync(queryCmd, queryFinalArgs, { cwd: root });
+          const payload = JSON.parse(String(queryOut || '').trim());
+          const results = Array.isArray(payload.results) ? payload.results : [];
+          const first = results[0] || null;
+          if (first) {
+            suggestedTitle = String(first.title || '').trim();
+            if (!suggestedTitle) {
+              const file = String(first.file || '');
+              if (file) suggestedTitle = path.basename(file).replace(/\.(org2|org)$/i, '');
+            }
+          }
+        } catch (_) {
+          // ignore; fall back below
+        }
+      }
+
+      if (!suggestedTitle) suggestedTitle = id.slice(0, 8);
+
+      const titleInput = await vscode.window.showInputBox({
         prompt: 'Org2: Roam — backlink title',
         placeHolder: 'Link text',
-        value: '',
+        value: suggestedTitle,
+        validateInput: (v) => (String(v || '').trim() ? undefined : 'Title is required'),
       });
-      if (title === undefined) return;
+      if (titleInput === undefined) return;
 
+      const title = String(titleInput).trim();
       const cursor = editor.selection.active;
       const pos = `${cursor.line + 1}:${cursor.character}`;
 
@@ -2184,9 +2232,9 @@ function activate(context) {
         '--pos',
         String(pos),
         '--id',
-        String(id).trim().toLowerCase(),
+        id,
         '--title',
-        String(title),
+        title,
         '--format',
         'json',
         '--apply',
@@ -2196,7 +2244,7 @@ function activate(context) {
 
       let out;
       try {
-        out = await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
+        out = await execFileAsync(finalCmd, finalArgs, { cwd: root });
       } catch (e) {
         vscode.window.showErrorMessage(`Org2: failed to insert backlink: ${String(e && e.message ? e.message : e)}`);
         return;
@@ -2257,11 +2305,15 @@ function activate(context) {
         }
       }
 
+      const cursor = editor.selection.active;
+
       const ensureArgs = [
         'id',
         'ensure',
         '--file',
         String(doc.uri.fsPath),
+        '--line',
+        String(cursor.line + 1),
         '--apply',
         '--format',
         'json',
@@ -2289,6 +2341,7 @@ function activate(context) {
         vscode.window.showErrorMessage('Org2: org2 id ensure did not return a valid UUID.');
         return;
       }
+      const ensuredKind = ensurePayload.kind === 'headline' ? 'headline' : 'file';
 
       // If we inserted an ID, the CLI wrote to disk. Refresh the editor view.
       try {
@@ -2327,7 +2380,7 @@ function activate(context) {
       const lines = [];
       lines.push(`#+TITLE: Backlinks (${backlinks.length})`);
       lines.push('');
-      lines.push(`* Backlinks for id:${id.toLowerCase()}`);
+      lines.push(`* Backlinks for id:${id.toLowerCase()} (${ensuredKind}-level)`);
       lines.push('');
 
       for (const b of backlinks) {

@@ -181,7 +181,7 @@
       },
       {
         "command": "org2.roamInsertBacklink",
-        "title": "Org2: Roam \u2014 Insert Backlink (ID Link)"
+        "title": "Org2: Roam \u2014 Insert Backlink (Prompt/Link)"
       },
       {
         "command": "org2.roamOpenId",
@@ -189,7 +189,7 @@
       },
       {
         "command": "org2.roamShowBacklinks",
-        "title": "Org2: Roam \u2014 Show Backlinks"
+        "title": "Org2: Roam \u2014 Show Backlinks (Current Heading/File)"
       },
       {
         "command": "org2.roamDbSync",
