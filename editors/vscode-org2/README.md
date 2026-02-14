@@ -167,10 +167,12 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
   - `Org2: Roam — Insert Backlink (Prompt/Link)` (`org2.roamInsertBacklink`)
   - `Org2: Roam — Open ID (Prompt/Link)` (`org2.roamOpenId`)
   - `Org2: Roam — Show Backlinks (Current Heading/File)` (`org2.roamShowBacklinks`)
+  - `Org2: Roam — Open Backlink Source (Pick)` (`org2.roamOpenBacklink`)
   - `Org2: Roam — DB Sync (Ensure File IDs)` (`org2.roamDbSync`)
   - Open-ID input accepts raw UUIDs, `id:UUID`, and full `[[id:UUID][desc]]` text; when invoked without an argument it prompts.
   - Insert-Backlink target input accepts the same UUID/id-link formats, and pre-fills the backlink title from an `[[id:...][desc]]` target (or from `org2 query --id` when possible).
   - Show Backlinks now scopes to the current heading when possible (falls back to file-level IDs when no heading context exists).
+  - Open Backlink Source uses the same heading/file scope, then offers a quick pick of backlink sources (title + file:line + context snippet) for one-step navigation.
 - Folding + debug
   - `Org2: Re-run Auto-Fold` (`org2.rerunAutoFold`)
   - `Org2: Toggle Fold Here` (`org2.toggleFoldHere`)
@@ -207,6 +209,7 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
   - `r l` → Roam Copy ID Link
   - `r i` → Roam Insert Backlink
   - `r o` → Roam Open ID
+  - `r p` → Roam Open Backlink Source
   - `r t` → Roam Dailies: Today
   - `r y` → Roam Dailies: Yesterday
   - `r m` → Roam Dailies: Tomorrow
