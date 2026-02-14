@@ -75,6 +75,7 @@ Current reality:
 - Formatter current-file check/apply commands (VS Code): *Available now* (MVP)
 - Formatter current-file diff preview command (VS Code): *Available now* (MVP)
 - Formatter (=org2 fmt=): *In progress*
+- LSP go-to-definition for file/id links (=org2 lsp=): *Available now* (MVP)
 - LSP entrypoint (=org2 lsp=): *In progress*
 - Formal Org2 spec (v0 draft): *In progress*
 
@@ -320,6 +321,15 @@ Notes:
 - =fmt --config PATH= resolves files from =org2.json= (=agendaFiles= + =ignorePatterns=) before formatter path filters.
 - =fmt --dir= scans top-level files by default; add =--recursive= to include subdirectories.
 - =--file-match= and =--exclude-file= use case-insensitive path substring matching and support comma-separated terms.
+
+*** Language Server (=lsp=) quick example
+
+#+begin_src sh
+# Start the LSP server over stdio
+npm run org2 -- lsp
+#+end_src
+
+Current LSP features include parser diagnostics, document symbols, folding ranges, and go-to-definition for both =[[file:...]]= and =[[id:...]]= links.
 
 *** Other CLI commands (brief)
 
