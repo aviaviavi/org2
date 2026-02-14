@@ -174,8 +174,10 @@ type AgendaMatchFilter = string[] | null;
 type AgendaExcludeMatchFilter = string[] | null;
 type AgendaTagFilter = string[] | null;
 type AgendaTodoFilter = Set<string> | null;
+type AgendaPriorityFilter = Set<string> | null;
 type AgendaExcludeTagFilter = string[] | null;
 type AgendaExcludeTodoFilter = Set<string> | null;
+type AgendaExcludePriorityFilter = Set<string> | null;
 type AgendaFileFilter = string[] | null;
 type AgendaExcludeFileFilter = string[] | null;
 type AgendaSortKey = "file" | "headline" | "todo" | "kind" | "line";
@@ -185,6 +187,7 @@ const AGENDA_STATUS_ALLOWED_HINT =
   "all, active, actionable, open, todo, in_progress, done, canceled, closed, custom";
 const AGENDA_KIND_ALLOWED_HINT = "all, scheduled, deadline";
 const AGENDA_WHEN_ALLOWED_HINT = "all, overdue, today, upcoming";
+const AGENDA_PRIORITY_ALLOWED_HINT = "A-Z or 0-9 (for example: A,B,C or [#A],[#B])";
 const AGENDA_SORT_ALLOWED_HINT = "default, file, headline, todo, kind, line";
 
 function agendaStatusBucketForKeyword(todo: string | undefined): AgendaStatusBucket | null {
@@ -421,6 +424,53 @@ function parseAgendaTodoFilterArgs(rawArgs: string[]): AgendaTodoFilter {
   return tokens.length > 0 ? new Set(tokens) : null;
 }
 
+function normalizeAgendaPriorityToken(tokenRaw: string): string | null {
+  let token = tokenRaw.trim();
+  if (!token) return null;
+
+  const bracketed = token.match(/^\[#([A-Za-z0-9])\]$/);
+  if (bracketed) {
+    token = bracketed[1] ?? "";
+  }
+
+  if (token.length !== 1 || !/^[A-Za-z0-9]$/.test(token)) return null;
+  return token.toUpperCase();
+}
+
+function parseAgendaPriorityFilterArgs(rawArgs: string[]): {
+  filter: AgendaPriorityFilter;
+  invalid: string[];
+} {
+  if (rawArgs.length === 0) return { filter: null, invalid: [] };
+
+  const selected = new Set<string>();
+  const invalid: string[] = [];
+
+  for (const raw of rawArgs) {
+    for (const tokenRaw of String(raw).split(",")) {
+      const token = tokenRaw.trim();
+      if (!token) continue;
+
+      const normalized = normalizeAgendaPriorityToken(token);
+      if (!normalized) {
+        invalid.push(token);
+        continue;
+      }
+
+      selected.add(normalized);
+    }
+  }
+
+  return { filter: selected.size > 0 ? selected : null, invalid };
+}
+
+function parseAgendaExcludePriorityFilterArgs(rawArgs: string[]): {
+  filter: AgendaExcludePriorityFilter;
+  invalid: string[];
+} {
+  return parseAgendaPriorityFilterArgs(rawArgs);
+}
+
 function parseAgendaExcludeTagFilterArgs(rawArgs: string[]): AgendaExcludeTagFilter {
   if (rawArgs.length === 0) return null;
 
@@ -546,6 +596,13 @@ function matchesAgendaTodoFilter(todo: string | undefined, todoFilter: AgendaTod
   return todoFilter.has(normalized);
 }
 
+function matchesAgendaPriorityFilter(priority: string | undefined, priorityFilter: AgendaPriorityFilter): boolean {
+  if (!priorityFilter || priorityFilter.size === 0) return true;
+  const normalized = normalizeAgendaPriorityToken(String(priority || ""));
+  if (!normalized) return false;
+  return priorityFilter.has(normalized);
+}
+
 function matchesAgendaExcludeTagFilter(tags: string[], excludeTagFilter: AgendaExcludeTagFilter): boolean {
   if (!excludeTagFilter || excludeTagFilter.length === 0) return true;
 
@@ -558,6 +615,16 @@ function matchesAgendaExcludeTodoFilter(todo: string | undefined, excludeTodoFil
   const normalized = String(todo || "").trim().toUpperCase();
   if (!normalized) return true;
   return !excludeTodoFilter.has(normalized);
+}
+
+function matchesAgendaExcludePriorityFilter(
+  priority: string | undefined,
+  excludePriorityFilter: AgendaExcludePriorityFilter,
+): boolean {
+  if (!excludePriorityFilter || excludePriorityFilter.size === 0) return true;
+  const normalized = normalizeAgendaPriorityToken(String(priority || ""));
+  if (!normalized) return true;
+  return !excludePriorityFilter.has(normalized);
 }
 
 function matchesAgendaFileFilter(filePath: string, fileFilter: AgendaFileFilter): boolean {
@@ -593,7 +660,24 @@ function matchesAgendaWhenFilter(
   return whenFilter.has(agendaWhenBucketForDate(itemDate, startDate));
 }
 
-function parseHeadlineLine(line: string): { todo?: string; title: string; tags: string[] } | null {
+function extractAgendaPriorityFromHeadlineTitle(rawTitle: string): { priority?: string; title: string } {
+  let title = String(rawTitle || "").trimStart();
+  const match = title.match(/^\[#([A-Za-z0-9])\](?:\s+|$)/);
+  if (!match) {
+    return { title };
+  }
+
+  const priority = normalizeAgendaPriorityToken(match[1] ?? "");
+  title = title.slice(match[0].length).trimStart();
+
+  if (!priority) {
+    return { title };
+  }
+
+  return { priority, title };
+}
+
+function parseHeadlineLine(line: string): { todo?: string; priority?: string; title: string; tags: string[] } | null {
   const m = /^(\*+)\s+(.*)$/.exec(line);
   if (!m) return null;
 
@@ -616,13 +700,22 @@ function parseHeadlineLine(line: string): { todo?: string; title: string; tags: 
 
   const pieces = rest.trim().split(/\s+/);
   const first = pieces[0] ?? "";
+  let todo: string | undefined;
+  let titleRest = rest;
 
   // Heuristic: TODO keywords are usually uppercase-ish.
   if (/^[A-Z][A-Z0-9_-]*$/.test(first) && pieces.length > 1) {
-    return { todo: first, title: rest.slice(first.length).trimStart(), tags };
+    todo = first;
+    titleRest = rest.slice(first.length).trimStart();
   }
 
-  return { title: rest, tags };
+  const { priority, title } = extractAgendaPriorityFromHeadlineTitle(titleRest);
+
+  if (todo) {
+    return { todo, priority, title, tags };
+  }
+
+  return { priority, title, tags };
 }
 
 function findScheduledItemsInText(
@@ -638,13 +731,15 @@ function findScheduledItemsInText(
   excludeTextFilter: AgendaExcludeMatchFilter,
   tagFilter: AgendaTagFilter,
   todoFilter: AgendaTodoFilter,
+  priorityFilter: AgendaPriorityFilter,
   excludeTagFilter: AgendaExcludeTagFilter,
   excludeTodoFilter: AgendaExcludeTodoFilter,
+  excludePriorityFilter: AgendaExcludePriorityFilter,
 ): ScheduledItem[] {
   const items: ScheduledItem[] = [];
   const lines = content.split("\n");
 
-  let current: { todo?: string; title: string; tags: string[]; lineNumber: number } | null = null;
+  let current: { todo?: string; priority?: string; title: string; tags: string[]; lineNumber: number } | null = null;
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i] ?? "";
@@ -673,8 +768,10 @@ function findScheduledItemsInText(
     if (!matchesAgendaExcludeTextFilter(current.title, excludeTextFilter)) continue;
     if (!matchesAgendaTagFilter(current.tags, tagFilter)) continue;
     if (!matchesAgendaTodoFilter(todo, todoFilter)) continue;
+    if (!matchesAgendaPriorityFilter(current.priority, priorityFilter)) continue;
     if (!matchesAgendaExcludeTagFilter(current.tags, excludeTagFilter)) continue;
     if (!matchesAgendaExcludeTodoFilter(todo, excludeTodoFilter)) continue;
+    if (!matchesAgendaExcludePriorityFilter(current.priority, excludePriorityFilter)) continue;
 
     const isDoneLike = todo === "DONE" || todo === "CANCELLED" || todo === "CANCELED";
     const isProgLike = todo === "PROG" || todo === "IN_PROGRESS";
@@ -738,8 +835,10 @@ function findScheduledItems(
   excludeTextFilter: AgendaExcludeMatchFilter,
   tagFilter: AgendaTagFilter,
   todoFilter: AgendaTodoFilter,
+  priorityFilter: AgendaPriorityFilter,
   excludeTagFilter: AgendaExcludeTagFilter,
   excludeTodoFilter: AgendaExcludeTodoFilter,
+  excludePriorityFilter: AgendaExcludePriorityFilter,
 ): ScheduledItem[] {
   const items: ScheduledItem[] = [];
 
@@ -771,13 +870,16 @@ function findScheduledItems(
                 .filter((t) => t.type === "Text")
                 .map((t) => t.value)
                 .join("");
+              const { priority, title: agendaTitle } = extractAgendaPriorityFromHeadlineTitle(titleText);
 
-              if (!matchesAgendaTextFilter(titleText, textFilter)) continue;
-              if (!matchesAgendaExcludeTextFilter(titleText, excludeTextFilter)) continue;
+              if (!matchesAgendaTextFilter(agendaTitle, textFilter)) continue;
+              if (!matchesAgendaExcludeTextFilter(agendaTitle, excludeTextFilter)) continue;
               if (!matchesAgendaTagFilter(headline.tags ?? [], tagFilter)) continue;
               if (!matchesAgendaTodoFilter(todo, todoFilter)) continue;
+              if (!matchesAgendaPriorityFilter(priority, priorityFilter)) continue;
               if (!matchesAgendaExcludeTagFilter(headline.tags ?? [], excludeTagFilter)) continue;
               if (!matchesAgendaExcludeTodoFilter(todo, excludeTodoFilter)) continue;
+              if (!matchesAgendaExcludePriorityFilter(priority, excludePriorityFilter)) continue;
               if (planning.kind === "CLOSED") continue;
               if (planningFilter && !planningFilter.has(planning.kind as AgendaPlanningKind)) continue;
 
@@ -793,7 +895,7 @@ function findScheduledItems(
                 items.push({
                   filePath,
                   lineNumber: 0, // Line numbers not tracked in AST, using 0
-                  headline: titleText,
+                  headline: agendaTitle,
                   todo,
                   date: dateStr,
                   kind: planning.kind,
@@ -1022,8 +1124,10 @@ async function main(): Promise<void> {
   let agendaExcludeMatchFiltersRaw: string[] = [];
   let agendaTagFiltersRaw: string[] = [];
   let agendaTodoFiltersRaw: string[] = [];
+  let agendaPriorityFiltersRaw: string[] = [];
   let agendaExcludeTagFiltersRaw: string[] = [];
   let agendaExcludeTodoFiltersRaw: string[] = [];
+  let agendaExcludePriorityFiltersRaw: string[] = [];
   let agendaFileFiltersRaw: string[] = [];
   let agendaExcludeFileFiltersRaw: string[] = [];
   let agendaSortRaw: string[] = [];
@@ -1340,6 +1444,14 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--priority") {
+      i++;
+      if (i < args.length) {
+        if (command === "agenda") {
+          agendaPriorityFiltersRaw.push(args[i]!);
+        }
+        i++;
+      }
     } else if (arg === "--exclude-tag") {
       i++;
       if (i < args.length) {
@@ -1353,6 +1465,14 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "agenda") {
           agendaExcludeTodoFiltersRaw.push(args[i]!);
+        }
+        i++;
+      }
+    } else if (arg === "--exclude-priority") {
+      i++;
+      if (i < args.length) {
+        if (command === "agenda") {
+          agendaExcludePriorityFiltersRaw.push(args[i]!);
         }
         i++;
       }
@@ -1537,7 +1657,7 @@ async function main(): Promise<void> {
 
   if (help) {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -1579,7 +1699,7 @@ async function main(): Promise<void> {
 
   if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -3104,8 +3224,22 @@ async function main(): Promise<void> {
   const parsedAgendaExcludeMatch = parseAgendaExcludeMatchFilterArgs(agendaExcludeMatchFiltersRaw);
   const parsedAgendaTag = parseAgendaTagFilterArgs(agendaTagFiltersRaw);
   const parsedAgendaTodo = parseAgendaTodoFilterArgs(agendaTodoFiltersRaw);
+  const parsedAgendaPriority = parseAgendaPriorityFilterArgs(agendaPriorityFiltersRaw);
+  if (parsedAgendaPriority.invalid.length > 0) {
+    console.error(
+      `Error: invalid agenda --priority value(s): ${parsedAgendaPriority.invalid.join(", ")}. Allowed: ${AGENDA_PRIORITY_ALLOWED_HINT}`,
+    );
+    process.exit(1);
+  }
   const parsedAgendaExcludeTag = parseAgendaExcludeTagFilterArgs(agendaExcludeTagFiltersRaw);
   const parsedAgendaExcludeTodo = parseAgendaExcludeTodoFilterArgs(agendaExcludeTodoFiltersRaw);
+  const parsedAgendaExcludePriority = parseAgendaExcludePriorityFilterArgs(agendaExcludePriorityFiltersRaw);
+  if (parsedAgendaExcludePriority.invalid.length > 0) {
+    console.error(
+      `Error: invalid agenda --exclude-priority value(s): ${parsedAgendaExcludePriority.invalid.join(", ")}. Allowed: ${AGENDA_PRIORITY_ALLOWED_HINT}`,
+    );
+    process.exit(1);
+  }
   const parsedAgendaFile = parseAgendaFileFilterArgs(agendaFileFiltersRaw);
   const parsedAgendaExcludeFile = parseAgendaExcludeFileFilterArgs(agendaExcludeFileFiltersRaw);
   const parsedAgendaSort = parseAgendaSortArgs(agendaSortRaw);
@@ -3197,8 +3331,10 @@ async function main(): Promise<void> {
         parsedAgendaExcludeMatch,
         parsedAgendaTag,
         parsedAgendaTodo,
+        parsedAgendaPriority.filter,
         parsedAgendaExcludeTag,
         parsedAgendaExcludeTodo,
+        parsedAgendaExcludePriority.filter,
       );
       allItems.push(...items);
     } catch (err) {
