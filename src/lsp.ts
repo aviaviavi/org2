@@ -101,6 +101,17 @@ interface Hover {
   range?: Range;
 }
 
+interface SignatureInformation {
+  label: string;
+  documentation?: string | MarkupContent;
+}
+
+interface SignatureHelp {
+  signatures: SignatureInformation[];
+  activeSignature?: number;
+  activeParameter?: number;
+}
+
 interface TextEdit {
   range: Range;
   newText: string;
@@ -267,6 +278,10 @@ class LSPServer {
             },
             completionProvider: {
               triggerCharacters: [" ", ":", "<"],
+            },
+            signatureHelpProvider: {
+              triggerCharacters: [":", "<", "[", " "],
+              retriggerCharacters: ["<", "[", " "],
             },
             codeActionProvider: {
               codeActionKinds: [CodeActionKind.QuickFix],
@@ -447,6 +462,16 @@ class LSPServer {
 
         const completions = this.getCompletions(doc.text, position);
         this.sendResponse(id, completions);
+      } else if (method === "textDocument/signatureHelp") {
+        const { textDocument, position } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, null);
+          return;
+        }
+
+        const signatureHelp = this.getSignatureHelp(doc.text, position);
+        this.sendResponse(id, signatureHelp);
       } else if (method === "textDocument/codeAction") {
         const { textDocument, context } = params;
         const doc = this.documents.get(textDocument.uri);
@@ -828,6 +853,53 @@ class LSPServer {
     }
 
     return Array.from(completions.values());
+  }
+
+  private getSignatureHelp(text: string, position: Position): SignatureHelp | null {
+    const lines = text.split("\n");
+    const line = lines[position.line] ?? "";
+    const cursor = Math.max(0, Math.min(position.character, line.length));
+
+    const planningRegex = /(SCHEDULED:|DEADLINE:)/gi;
+    let match: RegExpExecArray | null;
+
+    while ((match = planningRegex.exec(line)) !== null) {
+      const keyword = (match[1] || "").toUpperCase();
+      const start = match.index;
+      const end = start + keyword.length;
+      if (cursor < start) {
+        continue;
+      }
+
+      const valuePrefix = cursor <= end ? "" : line.slice(end, cursor);
+      const trimmedPrefix = valuePrefix.trimStart();
+      const activeSignature = trimmedPrefix.startsWith("[") ? 1 : 0;
+
+      return {
+        signatures: [
+          {
+            label: `${keyword} <YYYY-MM-DD Ddd>`,
+            documentation: {
+              kind: "markdown",
+              value:
+                "Active timestamp used by default in Org agenda workflows. Example: `<2026-02-14 Sat>`.",
+            },
+          },
+          {
+            label: `${keyword} [YYYY-MM-DD Ddd]`,
+            documentation: {
+              kind: "markdown",
+              value:
+                "Inactive timestamp for planning context that should not drive agenda scheduling. Example: `[2026-02-14 Sat]`.",
+            },
+          },
+        ],
+        activeSignature,
+        activeParameter: 0,
+      };
+    }
+
+    return null;
   }
 
   private getCodeActions(sourceUri: string, text: string, context: any): CodeAction[] {
