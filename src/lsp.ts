@@ -95,6 +95,22 @@ interface Hover {
   range?: Range;
 }
 
+interface TextEdit {
+  range: Range;
+  newText: string;
+}
+
+interface WorkspaceEdit {
+  changes?: Record<string, TextEdit[]>;
+}
+
+interface RenameTarget {
+  kind: "id";
+  targetId: string;
+  range: Range;
+  placeholder: string;
+}
+
 type ReferenceQuery =
   | {
       kind: "id";
@@ -216,6 +232,9 @@ class LSPServer {
             workspaceSymbolProvider: true,
             documentLinkProvider: true,
             hoverProvider: true,
+            renameProvider: {
+              prepareProvider: true,
+            },
             completionProvider: {
               triggerCharacters: [" ", ":", "<"],
             },
@@ -332,6 +351,46 @@ class LSPServer {
 
         const hover = this.getHover(doc.uri, doc.text, position);
         this.sendResponse(id, hover);
+      } else if (method === "textDocument/prepareRename") {
+        const { textDocument, position } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, null);
+          return;
+        }
+
+        const target = this.extractRenameTarget(doc.uri, doc.text, position);
+        if (!target) {
+          this.sendResponse(id, null);
+          return;
+        }
+
+        this.sendResponse(id, {
+          range: target.range,
+          placeholder: target.placeholder,
+        });
+      } else if (method === "textDocument/rename") {
+        const { textDocument, position, newName } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, null);
+          return;
+        }
+
+        const target = this.extractRenameTarget(doc.uri, doc.text, position);
+        if (!target) {
+          this.sendResponse(id, null);
+          return;
+        }
+
+        const normalizedNewId = this.normalizeRenameIdInput(String(newName ?? ""));
+        if (!normalizedNewId) {
+          this.sendError(id, -32602, "Rename target must be a non-empty ID without spaces");
+          return;
+        }
+
+        const edit = this.buildRenameWorkspaceEdit(doc.uri, target, normalizedNewId);
+        this.sendResponse(id, edit);
       } else if (method === "textDocument/completion") {
         const { textDocument, position } = params;
         const doc = this.documents.get(textDocument.uri);
@@ -874,7 +933,7 @@ class LSPServer {
     return this.extractLinkAtPosition(text, pos)?.target ?? null;
   }
 
-  private extractLinkAtPosition(text: string, pos: Position): { target: string; range: Range } | null {
+  private extractLinkAtPosition(text: string, pos: Position): { target: string; range: Range; targetRange: Range } | null {
     const lines = text.split("\n");
     const line = lines[pos.line] ?? "";
     const char = Math.max(0, Math.min(pos.character, line.length));
@@ -888,16 +947,25 @@ class LSPServer {
         continue;
       }
 
-      const target = (match[1] || "").trim();
+      const rawTarget = match[1] || "";
+      const target = rawTarget.trim();
       if (!target) {
         return null;
       }
+
+      const targetOffsetInMatch = match[0].indexOf(rawTarget);
+      const targetStartChar = targetOffsetInMatch >= 0 ? startChar + targetOffsetInMatch : startChar + 2;
+      const targetEndChar = targetStartChar + rawTarget.length;
 
       return {
         target,
         range: {
           start: { line: pos.line, character: startChar },
           end: { line: pos.line, character: endChar },
+        },
+        targetRange: {
+          start: { line: pos.line, character: targetStartChar },
+          end: { line: pos.line, character: targetEndChar },
         },
       };
     }
@@ -1111,6 +1179,135 @@ class LSPServer {
     });
   }
 
+  private extractRenameTarget(sourceUri: string, text: string, position: Position): RenameTarget | null {
+    const link = this.extractLinkAtPosition(text, position);
+    if (link && this.isPositionInRange(position, link.targetRange) && link.target.toLowerCase().startsWith("id:")) {
+      const targetId = this.normalizeIdValue(link.target);
+      if (targetId) {
+        return {
+          kind: "id",
+          targetId,
+          range: link.targetRange,
+          placeholder: link.target,
+        };
+      }
+    }
+
+    const lines = text.split("\n");
+    const line = lines[position.line] ?? "";
+    const cursor = Math.max(0, Math.min(position.character, line.length));
+    const match = line.match(/^(\s*:ID:\s*)(\S+)(\s*)$/i);
+    if (!match) {
+      return null;
+    }
+
+    const prefix = match[1] || "";
+    const value = match[2] || "";
+    const valueStart = prefix.length;
+    const valueEnd = valueStart + value.length;
+    if (cursor < valueStart || cursor > valueEnd) {
+      return null;
+    }
+
+    const targetId = this.normalizeIdValue(value);
+    if (!targetId) {
+      return null;
+    }
+
+    return {
+      kind: "id",
+      targetId,
+      range: {
+        start: { line: position.line, character: valueStart },
+        end: { line: position.line, character: valueEnd },
+      },
+      placeholder: value,
+    };
+  }
+
+  private normalizeRenameIdInput(value: string): string | null {
+    let normalized = value.trim();
+    if (!normalized) {
+      return null;
+    }
+
+    if (normalized.toLowerCase().startsWith("id:")) {
+      normalized = normalized.slice(3);
+    }
+
+    if (!normalized || /\s/.test(normalized) || normalized.includes("[") || normalized.includes("]")) {
+      return null;
+    }
+
+    return normalized.toLowerCase();
+  }
+
+  private buildRenameWorkspaceEdit(sourceUri: string, target: RenameTarget, newId: string): WorkspaceEdit | null {
+    if (target.kind !== "id") {
+      return null;
+    }
+
+    if (target.targetId === newId) {
+      return { changes: {} };
+    }
+
+    const editsByUri = new Map<string, TextEdit[]>();
+    const seenEdits = new Set<string>();
+    const addEdit = (uri: string, edit: TextEdit) => {
+      const key = `${uri}:${edit.range.start.line}:${edit.range.start.character}:${edit.range.end.line}:${edit.range.end.character}:${edit.newText}`;
+      if (seenEdits.has(key)) {
+        return;
+      }
+      seenEdits.add(key);
+
+      const existing = editsByUri.get(uri);
+      if (existing) {
+        existing.push(edit);
+      } else {
+        editsByUri.set(uri, [edit]);
+      }
+    };
+
+    for (const doc of this.collectReferenceDocuments(sourceUri)) {
+      for (const link of this.findLinkTargets(doc.text)) {
+        if (!link.target.toLowerCase().startsWith("id:")) {
+          continue;
+        }
+        if (this.normalizeIdValue(link.target) !== target.targetId) {
+          continue;
+        }
+
+        addEdit(doc.uri, {
+          range: link.targetRange,
+          newText: `id:${newId}`,
+        });
+      }
+
+      for (const range of this.findIdDefinitionValueRanges(doc.text, target.targetId)) {
+        addEdit(doc.uri, {
+          range,
+          newText: newId,
+        });
+      }
+    }
+
+    if (editsByUri.size === 0) {
+      return null;
+    }
+
+    const changes: Record<string, TextEdit[]> = {};
+    for (const [uri, edits] of editsByUri.entries()) {
+      changes[uri] = edits.sort((a, b) => {
+        if (a.range.start.line !== b.range.start.line) {
+          return a.range.start.line - b.range.start.line;
+        }
+        return a.range.start.character - b.range.start.character;
+      });
+    }
+
+    return { changes };
+  }
+
   private collectReferenceDocuments(sourceUri: string): Array<{ uri: string; text: string }> {
     const documents: Array<{ uri: string; text: string }> = [];
     const seenUri = new Set<string>();
@@ -1158,8 +1355,8 @@ class LSPServer {
     return documents;
   }
 
-  private findLinkTargets(text: string): Array<{ target: string; range: Range }> {
-    const links: Array<{ target: string; range: Range }> = [];
+  private findLinkTargets(text: string): Array<{ target: string; range: Range; targetRange: Range }> {
+    const links: Array<{ target: string; range: Range; targetRange: Range }> = [];
     const lines = text.split("\n");
 
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
@@ -1167,19 +1364,27 @@ class LSPServer {
       const linkRegex = /\[\[([^\]\n]+?)\](?:\[[^\]\n]*\])?\]/g;
       let match: RegExpExecArray | null;
       while ((match = linkRegex.exec(line)) !== null) {
-        const target = (match[1] || "").trim();
+        const rawTarget = match[1] || "";
+        const target = rawTarget.trim();
         if (!target) {
           continue;
         }
 
         const startChar = match.index;
         const endChar = startChar + match[0].length;
+        const targetOffsetInMatch = match[0].indexOf(rawTarget);
+        const targetStartChar = targetOffsetInMatch >= 0 ? startChar + targetOffsetInMatch : startChar + 2;
+        const targetEndChar = targetStartChar + rawTarget.length;
 
         links.push({
           target,
           range: {
             start: { line: lineIndex, character: startChar },
             end: { line: lineIndex, character: endChar },
+          },
+          targetRange: {
+            start: { line: lineIndex, character: targetStartChar },
+            end: { line: lineIndex, character: targetEndChar },
           },
         });
       }
@@ -1198,6 +1403,33 @@ class LSPServer {
       }
     }
     return result;
+  }
+
+  private findIdDefinitionValueRanges(text: string, targetId: string): Range[] {
+    const lines = text.split("\n");
+    const ranges: Range[] = [];
+
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const line = lines[lineIndex];
+      const match = line.match(/^(\s*:ID:\s*)(\S+)(\s*)$/i);
+      if (!match) {
+        continue;
+      }
+
+      const value = match[2] || "";
+      if (this.normalizeIdValue(value) !== targetId) {
+        continue;
+      }
+
+      const startChar = (match[1] || "").length;
+      const endChar = startChar + value.length;
+      ranges.push({
+        start: { line: lineIndex, character: startChar },
+        end: { line: lineIndex, character: endChar },
+      });
+    }
+
+    return ranges;
   }
 
   private normalizeFileLinkPath(sourceUri: string, target: string): string | null {
@@ -1249,7 +1481,13 @@ class LSPServer {
 
     if (sourceUri.startsWith("file://")) {
       const sourcePath = fileURLToPath(sourceUri);
-      roots.add(path.dirname(sourcePath));
+      const sourceDir = path.dirname(sourcePath);
+
+      // Only scan the source file directory when the source file exists on disk.
+      // This avoids pathological walks from virtual/non-existent URIs like file:///test.org.
+      if (fs.existsSync(sourcePath)) {
+        roots.add(sourceDir);
+      }
     }
 
     return Array.from(roots);
@@ -1414,6 +1652,22 @@ class LSPServer {
         return "";
       })
       .join("");
+  }
+
+  private isPositionInRange(position: Position, range: Range): boolean {
+    if (position.line < range.start.line || position.line > range.end.line) {
+      return false;
+    }
+
+    if (position.line === range.start.line && position.character < range.start.character) {
+      return false;
+    }
+
+    if (position.line === range.end.line && position.character > range.end.character) {
+      return false;
+    }
+
+    return true;
   }
 
   private positionToOffset(text: string, pos: Position): number {
