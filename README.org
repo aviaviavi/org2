@@ -76,6 +76,7 @@ Current reality:
 - Formatter current-file diff preview command (VS Code): *Available now* (MVP)
 - Formatter (=org2 fmt=): *In progress*
 - LSP go-to-definition for file/id links (=org2 lsp=): *Available now* (MVP)
+- LSP find-references for file/id links (=org2 lsp=): *Available now* (MVP)
 - LSP entrypoint (=org2 lsp=): *In progress*
 - Formal Org2 spec (v0 draft): *In progress*
 
@@ -329,7 +330,7 @@ Notes:
 npm run org2 -- lsp
 #+end_src
 
-Current LSP features include parser diagnostics, document symbols, folding ranges, and go-to-definition for both =[[file:...]]= and =[[id:...]]= links.
+Current LSP features include parser diagnostics, document symbols, folding ranges, go-to-definition, and find-references for both =[[file:...]]= and =[[id:...]]= links.
 
 *** Other CLI commands (brief)
 
