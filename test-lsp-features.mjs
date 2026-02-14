@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Test LSP feature coverage (symbols, folding, highlights, rename, code actions)
+ * Test LSP feature coverage (symbols, folding, highlights, rename, code actions, formatting)
  */
 
 import { spawn } from "node:child_process";
@@ -38,6 +38,8 @@ Link two: [[id:abc-123]]
 `;
 
 const quickFixOrgContent = "* Quickfix Playground\r\n\tTabbed line\r\n";
+const formattingOrgContent = "| a  |b|\n| longer | c |\n|---+---|\n| x | yyy |\n";
+const expectedFormattedTableSnippet = "| a      | b   |";
 
 function findPosition(haystack, needle) {
   const index = haystack.indexOf(needle);
@@ -352,24 +354,68 @@ async function testLSPFeatures() {
                         }
                         console.log();
 
-                        // Shutdown
-                        console.log("Shutting down...");
+                        // Test 9: Document formatting
+                        console.log("Test 9: Formatting");
                         sendMessage(server, {
                           jsonrpc: "2.0",
-                          id: 999,
-                          method: "shutdown",
-                          params: {},
+                          method: "textDocument/didOpen",
+                          params: {
+                            textDocument: {
+                              uri: "file:///formatting.org",
+                              languageId: "org",
+                              version: 1,
+                              text: formattingOrgContent,
+                            },
+                          },
                         });
 
                         setTimeout(() => {
-                          server.kill();
+                          sendMessage(server, {
+                            jsonrpc: "2.0",
+                            id: 8,
+                            method: "textDocument/formatting",
+                            params: {
+                              textDocument: { uri: "file:///formatting.org" },
+                              options: {
+                                tabSize: 2,
+                                insertSpaces: true,
+                              },
+                            },
+                          });
 
-                          console.log("\n=== Test Summary ===");
-                          console.log(`Passed: ${testsPassed}`);
-                          console.log(`Failed: ${testsFailed}`);
+                          setTimeout(() => {
+                            const formattingResponse = allResponses.find((r) => r.id === 8);
+                            const formattingEdits = Array.isArray(formattingResponse?.result) ? formattingResponse.result : null;
+                            const formattedText = formattingEdits?.[0]?.newText || "";
+                            if (formattingEdits && formattingEdits.length > 0 && formattedText.includes(expectedFormattedTableSnippet)) {
+                              console.log(`✓ Formatting returned ${formattingEdits.length} edit(s)`);
+                              testsPassed++;
+                            } else {
+                              console.log(`✗ Formatting missing expected table alignment edit: ${JSON.stringify(formattingResponse)}`);
+                              testsFailed++;
+                            }
+                            console.log();
 
-                          resolve(testsFailed === 0);
-                        }, 200);
+                            // Shutdown
+                            console.log("Shutting down...");
+                            sendMessage(server, {
+                              jsonrpc: "2.0",
+                              id: 999,
+                              method: "shutdown",
+                              params: {},
+                            });
+
+                            setTimeout(() => {
+                              server.kill();
+
+                              console.log("\n=== Test Summary ===");
+                              console.log(`Passed: ${testsPassed}`);
+                              console.log(`Failed: ${testsFailed}`);
+
+                              resolve(testsFailed === 0);
+                            }, 200);
+                          }, 300);
+                        }, 300);
                       }, 300);
                     }, 300);
                   }, 300);
