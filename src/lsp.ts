@@ -46,6 +46,13 @@ interface DocumentSymbol {
   children?: DocumentSymbol[];
 }
 
+interface SymbolInformation {
+  name: string;
+  kind: number;
+  location: Location;
+  containerName?: string;
+}
+
 interface FoldingRange {
   startLine: number;
   endLine: number;
@@ -177,6 +184,7 @@ class LSPServer {
             foldingRangeProvider: true,
             definitionProvider: true,
             referencesProvider: true,
+            workspaceSymbolProvider: true,
           },
           serverInfo: {
             name: "org2-lsp",
@@ -271,6 +279,10 @@ class LSPServer {
         const includeDeclaration = Boolean(context?.includeDeclaration);
         const references = this.findReferenceLocations(doc.uri, query, includeDeclaration);
         this.sendResponse(id, references);
+      } else if (method === "workspace/symbol") {
+        const query = String(params?.query || "").trim();
+        const symbols = this.findWorkspaceSymbols(query);
+        this.sendResponse(id, symbols);
       } else {
         this.sendError(id, -32601, "Method not found");
       }
@@ -469,6 +481,71 @@ class LSPServer {
     }
 
     return ranges;
+  }
+
+  private findWorkspaceSymbols(query: string): SymbolInformation[] {
+    const normalizedQuery = query.toLowerCase();
+    const allDocuments = this.collectReferenceDocuments("");
+    const symbols: SymbolInformation[] = [];
+
+    for (const doc of allDocuments) {
+      const headings = this.extractHeadingSymbolsFromText(doc.uri, doc.text);
+      for (const heading of headings) {
+        if (normalizedQuery && !heading.name.toLowerCase().includes(normalizedQuery)) {
+          continue;
+        }
+        symbols.push(heading);
+      }
+    }
+
+    symbols.sort((a, b) => {
+      if (a.name !== b.name) {
+        return a.name.localeCompare(b.name);
+      }
+      if (a.location.uri !== b.location.uri) {
+        return a.location.uri.localeCompare(b.location.uri);
+      }
+      if (a.location.range.start.line !== b.location.range.start.line) {
+        return a.location.range.start.line - b.location.range.start.line;
+      }
+      return a.location.range.start.character - b.location.range.start.character;
+    });
+
+    return symbols.slice(0, 200);
+  }
+
+  private extractHeadingSymbolsFromText(uri: string, text: string): SymbolInformation[] {
+    const symbols: SymbolInformation[] = [];
+    const lines = text.split("\n");
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const match = line.match(/^(\*+)\s+(.*)$/);
+      if (!match) {
+        continue;
+      }
+
+      const level = match[1].length;
+      const title = (match[2] || "").trim();
+      if (!title) {
+        continue;
+      }
+
+      symbols.push({
+        name: title,
+        kind: SymbolKind.Struct,
+        containerName: level > 1 ? `Level ${level}` : undefined,
+        location: {
+          uri,
+          range: {
+            start: { line: i, character: 0 },
+            end: { line: i, character: line.length },
+          },
+        },
+      });
+    }
+
+    return symbols;
   }
 
   private extractLinkTargetAtPosition(text: string, pos: Position): string | null {
