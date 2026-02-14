@@ -1,0 +1,8 @@
+* TODO Weekly report
+SCHEDULED: <2026-01-08 Thu +1w>
+
+* TODO Monthly review
+DEADLINE: <2025-12-31 Wed +1m>
+
+* TODO One-off task
+SCHEDULED: <2026-01-24 Sat>

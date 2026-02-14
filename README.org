@@ -86,7 +86,7 @@ Current reality:
 **** Org Mode parity areas (broader)
 - Export/publishing pipeline parity: *Planned*
 - Org crypt (encrypted sections/workflows): *Planned*
-- Recurring tasks / repeaters: *Planned*
+- Recurring tasks / repeaters: *In progress* (agenda repeater expansion MVP available)
 - Habits: *Planned*
 - Clocking + effort/properties for time tracking: *Planned*
 - Capture templates / quick capture flow: *Planned*
@@ -229,6 +229,7 @@ Notes:
 - =--limit= caps total rendered rows after sorting (across overdue + upcoming).
 - =--from= overrides agenda start date (default: =--today= / current date).
 - =--to= overrides agenda end date (default: start + =--days - 1=).
+- Repeater timestamps like =<2026-01-08 Thu +1w>= are expanded into recurring agenda rows (MVP: +/++/.+ with d/w/m/y units).
 
 *** Running against local data with =org2.json=
 
