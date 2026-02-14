@@ -62,6 +62,7 @@ Content-Length: 87
   - `textDocument/documentLink` - Clickable link targets for file/id/URL links
   - `textDocument/hover` - Tooltips for links, TODO keywords, and planning keywords
   - `textDocument/completion` - TODO/planning keyword + timestamp completions
+  - `textDocument/signatureHelp` - Planning timestamp signature hints (`SCHEDULED:` / `DEADLINE:` active vs inactive forms)
   - `textDocument/rename` (+ `textDocument/prepareRename`) - Rename Org IDs safely
     - Renames `[[id:...]]` link targets
     - Renames matching `:ID:` property values
