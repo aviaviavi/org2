@@ -70,6 +70,7 @@ Content-Length: 87
     - Convert CRLF documents to LF line endings
     - Replace tab characters with two spaces
   - `textDocument/formatting` - Canonical Org formatting via the org2 printer
+  - `textDocument/rangeFormatting` - Canonical Org formatting for selected line ranges
 
 ## Editor Integration Examples
 
