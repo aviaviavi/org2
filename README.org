@@ -59,6 +59,7 @@ Current reality:
 - Roam node creation (CLI + VS Code command): *Available now* (MVP)
 - Roam ID open command (VS Code prompt/selection + id-link parsing): *Available now* (MVP)
 - Roam backlink insert/show commands (VS Code prompt/link input + heading-aware scope): *Available now* (MVP)
+- Roam backlink source picker (VS Code quick pick): *Available now* (MVP)
 - Roam-ish ID/backlink workflows: *In progress*
 
 **** Language/tooling
