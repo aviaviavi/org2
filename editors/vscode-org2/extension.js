@@ -687,6 +687,7 @@ async function fetchAgendaGroups(context, filter) {
   const includeOverdue = cfg.get('agenda.includeOverdue', true);
   const statusFilter = String(cfg.get('agenda.statusFilter', 'all') || 'all').trim().toLowerCase();
   const kindFilter = String(cfg.get('agenda.kindFilter', 'all') || 'all').trim().toLowerCase();
+  const excludeKindFilter = String(cfg.get('agenda.excludeKindFilter', 'all') || 'all').trim().toLowerCase();
   const whenFilter = String(cfg.get('agenda.whenFilter', 'all') || 'all').trim().toLowerCase();
   const matchFilter = String(cfg.get('agenda.matchFilter', '') || '').trim();
   const excludeMatchFilter = String(cfg.get('agenda.excludeMatchFilter', '') || '').trim();
@@ -725,6 +726,7 @@ async function fetchAgendaGroups(context, filter) {
   if (!includeOverdue) args.push('--no-overdue');
   if (statusFilter && statusFilter !== 'all') args.push('--status', statusFilter);
   if (kindFilter && kindFilter !== 'all') args.push('--kind', kindFilter);
+  if (excludeKindFilter && excludeKindFilter !== 'all') args.push('--exclude-kind', excludeKindFilter);
   if (whenFilter && whenFilter !== 'all') args.push('--when', whenFilter);
   if (matchFilter) args.push('--match', matchFilter);
   if (excludeMatchFilter) args.push('--exclude-match', excludeMatchFilter);

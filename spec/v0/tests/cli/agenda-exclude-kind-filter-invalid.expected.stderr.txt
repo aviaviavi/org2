@@ -1,0 +1,1 @@
+Error: invalid agenda --exclude-kind value(s): someday. Allowed: all, scheduled, deadline
