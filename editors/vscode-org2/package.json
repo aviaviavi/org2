@@ -31,6 +31,7 @@
     "onCommand:org2.roamDailiesGotoDate",
     "onCommand:org2.roamNodeNew",
     "onCommand:org2.roamCopyIdLink",
+    "onCommand:org2.roamCopyIdLinkById",
     "onCommand:org2.roamInsertBacklink",
     "onCommand:org2.roamOpenId",
     "onCommand:org2.roamShowBacklinks",
@@ -180,7 +181,11 @@
       },
       {
         "command": "org2.roamCopyIdLink",
-        "title": "Org2: Roam \u2014 Copy ID Link"
+        "title": "Org2: Roam \u2014 Copy ID Link (Current Heading/File)"
+      },
+      {
+        "command": "org2.roamCopyIdLinkById",
+        "title": "Org2: Roam \u2014 Copy ID Link (Prompt/Link)"
       },
       {
         "command": "org2.roamInsertBacklink",
@@ -335,6 +340,11 @@
           "command": "org2.roamShowBacklinksById",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@16"
+        },
+        {
+          "command": "org2.roamCopyIdLinkById",
+          "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
+          "group": "navigation@17"
         },
         {
           "command": "org2.roamOpenBacklink",
@@ -658,6 +668,12 @@
         "key": "ctrl+; r l",
         "mac": "cmd+; r l",
         "command": "org2.roamCopyIdLink",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; r c",
+        "mac": "cmd+; r c",
+        "command": "org2.roamCopyIdLinkById",
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
