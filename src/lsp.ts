@@ -12,6 +12,7 @@ import {
   ListItemNode,
   type ParseError,
 } from "./parser.js";
+import { printCanonicalAstToOrg } from "./printer.js";
 
 import fs from "node:fs";
 import path from "node:path";
@@ -265,6 +266,7 @@ class LSPServer {
             codeActionProvider: {
               codeActionKinds: [CodeActionKind.QuickFix],
             },
+            documentFormattingProvider: true,
           },
           serverInfo: {
             name: "org2-lsp",
@@ -448,6 +450,16 @@ class LSPServer {
 
         const actions = this.getCodeActions(doc.uri, doc.text, context);
         this.sendResponse(id, actions);
+      } else if (method === "textDocument/formatting") {
+        const { textDocument } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, []);
+          return;
+        }
+
+        const edits = this.getDocumentFormattingEdits(doc.text);
+        this.sendResponse(id, edits);
       } else if (method === "workspace/symbol") {
         const query = String(params?.query || "").trim();
         const symbols = this.findWorkspaceSymbols(query);
@@ -838,6 +850,34 @@ class LSPServer {
     }
 
     return actions;
+  }
+
+  private getDocumentFormattingEdits(text: string): TextEdit[] {
+    const formatted = this.formatCanonicalOrgText(text);
+    if (!formatted) {
+      return [];
+    }
+
+    const normalizedText = text.replace(/\r\n/g, "\n");
+    if (formatted === normalizedText) {
+      return [];
+    }
+
+    return [
+      {
+        range: this.getFullDocumentRange(text),
+        newText: formatted,
+      },
+    ];
+  }
+
+  private formatCanonicalOrgText(rawText: string): string | null {
+    try {
+      const ast = parseOrgToCanonicalAst(rawText.replace(/\r\n/g, "\n"));
+      return printCanonicalAstToOrg(ast);
+    } catch {
+      return null;
+    }
   }
 
   private getFullDocumentRange(text: string): Range {

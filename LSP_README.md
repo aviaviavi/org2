@@ -69,10 +69,7 @@ Content-Length: 87
   - `textDocument/codeAction` - Quick fixes for parser-only whitespace issues
     - Convert CRLF documents to LF line endings
     - Replace tab characters with two spaces
-
-### Future Enhancements
-
-- `textDocument/formatting` - Code formatting
+  - `textDocument/formatting` - Canonical Org formatting via the org2 printer
 
 ## Editor Integration Examples
 

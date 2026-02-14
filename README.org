@@ -87,6 +87,7 @@ Current reality:
 - LSP document highlights for ID/file references (=org2 lsp=): *Available now* (MVP)
 - LSP rename for =[[id:...]]= links + =:ID:= properties (=org2 lsp=): *Available now* (MVP)
 - LSP quick-fix code actions for CRLF/tab parser issues (=org2 lsp=): *Available now* (MVP)
+- LSP document formatting (=textDocument/formatting= via =org2 lsp=): *Available now* (MVP)
 - LSP entrypoint (=org2 lsp=): *In progress*
 - Formal Org2 spec (v0 draft): *In progress*
 
@@ -357,7 +358,7 @@ Notes:
 npm run org2 -- lsp
 #+end_src
 
-Current LSP features include parser diagnostics, document symbols, folding ranges, go-to-definition, find-references for both =[[file:...]]= and =[[id:...]]= links, document links for file/id/URL targets, document highlights for ID/file references, hover tooltips for links/TODO/planning keywords, rename support for =[[id:...]]= links plus =:ID:= property values, completion for TODO/planning keywords and Org timestamps, quick-fix code actions for CRLF/tab parser issues, and workspace symbol search over org/org2 headings.
+Current LSP features include parser diagnostics, document symbols, folding ranges, go-to-definition, find-references for both =[[file:...]]= and =[[id:...]]= links, document links for file/id/URL targets, document highlights for ID/file references, hover tooltips for links/TODO/planning keywords, rename support for =[[id:...]]= links plus =:ID:= property values, completion for TODO/planning keywords and Org timestamps, quick-fix code actions for CRLF/tab parser issues, document formatting (=textDocument/formatting=), and workspace symbol search over org/org2 headings.
 
 *** Other CLI commands (brief)
 
