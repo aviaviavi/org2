@@ -64,6 +64,16 @@ interface Location {
   range: Range;
 }
 
+type ReferenceQuery =
+  | {
+      kind: "id";
+      targetId: string;
+    }
+  | {
+      kind: "file";
+      targetPath: string;
+    };
+
 // Symbol kinds
 const SymbolKind = {
   Struct: 23,
@@ -166,6 +176,7 @@ class LSPServer {
             documentSymbolProvider: true,
             foldingRangeProvider: true,
             definitionProvider: true,
+            referencesProvider: true,
           },
           serverInfo: {
             name: "org2-lsp",
@@ -243,6 +254,23 @@ class LSPServer {
 
         const location = this.resolveDefinitionLocation(doc.uri, target);
         this.sendResponse(id, location ? [location] : null);
+      } else if (method === "textDocument/references") {
+        const { textDocument, position, context } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, []);
+          return;
+        }
+
+        const query = this.extractReferenceQuery(doc.uri, doc.text, position);
+        if (!query) {
+          this.sendResponse(id, []);
+          return;
+        }
+
+        const includeDeclaration = Boolean(context?.includeDeclaration);
+        const references = this.findReferenceLocations(doc.uri, query, includeDeclaration);
+        this.sendResponse(id, references);
       } else {
         this.sendError(id, -32601, "Method not found");
       }
@@ -468,24 +496,8 @@ class LSPServer {
       return idLocation;
     }
 
-    // File links
-    // Examples:
-    //   file:notes.org2
-    //   file:./notes.org2
-    //   ./notes.org2
-    let fileTarget = target;
-    if (fileTarget.startsWith("file:")) fileTarget = fileTarget.slice("file:".length);
-
-    // Ignore non-file link types (http:, mailto:, etc)
-    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(fileTarget)) return null;
-
-    if (!sourceUri.startsWith("file://")) return null;
-
-    const sourcePath = fileURLToPath(sourceUri);
-    const baseDir = path.dirname(sourcePath);
-    const absPath = path.resolve(baseDir, fileTarget);
-
-    if (!fs.existsSync(absPath)) return null;
+    const absPath = this.normalizeFileLinkPath(sourceUri, target);
+    if (!absPath || !fs.existsSync(absPath)) return null;
 
     const uri = pathToFileURL(absPath).toString();
     return {
@@ -539,6 +551,229 @@ class LSPServer {
     }
 
     return null;
+  }
+
+  private extractReferenceQuery(sourceUri: string, text: string, position: Position): ReferenceQuery | null {
+    const target = this.extractLinkTargetAtPosition(text, position);
+    if (target) {
+      if (target.toLowerCase().startsWith("id:")) {
+        const targetId = this.normalizeIdValue(target);
+        if (targetId) {
+          return {
+            kind: "id",
+            targetId,
+          };
+        }
+      }
+
+      const targetPath = this.normalizeFileLinkPath(sourceUri, target);
+      if (targetPath) {
+        return {
+          kind: "file",
+          targetPath,
+        };
+      }
+    }
+
+    const lines = text.split("\n");
+    const currentLine = lines[position.line] ?? "";
+    const lineId = this.extractIdFromLine(currentLine);
+    if (lineId) {
+      return {
+        kind: "id",
+        targetId: lineId,
+      };
+    }
+
+    return null;
+  }
+
+  private findReferenceLocations(sourceUri: string, query: ReferenceQuery, includeDeclaration: boolean): Location[] {
+    const locations: Location[] = [];
+
+    const pushLocation = (uri: string, range: Range) => {
+      locations.push({
+        uri,
+        range,
+      });
+    };
+
+    for (const doc of this.collectReferenceDocuments(sourceUri)) {
+      const { uri, text } = doc;
+
+      for (const link of this.findLinkTargets(text)) {
+        if (query.kind === "id") {
+          if (!link.target.toLowerCase().startsWith("id:")) {
+            continue;
+          }
+          if (this.normalizeIdValue(link.target) !== query.targetId) {
+            continue;
+          }
+          pushLocation(uri, link.range);
+          continue;
+        }
+
+        const linkedPath = this.normalizeFileLinkPath(uri, link.target);
+        if (linkedPath && linkedPath === query.targetPath) {
+          pushLocation(uri, link.range);
+        }
+      }
+
+      if (query.kind === "id" && includeDeclaration) {
+        const definitionLines = this.findIdDefinitionLines(text, query.targetId);
+        for (const line of definitionLines) {
+          pushLocation(uri, {
+            start: { line, character: 0 },
+            end: { line, character: 0 },
+          });
+        }
+      }
+    }
+
+    const deduped = new Map<string, Location>();
+    for (const location of locations) {
+      const key = `${location.uri}:${location.range.start.line}:${location.range.start.character}:${location.range.end.line}:${location.range.end.character}`;
+      deduped.set(key, location);
+    }
+
+    return Array.from(deduped.values()).sort((a, b) => {
+      if (a.uri !== b.uri) {
+        return a.uri.localeCompare(b.uri);
+      }
+      if (a.range.start.line !== b.range.start.line) {
+        return a.range.start.line - b.range.start.line;
+      }
+      return a.range.start.character - b.range.start.character;
+    });
+  }
+
+  private collectReferenceDocuments(sourceUri: string): Array<{ uri: string; text: string }> {
+    const documents: Array<{ uri: string; text: string }> = [];
+    const seenUri = new Set<string>();
+    const seenPath = new Set<string>();
+
+    const addDocument = (uri: string, text: string) => {
+      if (seenUri.has(uri)) {
+        return;
+      }
+      seenUri.add(uri);
+      documents.push({ uri, text });
+
+      const filePath = this.filePathFromUri(uri);
+      if (filePath) {
+        seenPath.add(filePath);
+      }
+    };
+
+    for (const doc of this.documents.values()) {
+      addDocument(doc.uri, doc.text);
+    }
+
+    for (const root of this.buildDefinitionSearchRoots(sourceUri)) {
+      for (const filePath of this.walkOrgFiles(root)) {
+        if (!fs.existsSync(filePath)) {
+          continue;
+        }
+
+        const resolvedPath = path.resolve(filePath);
+        if (seenPath.has(resolvedPath)) {
+          continue;
+        }
+
+        let text = "";
+        try {
+          text = fs.readFileSync(filePath, "utf8");
+        } catch {
+          continue;
+        }
+
+        addDocument(pathToFileURL(filePath).toString(), text);
+      }
+    }
+
+    return documents;
+  }
+
+  private findLinkTargets(text: string): Array<{ target: string; range: Range }> {
+    const links: Array<{ target: string; range: Range }> = [];
+    const lines = text.split("\n");
+
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const line = lines[lineIndex];
+      const linkRegex = /\[\[([^\]\n]+?)\](?:\[[^\]\n]*\])?\]/g;
+      let match: RegExpExecArray | null;
+      while ((match = linkRegex.exec(line)) !== null) {
+        const target = (match[1] || "").trim();
+        if (!target) {
+          continue;
+        }
+
+        const startChar = match.index;
+        const endChar = startChar + match[0].length;
+
+        links.push({
+          target,
+          range: {
+            start: { line: lineIndex, character: startChar },
+            end: { line: lineIndex, character: endChar },
+          },
+        });
+      }
+    }
+
+    return links;
+  }
+
+  private findIdDefinitionLines(text: string, targetId: string): number[] {
+    const lines = text.split("\n");
+    const result: number[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const lineId = this.extractIdFromLine(lines[i]);
+      if (lineId && lineId === targetId) {
+        result.push(i);
+      }
+    }
+    return result;
+  }
+
+  private normalizeFileLinkPath(sourceUri: string, target: string): string | null {
+    if (!sourceUri.startsWith("file://")) {
+      return null;
+    }
+
+    let fileTarget = target.trim();
+    if (fileTarget.toLowerCase().startsWith("file:")) {
+      fileTarget = fileTarget.slice("file:".length);
+    }
+
+    if (!fileTarget) {
+      return null;
+    }
+
+    const targetPathOnly = fileTarget.split("::")[0]?.trim() ?? "";
+    if (!targetPathOnly) {
+      return null;
+    }
+
+    // Ignore non-file link types (http:, mailto:, etc).
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(targetPathOnly)) {
+      return null;
+    }
+
+    const sourcePath = fileURLToPath(sourceUri);
+    const baseDir = path.dirname(sourcePath);
+    return path.resolve(baseDir, targetPathOnly);
+  }
+
+  private filePathFromUri(uri: string): string | null {
+    if (!uri.startsWith("file://")) {
+      return null;
+    }
+    try {
+      return path.resolve(fileURLToPath(uri));
+    } catch {
+      return null;
+    }
   }
 
   private buildDefinitionSearchRoots(sourceUri: string): string[] {
