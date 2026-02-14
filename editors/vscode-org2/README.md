@@ -24,6 +24,7 @@ Minimal VS Code language support for Org2.
 - LSP selection ranges (`textDocument/selectionRange`) for nested semantic expand-selection behavior
 - LSP semantic tokens (`textDocument/semanticTokens/full`) for TODO/planning/property/link-target highlighting
 - LSP backlink code lenses (`textDocument/codeLens`) on `:ID:` properties (click runs `org2.roamShowBacklinksById`)
+- LSP linked editing ranges (`textDocument/linkedEditingRange`) for synchronized Org ID edits across `[[id:...]]` links and `:ID:` properties
 
 ## Link rendering note (best-effort)
 

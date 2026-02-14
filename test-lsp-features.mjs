@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Test LSP feature coverage (symbols, folding, highlights, rename, code actions, formatting, selection ranges, signature help, semantic tokens, code lenses)
+ * Test LSP feature coverage (symbols, folding, highlights, rename, linked editing, code actions, formatting, selection ranges, signature help, semantic tokens, code lenses)
  */
 
 import { spawn } from "node:child_process";
@@ -153,8 +153,9 @@ async function testLSPFeatures() {
           semanticTypes.includes("property") &&
           semanticTypes.includes("string");
         const codeLensOk = capabilities?.codeLensProvider?.resolveProvider === false;
-        if (capabilities && capabilities.signatureHelpProvider && semanticLegendOk && codeLensOk) {
-          console.log("✓ Initialize response received (signatureHelp + semanticTokens + codeLens advertised)\n");
+        const linkedEditingOk = capabilities?.linkedEditingRangeProvider === true;
+        if (capabilities && capabilities.signatureHelpProvider && semanticLegendOk && codeLensOk && linkedEditingOk) {
+          console.log("✓ Initialize response received (signatureHelp + semanticTokens + codeLens + linkedEditingRange advertised)\n");
           testsPassed++;
         } else {
           console.log("✗ Initialize failed or required LSP capabilities missing\n");
@@ -706,24 +707,70 @@ async function testLSPFeatures() {
                                             }
                                             console.log();
 
-                                            // Shutdown
-                                            console.log("Shutting down...");
-                                            sendMessage(server, {
-                                              jsonrpc: "2.0",
-                                              id: 999,
-                                              method: "shutdown",
-                                              params: {},
-                                            });
+                                            // Test 15: LinkedEditingRange (ID link + declaration)
+                                            console.log("Test 15: LinkedEditingRange");
+                                            if (!renameLinkPos) {
+                                              console.log("✗ LinkedEditingRange skipped (missing token position)\n");
+                                              testsFailed++;
+                                            } else {
+                                              sendMessage(server, {
+                                                jsonrpc: "2.0",
+                                                id: 15,
+                                                method: "textDocument/linkedEditingRange",
+                                                params: {
+                                                  textDocument: { uri: "file:///test.org" },
+                                                  position: { line: renameLinkPos.line, character: renameLinkPos.character + 4 },
+                                                },
+                                              });
+                                            }
 
                                             setTimeout(() => {
-                                              server.kill();
+                                              const linkedEditingResponse = allResponses.find((r) => r.id === 15);
+                                              const linkedRanges = Array.isArray(linkedEditingResponse?.result?.ranges)
+                                                ? linkedEditingResponse.result.ranges
+                                                : null;
 
-                                              console.log("\n=== Test Summary ===");
-                                              console.log(`Passed: ${testsPassed}`);
-                                              console.log(`Failed: ${testsFailed}`);
+                                              const hasCursorRange = linkedRanges?.some(
+                                                (range) =>
+                                                  range?.start?.line === renameLinkPos?.line &&
+                                                  range?.start?.character === renameLinkPos?.character
+                                              );
+                                              const hasOtherRange = linkedRanges?.some(
+                                                (range) => range?.start?.line !== renameLinkPos?.line
+                                              );
 
-                                              resolve(testsFailed === 0);
-                                            }, 200);
+                                              if (linkedRanges && linkedRanges.length >= 3 && hasCursorRange && hasOtherRange) {
+                                                console.log(
+                                                  `✓ LinkedEditingRange returned ${linkedRanges.length} synchronized range(s) across links + declaration`
+                                                );
+                                                testsPassed++;
+                                              } else {
+                                                console.log(
+                                                  `✗ LinkedEditingRange missing expected synchronized ranges: ${JSON.stringify(linkedEditingResponse)}`
+                                                );
+                                                testsFailed++;
+                                              }
+                                              console.log();
+
+                                              // Shutdown
+                                              console.log("Shutting down...");
+                                              sendMessage(server, {
+                                                jsonrpc: "2.0",
+                                                id: 999,
+                                                method: "shutdown",
+                                                params: {},
+                                              });
+
+                                              setTimeout(() => {
+                                                server.kill();
+
+                                                console.log("\n=== Test Summary ===");
+                                                console.log(`Passed: ${testsPassed}`);
+                                                console.log(`Failed: ${testsFailed}`);
+
+                                                resolve(testsFailed === 0);
+                                              }, 200);
+                                            }, 300);
                                           }, 300);
                                         }, 300);
                                       }, 300);

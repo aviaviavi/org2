@@ -158,6 +158,11 @@ interface CodeLens {
   data?: any;
 }
 
+interface LinkedEditingRanges {
+  ranges: Range[];
+  wordPattern?: string;
+}
+
 interface RenameTarget {
   kind: "id";
   targetId: string;
@@ -311,6 +316,7 @@ class LSPServer {
             renameProvider: {
               prepareProvider: true,
             },
+            linkedEditingRangeProvider: true,
             completionProvider: {
               triggerCharacters: [" ", ":", "<"],
             },
@@ -494,6 +500,16 @@ class LSPServer {
 
         const edit = this.buildRenameWorkspaceEdit(doc.uri, target, normalizedNewId);
         this.sendResponse(id, edit);
+      } else if (method === "textDocument/linkedEditingRange") {
+        const { textDocument, position } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, null);
+          return;
+        }
+
+        const linkedRanges = this.getLinkedEditingRanges(doc.uri, doc.text, position);
+        this.sendResponse(id, linkedRanges);
       } else if (method === "textDocument/completion") {
         const { textDocument, position } = params;
         const doc = this.documents.get(textDocument.uri);
@@ -2022,6 +2038,61 @@ class LSPServer {
         end: { line: position.line, character: valueEnd },
       },
       placeholder: value,
+    };
+  }
+
+  private getLinkedEditingRanges(sourceUri: string, text: string, position: Position): LinkedEditingRanges | null {
+    const target = this.extractRenameTarget(sourceUri, text, position);
+    if (!target || target.kind !== "id") {
+      return null;
+    }
+
+    const ranges: Range[] = [];
+    const seen = new Set<string>();
+
+    const addRange = (range: Range) => {
+      const key = `${range.start.line}:${range.start.character}:${range.end.line}:${range.end.character}`;
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      ranges.push(range);
+    };
+
+    for (const link of this.findLinkTargets(text)) {
+      if (!link.target.toLowerCase().startsWith("id:")) {
+        continue;
+      }
+      if (this.normalizeIdValue(link.target) !== target.targetId) {
+        continue;
+      }
+      addRange(link.targetRange);
+    }
+
+    for (const range of this.findIdDefinitionValueRanges(text, target.targetId)) {
+      addRange(range);
+    }
+
+    if (ranges.length < 2) {
+      return null;
+    }
+
+    ranges.sort((a, b) => {
+      if (a.start.line !== b.start.line) {
+        return a.start.line - b.start.line;
+      }
+      if (a.start.character !== b.start.character) {
+        return a.start.character - b.start.character;
+      }
+      if (a.end.line !== b.end.line) {
+        return a.end.line - b.end.line;
+      }
+      return a.end.character - b.end.character;
+    });
+
+    return {
+      ranges,
+      wordPattern: "[A-Za-z0-9:_-]+",
     };
   }
 
