@@ -1,0 +1,38 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-01-21",
+    "end": "2026-01-27",
+    "days": 7
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-01-22",
+      "weekday": "Thursday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Weekly report",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-repeater-filter.input.txt",
+          "line": 0
+        }
+      ]
+    },
+    {
+      "date": "2026-01-24",
+      "weekday": "Saturday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "One-off task",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-repeater-filter.input.txt",
+          "line": 6
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}

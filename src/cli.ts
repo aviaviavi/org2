@@ -36,6 +36,114 @@ function extractDateFromTimestamp(raw: string): string | null {
   return match ? match[0] : null;
 }
 
+type TimestampRepeater = {
+  mode: "+" | "++" | ".+";
+  value: number;
+  unit: "d" | "w" | "m" | "y";
+};
+
+function parseTimestampRepeater(raw: string): TimestampRepeater | null {
+  const match = raw.match(/(?:^|\s)(\+\+|\.\+|\+)(\d+)([dwmy])(?=[^A-Za-z0-9]|$)/i);
+  if (!match) return null;
+
+  const modeRaw = match[1] ?? "+";
+  const valueRaw = match[2] ?? "";
+  const unitRaw = (match[3] ?? "").toLowerCase();
+
+  const value = Number.parseInt(valueRaw, 10);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  if (unitRaw !== "d" && unitRaw !== "w" && unitRaw !== "m" && unitRaw !== "y") return null;
+
+  if (modeRaw !== "+" && modeRaw !== "++" && modeRaw !== ".+") return null;
+
+  return {
+    mode: modeRaw,
+    value,
+    unit: unitRaw,
+  };
+}
+
+function addRepeaterInterval(date: Date, repeater: TimestampRepeater): Date {
+  const next = new Date(date.getTime());
+
+  // For agenda projection we treat +, ++, and .+ as fixed intervals from the
+  // timestamp date and expand occurrences that fall within the requested range.
+  switch (repeater.unit) {
+    case "d":
+      next.setUTCDate(next.getUTCDate() + repeater.value);
+      break;
+    case "w":
+      next.setUTCDate(next.getUTCDate() + repeater.value * 7);
+      break;
+    case "m":
+      next.setUTCMonth(next.getUTCMonth() + repeater.value);
+      break;
+    case "y":
+      next.setUTCFullYear(next.getUTCFullYear() + repeater.value);
+      break;
+  }
+
+  return next;
+}
+
+function formatIsoDateUtc(date: Date): string {
+  const year = String(date.getUTCFullYear());
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function resolveAgendaDatesFromTimestamp(
+  raw: string,
+  startDate: Date,
+  endDate: Date,
+  wantsOverdue: boolean,
+): string[] {
+  const dateStr = extractDateFromTimestamp(raw);
+  if (!dateStr) return [];
+
+  const repeater = parseTimestampRepeater(raw);
+  if (!repeater) return [dateStr];
+
+  const firstDate = parseIsoDate(dateStr);
+  const seen = new Set<string>();
+  const resolved: string[] = [];
+
+  const addResolved = (date: Date): void => {
+    const iso = formatIsoDateUtc(date);
+    if (seen.has(iso)) return;
+    seen.add(iso);
+    resolved.push(iso);
+  };
+
+  const maxIterations = 10000;
+  let cursor = new Date(firstDate.getTime());
+  let previousBeforeStart: Date | null = null;
+
+  for (let i = 0; i < maxIterations && cursor < startDate; i += 1) {
+    previousBeforeStart = cursor;
+    const next = addRepeaterInterval(cursor, repeater);
+    if (next.getTime() <= cursor.getTime()) break;
+    cursor = next;
+  }
+
+  if (wantsOverdue && previousBeforeStart) {
+    addResolved(previousBeforeStart);
+  }
+
+  for (let i = 0; i < maxIterations && cursor <= endDate; i += 1) {
+    if (cursor >= startDate) {
+      addResolved(cursor);
+    }
+
+    const next = addRepeaterInterval(cursor, repeater);
+    if (next.getTime() <= cursor.getTime()) break;
+    cursor = next;
+  }
+
+  return resolved.sort();
+}
+
 // Get today's date as YYYY-MM-DD string
 function getTodayString(): string {
   const now = new Date();
@@ -584,32 +692,33 @@ function findScheduledItemsInText(
       if (planningFilter && !planningFilter.has(kind as AgendaPlanningKind)) continue;
 
       const tsRaw = m[2] ?? "";
-      const dateStr = extractDateFromTimestamp(tsRaw);
-      if (!dateStr) continue;
-
-      const itemDate = parseIsoDate(dateStr);
-      const inRange = itemDate >= startDate && itemDate <= endDate;
-      const isOverdue = itemDate < startDate;
       const wantsOverdue = whenFilter ? whenFilter.has("overdue") : includeOverdue;
+      const agendaDates = resolveAgendaDatesFromTimestamp(tsRaw, startDate, endDate, wantsOverdue);
 
-      // TODO state filtering:
-      // - DONE/CANCELLED: only show if not overdue.
-      // - PROG (and IN_PROGRESS): can appear when overdue regardless of includeOverdue
-      //   because those tasks are still active.
-      // - Everything else: show inRange, and show overdue when includeOverdue (or when
-      //   --when explicitly requests overdue rows).
-      if (isDoneLike && isOverdue) continue;
-      if (!(inRange || (isProgLike && isOverdue) || (!isDoneLike && wantsOverdue && isOverdue))) continue;
-      if (!matchesAgendaWhenFilter(itemDate, startDate, whenFilter)) continue;
+      for (const dateStr of agendaDates) {
+        const itemDate = parseIsoDate(dateStr);
+        const inRange = itemDate >= startDate && itemDate <= endDate;
+        const isOverdue = itemDate < startDate;
 
-      items.push({
-        filePath,
-        lineNumber: current.lineNumber,
-        headline: current.title,
-        todo,
-        date: dateStr,
-        kind,
-      });
+        // TODO state filtering:
+        // - DONE/CANCELLED: only show if not overdue.
+        // - PROG (and IN_PROGRESS): can appear when overdue regardless of includeOverdue
+        //   because those tasks are still active.
+        // - Everything else: show inRange, and show overdue when includeOverdue (or when
+        //   --when explicitly requests overdue rows).
+        if (isDoneLike && isOverdue) continue;
+        if (!(inRange || (isProgLike && isOverdue) || (!isDoneLike && wantsOverdue && isOverdue))) continue;
+        if (!matchesAgendaWhenFilter(itemDate, startDate, whenFilter)) continue;
+
+        items.push({
+          filePath,
+          lineNumber: current.lineNumber,
+          headline: current.title,
+          todo,
+          date: dateStr,
+          kind,
+        });
+      }
     }
   }
 
@@ -645,40 +754,41 @@ function findScheduledItems(
             if (planning.timestamp) {
               const ts = planning.timestamp as TimestampNode | TimestampRangeNode;
               const raw = "start" in ts ? ts.start.raw : ts.raw;
-              const dateStr = extractDateFromTimestamp(raw);
+              const wantsOverdue = whenFilter ? whenFilter.has("overdue") : includeOverdue;
+              const agendaDates = resolveAgendaDatesFromTimestamp(raw, startDate, endDate, wantsOverdue);
+              if (agendaDates.length === 0) continue;
 
-              if (dateStr) {
+              const todo = headline.todo;
+              if (!todo) continue;
+
+              const todoBucket = agendaStatusBucketForKeyword(todo);
+              if (statusFilter && (!todoBucket || !statusFilter.has(todoBucket))) continue;
+
+              const isDoneLike = todo === "DONE" || todo === "CANCELLED" || todo === "CANCELED";
+              const isProgLike = todo === "PROG" || todo === "IN_PROGRESS";
+
+              const titleText = headline.title
+                .filter((t) => t.type === "Text")
+                .map((t) => t.value)
+                .join("");
+
+              if (!matchesAgendaTextFilter(titleText, textFilter)) continue;
+              if (!matchesAgendaExcludeTextFilter(titleText, excludeTextFilter)) continue;
+              if (!matchesAgendaTagFilter(headline.tags ?? [], tagFilter)) continue;
+              if (!matchesAgendaTodoFilter(todo, todoFilter)) continue;
+              if (!matchesAgendaExcludeTagFilter(headline.tags ?? [], excludeTagFilter)) continue;
+              if (!matchesAgendaExcludeTodoFilter(todo, excludeTodoFilter)) continue;
+              if (planning.kind === "CLOSED") continue;
+              if (planningFilter && !planningFilter.has(planning.kind as AgendaPlanningKind)) continue;
+
+              for (const dateStr of agendaDates) {
                 const itemDate = parseIsoDate(dateStr);
                 const inRange = itemDate >= startDate && itemDate <= endDate;
                 const isOverdue = itemDate < startDate;
-                const wantsOverdue = whenFilter ? whenFilter.has("overdue") : includeOverdue;
-
-                const todo = headline.todo;
-                if (!todo) continue;
-
-                const todoBucket = agendaStatusBucketForKeyword(todo);
-                if (statusFilter && (!todoBucket || !statusFilter.has(todoBucket))) continue;
-
-                const isDoneLike = todo === "DONE" || todo === "CANCELLED" || todo === "CANCELED";
-                const isProgLike = todo === "PROG" || todo === "IN_PROGRESS";
 
                 if (isDoneLike && isOverdue) continue;
                 if (!(inRange || (isProgLike && isOverdue) || (!isDoneLike && wantsOverdue && isOverdue))) continue;
                 if (!matchesAgendaWhenFilter(itemDate, startDate, whenFilter)) continue;
-
-                const titleText = headline.title
-                  .filter((t) => t.type === "Text")
-                  .map((t) => t.value)
-                  .join("");
-
-                if (!matchesAgendaTextFilter(titleText, textFilter)) continue;
-                if (!matchesAgendaExcludeTextFilter(titleText, excludeTextFilter)) continue;
-                if (!matchesAgendaTagFilter(headline.tags ?? [], tagFilter)) continue;
-                if (!matchesAgendaTodoFilter(todo, todoFilter)) continue;
-                if (!matchesAgendaExcludeTagFilter(headline.tags ?? [], excludeTagFilter)) continue;
-                if (!matchesAgendaExcludeTodoFilter(todo, excludeTodoFilter)) continue;
-                if (planning.kind === "CLOSED") continue;
-                if (planningFilter && !planningFilter.has(planning.kind as AgendaPlanningKind)) continue;
 
                 items.push({
                   filePath,
