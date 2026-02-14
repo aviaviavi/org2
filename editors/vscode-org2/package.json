@@ -462,6 +462,23 @@
           "default": "all",
           "description": "Filter agenda rows by TODO state bucket before rendering. all=everything, active=todo+in_progress, actionable=active+custom, closed=done+canceled."
         },
+        "org2.agenda.excludeStatusFilter": {
+          "type": "string",
+          "enum": [
+            "all",
+            "active",
+            "actionable",
+            "open",
+            "todo",
+            "in_progress",
+            "done",
+            "canceled",
+            "closed",
+            "custom"
+          ],
+          "default": "all",
+          "description": "Exclude agenda rows by TODO state bucket before rendering. all=no exclusion, active hides todo+in_progress, closed hides done+canceled."
+        },
         "org2.agenda.kindFilter": {
           "type": "string",
           "enum": [
