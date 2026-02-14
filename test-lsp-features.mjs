@@ -39,7 +39,9 @@ Link two: [[id:abc-123]]
 
 const quickFixOrgContent = "* Quickfix Playground\r\n\tTabbed line\r\n";
 const formattingOrgContent = "| a  |b|\n| longer | c |\n|---+---|\n| x | yyy |\n";
+const rangeFormattingOrgContent = "* Keep\nBody.\n\n| a|bb |\n|longer| c|\n|--+--|\n|x|yyy|\n\n* Tail\nunchanged\n";
 const expectedFormattedTableSnippet = "| a      | b   |";
+const expectedRangeFormattedSnippet = "| a      | bb  |";
 
 function findPosition(haystack, needle) {
   const index = haystack.indexOf(needle);
@@ -396,24 +398,80 @@ async function testLSPFeatures() {
                             }
                             console.log();
 
-                            // Shutdown
-                            console.log("Shutting down...");
+                            // Test 10: Range formatting
+                            console.log("Test 10: RangeFormatting");
                             sendMessage(server, {
                               jsonrpc: "2.0",
-                              id: 999,
-                              method: "shutdown",
-                              params: {},
+                              method: "textDocument/didOpen",
+                              params: {
+                                textDocument: {
+                                  uri: "file:///range-formatting.org",
+                                  languageId: "org",
+                                  version: 1,
+                                  text: rangeFormattingOrgContent,
+                                },
+                              },
                             });
 
                             setTimeout(() => {
-                              server.kill();
+                              sendMessage(server, {
+                                jsonrpc: "2.0",
+                                id: 9,
+                                method: "textDocument/rangeFormatting",
+                                params: {
+                                  textDocument: { uri: "file:///range-formatting.org" },
+                                  range: {
+                                    start: { line: 3, character: 0 },
+                                    end: { line: 7, character: 0 },
+                                  },
+                                  options: {
+                                    tabSize: 2,
+                                    insertSpaces: true,
+                                  },
+                                },
+                              });
 
-                              console.log("\n=== Test Summary ===");
-                              console.log(`Passed: ${testsPassed}`);
-                              console.log(`Failed: ${testsFailed}`);
+                              setTimeout(() => {
+                                const rangeFormattingResponse = allResponses.find((r) => r.id === 9);
+                                const rangeFormattingEdits = Array.isArray(rangeFormattingResponse?.result)
+                                  ? rangeFormattingResponse.result
+                                  : null;
+                                const rangeFormattedText = rangeFormattingEdits?.[0]?.newText || "";
+                                if (
+                                  rangeFormattingEdits &&
+                                  rangeFormattingEdits.length > 0 &&
+                                  rangeFormattedText.includes(expectedRangeFormattedSnippet)
+                                ) {
+                                  console.log(`✓ RangeFormatting returned ${rangeFormattingEdits.length} edit(s)`);
+                                  testsPassed++;
+                                } else {
+                                  console.log(
+                                    `✗ RangeFormatting missing expected table alignment edit: ${JSON.stringify(rangeFormattingResponse)}`
+                                  );
+                                  testsFailed++;
+                                }
+                                console.log();
 
-                              resolve(testsFailed === 0);
-                            }, 200);
+                                // Shutdown
+                                console.log("Shutting down...");
+                                sendMessage(server, {
+                                  jsonrpc: "2.0",
+                                  id: 999,
+                                  method: "shutdown",
+                                  params: {},
+                                });
+
+                                setTimeout(() => {
+                                  server.kill();
+
+                                  console.log("\n=== Test Summary ===");
+                                  console.log(`Passed: ${testsPassed}`);
+                                  console.log(`Failed: ${testsFailed}`);
+
+                                  resolve(testsFailed === 0);
+                                }, 200);
+                              }, 300);
+                            }, 300);
                           }, 300);
                         }, 300);
                       }, 300);

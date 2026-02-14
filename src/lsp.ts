@@ -267,6 +267,7 @@ class LSPServer {
               codeActionKinds: [CodeActionKind.QuickFix],
             },
             documentFormattingProvider: true,
+            documentRangeFormattingProvider: true,
           },
           serverInfo: {
             name: "org2-lsp",
@@ -459,6 +460,16 @@ class LSPServer {
         }
 
         const edits = this.getDocumentFormattingEdits(doc.text);
+        this.sendResponse(id, edits);
+      } else if (method === "textDocument/rangeFormatting") {
+        const { textDocument, range } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, []);
+          return;
+        }
+
+        const edits = this.getRangeFormattingEdits(doc.text, range);
         this.sendResponse(id, edits);
       } else if (method === "workspace/symbol") {
         const query = String(params?.query || "").trim();
@@ -869,6 +880,49 @@ class LSPServer {
         newText: formatted,
       },
     ];
+  }
+
+  private getRangeFormattingEdits(text: string, range: Range): TextEdit[] {
+    const lines = text.split("\n");
+    if (lines.length === 0) {
+      return [];
+    }
+
+    const maxLine = lines.length - 1;
+    const startLine = this.clampLine(range?.start?.line, maxLine);
+    const rawEndLine = this.clampLine(range?.end?.line, maxLine);
+    const endLineExclusiveBase = (range?.end?.character ?? 0) === 0 ? rawEndLine : rawEndLine + 1;
+    const endLineExclusive = Math.min(lines.length, Math.max(startLine + 1, endLineExclusiveBase));
+
+    const selectedText = lines.slice(startLine, endLineExclusive).join("\n");
+    const formatted = this.formatCanonicalOrgText(selectedText);
+    if (!formatted) {
+      return [];
+    }
+
+    const normalizedSelectedText = selectedText.replace(/\r\n/g, "\n");
+    const normalizedFormattedText = formatted.replace(/\r\n/g, "\n");
+    if (normalizedFormattedText === normalizedSelectedText) {
+      return [];
+    }
+
+    const endLine = endLineExclusive - 1;
+    return [
+      {
+        range: {
+          start: { line: startLine, character: 0 },
+          end: { line: endLine, character: lines[endLine]?.length ?? 0 },
+        },
+        newText: normalizedFormattedText,
+      },
+    ];
+  }
+
+  private clampLine(line: number | undefined, maxLine: number): number {
+    if (!Number.isFinite(line)) {
+      return 0;
+    }
+    return Math.max(0, Math.min(maxLine, Number(line)));
   }
 
   private formatCanonicalOrgText(rawText: string): string | null {
