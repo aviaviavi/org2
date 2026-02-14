@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Test LSP feature coverage (symbols, folding, highlights, rename, code actions, formatting)
+ * Test LSP feature coverage (symbols, folding, highlights, rename, code actions, formatting, selection ranges)
  */
 
 import { spawn } from "node:child_process";
@@ -52,6 +52,16 @@ function findPosition(haystack, needle) {
   const line = lines.length - 1;
   const character = lines[lines.length - 1]?.length ?? 0;
   return { line, character };
+}
+
+function flattenSelectionRanges(selectionRange) {
+  const ranges = [];
+  let current = selectionRange;
+  while (current && current.range) {
+    ranges.push(current.range);
+    current = current.parent;
+  }
+  return ranges;
 }
 
 async function testLSPFeatures() {
@@ -452,24 +462,75 @@ async function testLSPFeatures() {
                                 }
                                 console.log();
 
-                                // Shutdown
-                                console.log("Shutting down...");
-                                sendMessage(server, {
-                                  jsonrpc: "2.0",
-                                  id: 999,
-                                  method: "shutdown",
-                                  params: {},
-                                });
+                                // Test 11: SelectionRange
+                                console.log("Test 11: SelectionRange");
+                                if (!renameLinkPos) {
+                                  console.log("✗ SelectionRange skipped (missing token position)\n");
+                                  testsFailed++;
+                                } else {
+                                  sendMessage(server, {
+                                    jsonrpc: "2.0",
+                                    id: 10,
+                                    method: "textDocument/selectionRange",
+                                    params: {
+                                      textDocument: { uri: "file:///test.org" },
+                                      positions: [{ line: renameLinkPos.line, character: renameLinkPos.character + 4 }],
+                                    },
+                                  });
+                                }
 
                                 setTimeout(() => {
-                                  server.kill();
+                                  const selectionRangeResponse = allResponses.find((r) => r.id === 10);
+                                  const selectionRanges = Array.isArray(selectionRangeResponse?.result)
+                                    ? selectionRangeResponse.result
+                                    : null;
+                                  const flattenedRanges = selectionRanges?.[0]
+                                    ? flattenSelectionRanges(selectionRanges[0])
+                                    : [];
 
-                                  console.log("\n=== Test Summary ===");
-                                  console.log(`Passed: ${testsPassed}`);
-                                  console.log(`Failed: ${testsFailed}`);
+                                  const expectedTargetStart = renameLinkPos?.character ?? -1;
+                                  const expectedTargetEnd = expectedTargetStart + "id:abc-123".length;
+                                  const hasTargetRange = flattenedRanges.some(
+                                    (range) =>
+                                      range?.start?.line === renameLinkPos?.line &&
+                                      range?.start?.character === expectedTargetStart &&
+                                      range?.end?.line === renameLinkPos?.line &&
+                                      range?.end?.character === expectedTargetEnd
+                                  );
+                                  const hasDocumentRange = flattenedRanges.some(
+                                    (range) => range?.start?.line === 0 && range?.start?.character === 0
+                                  );
 
-                                  resolve(testsFailed === 0);
-                                }, 200);
+                                  if (selectionRanges && flattenedRanges.length >= 3 && hasTargetRange && hasDocumentRange) {
+                                    console.log(
+                                      `✓ SelectionRange returned nested chain (${flattenedRanges.length} range${flattenedRanges.length === 1 ? "" : "s"})`
+                                    );
+                                    testsPassed++;
+                                  } else {
+                                    console.log(`✗ SelectionRange missing expected nested ranges: ${JSON.stringify(selectionRangeResponse)}`);
+                                    testsFailed++;
+                                  }
+                                  console.log();
+
+                                  // Shutdown
+                                  console.log("Shutting down...");
+                                  sendMessage(server, {
+                                    jsonrpc: "2.0",
+                                    id: 999,
+                                    method: "shutdown",
+                                    params: {},
+                                  });
+
+                                  setTimeout(() => {
+                                    server.kill();
+
+                                    console.log("\n=== Test Summary ===");
+                                    console.log(`Passed: ${testsPassed}`);
+                                    console.log(`Failed: ${testsFailed}`);
+
+                                    resolve(testsFailed === 0);
+                                  }, 200);
+                                }, 300);
                               }, 300);
                             }, 300);
                           }, 300);

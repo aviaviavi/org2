@@ -110,6 +110,11 @@ interface WorkspaceEdit {
   changes?: Record<string, TextEdit[]>;
 }
 
+interface SelectionRange {
+  range: Range;
+  parent?: SelectionRange;
+}
+
 interface CodeAction {
   title: string;
   kind?: string;
@@ -268,6 +273,7 @@ class LSPServer {
             },
             documentFormattingProvider: true,
             documentRangeFormattingProvider: true,
+            selectionRangeProvider: true,
           },
           serverInfo: {
             name: "org2-lsp",
@@ -471,6 +477,16 @@ class LSPServer {
 
         const edits = this.getRangeFormattingEdits(doc.text, range);
         this.sendResponse(id, edits);
+      } else if (method === "textDocument/selectionRange") {
+        const { textDocument, positions } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, []);
+          return;
+        }
+
+        const selectionRanges = this.getSelectionRanges(doc.text, Array.isArray(positions) ? positions : []);
+        this.sendResponse(id, selectionRanges);
       } else if (method === "workspace/symbol") {
         const query = String(params?.query || "").trim();
         const symbols = this.findWorkspaceSymbols(query);
@@ -916,6 +932,219 @@ class LSPServer {
         newText: normalizedFormattedText,
       },
     ];
+  }
+
+  private getSelectionRanges(text: string, positions: Position[]): SelectionRange[] {
+    return positions.map((position) => this.getSelectionRangeAtPosition(text, position));
+  }
+
+  private getSelectionRangeAtPosition(text: string, position: Position): SelectionRange {
+    const lines = text.split("\n");
+    const maxLine = Math.max(0, lines.length - 1);
+    const safeLine = this.clampLine(position?.line, maxLine);
+    const lineText = lines[safeLine] ?? "";
+    const rawCharacter = Number.isFinite(position?.character) ? Number(position.character) : 0;
+    const safeCharacter = Math.max(0, Math.min(lineText.length, rawCharacter));
+    const safePosition: Position = { line: safeLine, character: safeCharacter };
+
+    const lineRange: Range = {
+      start: { line: safeLine, character: 0 },
+      end: { line: safeLine, character: lineText.length },
+    };
+
+    const candidateRanges: Range[] = [];
+
+    const wordRange = this.getWordRangeAtPosition(lines, safePosition);
+    if (wordRange) {
+      candidateRanges.push(wordRange);
+    }
+
+    const link = this.extractLinkAtPosition(text, safePosition);
+    if (link) {
+      if (this.isPositionInRange(safePosition, link.targetRange)) {
+        candidateRanges.push(link.targetRange);
+      }
+      candidateRanges.push(link.range);
+    }
+
+    candidateRanges.push(lineRange);
+    for (const headlineRange of this.getEnclosingHeadlineRanges(lines, safeLine)) {
+      candidateRanges.push(headlineRange);
+    }
+
+    const documentRange = this.getFullDocumentRange(text);
+    candidateRanges.push(documentRange);
+
+    const uniqueRanges: Range[] = [];
+    const seen = new Set<string>();
+    for (const candidate of candidateRanges) {
+      const key = `${candidate.start.line}:${candidate.start.character}:${candidate.end.line}:${candidate.end.character}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      uniqueRanges.push(candidate);
+    }
+
+    uniqueRanges.sort((a, b) => {
+      const aContainsB = this.rangeContains(a, b);
+      const bContainsA = this.rangeContains(b, a);
+      if (aContainsB && !bContainsA) {
+        return 1;
+      }
+      if (bContainsA && !aContainsB) {
+        return -1;
+      }
+
+      const startCompare = this.comparePositions(a.start, b.start);
+      if (startCompare !== 0) {
+        return startCompare;
+      }
+      return this.comparePositions(a.end, b.end);
+    });
+
+    const normalizedRanges: Range[] = [];
+    for (const candidate of uniqueRanges) {
+      if (normalizedRanges.length === 0) {
+        normalizedRanges.push(candidate);
+        continue;
+      }
+
+      const previous = normalizedRanges[normalizedRanges.length - 1];
+      if (this.areRangesEqual(candidate, previous)) {
+        continue;
+      }
+
+      if (this.rangeContains(candidate, previous)) {
+        normalizedRanges.push(candidate);
+      }
+    }
+
+    if (normalizedRanges.length === 0) {
+      normalizedRanges.push(documentRange);
+    }
+
+    let selection: SelectionRange | undefined;
+    for (let i = normalizedRanges.length - 1; i >= 0; i--) {
+      selection = selection ? { range: normalizedRanges[i], parent: selection } : { range: normalizedRanges[i] };
+    }
+
+    return selection ?? { range: documentRange };
+  }
+
+  private getWordRangeAtPosition(lines: string[], position: Position): Range | null {
+    const line = lines[position.line] ?? "";
+    if (!line) {
+      return null;
+    }
+
+    let cursor = position.character;
+    if (cursor >= line.length && line.length > 0) {
+      cursor = line.length - 1;
+    }
+
+    if (cursor < 0 || cursor >= line.length) {
+      return null;
+    }
+
+    if (!/\S/.test(line[cursor])) {
+      return null;
+    }
+
+    let start = cursor;
+    while (start > 0 && /\S/.test(line[start - 1])) {
+      start -= 1;
+    }
+
+    let end = cursor + 1;
+    while (end < line.length && /\S/.test(line[end])) {
+      end += 1;
+    }
+
+    return {
+      start: { line: position.line, character: start },
+      end: { line: position.line, character: end },
+    };
+  }
+
+  private getEnclosingHeadlineRanges(lines: string[], lineNumber: number): Range[] {
+    const ranges: Range[] = [];
+    let searchFrom = lineNumber;
+    let maxLevel = Number.POSITIVE_INFINITY;
+
+    while (searchFrom >= 0) {
+      let headlineLine = -1;
+      let headlineLevel = 0;
+
+      for (let i = searchFrom; i >= 0; i--) {
+        const match = lines[i]?.match(/^(\*+)\s+/);
+        if (!match) {
+          continue;
+        }
+
+        const level = match[1].length;
+        if (level >= maxLevel) {
+          continue;
+        }
+
+        headlineLine = i;
+        headlineLevel = level;
+        break;
+      }
+
+      if (headlineLine < 0) {
+        break;
+      }
+
+      const endLine = this.findHeadlineEndLine(lines, headlineLine, headlineLevel);
+      if (lineNumber >= headlineLine && lineNumber <= endLine) {
+        ranges.push({
+          start: { line: headlineLine, character: 0 },
+          end: { line: endLine, character: lines[endLine]?.length ?? 0 },
+        });
+      }
+
+      maxLevel = headlineLevel;
+      searchFrom = headlineLine - 1;
+    }
+
+    return ranges;
+  }
+
+  private findHeadlineEndLine(lines: string[], headlineLine: number, headlineLevel: number): number {
+    for (let i = headlineLine + 1; i < lines.length; i++) {
+      const match = lines[i]?.match(/^(\*+)\s+/);
+      if (!match) {
+        continue;
+      }
+
+      const nextLevel = match[1].length;
+      if (nextLevel <= headlineLevel) {
+        return i - 1;
+      }
+    }
+
+    return Math.max(headlineLine, lines.length - 1);
+  }
+
+  private rangeContains(outer: Range, inner: Range): boolean {
+    return this.comparePositions(outer.start, inner.start) <= 0 && this.comparePositions(outer.end, inner.end) >= 0;
+  }
+
+  private areRangesEqual(a: Range, b: Range): boolean {
+    return (
+      a.start.line === b.start.line &&
+      a.start.character === b.start.character &&
+      a.end.line === b.end.line &&
+      a.end.character === b.end.character
+    );
+  }
+
+  private comparePositions(a: Position, b: Position): number {
+    if (a.line !== b.line) {
+      return a.line - b.line;
+    }
+    return a.character - b.character;
   }
 
   private clampLine(line: number | undefined, maxLine: number): number {

@@ -71,6 +71,7 @@ Content-Length: 87
     - Replace tab characters with two spaces
   - `textDocument/formatting` - Canonical Org formatting via the org2 printer
   - `textDocument/rangeFormatting` - Canonical Org formatting for selected line ranges
+  - `textDocument/selectionRange` - Nested semantic selection expansion (token → link/line → heading → document)
 
 ## Editor Integration Examples
 
