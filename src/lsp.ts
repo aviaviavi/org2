@@ -71,6 +71,12 @@ interface Location {
   range: Range;
 }
 
+interface DocumentLink {
+  range: Range;
+  target?: string;
+  tooltip?: string;
+}
+
 type ReferenceQuery =
   | {
       kind: "id";
@@ -185,6 +191,7 @@ class LSPServer {
             definitionProvider: true,
             referencesProvider: true,
             workspaceSymbolProvider: true,
+            documentLinkProvider: true,
           },
           serverInfo: {
             name: "org2-lsp",
@@ -226,6 +233,15 @@ class LSPServer {
       } else if (method === "textDocument/didClose") {
         const { textDocument } = params;
         this.documents.delete(textDocument.uri);
+      } else if (method === "textDocument/documentLink") {
+        const { textDocument } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (doc) {
+          const links = this.extractDocumentLinks(doc.uri, doc.text);
+          this.sendResponse(id, links);
+        } else {
+          this.sendResponse(id, []);
+        }
       } else if (method === "textDocument/documentSymbol") {
         const { textDocument } = params;
         const doc = this.documents.get(textDocument.uri);
@@ -565,6 +581,55 @@ class LSPServer {
     const target = inside.split("][")[0]?.trim() ?? "";
     if (!target) return null;
     return target;
+  }
+
+  private extractDocumentLinks(sourceUri: string, text: string): DocumentLink[] {
+    const links: DocumentLink[] = [];
+    const seen = new Set<string>();
+
+    for (const link of this.findLinkTargets(text)) {
+      const resolvedTarget = this.resolveDocumentLinkTarget(sourceUri, link.target);
+      if (!resolvedTarget) {
+        continue;
+      }
+
+      const key = `${link.range.start.line}:${link.range.start.character}:${link.range.end.line}:${link.range.end.character}:${resolvedTarget}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+
+      links.push({
+        range: link.range,
+        target: resolvedTarget,
+        tooltip: `Open ${link.target}`,
+      });
+    }
+
+    return links;
+  }
+
+  private resolveDocumentLinkTarget(sourceUri: string, target: string): string | null {
+    const normalizedTarget = target.trim();
+    if (!normalizedTarget) {
+      return null;
+    }
+
+    if (normalizedTarget.toLowerCase().startsWith("id:")) {
+      const location = this.resolveIdDefinitionLocation(sourceUri, normalizedTarget);
+      return location?.uri ?? null;
+    }
+
+    const absPath = this.normalizeFileLinkPath(sourceUri, normalizedTarget);
+    if (absPath && fs.existsSync(absPath)) {
+      return pathToFileURL(absPath).toString();
+    }
+
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(normalizedTarget)) {
+      return normalizedTarget;
+    }
+
+    return null;
   }
 
   private resolveDefinitionLocation(sourceUri: string, target: string): Location | null {
