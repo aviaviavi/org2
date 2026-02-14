@@ -472,6 +472,16 @@
           "default": "all",
           "description": "Filter agenda rows by planning kind before rendering. all=both SCHEDULED and DEADLINE items."
         },
+        "org2.agenda.excludeKindFilter": {
+          "type": "string",
+          "enum": [
+            "all",
+            "scheduled",
+            "deadline"
+          ],
+          "default": "all",
+          "description": "Exclude agenda rows by planning kind before rendering. all=no exclusion, scheduled/deadline hide matching planning rows."
+        },
         "org2.agenda.whenFilter": {
           "type": "string",
           "enum": [
