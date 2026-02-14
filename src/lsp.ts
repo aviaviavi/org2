@@ -77,6 +77,14 @@ interface DocumentLink {
   tooltip?: string;
 }
 
+interface CompletionItem {
+  label: string;
+  kind?: number;
+  detail?: string;
+  insertText?: string;
+  sortText?: string;
+}
+
 type ReferenceQuery =
   | {
       kind: "id";
@@ -90,6 +98,11 @@ type ReferenceQuery =
 // Symbol kinds
 const SymbolKind = {
   Struct: 23,
+};
+
+const CompletionItemKind = {
+  Keyword: 14,
+  Value: 12,
 };
 
 const DiagnosticSeverity = {
@@ -192,6 +205,9 @@ class LSPServer {
             referencesProvider: true,
             workspaceSymbolProvider: true,
             documentLinkProvider: true,
+            completionProvider: {
+              triggerCharacters: [" ", ":", "<"],
+            },
           },
           serverInfo: {
             name: "org2-lsp",
@@ -295,6 +311,16 @@ class LSPServer {
         const includeDeclaration = Boolean(context?.includeDeclaration);
         const references = this.findReferenceLocations(doc.uri, query, includeDeclaration);
         this.sendResponse(id, references);
+      } else if (method === "textDocument/completion") {
+        const { textDocument, position } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, []);
+          return;
+        }
+
+        const completions = this.getCompletions(doc.text, position);
+        this.sendResponse(id, completions);
       } else if (method === "workspace/symbol") {
         const query = String(params?.query || "").trim();
         const symbols = this.findWorkspaceSymbols(query);
@@ -562,6 +588,89 @@ class LSPServer {
     }
 
     return symbols;
+  }
+
+  private getCompletions(text: string, position: Position): CompletionItem[] {
+    const lines = text.split("\n");
+    const line = lines[position.line] ?? "";
+    const cursor = Math.max(0, Math.min(position.character, line.length));
+    const prefix = line.slice(0, cursor);
+
+    const completions = new Map<string, CompletionItem>();
+    const addCompletion = (item: CompletionItem) => {
+      const key = `${item.label}:${item.insertText || ""}`;
+      if (!completions.has(key)) {
+        completions.set(key, item);
+      }
+    };
+
+    const todoKeywords = ["TODO", "NEXT", "WAITING", "DONE", "CANCELLED"];
+    const headlineMatch = line.match(/^(\*+\s+)([A-Z]*)/);
+    if (headlineMatch) {
+      const keywordStart = headlineMatch[1].length;
+      const typedKeyword = (headlineMatch[2] || "").toUpperCase();
+      if (cursor >= keywordStart && cursor <= keywordStart + typedKeyword.length) {
+        for (const keyword of todoKeywords) {
+          if (typedKeyword && !keyword.startsWith(typedKeyword)) {
+            continue;
+          }
+          addCompletion({
+            label: keyword,
+            kind: CompletionItemKind.Keyword,
+            detail: "Org TODO keyword",
+            insertText: keyword,
+          });
+        }
+      }
+    }
+
+    const planningKeywordMatch = prefix.match(/^\s*([A-Z]*)$/);
+    if (planningKeywordMatch) {
+      const typed = (planningKeywordMatch[1] || "").toUpperCase();
+      for (const keyword of ["SCHEDULED:", "DEADLINE:"]) {
+        if (typed && !keyword.startsWith(typed)) {
+          continue;
+        }
+        addCompletion({
+          label: keyword,
+          kind: CompletionItemKind.Keyword,
+          detail: "Org planning keyword",
+          insertText: keyword,
+        });
+      }
+    }
+
+    if (/^\s*(SCHEDULED|DEADLINE):\s*(<[^>]*>)?$/i.test(prefix)) {
+      const activeTimestamp = this.formatOrgTimestamp(new Date(), true);
+      const inactiveTimestamp = this.formatOrgTimestamp(new Date(), false);
+
+      addCompletion({
+        label: activeTimestamp,
+        kind: CompletionItemKind.Value,
+        detail: "Active Org timestamp",
+        insertText: activeTimestamp,
+        sortText: "0",
+      });
+
+      addCompletion({
+        label: inactiveTimestamp,
+        kind: CompletionItemKind.Value,
+        detail: "Inactive Org timestamp",
+        insertText: inactiveTimestamp,
+        sortText: "1",
+      });
+    }
+
+    return Array.from(completions.values());
+  }
+
+  private formatOrgTimestamp(date: Date, active: boolean): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][date.getDay()];
+    const body = `${year}-${month}-${day} ${weekday}`;
+    return active ? `<${body}>` : `[${body}]`;
   }
 
   private extractLinkTargetAtPosition(text: string, pos: Position): string | null {

@@ -79,6 +79,7 @@ Current reality:
 - LSP find-references for file/id links (=org2 lsp=): *Available now* (MVP)
 - LSP workspace symbol search for headings (=org2 lsp=): *Available now* (MVP)
 - LSP document links for file/id/URL links (=org2 lsp=): *Available now* (MVP)
+- LSP completion for TODO/planning keywords + timestamps (=org2 lsp=): *Available now* (MVP)
 - LSP entrypoint (=org2 lsp=): *In progress*
 - Formal Org2 spec (v0 draft): *In progress*
 
@@ -332,7 +333,7 @@ Notes:
 npm run org2 -- lsp
 #+end_src
 
-Current LSP features include parser diagnostics, document symbols, folding ranges, go-to-definition, find-references for both =[[file:...]]= and =[[id:...]]= links, document links for file/id/URL targets, and workspace symbol search over org/org2 headings.
+Current LSP features include parser diagnostics, document symbols, folding ranges, go-to-definition, find-references for both =[[file:...]]= and =[[id:...]]= links, document links for file/id/URL targets, completion for TODO/planning keywords and Org timestamps, and workspace symbol search over org/org2 headings.
 
 *** Other CLI commands (brief)
 
