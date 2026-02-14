@@ -1,0 +1,11 @@
+* TODO [#A] Ship release candidate
+SCHEDULED: <2026-02-14 Sat>
+
+* TODO [#B] Review support queue
+DEADLINE: <2026-02-14 Sat>
+
+* TODO [#C] Refactor old script
+SCHEDULED: <2026-02-15 Sun>
+
+* TODO Capture stray notes
+SCHEDULED: <2026-02-15 Sun>

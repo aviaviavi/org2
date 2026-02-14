@@ -503,6 +503,11 @@
           "default": "",
           "description": "Filter agenda rows by exact TODO keyword (case-insensitive). Supports comma-separated keywords; a row matches when any keyword is present."
         },
+        "org2.agenda.priorityFilter": {
+          "type": "string",
+          "default": "",
+          "description": "Filter agenda rows by Org priority marker (for example `A,B` or `[#A],[#B]`, case-insensitive)."
+        },
         "org2.agenda.excludeTagFilter": {
           "type": "string",
           "default": "",
@@ -512,6 +517,11 @@
           "type": "string",
           "default": "",
           "description": "Exclude agenda rows by exact TODO keyword (case-insensitive). Supports comma-separated keywords; a row is hidden when any keyword matches."
+        },
+        "org2.agenda.excludePriorityFilter": {
+          "type": "string",
+          "default": "",
+          "description": "Exclude agenda rows by Org priority marker (for example `A,B` or `[#A],[#B]`, case-insensitive)."
         },
         "org2.agenda.fileFilter": {
           "type": "string",
