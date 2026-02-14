@@ -43,18 +43,25 @@ Content-Length: 87
   - `textDocument/didClose` - Close document
   - `textDocument/publishDiagnostics` - Parser error diagnostics with line/column info
 
-- ✅ **Code Navigation**
+- ✅ **Code Navigation + Editing**
   - `textDocument/documentSymbol` - Extract headlines and structure
     - Returns hierarchical list of headlines
     - Includes position ranges for each symbol
     - Supports nested headlines with children
-  
+
   - `textDocument/foldingRange` - Extract foldable regions
     - Headlines and their content blocks
     - Source code blocks (BEGIN_SRC...END_SRC)
     - Special blocks (BEGIN_QUOTE, BEGIN_VERSE, etc.)
     - Lists
 
+  - `textDocument/definition` - Go to definition for `[[file:...]]` and `[[id:...]]` links
+  - `textDocument/references` - Find references for `[[file:...]]` and `[[id:...]]` links
+  - `textDocument/documentHighlight` - Highlight in-file ID/file references under cursor
+  - `workspace/symbol` - Search headings across workspace Org files
+  - `textDocument/documentLink` - Clickable link targets for file/id/URL links
+  - `textDocument/hover` - Tooltips for links, TODO keywords, and planning keywords
+  - `textDocument/completion` - TODO/planning keyword + timestamp completions
   - `textDocument/rename` (+ `textDocument/prepareRename`) - Rename Org IDs safely
     - Renames `[[id:...]]` link targets
     - Renames matching `:ID:` property values
@@ -62,10 +69,6 @@ Content-Length: 87
 
 ### Future Enhancements
 
-- `textDocument/completion` - Autocompletion for keywords, links
-- `textDocument/hover` - Tooltip information for links, timestamps
-- `textDocument/definition` - Go to definition for links
-- `textDocument/references` - Find all references to a headline
 - `textDocument/codeAction` - Quick fixes for common issues
 - `textDocument/formatting` - Code formatting
 

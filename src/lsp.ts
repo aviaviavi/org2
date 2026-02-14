@@ -71,6 +71,11 @@ interface Location {
   range: Range;
 }
 
+interface DocumentHighlight {
+  range: Range;
+  kind?: number;
+}
+
 interface DocumentLink {
   range: Range;
   target?: string;
@@ -129,6 +134,12 @@ const SymbolKind = {
 const CompletionItemKind = {
   Keyword: 14,
   Value: 12,
+};
+
+const DocumentHighlightKind = {
+  Text: 1,
+  Read: 2,
+  Write: 3,
 };
 
 const DiagnosticSeverity = {
@@ -231,6 +242,7 @@ class LSPServer {
             referencesProvider: true,
             workspaceSymbolProvider: true,
             documentLinkProvider: true,
+            documentHighlightProvider: true,
             hoverProvider: true,
             renameProvider: {
               prepareProvider: true,
@@ -341,6 +353,16 @@ class LSPServer {
         const includeDeclaration = Boolean(context?.includeDeclaration);
         const references = this.findReferenceLocations(doc.uri, query, includeDeclaration);
         this.sendResponse(id, references);
+      } else if (method === "textDocument/documentHighlight") {
+        const { textDocument, position } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, []);
+          return;
+        }
+
+        const highlights = this.getDocumentHighlights(doc.uri, doc.text, position);
+        this.sendResponse(id, highlights);
       } else if (method === "textDocument/hover") {
         const { textDocument, position } = params;
         const doc = this.documents.get(textDocument.uri);
@@ -742,6 +764,58 @@ class LSPServer {
     }
 
     return Array.from(completions.values());
+  }
+
+  private getDocumentHighlights(sourceUri: string, text: string, position: Position): DocumentHighlight[] {
+    const query = this.extractReferenceQuery(sourceUri, text, position);
+    if (!query) {
+      return [];
+    }
+
+    const highlights: DocumentHighlight[] = [];
+    const seen = new Set<string>();
+    const addHighlight = (range: Range, kind: number) => {
+      const key = `${range.start.line}:${range.start.character}:${range.end.line}:${range.end.character}:${kind}`;
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      highlights.push({ range, kind });
+    };
+
+    for (const link of this.findLinkTargets(text)) {
+      if (query.kind === "id") {
+        if (!link.target.toLowerCase().startsWith("id:")) {
+          continue;
+        }
+        if (this.normalizeIdValue(link.target) !== query.targetId) {
+          continue;
+        }
+        addHighlight(link.targetRange, DocumentHighlightKind.Read);
+        continue;
+      }
+
+      const linkedPath = this.normalizeFileLinkPath(sourceUri, link.target);
+      if (linkedPath && linkedPath === query.targetPath) {
+        addHighlight(link.targetRange, DocumentHighlightKind.Read);
+      }
+    }
+
+    if (query.kind === "id") {
+      for (const range of this.findIdDefinitionValueRanges(text, query.targetId)) {
+        addHighlight(range, DocumentHighlightKind.Write);
+      }
+    }
+
+    return highlights.sort((a, b) => {
+      if (a.range.start.line !== b.range.start.line) {
+        return a.range.start.line - b.range.start.line;
+      }
+      if (a.range.start.character !== b.range.start.character) {
+        return a.range.start.character - b.range.start.character;
+      }
+      return (a.kind || 0) - (b.kind || 0);
+    });
   }
 
   private getHover(sourceUri: string, text: string, position: Position): Hover | null {
