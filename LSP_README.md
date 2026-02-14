@@ -55,13 +55,17 @@ Content-Length: 87
     - Special blocks (BEGIN_QUOTE, BEGIN_VERSE, etc.)
     - Lists
 
+  - `textDocument/rename` (+ `textDocument/prepareRename`) - Rename Org IDs safely
+    - Renames `[[id:...]]` link targets
+    - Renames matching `:ID:` property values
+    - Returns workspace edits across open + workspace Org files
+
 ### Future Enhancements
 
 - `textDocument/completion` - Autocompletion for keywords, links
 - `textDocument/hover` - Tooltip information for links, timestamps
 - `textDocument/definition` - Go to definition for links
 - `textDocument/references` - Find all references to a headline
-- `textDocument/rename` - Rename headlines and update references
 - `textDocument/codeAction` - Quick fixes for common issues
 - `textDocument/formatting` - Code formatting
 
