@@ -74,6 +74,7 @@ Content-Length: 87
   - `textDocument/rangeFormatting` - Canonical Org formatting for selected line ranges
   - `textDocument/selectionRange` - Nested semantic selection expansion (token → link/line → heading → document)
   - `textDocument/semanticTokens/full` - Semantic highlighting tokens for TODO keywords, planning keywords, property keys, and link targets
+  - `textDocument/codeLens` - Backlink-count lenses for `:ID:` properties (click to run `org2.roamShowBacklinksById` in VS Code)
 
 ## Editor Integration Examples
 
