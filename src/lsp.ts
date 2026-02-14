@@ -146,6 +146,18 @@ interface CodeAction {
   edit?: WorkspaceEdit;
 }
 
+interface Command {
+  title: string;
+  command: string;
+  arguments?: any[];
+}
+
+interface CodeLens {
+  range: Range;
+  command?: Command;
+  data?: any;
+}
+
 interface RenameTarget {
   kind: "id";
   targetId: string;
@@ -315,6 +327,9 @@ class LSPServer {
             semanticTokensProvider: {
               legend: SEMANTIC_TOKEN_LEGEND,
               full: true,
+            },
+            codeLensProvider: {
+              resolveProvider: false,
             },
           },
           serverInfo: {
@@ -549,6 +564,16 @@ class LSPServer {
 
         const semanticTokens = this.getSemanticTokens(doc.text);
         this.sendResponse(id, semanticTokens);
+      } else if (method === "textDocument/codeLens") {
+        const { textDocument } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, []);
+          return;
+        }
+
+        const codeLenses = this.getCodeLenses(doc.uri, doc.text);
+        this.sendResponse(id, codeLenses);
       } else if (method === "workspace/symbol") {
         const query = String(params?.query || "").trim();
         const symbols = this.findWorkspaceSymbols(query);
@@ -1222,6 +1247,77 @@ class LSPServer {
     return {
       data: this.encodeSemanticTokens(tokens),
     };
+  }
+
+  private getCodeLenses(sourceUri: string, text: string): CodeLens[] {
+    const idDefinitions = this.findCodeLensIdDefinitions(text);
+    if (idDefinitions.length === 0) {
+      return [];
+    }
+
+    const backlinkCounts = new Map<string, number>();
+    for (const definition of idDefinitions) {
+      backlinkCounts.set(definition.id, 0);
+    }
+
+    for (const doc of this.collectReferenceDocuments(sourceUri)) {
+      for (const link of this.findLinkTargets(doc.text)) {
+        if (!link.target.toLowerCase().startsWith("id:")) {
+          continue;
+        }
+
+        const normalizedId = this.normalizeIdValue(link.target);
+        if (!normalizedId || !backlinkCounts.has(normalizedId)) {
+          continue;
+        }
+
+        backlinkCounts.set(normalizedId, (backlinkCounts.get(normalizedId) ?? 0) + 1);
+      }
+    }
+
+    return idDefinitions.map((definition) => {
+      const count = backlinkCounts.get(definition.id) ?? 0;
+      const title = count === 0 ? "Org2: no backlinks" : `Org2: ${count} backlink${count === 1 ? "" : "s"}`;
+
+      return {
+        range: definition.range,
+        command: {
+          title,
+          command: "org2.roamShowBacklinksById",
+          arguments: [`id:${definition.id}`],
+        },
+      };
+    });
+  }
+
+  private findCodeLensIdDefinitions(text: string): Array<{ id: string; range: Range }> {
+    const lines = text.split("\n");
+    const definitions: Array<{ id: string; range: Range }> = [];
+
+    for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
+      const line = lines[lineNumber] ?? "";
+      const match = line.match(/^(\s*:ID:\s*)(\S+)(\s*)$/i);
+      if (!match) {
+        continue;
+      }
+
+      const normalizedId = this.normalizeIdValue(match[2] || "");
+      if (!normalizedId) {
+        continue;
+      }
+
+      const idStart = (match[1] || "").length;
+      const idLength = (match[2] || "").length;
+      definitions.push({
+        id: normalizedId,
+        range: {
+          start: { line: lineNumber, character: idStart },
+          end: { line: lineNumber, character: idStart + idLength },
+        },
+      });
+    }
+
+    return definitions;
   }
 
   private encodeSemanticTokens(tokens: SemanticToken[]): number[] {
