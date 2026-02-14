@@ -35,6 +35,7 @@
     "onCommand:org2.roamOpenId",
     "onCommand:org2.roamShowBacklinks",
     "onCommand:org2.roamOpenBacklink",
+    "onCommand:org2.roamOpenBacklinkById",
     "onCommand:org2.roamDbSync",
     "onCommand:org2.rerunAutoFold"
   ],
@@ -194,7 +195,11 @@
       },
       {
         "command": "org2.roamOpenBacklink",
-        "title": "Org2: Roam \u2014 Open Backlink Source (Pick)"
+        "title": "Org2: Roam \u2014 Open Backlink Source (Current Heading/File)"
+      },
+      {
+        "command": "org2.roamOpenBacklinkById",
+        "title": "Org2: Roam \u2014 Open Backlink Source (Prompt/Link)"
       },
       {
         "command": "org2.roamDbSync",
@@ -327,9 +332,14 @@
           "group": "navigation@16"
         },
         {
-          "command": "org2.roamNodeNew",
+          "command": "org2.roamOpenBacklinkById",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@17"
+        },
+        {
+          "command": "org2.roamNodeNew",
+          "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
+          "group": "navigation@18"
         }
       ]
     },
@@ -650,6 +660,12 @@
         "key": "ctrl+; r p",
         "mac": "cmd+; r p",
         "command": "org2.roamOpenBacklink",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; r g",
+        "mac": "cmd+; r g",
+        "command": "org2.roamOpenBacklinkById",
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
