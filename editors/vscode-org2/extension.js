@@ -2150,6 +2150,54 @@ function activate(context) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('org2.roamCopyIdLinkById', async (id) => {
+      const initial = typeof id === 'string' ? String(id).trim() : '';
+      let rawInput = initial;
+      let uuid = extractRoamUuid(rawInput);
+
+      if (!uuid) {
+        const editor = vscode.window.activeTextEditor;
+        const selectionText =
+          editor && editor.selection && !editor.selection.isEmpty
+            ? editor.document.getText(editor.selection)
+            : '';
+        if (extractRoamUuid(selectionText)) {
+          rawInput = String(selectionText || '').trim();
+          uuid = extractRoamUuid(rawInput);
+        }
+      }
+
+      if (!uuid) {
+        const input = await vscode.window.showInputBox({
+          prompt: 'Org2: Roam — copy ID link for target ID',
+          placeHolder: 'UUID, id:UUID, or [[id:UUID][title]]',
+          value: rawInput,
+          validateInput: (v) => (extractRoamUuid(v) ? undefined : 'Expected UUID or id:UUID link'),
+        });
+        if (input === undefined) return;
+        rawInput = String(input || '').trim();
+        uuid = extractRoamUuid(rawInput);
+      }
+
+      if (!uuid) {
+        vscode.window.showWarningMessage('Org2: invalid ID input (expected UUID or id:UUID link).');
+        return;
+      }
+
+      const parsedLink = parseRoamIdLink(rawInput);
+      let title = parsedLink && parsedLink.title ? parsedLink.title : '';
+      if (!title) {
+        title = await suggestRoamLinkTitleById(uuid, getAgendaRootDir());
+      }
+      if (!title) title = uuid.slice(0, 8);
+
+      const link = `[[id:${uuid}][${title}]]`;
+      await vscode.env.clipboard.writeText(link);
+      vscode.window.showInformationMessage(`Org2: copied ID link for id:${uuid}.`);
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('org2.roamInsertBacklink', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) return;
@@ -2190,23 +2238,7 @@ function activate(context) {
       let suggestedTitle = parsedLink && parsedLink.title ? parsedLink.title : '';
 
       if (!suggestedTitle) {
-        try {
-          const queryArgs = ['query', '--id', id, '--dir', root, '--recursive', '--format', 'json'];
-          const { cmd: queryCmd, args: queryFinalArgs } = resolveOrg2Command(context, queryArgs);
-          const { stdout: queryOut } = await execFileAsync(queryCmd, queryFinalArgs, { cwd: root });
-          const payload = JSON.parse(String(queryOut || '').trim());
-          const results = Array.isArray(payload.results) ? payload.results : [];
-          const first = results[0] || null;
-          if (first) {
-            suggestedTitle = String(first.title || '').trim();
-            if (!suggestedTitle) {
-              const file = String(first.file || '');
-              if (file) suggestedTitle = path.basename(file).replace(/\.(org2|org)$/i, '');
-            }
-          }
-        } catch (_) {
-          // ignore; fall back below
-        }
+        suggestedTitle = await suggestRoamLinkTitleById(id, root);
       }
 
       if (!suggestedTitle) suggestedTitle = id.slice(0, 8);
@@ -2300,6 +2332,31 @@ function activate(context) {
     const shortId = /^([0-9a-fA-F-]{36})$/.test(srcId) ? srcId.slice(0, 8).toLowerCase() : '';
     const meta = `${relPath}:${line0 + 1}${shortId ? ` • ${shortId}` : ''}`;
     return { relPath, meta };
+  }
+
+  async function suggestRoamLinkTitleById(id, rootDir) {
+    const normalizedId = extractRoamUuid(id);
+    if (!normalizedId) return '';
+
+    try {
+      const queryArgs = ['query', '--id', normalizedId, '--dir', rootDir, '--recursive', '--format', 'json'];
+      const { cmd: queryCmd, args: queryFinalArgs } = resolveOrg2Command(context, queryArgs);
+      const { stdout: queryOut } = await execFileAsync(queryCmd, queryFinalArgs, { cwd: rootDir });
+      const payload = JSON.parse(String(queryOut || '').trim());
+      const results = Array.isArray(payload.results) ? payload.results : [];
+      const first = results[0] || null;
+      if (!first) return '';
+
+      const title = String(first.title || '').trim();
+      if (title) return title;
+
+      const file = String(first.file || '').trim();
+      if (file) return path.basename(file).replace(/\.(org2|org)$/i, '');
+    } catch (_) {
+      // ignore; caller falls back
+    }
+
+    return '';
   }
 
   async function loadBacklinksById(id, rootDir) {
