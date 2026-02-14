@@ -167,12 +167,14 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
   - `Org2: Roam — Insert Backlink (Prompt/Link)` (`org2.roamInsertBacklink`)
   - `Org2: Roam — Open ID (Prompt/Link)` (`org2.roamOpenId`)
   - `Org2: Roam — Show Backlinks (Current Heading/File)` (`org2.roamShowBacklinks`)
+  - `Org2: Roam — Show Backlinks (Prompt/Link)` (`org2.roamShowBacklinksById`)
   - `Org2: Roam — Open Backlink Source (Current Heading/File)` (`org2.roamOpenBacklink`)
   - `Org2: Roam — Open Backlink Source (Prompt/Link)` (`org2.roamOpenBacklinkById`)
   - `Org2: Roam — DB Sync (Ensure File IDs)` (`org2.roamDbSync`)
   - Open-ID input accepts raw UUIDs, `id:UUID`, and full `[[id:UUID][desc]]` text; when invoked without an argument it prompts.
   - Insert-Backlink target input accepts the same UUID/id-link formats, and pre-fills the backlink title from an `[[id:...][desc]]` target (or from `org2 query --id` when possible).
   - Show Backlinks now scopes to the current heading when possible (falls back to file-level IDs when no heading context exists).
+  - Show Backlinks (Prompt/Link) accepts raw UUIDs, `id:UUID`, and `[[id:UUID][desc]]` input (or selected text), then opens a backlinks report for that explicit target ID.
   - Open Backlink Source (Current Heading/File) uses the same heading/file scope, then offers a quick pick of backlink sources (title + file:line + context snippet) for one-step navigation.
   - Open Backlink Source (Prompt/Link) accepts raw UUIDs, `id:UUID`, and `[[id:UUID][desc]]` input (or selected text), then opens a source pick list for that explicit target ID.
 - Folding + debug
@@ -208,6 +210,7 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
   - `a f` → Agenda Filter
 - Roam namespace (`cmd/ctrl+; r ...`):
   - `r b` → Roam Show Backlinks
+  - `r h` → Roam Show Backlinks (Prompt/Link)
   - `r l` → Roam Copy ID Link
   - `r i` → Roam Insert Backlink
   - `r o` → Roam Open ID
