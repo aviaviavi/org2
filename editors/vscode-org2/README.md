@@ -22,6 +22,7 @@ Minimal VS Code language support for Org2.
 - LSP document formatting (`textDocument/formatting`) for canonical Org table/layout alignment
 - LSP range formatting (`textDocument/rangeFormatting`) for selection-scoped canonical Org cleanup
 - LSP selection ranges (`textDocument/selectionRange`) for nested semantic expand-selection behavior
+- LSP semantic tokens (`textDocument/semanticTokens/full`) for TODO/planning/property/link-target highlighting
 
 ## Link rendering note (best-effort)
 

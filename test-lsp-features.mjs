@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Test LSP feature coverage (symbols, folding, highlights, rename, code actions, formatting, selection ranges, signature help)
+ * Test LSP feature coverage (symbols, folding, highlights, rename, code actions, formatting, selection ranges, signature help, semantic tokens)
  */
 
 import { spawn } from "node:child_process";
@@ -41,6 +41,13 @@ const quickFixOrgContent = "* Quickfix Playground\r\n\tTabbed line\r\n";
 const formattingOrgContent = "| a  |b|\n| longer | c |\n|---+---|\n| x | yyy |\n";
 const rangeFormattingOrgContent = "* Keep\nBody.\n\n| a|bb |\n|longer| c|\n|--+--|\n|x|yyy|\n\n* Tail\nunchanged\n";
 const signatureHelpOrgContent = "* Signature Playground\nSCHEDULED: <2026-02-14 Sat>\nDEADLINE: [2026-02-15 Sun]\n";
+const semanticTokensOrgContent = `* TODO Semantic Playground
+SCHEDULED: <2026-02-14 Sat>
+:PROPERTIES:
+:ID: semantic-123
+:END:
+Link: [[id:semantic-123][Semantic Playground]]
+`;
 const expectedFormattedTableSnippet = "| a      | b   |";
 const expectedRangeFormattedSnippet = "| a      | bb  |";
 
@@ -63,6 +70,27 @@ function flattenSelectionRanges(selectionRange) {
     current = current.parent;
   }
   return ranges;
+}
+
+function decodeSemanticTokenData(data) {
+  const tokens = [];
+  let line = 0;
+  let start = 0;
+
+  for (let i = 0; i + 4 < data.length; i += 5) {
+    const deltaLine = data[i];
+    const deltaStart = data[i + 1];
+    const length = data[i + 2];
+    const tokenType = data[i + 3];
+    const tokenModifiers = data[i + 4];
+
+    line += deltaLine;
+    start = deltaLine === 0 ? start + deltaStart : deltaStart;
+
+    tokens.push({ line, start, length, tokenType, tokenModifiers });
+  }
+
+  return tokens;
 }
 
 async function testLSPFeatures() {
@@ -118,11 +146,17 @@ async function testLSPFeatures() {
       setTimeout(() => {
         const initResponse = allResponses.find((r) => r.id === 1);
         const capabilities = initResponse?.result?.capabilities;
-        if (capabilities && capabilities.signatureHelpProvider) {
-          console.log("✓ Initialize response received (signatureHelp advertised)\n");
+        const semanticTypes = capabilities?.semanticTokensProvider?.legend?.tokenTypes;
+        const semanticLegendOk =
+          Array.isArray(semanticTypes) &&
+          semanticTypes.includes("keyword") &&
+          semanticTypes.includes("property") &&
+          semanticTypes.includes("string");
+        if (capabilities && capabilities.signatureHelpProvider && semanticLegendOk) {
+          console.log("✓ Initialize response received (signatureHelp + semanticTokens advertised)\n");
           testsPassed++;
         } else {
-          console.log("✗ Initialize failed or signatureHelp capability missing\n");
+          console.log("✗ Initialize failed or required LSP capabilities missing\n");
           testsFailed++;
         }
 
@@ -590,24 +624,81 @@ async function testLSPFeatures() {
                                       }
                                       console.log();
 
-                                      // Shutdown
-                                      console.log("Shutting down...");
+                                      // Test 13: SemanticTokens
+                                      console.log("Test 13: SemanticTokens");
                                       sendMessage(server, {
                                         jsonrpc: "2.0",
-                                        id: 999,
-                                        method: "shutdown",
-                                        params: {},
+                                        method: "textDocument/didOpen",
+                                        params: {
+                                          textDocument: {
+                                            uri: "file:///semantic-tokens.org",
+                                            languageId: "org",
+                                            version: 1,
+                                            text: semanticTokensOrgContent,
+                                          },
+                                        },
                                       });
 
                                       setTimeout(() => {
-                                        server.kill();
+                                        sendMessage(server, {
+                                          jsonrpc: "2.0",
+                                          id: 13,
+                                          method: "textDocument/semanticTokens/full",
+                                          params: {
+                                            textDocument: { uri: "file:///semantic-tokens.org" },
+                                          },
+                                        });
 
-                                        console.log("\n=== Test Summary ===");
-                                        console.log(`Passed: ${testsPassed}`);
-                                        console.log(`Failed: ${testsFailed}`);
+                                        setTimeout(() => {
+                                          const semanticTokensResponse = allResponses.find((r) => r.id === 13);
+                                          const rawTokenData = Array.isArray(semanticTokensResponse?.result?.data)
+                                            ? semanticTokensResponse.result.data
+                                            : null;
+                                          const decodedTokens = rawTokenData ? decodeSemanticTokenData(rawTokenData) : [];
 
-                                        resolve(testsFailed === 0);
-                                      }, 200);
+                                          const hasKeywordToken = decodedTokens.some((token) => token?.tokenType === 0);
+                                          const hasPropertyToken = decodedTokens.some((token) => token?.tokenType === 1);
+                                          const hasStringToken = decodedTokens.some((token) => token?.tokenType === 2);
+
+                                          if (
+                                            rawTokenData &&
+                                            decodedTokens.length >= 4 &&
+                                            hasKeywordToken &&
+                                            hasPropertyToken &&
+                                            hasStringToken
+                                          ) {
+                                            console.log(
+                                              `✓ SemanticTokens returned ${decodedTokens.length} token(s) with keyword/property/string coverage`
+                                            );
+                                            testsPassed++;
+                                          } else {
+                                            console.log(
+                                              `✗ SemanticTokens missing expected token coverage: ${JSON.stringify(semanticTokensResponse)}`
+                                            );
+                                            testsFailed++;
+                                          }
+                                          console.log();
+
+                                          // Shutdown
+                                          console.log("Shutting down...");
+                                          sendMessage(server, {
+                                            jsonrpc: "2.0",
+                                            id: 999,
+                                            method: "shutdown",
+                                            params: {},
+                                          });
+
+                                          setTimeout(() => {
+                                            server.kill();
+
+                                            console.log("\n=== Test Summary ===");
+                                            console.log(`Passed: ${testsPassed}`);
+                                            console.log(`Failed: ${testsFailed}`);
+
+                                            resolve(testsFailed === 0);
+                                          }, 200);
+                                        }, 300);
+                                      }, 300);
                                     }, 300);
                                   }, 300);
                                 }, 300);

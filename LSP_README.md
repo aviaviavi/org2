@@ -73,6 +73,7 @@ Content-Length: 87
   - `textDocument/formatting` - Canonical Org formatting via the org2 printer
   - `textDocument/rangeFormatting` - Canonical Org formatting for selected line ranges
   - `textDocument/selectionRange` - Nested semantic selection expansion (token → link/line → heading → document)
+  - `textDocument/semanticTokens/full` - Semantic highlighting tokens for TODO keywords, planning keywords, property keys, and link targets
 
 ## Editor Integration Examples
 
