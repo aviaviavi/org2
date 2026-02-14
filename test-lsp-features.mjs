@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Test LSP feature coverage (symbols, folding, highlights, rename, code actions, formatting, selection ranges, signature help, semantic tokens)
+ * Test LSP feature coverage (symbols, folding, highlights, rename, code actions, formatting, selection ranges, signature help, semantic tokens, code lenses)
  */
 
 import { spawn } from "node:child_process";
@@ -152,8 +152,9 @@ async function testLSPFeatures() {
           semanticTypes.includes("keyword") &&
           semanticTypes.includes("property") &&
           semanticTypes.includes("string");
-        if (capabilities && capabilities.signatureHelpProvider && semanticLegendOk) {
-          console.log("✓ Initialize response received (signatureHelp + semanticTokens advertised)\n");
+        const codeLensOk = capabilities?.codeLensProvider?.resolveProvider === false;
+        if (capabilities && capabilities.signatureHelpProvider && semanticLegendOk && codeLensOk) {
+          console.log("✓ Initialize response received (signatureHelp + semanticTokens + codeLens advertised)\n");
           testsPassed++;
         } else {
           console.log("✗ Initialize failed or required LSP capabilities missing\n");
@@ -679,24 +680,51 @@ async function testLSPFeatures() {
                                           }
                                           console.log();
 
-                                          // Shutdown
-                                          console.log("Shutting down...");
+                                          // Test 14: CodeLens (backlink counts on :ID:)
+                                          console.log("Test 14: CodeLens");
                                           sendMessage(server, {
                                             jsonrpc: "2.0",
-                                            id: 999,
-                                            method: "shutdown",
-                                            params: {},
+                                            id: 14,
+                                            method: "textDocument/codeLens",
+                                            params: {
+                                              textDocument: { uri: "file:///test.org" },
+                                            },
                                           });
 
                                           setTimeout(() => {
-                                            server.kill();
+                                            const codeLensResponse = allResponses.find((r) => r.id === 14);
+                                            const codeLenses = Array.isArray(codeLensResponse?.result) ? codeLensResponse.result : null;
+                                            const backlinkLens = codeLenses?.find((lens) =>
+                                              typeof lens?.command?.title === "string" && lens.command.title.includes("2 backlinks")
+                                            );
+                                            if (codeLenses && backlinkLens) {
+                                              console.log(`✓ CodeLens returned backlink lens (${codeLenses.length} total lens/lenses)`);
+                                              testsPassed++;
+                                            } else {
+                                              console.log(`✗ CodeLens missing expected backlink lens: ${JSON.stringify(codeLensResponse)}`);
+                                              testsFailed++;
+                                            }
+                                            console.log();
 
-                                            console.log("\n=== Test Summary ===");
-                                            console.log(`Passed: ${testsPassed}`);
-                                            console.log(`Failed: ${testsFailed}`);
+                                            // Shutdown
+                                            console.log("Shutting down...");
+                                            sendMessage(server, {
+                                              jsonrpc: "2.0",
+                                              id: 999,
+                                              method: "shutdown",
+                                              params: {},
+                                            });
 
-                                            resolve(testsFailed === 0);
-                                          }, 200);
+                                            setTimeout(() => {
+                                              server.kill();
+
+                                              console.log("\n=== Test Summary ===");
+                                              console.log(`Passed: ${testsPassed}`);
+                                              console.log(`Failed: ${testsFailed}`);
+
+                                              resolve(testsFailed === 0);
+                                            }, 200);
+                                          }, 300);
                                         }, 300);
                                       }, 300);
                                     }, 300);
