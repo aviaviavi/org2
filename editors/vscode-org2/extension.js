@@ -2286,124 +2286,189 @@ function activate(context) {
     })
   );
 
+  function formatBacklinkMeta(file, line0, srcId, rootDir) {
+    let relPath = path.basename(file);
+    try {
+      const rel = path.relative(rootDir, file);
+      if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) {
+        relPath = rel;
+      }
+    } catch (_) {
+      // ignore
+    }
+
+    const shortId = /^([0-9a-fA-F-]{36})$/.test(srcId) ? srcId.slice(0, 8).toLowerCase() : '';
+    const meta = `${relPath}:${line0 + 1}${shortId ? ` • ${shortId}` : ''}`;
+    return { relPath, meta };
+  }
+
+  async function loadBacklinksForActiveEditor() {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) return null;
+
+    const doc = editor.document;
+    if (!doc || doc.uri.scheme !== 'file') {
+      vscode.window.showWarningMessage('Org2: showing backlinks requires a file-backed document.');
+      return null;
+    }
+
+    if (doc.isDirty) {
+      const ok = await doc.save();
+      if (!ok) {
+        vscode.window.showWarningMessage('Org2: could not save file before loading backlinks.');
+        return null;
+      }
+    }
+
+    const rootDir = getAgendaRootDir();
+    const cursor = editor.selection.active;
+
+    const ensureArgs = [
+      'id',
+      'ensure',
+      '--file',
+      String(doc.uri.fsPath),
+      '--line',
+      String(cursor.line + 1),
+      '--apply',
+      '--format',
+      'json',
+    ];
+    const { cmd: ensureCmd, args: ensureFinalArgs } = resolveOrg2Command(context, ensureArgs);
+
+    let ensureOut;
+    try {
+      ensureOut = await execFileAsync(ensureCmd, ensureFinalArgs, { cwd: rootDir });
+    } catch (e) {
+      vscode.window.showErrorMessage(`Org2: failed to ensure ID: ${String(e && e.message ? e.message : e)}`);
+      return null;
+    }
+
+    let ensurePayload;
+    try {
+      ensurePayload = JSON.parse(String((ensureOut && ensureOut.stdout) || '').trim());
+    } catch (e) {
+      vscode.window.showErrorMessage('Org2: failed to parse org2 id ensure output.');
+      return null;
+    }
+
+    const id = typeof ensurePayload.id === 'string' ? ensurePayload.id : '';
+    if (!/^([0-9a-fA-F-]{36})$/.test(id)) {
+      vscode.window.showErrorMessage('Org2: org2 id ensure did not return a valid UUID.');
+      return null;
+    }
+    const ensuredKind = ensurePayload.kind === 'headline' ? 'headline' : 'file';
+
+    // If we inserted an ID, the CLI wrote to disk. Refresh the editor view.
+    try {
+      await vscode.commands.executeCommand('workbench.action.files.revert');
+    } catch (_) {
+      // ignore
+    }
+
+    const backlinksArgs = ['roam', 'backlinks', '--id', id.toLowerCase(), '--dir', rootDir, '--recursive', '--format', 'json'];
+    const { cmd: backlinksCmd, args: backlinksFinalArgs } = resolveOrg2Command(context, backlinksArgs);
+
+    let backlinksOut;
+    try {
+      backlinksOut = await execFileAsync(backlinksCmd, backlinksFinalArgs, { cwd: rootDir });
+    } catch (e) {
+      vscode.window.showErrorMessage(`Org2: failed to load backlinks: ${String(e && e.message ? e.message : e)}`);
+      return null;
+    }
+
+    let payload;
+    try {
+      payload = JSON.parse(String((backlinksOut && backlinksOut.stdout) || '').trim());
+    } catch (e) {
+      vscode.window.showErrorMessage('Org2: failed to parse org2 backlinks output.');
+      return null;
+    }
+
+    const backlinks = Array.isArray(payload.backlinks) ? payload.backlinks : [];
+    return {
+      id: id.toLowerCase(),
+      ensuredKind,
+      backlinks,
+      rootDir,
+    };
+  }
+
   context.subscriptions.push(
-    vscode.commands.registerCommand('org2.roamShowBacklinks', async () => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) return;
+    vscode.commands.registerCommand('org2.roamOpenBacklink', async () => {
+      const loaded = await loadBacklinksForActiveEditor();
+      if (!loaded) return;
 
-      const doc = editor.document;
-      if (!doc || doc.uri.scheme !== 'file') {
-        vscode.window.showWarningMessage('Org2: showing backlinks requires a file-backed document.');
-        return;
-      }
-
-      if (doc.isDirty) {
-        const ok = await doc.save();
-        if (!ok) {
-          vscode.window.showWarningMessage('Org2: could not save file before loading backlinks.');
-          return;
-        }
-      }
-
-      const cursor = editor.selection.active;
-
-      const ensureArgs = [
-        'id',
-        'ensure',
-        '--file',
-        String(doc.uri.fsPath),
-        '--line',
-        String(cursor.line + 1),
-        '--apply',
-        '--format',
-        'json',
-      ];
-      const { cmd: ensureCmd, args: ensureFinalArgs } = resolveOrg2Command(context, ensureArgs);
-
-      let ensureOut;
-      try {
-        ensureOut = await execFileAsync(ensureCmd, ensureFinalArgs, { cwd: getAgendaRootDir() });
-      } catch (e) {
-        vscode.window.showErrorMessage(`Org2: failed to ensure ID: ${String(e && e.message ? e.message : e)}`);
-        return;
-      }
-
-      let ensurePayload;
-      try {
-        ensurePayload = JSON.parse(String((ensureOut && ensureOut.stdout) || '').trim());
-      } catch (e) {
-        vscode.window.showErrorMessage('Org2: failed to parse org2 id ensure output.');
-        return;
-      }
-
-      const id = typeof ensurePayload.id === 'string' ? ensurePayload.id : '';
-      if (!/^([0-9a-fA-F-]{36})$/.test(id)) {
-        vscode.window.showErrorMessage('Org2: org2 id ensure did not return a valid UUID.');
-        return;
-      }
-      const ensuredKind = ensurePayload.kind === 'headline' ? 'headline' : 'file';
-
-      // If we inserted an ID, the CLI wrote to disk. Refresh the editor view.
-      try {
-        await vscode.commands.executeCommand('workbench.action.files.revert');
-      } catch (_) {
-        // ignore
-      }
-
-      const backlinksArgs = ['roam', 'backlinks', '--id', id.toLowerCase(), '--dir', getAgendaRootDir(), '--recursive', '--format', 'json'];
-      const { cmd: backlinksCmd, args: backlinksFinalArgs } = resolveOrg2Command(context, backlinksArgs);
-
-      let backlinksOut;
-      try {
-        backlinksOut = await execFileAsync(backlinksCmd, backlinksFinalArgs, { cwd: getAgendaRootDir() });
-      } catch (e) {
-        vscode.window.showErrorMessage(`Org2: failed to load backlinks: ${String(e && e.message ? e.message : e)}`);
-        return;
-      }
-
-      let payload;
-      try {
-        payload = JSON.parse(String((backlinksOut && backlinksOut.stdout) || '').trim());
-      } catch (e) {
-        vscode.window.showErrorMessage('Org2: failed to parse org2 backlinks output.');
-        return;
-      }
-
-      const backlinks = Array.isArray(payload.backlinks) ? payload.backlinks : [];
+      const { backlinks, rootDir } = loaded;
       if (backlinks.length === 0) {
         vscode.window.showInformationMessage('Org2: no backlinks found.');
         return;
       }
 
-      const rootDir = getAgendaRootDir();
+      const picks = backlinks
+        .map((b) => {
+          const file = String(b.file || '');
+          const line0 = typeof b.line === 'number' ? b.line : 0;
+          if (!file) return null;
+
+          const srcTitle = String(b.srcTitle || '(untitled)');
+          const srcId = typeof b.srcId === 'string' ? b.srcId : '';
+          const { meta } = formatBacklinkMeta(file, line0, srcId, rootDir);
+          const contextText = String(b.context || '').trim();
+          const firstContextLine = contextText ? contextText.split(/\r?\n/)[0] : '';
+
+          return {
+            label: srcTitle,
+            description: meta,
+            detail: firstContextLine || (srcId ? `id:${srcId.toLowerCase()}` : ''),
+            file,
+            line0,
+          };
+        })
+        .filter(Boolean);
+
+      if (!picks.length) {
+        vscode.window.showInformationMessage('Org2: backlinks found, but no openable source locations were returned.');
+        return;
+      }
+
+      const pick = await vscode.window.showQuickPick(picks, {
+        placeHolder: `Org2: open backlink source (${picks.length} found)`,
+        matchOnDescription: true,
+        matchOnDetail: true,
+      });
+      if (!pick) return;
+
+      await vscode.commands.executeCommand('org2.openFileAt', pick.file, pick.line0);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.roamShowBacklinks', async () => {
+      const loaded = await loadBacklinksForActiveEditor();
+      if (!loaded) return;
+
+      const { id, ensuredKind, backlinks, rootDir } = loaded;
+      if (backlinks.length === 0) {
+        vscode.window.showInformationMessage('Org2: no backlinks found.');
+        return;
+      }
 
       const lines = [];
       lines.push(`#+TITLE: Backlinks (${backlinks.length})`);
       lines.push('');
-      lines.push(`* Backlinks for id:${id.toLowerCase()} (${ensuredKind}-level)`);
+      lines.push(`* Backlinks for id:${id} (${ensuredKind}-level)`);
       lines.push('');
 
       for (const b of backlinks) {
         const file = String(b.file || '');
         const line0 = typeof b.line === 'number' ? b.line : 0;
         const srcTitle = String(b.srcTitle || '(untitled)');
-
-        let relPath = path.basename(file);
-        try {
-          const rel = path.relative(rootDir, file);
-          if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) {
-            relPath = rel;
-          }
-        } catch (_) {
-          // ignore
-        }
+        const srcId = typeof b.srcId === 'string' ? b.srcId : '';
+        const { meta } = formatBacklinkMeta(file, line0, srcId, rootDir);
 
         const payload = encodeURIComponent(JSON.stringify([file, line0]));
         const cmdUrl = `command:org2.openFileAt?${payload}`;
-
-        const srcId = typeof b.srcId === 'string' ? b.srcId : '';
-        const shortId = /^([0-9a-fA-F-]{36})$/.test(srcId) ? srcId.slice(0, 8).toLowerCase() : '';
-        const meta = `${relPath}:${line0 + 1}${shortId ? ` • ${shortId}` : ''}`;
 
         lines.push(`- [[${cmdUrl}][${srcTitle}]] :: ${meta}`);
 
