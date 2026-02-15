@@ -29,6 +29,7 @@ Minimal VS Code language support for Org2.
 - LSP backlink code lenses (`textDocument/codeLens`) on `:ID:` properties (click runs `org2.roamShowBacklinksById`)
 - LSP linked editing ranges (`textDocument/linkedEditingRange`) for synchronized Org ID edits across `[[id:...]]` links and `:ID:` properties
 - LSP document colors (`textDocument/documentColor` + `textDocument/colorPresentation`) for Org hex literals (`#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`)
+- LSP inlay hints (`textDocument/inlayHint`) for unlabeled Org ID links (`[[id:...]]`) using resolved heading titles
 
 ## Link rendering note (best-effort)
 
