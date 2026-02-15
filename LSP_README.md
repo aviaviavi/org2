@@ -64,7 +64,7 @@ Content-Length: 87
   - `workspace/symbol` - Search headings across workspace Org files
   - `textDocument/documentLink` - Clickable link targets for file/id/URL links
   - `textDocument/hover` - Tooltips for links, TODO keywords, and planning keywords
-  - `textDocument/completion` - TODO/planning keyword, timestamp, and `[[id:...]]` target completions
+  - `textDocument/completion` - TODO/planning keyword, timestamp, and `[[id:...]]`/file-link target completions
   - `textDocument/signatureHelp` - Planning timestamp signature hints (`SCHEDULED:` / `DEADLINE:` active vs inactive forms)
   - `textDocument/rename` (+ `textDocument/prepareRename`) - Rename Org IDs safely
     - Renames `[[id:...]]` link targets

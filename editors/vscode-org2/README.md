@@ -17,7 +17,7 @@ Minimal VS Code language support for Org2.
 - LSP go-to-definition + go-to-declaration + go-to-type-definition + go-to-implementation for Org file/id links (`textDocument/definition` + `textDocument/declaration` + `textDocument/typeDefinition` + `textDocument/implementation`)
 - LSP hover tooltips for Org links, TODO keywords, and planning keywords (`SCHEDULED:` / `DEADLINE:`)
 - LSP signature help for planning timestamps (`textDocument/signatureHelp` with active/inactive timestamp forms)
-- LSP completion for TODO/planning keywords, timestamps, and Org ID link targets (`textDocument/completion`)
+- LSP completion for TODO/planning keywords, timestamps, and Org ID/file link targets (`textDocument/completion`)
 - LSP document highlights for in-file ID/file references under cursor
 - LSP rename for Org ID links (`[[id:...]]`) and `:ID:` property values
 - LSP quick-fix code actions for parser whitespace issues (CRLF line endings and tab characters)
