@@ -401,12 +401,17 @@
         "org2.roam.dailiesDir": {
           "type": "string",
           "default": "",
-          "description": "Root directory for Org2 Roam dailies files (YYYY-MM-DD.org2). If empty, falls back to org2.agenda.dir, then the VS Code workspace folder."
+          "description": "Root directory for Org2 Roam dailies files (YYYY-MM-DD.org2). If empty, falls back to org2.roam.indexDir, then org2.agenda.dir, then the VS Code workspace folder."
+        },
+        "org2.roam.indexDir": {
+          "type": "string",
+          "default": "",
+          "description": "Root directory for Org2 Roam ID/query/backlinks/db-sync operations. Absolute paths are used directly; relative paths are resolved against org2.agenda.dir (or workspace root). If empty, uses org2.agenda.dir/workspace root."
         },
         "org2.roam.nodesDir": {
           "type": "string",
           "default": "",
-          "description": "Directory for Org2 Roam node creation (`org2 roam node new`). Absolute paths are used directly; relative paths are resolved against org2.agenda.dir (or workspace root). If empty, uses org2.agenda.dir/workspace root."
+          "description": "Directory for Org2 Roam node creation (`org2 roam node new`). Absolute paths are used directly; relative paths are resolved against org2.roam.indexDir (or org2.agenda.dir/workspace root). If empty, uses org2.roam.indexDir or org2.agenda.dir/workspace root."
         },
         "org2.agenda.files": {
           "type": "array",

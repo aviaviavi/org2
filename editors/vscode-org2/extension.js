@@ -474,19 +474,27 @@ function getAgendaRootDir() {
   return getWorkspaceRoot() || process.cwd();
 }
 
+function getRoamIndexRootDir() {
+  const cfg = vscode.workspace.getConfiguration('org2');
+  const configured = String(cfg.get('roam.indexDir', '') || '').trim();
+  if (!configured) return getAgendaRootDir();
+  if (path.isAbsolute(configured)) return configured;
+  return path.resolve(getAgendaRootDir(), configured);
+}
+
 function getRoamDailiesRootDir() {
   const cfg = vscode.workspace.getConfiguration('org2');
   const configured = String(cfg.get('roam.dailiesDir', '') || '').trim();
   if (configured) return configured;
-  return getAgendaRootDir();
+  return getRoamIndexRootDir();
 }
 
 function getRoamNodesRootDir() {
   const cfg = vscode.workspace.getConfiguration('org2');
   const configured = String(cfg.get('roam.nodesDir', '') || '').trim();
-  if (!configured) return getAgendaRootDir();
+  if (!configured) return getRoamIndexRootDir();
   if (path.isAbsolute(configured)) return configured;
-  return path.resolve(getAgendaRootDir(), configured);
+  return path.resolve(getRoamIndexRootDir(), configured);
 }
 
 function formatDateYYYYMMDD(d) {
@@ -2040,7 +2048,7 @@ function activate(context) {
       try {
         out = await vscode.window.withProgress(
           { location: vscode.ProgressLocation.Notification, title: 'Org2: Creating roam node', cancellable: false },
-          async () => await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() })
+          async () => await execFileAsync(finalCmd, finalArgs, { cwd: root })
         );
       } catch (e) {
         const stderr = e && e.stderr ? String(e.stderr).trim() : '';
@@ -2117,7 +2125,7 @@ function activate(context) {
 
       let out;
       try {
-        out = await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
+        out = await execFileAsync(finalCmd, finalArgs, { cwd: getRoamIndexRootDir() });
       } catch (e) {
         vscode.window.showErrorMessage(`Org2: failed to ensure ID: ${String(e && e.message ? e.message : e)}`);
         return;
@@ -2195,7 +2203,7 @@ function activate(context) {
       const parsedLink = parseRoamIdLink(rawInput);
       let title = parsedLink && parsedLink.title ? parsedLink.title : '';
       if (!title) {
-        title = await suggestRoamLinkTitleById(uuid, getAgendaRootDir());
+        title = await suggestRoamLinkTitleById(uuid, getRoamIndexRootDir());
       }
       if (!title) title = uuid.slice(0, 8);
 
@@ -2224,7 +2232,7 @@ function activate(context) {
         }
       }
 
-      const root = getAgendaRootDir();
+      const root = getRoamIndexRootDir();
       const selected = editor.selection && !editor.selection.isEmpty ? doc.getText(editor.selection) : '';
       const initialIdInput = extractRoamUuid(selected) ? String(selected).trim() : '';
 
@@ -2419,7 +2427,7 @@ function activate(context) {
       }
     }
 
-    const rootDir = getAgendaRootDir();
+    const rootDir = getRoamIndexRootDir();
     const cursor = editor.selection.active;
 
     const ensureArgs = [
@@ -2617,7 +2625,7 @@ function activate(context) {
         return;
       }
 
-      const loaded = await loadBacklinksById(uuid, getAgendaRootDir());
+      const loaded = await loadBacklinksById(uuid, getRoamIndexRootDir());
       if (!loaded) return;
 
       await pickAndOpenBacklinkSource(loaded);
@@ -2644,7 +2652,7 @@ function activate(context) {
         return;
       }
 
-      const loaded = await loadBacklinksById(uuid, getAgendaRootDir());
+      const loaded = await loadBacklinksById(uuid, getRoamIndexRootDir());
       if (!loaded) return;
 
       await showBacklinksDocument(loaded, {
@@ -2655,9 +2663,9 @@ function activate(context) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.roamDbSync', async () => {
-      const root = getAgendaRootDir();
+      const root = getRoamIndexRootDir();
       if (!root) {
-        vscode.window.showWarningMessage('Org2: no agenda root dir configured (set org2.agenda.dir or open a workspace).');
+        vscode.window.showWarningMessage('Org2: no Roam index dir configured (set org2.roam.indexDir or org2.agenda.dir, or open a workspace).');
         return;
       }
 
@@ -2767,7 +2775,7 @@ function activate(context) {
         return;
       }
 
-      const root = getAgendaRootDir();
+      const root = getRoamIndexRootDir();
 
       // Prefer the CLI query (supports file-level + headline IDs, and can return multiple matches).
       let results = [];
