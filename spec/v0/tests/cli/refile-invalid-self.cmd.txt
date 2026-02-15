@@ -1,0 +1,1 @@
+refile --file "spec/v0/tests/cli/refile-invalid-self.input.txt" --pos 1 --to-file "spec/v0/tests/cli/refile-invalid-self.input.txt" --to-pos 2

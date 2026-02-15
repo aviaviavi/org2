@@ -51,20 +51,22 @@ The extension can toggle/set TODO keywords on the current headline via the `org2
 
 Implementation detail: the extension saves the file (if needed), runs `org2 todo toggle|set --file ... --line ... --apply` (and adds `--logbook` when `org2.todo.writeTransitionLogbook` is enabled), then refreshes the buffer from disk. By default it restores the prior cursor/selection; this can be disabled with `org2.editor.restoreSelectionAfterCliApply` if your setup still auto-expands folds. You can also disable the explicit refresh (`org2.editor.refreshAfterCliApply`) to rely on VS Code file watching and avoid refresh-triggered fold churn. With refresh enabled, `org2.editor.skipRefreshWhenInSync` (default true) avoids unnecessary `revertResource` calls when the open document already matches disk after CLI apply, and `org2.editor.allowGlobalRefreshFallback` (default false) controls whether Org2 may fall back to global `workbench.action.files.revert` on older VS Code builds.
 
-## Planning + archiving (MVP)
+## Planning + archiving + refile (MVP)
 
-The extension can edit planning keywords and archive subtrees via the `org2` CLI.
+The extension can edit planning keywords, archive subtrees, and refile subtrees via the `org2` CLI.
 
 - Command: **Org2: Set Scheduled** (`org2.setScheduled`) → prompts for `YYYY-MM-DD`
 - Command: **Org2: Set Scheduled to Today** (`org2.setScheduledToday`) → no date prompt
 - Command: **Org2: Set Deadline** (`org2.setDeadline`) → prompts for `YYYY-MM-DD`
 - Command: **Org2: Set Deadline to Today** (`org2.setDeadlineToday`) → no date prompt
 - Command: **Org2: Archive Subtree** (`org2.archiveSubtree`) → shows a diff preview, then asks for confirmation
+- Command: **Org2: Refile Subtree** (`org2.refileSubtree`) → pick destination file/heading, preview diff, then apply
 
 Implementation detail: the extension saves the file (if needed).
 - Planning edits run `org2 plan set ... --apply`.
 - Archiving runs `org2 archive ... --format diff` first to generate a preview, then `org2 archive ... --apply` if confirmed.
-Afterward, the extension refreshes the edited file from disk (unless `org2.editor.refreshAfterCliApply` is disabled). Agenda-invoked archive edits also refresh the agenda view immediately.
+- Refile runs `org2 refile ... --format diff` for preview, then `org2 refile ... --apply --format json` if confirmed.
+Afterward, the extension refreshes edited files from disk (unless `org2.editor.refreshAfterCliApply` is disabled). Agenda-invoked archive/refile edits also refresh the agenda view immediately.
 
 ## Agenda (MVP)
 
@@ -180,6 +182,7 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
   - `Org2: Set DEADLINE` (`org2.setDeadline`)
   - `Org2: Set DEADLINE to Today` (`org2.setDeadlineToday`)
   - `Org2: Archive Subtree` (`org2.archiveSubtree`)
+  - `Org2: Refile Subtree` (`org2.refileSubtree`)
 - Roam
   - `Org2: Roam Dailies — Go to Today` (`org2.roamDailiesGotoToday`)
   - `Org2: Roam Dailies — Go to Yesterday` (`org2.roamDailiesGotoYesterday`)

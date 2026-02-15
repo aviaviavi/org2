@@ -1,0 +1,17 @@
+{
+  "kind": "refile",
+  "apply": false,
+  "changed": true,
+  "sourceChanged": true,
+  "destinationChanged": true,
+  "sourcePath": "spec/v0/tests/cli/refile-preview-source.input.txt",
+  "destinationPath": "spec/v0/tests/cli/refile-preview-dest.input.txt",
+  "sourceHeadlineLine1": 2,
+  "sourceHeadline": "* TODO Ship docs",
+  "destinationHeadingLine1": 1,
+  "headingLevelDelta": 1,
+  "sourceSubtreeText": "* TODO Ship docs\nBody\n",
+  "newSourceText": "* Inbox\n* Keep\n",
+  "newDestinationText": "* Projects\n\n** TODO Ship docs\nBody\n\n* Someday\n",
+  "diff": "--- spec/v0/tests/cli/refile-preview-source.input.txt\n+++ spec/v0/tests/cli/refile-preview-source.input.txt\n@@ -1,4 +1,2 @@\n * Inbox\n-* TODO Ship docs\n-Body\n * Keep\n\n--- spec/v0/tests/cli/refile-preview-dest.input.txt\n+++ spec/v0/tests/cli/refile-preview-dest.input.txt\n@@ -1,2 +1,6 @@\n * Projects\n+\n+** TODO Ship docs\n+Body\n+\n * Someday\n"
+}
