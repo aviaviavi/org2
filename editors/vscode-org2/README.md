@@ -30,6 +30,7 @@ Minimal VS Code language support for Org2.
 - LSP linked editing ranges (`textDocument/linkedEditingRange`) for synchronized Org ID edits across `[[id:...]]` links and `:ID:` properties
 - LSP document colors (`textDocument/documentColor` + `textDocument/colorPresentation`) for Org hex literals (`#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`)
 - LSP inlay hints (`textDocument/inlayHint`) for unlabeled Org ID/file links (`[[id:...]]`, `[[file:...]]`) using resolved heading/title metadata
+- LSP call hierarchy for Org ID links (`textDocument/prepareCallHierarchy` + `callHierarchy/incomingCalls` + `callHierarchy/outgoingCalls`)
 
 ## Link rendering note (best-effort)
 
