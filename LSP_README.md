@@ -66,9 +66,10 @@ Content-Length: 87
   - `textDocument/hover` - Tooltips for links, TODO keywords, and planning keywords
   - `textDocument/completion` - TODO/planning keyword, timestamp, and `[[id:...]]`/file-link target completions
   - `textDocument/signatureHelp` - Planning timestamp signature hints (`SCHEDULED:` / `DEADLINE:` active vs inactive forms)
-  - `textDocument/rename` (+ `textDocument/prepareRename`) - Rename Org IDs safely
+  - `textDocument/rename` (+ `textDocument/prepareRename`) - Rename Org ID and file-link targets safely
     - Renames `[[id:...]]` link targets
     - Renames matching `:ID:` property values
+    - Renames matching file-link targets while preserving `file:` vs bare-link style per document
     - Returns workspace edits across open + workspace Org files
   - `textDocument/codeAction` - Quick fixes for parser-only whitespace issues
     - Convert CRLF documents to LF line endings
