@@ -349,6 +349,10 @@ class LSPServer {
             },
             documentFormattingProvider: true,
             documentRangeFormattingProvider: true,
+            documentOnTypeFormattingProvider: {
+              firstTriggerCharacter: "|",
+              moreTriggerCharacter: ["\n"],
+            },
             selectionRangeProvider: true,
             semanticTokensProvider: {
               legend: SEMANTIC_TOKEN_LEGEND,
@@ -585,6 +589,16 @@ class LSPServer {
         }
 
         const edits = this.getRangeFormattingEdits(doc.text, range);
+        this.sendResponse(id, edits);
+      } else if (method === "textDocument/onTypeFormatting") {
+        const { textDocument, position, ch } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, []);
+          return;
+        }
+
+        const edits = this.getOnTypeFormattingEdits(doc.text, position, String(ch || ""));
         this.sendResponse(id, edits);
       } else if (method === "textDocument/selectionRange") {
         const { textDocument, positions } = params;
@@ -1128,6 +1142,44 @@ class LSPServer {
         newText: normalizedFormattedText,
       },
     ];
+  }
+
+  private getOnTypeFormattingEdits(text: string, position: Position, triggerCharacter: string): TextEdit[] {
+    if (triggerCharacter !== "|" && triggerCharacter !== "\n") {
+      return [];
+    }
+
+    const lines = text.split("\n");
+    if (lines.length === 0) {
+      return [];
+    }
+
+    const maxLine = lines.length - 1;
+    const rawLine = this.clampLine(position?.line, maxLine);
+    const targetLine = triggerCharacter === "\n" ? Math.max(0, rawLine - 1) : rawLine;
+    if (!this.isTableLikeLine(lines[targetLine] || "")) {
+      return [];
+    }
+
+    let startLine = targetLine;
+    while (startLine > 0 && this.isTableLikeLine(lines[startLine - 1] || "")) {
+      startLine -= 1;
+    }
+
+    let endLine = targetLine;
+    while (endLine + 1 < lines.length && this.isTableLikeLine(lines[endLine + 1] || "")) {
+      endLine += 1;
+    }
+
+    const endCharacter = lines[endLine]?.length ?? 0;
+    return this.getRangeFormattingEdits(text, {
+      start: { line: startLine, character: 0 },
+      end: { line: endLine, character: endCharacter },
+    });
+  }
+
+  private isTableLikeLine(line: string): boolean {
+    return /^\s*\|/.test(line);
   }
 
   private getSelectionRanges(text: string, positions: Position[]): SelectionRange[] {
