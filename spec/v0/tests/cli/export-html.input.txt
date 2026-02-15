@@ -1,0 +1,13 @@
+#+TITLE: Export Fixture
+
+* TODO Ship publishing flow :work:
+SCHEDULED: <2026-02-15 Sun>
+Paragraph with a [[https://example.com][link]].
+
+- [ ] First bullet
+- [X] Done bullet
+
+| Name | Value |
+|------+-------|
+| Foo  | 1     |
+| Bar  | 2     |
