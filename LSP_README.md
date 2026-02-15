@@ -56,6 +56,7 @@ Content-Length: 87
     - Lists
 
   - `textDocument/definition` - Go to definition for `[[file:...]]` and `[[id:...]]` links
+  - `textDocument/declaration` - Go to declaration for `[[file:...]]` and `[[id:...]]` links
   - `textDocument/references` - Find references for `[[file:...]]` and `[[id:...]]` links
   - `textDocument/documentHighlight` - Highlight in-file ID/file references under cursor
   - `workspace/symbol` - Search headings across workspace Org files

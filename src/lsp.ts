@@ -325,6 +325,7 @@ class LSPServer {
             documentSymbolProvider: true,
             foldingRangeProvider: true,
             definitionProvider: true,
+            declarationProvider: true,
             referencesProvider: true,
             workspaceSymbolProvider: true,
             documentLinkProvider: true,
@@ -426,6 +427,22 @@ class LSPServer {
           this.sendResponse(id, []);
         }
       } else if (method === "textDocument/definition") {
+        const { textDocument, position } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, null);
+          return;
+        }
+
+        const target = this.extractLinkTargetAtPosition(doc.text, position);
+        if (!target) {
+          this.sendResponse(id, null);
+          return;
+        }
+
+        const location = this.resolveDefinitionLocation(doc.uri, target);
+        this.sendResponse(id, location ? [location] : null);
+      } else if (method === "textDocument/declaration") {
         const { textDocument, position } = params;
         const doc = this.documents.get(textDocument.uri);
         if (!doc) {
