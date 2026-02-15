@@ -404,6 +404,18 @@ class LSPServer {
             colorProvider: true,
             inlayHintProvider: true,
             callHierarchyProvider: true,
+            workspace: {
+              fileOperations: {
+                willRename: {
+                  filters: [
+                    {
+                      scheme: "file",
+                      pattern: { glob: "**/*.{org,org2}" },
+                    },
+                  ],
+                },
+              },
+            },
           },
           serverInfo: {
             name: "org2-lsp",
@@ -730,6 +742,9 @@ class LSPServer {
       } else if (method === "callHierarchy/outgoingCalls") {
         const calls = this.getOutgoingCallHierarchy(params?.item);
         this.sendResponse(id, calls);
+      } else if (method === "workspace/willRenameFiles") {
+        const edits = this.buildWorkspaceWillRenameFilesEdit(Array.isArray(params?.files) ? params.files : []);
+        this.sendResponse(id, edits);
       } else if (method === "workspace/symbol") {
         const query = String(params?.query || "").trim();
         const symbols = this.findWorkspaceSymbols(query);
@@ -3401,6 +3416,100 @@ class LSPServer {
     }
 
     return rendered;
+  }
+
+  private buildWorkspaceWillRenameFilesEdit(files: Array<{ oldUri?: string; newUri?: string }>): WorkspaceEdit | null {
+    if (!Array.isArray(files) || files.length === 0) {
+      return null;
+    }
+
+    const renameTargets = new Map<string, string>();
+    for (const file of files) {
+      const oldPath = this.filePathFromUri(String(file?.oldUri || ""));
+      const newPath = this.filePathFromUri(String(file?.newUri || ""));
+      if (!oldPath || !newPath || oldPath === newPath) {
+        continue;
+      }
+      renameTargets.set(oldPath, newPath);
+    }
+
+    if (renameTargets.size === 0) {
+      return null;
+    }
+
+    const movedDocumentPaths = new Set(renameTargets.keys());
+    const editsByUri = new Map<string, TextEdit[]>();
+    const seenEdits = new Set<string>();
+    const addEdit = (uri: string, edit: TextEdit) => {
+      const key = `${uri}:${edit.range.start.line}:${edit.range.start.character}:${edit.range.end.line}:${edit.range.end.character}:${edit.newText}`;
+      if (seenEdits.has(key)) {
+        return;
+      }
+      seenEdits.add(key);
+
+      const existing = editsByUri.get(uri);
+      if (existing) {
+        existing.push(edit);
+      } else {
+        editsByUri.set(uri, [edit]);
+      }
+    };
+
+    for (const doc of this.collectReferenceDocuments("")) {
+      const docPath = this.filePathFromUri(doc.uri);
+      if (docPath && movedDocumentPaths.has(docPath)) {
+        // Skip links in documents that are themselves being moved because their
+        // relative link base is changing in the same operation.
+        continue;
+      }
+
+      for (const link of this.findLinkTargets(doc.text)) {
+        const targetPath = this.normalizeFileLinkPath(doc.uri, link.target);
+        if (!targetPath) {
+          continue;
+        }
+
+        const renamedPath = renameTargets.get(targetPath);
+        if (!renamedPath) {
+          continue;
+        }
+
+        const targetKey = this.normalizeFileLinkTargetKey(doc.uri, link.target);
+        let searchSuffix = "";
+        if (targetKey) {
+          const separatorIndex = targetKey.indexOf("::");
+          if (separatorIndex >= 0) {
+            searchSuffix = targetKey.slice(separatorIndex + 2).trim();
+          }
+        }
+
+        const replacement = this.formatRenamedFileLinkTarget(doc.uri, link.target, renamedPath, searchSuffix);
+        if (!replacement || replacement === link.target) {
+          continue;
+        }
+
+        addEdit(doc.uri, {
+          range: link.targetRange,
+          newText: replacement,
+        });
+      }
+    }
+
+    if (editsByUri.size === 0) {
+      return null;
+    }
+
+    const changes: Record<string, TextEdit[]> = {};
+    for (const [uri, edits] of editsByUri.entries()) {
+      changes[uri] = edits.sort((a, b) => {
+        if (a.range.start.line !== b.range.start.line) {
+          return a.range.start.line - b.range.start.line;
+        }
+        return a.range.start.character - b.range.start.character;
+      });
+    }
+
+    return { changes };
   }
 
   private collectReferenceDocuments(sourceUri: string): Array<{ uri: string; text: string }> {

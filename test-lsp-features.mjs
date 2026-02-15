@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Test LSP feature coverage (symbols, folding, definition/declaration/typeDefinition/implementation navigation, highlights, rename, linked editing, code actions, formatting, selection ranges, signature help, semantic tokens, code lenses, document colors, inlay hints, call hierarchy)
+ * Test LSP feature coverage (symbols, folding, definition/declaration/typeDefinition/implementation navigation, highlights, rename, linked editing, code actions, formatting, selection ranges, signature help, semantic tokens, code lenses, document colors, inlay hints, call hierarchy, workspace file-rename hooks)
  */
 
 import { spawn } from "node:child_process";
@@ -168,6 +168,9 @@ async function testLSPFeatures() {
         const typeDefinitionOk = capabilities?.typeDefinitionProvider === true;
         const implementationOk = capabilities?.implementationProvider === true;
         const callHierarchyOk = capabilities?.callHierarchyProvider === true;
+        const willRenameFilesOk =
+          Array.isArray(capabilities?.workspace?.fileOperations?.willRename?.filters) &&
+          capabilities.workspace.fileOperations.willRename.filters.length > 0;
         if (
           capabilities &&
           capabilities.signatureHelpProvider &&
@@ -179,10 +182,11 @@ async function testLSPFeatures() {
           declarationOk &&
           typeDefinitionOk &&
           implementationOk &&
-          callHierarchyOk
+          callHierarchyOk &&
+          willRenameFilesOk
         ) {
           console.log(
-            "✓ Initialize response received (signatureHelp + semanticTokens + codeLens + linkedEditingRange + documentColor + inlayHint + declaration + typeDefinition + implementation + callHierarchy advertised)\n"
+            "✓ Initialize response received (signatureHelp + semanticTokens + codeLens + linkedEditingRange + documentColor + inlayHint + declaration + typeDefinition + implementation + callHierarchy + workspace/willRenameFiles advertised)\n"
           );
           testsPassed++;
         } else {

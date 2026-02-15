@@ -71,6 +71,9 @@ Content-Length: 87
     - Renames matching `:ID:` property values
     - Renames matching file-link targets while preserving `file:` vs bare-link style per document
     - Returns workspace edits across open + workspace Org files
+  - `workspace/willRenameFiles` - Updates matching Org file-link targets when files are renamed in the editor workspace
+    - Preserves `file:` vs bare-link style and existing `::search` suffixes
+    - Returns workspace edits across open + workspace Org files
   - `textDocument/codeAction` - Quick fixes for parser-only whitespace issues
     - Convert CRLF documents to LF line endings
     - Replace tab characters with two spaces
