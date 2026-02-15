@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Test LSP feature coverage (symbols, folding, highlights, rename, linked editing, code actions, formatting, selection ranges, signature help, semantic tokens, code lenses, document colors)
+ * Test LSP feature coverage (symbols, folding, declaration/definition navigation, highlights, rename, linked editing, code actions, formatting, selection ranges, signature help, semantic tokens, code lenses, document colors)
  */
 
 import { spawn } from "node:child_process";
@@ -138,6 +138,7 @@ async function testLSPFeatures() {
   return new Promise((resolve) => {
     setTimeout(() => {
       const renameLinkPos = findPosition(testOrgContent, "id:abc-123");
+      const declarationPos = findPosition(testOrgContent, ":ID: abc-123");
       const scheduledKeywordPos = findPosition(signatureHelpOrgContent, "SCHEDULED:");
       const deadlineKeywordPos = findPosition(signatureHelpOrgContent, "DEADLINE:");
 
@@ -162,16 +163,18 @@ async function testLSPFeatures() {
         const codeLensOk = capabilities?.codeLensProvider?.resolveProvider === false;
         const linkedEditingOk = capabilities?.linkedEditingRangeProvider === true;
         const documentColorOk = capabilities?.colorProvider === true;
+        const declarationOk = capabilities?.declarationProvider === true;
         if (
           capabilities &&
           capabilities.signatureHelpProvider &&
           semanticLegendOk &&
           codeLensOk &&
           linkedEditingOk &&
-          documentColorOk
+          documentColorOk &&
+          declarationOk
         ) {
           console.log(
-            "✓ Initialize response received (signatureHelp + semanticTokens + codeLens + linkedEditingRange + documentColor advertised)\n"
+            "✓ Initialize response received (signatureHelp + semanticTokens + codeLens + linkedEditingRange + documentColor + declaration advertised)\n"
           );
           testsPassed++;
         } else {
@@ -353,58 +356,94 @@ async function testLSPFeatures() {
                     }
                     console.log();
 
-                    // Test 8: CodeAction quick fixes (CRLF + tabs)
-                    console.log("Test 8: CodeAction");
-                    sendMessage(server, {
-                      jsonrpc: "2.0",
-                      method: "textDocument/didOpen",
-                      params: {
-                        textDocument: {
-                          uri: "file:///quickfix.org",
-                          languageId: "org",
-                          version: 1,
-                          text: quickFixOrgContent,
-                        },
-                      },
-                    });
-
-                    setTimeout(() => {
+                    // Test 7b: Declaration (ID link target)
+                    console.log("Test 7b: Declaration");
+                    if (!renameLinkPos || !declarationPos) {
+                      console.log("✗ Declaration skipped (missing token position)\n");
+                      testsFailed++;
+                    } else {
                       sendMessage(server, {
                         jsonrpc: "2.0",
-                        id: 7,
-                        method: "textDocument/codeAction",
+                        id: 18,
+                        method: "textDocument/declaration",
                         params: {
-                          textDocument: { uri: "file:///quickfix.org" },
-                          range: {
-                            start: { line: 0, character: 0 },
-                            end: { line: 1, character: 5 },
-                          },
-                          context: {
-                            diagnostics: [
-                              {
-                                range: {
-                                  start: { line: 0, character: 0 },
-                                  end: { line: 0, character: 0 },
-                                },
-                                severity: 1,
-                                message: "Unsupported line endings: CRLF",
-                                code: "org2-parser",
-                              },
-                              {
-                                range: {
-                                  start: { line: 1, character: 0 },
-                                  end: { line: 1, character: 1 },
-                                },
-                                severity: 1,
-                                message: "Unsupported construct: tab character",
-                                code: "org2-parser",
-                              },
-                            ],
+                          textDocument: { uri: "file:///test.org" },
+                          position: { line: renameLinkPos.line, character: renameLinkPos.character + 4 },
+                        },
+                      });
+                    }
+
+                    setTimeout(() => {
+                      const declarationResponse = allResponses.find((r) => r.id === 18);
+                      const declarations = Array.isArray(declarationResponse?.result) ? declarationResponse.result : null;
+                      const hasDeclaration = declarations?.some(
+                        (location) =>
+                          location?.uri === "file:///test.org" &&
+                          location?.range?.start?.line === declarationPos?.line &&
+                          location?.range?.start?.character === 0
+                      );
+
+                      if (declarations && hasDeclaration) {
+                        console.log(`✓ Declaration returned ${declarations.length} location(s) for id target`);
+                        testsPassed++;
+                      } else {
+                        console.log(`✗ Declaration missing expected ID location: ${JSON.stringify(declarationResponse)}`);
+                        testsFailed++;
+                      }
+                      console.log();
+
+                      // Test 8: CodeAction quick fixes (CRLF + tabs)
+                      console.log("Test 8: CodeAction");
+                      sendMessage(server, {
+                        jsonrpc: "2.0",
+                        method: "textDocument/didOpen",
+                        params: {
+                          textDocument: {
+                            uri: "file:///quickfix.org",
+                            languageId: "org",
+                            version: 1,
+                            text: quickFixOrgContent,
                           },
                         },
                       });
 
                       setTimeout(() => {
+                        sendMessage(server, {
+                          jsonrpc: "2.0",
+                          id: 7,
+                          method: "textDocument/codeAction",
+                          params: {
+                            textDocument: { uri: "file:///quickfix.org" },
+                            range: {
+                              start: { line: 0, character: 0 },
+                              end: { line: 1, character: 5 },
+                            },
+                            context: {
+                              diagnostics: [
+                                {
+                                  range: {
+                                    start: { line: 0, character: 0 },
+                                    end: { line: 0, character: 0 },
+                                  },
+                                  severity: 1,
+                                  message: "Unsupported line endings: CRLF",
+                                  code: "org2-parser",
+                                },
+                                {
+                                  range: {
+                                    start: { line: 1, character: 0 },
+                                    end: { line: 1, character: 1 },
+                                  },
+                                  severity: 1,
+                                  message: "Unsupported construct: tab character",
+                                  code: "org2-parser",
+                                },
+                              ],
+                            },
+                          },
+                        });
+
+                        setTimeout(() => {
                         const codeActionResponse = allResponses.find((r) => r.id === 7);
                         const actions = Array.isArray(codeActionResponse?.result) ? codeActionResponse.result : null;
                         if (actions) {
@@ -893,6 +932,7 @@ async function testLSPFeatures() {
             }, 300);
           }, 300);
         }, 300);
+      }, 300);
       }, 300);
     }, 500);
   });
