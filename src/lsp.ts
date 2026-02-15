@@ -3059,42 +3059,88 @@ class LSPServer {
   }
 
   private getLinkedEditingRanges(sourceUri: string, text: string, position: Position): LinkedEditingRanges | null {
-    const target = this.extractRenameTarget(sourceUri, text, position);
-    if (!target || target.kind !== "id") {
+    const idTarget = this.extractRenameTarget(sourceUri, text, position);
+    if (idTarget && idTarget.kind === "id") {
+      const ranges: Range[] = [];
+      const seen = new Set<string>();
+
+      const addRange = (range: Range) => {
+        const key = `${range.start.line}:${range.start.character}:${range.end.line}:${range.end.character}`;
+        if (seen.has(key)) {
+          return;
+        }
+        seen.add(key);
+        ranges.push(range);
+      };
+
+      for (const link of this.findLinkTargets(text)) {
+        if (!link.target.toLowerCase().startsWith("id:")) {
+          continue;
+        }
+        if (this.normalizeIdValue(link.target) !== idTarget.targetId) {
+          continue;
+        }
+        addRange(link.targetRange);
+      }
+
+      for (const range of this.findIdDefinitionValueRanges(text, idTarget.targetId)) {
+        addRange(range);
+      }
+
+      if (ranges.length < 2) {
+        return null;
+      }
+
+      ranges.sort((a, b) => {
+        if (a.start.line !== b.start.line) {
+          return a.start.line - b.start.line;
+        }
+        if (a.start.character !== b.start.character) {
+          return a.start.character - b.start.character;
+        }
+        if (a.end.line !== b.end.line) {
+          return a.end.line - b.end.line;
+        }
+        return a.end.character - b.end.character;
+      });
+
+      return {
+        ranges,
+        wordPattern: "[A-Za-z0-9:_-]+",
+      };
+    }
+
+    const activeLink = this.extractLinkAtPosition(text, position);
+    if (!activeLink || !this.isPositionInRange(position, activeLink.targetRange)) {
       return null;
     }
 
-    const ranges: Range[] = [];
+    const activeFileKey = this.normalizeFileLinkTargetKey(sourceUri, activeLink.target);
+    if (!activeFileKey) {
+      return null;
+    }
+
+    const fileRanges: Range[] = [];
     const seen = new Set<string>();
-
-    const addRange = (range: Range) => {
-      const key = `${range.start.line}:${range.start.character}:${range.end.line}:${range.end.character}`;
-      if (seen.has(key)) {
-        return;
-      }
-      seen.add(key);
-      ranges.push(range);
-    };
-
     for (const link of this.findLinkTargets(text)) {
-      if (!link.target.toLowerCase().startsWith("id:")) {
+      const key = this.normalizeFileLinkTargetKey(sourceUri, link.target);
+      if (!key || key !== activeFileKey) {
         continue;
       }
-      if (this.normalizeIdValue(link.target) !== target.targetId) {
+
+      const rangeKey = `${link.targetRange.start.line}:${link.targetRange.start.character}:${link.targetRange.end.line}:${link.targetRange.end.character}`;
+      if (seen.has(rangeKey)) {
         continue;
       }
-      addRange(link.targetRange);
+      seen.add(rangeKey);
+      fileRanges.push(link.targetRange);
     }
 
-    for (const range of this.findIdDefinitionValueRanges(text, target.targetId)) {
-      addRange(range);
-    }
-
-    if (ranges.length < 2) {
+    if (fileRanges.length < 2) {
       return null;
     }
 
-    ranges.sort((a, b) => {
+    fileRanges.sort((a, b) => {
       if (a.start.line !== b.start.line) {
         return a.start.line - b.start.line;
       }
@@ -3108,8 +3154,8 @@ class LSPServer {
     });
 
     return {
-      ranges,
-      wordPattern: "[A-Za-z0-9:_-]+",
+      ranges: fileRanges,
+      wordPattern: "[^\\s\\]]+",
     };
   }
 
@@ -3322,7 +3368,7 @@ class LSPServer {
     return ranges;
   }
 
-  private normalizeFileLinkPath(sourceUri: string, target: string): string | null {
+  private normalizeFileLinkTargetKey(sourceUri: string, target: string): string | null {
     if (!sourceUri.startsWith("file://")) {
       return null;
     }
@@ -3336,7 +3382,8 @@ class LSPServer {
       return null;
     }
 
-    const targetPathOnly = fileTarget.split("::")[0]?.trim() ?? "";
+    const targetParts = fileTarget.split("::");
+    const targetPathOnly = targetParts.shift()?.trim() ?? "";
     if (!targetPathOnly) {
       return null;
     }
@@ -3348,7 +3395,17 @@ class LSPServer {
 
     const sourcePath = fileURLToPath(sourceUri);
     const baseDir = path.dirname(sourcePath);
-    return path.resolve(baseDir, targetPathOnly);
+    const absolutePath = path.resolve(baseDir, targetPathOnly);
+    const searchSuffix = targetParts.length > 0 ? targetParts.join("::").trim() : "";
+    return `${absolutePath}::${searchSuffix}`;
+  }
+
+  private normalizeFileLinkPath(sourceUri: string, target: string): string | null {
+    const key = this.normalizeFileLinkTargetKey(sourceUri, target);
+    if (!key) {
+      return null;
+    }
+    return key.split("::")[0] || null;
   }
 
   private filePathFromUri(uri: string): string | null {
