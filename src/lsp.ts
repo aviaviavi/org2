@@ -180,6 +180,13 @@ interface ColorPresentation {
   textEdit?: TextEdit;
 }
 
+interface InlayHint {
+  position: Position;
+  label: string;
+  paddingLeft?: boolean;
+  paddingRight?: boolean;
+}
+
 interface RenameTarget {
   kind: "id";
   targetId: string;
@@ -363,6 +370,7 @@ class LSPServer {
               resolveProvider: false,
             },
             colorProvider: true,
+            inlayHintProvider: true,
           },
           serverInfo: {
             name: "org2-lsp",
@@ -651,6 +659,16 @@ class LSPServer {
 
         const presentations = this.getColorPresentations(doc.text, color, range);
         this.sendResponse(id, presentations);
+      } else if (method === "textDocument/inlayHint") {
+        const { textDocument, range } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, []);
+          return;
+        }
+
+        const hints = this.getInlayHints(textDocument.uri, doc.text, range);
+        this.sendResponse(id, hints);
       } else if (method === "workspace/symbol") {
         const query = String(params?.query || "").trim();
         const symbols = this.findWorkspaceSymbols(query);
@@ -1684,6 +1702,86 @@ class LSPServer {
     return presentations;
   }
 
+  private getInlayHints(sourceUri: string, text: string, requestedRange?: Range): InlayHint[] {
+    const scanRange = requestedRange ?? this.getFullDocumentRange(text);
+    const idHeadlineLookup = this.buildIdHeadlineLookup(sourceUri);
+    if (idHeadlineLookup.size === 0) {
+      return [];
+    }
+
+    const hints: InlayHint[] = [];
+    const seen = new Set<string>();
+
+    for (const link of this.findLinkTargets(text)) {
+      if (link.hasDescription) {
+        continue;
+      }
+
+      if (!this.rangeContains(scanRange, link.range)) {
+        continue;
+      }
+
+      if (!link.target.toLowerCase().startsWith("id:")) {
+        continue;
+      }
+
+      const normalizedId = this.normalizeIdValue(link.target);
+      if (!normalizedId) {
+        continue;
+      }
+
+      const title = idHeadlineLookup.get(normalizedId);
+      if (!title) {
+        continue;
+      }
+
+      const key = `${link.range.end.line}:${link.range.end.character}:${normalizedId}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+
+      hints.push({
+        position: { ...link.range.end },
+        label: `=> ${title}`,
+        paddingLeft: true,
+      });
+    }
+
+    return hints;
+  }
+
+  private buildIdHeadlineLookup(sourceUri: string): Map<string, string> {
+    const entries = new Map<string, string>();
+
+    for (const doc of this.collectReferenceDocuments(sourceUri)) {
+      const lines = doc.text.split("\n");
+      let currentHeadline = "";
+
+      for (const line of lines) {
+        const headlineMatch = line.match(/^\*+\s+(.*)$/);
+        if (headlineMatch) {
+          const headlineTitle = (headlineMatch[1] || "").trim();
+          currentHeadline = headlineTitle.replace(/^[A-Z][A-Z0-9_-]*\s+/, "");
+        }
+
+        const idMatch = line.match(/^\s*:ID:\s*(\S+)\s*$/i);
+        if (!idMatch) {
+          continue;
+        }
+
+        const normalizedId = this.normalizeIdValue(idMatch[1] || "");
+        if (!normalizedId || !currentHeadline || entries.has(normalizedId)) {
+          continue;
+        }
+
+        entries.set(normalizedId, currentHeadline);
+      }
+    }
+
+    return entries;
+  }
+
   private getSingleLineRangeText(text: string, range: Range): string | null {
     const lines = text.split("\n");
     const startLine = range?.start?.line;
@@ -2665,13 +2763,13 @@ class LSPServer {
     return documents;
   }
 
-  private findLinkTargets(text: string): Array<{ target: string; range: Range; targetRange: Range }> {
-    const links: Array<{ target: string; range: Range; targetRange: Range }> = [];
+  private findLinkTargets(text: string): Array<{ target: string; range: Range; targetRange: Range; hasDescription: boolean }> {
+    const links: Array<{ target: string; range: Range; targetRange: Range; hasDescription: boolean }> = [];
     const lines = text.split("\n");
 
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex];
-      const linkRegex = /\[\[([^\]\n]+?)\](?:\[[^\]\n]*\])?\]/g;
+      const linkRegex = /\[\[([^\]\n]+?)\](?:\[([^\]\n]*)\])?\]/g;
       let match: RegExpExecArray | null;
       while ((match = linkRegex.exec(line)) !== null) {
         const rawTarget = match[1] || "";
@@ -2685,6 +2783,7 @@ class LSPServer {
         const targetOffsetInMatch = match[0].indexOf(rawTarget);
         const targetStartChar = targetOffsetInMatch >= 0 ? startChar + targetOffsetInMatch : startChar + 2;
         const targetEndChar = targetStartChar + rawTarget.length;
+        const description = typeof match[2] === "string" ? match[2] : null;
 
         links.push({
           target,
@@ -2696,6 +2795,7 @@ class LSPServer {
             start: { line: lineIndex, character: targetStartChar },
             end: { line: lineIndex, character: targetEndChar },
           },
+          hasDescription: Boolean(description && description.trim()),
         });
       }
     }
