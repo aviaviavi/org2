@@ -20,6 +20,7 @@ Minimal VS Code language support for Org2.
 - LSP completion for TODO/planning keywords, timestamps, and Org ID/file link targets (`textDocument/completion`)
 - LSP document highlights for in-file ID/file references under cursor
 - LSP rename for Org ID links (`[[id:...]]`), `:ID:` property values, and matching file-link targets
+- LSP workspace file-rename edits for Org file links (`workspace/willRenameFiles`)
 - LSP quick-fix code actions for parser whitespace issues (CRLF line endings and tab characters)
 - LSP document formatting (`textDocument/formatting`) for canonical Org table/layout alignment
 - LSP range formatting (`textDocument/rangeFormatting`) for selection-scoped canonical Org cleanup
