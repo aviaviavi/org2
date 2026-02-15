@@ -1,0 +1,22 @@
+{
+  "kind": "export-html-batch",
+  "sourceDir": "spec/v0/tests/cli/export-html-dir-fixture",
+  "outputDir": "spec/v0/tests/cli/export-html-dir-out",
+  "recursive": true,
+  "apply": false,
+  "count": 2,
+  "exported": [
+    {
+      "sourcePath": "spec/v0/tests/cli/export-html-dir-fixture/root-note.org2",
+      "outputPath": "spec/v0/tests/cli/export-html-dir-out/root-note.html",
+      "title": "Root Export Fixture",
+      "changed": true
+    },
+    {
+      "sourcePath": "spec/v0/tests/cli/export-html-dir-fixture/sub/nested-note.org2",
+      "outputPath": "spec/v0/tests/cli/export-html-dir-out/sub/nested-note.html",
+      "title": "Nested Export Fixture",
+      "changed": true
+    }
+  ]
+}

@@ -14,7 +14,7 @@ Minimal VS Code language support for Org2.
   - `[[url]]`
   - `[[url][desc]]`
   - bare `https://...` URLs
-- HTML export command for the active Org/Org2 file (`Org2: Export Current File to HTML`) with preview + write flow
+- HTML export commands for the active file and workspace (`Org2: Export Current File to HTML`, `Org2: Export Workspace Org Files to HTML`)
 - LSP go-to-definition + go-to-declaration + go-to-type-definition + go-to-implementation for Org file/id links, including file `::search` suffix targets (`textDocument/definition` + `textDocument/declaration` + `textDocument/typeDefinition` + `textDocument/implementation`)
 - LSP hover tooltips for Org links, TODO keywords, and planning keywords (`SCHEDULED:` / `DEADLINE:`)
 - LSP signature help for planning timestamps (`textDocument/signatureHelp` with active/inactive timestamp forms)
@@ -63,12 +63,14 @@ The extension can edit planning keywords, archive subtrees, refile subtrees, and
 - Command: **Org2: Archive Subtree** (`org2.archiveSubtree`) → shows a diff preview, then asks for confirmation
 - Command: **Org2: Refile Subtree** (`org2.refileSubtree`) → pick destination file/heading, preview diff, then apply
 - Command: **Org2: Export Current File to HTML** (`org2.exportCurrentFileHtml`) → preview generated HTML, then optionally write to disk
+- Command: **Org2: Export Workspace Org Files to HTML** (`org2.exportWorkspaceHtml`) → preview batch export count, then optionally write HTML for all workspace Org files
 
 Implementation detail: the extension saves the file (if needed).
 - Planning edits run `org2 plan set ... --apply`.
 - Archiving runs `org2 archive ... --format diff` first to generate a preview, then `org2 archive ... --apply` if confirmed.
 - Refile runs `org2 refile ... --format diff` for preview, then `org2 refile ... --apply --format json` if confirmed.
-- HTML export runs `org2 export html --file ... --format json` for preview and `org2 export html --file ... --out ... --apply --format json` when writing.
+- Current-file HTML export runs `org2 export html --file ... --format json` for preview and `org2 export html --file ... --out ... --apply --format json` when writing.
+- Workspace HTML export runs `org2 export html --dir <agenda-root> --recursive --out-dir <org2.export.outputDir> --format json` for preview and adds `--apply` when writing.
 Afterward, the extension refreshes edited files from disk (unless `org2.editor.refreshAfterCliApply` is disabled). Agenda-invoked archive/refile edits also refresh the agenda view immediately.
 
 ## Agenda (MVP)
@@ -112,6 +114,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.formatter.fileFilter`: limit workspace formatter check/apply commands to files whose paths contain any comma-separated term (case-insensitive substring match)
 - `org2.formatter.excludeFileFilter`: exclude files from workspace formatter check/apply commands when paths contain any comma-separated term (case-insensitive substring match)
 - `org2.formatter.configFile`: optional `org2.json` path for workspace formatter commands; when set, workspace check/apply uses `org2 fmt --config <path>` instead of scanning `org2.agenda.dir` recursively
+- `org2.export.outputDir`: output directory for `Org2: Export Workspace Org Files to HTML`; absolute paths are used directly, relative paths resolve against `org2.agenda.dir`/workspace root
 - `org2.agenda.sortBy`: optional per-day sort order (`default`, or comma-separated keys like `file,headline,todo,kind,line`)
 - `org2.agenda.recursive`: when scope=`workspace`, whether to scan recursively (default true)
 - `org2.roam.dailiesDir`: optional root directory for Roam dailies (`YYYY-MM-DD.org2`); defaults to `org2.roam.indexDir`, then `org2.agenda.dir`, then workspace root
@@ -173,6 +176,7 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
   - `Org2: Formatter — Preview Current File Diff` (`org2.formatCurrentFilePreviewDiff`)
   - `Org2: Formatter — Apply Current File Formatting` (`org2.formatCurrentFileApply`)
   - `Org2: Export Current File to HTML` (`org2.exportCurrentFileHtml`)
+  - `Org2: Export Workspace Org Files to HTML` (`org2.exportWorkspaceHtml`)
   - `Org2: Agenda Filter` (`org2.pickAgendaFilter`)
 - TODO + planning
   - `Org2: Toggle Todo Status` (`org2.toggleTodo`)
@@ -233,6 +237,7 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
   - `d t` → Set DEADLINE to Today
   - `x` → Archive Subtree
   - `p h` → Export Current File to HTML
+  - `p w` → Export Workspace Org Files to HTML
   - `1` → Fold to heading level 1 (`editor.foldLevel1`)
   - `2` → Fold to heading level 2 (`editor.foldLevel2`)
   - `3` → Fold to heading level 3 (`editor.foldLevel3`)
