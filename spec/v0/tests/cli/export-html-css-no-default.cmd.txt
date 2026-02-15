@@ -1,0 +1,1 @@
+export html --file spec/v0/tests/cli/export-html.input.txt --css /assets/site.css,https://cdn.example.com/theme.css --no-default-style --format json

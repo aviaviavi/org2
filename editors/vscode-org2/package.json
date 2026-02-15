@@ -635,6 +635,16 @@
           "default": "Org2 Export Index",
           "description": "Title used for the generated workspace export index page (`--index-title`). Ignored when org2.export.indexFile is empty."
         },
+        "org2.export.stylesheets": {
+          "type": "string",
+          "default": "",
+          "description": "Optional comma/newline-separated stylesheet URLs or paths passed as repeated `--css` flags to HTML export commands."
+        },
+        "org2.export.includeDefaultStyle": {
+          "type": "boolean",
+          "default": true,
+          "description": "When enabled, HTML export includes Org2's built-in inline stylesheet. Disable to use external CSS only (`--no-default-style`)."
+        },
         "org2.formatOnSave": {
           "type": "boolean",
           "default": true,
