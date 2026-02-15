@@ -187,6 +187,26 @@ interface InlayHint {
   paddingRight?: boolean;
 }
 
+interface CallHierarchyItem {
+  name: string;
+  kind: number;
+  uri: string;
+  range: Range;
+  selectionRange: Range;
+  detail?: string;
+  data?: any;
+}
+
+interface CallHierarchyIncomingCall {
+  from: CallHierarchyItem;
+  fromRanges: Range[];
+}
+
+interface CallHierarchyOutgoingCall {
+  to: CallHierarchyItem;
+  fromRanges: Range[];
+}
+
 interface RenameTarget {
   kind: "id";
   targetId: string;
@@ -371,6 +391,7 @@ class LSPServer {
             },
             colorProvider: true,
             inlayHintProvider: true,
+            callHierarchyProvider: true,
           },
           serverInfo: {
             name: "org2-lsp",
@@ -669,6 +690,22 @@ class LSPServer {
 
         const hints = this.getInlayHints(textDocument.uri, doc.text, range);
         this.sendResponse(id, hints);
+      } else if (method === "textDocument/prepareCallHierarchy") {
+        const { textDocument, position } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, []);
+          return;
+        }
+
+        const items = this.getCallHierarchyItems(textDocument.uri, doc.text, position);
+        this.sendResponse(id, items);
+      } else if (method === "callHierarchy/incomingCalls") {
+        const calls = this.getIncomingCallHierarchy(params?.item);
+        this.sendResponse(id, calls);
+      } else if (method === "callHierarchy/outgoingCalls") {
+        const calls = this.getOutgoingCallHierarchy(params?.item);
+        this.sendResponse(id, calls);
       } else if (method === "workspace/symbol") {
         const query = String(params?.query || "").trim();
         const symbols = this.findWorkspaceSymbols(query);
@@ -1760,6 +1797,297 @@ class LSPServer {
     }
 
     return hints;
+  }
+
+  private getCallHierarchyItems(sourceUri: string, text: string, position: Position): CallHierarchyItem[] {
+    const query = this.extractReferenceQuery(sourceUri, text, position);
+    if (!query || query.kind !== "id") {
+      return [];
+    }
+
+    const item = this.buildIdCallHierarchyItem(sourceUri, query.targetId);
+    return item ? [item] : [];
+  }
+
+  private getIncomingCallHierarchy(item: any): CallHierarchyIncomingCall[] {
+    const targetId = this.extractCallHierarchyTargetId(item);
+    if (!targetId) {
+      return [];
+    }
+
+    const sourceUri = typeof item?.uri === "string" ? item.uri : "";
+    const references = this.findReferenceLocations(
+      sourceUri,
+      {
+        kind: "id",
+        targetId,
+      },
+      false
+    );
+
+    const grouped = new Map<string, CallHierarchyIncomingCall>();
+
+    for (const reference of references) {
+      const fromItem = this.buildCallHierarchyContextItem(reference.uri, reference.range.start.line, `id:${targetId}`);
+      if (!fromItem) {
+        continue;
+      }
+
+      const key = this.callHierarchyItemKey(fromItem);
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.fromRanges.push(reference.range);
+      } else {
+        grouped.set(key, {
+          from: fromItem,
+          fromRanges: [reference.range],
+        });
+      }
+    }
+
+    const calls = Array.from(grouped.values()).map((call) => {
+      const dedupedRanges = new Map<string, Range>();
+      for (const range of call.fromRanges) {
+        const key = `${range.start.line}:${range.start.character}:${range.end.line}:${range.end.character}`;
+        dedupedRanges.set(key, range);
+      }
+
+      return {
+        from: call.from,
+        fromRanges: Array.from(dedupedRanges.values()).sort((a, b) => this.compareRanges(a, b)),
+      };
+    });
+
+    calls.sort((a, b) => this.compareCallHierarchyItems(a.from, b.from));
+    return calls;
+  }
+
+  private getOutgoingCallHierarchy(item: any): CallHierarchyOutgoingCall[] {
+    const targetId = this.extractCallHierarchyTargetId(item);
+    if (!targetId) {
+      return [];
+    }
+
+    const sourceUri = typeof item?.uri === "string" ? item.uri : "";
+    const definition = this.resolveIdDefinitionLocation(sourceUri, `id:${targetId}`);
+    if (!definition) {
+      return [];
+    }
+
+    const text = this.readDocumentText(definition.uri);
+    if (!text) {
+      return [];
+    }
+
+    const lines = text.split("\n");
+    const safeLine = this.clampLine(definition.range.start.line, Math.max(0, lines.length - 1));
+    const enclosing = this.getEnclosingHeadlineRanges(lines, safeLine);
+    const scanRange = enclosing[0] ?? this.getFullDocumentRange(text);
+
+    const grouped = new Map<string, CallHierarchyOutgoingCall>();
+
+    for (const link of this.findLinkTargets(text)) {
+      if (!this.rangeContains(scanRange, link.range)) {
+        continue;
+      }
+
+      if (!link.target.toLowerCase().startsWith("id:")) {
+        continue;
+      }
+
+      const linkedId = this.normalizeIdValue(link.target);
+      if (!linkedId || linkedId === targetId) {
+        continue;
+      }
+
+      const toItem = this.buildIdCallHierarchyItem(definition.uri, linkedId);
+      if (!toItem) {
+        continue;
+      }
+
+      const key = this.callHierarchyItemKey(toItem);
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.fromRanges.push(link.targetRange);
+      } else {
+        grouped.set(key, {
+          to: toItem,
+          fromRanges: [link.targetRange],
+        });
+      }
+    }
+
+    const calls = Array.from(grouped.values()).map((call) => {
+      const dedupedRanges = new Map<string, Range>();
+      for (const range of call.fromRanges) {
+        const key = `${range.start.line}:${range.start.character}:${range.end.line}:${range.end.character}`;
+        dedupedRanges.set(key, range);
+      }
+
+      return {
+        to: call.to,
+        fromRanges: Array.from(dedupedRanges.values()).sort((a, b) => this.compareRanges(a, b)),
+      };
+    });
+
+    calls.sort((a, b) => this.compareCallHierarchyItems(a.to, b.to));
+    return calls;
+  }
+
+  private buildIdCallHierarchyItem(sourceUri: string, targetId: string): CallHierarchyItem | null {
+    const definition = this.resolveIdDefinitionLocation(sourceUri, `id:${targetId}`);
+    if (!definition) {
+      return null;
+    }
+
+    const baseItem = this.buildCallHierarchyContextItem(definition.uri, definition.range.start.line, `id:${targetId}`);
+    if (!baseItem) {
+      return null;
+    }
+
+    return {
+      ...baseItem,
+      detail: `id:${targetId}`,
+      data: {
+        kind: "id",
+        targetId,
+      },
+    };
+  }
+
+  private buildCallHierarchyContextItem(uri: string, lineNumber: number, fallbackName: string): CallHierarchyItem | null {
+    const text = this.readDocumentText(uri);
+    const filePath = this.filePathFromUri(uri);
+    const detail = filePath ? this.formatPathForHover(filePath) : uri;
+
+    if (!text) {
+      const safeLine = Math.max(0, Number.isFinite(lineNumber) ? Math.floor(lineNumber) : 0);
+      const fallbackRange = {
+        start: { line: safeLine, character: 0 },
+        end: { line: safeLine, character: 0 },
+      };
+
+      return {
+        name: fallbackName,
+        kind: SymbolKind.Struct,
+        uri,
+        range: fallbackRange,
+        selectionRange: fallbackRange,
+        detail,
+      };
+    }
+
+    const lines = text.split("\n");
+    const safeLine = this.clampLine(lineNumber, Math.max(0, lines.length - 1));
+    const enclosing = this.getEnclosingHeadlineRanges(lines, safeLine);
+
+    if (enclosing.length > 0) {
+      const headlineRange = enclosing[0];
+      const headlineLine = headlineRange.start.line;
+      const headlineText = lines[headlineLine] ?? "";
+      const headlineTitle = this.extractHeadlineTitleFromLine(headlineText) ?? fallbackName;
+
+      return {
+        name: headlineTitle,
+        kind: SymbolKind.Struct,
+        uri,
+        range: headlineRange,
+        selectionRange: {
+          start: { line: headlineLine, character: 0 },
+          end: { line: headlineLine, character: headlineText.length },
+        },
+        detail,
+      };
+    }
+
+    const lineText = lines[safeLine] ?? "";
+    return {
+      name: fallbackName,
+      kind: SymbolKind.Struct,
+      uri,
+      range: {
+        start: { line: safeLine, character: 0 },
+        end: { line: safeLine, character: lineText.length },
+      },
+      selectionRange: {
+        start: { line: safeLine, character: 0 },
+        end: { line: safeLine, character: lineText.length },
+      },
+      detail,
+    };
+  }
+
+  private extractHeadlineTitleFromLine(line: string): string | null {
+    const match = line.match(/^\*+\s+(.*)$/);
+    if (!match) {
+      return null;
+    }
+
+    const rawTitle = (match[1] || "").trim();
+    if (!rawTitle) {
+      return null;
+    }
+
+    const normalizedTitle = rawTitle.replace(/^[A-Z][A-Z0-9_-]*\s+/, "").trim();
+    return normalizedTitle || rawTitle;
+  }
+
+  private extractCallHierarchyTargetId(item: any): string | null {
+    const rawFromData = typeof item?.data?.targetId === "string" ? item.data.targetId : "";
+    if (rawFromData) {
+      const normalized = this.normalizeIdValue(rawFromData);
+      if (normalized) {
+        return normalized;
+      }
+    }
+
+    const detail = typeof item?.detail === "string" ? item.detail.trim() : "";
+    if (detail.toLowerCase().startsWith("id:")) {
+      const normalized = this.normalizeIdValue(detail);
+      if (normalized) {
+        return normalized;
+      }
+    }
+
+    return null;
+  }
+
+  private readDocumentText(uri: string): string | null {
+    const openDoc = this.documents.get(uri);
+    if (openDoc) {
+      return openDoc.text;
+    }
+
+    const filePath = this.filePathFromUri(uri);
+    if (!filePath || !fs.existsSync(filePath)) {
+      return null;
+    }
+
+    try {
+      return fs.readFileSync(filePath, "utf8");
+    } catch {
+      return null;
+    }
+  }
+
+  private callHierarchyItemKey(item: CallHierarchyItem): string {
+    return `${item.uri}:${item.selectionRange.start.line}:${item.selectionRange.start.character}:${item.selectionRange.end.line}:${item.selectionRange.end.character}`;
+  }
+
+  private compareRanges(a: Range, b: Range): number {
+    const startComparison = this.comparePositions(a.start, b.start);
+    if (startComparison !== 0) {
+      return startComparison;
+    }
+    return this.comparePositions(a.end, b.end);
+  }
+
+  private compareCallHierarchyItems(a: CallHierarchyItem, b: CallHierarchyItem): number {
+    if (a.uri !== b.uri) {
+      return a.uri.localeCompare(b.uri);
+    }
+
+    return this.compareRanges(a.selectionRange, b.selectionRange);
   }
 
   private buildIdHeadlineLookup(sourceUri: string): Map<string, string> {
