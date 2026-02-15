@@ -55,10 +55,10 @@ Content-Length: 87
     - Special blocks (BEGIN_QUOTE, BEGIN_VERSE, etc.)
     - Lists
 
-  - `textDocument/definition` - Go to definition for `[[file:...]]` and `[[id:...]]` links
-  - `textDocument/declaration` - Go to declaration for `[[file:...]]` and `[[id:...]]` links
-  - `textDocument/typeDefinition` - Go to type definition for `[[file:...]]` and `[[id:...]]` links
-  - `textDocument/implementation` - Go to implementation for `[[file:...]]` and `[[id:...]]` links
+  - `textDocument/definition` - Go to definition for `[[file:...]]` and `[[id:...]]` links (including file `::search` suffix targets like `::*Heading`, `::#custom-id`, and `::42`)
+  - `textDocument/declaration` - Go to declaration for `[[file:...]]` and `[[id:...]]` links (including file `::search` suffix targets)
+  - `textDocument/typeDefinition` - Go to type definition for `[[file:...]]` and `[[id:...]]` links (including file `::search` suffix targets)
+  - `textDocument/implementation` - Go to implementation for `[[file:...]]` and `[[id:...]]` links (including file `::search` suffix targets)
   - `textDocument/references` - Find references for `[[file:...]]` and `[[id:...]]` links
   - `textDocument/documentHighlight` - Highlight in-file ID/file references under cursor
   - `workspace/symbol` - Search headings across workspace Org files

@@ -2900,17 +2900,7 @@ class LSPServer {
       return idLocation;
     }
 
-    const absPath = this.normalizeFileLinkPath(sourceUri, target);
-    if (!absPath || !fs.existsSync(absPath)) return null;
-
-    const uri = pathToFileURL(absPath).toString();
-    return {
-      uri,
-      range: {
-        start: { line: 0, character: 0 },
-        end: { line: 0, character: 0 },
-      },
-    };
+    return this.resolveFileLinkDefinitionLocation(sourceUri, target);
   }
 
   private resolveIdDefinitionLocation(sourceUri: string, target: string): Location | null {
@@ -2955,6 +2945,77 @@ class LSPServer {
     }
 
     return null;
+  }
+
+  private resolveFileLinkDefinitionLocation(sourceUri: string, target: string): Location | null {
+    const normalized = this.normalizeRenameFileInput(sourceUri, target);
+    if (!normalized) {
+      return null;
+    }
+
+    const absolutePath = path.resolve(normalized.targetPath);
+    const uri = pathToFileURL(absolutePath).toString();
+    const text = this.readDocumentText(uri);
+    if (!text && !fs.existsSync(absolutePath)) {
+      return null;
+    }
+
+    const line = this.resolveFileLinkSearchLine(text || "", normalized.searchSuffix);
+    return {
+      uri,
+      range: {
+        start: { line, character: 0 },
+        end: { line, character: 0 },
+      },
+    };
+  }
+
+  private resolveFileLinkSearchLine(text: string, searchSuffix: string): number {
+    const lines = text.split("\n");
+    const maxLine = Math.max(0, lines.length - 1);
+    const normalizedSearch = searchSuffix.trim();
+    if (!normalizedSearch || lines.length === 0) {
+      return 0;
+    }
+
+    if (/^\d+$/.test(normalizedSearch)) {
+      const targetLine = Number.parseInt(normalizedSearch, 10);
+      if (Number.isFinite(targetLine) && targetLine > 0) {
+        return this.clampLine(targetLine - 1, maxLine);
+      }
+    }
+
+    if (normalizedSearch.startsWith("*")) {
+      const headingTarget = normalizedSearch.replace(/^\*+\s*/, "").trim();
+      if (headingTarget) {
+        for (let i = 0; i < lines.length; i++) {
+          const title = this.extractHeadlineTitleFromLine(lines[i]);
+          if (title && title === headingTarget) {
+            return i;
+          }
+        }
+      }
+    }
+
+    if (normalizedSearch.startsWith("#")) {
+      const customIdTarget = normalizedSearch.slice(1).trim().toLowerCase();
+      if (customIdTarget) {
+        for (let i = 0; i < lines.length; i++) {
+          const match = lines[i]?.match(/^\s*:CUSTOM_ID:\s*(\S+)\s*$/i);
+          if ((match?.[1] || "").trim().toLowerCase() === customIdTarget) {
+            return i;
+          }
+        }
+      }
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i]?.includes(normalizedSearch)) {
+        return i;
+      }
+    }
+
+    return 0;
   }
 
   private extractReferenceQuery(sourceUri: string, text: string, position: Position): ReferenceQuery | null {
