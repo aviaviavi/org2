@@ -82,7 +82,7 @@ Content-Length: 87
   - `textDocument/linkedEditingRange` - Synchronized ID editing ranges across `[[id:...]]` links and matching `:ID:` property values
   - `textDocument/documentColor` + `textDocument/colorPresentation` - Hex color literal detection (`#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`) with editable presentation labels
   - `textDocument/inlayHint` - Inlay hints for unlabeled `[[id:...]]` and `[[file:...]]` links (resolved from heading/title metadata)
-  - `textDocument/prepareCallHierarchy` + `callHierarchy/incomingCalls` + `callHierarchy/outgoingCalls` - Call hierarchy for Org ID links
+  - `textDocument/prepareCallHierarchy` + `callHierarchy/incomingCalls` + `callHierarchy/outgoingCalls` - Call hierarchy for Org ID/file links
 
 ## Editor Integration Examples
 

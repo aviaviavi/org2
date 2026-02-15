@@ -15,6 +15,15 @@ Outgoing link: [[id:def-456]]
 
 * Incoming Node
 Calls target here: [[id:abc-123]]
+Calls target file: [[file:target.org]]
+`;
+
+const fileTargetContent = `* File Target
+Links to another file: [[file:next.org]]
+Links to referenced id: [[id:def-456]]
+`;
+
+const nextFileContent = `* Next File
 `;
 
 function findPosition(haystack, needle) {
@@ -87,7 +96,11 @@ async function run() {
     const idLinePos = findPosition(hierarchyContent, ":ID: abc-123");
     const incomingLinkPos = findPosition(hierarchyContent, "id:abc-123");
     const outgoingLinkPos = findPosition(hierarchyContent, "id:def-456");
-    if (!idLinePos || !incomingLinkPos || !outgoingLinkPos) {
+    const fileLinkPos = findPosition(hierarchyContent, "file:target.org");
+    const fileOutgoingLinkPos = findPosition(fileTargetContent, "file:next.org");
+    const fileOutgoingIdPos = findPosition(fileTargetContent, "id:def-456");
+
+    if (!idLinePos || !incomingLinkPos || !outgoingLinkPos || !fileLinkPos || !fileOutgoingLinkPos || !fileOutgoingIdPos) {
       throw new Error("Could not determine call hierarchy fixture positions");
     }
 
@@ -95,7 +108,7 @@ async function run() {
       jsonrpc: "2.0",
       id: 1,
       method: "initialize",
-      params: { processId: process.pid, rootUri: "file:///test", capabilities: {} },
+      params: { processId: process.pid, rootUri: "file:///workspace", capabilities: {} },
     });
 
     const initResponse = await waitForResponse(1);
@@ -108,7 +121,7 @@ async function run() {
       method: "textDocument/didOpen",
       params: {
         textDocument: {
-          uri: "file:///hierarchy.org",
+          uri: "file:///workspace/hierarchy.org",
           languageId: "org",
           version: 1,
           text: hierarchyContent,
@@ -118,10 +131,36 @@ async function run() {
 
     sendMessage(server, {
       jsonrpc: "2.0",
+      method: "textDocument/didOpen",
+      params: {
+        textDocument: {
+          uri: "file:///workspace/target.org",
+          languageId: "org",
+          version: 1,
+          text: fileTargetContent,
+        },
+      },
+    });
+
+    sendMessage(server, {
+      jsonrpc: "2.0",
+      method: "textDocument/didOpen",
+      params: {
+        textDocument: {
+          uri: "file:///workspace/next.org",
+          languageId: "org",
+          version: 1,
+          text: nextFileContent,
+        },
+      },
+    });
+
+    sendMessage(server, {
+      jsonrpc: "2.0",
       id: 2,
       method: "textDocument/prepareCallHierarchy",
       params: {
-        textDocument: { uri: "file:///hierarchy.org" },
+        textDocument: { uri: "file:///workspace/hierarchy.org" },
         position: {
           line: idLinePos.line,
           character: idLinePos.character + ":ID: ".length,
@@ -129,46 +168,109 @@ async function run() {
       },
     });
 
-    const prepareResponse = await waitForResponse(2);
-    const items = Array.isArray(prepareResponse?.result) ? prepareResponse.result : [];
-    if (items.length === 0 || !String(items[0]?.detail || "").toLowerCase().startsWith("id:abc-123")) {
-      throw new Error(`Expected prepareCallHierarchy item for id:abc-123, got ${JSON.stringify(prepareResponse?.result)}`);
+    const prepareIdResponse = await waitForResponse(2);
+    const idItems = Array.isArray(prepareIdResponse?.result) ? prepareIdResponse.result : [];
+    if (idItems.length === 0 || !String(idItems[0]?.detail || "").toLowerCase().startsWith("id:abc-123")) {
+      throw new Error(`Expected prepareCallHierarchy item for id:abc-123, got ${JSON.stringify(prepareIdResponse?.result)}`);
     }
 
     sendMessage(server, {
       jsonrpc: "2.0",
       id: 3,
       method: "callHierarchy/incomingCalls",
-      params: { item: items[0] },
+      params: { item: idItems[0] },
     });
 
-    const incomingResponse = await waitForResponse(3);
-    const incomingCalls = Array.isArray(incomingResponse?.result) ? incomingResponse.result : [];
-    const incomingHasTarget = incomingCalls.some((call) => {
+    const incomingIdResponse = await waitForResponse(3);
+    const incomingIdCalls = Array.isArray(incomingIdResponse?.result) ? incomingIdResponse.result : [];
+    const incomingIdHasTarget = incomingIdCalls.some((call) => {
       const fromName = String(call?.from?.name || "");
       const ranges = Array.isArray(call?.fromRanges) ? call.fromRanges : [];
       return fromName.includes("Incoming Node") && ranges.some((range) => range?.start?.line === incomingLinkPos.line);
     });
-    if (!incomingHasTarget) {
-      throw new Error(`Expected incoming call from Incoming Node, got ${JSON.stringify(incomingResponse?.result)}`);
+    if (!incomingIdHasTarget) {
+      throw new Error(`Expected incoming call from Incoming Node for id target, got ${JSON.stringify(incomingIdResponse?.result)}`);
     }
 
     sendMessage(server, {
       jsonrpc: "2.0",
       id: 4,
       method: "callHierarchy/outgoingCalls",
-      params: { item: items[0] },
+      params: { item: idItems[0] },
     });
 
-    const outgoingResponse = await waitForResponse(4);
-    const outgoingCalls = Array.isArray(outgoingResponse?.result) ? outgoingResponse.result : [];
-    const outgoingHasTarget = outgoingCalls.some((call) => {
+    const outgoingIdResponse = await waitForResponse(4);
+    const outgoingIdCalls = Array.isArray(outgoingIdResponse?.result) ? outgoingIdResponse.result : [];
+    const outgoingIdHasTarget = outgoingIdCalls.some((call) => {
       const toDetail = String(call?.to?.detail || "").toLowerCase();
       const ranges = Array.isArray(call?.fromRanges) ? call.fromRanges : [];
       return toDetail.startsWith("id:def-456") && ranges.some((range) => range?.start?.line === outgoingLinkPos.line);
     });
-    if (!outgoingHasTarget) {
-      throw new Error(`Expected outgoing call to id:def-456, got ${JSON.stringify(outgoingResponse?.result)}`);
+    if (!outgoingIdHasTarget) {
+      throw new Error(`Expected outgoing call to id:def-456, got ${JSON.stringify(outgoingIdResponse?.result)}`);
+    }
+
+    sendMessage(server, {
+      jsonrpc: "2.0",
+      id: 5,
+      method: "textDocument/prepareCallHierarchy",
+      params: {
+        textDocument: { uri: "file:///workspace/hierarchy.org" },
+        position: {
+          line: fileLinkPos.line,
+          character: fileLinkPos.character + "file:".length,
+        },
+      },
+    });
+
+    const prepareFileResponse = await waitForResponse(5);
+    const fileItems = Array.isArray(prepareFileResponse?.result) ? prepareFileResponse.result : [];
+    if (fileItems.length === 0 || fileItems[0]?.data?.kind !== "file") {
+      throw new Error(`Expected prepareCallHierarchy item for file target, got ${JSON.stringify(prepareFileResponse?.result)}`);
+    }
+
+    sendMessage(server, {
+      jsonrpc: "2.0",
+      id: 6,
+      method: "callHierarchy/incomingCalls",
+      params: { item: fileItems[0] },
+    });
+
+    const incomingFileResponse = await waitForResponse(6);
+    const incomingFileCalls = Array.isArray(incomingFileResponse?.result) ? incomingFileResponse.result : [];
+    const incomingFileHasTarget = incomingFileCalls.some((call) => {
+      const fromName = String(call?.from?.name || "");
+      const ranges = Array.isArray(call?.fromRanges) ? call.fromRanges : [];
+      return fromName.includes("Incoming Node") && ranges.some((range) => range?.start?.line === fileLinkPos.line);
+    });
+    if (!incomingFileHasTarget) {
+      throw new Error(`Expected incoming call from Incoming Node for file target, got ${JSON.stringify(incomingFileResponse?.result)}`);
+    }
+
+    sendMessage(server, {
+      jsonrpc: "2.0",
+      id: 7,
+      method: "callHierarchy/outgoingCalls",
+      params: { item: fileItems[0] },
+    });
+
+    const outgoingFileResponse = await waitForResponse(7);
+    const outgoingFileCalls = Array.isArray(outgoingFileResponse?.result) ? outgoingFileResponse.result : [];
+
+    const outgoingFileHasFileTarget = outgoingFileCalls.some((call) => {
+      const toPath = String(call?.to?.data?.targetPath || "");
+      const ranges = Array.isArray(call?.fromRanges) ? call.fromRanges : [];
+      return toPath.endsWith("/next.org") && ranges.some((range) => range?.start?.line === fileOutgoingLinkPos.line);
+    });
+
+    const outgoingFileHasIdTarget = outgoingFileCalls.some((call) => {
+      const toDetail = String(call?.to?.detail || "").toLowerCase();
+      const ranges = Array.isArray(call?.fromRanges) ? call.fromRanges : [];
+      return toDetail.startsWith("id:def-456") && ranges.some((range) => range?.start?.line === fileOutgoingIdPos.line);
+    });
+
+    if (!outgoingFileHasFileTarget || !outgoingFileHasIdTarget) {
+      throw new Error(`Expected outgoing file calls to next.org and id:def-456, got ${JSON.stringify(outgoingFileResponse?.result)}`);
     }
 
     sendMessage(server, { jsonrpc: "2.0", id: 999, method: "shutdown", params: {} });

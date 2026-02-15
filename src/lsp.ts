@@ -1801,34 +1801,32 @@ class LSPServer {
 
   private getCallHierarchyItems(sourceUri: string, text: string, position: Position): CallHierarchyItem[] {
     const query = this.extractReferenceQuery(sourceUri, text, position);
-    if (!query || query.kind !== "id") {
+    if (!query) {
       return [];
     }
 
-    const item = this.buildIdCallHierarchyItem(sourceUri, query.targetId);
+    const item =
+      query.kind === "id"
+        ? this.buildIdCallHierarchyItem(sourceUri, query.targetId)
+        : this.buildFileCallHierarchyItem(query.targetPath);
     return item ? [item] : [];
   }
 
   private getIncomingCallHierarchy(item: any): CallHierarchyIncomingCall[] {
-    const targetId = this.extractCallHierarchyTargetId(item);
-    if (!targetId) {
+    const target = this.extractCallHierarchyTarget(item);
+    if (!target) {
       return [];
     }
 
     const sourceUri = typeof item?.uri === "string" ? item.uri : "";
-    const references = this.findReferenceLocations(
-      sourceUri,
-      {
-        kind: "id",
-        targetId,
-      },
-      false
-    );
+    const references = this.findReferenceLocations(sourceUri, target, false);
+    const fallbackName =
+      target.kind === "id" ? `id:${target.targetId}` : path.basename(target.targetPath) || target.targetPath;
 
     const grouped = new Map<string, CallHierarchyIncomingCall>();
 
     for (const reference of references) {
-      const fromItem = this.buildCallHierarchyContextItem(reference.uri, reference.range.start.line, `id:${targetId}`);
+      const fromItem = this.buildCallHierarchyContextItem(reference.uri, reference.range.start.line, fallbackName);
       if (!fromItem) {
         continue;
       }
@@ -1863,45 +1861,55 @@ class LSPServer {
   }
 
   private getOutgoingCallHierarchy(item: any): CallHierarchyOutgoingCall[] {
-    const targetId = this.extractCallHierarchyTargetId(item);
-    if (!targetId) {
+    const target = this.extractCallHierarchyTarget(item);
+    if (!target) {
       return [];
     }
 
-    const sourceUri = typeof item?.uri === "string" ? item.uri : "";
-    const definition = this.resolveIdDefinitionLocation(sourceUri, `id:${targetId}`);
-    if (!definition) {
-      return [];
+    let sourceUri = typeof item?.uri === "string" ? item.uri : "";
+    let text = "";
+    let scanRange: Range | null = null;
+
+    if (target.kind === "id") {
+      const definition = this.resolveIdDefinitionLocation(sourceUri, `id:${target.targetId}`);
+      if (!definition) {
+        return [];
+      }
+
+      sourceUri = definition.uri;
+      text = this.readDocumentText(sourceUri) ?? "";
+      if (!text) {
+        return [];
+      }
+
+      const lines = text.split("\n");
+      const safeLine = this.clampLine(definition.range.start.line, Math.max(0, lines.length - 1));
+      const enclosing = this.getEnclosingHeadlineRanges(lines, safeLine);
+      scanRange = enclosing[0] ?? this.getFullDocumentRange(text);
+    } else {
+      sourceUri = pathToFileURL(target.targetPath).toString();
+      text = this.readDocumentText(sourceUri) ?? "";
+      if (!text) {
+        return [];
+      }
+      scanRange = this.getFullDocumentRange(text);
     }
 
-    const text = this.readDocumentText(definition.uri);
-    if (!text) {
-      return [];
-    }
-
-    const lines = text.split("\n");
-    const safeLine = this.clampLine(definition.range.start.line, Math.max(0, lines.length - 1));
-    const enclosing = this.getEnclosingHeadlineRanges(lines, safeLine);
-    const scanRange = enclosing[0] ?? this.getFullDocumentRange(text);
-
+    const effectiveScanRange = scanRange ?? this.getFullDocumentRange(text);
     const grouped = new Map<string, CallHierarchyOutgoingCall>();
 
     for (const link of this.findLinkTargets(text)) {
-      if (!this.rangeContains(scanRange, link.range)) {
+      if (!this.rangeContains(effectiveScanRange, link.range)) {
         continue;
       }
 
-      if (!link.target.toLowerCase().startsWith("id:")) {
-        continue;
-      }
-
-      const linkedId = this.normalizeIdValue(link.target);
-      if (!linkedId || linkedId === targetId) {
-        continue;
-      }
-
-      const toItem = this.buildIdCallHierarchyItem(definition.uri, linkedId);
+      const toItem = this.buildCallHierarchyItemForLinkTarget(sourceUri, link.target);
       if (!toItem) {
+        continue;
+      }
+
+      const toTarget = this.extractCallHierarchyTarget(toItem);
+      if (toTarget && this.isSameCallHierarchyTarget(toTarget, target)) {
         continue;
       }
 
@@ -1934,6 +1942,23 @@ class LSPServer {
     return calls;
   }
 
+  private buildCallHierarchyItemForLinkTarget(sourceUri: string, target: string): CallHierarchyItem | null {
+    if (target.toLowerCase().startsWith("id:")) {
+      const normalizedId = this.normalizeIdValue(target);
+      if (normalizedId) {
+        return this.buildIdCallHierarchyItem(sourceUri, normalizedId);
+      }
+      return null;
+    }
+
+    const targetPath = this.normalizeFileLinkPath(sourceUri, target);
+    if (!targetPath) {
+      return null;
+    }
+
+    return this.buildFileCallHierarchyItem(targetPath);
+  }
+
   private buildIdCallHierarchyItem(sourceUri: string, targetId: string): CallHierarchyItem | null {
     const definition = this.resolveIdDefinitionLocation(sourceUri, `id:${targetId}`);
     if (!definition) {
@@ -1951,6 +1976,30 @@ class LSPServer {
       data: {
         kind: "id",
         targetId,
+      },
+    };
+  }
+
+  private buildFileCallHierarchyItem(targetPath: string): CallHierarchyItem | null {
+    const normalizedPath = path.resolve(targetPath);
+    const uri = pathToFileURL(normalizedPath).toString();
+
+    if (!this.readDocumentText(uri) && !fs.existsSync(normalizedPath)) {
+      return null;
+    }
+
+    const fallbackName = path.basename(normalizedPath) || normalizedPath;
+    const baseItem = this.buildCallHierarchyContextItem(uri, 0, fallbackName);
+    if (!baseItem) {
+      return null;
+    }
+
+    return {
+      ...baseItem,
+      detail: `file:${this.formatPathForHover(normalizedPath)}`,
+      data: {
+        kind: "file",
+        targetPath: normalizedPath,
       },
     };
   }
@@ -2032,12 +2081,26 @@ class LSPServer {
     return normalizedTitle || rawTitle;
   }
 
-  private extractCallHierarchyTargetId(item: any): string | null {
-    const rawFromData = typeof item?.data?.targetId === "string" ? item.data.targetId : "";
-    if (rawFromData) {
-      const normalized = this.normalizeIdValue(rawFromData);
+  private extractCallHierarchyTarget(item: any): ReferenceQuery | null {
+    const dataKind = typeof item?.data?.kind === "string" ? item.data.kind.toLowerCase() : "";
+
+    if (dataKind === "id") {
+      const normalized = this.normalizeIdValue(typeof item?.data?.targetId === "string" ? item.data.targetId : "");
       if (normalized) {
-        return normalized;
+        return {
+          kind: "id",
+          targetId: normalized,
+        };
+      }
+    }
+
+    if (dataKind === "file") {
+      const rawPath = typeof item?.data?.targetPath === "string" ? item.data.targetPath.trim() : "";
+      if (rawPath) {
+        return {
+          kind: "file",
+          targetPath: path.resolve(rawPath),
+        };
       }
     }
 
@@ -2045,11 +2108,26 @@ class LSPServer {
     if (detail.toLowerCase().startsWith("id:")) {
       const normalized = this.normalizeIdValue(detail);
       if (normalized) {
-        return normalized;
+        return {
+          kind: "id",
+          targetId: normalized,
+        };
       }
     }
 
     return null;
+  }
+
+  private isSameCallHierarchyTarget(a: ReferenceQuery, b: ReferenceQuery): boolean {
+    if (a.kind === "id" && b.kind === "id") {
+      return a.targetId === b.targetId;
+    }
+
+    if (a.kind === "file" && b.kind === "file") {
+      return path.resolve(a.targetPath) === path.resolve(b.targetPath);
+    }
+
+    return false;
   }
 
   private readDocumentText(uri: string): string | null {
