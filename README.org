@@ -78,7 +78,7 @@ Current reality:
 - Formatter current-file check/apply commands (VS Code): *Available now* (MVP)
 - Formatter current-file diff preview command (VS Code): *Available now* (MVP)
 - Formatter (=org2 fmt=): *In progress*
-- HTML export (=org2 export html=): *Available now* (MVP, single-file standalone export)
+- HTML export (=org2 export html=): *Available now* (MVP, single-file + directory batch standalone export)
 - LSP go-to-definition for file/id links (including file =::search= suffix targets) (=org2 lsp=): *Available now* (MVP)
 - LSP go-to-declaration for file/id links (including file =::search= suffix targets) (=textDocument/declaration= via =org2 lsp=): *Available now* (MVP)
 - LSP go-to-type-definition + go-to-implementation for file/id links (including file =::search= suffix targets) (=textDocument/typeDefinition= + =textDocument/implementation= via =org2 lsp=): *Available now* (MVP)
@@ -106,7 +106,7 @@ Current reality:
 - Formal Org2 spec (v0 draft): *In progress*
 
 **** Org Mode parity areas (broader)
-- Export/publishing pipeline parity: *In progress* (MVP single-file HTML export available via CLI + VS Code)
+- Export/publishing pipeline parity: *In progress* (MVP single-file + directory-batch HTML export available via CLI + VS Code)
 - Org crypt (encrypted sections/workflows): *Planned*
 - Recurring tasks / repeaters: *In progress* (agenda repeater expansion MVP available)
 - Habits: *Planned*
@@ -370,12 +370,19 @@ npm run org2 -- export html --file /path/to/notes.org2 --apply
 
 # Write HTML to an explicit output path
 npm run org2 -- export html --file /path/to/notes.org2 --out /path/to/site/index.html --apply
+
+# Preview a whole directory tree as machine-readable JSON (includes per-file output paths)
+npm run org2 -- export html --dir /path/to/org --recursive --out-dir /path/to/site --format json
+
+# Export a whole directory tree to HTML (preserves subdirectory structure)
+npm run org2 -- export html --dir /path/to/org --recursive --out-dir /path/to/site --apply
 #+end_src
 
 Notes:
-- =export html= currently exports one source file at a time.
-- Without =--apply=, output is preview-only (stdout/JSON).
-- Default output path is source path with =.html= extension (or =.html= appended when source has a non-org extension).
+- =export html --file= renders one file and supports =--title= / =--out= overrides.
+- =export html --dir= batch-renders all =.org/=*.org2= files in the target directory (recursive when =--recursive= is set).
+- Directory exports preserve relative source paths under =--out-dir= (or under =--dir= when =--out-dir= is omitted), swapping source extensions to =.html=.
+- Without =--apply=, output is preview-only (single-file emits HTML text by default; batch mode emits summary text or JSON).
 
 *** Formatter (=fmt=) quick examples
 

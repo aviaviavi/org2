@@ -1,0 +1,1 @@
+export html --dir spec/v0/tests/cli/export-html-dir-fixture --recursive --out-dir spec/v0/tests/cli/export-html-dir-out --format json
