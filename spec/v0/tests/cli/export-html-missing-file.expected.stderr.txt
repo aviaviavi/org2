@@ -1,1 +1,1 @@
-Error: export html requires --file FILE
+Error: export html requires --file FILE or --dir DIR
