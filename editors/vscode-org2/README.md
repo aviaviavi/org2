@@ -14,6 +14,7 @@ Minimal VS Code language support for Org2.
   - `[[url]]`
   - `[[url][desc]]`
   - bare `https://...` URLs
+- LSP go-to-definition + go-to-declaration for Org file/id links (`textDocument/definition` + `textDocument/declaration`)
 - LSP hover tooltips for Org links, TODO keywords, and planning keywords (`SCHEDULED:` / `DEADLINE:`)
 - LSP signature help for planning timestamps (`textDocument/signatureHelp` with active/inactive timestamp forms)
 - LSP document highlights for in-file ID/file references under cursor
