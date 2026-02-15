@@ -270,3 +270,34 @@ export function renderOrgDocumentToHtml(
 
   return { html, title };
 }
+
+export type OrgExportIndexItem = {
+  title: string;
+  href: string;
+  sourcePath?: string;
+};
+
+export function renderOrgExportIndexToHtml(opts: {
+  title?: string;
+  sourcePath?: string;
+  items: OrgExportIndexItem[];
+}): { html: string; title: string } {
+  const title = String(opts.title || "").trim() || (opts.sourcePath ? path.basename(opts.sourcePath) : "Org2 Export Index");
+  const items = Array.isArray(opts.items) ? opts.items : [];
+
+  const listHtml = items
+    .map((item) => {
+      const itemTitle = String(item.title || "").trim() || String(item.href || "").trim() || "Untitled";
+      const href = String(item.href || "").trim() || "#";
+      const source = String(item.sourcePath || "").trim();
+      const sourceHtml = source ? ` <span class="org2-export-source">(${escapeHtml(source)})</span>` : "";
+      return `<li><a href="${escapeAttr(href)}">${escapeHtml(itemTitle)}</a>${sourceHtml}</li>`;
+    })
+    .join("\n");
+
+  const body = listHtml || "<li>No exported files.</li>";
+
+  const html = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n<style>\n:root { color-scheme: light dark; }\nbody { font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }\nmain { display: grid; gap: 1rem; }\nh1 { margin: 0; }\nul.org2-export-index { padding-left: 1.25rem; margin: 0; display: grid; gap: 0.35rem; }\n.org2-export-source { opacity: 0.75; font-size: 0.9em; }\na { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }\n</style>\n</head>\n<body>\n<main class="org2-export-index-document">\n<h1>${escapeHtml(title)}</h1>\n<ul class="org2-export-index">\n${body}\n</ul>\n</main>\n</body>\n</html>\n`;
+
+  return { html, title };
+}

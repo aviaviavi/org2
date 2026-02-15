@@ -625,6 +625,16 @@
           "default": "_site",
           "description": "Output directory for `Org2: Export Workspace Org Files to HTML`. Absolute paths are used directly; relative paths are resolved against org2.agenda.dir (or workspace root)."
         },
+        "org2.export.indexFile": {
+          "type": "string",
+          "default": "index.html",
+          "description": "Optional index file path for workspace HTML export (`--index`). Empty disables index generation. Relative paths are resolved inside org2.export.outputDir."
+        },
+        "org2.export.indexTitle": {
+          "type": "string",
+          "default": "Org2 Export Index",
+          "description": "Title used for the generated workspace export index page (`--index-title`). Ignored when org2.export.indexFile is empty."
+        },
         "org2.formatOnSave": {
           "type": "boolean",
           "default": true,

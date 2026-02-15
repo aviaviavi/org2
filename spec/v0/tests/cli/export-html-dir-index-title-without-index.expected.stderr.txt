@@ -1,0 +1,1 @@
+Error: --index-title requires --index for export html --dir
