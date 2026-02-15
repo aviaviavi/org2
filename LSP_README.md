@@ -79,7 +79,7 @@ Content-Length: 87
   - `textDocument/selectionRange` - Nested semantic selection expansion (token → link/line → heading → document)
   - `textDocument/semanticTokens/full` - Semantic highlighting tokens for TODO keywords, planning keywords, property keys, and link targets
   - `textDocument/codeLens` - Backlink-count lenses for `:ID:` properties (click to run `org2.roamShowBacklinksById` in VS Code)
-  - `textDocument/linkedEditingRange` - Synchronized ID editing ranges across `[[id:...]]` links and matching `:ID:` property values
+  - `textDocument/linkedEditingRange` - Synchronized linked editing across `[[id:...]]` links + matching `:ID:` values, and matching file-link targets
   - `textDocument/documentColor` + `textDocument/colorPresentation` - Hex color literal detection (`#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`) with editable presentation labels
   - `textDocument/inlayHint` - Inlay hints for unlabeled `[[id:...]]` and `[[file:...]]` links (resolved from heading/title metadata)
   - `textDocument/prepareCallHierarchy` + `callHierarchy/incomingCalls` + `callHierarchy/outgoingCalls` - Call hierarchy for Org ID/file links
