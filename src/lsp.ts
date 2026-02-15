@@ -163,6 +163,23 @@ interface LinkedEditingRanges {
   wordPattern?: string;
 }
 
+interface Color {
+  red: number;
+  green: number;
+  blue: number;
+  alpha: number;
+}
+
+interface ColorInformation {
+  range: Range;
+  color: Color;
+}
+
+interface ColorPresentation {
+  label: string;
+  textEdit?: TextEdit;
+}
+
 interface RenameTarget {
   kind: "id";
   targetId: string;
@@ -337,6 +354,7 @@ class LSPServer {
             codeLensProvider: {
               resolveProvider: false,
             },
+            colorProvider: true,
           },
           serverInfo: {
             name: "org2-lsp",
@@ -590,6 +608,26 @@ class LSPServer {
 
         const codeLenses = this.getCodeLenses(doc.uri, doc.text);
         this.sendResponse(id, codeLenses);
+      } else if (method === "textDocument/documentColor") {
+        const { textDocument } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, []);
+          return;
+        }
+
+        const colors = this.getDocumentColors(doc.text);
+        this.sendResponse(id, colors);
+      } else if (method === "textDocument/colorPresentation") {
+        const { textDocument, color, range } = params;
+        const doc = this.documents.get(textDocument.uri);
+        if (!doc) {
+          this.sendResponse(id, []);
+          return;
+        }
+
+        const presentations = this.getColorPresentations(doc.text, color, range);
+        this.sendResponse(id, presentations);
       } else if (method === "workspace/symbol") {
         const query = String(params?.query || "").trim();
         const symbols = this.findWorkspaceSymbols(query);
@@ -1334,6 +1372,170 @@ class LSPServer {
     }
 
     return definitions;
+  }
+
+  private getDocumentColors(text: string): ColorInformation[] {
+    const lines = text.split("\n");
+    const colors: ColorInformation[] = [];
+    const seen = new Set<string>();
+
+    for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
+      const line = lines[lineNumber] ?? "";
+      const colorRegex = /(^|[^A-Za-z0-9])(#(?:[A-Fa-f0-9]{8}|[A-Fa-f0-9]{6}|[A-Fa-f0-9]{4}|[A-Fa-f0-9]{3}))(?=$|[^A-Za-z0-9])/g;
+      let match: RegExpExecArray | null;
+      while ((match = colorRegex.exec(line)) !== null) {
+        const rawColor = match[2] || "";
+        const parsed = this.parseHexColorLiteral(rawColor);
+        if (!parsed) {
+          continue;
+        }
+
+        const prefix = match[1] || "";
+        const startChar = match.index + prefix.length;
+        const endChar = startChar + rawColor.length;
+        const key = `${lineNumber}:${startChar}:${endChar}:${rawColor.toLowerCase()}`;
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+
+        colors.push({
+          color: parsed,
+          range: {
+            start: { line: lineNumber, character: startChar },
+            end: { line: lineNumber, character: endChar },
+          },
+        });
+      }
+    }
+
+    return colors;
+  }
+
+  private getColorPresentations(text: string, color: Color, range?: Range): ColorPresentation[] {
+    if (!color) {
+      return [];
+    }
+
+    const existingLiteral = range ? this.getSingleLineRangeText(text, range) : null;
+    const existingLength = existingLiteral && /^#[A-Fa-f0-9]+$/.test(existingLiteral) ? existingLiteral.length - 1 : 0;
+    const includeAlpha = existingLength === 4 || existingLength === 8 || this.colorComponentToByte(color.alpha) < 255;
+
+    const lengths = includeAlpha ? [8, 4, 6, 3] : [6, 3, 8, 4];
+    const orderedLengths = existingLength > 0 ? [existingLength, ...lengths.filter((length) => length !== existingLength)] : lengths;
+
+    const presentations: ColorPresentation[] = [];
+    const seen = new Set<string>();
+
+    for (const length of orderedLengths) {
+      const label = this.formatColorAsHex(color, length);
+      if (!label || seen.has(label)) {
+        continue;
+      }
+      seen.add(label);
+      presentations.push({
+        label,
+        textEdit: range
+          ? {
+              range,
+              newText: label,
+            }
+          : undefined,
+      });
+    }
+
+    return presentations;
+  }
+
+  private getSingleLineRangeText(text: string, range: Range): string | null {
+    const lines = text.split("\n");
+    const startLine = range?.start?.line;
+    const endLine = range?.end?.line;
+    if (!Number.isFinite(startLine) || !Number.isFinite(endLine) || startLine !== endLine) {
+      return null;
+    }
+
+    const lineNumber = Math.trunc(Number(startLine));
+    const line = lines[lineNumber] ?? "";
+    const startChar = Math.max(0, Math.min(line.length, Number(range?.start?.character ?? 0)));
+    const endChar = Math.max(startChar, Math.min(line.length, Number(range?.end?.character ?? startChar)));
+    return line.slice(startChar, endChar);
+  }
+
+  private parseHexColorLiteral(value: string): Color | null {
+    const raw = value.trim();
+    if (!raw.startsWith("#")) {
+      return null;
+    }
+
+    let hex = raw.slice(1);
+    if (hex.length === 3 || hex.length === 4) {
+      hex = hex
+        .split("")
+        .map((char) => char + char)
+        .join("");
+    }
+
+    if (hex.length === 6) {
+      hex += "ff";
+    }
+
+    if (hex.length !== 8 || /[^A-Fa-f0-9]/.test(hex)) {
+      return null;
+    }
+
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    const a = parseInt(hex.slice(6, 8), 16);
+    if ([r, g, b, a].some((component) => Number.isNaN(component))) {
+      return null;
+    }
+
+    return {
+      red: r / 255,
+      green: g / 255,
+      blue: b / 255,
+      alpha: a / 255,
+    };
+  }
+
+  private formatColorAsHex(color: Color, length: number): string | null {
+    const toByteHex = (value: number) => this.colorComponentToByte(value).toString(16).padStart(2, "0").toUpperCase();
+
+    const red = toByteHex(color.red);
+    const green = toByteHex(color.green);
+    const blue = toByteHex(color.blue);
+    const alpha = toByteHex(color.alpha);
+
+    if (length === 6) {
+      return `#${red}${green}${blue}`;
+    }
+
+    if (length === 8) {
+      return `#${red}${green}${blue}${alpha}`;
+    }
+
+    const canShorten = (component: string) => component.length === 2 && component[0] === component[1];
+    if (length === 3) {
+      if (!canShorten(red) || !canShorten(green) || !canShorten(blue)) {
+        return null;
+      }
+      return `#${red[0]}${green[0]}${blue[0]}`;
+    }
+
+    if (!canShorten(red) || !canShorten(green) || !canShorten(blue) || !canShorten(alpha)) {
+      return null;
+    }
+
+    return `#${red[0]}${green[0]}${blue[0]}${alpha[0]}`;
+  }
+
+  private colorComponentToByte(value: number): number {
+    if (!Number.isFinite(value)) {
+      return 0;
+    }
+    return Math.max(0, Math.min(255, Math.round(value * 255)));
   }
 
   private encodeSemanticTokens(tokens: SemanticToken[]): number[] {

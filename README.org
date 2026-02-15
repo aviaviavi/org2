@@ -94,6 +94,7 @@ Current reality:
 - LSP semantic tokens for TODO/planning/properties/links (=textDocument/semanticTokens/full= via =org2 lsp=): *Available now* (MVP)
 - LSP backlink code lenses for =:ID:= properties (=textDocument/codeLens= via =org2 lsp=): *Available now* (MVP)
 - LSP linked editing ranges for ID links/properties (=textDocument/linkedEditingRange= via =org2 lsp=): *Available now* (MVP)
+- LSP document colors for hex literals (=textDocument/documentColor= + =textDocument/colorPresentation= via =org2 lsp=): *Available now* (MVP)
 - LSP entrypoint (=org2 lsp=): *In progress*
 - Formal Org2 spec (v0 draft): *In progress*
 
@@ -364,7 +365,7 @@ Notes:
 npm run org2 -- lsp
 #+end_src
 
-Current LSP features include parser diagnostics, document symbols, folding ranges, go-to-definition, find-references for both =[[file:...]]= and =[[id:...]]= links, document links for file/id/URL targets, document highlights for ID/file references, hover tooltips for links/TODO/planning keywords, rename support for =[[id:...]]= links plus =:ID:= property values, linked editing ranges for synchronized ID edits across links/properties (=textDocument/linkedEditingRange=), completion for TODO/planning keywords and Org timestamps, planning timestamp signature help (=textDocument/signatureHelp=), quick-fix code actions for CRLF/tab parser issues, document formatting (=textDocument/formatting=), range formatting (=textDocument/rangeFormatting=), selection ranges (=textDocument/selectionRange=), semantic tokens for TODO/planning/properties/link targets (=textDocument/semanticTokens/full=), backlink code lenses for =:ID:= properties (=textDocument/codeLens=), and workspace symbol search over org/org2 headings.
+Current LSP features include parser diagnostics, document symbols, folding ranges, go-to-definition, find-references for both =[[file:...]]= and =[[id:...]]= links, document links for file/id/URL targets, document highlights for ID/file references, hover tooltips for links/TODO/planning keywords, rename support for =[[id:...]]= links plus =:ID:= property values, linked editing ranges for synchronized ID edits across links/properties (=textDocument/linkedEditingRange=), completion for TODO/planning keywords and Org timestamps, planning timestamp signature help (=textDocument/signatureHelp=), quick-fix code actions for CRLF/tab parser issues, document formatting (=textDocument/formatting=), range formatting (=textDocument/rangeFormatting=), selection ranges (=textDocument/selectionRange=), semantic tokens for TODO/planning/properties/link targets (=textDocument/semanticTokens/full=), backlink code lenses for =:ID:= properties (=textDocument/codeLens=), document color extraction + hex presentations (=textDocument/documentColor= / =textDocument/colorPresentation=), and workspace symbol search over org/org2 headings.
 
 *** Other CLI commands (brief)
 
