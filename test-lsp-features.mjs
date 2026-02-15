@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Test LSP feature coverage (symbols, folding, declaration/definition navigation, highlights, rename, linked editing, code actions, formatting, selection ranges, signature help, semantic tokens, code lenses, document colors)
+ * Test LSP feature coverage (symbols, folding, definition/declaration/typeDefinition/implementation navigation, highlights, rename, linked editing, code actions, formatting, selection ranges, signature help, semantic tokens, code lenses, document colors)
  */
 
 import { spawn } from "node:child_process";
@@ -164,6 +164,8 @@ async function testLSPFeatures() {
         const linkedEditingOk = capabilities?.linkedEditingRangeProvider === true;
         const documentColorOk = capabilities?.colorProvider === true;
         const declarationOk = capabilities?.declarationProvider === true;
+        const typeDefinitionOk = capabilities?.typeDefinitionProvider === true;
+        const implementationOk = capabilities?.implementationProvider === true;
         if (
           capabilities &&
           capabilities.signatureHelpProvider &&
@@ -171,10 +173,12 @@ async function testLSPFeatures() {
           codeLensOk &&
           linkedEditingOk &&
           documentColorOk &&
-          declarationOk
+          declarationOk &&
+          typeDefinitionOk &&
+          implementationOk
         ) {
           console.log(
-            "✓ Initialize response received (signatureHelp + semanticTokens + codeLens + linkedEditingRange + documentColor + declaration advertised)\n"
+            "✓ Initialize response received (signatureHelp + semanticTokens + codeLens + linkedEditingRange + documentColor + declaration + typeDefinition + implementation advertised)\n"
           );
           testsPassed++;
         } else {
@@ -356,20 +360,36 @@ async function testLSPFeatures() {
                     }
                     console.log();
 
-                    // Test 7b: Declaration (ID link target)
-                    console.log("Test 7b: Declaration");
+                    // Test 7b: Declaration + TypeDefinition + Implementation (ID link target)
+                    console.log("Test 7b: Declaration + TypeDefinition + Implementation");
                     if (!renameLinkPos || !declarationPos) {
-                      console.log("✗ Declaration skipped (missing token position)\n");
+                      console.log("✗ Declaration/TypeDefinition/Implementation skipped (missing token position)\n");
                       testsFailed++;
                     } else {
+                      const navigationParams = {
+                        textDocument: { uri: "file:///test.org" },
+                        position: { line: renameLinkPos.line, character: renameLinkPos.character + 4 },
+                      };
+
                       sendMessage(server, {
                         jsonrpc: "2.0",
                         id: 18,
                         method: "textDocument/declaration",
-                        params: {
-                          textDocument: { uri: "file:///test.org" },
-                          position: { line: renameLinkPos.line, character: renameLinkPos.character + 4 },
-                        },
+                        params: navigationParams,
+                      });
+
+                      sendMessage(server, {
+                        jsonrpc: "2.0",
+                        id: 19,
+                        method: "textDocument/typeDefinition",
+                        params: navigationParams,
+                      });
+
+                      sendMessage(server, {
+                        jsonrpc: "2.0",
+                        id: 20,
+                        method: "textDocument/implementation",
+                        params: navigationParams,
                       });
                     }
 
@@ -388,6 +408,40 @@ async function testLSPFeatures() {
                         testsPassed++;
                       } else {
                         console.log(`✗ Declaration missing expected ID location: ${JSON.stringify(declarationResponse)}`);
+                        testsFailed++;
+                      }
+
+                      const typeDefinitionResponse = allResponses.find((r) => r.id === 19);
+                      const typeDefinitions = Array.isArray(typeDefinitionResponse?.result) ? typeDefinitionResponse.result : null;
+                      const hasTypeDefinition = typeDefinitions?.some(
+                        (location) =>
+                          location?.uri === "file:///test.org" &&
+                          location?.range?.start?.line === declarationPos?.line &&
+                          location?.range?.start?.character === 0
+                      );
+
+                      if (typeDefinitions && hasTypeDefinition) {
+                        console.log(`✓ TypeDefinition returned ${typeDefinitions.length} location(s) for id target`);
+                        testsPassed++;
+                      } else {
+                        console.log(`✗ TypeDefinition missing expected ID location: ${JSON.stringify(typeDefinitionResponse)}`);
+                        testsFailed++;
+                      }
+
+                      const implementationResponse = allResponses.find((r) => r.id === 20);
+                      const implementations = Array.isArray(implementationResponse?.result) ? implementationResponse.result : null;
+                      const hasImplementation = implementations?.some(
+                        (location) =>
+                          location?.uri === "file:///test.org" &&
+                          location?.range?.start?.line === declarationPos?.line &&
+                          location?.range?.start?.character === 0
+                      );
+
+                      if (implementations && hasImplementation) {
+                        console.log(`✓ Implementation returned ${implementations.length} location(s) for id target`);
+                        testsPassed++;
+                      } else {
+                        console.log(`✗ Implementation missing expected ID location: ${JSON.stringify(implementationResponse)}`);
                         testsFailed++;
                       }
                       console.log();

@@ -326,6 +326,8 @@ class LSPServer {
             foldingRangeProvider: true,
             definitionProvider: true,
             declarationProvider: true,
+            typeDefinitionProvider: true,
+            implementationProvider: true,
             referencesProvider: true,
             workspaceSymbolProvider: true,
             documentLinkProvider: true,
@@ -426,23 +428,12 @@ class LSPServer {
         } else {
           this.sendResponse(id, []);
         }
-      } else if (method === "textDocument/definition") {
-        const { textDocument, position } = params;
-        const doc = this.documents.get(textDocument.uri);
-        if (!doc) {
-          this.sendResponse(id, null);
-          return;
-        }
-
-        const target = this.extractLinkTargetAtPosition(doc.text, position);
-        if (!target) {
-          this.sendResponse(id, null);
-          return;
-        }
-
-        const location = this.resolveDefinitionLocation(doc.uri, target);
-        this.sendResponse(id, location ? [location] : null);
-      } else if (method === "textDocument/declaration") {
+      } else if (
+        method === "textDocument/definition" ||
+        method === "textDocument/declaration" ||
+        method === "textDocument/typeDefinition" ||
+        method === "textDocument/implementation"
+      ) {
         const { textDocument, position } = params;
         const doc = this.documents.get(textDocument.uri);
         if (!doc) {
