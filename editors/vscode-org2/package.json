@@ -645,6 +645,11 @@
           "default": true,
           "description": "When enabled, HTML export includes Org2's built-in inline stylesheet. Disable to use external CSS only (`--no-default-style`)."
         },
+        "org2.export.includeToc": {
+          "type": "boolean",
+          "default": false,
+          "description": "When enabled, HTML export includes a generated table of contents with heading anchors (`--toc`)."
+        },
         "org2.formatOnSave": {
           "type": "boolean",
           "default": true,

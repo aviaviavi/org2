@@ -1204,6 +1204,7 @@ async function main(): Promise<void> {
   let exportIndexTitle = "";
   let exportStylesheets: string[] = [];
   let exportIncludeDefaultStyle = true;
+  let exportIncludeToc = false;
   let exportApply = false;
   let exportFormat: "text" | "json" = "text";
   let exportTitle = "";
@@ -1786,6 +1787,11 @@ async function main(): Promise<void> {
         exportIncludeDefaultStyle = false;
       }
       i++;
+    } else if (arg === "--toc") {
+      if (command === "export") {
+        exportIncludeToc = true;
+      }
+      i++;
     } else if (arg === "--archive-file") {
       i++;
       if (i < args.length) {
@@ -1878,7 +1884,7 @@ async function main(): Promise<void> {
       "       org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--format text|diff|json] [--apply]",
     );
     console.error(
-      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--css HREF[,HREF...]] [--no-default-style] [--format text|json] [--apply]",
+      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--css HREF[,HREF...]] [--no-default-style] [--toc] [--format text|json] [--apply]",
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
@@ -1929,7 +1935,7 @@ async function main(): Promise<void> {
       "       org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--format text|diff|json] [--apply]",
     );
     console.error(
-      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--css HREF[,HREF...]] [--no-default-style] [--format text|json] [--apply]",
+      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--css HREF[,HREF...]] [--no-default-style] [--toc] [--format text|json] [--apply]",
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
@@ -2302,6 +2308,7 @@ async function main(): Promise<void> {
           sourcePath: toDisplayPath(sourcePath),
           stylesheets: exportStylesheetsNormalized,
           includeDefaultStyle: exportIncludeDefaultStyle,
+          includeToc: exportIncludeToc,
         });
 
         const relativeSourcePath = path.relative(sourceDir, sourcePath);
@@ -2427,6 +2434,7 @@ async function main(): Promise<void> {
       sourcePath: sourcePathInput,
       stylesheets: exportStylesheetsNormalized,
       includeDefaultStyle: exportIncludeDefaultStyle,
+      includeToc: exportIncludeToc,
     });
 
     const defaultOutputPath = (() => {
