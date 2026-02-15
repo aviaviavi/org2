@@ -1186,6 +1186,14 @@ async function main(): Promise<void> {
   let archiveApply = false;
   let archiveFormat: "text" | "diff" | "json" = "text";
 
+  // Refile workflow
+  let refileFile = "";
+  let refilePos = "";
+  let refileToFile = "";
+  let refileToPos = "";
+  let refileApply = false;
+  let refileFormat: "text" | "diff" | "json" = "text";
+
   // Todo status editing
   let todoAction: "set" | "toggle" = "toggle";
   let todoFile = "";
@@ -1270,6 +1278,9 @@ async function main(): Promise<void> {
       i++;
     } else if (arg === "archive") {
       command = "archive";
+      i++;
+    } else if (arg === "refile") {
+      command = "refile";
       i++;
     } else if (arg === "lsp") {
       command = "lsp";
@@ -1380,6 +1391,8 @@ async function main(): Promise<void> {
           planFile = args[i]!;
         } else if (command === "id") {
           idFile = args[i]!;
+        } else if (command === "refile") {
+          refileFile = args[i]!;
         } else if (command === "roam" && roamAction === "link") {
           roamLinkFile = args[i]!;
         } else {
@@ -1656,6 +1669,8 @@ async function main(): Promise<void> {
         const v = args[i];
         if (command === "archive" && (v === "text" || v === "diff" || v === "json")) {
           archiveFormat = v as "text" | "diff" | "json";
+        } else if (command === "refile" && (v === "text" || v === "diff" || v === "json")) {
+          refileFormat = v as "text" | "diff" | "json";
         } else if (command === "agenda" && (v === "text" || v === "json")) {
           format = v;
         } else if (command === "todo" && (v === "text" || v === "json" || v === "diff")) {
@@ -1698,6 +1713,22 @@ async function main(): Promise<void> {
         archiveFile = args[i];
         i++;
       }
+    } else if (arg === "--to-file") {
+      i++;
+      if (i < args.length) {
+        if (command === "refile") {
+          refileToFile = args[i]!;
+        }
+        i++;
+      }
+    } else if (arg === "--to-pos") {
+      i++;
+      if (i < args.length) {
+        if (command === "refile") {
+          refileToPos = args[i]!;
+        }
+        i++;
+      }
     } else if (arg === "--pos") {
       i++;
       if (i < args.length) {
@@ -1707,6 +1738,8 @@ async function main(): Promise<void> {
         // - todo/plan/id only use the line component
         if (command === "archive") {
           archivePos = rawPos;
+        } else if (command === "refile") {
+          refilePos = rawPos;
         } else if (command === "todo") {
           todoLine = parseInt(rawPos.split(":")[0]!, 10);
         } else if (command === "plan") {
@@ -1735,6 +1768,8 @@ async function main(): Promise<void> {
         planApply = true;
       } else if (command === "archive") {
         archiveApply = true;
+      } else if (command === "refile") {
+        refileApply = true;
       } else if (command === "fmt") {
         fmtApply = true;
       } else if (command === "id") {
@@ -1757,6 +1792,9 @@ async function main(): Promise<void> {
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
+    );
+    console.error(
+      "       org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--format text|diff|json] [--apply]",
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
@@ -1796,12 +1834,15 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
     console.error(
       "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
+    );
+    console.error(
+      "       org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--format text|diff|json] [--apply]",
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
@@ -3240,6 +3281,266 @@ async function main(): Promise<void> {
 
     if (fmtFormat === "json") {
       emitFmtApplyJson(fmtFiles, changedFiles);
+    }
+
+    return;
+  }
+
+  if (command === "refile") {
+    if (!refileFile) {
+      console.error("Error: refile requires --file FILE");
+      process.exit(1);
+    }
+    if (!refilePos) {
+      console.error("Error: refile requires --pos LINE[:COL]");
+      process.exit(1);
+    }
+    if (!refileToFile) {
+      console.error("Error: refile requires --to-file FILE");
+      process.exit(1);
+    }
+
+    const parsePosLine = (rawPos: string, flagName: string): number => {
+      const line = parseInt(String(rawPos || "").split(":")[0] || "", 10);
+      if (!Number.isFinite(line) || line < 1) {
+        console.error(`Error: invalid ${flagName} ${rawPos}`);
+        process.exit(1);
+      }
+      return line;
+    };
+
+    const findHeadingAtOrAbove = (
+      lines: string[],
+      line1: number,
+    ): { lineIndex: number; level: number; line: string } | null => {
+      const start = Math.min(Math.max(line1 - 1, 0), Math.max(0, lines.length - 1));
+      for (let idx = start; idx >= 0; idx -= 1) {
+        const line = lines[idx] ?? "";
+        const m = /^(\*+)\s+/.exec(line);
+        if (m) {
+          return {
+            lineIndex: idx,
+            level: m[1]!.length,
+            line,
+          };
+        }
+      }
+      return null;
+    };
+
+    const findSubtreeEndExclusive = (lines: string[], startLineIndex: number, level: number): number => {
+      for (let idx = startLineIndex + 1; idx < lines.length; idx += 1) {
+        const m = /^(\*+)\s+/.exec(lines[idx] ?? "");
+        if (m && m[1]!.length <= level) {
+          return idx;
+        }
+      }
+      return lines.length;
+    };
+
+    const normalizeOutText = (lines: string[]): string => {
+      const text = lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
+      return text.length > 0 ? `${text}\n` : "";
+    };
+
+    const buildUnifiedDiff = (before: string, after: string, targetPath: string, tmpPrefix: string): string => {
+      if (before === after) return "";
+
+      let tmpDir: string | null = null;
+      try {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), tmpPrefix));
+        const aPath = path.join(tmpDir, "before.org2");
+        const bPath = path.join(tmpDir, "after.org2");
+        fs.writeFileSync(aPath, before, "utf8");
+        fs.writeFileSync(bPath, after, "utf8");
+
+        const res = spawnSync(
+          "diff",
+          ["-u", "--label", targetPath, "--label", targetPath, aPath, bPath],
+          { encoding: "utf8" },
+        );
+        if (res.status !== 0 && res.status !== 1) {
+          throw new Error(res.stderr || `diff exited with status ${res.status}`);
+        }
+
+        return res.stdout || "";
+      } finally {
+        if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    };
+
+    const sourcePathInput = refileFile;
+    const destinationPathInput = refileToFile;
+    const sourcePath = path.resolve(sourcePathInput);
+    const destinationPath = path.resolve(destinationPathInput);
+    const sameFile = sourcePath === destinationPath;
+
+    const sourceRaw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
+    const sourceLines = sourceRaw.split("\n");
+
+    const sourcePosLine1 = parsePosLine(refilePos, "--pos");
+    const sourceHeading = findHeadingAtOrAbove(sourceLines, sourcePosLine1);
+    if (!sourceHeading) {
+      console.error("Error: no source headline found at or above --pos");
+      process.exit(1);
+    }
+
+    const sourceEndExclusive = findSubtreeEndExclusive(sourceLines, sourceHeading.lineIndex, sourceHeading.level);
+    const sourceSubtreeLines = sourceLines.slice(sourceHeading.lineIndex, sourceEndExclusive);
+    const sourceSubtreeText = sourceSubtreeLines.join("\n").trimEnd() + "\n";
+
+    const sourceRemainingLines = [
+      ...sourceLines.slice(0, sourceHeading.lineIndex),
+      ...sourceLines.slice(sourceEndExclusive),
+    ];
+    const sourceOutText = normalizeOutText(sourceRemainingLines);
+
+    const destinationRaw = sameFile
+      ? sourceRaw
+      : fs.existsSync(destinationPath)
+        ? fs.readFileSync(destinationPath, "utf8").replace(/\r\n/g, "\n")
+        : "";
+
+    const destinationBaseText = sameFile ? sourceOutText : destinationRaw;
+    const destinationLines = destinationBaseText.length > 0 ? destinationBaseText.split("\n") : [];
+
+    let destinationInsertIndex = destinationLines.length;
+    let destinationHeadingLine1: number | null = null;
+    let movedSubtreeLines = [...sourceSubtreeLines];
+    let headingLevelDelta = 0;
+
+    if (refileToPos) {
+      const toPosLine1Raw = parsePosLine(refileToPos, "--to-pos");
+      if (
+        sameFile &&
+        toPosLine1Raw >= sourceHeading.lineIndex + 1 &&
+        toPosLine1Raw <= sourceEndExclusive
+      ) {
+        console.error("Error: --to-pos cannot point inside the subtree being moved");
+        process.exit(1);
+      }
+
+      const removedLineCount = sourceEndExclusive - sourceHeading.lineIndex;
+      const toPosLine1Adjusted =
+        sameFile && toPosLine1Raw > sourceHeading.lineIndex + 1
+          ? Math.max(1, toPosLine1Raw - removedLineCount)
+          : toPosLine1Raw;
+
+      const destinationHeading = findHeadingAtOrAbove(destinationLines, toPosLine1Adjusted);
+      if (!destinationHeading) {
+        console.error("Error: no destination headline found at or above --to-pos");
+        process.exit(1);
+      }
+
+      destinationHeadingLine1 = destinationHeading.lineIndex + 1;
+      destinationInsertIndex = findSubtreeEndExclusive(
+        destinationLines,
+        destinationHeading.lineIndex,
+        destinationHeading.level,
+      );
+
+      headingLevelDelta = destinationHeading.level + 1 - sourceHeading.level;
+      if (headingLevelDelta !== 0) {
+        movedSubtreeLines = sourceSubtreeLines.map((line) => {
+          const m = /^(\*+)(\s+.*)$/.exec(line);
+          if (!m) return line;
+          const nextLevel = Math.max(1, m[1]!.length + headingLevelDelta);
+          return `${"*".repeat(nextLevel)}${m[2]!}`;
+        });
+      }
+    }
+
+    const movedBlockText = movedSubtreeLines.join("\n").trimEnd();
+    const movedBlockLines = movedBlockText.length > 0 ? movedBlockText.split("\n") : [];
+    const beforeDestination = destinationLines.slice(0, destinationInsertIndex);
+    const afterDestination = destinationLines.slice(destinationInsertIndex);
+
+    const destinationOutLines = [...beforeDestination];
+    if (
+      destinationOutLines.length > 0 &&
+      (destinationOutLines[destinationOutLines.length - 1] ?? "").trim() !== ""
+    ) {
+      destinationOutLines.push("");
+    }
+    destinationOutLines.push(...movedBlockLines);
+    if (afterDestination.length > 0 && (afterDestination[0] ?? "").trim() !== "") {
+      destinationOutLines.push("");
+    }
+    destinationOutLines.push(...afterDestination);
+
+    const destinationOutText = normalizeOutText(destinationOutLines);
+
+    const sourceChanged = sameFile ? destinationOutText !== sourceRaw : sourceOutText !== sourceRaw;
+    const destinationChanged = sameFile ? destinationOutText !== sourceRaw : destinationOutText !== destinationRaw;
+    const changed = sameFile ? sourceChanged : sourceChanged || destinationChanged;
+
+    const sourceDiff = buildUnifiedDiff(
+      sourceRaw,
+      sameFile ? destinationOutText : sourceOutText,
+      sourcePathInput,
+      "org2-refile-source-diff-",
+    );
+    const destinationDiff = sameFile
+      ? ""
+      : buildUnifiedDiff(destinationRaw, destinationOutText, destinationPathInput, "org2-refile-destination-diff-");
+    const combinedDiff = [sourceDiff, destinationDiff].filter((part) => part.length > 0).join("\n");
+
+    if (refileFormat === "diff") {
+      if (combinedDiff) process.stdout.write(combinedDiff);
+      return;
+    }
+
+    if (refileFormat === "json") {
+      process.stdout.write(
+        JSON.stringify(
+          {
+            kind: "refile",
+            apply: refileApply,
+            changed,
+            sourceChanged,
+            destinationChanged,
+            sourcePath: sourcePathInput,
+            destinationPath: destinationPathInput,
+            sourceHeadlineLine1: sourceHeading.lineIndex + 1,
+            sourceHeadline: sourceHeading.line,
+            destinationHeadingLine1,
+            headingLevelDelta,
+            sourceSubtreeText,
+            newSourceText: sameFile ? destinationOutText : sourceOutText,
+            newDestinationText: destinationOutText,
+            diff: combinedDiff,
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+
+      if (!refileApply) return;
+    }
+
+    if (!refileApply) {
+      process.stdout.write(
+        `Would refile subtree starting at ${sourcePathInput}:${sourceHeading.lineIndex + 1} to ${destinationPathInput}` +
+          (destinationHeadingLine1 ? ` under heading line ${destinationHeadingLine1}` : " (file end)") +
+          "\nUse --apply to write changes.\n",
+      );
+      return;
+    }
+
+    if (!sameFile) {
+      fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+      fs.writeFileSync(sourcePath, sourceOutText, "utf8");
+      fs.writeFileSync(destinationPath, destinationOutText, "utf8");
+    } else {
+      fs.writeFileSync(sourcePath, destinationOutText, "utf8");
+    }
+
+    if (refileFormat === "text") {
+      process.stdout.write(
+        `Refiled subtree from ${sourcePathInput}:${sourceHeading.lineIndex + 1} to ${destinationPathInput}` +
+          (destinationHeadingLine1 ? ` under heading line ${destinationHeadingLine1}.` : ".") +
+          "\n",
+      );
     }
 
     return;

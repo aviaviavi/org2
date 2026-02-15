@@ -1,0 +1,1 @@
+Error: --to-pos cannot point inside the subtree being moved
