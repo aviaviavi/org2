@@ -110,7 +110,7 @@ Current reality:
 - Recurring tasks / repeaters: *In progress* (agenda repeater expansion MVP available)
 - Habits: *Planned*
 - Clocking + effort/properties for time tracking: *Planned*
-- Capture templates / quick capture flow: *Planned*
+- Capture templates / quick capture flow: *Available now* (CLI MVP: note/task quick-capture templates)
 - Refile workflows parity: *Planned*
 - Advanced agenda customization parity: *Planned*
 - Mature extensibility/plugin ecosystem: *Planned*
@@ -313,6 +313,28 @@ Tip: for a reproducible “fixture” when testing agenda output, create a small
 #+begin_src sh
 npm run org2 -- agenda --dir ./tmp/agenda-fixture --today 2026-01-25 --days 14 --format json
 #+end_src
+
+*** Quick capture (MVP)
+
+#+begin_src sh
+# Preview a note capture append (prints full resulting file text)
+npm run org2 -- capture --file /path/to/inbox.org2 --template note --title "Call with design team"
+
+# Preview a task capture append with explicit TODO keyword
+npm run org2 -- capture --file /path/to/inbox.org2 --template task --todo IN_PROGRESS --title "Ship onboarding copy" --format json
+
+# Write the capture result to disk
+npm run org2 -- capture --file /path/to/inbox.org2 --template task --title "Plan Q2 roadmap" --apply
+
+# Emit a unified diff preview instead of full text/json
+npm run org2 -- capture --file /path/to/inbox.org2 --template note --title "Draft launch notes" --format diff
+#+end_src
+
+Notes:
+- =capture= appends a new heading to the end of the target file.
+- =--template note= writes =* Title= + =CAPTURED: <...>=.
+- =--template task= writes =* TODO Title= by default (override keyword with =--todo=).
+- Use =--now ISO= for deterministic tests.
 
 *** Formatter (=fmt=) quick examples
 
