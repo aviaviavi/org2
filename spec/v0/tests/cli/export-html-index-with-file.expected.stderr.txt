@@ -1,0 +1,1 @@
+Error: --index is only supported with export html --dir

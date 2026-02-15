@@ -12,7 +12,7 @@ import { findConfigFile, loadConfig, resolveFilesFromConfig } from "./config.js"
 import { formatOrgTimestamp, TODO_KEYWORDS, updateTodoInText, type TodoStatus } from "./todo.js";
 import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from "./planning.js";
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
-import { renderOrgDocumentToHtml } from "./export.js";
+import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
 import type {
   DocumentNode,
   HeadlineNode,
@@ -1200,6 +1200,8 @@ async function main(): Promise<void> {
   let exportFile = "";
   let exportOut = "";
   let exportOutDir = "";
+  let exportIndex = "";
+  let exportIndexTitle = "";
   let exportApply = false;
   let exportFormat: "text" | "json" = "text";
   let exportTitle = "";
@@ -1749,6 +1751,22 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--index") {
+      i++;
+      if (i < args.length) {
+        if (command === "export") {
+          exportIndex = args[i]!;
+        }
+        i++;
+      }
+    } else if (arg === "--index-title") {
+      i++;
+      if (i < args.length) {
+        if (command === "export") {
+          exportIndexTitle = args[i]!;
+        }
+        i++;
+      }
     } else if (arg === "--archive-file") {
       i++;
       if (i < args.length) {
@@ -1841,7 +1859,7 @@ async function main(): Promise<void> {
       "       org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--format text|diff|json] [--apply]",
     );
     console.error(
-      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR]) [--format text|json] [--apply]",
+      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--format text|json] [--apply]",
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
@@ -1892,7 +1910,7 @@ async function main(): Promise<void> {
       "       org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--format text|diff|json] [--apply]",
     );
     console.error(
-      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR]) [--format text|json] [--apply]",
+      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--format text|json] [--apply]",
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
@@ -2202,6 +2220,16 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
+    if (hasSingleSource && exportIndex) {
+      console.error("Error: --index is only supported with export html --dir");
+      process.exit(1);
+    }
+
+    if (hasSingleSource && exportIndexTitle) {
+      console.error("Error: --index-title is only supported with export html --dir --index");
+      process.exit(1);
+    }
+
     if (hasDirSource && exportOut) {
       console.error("Error: --out is only supported with export html --file");
       process.exit(1);
@@ -2209,6 +2237,11 @@ async function main(): Promise<void> {
 
     if (hasDirSource && exportTitle) {
       console.error("Error: --title is only supported with export html --file");
+      process.exit(1);
+    }
+
+    if (hasDirSource && exportIndexTitle && !exportIndex) {
+      console.error("Error: --index-title requires --index for export html --dir");
       process.exit(1);
     }
 
@@ -2235,6 +2268,7 @@ async function main(): Promise<void> {
       const exported: Array<{
         sourcePath: string;
         outputPath: string;
+        outputPathAbsolute: string;
         title: string;
         changed: boolean;
       }> = [];
@@ -2251,22 +2285,68 @@ async function main(): Promise<void> {
           ? relativeSourcePath.replace(/\.(org|org2)$/i, ".html")
           : `${relativeSourcePath}.html`;
 
-        const outputPath = path.resolve(outputRoot, outputRelativePath);
+        const outputPathAbsolute = path.resolve(outputRoot, outputRelativePath);
         const outputPathDisplay = path.join(outputRootInput, outputRelativePath);
-        const existingOutput = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, "utf8").replace(/\r\n/g, "\n") : "";
+        const existingOutput = fs.existsSync(outputPathAbsolute)
+          ? fs.readFileSync(outputPathAbsolute, "utf8").replace(/\r\n/g, "\n")
+          : "";
         const changed = existingOutput !== rendered.html;
 
         if (exportApply) {
-          fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-          fs.writeFileSync(outputPath, rendered.html, "utf8");
+          fs.mkdirSync(path.dirname(outputPathAbsolute), { recursive: true });
+          fs.writeFileSync(outputPathAbsolute, rendered.html, "utf8");
         }
 
         exported.push({
           sourcePath: toDisplayPath(sourcePath),
           outputPath: outputPathDisplay,
+          outputPathAbsolute,
           title: rendered.title,
           changed,
         });
+      }
+
+      const exportedForOutput = exported.map(({ sourcePath, outputPath, title, changed }) => ({
+        sourcePath,
+        outputPath,
+        title,
+        changed,
+      }));
+
+      let indexOutput: { outputPath: string; title: string; changed: boolean } | null = null;
+      const indexRaw = String(exportIndex || "").trim();
+      if (indexRaw) {
+        const indexPathAbsolute = path.isAbsolute(indexRaw) ? path.resolve(indexRaw) : path.resolve(outputRoot, indexRaw);
+        const indexPathDisplay = path.isAbsolute(indexRaw) ? toDisplayPath(indexPathAbsolute) : path.join(outputRootInput, indexRaw);
+        const indexRendered = renderOrgExportIndexToHtml({
+          title: exportIndexTitle || undefined,
+          sourcePath: indexRaw,
+          items: exported.map((item) => {
+            const hrefRaw = path.relative(path.dirname(indexPathAbsolute), item.outputPathAbsolute);
+            const href = String(hrefRaw || path.basename(item.outputPathAbsolute)).split(path.sep).join("/");
+            return {
+              title: item.title,
+              href,
+              sourcePath: item.sourcePath,
+            };
+          }),
+        });
+
+        const existingIndex = fs.existsSync(indexPathAbsolute)
+          ? fs.readFileSync(indexPathAbsolute, "utf8").replace(/\r\n/g, "\n")
+          : "";
+        const indexChanged = existingIndex !== indexRendered.html;
+
+        if (exportApply) {
+          fs.mkdirSync(path.dirname(indexPathAbsolute), { recursive: true });
+          fs.writeFileSync(indexPathAbsolute, indexRendered.html, "utf8");
+        }
+
+        indexOutput = {
+          outputPath: indexPathDisplay,
+          title: indexRendered.title,
+          changed: indexChanged,
+        };
       }
 
       if (exportFormat === "json") {
@@ -2278,8 +2358,9 @@ async function main(): Promise<void> {
               outputDir: outputRootInput,
               recursive,
               apply: exportApply,
-              count: exported.length,
-              exported,
+              count: exportedForOutput.length,
+              exported: exportedForOutput,
+              index: indexOutput,
             },
             null,
             2,
@@ -2288,21 +2369,25 @@ async function main(): Promise<void> {
         return;
       }
 
-      if (exported.length === 0) {
+      if (exportedForOutput.length === 0 && !indexOutput) {
         process.stdout.write(`No Org/Org2 files found under ${sourceDirInput}\n`);
         return;
       }
 
       if (exportApply) {
-        process.stdout.write(`Exported ${exported.length} file(s) to ${outputRootInput}\n`);
+        process.stdout.write(`Exported ${exportedForOutput.length} file(s) to ${outputRootInput}\n`);
       } else {
-        process.stdout.write(`Previewed ${exported.length} file(s) from ${sourceDirInput}\n`);
+        process.stdout.write(`Previewed ${exportedForOutput.length} file(s) from ${sourceDirInput}\n`);
       }
 
-      for (const item of exported) {
+      for (const item of exportedForOutput) {
         process.stdout.write(
           `${item.sourcePath} -> ${item.outputPath}${item.changed ? "" : " (unchanged)"}\n`,
         );
+      }
+
+      if (indexOutput) {
+        process.stdout.write(`index -> ${indexOutput.outputPath}${indexOutput.changed ? "" : " (unchanged)"}\n`);
       }
       return;
     }

@@ -19,5 +19,9 @@
       "changed": true
     }
   ],
-  "index": null
+  "index": {
+    "outputPath": "spec/v0/tests/cli/export-html-dir-out/index.html",
+    "title": "Fixture Index",
+    "changed": true
+  }
 }

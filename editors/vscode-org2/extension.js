@@ -1534,8 +1534,16 @@ function activate(context) {
     const outputDir = path.isAbsolute(outputDirConfig)
       ? outputDirConfig
       : path.resolve(workspaceRoot, outputDirConfig);
+    const indexFileConfig = String(cfg.get('export.indexFile', 'index.html') || '').trim();
+    const indexTitleConfig = String(cfg.get('export.indexTitle', 'Org2 Export Index') || '').trim();
 
     const previewArgs = ['export', 'html', '--dir', workspaceRoot, '--recursive', '--out-dir', outputDir, '--format', 'json'];
+    if (indexFileConfig) {
+      previewArgs.push('--index', indexFileConfig);
+      if (indexTitleConfig) {
+        previewArgs.push('--index-title', indexTitleConfig);
+      }
+    }
     const { cmd: previewCmd, args: previewFinalArgs } = resolveOrg2Command(context, previewArgs);
 
     let previewPayload;
@@ -1584,9 +1592,18 @@ function activate(context) {
     const appliedCountRaw = Number(applyPayload && applyPayload.count);
     const appliedCount = Number.isFinite(appliedCountRaw) && appliedCountRaw >= 0 ? appliedCountRaw : appliedExported.length;
 
-    const firstOutputRaw = appliedExported[0] && typeof appliedExported[0].outputPath === 'string'
-      ? appliedExported[0].outputPath
+    const indexPayload = applyPayload && typeof applyPayload.index === 'object' && applyPayload.index
+      ? applyPayload.index
+      : null;
+    const indexOutputRaw = indexPayload && typeof indexPayload.outputPath === 'string'
+      ? indexPayload.outputPath
       : '';
+
+    const firstOutputRaw = indexOutputRaw || (
+      appliedExported[0] && typeof appliedExported[0].outputPath === 'string'
+        ? appliedExported[0].outputPath
+        : ''
+    );
 
     if (firstOutputRaw) {
       const firstOutputPath = path.isAbsolute(firstOutputRaw)
@@ -1600,7 +1617,8 @@ function activate(context) {
       }
     }
 
-    vscode.window.showInformationMessage(`Org2: exported ${appliedCount} workspace Org file(s) to HTML.`);
+    const indexSuffix = indexOutputRaw ? ` (index: ${path.basename(indexOutputRaw)})` : '';
+    vscode.window.showInformationMessage(`Org2: exported ${appliedCount} workspace Org file(s) to HTML${indexSuffix}.`);
   }
 
   const formattingProvider = {
