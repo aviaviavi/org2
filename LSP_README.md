@@ -75,6 +75,7 @@ Content-Length: 87
     - Replace tab characters with two spaces
   - `textDocument/formatting` - Canonical Org formatting via the org2 printer
   - `textDocument/rangeFormatting` - Canonical Org formatting for selected line ranges
+  - `textDocument/onTypeFormatting` - Table-aware canonical Org formatting while typing (`|` / newline triggers)
   - `textDocument/selectionRange` - Nested semantic selection expansion (token → link/line → heading → document)
   - `textDocument/semanticTokens/full` - Semantic highlighting tokens for TODO keywords, planning keywords, property keys, and link targets
   - `textDocument/codeLens` - Backlink-count lenses for `:ID:` properties (click to run `org2.roamShowBacklinksById` in VS Code)
