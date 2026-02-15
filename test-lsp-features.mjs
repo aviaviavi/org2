@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Test LSP feature coverage (symbols, folding, highlights, rename, linked editing, code actions, formatting, selection ranges, signature help, semantic tokens, code lenses)
+ * Test LSP feature coverage (symbols, folding, highlights, rename, linked editing, code actions, formatting, selection ranges, signature help, semantic tokens, code lenses, document colors)
  */
 
 import { spawn } from "node:child_process";
@@ -47,6 +47,13 @@ SCHEDULED: <2026-02-14 Sat>
 :ID: semantic-123
 :END:
 Link: [[id:semantic-123][Semantic Playground]]
+`;
+const colorOrgContent = `* Color Playground
+:PROPERTIES:
+:THEME_COLOR: #12abef
+:FADE: #33669980
+:SHORT: #f0a
+:END:
 `;
 const expectedFormattedTableSnippet = "| a      | b   |";
 const expectedRangeFormattedSnippet = "| a      | bb  |";
@@ -154,8 +161,18 @@ async function testLSPFeatures() {
           semanticTypes.includes("string");
         const codeLensOk = capabilities?.codeLensProvider?.resolveProvider === false;
         const linkedEditingOk = capabilities?.linkedEditingRangeProvider === true;
-        if (capabilities && capabilities.signatureHelpProvider && semanticLegendOk && codeLensOk && linkedEditingOk) {
-          console.log("✓ Initialize response received (signatureHelp + semanticTokens + codeLens + linkedEditingRange advertised)\n");
+        const documentColorOk = capabilities?.colorProvider === true;
+        if (
+          capabilities &&
+          capabilities.signatureHelpProvider &&
+          semanticLegendOk &&
+          codeLensOk &&
+          linkedEditingOk &&
+          documentColorOk
+        ) {
+          console.log(
+            "✓ Initialize response received (signatureHelp + semanticTokens + codeLens + linkedEditingRange + documentColor advertised)\n"
+          );
           testsPassed++;
         } else {
           console.log("✗ Initialize failed or required LSP capabilities missing\n");
@@ -752,24 +769,111 @@ async function testLSPFeatures() {
                                               }
                                               console.log();
 
-                                              // Shutdown
-                                              console.log("Shutting down...");
+                                              // Test 16: DocumentColor + ColorPresentation (hex color literals)
+                                              console.log("Test 16: DocumentColor + ColorPresentation");
                                               sendMessage(server, {
                                                 jsonrpc: "2.0",
-                                                id: 999,
-                                                method: "shutdown",
-                                                params: {},
+                                                method: "textDocument/didOpen",
+                                                params: {
+                                                  textDocument: {
+                                                    uri: "file:///colors.org",
+                                                    languageId: "org",
+                                                    version: 1,
+                                                    text: colorOrgContent,
+                                                  },
+                                                },
                                               });
 
                                               setTimeout(() => {
-                                                server.kill();
+                                                sendMessage(server, {
+                                                  jsonrpc: "2.0",
+                                                  id: 16,
+                                                  method: "textDocument/documentColor",
+                                                  params: {
+                                                    textDocument: { uri: "file:///colors.org" },
+                                                  },
+                                                });
 
-                                                console.log("\n=== Test Summary ===");
-                                                console.log(`Passed: ${testsPassed}`);
-                                                console.log(`Failed: ${testsFailed}`);
+                                                setTimeout(() => {
+                                                  const documentColorResponse = allResponses.find((r) => r.id === 16);
+                                                  const colorInfos = Array.isArray(documentColorResponse?.result)
+                                                    ? documentColorResponse.result
+                                                    : null;
 
-                                                resolve(testsFailed === 0);
-                                              }, 200);
+                                                  const hasShortHex = colorInfos?.some(
+                                                    (info) => info?.range?.start?.line === 4 && info?.range?.end?.character - info?.range?.start?.character === 4
+                                                  );
+                                                  const hasAlphaHex = colorInfos?.some(
+                                                    (info) => info?.range?.start?.line === 3 && info?.range?.end?.character - info?.range?.start?.character === 9
+                                                  );
+
+                                                  if (colorInfos && colorInfos.length >= 3 && hasShortHex && hasAlphaHex) {
+                                                    console.log(`✓ DocumentColor returned ${colorInfos.length} color range(s) with short+alpha coverage`);
+                                                    testsPassed++;
+                                                  } else {
+                                                    console.log(`✗ DocumentColor missing expected color ranges: ${JSON.stringify(documentColorResponse)}`);
+                                                    testsFailed++;
+                                                  }
+
+                                                  const firstColor = colorInfos?.[0];
+                                                  sendMessage(server, {
+                                                    jsonrpc: "2.0",
+                                                    id: 17,
+                                                    method: "textDocument/colorPresentation",
+                                                    params: {
+                                                      textDocument: { uri: "file:///colors.org" },
+                                                      color: firstColor?.color || { red: 0.07, green: 0.67, blue: 0.94, alpha: 1 },
+                                                      range: firstColor?.range || {
+                                                        start: { line: 2, character: 14 },
+                                                        end: { line: 2, character: 21 },
+                                                      },
+                                                    },
+                                                  });
+
+                                                  setTimeout(() => {
+                                                    const colorPresentationResponse = allResponses.find((r) => r.id === 17);
+                                                    const presentations = Array.isArray(colorPresentationResponse?.result)
+                                                      ? colorPresentationResponse.result
+                                                      : null;
+                                                    const hasHexLabel = presentations?.some((item) => /^#[A-F0-9]{3,8}$/.test(item?.label || ""));
+                                                    const hasTextEdit = presentations?.some(
+                                                      (item) => item?.textEdit?.newText && item.textEdit.newText === item?.label
+                                                    );
+
+                                                    if (presentations && presentations.length > 0 && hasHexLabel && hasTextEdit) {
+                                                      console.log(
+                                                        `✓ ColorPresentation returned ${presentations.length} presentation(s) with editable hex labels`
+                                                      );
+                                                      testsPassed++;
+                                                    } else {
+                                                      console.log(
+                                                        `✗ ColorPresentation missing expected editable labels: ${JSON.stringify(colorPresentationResponse)}`
+                                                      );
+                                                      testsFailed++;
+                                                    }
+                                                    console.log();
+
+                                                    // Shutdown
+                                                    console.log("Shutting down...");
+                                                    sendMessage(server, {
+                                                      jsonrpc: "2.0",
+                                                      id: 999,
+                                                      method: "shutdown",
+                                                      params: {},
+                                                    });
+
+                                                    setTimeout(() => {
+                                                      server.kill();
+
+                                                      console.log("\n=== Test Summary ===");
+                                                      console.log(`Passed: ${testsPassed}`);
+                                                      console.log(`Failed: ${testsFailed}`);
+
+                                                      resolve(testsFailed === 0);
+                                                    }, 200);
+                                                  }, 300);
+                                                }, 300);
+                                              }, 300);
                                             }, 300);
                                           }, 300);
                                         }, 300);
