@@ -14,6 +14,7 @@
     "onCommand:org2.formatCurrentFileCheck",
     "onCommand:org2.formatCurrentFilePreviewDiff",
     "onCommand:org2.formatCurrentFileApply",
+    "onCommand:org2.exportCurrentFileHtml",
     "onCommand:org2.toggleTodo",
     "onCommand:org2.setTodoStatus",
     "onCommand:org2.setTodoTODO",
@@ -107,6 +108,10 @@
       {
         "command": "org2.formatCurrentFileApply",
         "title": "Org2: Formatter — Apply Current File Formatting"
+      },
+      {
+        "command": "org2.exportCurrentFileHtml",
+        "title": "Org2: Export Current File to HTML"
       },
       {
         "command": "org2.pickAgendaFilter",
@@ -345,6 +350,11 @@
           "command": "org2.refileSubtree",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@15"
+        },
+        {
+          "command": "org2.exportCurrentFileHtml",
+          "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
+          "group": "navigation@15.5"
         },
         {
           "command": "org2.roamShowBacklinks",
@@ -881,6 +891,12 @@
         "key": "ctrl+; x",
         "mac": "cmd+; x",
         "command": "org2.archiveSubtree",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; p h",
+        "mac": "cmd+; p h",
+        "command": "org2.exportCurrentFileHtml",
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       }
     ]

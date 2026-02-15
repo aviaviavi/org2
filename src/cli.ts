@@ -12,6 +12,7 @@ import { findConfigFile, loadConfig, resolveFilesFromConfig } from "./config.js"
 import { formatOrgTimestamp, TODO_KEYWORDS, updateTodoInText, type TodoStatus } from "./todo.js";
 import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from "./planning.js";
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
+import { renderOrgDocumentToHtml } from "./export.js";
 import type {
   DocumentNode,
   HeadlineNode,
@@ -1194,6 +1195,14 @@ async function main(): Promise<void> {
   let refileApply = false;
   let refileFormat: "text" | "diff" | "json" = "text";
 
+  // HTML export/publishing
+  let exportAction: "html" = "html";
+  let exportFile = "";
+  let exportOut = "";
+  let exportApply = false;
+  let exportFormat: "text" | "json" = "text";
+  let exportTitle = "";
+
   // Todo status editing
   let todoAction: "set" | "toggle" = "toggle";
   let todoFile = "";
@@ -1282,6 +1291,16 @@ async function main(): Promise<void> {
     } else if (arg === "refile") {
       command = "refile";
       i++;
+    } else if (arg === "export") {
+      command = "export";
+      i++;
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        const sub = args[i]!;
+        if (sub === "html") {
+          exportAction = "html";
+          i++;
+        }
+      }
     } else if (arg === "lsp") {
       command = "lsp";
       i++;
@@ -1393,6 +1412,8 @@ async function main(): Promise<void> {
           idFile = args[i]!;
         } else if (command === "refile") {
           refileFile = args[i]!;
+        } else if (command === "export") {
+          exportFile = args[i]!;
         } else if (command === "roam" && roamAction === "link") {
           roamLinkFile = args[i]!;
         } else {
@@ -1640,6 +1661,8 @@ async function main(): Promise<void> {
           }
         } else if (command === "capture") {
           captureTitle = args[i]!;
+        } else if (command === "export") {
+          exportTitle = args[i]!;
         }
         i++;
       }
@@ -1671,6 +1694,8 @@ async function main(): Promise<void> {
           archiveFormat = v as "text" | "diff" | "json";
         } else if (command === "refile" && (v === "text" || v === "diff" || v === "json")) {
           refileFormat = v as "text" | "diff" | "json";
+        } else if (command === "export" && (v === "text" || v === "json")) {
+          exportFormat = v;
         } else if (command === "agenda" && (v === "text" || v === "json")) {
           format = v;
         } else if (command === "todo" && (v === "text" || v === "json" || v === "diff")) {
@@ -1707,6 +1732,14 @@ async function main(): Promise<void> {
     } else if (arg === "--overdue") {
       includeOverdue = true;
       i++;
+    } else if (arg === "--out" || arg === "--output") {
+      i++;
+      if (i < args.length) {
+        if (command === "export") {
+          exportOut = args[i]!;
+        }
+        i++;
+      }
     } else if (arg === "--archive-file") {
       i++;
       if (i < args.length) {
@@ -1770,6 +1803,8 @@ async function main(): Promise<void> {
         archiveApply = true;
       } else if (command === "refile") {
         refileApply = true;
+      } else if (command === "export") {
+        exportApply = true;
       } else if (command === "fmt") {
         fmtApply = true;
       } else if (command === "id") {
@@ -1795,6 +1830,9 @@ async function main(): Promise<void> {
     );
     console.error(
       "       org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--format text|diff|json] [--apply]",
+    );
+    console.error(
+      "       org2 export html --file FILE [--out FILE] [--title TITLE] [--format text|json] [--apply]",
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
@@ -1834,7 +1872,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
     console.error(
       "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--limit N] [--no-overdue] [--verbose-errors]",
     );
@@ -1843,6 +1881,9 @@ async function main(): Promise<void> {
     );
     console.error(
       "       org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--format text|diff|json] [--apply]",
+    );
+    console.error(
+      "       org2 export html --file FILE [--out FILE] [--title TITLE] [--format text|json] [--apply]",
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
@@ -2130,6 +2171,71 @@ async function main(): Promise<void> {
       );
     }
 
+    return;
+  }
+
+  if (command === "export") {
+    if (exportAction !== "html") {
+      console.error("Error: export currently supports only `html`");
+      process.exit(1);
+    }
+
+    if (!exportFile) {
+      console.error("Error: export html requires --file FILE");
+      process.exit(1);
+    }
+
+    const sourcePathInput = exportFile;
+    const sourcePath = path.resolve(sourcePathInput);
+    const sourceRaw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
+    const sourceAst = parseOrgToCanonicalAst(sourceRaw);
+    const rendered = renderOrgDocumentToHtml(sourceAst, {
+      title: exportTitle || undefined,
+      sourcePath: sourcePathInput,
+    });
+
+    const defaultOutputPath = (() => {
+      if (/\.(org|org2)$/i.test(sourcePathInput)) {
+        return sourcePathInput.replace(/\.(org|org2)$/i, ".html");
+      }
+      return `${sourcePathInput}.html`;
+    })();
+
+    const outputPathInput = exportOut || defaultOutputPath;
+    const outputPath = path.resolve(outputPathInput);
+    const existingOutput = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, "utf8").replace(/\r\n/g, "\n") : "";
+    const changed = existingOutput !== rendered.html;
+
+    if (exportApply) {
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fs.writeFileSync(outputPath, rendered.html, "utf8");
+    }
+
+    if (exportFormat === "json") {
+      process.stdout.write(
+        JSON.stringify(
+          {
+            kind: "export-html",
+            sourcePath: sourcePathInput,
+            outputPath: outputPathInput,
+            title: rendered.title,
+            apply: exportApply,
+            changed,
+            html: rendered.html,
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+      return;
+    }
+
+    if (!exportApply) {
+      process.stdout.write(rendered.html);
+      return;
+    }
+
+    process.stdout.write(`Exported HTML to ${outputPathInput}\n`);
     return;
   }
 
