@@ -1434,6 +1434,29 @@ function activate(context) {
     }
   }
 
+  function getHtmlExportStyleArgs() {
+    const cfg = vscode.workspace.getConfiguration('org2');
+    const stylesheetsRaw = String(cfg.get('export.stylesheets', '') || '');
+    const includeDefaultStyle = cfg.get('export.includeDefaultStyle', true) ? true : false;
+    const stylesheets = Array.from(
+      new Set(
+        stylesheetsRaw
+          .split(/[\n,]/)
+          .map((value) => String(value || '').trim())
+          .filter((value) => value.length > 0)
+      )
+    );
+
+    const args = [];
+    for (const href of stylesheets) {
+      args.push('--css', href);
+    }
+    if (!includeDefaultStyle) {
+      args.push('--no-default-style');
+    }
+    return args;
+  }
+
   async function exportCurrentFileHtml() {
     const editor = vscode.window.activeTextEditor;
     if (!editor) return;
@@ -1459,8 +1482,9 @@ function activate(context) {
 
     const filePath = doc.uri.fsPath;
     const cwd = getWorkspaceRoot() || path.dirname(filePath) || process.cwd();
+    const exportStyleArgs = getHtmlExportStyleArgs();
 
-    const previewArgs = ['export', 'html', '--file', filePath, '--format', 'json'];
+    const previewArgs = ['export', 'html', '--file', filePath, ...exportStyleArgs, '--format', 'json'];
     const { cmd: previewCmd, args: previewFinalArgs } = resolveOrg2Command(context, previewArgs);
 
     let previewPayload;
@@ -1494,7 +1518,7 @@ function activate(context) {
 
     if (confirm !== 'Write HTML') return;
 
-    const applyArgs = ['export', 'html', '--file', filePath, '--out', outputPath, '--format', 'json', '--apply'];
+    const applyArgs = ['export', 'html', '--file', filePath, '--out', outputPath, ...exportStyleArgs, '--format', 'json', '--apply'];
     const { cmd: applyCmd, args: applyFinalArgs } = resolveOrg2Command(context, applyArgs);
 
     let applyPayload;
@@ -1536,8 +1560,9 @@ function activate(context) {
       : path.resolve(workspaceRoot, outputDirConfig);
     const indexFileConfig = String(cfg.get('export.indexFile', 'index.html') || '').trim();
     const indexTitleConfig = String(cfg.get('export.indexTitle', 'Org2 Export Index') || '').trim();
+    const exportStyleArgs = getHtmlExportStyleArgs();
 
-    const previewArgs = ['export', 'html', '--dir', workspaceRoot, '--recursive', '--out-dir', outputDir, '--format', 'json'];
+    const previewArgs = ['export', 'html', '--dir', workspaceRoot, '--recursive', '--out-dir', outputDir, ...exportStyleArgs, '--format', 'json'];
     if (indexFileConfig) {
       previewArgs.push('--index', indexFileConfig);
       if (indexTitleConfig) {

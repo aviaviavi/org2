@@ -33,6 +33,68 @@ function escapeAttr(value: string): string {
   return escapeHtml(value).replace(/`/g, "&#96;");
 }
 
+function normalizeStylesheets(stylesheets: string[] | undefined): string[] {
+  if (!Array.isArray(stylesheets)) return [];
+  return stylesheets.map((href) => String(href || "").trim()).filter((href) => href.length > 0);
+}
+
+const DEFAULT_DOCUMENT_STYLE = `:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }`;
+
+const DEFAULT_INDEX_STYLE = `:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 1rem; }
+h1 { margin: 0; }
+ul.org2-export-index { padding-left: 1.25rem; margin: 0; display: grid; gap: 0.35rem; }
+.org2-export-source { opacity: 0.75; font-size: 0.9em; }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }`;
+
+function renderHeadStyleSection(opts: {
+  stylesheets?: string[];
+  includeDefaultStyle?: boolean;
+  defaultStyle: string;
+}): string {
+  const includeDefaultStyle = opts.includeDefaultStyle !== false;
+  const stylesheets = normalizeStylesheets(opts.stylesheets);
+  const stylesheetLinks = stylesheets
+    .map((href) => `<link rel="stylesheet" href="${escapeAttr(href)}" />`)
+    .join("\n");
+
+  const defaultStyleBlock = includeDefaultStyle ? `<style>\n${opts.defaultStyle}\n</style>` : "";
+
+  if (stylesheetLinks && defaultStyleBlock) {
+    return `${stylesheetLinks}\n${defaultStyleBlock}\n`;
+  }
+
+  if (stylesheetLinks) {
+    return `${stylesheetLinks}\n`;
+  }
+
+  if (defaultStyleBlock) {
+    return `${defaultStyleBlock}\n`;
+  }
+
+  return "";
+}
+
 function inlineToText(node: InlineNode): string {
   if (node.type === "Text") return node.value;
   if (node.type === "Timestamp") return node.raw;
@@ -261,12 +323,17 @@ function resolveTitle(doc: DocumentNode, explicitTitle: string | undefined, sour
 
 export function renderOrgDocumentToHtml(
   doc: DocumentNode,
-  opts: { title?: string; sourcePath?: string } = {},
+  opts: { title?: string; sourcePath?: string; stylesheets?: string[]; includeDefaultStyle?: boolean } = {},
 ): { html: string; title: string } {
   const title = resolveTitle(doc, opts.title, opts.sourcePath);
   const body = renderNodes(doc.children);
+  const headStyleSection = renderHeadStyleSection({
+    stylesheets: opts.stylesheets,
+    includeDefaultStyle: opts.includeDefaultStyle,
+    defaultStyle: DEFAULT_DOCUMENT_STYLE,
+  });
 
-  const html = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n<style>\n:root { color-scheme: light dark; }\nbody { font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }\nmain { display: grid; gap: 0.75rem; }\nsection.org2-headline { margin: 0.5rem 0 1rem; }\nh1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }\n.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }\n.org2-tags { font-size: 0.8em; opacity: 0.8; }\n.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }\n.org2-planning { font-size: 0.95em; opacity: 0.9; }\n.org2-planning-kind { font-weight: 600; }\n.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }\n.org2-properties dt { font-weight: 600; }\n.org2-properties dd { margin: 0; }\n.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }\n.org2-center { text-align: center; }\n.org2-underline { text-decoration: underline; }\ntable { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }\nth, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }\nthead th { background: rgba(127,127,127,0.16); }\na { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }\n</style>\n</head>\n<body>\n<main class="org2-document">\n${body}\n</main>\n</body>\n</html>\n`;
+  const html = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n${headStyleSection}</head>\n<body>\n<main class="org2-document">\n${body}\n</main>\n</body>\n</html>\n`;
 
   return { html, title };
 }
@@ -281,6 +348,8 @@ export function renderOrgExportIndexToHtml(opts: {
   title?: string;
   sourcePath?: string;
   items: OrgExportIndexItem[];
+  stylesheets?: string[];
+  includeDefaultStyle?: boolean;
 }): { html: string; title: string } {
   const title = String(opts.title || "").trim() || (opts.sourcePath ? path.basename(opts.sourcePath) : "Org2 Export Index");
   const items = Array.isArray(opts.items) ? opts.items : [];
@@ -296,8 +365,13 @@ export function renderOrgExportIndexToHtml(opts: {
     .join("\n");
 
   const body = listHtml || "<li>No exported files.</li>";
+  const headStyleSection = renderHeadStyleSection({
+    stylesheets: opts.stylesheets,
+    includeDefaultStyle: opts.includeDefaultStyle,
+    defaultStyle: DEFAULT_INDEX_STYLE,
+  });
 
-  const html = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n<style>\n:root { color-scheme: light dark; }\nbody { font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }\nmain { display: grid; gap: 1rem; }\nh1 { margin: 0; }\nul.org2-export-index { padding-left: 1.25rem; margin: 0; display: grid; gap: 0.35rem; }\n.org2-export-source { opacity: 0.75; font-size: 0.9em; }\na { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }\n</style>\n</head>\n<body>\n<main class="org2-export-index-document">\n<h1>${escapeHtml(title)}</h1>\n<ul class="org2-export-index">\n${body}\n</ul>\n</main>\n</body>\n</html>\n`;
+  const html = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n${headStyleSection}</head>\n<body>\n<main class="org2-export-index-document">\n<h1>${escapeHtml(title)}</h1>\n<ul class="org2-export-index">\n${body}\n</ul>\n</main>\n</body>\n</html>\n`;
 
   return { html, title };
 }
