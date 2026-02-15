@@ -81,6 +81,7 @@ Content-Length: 87
   - `textDocument/codeLens` - Backlink-count lenses for `:ID:` properties (click to run `org2.roamShowBacklinksById` in VS Code)
   - `textDocument/linkedEditingRange` - Synchronized ID editing ranges across `[[id:...]]` links and matching `:ID:` property values
   - `textDocument/documentColor` + `textDocument/colorPresentation` - Hex color literal detection (`#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`) with editable presentation labels
+  - `textDocument/inlayHint` - Inlay hints for unlabeled `[[id:...]]` links (resolved from heading titles)
 
 ## Editor Integration Examples
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Test LSP feature coverage (symbols, folding, definition/declaration/typeDefinition/implementation navigation, highlights, rename, linked editing, code actions, formatting, selection ranges, signature help, semantic tokens, code lenses, document colors)
+ * Test LSP feature coverage (symbols, folding, definition/declaration/typeDefinition/implementation navigation, highlights, rename, linked editing, code actions, formatting, selection ranges, signature help, semantic tokens, code lenses, document colors, inlay hints)
  */
 
 import { spawn } from "node:child_process";
@@ -163,6 +163,7 @@ async function testLSPFeatures() {
         const codeLensOk = capabilities?.codeLensProvider?.resolveProvider === false;
         const linkedEditingOk = capabilities?.linkedEditingRangeProvider === true;
         const documentColorOk = capabilities?.colorProvider === true;
+        const inlayHintOk = capabilities?.inlayHintProvider === true;
         const declarationOk = capabilities?.declarationProvider === true;
         const typeDefinitionOk = capabilities?.typeDefinitionProvider === true;
         const implementationOk = capabilities?.implementationProvider === true;
@@ -173,12 +174,13 @@ async function testLSPFeatures() {
           codeLensOk &&
           linkedEditingOk &&
           documentColorOk &&
+          inlayHintOk &&
           declarationOk &&
           typeDefinitionOk &&
           implementationOk
         ) {
           console.log(
-            "✓ Initialize response received (signatureHelp + semanticTokens + codeLens + linkedEditingRange + documentColor + declaration + typeDefinition + implementation advertised)\n"
+            "✓ Initialize response received (signatureHelp + semanticTokens + codeLens + linkedEditingRange + documentColor + inlayHint + declaration + typeDefinition + implementation advertised)\n"
           );
           testsPassed++;
         } else {
