@@ -22,6 +22,7 @@ Minimal VS Code language support for Org2.
 - LSP quick-fix code actions for parser whitespace issues (CRLF line endings and tab characters)
 - LSP document formatting (`textDocument/formatting`) for canonical Org table/layout alignment
 - LSP range formatting (`textDocument/rangeFormatting`) for selection-scoped canonical Org cleanup
+- LSP on-type formatting (`textDocument/onTypeFormatting`) for table-aware canonical alignment while typing (`|`/newline triggers)
 - LSP selection ranges (`textDocument/selectionRange`) for nested semantic expand-selection behavior
 - LSP semantic tokens (`textDocument/semanticTokens/full`) for TODO/planning/property/link-target highlighting
 - LSP backlink code lenses (`textDocument/codeLens`) on `:ID:` properties (click runs `org2.roamShowBacklinksById`)
