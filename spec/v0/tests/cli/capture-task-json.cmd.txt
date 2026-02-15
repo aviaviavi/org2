@@ -1,0 +1,1 @@
+capture --file "spec/v0/tests/cli/capture-task.input.txt" --template task --todo IN_PROGRESS --title "Ship release" --now 2026-01-21T12:34:00 --format json

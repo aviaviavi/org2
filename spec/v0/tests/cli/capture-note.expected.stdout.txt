@@ -1,0 +1,6 @@
+#+TITLE: Inbox
+
+* Existing note
+
+* New thought
+CAPTURED: <2026-01-21 Wed 12:34>

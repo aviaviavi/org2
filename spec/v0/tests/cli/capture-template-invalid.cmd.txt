@@ -1,0 +1,1 @@
+capture --file "spec/v0/tests/cli/capture-note.input.txt" --template weird --title "Nope"
