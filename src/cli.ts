@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import { parseOrgToCanonicalAst } from "./parser.js";
 import { printCanonicalAstToOrg } from "./printer.js";
 import { findConfigFile, loadConfig, resolveFilesFromConfig } from "./config.js";
-import { updateTodoInText, type TodoStatus } from "./todo.js";
+import { formatOrgTimestamp, TODO_KEYWORDS, updateTodoInText, type TodoStatus } from "./todo.js";
 import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from "./planning.js";
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import type {
@@ -1197,6 +1197,16 @@ async function main(): Promise<void> {
   let todoLogbook = false;
   let todoLogbookFlagSet = false;
 
+  // Quick capture
+  let captureFile = "";
+  let captureTitle = "";
+  let captureTemplateRaw = "note";
+  let captureTodoKeywordRaw = "TODO";
+  let captureTodoKeywordFlagSet = false;
+  let captureNow = ""; // ISO string
+  let captureApply = false;
+  let captureFormat: "text" | "json" | "diff" = "text";
+
   // Planning editing
   let planAction: "set" | "today" = "set";
   let planFile = "";
@@ -1278,6 +1288,9 @@ async function main(): Promise<void> {
           i++;
         }
       }
+    } else if (arg === "capture") {
+      command = "capture";
+      i++;
     } else if (arg === "plan" || arg === "planning") {
       command = "plan";
       i++;
@@ -1361,6 +1374,8 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "todo") {
           todoFile = args[i]!;
+        } else if (command === "capture") {
+          captureFile = args[i]!;
         } else if (command === "plan") {
           planFile = args[i]!;
         } else if (command === "id") {
@@ -1406,7 +1421,11 @@ async function main(): Promise<void> {
     } else if (arg === "--now") {
       i++;
       if (i < args.length) {
-        todoNow = args[i]!;
+        if (command === "capture") {
+          captureNow = args[i]!;
+        } else {
+          todoNow = args[i]!;
+        }
         i++;
       }
     } else if (arg === "--logbook") {
@@ -1501,6 +1520,9 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "agenda") {
           agendaTodoFiltersRaw.push(args[i]!);
+        } else if (command === "capture") {
+          captureTodoKeywordRaw = args[i]!;
+          captureTodoKeywordFlagSet = true;
         }
         i++;
       }
@@ -1586,6 +1608,14 @@ async function main(): Promise<void> {
         planDate = args[i]!;
         i++;
       }
+    } else if (arg === "--template") {
+      i++;
+      if (i < args.length) {
+        if (command === "capture") {
+          captureTemplateRaw = args[i]!;
+        }
+        i++;
+      }
     } else if (arg === "--title") {
       i++;
       if (i < args.length) {
@@ -1595,6 +1625,8 @@ async function main(): Promise<void> {
           } else {
             roamTitle = args[i]!;
           }
+        } else if (command === "capture") {
+          captureTitle = args[i]!;
         }
         i++;
       }
@@ -1628,6 +1660,8 @@ async function main(): Promise<void> {
           format = v;
         } else if (command === "todo" && (v === "text" || v === "json" || v === "diff")) {
           todoFormat = v as "text" | "json" | "diff";
+        } else if (command === "capture" && (v === "text" || v === "json" || v === "diff")) {
+          captureFormat = v as "text" | "json" | "diff";
         } else if (command === "plan" && (v === "text" || v === "json" || v === "diff")) {
           planFormat = v as "text" | "json" | "diff";
         } else if (command === "fmt" && (v === "text" || v === "json")) {
@@ -1695,6 +1729,8 @@ async function main(): Promise<void> {
     } else if (arg === "--apply" || arg === "--in-place") {
       if (command === "todo") {
         todoApply = true;
+      } else if (command === "capture") {
+        captureApply = true;
       } else if (command === "plan") {
         planApply = true;
       } else if (command === "archive") {
@@ -1724,6 +1760,9 @@ async function main(): Promise<void> {
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
+    );
+    console.error(
+      "       org2 capture --file FILE --title TITLE [--template note|task] [--todo KEYWORD] [--now ISO] [--format text|json|diff] [--apply]",
     );
     console.error(
       "       org2 plan set --file FILE (--line N | --pos LINE[:COL]) --kind scheduled|deadline --date YYYY-MM-DD [--format text|json|diff] [--apply]",
@@ -1757,7 +1796,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
     console.error(
       "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--limit N] [--no-overdue] [--verbose-errors]",
     );
@@ -1766,6 +1805,9 @@ async function main(): Promise<void> {
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
+    );
+    console.error(
+      "       org2 capture --file FILE --title TITLE [--template note|task] [--todo KEYWORD] [--now ISO] [--format text|json|diff] [--apply]",
     );
     console.error(
       "       org2 plan set --file FILE (--line N | --pos LINE[:COL]) --kind scheduled|deadline --date YYYY-MM-DD [--format text|json|diff] [--apply]",
@@ -2047,6 +2089,126 @@ async function main(): Promise<void> {
       );
     }
 
+    return;
+  }
+
+  if (command === "capture") {
+    if (!captureFile) {
+      console.error("Error: capture requires --file FILE");
+      process.exit(1);
+    }
+
+    const normalizedTitle = captureTitle.trim();
+    if (!normalizedTitle) {
+      console.error("Error: capture requires --title TITLE");
+      process.exit(1);
+    }
+
+    const normalizedTemplateRaw = captureTemplateRaw.trim().toLowerCase();
+    if (normalizedTemplateRaw !== "note" && normalizedTemplateRaw !== "task") {
+      console.error(`Error: invalid --template ${captureTemplateRaw}. Allowed: note, task`);
+      process.exit(1);
+    }
+    const normalizedTemplate = normalizedTemplateRaw as "note" | "task";
+
+    if (captureTodoKeywordFlagSet && normalizedTemplate !== "task") {
+      console.error("Error: --todo is only supported with --template task");
+      process.exit(1);
+    }
+
+    const normalizedTodoKeyword = captureTodoKeywordRaw.trim().toUpperCase();
+    if (
+      normalizedTemplate === "task" &&
+      !(TODO_KEYWORDS as readonly string[]).includes(normalizedTodoKeyword)
+    ) {
+      console.error(
+        `Error: invalid capture --todo value ${captureTodoKeywordRaw}. Allowed: ${TODO_KEYWORDS.join(", ")}`,
+      );
+      process.exit(1);
+    }
+
+    let captureNowDate = new Date();
+    if (captureNow) {
+      const parsedNow = new Date(captureNow);
+      if (isNaN(parsedNow.getTime())) {
+        console.error(`Error: invalid --now ${captureNow}`);
+        process.exit(1);
+      }
+      captureNowDate = parsedNow;
+    }
+
+    const headingLine =
+      normalizedTemplate === "task"
+        ? `* ${normalizedTodoKeyword} ${normalizedTitle}`
+        : `* ${normalizedTitle}`;
+    const capturedAt = formatOrgTimestamp(captureNowDate);
+    const captureEntryText = `${headingLine}\nCAPTURED: ${capturedAt}\n`;
+
+    const beforeText = fs.existsSync(captureFile)
+      ? fs.readFileSync(captureFile, "utf8").replace(/\r\n/g, "\n")
+      : "";
+    const beforeTrimmed = beforeText.trimEnd();
+    const outText =
+      beforeTrimmed.length > 0
+        ? `${beforeTrimmed}\n\n${captureEntryText}`
+        : captureEntryText;
+
+    const changed = outText !== beforeText;
+    const headingLine1 = beforeTrimmed.length === 0 ? 1 : beforeTrimmed.split("\n").length + 2;
+
+    if (captureApply && changed) {
+      fs.mkdirSync(path.dirname(captureFile), { recursive: true });
+      fs.writeFileSync(captureFile, outText, "utf8");
+    }
+
+    const unifiedDiff = (before: string, after: string): string => {
+      let tmpDir: string | null = null;
+      try {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-capture-diff-"));
+        const aPath = path.join(tmpDir, "before.org2");
+        const bPath = path.join(tmpDir, "after.org2");
+        fs.writeFileSync(aPath, before, "utf8");
+        fs.writeFileSync(bPath, after, "utf8");
+
+        const res = spawnSync("diff", ["-u", aPath, bPath], { encoding: "utf8" });
+        if (res.status !== 0 && res.status !== 1) {
+          throw new Error(res.stderr || `diff exited with status ${res.status}`);
+        }
+
+        return (res.stdout || "").split(aPath).join(captureFile).split(bPath).join(captureFile);
+      } finally {
+        if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    };
+
+    if (captureFormat === "diff") {
+      if (changed) process.stdout.write(unifiedDiff(beforeText, outText));
+      return;
+    }
+
+    if (captureFormat === "json") {
+      process.stdout.write(
+        JSON.stringify(
+          {
+            kind: "capture",
+            file: captureFile,
+            template: normalizedTemplate,
+            title: normalizedTitle,
+            todoKeyword: normalizedTemplate === "task" ? normalizedTodoKeyword : null,
+            capturedAt,
+            headingLine1,
+            apply: captureApply,
+            changed,
+            outText,
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+      return;
+    }
+
+    process.stdout.write(outText);
     return;
   }
 

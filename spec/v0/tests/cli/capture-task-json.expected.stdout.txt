@@ -1,0 +1,12 @@
+{
+  "kind": "capture",
+  "file": "spec/v0/tests/cli/capture-task.input.txt",
+  "template": "task",
+  "title": "Ship release",
+  "todoKeyword": "IN_PROGRESS",
+  "capturedAt": "<2026-01-21 Wed 12:34>",
+  "headingLine1": 3,
+  "apply": false,
+  "changed": true,
+  "outText": "* Existing\n\n* IN_PROGRESS Ship release\nCAPTURED: <2026-01-21 Wed 12:34>\n"
+}
