@@ -1,0 +1,1 @@
+export html --dir spec/v0/tests/cli/export-html-dir-fixture --index-title "Fixture Index" --format json

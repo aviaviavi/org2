@@ -78,7 +78,7 @@ Current reality:
 - Formatter current-file check/apply commands (VS Code): *Available now* (MVP)
 - Formatter current-file diff preview command (VS Code): *Available now* (MVP)
 - Formatter (=org2 fmt=): *In progress*
-- HTML export (=org2 export html=): *Available now* (MVP, single-file + directory batch standalone export)
+- HTML export (=org2 export html=): *Available now* (MVP, single-file + directory batch standalone export + optional index page)
 - LSP go-to-definition for file/id links (including file =::search= suffix targets) (=org2 lsp=): *Available now* (MVP)
 - LSP go-to-declaration for file/id links (including file =::search= suffix targets) (=textDocument/declaration= via =org2 lsp=): *Available now* (MVP)
 - LSP go-to-type-definition + go-to-implementation for file/id links (including file =::search= suffix targets) (=textDocument/typeDefinition= + =textDocument/implementation= via =org2 lsp=): *Available now* (MVP)
@@ -106,7 +106,7 @@ Current reality:
 - Formal Org2 spec (v0 draft): *In progress*
 
 **** Org Mode parity areas (broader)
-- Export/publishing pipeline parity: *In progress* (MVP single-file + directory-batch HTML export available via CLI + VS Code)
+- Export/publishing pipeline parity: *In progress* (MVP single-file + directory-batch HTML export + index generation available via CLI + VS Code)
 - Org crypt (encrypted sections/workflows): *Planned*
 - Recurring tasks / repeaters: *In progress* (agenda repeater expansion MVP available)
 - Habits: *Planned*
@@ -376,12 +376,17 @@ npm run org2 -- export html --dir /path/to/org --recursive --out-dir /path/to/si
 
 # Export a whole directory tree to HTML (preserves subdirectory structure)
 npm run org2 -- export html --dir /path/to/org --recursive --out-dir /path/to/site --apply
+
+# Preview a generated index page for batch exports (links to exported files)
+npm run org2 -- export html --dir /path/to/org --recursive --out-dir /path/to/site --index index.html --index-title "Site Index" --format json
 #+end_src
 
 Notes:
 - =export html --file= renders one file and supports =--title= / =--out= overrides.
 - =export html --dir= batch-renders all =.org/=*.org2= files in the target directory (recursive when =--recursive= is set).
 - Directory exports preserve relative source paths under =--out-dir= (or under =--dir= when =--out-dir= is omitted), swapping source extensions to =.html=.
+- =--index FILE= (directory mode only) emits an HTML index file with links to every exported page; relative index paths are resolved under =--out-dir=.
+- =--index-title TITLE= overrides the index page title.
 - Without =--apply=, output is preview-only (single-file emits HTML text by default; batch mode emits summary text or JSON).
 
 *** Formatter (=fmt=) quick examples
