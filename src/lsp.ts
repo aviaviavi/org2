@@ -548,7 +548,7 @@ class LSPServer {
           return;
         }
 
-        const completions = this.getCompletions(doc.text, position);
+        const completions = this.getCompletions(textDocument.uri, doc.text, position);
         this.sendResponse(id, completions);
       } else if (method === "textDocument/signatureHelp") {
         const { textDocument, position } = params;
@@ -919,7 +919,7 @@ class LSPServer {
     return symbols;
   }
 
-  private getCompletions(text: string, position: Position): CompletionItem[] {
+  private getCompletions(sourceUri: string, text: string, position: Position): CompletionItem[] {
     const lines = text.split("\n");
     const line = lines[position.line] ?? "";
     const cursor = Math.max(0, Math.min(position.character, line.length));
@@ -990,7 +990,92 @@ class LSPServer {
       });
     }
 
-    return Array.from(completions.values());
+    const idLinkContext = this.getIdLinkCompletionContext(line, cursor);
+    if (idLinkContext) {
+      for (const item of this.collectIdLinkCompletionItems(sourceUri, idLinkContext.typedPrefix)) {
+        addCompletion(item);
+      }
+    }
+
+    return Array.from(completions.values()).sort((a, b) => {
+      const aSort = a.sortText ?? a.label;
+      const bSort = b.sortText ?? b.label;
+      return aSort.localeCompare(bSort);
+    });
+  }
+
+  private getIdLinkCompletionContext(line: string, cursor: number): { typedPrefix: string } | null {
+    const beforeCursor = line.slice(0, cursor);
+    const linkStart = beforeCursor.toLowerCase().lastIndexOf("[[id:");
+    if (linkStart < 0) {
+      return null;
+    }
+
+    const targetStart = linkStart + "[[id:".length;
+    const targetEnd = line.indexOf("]", targetStart);
+    const effectiveTargetEnd = targetEnd >= 0 ? targetEnd : line.length;
+    if (cursor < targetStart || cursor > effectiveTargetEnd) {
+      return null;
+    }
+
+    const typedPrefix = line.slice(targetStart, cursor);
+    if (/[\s\[\]]/.test(typedPrefix)) {
+      return null;
+    }
+
+    return {
+      typedPrefix,
+    };
+  }
+
+  private collectIdLinkCompletionItems(sourceUri: string, typedPrefix: string): CompletionItem[] {
+    const normalizedPrefix = this.normalizeIdValue(typedPrefix || "");
+    const entries = new Map<string, string>();
+
+    for (const doc of this.collectReferenceDocuments(sourceUri)) {
+      const lines = doc.text.split("\n");
+      let currentHeadline = "";
+      const docPath = this.filePathFromUri(doc.uri);
+      const locationLabel = docPath ? this.formatPathForHover(docPath) : doc.uri;
+
+      for (const line of lines) {
+        const headlineMatch = line.match(/^\*+\s+(.*)$/);
+        if (headlineMatch) {
+          const headlineTitle = (headlineMatch[1] || "").trim();
+          currentHeadline = headlineTitle.replace(/^[A-Z][A-Z0-9_-]*\s+/, "");
+        }
+
+        const idMatch = line.match(/^\s*:ID:\s*(\S+)\s*$/i);
+        if (!idMatch) {
+          continue;
+        }
+
+        const normalizedId = this.normalizeIdValue(idMatch[1] || "");
+        if (!normalizedId) {
+          continue;
+        }
+
+        if (normalizedPrefix && !normalizedId.startsWith(normalizedPrefix)) {
+          continue;
+        }
+
+        const detail = currentHeadline ? `${currentHeadline} - ${locationLabel}` : `Org ID in ${locationLabel}`;
+        if (!entries.has(normalizedId) || currentHeadline) {
+          entries.set(normalizedId, detail);
+        }
+      }
+    }
+
+    return Array.from(entries.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(0, 100)
+      .map(([id, detail], index) => ({
+        label: id,
+        kind: CompletionItemKind.Value,
+        detail,
+        insertText: id,
+        sortText: `2-${String(index).padStart(3, "0")}-${id}`,
+      }));
   }
 
   private getSignatureHelp(text: string, position: Position): SignatureHelp | null {
