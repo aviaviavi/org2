@@ -1438,6 +1438,7 @@ function activate(context) {
     const cfg = vscode.workspace.getConfiguration('org2');
     const stylesheetsRaw = String(cfg.get('export.stylesheets', '') || '');
     const includeDefaultStyle = cfg.get('export.includeDefaultStyle', true) ? true : false;
+    const includeToc = cfg.get('export.includeToc', false) ? true : false;
     const stylesheets = Array.from(
       new Set(
         stylesheetsRaw
@@ -1453,6 +1454,9 @@ function activate(context) {
     }
     if (!includeDefaultStyle) {
       args.push('--no-default-style');
+    }
+    if (includeToc) {
+      args.push('--toc');
     }
     return args;
   }
