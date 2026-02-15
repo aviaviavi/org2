@@ -59,6 +59,15 @@ th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text
 thead th { background: rgba(127,127,127,0.16); }
 a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }`;
 
+const DOCUMENT_TOC_STYLE = `.org2-toc { border: 1px solid rgba(127,127,127,0.35); border-radius: 0.5rem; padding: 0.75rem 1rem; margin: 0.25rem 0 1rem; }
+.org2-toc h2 { margin: 0 0 0.5rem; font-size: 1rem; }
+.org2-toc ul { margin: 0; padding-left: 1.25rem; display: grid; gap: 0.25rem; }
+.org2-toc li.org2-toc-level-2 { margin-left: 0.75rem; }
+.org2-toc li.org2-toc-level-3 { margin-left: 1.5rem; }
+.org2-toc li.org2-toc-level-4 { margin-left: 2.25rem; }
+.org2-toc li.org2-toc-level-5 { margin-left: 3rem; }
+.org2-toc li.org2-toc-level-6 { margin-left: 3.75rem; }`;
+
 const DEFAULT_INDEX_STYLE = `:root { color-scheme: light dark; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
 main { display: grid; gap: 1rem; }
@@ -93,6 +102,69 @@ function renderHeadStyleSection(opts: {
   }
 
   return "";
+}
+
+type TocItem = {
+  id: string;
+  title: string;
+  level: number;
+};
+
+type RenderContext = {
+  headlineIds?: WeakMap<HeadlineNode, string>;
+};
+
+function slugifyHeadlineTitle(value: string): string {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return normalized || "section";
+}
+
+function buildHeadlineToc(doc: DocumentNode): { items: TocItem[]; headlineIds: WeakMap<HeadlineNode, string> } {
+  const items: TocItem[] = [];
+  const headlineIds = new WeakMap<HeadlineNode, string>();
+  const slugCounts = new Map<string, number>();
+
+  const nextSlug = (baseSlug: string): string => {
+    const count = (slugCounts.get(baseSlug) || 0) + 1;
+    slugCounts.set(baseSlug, count);
+    if (count === 1) return baseSlug;
+    return `${baseSlug}-${count}`;
+  };
+
+  const visitNodes = (nodes: Node[]): void => {
+    for (const node of nodes) {
+      if (node.type !== "Headline") continue;
+      const title = node.title.map((child) => inlineToText(child)).join("").trim() || "Untitled";
+      const id = nextSlug(slugifyHeadlineTitle(title));
+      headlineIds.set(node, id);
+      items.push({
+        id,
+        title,
+        level: Math.max(1, Math.min(6, node.level)),
+      });
+      visitNodes(node.children);
+    }
+  };
+
+  visitNodes(doc.children);
+  return { items, headlineIds };
+}
+
+function renderToc(items: TocItem[]): string {
+  if (!Array.isArray(items) || items.length === 0) return "";
+  const rows = items
+    .map((item) => {
+      const level = Math.max(1, Math.min(6, item.level));
+      return `<li class="org2-toc-level-${level}"><a href="#${escapeAttr(item.id)}">${escapeHtml(item.title)}</a></li>`;
+    })
+    .join("\n");
+  return `<nav class="org2-toc" aria-label="Table of contents">\n<h2>Contents</h2>\n<ul>\n${rows}\n</ul>\n</nav>`;
 }
 
 function inlineToText(node: InlineNode): string {
@@ -211,8 +283,8 @@ function renderTable(node: TableNode): string {
   return `<table>\n${[renderedHead, renderedBody].filter(Boolean).join("\n")}\n</table>`;
 }
 
-function renderListItem(node: ListItemNode): string {
-  const body = renderNodes(node.children);
+function renderListItem(node: ListItemNode, context: RenderContext): string {
+  const body = renderNodes(node.children, context);
   const checkbox =
     node.checkbox === "checked"
       ? '<input type="checkbox" checked disabled /> '
@@ -225,13 +297,13 @@ function renderListItem(node: ListItemNode): string {
   return `<li>${checkbox}${body}</li>`;
 }
 
-function renderList(node: ListNode): string {
+function renderList(node: ListNode, context: RenderContext): string {
   const tag = node.ordered ? "ol" : "ul";
-  const items = node.items.map((item) => renderListItem(item)).join("\n");
+  const items = node.items.map((item) => renderListItem(item, context)).join("\n");
   return `<${tag}>\n${items}\n</${tag}>`;
 }
 
-function renderHeadline(node: HeadlineNode): string {
+function renderHeadline(node: HeadlineNode, context: RenderContext): string {
   const headingLevel = Math.max(1, Math.min(6, node.level));
   const headingTag = `h${headingLevel}`;
   const title = renderInlineChildren(node.title);
@@ -240,20 +312,22 @@ function renderHeadline(node: HeadlineNode): string {
     node.tags && node.tags.length > 0
       ? ` <span class="org2-tags">${node.tags.map((tag) => `<span class="org2-tag">${escapeHtml(tag)}</span>`).join(" ")}</span>`
       : "";
+  const headingId = context.headlineIds?.get(node);
+  const headingIdAttr = headingId ? ` id="${escapeAttr(headingId)}"` : "";
 
-  const childrenHtml = renderNodes(node.children);
+  const childrenHtml = renderNodes(node.children, context);
   if (!childrenHtml.trim()) {
-    return `<section class="org2-headline level-${node.level}">\n<${headingTag}>${todo}${title}${tags}</${headingTag}>\n</section>`;
+    return `<section class="org2-headline level-${node.level}">\n<${headingTag}${headingIdAttr}>${todo}${title}${tags}</${headingTag}>\n</section>`;
   }
 
-  return `<section class="org2-headline level-${node.level}">\n<${headingTag}>${todo}${title}${tags}</${headingTag}>\n${childrenHtml}\n</section>`;
+  return `<section class="org2-headline level-${node.level}">\n<${headingTag}${headingIdAttr}>${todo}${title}${tags}</${headingTag}>\n${childrenHtml}\n</section>`;
 }
 
-function renderNode(node: Node): string {
-  if (node.type === "Headline") return renderHeadline(node);
+function renderNode(node: Node, context: RenderContext): string {
+  if (node.type === "Headline") return renderHeadline(node, context);
   if (node.type === "Paragraph") return renderParagraph(node);
-  if (node.type === "List") return renderList(node);
-  if (node.type === "ListItem") return renderListItem(node);
+  if (node.type === "List") return renderList(node, context);
+  if (node.type === "ListItem") return renderListItem(node, context);
   if (node.type === "Planning") return renderPlanning(node);
   if (node.type === "PropertyDrawer") return renderPropertyDrawer(node);
   if (node.type === "SrcBlock") return renderSrcBlock(node);
@@ -281,9 +355,9 @@ function renderNode(node: Node): string {
   return "";
 }
 
-function renderNodes(nodes: Node[]): string {
+function renderNodes(nodes: Node[], context: RenderContext = {}): string {
   return nodes
-    .map((node) => renderNode(node))
+    .map((node) => renderNode(node, context))
     .filter((html) => String(html || "").trim().length > 0)
     .join("\n");
 }
@@ -323,17 +397,36 @@ function resolveTitle(doc: DocumentNode, explicitTitle: string | undefined, sour
 
 export function renderOrgDocumentToHtml(
   doc: DocumentNode,
-  opts: { title?: string; sourcePath?: string; stylesheets?: string[]; includeDefaultStyle?: boolean } = {},
+  opts: {
+    title?: string;
+    sourcePath?: string;
+    stylesheets?: string[];
+    includeDefaultStyle?: boolean;
+    includeToc?: boolean;
+  } = {},
 ): { html: string; title: string } {
   const title = resolveTitle(doc, opts.title, opts.sourcePath);
-  const body = renderNodes(doc.children);
+  const includeToc = opts.includeToc === true;
+
+  let tocItems: TocItem[] = [];
+  const context: RenderContext = {};
+  if (includeToc) {
+    const toc = buildHeadlineToc(doc);
+    tocItems = toc.items;
+    context.headlineIds = toc.headlineIds;
+  }
+
+  const body = renderNodes(doc.children, context);
+  const tocHtml = includeToc ? renderToc(tocItems) : "";
+  const mainBody = [tocHtml, body].filter((segment) => String(segment || "").trim().length > 0).join("\n");
   const headStyleSection = renderHeadStyleSection({
     stylesheets: opts.stylesheets,
     includeDefaultStyle: opts.includeDefaultStyle,
-    defaultStyle: DEFAULT_DOCUMENT_STYLE,
+    defaultStyle: includeToc ? `${DEFAULT_DOCUMENT_STYLE}
+${DOCUMENT_TOC_STYLE}` : DEFAULT_DOCUMENT_STYLE,
   });
 
-  const html = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n${headStyleSection}</head>\n<body>\n<main class="org2-document">\n${body}\n</main>\n</body>\n</html>\n`;
+  const html = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n${headStyleSection}</head>\n<body>\n<main class="org2-document">\n${mainBody}\n</main>\n</body>\n</html>\n`;
 
   return { html, title };
 }
