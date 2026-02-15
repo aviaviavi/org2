@@ -207,11 +207,23 @@ interface CallHierarchyOutgoingCall {
   fromRanges: Range[];
 }
 
-interface RenameTarget {
-  kind: "id";
-  targetId: string;
-  range: Range;
-  placeholder: string;
+type RenameTarget =
+  | {
+      kind: "id";
+      targetId: string;
+      range: Range;
+      placeholder: string;
+    }
+  | {
+      kind: "file";
+      targetKey: string;
+      range: Range;
+      placeholder: string;
+    };
+
+interface FileRenameInput {
+  targetPath: string;
+  searchSuffix: string;
 }
 
 type ReferenceQuery =
@@ -552,13 +564,25 @@ class LSPServer {
           return;
         }
 
-        const normalizedNewId = this.normalizeRenameIdInput(String(newName ?? ""));
-        if (!normalizedNewId) {
-          this.sendError(id, -32602, "Rename target must be a non-empty ID without spaces");
+        if (target.kind === "id") {
+          const normalizedNewId = this.normalizeRenameIdInput(String(newName ?? ""));
+          if (!normalizedNewId) {
+            this.sendError(id, -32602, "Rename target must be a non-empty ID without spaces");
+            return;
+          }
+
+          const edit = this.buildIdRenameWorkspaceEdit(doc.uri, target.targetId, normalizedNewId);
+          this.sendResponse(id, edit);
           return;
         }
 
-        const edit = this.buildRenameWorkspaceEdit(doc.uri, target, normalizedNewId);
+        const normalizedFileRename = this.normalizeRenameFileInput(doc.uri, String(newName ?? ""));
+        if (!normalizedFileRename) {
+          this.sendError(id, -32602, "Rename target must be a valid file-link target");
+          return;
+        }
+
+        const edit = this.buildFileRenameWorkspaceEdit(doc.uri, target.targetKey, normalizedFileRename);
         this.sendResponse(id, edit);
       } else if (method === "textDocument/linkedEditingRange") {
         const { textDocument, position } = params;
@@ -3014,12 +3038,24 @@ class LSPServer {
 
   private extractRenameTarget(sourceUri: string, text: string, position: Position): RenameTarget | null {
     const link = this.extractLinkAtPosition(text, position);
-    if (link && this.isPositionInRange(position, link.targetRange) && link.target.toLowerCase().startsWith("id:")) {
-      const targetId = this.normalizeIdValue(link.target);
-      if (targetId) {
+    if (link && this.isPositionInRange(position, link.targetRange)) {
+      if (link.target.toLowerCase().startsWith("id:")) {
+        const targetId = this.normalizeIdValue(link.target);
+        if (targetId) {
+          return {
+            kind: "id",
+            targetId,
+            range: link.targetRange,
+            placeholder: link.target,
+          };
+        }
+      }
+
+      const targetKey = this.normalizeFileLinkTargetKey(sourceUri, link.target);
+      if (targetKey) {
         return {
-          kind: "id",
-          targetId,
+          kind: "file",
+          targetKey,
           range: link.targetRange,
           placeholder: link.target,
         };
@@ -3176,12 +3212,8 @@ class LSPServer {
     return normalized.toLowerCase();
   }
 
-  private buildRenameWorkspaceEdit(sourceUri: string, target: RenameTarget, newId: string): WorkspaceEdit | null {
-    if (target.kind !== "id") {
-      return null;
-    }
-
-    if (target.targetId === newId) {
+  private buildIdRenameWorkspaceEdit(sourceUri: string, targetId: string, newId: string): WorkspaceEdit | null {
+    if (targetId === newId) {
       return { changes: {} };
     }
 
@@ -3207,7 +3239,7 @@ class LSPServer {
         if (!link.target.toLowerCase().startsWith("id:")) {
           continue;
         }
-        if (this.normalizeIdValue(link.target) !== target.targetId) {
+        if (this.normalizeIdValue(link.target) !== targetId) {
           continue;
         }
 
@@ -3217,7 +3249,7 @@ class LSPServer {
         });
       }
 
-      for (const range of this.findIdDefinitionValueRanges(doc.text, target.targetId)) {
+      for (const range of this.findIdDefinitionValueRanges(doc.text, targetId)) {
         addEdit(doc.uri, {
           range,
           newText: newId,
@@ -3240,6 +3272,135 @@ class LSPServer {
     }
 
     return { changes };
+  }
+
+  private normalizeRenameFileInput(sourceUri: string, value: string): FileRenameInput | null {
+    const sourcePath = this.filePathFromUri(sourceUri);
+    if (!sourcePath) {
+      return null;
+    }
+
+    let normalized = value.trim();
+    if (!normalized) {
+      return null;
+    }
+
+    if (normalized.toLowerCase().startsWith("file:")) {
+      normalized = normalized.slice("file:".length);
+    }
+
+    if (!normalized || normalized.includes("[") || normalized.includes("]") || normalized.includes("\n")) {
+      return null;
+    }
+
+    const targetParts = normalized.split("::");
+    const targetPathOnly = targetParts.shift()?.trim() ?? "";
+    if (!targetPathOnly) {
+      return null;
+    }
+
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(targetPathOnly)) {
+      return null;
+    }
+
+    const absolutePath = path.resolve(path.dirname(sourcePath), targetPathOnly);
+    const searchSuffix = targetParts.length > 0 ? targetParts.join("::").trim() : "";
+
+    return {
+      targetPath: absolutePath,
+      searchSuffix,
+    };
+  }
+
+  private buildFileRenameWorkspaceEdit(sourceUri: string, targetKey: string, newTarget: FileRenameInput): WorkspaceEdit | null {
+    const normalizedTargetPath = path.resolve(newTarget.targetPath);
+    const normalizedSearchSuffix = newTarget.searchSuffix.trim();
+    const newTargetKey = `${normalizedTargetPath}::${normalizedSearchSuffix}`;
+    if (targetKey === newTargetKey) {
+      return { changes: {} };
+    }
+
+    const editsByUri = new Map<string, TextEdit[]>();
+    const seenEdits = new Set<string>();
+    const addEdit = (uri: string, edit: TextEdit) => {
+      const key = `${uri}:${edit.range.start.line}:${edit.range.start.character}:${edit.range.end.line}:${edit.range.end.character}:${edit.newText}`;
+      if (seenEdits.has(key)) {
+        return;
+      }
+      seenEdits.add(key);
+
+      const existing = editsByUri.get(uri);
+      if (existing) {
+        existing.push(edit);
+      } else {
+        editsByUri.set(uri, [edit]);
+      }
+    };
+
+    for (const doc of this.collectReferenceDocuments(sourceUri)) {
+      for (const link of this.findLinkTargets(doc.text)) {
+        const linkKey = this.normalizeFileLinkTargetKey(doc.uri, link.target);
+        if (!linkKey || linkKey !== targetKey) {
+          continue;
+        }
+
+        const replacement = this.formatRenamedFileLinkTarget(doc.uri, link.target, normalizedTargetPath, normalizedSearchSuffix);
+        if (!replacement) {
+          continue;
+        }
+
+        addEdit(doc.uri, {
+          range: link.targetRange,
+          newText: replacement,
+        });
+      }
+    }
+
+    if (editsByUri.size === 0) {
+      return null;
+    }
+
+    const changes: Record<string, TextEdit[]> = {};
+    for (const [uri, edits] of editsByUri.entries()) {
+      changes[uri] = edits.sort((a, b) => {
+        if (a.range.start.line !== b.range.start.line) {
+          return a.range.start.line - b.range.start.line;
+        }
+        return a.range.start.character - b.range.start.character;
+      });
+    }
+
+    return { changes };
+  }
+
+  private formatRenamedFileLinkTarget(
+    sourceUri: string,
+    existingTarget: string,
+    newTargetPath: string,
+    searchSuffix: string
+  ): string | null {
+    const sourcePath = this.filePathFromUri(sourceUri);
+    if (!sourcePath) {
+      return null;
+    }
+
+    const sourceDir = path.dirname(sourcePath);
+    let relativePath = path.relative(sourceDir, path.resolve(newTargetPath)).split(path.sep).join("/");
+    if (!relativePath) {
+      relativePath = path.basename(newTargetPath);
+    }
+
+    if (!relativePath) {
+      return null;
+    }
+
+    const hasFilePrefix = existingTarget.trim().toLowerCase().startsWith("file:");
+    let rendered = hasFilePrefix ? `file:${relativePath}` : relativePath;
+    if (searchSuffix) {
+      rendered += `::${searchSuffix}`;
+    }
+
+    return rendered;
   }
 
   private collectReferenceDocuments(sourceUri: string): Array<{ uri: string; text: string }> {
