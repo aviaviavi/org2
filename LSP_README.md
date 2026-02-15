@@ -76,6 +76,7 @@ Content-Length: 87
   - `textDocument/semanticTokens/full` - Semantic highlighting tokens for TODO keywords, planning keywords, property keys, and link targets
   - `textDocument/codeLens` - Backlink-count lenses for `:ID:` properties (click to run `org2.roamShowBacklinksById` in VS Code)
   - `textDocument/linkedEditingRange` - Synchronized ID editing ranges across `[[id:...]]` links and matching `:ID:` property values
+  - `textDocument/documentColor` + `textDocument/colorPresentation` - Hex color literal detection (`#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`) with editable presentation labels
 
 ## Editor Integration Examples
 
