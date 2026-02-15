@@ -1199,6 +1199,7 @@ async function main(): Promise<void> {
   let exportAction: "html" = "html";
   let exportFile = "";
   let exportOut = "";
+  let exportOutDir = "";
   let exportApply = false;
   let exportFormat: "text" | "json" = "text";
   let exportTitle = "";
@@ -1740,6 +1741,14 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--out-dir") {
+      i++;
+      if (i < args.length) {
+        if (command === "export") {
+          exportOutDir = args[i]!;
+        }
+        i++;
+      }
     } else if (arg === "--archive-file") {
       i++;
       if (i < args.length) {
@@ -1832,7 +1841,7 @@ async function main(): Promise<void> {
       "       org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--format text|diff|json] [--apply]",
     );
     console.error(
-      "       org2 export html --file FILE [--out FILE] [--title TITLE] [--format text|json] [--apply]",
+      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR]) [--format text|json] [--apply]",
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
@@ -1883,7 +1892,7 @@ async function main(): Promise<void> {
       "       org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--format text|diff|json] [--apply]",
     );
     console.error(
-      "       org2 export html --file FILE [--out FILE] [--title TITLE] [--format text|json] [--apply]",
+      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR]) [--format text|json] [--apply]",
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
@@ -2180,9 +2189,122 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
-    if (!exportFile) {
-      console.error("Error: export html requires --file FILE");
+    const hasSingleSource = Boolean(exportFile);
+    const hasDirSource = Boolean(String(dir || "").trim());
+
+    if (hasSingleSource && hasDirSource) {
+      console.error("Error: export html does not support combining --file with --dir");
       process.exit(1);
+    }
+
+    if (hasSingleSource && exportOutDir) {
+      console.error("Error: --out-dir is only supported with export html --dir");
+      process.exit(1);
+    }
+
+    if (hasDirSource && exportOut) {
+      console.error("Error: --out is only supported with export html --file");
+      process.exit(1);
+    }
+
+    if (hasDirSource && exportTitle) {
+      console.error("Error: --title is only supported with export html --file");
+      process.exit(1);
+    }
+
+    if (!hasSingleSource && !hasDirSource) {
+      console.error("Error: export html requires --file FILE or --dir DIR");
+      process.exit(1);
+    }
+
+    if (hasDirSource) {
+      const sourceDirInput = String(dir || "").trim();
+      const sourceDir = path.resolve(sourceDirInput);
+      const sourceFiles = listOrgLikeFiles(sourceDir, recursive).sort((a, b) => a.localeCompare(b));
+      const outputRootInput = String(exportOutDir || sourceDirInput).trim();
+      const outputRoot = path.resolve(outputRootInput);
+
+      const toDisplayPath = (absolutePath: string): string => {
+        const relative = path.relative(process.cwd(), absolutePath);
+        if (!relative || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
+          return relative || path.basename(absolutePath);
+        }
+        return absolutePath;
+      };
+
+      const exported: Array<{
+        sourcePath: string;
+        outputPath: string;
+        title: string;
+        changed: boolean;
+      }> = [];
+
+      for (const sourcePath of sourceFiles) {
+        const sourceRaw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
+        const sourceAst = parseOrgToCanonicalAst(sourceRaw);
+        const rendered = renderOrgDocumentToHtml(sourceAst, {
+          sourcePath: toDisplayPath(sourcePath),
+        });
+
+        const relativeSourcePath = path.relative(sourceDir, sourcePath);
+        const outputRelativePath = /\.(org|org2)$/i.test(relativeSourcePath)
+          ? relativeSourcePath.replace(/\.(org|org2)$/i, ".html")
+          : `${relativeSourcePath}.html`;
+
+        const outputPath = path.resolve(outputRoot, outputRelativePath);
+        const outputPathDisplay = path.join(outputRootInput, outputRelativePath);
+        const existingOutput = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, "utf8").replace(/\r\n/g, "\n") : "";
+        const changed = existingOutput !== rendered.html;
+
+        if (exportApply) {
+          fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+          fs.writeFileSync(outputPath, rendered.html, "utf8");
+        }
+
+        exported.push({
+          sourcePath: toDisplayPath(sourcePath),
+          outputPath: outputPathDisplay,
+          title: rendered.title,
+          changed,
+        });
+      }
+
+      if (exportFormat === "json") {
+        process.stdout.write(
+          JSON.stringify(
+            {
+              kind: "export-html-batch",
+              sourceDir: sourceDirInput,
+              outputDir: outputRootInput,
+              recursive,
+              apply: exportApply,
+              count: exported.length,
+              exported,
+            },
+            null,
+            2,
+          ) + "\n",
+        );
+        return;
+      }
+
+      if (exported.length === 0) {
+        process.stdout.write(`No Org/Org2 files found under ${sourceDirInput}\n`);
+        return;
+      }
+
+      if (exportApply) {
+        process.stdout.write(`Exported ${exported.length} file(s) to ${outputRootInput}\n`);
+      } else {
+        process.stdout.write(`Previewed ${exported.length} file(s) from ${sourceDirInput}\n`);
+      }
+
+      for (const item of exported) {
+        process.stdout.write(
+          `${item.sourcePath} -> ${item.outputPath}${item.changed ? "" : " (unchanged)"}\n`,
+        );
+      }
+      return;
     }
 
     const sourcePathInput = exportFile;
