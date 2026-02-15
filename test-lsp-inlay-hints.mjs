@@ -8,9 +8,17 @@ const inlayContent = `* Target Heading
 :END:
 
 * Links
-Unlabeled: [[id:alpha-123]]
-Labeled: [[id:alpha-123][Already Named]]
-Missing: [[id:missing-999]]
+Unlabeled ID: [[id:alpha-123]]
+Labeled ID: [[id:alpha-123][Already Named]]
+Missing ID: [[id:missing-999]]
+Unlabeled File: [[file:linked.org]]
+Labeled File: [[file:linked.org][Linked File Label]]
+Missing File: [[file:missing.org]]
+`;
+
+const linkedFileContent = `#+TITLE: Linked File Title
+* Body
+Some details.
 `;
 
 function findPosition(haystack, needle) {
@@ -80,9 +88,10 @@ async function run() {
     });
 
   try {
-    const unlabeledStart = findPosition(inlayContent, "[[id:alpha-123]]");
-    if (!unlabeledStart) {
-      throw new Error("Could not determine unlabeled ID link position");
+    const unlabeledIdStart = findPosition(inlayContent, "[[id:alpha-123]]");
+    const unlabeledFileStart = findPosition(inlayContent, "[[file:linked.org]]");
+    if (!unlabeledIdStart || !unlabeledFileStart) {
+      throw new Error("Could not determine unlabeled ID/file link positions");
     }
 
     sendMessage(server, {
@@ -96,6 +105,19 @@ async function run() {
     if (!initResponse?.result?.capabilities?.inlayHintProvider) {
       throw new Error(`Expected inlayHintProvider capability, got ${JSON.stringify(initResponse?.result?.capabilities)}`);
     }
+
+    sendMessage(server, {
+      jsonrpc: "2.0",
+      method: "textDocument/didOpen",
+      params: {
+        textDocument: {
+          uri: "file:///test/linked.org",
+          languageId: "org",
+          version: 1,
+          text: linkedFileContent,
+        },
+      },
+    });
 
     sendMessage(server, {
       jsonrpc: "2.0",
@@ -126,21 +148,30 @@ async function run() {
     const hintsResponse = await waitForResponse(2, 15000);
     const hints = Array.isArray(hintsResponse?.result) ? hintsResponse.result : [];
 
-    if (hints.length !== 1) {
-      throw new Error(`Expected exactly one inlay hint for unlabeled ID links, got ${JSON.stringify(hints)}`);
+    if (hints.length !== 2) {
+      throw new Error(`Expected exactly two inlay hints for unlabeled ID/file links, got ${JSON.stringify(hints)}`);
     }
 
-    const hint = hints[0] || {};
-    if (String(hint.label || "").includes("Target Heading") !== true) {
-      throw new Error(`Expected inlay hint label to include resolved heading title, got ${JSON.stringify(hint)}`);
-    }
+    const hintByPosition = new Map(
+      hints.map((hint) => [`${hint?.position?.line}:${hint?.position?.character}`, hint])
+    );
 
-    const expectedPosition = {
-      line: unlabeledStart.line,
-      character: unlabeledStart.character + "[[id:alpha-123]]".length,
+    const expectedIdPosition = {
+      line: unlabeledIdStart.line,
+      character: unlabeledIdStart.character + "[[id:alpha-123]]".length,
     };
-    if (hint?.position?.line !== expectedPosition.line || hint?.position?.character !== expectedPosition.character) {
-      throw new Error(`Expected inlay hint at unlabeled link end ${JSON.stringify(expectedPosition)}, got ${JSON.stringify(hint)}`);
+    const idHint = hintByPosition.get(`${expectedIdPosition.line}:${expectedIdPosition.character}`);
+    if (!idHint || String(idHint.label || "").includes("Target Heading") !== true) {
+      throw new Error(`Expected ID inlay hint with resolved heading title, got ${JSON.stringify(hints)}`);
+    }
+
+    const expectedFilePosition = {
+      line: unlabeledFileStart.line,
+      character: unlabeledFileStart.character + "[[file:linked.org]]".length,
+    };
+    const fileHint = hintByPosition.get(`${expectedFilePosition.line}:${expectedFilePosition.character}`);
+    if (!fileHint || String(fileHint.label || "").includes("Linked File Title") !== true) {
+      throw new Error(`Expected file-link inlay hint with linked title, got ${JSON.stringify(hints)}`);
     }
 
     sendMessage(server, { jsonrpc: "2.0", id: 999, method: "shutdown", params: {} });

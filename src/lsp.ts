@@ -1705,7 +1705,8 @@ class LSPServer {
   private getInlayHints(sourceUri: string, text: string, requestedRange?: Range): InlayHint[] {
     const scanRange = requestedRange ?? this.getFullDocumentRange(text);
     const idHeadlineLookup = this.buildIdHeadlineLookup(sourceUri);
-    if (idHeadlineLookup.size === 0) {
+    const fileHeadlineLookup = this.buildFileHeadlineLookup(sourceUri);
+    if (idHeadlineLookup.size === 0 && fileHeadlineLookup.size === 0) {
       return [];
     }
 
@@ -1721,21 +1722,31 @@ class LSPServer {
         continue;
       }
 
-      if (!link.target.toLowerCase().startsWith("id:")) {
+      let hintTitle: string | null = null;
+      let hintKeySuffix = "";
+
+      if (link.target.toLowerCase().startsWith("id:")) {
+        const normalizedId = this.normalizeIdValue(link.target);
+        if (!normalizedId) {
+          continue;
+        }
+        hintTitle = idHeadlineLookup.get(normalizedId) ?? null;
+        hintKeySuffix = `id:${normalizedId}`;
+      } else {
+        const filePath = this.normalizeFileLinkPath(sourceUri, link.target);
+        if (!filePath) {
+          continue;
+        }
+        const normalizedPath = path.resolve(filePath);
+        hintTitle = fileHeadlineLookup.get(normalizedPath) ?? null;
+        hintKeySuffix = `file:${normalizedPath}`;
+      }
+
+      if (!hintTitle) {
         continue;
       }
 
-      const normalizedId = this.normalizeIdValue(link.target);
-      if (!normalizedId) {
-        continue;
-      }
-
-      const title = idHeadlineLookup.get(normalizedId);
-      if (!title) {
-        continue;
-      }
-
-      const key = `${link.range.end.line}:${link.range.end.character}:${normalizedId}`;
+      const key = `${link.range.end.line}:${link.range.end.character}:${hintKeySuffix}`;
       if (seen.has(key)) {
         continue;
       }
@@ -1743,7 +1754,7 @@ class LSPServer {
 
       hints.push({
         position: { ...link.range.end },
-        label: `=> ${title}`,
+        label: `=> ${hintTitle}`,
         paddingLeft: true,
       });
     }
@@ -1780,6 +1791,69 @@ class LSPServer {
     }
 
     return entries;
+  }
+
+  private buildFileHeadlineLookup(sourceUri: string): Map<string, string> {
+    const entries = new Map<string, string>();
+
+    for (const doc of this.collectReferenceDocuments(sourceUri)) {
+      const filePath = this.filePathFromUri(doc.uri);
+      if (!filePath) {
+        continue;
+      }
+
+      const normalizedPath = path.resolve(filePath);
+      if (entries.has(normalizedPath)) {
+        continue;
+      }
+
+      const title = this.extractDocumentDisplayTitle(doc.text, normalizedPath);
+      if (!title) {
+        continue;
+      }
+
+      entries.set(normalizedPath, title);
+    }
+
+    return entries;
+  }
+
+  private extractDocumentDisplayTitle(text: string, fallbackPath?: string): string | null {
+    const lines = text.split("\n");
+
+    for (const line of lines) {
+      const titleMatch = line.match(/^\s*#\+TITLE:\s*(.+?)\s*$/i);
+      if (!titleMatch) {
+        continue;
+      }
+
+      const title = (titleMatch[1] || "").trim();
+      if (title) {
+        return title;
+      }
+    }
+
+    for (const line of lines) {
+      const headlineMatch = line.match(/^\*+\s+(.*)$/);
+      if (!headlineMatch) {
+        continue;
+      }
+
+      const rawHeadline = (headlineMatch[1] || "").trim();
+      const normalizedHeadline = rawHeadline.replace(/^[A-Z][A-Z0-9_-]*\s+/, "").trim();
+      if (normalizedHeadline) {
+        return normalizedHeadline;
+      }
+    }
+
+    if (fallbackPath) {
+      const baseName = path.basename(fallbackPath, path.extname(fallbackPath)).trim();
+      if (baseName) {
+        return baseName;
+      }
+    }
+
+    return null;
   }
 
   private getSingleLineRangeText(text: string, range: Range): string | null {
