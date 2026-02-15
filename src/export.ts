@@ -112,6 +112,7 @@ type TocItem = {
 
 type RenderContext = {
   headlineIds?: WeakMap<HeadlineNode, string>;
+  rewriteFileLinks?: boolean;
 };
 
 function slugifyHeadlineTitle(value: string): string {
@@ -167,6 +168,37 @@ function renderToc(items: TocItem[]): string {
   return `<nav class="org2-toc" aria-label="Table of contents">\n<h2>Contents</h2>\n<ul>\n${rows}\n</ul>\n</nav>`;
 }
 
+function rewriteOrgFileHrefForHtml(rawHref: string): string {
+  const href = String(rawHref || "").trim();
+  if (!href) return href;
+
+  const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(href);
+  const isFileScheme = /^file:/i.test(href);
+  if (hasScheme && !isFileScheme) return href;
+
+  const source = isFileScheme ? href.slice(5) : href;
+  const searchSeparatorIndex = source.indexOf("::");
+  const pathPart = searchSeparatorIndex >= 0 ? source.slice(0, searchSeparatorIndex) : source;
+  const searchSuffix = searchSeparatorIndex >= 0 ? source.slice(searchSeparatorIndex + 2) : "";
+
+  if (!/\.(org|org2)(?=($|[?#]))/i.test(pathPart)) return href;
+  const rewrittenPath = pathPart.replace(/\.(org|org2)(?=($|[?#]))/i, ".html");
+
+  if (!searchSuffix.trim()) return rewrittenPath;
+
+  const trimmedSearchSuffix = searchSuffix.trim();
+  if (trimmedSearchSuffix.startsWith("#")) {
+    return `${rewrittenPath}${trimmedSearchSuffix}`;
+  }
+
+  if (trimmedSearchSuffix.startsWith("*")) {
+    const headingText = trimmedSearchSuffix.replace(/^\*+\s*/, "").trim();
+    return `${rewrittenPath}#${slugifyHeadlineTitle(headingText || "section")}`;
+  }
+
+  return href;
+}
+
 function inlineToText(node: InlineNode): string {
   if (node.type === "Text") return node.value;
   if (node.type === "Timestamp") return node.raw;
@@ -195,27 +227,28 @@ function renderEmphasis(node: EmphasisNode): string {
   return `<code>${content}</code>`;
 }
 
-function renderLink(node: LinkNode): string {
-  const href = String(node.targetRaw || "").trim();
+function renderLink(node: LinkNode, context: RenderContext): string {
+  const hrefRaw = String(node.targetRaw || "").trim();
+  const href = context.rewriteFileLinks ? rewriteOrgFileHrefForHtml(hrefRaw) : hrefRaw;
   const text = String(node.descriptionRaw || node.targetRaw || "").trim() || href;
   return `<a href="${escapeAttr(href)}">${escapeHtml(text)}</a>`;
 }
 
-function renderInline(node: InlineNode): string {
+function renderInline(node: InlineNode, context: RenderContext): string {
   if (node.type === "Text") return escapeHtml(node.value);
   if (node.type === "Timestamp") return renderTimestamp(node);
   if (node.type === "TimestampRange") return renderTimestampRange(node);
   if (node.type === "Emphasis") return renderEmphasis(node);
-  if (node.type === "Link") return renderLink(node);
+  if (node.type === "Link") return renderLink(node, context);
   return "";
 }
 
-function renderInlineChildren(nodes: InlineNode[]): string {
-  return nodes.map((node) => renderInline(node)).join("");
+function renderInlineChildren(nodes: InlineNode[], context: RenderContext): string {
+  return nodes.map((node) => renderInline(node, context)).join("");
 }
 
-function renderParagraph(node: ParagraphNode): string {
-  return `<p>${renderInlineChildren(node.children)}</p>`;
+function renderParagraph(node: ParagraphNode, context: RenderContext): string {
+  return `<p>${renderInlineChildren(node.children, context)}</p>`;
 }
 
 function renderPlanning(node: PlanningNode): string {
@@ -306,7 +339,7 @@ function renderList(node: ListNode, context: RenderContext): string {
 function renderHeadline(node: HeadlineNode, context: RenderContext): string {
   const headingLevel = Math.max(1, Math.min(6, node.level));
   const headingTag = `h${headingLevel}`;
-  const title = renderInlineChildren(node.title);
+  const title = renderInlineChildren(node.title, context);
   const todo = node.todo ? `<span class="org2-todo">${escapeHtml(node.todo)}</span> ` : "";
   const tags =
     node.tags && node.tags.length > 0
@@ -325,7 +358,7 @@ function renderHeadline(node: HeadlineNode, context: RenderContext): string {
 
 function renderNode(node: Node, context: RenderContext): string {
   if (node.type === "Headline") return renderHeadline(node, context);
-  if (node.type === "Paragraph") return renderParagraph(node);
+  if (node.type === "Paragraph") return renderParagraph(node, context);
   if (node.type === "List") return renderList(node, context);
   if (node.type === "ListItem") return renderListItem(node, context);
   if (node.type === "Planning") return renderPlanning(node);
@@ -403,13 +436,16 @@ export function renderOrgDocumentToHtml(
     stylesheets?: string[];
     includeDefaultStyle?: boolean;
     includeToc?: boolean;
+    rewriteFileLinks?: boolean;
   } = {},
 ): { html: string; title: string } {
   const title = resolveTitle(doc, opts.title, opts.sourcePath);
   const includeToc = opts.includeToc === true;
 
   let tocItems: TocItem[] = [];
-  const context: RenderContext = {};
+  const context: RenderContext = {
+    rewriteFileLinks: opts.rewriteFileLinks === true,
+  };
   if (includeToc) {
     const toc = buildHeadlineToc(doc);
     tocItems = toc.items;

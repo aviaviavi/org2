@@ -1439,6 +1439,7 @@ function activate(context) {
     const stylesheetsRaw = String(cfg.get('export.stylesheets', '') || '');
     const includeDefaultStyle = cfg.get('export.includeDefaultStyle', true) ? true : false;
     const includeToc = cfg.get('export.includeToc', false) ? true : false;
+    const rewriteFileLinks = cfg.get('export.rewriteFileLinks', false) ? true : false;
     const stylesheets = Array.from(
       new Set(
         stylesheetsRaw
@@ -1457,6 +1458,9 @@ function activate(context) {
     }
     if (includeToc) {
       args.push('--toc');
+    }
+    if (rewriteFileLinks) {
+      args.push('--rewrite-file-links');
     }
     return args;
   }
