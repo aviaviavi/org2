@@ -111,7 +111,7 @@ Current reality:
 - Habits: *Planned*
 - Clocking + effort/properties for time tracking: *Planned*
 - Capture templates / quick capture flow: *Available now* (CLI MVP: note/task quick-capture templates)
-- Refile workflows parity: *Planned*
+- Refile workflows parity: *Available now* (CLI + VS Code MVP)
 - Advanced agenda customization parity: *Planned*
 - Mature extensibility/plugin ecosystem: *Planned*
 
@@ -335,6 +335,25 @@ Notes:
 - =--template note= writes =* Title= + =CAPTURED: <...>=.
 - =--template task= writes =* TODO Title= by default (override keyword with =--todo=).
 - Use =--now ISO= for deterministic tests.
+
+*** Refile subtree (MVP)
+
+#+begin_src sh
+# Preview moving the subtree at/above --pos into another file (append to file end)
+npm run org2 -- refile --file /path/to/inbox.org2 --pos 42 --to-file /path/to/projects.org2 --format json
+
+# Preview as diff
+npm run org2 -- refile --file /path/to/inbox.org2 --pos 42 --to-file /path/to/projects.org2 --format diff
+
+# Refile under a destination heading (line or cursor-like LINE[:COL])
+npm run org2 -- refile --file /path/to/inbox.org2 --pos 42 --to-file /path/to/projects.org2 --to-pos 10 --apply
+#+end_src
+
+Notes:
+- =refile= moves the headline subtree at/above =--pos= out of the source file and into =--to-file=.
+- Without =--to-pos=, the moved subtree is appended at end-of-file.
+- With =--to-pos=, the moved subtree is inserted at the end of the destination heading subtree and headline levels are adjusted so the moved root becomes a child of that heading.
+- Use =--format diff= to preview the exact source+destination edits before applying.
 
 *** Formatter (=fmt=) quick examples
 

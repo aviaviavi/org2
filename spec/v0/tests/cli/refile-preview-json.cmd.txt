@@ -1,0 +1,1 @@
+refile --file "spec/v0/tests/cli/refile-preview-source.input.txt" --pos 2 --to-file "spec/v0/tests/cli/refile-preview-dest.input.txt" --to-pos 1 --format json

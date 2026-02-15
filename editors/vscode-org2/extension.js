@@ -1990,6 +1990,209 @@ function activate(context) {
     })
   );
 
+  async function runRefileCli(item) {
+    let filePath;
+    let line;
+
+    if (item && item.file) {
+      filePath = resolveAgendaItemPath(item);
+      line = typeof item.line === 'number' ? item.line + 1 : 1;
+
+      const openDoc = findOpenDocumentForPath(filePath);
+      if (openDoc && openDoc.isDirty) {
+        vscode.window.showWarningMessage('Org2: please save the file before refiling from the agenda.');
+        return;
+      }
+    } else {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+
+      const doc = editor.document;
+      if (!doc || doc.uri.scheme !== 'file') {
+        vscode.window.showWarningMessage('Org2: refiling requires a file-backed document.');
+        return;
+      }
+
+      if (doc.isDirty) {
+        const ok = await doc.save();
+        if (!ok) {
+          vscode.window.showWarningMessage('Org2: could not save file before refiling.');
+          return;
+        }
+      }
+
+      filePath = doc.uri.fsPath;
+      line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
+    }
+
+    const cfg = vscode.workspace.getConfiguration('org2');
+    const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
+    const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
+    const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
+    const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
+
+    const activeEditorBefore = item ? undefined : vscode.window.activeTextEditor;
+    const activeUriBefore = activeEditorBefore && activeEditorBefore.document ? activeEditorBefore.document.uri.toString() : '';
+    const selectionBefore =
+      activeEditorBefore && activeEditorBefore.selection
+        ? new vscode.Selection(activeEditorBefore.selection.start, activeEditorBefore.selection.end)
+        : undefined;
+
+    const sourcePath = path.resolve(String(filePath));
+
+    let candidatePaths = [];
+    try {
+      const roots = vscode.workspace.workspaceFolders || [];
+      if (roots.length > 0) {
+        const found = await vscode.workspace.findFiles('**/*.{org,org2}', '**/{.git,node_modules,.org2}/**', 500);
+        candidatePaths = found.map((uri) => uri.fsPath);
+      }
+    } catch (_) {
+      // Fall back to source-only picker.
+    }
+
+    if (!candidatePaths.includes(sourcePath)) {
+      candidatePaths.push(sourcePath);
+    }
+
+    candidatePaths = Array.from(new Set(candidatePaths.map((p) => path.resolve(String(p))))).sort((a, b) => a.localeCompare(b));
+
+    const workspaceRoot = getWorkspaceRoot();
+    const destinationPick = await vscode.window.showQuickPick(
+      candidatePaths.map((candidate) => ({
+        label: workspaceRoot ? path.relative(workspaceRoot, candidate) || path.basename(candidate) : path.basename(candidate),
+        description: candidate === sourcePath ? 'Current file' : '',
+        detail: candidate,
+        filePath: candidate,
+      })),
+      {
+        placeHolder: 'Org2: refile subtree destination file',
+        matchOnDescription: true,
+        matchOnDetail: true,
+      }
+    );
+    if (!destinationPick) return;
+
+    const destinationPath = path.resolve(String(destinationPick.filePath || ''));
+    if (!destinationPath) return;
+
+    const openDestinationDoc = findOpenDocumentForPath(destinationPath);
+    if (openDestinationDoc && openDestinationDoc.isDirty) {
+      vscode.window.showWarningMessage('Org2: please save the destination file before refiling.');
+      return;
+    }
+
+    let destinationText = '';
+    try {
+      destinationText = fs.existsSync(destinationPath)
+        ? fs.readFileSync(destinationPath, 'utf8').replace(/\r\n/g, '\n')
+        : '';
+    } catch (e) {
+      vscode.window.showErrorMessage(`Org2: could not read destination file: ${String(e && e.message ? e.message : e)}`);
+      return;
+    }
+
+    const headingPicks = [{
+      label: 'Append to end of file',
+      description: path.basename(destinationPath),
+      detail: destinationPath,
+      line1: 0,
+    }];
+
+    const destinationLines = destinationText.split('\n');
+    for (let idx = 0; idx < destinationLines.length; idx++) {
+      const lineText = destinationLines[idx] || '';
+      const m = /^(\*+)\s+(.*)$/.exec(lineText);
+      if (!m) continue;
+      const title = String(m[2] || '').trim() || '(untitled heading)';
+      headingPicks.push({
+        label: `${m[1]} ${title}`,
+        description: `Line ${idx + 1}`,
+        detail: destinationPath,
+        line1: idx + 1,
+      });
+    }
+
+    const headingPick = await vscode.window.showQuickPick(headingPicks, {
+      placeHolder: 'Org2: insert location in destination file',
+      matchOnDescription: true,
+      matchOnDetail: false,
+    });
+    if (!headingPick) return;
+
+    const destinationHeadingLine1 = headingPick.line1 > 0 ? String(headingPick.line1) : '';
+
+    const previewArgs = ['refile', '--file', sourcePath, '--pos', String(line), '--to-file', destinationPath, '--format', 'diff'];
+    if (destinationHeadingLine1) {
+      previewArgs.push('--to-pos', destinationHeadingLine1);
+    }
+
+    const { cmd: previewCmd, args: previewFinalArgs } = resolveOrg2Command(context, previewArgs);
+
+    try {
+      const { stdout } = await execFileAsync(previewCmd, previewFinalArgs, { cwd: getAgendaRootDir() });
+      const diffText = String(stdout || '').trimEnd();
+
+      if (!diffText) {
+        vscode.window.showInformationMessage('Org2: nothing to refile.');
+        return;
+      }
+
+      const diffDoc = await vscode.workspace.openTextDocument({ language: 'diff', content: diffText + '\n' });
+      await vscode.window.showTextDocument(diffDoc, { preview: true, preserveFocus: false });
+
+      const applyOk = await vscode.window.showWarningMessage(
+        `Org2: apply refile edit to ${path.basename(destinationPath)}?`,
+        { modal: true },
+        'Apply'
+      );
+      if (applyOk !== 'Apply') return;
+
+      const applyArgs = ['refile', '--file', sourcePath, '--pos', String(line), '--to-file', destinationPath, '--format', 'json', '--apply'];
+      if (destinationHeadingLine1) {
+        applyArgs.push('--to-pos', destinationHeadingLine1);
+      }
+
+      const { cmd: applyCmd, args: applyFinalArgs } = resolveOrg2Command(context, applyArgs);
+      const { stdout: applyOut } = await execFileAsync(applyCmd, applyFinalArgs, { cwd: getAgendaRootDir() });
+      const changed = parseChangedFlagFromCliJson(applyOut);
+
+      if (refreshAfterCliApply && changed !== false) {
+        await refreshFileFromDisk(sourcePath, {
+          selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
+          activeUri: activeUriBefore,
+          skipIfInSync: skipRefreshWhenInSync,
+          allowGlobalFallback: allowGlobalRefreshFallback,
+        });
+
+        if (path.resolve(destinationPath) !== path.resolve(sourcePath)) {
+          await refreshFileFromDisk(destinationPath, {
+            skipIfInSync: skipRefreshWhenInSync,
+            allowGlobalFallback: allowGlobalRefreshFallback,
+          });
+        }
+      }
+
+      if (item instanceof Org2AgendaItem && changed !== false) {
+        await agendaProvider.load();
+      }
+
+      vscode.window.showInformationMessage(
+        `Org2: refiled subtree to ${path.basename(destinationPath)}${destinationHeadingLine1 ? ` (line ${destinationHeadingLine1})` : ''}.`
+      );
+    } catch (e) {
+      const stderr = e && e.stderr ? String(e.stderr).trim() : '';
+      const extra = stderr ? `\n${stderr}` : '';
+      vscode.window.showErrorMessage(`Org2: refile failed: ${String(e && e.message ? e.message : e)}${extra}`);
+    }
+  }
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.refileSubtree', async (item) => {
+      await runRefileCli(item);
+    })
+  );
+
   // Roam dailies navigation (open or create YYYY-MM-DD.org2)
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.roamDailiesGotoToday', async () => {
