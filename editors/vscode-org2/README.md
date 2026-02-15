@@ -14,6 +14,7 @@ Minimal VS Code language support for Org2.
   - `[[url]]`
   - `[[url][desc]]`
   - bare `https://...` URLs
+- HTML export command for the active Org/Org2 file (`Org2: Export Current File to HTML`) with preview + write flow
 - LSP go-to-definition + go-to-declaration + go-to-type-definition + go-to-implementation for Org file/id links, including file `::search` suffix targets (`textDocument/definition` + `textDocument/declaration` + `textDocument/typeDefinition` + `textDocument/implementation`)
 - LSP hover tooltips for Org links, TODO keywords, and planning keywords (`SCHEDULED:` / `DEADLINE:`)
 - LSP signature help for planning timestamps (`textDocument/signatureHelp` with active/inactive timestamp forms)
@@ -51,9 +52,9 @@ The extension can toggle/set TODO keywords on the current headline via the `org2
 
 Implementation detail: the extension saves the file (if needed), runs `org2 todo toggle|set --file ... --line ... --apply` (and adds `--logbook` when `org2.todo.writeTransitionLogbook` is enabled), then refreshes the buffer from disk. By default it restores the prior cursor/selection; this can be disabled with `org2.editor.restoreSelectionAfterCliApply` if your setup still auto-expands folds. You can also disable the explicit refresh (`org2.editor.refreshAfterCliApply`) to rely on VS Code file watching and avoid refresh-triggered fold churn. With refresh enabled, `org2.editor.skipRefreshWhenInSync` (default true) avoids unnecessary `revertResource` calls when the open document already matches disk after CLI apply, and `org2.editor.allowGlobalRefreshFallback` (default false) controls whether Org2 may fall back to global `workbench.action.files.revert` on older VS Code builds.
 
-## Planning + archiving + refile (MVP)
+## Planning + archiving + refile + export (MVP)
 
-The extension can edit planning keywords, archive subtrees, and refile subtrees via the `org2` CLI.
+The extension can edit planning keywords, archive subtrees, refile subtrees, and export HTML via the `org2` CLI.
 
 - Command: **Org2: Set Scheduled** (`org2.setScheduled`) → prompts for `YYYY-MM-DD`
 - Command: **Org2: Set Scheduled to Today** (`org2.setScheduledToday`) → no date prompt
@@ -61,11 +62,13 @@ The extension can edit planning keywords, archive subtrees, and refile subtrees 
 - Command: **Org2: Set Deadline to Today** (`org2.setDeadlineToday`) → no date prompt
 - Command: **Org2: Archive Subtree** (`org2.archiveSubtree`) → shows a diff preview, then asks for confirmation
 - Command: **Org2: Refile Subtree** (`org2.refileSubtree`) → pick destination file/heading, preview diff, then apply
+- Command: **Org2: Export Current File to HTML** (`org2.exportCurrentFileHtml`) → preview generated HTML, then optionally write to disk
 
 Implementation detail: the extension saves the file (if needed).
 - Planning edits run `org2 plan set ... --apply`.
 - Archiving runs `org2 archive ... --format diff` first to generate a preview, then `org2 archive ... --apply` if confirmed.
 - Refile runs `org2 refile ... --format diff` for preview, then `org2 refile ... --apply --format json` if confirmed.
+- HTML export runs `org2 export html --file ... --format json` for preview and `org2 export html --file ... --out ... --apply --format json` when writing.
 Afterward, the extension refreshes edited files from disk (unless `org2.editor.refreshAfterCliApply` is disabled). Agenda-invoked archive/refile edits also refresh the agenda view immediately.
 
 ## Agenda (MVP)
@@ -169,6 +172,7 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
   - `Org2: Formatter — Check Current File Drift` (`org2.formatCurrentFileCheck`)
   - `Org2: Formatter — Preview Current File Diff` (`org2.formatCurrentFilePreviewDiff`)
   - `Org2: Formatter — Apply Current File Formatting` (`org2.formatCurrentFileApply`)
+  - `Org2: Export Current File to HTML` (`org2.exportCurrentFileHtml`)
   - `Org2: Agenda Filter` (`org2.pickAgendaFilter`)
 - TODO + planning
   - `Org2: Toggle Todo Status` (`org2.toggleTodo`)
@@ -228,6 +232,7 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
   - `d` → Set DEADLINE (prompt)
   - `d t` → Set DEADLINE to Today
   - `x` → Archive Subtree
+  - `p h` → Export Current File to HTML
   - `1` → Fold to heading level 1 (`editor.foldLevel1`)
   - `2` → Fold to heading level 2 (`editor.foldLevel2`)
   - `3` → Fold to heading level 3 (`editor.foldLevel3`)

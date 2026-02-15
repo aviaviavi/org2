@@ -1434,6 +1434,93 @@ function activate(context) {
     }
   }
 
+  async function exportCurrentFileHtml() {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) return;
+
+    const doc = editor.document;
+    if (!doc || doc.uri.scheme !== 'file') {
+      vscode.window.showWarningMessage('Org2: HTML export requires a file-backed document.');
+      return;
+    }
+
+    if (doc.languageId !== 'org2' && doc.languageId !== 'org') {
+      vscode.window.showWarningMessage('Org2: HTML export only supports Org/Org2 files.');
+      return;
+    }
+
+    if (doc.isDirty) {
+      const ok = await doc.save();
+      if (!ok) {
+        vscode.window.showWarningMessage('Org2: could not save file before HTML export.');
+        return;
+      }
+    }
+
+    const filePath = doc.uri.fsPath;
+    const cwd = getWorkspaceRoot() || path.dirname(filePath) || process.cwd();
+
+    const previewArgs = ['export', 'html', '--file', filePath, '--format', 'json'];
+    const { cmd: previewCmd, args: previewFinalArgs } = resolveOrg2Command(context, previewArgs);
+
+    let previewPayload;
+    try {
+      const { stdout } = await execFileAsync(previewCmd, previewFinalArgs, { cwd });
+      previewPayload = JSON.parse(String(stdout || '').trim());
+    } catch (e) {
+      const stderr = e && e.stderr ? String(e.stderr).trim() : '';
+      const extra = stderr ? `\n${stderr}` : '';
+      vscode.window.showErrorMessage(`Org2: HTML export preview failed: ${String(e && e.message ? e.message : e)}${extra}`);
+      return;
+    }
+
+    const htmlText = typeof previewPayload.html === 'string' ? previewPayload.html : '';
+    const outputPathRaw = typeof previewPayload.outputPath === 'string' ? previewPayload.outputPath : '';
+
+    if (!htmlText) {
+      vscode.window.showErrorMessage('Org2: HTML export preview returned no html output.');
+      return;
+    }
+
+    const previewDoc = await vscode.workspace.openTextDocument({ language: 'html', content: htmlText });
+    await vscode.window.showTextDocument(previewDoc, { preview: true, preserveFocus: false });
+
+    const outputPath = path.isAbsolute(outputPathRaw) ? outputPathRaw : path.resolve(cwd, outputPathRaw || `${filePath}.html`);
+    const confirm = await vscode.window.showInformationMessage(
+      `Org2: write HTML export to ${path.basename(outputPath)}?`,
+      { modal: true },
+      'Write HTML'
+    );
+
+    if (confirm !== 'Write HTML') return;
+
+    const applyArgs = ['export', 'html', '--file', filePath, '--out', outputPath, '--format', 'json', '--apply'];
+    const { cmd: applyCmd, args: applyFinalArgs } = resolveOrg2Command(context, applyArgs);
+
+    let applyPayload;
+    try {
+      const { stdout } = await execFileAsync(applyCmd, applyFinalArgs, { cwd });
+      applyPayload = JSON.parse(String(stdout || '').trim());
+    } catch (e) {
+      const stderr = e && e.stderr ? String(e.stderr).trim() : '';
+      const extra = stderr ? `\n${stderr}` : '';
+      vscode.window.showErrorMessage(`Org2: HTML export write failed: ${String(e && e.message ? e.message : e)}${extra}`);
+      return;
+    }
+
+    const appliedOutRaw = typeof applyPayload.outputPath === 'string' ? applyPayload.outputPath : outputPath;
+    const appliedOutPath = path.isAbsolute(appliedOutRaw) ? appliedOutRaw : path.resolve(cwd, appliedOutRaw);
+
+    try {
+      const exportedDoc = await vscode.workspace.openTextDocument(vscode.Uri.file(appliedOutPath));
+      await vscode.window.showTextDocument(exportedDoc, { preview: false });
+    } catch {
+      // It's fine if VS Code can't open the output path immediately.
+    }
+
+    vscode.window.showInformationMessage(`Org2: exported HTML to ${path.basename(appliedOutPath)}.`);
+  }
+
   const formattingProvider = {
     async provideDocumentFormattingEdits(document) {
       const text = document.getText();
@@ -1536,6 +1623,12 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.formatCurrentFileApply', async () => {
       await applyCurrentFileFormatting();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.exportCurrentFileHtml', async () => {
+      await exportCurrentFileHtml();
     })
   );
 
