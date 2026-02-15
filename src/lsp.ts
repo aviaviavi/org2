@@ -205,6 +205,7 @@ const SymbolKind = {
 const CompletionItemKind = {
   Keyword: 14,
   Value: 12,
+  File: 17,
 };
 
 const DocumentHighlightKind = {
@@ -997,6 +998,13 @@ class LSPServer {
       }
     }
 
+    const fileLinkContext = this.getFileLinkCompletionContext(line, cursor);
+    if (fileLinkContext) {
+      for (const item of this.collectFileLinkCompletionItems(sourceUri, fileLinkContext.typedPrefix)) {
+        addCompletion(item);
+      }
+    }
+
     return Array.from(completions.values()).sort((a, b) => {
       const aSort = a.sortText ?? a.label;
       const bSort = b.sortText ?? b.label;
@@ -1025,6 +1033,47 @@ class LSPServer {
 
     return {
       typedPrefix,
+    };
+  }
+
+  private getFileLinkCompletionContext(line: string, cursor: number): { typedPrefix: string } | null {
+    const beforeCursor = line.slice(0, cursor);
+    const linkStart = beforeCursor.lastIndexOf("[[");
+    if (linkStart < 0) {
+      return null;
+    }
+
+    const targetStart = linkStart + "[[".length;
+    const targetEnd = line.indexOf("]", targetStart);
+    const effectiveTargetEnd = targetEnd >= 0 ? targetEnd : line.length;
+    if (cursor < targetStart || cursor > effectiveTargetEnd) {
+      return null;
+    }
+
+    const typedTarget = line.slice(targetStart, cursor);
+    if (!typedTarget || /[\s\[\]]/.test(typedTarget)) {
+      return null;
+    }
+
+    const loweredTarget = typedTarget.toLowerCase();
+    if (loweredTarget.startsWith("id:")) {
+      return null;
+    }
+
+    let typedPrefix = typedTarget;
+    if (loweredTarget.startsWith("file:")) {
+      typedPrefix = typedTarget.slice("file:".length);
+    } else if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(typedTarget)) {
+      return null;
+    }
+
+    const pathPrefix = (typedPrefix.split("::")[0] || "").replace(/\\/g, "/");
+    if (/[\s\[\]]/.test(pathPrefix)) {
+      return null;
+    }
+
+    return {
+      typedPrefix: pathPrefix,
     };
   }
 
@@ -1075,6 +1124,49 @@ class LSPServer {
         detail,
         insertText: id,
         sortText: `2-${String(index).padStart(3, "0")}-${id}`,
+      }));
+  }
+
+  private collectFileLinkCompletionItems(sourceUri: string, typedPrefix: string): CompletionItem[] {
+    const sourcePath = this.filePathFromUri(sourceUri);
+    if (!sourcePath) {
+      return [];
+    }
+
+    const sourceDir = path.dirname(sourcePath);
+    const normalizedPrefix = (typedPrefix || "").toLowerCase();
+    const entries = new Map<string, string>();
+
+    for (const doc of this.collectReferenceDocuments(sourceUri)) {
+      const filePath = this.filePathFromUri(doc.uri);
+      if (!filePath || !this.isOrgFile(filePath)) {
+        continue;
+      }
+
+      const relativePath = path.relative(sourceDir, filePath).split(path.sep).join("/");
+      if (!relativePath) {
+        continue;
+      }
+
+      const normalizedRelativePath = relativePath.toLowerCase();
+      if (normalizedPrefix && !normalizedRelativePath.startsWith(normalizedPrefix)) {
+        continue;
+      }
+
+      if (!entries.has(relativePath)) {
+        entries.set(relativePath, `Org file - ${this.formatPathForHover(filePath)}`);
+      }
+    }
+
+    return Array.from(entries.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(0, 100)
+      .map(([relativePath, detail], index) => ({
+        label: relativePath,
+        kind: CompletionItemKind.File,
+        detail,
+        insertText: relativePath,
+        sortText: `3-${String(index).padStart(3, "0")}-${relativePath}`,
       }));
   }
 
