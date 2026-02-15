@@ -1202,6 +1202,8 @@ async function main(): Promise<void> {
   let exportOutDir = "";
   let exportIndex = "";
   let exportIndexTitle = "";
+  let exportStylesheets: string[] = [];
+  let exportIncludeDefaultStyle = true;
   let exportApply = false;
   let exportFormat: "text" | "json" = "text";
   let exportTitle = "";
@@ -1767,6 +1769,23 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--css") {
+      i++;
+      if (i < args.length) {
+        if (command === "export") {
+          const cssValues = String(args[i] || "")
+            .split(",")
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0);
+          exportStylesheets.push(...cssValues);
+        }
+        i++;
+      }
+    } else if (arg === "--no-default-style") {
+      if (command === "export") {
+        exportIncludeDefaultStyle = false;
+      }
+      i++;
     } else if (arg === "--archive-file") {
       i++;
       if (i < args.length) {
@@ -1859,7 +1878,7 @@ async function main(): Promise<void> {
       "       org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--format text|diff|json] [--apply]",
     );
     console.error(
-      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--format text|json] [--apply]",
+      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--css HREF[,HREF...]] [--no-default-style] [--format text|json] [--apply]",
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
@@ -1910,7 +1929,7 @@ async function main(): Promise<void> {
       "       org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--format text|diff|json] [--apply]",
     );
     console.error(
-      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--format text|json] [--apply]",
+      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--css HREF[,HREF...]] [--no-default-style] [--format text|json] [--apply]",
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
@@ -2209,6 +2228,9 @@ async function main(): Promise<void> {
 
     const hasSingleSource = Boolean(exportFile);
     const hasDirSource = Boolean(String(dir || "").trim());
+    const exportStylesheetsNormalized = Array.from(
+      new Set(exportStylesheets.map((href) => String(href || "").trim()).filter((href) => href.length > 0)),
+    );
 
     if (hasSingleSource && hasDirSource) {
       console.error("Error: export html does not support combining --file with --dir");
@@ -2278,6 +2300,8 @@ async function main(): Promise<void> {
         const sourceAst = parseOrgToCanonicalAst(sourceRaw);
         const rendered = renderOrgDocumentToHtml(sourceAst, {
           sourcePath: toDisplayPath(sourcePath),
+          stylesheets: exportStylesheetsNormalized,
+          includeDefaultStyle: exportIncludeDefaultStyle,
         });
 
         const relativeSourcePath = path.relative(sourceDir, sourcePath);
@@ -2321,6 +2345,8 @@ async function main(): Promise<void> {
         const indexRendered = renderOrgExportIndexToHtml({
           title: exportIndexTitle || undefined,
           sourcePath: indexRaw,
+          stylesheets: exportStylesheetsNormalized,
+          includeDefaultStyle: exportIncludeDefaultStyle,
           items: exported.map((item) => {
             const hrefRaw = path.relative(path.dirname(indexPathAbsolute), item.outputPathAbsolute);
             const href = String(hrefRaw || path.basename(item.outputPathAbsolute)).split(path.sep).join("/");
@@ -2399,6 +2425,8 @@ async function main(): Promise<void> {
     const rendered = renderOrgDocumentToHtml(sourceAst, {
       title: exportTitle || undefined,
       sourcePath: sourcePathInput,
+      stylesheets: exportStylesheetsNormalized,
+      includeDefaultStyle: exportIncludeDefaultStyle,
     });
 
     const defaultOutputPath = (() => {

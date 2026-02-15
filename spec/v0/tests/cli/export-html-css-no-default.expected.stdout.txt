@@ -1,0 +1,9 @@
+{
+  "kind": "export-html",
+  "sourcePath": "spec/v0/tests/cli/export-html.input.txt",
+  "outputPath": "spec/v0/tests/cli/export-html.input.txt.html",
+  "title": "Export Fixture",
+  "apply": false,
+  "changed": true,
+  "html": "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\" />\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n<title>Export Fixture</title>\n<link rel=\"stylesheet\" href=\"/assets/site.css\" />\n<link rel=\"stylesheet\" href=\"https://cdn.example.com/theme.css\" />\n</head>\n<body>\n<main class=\"org2-document\">\n<section class=\"org2-headline level-1\">\n<h1><span class=\"org2-todo\">TODO</span> Ship publishing flow <span class=\"org2-tags\"><span class=\"org2-tag\">work</span></span></h1>\n<p class=\"org2-planning\"><span class=\"org2-planning-kind\">SCHEDULED</span> &lt;2026-02-15 Sun&gt;</p>\n<p>Paragraph with a <a href=\"https://example.com\">link</a>.</p>\n<ul>\n<li><input type=\"checkbox\" disabled /> <p>First bullet</p></li>\n<li><input type=\"checkbox\" checked disabled /> <p>Done bullet</p></li>\n</ul>\n<table>\n<thead>\n<tr><th>Name</th><th>Value</th></tr>\n</thead>\n<tbody>\n<tr><td>Foo</td><td>1</td></tr>\n<tr><td>Bar</td><td>2</td></tr>\n</tbody>\n</table>\n</section>\n</main>\n</body>\n</html>\n"
+}
