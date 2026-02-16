@@ -78,7 +78,7 @@ Current reality:
 - Formatter current-file check/apply commands (VS Code): *Available now* (MVP)
 - Formatter current-file diff preview command (VS Code): *Available now* (MVP)
 - Formatter (=org2 fmt=): *In progress*
-- HTML export (=org2 export html=): *Available now* (MVP, single-file + directory batch standalone export + optional index page + configurable stylesheet injection + optional table of contents + optional Org file-link rewrite + automatic heading anchors [including =:CUSTOM_ID:= targets during file-link rewrite] + keyword-driven metadata/head controls)
+- HTML export (=org2 export html=): *Available now* (MVP, single-file + directory batch standalone export + optional index page + configurable stylesheet injection + optional table of contents + optional Org file-link rewrite + automatic heading anchors for TOC/rewrite targets and in-document =[[* Heading]]= /=[[#custom-id]]= links [including =:CUSTOM_ID:= targets] + keyword-driven metadata/head controls)
 - LSP go-to-definition for file/id links (including file =::search= suffix targets) (=org2 lsp=): *Available now* (MVP)
 - LSP go-to-declaration for file/id links (including file =::search= suffix targets) (=textDocument/declaration= via =org2 lsp=): *Available now* (MVP)
 - LSP go-to-type-definition + go-to-implementation for file/id links (including file =::search= suffix targets) (=textDocument/typeDefinition= + =textDocument/implementation= via =org2 lsp=): *Available now* (MVP)
@@ -400,6 +400,7 @@ Notes:
 - =--no-default-style= omits Org2's built-in inline stylesheet (useful when styling entirely via external CSS).
 - =--toc= prepends an auto-generated table of contents and heading anchor IDs to each exported HTML page.
 - =--rewrite-file-links= rewrites Org file links (for example =file:notes.org2= or =../notes.org=) to =.html= hrefs during export and emits heading anchor IDs so rewritten =::* Heading= / =::#custom-id= targets resolve in published output.
+- In-document heading links (=[[* Heading]]= and =[[#custom-id]]=) are exported as hash anchors and trigger heading anchor IDs automatically (no =--toc= required).
 - Exported HTML maps =#+AUTHOR=, =#+DATE=, =#+DESCRIPTION=, and =#+KEYWORDS= into corresponding HTML =<meta>= tags.
 - =#+LANGUAGE= sets the exported =<html lang="...">= attribute (defaults to =en= when omitted/invalid).
 - =#+HTML_HEAD= and =#+HTML_HEAD_EXTRA= inject raw snippets into the HTML =<head>= (in file order).
