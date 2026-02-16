@@ -1,0 +1,8 @@
+#+TITLE: Metadata Fixture
+#+AUTHOR: Avi Press
+#+DATE: <2026-02-16 Mon>
+#+DESCRIPTION: Org2 export should include metadata tags.
+#+KEYWORDS: org2, publishing, html export
+
+* Post
+Hello metadata world.
