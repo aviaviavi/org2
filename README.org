@@ -55,6 +55,7 @@ Current reality:
 - Agenda source-file filtering (CLI + VS Code): *Available now* (MVP)
 - Agenda sort-order filtering (CLI + VS Code): *Available now* (MVP)
 - Agenda descending sort-order controls (CLI + VS Code): *Available now* (MVP)
+- Agenda date-order controls (CLI + VS Code): *Available now* (MVP)
 - Agenda row-limit filtering (CLI + VS Code): *Available now* (MVP)
 - Agenda explicit date-range bounds (CLI + VS Code): *Available now* (MVP)
 - TODO set/toggle from CLI/editor: *Available now*
@@ -244,6 +245,9 @@ npm run org2 -- agenda --dir /path/to/org --sort "file,headline"
 # Descending sort: prefix any key with '-' (or use :desc)
 npm run org2 -- agenda --dir /path/to/org --sort "-headline,todo:desc"
 
+# Show newest dates first (default is ascending/oldest-first)
+npm run org2 -- agenda --dir /path/to/org --date-order desc
+
 # Limit total rows after sorting (across overdue + upcoming sections)
 npm run org2 -- agenda --dir /path/to/org --limit 25
 
@@ -268,6 +272,7 @@ Notes:
 - =--file-match= keeps rows whose source file path contains any term.
 - =--exclude-file= hides rows whose source file path contains any term.
 - =--sort= reorders rows within each date bucket (always date-first overall sorting); prefix a key with =-= (or suffix with =:desc=) for descending order.
+- =--date-order= controls overall date ordering (=asc= oldest-first, =desc= newest-first) while still applying per-day =--sort= tie-breakers.
 - =--limit= caps total rendered rows after sorting (across overdue + upcoming).
 - =--from= overrides agenda start date (default: =--today= / current date).
 - =--to= overrides agenda end date (default: start + =--days - 1=).
