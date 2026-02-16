@@ -1,0 +1,1 @@
+agenda --files "spec/v0/tests/cli/agenda-when-filter.input.txt" --today 2026-01-21 --days 3 --when today,upcoming --date-order desc
