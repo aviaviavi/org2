@@ -247,29 +247,63 @@ function slugifyHeadlineTitle(value: string): string {
   return normalized || "section";
 }
 
-function buildHeadlineToc(doc: DocumentNode): { items: TocItem[]; headlineIds: WeakMap<HeadlineNode, string> } {
+function normalizeAnchorId(value: string): string | null {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^A-Za-z0-9_.:-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return normalized || null;
+}
+
+function findHeadlineCustomId(node: HeadlineNode): string | null {
+  for (const child of node.children) {
+    if (child.type !== "PropertyDrawer") continue;
+    for (const property of child.properties) {
+      if (String(property.key || "").trim().toUpperCase() !== "CUSTOM_ID") continue;
+      const normalized = normalizeAnchorId(property.value);
+      if (normalized) return normalized;
+    }
+  }
+
+  return null;
+}
+
+function buildHeadlineAnchors(doc: DocumentNode, opts: { includeToc?: boolean } = {}): {
+  items: TocItem[];
+  headlineIds: WeakMap<HeadlineNode, string>;
+} {
+  const includeToc = opts.includeToc === true;
   const items: TocItem[] = [];
   const headlineIds = new WeakMap<HeadlineNode, string>();
-  const slugCounts = new Map<string, number>();
+  const idCounts = new Map<string, number>();
 
-  const nextSlug = (baseSlug: string): string => {
-    const count = (slugCounts.get(baseSlug) || 0) + 1;
-    slugCounts.set(baseSlug, count);
-    if (count === 1) return baseSlug;
-    return `${baseSlug}-${count}`;
+  const nextId = (baseId: string): string => {
+    const normalizedBase = normalizeAnchorId(baseId) || "section";
+    const key = normalizedBase.toLowerCase();
+    const count = (idCounts.get(key) || 0) + 1;
+    idCounts.set(key, count);
+    if (count === 1) return normalizedBase;
+    return `${normalizedBase}-${count}`;
   };
 
   const visitNodes = (nodes: Node[]): void => {
     for (const node of nodes) {
       if (node.type !== "Headline") continue;
       const title = node.title.map((child) => inlineToText(child)).join("").trim() || "Untitled";
-      const id = nextSlug(slugifyHeadlineTitle(title));
+      const customId = findHeadlineCustomId(node);
+      const id = nextId(customId || slugifyHeadlineTitle(title));
       headlineIds.set(node, id);
-      items.push({
-        id,
-        title,
-        level: Math.max(1, Math.min(6, node.level)),
-      });
+
+      if (includeToc) {
+        items.push({
+          id,
+          title,
+          level: Math.max(1, Math.min(6, node.level)),
+        });
+      }
+
       visitNodes(node.children);
     }
   };
@@ -565,13 +599,14 @@ export function renderOrgDocumentToHtml(
   const includeToc = opts.includeToc === true;
 
   let tocItems: TocItem[] = [];
+  const includeHeadingAnchors = includeToc || opts.rewriteFileLinks === true;
   const context: RenderContext = {
     rewriteFileLinks: opts.rewriteFileLinks === true,
   };
-  if (includeToc) {
-    const toc = buildHeadlineToc(doc);
-    tocItems = toc.items;
-    context.headlineIds = toc.headlineIds;
+  if (includeHeadingAnchors) {
+    const anchors = buildHeadlineAnchors(doc, { includeToc });
+    tocItems = anchors.items;
+    context.headlineIds = anchors.headlineIds;
   }
 
   const body = renderNodes(doc.children, context);
