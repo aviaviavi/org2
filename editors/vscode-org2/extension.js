@@ -2443,6 +2443,7 @@ function activate(context) {
     const defaultTemplateRaw = String(cfg.get('capture.defaultTemplate', 'note') || 'note').trim().toLowerCase();
     const defaultTemplate = defaultTemplateRaw === 'task' ? 'task' : 'note';
     const defaultTodoKeywordRaw = String(cfg.get('capture.defaultTodoKeyword', 'TODO') || 'TODO').trim().toUpperCase();
+    const captureUseSelectionAsBody = cfg.get('capture.useSelectionAsBody', true) ? true : false;
 
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
@@ -2461,6 +2462,11 @@ function activate(context) {
     const activeFilePath =
       activeDoc && activeDoc.uri && activeDoc.uri.scheme === 'file' && (activeDoc.languageId === 'org2' || activeDoc.languageId === 'org')
         ? path.resolve(activeDoc.uri.fsPath)
+        : '';
+
+    const selectedCaptureBody =
+      captureUseSelectionAsBody && activeEditor && activeDoc && !activeEditor.selection.isEmpty
+        ? String(activeDoc.getText(activeEditor.selection) || '').replace(/\r\n/g, '\n').trim()
         : '';
 
     const configuredDefaultPath = resolveCapturePath(defaultFileRaw);
@@ -2575,6 +2581,9 @@ function activate(context) {
     if (templatePick.value === 'task') {
       previewArgs.push('--todo', captureTodoKeyword);
     }
+    if (selectedCaptureBody) {
+      previewArgs.push('--body', selectedCaptureBody);
+    }
 
     const { cmd: previewCmd, args: previewFinalArgs } = resolveOrg2Command(context, previewArgs);
     const cwd = getWorkspaceRoot() || path.dirname(captureFilePath) || process.cwd();
@@ -2608,6 +2617,9 @@ function activate(context) {
     const applyArgs = ['capture', '--file', captureFilePath, '--template', templatePick.value, '--title', captureTitle, '--format', 'json', '--apply'];
     if (templatePick.value === 'task') {
       applyArgs.push('--todo', captureTodoKeyword);
+    }
+    if (selectedCaptureBody) {
+      applyArgs.push('--body', selectedCaptureBody);
     }
 
     const { cmd: applyCmd, args: applyFinalArgs } = resolveOrg2Command(context, applyArgs);

@@ -4,6 +4,7 @@
   "template": "task",
   "title": "Ship release",
   "todoKeyword": "IN_PROGRESS",
+  "body": null,
   "capturedAt": "<2026-01-21 Wed 12:34>",
   "headingLine1": 3,
   "apply": false,

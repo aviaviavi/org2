@@ -646,6 +646,11 @@
           "default": "TODO",
           "description": "Default TODO keyword ordering for task captures in `Org2: Capture Quick Entry` (`TODO`, `IN_PROGRESS`, `DONE`, `CANCELED`, or `CANCELLED`)."
         },
+        "org2.capture.useSelectionAsBody": {
+          "type": "boolean",
+          "default": true,
+          "description": "When enabled, `Org2: Capture Quick Entry` passes the current editor selection as capture body text (`--body`)."
+        },
         "org2.export.outputDir": {
           "type": "string",
           "default": "_site",
