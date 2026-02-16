@@ -399,6 +399,7 @@ Notes:
 - =--css HREF= injects an external stylesheet link (repeat flag or pass comma-separated values).
 - =--no-default-style= omits Org2's built-in inline stylesheet (useful when styling entirely via external CSS).
 - =--toc= prepends an auto-generated table of contents and heading anchor IDs to each exported HTML page.
+- =#+OPTIONS: toc:t= enables the same TOC + heading-anchor export behavior even without passing =--toc=.
 - =--rewrite-file-links= rewrites Org file links (for example =file:notes.org2= or =../notes.org=) to =.html= hrefs during export and emits heading anchor IDs so rewritten =::* Heading= / =::#custom-id= targets resolve in published output.
 - In-document heading links (=[[* Heading]]= and =[[#custom-id]]=) are exported as hash anchors and trigger heading anchor IDs automatically (no =--toc= required).
 - When in-document heading/custom-id links omit a description, exported link text defaults to a cleaned label (=Heading= / =custom-id=) instead of raw Org target markup.
