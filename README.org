@@ -111,7 +111,7 @@ Current reality:
 - Recurring tasks / repeaters: *In progress* (agenda repeater expansion MVP available)
 - Habits: *Planned*
 - Clocking + effort/properties for time tracking: *Planned*
-- Capture templates / quick capture flow: *Available now* (CLI MVP: note/task quick-capture templates)
+- Capture templates / quick capture flow: *Available now* (CLI + VS Code MVP: note/task quick-capture templates)
 - Refile workflows parity: *Available now* (CLI + VS Code MVP)
 - Advanced agenda customization parity: *Planned*
 - Mature extensibility/plugin ecosystem: *Planned*
@@ -128,7 +128,7 @@ If you need full, stable, mature Org Mode parity today, treat Org2 as experiment
 Current editor status:
 
 - *VS Code* (=editors/vscode-org2/=): primary integration target right now.
-  - Provides language support + folding + agenda + TODO/planning/archive + roam commands via CLI-backed actions.
+  - Provides language support + folding + agenda + TODO/planning/archive/refile/capture/export + roam commands via CLI-backed actions.
   - Usable for daily workflows, but still evolving quickly.
 - *Vim/Neovim* (=editors/vim-org2/=): minimal support.
   - Filetype + syntax + heading fold toggles.
@@ -333,6 +333,7 @@ npm run org2 -- capture --file /path/to/inbox.org2 --template note --title "Draf
 
 Notes:
 - =capture= appends a new heading to the end of the target file.
+- VS Code command =Org2: Capture Quick Entry= wraps this flow with file/template/title prompts, a diff preview, and apply confirmation.
 - =--template note= writes =* Title= + =CAPTURED: <...>=.
 - =--template task= writes =* TODO Title= by default (override keyword with =--todo=).
 - Use =--now ISO= for deterministic tests.
