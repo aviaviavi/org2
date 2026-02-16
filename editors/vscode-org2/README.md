@@ -71,7 +71,7 @@ Implementation detail: the extension saves the file (if needed).
 - Refile runs `org2 refile ... --format diff` for preview, then `org2 refile ... --apply --format json` if confirmed.
 - Current-file HTML export runs `org2 export html --file ... --format json` for preview and `org2 export html --file ... --out ... --apply --format json` when writing, plus optional export flags from settings (`--css` / `--no-default-style` / `--toc` / `--rewrite-file-links`).
 - Workspace HTML export runs `org2 export html --dir <agenda-root> --recursive --out-dir <org2.export.outputDir> --format json` for preview, adds optional `--index/--index-title` and export flags (`--css` / `--no-default-style` / `--toc` / `--rewrite-file-links`) from settings, and adds `--apply` when writing.
-- Exported HTML maps `#+AUTHOR`, `#+DATE`, `#+DESCRIPTION`, and `#+KEYWORDS` into standard HTML `<meta>` tags, respects `#+LANGUAGE` for `<html lang="...">`, and injects `#+HTML_HEAD` / `#+HTML_HEAD_EXTRA` snippets into `<head>` automatically.
+- Exported HTML maps `#+AUTHOR`, `#+DATE`, `#+DESCRIPTION`, and `#+KEYWORDS` into standard HTML `<meta>` tags, respects `#+LANGUAGE` for `<html lang="...">`, injects `#+HTML_HEAD` / `#+HTML_HEAD_EXTRA` snippets into `<head>`, and emits heading anchor IDs for `--toc`/`--rewrite-file-links` (including `:CUSTOM_ID:` targets for rewritten `::#custom-id` links).
 Afterward, the extension refreshes edited files from disk (unless `org2.editor.refreshAfterCliApply` is disabled). Agenda-invoked archive/refile edits also refresh the agenda view immediately.
 
 ## Agenda (MVP)
@@ -121,7 +121,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.export.stylesheets`: optional comma/newline-separated stylesheet URLs/paths passed to HTML export commands as repeated `--css` flags
 - `org2.export.includeDefaultStyle`: when true (default), keep Org2's built-in inline stylesheet; disable to export with external CSS only (`--no-default-style`)
 - `org2.export.includeToc`: when true, include a generated table of contents with heading anchor links in exported HTML (`--toc`)
-- `org2.export.rewriteFileLinks`: when true, rewrite Org file links (`file:*.org`, `*.org2`) to `.html` hrefs in exported output (`--rewrite-file-links`)
+- `org2.export.rewriteFileLinks`: when true, rewrite Org file links (`file:*.org`, `*.org2`) to `.html` hrefs in exported output and emit heading anchor IDs (including `:CUSTOM_ID:` targets) for rewritten `::* Heading` / `::#custom-id` links (`--rewrite-file-links`)
 - `org2.agenda.sortBy`: optional per-day sort order (`default`, or comma-separated keys like `file,headline,todo,kind,line`)
 - `org2.agenda.recursive`: when scope=`workspace`, whether to scan recursively (default true)
 - `org2.roam.dailiesDir`: optional root directory for Roam dailies (`YYYY-MM-DD.org2`); defaults to `org2.roam.indexDir`, then `org2.agenda.dir`, then workspace root

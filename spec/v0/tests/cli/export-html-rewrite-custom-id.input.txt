@@ -1,0 +1,8 @@
+#+TITLE: Rewrite Anchors Fixture
+* Intro
+* Intro
+* Destination
+:PROPERTIES:
+:CUSTOM_ID: deep-link
+:END:
+Reference links: [[file:./other.org::* Intro][Heading]] and [[file:./other.org::#deep-link][Custom]].
