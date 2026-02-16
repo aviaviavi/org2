@@ -115,6 +115,87 @@ type RenderContext = {
   rewriteFileLinks?: boolean;
 };
 
+export type OrgExportMetadata = {
+  author?: string;
+  date?: string;
+  description?: string;
+  keywords?: string[];
+};
+
+const HIDDEN_DOCUMENT_KEYWORDS = new Set(["TITLE", "AUTHOR", "DATE", "DESCRIPTION", "KEYWORDS"]);
+
+function parseKeywordList(value: string): string[] {
+  const values = String(value || "")
+    .split(/[;,]/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  return Array.from(new Set(values));
+}
+
+function collectKeywordMetadata(doc: DocumentNode): OrgExportMetadata {
+  const metadata: OrgExportMetadata = {};
+
+  for (const node of doc.children) {
+    if (node.type !== "KeywordLine") continue;
+    const key = String(node.keyRaw || "").trim().toUpperCase();
+    const value = String(node.valueRaw || "").trim();
+    if (!value) continue;
+
+    if (key === "AUTHOR" && !metadata.author) {
+      metadata.author = value;
+      continue;
+    }
+
+    if (key === "DATE" && !metadata.date) {
+      metadata.date = value;
+      continue;
+    }
+
+    if (key === "DESCRIPTION" && !metadata.description) {
+      metadata.description = value;
+      continue;
+    }
+
+    if (key === "KEYWORDS" && !metadata.keywords) {
+      const parsedKeywords = parseKeywordList(value);
+      if (parsedKeywords.length > 0) {
+        metadata.keywords = parsedKeywords;
+      }
+    }
+  }
+
+  return metadata;
+}
+
+function hasKeywordMetadata(metadata: OrgExportMetadata): boolean {
+  return Boolean(
+    metadata.author ||
+      metadata.date ||
+      metadata.description ||
+      (Array.isArray(metadata.keywords) && metadata.keywords.length > 0),
+  );
+}
+
+function renderHeadMetaSection(metadata: OrgExportMetadata): string {
+  if (!hasKeywordMetadata(metadata)) return "";
+
+  const rows: string[] = [];
+  if (metadata.author) {
+    rows.push(`<meta name="author" content="${escapeAttr(metadata.author)}" />`);
+  }
+  if (metadata.date) {
+    rows.push(`<meta name="date" content="${escapeAttr(metadata.date)}" />`);
+  }
+  if (metadata.description) {
+    rows.push(`<meta name="description" content="${escapeAttr(metadata.description)}" />`);
+  }
+  if (Array.isArray(metadata.keywords) && metadata.keywords.length > 0) {
+    rows.push(`<meta name="keywords" content="${escapeAttr(metadata.keywords.join(", "))}" />`);
+  }
+
+  return rows.length > 0 ? `${rows.join("\n")}\n` : "";
+}
+
 function slugifyHeadlineTitle(value: string): string {
   const normalized = String(value || "")
     .trim()
@@ -373,7 +454,7 @@ function renderNode(node: Node, context: RenderContext): string {
   }
   if (node.type === "KeywordLine") {
     const key = String(node.keyRaw || "").trim().toUpperCase();
-    if (key === "TITLE" || key === "AUTHOR" || key === "DATE") return "";
+    if (HIDDEN_DOCUMENT_KEYWORDS.has(key)) return "";
     return `<p class="org2-keyword"><span class="org2-keyword-name">${escapeHtml(node.keyRaw)}</span>: ${escapeHtml(node.valueRaw)}</p>`;
   }
   if (node.type === "DirectiveLine") {
@@ -438,8 +519,9 @@ export function renderOrgDocumentToHtml(
     includeToc?: boolean;
     rewriteFileLinks?: boolean;
   } = {},
-): { html: string; title: string } {
+): { html: string; title: string; metadata: OrgExportMetadata } {
   const title = resolveTitle(doc, opts.title, opts.sourcePath);
+  const metadata = collectKeywordMetadata(doc);
   const includeToc = opts.includeToc === true;
 
   let tocItems: TocItem[] = [];
@@ -455,6 +537,7 @@ export function renderOrgDocumentToHtml(
   const body = renderNodes(doc.children, context);
   const tocHtml = includeToc ? renderToc(tocItems) : "";
   const mainBody = [tocHtml, body].filter((segment) => String(segment || "").trim().length > 0).join("\n");
+  const headMetaSection = renderHeadMetaSection(metadata);
   const headStyleSection = renderHeadStyleSection({
     stylesheets: opts.stylesheets,
     includeDefaultStyle: opts.includeDefaultStyle,
@@ -462,9 +545,9 @@ export function renderOrgDocumentToHtml(
 ${DOCUMENT_TOC_STYLE}` : DEFAULT_DOCUMENT_STYLE,
   });
 
-  const html = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n${headStyleSection}</head>\n<body>\n<main class="org2-document">\n${mainBody}\n</main>\n</body>\n</html>\n`;
+  const html = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n${headMetaSection}${headStyleSection}</head>\n<body>\n<main class="org2-document">\n${mainBody}\n</main>\n</body>\n</html>\n`;
 
-  return { html, title };
+  return { html, title, metadata };
 }
 
 export type OrgExportIndexItem = {
