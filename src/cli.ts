@@ -183,6 +183,7 @@ interface ScheduledItem {
   lineNumber: number;
   headline: string;
   todo: string | undefined;
+  priority: string | undefined;
   date: string;
   kind: string;
 }
@@ -206,7 +207,7 @@ type AgendaExcludeTodoFilter = Set<string> | null;
 type AgendaExcludePriorityFilter = Set<string> | null;
 type AgendaFileFilter = string[] | null;
 type AgendaExcludeFileFilter = string[] | null;
-type AgendaSortKey = "file" | "headline" | "todo" | "kind" | "line";
+type AgendaSortKey = "file" | "headline" | "todo" | "priority" | "kind" | "line";
 type AgendaSortDirection = "asc" | "desc";
 type AgendaSortField = { key: AgendaSortKey; direction: AgendaSortDirection };
 type AgendaSortOrder = AgendaSortField[] | null;
@@ -217,7 +218,7 @@ const AGENDA_STATUS_ALLOWED_HINT =
 const AGENDA_KIND_ALLOWED_HINT = "all, scheduled, deadline";
 const AGENDA_WHEN_ALLOWED_HINT = "all, overdue, today, upcoming";
 const AGENDA_PRIORITY_ALLOWED_HINT = "A-Z or 0-9 (for example: A,B,C or [#A],[#B])";
-const AGENDA_SORT_ALLOWED_HINT = "default, [+-]file, [+-]headline, [+-]todo, [+-]kind, [+-]line";
+const AGENDA_SORT_ALLOWED_HINT = "default, [+-]file, [+-]headline, [+-]todo, [+-]priority, [+-]kind, [+-]line";
 const AGENDA_DATE_ORDER_ALLOWED_HINT = "asc, desc";
 
 function agendaStatusBucketForKeyword(todo: string | undefined): AgendaStatusBucket | null {
@@ -598,6 +599,7 @@ function parseAgendaSortArgs(rawArgs: string[]): {
     if (token === "file" || token === "path") normalized = "file";
     else if (token === "headline" || token === "title") normalized = "headline";
     else if (token === "todo" || token === "status") normalized = "todo";
+    else if (token === "priority" || token === "prio") normalized = "priority";
     else if (token === "kind" || token === "planning") normalized = "kind";
     else if (token === "line" || token === "position") normalized = "line";
 
@@ -928,6 +930,7 @@ function findScheduledItemsInText(
           lineNumber: current.lineNumber,
           headline: current.title,
           todo,
+          priority: current.priority,
           date: dateStr,
           kind,
         });
@@ -1017,6 +1020,7 @@ function findScheduledItems(
                   lineNumber: 0, // Line numbers not tracked in AST, using 0
                   headline: agendaTitle,
                   todo,
+                  priority,
                   date: dateStr,
                   kind: planning.kind,
                 });
@@ -1157,6 +1161,27 @@ function formatByDate(items: ScheduledItem[], dateOrder: AgendaDateOrder): strin
   return output;
 }
 
+function compareAgendaPriorityValues(aPriority: string | undefined, bPriority: string | undefined): number {
+  const a = normalizeAgendaPriorityToken(String(aPriority || ""));
+  const b = normalizeAgendaPriorityToken(String(bPriority || ""));
+
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+
+  const rank = (priority: string): number => {
+    if (/^[A-Z]$/.test(priority)) {
+      return priority.charCodeAt(0) - 65;
+    }
+    if (/^[0-9]$/.test(priority)) {
+      return 26 + Number.parseInt(priority, 10);
+    }
+    return 100 + priority.charCodeAt(0);
+  };
+
+  return rank(a) - rank(b);
+}
+
 function compareAgendaItems(
   a: ScheduledItem,
   b: ScheduledItem,
@@ -1181,6 +1206,10 @@ function compareAgendaItems(
 
     if (key === "todo") {
       return String(a.todo || "").localeCompare(String(b.todo || ""));
+    }
+
+    if (key === "priority") {
+      return compareAgendaPriorityValues(a.priority, b.priority);
     }
 
     if (key === "kind") {
