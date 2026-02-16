@@ -1,0 +1,1 @@
+export html --file spec/v0/tests/cli/export-html-number-headings-depth.input.txt --number-headings-depth 2 --format json
