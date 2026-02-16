@@ -111,7 +111,7 @@ Current reality:
 - Recurring tasks / repeaters: *In progress* (agenda repeater expansion MVP available)
 - Habits: *Planned*
 - Clocking + effort/properties for time tracking: *Planned*
-- Capture templates / quick capture flow: *Available now* (CLI + VS Code MVP: note/task quick-capture templates)
+- Capture templates / quick capture flow: *Available now* (CLI + VS Code MVP: note/task quick-capture templates with optional body text via =--body= / selection capture)
 - Refile workflows parity: *Available now* (CLI + VS Code MVP)
 - Advanced agenda customization parity: *Planned*
 - Mature extensibility/plugin ecosystem: *Planned*
@@ -329,6 +329,9 @@ npm run org2 -- capture --file /path/to/inbox.org2 --template task --title "Plan
 
 # Emit a unified diff preview instead of full text/json
 npm run org2 -- capture --file /path/to/inbox.org2 --template note --title "Draft launch notes" --format diff
+
+# Include body text under the captured heading
+npm run org2 -- capture --file /path/to/inbox.org2 --template note --title "Standup notes" --body $'Blocked on API key\nWaiting on infra.' --apply
 #+end_src
 
 Notes:
@@ -336,6 +339,8 @@ Notes:
 - VS Code command =Org2: Capture Quick Entry= wraps this flow with file/template/title prompts, a diff preview, and apply confirmation.
 - =--template note= writes =* Title= + =CAPTURED: <...>=.
 - =--template task= writes =* TODO Title= by default (override keyword with =--todo=).
+- =--body TEXT= inserts optional body text below the =CAPTURED:= line.
+- In VS Code, capture can pass the active selection as =--body= (config: =org2.capture.useSelectionAsBody=).
 - Use =--now ISO= for deterministic tests.
 
 *** Refile subtree (MVP)

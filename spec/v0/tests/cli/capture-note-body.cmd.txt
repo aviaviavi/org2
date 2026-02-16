@@ -1,0 +1,1 @@
+capture --file "spec/v0/tests/cli/capture-note-body.input.txt" --template note --title "New thought" --body "Follow up with design" --now 2026-01-21T12:34:00 --format text

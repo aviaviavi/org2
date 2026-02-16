@@ -1253,6 +1253,7 @@ async function main(): Promise<void> {
   let captureTemplateRaw = "note";
   let captureTodoKeywordRaw = "TODO";
   let captureTodoKeywordFlagSet = false;
+  let captureBodyRaw = "";
   let captureNow = ""; // ISO string
   let captureApply = false;
   let captureFormat: "text" | "json" | "diff" = "text";
@@ -1699,6 +1700,14 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--body") {
+      i++;
+      if (i < args.length) {
+        if (command === "capture") {
+          captureBodyRaw = args[i]!;
+        }
+        i++;
+      }
     } else if (arg === "--id") {
       i++;
       if (i < args.length) {
@@ -1945,7 +1954,7 @@ async function main(): Promise<void> {
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
     );
     console.error(
-      "       org2 capture --file FILE --title TITLE [--template note|task] [--todo KEYWORD] [--now ISO] [--format text|json|diff] [--apply]",
+      "       org2 capture --file FILE --title TITLE [--template note|task] [--todo KEYWORD] [--body TEXT] [--now ISO] [--format text|json|diff] [--apply]",
     );
     console.error(
       "       org2 plan set --file FILE (--line N | --pos LINE[:COL]) --kind scheduled|deadline --date YYYY-MM-DD [--format text|json|diff] [--apply]",
@@ -1996,7 +2005,7 @@ async function main(): Promise<void> {
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
     );
     console.error(
-      "       org2 capture --file FILE --title TITLE [--template note|task] [--todo KEYWORD] [--now ISO] [--format text|json|diff] [--apply]",
+      "       org2 capture --file FILE --title TITLE [--template note|task] [--todo KEYWORD] [--body TEXT] [--now ISO] [--format text|json|diff] [--apply]",
     );
     console.error(
       "       org2 plan set --file FILE (--line N | --pos LINE[:COL]) --kind scheduled|deadline --date YYYY-MM-DD [--format text|json|diff] [--apply]",
@@ -2628,12 +2637,17 @@ async function main(): Promise<void> {
       captureNowDate = parsedNow;
     }
 
+    const normalizedBody = captureBodyRaw.replace(/\r\n/g, "\n").trim();
+
     const headingLine =
       normalizedTemplate === "task"
         ? `* ${normalizedTodoKeyword} ${normalizedTitle}`
         : `* ${normalizedTitle}`;
     const capturedAt = formatOrgTimestamp(captureNowDate);
-    const captureEntryText = `${headingLine}\nCAPTURED: ${capturedAt}\n`;
+    const captureEntryText =
+      normalizedBody.length > 0
+        ? `${headingLine}\nCAPTURED: ${capturedAt}\n\n${normalizedBody}\n`
+        : `${headingLine}\nCAPTURED: ${capturedAt}\n`;
 
     const beforeText = fs.existsSync(captureFile)
       ? fs.readFileSync(captureFile, "utf8").replace(/\r\n/g, "\n")
@@ -2686,6 +2700,7 @@ async function main(): Promise<void> {
             template: normalizedTemplate,
             title: normalizedTitle,
             todoKeyword: normalizedTemplate === "task" ? normalizedTodoKeyword : null,
+            body: normalizedBody || null,
             capturedAt,
             headingLine1,
             apply: captureApply,
