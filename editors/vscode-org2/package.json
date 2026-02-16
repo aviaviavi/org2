@@ -656,6 +656,17 @@
           "minimum": 0,
           "description": "Optional TOC heading depth limit for HTML export. Values >0 pass `--toc-depth N` (and implicitly enable TOC); 0 keeps full-depth TOC behavior."
         },
+        "org2.export.numberHeadings": {
+          "type": "boolean",
+          "default": false,
+          "description": "When enabled, HTML export prefixes headings (and TOC entries when present) with generated section numbers (`--number-headings`)."
+        },
+        "org2.export.numberHeadingsDepth": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "description": "Optional heading-number depth limit for HTML export. Values >0 pass `--number-headings-depth N` (and implicitly enable heading numbers); 0 keeps full-depth numbering behavior."
+        },
         "org2.export.rewriteFileLinks": {
           "type": "boolean",
           "default": false,
