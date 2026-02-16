@@ -1,0 +1,46 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-01-21",
+    "end": "2026-01-21",
+    "days": 1
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-01-21",
+      "weekday": "Wednesday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "No tag task",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-sort-filter-tags.input.txt",
+          "line": 6
+        },
+        {
+          "todo": "TODO",
+          "headline": "Alpha tagged",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-sort-filter-tags.input.txt",
+          "line": 4
+        },
+        {
+          "todo": "TODO",
+          "headline": "Zebra tagged",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-sort-filter-tags.input.txt",
+          "line": 0
+        },
+        {
+          "todo": "TODO",
+          "headline": "Bravo tagged",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-sort-filter-tags.input.txt",
+          "line": 2
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}
