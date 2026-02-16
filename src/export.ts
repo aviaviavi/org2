@@ -126,6 +126,10 @@ export type OrgExportMetadata = {
   htmlHead?: string[];
 };
 
+type OrgExportOptions = {
+  toc?: boolean;
+};
+
 const HIDDEN_DOCUMENT_KEYWORDS = new Set([
   "TITLE",
   "AUTHOR",
@@ -136,6 +140,7 @@ const HIDDEN_DOCUMENT_KEYWORDS = new Set([
   "LANGUAGE",
   "HTML_HEAD",
   "HTML_HEAD_EXTRA",
+  "OPTIONS",
 ]);
 
 function parseKeywordList(value: string): string[] {
@@ -151,6 +156,59 @@ function normalizeDocumentLanguage(value: string): string | null {
   if (!normalized) return null;
   if (!/^[A-Za-z0-9-]+$/.test(normalized)) return null;
   return normalized;
+}
+
+function parseKeywordOptionsMap(value: string): Map<string, string> {
+  const assignments = new Map<string, string>();
+  const tokens = String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter((token) => token.length > 0);
+
+  for (const token of tokens) {
+    const separatorIndex = token.indexOf(":");
+    if (separatorIndex <= 0) continue;
+    const key = token.slice(0, separatorIndex).trim().toLowerCase();
+    const optionValue = token.slice(separatorIndex + 1).trim();
+    if (!key || !optionValue) continue;
+    assignments.set(key, optionValue);
+  }
+
+  return assignments;
+}
+
+function parseKeywordBooleanOption(value: string | undefined): boolean | null {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return null;
+
+  if (["t", "true", "yes", "on"].includes(normalized)) return true;
+  if (["nil", "false", "no", "off"].includes(normalized)) return false;
+
+  if (/^\d+$/.test(normalized)) {
+    return Number(normalized) > 0;
+  }
+
+  return null;
+}
+
+function collectKeywordOptions(doc: DocumentNode): OrgExportOptions {
+  const options: OrgExportOptions = {};
+
+  for (const node of doc.children) {
+    if (node.type !== "KeywordLine") continue;
+    const key = String(node.keyRaw || "").trim().toUpperCase();
+    if (key !== "OPTIONS") continue;
+
+    const assignments = parseKeywordOptionsMap(node.valueRaw);
+    if (assignments.has("toc")) {
+      const parsed = parseKeywordBooleanOption(assignments.get("toc"));
+      if (parsed !== null) {
+        options.toc = parsed;
+      }
+    }
+  }
+
+  return options;
 }
 
 function collectKeywordMetadata(doc: DocumentNode): OrgExportMetadata {
@@ -723,7 +781,8 @@ export function renderOrgDocumentToHtml(
 ): { html: string; title: string; metadata: OrgExportMetadata } {
   const title = resolveTitle(doc, opts.title, opts.sourcePath);
   const metadata = collectKeywordMetadata(doc);
-  const includeToc = opts.includeToc === true;
+  const exportOptions = collectKeywordOptions(doc);
+  const includeToc = opts.includeToc === true || (opts.includeToc !== false && exportOptions.toc === true);
   const keywordSubtitle = findSubtitleFromKeywords(doc);
 
   let tocItems: TocItem[] = [];
