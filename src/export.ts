@@ -120,9 +120,20 @@ export type OrgExportMetadata = {
   date?: string;
   description?: string;
   keywords?: string[];
+  language?: string;
+  htmlHead?: string[];
 };
 
-const HIDDEN_DOCUMENT_KEYWORDS = new Set(["TITLE", "AUTHOR", "DATE", "DESCRIPTION", "KEYWORDS"]);
+const HIDDEN_DOCUMENT_KEYWORDS = new Set([
+  "TITLE",
+  "AUTHOR",
+  "DATE",
+  "DESCRIPTION",
+  "KEYWORDS",
+  "LANGUAGE",
+  "HTML_HEAD",
+  "HTML_HEAD_EXTRA",
+]);
 
 function parseKeywordList(value: string): string[] {
   const values = String(value || "")
@@ -130,6 +141,13 @@ function parseKeywordList(value: string): string[] {
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
   return Array.from(new Set(values));
+}
+
+function normalizeDocumentLanguage(value: string): string | null {
+  const normalized = String(value || "").trim();
+  if (!normalized) return null;
+  if (!/^[A-Za-z0-9-]+$/.test(normalized)) return null;
+  return normalized;
 }
 
 function collectKeywordMetadata(doc: DocumentNode): OrgExportMetadata {
@@ -161,6 +179,20 @@ function collectKeywordMetadata(doc: DocumentNode): OrgExportMetadata {
       if (parsedKeywords.length > 0) {
         metadata.keywords = parsedKeywords;
       }
+      continue;
+    }
+
+    if (key === "LANGUAGE" && !metadata.language) {
+      const normalizedLanguage = normalizeDocumentLanguage(value);
+      if (normalizedLanguage) {
+        metadata.language = normalizedLanguage;
+      }
+      continue;
+    }
+
+    if (key === "HTML_HEAD" || key === "HTML_HEAD_EXTRA") {
+      if (!metadata.htmlHead) metadata.htmlHead = [];
+      metadata.htmlHead.push(value);
     }
   }
 
@@ -172,7 +204,9 @@ function hasKeywordMetadata(metadata: OrgExportMetadata): boolean {
     metadata.author ||
       metadata.date ||
       metadata.description ||
-      (Array.isArray(metadata.keywords) && metadata.keywords.length > 0),
+      (Array.isArray(metadata.keywords) && metadata.keywords.length > 0) ||
+      metadata.language ||
+      (Array.isArray(metadata.htmlHead) && metadata.htmlHead.length > 0),
   );
 }
 
@@ -194,6 +228,12 @@ function renderHeadMetaSection(metadata: OrgExportMetadata): string {
   }
 
   return rows.length > 0 ? `${rows.join("\n")}\n` : "";
+}
+
+function renderHeadExtraSection(metadata: OrgExportMetadata): string {
+  if (!Array.isArray(metadata.htmlHead) || metadata.htmlHead.length === 0) return "";
+  const snippets = metadata.htmlHead.map((snippet) => String(snippet || "").trim()).filter((snippet) => snippet.length > 0);
+  return snippets.length > 0 ? `${snippets.join("\n")}\n` : "";
 }
 
 function slugifyHeadlineTitle(value: string): string {
@@ -537,7 +577,9 @@ export function renderOrgDocumentToHtml(
   const body = renderNodes(doc.children, context);
   const tocHtml = includeToc ? renderToc(tocItems) : "";
   const mainBody = [tocHtml, body].filter((segment) => String(segment || "").trim().length > 0).join("\n");
+  const language = metadata.language || "en";
   const headMetaSection = renderHeadMetaSection(metadata);
+  const headExtraSection = renderHeadExtraSection(metadata);
   const headStyleSection = renderHeadStyleSection({
     stylesheets: opts.stylesheets,
     includeDefaultStyle: opts.includeDefaultStyle,
@@ -545,7 +587,7 @@ export function renderOrgDocumentToHtml(
 ${DOCUMENT_TOC_STYLE}` : DEFAULT_DOCUMENT_STYLE,
   });
 
-  const html = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n${headMetaSection}${headStyleSection}</head>\n<body>\n<main class="org2-document">\n${mainBody}\n</main>\n</body>\n</html>\n`;
+  const html = `<!doctype html>\n<html lang="${escapeAttr(language)}">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n${headMetaSection}${headExtraSection}${headStyleSection}</head>\n<body>\n<main class="org2-document">\n${mainBody}\n</main>\n</body>\n</html>\n`;
 
   return { html, title, metadata };
 }

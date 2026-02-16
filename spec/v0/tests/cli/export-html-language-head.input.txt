@@ -1,0 +1,7 @@
+#+TITLE: Head Keyword Fixture
+#+LANGUAGE: fr-CA
+#+HTML_HEAD: <meta property="og:type" content="article" />
+#+HTML_HEAD_EXTRA: <link rel="preconnect" href="https://cdn.example.com" />
+
+* Bonjour
+Salut le monde.
