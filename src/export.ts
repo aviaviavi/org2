@@ -108,11 +108,13 @@ type TocItem = {
   id: string;
   title: string;
   level: number;
+  number?: string;
 };
 
 type RenderContext = {
   headlineIds?: WeakMap<HeadlineNode, string>;
   headlineSlugIds?: Map<string, string>;
+  headlineNumbers?: WeakMap<HeadlineNode, string>;
   rewriteFileLinks?: boolean;
 };
 
@@ -129,6 +131,8 @@ export type OrgExportMetadata = {
 type OrgExportOptions = {
   toc?: boolean;
   tocDepth?: number;
+  num?: boolean;
+  numDepth?: number;
 };
 
 const HIDDEN_DOCUMENT_KEYWORDS = new Set([
@@ -221,6 +225,20 @@ function collectKeywordOptions(doc: DocumentNode): OrgExportOptions {
       if (parsedDepth !== null) {
         options.toc = true;
         options.tocDepth = parsedDepth;
+      }
+    }
+
+    if (assignments.has("num")) {
+      const numRaw = assignments.get("num");
+      const parsed = parseKeywordBooleanOption(numRaw);
+      if (parsed !== null) {
+        options.num = parsed;
+      }
+
+      const parsedDepth = parseKeywordPositiveIntegerOption(numRaw);
+      if (parsedDepth !== null) {
+        options.num = true;
+        options.numDepth = parsedDepth;
       }
     }
   }
@@ -365,16 +383,37 @@ function normalizeTocDepth(value: number | undefined): number | null {
   return Math.min(6, normalized);
 }
 
-function buildHeadlineAnchors(doc: DocumentNode, opts: { includeToc?: boolean; includeTocDepth?: number } = {}): {
+function normalizeHeadlineNumberDepth(value: number | undefined): number | null {
+  if (value === undefined || value === null) return null;
+  if (!Number.isFinite(value)) return null;
+  const normalized = Math.trunc(value);
+  if (normalized < 1) return null;
+  return Math.min(6, normalized);
+}
+
+function buildHeadlineAnchors(
+  doc: DocumentNode,
+  opts: {
+    includeToc?: boolean;
+    includeTocDepth?: number;
+    includeHeadlineNumbers?: boolean;
+    includeHeadlineNumberDepth?: number;
+  } = {},
+): {
   items: TocItem[];
   headlineIds: WeakMap<HeadlineNode, string>;
   headlineSlugIds: Map<string, string>;
+  headlineNumbers: WeakMap<HeadlineNode, string>;
 } {
   const includeToc = opts.includeToc === true;
   const includeTocDepth = normalizeTocDepth(opts.includeTocDepth);
+  const includeHeadlineNumbers = opts.includeHeadlineNumbers === true;
+  const includeHeadlineNumberDepth = normalizeHeadlineNumberDepth(opts.includeHeadlineNumberDepth);
   const items: TocItem[] = [];
   const headlineIds = new WeakMap<HeadlineNode, string>();
   const headlineSlugIds = new Map<string, string>();
+  const headlineNumbers = new WeakMap<HeadlineNode, string>();
+  const headlineNumberCounts = [0, 0, 0, 0, 0, 0];
   const idCounts = new Map<string, number>();
 
   const nextId = (baseId: string): string => {
@@ -400,11 +439,26 @@ function buildHeadlineAnchors(doc: DocumentNode, opts: { includeToc?: boolean; i
         headlineSlugIds.set(titleKey, id);
       }
 
+      headlineNumberCounts[level - 1] += 1;
+      for (let idx = level; idx < headlineNumberCounts.length; idx += 1) {
+        headlineNumberCounts[idx] = 0;
+      }
+
+      let headlineNumber: string | null = null;
+      if (includeHeadlineNumbers && (includeHeadlineNumberDepth === null || level <= includeHeadlineNumberDepth)) {
+        const parts = headlineNumberCounts.slice(0, level).filter((value) => value > 0);
+        if (parts.length > 0) {
+          headlineNumber = parts.join(".");
+          headlineNumbers.set(node, headlineNumber);
+        }
+      }
+
       if (includeToc && (includeTocDepth === null || level <= includeTocDepth)) {
         items.push({
           id,
           title,
           level,
+          ...(headlineNumber ? { number: headlineNumber } : {}),
         });
       }
 
@@ -413,7 +467,7 @@ function buildHeadlineAnchors(doc: DocumentNode, opts: { includeToc?: boolean; i
   };
 
   visitNodes(doc.children);
-  return { items, headlineIds, headlineSlugIds };
+  return { items, headlineIds, headlineSlugIds, headlineNumbers };
 }
 
 function renderToc(items: TocItem[]): string {
@@ -421,7 +475,8 @@ function renderToc(items: TocItem[]): string {
   const rows = items
     .map((item) => {
       const level = Math.max(1, Math.min(6, item.level));
-      return `<li class="org2-toc-level-${level}"><a href="#${escapeAttr(item.id)}">${escapeHtml(item.title)}</a></li>`;
+      const numberPrefix = item.number ? `${escapeHtml(item.number)} ` : "";
+      return `<li class="org2-toc-level-${level}"><a href="#${escapeAttr(item.id)}">${numberPrefix}${escapeHtml(item.title)}</a></li>`;
     })
     .join("\n");
   return `<nav class="org2-toc" aria-label="Table of contents">\n<h2>Contents</h2>\n<ul>\n${rows}\n</ul>\n</nav>`;
@@ -688,6 +743,8 @@ function renderHeadline(node: HeadlineNode, context: RenderContext): string {
   const headingLevel = Math.max(1, Math.min(6, node.level));
   const headingTag = `h${headingLevel}`;
   const title = renderInlineChildren(node.title, context);
+  const headingNumberRaw = context.headlineNumbers?.get(node);
+  const headingNumber = headingNumberRaw ? `<span class="org2-headline-number">${escapeHtml(headingNumberRaw)}</span> ` : "";
   const todo = node.todo ? `<span class="org2-todo">${escapeHtml(node.todo)}</span> ` : "";
   const tags =
     node.tags && node.tags.length > 0
@@ -698,10 +755,10 @@ function renderHeadline(node: HeadlineNode, context: RenderContext): string {
 
   const childrenHtml = renderNodes(node.children, context);
   if (!childrenHtml.trim()) {
-    return `<section class="org2-headline level-${node.level}">\n<${headingTag}${headingIdAttr}>${todo}${title}${tags}</${headingTag}>\n</section>`;
+    return `<section class="org2-headline level-${node.level}">\n<${headingTag}${headingIdAttr}>${headingNumber}${todo}${title}${tags}</${headingTag}>\n</section>`;
   }
 
-  return `<section class="org2-headline level-${node.level}">\n<${headingTag}${headingIdAttr}>${todo}${title}${tags}</${headingTag}>\n${childrenHtml}\n</section>`;
+  return `<section class="org2-headline level-${node.level}">\n<${headingTag}${headingIdAttr}>${headingNumber}${todo}${title}${tags}</${headingTag}>\n${childrenHtml}\n</section>`;
 }
 
 function renderNode(node: Node, context: RenderContext): string {
@@ -804,6 +861,8 @@ export function renderOrgDocumentToHtml(
     includeDefaultStyle?: boolean;
     includeToc?: boolean;
     includeTocDepth?: number;
+    includeHeadlineNumbers?: boolean;
+    includeHeadlineNumberDepth?: number;
     rewriteFileLinks?: boolean;
   } = {},
 ): { html: string; title: string; metadata: OrgExportMetadata } {
@@ -813,18 +872,32 @@ export function renderOrgDocumentToHtml(
   const includeToc = opts.includeToc === true || (opts.includeToc !== false && exportOptions.toc === true);
   const includeTocDepth =
     normalizeTocDepth(opts.includeTocDepth) ?? normalizeTocDepth(exportOptions.tocDepth) ?? undefined;
+  const includeHeadlineNumbers =
+    opts.includeHeadlineNumbers === true ||
+    (opts.includeHeadlineNumbers !== false && exportOptions.num === true);
+  const includeHeadlineNumberDepth =
+    normalizeHeadlineNumberDepth(opts.includeHeadlineNumberDepth) ??
+    normalizeHeadlineNumberDepth(exportOptions.numDepth) ??
+    undefined;
   const keywordSubtitle = findSubtitleFromKeywords(doc);
 
   let tocItems: TocItem[] = [];
   const includeHeadingAnchors = includeToc || opts.rewriteFileLinks === true || nodesNeedHeadingAnchors(doc.children);
+  const includeHeadlineData = includeHeadingAnchors || includeHeadlineNumbers;
   const context: RenderContext = {
     rewriteFileLinks: opts.rewriteFileLinks === true,
   };
-  if (includeHeadingAnchors) {
-    const anchors = buildHeadlineAnchors(doc, { includeToc, includeTocDepth });
+  if (includeHeadlineData) {
+    const anchors = buildHeadlineAnchors(doc, {
+      includeToc,
+      includeTocDepth,
+      includeHeadlineNumbers,
+      includeHeadlineNumberDepth,
+    });
     tocItems = anchors.items;
     context.headlineIds = anchors.headlineIds;
     context.headlineSlugIds = anchors.headlineSlugIds;
+    context.headlineNumbers = anchors.headlineNumbers;
   }
 
   const body = renderNodes(doc.children, context);

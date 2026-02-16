@@ -1,0 +1,8 @@
+#+TITLE: Export Options Number Fixture
+#+OPTIONS: num:t toc:nil
+
+* Top heading
+** Nested heading
+*** Deep heading
+* Another top heading
+Paragraph content.

@@ -1229,6 +1229,8 @@ async function main(): Promise<void> {
   let exportIncludeDefaultStyle = true;
   let exportIncludeToc: boolean | undefined = undefined;
   let exportTocDepthRaw = "";
+  let exportIncludeHeadlineNumbers: boolean | undefined = undefined;
+  let exportHeadlineNumberDepthRaw = "";
   let exportRewriteFileLinks = false;
   let exportApply = false;
   let exportFormat: "text" | "json" = "text";
@@ -1826,6 +1828,20 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--number-headings") {
+      if (command === "export") {
+        exportIncludeHeadlineNumbers = true;
+      }
+      i++;
+    } else if (arg === "--number-headings-depth") {
+      i++;
+      if (i < args.length) {
+        if (command === "export") {
+          exportHeadlineNumberDepthRaw = String(args[i] || "");
+          exportIncludeHeadlineNumbers = true;
+        }
+        i++;
+      }
     } else if (arg === "--rewrite-file-links") {
       if (command === "export") {
         exportRewriteFileLinks = true;
@@ -1923,7 +1939,7 @@ async function main(): Promise<void> {
       "       org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--format text|diff|json] [--apply]",
     );
     console.error(
-      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--css HREF[,HREF...]] [--no-default-style] [--toc] [--toc-depth N] [--rewrite-file-links] [--format text|json] [--apply]",
+      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--css HREF[,HREF...]] [--no-default-style] [--toc] [--toc-depth N] [--number-headings] [--number-headings-depth N] [--rewrite-file-links] [--format text|json] [--apply]",
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
@@ -1974,7 +1990,7 @@ async function main(): Promise<void> {
       "       org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--format text|diff|json] [--apply]",
     );
     console.error(
-      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--css HREF[,HREF...]] [--no-default-style] [--toc] [--toc-depth N] [--rewrite-file-links] [--format text|json] [--apply]",
+      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--css HREF[,HREF...]] [--no-default-style] [--toc] [--toc-depth N] [--number-headings] [--number-headings-depth N] [--rewrite-file-links] [--format text|json] [--apply]",
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
@@ -2292,6 +2308,25 @@ async function main(): Promise<void> {
       exportTocDepth = parsedDepth;
     }
 
+    let exportHeadlineNumberDepth: number | undefined;
+    if (exportHeadlineNumberDepthRaw.trim().length > 0) {
+      const rawDepth = exportHeadlineNumberDepthRaw.trim();
+      if (!/^\d+$/.test(rawDepth)) {
+        console.error(
+          `Error: invalid export --number-headings-depth value: ${exportHeadlineNumberDepthRaw}. Expected a positive integer.`,
+        );
+        process.exit(1);
+      }
+      const parsedDepth = Number.parseInt(rawDepth, 10);
+      if (!Number.isFinite(parsedDepth) || parsedDepth < 1) {
+        console.error(
+          `Error: invalid export --number-headings-depth value: ${exportHeadlineNumberDepthRaw}. Expected a positive integer.`,
+        );
+        process.exit(1);
+      }
+      exportHeadlineNumberDepth = parsedDepth;
+    }
+
     if (hasSingleSource && hasDirSource) {
       console.error("Error: export html does not support combining --file with --dir");
       process.exit(1);
@@ -2365,6 +2400,8 @@ async function main(): Promise<void> {
           includeDefaultStyle: exportIncludeDefaultStyle,
           includeToc: exportIncludeToc,
           includeTocDepth: exportTocDepth,
+          includeHeadlineNumbers: exportIncludeHeadlineNumbers,
+          includeHeadlineNumberDepth: exportHeadlineNumberDepth,
           rewriteFileLinks: exportRewriteFileLinks,
         });
 
@@ -2495,6 +2532,8 @@ async function main(): Promise<void> {
       includeDefaultStyle: exportIncludeDefaultStyle,
       includeToc: exportIncludeToc,
       includeTocDepth: exportTocDepth,
+      includeHeadlineNumbers: exportIncludeHeadlineNumbers,
+      includeHeadlineNumberDepth: exportHeadlineNumberDepth,
       rewriteFileLinks: exportRewriteFileLinks,
     });
 

@@ -1,0 +1,1 @@
+Error: invalid export --number-headings-depth value: nope. Expected a positive integer.

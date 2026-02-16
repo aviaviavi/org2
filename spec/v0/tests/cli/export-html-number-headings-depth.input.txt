@@ -1,0 +1,6 @@
+#+TITLE: Export Number Depth Fixture
+
+* Parent heading
+** Child heading
+*** Grandchild heading
+* Second parent heading

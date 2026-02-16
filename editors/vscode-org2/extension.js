@@ -1441,6 +1441,9 @@ function activate(context) {
     const includeToc = cfg.get('export.includeToc', false) ? true : false;
     const tocDepthRaw = Number(cfg.get('export.tocDepth', 0));
     const tocDepth = Number.isFinite(tocDepthRaw) ? Math.trunc(tocDepthRaw) : 0;
+    const includeHeadlineNumbers = cfg.get('export.numberHeadings', false) ? true : false;
+    const headlineNumberDepthRaw = Number(cfg.get('export.numberHeadingsDepth', 0));
+    const headlineNumberDepth = Number.isFinite(headlineNumberDepthRaw) ? Math.trunc(headlineNumberDepthRaw) : 0;
     const rewriteFileLinks = cfg.get('export.rewriteFileLinks', false) ? true : false;
     const stylesheets = Array.from(
       new Set(
@@ -1462,6 +1465,11 @@ function activate(context) {
       args.push('--toc-depth', String(tocDepth));
     } else if (includeToc) {
       args.push('--toc');
+    }
+    if (headlineNumberDepth > 0) {
+      args.push('--number-headings-depth', String(headlineNumberDepth));
+    } else if (includeHeadlineNumbers) {
+      args.push('--number-headings');
     }
     if (rewriteFileLinks) {
       args.push('--rewrite-file-links');
