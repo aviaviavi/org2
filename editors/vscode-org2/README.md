@@ -120,6 +120,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.export.stylesheets`: optional comma/newline-separated stylesheet URLs/paths passed to HTML export commands as repeated `--css` flags
 - `org2.export.includeDefaultStyle`: when true (default), keep Org2's built-in inline stylesheet; disable to export with external CSS only (`--no-default-style`)
 - `org2.export.includeToc`: when true, include a generated table of contents with heading anchor links in exported HTML (`--toc`)
+- `org2.export.rewriteFileLinks`: when true, rewrite Org file links (`file:*.org`, `*.org2`) to `.html` hrefs in exported output (`--rewrite-file-links`)
 - `org2.agenda.sortBy`: optional per-day sort order (`default`, or comma-separated keys like `file,headline,todo,kind,line`)
 - `org2.agenda.recursive`: when scope=`workspace`, whether to scan recursively (default true)
 - `org2.roam.dailiesDir`: optional root directory for Roam dailies (`YYYY-MM-DD.org2`); defaults to `org2.roam.indexDir`, then `org2.agenda.dir`, then workspace root
