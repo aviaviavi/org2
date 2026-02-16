@@ -1,0 +1,14 @@
+
+═════════════════════
+ 2026-01-22 Thursday
+═════════════════════
+
+  [TODO] Upcoming task (DEADLINE) spec/v0/tests/cli/agenda-when-filter.input.txt
+
+
+══════════════════════
+ 2026-01-21 Wednesday
+══════════════════════
+
+  [TODO] Today task (SCHEDULED) spec/v0/tests/cli/agenda-when-filter.input.txt
+
