@@ -1,0 +1,6 @@
+#+TITLE: Export Link Rewrite Fixture
+* Links
+Paragraph with [[file:./notes/alpha.org2][Alpha]], [[./notes/beta.org][Beta]], and [[file:./notes/gamma.org::#custom-id][Custom Anchor]].
+Paragraph with heading search [[file:./notes/gamma.org::* Sub Heading][Heading Anchor]].
+Paragraph with unsupported search [[file:./notes/delta.org::42][Line Search]].
+Paragraph with non-file links [[https://example.com/file.org][External]] and [[id:abc-123][ID link]].

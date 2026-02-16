@@ -78,7 +78,7 @@ Current reality:
 - Formatter current-file check/apply commands (VS Code): *Available now* (MVP)
 - Formatter current-file diff preview command (VS Code): *Available now* (MVP)
 - Formatter (=org2 fmt=): *In progress*
-- HTML export (=org2 export html=): *Available now* (MVP, single-file + directory batch standalone export + optional index page + configurable stylesheet injection + optional table of contents)
+- HTML export (=org2 export html=): *Available now* (MVP, single-file + directory batch standalone export + optional index page + configurable stylesheet injection + optional table of contents + optional Org file-link rewrite)
 - LSP go-to-definition for file/id links (including file =::search= suffix targets) (=org2 lsp=): *Available now* (MVP)
 - LSP go-to-declaration for file/id links (including file =::search= suffix targets) (=textDocument/declaration= via =org2 lsp=): *Available now* (MVP)
 - LSP go-to-type-definition + go-to-implementation for file/id links (including file =::search= suffix targets) (=textDocument/typeDefinition= + =textDocument/implementation= via =org2 lsp=): *Available now* (MVP)
@@ -106,7 +106,7 @@ Current reality:
 - Formal Org2 spec (v0 draft): *In progress*
 
 **** Org Mode parity areas (broader)
-- Export/publishing pipeline parity: *In progress* (MVP single-file + directory-batch HTML export + index generation + configurable stylesheet injection + optional table of contents available via CLI + VS Code)
+- Export/publishing pipeline parity: *In progress* (MVP single-file + directory-batch HTML export + index generation + configurable stylesheet injection + optional table of contents + optional Org file-link rewrite available via CLI + VS Code)
 - Org crypt (encrypted sections/workflows): *Planned*
 - Recurring tasks / repeaters: *In progress* (agenda repeater expansion MVP available)
 - Habits: *Planned*
@@ -385,6 +385,9 @@ npm run org2 -- export html --file /path/to/notes.org2 --css /assets/site.css,ht
 
 # Export with an auto-generated table of contents + heading anchors
 npm run org2 -- export html --file /path/to/notes.org2 --toc --apply
+
+# Rewrite Org file links (file:*.org / *.org2) to .html hrefs in exported output
+npm run org2 -- export html --file /path/to/notes.org2 --rewrite-file-links --apply
 #+end_src
 
 Notes:
@@ -396,6 +399,7 @@ Notes:
 - =--css HREF= injects an external stylesheet link (repeat flag or pass comma-separated values).
 - =--no-default-style= omits Org2's built-in inline stylesheet (useful when styling entirely via external CSS).
 - =--toc= prepends an auto-generated table of contents and heading anchor IDs to each exported HTML page.
+- =--rewrite-file-links= rewrites Org file links (for example =file:notes.org2= or =../notes.org=) to =.html= hrefs during export.
 - Without =--apply=, output is preview-only (single-file emits HTML text by default; batch mode emits summary text or JSON).
 
 *** Formatter (=fmt=) quick examples
