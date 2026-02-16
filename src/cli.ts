@@ -46,6 +46,7 @@ type TimestampRepeater = {
 type ExportMetadataPayload = {
   author?: string;
   date?: string;
+  subtitle?: string;
   description?: string;
   keywords?: string[];
   language?: string;
@@ -57,6 +58,7 @@ function hasExportMetadata(metadata: ExportMetadataPayload | null | undefined): 
   return Boolean(
     metadata.author ||
       metadata.date ||
+      metadata.subtitle ||
       metadata.description ||
       metadata.language ||
       (Array.isArray(metadata.keywords) && metadata.keywords.length > 0) ||
