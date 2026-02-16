@@ -1,0 +1,38 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-01-21",
+    "end": "2026-01-23",
+    "days": 3
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-01-22",
+      "weekday": "Thursday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Upcoming task",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-when-filter.input.txt",
+          "line": 9
+        }
+      ]
+    },
+    {
+      "date": "2026-01-21",
+      "weekday": "Wednesday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Today task",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-when-filter.input.txt",
+          "line": 6
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}
