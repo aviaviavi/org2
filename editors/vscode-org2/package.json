@@ -613,7 +613,7 @@
         "org2.agenda.sortBy": {
           "type": "string",
           "default": "default",
-          "description": "Sort agenda rows within each date by one or more keys (`file`, `headline`, `todo`, `kind`, `line`). Supports comma-separated values; prefix a key with `-` (or suffix with `:desc`) for descending order. Use `default` for existing ordering."
+          "description": "Sort agenda rows within each date by one or more keys (`file`, `headline`, `todo`, `priority`, `kind`, `line`). Supports comma-separated values; prefix a key with `-` (or suffix with `:desc`) for descending order. Use `default` for existing ordering."
         },
         "org2.agenda.dateOrder": {
           "type": "string",
