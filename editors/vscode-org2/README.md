@@ -14,6 +14,7 @@ Minimal VS Code language support for Org2.
   - `[[url]]`
   - `[[url][desc]]`
   - bare `https://...` URLs
+- Quick capture command with diff preview + apply confirmation (`Org2: Capture Quick Entry`)
 - HTML export commands for the active file and workspace (`Org2: Export Current File to HTML`, `Org2: Export Workspace Org Files to HTML`)
 - LSP go-to-definition + go-to-declaration + go-to-type-definition + go-to-implementation for Org file/id links, including file `::search` suffix targets (`textDocument/definition` + `textDocument/declaration` + `textDocument/typeDefinition` + `textDocument/implementation`)
 - LSP hover tooltips for Org links, TODO keywords, and planning keywords (`SCHEDULED:` / `DEADLINE:`)
@@ -52,14 +53,15 @@ The extension can toggle/set TODO keywords on the current headline via the `org2
 
 Implementation detail: the extension saves the file (if needed), runs `org2 todo toggle|set --file ... --line ... --apply` (and adds `--logbook` when `org2.todo.writeTransitionLogbook` is enabled), then refreshes the buffer from disk. By default it restores the prior cursor/selection; this can be disabled with `org2.editor.restoreSelectionAfterCliApply` if your setup still auto-expands folds. You can also disable the explicit refresh (`org2.editor.refreshAfterCliApply`) to rely on VS Code file watching and avoid refresh-triggered fold churn. With refresh enabled, `org2.editor.skipRefreshWhenInSync` (default true) avoids unnecessary `revertResource` calls when the open document already matches disk after CLI apply, and `org2.editor.allowGlobalRefreshFallback` (default false) controls whether Org2 may fall back to global `workbench.action.files.revert` on older VS Code builds.
 
-## Planning + archiving + refile + export (MVP)
+## Planning + capture + archiving + refile + export (MVP)
 
-The extension can edit planning keywords, archive subtrees, refile subtrees, and export HTML via the `org2` CLI.
+The extension can edit planning keywords, run quick capture, archive subtrees, refile subtrees, and export HTML via the `org2` CLI.
 
 - Command: **Org2: Set Scheduled** (`org2.setScheduled`) → prompts for `YYYY-MM-DD`
 - Command: **Org2: Set Scheduled to Today** (`org2.setScheduledToday`) → no date prompt
 - Command: **Org2: Set Deadline** (`org2.setDeadline`) → prompts for `YYYY-MM-DD`
 - Command: **Org2: Set Deadline to Today** (`org2.setDeadlineToday`) → no date prompt
+- Command: **Org2: Capture Quick Entry** (`org2.captureQuickEntry`) → pick file/template/title, preview diff, then apply
 - Command: **Org2: Archive Subtree** (`org2.archiveSubtree`) → shows a diff preview, then asks for confirmation
 - Command: **Org2: Refile Subtree** (`org2.refileSubtree`) → pick destination file/heading, preview diff, then apply
 - Command: **Org2: Export Current File to HTML** (`org2.exportCurrentFileHtml`) → preview generated HTML, then optionally write to disk
@@ -67,6 +69,7 @@ The extension can edit planning keywords, archive subtrees, refile subtrees, and
 
 Implementation detail: the extension saves the file (if needed).
 - Planning edits run `org2 plan set ... --apply`.
+- Quick capture runs `org2 capture ... --format diff` first to preview the append, then `org2 capture ... --apply --format json` if confirmed.
 - Archiving runs `org2 archive ... --format diff` first to generate a preview, then `org2 archive ... --apply` if confirmed.
 - Refile runs `org2 refile ... --format diff` for preview, then `org2 refile ... --apply --format json` if confirmed.
 - Current-file HTML export runs `org2 export html --file ... --format json` for preview and `org2 export html --file ... --out ... --apply --format json` when writing, plus optional export flags from settings (`--css` / `--no-default-style` / `--toc` / `--toc-depth` / `--number-headings` / `--number-headings-depth` / `--rewrite-file-links`).
@@ -115,6 +118,9 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.formatter.fileFilter`: limit workspace formatter check/apply commands to files whose paths contain any comma-separated term (case-insensitive substring match)
 - `org2.formatter.excludeFileFilter`: exclude files from workspace formatter check/apply commands when paths contain any comma-separated term (case-insensitive substring match)
 - `org2.formatter.configFile`: optional `org2.json` path for workspace formatter commands; when set, workspace check/apply uses `org2 fmt --config <path>` instead of scanning `org2.agenda.dir` recursively
+- `org2.capture.defaultFile`: optional default target file for `Org2: Capture Quick Entry`; absolute paths are used directly, relative paths resolve against `org2.agenda.dir`/workspace root
+- `org2.capture.defaultTemplate`: default template ordering (`note` or `task`) for `Org2: Capture Quick Entry`
+- `org2.capture.defaultTodoKeyword`: default TODO keyword ordering for task captures (`TODO`, `IN_PROGRESS`, `DONE`, `CANCELED`, `CANCELLED`)
 - `org2.export.outputDir`: output directory for `Org2: Export Workspace Org Files to HTML`; absolute paths are used directly, relative paths resolve against `org2.agenda.dir`/workspace root
 - `org2.export.indexFile`: optional workspace export index file path (`index.html` by default); empty disables index generation; relative paths resolve inside `org2.export.outputDir`
 - `org2.export.indexTitle`: title used for generated workspace export index pages (`Org2 Export Index` by default)
@@ -199,6 +205,7 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
   - `Org2: Set SCHEDULED to Today` (`org2.setScheduledToday`)
   - `Org2: Set DEADLINE` (`org2.setDeadline`)
   - `Org2: Set DEADLINE to Today` (`org2.setDeadlineToday`)
+  - `Org2: Capture Quick Entry` (`org2.captureQuickEntry`)
   - `Org2: Archive Subtree` (`org2.archiveSubtree`)
   - `Org2: Refile Subtree` (`org2.refileSubtree`)
 - Roam
@@ -246,6 +253,7 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
   - `d` → Set DEADLINE (prompt)
   - `d t` → Set DEADLINE to Today
   - `x` → Archive Subtree
+  - `c q` → Capture Quick Entry
   - `p h` → Export Current File to HTML
   - `p w` → Export Workspace Org Files to HTML
   - `1` → Fold to heading level 1 (`editor.foldLevel1`)

@@ -2437,6 +2437,239 @@ function activate(context) {
     })
   );
 
+  async function runCaptureCli() {
+    const cfg = vscode.workspace.getConfiguration('org2');
+    const defaultFileRaw = String(cfg.get('capture.defaultFile', '') || '').trim();
+    const defaultTemplateRaw = String(cfg.get('capture.defaultTemplate', 'note') || 'note').trim().toLowerCase();
+    const defaultTemplate = defaultTemplateRaw === 'task' ? 'task' : 'note';
+    const defaultTodoKeywordRaw = String(cfg.get('capture.defaultTodoKeyword', 'TODO') || 'TODO').trim().toUpperCase();
+
+    const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
+    const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
+    const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
+    const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
+
+    const workspaceRoot = getWorkspaceRoot() || getAgendaRootDir() || process.cwd();
+    const resolveCapturePath = (value) => {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+      return path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(workspaceRoot, raw);
+    };
+
+    const activeEditor = vscode.window.activeTextEditor;
+    const activeDoc = activeEditor && activeEditor.document ? activeEditor.document : null;
+    const activeFilePath =
+      activeDoc && activeDoc.uri && activeDoc.uri.scheme === 'file' && (activeDoc.languageId === 'org2' || activeDoc.languageId === 'org')
+        ? path.resolve(activeDoc.uri.fsPath)
+        : '';
+
+    const configuredDefaultPath = resolveCapturePath(defaultFileRaw);
+
+    let candidatePaths = [];
+    try {
+      if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+        const found = await vscode.workspace.findFiles('**/*.{org,org2}', '**/{.git,node_modules,.org2}/**', 500);
+        candidatePaths = found.map((uri) => path.resolve(uri.fsPath));
+      }
+    } catch (_) {
+      // Fall back to active/configured paths below.
+    }
+
+    if (activeFilePath) candidatePaths.push(activeFilePath);
+    if (configuredDefaultPath) candidatePaths.push(configuredDefaultPath);
+
+    candidatePaths = Array.from(new Set(candidatePaths.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+
+    const preferredPath = configuredDefaultPath || activeFilePath || '';
+    if (preferredPath) {
+      candidatePaths = [preferredPath, ...candidatePaths.filter((value) => value !== preferredPath)];
+    }
+
+    const captureFilePick = await vscode.window.showQuickPick(
+      [
+        {
+          label: '$(edit) Enter custom capture file path…',
+          description: '',
+          detail: defaultFileRaw || activeFilePath || workspaceRoot,
+          customPath: true,
+        },
+        ...candidatePaths.map((candidate) => ({
+          label: path.relative(workspaceRoot, candidate) || path.basename(candidate),
+          description: candidate === activeFilePath ? 'Current file' : candidate === configuredDefaultPath ? 'Configured default' : '',
+          detail: candidate,
+          filePath: candidate,
+        })),
+      ],
+      {
+        placeHolder: 'Org2: capture target file',
+        matchOnDescription: true,
+        matchOnDetail: true,
+      }
+    );
+
+    if (!captureFilePick) return;
+
+    let captureFilePath = '';
+    if (captureFilePick.customPath) {
+      const customPathRaw = await vscode.window.showInputBox({
+        prompt: 'Org2: capture file path',
+        value: defaultFileRaw || activeFilePath || path.join(workspaceRoot, 'inbox.org2'),
+        placeHolder: '/path/to/inbox.org2',
+        validateInput: (v) => (String(v || '').trim() ? undefined : 'Capture file path is required'),
+      });
+      if (customPathRaw === undefined) return;
+      captureFilePath = resolveCapturePath(customPathRaw);
+    } else {
+      captureFilePath = path.resolve(String(captureFilePick.filePath || ''));
+    }
+
+    if (!captureFilePath) {
+      vscode.window.showWarningMessage('Org2: capture file path is required.');
+      return;
+    }
+
+    const templateOptions = [
+      { label: 'Note', description: '* Title + CAPTURED timestamp', value: 'note' },
+      { label: 'Task', description: '* TODO Title + CAPTURED timestamp', value: 'task' },
+    ];
+    const templatePicks = defaultTemplate === 'task'
+      ? [templateOptions[1], templateOptions[0]]
+      : [templateOptions[0], templateOptions[1]];
+
+    const templatePick = await vscode.window.showQuickPick(templatePicks, {
+      placeHolder: 'Org2: capture template',
+      matchOnDescription: true,
+    });
+    if (!templatePick) return;
+
+    const titleRaw = await vscode.window.showInputBox({
+      prompt: 'Org2: capture title',
+      placeHolder: templatePick.value === 'task' ? 'Ship onboarding copy' : 'Call notes',
+      validateInput: (v) => (String(v || '').trim() ? undefined : 'Capture title is required'),
+    });
+    if (titleRaw === undefined) return;
+
+    const captureTitle = String(titleRaw || '').trim();
+    if (!captureTitle) {
+      vscode.window.showWarningMessage('Org2: capture title is required.');
+      return;
+    }
+
+    const todoKeywordOptions = ['TODO', 'IN_PROGRESS', 'DONE', 'CANCELED', 'CANCELLED'];
+    let captureTodoKeyword = 'TODO';
+    if (templatePick.value === 'task') {
+      const normalizedDefaultTodo = todoKeywordOptions.includes(defaultTodoKeywordRaw) ? defaultTodoKeywordRaw : 'TODO';
+      const todoPickOrder = [
+        normalizedDefaultTodo,
+        ...todoKeywordOptions.filter((keyword) => keyword !== normalizedDefaultTodo),
+      ];
+      const todoPick = await vscode.window.showQuickPick(
+        todoPickOrder.map((keyword) => ({ label: keyword, value: keyword })),
+        { placeHolder: 'Org2: capture task TODO keyword' }
+      );
+      if (!todoPick) return;
+      captureTodoKeyword = todoPick.value;
+    }
+
+    const previewArgs = ['capture', '--file', captureFilePath, '--template', templatePick.value, '--title', captureTitle, '--format', 'diff'];
+    if (templatePick.value === 'task') {
+      previewArgs.push('--todo', captureTodoKeyword);
+    }
+
+    const { cmd: previewCmd, args: previewFinalArgs } = resolveOrg2Command(context, previewArgs);
+    const cwd = getWorkspaceRoot() || path.dirname(captureFilePath) || process.cwd();
+
+    let diffText = '';
+    try {
+      const { stdout } = await execFileAsync(previewCmd, previewFinalArgs, { cwd });
+      diffText = String(stdout || '').trimEnd();
+    } catch (e) {
+      const stderr = e && e.stderr ? String(e.stderr).trim() : '';
+      const extra = stderr ? `\n${stderr}` : '';
+      vscode.window.showErrorMessage(`Org2: capture preview failed: ${String(e && e.message ? e.message : e)}${extra}`);
+      return;
+    }
+
+    if (!diffText) {
+      vscode.window.showInformationMessage('Org2: capture preview produced no changes.');
+      return;
+    }
+
+    const diffDoc = await vscode.workspace.openTextDocument({ language: 'diff', content: diffText + '\n' });
+    await vscode.window.showTextDocument(diffDoc, { preview: true, preserveFocus: false });
+
+    const applyOk = await vscode.window.showWarningMessage(
+      `Org2: capture ${templatePick.value} in ${path.basename(captureFilePath)}?`,
+      { modal: true },
+      'Capture'
+    );
+    if (applyOk !== 'Capture') return;
+
+    const applyArgs = ['capture', '--file', captureFilePath, '--template', templatePick.value, '--title', captureTitle, '--format', 'json', '--apply'];
+    if (templatePick.value === 'task') {
+      applyArgs.push('--todo', captureTodoKeyword);
+    }
+
+    const { cmd: applyCmd, args: applyFinalArgs } = resolveOrg2Command(context, applyArgs);
+
+    let applyPayload;
+    try {
+      const { stdout } = await execFileAsync(applyCmd, applyFinalArgs, { cwd });
+      applyPayload = JSON.parse(String(stdout || '').trim());
+    } catch (e) {
+      const stderr = e && e.stderr ? String(e.stderr).trim() : '';
+      const extra = stderr ? `\n${stderr}` : '';
+      vscode.window.showErrorMessage(`Org2: capture failed: ${String(e && e.message ? e.message : e)}${extra}`);
+      return;
+    }
+
+    const changed = applyPayload && typeof applyPayload.changed === 'boolean' ? applyPayload.changed : true;
+    const headingLine1Raw = Number(applyPayload && applyPayload.headingLine1);
+    const headingLine1 = Number.isFinite(headingLine1Raw) && headingLine1Raw > 0 ? Math.floor(headingLine1Raw) : 1;
+
+    const isActiveTarget = activeDoc && activeDoc.uri && activeDoc.uri.scheme === 'file'
+      ? path.resolve(activeDoc.uri.fsPath) === path.resolve(captureFilePath)
+      : false;
+
+    const selectionBefore =
+      isActiveTarget && activeEditor && activeEditor.selection
+        ? new vscode.Selection(activeEditor.selection.start, activeEditor.selection.end)
+        : undefined;
+    const activeUriBefore = isActiveTarget && activeEditor && activeEditor.document
+      ? activeEditor.document.uri.toString()
+      : '';
+
+    if (refreshAfterCliApply && changed !== false) {
+      await refreshFileFromDisk(captureFilePath, {
+        selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
+        activeUri: activeUriBefore,
+        skipIfInSync: skipRefreshWhenInSync,
+        allowGlobalFallback: allowGlobalRefreshFallback,
+      });
+    }
+
+    try {
+      const targetDoc = await vscode.workspace.openTextDocument(vscode.Uri.file(captureFilePath));
+      const targetEditor = await vscode.window.showTextDocument(targetDoc, { preview: false });
+      const maxLine = Math.max(0, targetDoc.lineCount - 1);
+      const targetPos = new vscode.Position(Math.min(Math.max(headingLine1 - 1, 0), maxLine), 0);
+      targetEditor.selection = new vscode.Selection(targetPos, targetPos);
+      revealNavigationPosition(targetEditor, targetPos);
+    } catch {
+      // It's fine if VS Code cannot open/reveal the target file immediately.
+    }
+
+    vscode.window.showInformationMessage(
+      `Org2: captured ${templatePick.value} in ${path.basename(captureFilePath)} (line ${headingLine1}).`
+    );
+  }
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.captureQuickEntry', async () => {
+      await runCaptureCli();
+    })
+  );
+
   // Roam dailies navigation (open or create YYYY-MM-DD.org2)
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.roamDailiesGotoToday', async () => {
