@@ -653,7 +653,7 @@
         "org2.export.rewriteFileLinks": {
           "type": "boolean",
           "default": false,
-          "description": "When enabled, HTML export rewrites Org file links to `.html` targets for published output (`--rewrite-file-links`)."
+          "description": "When enabled, HTML export rewrites Org file links to `.html` targets for published output and emits heading anchor IDs (including `:CUSTOM_ID:` targets) for rewritten `::* Heading` / `::#custom-id` links (`--rewrite-file-links`)."
         },
         "org2.formatOnSave": {
           "type": "boolean",
