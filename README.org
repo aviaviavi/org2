@@ -401,6 +401,7 @@ Notes:
 - =--toc= prepends an auto-generated table of contents and heading anchor IDs to each exported HTML page.
 - =--rewrite-file-links= rewrites Org file links (for example =file:notes.org2= or =../notes.org=) to =.html= hrefs during export and emits heading anchor IDs so rewritten =::* Heading= / =::#custom-id= targets resolve in published output.
 - In-document heading links (=[[* Heading]]= and =[[#custom-id]]=) are exported as hash anchors and trigger heading anchor IDs automatically (no =--toc= required).
+- When in-document heading/custom-id links omit a description, exported link text defaults to a cleaned label (=Heading= / =custom-id=) instead of raw Org target markup.
 - Exported HTML maps =#+AUTHOR=, =#+DATE=, =#+DESCRIPTION=, and =#+KEYWORDS= into corresponding HTML =<meta>= tags.
 - =#+LANGUAGE= sets the exported =<html lang="...">= attribute (defaults to =en= when omitted/invalid).
 - =#+HTML_HEAD= and =#+HTML_HEAD_EXTRA= inject raw snippets into the HTML =<head>= (in file order).
