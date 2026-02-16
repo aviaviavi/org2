@@ -1,0 +1,1 @@
+export html --file spec/v0/tests/cli/export-html-keyword-meta.input.txt --format json
