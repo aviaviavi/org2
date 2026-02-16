@@ -1,0 +1,8 @@
+* TODO Zebra tagged :zeta:alpha:
+SCHEDULED: <2026-01-21 Wed>
+* TODO Bravo tagged :beta:
+SCHEDULED: <2026-01-21 Wed>
+* TODO Alpha tagged :alpha:
+SCHEDULED: <2026-01-21 Wed>
+* TODO No tag task
+DEADLINE: <2026-01-21 Wed>
