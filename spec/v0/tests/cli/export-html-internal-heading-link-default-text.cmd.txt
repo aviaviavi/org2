@@ -1,0 +1,1 @@
+export html --file spec/v0/tests/cli/export-html-internal-heading-link-default-text.input.txt --format json

@@ -1,0 +1,10 @@
+#+TITLE: Internal Heading Link Default Text Fixture
+
+See [[* Child Heading]] and [[#deep-link]].
+
+* Parent
+** Child Heading
+:PROPERTIES:
+:CUSTOM_ID: deep-link
+:END:
+Body text.

@@ -385,6 +385,24 @@ function linkTargetNeedsHeadingAnchor(rawTarget: string): boolean {
   return target.startsWith("#") || target.startsWith("*");
 }
 
+function resolveDefaultInternalLinkText(rawTarget: string): string | null {
+  const target = String(rawTarget || "").trim();
+  if (!target) return null;
+
+  if (target.startsWith("*")) {
+    const headingText = target.replace(/^\*+\s*/, "").trim();
+    return headingText || null;
+  }
+
+  if (target.startsWith("#")) {
+    const anchorRaw = target.slice(1).trim();
+    if (!anchorRaw) return null;
+    return normalizeAnchorId(anchorRaw) || anchorRaw;
+  }
+
+  return null;
+}
+
 function inlineNodesNeedHeadingAnchors(nodes: InlineNode[]): boolean {
   for (const node of nodes) {
     if (node.type !== "Link") continue;
@@ -462,7 +480,9 @@ function renderLink(node: LinkNode, context: RenderContext): string {
     href = rewriteOrgInternalHrefForHtml(hrefRaw, context);
   }
 
-  const text = String(node.descriptionRaw || node.targetRaw || "").trim() || href;
+  const explicitDescription = String(node.descriptionRaw || "").trim();
+  const defaultInternalText = resolveDefaultInternalLinkText(hrefRaw);
+  const text = explicitDescription || defaultInternalText || String(node.targetRaw || "").trim() || href;
   return `<a href="${escapeAttr(href)}">${escapeHtml(text)}</a>`;
 }
 
