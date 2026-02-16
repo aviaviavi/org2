@@ -207,14 +207,16 @@ type AgendaExcludePriorityFilter = Set<string> | null;
 type AgendaFileFilter = string[] | null;
 type AgendaExcludeFileFilter = string[] | null;
 type AgendaSortKey = "file" | "headline" | "todo" | "kind" | "line";
-type AgendaSortOrder = AgendaSortKey[] | null;
+type AgendaSortDirection = "asc" | "desc";
+type AgendaSortField = { key: AgendaSortKey; direction: AgendaSortDirection };
+type AgendaSortOrder = AgendaSortField[] | null;
 
 const AGENDA_STATUS_ALLOWED_HINT =
   "all, active, actionable, open, todo, in_progress, done, canceled, closed, custom";
 const AGENDA_KIND_ALLOWED_HINT = "all, scheduled, deadline";
 const AGENDA_WHEN_ALLOWED_HINT = "all, overdue, today, upcoming";
 const AGENDA_PRIORITY_ALLOWED_HINT = "A-Z or 0-9 (for example: A,B,C or [#A],[#B])";
-const AGENDA_SORT_ALLOWED_HINT = "default, file, headline, todo, kind, line";
+const AGENDA_SORT_ALLOWED_HINT = "default, [+-]file, [+-]headline, [+-]todo, [+-]kind, [+-]line";
 
 function agendaStatusBucketForKeyword(todo: string | undefined): AgendaStatusBucket | null {
   const key = String(todo || "").trim().toUpperCase();
@@ -561,16 +563,33 @@ function parseAgendaSortArgs(rawArgs: string[]): {
 } {
   if (rawArgs.length === 0) return { sortOrder: null, invalid: [] };
 
-  const sortOrder: AgendaSortKey[] = [];
+  const sortOrder: AgendaSortField[] = [];
   const seen = new Set<AgendaSortKey>();
   const invalid: string[] = [];
 
   const addToken = (tokenRaw: string): void => {
-    const token = tokenRaw.trim().toLowerCase();
+    const original = tokenRaw.trim();
+    let token = original.toLowerCase();
     if (!token) return;
 
     if (token === "default") {
       return;
+    }
+
+    let direction: AgendaSortDirection = "asc";
+    if (token.startsWith("+")) {
+      token = token.slice(1);
+    } else if (token.startsWith("-")) {
+      direction = "desc";
+      token = token.slice(1);
+    }
+
+    if (token.endsWith(":asc")) {
+      direction = "asc";
+      token = token.slice(0, -":asc".length);
+    } else if (token.endsWith(":desc")) {
+      direction = "desc";
+      token = token.slice(0, -":desc".length);
     }
 
     let normalized: AgendaSortKey | null = null;
@@ -581,13 +600,13 @@ function parseAgendaSortArgs(rawArgs: string[]): {
     else if (token === "line" || token === "position") normalized = "line";
 
     if (!normalized) {
-      invalid.push(tokenRaw.trim());
+      invalid.push(original);
       return;
     }
 
     if (!seen.has(normalized)) {
       seen.add(normalized);
-      sortOrder.push(normalized);
+      sortOrder.push({ key: normalized, direction });
     }
   };
 
@@ -1122,9 +1141,11 @@ function compareAgendaItems(a: ScheduledItem, b: ScheduledItem, sortOrder: Agend
   };
 
   if (sortOrder && sortOrder.length > 0) {
-    for (const key of sortOrder) {
-      const cmp = compareByKey(key);
-      if (cmp !== 0) return cmp;
+    for (const field of sortOrder) {
+      const cmp = compareByKey(field.key);
+      if (cmp !== 0) {
+        return field.direction === "desc" ? -cmp : cmp;
+      }
     }
   }
 
@@ -1939,7 +1960,7 @@ async function main(): Promise<void> {
 
   if (help) {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -1990,7 +2011,7 @@ async function main(): Promise<void> {
 
   if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort ORDER[,ORDER...]] [--limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
