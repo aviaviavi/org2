@@ -1,1 +1,1 @@
-Error: invalid agenda --sort value(s): banana. Allowed: default, [+-]file, [+-]headline, [+-]todo, [+-]priority, [+-]kind, [+-]line
+Error: invalid agenda --sort value(s): banana. Allowed: default, [+-]file, [+-]headline, [+-]todo, [+-]priority, [+-]kind, [+-]tags, [+-]line

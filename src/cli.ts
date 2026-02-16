@@ -186,6 +186,7 @@ interface ScheduledItem {
   priority: string | undefined;
   date: string;
   kind: string;
+  tags: string[];
 }
 
 type AgendaStatusBucket = "todo" | "in_progress" | "done" | "canceled" | "custom";
@@ -207,7 +208,7 @@ type AgendaExcludeTodoFilter = Set<string> | null;
 type AgendaExcludePriorityFilter = Set<string> | null;
 type AgendaFileFilter = string[] | null;
 type AgendaExcludeFileFilter = string[] | null;
-type AgendaSortKey = "file" | "headline" | "todo" | "priority" | "kind" | "line";
+type AgendaSortKey = "file" | "headline" | "todo" | "priority" | "kind" | "tags" | "line";
 type AgendaSortDirection = "asc" | "desc";
 type AgendaSortField = { key: AgendaSortKey; direction: AgendaSortDirection };
 type AgendaSortOrder = AgendaSortField[] | null;
@@ -218,7 +219,7 @@ const AGENDA_STATUS_ALLOWED_HINT =
 const AGENDA_KIND_ALLOWED_HINT = "all, scheduled, deadline";
 const AGENDA_WHEN_ALLOWED_HINT = "all, overdue, today, upcoming";
 const AGENDA_PRIORITY_ALLOWED_HINT = "A-Z or 0-9 (for example: A,B,C or [#A],[#B])";
-const AGENDA_SORT_ALLOWED_HINT = "default, [+-]file, [+-]headline, [+-]todo, [+-]priority, [+-]kind, [+-]line";
+const AGENDA_SORT_ALLOWED_HINT = "default, [+-]file, [+-]headline, [+-]todo, [+-]priority, [+-]kind, [+-]tags, [+-]line";
 const AGENDA_DATE_ORDER_ALLOWED_HINT = "asc, desc";
 
 function agendaStatusBucketForKeyword(todo: string | undefined): AgendaStatusBucket | null {
@@ -601,6 +602,7 @@ function parseAgendaSortArgs(rawArgs: string[]): {
     else if (token === "todo" || token === "status") normalized = "todo";
     else if (token === "priority" || token === "prio") normalized = "priority";
     else if (token === "kind" || token === "planning") normalized = "kind";
+    else if (token === "tags" || token === "tag" || token === "labels") normalized = "tags";
     else if (token === "line" || token === "position") normalized = "line";
 
     if (!normalized) {
@@ -933,6 +935,7 @@ function findScheduledItemsInText(
           priority: current.priority,
           date: dateStr,
           kind,
+          tags: [...current.tags],
         });
       }
     }
@@ -1023,6 +1026,7 @@ function findScheduledItems(
                   priority,
                   date: dateStr,
                   kind: planning.kind,
+                  tags: [...(headline.tags ?? [])],
                 });
               }
             }
@@ -1214,6 +1218,18 @@ function compareAgendaItems(
 
     if (key === "kind") {
       return a.kind.localeCompare(b.kind);
+    }
+
+    if (key === "tags") {
+      const normalizeTags = (item: ScheduledItem): string =>
+        (item.tags || [])
+          .map((tag) => String(tag).trim().toLowerCase())
+          .filter(Boolean)
+          .sort()
+          .join(",");
+      const byTags = normalizeTags(a).localeCompare(normalizeTags(b));
+      if (byTags !== 0) return byTags;
+      return a.lineNumber - b.lineNumber;
     }
 
     return a.lineNumber - b.lineNumber;
