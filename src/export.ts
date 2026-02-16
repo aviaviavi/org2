@@ -119,6 +119,7 @@ type RenderContext = {
 export type OrgExportMetadata = {
   author?: string;
   date?: string;
+  subtitle?: string;
   description?: string;
   keywords?: string[];
   language?: string;
@@ -129,6 +130,7 @@ const HIDDEN_DOCUMENT_KEYWORDS = new Set([
   "TITLE",
   "AUTHOR",
   "DATE",
+  "SUBTITLE",
   "DESCRIPTION",
   "KEYWORDS",
   "LANGUAGE",
@@ -170,6 +172,11 @@ function collectKeywordMetadata(doc: DocumentNode): OrgExportMetadata {
       continue;
     }
 
+    if (key === "SUBTITLE" && !metadata.subtitle) {
+      metadata.subtitle = value;
+      continue;
+    }
+
     if (key === "DESCRIPTION" && !metadata.description) {
       metadata.description = value;
       continue;
@@ -204,6 +211,7 @@ function hasKeywordMetadata(metadata: OrgExportMetadata): boolean {
   return Boolean(
     metadata.author ||
       metadata.date ||
+      metadata.subtitle ||
       metadata.description ||
       (Array.isArray(metadata.keywords) && metadata.keywords.length > 0) ||
       metadata.language ||
@@ -220,6 +228,9 @@ function renderHeadMetaSection(metadata: OrgExportMetadata): string {
   }
   if (metadata.date) {
     rows.push(`<meta name="date" content="${escapeAttr(metadata.date)}" />`);
+  }
+  if (metadata.subtitle) {
+    rows.push(`<meta name="subtitle" content="${escapeAttr(metadata.subtitle)}" />`);
   }
   if (metadata.description) {
     rows.push(`<meta name="description" content="${escapeAttr(metadata.description)}" />`);
@@ -657,6 +668,16 @@ function findTitleFromKeywords(doc: DocumentNode): string | null {
   return null;
 }
 
+function findSubtitleFromKeywords(doc: DocumentNode): string | null {
+  for (const node of doc.children) {
+    if (node.type !== "KeywordLine") continue;
+    if (String(node.keyRaw || "").trim().toUpperCase() !== "SUBTITLE") continue;
+    const value = String(node.valueRaw || "").trim();
+    if (value) return value;
+  }
+  return null;
+}
+
 function findTitleFromHeadlines(doc: DocumentNode): string | null {
   for (const node of doc.children) {
     if (node.type !== "Headline") continue;
@@ -680,6 +701,15 @@ function resolveTitle(doc: DocumentNode, explicitTitle: string | undefined, sour
   return "Org2 Document";
 }
 
+function renderDocumentHeader(opts: { title: string; subtitle?: string }): string {
+  const title = String(opts.title || "").trim();
+  if (!title) return "";
+
+  const subtitle = String(opts.subtitle || "").trim();
+  const subtitleHtml = subtitle ? `\n<p class="org2-document-subtitle" role="doc-subtitle">${escapeHtml(subtitle)}</p>` : "";
+  return `<header class="org2-document-header">\n<h1 class="org2-document-title">${escapeHtml(title)}</h1>${subtitleHtml}\n</header>`;
+}
+
 export function renderOrgDocumentToHtml(
   doc: DocumentNode,
   opts: {
@@ -694,6 +724,7 @@ export function renderOrgDocumentToHtml(
   const title = resolveTitle(doc, opts.title, opts.sourcePath);
   const metadata = collectKeywordMetadata(doc);
   const includeToc = opts.includeToc === true;
+  const keywordSubtitle = findSubtitleFromKeywords(doc);
 
   let tocItems: TocItem[] = [];
   const includeHeadingAnchors = includeToc || opts.rewriteFileLinks === true || nodesNeedHeadingAnchors(doc.children);
@@ -709,7 +740,10 @@ export function renderOrgDocumentToHtml(
 
   const body = renderNodes(doc.children, context);
   const tocHtml = includeToc ? renderToc(tocItems) : "";
-  const mainBody = [tocHtml, body].filter((segment) => String(segment || "").trim().length > 0).join("\n");
+  const documentHeader = keywordSubtitle ? renderDocumentHeader({ title, subtitle: metadata.subtitle }) : "";
+  const mainBody = [documentHeader, tocHtml, body]
+    .filter((segment) => String(segment || "").trim().length > 0)
+    .join("\n");
   const language = metadata.language || "en";
   const headMetaSection = renderHeadMetaSection(metadata);
   const headExtraSection = renderHeadExtraSection(metadata);
