@@ -112,6 +112,7 @@ type TocItem = {
 
 type RenderContext = {
   headlineIds?: WeakMap<HeadlineNode, string>;
+  headlineSlugIds?: Map<string, string>;
   rewriteFileLinks?: boolean;
 };
 
@@ -273,10 +274,12 @@ function findHeadlineCustomId(node: HeadlineNode): string | null {
 function buildHeadlineAnchors(doc: DocumentNode, opts: { includeToc?: boolean } = {}): {
   items: TocItem[];
   headlineIds: WeakMap<HeadlineNode, string>;
+  headlineSlugIds: Map<string, string>;
 } {
   const includeToc = opts.includeToc === true;
   const items: TocItem[] = [];
   const headlineIds = new WeakMap<HeadlineNode, string>();
+  const headlineSlugIds = new Map<string, string>();
   const idCounts = new Map<string, number>();
 
   const nextId = (baseId: string): string => {
@@ -292,9 +295,14 @@ function buildHeadlineAnchors(doc: DocumentNode, opts: { includeToc?: boolean } 
     for (const node of nodes) {
       if (node.type !== "Headline") continue;
       const title = node.title.map((child) => inlineToText(child)).join("").trim() || "Untitled";
+      const titleSlug = slugifyHeadlineTitle(title);
       const customId = findHeadlineCustomId(node);
-      const id = nextId(customId || slugifyHeadlineTitle(title));
+      const id = nextId(customId || titleSlug);
       headlineIds.set(node, id);
+      const titleKey = titleSlug.toLowerCase();
+      if (!headlineSlugIds.has(titleKey)) {
+        headlineSlugIds.set(titleKey, id);
+      }
 
       if (includeToc) {
         items.push({
@@ -309,7 +317,7 @@ function buildHeadlineAnchors(doc: DocumentNode, opts: { includeToc?: boolean } 
   };
 
   visitNodes(doc.children);
-  return { items, headlineIds };
+  return { items, headlineIds, headlineSlugIds };
 }
 
 function renderToc(items: TocItem[]): string {
@@ -354,6 +362,66 @@ function rewriteOrgFileHrefForHtml(rawHref: string): string {
   return href;
 }
 
+function rewriteOrgInternalHrefForHtml(rawHref: string, context: RenderContext): string {
+  const href = String(rawHref || "").trim();
+  if (!href) return href;
+
+  if (href.startsWith("#")) {
+    const normalizedAnchor = normalizeAnchorId(href.slice(1));
+    return normalizedAnchor ? `#${normalizedAnchor}` : href;
+  }
+
+  if (!href.startsWith("*")) return href;
+
+  const headingText = href.replace(/^\*+\s*/, "").trim();
+  const headingSlug = slugifyHeadlineTitle(headingText || "section");
+  const resolvedHeadingId = context.headlineSlugIds?.get(headingSlug.toLowerCase()) || headingSlug;
+  return `#${resolvedHeadingId}`;
+}
+
+function linkTargetNeedsHeadingAnchor(rawTarget: string): boolean {
+  const target = String(rawTarget || "").trim();
+  if (!target) return false;
+  return target.startsWith("#") || target.startsWith("*");
+}
+
+function inlineNodesNeedHeadingAnchors(nodes: InlineNode[]): boolean {
+  for (const node of nodes) {
+    if (node.type !== "Link") continue;
+    if (linkTargetNeedsHeadingAnchor(node.targetRaw)) return true;
+  }
+
+  return false;
+}
+
+function nodesNeedHeadingAnchors(nodes: Node[]): boolean {
+  for (const node of nodes) {
+    if (node.type === "Headline") {
+      if (inlineNodesNeedHeadingAnchors(node.title)) return true;
+      if (nodesNeedHeadingAnchors(node.children)) return true;
+      continue;
+    }
+
+    if (node.type === "Paragraph") {
+      if (inlineNodesNeedHeadingAnchors(node.children)) return true;
+      continue;
+    }
+
+    if (node.type === "List") {
+      for (const item of node.items) {
+        if (nodesNeedHeadingAnchors(item.children)) return true;
+      }
+      continue;
+    }
+
+    if (node.type === "ListItem") {
+      if (nodesNeedHeadingAnchors(node.children)) return true;
+    }
+  }
+
+  return false;
+}
+
 function inlineToText(node: InlineNode): string {
   if (node.type === "Text") return node.value;
   if (node.type === "Timestamp") return node.raw;
@@ -384,7 +452,16 @@ function renderEmphasis(node: EmphasisNode): string {
 
 function renderLink(node: LinkNode, context: RenderContext): string {
   const hrefRaw = String(node.targetRaw || "").trim();
-  const href = context.rewriteFileLinks ? rewriteOrgFileHrefForHtml(hrefRaw) : hrefRaw;
+  let href = hrefRaw;
+
+  if (context.rewriteFileLinks) {
+    href = rewriteOrgFileHrefForHtml(hrefRaw);
+  }
+
+  if (linkTargetNeedsHeadingAnchor(hrefRaw)) {
+    href = rewriteOrgInternalHrefForHtml(hrefRaw, context);
+  }
+
   const text = String(node.descriptionRaw || node.targetRaw || "").trim() || href;
   return `<a href="${escapeAttr(href)}">${escapeHtml(text)}</a>`;
 }
@@ -599,7 +676,7 @@ export function renderOrgDocumentToHtml(
   const includeToc = opts.includeToc === true;
 
   let tocItems: TocItem[] = [];
-  const includeHeadingAnchors = includeToc || opts.rewriteFileLinks === true;
+  const includeHeadingAnchors = includeToc || opts.rewriteFileLinks === true || nodesNeedHeadingAnchors(doc.children);
   const context: RenderContext = {
     rewriteFileLinks: opts.rewriteFileLinks === true,
   };
@@ -607,6 +684,7 @@ export function renderOrgDocumentToHtml(
     const anchors = buildHeadlineAnchors(doc, { includeToc });
     tocItems = anchors.items;
     context.headlineIds = anchors.headlineIds;
+    context.headlineSlugIds = anchors.headlineSlugIds;
   }
 
   const body = renderNodes(doc.children, context);
