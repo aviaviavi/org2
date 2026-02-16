@@ -48,6 +48,8 @@ type ExportMetadataPayload = {
   date?: string;
   description?: string;
   keywords?: string[];
+  language?: string;
+  htmlHead?: string[];
 };
 
 function hasExportMetadata(metadata: ExportMetadataPayload | null | undefined): boolean {
@@ -56,7 +58,9 @@ function hasExportMetadata(metadata: ExportMetadataPayload | null | undefined): 
     metadata.author ||
       metadata.date ||
       metadata.description ||
-      (Array.isArray(metadata.keywords) && metadata.keywords.length > 0),
+      metadata.language ||
+      (Array.isArray(metadata.keywords) && metadata.keywords.length > 0) ||
+      (Array.isArray(metadata.htmlHead) && metadata.htmlHead.length > 0),
   );
 }
 
