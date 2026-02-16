@@ -1,0 +1,6 @@
+#+TITLE: Subtitle Fixture
+#+SUBTITLE: Publishing parity subtitle
+#+AUTHOR: Avi Press
+
+* Post
+Hello subtitle world.
