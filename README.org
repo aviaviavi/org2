@@ -78,7 +78,7 @@ Current reality:
 - Formatter current-file check/apply commands (VS Code): *Available now* (MVP)
 - Formatter current-file diff preview command (VS Code): *Available now* (MVP)
 - Formatter (=org2 fmt=): *In progress*
-- HTML export (=org2 export html=): *Available now* (MVP, single-file + directory batch standalone export + optional index page + configurable stylesheet injection + optional table of contents + optional Org file-link rewrite + automatic heading anchors for TOC/rewrite targets and in-document =[[* Heading]]= /=[[#custom-id]]= links [including =:CUSTOM_ID:= targets] + keyword-driven metadata/head controls + keyword-driven document title/subtitle header rendering)
+- HTML export (=org2 export html=): *Available now* (MVP, single-file + directory batch standalone export + optional index page + configurable stylesheet injection + optional/depth-limited table of contents (CLI =--toc-depth= + =#+OPTIONS: toc:N=) + optional Org file-link rewrite + automatic heading anchors for TOC/rewrite targets and in-document =[[* Heading]]= /=[[#custom-id]]= links [including =:CUSTOM_ID:= targets] + keyword-driven metadata/head controls + keyword-driven document title/subtitle header rendering)
 - LSP go-to-definition for file/id links (including file =::search= suffix targets) (=org2 lsp=): *Available now* (MVP)
 - LSP go-to-declaration for file/id links (including file =::search= suffix targets) (=textDocument/declaration= via =org2 lsp=): *Available now* (MVP)
 - LSP go-to-type-definition + go-to-implementation for file/id links (including file =::search= suffix targets) (=textDocument/typeDefinition= + =textDocument/implementation= via =org2 lsp=): *Available now* (MVP)
@@ -106,7 +106,7 @@ Current reality:
 - Formal Org2 spec (v0 draft): *In progress*
 
 **** Org Mode parity areas (broader)
-- Export/publishing pipeline parity: *In progress* (MVP single-file + directory-batch HTML export + index generation + configurable stylesheet injection + optional table of contents + optional Org file-link rewrite + automatic heading anchors [including =:CUSTOM_ID:= targets during file-link rewrite] + keyword-driven HTML metadata tags/lang/head snippets + keyword-driven title/subtitle header rendering available via CLI + VS Code)
+- Export/publishing pipeline parity: *In progress* (MVP single-file + directory-batch HTML export + index generation + configurable stylesheet injection + optional/depth-limited table of contents (=--toc-depth= / =#+OPTIONS: toc:N=) + optional Org file-link rewrite + automatic heading anchors [including =:CUSTOM_ID:= targets during file-link rewrite] + keyword-driven HTML metadata tags/lang/head snippets + keyword-driven title/subtitle header rendering available via CLI + VS Code)
 - Org crypt (encrypted sections/workflows): *Planned*
 - Recurring tasks / repeaters: *In progress* (agenda repeater expansion MVP available)
 - Habits: *Planned*
@@ -386,6 +386,9 @@ npm run org2 -- export html --file /path/to/notes.org2 --css /assets/site.css,ht
 # Export with an auto-generated table of contents + heading anchors
 npm run org2 -- export html --file /path/to/notes.org2 --toc --apply
 
+# Export with a depth-limited table of contents (only levels 1-2)
+npm run org2 -- export html --file /path/to/notes.org2 --toc-depth 2 --apply
+
 # Rewrite Org file links (file:*.org / *.org2) to .html hrefs in exported output
 npm run org2 -- export html --file /path/to/notes.org2 --rewrite-file-links --apply
 #+end_src
@@ -399,7 +402,8 @@ Notes:
 - =--css HREF= injects an external stylesheet link (repeat flag or pass comma-separated values).
 - =--no-default-style= omits Org2's built-in inline stylesheet (useful when styling entirely via external CSS).
 - =--toc= prepends an auto-generated table of contents and heading anchor IDs to each exported HTML page.
-- =#+OPTIONS: toc:t= enables the same TOC + heading-anchor export behavior even without passing =--toc=.
+- =--toc-depth N= limits TOC entries to heading levels =<=N= (and enables TOC automatically).
+- =#+OPTIONS: toc:t= enables the same TOC + heading-anchor export behavior even without passing =--toc=; =#+OPTIONS: toc:N= applies a heading-depth limit.
 - =--rewrite-file-links= rewrites Org file links (for example =file:notes.org2= or =../notes.org=) to =.html= hrefs during export and emits heading anchor IDs so rewritten =::* Heading= / =::#custom-id= targets resolve in published output.
 - In-document heading links (=[[* Heading]]= and =[[#custom-id]]=) are exported as hash anchors and trigger heading anchor IDs automatically (no =--toc= required).
 - When in-document heading/custom-id links omit a description, exported link text defaults to a cleaned label (=Heading= / =custom-id=) instead of raw Org target markup.

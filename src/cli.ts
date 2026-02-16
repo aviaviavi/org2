@@ -1227,7 +1227,8 @@ async function main(): Promise<void> {
   let exportIndexTitle = "";
   let exportStylesheets: string[] = [];
   let exportIncludeDefaultStyle = true;
-  let exportIncludeToc = false;
+  let exportIncludeToc: boolean | undefined = undefined;
+  let exportTocDepthRaw = "";
   let exportRewriteFileLinks = false;
   let exportApply = false;
   let exportFormat: "text" | "json" = "text";
@@ -1816,6 +1817,15 @@ async function main(): Promise<void> {
         exportIncludeToc = true;
       }
       i++;
+    } else if (arg === "--toc-depth") {
+      i++;
+      if (i < args.length) {
+        if (command === "export") {
+          exportTocDepthRaw = String(args[i] || "");
+          exportIncludeToc = true;
+        }
+        i++;
+      }
     } else if (arg === "--rewrite-file-links") {
       if (command === "export") {
         exportRewriteFileLinks = true;
@@ -1913,7 +1923,7 @@ async function main(): Promise<void> {
       "       org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--format text|diff|json] [--apply]",
     );
     console.error(
-      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--css HREF[,HREF...]] [--no-default-style] [--toc] [--rewrite-file-links] [--format text|json] [--apply]",
+      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--css HREF[,HREF...]] [--no-default-style] [--toc] [--toc-depth N] [--rewrite-file-links] [--format text|json] [--apply]",
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
@@ -1964,7 +1974,7 @@ async function main(): Promise<void> {
       "       org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--format text|diff|json] [--apply]",
     );
     console.error(
-      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--css HREF[,HREF...]] [--no-default-style] [--toc] [--rewrite-file-links] [--format text|json] [--apply]",
+      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--css HREF[,HREF...]] [--no-default-style] [--toc] [--toc-depth N] [--rewrite-file-links] [--format text|json] [--apply]",
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
@@ -2267,6 +2277,21 @@ async function main(): Promise<void> {
       new Set(exportStylesheets.map((href) => String(href || "").trim()).filter((href) => href.length > 0)),
     );
 
+    let exportTocDepth: number | undefined;
+    if (exportTocDepthRaw.trim().length > 0) {
+      const rawDepth = exportTocDepthRaw.trim();
+      if (!/^\d+$/.test(rawDepth)) {
+        console.error(`Error: invalid export --toc-depth value: ${exportTocDepthRaw}. Expected a positive integer.`);
+        process.exit(1);
+      }
+      const parsedDepth = Number.parseInt(rawDepth, 10);
+      if (!Number.isFinite(parsedDepth) || parsedDepth < 1) {
+        console.error(`Error: invalid export --toc-depth value: ${exportTocDepthRaw}. Expected a positive integer.`);
+        process.exit(1);
+      }
+      exportTocDepth = parsedDepth;
+    }
+
     if (hasSingleSource && hasDirSource) {
       console.error("Error: export html does not support combining --file with --dir");
       process.exit(1);
@@ -2339,6 +2364,7 @@ async function main(): Promise<void> {
           stylesheets: exportStylesheetsNormalized,
           includeDefaultStyle: exportIncludeDefaultStyle,
           includeToc: exportIncludeToc,
+          includeTocDepth: exportTocDepth,
           rewriteFileLinks: exportRewriteFileLinks,
         });
 
@@ -2468,6 +2494,7 @@ async function main(): Promise<void> {
       stylesheets: exportStylesheetsNormalized,
       includeDefaultStyle: exportIncludeDefaultStyle,
       includeToc: exportIncludeToc,
+      includeTocDepth: exportTocDepth,
       rewriteFileLinks: exportRewriteFileLinks,
     });
 
