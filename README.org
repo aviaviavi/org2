@@ -106,7 +106,7 @@ Current reality:
 - Formal Org2 spec (v0 draft): *In progress*
 
 **** Org Mode parity areas (broader)
-- Export/publishing pipeline parity: *In progress* (MVP single-file + directory-batch HTML export + index generation + configurable stylesheet injection + optional table of contents + optional Org file-link rewrite available via CLI + VS Code)
+- Export/publishing pipeline parity: *In progress* (MVP single-file + directory-batch HTML export + index generation + configurable stylesheet injection + optional table of contents + optional Org file-link rewrite + keyword-driven HTML metadata tags available via CLI + VS Code)
 - Org crypt (encrypted sections/workflows): *Planned*
 - Recurring tasks / repeaters: *In progress* (agenda repeater expansion MVP available)
 - Habits: *Planned*
@@ -400,6 +400,8 @@ Notes:
 - =--no-default-style= omits Org2's built-in inline stylesheet (useful when styling entirely via external CSS).
 - =--toc= prepends an auto-generated table of contents and heading anchor IDs to each exported HTML page.
 - =--rewrite-file-links= rewrites Org file links (for example =file:notes.org2= or =../notes.org=) to =.html= hrefs during export.
+- Exported HTML now maps =#+AUTHOR=, =#+DATE=, =#+DESCRIPTION=, and =#+KEYWORDS= into corresponding HTML =<meta>= tags.
+- Single-file JSON export includes a =metadata= object when those keywords are present.
 - Without =--apply=, output is preview-only (single-file emits HTML text by default; batch mode emits summary text or JSON).
 
 *** Formatter (=fmt=) quick examples

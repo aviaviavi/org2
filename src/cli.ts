@@ -43,6 +43,23 @@ type TimestampRepeater = {
   unit: "d" | "w" | "m" | "y";
 };
 
+type ExportMetadataPayload = {
+  author?: string;
+  date?: string;
+  description?: string;
+  keywords?: string[];
+};
+
+function hasExportMetadata(metadata: ExportMetadataPayload | null | undefined): boolean {
+  if (!metadata) return false;
+  return Boolean(
+    metadata.author ||
+      metadata.date ||
+      metadata.description ||
+      (Array.isArray(metadata.keywords) && metadata.keywords.length > 0),
+  );
+}
+
 function parseTimestampRepeater(raw: string): TimestampRepeater | null {
   const match = raw.match(/(?:^|\s)(\+\+|\.\+|\+)(\d+)([dwmy])(?=[^A-Za-z0-9]|$)/i);
   if (!match) return null;
@@ -2305,6 +2322,7 @@ async function main(): Promise<void> {
         outputPathAbsolute: string;
         title: string;
         changed: boolean;
+        metadata?: ExportMetadataPayload;
       }> = [];
 
       for (const sourcePath of sourceFiles) {
@@ -2341,14 +2359,16 @@ async function main(): Promise<void> {
           outputPathAbsolute,
           title: rendered.title,
           changed,
+          ...(hasExportMetadata(rendered.metadata) ? { metadata: rendered.metadata } : {}),
         });
       }
 
-      const exportedForOutput = exported.map(({ sourcePath, outputPath, title, changed }) => ({
+      const exportedForOutput = exported.map(({ sourcePath, outputPath, title, changed, metadata }) => ({
         sourcePath,
         outputPath,
         title,
         changed,
+        ...(hasExportMetadata(metadata) ? { metadata } : {}),
       }));
 
       let indexOutput: { outputPath: string; title: string; changed: boolean } | null = null;
@@ -2470,6 +2490,7 @@ async function main(): Promise<void> {
             sourcePath: sourcePathInput,
             outputPath: outputPathInput,
             title: rendered.title,
+            ...(hasExportMetadata(rendered.metadata) ? { metadata: rendered.metadata } : {}),
             apply: exportApply,
             changed,
             html: rendered.html,
