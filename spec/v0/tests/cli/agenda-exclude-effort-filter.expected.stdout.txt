@@ -1,0 +1,25 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-02-14",
+    "end": "2026-02-15",
+    "days": 2
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-02-15",
+      "weekday": "Sunday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Inbox cleanup",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-effort-filter.input.txt",
+          "line": 18
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}

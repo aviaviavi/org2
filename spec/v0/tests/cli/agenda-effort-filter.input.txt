@@ -1,0 +1,20 @@
+* TODO [#A] Write weekly update
+SCHEDULED: <2026-02-14 Sat>
+:PROPERTIES:
+:EFFORT: 1:15
+:END:
+
+* TODO [#B] Run release checklist
+SCHEDULED: <2026-02-14 Sat>
+:PROPERTIES:
+:EFFORT: 0:30
+:END:
+
+* TODO Plan customer follow-up
+SCHEDULED: <2026-02-15 Sun>
+:PROPERTIES:
+:EFFORT: 30m
+:END:
+
+* TODO Inbox cleanup
+SCHEDULED: <2026-02-15 Sun>
