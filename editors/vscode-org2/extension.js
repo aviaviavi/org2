@@ -1439,6 +1439,8 @@ function activate(context) {
     const stylesheetsRaw = String(cfg.get('export.stylesheets', '') || '');
     const includeDefaultStyle = cfg.get('export.includeDefaultStyle', true) ? true : false;
     const includeToc = cfg.get('export.includeToc', false) ? true : false;
+    const tocDepthRaw = Number(cfg.get('export.tocDepth', 0));
+    const tocDepth = Number.isFinite(tocDepthRaw) ? Math.trunc(tocDepthRaw) : 0;
     const rewriteFileLinks = cfg.get('export.rewriteFileLinks', false) ? true : false;
     const stylesheets = Array.from(
       new Set(
@@ -1456,7 +1458,9 @@ function activate(context) {
     if (!includeDefaultStyle) {
       args.push('--no-default-style');
     }
-    if (includeToc) {
+    if (tocDepth > 0) {
+      args.push('--toc-depth', String(tocDepth));
+    } else if (includeToc) {
       args.push('--toc');
     }
     if (rewriteFileLinks) {

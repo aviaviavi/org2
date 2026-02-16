@@ -128,6 +128,7 @@ export type OrgExportMetadata = {
 
 type OrgExportOptions = {
   toc?: boolean;
+  tocDepth?: number;
 };
 
 const HIDDEN_DOCUMENT_KEYWORDS = new Set([
@@ -191,6 +192,15 @@ function parseKeywordBooleanOption(value: string | undefined): boolean | null {
   return null;
 }
 
+function parseKeywordPositiveIntegerOption(value: string | undefined): number | null {
+  const normalized = String(value || "").trim();
+  if (!/^\d+$/.test(normalized)) return null;
+
+  const parsed = Number.parseInt(normalized, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return null;
+  return parsed;
+}
+
 function collectKeywordOptions(doc: DocumentNode): OrgExportOptions {
   const options: OrgExportOptions = {};
 
@@ -201,9 +211,16 @@ function collectKeywordOptions(doc: DocumentNode): OrgExportOptions {
 
     const assignments = parseKeywordOptionsMap(node.valueRaw);
     if (assignments.has("toc")) {
-      const parsed = parseKeywordBooleanOption(assignments.get("toc"));
+      const tocRaw = assignments.get("toc");
+      const parsed = parseKeywordBooleanOption(tocRaw);
       if (parsed !== null) {
         options.toc = parsed;
+      }
+
+      const parsedDepth = parseKeywordPositiveIntegerOption(tocRaw);
+      if (parsedDepth !== null) {
+        options.toc = true;
+        options.tocDepth = parsedDepth;
       }
     }
   }
@@ -340,12 +357,21 @@ function findHeadlineCustomId(node: HeadlineNode): string | null {
   return null;
 }
 
-function buildHeadlineAnchors(doc: DocumentNode, opts: { includeToc?: boolean } = {}): {
+function normalizeTocDepth(value: number | undefined): number | null {
+  if (value === undefined || value === null) return null;
+  if (!Number.isFinite(value)) return null;
+  const normalized = Math.trunc(value);
+  if (normalized < 1) return null;
+  return Math.min(6, normalized);
+}
+
+function buildHeadlineAnchors(doc: DocumentNode, opts: { includeToc?: boolean; includeTocDepth?: number } = {}): {
   items: TocItem[];
   headlineIds: WeakMap<HeadlineNode, string>;
   headlineSlugIds: Map<string, string>;
 } {
   const includeToc = opts.includeToc === true;
+  const includeTocDepth = normalizeTocDepth(opts.includeTocDepth);
   const items: TocItem[] = [];
   const headlineIds = new WeakMap<HeadlineNode, string>();
   const headlineSlugIds = new Map<string, string>();
@@ -367,17 +393,18 @@ function buildHeadlineAnchors(doc: DocumentNode, opts: { includeToc?: boolean } 
       const titleSlug = slugifyHeadlineTitle(title);
       const customId = findHeadlineCustomId(node);
       const id = nextId(customId || titleSlug);
+      const level = Math.max(1, Math.min(6, node.level));
       headlineIds.set(node, id);
       const titleKey = titleSlug.toLowerCase();
       if (!headlineSlugIds.has(titleKey)) {
         headlineSlugIds.set(titleKey, id);
       }
 
-      if (includeToc) {
+      if (includeToc && (includeTocDepth === null || level <= includeTocDepth)) {
         items.push({
           id,
           title,
-          level: Math.max(1, Math.min(6, node.level)),
+          level,
         });
       }
 
@@ -776,6 +803,7 @@ export function renderOrgDocumentToHtml(
     stylesheets?: string[];
     includeDefaultStyle?: boolean;
     includeToc?: boolean;
+    includeTocDepth?: number;
     rewriteFileLinks?: boolean;
   } = {},
 ): { html: string; title: string; metadata: OrgExportMetadata } {
@@ -783,6 +811,8 @@ export function renderOrgDocumentToHtml(
   const metadata = collectKeywordMetadata(doc);
   const exportOptions = collectKeywordOptions(doc);
   const includeToc = opts.includeToc === true || (opts.includeToc !== false && exportOptions.toc === true);
+  const includeTocDepth =
+    normalizeTocDepth(opts.includeTocDepth) ?? normalizeTocDepth(exportOptions.tocDepth) ?? undefined;
   const keywordSubtitle = findSubtitleFromKeywords(doc);
 
   let tocItems: TocItem[] = [];
@@ -791,7 +821,7 @@ export function renderOrgDocumentToHtml(
     rewriteFileLinks: opts.rewriteFileLinks === true,
   };
   if (includeHeadingAnchors) {
-    const anchors = buildHeadlineAnchors(doc, { includeToc });
+    const anchors = buildHeadlineAnchors(doc, { includeToc, includeTocDepth });
     tocItems = anchors.items;
     context.headlineIds = anchors.headlineIds;
     context.headlineSlugIds = anchors.headlineSlugIds;

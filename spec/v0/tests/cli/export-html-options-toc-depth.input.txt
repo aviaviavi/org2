@@ -1,0 +1,7 @@
+#+TITLE: Export Options TOC Depth Fixture
+#+OPTIONS: toc:2 num:nil
+
+* Root
+** Child
+*** Grandchild
+Paragraph content.
