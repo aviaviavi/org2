@@ -184,6 +184,7 @@ interface ScheduledItem {
   headline: string;
   todo: string | undefined;
   priority: string | undefined;
+  effort: string | undefined;
   date: string;
   kind: string;
   tags: string[];
@@ -203,12 +204,14 @@ type AgendaExcludeMatchFilter = string[] | null;
 type AgendaTagFilter = string[] | null;
 type AgendaTodoFilter = Set<string> | null;
 type AgendaPriorityFilter = Set<string> | null;
+type AgendaEffortFilter = Set<string> | null;
 type AgendaExcludeTagFilter = string[] | null;
 type AgendaExcludeTodoFilter = Set<string> | null;
 type AgendaExcludePriorityFilter = Set<string> | null;
+type AgendaExcludeEffortFilter = Set<string> | null;
 type AgendaFileFilter = string[] | null;
 type AgendaExcludeFileFilter = string[] | null;
-type AgendaSortKey = "file" | "headline" | "todo" | "priority" | "kind" | "tags" | "line";
+type AgendaSortKey = "file" | "headline" | "todo" | "priority" | "effort" | "kind" | "tags" | "line";
 type AgendaSortDirection = "asc" | "desc";
 type AgendaSortField = { key: AgendaSortKey; direction: AgendaSortDirection };
 type AgendaSortOrder = AgendaSortField[] | null;
@@ -219,7 +222,7 @@ const AGENDA_STATUS_ALLOWED_HINT =
 const AGENDA_KIND_ALLOWED_HINT = "all, scheduled, deadline";
 const AGENDA_WHEN_ALLOWED_HINT = "all, overdue, today, upcoming";
 const AGENDA_PRIORITY_ALLOWED_HINT = "A-Z or 0-9 (for example: A,B,C or [#A],[#B])";
-const AGENDA_SORT_ALLOWED_HINT = "default, [+-]file, [+-]headline, [+-]todo, [+-]priority, [+-]kind, [+-]tags, [+-]line";
+const AGENDA_SORT_ALLOWED_HINT = "default, [+-]file, [+-]headline, [+-]todo, [+-]priority, [+-]effort, [+-]kind, [+-]tags, [+-]line";
 const AGENDA_DATE_ORDER_ALLOWED_HINT = "asc, desc";
 
 function agendaStatusBucketForKeyword(todo: string | undefined): AgendaStatusBucket | null {
@@ -483,6 +486,58 @@ function normalizeAgendaPriorityToken(tokenRaw: string): string | null {
   return token.toUpperCase();
 }
 
+function parseAgendaEffortToMinutes(tokenRaw: string): number | null {
+  const token = String(tokenRaw || "").trim().toLowerCase().replace(/\s+/g, "");
+  if (!token) return null;
+
+  const parseIntStrict = (raw: string): number | null => {
+    if (!/^\d+$/.test(raw)) return null;
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const hm = token.match(/^(\d+):(\d{1,2})$/);
+  if (hm) {
+    const hours = parseIntStrict(hm[1] ?? "");
+    const minutes = parseIntStrict(hm[2] ?? "");
+    if (hours === null || minutes === null || minutes >= 60) return null;
+    return hours * 60 + minutes;
+  }
+
+  const hoursOnly = token.match(/^(\d+)h$/);
+  if (hoursOnly) {
+    const hours = parseIntStrict(hoursOnly[1] ?? "");
+    return hours === null ? null : hours * 60;
+  }
+
+  const minutesOnly = token.match(/^(\d+)m$/);
+  if (minutesOnly) {
+    return parseIntStrict(minutesOnly[1] ?? "");
+  }
+
+  const hmCompact = token.match(/^(\d+)h(\d+)m$/);
+  if (hmCompact) {
+    const hours = parseIntStrict(hmCompact[1] ?? "");
+    const minutes = parseIntStrict(hmCompact[2] ?? "");
+    if (hours === null || minutes === null) return null;
+    return hours * 60 + minutes;
+  }
+
+  return parseIntStrict(token);
+}
+
+function normalizeAgendaEffortToken(tokenRaw: string): string {
+  const token = String(tokenRaw || "").trim();
+  if (!token) return "";
+
+  const minutes = parseAgendaEffortToMinutes(token);
+  if (minutes !== null) {
+    return `m:${minutes}`;
+  }
+
+  return token.toLowerCase().replace(/\s+/g, " ");
+}
+
 function parseAgendaPriorityFilterArgs(rawArgs: string[]): {
   filter: AgendaPriorityFilter;
   invalid: string[];
@@ -515,6 +570,21 @@ function parseAgendaExcludePriorityFilterArgs(rawArgs: string[]): {
   invalid: string[];
 } {
   return parseAgendaPriorityFilterArgs(rawArgs);
+}
+
+function parseAgendaEffortFilterArgs(rawArgs: string[]): AgendaEffortFilter {
+  if (rawArgs.length === 0) return null;
+
+  const tokens = rawArgs
+    .flatMap((raw) => String(raw).split(","))
+    .map((token) => normalizeAgendaEffortToken(token))
+    .filter(Boolean);
+
+  return tokens.length > 0 ? new Set(tokens) : null;
+}
+
+function parseAgendaExcludeEffortFilterArgs(rawArgs: string[]): AgendaExcludeEffortFilter {
+  return parseAgendaEffortFilterArgs(rawArgs);
 }
 
 function parseAgendaExcludeTagFilterArgs(rawArgs: string[]): AgendaExcludeTagFilter {
@@ -601,6 +671,7 @@ function parseAgendaSortArgs(rawArgs: string[]): {
     else if (token === "headline" || token === "title") normalized = "headline";
     else if (token === "todo" || token === "status") normalized = "todo";
     else if (token === "priority" || token === "prio") normalized = "priority";
+    else if (token === "effort" || token === "estimate") normalized = "effort";
     else if (token === "kind" || token === "planning") normalized = "kind";
     else if (token === "tags" || token === "tag" || token === "labels") normalized = "tags";
     else if (token === "line" || token === "position") normalized = "line";
@@ -743,6 +814,23 @@ function matchesAgendaExcludePriorityFilter(
   return !excludePriorityFilter.has(normalized);
 }
 
+function matchesAgendaEffortFilter(effort: string | undefined, effortFilter: AgendaEffortFilter): boolean {
+  if (!effortFilter || effortFilter.size === 0) return true;
+  const normalized = normalizeAgendaEffortToken(String(effort || ""));
+  if (!normalized) return false;
+  return effortFilter.has(normalized);
+}
+
+function matchesAgendaExcludeEffortFilter(
+  effort: string | undefined,
+  excludeEffortFilter: AgendaExcludeEffortFilter,
+): boolean {
+  if (!excludeEffortFilter || excludeEffortFilter.size === 0) return true;
+  const normalized = normalizeAgendaEffortToken(String(effort || ""));
+  if (!normalized) return true;
+  return !excludeEffortFilter.has(normalized);
+}
+
 function matchesAgendaFileFilter(filePath: string, fileFilter: AgendaFileFilter): boolean {
   if (!fileFilter || fileFilter.length === 0) return true;
 
@@ -834,6 +922,40 @@ function parseHeadlineLine(line: string): { todo?: string; priority?: string; ti
   return { priority, title, tags };
 }
 
+function extractAgendaEffortNearHeadline(lines: string[], headlineLineIndex: number): string | undefined {
+  let inProperties = false;
+
+  for (let i = headlineLineIndex + 1; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (/^(\*+)\s+/.test(line)) break;
+
+    const trimmed = line.trim();
+
+    if (!inProperties) {
+      if (!trimmed) continue;
+      if (/^(SCHEDULED|DEADLINE|CLOSED):/i.test(trimmed)) continue;
+      if (trimmed === ":PROPERTIES:") {
+        inProperties = true;
+        continue;
+      }
+      break;
+    }
+
+    if (trimmed === ":END:") break;
+    if (!trimmed) continue;
+
+    const match = /^:([A-Za-z0-9_@#%+.-]+):\s*(.*)$/.exec(trimmed);
+    if (!match) continue;
+
+    if ((match[1] ?? "").trim().toUpperCase() === "EFFORT") {
+      const effort = (match[2] ?? "").trim();
+      if (effort) return effort;
+    }
+  }
+
+  return undefined;
+}
+
 function findScheduledItemsInText(
   content: string,
   filePath: string,
@@ -850,14 +972,23 @@ function findScheduledItemsInText(
   tagFilter: AgendaTagFilter,
   todoFilter: AgendaTodoFilter,
   priorityFilter: AgendaPriorityFilter,
+  effortFilter: AgendaEffortFilter,
   excludeTagFilter: AgendaExcludeTagFilter,
   excludeTodoFilter: AgendaExcludeTodoFilter,
   excludePriorityFilter: AgendaExcludePriorityFilter,
+  excludeEffortFilter: AgendaExcludeEffortFilter,
 ): ScheduledItem[] {
   const items: ScheduledItem[] = [];
   const lines = content.split("\n");
 
-  let current: { todo?: string; priority?: string; title: string; tags: string[]; lineNumber: number } | null = null;
+  let current: {
+    todo?: string;
+    priority?: string;
+    effort?: string;
+    title: string;
+    tags: string[];
+    lineNumber: number;
+  } | null = null;
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i] ?? "";
@@ -866,7 +997,7 @@ function findScheduledItemsInText(
     if (/^(\*+)\s+/.test(line)) {
       const parsed = parseHeadlineLine(line);
       if (parsed) {
-        current = { ...parsed, lineNumber: i };
+        current = { ...parsed, effort: extractAgendaEffortNearHeadline(lines, i), lineNumber: i };
       } else {
         current = null;
       }
@@ -888,9 +1019,11 @@ function findScheduledItemsInText(
     if (!matchesAgendaTagFilter(current.tags, tagFilter)) continue;
     if (!matchesAgendaTodoFilter(todo, todoFilter)) continue;
     if (!matchesAgendaPriorityFilter(current.priority, priorityFilter)) continue;
+    if (!matchesAgendaEffortFilter(current.effort, effortFilter)) continue;
     if (!matchesAgendaExcludeTagFilter(current.tags, excludeTagFilter)) continue;
     if (!matchesAgendaExcludeTodoFilter(todo, excludeTodoFilter)) continue;
     if (!matchesAgendaExcludePriorityFilter(current.priority, excludePriorityFilter)) continue;
+    if (!matchesAgendaExcludeEffortFilter(current.effort, excludeEffortFilter)) continue;
 
     const isDoneLike = todo === "DONE" || todo === "CANCELLED" || todo === "CANCELED";
     const isProgLike = todo === "PROG" || todo === "IN_PROGRESS";
@@ -933,6 +1066,7 @@ function findScheduledItemsInText(
           headline: current.title,
           todo,
           priority: current.priority,
+          effort: current.effort,
           date: dateStr,
           kind,
           tags: [...current.tags],
@@ -1024,6 +1158,7 @@ function findScheduledItems(
                   headline: agendaTitle,
                   todo,
                   priority,
+                  effort: undefined,
                   date: dateStr,
                   kind: planning.kind,
                   tags: [...(headline.tags ?? [])],
@@ -1186,6 +1321,27 @@ function compareAgendaPriorityValues(aPriority: string | undefined, bPriority: s
   return rank(a) - rank(b);
 }
 
+function compareAgendaEffortValues(aEffort: string | undefined, bEffort: string | undefined): number {
+  const aMinutes = parseAgendaEffortToMinutes(String(aEffort || ""));
+  const bMinutes = parseAgendaEffortToMinutes(String(bEffort || ""));
+
+  if (aMinutes !== null && bMinutes !== null) {
+    return aMinutes - bMinutes;
+  }
+
+  if (aMinutes !== null) return -1;
+  if (bMinutes !== null) return 1;
+
+  const aText = normalizeAgendaEffortToken(String(aEffort || ""));
+  const bText = normalizeAgendaEffortToken(String(bEffort || ""));
+
+  if (!aText && !bText) return 0;
+  if (!aText) return 1;
+  if (!bText) return -1;
+
+  return aText.localeCompare(bText);
+}
+
 function compareAgendaItems(
   a: ScheduledItem,
   b: ScheduledItem,
@@ -1214,6 +1370,10 @@ function compareAgendaItems(
 
     if (key === "priority") {
       return compareAgendaPriorityValues(a.priority, b.priority);
+    }
+
+    if (key === "effort") {
+      return compareAgendaEffortValues(a.effort, b.effort);
     }
 
     if (key === "kind") {
@@ -1309,9 +1469,11 @@ async function main(): Promise<void> {
   let agendaTagFiltersRaw: string[] = [];
   let agendaTodoFiltersRaw: string[] = [];
   let agendaPriorityFiltersRaw: string[] = [];
+  let agendaEffortFiltersRaw: string[] = [];
   let agendaExcludeTagFiltersRaw: string[] = [];
   let agendaExcludeTodoFiltersRaw: string[] = [];
   let agendaExcludePriorityFiltersRaw: string[] = [];
+  let agendaExcludeEffortFiltersRaw: string[] = [];
   let agendaFileFiltersRaw: string[] = [];
   let agendaExcludeFileFiltersRaw: string[] = [];
   let agendaSortRaw: string[] = [];
@@ -1719,6 +1881,14 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--effort") {
+      i++;
+      if (i < args.length) {
+        if (command === "agenda") {
+          agendaEffortFiltersRaw.push(args[i]!);
+        }
+        i++;
+      }
     } else if (arg === "--exclude-tag") {
       i++;
       if (i < args.length) {
@@ -1740,6 +1910,14 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "agenda") {
           agendaExcludePriorityFiltersRaw.push(args[i]!);
+        }
+        i++;
+      }
+    } else if (arg === "--exclude-effort") {
+      i++;
+      if (i < args.length) {
+        if (command === "agenda") {
+          agendaExcludeEffortFiltersRaw.push(args[i]!);
         }
         i++;
       }
@@ -2064,7 +2242,7 @@ async function main(): Promise<void> {
 
   if (help) {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--effort VALUE[,VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-effort VALUE[,VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -2115,7 +2293,7 @@ async function main(): Promise<void> {
 
   if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--effort VALUE[,VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-effort VALUE[,VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -4360,6 +4538,7 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
+  const parsedAgendaEffort = parseAgendaEffortFilterArgs(agendaEffortFiltersRaw);
   const parsedAgendaExcludeTag = parseAgendaExcludeTagFilterArgs(agendaExcludeTagFiltersRaw);
   const parsedAgendaExcludeTodo = parseAgendaExcludeTodoFilterArgs(agendaExcludeTodoFiltersRaw);
   const parsedAgendaExcludePriority = parseAgendaExcludePriorityFilterArgs(agendaExcludePriorityFiltersRaw);
@@ -4369,6 +4548,7 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
+  const parsedAgendaExcludeEffort = parseAgendaExcludeEffortFilterArgs(agendaExcludeEffortFiltersRaw);
   const parsedAgendaFile = parseAgendaFileFilterArgs(agendaFileFiltersRaw);
   const parsedAgendaExcludeFile = parseAgendaExcludeFileFilterArgs(agendaExcludeFileFiltersRaw);
   const parsedAgendaSort = parseAgendaSortArgs(agendaSortRaw);
@@ -4471,9 +4651,11 @@ async function main(): Promise<void> {
         parsedAgendaTag,
         parsedAgendaTodo,
         parsedAgendaPriority.filter,
+        parsedAgendaEffort,
         parsedAgendaExcludeTag,
         parsedAgendaExcludeTodo,
         parsedAgendaExcludePriority.filter,
+        parsedAgendaExcludeEffort,
       );
       allItems.push(...items);
     } catch (err) {
@@ -4521,6 +4703,7 @@ async function main(): Promise<void> {
             kind: it.kind,
             file: it.filePath,
             line: it.lineNumber,
+            ...(it.effort ? { effort: it.effort } : {}),
           })),
         }));
     };
