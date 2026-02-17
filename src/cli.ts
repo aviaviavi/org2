@@ -205,10 +205,13 @@ type AgendaTagFilter = string[] | null;
 type AgendaTodoFilter = Set<string> | null;
 type AgendaPriorityFilter = Set<string> | null;
 type AgendaEffortFilter = Set<string> | null;
+type AgendaPropertyFilterTerm = { key: string; value: string };
+type AgendaPropertyFilter = AgendaPropertyFilterTerm[] | null;
 type AgendaExcludeTagFilter = string[] | null;
 type AgendaExcludeTodoFilter = Set<string> | null;
 type AgendaExcludePriorityFilter = Set<string> | null;
 type AgendaExcludeEffortFilter = Set<string> | null;
+type AgendaExcludePropertyFilter = AgendaPropertyFilterTerm[] | null;
 type AgendaFileFilter = string[] | null;
 type AgendaExcludeFileFilter = string[] | null;
 type AgendaSortKey = "file" | "headline" | "todo" | "priority" | "effort" | "kind" | "tags" | "line";
@@ -224,6 +227,7 @@ const AGENDA_STATUS_ALLOWED_HINT =
 const AGENDA_KIND_ALLOWED_HINT = "all, scheduled, deadline";
 const AGENDA_WHEN_ALLOWED_HINT = "all, overdue, today, upcoming";
 const AGENDA_PRIORITY_ALLOWED_HINT = "A-Z or 0-9 (for example: A,B,C or [#A],[#B])";
+const AGENDA_PROPERTY_ALLOWED_HINT = "KEY=VALUE (for example: OWNER=Avi,TEAM=Platform)";
 const AGENDA_SORT_ALLOWED_HINT = "default, [+-]file, [+-]headline, [+-]todo, [+-]priority, [+-]effort, [+-]kind, [+-]tags, [+-]line";
 const AGENDA_GROUP_ALLOWED_HINT = AGENDA_SORT_ALLOWED_HINT;
 const AGENDA_DATE_ORDER_ALLOWED_HINT = "asc, desc";
@@ -590,6 +594,65 @@ function parseAgendaExcludeEffortFilterArgs(rawArgs: string[]): AgendaExcludeEff
   return parseAgendaEffortFilterArgs(rawArgs);
 }
 
+function normalizeAgendaPropertyKey(raw: string): string {
+  return String(raw || "")
+    .trim()
+    .replace(/^:+|:+$/g, "")
+    .toUpperCase();
+}
+
+function normalizeAgendaPropertyValue(raw: string): string {
+  return String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function parseAgendaPropertyFilterArgs(rawArgs: string[]): {
+  filter: AgendaPropertyFilter;
+  invalid: string[];
+} {
+  if (rawArgs.length === 0) return { filter: null, invalid: [] };
+
+  const filters: AgendaPropertyFilterTerm[] = [];
+  const invalid: string[] = [];
+  const seen = new Set<string>();
+
+  for (const raw of rawArgs) {
+    for (const tokenRaw of String(raw).split(",")) {
+      const token = tokenRaw.trim();
+      if (!token) continue;
+
+      const splitAt = token.indexOf("=");
+      if (splitAt <= 0 || splitAt === token.length - 1) {
+        invalid.push(token);
+        continue;
+      }
+
+      const key = normalizeAgendaPropertyKey(token.slice(0, splitAt));
+      const value = normalizeAgendaPropertyValue(token.slice(splitAt + 1));
+      if (!key || !value) {
+        invalid.push(token);
+        continue;
+      }
+
+      const dedupeKey = `${key}=${value}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      filters.push({ key, value });
+    }
+  }
+
+  return { filter: filters.length > 0 ? filters : null, invalid };
+}
+
+function parseAgendaExcludePropertyFilterArgs(rawArgs: string[]): {
+  filter: AgendaExcludePropertyFilter;
+  invalid: string[];
+} {
+  return parseAgendaPropertyFilterArgs(rawArgs);
+}
+
 function parseAgendaExcludeTagFilterArgs(rawArgs: string[]): AgendaExcludeTagFilter {
   if (rawArgs.length === 0) return null;
 
@@ -845,6 +908,32 @@ function matchesAgendaExcludeEffortFilter(
   return !excludeEffortFilter.has(normalized);
 }
 
+function matchesAgendaPropertyFilter(
+  properties: Record<string, string>,
+  propertyFilter: AgendaPropertyFilter,
+): boolean {
+  if (!propertyFilter || propertyFilter.length === 0) return true;
+
+  return propertyFilter.some((term) => {
+    const valueRaw = properties[term.key];
+    if (!valueRaw) return false;
+    return normalizeAgendaPropertyValue(valueRaw) === term.value;
+  });
+}
+
+function matchesAgendaExcludePropertyFilter(
+  properties: Record<string, string>,
+  excludePropertyFilter: AgendaExcludePropertyFilter,
+): boolean {
+  if (!excludePropertyFilter || excludePropertyFilter.length === 0) return true;
+
+  return !excludePropertyFilter.some((term) => {
+    const valueRaw = properties[term.key];
+    if (!valueRaw) return false;
+    return normalizeAgendaPropertyValue(valueRaw) === term.value;
+  });
+}
+
 function matchesAgendaFileFilter(filePath: string, fileFilter: AgendaFileFilter): boolean {
   if (!fileFilter || fileFilter.length === 0) return true;
 
@@ -936,7 +1025,8 @@ function parseHeadlineLine(line: string): { todo?: string; priority?: string; ti
   return { priority, title, tags };
 }
 
-function extractAgendaEffortNearHeadline(lines: string[], headlineLineIndex: number): string | undefined {
+function extractAgendaPropertiesNearHeadline(lines: string[], headlineLineIndex: number): Record<string, string> {
+  const properties: Record<string, string> = {};
   let inProperties = false;
 
   for (let i = headlineLineIndex + 1; i < lines.length; i += 1) {
@@ -961,13 +1051,14 @@ function extractAgendaEffortNearHeadline(lines: string[], headlineLineIndex: num
     const match = /^:([A-Za-z0-9_@#%+.-]+):\s*(.*)$/.exec(trimmed);
     if (!match) continue;
 
-    if ((match[1] ?? "").trim().toUpperCase() === "EFFORT") {
-      const effort = (match[2] ?? "").trim();
-      if (effort) return effort;
-    }
+    const key = normalizeAgendaPropertyKey(match[1] ?? "");
+    const value = (match[2] ?? "").trim();
+    if (!key || !value) continue;
+
+    properties[key] = value;
   }
 
-  return undefined;
+  return properties;
 }
 
 function findScheduledItemsInText(
@@ -987,10 +1078,12 @@ function findScheduledItemsInText(
   todoFilter: AgendaTodoFilter,
   priorityFilter: AgendaPriorityFilter,
   effortFilter: AgendaEffortFilter,
+  propertyFilter: AgendaPropertyFilter,
   excludeTagFilter: AgendaExcludeTagFilter,
   excludeTodoFilter: AgendaExcludeTodoFilter,
   excludePriorityFilter: AgendaExcludePriorityFilter,
   excludeEffortFilter: AgendaExcludeEffortFilter,
+  excludePropertyFilter: AgendaExcludePropertyFilter,
 ): ScheduledItem[] {
   const items: ScheduledItem[] = [];
   const lines = content.split("\n");
@@ -999,6 +1092,7 @@ function findScheduledItemsInText(
     todo?: string;
     priority?: string;
     effort?: string;
+    properties: Record<string, string>;
     title: string;
     tags: string[];
     lineNumber: number;
@@ -1011,7 +1105,13 @@ function findScheduledItemsInText(
     if (/^(\*+)\s+/.test(line)) {
       const parsed = parseHeadlineLine(line);
       if (parsed) {
-        current = { ...parsed, effort: extractAgendaEffortNearHeadline(lines, i), lineNumber: i };
+        const properties = extractAgendaPropertiesNearHeadline(lines, i);
+        current = {
+          ...parsed,
+          effort: properties.EFFORT,
+          properties,
+          lineNumber: i,
+        };
       } else {
         current = null;
       }
@@ -1034,10 +1134,12 @@ function findScheduledItemsInText(
     if (!matchesAgendaTodoFilter(todo, todoFilter)) continue;
     if (!matchesAgendaPriorityFilter(current.priority, priorityFilter)) continue;
     if (!matchesAgendaEffortFilter(current.effort, effortFilter)) continue;
+    if (!matchesAgendaPropertyFilter(current.properties, propertyFilter)) continue;
     if (!matchesAgendaExcludeTagFilter(current.tags, excludeTagFilter)) continue;
     if (!matchesAgendaExcludeTodoFilter(todo, excludeTodoFilter)) continue;
     if (!matchesAgendaExcludePriorityFilter(current.priority, excludePriorityFilter)) continue;
     if (!matchesAgendaExcludeEffortFilter(current.effort, excludeEffortFilter)) continue;
+    if (!matchesAgendaExcludePropertyFilter(current.properties, excludePropertyFilter)) continue;
 
     const isDoneLike = todo === "DONE" || todo === "CANCELLED" || todo === "CANCELED";
     const isProgLike = todo === "PROG" || todo === "IN_PROGRESS";
@@ -1582,10 +1684,12 @@ async function main(): Promise<void> {
   let agendaTodoFiltersRaw: string[] = [];
   let agendaPriorityFiltersRaw: string[] = [];
   let agendaEffortFiltersRaw: string[] = [];
+  let agendaPropertyFiltersRaw: string[] = [];
   let agendaExcludeTagFiltersRaw: string[] = [];
   let agendaExcludeTodoFiltersRaw: string[] = [];
   let agendaExcludePriorityFiltersRaw: string[] = [];
   let agendaExcludeEffortFiltersRaw: string[] = [];
+  let agendaExcludePropertyFiltersRaw: string[] = [];
   let agendaFileFiltersRaw: string[] = [];
   let agendaExcludeFileFiltersRaw: string[] = [];
   let agendaSortRaw: string[] = [];
@@ -2003,6 +2107,14 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--property") {
+      i++;
+      if (i < args.length) {
+        if (command === "agenda") {
+          agendaPropertyFiltersRaw.push(args[i]!);
+        }
+        i++;
+      }
     } else if (arg === "--exclude-tag") {
       i++;
       if (i < args.length) {
@@ -2032,6 +2144,14 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "agenda") {
           agendaExcludeEffortFiltersRaw.push(args[i]!);
+        }
+        i++;
+      }
+    } else if (arg === "--exclude-property") {
+      i++;
+      if (i < args.length) {
+        if (command === "agenda") {
+          agendaExcludePropertyFiltersRaw.push(args[i]!);
         }
         i++;
       }
@@ -2372,7 +2492,7 @@ async function main(): Promise<void> {
 
   if (help) {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--effort VALUE[,VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-effort VALUE[,VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--group-limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--effort VALUE[,VALUE...]] [--property KEY=VALUE[,KEY=VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-effort VALUE[,VALUE...]] [--exclude-property KEY=VALUE[,KEY=VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--group-limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -2423,7 +2543,7 @@ async function main(): Promise<void> {
 
   if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--effort VALUE[,VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-effort VALUE[,VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--group-limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--effort VALUE[,VALUE...]] [--property KEY=VALUE[,KEY=VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-effort VALUE[,VALUE...]] [--exclude-property KEY=VALUE[,KEY=VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--group-limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -4669,6 +4789,13 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   const parsedAgendaEffort = parseAgendaEffortFilterArgs(agendaEffortFiltersRaw);
+  const parsedAgendaProperty = parseAgendaPropertyFilterArgs(agendaPropertyFiltersRaw);
+  if (parsedAgendaProperty.invalid.length > 0) {
+    console.error(
+      `Error: invalid agenda --property value(s): ${parsedAgendaProperty.invalid.join(", ")}. Allowed: ${AGENDA_PROPERTY_ALLOWED_HINT}`,
+    );
+    process.exit(1);
+  }
   const parsedAgendaExcludeTag = parseAgendaExcludeTagFilterArgs(agendaExcludeTagFiltersRaw);
   const parsedAgendaExcludeTodo = parseAgendaExcludeTodoFilterArgs(agendaExcludeTodoFiltersRaw);
   const parsedAgendaExcludePriority = parseAgendaExcludePriorityFilterArgs(agendaExcludePriorityFiltersRaw);
@@ -4679,6 +4806,13 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   const parsedAgendaExcludeEffort = parseAgendaExcludeEffortFilterArgs(agendaExcludeEffortFiltersRaw);
+  const parsedAgendaExcludeProperty = parseAgendaExcludePropertyFilterArgs(agendaExcludePropertyFiltersRaw);
+  if (parsedAgendaExcludeProperty.invalid.length > 0) {
+    console.error(
+      `Error: invalid agenda --exclude-property value(s): ${parsedAgendaExcludeProperty.invalid.join(", ")}. Allowed: ${AGENDA_PROPERTY_ALLOWED_HINT}`,
+    );
+    process.exit(1);
+  }
   const parsedAgendaFile = parseAgendaFileFilterArgs(agendaFileFiltersRaw);
   const parsedAgendaExcludeFile = parseAgendaExcludeFileFilterArgs(agendaExcludeFileFiltersRaw);
   const parsedAgendaSort = parseAgendaSortArgs(agendaSortRaw);
@@ -4809,10 +4943,12 @@ async function main(): Promise<void> {
         parsedAgendaTodo,
         parsedAgendaPriority.filter,
         parsedAgendaEffort,
+        parsedAgendaProperty.filter,
         parsedAgendaExcludeTag,
         parsedAgendaExcludeTodo,
         parsedAgendaExcludePriority.filter,
         parsedAgendaExcludeEffort,
+        parsedAgendaExcludeProperty.filter,
       );
       allItems.push(...items);
     } catch (err) {
