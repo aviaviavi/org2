@@ -1,0 +1,6 @@
+* TODO Legacy migration
+SCHEDULED: <2025-01-05 Sun>
+* TODO Current-year prep
+SCHEDULED: <2026-03-14 Sat>
+* TODO Future launch
+DEADLINE: <2027-11-09 Tue>
