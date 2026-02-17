@@ -5661,7 +5661,7 @@ async function main(): Promise<void> {
   const startDate = agendaFromDate ?? parseIsoDate(today);
   const endDate = agendaToDate ? new Date(agendaToDate) : new Date(startDate);
   if (!agendaToDate) {
-    endDate.setDate(endDate.getDate() + days - 1);
+    endDate.setUTCDate(endDate.getUTCDate() + days - 1);
   }
 
   if (endDate < startDate) {
