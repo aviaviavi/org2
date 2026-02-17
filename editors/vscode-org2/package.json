@@ -560,6 +560,17 @@
           "default": "all",
           "description": "Filter agenda rows by time bucket before rendering. all=overdue+today+upcoming, upcoming=rows after today in the current agenda window."
         },
+        "org2.agenda.excludeWhenFilter": {
+          "type": "string",
+          "enum": [
+            "all",
+            "overdue",
+            "today",
+            "upcoming"
+          ],
+          "default": "all",
+          "description": "Exclude agenda rows by time bucket before rendering. all=no exclusion, overdue/today/upcoming hide matching buckets from the current agenda window."
+        },
         "org2.agenda.matchFilter": {
           "type": "string",
           "default": "",

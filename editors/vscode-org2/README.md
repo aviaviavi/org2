@@ -106,6 +106,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.kindFilter`: filter by planning kind (`all`, `scheduled`, `deadline`)
 - `org2.agenda.excludeKindFilter`: exclude rows by planning kind (`all`, `scheduled`, `deadline`)
 - `org2.agenda.whenFilter`: filter by time bucket (`all`, `overdue`, `today`, `upcoming`)
+- `org2.agenda.excludeWhenFilter`: exclude rows by time bucket (`all`, `overdue`, `today`, `upcoming`)
 - `org2.agenda.matchFilter`: filter by headline text (case-insensitive; comma-separated terms use OR matching)
 - `org2.agenda.excludeMatchFilter`: exclude rows by headline text (case-insensitive; comma-separated terms use OR matching)
 - `org2.agenda.tagFilter`: filter by headline tags (case-insensitive exact tag match; comma-separated tags use OR matching)
