@@ -129,6 +129,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.tagFilter`: filter by headline tags (case-insensitive exact tag match; comma-separated tags use OR matching)
 - `org2.agenda.idFilter`: filter by headline `:ID:` / `:CUSTOM_ID:` values (case-insensitive exact match; comma-separated IDs use OR matching)
 - `org2.agenda.todoKeywordFilter`: filter by exact TODO keyword (case-insensitive; comma-separated keywords use OR matching)
+- `org2.agenda.todoOrder`: optional custom TODO keyword ordering used by `sortBy=todo` / `groupBy=todo` (comma-separated, e.g. `TODO,IN_PROGRESS,BLOCKED,DONE`; blank keeps default alphabetical ordering)
 - `org2.agenda.priorityFilter`: filter by Org priority marker (for example `A,B` or `[#A],[#B]`, case-insensitive)
 - `org2.agenda.timeFilter`: filter by planning clock-time tokens (exact `HH:MM`, inclusive ranges like `09:00-12:30` including overnight windows, plus `timed`/`untimed`; comma-separated terms use OR matching)
 - `org2.agenda.effortFilter`: filter by `:EFFORT:` property value (case-insensitive exact match; comma-separated terms use OR matching, e.g. `0:30,30m,1h`)
