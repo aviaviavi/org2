@@ -490,6 +490,13 @@
           "maximum": 5000,
           "description": "Maximum number of agenda rows to render after sorting (0 = no limit)."
         },
+        "org2.agenda.dayLimit": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 1000,
+          "description": "Optional per-date row cap applied after sort/group ordering and before overall `org2.agenda.limit` (0 = no per-date cap)."
+        },
         "org2.agenda.includeOverdue": {
           "type": "boolean",
           "default": true,
