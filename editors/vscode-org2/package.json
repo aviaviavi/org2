@@ -591,6 +591,16 @@
           "default": "all",
           "description": "Exclude agenda rows by day-of-month numbers before rendering. Supports comma-separated values like `1,31` (use `all` for no exclusion)."
         },
+        "org2.agenda.monthFilter": {
+          "type": "string",
+          "default": "all",
+          "description": "Filter agenda rows by month before rendering. Supports comma-separated month numbers (`1..12`) and month name aliases (`jan`, `february`, `mar`) (use `all` to disable)."
+        },
+        "org2.agenda.excludeMonthFilter": {
+          "type": "string",
+          "default": "all",
+          "description": "Exclude agenda rows by month before rendering. Supports comma-separated month numbers (`1..12`) and month name aliases (use `all` for no exclusion)."
+        },
         "org2.agenda.levelFilter": {
           "type": "string",
           "default": "",

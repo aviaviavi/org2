@@ -111,6 +111,8 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.excludeWeekdayFilter`: exclude rows by weekday tokens (comma-separated, e.g. `sat,sun`; supports full names plus `weekday`/`weekend`; use `all` for no exclusion)
 - `org2.agenda.dayOfMonthFilter`: filter by day-of-month numbers (comma-separated `1..31`, e.g. `1,15,31`; use `all` to disable)
 - `org2.agenda.excludeDayOfMonthFilter`: exclude rows by day-of-month numbers (comma-separated `1..31`, e.g. `1,31`; use `all` for no exclusion)
+- `org2.agenda.monthFilter`: filter by month (comma-separated month numbers `1..12` or aliases like `jan,mar,march`; use `all` to disable)
+- `org2.agenda.excludeMonthFilter`: exclude rows by month (comma-separated month numbers `1..12` or aliases; use `all` for no exclusion)
 - `org2.agenda.levelFilter`: filter by headline level (comma-separated positive integers, e.g. `1,2,3`; empty disables)
 - `org2.agenda.excludeLevelFilter`: exclude rows by headline level (comma-separated positive integers, e.g. `1,2`; empty disables)
 - `org2.agenda.matchFilter`: filter by headline text (case-insensitive; comma-separated terms use OR matching)
