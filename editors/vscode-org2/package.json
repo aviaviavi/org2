@@ -664,12 +664,12 @@
         "org2.agenda.sortBy": {
           "type": "string",
           "default": "default",
-          "description": "Sort agenda rows within each date by one or more keys (`file`, `headline`, `todo`, `priority`, `effort`, `kind`, `tags`, `line`). Supports comma-separated values; prefix a key with `-` (or suffix with `:desc`) for descending order. Use `default` for existing ordering."
+          "description": "Sort agenda rows within each date by one or more keys (`file`, `headline`, `todo`, `priority`, `effort`, `level`, `kind`, `tags`, `line`). Supports comma-separated values; prefix a key with `-` (or suffix with `:desc`) for descending order. Use `default` for existing ordering."
         },
         "org2.agenda.groupBy": {
           "type": "string",
           "default": "default",
-          "description": "Group agenda rows within each date by one or more keys (`file`, `headline`, `todo`, `priority`, `effort`, `kind`, `tags`, `line`). Supports comma-separated values; prefix a key with `-` (or suffix with `:desc`) for reverse group ordering. Use `default` to disable grouping."
+          "description": "Group agenda rows within each date by one or more keys (`file`, `headline`, `todo`, `priority`, `effort`, `level`, `kind`, `tags`, `line`). Supports comma-separated values; prefix a key with `-` (or suffix with `:desc`) for reverse group ordering. Use `default` to disable grouping."
         },
         "org2.agenda.groupLimit": {
           "type": "number",
