@@ -1,0 +1,8 @@
+* TODO January kickoff
+SCHEDULED: <2026-01-05 Mon>
+* TODO February planning
+SCHEDULED: <2026-02-14 Sat>
+* TODO March launch
+DEADLINE: <2026-03-20 Fri>
+* TODO April wrap
+SCHEDULED: <2026-04-02 Thu>
