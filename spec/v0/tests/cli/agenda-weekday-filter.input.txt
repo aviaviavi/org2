@@ -1,0 +1,14 @@
+* TODO Monday plan
+SCHEDULED: <2026-01-19 Mon>
+
+* TODO Tuesday deadline
+DEADLINE: <2026-01-20 Tue>
+
+* TODO Friday ship
+SCHEDULED: <2026-01-23 Fri>
+
+* TODO Saturday chore
+SCHEDULED: <2026-01-24 Sat>
+
+* IN_PROGRESS Sunday prep
+DEADLINE: <2026-01-25 Sun>

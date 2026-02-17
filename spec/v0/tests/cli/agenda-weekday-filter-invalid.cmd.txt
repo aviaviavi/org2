@@ -1,0 +1,1 @@
+agenda --files "spec/v0/tests/cli/agenda-weekday-filter.input.txt" --today 2026-01-19 --days 7 --format json --weekday monday,freeday
