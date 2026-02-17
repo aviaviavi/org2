@@ -255,6 +255,7 @@ type AgendaSortKey =
   | "file"
   | "headline"
   | "todo"
+  | "status"
   | "priority"
   | "effort"
   | "level"
@@ -278,7 +279,7 @@ const AGENDA_WEEKDAY_ALLOWED_HINT =
 const AGENDA_LEVEL_ALLOWED_HINT = "positive integers (for example: 1,2,3)";
 const AGENDA_PRIORITY_ALLOWED_HINT = "A-Z or 0-9 (for example: A,B,C or [#A],[#B])";
 const AGENDA_PROPERTY_ALLOWED_HINT = "KEY=VALUE (for example: OWNER=Avi,TEAM=Platform)";
-const AGENDA_SORT_ALLOWED_HINT = "default, [+-]file, [+-]headline, [+-]todo, [+-]priority, [+-]effort, [+-]level, [+-]time, [+-]kind, [+-]tags, [+-]line";
+const AGENDA_SORT_ALLOWED_HINT = "default, [+-]file, [+-]headline, [+-]todo, [+-]status, [+-]priority, [+-]effort, [+-]level, [+-]time, [+-]kind, [+-]tags, [+-]line";
 const AGENDA_GROUP_ALLOWED_HINT = AGENDA_SORT_ALLOWED_HINT;
 const AGENDA_DATE_ORDER_ALLOWED_HINT = "asc, desc";
 
@@ -908,7 +909,8 @@ function parseAgendaSortArgs(rawArgs: string[]): {
     let normalized: AgendaSortKey | null = null;
     if (token === "file" || token === "path") normalized = "file";
     else if (token === "headline" || token === "title") normalized = "headline";
-    else if (token === "todo" || token === "status") normalized = "todo";
+    else if (token === "todo" || token === "keyword") normalized = "todo";
+    else if (token === "status" || token === "state" || token === "bucket") normalized = "status";
     else if (token === "priority" || token === "prio") normalized = "priority";
     else if (token === "effort" || token === "estimate") normalized = "effort";
     else if (token === "level" || token === "depth") normalized = "level";
@@ -1722,6 +1724,29 @@ function compareAgendaEffortValues(aEffort: string | undefined, bEffort: string 
   return aText.localeCompare(bText);
 }
 
+function agendaStatusSortBucketForItem(item: ScheduledItem): AgendaStatusBucket | null {
+  return agendaStatusBucketForKeyword(item.todo);
+}
+
+function compareAgendaStatusBuckets(a: ScheduledItem, b: ScheduledItem): number {
+  const rankForBucket = (bucket: AgendaStatusBucket | null): number => {
+    if (bucket === "todo") return 0;
+    if (bucket === "in_progress") return 1;
+    if (bucket === "done") return 2;
+    if (bucket === "canceled") return 3;
+    if (bucket === "custom") return 4;
+    return 5;
+  };
+
+  const aBucket = agendaStatusSortBucketForItem(a);
+  const bBucket = agendaStatusSortBucketForItem(b);
+
+  const byRank = rankForBucket(aBucket) - rankForBucket(bBucket);
+  if (byRank !== 0) return byRank;
+
+  return String(a.todo || "").localeCompare(String(b.todo || ""));
+}
+
 function compareAgendaItemsByKey(a: ScheduledItem, b: ScheduledItem, key: AgendaSortKey): number {
   if (key === "file") {
     const byFile = a.filePath.localeCompare(b.filePath);
@@ -1735,6 +1760,10 @@ function compareAgendaItemsByKey(a: ScheduledItem, b: ScheduledItem, key: Agenda
 
   if (key === "todo") {
     return String(a.todo || "").localeCompare(String(b.todo || ""));
+  }
+
+  if (key === "status") {
+    return compareAgendaStatusBuckets(a, b);
   }
 
   if (key === "priority") {
@@ -1786,6 +1815,7 @@ function agendaGroupValueForKey(item: ScheduledItem, key: AgendaSortKey): string
   if (key === "file") return item.filePath;
   if (key === "headline") return item.headline;
   if (key === "todo") return String(item.todo || "").trim();
+  if (key === "status") return agendaStatusSortBucketForItem(item) || "";
   if (key === "priority") return normalizeAgendaPriorityToken(String(item.priority || "")) || "";
   if (key === "effort") return String(item.effort || "").trim();
   if (key === "level") return String(item.level || "").trim();
@@ -1808,6 +1838,7 @@ function agendaGroupLabelForItem(item: ScheduledItem, groupOrder: AgendaGroupOrd
     if (key === "file") return "File";
     if (key === "headline") return "Headline";
     if (key === "todo") return "TODO";
+    if (key === "status") return "Status";
     if (key === "priority") return "Priority";
     if (key === "effort") return "Effort";
     if (key === "level") return "Level";
