@@ -1507,6 +1507,30 @@ function compareAgendaItems(
   return a.kind.localeCompare(b.kind);
 }
 
+function applyAgendaGroupLimit(
+  items: ScheduledItem[],
+  groupOrder: AgendaGroupOrder,
+  groupLimit: number | null,
+): ScheduledItem[] {
+  if (!groupLimit || groupLimit < 1) return items;
+  if (!groupOrder || groupOrder.length === 0) return items;
+
+  const perDateGroupCounts = new Map<string, number>();
+  const kept: ScheduledItem[] = [];
+
+  for (const item of items) {
+    const groupKey = agendaGroupKeyForItem(item, groupOrder);
+    const dateGroupKey = `${item.date}\u001f${groupKey}`;
+    const seen = perDateGroupCounts.get(dateGroupKey) || 0;
+    if (seen >= groupLimit) continue;
+
+    perDateGroupCounts.set(dateGroupKey, seen + 1);
+    kept.push(item);
+  }
+
+  return kept;
+}
+
 function listOrgLikeFiles(rootDir: string, recursiveScan: boolean): string[] {
   const out: string[] = [];
 
@@ -1568,6 +1592,7 @@ async function main(): Promise<void> {
   let agendaGroupRaw: string[] = [];
   let agendaDateOrderRaw: string[] = [];
   let agendaLimitRaw = "";
+  let agendaGroupLimitRaw = "";
   let agendaFromRaw = "";
   let agendaToRaw = "";
   let verboseErrors = false;
@@ -2070,6 +2095,14 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--group-limit") {
+      i++;
+      if (i < args.length) {
+        if (command === "agenda") {
+          agendaGroupLimitRaw = args[i]!;
+        }
+        i++;
+      }
     } else if (arg === "--date") {
       i++;
       if (i < args.length) {
@@ -2339,7 +2372,7 @@ async function main(): Promise<void> {
 
   if (help) {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--effort VALUE[,VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-effort VALUE[,VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--effort VALUE[,VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-effort VALUE[,VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--group-limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -2390,7 +2423,7 @@ async function main(): Promise<void> {
 
   if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--effort VALUE[,VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-effort VALUE[,VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--effort VALUE[,VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-effort VALUE[,VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--group-limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -4687,6 +4720,25 @@ async function main(): Promise<void> {
     agendaLimit = parsedLimit;
   }
 
+  let agendaGroupLimit: number | null = null;
+  if (agendaGroupLimitRaw.trim().length > 0) {
+    const rawGroupLimit = agendaGroupLimitRaw.trim();
+    if (!/^\d+$/.test(rawGroupLimit)) {
+      console.error(
+        `Error: invalid agenda --group-limit value: ${agendaGroupLimitRaw}. Expected a positive integer.`,
+      );
+      process.exit(1);
+    }
+    const parsedGroupLimit = Number.parseInt(rawGroupLimit, 10);
+    if (!Number.isFinite(parsedGroupLimit) || parsedGroupLimit < 1) {
+      console.error(
+        `Error: invalid agenda --group-limit value: ${agendaGroupLimitRaw}. Expected a positive integer.`,
+      );
+      process.exit(1);
+    }
+    agendaGroupLimit = parsedGroupLimit;
+  }
+
   let agendaFromDate: Date | null = null;
   if (agendaFromRaw.trim().length > 0) {
     const rawFrom = agendaFromRaw.trim();
@@ -4782,7 +4834,8 @@ async function main(): Promise<void> {
     compareAgendaItems(a, b, parsedAgendaGroup.groupOrder, parsedAgendaSort.sortOrder, parsedAgendaDateOrder.dateOrder),
   );
 
-  const outputItems = agendaLimit ? allItems.slice(0, agendaLimit) : allItems;
+  const groupLimitedItems = applyAgendaGroupLimit(allItems, parsedAgendaGroup.groupOrder, agendaGroupLimit);
+  const outputItems = agendaLimit ? groupLimitedItems.slice(0, agendaLimit) : groupLimitedItems;
 
   if (format === "json") {
     const startIso = startDate.toISOString().slice(0, 10);

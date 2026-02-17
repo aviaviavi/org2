@@ -1,0 +1,1 @@
+Error: invalid agenda --group-limit value: 0. Expected a positive integer.
