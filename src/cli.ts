@@ -215,6 +215,8 @@ type AgendaSortKey = "file" | "headline" | "todo" | "priority" | "effort" | "kin
 type AgendaSortDirection = "asc" | "desc";
 type AgendaSortField = { key: AgendaSortKey; direction: AgendaSortDirection };
 type AgendaSortOrder = AgendaSortField[] | null;
+type AgendaGroupField = { key: AgendaSortKey; direction: AgendaSortDirection };
+type AgendaGroupOrder = AgendaGroupField[] | null;
 type AgendaDateOrder = "asc" | "desc";
 
 const AGENDA_STATUS_ALLOWED_HINT =
@@ -223,6 +225,7 @@ const AGENDA_KIND_ALLOWED_HINT = "all, scheduled, deadline";
 const AGENDA_WHEN_ALLOWED_HINT = "all, overdue, today, upcoming";
 const AGENDA_PRIORITY_ALLOWED_HINT = "A-Z or 0-9 (for example: A,B,C or [#A],[#B])";
 const AGENDA_SORT_ALLOWED_HINT = "default, [+-]file, [+-]headline, [+-]todo, [+-]priority, [+-]effort, [+-]kind, [+-]tags, [+-]line";
+const AGENDA_GROUP_ALLOWED_HINT = AGENDA_SORT_ALLOWED_HINT;
 const AGENDA_DATE_ORDER_ALLOWED_HINT = "asc, desc";
 
 function agendaStatusBucketForKeyword(todo: string | undefined): AgendaStatusBucket | null {
@@ -702,6 +705,17 @@ function parseAgendaSortArgs(rawArgs: string[]): {
   }
 
   return { sortOrder, invalid: [] };
+}
+
+function parseAgendaGroupArgs(rawArgs: string[]): {
+  groupOrder: AgendaGroupOrder;
+  invalid: string[];
+} {
+  const parsed = parseAgendaSortArgs(rawArgs);
+  return {
+    groupOrder: parsed.sortOrder,
+    invalid: parsed.invalid,
+  };
 }
 
 function parseAgendaDateOrderArgs(rawArgs: string[]): {
@@ -1231,7 +1245,12 @@ function formatArchiveDiff(
   return diff;
 }
 
-function formatOutput(items: ScheduledItem[], startDate: Date, dateOrder: AgendaDateOrder): string {
+function formatOutput(
+  items: ScheduledItem[],
+  startDate: Date,
+  dateOrder: AgendaDateOrder,
+  groupOrder: AgendaGroupOrder,
+): string {
   if (items.length === 0) {
     return "No scheduled items in range.\n";
   }
@@ -1249,18 +1268,18 @@ function formatOutput(items: ScheduledItem[], startDate: Date, dateOrder: Agenda
 
   if (overdueItems.length > 0) {
     output += formatSectionHeader(`OVERDUE (before ${startIso})`);
-    output += formatByDate(overdueItems, dateOrder);
+    output += formatByDate(overdueItems, dateOrder, groupOrder);
 
     if (upcomingItems.length > 0) {
       output += formatSectionHeader(`UPCOMING (from ${startIso})`);
     }
   }
 
-  output += formatByDate(upcomingItems, dateOrder);
+  output += formatByDate(upcomingItems, dateOrder, groupOrder);
   return output;
 }
 
-function formatByDate(items: ScheduledItem[], dateOrder: AgendaDateOrder): string {
+function formatByDate(items: ScheduledItem[], dateOrder: AgendaDateOrder, groupOrder: AgendaGroupOrder): string {
   if (items.length === 0) return "";
 
   // Group by date
@@ -1289,9 +1308,24 @@ function formatByDate(items: ScheduledItem[], dateOrder: AgendaDateOrder): strin
     output += `${separator}\n\n`;
 
     const dayItems = byDate.get(date)!;
-    for (const item of dayItems) {
-      const status = item.todo || "ITEM";
-      output += `  [${status}] ${item.headline} (${item.kind}) ${item.filePath}\n`;
+    if (groupOrder && groupOrder.length > 0) {
+      let previousGroupKey = "";
+      for (const item of dayItems) {
+        const nextGroupKey = agendaGroupKeyForItem(item, groupOrder);
+        if (nextGroupKey !== previousGroupKey) {
+          if (previousGroupKey) output += "\n";
+          output += `  ─ ${agendaGroupLabelForItem(item, groupOrder)}\n`;
+          previousGroupKey = nextGroupKey;
+        }
+
+        const status = item.todo || "ITEM";
+        output += `    [${status}] ${item.headline} (${item.kind}) ${item.filePath}\n`;
+      }
+    } else {
+      for (const item of dayItems) {
+        const status = item.todo || "ITEM";
+        output += `  [${status}] ${item.headline} (${item.kind}) ${item.filePath}\n`;
+      }
     }
 
     output += "\n";
@@ -1342,9 +1376,96 @@ function compareAgendaEffortValues(aEffort: string | undefined, bEffort: string 
   return aText.localeCompare(bText);
 }
 
+function compareAgendaItemsByKey(a: ScheduledItem, b: ScheduledItem, key: AgendaSortKey): number {
+  if (key === "file") {
+    const byFile = a.filePath.localeCompare(b.filePath);
+    if (byFile !== 0) return byFile;
+    return a.lineNumber - b.lineNumber;
+  }
+
+  if (key === "headline") {
+    return a.headline.localeCompare(b.headline);
+  }
+
+  if (key === "todo") {
+    return String(a.todo || "").localeCompare(String(b.todo || ""));
+  }
+
+  if (key === "priority") {
+    return compareAgendaPriorityValues(a.priority, b.priority);
+  }
+
+  if (key === "effort") {
+    return compareAgendaEffortValues(a.effort, b.effort);
+  }
+
+  if (key === "kind") {
+    return a.kind.localeCompare(b.kind);
+  }
+
+  if (key === "tags") {
+    const normalizeTags = (item: ScheduledItem): string =>
+      (item.tags || [])
+        .map((tag) => String(tag).trim().toLowerCase())
+        .filter(Boolean)
+        .sort()
+        .join(",");
+    const byTags = normalizeTags(a).localeCompare(normalizeTags(b));
+    if (byTags !== 0) return byTags;
+    return a.lineNumber - b.lineNumber;
+  }
+
+  return a.lineNumber - b.lineNumber;
+}
+
+function agendaGroupValueForKey(item: ScheduledItem, key: AgendaSortKey): string {
+  if (key === "file") return item.filePath;
+  if (key === "headline") return item.headline;
+  if (key === "todo") return String(item.todo || "").trim();
+  if (key === "priority") return normalizeAgendaPriorityToken(String(item.priority || "")) || "";
+  if (key === "effort") return String(item.effort || "").trim();
+  if (key === "kind") return String(item.kind || "").trim();
+  if (key === "tags") {
+    return (item.tags || [])
+      .map((tag) => String(tag).trim().toLowerCase())
+      .filter(Boolean)
+      .sort()
+      .join(",");
+  }
+  return String(item.lineNumber);
+}
+
+function agendaGroupLabelForItem(item: ScheduledItem, groupOrder: AgendaGroupOrder): string {
+  if (!groupOrder || groupOrder.length === 0) return "";
+
+  const labelForKey = (key: AgendaSortKey): string => {
+    if (key === "file") return "File";
+    if (key === "headline") return "Headline";
+    if (key === "todo") return "TODO";
+    if (key === "priority") return "Priority";
+    if (key === "effort") return "Effort";
+    if (key === "kind") return "Kind";
+    if (key === "tags") return "Tags";
+    return "Line";
+  };
+
+  return groupOrder
+    .map((field) => {
+      const value = agendaGroupValueForKey(item, field.key);
+      return `${labelForKey(field.key)}: ${value || "(none)"}`;
+    })
+    .join(" · ");
+}
+
+function agendaGroupKeyForItem(item: ScheduledItem, groupOrder: AgendaGroupOrder): string {
+  if (!groupOrder || groupOrder.length === 0) return "";
+  return groupOrder.map((field) => `${field.key}=${agendaGroupValueForKey(item, field.key)}`).join("|\u001f|");
+}
+
 function compareAgendaItems(
   a: ScheduledItem,
   b: ScheduledItem,
+  groupOrder: AgendaGroupOrder,
   sortOrder: AgendaSortOrder,
   dateOrder: AgendaDateOrder,
 ): number {
@@ -1353,51 +1474,18 @@ function compareAgendaItems(
     return dateOrder === "desc" ? -byDate : byDate;
   }
 
-  const compareByKey = (key: AgendaSortKey): number => {
-    if (key === "file") {
-      const byFile = a.filePath.localeCompare(b.filePath);
-      if (byFile !== 0) return byFile;
-      return a.lineNumber - b.lineNumber;
+  if (groupOrder && groupOrder.length > 0) {
+    for (const field of groupOrder) {
+      const cmp = compareAgendaItemsByKey(a, b, field.key);
+      if (cmp !== 0) {
+        return field.direction === "desc" ? -cmp : cmp;
+      }
     }
-
-    if (key === "headline") {
-      return a.headline.localeCompare(b.headline);
-    }
-
-    if (key === "todo") {
-      return String(a.todo || "").localeCompare(String(b.todo || ""));
-    }
-
-    if (key === "priority") {
-      return compareAgendaPriorityValues(a.priority, b.priority);
-    }
-
-    if (key === "effort") {
-      return compareAgendaEffortValues(a.effort, b.effort);
-    }
-
-    if (key === "kind") {
-      return a.kind.localeCompare(b.kind);
-    }
-
-    if (key === "tags") {
-      const normalizeTags = (item: ScheduledItem): string =>
-        (item.tags || [])
-          .map((tag) => String(tag).trim().toLowerCase())
-          .filter(Boolean)
-          .sort()
-          .join(",");
-      const byTags = normalizeTags(a).localeCompare(normalizeTags(b));
-      if (byTags !== 0) return byTags;
-      return a.lineNumber - b.lineNumber;
-    }
-
-    return a.lineNumber - b.lineNumber;
-  };
+  }
 
   if (sortOrder && sortOrder.length > 0) {
     for (const field of sortOrder) {
-      const cmp = compareByKey(field.key);
+      const cmp = compareAgendaItemsByKey(a, b, field.key);
       if (cmp !== 0) {
         return field.direction === "desc" ? -cmp : cmp;
       }
@@ -1477,6 +1565,7 @@ async function main(): Promise<void> {
   let agendaFileFiltersRaw: string[] = [];
   let agendaExcludeFileFiltersRaw: string[] = [];
   let agendaSortRaw: string[] = [];
+  let agendaGroupRaw: string[] = [];
   let agendaDateOrderRaw: string[] = [];
   let agendaLimitRaw = "";
   let agendaFromRaw = "";
@@ -1957,6 +2046,14 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--group") {
+      i++;
+      if (i < args.length) {
+        if (command === "agenda") {
+          agendaGroupRaw.push(args[i]!);
+        }
+        i++;
+      }
     } else if (arg === "--date-order") {
       i++;
       if (i < args.length) {
@@ -2242,7 +2339,7 @@ async function main(): Promise<void> {
 
   if (help) {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--effort VALUE[,VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-effort VALUE[,VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--effort VALUE[,VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-effort VALUE[,VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -2293,7 +2390,7 @@ async function main(): Promise<void> {
 
   if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--effort VALUE[,VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-effort VALUE[,VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--effort VALUE[,VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-effort VALUE[,VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -4559,6 +4656,14 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const parsedAgendaGroup = parseAgendaGroupArgs(agendaGroupRaw);
+  if (parsedAgendaGroup.invalid.length > 0) {
+    console.error(
+      `Error: invalid agenda --group value(s): ${parsedAgendaGroup.invalid.join(", ")}. Allowed: ${AGENDA_GROUP_ALLOWED_HINT}`,
+    );
+    process.exit(1);
+  }
+
   const parsedAgendaDateOrder = parseAgendaDateOrderArgs(agendaDateOrderRaw);
   if (parsedAgendaDateOrder.invalid.length > 0) {
     console.error(
@@ -4673,7 +4778,9 @@ async function main(): Promise<void> {
   }
 
   // Sort by date first, then optional user-selected tie-breakers.
-  allItems.sort((a, b) => compareAgendaItems(a, b, parsedAgendaSort.sortOrder, parsedAgendaDateOrder.dateOrder));
+  allItems.sort((a, b) =>
+    compareAgendaItems(a, b, parsedAgendaGroup.groupOrder, parsedAgendaSort.sortOrder, parsedAgendaDateOrder.dateOrder),
+  );
 
   const outputItems = agendaLimit ? allItems.slice(0, agendaLimit) : allItems;
 
@@ -4689,23 +4796,57 @@ async function main(): Promise<void> {
       for (const item of items) {
         (byDate[item.date] ??= []).push(item);
       }
+
+      const serializeAgendaItem = (it: ScheduledItem) => ({
+        todo: it.todo,
+        headline: it.headline,
+        kind: it.kind,
+        file: it.filePath,
+        line: it.lineNumber,
+        ...(it.effort ? { effort: it.effort } : {}),
+      });
+
       return Object.keys(byDate)
         .sort((a, b) => {
           const cmp = a.localeCompare(b);
           return parsedAgendaDateOrder.dateOrder === "desc" ? -cmp : cmp;
         })
-        .map((date) => ({
-          date,
-          weekday: formatDateHeader(date).split(" ").slice(1).join(" "),
-          items: (byDate[date] ?? []).map((it) => ({
-            todo: it.todo,
-            headline: it.headline,
-            kind: it.kind,
-            file: it.filePath,
-            line: it.lineNumber,
-            ...(it.effort ? { effort: it.effort } : {}),
-          })),
-        }));
+        .map((date) => {
+          const dayItems = byDate[date] ?? [];
+          const dayPayload: {
+            date: string;
+            weekday: string;
+            items: ReturnType<typeof serializeAgendaItem>[];
+            groups?: Array<{ label: string; items: ReturnType<typeof serializeAgendaItem>[] }>;
+          } = {
+            date,
+            weekday: formatDateHeader(date).split(" ").slice(1).join(" "),
+            items: dayItems.map(serializeAgendaItem),
+          };
+
+          if (parsedAgendaGroup.groupOrder && parsedAgendaGroup.groupOrder.length > 0) {
+            const groupedRows: Array<{ key: string; label: string; items: ReturnType<typeof serializeAgendaItem>[] }> = [];
+            for (const row of dayItems) {
+              const key = agendaGroupKeyForItem(row, parsedAgendaGroup.groupOrder);
+              const label = agendaGroupLabelForItem(row, parsedAgendaGroup.groupOrder);
+              const serialized = serializeAgendaItem(row);
+              const previous = groupedRows[groupedRows.length - 1];
+
+              if (!previous || previous.key !== key) {
+                groupedRows.push({ key, label, items: [serialized] });
+              } else {
+                previous.items.push(serialized);
+              }
+            }
+
+            dayPayload.groups = groupedRows.map(({ label, items: groupedItems }) => ({
+              label,
+              items: groupedItems,
+            }));
+          }
+
+          return dayPayload;
+        });
     };
 
     const payload = {
@@ -4721,7 +4862,7 @@ async function main(): Promise<void> {
   }
 
   // Output text
-  const output = formatOutput(outputItems, startDate, parsedAgendaDateOrder.dateOrder);
+  const output = formatOutput(outputItems, startDate, parsedAgendaDateOrder.dateOrder, parsedAgendaGroup.groupOrder);
   process.stdout.write(output);
 }
 
