@@ -1,0 +1,34 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-01-22",
+    "end": "2026-01-22",
+    "days": 1
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-01-22",
+      "weekday": "Thursday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Late deploy",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-time-filter-range-overnight.input.txt",
+          "line": 0,
+          "time": "23:30"
+        },
+        {
+          "todo": "TODO",
+          "headline": "Night oncall",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-time-filter-range-overnight.input.txt",
+          "line": 2,
+          "time": "01:15"
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}

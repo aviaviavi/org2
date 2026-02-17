@@ -1,0 +1,1 @@
+agenda --files "spec/v0/tests/cli/agenda-time-filter.input.txt" --today 2026-01-22 --days 1 --format json --time 09:00-12:30

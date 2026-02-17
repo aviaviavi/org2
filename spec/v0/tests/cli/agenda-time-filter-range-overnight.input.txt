@@ -1,0 +1,6 @@
+* TODO Late deploy
+SCHEDULED: <2026-01-22 Thu 23:30>
+* TODO Night oncall
+SCHEDULED: <2026-01-22 Thu 01:15>
+* TODO Morning standup
+SCHEDULED: <2026-01-22 Thu 09:00>
