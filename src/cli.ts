@@ -247,14 +247,19 @@ type AgendaExcludeMatchFilter = string[] | null;
 type AgendaTagFilter = string[] | null;
 type AgendaTodoFilter = Set<string> | null;
 type AgendaPriorityFilter = Set<string> | null;
-type AgendaTimeFilter = Set<string> | null;
+type AgendaTimeRange = {
+  startMinutes: number;
+  endMinutes: number;
+  wraps: boolean;
+};
+type AgendaTimeFilter = { tokens: Set<string>; ranges: AgendaTimeRange[] } | null;
 type AgendaEffortFilter = Set<string> | null;
 type AgendaPropertyFilterTerm = { key: string; value: string };
 type AgendaPropertyFilter = AgendaPropertyFilterTerm[] | null;
 type AgendaExcludeTagFilter = string[] | null;
 type AgendaExcludeTodoFilter = Set<string> | null;
 type AgendaExcludePriorityFilter = Set<string> | null;
-type AgendaExcludeTimeFilter = Set<string> | null;
+type AgendaExcludeTimeFilter = AgendaTimeFilter;
 type AgendaExcludeEffortFilter = Set<string> | null;
 type AgendaExcludePropertyFilter = AgendaPropertyFilterTerm[] | null;
 type AgendaFileFilter = string[] | null;
@@ -290,7 +295,8 @@ const AGENDA_MONTH_ALLOWED_HINT =
 const AGENDA_YEAR_ALLOWED_HINT = "all, positive year numbers (for example: 2025,2026,2027)";
 const AGENDA_LEVEL_ALLOWED_HINT = "positive integers (for example: 1,2,3)";
 const AGENDA_PRIORITY_ALLOWED_HINT = "A-Z or 0-9 (for example: A,B,C or [#A],[#B])";
-const AGENDA_TIME_ALLOWED_HINT = "all, timed, untimed, HH:MM (for example: 09:30,17:45)";
+const AGENDA_TIME_ALLOWED_HINT =
+  "all, timed, untimed, HH:MM, HH:MM-HH:MM (for example: 09:30,17:45,09:00-12:30,22:00-02:00)";
 const AGENDA_PROPERTY_ALLOWED_HINT = "KEY=VALUE (for example: OWNER=Avi,TEAM=Platform)";
 const AGENDA_SORT_ALLOWED_HINT = "default, [+-]file, [+-]headline, [+-]todo, [+-]status, [+-]priority, [+-]effort, [+-]level, [+-]time, [+-]kind, [+-]tags, [+-]line";
 const AGENDA_GROUP_ALLOWED_HINT = AGENDA_SORT_ALLOWED_HINT;
@@ -960,6 +966,25 @@ function parseAgendaExcludePriorityFilterArgs(rawArgs: string[]): {
 const AGENDA_TIME_FILTER_TIMED = "__timed__";
 const AGENDA_TIME_FILTER_UNTIMED = "__untimed__";
 
+function parseAgendaTimeRangeToken(raw: string): AgendaTimeRange | null {
+  const match = String(raw || "").match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/);
+  if (!match) return null;
+
+  const startToken = normalizeAgendaTimeToken(match[1] || "");
+  const endToken = normalizeAgendaTimeToken(match[2] || "");
+  if (!startToken || !endToken) return null;
+
+  const startMinutes = parseAgendaTimeToMinutes(startToken);
+  const endMinutes = parseAgendaTimeToMinutes(endToken);
+  if (startMinutes === null || endMinutes === null) return null;
+
+  return {
+    startMinutes,
+    endMinutes,
+    wraps: startMinutes > endMinutes,
+  };
+}
+
 function parseAgendaTimeFilterArgs(rawArgs: string[]): {
   filter: AgendaTimeFilter;
   invalid: string[];
@@ -967,6 +992,8 @@ function parseAgendaTimeFilterArgs(rawArgs: string[]): {
   if (rawArgs.length === 0) return { filter: null, invalid: [] };
 
   const selected = new Set<string>();
+  const ranges: AgendaTimeRange[] = [];
+  const seenRanges = new Set<string>();
   const invalid: string[] = [];
   let sawAll = false;
 
@@ -989,6 +1016,21 @@ function parseAgendaTimeFilterArgs(rawArgs: string[]): {
       return;
     }
 
+    if (token.includes("-")) {
+      const parsedRange = parseAgendaTimeRangeToken(token);
+      if (!parsedRange) {
+        invalid.push(tokenRaw.trim());
+        return;
+      }
+
+      const rangeKey = `${parsedRange.startMinutes}-${parsedRange.endMinutes}`;
+      if (!seenRanges.has(rangeKey)) {
+        seenRanges.add(rangeKey);
+        ranges.push(parsedRange);
+      }
+      return;
+    }
+
     const normalized = normalizeAgendaTimeToken(token);
     if (!normalized) {
       invalid.push(tokenRaw.trim());
@@ -1004,15 +1046,23 @@ function parseAgendaTimeFilterArgs(rawArgs: string[]): {
     }
   }
 
+  const builtFilter: AgendaTimeFilter =
+    selected.size > 0 || ranges.length > 0
+      ? {
+          tokens: selected,
+          ranges,
+        }
+      : null;
+
   if (invalid.length > 0) {
-    return { filter: selected.size > 0 ? selected : null, invalid };
+    return { filter: builtFilter, invalid };
   }
 
-  if (sawAll || selected.size === 0) {
+  if (sawAll || !builtFilter) {
     return { filter: null, invalid: [] };
   }
 
-  return { filter: selected, invalid: [] };
+  return { filter: builtFilter, invalid: [] };
 }
 
 function parseAgendaExcludeTimeFilterArgs(rawArgs: string[]): {
@@ -1295,30 +1345,44 @@ function matchesAgendaPriorityFilter(priority: string | undefined, priorityFilte
   return priorityFilter.has(normalized);
 }
 
-function matchesAgendaTimeFilter(time: string | undefined, timeFilter: AgendaTimeFilter): boolean {
-  if (!timeFilter || timeFilter.size === 0) return true;
-
+function matchesAgendaTimeFilterTokenSet(
+  time: string | undefined,
+  timeFilter: Exclude<AgendaTimeFilter, null>,
+): boolean {
   const normalized = normalizeAgendaTimeToken(String(time || ""));
   const hasTime = Boolean(normalized);
 
-  if (hasTime && timeFilter.has(AGENDA_TIME_FILTER_TIMED)) return true;
-  if (!hasTime && timeFilter.has(AGENDA_TIME_FILTER_UNTIMED)) return true;
-  if (normalized && timeFilter.has(normalized)) return true;
+  if (hasTime && timeFilter.tokens.has(AGENDA_TIME_FILTER_TIMED)) return true;
+  if (!hasTime && timeFilter.tokens.has(AGENDA_TIME_FILTER_UNTIMED)) return true;
+  if (normalized && timeFilter.tokens.has(normalized)) return true;
+
+  if (normalized) {
+    const minutes = parseAgendaTimeToMinutes(normalized);
+    if (minutes !== null) {
+      for (const range of timeFilter.ranges) {
+        if (!range.wraps && minutes >= range.startMinutes && minutes <= range.endMinutes) {
+          return true;
+        }
+        if (range.wraps && (minutes >= range.startMinutes || minutes <= range.endMinutes)) {
+          return true;
+        }
+      }
+    }
+  }
 
   return false;
 }
 
+function matchesAgendaTimeFilter(time: string | undefined, timeFilter: AgendaTimeFilter): boolean {
+  if (!timeFilter || (timeFilter.tokens.size === 0 && timeFilter.ranges.length === 0)) return true;
+  return matchesAgendaTimeFilterTokenSet(time, timeFilter);
+}
+
 function matchesAgendaExcludeTimeFilter(time: string | undefined, excludeTimeFilter: AgendaExcludeTimeFilter): boolean {
-  if (!excludeTimeFilter || excludeTimeFilter.size === 0) return true;
-
-  const normalized = normalizeAgendaTimeToken(String(time || ""));
-  const hasTime = Boolean(normalized);
-
-  if (hasTime && excludeTimeFilter.has(AGENDA_TIME_FILTER_TIMED)) return false;
-  if (!hasTime && excludeTimeFilter.has(AGENDA_TIME_FILTER_UNTIMED)) return false;
-  if (normalized && excludeTimeFilter.has(normalized)) return false;
-
-  return true;
+  if (!excludeTimeFilter || (excludeTimeFilter.tokens.size === 0 && excludeTimeFilter.ranges.length === 0)) {
+    return true;
+  }
+  return !matchesAgendaTimeFilterTokenSet(time, excludeTimeFilter);
 }
 
 function matchesAgendaExcludeStatusFilter(
