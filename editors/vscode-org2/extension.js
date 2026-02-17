@@ -708,6 +708,8 @@ async function fetchAgendaGroups(context, filter) {
   const excludeDayOfMonthFilter = String(cfg.get('agenda.excludeDayOfMonthFilter', 'all') || 'all').trim().toLowerCase();
   const monthFilter = String(cfg.get('agenda.monthFilter', 'all') || 'all').trim().toLowerCase();
   const excludeMonthFilter = String(cfg.get('agenda.excludeMonthFilter', 'all') || 'all').trim().toLowerCase();
+  const quarterFilter = String(cfg.get('agenda.quarterFilter', 'all') || 'all').trim().toLowerCase();
+  const excludeQuarterFilter = String(cfg.get('agenda.excludeQuarterFilter', 'all') || 'all').trim().toLowerCase();
   const yearFilter = String(cfg.get('agenda.yearFilter', 'all') || 'all').trim().toLowerCase();
   const excludeYearFilter = String(cfg.get('agenda.excludeYearFilter', 'all') || 'all').trim().toLowerCase();
   const dateFilter = String(cfg.get('agenda.dateFilter', 'all') || 'all').trim();
@@ -770,6 +772,8 @@ async function fetchAgendaGroups(context, filter) {
   if (excludeDayOfMonthFilter && excludeDayOfMonthFilter !== 'all') args.push('--exclude-day-of-month', excludeDayOfMonthFilter);
   if (monthFilter && monthFilter !== 'all') args.push('--month', monthFilter);
   if (excludeMonthFilter && excludeMonthFilter !== 'all') args.push('--exclude-month', excludeMonthFilter);
+  if (quarterFilter && quarterFilter !== 'all') args.push('--quarter', quarterFilter);
+  if (excludeQuarterFilter && excludeQuarterFilter !== 'all') args.push('--exclude-quarter', excludeQuarterFilter);
   if (yearFilter && yearFilter !== 'all') args.push('--year', yearFilter);
   if (excludeYearFilter && excludeYearFilter !== 'all') args.push('--exclude-year', excludeYearFilter);
   if (dateFilter && dateFilter.toLowerCase() !== 'all') args.push('--date', dateFilter);
