@@ -215,6 +215,7 @@ interface ScheduledItem {
   todo: string | undefined;
   priority: string | undefined;
   effort: string | undefined;
+  id: string | undefined;
   level: number;
   date: string;
   time: string | undefined;
@@ -279,6 +280,7 @@ type AgendaSortKey =
   | "status"
   | "priority"
   | "effort"
+  | "id"
   | "level"
   | "time"
   | "kind"
@@ -310,7 +312,7 @@ const AGENDA_PRIORITY_ALLOWED_HINT = "A-Z or 0-9 (for example: A,B,C or [#A],[#B
 const AGENDA_TIME_ALLOWED_HINT =
   "all, timed, untimed, HH:MM, HH:MM-HH:MM (for example: 09:30,17:45,09:00-12:30,22:00-02:00)";
 const AGENDA_PROPERTY_ALLOWED_HINT = "KEY=VALUE (for example: OWNER=Avi,TEAM=Platform)";
-const AGENDA_SORT_ALLOWED_HINT = "default, [+-]file, [+-]headline, [+-]todo, [+-]status, [+-]priority, [+-]effort, [+-]level, [+-]time, [+-]kind, [+-]tags, [+-]line";
+const AGENDA_SORT_ALLOWED_HINT = "default, [+-]file, [+-]headline, [+-]todo, [+-]status, [+-]priority, [+-]effort, [+-]id, [+-]level, [+-]time, [+-]kind, [+-]tags, [+-]line";
 const AGENDA_GROUP_ALLOWED_HINT = AGENDA_SORT_ALLOWED_HINT;
 const AGENDA_DATE_ORDER_ALLOWED_HINT = "asc, desc";
 
@@ -1450,6 +1452,7 @@ function parseAgendaSortArgs(rawArgs: string[]): {
     else if (token === "status" || token === "state" || token === "bucket") normalized = "status";
     else if (token === "priority" || token === "prio") normalized = "priority";
     else if (token === "effort" || token === "estimate") normalized = "effort";
+    else if (token === "id" || token === "custom-id" || token === "custom_id" || token === "node") normalized = "id";
     else if (token === "level" || token === "depth") normalized = "level";
     else if (token === "time" || token === "clock") normalized = "time";
     else if (token === "kind" || token === "planning") normalized = "kind";
@@ -1554,6 +1557,20 @@ function agendaIdsFromProperties(properties: Record<string, string>): string[] {
     .map((value) => String(value || "").trim().toLowerCase())
     .filter(Boolean);
   return [...new Set(candidates)];
+}
+
+function agendaPrimaryIdFromProperties(properties: Record<string, string>): string | undefined {
+  const directId = String(properties.ID || "").trim();
+  if (directId) return directId;
+
+  const customId = String(properties.CUSTOM_ID || "").trim();
+  if (customId) return customId;
+
+  return undefined;
+}
+
+function normalizeAgendaItemId(item: ScheduledItem): string {
+  return String(item.id || "").trim().toLowerCase();
 }
 
 function matchesAgendaIdFilter(properties: Record<string, string>, idFilter: AgendaIdFilter): boolean {
@@ -2129,6 +2146,7 @@ function findScheduledItemsInText(
           todo,
           priority: current.priority,
           effort: current.effort,
+          id: agendaPrimaryIdFromProperties(current.properties),
           level: current.level,
           date: dateStr,
           time: planningTime,
@@ -2234,6 +2252,7 @@ function findScheduledItems(
                   todo,
                   priority,
                   effort: undefined,
+                  id: undefined,
                   level: headline.level,
                   date: dateStr,
                   time: planningTime,
@@ -2491,6 +2510,19 @@ function compareAgendaItemsByKey(a: ScheduledItem, b: ScheduledItem, key: Agenda
     return compareAgendaEffortValues(a.effort, b.effort);
   }
 
+  if (key === "id") {
+    const aId = normalizeAgendaItemId(a);
+    const bId = normalizeAgendaItemId(b);
+
+    if (!aId && !bId) return 0;
+    if (!aId) return 1;
+    if (!bId) return -1;
+
+    const byId = aId.localeCompare(bId);
+    if (byId !== 0) return byId;
+    return a.lineNumber - b.lineNumber;
+  }
+
   if (key === "level") {
     return a.level - b.level;
   }
@@ -2535,6 +2567,7 @@ function agendaGroupValueForKey(item: ScheduledItem, key: AgendaSortKey): string
   if (key === "status") return agendaStatusSortBucketForItem(item) || "";
   if (key === "priority") return normalizeAgendaPriorityToken(String(item.priority || "")) || "";
   if (key === "effort") return String(item.effort || "").trim();
+  if (key === "id") return normalizeAgendaItemId(item);
   if (key === "level") return String(item.level || "").trim();
   if (key === "time") return normalizeAgendaTimeToken(String(item.time || "")) || "";
   if (key === "kind") return String(item.kind || "").trim();
@@ -2558,6 +2591,7 @@ function agendaGroupLabelForItem(item: ScheduledItem, groupOrder: AgendaGroupOrd
     if (key === "status") return "Status";
     if (key === "priority") return "Priority";
     if (key === "effort") return "Effort";
+    if (key === "id") return "ID";
     if (key === "level") return "Level";
     if (key === "time") return "Time";
     if (key === "kind") return "Kind";
@@ -6374,6 +6408,7 @@ async function main(): Promise<void> {
         line: it.lineNumber,
         ...(it.time ? { time: it.time } : {}),
         ...(it.effort ? { effort: it.effort } : {}),
+        ...(it.id ? { id: it.id } : {}),
       });
 
       return Object.keys(byDate)

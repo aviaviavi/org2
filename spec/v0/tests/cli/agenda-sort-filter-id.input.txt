@@ -1,0 +1,17 @@
+* TODO No id task
+SCHEDULED: <2026-01-21 Wed>
+* TODO Custom id task
+:PROPERTIES:
+:CUSTOM_ID: zeta-node
+:END:
+SCHEDULED: <2026-01-21 Wed>
+* TODO UUID id task
+:PROPERTIES:
+:ID: 0f1e2d3c
+:END:
+SCHEDULED: <2026-01-21 Wed>
+* TODO Alpha custom id task
+:PROPERTIES:
+:CUSTOM_ID: alpha-node
+:END:
+SCHEDULED: <2026-01-21 Wed>
