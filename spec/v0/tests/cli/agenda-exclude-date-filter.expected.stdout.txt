@@ -1,0 +1,38 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-03-01",
+    "end": "2026-04-30",
+    "days": 61
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-03-01",
+      "weekday": "Sunday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Kickoff",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-date-filter.input.txt",
+          "line": 0
+        }
+      ]
+    },
+    {
+      "date": "2026-03-20",
+      "weekday": "Friday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Retrospective",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-date-filter.input.txt",
+          "line": 4
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}
