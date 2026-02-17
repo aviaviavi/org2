@@ -1,0 +1,33 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-01-22",
+    "end": "2026-01-22",
+    "days": 1
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-01-22",
+      "weekday": "Thursday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Untimed planning",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-time-filter.input.txt",
+          "line": 4
+        },
+        {
+          "todo": "TODO",
+          "headline": "Evening cutoff",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-time-filter.input.txt",
+          "line": 6,
+          "time": "17:45"
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}
