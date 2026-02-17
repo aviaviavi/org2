@@ -1,0 +1,1 @@
+Error: invalid agenda --weekday value(s): freeday. Allowed: all, mon|monday, tue|tuesday, wed|wednesday, thu|thursday, fri|friday, sat|saturday, sun|sunday, weekday, weekend
