@@ -724,6 +724,7 @@ async function fetchAgendaGroups(context, filter) {
   const idFilter = String(cfg.get('agenda.idFilter', '') || '').trim();
   const todoKeywordFilter = String(cfg.get('agenda.todoKeywordFilter', '') || '').trim();
   const todoOrder = String(cfg.get('agenda.todoOrder', '') || '').trim();
+  const statusOrder = String(cfg.get('agenda.statusOrder', '') || '').trim().toLowerCase();
   const priorityFilter = String(cfg.get('agenda.priorityFilter', '') || '').trim();
   const timeFilter = String(cfg.get('agenda.timeFilter', '') || '').trim().toLowerCase();
   const effortFilter = String(cfg.get('agenda.effortFilter', '') || '').trim();
@@ -794,6 +795,7 @@ async function fetchAgendaGroups(context, filter) {
   if (idFilter) args.push('--id', idFilter);
   if (todoKeywordFilter) args.push('--todo', todoKeywordFilter);
   if (todoOrder) args.push('--todo-order', todoOrder);
+  if (statusOrder) args.push('--status-order', statusOrder);
   if (priorityFilter) args.push('--priority', priorityFilter);
   if (timeFilter) args.push('--time', timeFilter);
   if (effortFilter) args.push('--effort', effortFilter);
