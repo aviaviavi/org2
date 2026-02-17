@@ -698,6 +698,11 @@
           "default": "",
           "description": "Optional custom ordering for planning kinds used by `agenda --sort kind` / `--group kind` (comma-separated values from `scheduled`, `deadline`; blank keeps default lexical ordering)."
         },
+        "org2.agenda.priorityOrder": {
+          "type": "string",
+          "default": "",
+          "description": "Optional custom ordering for priority markers used by `agenda --sort priority` / `--group priority` (comma-separated values from `A..Z` or `0..9`, accepts bracketed forms like `[#A]`; blank keeps default A→Z then 0→9 ordering)."
+        },
         "org2.agenda.priorityFilter": {
           "type": "string",
           "default": "",

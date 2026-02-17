@@ -132,6 +132,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.todoOrder`: optional custom TODO keyword ordering used by `sortBy=todo` / `groupBy=todo` (comma-separated, e.g. `TODO,IN_PROGRESS,BLOCKED,DONE`; blank keeps default alphabetical ordering)
 - `org2.agenda.statusOrder`: optional custom normalized status-bucket ordering used by `sortBy=status` / `groupBy=status` (comma-separated values from `todo,in_progress,done,canceled,custom`; aliases like `open`, `prog`, `completed`, and `closed` are accepted)
 - `org2.agenda.kindOrder`: optional custom planning-kind ordering used by `sortBy=kind` / `groupBy=kind` (comma-separated values from `scheduled,deadline`; blank keeps default lexical ordering)
+- `org2.agenda.priorityOrder`: optional custom priority ordering used by `sortBy=priority` / `groupBy=priority` (comma-separated `A..Z`/`0..9`, accepts bracketed tokens like `[#A]`; blank keeps default `A→Z` then `0→9` ordering)
 - `org2.agenda.priorityFilter`: filter by Org priority marker (for example `A,B` or `[#A],[#B]`, case-insensitive)
 - `org2.agenda.timeFilter`: filter by planning clock-time tokens (exact `HH:MM`, inclusive ranges like `09:00-12:30` including overnight windows, plus `timed`/`untimed`; comma-separated terms use OR matching)
 - `org2.agenda.effortFilter`: filter by `:EFFORT:` property value (case-insensitive exact match; comma-separated terms use OR matching, e.g. `0:30,30m,1h`)
