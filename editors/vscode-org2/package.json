@@ -590,6 +590,11 @@
           "default": "",
           "description": "Filter agenda rows by `:EFFORT:` property value (case-insensitive exact match; supports comma-separated OR terms like `0:30,30m,1h`)."
         },
+        "org2.agenda.propertyFilter": {
+          "type": "string",
+          "default": "",
+          "description": "Filter agenda rows by exact headline drawer property terms using `KEY=VALUE` (case-insensitive; supports comma-separated OR terms)."
+        },
         "org2.agenda.excludeTagFilter": {
           "type": "string",
           "default": "",
@@ -609,6 +614,11 @@
           "type": "string",
           "default": "",
           "description": "Exclude agenda rows by `:EFFORT:` property value (case-insensitive exact match; supports comma-separated OR terms like `0:30,30m,1h`)."
+        },
+        "org2.agenda.excludePropertyFilter": {
+          "type": "string",
+          "default": "",
+          "description": "Exclude agenda rows by exact headline drawer property terms using `KEY=VALUE` (case-insensitive; supports comma-separated OR terms)."
         },
         "org2.agenda.fileFilter": {
           "type": "string",
