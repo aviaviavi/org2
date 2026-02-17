@@ -1,0 +1,12 @@
+* TODO Alpha todo
+SCHEDULED: <2026-01-21 Wed>
+* WAITING Beta in progress
+SCHEDULED: <2026-01-21 Wed>
+* DONE Charlie done
+SCHEDULED: <2026-01-21 Wed>
+* CANCELED Delta canceled
+SCHEDULED: <2026-01-21 Wed>
+* REVIEW Echo custom
+SCHEDULED: <2026-01-21 Wed>
+* Plain note
+SCHEDULED: <2026-01-21 Wed>
