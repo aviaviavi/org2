@@ -260,7 +260,7 @@ class Org2AgendaSeparator {
 }
 
 class Org2AgendaItem {
-  constructor({ todo, headline, kind, file, line, date, urgency }) {
+  constructor({ todo, headline, kind, file, line, date, time, urgency }) {
     this.todo = todo || '';
     this.headline = headline || '';
     this.kind = kind || '';
@@ -268,6 +268,7 @@ class Org2AgendaItem {
     this.fileLabel = agendaFileLabel(file);
     this.line = typeof line === 'number' ? line : 0;
     this.date = date;
+    this.time = typeof time === 'string' ? time.trim() : '';
     this.urgency = urgency || agendaUrgencyFromDate(date);
     this.statusBucket = agendaStatusBucket(todo);
   }
@@ -355,6 +356,7 @@ class Org2AgendaProvider {
       }
 
       const parts = [element.fileLabel];
+      if (element.time) parts.push(`@${element.time}`);
       if (element.kind) parts.push(element.kind);
       item.description = parts.join(' · ');
 
@@ -378,6 +380,7 @@ class Org2AgendaProvider {
           '',
           `- File: ${element.file || '(unknown file)'}:${element.line + 1}`,
           `- Schedule urgency: ${urgencyLabel}`,
+          ...(element.time ? [`- Scheduled time: ${element.time}`] : []),
           `- TODO status: ${statusCue} <span style="color:var(--vscode-${statusColor.replace('.', '-')}, ${statusFallback});">${statusKeyword}</span> · ${statusStage}`,
         ].join('\n')
       );

@@ -1,0 +1,8 @@
+* TODO Midday review
+SCHEDULED: <2026-01-21 Wed 12:00>
+* TODO Early standup
+SCHEDULED: <2026-01-21 Wed 08:30>
+* TODO Untimed note
+SCHEDULED: <2026-01-21 Wed>
+* TODO Deadline wrap-up
+DEADLINE: <2026-01-21 Wed 17:45>

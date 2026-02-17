@@ -37,6 +37,36 @@ function extractDateFromTimestamp(raw: string): string | null {
   return match ? match[0] : null;
 }
 
+function normalizeAgendaTimeToken(raw: string): string | null {
+  const match = String(raw || "").match(/(?:^|\s)(\d{1,2}):(\d{2})(?=[^0-9]|$)/);
+  if (!match) return null;
+
+  const hour = Number.parseInt(match[1] ?? "", 10);
+  const minute = Number.parseInt(match[2] ?? "", 10);
+
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function parseAgendaTimeToMinutes(raw: string | undefined): number | null {
+  const normalized = normalizeAgendaTimeToken(String(raw || ""));
+  if (!normalized) return null;
+
+  const [hourRaw, minuteRaw] = normalized.split(":");
+  const hour = Number.parseInt(hourRaw || "", 10);
+  const minute = Number.parseInt(minuteRaw || "", 10);
+
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  return hour * 60 + minute;
+}
+
+function extractTimeFromTimestamp(raw: string): string | undefined {
+  const normalized = normalizeAgendaTimeToken(raw);
+  return normalized || undefined;
+}
+
 type TimestampRepeater = {
   mode: "+" | "++" | ".+";
   value: number;
@@ -187,6 +217,7 @@ interface ScheduledItem {
   effort: string | undefined;
   level: number;
   date: string;
+  time: string | undefined;
   kind: string;
   tags: string[];
 }
@@ -220,7 +251,17 @@ type AgendaExcludeEffortFilter = Set<string> | null;
 type AgendaExcludePropertyFilter = AgendaPropertyFilterTerm[] | null;
 type AgendaFileFilter = string[] | null;
 type AgendaExcludeFileFilter = string[] | null;
-type AgendaSortKey = "file" | "headline" | "todo" | "priority" | "effort" | "level" | "kind" | "tags" | "line";
+type AgendaSortKey =
+  | "file"
+  | "headline"
+  | "todo"
+  | "priority"
+  | "effort"
+  | "level"
+  | "time"
+  | "kind"
+  | "tags"
+  | "line";
 type AgendaSortDirection = "asc" | "desc";
 type AgendaSortField = { key: AgendaSortKey; direction: AgendaSortDirection };
 type AgendaSortOrder = AgendaSortField[] | null;
@@ -237,7 +278,7 @@ const AGENDA_WEEKDAY_ALLOWED_HINT =
 const AGENDA_LEVEL_ALLOWED_HINT = "positive integers (for example: 1,2,3)";
 const AGENDA_PRIORITY_ALLOWED_HINT = "A-Z or 0-9 (for example: A,B,C or [#A],[#B])";
 const AGENDA_PROPERTY_ALLOWED_HINT = "KEY=VALUE (for example: OWNER=Avi,TEAM=Platform)";
-const AGENDA_SORT_ALLOWED_HINT = "default, [+-]file, [+-]headline, [+-]todo, [+-]priority, [+-]effort, [+-]level, [+-]kind, [+-]tags, [+-]line";
+const AGENDA_SORT_ALLOWED_HINT = "default, [+-]file, [+-]headline, [+-]todo, [+-]priority, [+-]effort, [+-]level, [+-]time, [+-]kind, [+-]tags, [+-]line";
 const AGENDA_GROUP_ALLOWED_HINT = AGENDA_SORT_ALLOWED_HINT;
 const AGENDA_DATE_ORDER_ALLOWED_HINT = "asc, desc";
 
@@ -871,6 +912,7 @@ function parseAgendaSortArgs(rawArgs: string[]): {
     else if (token === "priority" || token === "prio") normalized = "priority";
     else if (token === "effort" || token === "estimate") normalized = "effort";
     else if (token === "level" || token === "depth") normalized = "level";
+    else if (token === "time" || token === "clock") normalized = "time";
     else if (token === "kind" || token === "planning") normalized = "kind";
     else if (token === "tags" || token === "tag" || token === "labels") normalized = "tags";
     else if (token === "line" || token === "position") normalized = "line";
@@ -1343,6 +1385,7 @@ function findScheduledItemsInText(
       if (!matchesAgendaExcludeKindFilter(kind as AgendaPlanningKind, excludePlanningFilter)) continue;
 
       const tsRaw = m[2] ?? "";
+      const planningTime = extractTimeFromTimestamp(tsRaw);
       const wantsOverdue = agendaWantsOverdue(includeOverdue, whenFilter, excludeWhenFilter);
       const agendaDates = resolveAgendaDatesFromTimestamp(tsRaw, startDate, endDate, wantsOverdue);
 
@@ -1373,6 +1416,7 @@ function findScheduledItemsInText(
           effort: current.effort,
           level: current.level,
           date: dateStr,
+          time: planningTime,
           kind,
           tags: [...current.tags],
         });
@@ -1419,6 +1463,7 @@ function findScheduledItems(
             if (planning.timestamp) {
               const ts = planning.timestamp as TimestampNode | TimestampRangeNode;
               const raw = "start" in ts ? ts.start.raw : ts.raw;
+              const planningTime = extractTimeFromTimestamp(raw);
               const wantsOverdue = agendaWantsOverdue(includeOverdue, whenFilter, excludeWhenFilter);
               const agendaDates = resolveAgendaDatesFromTimestamp(raw, startDate, endDate, wantsOverdue);
               if (agendaDates.length === 0) continue;
@@ -1472,6 +1517,7 @@ function findScheduledItems(
                   effort: undefined,
                   level: headline.level,
                   date: dateStr,
+                  time: planningTime,
                   kind: planning.kind,
                   tags: [...(headline.tags ?? [])],
                 });
@@ -1617,12 +1663,14 @@ function formatByDate(items: ScheduledItem[], dateOrder: AgendaDateOrder, groupO
         }
 
         const status = item.todo || "ITEM";
-        output += `    [${status}] ${item.headline} (${item.kind}) ${item.filePath}\n`;
+        const timePrefix = item.time ? `${item.time} ` : "";
+        output += `    [${status}] ${timePrefix}${item.headline} (${item.kind}) ${item.filePath}\n`;
       }
     } else {
       for (const item of dayItems) {
         const status = item.todo || "ITEM";
-        output += `  [${status}] ${item.headline} (${item.kind}) ${item.filePath}\n`;
+        const timePrefix = item.time ? `${item.time} ` : "";
+        output += `  [${status}] ${timePrefix}${item.headline} (${item.kind}) ${item.filePath}\n`;
       }
     }
 
@@ -1701,6 +1749,20 @@ function compareAgendaItemsByKey(a: ScheduledItem, b: ScheduledItem, key: Agenda
     return a.level - b.level;
   }
 
+  if (key === "time") {
+    const aMinutes = parseAgendaTimeToMinutes(a.time);
+    const bMinutes = parseAgendaTimeToMinutes(b.time);
+
+    if (aMinutes !== null && bMinutes !== null) {
+      return aMinutes - bMinutes;
+    }
+
+    if (aMinutes !== null) return -1;
+    if (bMinutes !== null) return 1;
+
+    return String(a.time || "").localeCompare(String(b.time || ""));
+  }
+
   if (key === "kind") {
     return a.kind.localeCompare(b.kind);
   }
@@ -1727,6 +1789,7 @@ function agendaGroupValueForKey(item: ScheduledItem, key: AgendaSortKey): string
   if (key === "priority") return normalizeAgendaPriorityToken(String(item.priority || "")) || "";
   if (key === "effort") return String(item.effort || "").trim();
   if (key === "level") return String(item.level || "").trim();
+  if (key === "time") return normalizeAgendaTimeToken(String(item.time || "")) || "";
   if (key === "kind") return String(item.kind || "").trim();
   if (key === "tags") {
     return (item.tags || [])
@@ -1748,6 +1811,7 @@ function agendaGroupLabelForItem(item: ScheduledItem, groupOrder: AgendaGroupOrd
     if (key === "priority") return "Priority";
     if (key === "effort") return "Effort";
     if (key === "level") return "Level";
+    if (key === "time") return "Time";
     if (key === "kind") return "Kind";
     if (key === "tags") return "Tags";
     return "Line";
@@ -5284,6 +5348,7 @@ async function main(): Promise<void> {
         kind: it.kind,
         file: it.filePath,
         line: it.lineNumber,
+        ...(it.time ? { time: it.time } : {}),
         ...(it.effort ? { effort: it.effort } : {}),
       });
 
