@@ -611,6 +611,16 @@
           "default": "all",
           "description": "Exclude agenda rows by year before rendering. Supports comma-separated positive year numbers like `2026` (use `all` for no exclusion)."
         },
+        "org2.agenda.dateFilter": {
+          "type": "string",
+          "default": "all",
+          "description": "Filter agenda rows by exact dates before rendering. Supports comma-separated `YYYY-MM-DD` values like `2026-03-01,2026-03-15` (use `all` to disable)."
+        },
+        "org2.agenda.excludeDateFilter": {
+          "type": "string",
+          "default": "all",
+          "description": "Exclude agenda rows by exact dates before rendering. Supports comma-separated `YYYY-MM-DD` values like `2026-03-01` (use `all` for no exclusion)."
+        },
         "org2.agenda.levelFilter": {
           "type": "string",
           "default": "",

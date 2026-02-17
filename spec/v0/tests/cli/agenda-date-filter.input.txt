@@ -1,0 +1,8 @@
+* TODO Kickoff
+SCHEDULED: <2026-03-01 Sun>
+* TODO Sprint review
+SCHEDULED: <2026-03-15 Sun>
+* TODO Retrospective
+DEADLINE: <2026-03-20 Fri>
+* TODO April planning
+SCHEDULED: <2026-04-02 Thu>
