@@ -1,0 +1,38 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2025-01-01",
+    "end": "2027-12-31",
+    "days": 1095
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2025-01-05",
+      "weekday": "Sunday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Legacy migration",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-year-filter.input.txt",
+          "line": 0
+        }
+      ]
+    },
+    {
+      "date": "2027-11-09",
+      "weekday": "Tuesday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Future launch",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-year-filter.input.txt",
+          "line": 4
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}

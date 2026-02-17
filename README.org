@@ -246,6 +246,12 @@ npm run org2 -- agenda --dir /path/to/org --month jan,3
 # Exclude months (for example, hide summer planning rows)
 npm run org2 -- agenda --dir /path/to/org --exclude-month jun,jul,aug
 
+# Filter by year (comma-separated positive year numbers)
+npm run org2 -- agenda --dir /path/to/org --year 2025,2027
+
+# Exclude years (for example, hide current-year planning rows)
+npm run org2 -- agenda --dir /path/to/org --exclude-year 2026
+
 # Filter by headline level (comma-separated positive integers)
 npm run org2 -- agenda --dir /path/to/org --level 1,2
 
@@ -348,6 +354,8 @@ Notes:
 - =--exclude-day-of-month= hides rows whose date day-of-month matches the provided =1..31= values.
 - =--month= filters rows to matching months (comma-separated values using =1..12= or name aliases like =jan=, =march=).
 - =--exclude-month= hides rows for matching months (same allowed values as =--month=).
+- =--year= filters rows to matching calendar years (comma-separated positive year numbers like =2025,2026=).
+- =--exclude-year= hides rows for matching calendar years (same allowed values as =--year=).
 - =--level= filters rows to matching headline levels (comma-separated positive integers like =1,2,3=).
 - =--exclude-level= hides rows from matching headline levels (same value format as =--level=).
 - =--exclude-status= hides rows with matching TODO state buckets (=active=, =closed=, etc.; same allowed values as =--status=).
