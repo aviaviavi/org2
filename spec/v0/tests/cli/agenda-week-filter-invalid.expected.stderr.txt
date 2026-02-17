@@ -1,0 +1,1 @@
+Error: invalid agenda --week value(s): 0, w54, foo. Allowed: all, 1-53 or w1..w53 (for example: 1,w2,week10,53)

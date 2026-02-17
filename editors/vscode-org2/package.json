@@ -581,6 +581,16 @@
           "default": "all",
           "description": "Exclude agenda rows by weekday tokens before rendering. Supports comma-separated values like `sat,sun`, full names, and `weekday`/`weekend` aliases (use `all` for no exclusion)."
         },
+        "org2.agenda.weekFilter": {
+          "type": "string",
+          "default": "all",
+          "description": "Filter agenda rows by ISO week number before rendering. Supports comma-separated values like `1,w2,week10` (use `all` to disable)."
+        },
+        "org2.agenda.excludeWeekFilter": {
+          "type": "string",
+          "default": "all",
+          "description": "Exclude agenda rows by ISO week number before rendering. Supports comma-separated values like `w1,week52` (use `all` for no exclusion)."
+        },
         "org2.agenda.dayOfMonthFilter": {
           "type": "string",
           "default": "all",
