@@ -1,0 +1,6 @@
+* TODO Zebra top
+SCHEDULED: <2026-01-21 Wed>
+** TODO Alpha middle
+SCHEDULED: <2026-01-21 Wed>
+*** TODO Beta deep
+SCHEDULED: <2026-01-21 Wed>
