@@ -1,0 +1,1 @@
+agenda --files "spec/v0/tests/cli/agenda-month-filter.input.txt" --today 2026-01-01 --days 130 --format json --quarter 0,q5,foo

@@ -52,6 +52,8 @@ Current reality:
 - Agenda weekday exclusion filter (CLI + VS Code): *Available now* (MVP)
 - Agenda month filtering (CLI + VS Code): *Available now* (MVP)
 - Agenda month exclusion filter (CLI + VS Code): *Available now* (MVP)
+- Agenda quarter filtering (CLI + VS Code): *Available now* (MVP)
+- Agenda quarter exclusion filter (CLI + VS Code): *Available now* (MVP)
 - Agenda exact-date filtering (CLI + VS Code): *Available now* (MVP)
 - Agenda exact-date exclusion filter (CLI + VS Code): *Available now* (MVP)
 - Agenda headline-level filtering (CLI + VS Code): *Available now* (MVP)
@@ -248,6 +250,12 @@ npm run org2 -- agenda --dir /path/to/org --month jan,3
 # Exclude months (for example, hide summer planning rows)
 npm run org2 -- agenda --dir /path/to/org --exclude-month jun,jul,aug
 
+# Filter by calendar quarter (comma-separated 1..4, q1..q4, or quarter1..quarter4)
+npm run org2 -- agenda --dir /path/to/org --quarter q1,3
+
+# Exclude calendar quarters (for example, hide end-of-year planning rows)
+npm run org2 -- agenda --dir /path/to/org --exclude-quarter q4
+
 # Filter by year (comma-separated positive year numbers)
 npm run org2 -- agenda --dir /path/to/org --year 2025,2027
 
@@ -368,6 +376,8 @@ Notes:
 - =--exclude-day-of-month= hides rows whose date day-of-month matches the provided =1..31= values.
 - =--month= filters rows to matching months (comma-separated values using =1..12= or name aliases like =jan=, =march=).
 - =--exclude-month= hides rows for matching months (same allowed values as =--month=).
+- =--quarter= filters rows to matching calendar quarters (comma-separated values using =1..4= plus aliases like =q1=, =quarter2=).
+- =--exclude-quarter= hides rows for matching calendar quarters (same allowed values as =--quarter=).
 - =--year= filters rows to matching calendar years (comma-separated positive year numbers like =2025,2026=).
 - =--exclude-year= hides rows for matching calendar years (same allowed values as =--year=).
 - =--date= filters rows to exact dates (comma-separated =YYYY-MM-DD= values like =2026-03-01,2026-03-15=).

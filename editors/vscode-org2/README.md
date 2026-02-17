@@ -113,6 +113,8 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.excludeDayOfMonthFilter`: exclude rows by day-of-month numbers (comma-separated `1..31`, e.g. `1,31`; use `all` for no exclusion)
 - `org2.agenda.monthFilter`: filter by month (comma-separated month numbers `1..12` or aliases like `jan,mar,march`; use `all` to disable)
 - `org2.agenda.excludeMonthFilter`: exclude rows by month (comma-separated month numbers `1..12` or aliases; use `all` for no exclusion)
+- `org2.agenda.quarterFilter`: filter by calendar quarter (comma-separated `1..4` values or aliases like `q1,quarter2`; use `all` to disable)
+- `org2.agenda.excludeQuarterFilter`: exclude rows by calendar quarter (comma-separated `1..4` values or aliases like `q4`; use `all` for no exclusion)
 - `org2.agenda.yearFilter`: filter by year (comma-separated positive year numbers, e.g. `2025,2026`; use `all` to disable)
 - `org2.agenda.excludeYearFilter`: exclude rows by year (comma-separated positive year numbers, e.g. `2026`; use `all` for no exclusion)
 - `org2.agenda.dateFilter`: filter by exact dates (comma-separated `YYYY-MM-DD` values, e.g. `2026-03-01,2026-03-15`; use `all` to disable)
