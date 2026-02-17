@@ -703,6 +703,11 @@
           "default": "",
           "description": "Optional custom ordering for priority markers used by `agenda --sort priority` / `--group priority` (comma-separated values from `A..Z` or `0..9`, accepts bracketed forms like `[#A]`; blank keeps default A→Z then 0→9 ordering)."
         },
+        "org2.agenda.tagOrder": {
+          "type": "string",
+          "default": "",
+          "description": "Optional custom ordering for tags used by `agenda --sort tags` / `--group tags` (comma-separated tag names, case-insensitive; rows with listed tags are ranked first in the provided order, and unlisted tags keep lexical fallback ordering)."
+        },
         "org2.agenda.priorityFilter": {
           "type": "string",
           "default": "",
