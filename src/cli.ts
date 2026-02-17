@@ -185,6 +185,7 @@ interface ScheduledItem {
   todo: string | undefined;
   priority: string | undefined;
   effort: string | undefined;
+  level: number;
   date: string;
   kind: string;
   tags: string[];
@@ -219,7 +220,7 @@ type AgendaExcludeEffortFilter = Set<string> | null;
 type AgendaExcludePropertyFilter = AgendaPropertyFilterTerm[] | null;
 type AgendaFileFilter = string[] | null;
 type AgendaExcludeFileFilter = string[] | null;
-type AgendaSortKey = "file" | "headline" | "todo" | "priority" | "effort" | "kind" | "tags" | "line";
+type AgendaSortKey = "file" | "headline" | "todo" | "priority" | "effort" | "level" | "kind" | "tags" | "line";
 type AgendaSortDirection = "asc" | "desc";
 type AgendaSortField = { key: AgendaSortKey; direction: AgendaSortDirection };
 type AgendaSortOrder = AgendaSortField[] | null;
@@ -236,7 +237,7 @@ const AGENDA_WEEKDAY_ALLOWED_HINT =
 const AGENDA_LEVEL_ALLOWED_HINT = "positive integers (for example: 1,2,3)";
 const AGENDA_PRIORITY_ALLOWED_HINT = "A-Z or 0-9 (for example: A,B,C or [#A],[#B])";
 const AGENDA_PROPERTY_ALLOWED_HINT = "KEY=VALUE (for example: OWNER=Avi,TEAM=Platform)";
-const AGENDA_SORT_ALLOWED_HINT = "default, [+-]file, [+-]headline, [+-]todo, [+-]priority, [+-]effort, [+-]kind, [+-]tags, [+-]line";
+const AGENDA_SORT_ALLOWED_HINT = "default, [+-]file, [+-]headline, [+-]todo, [+-]priority, [+-]effort, [+-]level, [+-]kind, [+-]tags, [+-]line";
 const AGENDA_GROUP_ALLOWED_HINT = AGENDA_SORT_ALLOWED_HINT;
 const AGENDA_DATE_ORDER_ALLOWED_HINT = "asc, desc";
 
@@ -869,6 +870,7 @@ function parseAgendaSortArgs(rawArgs: string[]): {
     else if (token === "todo" || token === "status") normalized = "todo";
     else if (token === "priority" || token === "prio") normalized = "priority";
     else if (token === "effort" || token === "estimate") normalized = "effort";
+    else if (token === "level" || token === "depth") normalized = "level";
     else if (token === "kind" || token === "planning") normalized = "kind";
     else if (token === "tags" || token === "tag" || token === "labels") normalized = "tags";
     else if (token === "line" || token === "position") normalized = "line";
@@ -1369,6 +1371,7 @@ function findScheduledItemsInText(
           todo,
           priority: current.priority,
           effort: current.effort,
+          level: current.level,
           date: dateStr,
           kind,
           tags: [...current.tags],
@@ -1467,6 +1470,7 @@ function findScheduledItems(
                   todo,
                   priority,
                   effort: undefined,
+                  level: headline.level,
                   date: dateStr,
                   kind: planning.kind,
                   tags: [...(headline.tags ?? [])],
@@ -1693,6 +1697,10 @@ function compareAgendaItemsByKey(a: ScheduledItem, b: ScheduledItem, key: Agenda
     return compareAgendaEffortValues(a.effort, b.effort);
   }
 
+  if (key === "level") {
+    return a.level - b.level;
+  }
+
   if (key === "kind") {
     return a.kind.localeCompare(b.kind);
   }
@@ -1718,6 +1726,7 @@ function agendaGroupValueForKey(item: ScheduledItem, key: AgendaSortKey): string
   if (key === "todo") return String(item.todo || "").trim();
   if (key === "priority") return normalizeAgendaPriorityToken(String(item.priority || "")) || "";
   if (key === "effort") return String(item.effort || "").trim();
+  if (key === "level") return String(item.level || "").trim();
   if (key === "kind") return String(item.kind || "").trim();
   if (key === "tags") {
     return (item.tags || [])
@@ -1738,6 +1747,7 @@ function agendaGroupLabelForItem(item: ScheduledItem, groupOrder: AgendaGroupOrd
     if (key === "todo") return "TODO";
     if (key === "priority") return "Priority";
     if (key === "effort") return "Effort";
+    if (key === "level") return "Level";
     if (key === "kind") return "Kind";
     if (key === "tags") return "Tags";
     return "Line";
