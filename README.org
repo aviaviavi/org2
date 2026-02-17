@@ -361,6 +361,9 @@ npm run org2 -- agenda --dir /path/to/org --sort "priority,headline" --day-limit
 # Group normalized TODO status buckets first (todo -> in_progress -> done -> canceled -> custom)
 npm run org2 -- agenda --dir /path/to/org --sort "status,headline"
 
+# Override normalized status-bucket ordering for --sort status / --group status
+npm run org2 -- agenda --dir /path/to/org --sort "status,headline" --status-order "done,todo,custom,in_progress,canceled"
+
 # Use an explicit TODO keyword sequence for --sort todo / --group todo
 npm run org2 -- agenda --dir /path/to/org --sort "todo,headline" --todo-order "TODO,NEXT,IN_PROGRESS,WAITING,DONE,CANCELED"
 
@@ -422,6 +425,7 @@ Notes:
 - =--sort id= / =--group id= use headline =:ID:= first, then =:CUSTOM_ID:= when =:ID:= is absent; rows without either ID value sort/group as =(none)= (and sort after rows with IDs).
 - =--todo= checks exact TODO keywords only, case-insensitively.
 - =--todo-order= sets explicit TODO keyword ordering for =--sort todo= / =--group todo= (comma-separated keywords like =TODO,IN_PROGRESS,DONE=). Keywords not listed in =--todo-order= fall back after ranked keywords in default alphabetical order.
+- =--status-order= sets explicit normalized status-bucket ordering for =--sort status= / =--group status= (comma-separated buckets: =todo=, =in_progress=, =done=, =canceled=, =custom=; aliases like =open=, =prog=, =completed=, and =closed= are accepted). Buckets not listed in =--status-order= fall back after ranked buckets using default status order.
 - =--priority= checks Org headline priority markers (for example =A=, =B=, or =[#A]= tokens).
 - =--time= checks planning clock-time values using exact =HH:MM= tokens and inclusive ranges (=HH:MM-HH:MM=, including overnight windows like =22:00-02:00=); special values =timed= and =untimed= match rows with/without explicit planning times.
 - =--effort= checks headline =:EFFORT:= property values (exact match after normalization; for example =0:30=, =30m=, and =1h=).
