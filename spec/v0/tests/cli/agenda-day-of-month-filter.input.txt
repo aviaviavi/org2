@@ -1,0 +1,8 @@
+* TODO First-day planning
+SCHEDULED: <2026-01-01 Thu>
+* TODO Mid-month review
+SCHEDULED: <2026-01-15 Thu>
+* TODO Month-end close
+DEADLINE: <2026-01-31 Sat>
+* TODO Next-month carry
+SCHEDULED: <2026-02-01 Sun>
