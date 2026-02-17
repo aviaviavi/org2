@@ -60,7 +60,9 @@ Current reality:
 - Agenda headline-level exclusion filter (CLI + VS Code): *Available now* (MVP)
 - Agenda text matching filter (CLI + VS Code): *Available now* (MVP)
 - Agenda tag filter (CLI + VS Code): *Available now* (MVP)
+- Agenda ID/CUSTOM_ID filter (CLI + VS Code): *Available now* (MVP)
 - Agenda TODO keyword filter (CLI + VS Code): *Available now* (MVP)
+- Agenda ID/CUSTOM_ID exclusion filter (CLI + VS Code): *Available now* (MVP)
 - Agenda priority filter (CLI + VS Code): *Available now* (MVP)
 - Agenda clock-time filter (CLI + VS Code): *Available now* (MVP; exact times + inclusive ranges)
 - Agenda clock-time exclusion filter (CLI + VS Code): *Available now* (MVP; exact times + inclusive ranges)
@@ -289,6 +291,9 @@ npm run org2 -- agenda --dir /path/to/org --exclude-match "retro,parking lot"
 # Filter by headline tags (case-insensitive exact tag match, comma-separated OR terms)
 npm run org2 -- agenda --dir /path/to/org --tag "work,urgent"
 
+# Filter by headline :ID: / :CUSTOM_ID: values (case-insensitive exact match, comma-separated OR terms)
+npm run org2 -- agenda --dir /path/to/org --id "abc123,project-roadmap"
+
 # Filter by exact TODO keywords (case-insensitive, comma-separated OR terms)
 npm run org2 -- agenda --dir /path/to/org --todo "waiting,done"
 
@@ -309,6 +314,9 @@ npm run org2 -- agenda --dir /path/to/org --property "owner=avi,team=platform"
 
 # Exclude rows with tags (case-insensitive exact tag match, comma-separated OR terms)
 npm run org2 -- agenda --dir /path/to/org --exclude-tag "someday,maybe"
+
+# Exclude rows by headline :ID: / :CUSTOM_ID: values (case-insensitive exact match)
+npm run org2 -- agenda --dir /path/to/org --exclude-id "archive-node,legacy-plan"
 
 # Exclude rows with exact TODO keywords (case-insensitive, comma-separated OR terms)
 npm run org2 -- agenda --dir /path/to/org --exclude-todo "done,canceled"
@@ -397,12 +405,14 @@ Notes:
 - =--match= checks agenda headline text only, case-insensitively.
 - =--exclude-match= hides rows whose headline text matches any provided term.
 - =--tag= checks agenda headline tags only, case-insensitively (exact tag match).
+- =--id= checks headline =:ID:= / =:CUSTOM_ID:= property values only, case-insensitively (exact match).
 - =--todo= checks exact TODO keywords only, case-insensitively.
 - =--priority= checks Org headline priority markers (for example =A=, =B=, or =[#A]= tokens).
 - =--time= checks planning clock-time values using exact =HH:MM= tokens and inclusive ranges (=HH:MM-HH:MM=, including overnight windows like =22:00-02:00=); special values =timed= and =untimed= match rows with/without explicit planning times.
 - =--effort= checks headline =:EFFORT:= property values (exact match after normalization; for example =0:30=, =30m=, and =1h=).
 - =--property= checks exact headline drawer properties using =KEY=VALUE= terms (case-insensitive; comma-separated OR matching).
 - =--exclude-tag= hides rows with matching headline tags.
+- =--exclude-id= hides rows with matching headline =:ID:= / =:CUSTOM_ID:= property values.
 - =--exclude-todo= hides rows with matching TODO keywords.
 - =--exclude-priority= hides rows with matching Org priority markers.
 - =--exclude-time= hides rows with matching planning clock-time values/ranges (same token support as =--time=).
