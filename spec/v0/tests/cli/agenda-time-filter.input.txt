@@ -1,0 +1,8 @@
+* TODO Morning sync
+SCHEDULED: <2026-01-22 Thu 09:30>
+* TODO Noon checkpoint
+SCHEDULED: <2026-01-22 Thu 12:00>
+* TODO Untimed planning
+SCHEDULED: <2026-01-22 Thu>
+* TODO Evening cutoff
+DEADLINE: <2026-01-22 Thu 17:45>
