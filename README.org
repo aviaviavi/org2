@@ -233,6 +233,9 @@ npm run org2 -- agenda --dir /path/to/org --priority "a,[#b]"
 # Filter by :EFFORT: property values (case-insensitive exact match; supports 0:30/30m/1h forms)
 npm run org2 -- agenda --dir /path/to/org --effort "0:30,1h"
 
+# Filter by exact headline drawer properties (KEY=VALUE, case-insensitive)
+npm run org2 -- agenda --dir /path/to/org --property "owner=avi,team=platform"
+
 # Exclude rows with tags (case-insensitive exact tag match, comma-separated OR terms)
 npm run org2 -- agenda --dir /path/to/org --exclude-tag "someday,maybe"
 
@@ -244,6 +247,9 @@ npm run org2 -- agenda --dir /path/to/org --exclude-priority "c"
 
 # Exclude rows with matching :EFFORT: values (case-insensitive exact match)
 npm run org2 -- agenda --dir /path/to/org --exclude-effort "15m,0:30"
+
+# Exclude rows by exact headline drawer properties (KEY=VALUE, case-insensitive)
+npm run org2 -- agenda --dir /path/to/org --exclude-property "owner=bot"
 
 # Keep only rows whose source file path contains any term (case-insensitive)
 npm run org2 -- agenda --dir /path/to/org --file-match "projects,work"
@@ -291,10 +297,12 @@ Notes:
 - =--todo= checks exact TODO keywords only, case-insensitively.
 - =--priority= checks Org headline priority markers (for example =A=, =B=, or =[#A]= tokens).
 - =--effort= checks headline =:EFFORT:= property values (exact match after normalization; for example =0:30=, =30m=, and =1h=).
+- =--property= checks exact headline drawer properties using =KEY=VALUE= terms (case-insensitive; comma-separated OR matching).
 - =--exclude-tag= hides rows with matching headline tags.
 - =--exclude-todo= hides rows with matching TODO keywords.
 - =--exclude-priority= hides rows with matching Org priority markers.
 - =--exclude-effort= hides rows with matching =:EFFORT:= property values.
+- =--exclude-property= hides rows with matching headline drawer property terms (=KEY=VALUE=, case-insensitive).
 - =--file-match= keeps rows whose source file path contains any term.
 - =--exclude-file= hides rows whose source file path contains any term.
 - =--sort= reorders rows within each date bucket (always date-first overall sorting); supported keys are =file=, =headline=, =todo=, =priority=, =effort=, =kind=, =tags=, and =line=. Prefix a key with =-= (or suffix with =:desc=) for descending order.

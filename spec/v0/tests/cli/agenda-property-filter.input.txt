@@ -1,0 +1,23 @@
+* TODO Follow up with Avi
+SCHEDULED: <2026-02-14 Sat>
+:PROPERTIES:
+:OWNER: Avi
+:TEAM: Platform
+:END:
+
+* TODO Prepare platform doc
+SCHEDULED: <2026-02-14 Sat>
+:PROPERTIES:
+:OWNER: Bot
+:TEAM: Platform
+:END:
+
+* TODO Handle support inbox
+SCHEDULED: <2026-02-15 Sun>
+:PROPERTIES:
+:OWNER: AVI
+:TEAM: Support
+:END:
+
+* TODO No properties task
+SCHEDULED: <2026-02-15 Sun>
