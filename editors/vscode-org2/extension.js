@@ -701,6 +701,8 @@ async function fetchAgendaGroups(context, filter) {
   const excludeWhenFilter = String(cfg.get('agenda.excludeWhenFilter', 'all') || 'all').trim().toLowerCase();
   const weekdayFilter = String(cfg.get('agenda.weekdayFilter', 'all') || 'all').trim().toLowerCase();
   const excludeWeekdayFilter = String(cfg.get('agenda.excludeWeekdayFilter', 'all') || 'all').trim().toLowerCase();
+  const levelFilter = String(cfg.get('agenda.levelFilter', '') || '').trim();
+  const excludeLevelFilter = String(cfg.get('agenda.excludeLevelFilter', '') || '').trim();
   const matchFilter = String(cfg.get('agenda.matchFilter', '') || '').trim();
   const excludeMatchFilter = String(cfg.get('agenda.excludeMatchFilter', '') || '').trim();
   const tagFilter = String(cfg.get('agenda.tagFilter', '') || '').trim();
@@ -751,6 +753,8 @@ async function fetchAgendaGroups(context, filter) {
   if (excludeWhenFilter && excludeWhenFilter !== 'all') args.push('--exclude-when', excludeWhenFilter);
   if (weekdayFilter && weekdayFilter !== 'all') args.push('--weekday', weekdayFilter);
   if (excludeWeekdayFilter && excludeWeekdayFilter !== 'all') args.push('--exclude-weekday', excludeWeekdayFilter);
+  if (levelFilter) args.push('--level', levelFilter);
+  if (excludeLevelFilter) args.push('--exclude-level', excludeLevelFilter);
   if (matchFilter) args.push('--match', matchFilter);
   if (excludeMatchFilter) args.push('--exclude-match', excludeMatchFilter);
   if (tagFilter) args.push('--tag', tagFilter);

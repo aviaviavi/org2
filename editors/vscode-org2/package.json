@@ -581,6 +581,16 @@
           "default": "all",
           "description": "Exclude agenda rows by weekday tokens before rendering. Supports comma-separated values like `sat,sun`, full names, and `weekday`/`weekend` aliases (use `all` for no exclusion)."
         },
+        "org2.agenda.levelFilter": {
+          "type": "string",
+          "default": "",
+          "description": "Filter agenda rows by headline level before rendering. Supports comma-separated positive integers like `1,2,3` (empty = no level filter)."
+        },
+        "org2.agenda.excludeLevelFilter": {
+          "type": "string",
+          "default": "",
+          "description": "Exclude agenda rows by headline level before rendering. Supports comma-separated positive integers like `1,2` (empty = no level exclusion)."
+        },
         "org2.agenda.matchFilter": {
           "type": "string",
           "default": "",

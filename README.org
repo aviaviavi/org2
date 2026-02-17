@@ -50,6 +50,8 @@ Current reality:
 - Agenda time-bucket exclusion filter (CLI + VS Code): *Available now* (MVP)
 - Agenda weekday filtering (CLI + VS Code): *Available now* (MVP)
 - Agenda weekday exclusion filter (CLI + VS Code): *Available now* (MVP)
+- Agenda headline-level filtering (CLI + VS Code): *Available now* (MVP)
+- Agenda headline-level exclusion filter (CLI + VS Code): *Available now* (MVP)
 - Agenda text matching filter (CLI + VS Code): *Available now* (MVP)
 - Agenda tag filter (CLI + VS Code): *Available now* (MVP)
 - Agenda TODO keyword filter (CLI + VS Code): *Available now* (MVP)
@@ -227,6 +229,12 @@ npm run org2 -- agenda --dir /path/to/org --weekday mon,weekday
 # Exclude weekdays (for example, hide weekend rows)
 npm run org2 -- agenda --dir /path/to/org --exclude-weekday weekend
 
+# Filter by headline level (comma-separated positive integers)
+npm run org2 -- agenda --dir /path/to/org --level 1,2
+
+# Exclude headline levels (for example, hide top-level project headings)
+npm run org2 -- agenda --dir /path/to/org --exclude-level 1
+
 # Filter by headline text (case-insensitive, comma-separated OR terms)
 npm run org2 -- agenda --dir /path/to/org --match "release,retro"
 
@@ -304,6 +312,8 @@ Notes:
 - =--exclude-when= hides rows in matching schedule buckets (=overdue=, =today=, and/or =upcoming=).
 - =--weekday= filters rows to matching weekdays (supports =mon...sun= aliases, full names, and =weekday=/=weekend= aliases).
 - =--exclude-weekday= hides rows for matching weekdays (same allowed values as =--weekday=).
+- =--level= filters rows to matching headline levels (comma-separated positive integers like =1,2,3=).
+- =--exclude-level= hides rows from matching headline levels (same value format as =--level=).
 - =--exclude-status= hides rows with matching TODO state buckets (=active=, =closed=, etc.; same allowed values as =--status=).
 - =--exclude-kind= hides rows with matching planning kinds (=scheduled= and/or =deadline=).
 - =--match= checks agenda headline text only, case-insensitively.
