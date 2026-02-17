@@ -66,6 +66,7 @@ Current reality:
 - Agenda priority sort-order controls (CLI + VS Code): *Available now* (MVP)
 - Agenda effort sort-order controls (CLI + VS Code): *Available now* (MVP)
 - Agenda tag sort-order controls (CLI + VS Code): *Available now* (MVP)
+- Agenda timestamp-time sort/group controls (CLI + VS Code): *Available now* (MVP)
 - Agenda date-order controls (CLI + VS Code): *Available now* (MVP)
 - Agenda row-limit filtering (CLI + VS Code): *Available now* (MVP)
 - Agenda explicit date-range bounds (CLI + VS Code): *Available now* (MVP)
@@ -277,7 +278,7 @@ npm run org2 -- agenda --dir /path/to/org --file-match "projects,work"
 # Hide rows whose source file path contains any term (case-insensitive)
 npm run org2 -- agenda --dir /path/to/org --exclude-file "archive,personal"
 
-# Sort rows within each day (comma-separated sort keys: file, headline, todo, priority, effort, level, kind, tags, line)
+# Sort rows within each day (comma-separated sort keys: file, headline, todo, priority, effort, level, time, kind, tags, line)
 npm run org2 -- agenda --dir /path/to/org --sort "file,headline"
 
 # Group rows within each day (same keys as --sort)
@@ -294,6 +295,9 @@ npm run org2 -- agenda --dir /path/to/org --sort "effort,headline"
 
 # Sort by headline depth (top-level first by default; use -level for deepest-first)
 npm run org2 -- agenda --dir /path/to/org --sort "level,headline"
+
+# Sort timed rows by clock time (untimed rows come last)
+npm run org2 -- agenda --dir /path/to/org --sort "time,headline"
 
 # Descending sort: prefix any key with '-' (or use :desc)
 npm run org2 -- agenda --dir /path/to/org --sort "-headline,todo:desc"
@@ -333,7 +337,7 @@ Notes:
 - =--exclude-property= hides rows with matching headline drawer property terms (=KEY=VALUE=, case-insensitive).
 - =--file-match= keeps rows whose source file path contains any term.
 - =--exclude-file= hides rows whose source file path contains any term.
-- =--sort= reorders rows within each date bucket (always date-first overall sorting); supported keys are =file=, =headline=, =todo=, =priority=, =effort=, =level=, =kind=, =tags=, and =line=. Prefix a key with =-= (or suffix with =:desc=) for descending order.
+- =--sort= reorders rows within each date bucket (always date-first overall sorting); supported keys are =file=, =headline=, =todo=, =priority=, =effort=, =level=, =time=, =kind=, =tags=, and =line=. Prefix a key with =-= (or suffix with =:desc=) for descending order.
 - =--group= clusters rows within each date bucket by one or more keys (same key set/syntax as =--sort=). In JSON output this also adds per-day =groups= arrays with grouped row subsets.
 - =--group-limit= caps rows per day+group bucket (applies after sorting; requires =--group= to have an effect).
 - =--date-order= controls overall date ordering (=asc= oldest-first, =desc= newest-first) while still applying per-day =--group= and =--sort= tie-breakers.
