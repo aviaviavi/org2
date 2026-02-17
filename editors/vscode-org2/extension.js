@@ -703,9 +703,11 @@ async function fetchAgendaGroups(context, filter) {
   const tagFilter = String(cfg.get('agenda.tagFilter', '') || '').trim();
   const todoKeywordFilter = String(cfg.get('agenda.todoKeywordFilter', '') || '').trim();
   const priorityFilter = String(cfg.get('agenda.priorityFilter', '') || '').trim();
+  const effortFilter = String(cfg.get('agenda.effortFilter', '') || '').trim();
   const excludeTagFilter = String(cfg.get('agenda.excludeTagFilter', '') || '').trim();
   const excludeTodoKeywordFilter = String(cfg.get('agenda.excludeTodoKeywordFilter', '') || '').trim();
   const excludePriorityFilter = String(cfg.get('agenda.excludePriorityFilter', '') || '').trim();
+  const excludeEffortFilter = String(cfg.get('agenda.excludeEffortFilter', '') || '').trim();
   const fileFilter = String(cfg.get('agenda.fileFilter', '') || '').trim();
   const excludeFileFilter = String(cfg.get('agenda.excludeFileFilter', '') || '').trim();
   const sortBy = String(cfg.get('agenda.sortBy', 'default') || 'default').trim().toLowerCase();
@@ -744,9 +746,11 @@ async function fetchAgendaGroups(context, filter) {
   if (tagFilter) args.push('--tag', tagFilter);
   if (todoKeywordFilter) args.push('--todo', todoKeywordFilter);
   if (priorityFilter) args.push('--priority', priorityFilter);
+  if (effortFilter) args.push('--effort', effortFilter);
   if (excludeTagFilter) args.push('--exclude-tag', excludeTagFilter);
   if (excludeTodoKeywordFilter) args.push('--exclude-todo', excludeTodoKeywordFilter);
   if (excludePriorityFilter) args.push('--exclude-priority', excludePriorityFilter);
+  if (excludeEffortFilter) args.push('--exclude-effort', excludeEffortFilter);
   if (fileFilter) args.push('--file-match', fileFilter);
   if (excludeFileFilter) args.push('--exclude-file', excludeFileFilter);
   if (sortBy && sortBy !== 'default') args.push('--sort', sortBy);

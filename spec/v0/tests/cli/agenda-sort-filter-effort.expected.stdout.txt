@@ -1,0 +1,34 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-02-14",
+    "end": "2026-02-14",
+    "days": 1
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-02-14",
+      "weekday": "Saturday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Run release checklist",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-effort-filter.input.txt",
+          "line": 6,
+          "effort": "0:30"
+        },
+        {
+          "todo": "TODO",
+          "headline": "Write weekly update",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-effort-filter.input.txt",
+          "line": 0,
+          "effort": "1:15"
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}

@@ -585,6 +585,11 @@
           "default": "",
           "description": "Filter agenda rows by Org priority marker (for example `A,B` or `[#A],[#B]`, case-insensitive)."
         },
+        "org2.agenda.effortFilter": {
+          "type": "string",
+          "default": "",
+          "description": "Filter agenda rows by `:EFFORT:` property value (case-insensitive exact match; supports comma-separated OR terms like `0:30,30m,1h`)."
+        },
         "org2.agenda.excludeTagFilter": {
           "type": "string",
           "default": "",
@@ -600,6 +605,11 @@
           "default": "",
           "description": "Exclude agenda rows by Org priority marker (for example `A,B` or `[#A],[#B]`, case-insensitive)."
         },
+        "org2.agenda.excludeEffortFilter": {
+          "type": "string",
+          "default": "",
+          "description": "Exclude agenda rows by `:EFFORT:` property value (case-insensitive exact match; supports comma-separated OR terms like `0:30,30m,1h`)."
+        },
         "org2.agenda.fileFilter": {
           "type": "string",
           "default": "",
@@ -613,7 +623,7 @@
         "org2.agenda.sortBy": {
           "type": "string",
           "default": "default",
-          "description": "Sort agenda rows within each date by one or more keys (`file`, `headline`, `todo`, `priority`, `kind`, `tags`, `line`). Supports comma-separated values; prefix a key with `-` (or suffix with `:desc`) for descending order. Use `default` for existing ordering."
+          "description": "Sort agenda rows within each date by one or more keys (`file`, `headline`, `todo`, `priority`, `effort`, `kind`, `tags`, `line`). Supports comma-separated values; prefix a key with `-` (or suffix with `:desc`) for descending order. Use `default` for existing ordering."
         },
         "org2.agenda.dateOrder": {
           "type": "string",
