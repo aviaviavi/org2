@@ -1,0 +1,38 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-01-01",
+    "end": "2026-05-09",
+    "days": 129
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-02-14",
+      "weekday": "Saturday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "February planning",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-month-filter.input.txt",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "date": "2026-04-02",
+      "weekday": "Thursday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "April wrap",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-month-filter.input.txt",
+          "line": 6
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}
