@@ -666,6 +666,11 @@
           "default": "",
           "description": "Filter agenda rows by headline tags (case-insensitive exact tag match). Supports comma-separated tags; a row matches when any tag is present."
         },
+        "org2.agenda.idFilter": {
+          "type": "string",
+          "default": "",
+          "description": "Filter agenda rows by headline `:ID:` or `:CUSTOM_ID:` values (case-insensitive exact match). Supports comma-separated IDs; a row matches when any ID/CUSTOM_ID term is present."
+        },
         "org2.agenda.todoKeywordFilter": {
           "type": "string",
           "default": "",
@@ -695,6 +700,11 @@
           "type": "string",
           "default": "",
           "description": "Exclude agenda rows by headline tags (case-insensitive exact tag match). Supports comma-separated tags; a row is hidden when any tag matches."
+        },
+        "org2.agenda.excludeIdFilter": {
+          "type": "string",
+          "default": "",
+          "description": "Exclude agenda rows by headline `:ID:` or `:CUSTOM_ID:` values (case-insensitive exact match). Supports comma-separated IDs; a row is hidden when any ID/CUSTOM_ID term matches."
         },
         "org2.agenda.excludeTodoKeywordFilter": {
           "type": "string",
