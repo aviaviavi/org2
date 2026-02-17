@@ -234,6 +234,8 @@ type AgendaWhenFilter = Set<AgendaWhenBucket> | null;
 type AgendaExcludeWhenFilter = Set<AgendaWhenBucket> | null;
 type AgendaWeekdayFilter = Set<number> | null;
 type AgendaExcludeWeekdayFilter = Set<number> | null;
+type AgendaWeekFilter = Set<number> | null;
+type AgendaExcludeWeekFilter = Set<number> | null;
 type AgendaDayOfMonthFilter = Set<number> | null;
 type AgendaExcludeDayOfMonthFilter = Set<number> | null;
 type AgendaMonthFilter = Set<number> | null;
@@ -293,6 +295,7 @@ const AGENDA_KIND_ALLOWED_HINT = "all, scheduled, deadline";
 const AGENDA_WHEN_ALLOWED_HINT = "all, overdue, today, upcoming";
 const AGENDA_WEEKDAY_ALLOWED_HINT =
   "all, mon|monday, tue|tuesday, wed|wednesday, thu|thursday, fri|friday, sat|saturday, sun|sunday, weekday, weekend";
+const AGENDA_WEEK_ALLOWED_HINT = "all, 1-53 or w1..w53 (for example: 1,w2,week10,53)";
 const AGENDA_DAY_OF_MONTH_ALLOWED_HINT = "all, 1-31 (for example: 1,15,31)";
 const AGENDA_MONTH_ALLOWED_HINT =
   "all, 1-12 or jan|january...dec|december (for example: 1,jan,mar,12)";
@@ -595,6 +598,60 @@ function parseAgendaExcludeWeekdayFilterArgs(rawArgs: string[]): {
   invalid: string[];
 } {
   return parseAgendaWeekdayFilterArgs(rawArgs);
+}
+
+function parseAgendaWeekFilterArgs(rawArgs: string[]): {
+  filter: AgendaWeekFilter;
+  invalid: string[];
+} {
+  if (rawArgs.length === 0) return { filter: null, invalid: [] };
+
+  const selected = new Set<number>();
+  const invalid: string[] = [];
+  let sawAll = false;
+
+  for (const raw of rawArgs) {
+    for (const tokenRaw of String(raw).split(",")) {
+      const token = tokenRaw.trim().toLowerCase();
+      if (!token) continue;
+
+      if (token === "all") {
+        sawAll = true;
+        continue;
+      }
+
+      const weekMatch = /^(?:w|week)?(\d{1,2})$/.exec(token);
+      if (!weekMatch) {
+        invalid.push(tokenRaw.trim());
+        continue;
+      }
+
+      const week = Number.parseInt(weekMatch[1] ?? "", 10);
+      if (!Number.isFinite(week) || week < 1 || week > 53) {
+        invalid.push(tokenRaw.trim());
+        continue;
+      }
+
+      selected.add(week);
+    }
+  }
+
+  if (invalid.length > 0) {
+    return { filter: selected.size > 0 ? selected : null, invalid };
+  }
+
+  if (sawAll || selected.size === 0) {
+    return { filter: null, invalid: [] };
+  }
+
+  return { filter: selected, invalid: [] };
+}
+
+function parseAgendaExcludeWeekFilterArgs(rawArgs: string[]): {
+  filter: AgendaExcludeWeekFilter;
+  invalid: string[];
+} {
+  return parseAgendaWeekFilterArgs(rawArgs);
 }
 
 function parseAgendaDayOfMonthFilterArgs(rawArgs: string[]): {
@@ -1637,6 +1694,29 @@ function matchesAgendaExcludeWeekdayFilter(
   return !excludeWeekdayFilter.has(itemDate.getUTCDay());
 }
 
+function agendaIsoWeekForDate(itemDate: Date): number {
+  const normalized = new Date(Date.UTC(itemDate.getUTCFullYear(), itemDate.getUTCMonth(), itemDate.getUTCDate()));
+  const weekday = normalized.getUTCDay() || 7;
+  normalized.setUTCDate(normalized.getUTCDate() + 4 - weekday);
+
+  const yearStart = new Date(Date.UTC(normalized.getUTCFullYear(), 0, 1));
+  const dayOffset = Math.floor((normalized.getTime() - yearStart.getTime()) / (24 * 60 * 60 * 1000));
+  return Math.floor((dayOffset + 7) / 7);
+}
+
+function matchesAgendaWeekFilter(itemDate: Date, weekFilter: AgendaWeekFilter): boolean {
+  if (!weekFilter || weekFilter.size === 0) return true;
+  return weekFilter.has(agendaIsoWeekForDate(itemDate));
+}
+
+function matchesAgendaExcludeWeekFilter(
+  itemDate: Date,
+  excludeWeekFilter: AgendaExcludeWeekFilter,
+): boolean {
+  if (!excludeWeekFilter || excludeWeekFilter.size === 0) return true;
+  return !excludeWeekFilter.has(agendaIsoWeekForDate(itemDate));
+}
+
 function matchesAgendaDayOfMonthFilter(itemDate: Date, dayOfMonthFilter: AgendaDayOfMonthFilter): boolean {
   if (!dayOfMonthFilter || dayOfMonthFilter.size === 0) return true;
   return dayOfMonthFilter.has(itemDate.getUTCDate());
@@ -1827,6 +1907,8 @@ function findScheduledItemsInText(
   excludeWhenFilter: AgendaExcludeWhenFilter,
   weekdayFilter: AgendaWeekdayFilter,
   excludeWeekdayFilter: AgendaExcludeWeekdayFilter,
+  weekFilter: AgendaWeekFilter,
+  excludeWeekFilter: AgendaExcludeWeekFilter,
   dayOfMonthFilter: AgendaDayOfMonthFilter,
   excludeDayOfMonthFilter: AgendaExcludeDayOfMonthFilter,
   monthFilter: AgendaMonthFilter,
@@ -1953,6 +2035,8 @@ function findScheduledItemsInText(
         if (!matchesAgendaExcludeWhenFilter(itemDate, startDate, excludeWhenFilter)) continue;
         if (!matchesAgendaWeekdayFilter(itemDate, weekdayFilter)) continue;
         if (!matchesAgendaExcludeWeekdayFilter(itemDate, excludeWeekdayFilter)) continue;
+        if (!matchesAgendaWeekFilter(itemDate, weekFilter)) continue;
+        if (!matchesAgendaExcludeWeekFilter(itemDate, excludeWeekFilter)) continue;
         if (!matchesAgendaDayOfMonthFilter(itemDate, dayOfMonthFilter)) continue;
         if (!matchesAgendaExcludeDayOfMonthFilter(itemDate, excludeDayOfMonthFilter)) continue;
         if (!matchesAgendaMonthFilter(itemDate, monthFilter)) continue;
@@ -2537,6 +2621,8 @@ async function main(): Promise<void> {
   let agendaExcludeWhenFiltersRaw: string[] = [];
   let agendaWeekdayFiltersRaw: string[] = [];
   let agendaExcludeWeekdayFiltersRaw: string[] = [];
+  let agendaWeekFiltersRaw: string[] = [];
+  let agendaExcludeWeekFiltersRaw: string[] = [];
   let agendaDayOfMonthFiltersRaw: string[] = [];
   let agendaExcludeDayOfMonthFiltersRaw: string[] = [];
   let agendaMonthFiltersRaw: string[] = [];
@@ -2950,6 +3036,22 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "agenda") {
           agendaExcludeWeekdayFiltersRaw.push(args[i]!);
+        }
+        i++;
+      }
+    } else if (arg === "--week") {
+      i++;
+      if (i < args.length) {
+        if (command === "agenda") {
+          agendaWeekFiltersRaw.push(args[i]!);
+        }
+        i++;
+      }
+    } else if (arg === "--exclude-week") {
+      i++;
+      if (i < args.length) {
+        if (command === "agenda") {
+          agendaExcludeWeekFiltersRaw.push(args[i]!);
         }
         i++;
       }
@@ -3497,7 +3599,7 @@ async function main(): Promise<void> {
 
   if (help) {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--exclude-when FILTER[,FILTER...]] [--weekday FILTER[,FILTER...]] [--exclude-weekday FILTER[,FILTER...]] [--day-of-month FILTER[,FILTER...]] [--exclude-day-of-month FILTER[,FILTER...]] [--month FILTER[,FILTER...]] [--exclude-month FILTER[,FILTER...]] [--quarter FILTER[,FILTER...]] [--exclude-quarter FILTER[,FILTER...]] [--year FILTER[,FILTER...]] [--exclude-year FILTER[,FILTER...]] [--date YYYY-MM-DD[,YYYY-MM-DD...]] [--exclude-date YYYY-MM-DD[,YYYY-MM-DD...]] [--level N[,N...]] [--exclude-level N[,N...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--time VALUE[,VALUE...]] [--effort VALUE[,VALUE...]] [--property KEY=VALUE[,KEY=VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-time VALUE[,VALUE...]] [--exclude-effort VALUE[,VALUE...]] [--exclude-property KEY=VALUE[,KEY=VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--group-limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--exclude-when FILTER[,FILTER...]] [--weekday FILTER[,FILTER...]] [--exclude-weekday FILTER[,FILTER...]] [--week FILTER[,FILTER...]] [--exclude-week FILTER[,FILTER...]] [--day-of-month FILTER[,FILTER...]] [--exclude-day-of-month FILTER[,FILTER...]] [--month FILTER[,FILTER...]] [--exclude-month FILTER[,FILTER...]] [--quarter FILTER[,FILTER...]] [--exclude-quarter FILTER[,FILTER...]] [--year FILTER[,FILTER...]] [--exclude-year FILTER[,FILTER...]] [--date YYYY-MM-DD[,YYYY-MM-DD...]] [--exclude-date YYYY-MM-DD[,YYYY-MM-DD...]] [--level N[,N...]] [--exclude-level N[,N...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--time VALUE[,VALUE...]] [--effort VALUE[,VALUE...]] [--property KEY=VALUE[,KEY=VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-time VALUE[,VALUE...]] [--exclude-effort VALUE[,VALUE...]] [--exclude-property KEY=VALUE[,KEY=VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--group-limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -3548,7 +3650,7 @@ async function main(): Promise<void> {
 
   if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--exclude-when FILTER[,FILTER...]] [--weekday FILTER[,FILTER...]] [--exclude-weekday FILTER[,FILTER...]] [--day-of-month FILTER[,FILTER...]] [--exclude-day-of-month FILTER[,FILTER...]] [--month FILTER[,FILTER...]] [--exclude-month FILTER[,FILTER...]] [--quarter FILTER[,FILTER...]] [--exclude-quarter FILTER[,FILTER...]] [--year FILTER[,FILTER...]] [--exclude-year FILTER[,FILTER...]] [--date YYYY-MM-DD[,YYYY-MM-DD...]] [--exclude-date YYYY-MM-DD[,YYYY-MM-DD...]] [--level N[,N...]] [--exclude-level N[,N...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--time VALUE[,VALUE...]] [--effort VALUE[,VALUE...]] [--property KEY=VALUE[,KEY=VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-time VALUE[,VALUE...]] [--exclude-effort VALUE[,VALUE...]] [--exclude-property KEY=VALUE[,KEY=VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--group-limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--exclude-when FILTER[,FILTER...]] [--weekday FILTER[,FILTER...]] [--exclude-weekday FILTER[,FILTER...]] [--week FILTER[,FILTER...]] [--exclude-week FILTER[,FILTER...]] [--day-of-month FILTER[,FILTER...]] [--exclude-day-of-month FILTER[,FILTER...]] [--month FILTER[,FILTER...]] [--exclude-month FILTER[,FILTER...]] [--quarter FILTER[,FILTER...]] [--exclude-quarter FILTER[,FILTER...]] [--year FILTER[,FILTER...]] [--exclude-year FILTER[,FILTER...]] [--date YYYY-MM-DD[,YYYY-MM-DD...]] [--exclude-date YYYY-MM-DD[,YYYY-MM-DD...]] [--level N[,N...]] [--exclude-level N[,N...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--todo KEYWORD[,KEYWORD...]] [--priority A[,B...]] [--time VALUE[,VALUE...]] [--effort VALUE[,VALUE...]] [--property KEY=VALUE[,KEY=VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-time VALUE[,VALUE...]] [--exclude-effort VALUE[,VALUE...]] [--exclude-property KEY=VALUE[,KEY=VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--group-limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -5806,6 +5908,22 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const parsedAgendaWeek = parseAgendaWeekFilterArgs(agendaWeekFiltersRaw);
+  if (parsedAgendaWeek.invalid.length > 0) {
+    console.error(
+      `Error: invalid agenda --week value(s): ${parsedAgendaWeek.invalid.join(", ")}. Allowed: ${AGENDA_WEEK_ALLOWED_HINT}`,
+    );
+    process.exit(1);
+  }
+
+  const parsedAgendaExcludeWeek = parseAgendaExcludeWeekFilterArgs(agendaExcludeWeekFiltersRaw);
+  if (parsedAgendaExcludeWeek.invalid.length > 0) {
+    console.error(
+      `Error: invalid agenda --exclude-week value(s): ${parsedAgendaExcludeWeek.invalid.join(", ")}. Allowed: ${AGENDA_WEEK_ALLOWED_HINT}`,
+    );
+    process.exit(1);
+  }
+
   const parsedAgendaDayOfMonth = parseAgendaDayOfMonthFilterArgs(agendaDayOfMonthFiltersRaw);
   if (parsedAgendaDayOfMonth.invalid.length > 0) {
     console.error(
@@ -6081,6 +6199,8 @@ async function main(): Promise<void> {
         parsedAgendaExcludeWhen.filter,
         parsedAgendaWeekday.filter,
         parsedAgendaExcludeWeekday.filter,
+        parsedAgendaWeek.filter,
+        parsedAgendaExcludeWeek.filter,
         parsedAgendaDayOfMonth.filter,
         parsedAgendaExcludeDayOfMonth.filter,
         parsedAgendaMonth.filter,

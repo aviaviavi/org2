@@ -109,6 +109,8 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.excludeWhenFilter`: exclude rows by time bucket (`all`, `overdue`, `today`, `upcoming`)
 - `org2.agenda.weekdayFilter`: filter by weekday tokens (comma-separated, e.g. `mon,wed`; supports full names plus `weekday`/`weekend`; use `all` to disable)
 - `org2.agenda.excludeWeekdayFilter`: exclude rows by weekday tokens (comma-separated, e.g. `sat,sun`; supports full names plus `weekday`/`weekend`; use `all` for no exclusion)
+- `org2.agenda.weekFilter`: filter by ISO week number (comma-separated `1..53` values with aliases like `w2,week10`; use `all` to disable)
+- `org2.agenda.excludeWeekFilter`: exclude rows by ISO week number (comma-separated `1..53` values with aliases like `w52,week53`; use `all` for no exclusion)
 - `org2.agenda.dayOfMonthFilter`: filter by day-of-month numbers (comma-separated `1..31`, e.g. `1,15,31`; use `all` to disable)
 - `org2.agenda.excludeDayOfMonthFilter`: exclude rows by day-of-month numbers (comma-separated `1..31`, e.g. `1,31`; use `all` for no exclusion)
 - `org2.agenda.monthFilter`: filter by month (comma-separated month numbers `1..12` or aliases like `jan,mar,march`; use `all` to disable)

@@ -1,0 +1,1 @@
+agenda --files "spec/v0/tests/cli/agenda-week-filter.input.txt" --today 2026-01-01 --days 70 --format json --week w2,10
