@@ -1,0 +1,1 @@
+Error: invalid agenda --quarter value(s): 0, q5, foo. Allowed: all, 1-4 or q1..q4 (for example: 1,q2,quarter3,4)
