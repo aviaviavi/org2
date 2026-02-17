@@ -99,6 +99,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.startDate`: optional start-date override (`YYYY-MM-DD`) for agenda range calculations
 - `org2.agenda.endDate`: optional end-date override (`YYYY-MM-DD`) for agenda range calculations
 - `org2.agenda.limit`: max rows to render after sorting (`0` = unlimited)
+- `org2.agenda.groupLimit`: optional per-day per-group row cap when `org2.agenda.groupBy` is set (`0` = unlimited)
 - `org2.agenda.includeOverdue`: include overdue items
 - `org2.agenda.statusFilter`: filter by TODO state bucket (`all`, `active`, `actionable`, `open`, `todo`, `in_progress`, `done`, `canceled`, `closed`, `custom`)
 - `org2.agenda.excludeStatusFilter`: exclude TODO state buckets (`all`, `active`, `actionable`, `open`, `todo`, `in_progress`, `done`, `canceled`, `closed`, `custom`)
@@ -136,6 +137,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.export.rewriteFileLinks`: when true, rewrite Org file links (`file:*.org`, `*.org2`) to `.html` hrefs in exported output and emit heading anchor IDs (including `:CUSTOM_ID:` targets) for rewritten `::* Heading` / `::#custom-id` links (`--rewrite-file-links`)
 - `org2.agenda.sortBy`: optional per-day sort order (`default`, or comma-separated keys like `file,headline,todo,priority,effort,kind,tags,line`); prefix a key with `-` (or suffix with `:desc`) for descending order
 - `org2.agenda.groupBy`: optional per-day grouping keys (`default`, or comma-separated keys like `todo,file`); uses the same key syntax as `sortBy` (including `-key`/`:desc`)
+- `org2.agenda.groupLimit`: optional per-day per-group row cap when `groupBy` is set (`0` = no per-group cap)
 - `org2.agenda.dateOrder`: overall date ordering for agenda groups (`asc` oldest-first or `desc` newest-first)
 - `org2.agenda.recursive`: when scope=`workspace`, whether to scan recursively (default true)
 - `org2.roam.dailiesDir`: optional root directory for Roam dailies (`YYYY-MM-DD.org2`); defaults to `org2.roam.indexDir`, then `org2.agenda.dir`, then workspace root
