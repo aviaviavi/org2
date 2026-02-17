@@ -1,0 +1,49 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-01-21",
+    "end": "2026-01-21",
+    "days": 1
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-01-21",
+      "weekday": "Wednesday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "UUID id task",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-sort-filter-id.input.txt",
+          "line": 7,
+          "id": "0f1e2d3c"
+        },
+        {
+          "todo": "TODO",
+          "headline": "Alpha custom id task",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-sort-filter-id.input.txt",
+          "line": 12,
+          "id": "alpha-node"
+        },
+        {
+          "todo": "TODO",
+          "headline": "Custom id task",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-sort-filter-id.input.txt",
+          "line": 2,
+          "id": "zeta-node"
+        },
+        {
+          "todo": "TODO",
+          "headline": "No id task",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-sort-filter-id.input.txt",
+          "line": 0
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}
