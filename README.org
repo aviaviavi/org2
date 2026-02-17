@@ -72,6 +72,7 @@ Current reality:
 - Agenda sort-order filtering (CLI + VS Code): *Available now* (MVP)
 - Agenda group-by controls (CLI + VS Code): *Available now* (MVP)
 - Agenda per-group row-limit controls (CLI + VS Code): *Available now* (MVP)
+- Agenda per-day row-limit controls (CLI + VS Code): *Available now* (MVP)
 - Agenda descending sort-order controls (CLI + VS Code): *Available now* (MVP)
 - Agenda priority sort-order controls (CLI + VS Code): *Available now* (MVP)
 - Agenda effort sort-order controls (CLI + VS Code): *Available now* (MVP)
@@ -354,6 +355,9 @@ npm run org2 -- agenda --dir /path/to/org --group "id"
 # Keep only the first N rows per day+group bucket (requires --group)
 npm run org2 -- agenda --dir /path/to/org --group "todo" --group-limit 3
 
+# Keep only the first N rows per day before applying global --limit
+npm run org2 -- agenda --dir /path/to/org --sort "priority,headline" --day-limit 10
+
 # Group normalized TODO status buckets first (todo -> in_progress -> done -> canceled -> custom)
 npm run org2 -- agenda --dir /path/to/org --sort "status,headline"
 
@@ -430,6 +434,7 @@ Notes:
 - =--sort= reorders rows within each date bucket (always date-first overall sorting); supported keys are =file=, =headline=, =todo=, =status=, =priority=, =effort=, =id=, =level=, =time=, =kind=, =tags=, and =line=. Prefix a key with =-= (or suffix with =:desc=) for descending order.
 - =--group= clusters rows within each date bucket by one or more keys (same key set/syntax as =--sort=). In JSON output this also adds per-day =groups= arrays with grouped row subsets.
 - =--group-limit= caps rows per day+group bucket (applies after sorting; requires =--group= to have an effect).
+- =--day-limit= caps rows per day after sort/group ordering (applied before global =--limit=).
 - =--date-order= controls overall date ordering (=asc= oldest-first, =desc= newest-first) while still applying per-day =--group= and =--sort= tie-breakers.
 - =--limit= caps total rendered rows after sorting (across overdue + upcoming).
 - =--from= overrides agenda start date (default: =--today= / current date).

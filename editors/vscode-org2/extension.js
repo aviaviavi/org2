@@ -740,6 +740,7 @@ async function fetchAgendaGroups(context, filter) {
   const groupBy = String(cfg.get('agenda.groupBy', 'default') || 'default').trim().toLowerCase();
   const dateOrder = String(cfg.get('agenda.dateOrder', 'asc') || 'asc').trim().toLowerCase();
   const agendaLimit = Number(cfg.get('agenda.limit', 0) || 0);
+  const agendaDayLimit = Number(cfg.get('agenda.dayLimit', 0) || 0);
   const agendaGroupLimit = Number(cfg.get('agenda.groupLimit', 0) || 0);
   const startDate = String(cfg.get('agenda.startDate', '') || '').trim();
   const endDate = String(cfg.get('agenda.endDate', '') || '').trim();
@@ -806,6 +807,9 @@ async function fetchAgendaGroups(context, filter) {
   if (excludeFileFilter) args.push('--exclude-file', excludeFileFilter);
   if (sortBy && sortBy !== 'default') args.push('--sort', sortBy);
   if (groupBy && groupBy !== 'default') args.push('--group', groupBy);
+  if (Number.isFinite(agendaDayLimit) && agendaDayLimit > 0) {
+    args.push('--day-limit', String(Math.floor(agendaDayLimit)));
+  }
   if (Number.isFinite(agendaGroupLimit) && agendaGroupLimit > 0 && groupBy && groupBy !== 'default') {
     args.push('--group-limit', String(Math.floor(agendaGroupLimit)));
   }
