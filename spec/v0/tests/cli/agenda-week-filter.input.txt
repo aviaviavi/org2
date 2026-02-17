@@ -1,0 +1,8 @@
+* TODO Week two kickoff
+SCHEDULED: <2026-01-05 Mon>
+* TODO Week three planning
+SCHEDULED: <2026-01-12 Mon>
+* TODO Week four deadline
+DEADLINE: <2026-01-20 Tue>
+* TODO Week ten review
+SCHEDULED: <2026-03-03 Tue>

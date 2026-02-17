@@ -238,6 +238,12 @@ npm run org2 -- agenda --dir /path/to/org --weekday mon,weekday
 # Exclude weekdays (for example, hide weekend rows)
 npm run org2 -- agenda --dir /path/to/org --exclude-weekday weekend
 
+# Filter by ISO week number (comma-separated 1..53, with wN/weekN aliases)
+npm run org2 -- agenda --dir /path/to/org --week w2,10
+
+# Exclude ISO week numbers (for example, hide holiday shutdown weeks)
+npm run org2 -- agenda --dir /path/to/org --exclude-week 52,53
+
 # Filter by day-of-month numbers (comma-separated 1..31 values)
 npm run org2 -- agenda --dir /path/to/org --day-of-month 1,15,31
 
@@ -372,6 +378,8 @@ Notes:
 - =--exclude-when= hides rows in matching schedule buckets (=overdue=, =today=, and/or =upcoming=).
 - =--weekday= filters rows to matching weekdays (supports =mon...sun= aliases, full names, and =weekday=/=weekend= aliases).
 - =--exclude-weekday= hides rows for matching weekdays (same allowed values as =--weekday=).
+- =--week= filters rows to matching ISO week numbers (comma-separated =1..53= values plus aliases like =w2= and =week10=).
+- =--exclude-week= hides rows for matching ISO week numbers (same allowed values as =--week=).
 - =--day-of-month= filters rows to matching day-of-month values (comma-separated =1..31= integers like =1,15,31=).
 - =--exclude-day-of-month= hides rows whose date day-of-month matches the provided =1..31= values.
 - =--month= filters rows to matching months (comma-separated values using =1..12= or name aliases like =jan=, =march=).
