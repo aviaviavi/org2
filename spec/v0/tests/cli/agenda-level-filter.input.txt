@@ -1,0 +1,11 @@
+* TODO Top level plan
+SCHEDULED: <2026-01-19 Mon>
+
+* Project
+** TODO Child task
+SCHEDULED: <2026-01-20 Tue>
+*** TODO Deep task
+DEADLINE: <2026-01-21 Wed>
+
+* TODO Another top
+DEADLINE: <2026-01-22 Thu>
