@@ -1,0 +1,1 @@
+agenda --files "spec/v0/tests/cli/agenda-day-of-month-filter.input.txt" --today 2026-01-01 --days 40 --format json --exclude-day-of-month 1
