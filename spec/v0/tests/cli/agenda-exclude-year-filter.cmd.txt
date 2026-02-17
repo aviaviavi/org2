@@ -1,0 +1,1 @@
+agenda --files "spec/v0/tests/cli/agenda-year-filter.input.txt" --from 2025-01-01 --to 2027-12-31 --format json --exclude-year 2026
