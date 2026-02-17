@@ -48,6 +48,8 @@ Current reality:
 - Agenda planning-kind exclusion filter (CLI + VS Code): *Available now* (MVP)
 - Agenda time-bucket filtering (CLI + VS Code): *Available now* (MVP)
 - Agenda time-bucket exclusion filter (CLI + VS Code): *Available now* (MVP)
+- Agenda weekday filtering (CLI + VS Code): *Available now* (MVP)
+- Agenda weekday exclusion filter (CLI + VS Code): *Available now* (MVP)
 - Agenda text matching filter (CLI + VS Code): *Available now* (MVP)
 - Agenda tag filter (CLI + VS Code): *Available now* (MVP)
 - Agenda TODO keyword filter (CLI + VS Code): *Available now* (MVP)
@@ -219,6 +221,12 @@ npm run org2 -- agenda --dir /path/to/org --when today
 # Exclude time buckets (hide overdue/today/upcoming rows)
 npm run org2 -- agenda --dir /path/to/org --exclude-when overdue
 
+# Filter by weekday (mon/tue/... or full names; supports weekday/weekend aliases)
+npm run org2 -- agenda --dir /path/to/org --weekday mon,weekday
+
+# Exclude weekdays (for example, hide weekend rows)
+npm run org2 -- agenda --dir /path/to/org --exclude-weekday weekend
+
 # Filter by headline text (case-insensitive, comma-separated OR terms)
 npm run org2 -- agenda --dir /path/to/org --match "release,retro"
 
@@ -294,6 +302,8 @@ Notes:
 - By default, overdue items are included; use =--no-overdue= to hide them.
 - =--when= filters by schedule bucket relative to =--today=: =overdue=, =today=, =upcoming=.
 - =--exclude-when= hides rows in matching schedule buckets (=overdue=, =today=, and/or =upcoming=).
+- =--weekday= filters rows to matching weekdays (supports =mon...sun= aliases, full names, and =weekday=/=weekend= aliases).
+- =--exclude-weekday= hides rows for matching weekdays (same allowed values as =--weekday=).
 - =--exclude-status= hides rows with matching TODO state buckets (=active=, =closed=, etc.; same allowed values as =--status=).
 - =--exclude-kind= hides rows with matching planning kinds (=scheduled= and/or =deadline=).
 - =--match= checks agenda headline text only, case-insensitively.
