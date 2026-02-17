@@ -158,8 +158,8 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.export.numberHeadings`: when true, prefix exported headings (and TOC entries when present) with generated section numbers (`--number-headings`)
 - `org2.export.numberHeadingsDepth`: optional heading-number depth limit; values `>0` pass `--number-headings-depth N` (and enable heading numbers automatically), `0` keeps full-depth numbering behavior
 - `org2.export.rewriteFileLinks`: when true, rewrite Org file links (`file:*.org`, `*.org2`) to `.html` hrefs in exported output and emit heading anchor IDs (including `:CUSTOM_ID:` targets) for rewritten `::* Heading` / `::#custom-id` links (`--rewrite-file-links`)
-- `org2.agenda.sortBy`: optional per-day sort order (`default`, or comma-separated keys like `file,headline,todo,status,priority,effort,level,time,kind,tags,line`); prefix a key with `-` (or suffix with `:desc`) for descending order
-- `org2.agenda.groupBy`: optional per-day grouping keys (`default`, or comma-separated keys like `status,todo,file`); uses the same key syntax as `sortBy` (including `status`, `time`, and `-key`/`:desc`)
+- `org2.agenda.sortBy`: optional per-day sort order (`default`, or comma-separated keys like `file,headline,todo,status,priority,effort,id,level,time,kind,tags,line`); prefix a key with `-` (or suffix with `:desc`) for descending order
+- `org2.agenda.groupBy`: optional per-day grouping keys (`default`, or comma-separated keys like `status,todo,id,file`); uses the same key syntax as `sortBy` (including `status`, `id`, `time`, and `-key`/`:desc`)
 - `org2.agenda.groupLimit`: optional per-day per-group row cap when `groupBy` is set (`0` = no per-group cap)
 - `org2.agenda.dateOrder`: overall date ordering for agenda groups (`asc` oldest-first or `desc` newest-first)
 - `org2.agenda.recursive`: when scope=`workspace`, whether to scan recursively (default true)
