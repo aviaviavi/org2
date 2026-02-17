@@ -616,6 +616,11 @@
           "default": "",
           "description": "Filter agenda rows by Org priority marker (for example `A,B` or `[#A],[#B]`, case-insensitive)."
         },
+        "org2.agenda.timeFilter": {
+          "type": "string",
+          "default": "",
+          "description": "Filter agenda rows by planning clock-time tokens. Supports comma-separated terms, exact `HH:MM` matches, and aliases like `timed`/`untimed`."
+        },
         "org2.agenda.effortFilter": {
           "type": "string",
           "default": "",
@@ -640,6 +645,11 @@
           "type": "string",
           "default": "",
           "description": "Exclude agenda rows by Org priority marker (for example `A,B` or `[#A],[#B]`, case-insensitive)."
+        },
+        "org2.agenda.excludeTimeFilter": {
+          "type": "string",
+          "default": "",
+          "description": "Exclude agenda rows by planning clock-time tokens. Supports comma-separated terms, exact `HH:MM` matches, and aliases like `timed`/`untimed`."
         },
         "org2.agenda.excludeEffortFilter": {
           "type": "string",

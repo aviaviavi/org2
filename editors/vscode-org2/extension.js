@@ -711,11 +711,13 @@ async function fetchAgendaGroups(context, filter) {
   const tagFilter = String(cfg.get('agenda.tagFilter', '') || '').trim();
   const todoKeywordFilter = String(cfg.get('agenda.todoKeywordFilter', '') || '').trim();
   const priorityFilter = String(cfg.get('agenda.priorityFilter', '') || '').trim();
+  const timeFilter = String(cfg.get('agenda.timeFilter', '') || '').trim().toLowerCase();
   const effortFilter = String(cfg.get('agenda.effortFilter', '') || '').trim();
   const propertyFilter = String(cfg.get('agenda.propertyFilter', '') || '').trim();
   const excludeTagFilter = String(cfg.get('agenda.excludeTagFilter', '') || '').trim();
   const excludeTodoKeywordFilter = String(cfg.get('agenda.excludeTodoKeywordFilter', '') || '').trim();
   const excludePriorityFilter = String(cfg.get('agenda.excludePriorityFilter', '') || '').trim();
+  const excludeTimeFilter = String(cfg.get('agenda.excludeTimeFilter', '') || '').trim().toLowerCase();
   const excludeEffortFilter = String(cfg.get('agenda.excludeEffortFilter', '') || '').trim();
   const excludePropertyFilter = String(cfg.get('agenda.excludePropertyFilter', '') || '').trim();
   const fileFilter = String(cfg.get('agenda.fileFilter', '') || '').trim();
@@ -763,11 +765,13 @@ async function fetchAgendaGroups(context, filter) {
   if (tagFilter) args.push('--tag', tagFilter);
   if (todoKeywordFilter) args.push('--todo', todoKeywordFilter);
   if (priorityFilter) args.push('--priority', priorityFilter);
+  if (timeFilter) args.push('--time', timeFilter);
   if (effortFilter) args.push('--effort', effortFilter);
   if (propertyFilter) args.push('--property', propertyFilter);
   if (excludeTagFilter) args.push('--exclude-tag', excludeTagFilter);
   if (excludeTodoKeywordFilter) args.push('--exclude-todo', excludeTodoKeywordFilter);
   if (excludePriorityFilter) args.push('--exclude-priority', excludePriorityFilter);
+  if (excludeTimeFilter) args.push('--exclude-time', excludeTimeFilter);
   if (excludeEffortFilter) args.push('--exclude-effort', excludeEffortFilter);
   if (excludePropertyFilter) args.push('--exclude-property', excludePropertyFilter);
   if (fileFilter) args.push('--file-match', fileFilter);
