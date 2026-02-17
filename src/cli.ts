@@ -276,6 +276,7 @@ type AgendaExcludeFileFilter = string[] | null;
 type AgendaTodoOrder = Map<string, number> | null;
 type AgendaStatusOrder = Map<AgendaStatusBucket, number> | null;
 type AgendaKindOrder = Map<AgendaPlanningKind, number> | null;
+type AgendaPriorityOrder = Map<string, number> | null;
 type AgendaSortKey =
   | "file"
   | "headline"
@@ -301,6 +302,7 @@ const AGENDA_STATUS_ALLOWED_HINT =
 const AGENDA_STATUS_ORDER_ALLOWED_HINT =
   "default, todo|open, in_progress|in-progress|prog, done|completed, canceled|cancelled|closed, custom";
 const AGENDA_KIND_ORDER_ALLOWED_HINT = "default, scheduled, deadline";
+const AGENDA_PRIORITY_ORDER_ALLOWED_HINT = "default, A-Z or 0-9 (for example: A,[#B],9)";
 const AGENDA_KIND_ALLOWED_HINT = "all, scheduled, deadline";
 const AGENDA_WHEN_ALLOWED_HINT = "all, overdue, today, upcoming";
 const AGENDA_WEEKDAY_ALLOWED_HINT =
@@ -1513,6 +1515,42 @@ function parseAgendaKindOrderArgs(rawArgs: string[]): {
   return { kindOrder: rank.size > 0 ? rank : null, invalid: [] };
 }
 
+function parseAgendaPriorityOrderArgs(rawArgs: string[]): {
+  priorityOrder: AgendaPriorityOrder;
+  invalid: string[];
+} {
+  if (rawArgs.length === 0) return { priorityOrder: null, invalid: [] };
+
+  const rank = new Map<string, number>();
+  const invalid: string[] = [];
+  let nextRank = 0;
+
+  for (const raw of rawArgs) {
+    for (const tokenRaw of String(raw).split(",")) {
+      const token = tokenRaw.trim();
+      if (!token) continue;
+      if (token.toLowerCase() === "default") continue;
+
+      const normalized = normalizeAgendaPriorityToken(token);
+      if (!normalized) {
+        invalid.push(tokenRaw.trim());
+        continue;
+      }
+
+      if (!rank.has(normalized)) {
+        rank.set(normalized, nextRank);
+        nextRank += 1;
+      }
+    }
+  }
+
+  if (invalid.length > 0) {
+    return { priorityOrder: rank.size > 0 ? rank : null, invalid };
+  }
+
+  return { priorityOrder: rank.size > 0 ? rank : null, invalid: [] };
+}
+
 function parseAgendaFileFilterArgs(rawArgs: string[]): AgendaFileFilter {
   if (rawArgs.length === 0) return null;
 
@@ -2543,7 +2581,11 @@ function formatByDate(items: ScheduledItem[], dateOrder: AgendaDateOrder, groupO
   return output;
 }
 
-function compareAgendaPriorityValues(aPriority: string | undefined, bPriority: string | undefined): number {
+function compareAgendaPriorityValues(
+  aPriority: string | undefined,
+  bPriority: string | undefined,
+  priorityOrder: AgendaPriorityOrder,
+): number {
   const a = normalizeAgendaPriorityToken(String(aPriority || ""));
   const b = normalizeAgendaPriorityToken(String(bPriority || ""));
 
@@ -2551,7 +2593,7 @@ function compareAgendaPriorityValues(aPriority: string | undefined, bPriority: s
   if (!a) return 1;
   if (!b) return -1;
 
-  const rank = (priority: string): number => {
+  const defaultRank = (priority: string): number => {
     if (/^[A-Z]$/.test(priority)) {
       return priority.charCodeAt(0) - 65;
     }
@@ -2559,6 +2601,16 @@ function compareAgendaPriorityValues(aPriority: string | undefined, bPriority: s
       return 26 + Number.parseInt(priority, 10);
     }
     return 100 + priority.charCodeAt(0);
+  };
+
+  const rank = (priority: string): number => {
+    if (priorityOrder && priorityOrder.size > 0) {
+      const customRank = priorityOrder.get(priority);
+      if (customRank !== undefined) return customRank;
+      return priorityOrder.size + defaultRank(priority);
+    }
+
+    return defaultRank(priority);
   };
 
   return rank(a) - rank(b);
@@ -2690,6 +2742,7 @@ function compareAgendaItemsByKey(
   todoOrder: AgendaTodoOrder,
   statusOrder: AgendaStatusOrder,
   kindOrder: AgendaKindOrder,
+  priorityOrder: AgendaPriorityOrder,
 ): number {
   if (key === "file") {
     const byFile = a.filePath.localeCompare(b.filePath);
@@ -2710,7 +2763,7 @@ function compareAgendaItemsByKey(
   }
 
   if (key === "priority") {
-    return compareAgendaPriorityValues(a.priority, b.priority);
+    return compareAgendaPriorityValues(a.priority, b.priority, priorityOrder);
   }
 
   if (key === "effort") {
@@ -2828,6 +2881,7 @@ function compareAgendaItems(
   todoOrder: AgendaTodoOrder,
   statusOrder: AgendaStatusOrder,
   kindOrder: AgendaKindOrder,
+  priorityOrder: AgendaPriorityOrder,
 ): number {
   const byDate = a.date.localeCompare(b.date);
   if (byDate !== 0) {
@@ -2836,7 +2890,7 @@ function compareAgendaItems(
 
   if (groupOrder && groupOrder.length > 0) {
     for (const field of groupOrder) {
-      const cmp = compareAgendaItemsByKey(a, b, field.key, todoOrder, statusOrder, kindOrder);
+      const cmp = compareAgendaItemsByKey(a, b, field.key, todoOrder, statusOrder, kindOrder, priorityOrder);
       if (cmp !== 0) {
         return field.direction === "desc" ? -cmp : cmp;
       }
@@ -2845,7 +2899,7 @@ function compareAgendaItems(
 
   if (sortOrder && sortOrder.length > 0) {
     for (const field of sortOrder) {
-      const cmp = compareAgendaItemsByKey(a, b, field.key, todoOrder, statusOrder, kindOrder);
+      const cmp = compareAgendaItemsByKey(a, b, field.key, todoOrder, statusOrder, kindOrder, priorityOrder);
       if (cmp !== 0) {
         return field.direction === "desc" ? -cmp : cmp;
       }
@@ -2978,6 +3032,7 @@ async function main(): Promise<void> {
   let agendaTodoOrderRaw: string[] = [];
   let agendaStatusOrderRaw: string[] = [];
   let agendaKindOrderRaw: string[] = [];
+  let agendaPriorityOrderRaw: string[] = [];
   let agendaPriorityFiltersRaw: string[] = [];
   let agendaTimeFiltersRaw: string[] = [];
   let agendaEffortFiltersRaw: string[] = [];
@@ -3535,6 +3590,14 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--priority-order") {
+      i++;
+      if (i < args.length) {
+        if (command === "agenda") {
+          agendaPriorityOrderRaw.push(args[i]!);
+        }
+        i++;
+      }
     } else if (arg === "--priority") {
       i++;
       if (i < args.length) {
@@ -3982,7 +4045,7 @@ async function main(): Promise<void> {
 
   if (help) {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--exclude-when FILTER[,FILTER...]] [--weekday FILTER[,FILTER...]] [--exclude-weekday FILTER[,FILTER...]] [--week FILTER[,FILTER...]] [--exclude-week FILTER[,FILTER...]] [--day-of-month FILTER[,FILTER...]] [--exclude-day-of-month FILTER[,FILTER...]] [--month FILTER[,FILTER...]] [--exclude-month FILTER[,FILTER...]] [--quarter FILTER[,FILTER...]] [--exclude-quarter FILTER[,FILTER...]] [--year FILTER[,FILTER...]] [--exclude-year FILTER[,FILTER...]] [--date YYYY-MM-DD[,YYYY-MM-DD...]] [--exclude-date YYYY-MM-DD[,YYYY-MM-DD...]] [--level N[,N...]] [--exclude-level N[,N...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--id ID[,ID...]] [--todo KEYWORD[,KEYWORD...]] [--todo-order KEYWORD[,KEYWORD...]] [--status-order STATUS[,STATUS...]] [--kind-order KIND[,KIND...]] [--priority A[,B...]] [--time VALUE[,VALUE...]] [--effort VALUE[,VALUE...]] [--property KEY=VALUE[,KEY=VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-id ID[,ID...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-time VALUE[,VALUE...]] [--exclude-effort VALUE[,VALUE...]] [--exclude-property KEY=VALUE[,KEY=VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--day-limit N] [--group-limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--exclude-when FILTER[,FILTER...]] [--weekday FILTER[,FILTER...]] [--exclude-weekday FILTER[,FILTER...]] [--week FILTER[,FILTER...]] [--exclude-week FILTER[,FILTER...]] [--day-of-month FILTER[,FILTER...]] [--exclude-day-of-month FILTER[,FILTER...]] [--month FILTER[,FILTER...]] [--exclude-month FILTER[,FILTER...]] [--quarter FILTER[,FILTER...]] [--exclude-quarter FILTER[,FILTER...]] [--year FILTER[,FILTER...]] [--exclude-year FILTER[,FILTER...]] [--date YYYY-MM-DD[,YYYY-MM-DD...]] [--exclude-date YYYY-MM-DD[,YYYY-MM-DD...]] [--level N[,N...]] [--exclude-level N[,N...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--id ID[,ID...]] [--todo KEYWORD[,KEYWORD...]] [--todo-order KEYWORD[,KEYWORD...]] [--status-order STATUS[,STATUS...]] [--kind-order KIND[,KIND...]] [--priority-order PRIORITY[,PRIORITY...]] [--priority A[,B...]] [--time VALUE[,VALUE...]] [--effort VALUE[,VALUE...]] [--property KEY=VALUE[,KEY=VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-id ID[,ID...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-time VALUE[,VALUE...]] [--exclude-effort VALUE[,VALUE...]] [--exclude-property KEY=VALUE[,KEY=VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--day-limit N] [--group-limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -4033,7 +4096,7 @@ async function main(): Promise<void> {
 
   if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
     console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--exclude-when FILTER[,FILTER...]] [--weekday FILTER[,FILTER...]] [--exclude-weekday FILTER[,FILTER...]] [--week FILTER[,FILTER...]] [--exclude-week FILTER[,FILTER...]] [--day-of-month FILTER[,FILTER...]] [--exclude-day-of-month FILTER[,FILTER...]] [--month FILTER[,FILTER...]] [--exclude-month FILTER[,FILTER...]] [--quarter FILTER[,FILTER...]] [--exclude-quarter FILTER[,FILTER...]] [--year FILTER[,FILTER...]] [--exclude-year FILTER[,FILTER...]] [--date YYYY-MM-DD[,YYYY-MM-DD...]] [--exclude-date YYYY-MM-DD[,YYYY-MM-DD...]] [--level N[,N...]] [--exclude-level N[,N...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--id ID[,ID...]] [--todo KEYWORD[,KEYWORD...]] [--todo-order KEYWORD[,KEYWORD...]] [--status-order STATUS[,STATUS...]] [--kind-order KIND[,KIND...]] [--priority A[,B...]] [--time VALUE[,VALUE...]] [--effort VALUE[,VALUE...]] [--property KEY=VALUE[,KEY=VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-id ID[,ID...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-time VALUE[,VALUE...]] [--exclude-effort VALUE[,VALUE...]] [--exclude-property KEY=VALUE[,KEY=VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--day-limit N] [--group-limit N] [--no-overdue] [--verbose-errors]",
+      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--exclude-when FILTER[,FILTER...]] [--weekday FILTER[,FILTER...]] [--exclude-weekday FILTER[,FILTER...]] [--week FILTER[,FILTER...]] [--exclude-week FILTER[,FILTER...]] [--day-of-month FILTER[,FILTER...]] [--exclude-day-of-month FILTER[,FILTER...]] [--month FILTER[,FILTER...]] [--exclude-month FILTER[,FILTER...]] [--quarter FILTER[,FILTER...]] [--exclude-quarter FILTER[,FILTER...]] [--year FILTER[,FILTER...]] [--exclude-year FILTER[,FILTER...]] [--date YYYY-MM-DD[,YYYY-MM-DD...]] [--exclude-date YYYY-MM-DD[,YYYY-MM-DD...]] [--level N[,N...]] [--exclude-level N[,N...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--id ID[,ID...]] [--todo KEYWORD[,KEYWORD...]] [--todo-order KEYWORD[,KEYWORD...]] [--status-order STATUS[,STATUS...]] [--kind-order KIND[,KIND...]] [--priority-order PRIORITY[,PRIORITY...]] [--priority A[,B...]] [--time VALUE[,VALUE...]] [--effort VALUE[,VALUE...]] [--property KEY=VALUE[,KEY=VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-id ID[,ID...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-time VALUE[,VALUE...]] [--exclude-effort VALUE[,VALUE...]] [--exclude-property KEY=VALUE[,KEY=VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--day-limit N] [--group-limit N] [--no-overdue] [--verbose-errors]",
     );
     console.error(
       "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
@@ -6431,6 +6494,13 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
+  const parsedAgendaPriorityOrder = parseAgendaPriorityOrderArgs(agendaPriorityOrderRaw);
+  if (parsedAgendaPriorityOrder.invalid.length > 0) {
+    console.error(
+      `Error: invalid agenda --priority-order value(s): ${parsedAgendaPriorityOrder.invalid.join(", ")}. Allowed: ${AGENDA_PRIORITY_ORDER_ALLOWED_HINT}`,
+    );
+    process.exit(1);
+  }
   const parsedAgendaPriority = parseAgendaPriorityFilterArgs(agendaPriorityFiltersRaw);
   if (parsedAgendaPriority.invalid.length > 0) {
     console.error(
@@ -6683,6 +6753,7 @@ async function main(): Promise<void> {
       parsedAgendaTodoOrder,
       parsedAgendaStatusOrder.statusOrder,
       parsedAgendaKindOrder.kindOrder,
+      parsedAgendaPriorityOrder.priorityOrder,
     ),
   );
 
