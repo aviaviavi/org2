@@ -1,1 +1,1 @@
-Error: invalid agenda --group value(s): banana. Allowed: default, [+-]file, [+-]headline, [+-]todo, [+-]priority, [+-]effort, [+-]level, [+-]kind, [+-]tags, [+-]line
+Error: invalid agenda --group value(s): banana. Allowed: default, [+-]file, [+-]headline, [+-]todo, [+-]priority, [+-]effort, [+-]level, [+-]time, [+-]kind, [+-]tags, [+-]line
