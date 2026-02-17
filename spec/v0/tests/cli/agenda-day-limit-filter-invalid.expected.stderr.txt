@@ -1,0 +1,1 @@
+Error: invalid agenda --day-limit value: 0. Expected a positive integer.
