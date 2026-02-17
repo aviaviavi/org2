@@ -1,0 +1,1 @@
+Error: invalid agenda --exclude-when value(s): banana. Allowed: all, overdue, today, upcoming
