@@ -16,7 +16,8 @@
           "headline": "Ship API",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-id-filter.input.txt",
-          "line": 0
+          "line": 0,
+          "id": "abc123"
         }
       ]
     },
