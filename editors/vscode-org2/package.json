@@ -601,6 +601,16 @@
           "default": "all",
           "description": "Exclude agenda rows by month before rendering. Supports comma-separated month numbers (`1..12`) and month name aliases (use `all` for no exclusion)."
         },
+        "org2.agenda.quarterFilter": {
+          "type": "string",
+          "default": "all",
+          "description": "Filter agenda rows by calendar quarter before rendering. Supports comma-separated quarter numbers (`1..4`) and aliases like `q1`/`quarter2` (use `all` to disable)."
+        },
+        "org2.agenda.excludeQuarterFilter": {
+          "type": "string",
+          "default": "all",
+          "description": "Exclude agenda rows by calendar quarter before rendering. Supports comma-separated quarter numbers (`1..4`) and aliases like `q3` (use `all` for no exclusion)."
+        },
         "org2.agenda.yearFilter": {
           "type": "string",
           "default": "all",
