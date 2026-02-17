@@ -56,6 +56,8 @@ Current reality:
 - Agenda tag filter (CLI + VS Code): *Available now* (MVP)
 - Agenda TODO keyword filter (CLI + VS Code): *Available now* (MVP)
 - Agenda priority filter (CLI + VS Code): *Available now* (MVP)
+- Agenda clock-time filter (CLI + VS Code): *Available now* (MVP)
+- Agenda clock-time exclusion filter (CLI + VS Code): *Available now* (MVP)
 - Agenda effort-property filter (CLI + VS Code): *Available now* (MVP)
 - Agenda exclusion filters (CLI + VS Code): *Available now* (MVP)
 - Agenda source-file filtering (CLI + VS Code): *Available now* (MVP)
@@ -251,6 +253,9 @@ npm run org2 -- agenda --dir /path/to/org --todo "waiting,done"
 # Filter by headline priority markers (case-insensitive; accepts A,B or [#A],[#B])
 npm run org2 -- agenda --dir /path/to/org --priority "a,[#b]"
 
+# Filter by planning clock time (exact HH:MM matches, plus timed/untimed aliases)
+npm run org2 -- agenda --dir /path/to/org --time "09:30,timed"
+
 # Filter by :EFFORT: property values (case-insensitive exact match; supports 0:30/30m/1h forms)
 npm run org2 -- agenda --dir /path/to/org --effort "0:30,1h"
 
@@ -265,6 +270,9 @@ npm run org2 -- agenda --dir /path/to/org --exclude-todo "done,canceled"
 
 # Exclude rows with headline priority markers (case-insensitive; accepts A,B or [#A],[#B])
 npm run org2 -- agenda --dir /path/to/org --exclude-priority "c"
+
+# Exclude rows by planning clock time (exact HH:MM matches, plus timed/untimed aliases)
+npm run org2 -- agenda --dir /path/to/org --exclude-time "17:00,untimed"
 
 # Exclude rows with matching :EFFORT: values (case-insensitive exact match)
 npm run org2 -- agenda --dir /path/to/org --exclude-effort "15m,0:30"
@@ -331,11 +339,13 @@ Notes:
 - =--tag= checks agenda headline tags only, case-insensitively (exact tag match).
 - =--todo= checks exact TODO keywords only, case-insensitively.
 - =--priority= checks Org headline priority markers (for example =A=, =B=, or =[#A]= tokens).
+- =--time= checks planning clock-time values using exact =HH:MM= tokens; special values =timed= and =untimed= match rows with/without explicit planning times.
 - =--effort= checks headline =:EFFORT:= property values (exact match after normalization; for example =0:30=, =30m=, and =1h=).
 - =--property= checks exact headline drawer properties using =KEY=VALUE= terms (case-insensitive; comma-separated OR matching).
 - =--exclude-tag= hides rows with matching headline tags.
 - =--exclude-todo= hides rows with matching TODO keywords.
 - =--exclude-priority= hides rows with matching Org priority markers.
+- =--exclude-time= hides rows with matching planning clock-time values (same token support as =--time=).
 - =--exclude-effort= hides rows with matching =:EFFORT:= property values.
 - =--exclude-property= hides rows with matching headline drawer property terms (=KEY=VALUE=, case-insensitive).
 - =--file-match= keeps rows whose source file path contains any term.
