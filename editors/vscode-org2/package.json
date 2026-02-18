@@ -89,7 +89,8 @@
       },
       {
         "command": "org2.refreshAgenda",
-        "title": "Org2: Refresh Agenda"
+        "title": "Org2: Refresh Agenda",
+        "icon": "$(refresh)"
       },
       {
         "command": "org2.formatWorkspaceCheck",
@@ -125,7 +126,8 @@
       },
       {
         "command": "org2.pickAgendaFilter",
-        "title": "Org2: Agenda Filter"
+        "title": "Org2: Agenda Filter",
+        "icon": "$(filter)"
       },
       {
         "command": "org2.openAgendaItem",
