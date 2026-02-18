@@ -382,6 +382,9 @@ npm run org2 -- agenda --dir /path/to/org --sort "priority,headline"
 # Sort by shortest effort estimate first (supports Org-style values like 0:30, 45m, 1h)
 npm run org2 -- agenda --dir /path/to/org --sort "effort,headline"
 
+# Override effort ordering for --sort effort / --group effort (supports none/empty/unset/no-effort)
+npm run org2 -- agenda --dir /path/to/org --sort "effort,headline" --effort-order "none,2h,0:30,1:15"
+
 # Sort by exact :ID:/ :CUSTOM_ID: values (rows without IDs sort last)
 npm run org2 -- agenda --dir /path/to/org --sort "id,headline"
 
@@ -438,6 +441,7 @@ Notes:
 - =--kind-order= sets explicit planning-kind ordering for =--sort kind= / =--group kind= (comma-separated values: =scheduled=, =deadline=). Kinds not listed in =--kind-order= fall back after ranked kinds using the default lexical order.
 - =--priority-order= sets explicit priority-marker ordering for =--sort priority= / =--group priority= (comma-separated values: =A..Z= and/or =0..9=, bracketed forms like =[#A]= are accepted). Priorities not listed in =--priority-order= fall back after ranked values using the default =A→Z= then =0→9= ordering.
 - =--tag-order= sets explicit tag ordering for =--sort tags= / =--group tags= (comma-separated tag names, case-insensitive). Rows containing listed tags rank first in the provided order; unlisted tags keep lexical fallback ordering.
+- =--effort-order= sets explicit effort ordering for =--sort effort= / =--group effort= (comma-separated effort tokens like =0:30=, =45m=, =2h=; plus aliases =none= / =empty= / =unset= / =no-effort= for rows without =:EFFORT:=). Tokens not listed in =--effort-order= fall back after ranked values using default effort sorting.
 - =--priority= checks Org headline priority markers (for example =A=, =B=, or =[#A]= tokens).
 - =--time= checks planning clock-time values using exact =HH:MM= tokens and inclusive ranges (=HH:MM-HH:MM=, including overnight windows like =22:00-02:00=); special values =timed= and =untimed= match rows with/without explicit planning times.
 - =--effort= checks headline =:EFFORT:= property values (exact match after normalization; for example =0:30=, =30m=, and =1h=).
