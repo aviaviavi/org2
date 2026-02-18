@@ -713,6 +713,11 @@
           "default": "",
           "description": "Optional custom ordering for effort values used by `agenda --sort effort` / `--group effort` (comma-separated effort tokens like `0:30,45m,2h`; aliases `none`, `empty`, `unset`, and `no-effort` target rows without `:EFFORT:`)."
         },
+        "org2.agenda.fileOrder": {
+          "type": "string",
+          "default": "",
+          "description": "Optional custom path-fragment ordering used by `agenda --sort file` / `--group file` (comma-separated case-insensitive terms like `projects,work,inbox`; matching files rank first in the provided order, unmatched paths keep lexical fallback ordering)."
+        },
         "org2.agenda.priorityFilter": {
           "type": "string",
           "default": "",
