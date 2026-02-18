@@ -1,0 +1,1 @@
+agenda --files "spec/v0/tests/cli/agenda-sort-filter-effort-order.input.txt" --today 2026-03-05 --days 1 --format json --group effort --sort headline --effort-order "none,2h,someday,0:30"
