@@ -728,6 +728,7 @@ async function fetchAgendaGroups(context, filter) {
   const kindOrder = String(cfg.get('agenda.kindOrder', '') || '').trim().toLowerCase();
   const priorityOrder = String(cfg.get('agenda.priorityOrder', '') || '').trim();
   const tagOrder = String(cfg.get('agenda.tagOrder', '') || '').trim().toLowerCase();
+  const effortOrder = String(cfg.get('agenda.effortOrder', '') || '').trim().toLowerCase();
   const priorityFilter = String(cfg.get('agenda.priorityFilter', '') || '').trim();
   const timeFilter = String(cfg.get('agenda.timeFilter', '') || '').trim().toLowerCase();
   const effortFilter = String(cfg.get('agenda.effortFilter', '') || '').trim();
@@ -802,6 +803,7 @@ async function fetchAgendaGroups(context, filter) {
   if (kindOrder) args.push('--kind-order', kindOrder);
   if (priorityOrder) args.push('--priority-order', priorityOrder);
   if (tagOrder) args.push('--tag-order', tagOrder);
+  if (effortOrder) args.push('--effort-order', effortOrder);
   if (priorityFilter) args.push('--priority', priorityFilter);
   if (timeFilter) args.push('--time', timeFilter);
   if (effortFilter) args.push('--effort', effortFilter);

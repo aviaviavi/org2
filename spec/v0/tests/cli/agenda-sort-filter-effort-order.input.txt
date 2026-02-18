@@ -1,0 +1,26 @@
+* TODO No estimate item
+SCHEDULED: <2026-03-05 Thu>
+
+* TODO Deep refactor
+SCHEDULED: <2026-03-05 Thu>
+:PROPERTIES:
+:EFFORT: 2:00
+:END:
+
+* TODO Quick admin task
+SCHEDULED: <2026-03-05 Thu>
+:PROPERTIES:
+:EFFORT: 0:30
+:END:
+
+* TODO Discovery spike
+SCHEDULED: <2026-03-05 Thu>
+:PROPERTIES:
+:EFFORT: someday
+:END:
+
+* TODO Standard planning
+SCHEDULED: <2026-03-05 Thu>
+:PROPERTIES:
+:EFFORT: 1:15
+:END:
