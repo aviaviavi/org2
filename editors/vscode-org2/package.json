@@ -708,6 +708,11 @@
           "default": "",
           "description": "Optional custom ordering for tags used by `agenda --sort tags` / `--group tags` (comma-separated tag names, case-insensitive; rows with listed tags are ranked first in the provided order, and unlisted tags keep lexical fallback ordering)."
         },
+        "org2.agenda.effortOrder": {
+          "type": "string",
+          "default": "",
+          "description": "Optional custom ordering for effort values used by `agenda --sort effort` / `--group effort` (comma-separated effort tokens like `0:30,45m,2h`; aliases `none`, `empty`, `unset`, and `no-effort` target rows without `:EFFORT:`)."
+        },
         "org2.agenda.priorityFilter": {
           "type": "string",
           "default": "",

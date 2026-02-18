@@ -1,0 +1,57 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-03-05",
+    "end": "2026-03-05",
+    "days": 1
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-03-05",
+      "weekday": "Thursday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "No estimate item",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-sort-filter-effort-order.input.txt",
+          "line": 0
+        },
+        {
+          "todo": "TODO",
+          "headline": "Deep refactor",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-sort-filter-effort-order.input.txt",
+          "line": 3,
+          "effort": "2:00"
+        },
+        {
+          "todo": "TODO",
+          "headline": "Discovery spike",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-sort-filter-effort-order.input.txt",
+          "line": 15,
+          "effort": "someday"
+        },
+        {
+          "todo": "TODO",
+          "headline": "Quick admin task",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-sort-filter-effort-order.input.txt",
+          "line": 9,
+          "effort": "0:30"
+        },
+        {
+          "todo": "TODO",
+          "headline": "Standard planning",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-sort-filter-effort-order.input.txt",
+          "line": 21,
+          "effort": "1:15"
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}
