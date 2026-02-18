@@ -864,6 +864,7 @@ export function renderOrgDocumentToHtml(
     includeHeadlineNumbers?: boolean;
     includeHeadlineNumberDepth?: number;
     rewriteFileLinks?: boolean;
+    postambleHtml?: string;
   } = {},
 ): { html: string; title: string; metadata: OrgExportMetadata } {
   const title = resolveTitle(doc, opts.title, opts.sourcePath);
@@ -906,6 +907,7 @@ export function renderOrgDocumentToHtml(
   const mainBody = [documentHeader, tocHtml, body]
     .filter((segment) => String(segment || "").trim().length > 0)
     .join("\n");
+  const postambleHtml = String(opts.postambleHtml || "").trim();
   const language = metadata.language || "en";
   const headMetaSection = renderHeadMetaSection(metadata);
   const headExtraSection = renderHeadExtraSection(metadata);
@@ -916,7 +918,8 @@ export function renderOrgDocumentToHtml(
 ${DOCUMENT_TOC_STYLE}` : DEFAULT_DOCUMENT_STYLE,
   });
 
-  const html = `<!doctype html>\n<html lang="${escapeAttr(language)}">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n${headMetaSection}${headExtraSection}${headStyleSection}</head>\n<body>\n<main class="org2-document">\n${mainBody}\n</main>\n</body>\n</html>\n`;
+  const postambleSection = postambleHtml ? `${postambleHtml}\n` : "";
+  const html = `<!doctype html>\n<html lang="${escapeAttr(language)}">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n${headMetaSection}${headExtraSection}${headStyleSection}</head>\n<body>\n<main class="org2-document">\n${mainBody}\n</main>\n${postambleSection}</body>\n</html>\n`;
 
   return { html, title, metadata };
 }

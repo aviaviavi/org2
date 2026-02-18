@@ -8,7 +8,13 @@ import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { parseOrgToCanonicalAst } from "./parser.js";
 import { printCanonicalAstToOrg } from "./printer.js";
-import { findConfigFile, loadConfig, resolveFilesFromConfig } from "./config.js";
+import {
+  findConfigFile,
+  loadConfig,
+  resolveFilesFromConfig,
+  resolveFilesFromDir,
+  type Org2PublishProjectConfig,
+} from "./config.js";
 import { formatOrgTimestamp, TODO_KEYWORDS, updateTodoInText, type TodoStatus } from "./todo.js";
 import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from "./planning.js";
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
@@ -3239,6 +3245,10 @@ async function main(): Promise<void> {
   // HTML export/publishing
   let exportAction: "html" = "html";
   let exportFile = "";
+  let publishProject = "";
+  let publishConfigPath = "";
+  let publishPreview = false;
+  let publishFormat: "text" | "json" = "text";
   let exportOut = "";
   let exportOutDir = "";
   let exportIndex = "";
@@ -3352,6 +3362,13 @@ async function main(): Promise<void> {
           exportAction = "html";
           i++;
         }
+      }
+    } else if (arg === "publish") {
+      command = "publish";
+      i++;
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        publishProject = args[i]!;
+        i++;
       }
     } else if (arg === "lsp") {
       command = "lsp";
@@ -3893,6 +3910,8 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "fmt") {
           fmtConfigPath = args[i]!;
+        } else if (command === "publish") {
+          publishConfigPath = args[i]!;
         }
         i++;
       }
@@ -4026,6 +4045,8 @@ async function main(): Promise<void> {
           refileFormat = v as "text" | "diff" | "json";
         } else if (command === "export" && (v === "text" || v === "json")) {
           exportFormat = v;
+        } else if (command === "publish" && (v === "text" || v === "json")) {
+          publishFormat = v;
         } else if (command === "agenda" && (v === "text" || v === "json")) {
           format = v;
         } else if (command === "todo" && (v === "text" || v === "json" || v === "diff")) {
@@ -4061,6 +4082,19 @@ async function main(): Promise<void> {
       i++;
     } else if (arg === "--overdue") {
       includeOverdue = true;
+      i++;
+    } else if (arg === "--project") {
+      i++;
+      if (i < args.length) {
+        if (command === "publish") {
+          publishProject = args[i]!;
+        }
+        i++;
+      }
+    } else if (arg === "--preview") {
+      if (command === "publish") {
+        publishPreview = true;
+      }
       i++;
     } else if (arg === "--out" || arg === "--output") {
       i++;
@@ -4239,6 +4273,9 @@ async function main(): Promise<void> {
       "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--css HREF[,HREF...]] [--no-default-style] [--toc] [--toc-depth N] [--number-headings] [--number-headings-depth N] [--rewrite-file-links] [--format text|json] [--apply]",
     );
     console.error(
+      "       org2 publish [PROJECT] [--project NAME] [--config PATH] [--preview] [--format text|json]",
+    );
+    console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
     );
     console.error(
@@ -4276,7 +4313,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
     console.error(
       "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--exclude-when FILTER[,FILTER...]] [--weekday FILTER[,FILTER...]] [--exclude-weekday FILTER[,FILTER...]] [--week FILTER[,FILTER...]] [--exclude-week FILTER[,FILTER...]] [--day-of-month FILTER[,FILTER...]] [--exclude-day-of-month FILTER[,FILTER...]] [--month FILTER[,FILTER...]] [--exclude-month FILTER[,FILTER...]] [--quarter FILTER[,FILTER...]] [--exclude-quarter FILTER[,FILTER...]] [--year FILTER[,FILTER...]] [--exclude-year FILTER[,FILTER...]] [--date YYYY-MM-DD[,YYYY-MM-DD...]] [--exclude-date YYYY-MM-DD[,YYYY-MM-DD...]] [--level N[,N...]] [--exclude-level N[,N...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--id ID[,ID...]] [--todo KEYWORD[,KEYWORD...]] [--todo-order KEYWORD[,KEYWORD...]] [--status-order STATUS[,STATUS...]] [--kind-order KIND[,KIND...]] [--priority-order PRIORITY[,PRIORITY...]] [--tag-order TAG[,TAG...]] [--effort-order VALUE[,VALUE...]] [--priority A[,B...]] [--time VALUE[,VALUE...]] [--effort VALUE[,VALUE...]] [--property KEY=VALUE[,KEY=VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-id ID[,ID...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-time VALUE[,VALUE...]] [--exclude-effort VALUE[,VALUE...]] [--exclude-property KEY=VALUE[,KEY=VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--day-limit N] [--group-limit N] [--no-overdue] [--verbose-errors]",
     );
@@ -4288,6 +4325,9 @@ async function main(): Promise<void> {
     );
     console.error(
       "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--css HREF[,HREF...]] [--no-default-style] [--toc] [--toc-depth N] [--number-headings] [--number-headings-depth N] [--rewrite-file-links] [--format text|json] [--apply]",
+    );
+    console.error(
+      "       org2 publish [PROJECT] [--project NAME] [--config PATH] [--preview] [--format text|json]",
     );
     console.error(
       "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
@@ -4575,6 +4615,185 @@ async function main(): Promise<void> {
       );
     }
 
+    return;
+  }
+
+  if (command === "publish") {
+    const configPathResolved = publishConfigPath.trim().length > 0
+      ? path.resolve(publishConfigPath.trim())
+      : findConfigFile(process.cwd());
+    if (!configPathResolved) {
+      console.error("Error: publish requires an org2.json config (pass --config PATH or run from a configured directory)");
+      process.exit(1);
+    }
+
+    let project: Org2PublishProjectConfig | null = null;
+    let projectNames: string[] = [];
+    try {
+      const cfg = loadConfig(configPathResolved);
+      const projects = cfg.publish?.projects || {};
+      projectNames = Object.keys(projects).sort((a, b) => a.localeCompare(b));
+      if (!publishProject) {
+        if (projectNames.length === 1) publishProject = projectNames[0]!;
+        else {
+          console.error(`Error: publish requires a project name${projectNames.length > 0 ? ` (available: ${projectNames.join(", ")})` : ""}`);
+          process.exit(1);
+        }
+      }
+      project = projects[publishProject] || null;
+    } catch (err) {
+      console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+
+    if (!project) {
+      console.error(`Error: publish project \"${publishProject}\" not found in ${configPathResolved}${projectNames.length > 0 ? ` (available: ${projectNames.join(", ")})` : ""}`);
+      process.exit(1);
+    }
+
+    const sourceDirValue = String(project.baseDir || "").trim();
+    const outDirValue = String(project.outDir || "").trim();
+    if (!sourceDirValue) {
+      console.error(`Error: publish project \"${publishProject}\" is missing required field: baseDir`);
+      process.exit(1);
+    }
+    if (!outDirValue) {
+      console.error(`Error: publish project \"${publishProject}\" is missing required field: outDir`);
+      process.exit(1);
+    }
+
+    const configDir = path.dirname(configPathResolved);
+    const sourceDir = path.resolve(configDir, sourceDirValue);
+    const outputRoot = path.resolve(configDir, outDirValue);
+    const sourceDirInput = path.relative(process.cwd(), sourceDir) || sourceDir;
+    const outputRootInput = path.relative(process.cwd(), outputRoot) || outputRoot;
+
+    const includePatterns = Array.isArray(project.include) && project.include.length > 0 ? project.include : ["*.org", "*.org2"];
+    const ignorePatterns = Array.isArray(project.ignore) ? project.ignore : [];
+    const publishRecursive = project.recursive !== false;
+    const sourceFiles = resolveFilesFromDir(sourceDir, includePatterns, ignorePatterns, publishRecursive).sort((a, b) => a.localeCompare(b));
+
+    const toDisplayPath = (absolutePath: string): string => {
+      const relative = path.relative(process.cwd(), absolutePath);
+      if (!relative || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
+        return relative || path.basename(absolutePath);
+      }
+      return absolutePath;
+    };
+
+    const exported: Array<{ sourcePath: string; outputPath: string; outputPathAbsolute: string; title: string; changed: boolean; metadata?: ExportMetadataPayload; }> = [];
+    for (const sourcePath of sourceFiles) {
+      const sourceRaw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
+      const sourceAst = parseOrgToCanonicalAst(sourceRaw);
+      const rendered = renderOrgDocumentToHtml(sourceAst, {
+        sourcePath: toDisplayPath(sourcePath),
+        stylesheets: project.stylesheets,
+        includeDefaultStyle: project.includeDefaultStyle,
+        includeToc: project.toc,
+        includeTocDepth: project.tocDepth,
+        includeHeadlineNumbers: project.numberHeadings,
+        includeHeadlineNumberDepth: project.numberHeadingsDepth,
+        rewriteFileLinks: project.rewriteFileLinks,
+        postambleHtml: project.postambleHtml,
+      });
+
+      const relativeSourcePath = path.relative(sourceDir, sourcePath);
+      const outputRelativePath = /\.(org|org2)$/i.test(relativeSourcePath)
+        ? relativeSourcePath.replace(/\.(org|org2)$/i, ".html")
+        : `${relativeSourcePath}.html`;
+
+      const outputPathAbsolute = path.resolve(outputRoot, outputRelativePath);
+      const outputPathDisplay = path.join(outputRootInput, outputRelativePath);
+      const existingOutput = fs.existsSync(outputPathAbsolute)
+        ? fs.readFileSync(outputPathAbsolute, "utf8").replace(/\r\n/g, "\n")
+        : "";
+      const changed = existingOutput !== rendered.html;
+
+      if (!publishPreview) {
+        fs.mkdirSync(path.dirname(outputPathAbsolute), { recursive: true });
+        fs.writeFileSync(outputPathAbsolute, rendered.html, "utf8");
+      }
+
+      exported.push({
+        sourcePath: toDisplayPath(sourcePath),
+        outputPath: outputPathDisplay,
+        outputPathAbsolute,
+        title: rendered.title,
+        changed,
+        ...(hasExportMetadata(rendered.metadata) ? { metadata: rendered.metadata } : {}),
+      });
+    }
+
+    const exportedForOutput = exported.map(({ sourcePath, outputPath, title, changed, metadata }) => ({
+      sourcePath,
+      outputPath,
+      title,
+      changed,
+      ...(hasExportMetadata(metadata) ? { metadata } : {}),
+    }));
+
+    let indexOutput: { outputPath: string; title: string; changed: boolean } | null = null;
+    let indexPathRaw = "";
+    let indexTitleRaw = "";
+    if (typeof project.index === "string") indexPathRaw = project.index;
+    else if (project.index && typeof project.index === "object") {
+      indexPathRaw = String(project.index.file || "").trim();
+      indexTitleRaw = String(project.index.title || "").trim();
+    }
+
+    if (indexPathRaw) {
+      const indexPathAbsolute = path.isAbsolute(indexPathRaw) ? path.resolve(indexPathRaw) : path.resolve(outputRoot, indexPathRaw);
+      const indexPathDisplay = path.isAbsolute(indexPathRaw) ? toDisplayPath(indexPathAbsolute) : path.join(outputRootInput, indexPathRaw);
+      const indexRendered = renderOrgExportIndexToHtml({
+        title: indexTitleRaw || undefined,
+        sourcePath: indexPathRaw,
+        stylesheets: project.stylesheets,
+        includeDefaultStyle: project.includeDefaultStyle,
+        items: exported.map((item) => {
+          const hrefRaw = path.relative(path.dirname(indexPathAbsolute), item.outputPathAbsolute);
+          const href = String(hrefRaw || path.basename(item.outputPathAbsolute)).split(path.sep).join("/");
+          return { title: item.title, href, sourcePath: item.sourcePath };
+        }),
+      });
+
+      const existingIndex = fs.existsSync(indexPathAbsolute)
+        ? fs.readFileSync(indexPathAbsolute, "utf8").replace(/\r\n/g, "\n")
+        : "";
+      const indexChanged = existingIndex !== indexRendered.html;
+
+      if (!publishPreview) {
+        fs.mkdirSync(path.dirname(indexPathAbsolute), { recursive: true });
+        fs.writeFileSync(indexPathAbsolute, indexRendered.html, "utf8");
+      }
+
+      indexOutput = { outputPath: indexPathDisplay, title: indexRendered.title, changed: indexChanged };
+    }
+
+    if (publishFormat === "json") {
+      process.stdout.write(
+        JSON.stringify(
+          {
+            kind: "publish-html",
+            project: publishProject,
+            configPath: toDisplayPath(configPathResolved),
+            sourceDir: sourceDirInput,
+            outputDir: outputRootInput,
+            recursive: publishRecursive,
+            preview: publishPreview,
+            count: exportedForOutput.length,
+            exported: exportedForOutput,
+            index: indexOutput,
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+      return;
+    }
+
+    process.stdout.write(`${publishPreview ? "Previewed" : "Published"} ${exportedForOutput.length} file(s) for project ${publishProject} to ${outputRootInput}\n`);
+    for (const item of exportedForOutput) process.stdout.write(`${item.sourcePath} -> ${item.outputPath}${item.changed ? "" : " (unchanged)"}\n`);
+    if (indexOutput) process.stdout.write(`index -> ${indexOutput.outputPath}${indexOutput.changed ? "" : " (unchanged)"}\n`);
     return;
   }
 

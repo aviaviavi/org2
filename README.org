@@ -625,6 +625,50 @@ Notes:
 - Single-file JSON export includes a =metadata= object when keyword metadata/head snippets are present.
 - Without =--apply=, output is preview-only (single-file emits HTML text by default; batch mode emits summary text or JSON).
 
+*** Project publish (=publish=)
+
+Use =publish= for project-level HTML publishing from =org2.json= (Org2 analog to =org-publish-project-alist=).
+
+#+begin_src sh
+# Publish a named project from org2.json (writes files by default)
+npm run org2 -- publish homepage
+
+# Preview publish plan/output metadata without writing files
+npm run org2 -- publish homepage --preview --format json
+
+# Use an explicit config path
+npm run org2 -- publish --project homepage --config /path/to/org2.json
+#+end_src
+
+Example =org2.json= project:
+
+#+begin_src json
+{
+  "publish": {
+    "projects": {
+      "homepage": {
+        "baseDir": "/Users/avi/dev/homepage",
+        "outDir": "/Users/avi/dev/homepage/docs",
+        "include": ["index.org", "posts/**/*.org", "sitemap.org"],
+        "ignore": [".git/**"],
+        "recursive": true,
+        "rewriteFileLinks": true,
+        "includeDefaultStyle": false,
+        "postambleHtml": "<div id=\"postamble\" class=\"status\">...</div>",
+        "index": { "file": "sitemap.html", "title": "Sitemap" }
+      }
+    }
+  }
+}
+#+end_src
+
+Notes:
+- =publish= reads project config from =publish.projects.<name>= in =org2.json=.
+- Required fields: =baseDir= + =outDir=.
+- =publish= exports matching =.org/.org2= files to HTML preserving relative paths under =outDir=.
+- =postambleHtml= appends raw HTML near the end of =<body>= on every exported page (for site-wide footers/postambles).
+- Publish project options support TOC/heading numbering/rewrite-file-links/index generation and stylesheet/default-style controls.
+
 *** Formatter (=fmt=) quick examples
 
 #+begin_src sh
