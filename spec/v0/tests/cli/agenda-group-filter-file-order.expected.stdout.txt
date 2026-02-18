@@ -1,0 +1,77 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-03-06",
+    "end": "2026-03-06",
+    "days": 1
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-03-06",
+      "weekday": "Friday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Ops rollout",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-file-order-ops.input.txt",
+          "line": 0
+        },
+        {
+          "todo": "TODO",
+          "headline": "Inbox triage",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-file-order-inbox.input.txt",
+          "line": 0
+        },
+        {
+          "todo": "TODO",
+          "headline": "Projects roadmap",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-file-order-projects.input.txt",
+          "line": 0
+        }
+      ],
+      "groups": [
+        {
+          "label": "File: spec/v0/tests/cli/agenda-file-order-ops.input.txt",
+          "items": [
+            {
+              "todo": "TODO",
+              "headline": "Ops rollout",
+              "kind": "SCHEDULED",
+              "file": "spec/v0/tests/cli/agenda-file-order-ops.input.txt",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "label": "File: spec/v0/tests/cli/agenda-file-order-inbox.input.txt",
+          "items": [
+            {
+              "todo": "TODO",
+              "headline": "Inbox triage",
+              "kind": "SCHEDULED",
+              "file": "spec/v0/tests/cli/agenda-file-order-inbox.input.txt",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "label": "File: spec/v0/tests/cli/agenda-file-order-projects.input.txt",
+          "items": [
+            {
+              "todo": "TODO",
+              "headline": "Projects roadmap",
+              "kind": "SCHEDULED",
+              "file": "spec/v0/tests/cli/agenda-file-order-projects.input.txt",
+              "line": 0
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}

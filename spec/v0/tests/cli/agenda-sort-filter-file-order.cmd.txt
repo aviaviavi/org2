@@ -1,0 +1,1 @@
+agenda --files "spec/v0/tests/cli/agenda-file-order-ops.input.txt" "spec/v0/tests/cli/agenda-file-order-inbox.input.txt" "spec/v0/tests/cli/agenda-file-order-projects.input.txt" --today 2026-03-06 --days 1 --format json --sort "file,headline" --file-order "projects,inbox"
