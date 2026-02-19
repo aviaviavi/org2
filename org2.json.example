@@ -12,6 +12,10 @@
         "recursive": true,
         "rewriteFileLinks": true,
         "includeDefaultStyle": false,
+        "headIncludes": [
+          "<link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/prismjs/themes/prism.min.css\" />",
+          "<script defer src=\"https://cdn.jsdelivr.net/npm/prismjs/prism.min.js\"></script>"
+        ],
         "postambleHtml": "<div id=\"postamble\" class=\"status\"><p class=\"postamble\">© Avi Press 2026</p></div>",
         "index": {
           "file": "sitemap.html",

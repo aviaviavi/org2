@@ -335,9 +335,13 @@ function renderHeadMetaSection(metadata: OrgExportMetadata): string {
   return rows.length > 0 ? `${rows.join("\n")}\n` : "";
 }
 
-function renderHeadExtraSection(metadata: OrgExportMetadata): string {
-  if (!Array.isArray(metadata.htmlHead) || metadata.htmlHead.length === 0) return "";
-  const snippets = metadata.htmlHead.map((snippet) => String(snippet || "").trim()).filter((snippet) => snippet.length > 0);
+function renderHeadExtraSection(metadata: OrgExportMetadata, extraHead?: string[]): string {
+  const snippets = [
+    ...(Array.isArray(metadata.htmlHead) ? metadata.htmlHead : []),
+    ...(Array.isArray(extraHead) ? extraHead : []),
+  ]
+    .map((snippet) => String(snippet || "").trim())
+    .filter((snippet) => snippet.length > 0);
   return snippets.length > 0 ? `${snippets.join("\n")}\n` : "";
 }
 
@@ -679,12 +683,15 @@ function renderPropertyDrawer(node: PropertyDrawerNode): string {
 }
 
 function renderSrcBlock(node: SrcBlockNode): string {
-  const language = String(node.begin.afterKeywordRaw || "")
+  const languageRaw = String(node.begin.afterKeywordRaw || "")
     .trim()
     .split(/\s+/)[0];
-  const classAttr = language ? ` class="language-${escapeAttr(language)}"` : "";
+  const language = languageRaw.toLowerCase().replace(/[^a-z0-9_+-]/g, "");
+  const languageClass = language ? ` language-${language}` : "";
+  const codeClassAttr = language ? ` class="language-${escapeAttr(language)}"` : "";
   const body = escapeHtml(node.bodyRaw.replace(/\n$/, ""));
-  return `<pre class="org2-src"><code${classAttr}>${body}</code></pre>`;
+  const baseStyle = "padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.45;";
+  return `<pre class="org2-src${languageClass}" style="${escapeAttr(baseStyle)}"><code${codeClassAttr}>${body}</code></pre>`;
 }
 
 function renderBlock(node: BlockNode): string {
@@ -883,6 +890,7 @@ export function renderOrgDocumentToHtml(
     includeHeadlineNumberDepth?: number;
     rewriteFileLinks?: boolean;
     postambleHtml?: string;
+    headIncludes?: string[];
     includeDocumentHeader?: boolean;
     compatContentWrapper?: boolean;
   } = {},
@@ -931,7 +939,7 @@ export function renderOrgDocumentToHtml(
   const postambleHtml = String(opts.postambleHtml || "").trim();
   const language = metadata.language || "en";
   const headMetaSection = renderHeadMetaSection(metadata);
-  const headExtraSection = renderHeadExtraSection(metadata);
+  const headExtraSection = renderHeadExtraSection(metadata, opts.headIncludes);
   const headStyleSection = renderHeadStyleSection({
     stylesheets: opts.stylesheets,
     includeDefaultStyle: opts.includeDefaultStyle,
