@@ -68,32 +68,43 @@ export function getDefaultConfig(): Org2Config {
   };
 }
 
-function matchesPattern(filePath: string, pattern: string): boolean {
-  if (pattern.includes("**")) {
-    const parts = pattern.split("**");
-    if (parts.length === 2) {
-      const prefix = parts[0].replace(/\/$/, "");
-      const suffix = parts[1].replace(/^\//, "");
+function normalizePathForMatch(value: string): string {
+  return String(value || "").replace(/\\/g, "/");
+}
 
-      if (prefix && !filePath.startsWith(prefix)) return false;
-      if (suffix) {
-        const remaining = filePath.slice(prefix ? prefix.length + 1 : 0);
-        return (
-          suffix === "*" ||
-          remaining.endsWith(suffix) ||
-          new RegExp(`.*${suffix.replace(/\./g, "\\.")}$`).test(remaining)
-        );
-      }
-      return true;
+function segmentMatches(pathSegment: string, patternSegment: string): boolean {
+  const escaped = patternSegment.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`^${escaped.replace(/\*/g, ".*")}$`);
+  return regex.test(pathSegment);
+}
+
+function matchSegments(pathSegments: string[], patternSegments: string[], pi: number = 0, pj: number = 0): boolean {
+  if (pj >= patternSegments.length) return pi >= pathSegments.length;
+
+  const pat = patternSegments[pj];
+  if (pat === "**") {
+    for (let k = pi; k <= pathSegments.length; k += 1) {
+      if (matchSegments(pathSegments, patternSegments, k, pj + 1)) return true;
     }
+    return false;
   }
 
-  if (pattern.startsWith("*.")) {
-    const ext = pattern.slice(1);
-    return filePath.endsWith(ext);
+  if (pi >= pathSegments.length) return false;
+  if (!segmentMatches(pathSegments[pi] ?? "", pat)) return false;
+  return matchSegments(pathSegments, patternSegments, pi + 1, pj + 1);
+}
+
+function matchesPattern(filePath: string, pattern: string): boolean {
+  const normalizedPath = normalizePathForMatch(filePath);
+  const normalizedPattern = normalizePathForMatch(pattern);
+
+  if (normalizedPattern.includes("*")) {
+    const pathSegments = normalizedPath.split("/").filter((seg) => seg.length > 0);
+    const patternSegments = normalizedPattern.split("/").filter((seg) => seg.length > 0);
+    return matchSegments(pathSegments, patternSegments);
   }
 
-  return filePath === pattern || filePath.startsWith(pattern + "/");
+  return normalizedPath === normalizedPattern || normalizedPath.startsWith(normalizedPattern + "/");
 }
 
 function shouldIgnore(filePath: string, ignorePatterns: string[]): boolean {
