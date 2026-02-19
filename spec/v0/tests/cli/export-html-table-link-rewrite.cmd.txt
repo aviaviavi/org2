@@ -1,0 +1,1 @@
+export html --file spec/v0/tests/cli/export-html-table-link-rewrite.input.txt --format json --no-default-style --rewrite-file-links

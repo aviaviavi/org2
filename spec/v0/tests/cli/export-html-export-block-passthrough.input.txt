@@ -1,0 +1,4 @@
+#+title: Export block passthrough
+#+BEGIN_EXPORT html
+<div class="raw-html">hi</div>
+#+END_EXPORT

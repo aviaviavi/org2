@@ -1,0 +1,9 @@
+{
+  "kind": "export-html",
+  "sourcePath": "spec/v0/tests/cli/export-html-headline-space-required.input.txt",
+  "outputPath": "spec/v0/tests/cli/export-html-headline-space-required.input.txt.html",
+  "title": "Headline disambiguation",
+  "apply": false,
+  "changed": true,
+  "html": "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\" />\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n<title>Headline disambiguation</title>\n</head>\n<body>\n<main class=\"org2-document\">\n<p><strong>About me</strong></p>\n</main>\n</body>\n</html>\n"
+}
