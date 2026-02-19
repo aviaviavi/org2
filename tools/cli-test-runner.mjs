@@ -27,7 +27,7 @@ for (const cmdFile of cmdFiles) {
     continue;
   }
 
-  const expectedStderr = fs.readFileSync(expectedStderrPath, "utf8");
+  const expectedStderr = fs.readFileSync(expectedStderrPath, "utf8").replaceAll("__CWD__", process.cwd());
   const expectedStdout = fs.existsSync(expectedStdoutPath) ? fs.readFileSync(expectedStdoutPath, "utf8") : null;
   const expectedCode = fs.existsSync(expectedCodePath)
     ? Number(fs.readFileSync(expectedCodePath, "utf8").trim())
