@@ -28,6 +28,11 @@ import type {
   TimestampRangeNode,
 } from "./ast.js";
 
+const DEFAULT_SYNTAX_HEAD_INCLUDES = [
+  '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs/themes/prism.min.css" />',
+  '<script defer src="https://cdn.jsdelivr.net/npm/prismjs/prism.min.js"></script>',
+];
+
 // Parse ISO date string to Date
 function parseIsoDate(dateStr: string): Date {
   const d = new Date(dateStr);
@@ -4681,6 +4686,12 @@ async function main(): Promise<void> {
       return absolutePath;
     };
 
+    const resolvedHeadIncludes = Array.isArray(project.headIncludes) && project.headIncludes.length > 0
+      ? project.headIncludes
+      : project.syntaxHighlighting === false
+        ? []
+        : DEFAULT_SYNTAX_HEAD_INCLUDES;
+
     const exported: Array<{ sourcePath: string; outputPath: string; outputPathAbsolute: string; title: string; changed: boolean; metadata?: ExportMetadataPayload; }> = [];
     for (const sourcePath of sourceFiles) {
       const sourceRaw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
@@ -4695,7 +4706,7 @@ async function main(): Promise<void> {
         includeHeadlineNumberDepth: project.numberHeadingsDepth,
         rewriteFileLinks: project.rewriteFileLinks,
         postambleHtml: project.postambleHtml,
-        headIncludes: project.headIncludes,
+        headIncludes: resolvedHeadIncludes,
         includeDocumentHeader: true,
         compatContentWrapper: true,
       });
