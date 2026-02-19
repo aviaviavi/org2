@@ -1,0 +1,25 @@
+{
+  "publish": {
+    "projects": {
+      "fixture": {
+        "baseDir": "spec/v0/fixtures/cli-publish-parity",
+        "outDir": "spec/v0/fixtures/cli-publish-parity/out",
+        "include": [
+          "index.org",
+          "posts/**/*.org",
+          "sitemap.org"
+        ],
+        "ignore": [
+          ".git/**"
+        ],
+        "recursive": true,
+        "rewriteFileLinks": true,
+        "includeDefaultStyle": false,
+        "index": {
+          "file": "sitemap.html",
+          "title": "Sitemap for project fixture"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,3 @@
+#+title: Fixture Home
+* Home
+See [[file:posts/post-a.org][Post A]]
