@@ -1,0 +1,3 @@
+#+HTML_HEAD_EXTRA: <meta name="a" content="1" />
+#+HTML_HEAD_EXTRA: <meta name="b" content="2" />
+#+HTML_HEAD_EXTRA: <meta name="c" content="3" />
