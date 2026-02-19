@@ -19,6 +19,7 @@ import type {
   TimestampNode,
   TimestampRangeNode,
 } from "./ast.js";
+import { parseInlinesFromText } from "./parser.js";
 
 function escapeHtml(value: string): string {
   return String(value)
@@ -683,22 +684,34 @@ function renderSrcBlock(node: SrcBlockNode): string {
 }
 
 function renderBlock(node: BlockNode): string {
-  const body = escapeHtml(node.bodyRaw.replace(/\n$/, ""));
+  const bodyRaw = node.bodyRaw.replace(/\n$/, "");
+  const body = escapeHtml(bodyRaw);
 
   if (node.kind === "quote") return `<blockquote>${body}</blockquote>`;
   if (node.kind === "center") return `<div class="org2-center">${body}</div>`;
   if (node.kind === "verse") return `<pre class="org2-verse">${body}</pre>`;
   if (node.kind === "comment") return `<pre class="org2-comment">${body}</pre>`;
+  if (node.kind === "export") {
+    const exportTarget = String(node.begin.afterKeywordRaw || "").trim().toLowerCase();
+    if (exportTarget === "html") return bodyRaw;
+    return `<pre class="org2-export">${body}</pre>`;
+  }
   return `<pre class="org2-example">${body}</pre>`;
 }
 
-function renderTableRow(row: TableRowNode, asHeader: boolean): string {
+function renderTableRow(row: TableRowNode, asHeader: boolean, context: RenderContext): string {
   const cellTag = asHeader ? "th" : "td";
-  const cells = row.cells.map((cell) => `<${cellTag}>${escapeHtml(String(cell || "").trim())}</${cellTag}>`).join("");
+  const cells = row.cells
+    .map((cell) => {
+      const parsed = parseInlinesFromText(String(cell || "").trim());
+      const rendered = renderInlineChildren(parsed, context);
+      return `<${cellTag}>${rendered}</${cellTag}>`;
+    })
+    .join("");
   return `<tr>${cells}</tr>`;
 }
 
-function renderTable(node: TableNode): string {
+function renderTable(node: TableNode, context: RenderContext): string {
   const rows = node.rows;
   const firstHline = rows.findIndex((row): row is TableHlineNode => row.type === "TableHline");
 
@@ -713,8 +726,9 @@ function renderTable(node: TableNode): string {
       : rows.filter((row): row is TableRowNode => row.type === "TableRow");
 
   const resolvedBodyRows = bodyRows.length > 0 ? bodyRows : headerRows;
-  const renderedHead = headerRows.length > 0 ? `<thead>\n${headerRows.map((row) => renderTableRow(row, true)).join("\n")}\n</thead>` : "";
-  const renderedBody = `<tbody>\n${resolvedBodyRows.map((row) => renderTableRow(row, false)).join("\n")}\n</tbody>`;
+  const renderedHead =
+    headerRows.length > 0 ? `<thead>\n${headerRows.map((row) => renderTableRow(row, true, context)).join("\n")}\n</thead>` : "";
+  const renderedBody = `<tbody>\n${resolvedBodyRows.map((row) => renderTableRow(row, false, context)).join("\n")}\n</tbody>`;
 
   return `<table>\n${[renderedHead, renderedBody].filter(Boolean).join("\n")}\n</table>`;
 }
@@ -770,7 +784,7 @@ function renderNode(node: Node, context: RenderContext): string {
   if (node.type === "PropertyDrawer") return renderPropertyDrawer(node);
   if (node.type === "SrcBlock") return renderSrcBlock(node);
   if (node.type === "Block") return renderBlock(node);
-  if (node.type === "Table") return renderTable(node);
+  if (node.type === "Table") return renderTable(node, context);
   if (node.type === "Drawer") {
     const name = escapeHtml(node.nameRaw);
     const body = escapeHtml(node.bodyRaw.replace(/\n$/, ""));
