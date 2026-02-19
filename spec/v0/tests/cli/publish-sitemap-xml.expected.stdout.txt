@@ -1,7 +1,7 @@
 {
   "kind": "publish-html",
   "project": "fixture",
-  "configPath": "spec/v0/fixtures/cli-publish-parity/org2.json",
+  "configPath": "spec/v0/fixtures/cli-publish-parity/org2-sitemap.json",
   "sourceDir": "spec/v0/fixtures/cli-publish-parity",
   "outputDir": "spec/v0/fixtures/cli-publish-parity/out",
   "recursive": true,
@@ -38,7 +38,11 @@
     "title": "Sitemap for project fixture",
     "changed": true
   },
-  "sitemapXml": null,
+  "sitemapXml": {
+    "outputPath": "spec/v0/fixtures/cli-publish-parity/out/sitemap.xml",
+    "urlCount": 5,
+    "changed": true
+  },
   "assets": [
     {
       "sourcePath": "spec/v0/fixtures/cli-publish-parity/css.txt",
