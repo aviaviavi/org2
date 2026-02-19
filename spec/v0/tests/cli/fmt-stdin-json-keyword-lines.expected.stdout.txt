@@ -1,0 +1,5 @@
+{
+  "$schema": "org2:fmt-stdin:v1",
+  "changed": false,
+  "formattedText": "#+HTML_HEAD_EXTRA: <meta name=\"a\" content=\"1\" />\n#+HTML_HEAD_EXTRA: <meta name=\"b\" content=\"2\" />\n#+HTML_HEAD_EXTRA: <meta name=\"c\" content=\"3\" />\n"
+}
