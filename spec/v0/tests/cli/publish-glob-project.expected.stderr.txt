@@ -1,1 +1,1 @@
-Error reading directory /Users/avi/clawd/org2/spec/v0/fixtures/cli-publish-parity/spec/v0/fixtures/cli-publish-parity: ENOENT: no such file or directory, scandir '/Users/avi/clawd/org2/spec/v0/fixtures/cli-publish-parity/spec/v0/fixtures/cli-publish-parity'
+Error reading directory __CWD__/spec/v0/fixtures/cli-publish-parity/spec/v0/fixtures/cli-publish-parity: ENOENT: no such file or directory, scandir '__CWD__/spec/v0/fixtures/cli-publish-parity/spec/v0/fixtures/cli-publish-parity'
