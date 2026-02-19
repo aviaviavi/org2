@@ -22,6 +22,11 @@ export type Org2PublishProjectConfig = {
     include?: string[];
     ignore?: string[];
   };
+  sitemapXml?: {
+    file?: string;
+    baseUrl: string;
+    includeIndexPage?: boolean;
+  };
 };
 
 export interface Org2Config {

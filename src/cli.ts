@@ -4739,6 +4739,7 @@ async function main(): Promise<void> {
     }));
 
     let indexOutput: { outputPath: string; title: string; changed: boolean } | null = null;
+    let sitemapXmlOutput: { outputPath: string; urlCount: number; changed: boolean } | null = null;
     let indexPathRaw = "";
     let indexTitleRaw = "";
     if (typeof project.index === "string") indexPathRaw = project.index;
@@ -4773,6 +4774,62 @@ async function main(): Promise<void> {
       }
 
       indexOutput = { outputPath: indexPathDisplay, title: indexRendered.title, changed: indexChanged };
+    }
+
+    if (project.sitemapXml) {
+      const baseUrlRaw = String(project.sitemapXml.baseUrl || "").trim();
+      if (!baseUrlRaw) {
+        console.error(`Error: publish project "${publishProject}" sitemapXml.baseUrl is required when sitemapXml is configured`);
+        process.exit(1);
+      }
+
+      const baseUrl = baseUrlRaw.replace(/\/$/, "");
+      const sitemapFileRaw = String(project.sitemapXml.file || "sitemap.xml").trim() || "sitemap.xml";
+      const sitemapPathAbsolute = path.isAbsolute(sitemapFileRaw)
+        ? path.resolve(sitemapFileRaw)
+        : path.resolve(outputRoot, sitemapFileRaw);
+      const sitemapPathDisplay = path.isAbsolute(sitemapFileRaw)
+        ? toDisplayPath(sitemapPathAbsolute)
+        : path.join(outputRootInput, sitemapFileRaw);
+
+      const urlEntries: string[] = [];
+      if (project.sitemapXml.includeIndexPage !== false) {
+        urlEntries.push(`${baseUrl}/`);
+      }
+      for (const item of exported) {
+        const rel = path.relative(outputRoot, item.outputPathAbsolute).split(path.sep).join("/");
+        const relWithoutDot = rel.startsWith("./") ? rel.slice(2) : rel;
+        urlEntries.push(`${baseUrl}/${relWithoutDot}`);
+      }
+
+      const uniqueUrls = Array.from(new Set(urlEntries));
+      const sitemapXml = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+        ...uniqueUrls.map((url) => {
+          const escapedUrl = url
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/\"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+          return `  <url>\n    <loc>${escapedUrl}</loc>\n  </url>`;
+        }),
+        '</urlset>',
+        '',
+      ].join("\n");
+
+      const existingSitemap = fs.existsSync(sitemapPathAbsolute)
+        ? fs.readFileSync(sitemapPathAbsolute, "utf8").replace(/\r\n/g, "\n")
+        : "";
+      const sitemapChanged = existingSitemap !== sitemapXml;
+
+      if (!publishPreview) {
+        fs.mkdirSync(path.dirname(sitemapPathAbsolute), { recursive: true });
+        fs.writeFileSync(sitemapPathAbsolute, sitemapXml, "utf8");
+      }
+
+      sitemapXmlOutput = { outputPath: sitemapPathDisplay, urlCount: uniqueUrls.length, changed: sitemapChanged };
     }
 
     const copiedAssets: Array<{ sourcePath: string; outputPath: string; changed: boolean }> = [];
@@ -4830,6 +4887,7 @@ async function main(): Promise<void> {
             count: exportedForOutput.length,
             exported: exportedForOutput,
             index: indexOutput,
+            sitemapXml: sitemapXmlOutput,
             assets: copiedAssets,
           },
           null,
@@ -4842,6 +4900,7 @@ async function main(): Promise<void> {
     process.stdout.write(`${publishPreview ? "Previewed" : "Published"} ${exportedForOutput.length} file(s) for project ${publishProject} to ${outputRootInput}\n`);
     for (const item of exportedForOutput) process.stdout.write(`${item.sourcePath} -> ${item.outputPath}${item.changed ? "" : " (unchanged)"}\n`);
     if (indexOutput) process.stdout.write(`index -> ${indexOutput.outputPath}${indexOutput.changed ? "" : " (unchanged)"}\n`);
+    if (sitemapXmlOutput) process.stdout.write(`sitemap -> ${sitemapXmlOutput.outputPath}${sitemapXmlOutput.changed ? "" : " (unchanged)"}\n`);
     for (const asset of copiedAssets) process.stdout.write(`${asset.sourcePath} -> ${asset.outputPath}${asset.changed ? "" : " (unchanged)"}\n`);
     return;
   }
