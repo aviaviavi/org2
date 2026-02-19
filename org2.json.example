@@ -1,5 +1,23 @@
 {
   "agendaFiles": ["*.org", "notes/**/*.org", "agenda/*"],
   "recursive": true,
-  "ignorePatterns": [".git/**", "node_modules/**", ".#*", "*_archive", "*.archive"]
+  "ignorePatterns": [".git/**", "node_modules/**", ".#*", "*_archive", "*.archive"],
+  "publish": {
+    "projects": {
+      "homepage": {
+        "baseDir": "/Users/avi/dev/homepage",
+        "outDir": "/Users/avi/dev/homepage/docs",
+        "include": ["index.org", "posts/**/*.org", "sitemap.org"],
+        "ignore": [".git/**"],
+        "recursive": true,
+        "rewriteFileLinks": true,
+        "includeDefaultStyle": false,
+        "postambleHtml": "<div id=\"postamble\" class=\"status\"><p class=\"postamble\">© Avi Press 2026</p></div>",
+        "index": {
+          "file": "sitemap.html",
+          "title": "Sitemap"
+        }
+      }
+    }
+  }
 }

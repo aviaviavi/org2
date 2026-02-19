@@ -1,12 +1,32 @@
 import fs from "node:fs";
 import path from "node:path";
 
+export type Org2PublishProjectConfig = {
+  baseDir: string;
+  outDir: string;
+  recursive?: boolean;
+  include?: string[];
+  ignore?: string[];
+  index?: string | { file: string; title?: string };
+  stylesheets?: string[];
+  includeDefaultStyle?: boolean;
+  toc?: boolean;
+  tocDepth?: number;
+  numberHeadings?: boolean;
+  numberHeadingsDepth?: number;
+  rewriteFileLinks?: boolean;
+  postambleHtml?: string;
+};
+
 export interface Org2Config {
   agendaFiles?: string[];
   recursive?: boolean;
   ignorePatterns?: string[];
   todo?: {
     writeTransitionLogbook?: boolean;
+  };
+  publish?: {
+    projects?: Record<string, Org2PublishProjectConfig>;
   };
 }
 
