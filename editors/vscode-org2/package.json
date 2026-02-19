@@ -945,8 +945,14 @@
         },
         "org2.links.renderDescriptions": {
           "type": "boolean",
-          "default": false,
-          "description": "Render described links ([[url][desc]]) as decoration labels. Disable to avoid visual spacing artifacts in long lines."
+          "default": true,
+          "description": "Render described links ([[url][desc]]) as decoration labels."
+        },
+        "org2.links.renderDescriptionsMode": {
+          "type": "string",
+          "enum": ["safe", "full"],
+          "default": "safe",
+          "description": "safe: render only when the described link occupies the full list/line context (avoids spacing artifacts). full: render all described links (may cause spacing artifacts due to VS Code decoration limits)."
         },
         "org2.keymap.power": {
           "type": "boolean",
