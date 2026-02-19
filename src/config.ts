@@ -16,6 +16,10 @@ export type Org2PublishProjectConfig = {
   numberHeadingsDepth?: number;
   rewriteFileLinks?: boolean;
   postambleHtml?: string;
+  assets?: {
+    include?: string[];
+    ignore?: string[];
+  };
 };
 
 export interface Org2Config {

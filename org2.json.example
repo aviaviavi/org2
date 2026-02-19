@@ -16,6 +16,10 @@
         "index": {
           "file": "sitemap.html",
           "title": "Sitemap"
+        },
+        "assets": {
+          "include": ["css/**", "images/**", "CNAME"],
+          "ignore": ["**/.DS_Store"]
         }
       }
     }

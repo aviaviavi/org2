@@ -4696,6 +4696,7 @@ async function main(): Promise<void> {
         rewriteFileLinks: project.rewriteFileLinks,
         postambleHtml: project.postambleHtml,
         includeDocumentHeader: true,
+        compatContentWrapper: true,
       });
 
       const relativeSourcePath = path.relative(sourceDir, sourcePath);
@@ -4753,7 +4754,7 @@ async function main(): Promise<void> {
         items: exported.map((item) => {
           const hrefRaw = path.relative(path.dirname(indexPathAbsolute), item.outputPathAbsolute);
           const href = String(hrefRaw || path.basename(item.outputPathAbsolute)).split(path.sep).join("/");
-          return { title: item.title, href, sourcePath: item.sourcePath };
+          return { title: item.title, href };
         }),
       });
 
@@ -4770,6 +4771,47 @@ async function main(): Promise<void> {
       indexOutput = { outputPath: indexPathDisplay, title: indexRendered.title, changed: indexChanged };
     }
 
+    const copiedAssets: Array<{ sourcePath: string; outputPath: string; changed: boolean }> = [];
+    const assetIncludePatterns = Array.isArray(project.assets?.include)
+      ? project.assets!.include.map((pattern) => String(pattern || "").trim()).filter((pattern) => pattern.length > 0)
+      : [];
+
+    if (assetIncludePatterns.length > 0) {
+      const orgSet = new Set(sourceFiles.map((file) => path.resolve(file)));
+      const baseIgnore = Array.isArray(project.ignore)
+        ? project.ignore.map((pattern) => String(pattern || "").trim()).filter((pattern) => pattern.length > 0)
+        : [];
+      const assetIgnore = Array.isArray(project.assets?.ignore)
+        ? project.assets!.ignore.map((pattern) => String(pattern || "").trim()).filter((pattern) => pattern.length > 0)
+        : [];
+      const mergedIgnore = Array.from(new Set([...baseIgnore, ...assetIgnore]));
+
+      const assetFiles = resolveFilesFromDir(sourceDir, assetIncludePatterns, mergedIgnore, publishRecursive)
+        .map((file) => path.resolve(file))
+        .filter((file) => !orgSet.has(file));
+
+      for (const assetPath of assetFiles) {
+        const relativeAssetPath = path.relative(sourceDir, assetPath);
+        if (!relativeAssetPath || relativeAssetPath.startsWith("..")) continue;
+        const outputAssetPathAbsolute = path.resolve(outputRoot, relativeAssetPath);
+        const outputAssetPathDisplay = path.join(outputRootInput, relativeAssetPath);
+        const assetBuffer = fs.readFileSync(assetPath);
+        const existingAssetBuffer = fs.existsSync(outputAssetPathAbsolute) ? fs.readFileSync(outputAssetPathAbsolute) : null;
+        const changed = !existingAssetBuffer || !existingAssetBuffer.equals(assetBuffer);
+
+        if (!publishPreview) {
+          fs.mkdirSync(path.dirname(outputAssetPathAbsolute), { recursive: true });
+          fs.writeFileSync(outputAssetPathAbsolute, assetBuffer);
+        }
+
+        copiedAssets.push({
+          sourcePath: toDisplayPath(assetPath),
+          outputPath: outputAssetPathDisplay,
+          changed,
+        });
+      }
+    }
+
     if (publishFormat === "json") {
       process.stdout.write(
         JSON.stringify(
@@ -4784,6 +4826,7 @@ async function main(): Promise<void> {
             count: exportedForOutput.length,
             exported: exportedForOutput,
             index: indexOutput,
+            assets: copiedAssets,
           },
           null,
           2,
@@ -4795,6 +4838,7 @@ async function main(): Promise<void> {
     process.stdout.write(`${publishPreview ? "Previewed" : "Published"} ${exportedForOutput.length} file(s) for project ${publishProject} to ${outputRootInput}\n`);
     for (const item of exportedForOutput) process.stdout.write(`${item.sourcePath} -> ${item.outputPath}${item.changed ? "" : " (unchanged)"}\n`);
     if (indexOutput) process.stdout.write(`index -> ${indexOutput.outputPath}${indexOutput.changed ? "" : " (unchanged)"}\n`);
+    for (const asset of copiedAssets) process.stdout.write(`${asset.sourcePath} -> ${asset.outputPath}${asset.changed ? "" : " (unchanged)"}\n`);
     return;
   }
 
