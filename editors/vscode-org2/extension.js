@@ -3678,7 +3678,8 @@ function activate(context) {
     if (doc.languageId !== 'org2' && doc.languageId !== 'org') return;
 
     const cfg = vscode.workspace.getConfiguration('org2');
-    const renderDescribedLinks = cfg.get('links.renderDescriptions', false);
+    const renderDescribedLinks = cfg.get('links.renderDescriptions', true);
+    const renderMode = String(cfg.get('links.renderDescriptionsMode', 'safe') || 'safe').toLowerCase();
     if (!renderDescribedLinks) {
       editor.setDecorations(org2LinkDescDecoration, []);
       return;
@@ -3699,6 +3700,14 @@ function activate(context) {
         const desc = m[2] || '';
 
         if (!desc.trim()) continue;
+
+        if (renderMode !== 'full') {
+          const before = text.slice(0, start);
+          const after = text.slice(end);
+          const safeBefore = /^\s*(?:[-+*]\s+)?$/.test(before);
+          const safeAfter = /^\s*$/.test(after);
+          if (!(safeBefore && safeAfter)) continue;
+        }
 
         const target = resolveOrg2LinkTarget(rawUrl, doc);
         const hover = target
@@ -3772,7 +3781,10 @@ function activate(context) {
         autoFoldedForDoc.clear();
         vscode.window.visibleTextEditors.forEach((ed) => maybeAutoFold(ed));
       }
-      if (e.affectsConfiguration('org2.links.renderDescriptions')) {
+      if (
+        e.affectsConfiguration('org2.links.renderDescriptions') ||
+        e.affectsConfiguration('org2.links.renderDescriptionsMode')
+      ) {
         vscode.window.visibleTextEditors.forEach((ed) => updateLinkDecorations(ed));
       }
     })
