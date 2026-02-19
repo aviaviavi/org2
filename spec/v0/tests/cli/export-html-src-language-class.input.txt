@@ -1,0 +1,5 @@
+#+TITLE: Source Language Fixture
+
+#+begin_src haskell
+main = putStrLn "hi"
+#+end_src
