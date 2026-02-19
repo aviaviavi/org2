@@ -878,6 +878,7 @@ export function renderOrgDocumentToHtml(
     includeHeadlineNumberDepth?: number;
     rewriteFileLinks?: boolean;
     postambleHtml?: string;
+    includeDocumentHeader?: boolean;
   } = {},
 ): { html: string; title: string; metadata: OrgExportMetadata } {
   const title = resolveTitle(doc, opts.title, opts.sourcePath);
@@ -916,7 +917,8 @@ export function renderOrgDocumentToHtml(
 
   const body = renderNodes(doc.children, context);
   const tocHtml = includeToc ? renderToc(tocItems) : "";
-  const documentHeader = keywordSubtitle ? renderDocumentHeader({ title, subtitle: metadata.subtitle }) : "";
+  const includeDocumentHeader = opts.includeDocumentHeader === true || (opts.includeDocumentHeader !== false && Boolean(keywordSubtitle));
+  const documentHeader = includeDocumentHeader ? renderDocumentHeader({ title, subtitle: metadata.subtitle }) : "";
   const mainBody = [documentHeader, tocHtml, body]
     .filter((segment) => String(segment || "").trim().length > 0)
     .join("\n");

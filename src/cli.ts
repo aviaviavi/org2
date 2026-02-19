@@ -4695,6 +4695,7 @@ async function main(): Promise<void> {
         includeHeadlineNumberDepth: project.numberHeadingsDepth,
         rewriteFileLinks: project.rewriteFileLinks,
         postambleHtml: project.postambleHtml,
+        includeDocumentHeader: true,
       });
 
       const relativeSourcePath = path.relative(sourceDir, sourcePath);
