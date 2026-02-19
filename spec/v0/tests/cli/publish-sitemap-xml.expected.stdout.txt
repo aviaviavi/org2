@@ -40,7 +40,7 @@
   },
   "sitemapXml": {
     "outputPath": "spec/v0/fixtures/cli-publish-parity/out/sitemap.xml",
-    "urlCount": 5,
+    "urlCount": 4,
     "changed": true
   },
   "assets": [
