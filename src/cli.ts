@@ -29,8 +29,14 @@ import type {
 } from "./ast.js";
 
 const DEFAULT_SYNTAX_HEAD_INCLUDES = [
-  '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs/themes/prism.min.css" />',
+  '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs/themes/prism.min.css" media="(prefers-color-scheme: light)" />',
+  '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs/themes/prism-okaidia.min.css" media="(prefers-color-scheme: dark)" />',
   '<script defer src="https://cdn.jsdelivr.net/npm/prismjs/prism.min.js"></script>',
+  '<script defer src="https://cdn.jsdelivr.net/npm/prismjs/components/prism-haskell.min.js"></script>',
+  '<script defer src="https://cdn.jsdelivr.net/npm/prismjs/components/prism-bash.min.js"></script>',
+  '<script defer src="https://cdn.jsdelivr.net/npm/prismjs/components/prism-json.min.js"></script>',
+  '<script defer src="https://cdn.jsdelivr.net/npm/prismjs/components/prism-typescript.min.js"></script>',
+  '<script defer src="https://cdn.jsdelivr.net/npm/prismjs/components/prism-jsx.min.js"></script>',
 ];
 
 // Parse ISO date string to Date
