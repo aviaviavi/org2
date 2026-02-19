@@ -262,7 +262,7 @@ function parseLinkAt(value: string, startIndex: number): ParsedLinkAt | null {
   return parseBracketLinkAt(value, startIndex) ?? parsePlainUrlAt(value, startIndex);
 }
 
-function parseInlinesFromText(value: string): InlineNode[] {
+export function parseInlinesFromText(value: string): InlineNode[] {
   const out: InlineNode[] = [];
 
   let i = 0;
@@ -607,7 +607,7 @@ function parseListItemLine(line: string): ParsedListItem | null {
     if (ws !== " ") return null;
     let content = unordered[3];
     if (content.length === 0) return null;
-    
+
     // Check for checkbox syntax: [ ] or [X] or [x]
     let checkbox: "unchecked" | "checked" | undefined;
     const checkboxMatch = /^\[([ Xx])\]\s+(.*)$/.exec(content);
@@ -615,7 +615,7 @@ function parseListItemLine(line: string): ParsedListItem | null {
       checkbox = checkboxMatch[1] === " " ? "unchecked" : "checked";
       content = checkboxMatch[2];
     }
-    
+
     return { ordered: false, content, indentColumn: unordered[1].length + ws.length, checkbox };
   }
 
@@ -625,7 +625,7 @@ function parseListItemLine(line: string): ParsedListItem | null {
     if (ws !== " ") return null;
     let content = ordered[4];
     if (content.length === 0) return null;
-    
+
     // Check for checkbox syntax: [ ] or [X] or [x]
     let checkbox: "unchecked" | "checked" | undefined;
     const checkboxMatch = /^\[([ Xx])\]\s+(.*)$/.exec(content);
@@ -633,7 +633,7 @@ function parseListItemLine(line: string): ParsedListItem | null {
       checkbox = checkboxMatch[1] === " " ? "unchecked" : "checked";
       content = checkboxMatch[2];
     }
-    
+
     return {
       ordered: true,
       content,
@@ -687,6 +687,7 @@ function getBlockKindFromBegin(line: SrcBlockLine): BlockKind | null {
   if (key === "begin_verse") return "verse";
   if (key === "begin_center") return "center";
   if (key === "begin_comment") return "comment";
+  if (key === "begin_export") return "export";
   return null;
 }
 
@@ -1040,7 +1041,15 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
       fail(makeError("Unsupported construct: tab character", lineNumber, line.indexOf("\t") + 1));
     }
 
-    const listItem = parseListItemLine(line);
+    const listItem = parseListItemLine(line) ?? (() => {
+      const trimmed = line.trimStart();
+      if (trimmed === line) return null;
+      const parsed = parseListItemLine(trimmed);
+      if (!parsed) return null;
+      const leadingSpaces = line.length - trimmed.length;
+      return { ...parsed, indentColumn: parsed.indentColumn + leadingSpaces };
+    })();
+
     if (listItem) {
       flushParagraph();
       const item = addListItem(listItem.ordered, listItem.content, listItem.checkbox);
