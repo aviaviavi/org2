@@ -2,8 +2,8 @@
   "publish": {
     "projects": {
       "fixture": {
-        "baseDir": "spec/v0/fixtures/cli-publish-parity",
-        "outDir": "spec/v0/fixtures/cli-publish-parity/out",
+        "baseDir": ".",
+        "outDir": "./out",
         "include": [
           "index.org",
           "posts/**/*.org",
@@ -18,6 +18,11 @@
         "index": {
           "file": "sitemap.html",
           "title": "Sitemap for project fixture"
+        },
+        "assets": {
+          "include": [
+            "css.txt"
+          ]
         }
       }
     }
