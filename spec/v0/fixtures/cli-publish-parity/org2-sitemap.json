@@ -1,0 +1,35 @@
+{
+  "publish": {
+    "projects": {
+      "fixture": {
+        "baseDir": ".",
+        "outDir": "./out",
+        "include": [
+          "index.org",
+          "posts/**/*.org",
+          "sitemap.org"
+        ],
+        "ignore": [
+          ".git/**"
+        ],
+        "recursive": true,
+        "rewriteFileLinks": true,
+        "includeDefaultStyle": false,
+        "index": {
+          "file": "sitemap.html",
+          "title": "Sitemap for project fixture"
+        },
+        "sitemapXml": {
+          "file": "sitemap.xml",
+          "baseUrl": "https://example.test",
+          "includeIndexPage": true
+        },
+        "assets": {
+          "include": [
+            "css.txt"
+          ]
+        }
+      }
+    }
+  }
+}
