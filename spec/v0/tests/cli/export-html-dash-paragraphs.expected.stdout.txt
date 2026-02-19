@@ -1,0 +1,9 @@
+{
+  "kind": "export-html",
+  "sourcePath": "spec/v0/tests/cli/export-html-dash-paragraphs.input.txt",
+  "outputPath": "spec/v0/tests/cli/export-html-dash-paragraphs.input.txt.html",
+  "title": "Dash paragraphs",
+  "apply": false,
+  "changed": true,
+  "html": "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\" />\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n<title>Dash paragraphs</title>\n</head>\n<body>\n<main class=\"org2-document\">\n<p>&#x2013;</p>\n<p>&#x2014;</p>\n</main>\n</body>\n</html>\n"
+}

@@ -1,0 +1,9 @@
+{
+  "kind": "export-html",
+  "sourcePath": "spec/v0/tests/cli/export-html-export-block-passthrough.input.txt",
+  "outputPath": "spec/v0/tests/cli/export-html-export-block-passthrough.input.txt.html",
+  "title": "Export block passthrough",
+  "apply": false,
+  "changed": true,
+  "html": "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\" />\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n<title>Export block passthrough</title>\n</head>\n<body>\n<main class=\"org2-document\">\n<div class=\"raw-html\">hi</div>\n</main>\n</body>\n</html>\n"
+}
