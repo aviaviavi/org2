@@ -884,6 +884,7 @@ export function renderOrgDocumentToHtml(
     rewriteFileLinks?: boolean;
     postambleHtml?: string;
     includeDocumentHeader?: boolean;
+    compatContentWrapper?: boolean;
   } = {},
 ): { html: string; title: string; metadata: OrgExportMetadata } {
   const title = resolveTitle(doc, opts.title, opts.sourcePath);
@@ -939,7 +940,9 @@ ${DOCUMENT_TOC_STYLE}` : DEFAULT_DOCUMENT_STYLE,
   });
 
   const postambleSection = postambleHtml ? `${postambleHtml}\n` : "";
-  const html = `<!doctype html>\n<html lang="${escapeAttr(language)}">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n${headMetaSection}${headExtraSection}${headStyleSection}</head>\n<body>\n<main class="org2-document">\n${mainBody}\n</main>\n${postambleSection}</body>\n</html>\n`;
+  const compatOpen = opts.compatContentWrapper ? '<div id="content" class="content">\n' : "";
+  const compatClose = opts.compatContentWrapper ? "</div>\n" : "";
+  const html = `<!doctype html>\n<html lang="${escapeAttr(language)}">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n${headMetaSection}${headExtraSection}${headStyleSection}</head>\n<body>\n${compatOpen}<main class="org2-document">\n${mainBody}\n</main>\n${compatClose}${postambleSection}</body>\n</html>\n`;
 
   return { html, title, metadata };
 }

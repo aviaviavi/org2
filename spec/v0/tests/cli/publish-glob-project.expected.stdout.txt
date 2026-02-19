@@ -2,15 +2,47 @@
   "kind": "publish-html",
   "project": "fixture",
   "configPath": "spec/v0/fixtures/cli-publish-parity/org2.json",
-  "sourceDir": "spec/v0/fixtures/cli-publish-parity/spec/v0/fixtures/cli-publish-parity",
-  "outputDir": "spec/v0/fixtures/cli-publish-parity/spec/v0/fixtures/cli-publish-parity/out",
+  "sourceDir": "spec/v0/fixtures/cli-publish-parity",
+  "outputDir": "spec/v0/fixtures/cli-publish-parity/out",
   "recursive": true,
   "preview": true,
-  "count": 0,
-  "exported": [],
+  "count": 4,
+  "exported": [
+    {
+      "sourcePath": "spec/v0/fixtures/cli-publish-parity/index.org",
+      "outputPath": "spec/v0/fixtures/cli-publish-parity/out/index.html",
+      "title": "Fixture Home",
+      "changed": true
+    },
+    {
+      "sourcePath": "spec/v0/fixtures/cli-publish-parity/posts/post-a.org",
+      "outputPath": "spec/v0/fixtures/cli-publish-parity/out/posts/post-a.html",
+      "title": "Post A",
+      "changed": true
+    },
+    {
+      "sourcePath": "spec/v0/fixtures/cli-publish-parity/posts/post-b.org",
+      "outputPath": "spec/v0/fixtures/cli-publish-parity/out/posts/post-b.html",
+      "title": "Post B",
+      "changed": true
+    },
+    {
+      "sourcePath": "spec/v0/fixtures/cli-publish-parity/sitemap.org",
+      "outputPath": "spec/v0/fixtures/cli-publish-parity/out/sitemap.html",
+      "title": "Sitemap for project fixture",
+      "changed": true
+    }
+  ],
   "index": {
-    "outputPath": "spec/v0/fixtures/cli-publish-parity/spec/v0/fixtures/cli-publish-parity/out/sitemap.html",
+    "outputPath": "spec/v0/fixtures/cli-publish-parity/out/sitemap.html",
     "title": "Sitemap for project fixture",
     "changed": true
-  }
+  },
+  "assets": [
+    {
+      "sourcePath": "spec/v0/fixtures/cli-publish-parity/css.txt",
+      "outputPath": "spec/v0/fixtures/cli-publish-parity/out/css.txt",
+      "changed": true
+    }
+  ]
 }
