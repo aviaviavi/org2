@@ -140,6 +140,10 @@ function isWhitespace(ch: string): boolean {
   return ch === " " || ch === "\n";
 }
 
+function isHeadlineStart(line: string): boolean {
+  return /^\*+\s/.test(line);
+}
+
 function isBoundaryChar(ch: string | undefined): boolean {
   if (ch === undefined) return true;
   if (isWhitespace(ch)) return true;
@@ -975,7 +979,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
       continue;
     }
 
-    if (line.startsWith("*")) {
+    if (isHeadlineStart(line)) {
       flushParagraph();
       endList();
 
@@ -1059,7 +1063,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
           break;
         }
 
-        if (contLine.startsWith("*")) {
+        if (isHeadlineStart(contLine)) {
           flushItemParagraph();
           break;
         }
@@ -1098,7 +1102,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
                   break;
                 }
                 
-                if (nestedLine.startsWith("*")) {
+                if (isHeadlineStart(nestedLine)) {
                   break;
                 }
                 
@@ -1167,7 +1171,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
                     break;
                   }
                   
-                  if (contNestedLine.startsWith("*")) {
+                  if (isHeadlineStart(contNestedLine)) {
                     if (nestedItemParaLines.length > 0) {
                       nestedListItem.children.push(paragraphFromLines(nestedItemParaLines));
                       nestedItemParaLines = [];
@@ -1198,7 +1202,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
 
                         while (i < lines.length) {
                           const deeperLine = lines[i] ?? "";
-                          if (isBlank(deeperLine) || deeperLine.startsWith("*")) break;
+                          if (isBlank(deeperLine) || isHeadlineStart(deeperLine)) break;
 
                           const deeperLeadingSpaces = deeperLine.match(/^(\s*)/)?.[1]?.length ?? 0;
                           const deeperUnindentedLine = deeperLine.slice(deeperLeadingSpaces);
