@@ -951,7 +951,7 @@ ${DOCUMENT_TOC_STYLE}` : DEFAULT_DOCUMENT_STYLE,
   const compatOpen = opts.compatContentWrapper ? '<div id="content" class="content">\n' : "";
   const compatClose = opts.compatContentWrapper ? "</div>\n" : "";
   const compatStyleSection = opts.compatContentWrapper
-    ? "<style>\n#content { max-width: 60em; margin: auto; line-height: 1.35; }\n</style>\n"
+    ? "<style>\n#content { max-width: 60em; margin: auto; line-height: 1.35; }\n#content li > p { margin: 0; }\n#content li + li { margin-top: 0.2rem; }\n</style>\n"
     : "";
   const html = `<!doctype html>\n<html lang="${escapeAttr(language)}">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n${headMetaSection}${headExtraSection}${headStyleSection}${compatStyleSection}</head>\n<body>\n${compatOpen}<main class="org2-document">\n${mainBody}\n</main>\n${compatClose}${postambleSection}</body>\n</html>\n`;
 
