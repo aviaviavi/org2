@@ -20,6 +20,7 @@ import type {
   TimestampRangeNode,
 } from "./ast.js";
 import { parseInlinesFromText } from "./parser.js";
+import { COMPAT_CONTENT_CLOSE, COMPAT_CONTENT_OPEN, COMPAT_CONTENT_STYLE_SECTION } from "./publish-defaults.js";
 
 function escapeHtml(value: string): string {
   return String(value)
@@ -877,6 +878,144 @@ function renderDocumentHeader(opts: { title: string; subtitle?: string }): strin
   return `<header class="org2-document-header">\n<h1 class="org2-document-title">${escapeHtml(title)}</h1>${subtitleHtml}\n</header>`;
 }
 
+type ResolvedDocumentRenderOptions = {
+  includeToc: boolean;
+  includeTocDepth: number | undefined;
+  includeHeadlineNumbers: boolean;
+  includeHeadlineNumberDepth: number | undefined;
+  includeDocumentHeader: boolean;
+};
+
+function resolveDocumentRenderOptions(
+  doc: DocumentNode,
+  opts: {
+    includeToc?: boolean;
+    includeTocDepth?: number;
+    includeHeadlineNumbers?: boolean;
+    includeHeadlineNumberDepth?: number;
+    includeDocumentHeader?: boolean;
+  },
+): ResolvedDocumentRenderOptions {
+  const exportOptions = collectKeywordOptions(doc);
+  const includeToc = opts.includeToc === true || (opts.includeToc !== false && exportOptions.toc === true);
+  const includeTocDepth =
+    normalizeTocDepth(opts.includeTocDepth) ?? normalizeTocDepth(exportOptions.tocDepth) ?? undefined;
+  const includeHeadlineNumbers =
+    opts.includeHeadlineNumbers === true ||
+    (opts.includeHeadlineNumbers !== false && exportOptions.num === true);
+  const includeHeadlineNumberDepth =
+    normalizeHeadlineNumberDepth(opts.includeHeadlineNumberDepth) ??
+    normalizeHeadlineNumberDepth(exportOptions.numDepth) ??
+    undefined;
+  const includeDocumentHeader =
+    opts.includeDocumentHeader === true ||
+    (opts.includeDocumentHeader !== false && Boolean(findSubtitleFromKeywords(doc)));
+
+  return {
+    includeToc,
+    includeTocDepth,
+    includeHeadlineNumbers,
+    includeHeadlineNumberDepth,
+    includeDocumentHeader,
+  };
+}
+
+function buildDocumentRenderContext(
+  doc: DocumentNode,
+  opts: {
+    includeToc: boolean;
+    includeTocDepth?: number;
+    includeHeadlineNumbers: boolean;
+    includeHeadlineNumberDepth?: number;
+    rewriteFileLinks?: boolean;
+  },
+): { context: RenderContext; tocItems: TocItem[] } {
+  let tocItems: TocItem[] = [];
+  const includeHeadingAnchors = opts.includeToc || opts.rewriteFileLinks === true || nodesNeedHeadingAnchors(doc.children);
+  const includeHeadlineData = includeHeadingAnchors || opts.includeHeadlineNumbers;
+  const context: RenderContext = {
+    rewriteFileLinks: opts.rewriteFileLinks === true,
+  };
+
+  if (includeHeadlineData) {
+    const anchors = buildHeadlineAnchors(doc, {
+      includeToc: opts.includeToc,
+      includeTocDepth: opts.includeTocDepth,
+      includeHeadlineNumbers: opts.includeHeadlineNumbers,
+      includeHeadlineNumberDepth: opts.includeHeadlineNumberDepth,
+    });
+    tocItems = anchors.items;
+    context.headlineIds = anchors.headlineIds;
+    context.headlineSlugIds = anchors.headlineSlugIds;
+    context.headlineNumbers = anchors.headlineNumbers;
+  }
+
+  return { context, tocItems };
+}
+
+function renderMainBody(opts: {
+  doc: DocumentNode;
+  context: RenderContext;
+  includeToc: boolean;
+  tocItems: TocItem[];
+  includeDocumentHeader: boolean;
+  title: string;
+  subtitle?: string;
+}): string {
+  const body = renderNodes(opts.doc.children, opts.context);
+  const tocHtml = opts.includeToc ? renderToc(opts.tocItems) : "";
+  const documentHeader = opts.includeDocumentHeader
+    ? renderDocumentHeader({ title: opts.title, subtitle: opts.subtitle })
+    : "";
+
+  return [documentHeader, tocHtml, body]
+    .filter((segment) => String(segment || "").trim().length > 0)
+    .join("\n");
+}
+
+function renderDocumentHtml(opts: {
+  title: string;
+  language: string;
+  metadata: OrgExportMetadata;
+  headIncludes?: string[];
+  stylesheets?: string[];
+  includeDefaultStyle?: boolean;
+  includeToc: boolean;
+  mainBody: string;
+  postambleHtml?: string;
+  compatContentWrapper?: boolean;
+}): string {
+  const headMetaSection = renderHeadMetaSection(opts.metadata);
+  const headExtraSection = renderHeadExtraSection(opts.metadata, opts.headIncludes);
+  const headStyleSection = renderHeadStyleSection({
+    stylesheets: opts.stylesheets,
+    includeDefaultStyle: opts.includeDefaultStyle,
+    defaultStyle: opts.includeToc ? `${DEFAULT_DOCUMENT_STYLE}
+${DOCUMENT_TOC_STYLE}` : DEFAULT_DOCUMENT_STYLE,
+  });
+
+  const postambleSection = opts.postambleHtml ? `${opts.postambleHtml}
+` : "";
+  const compatOpen = opts.compatContentWrapper ? COMPAT_CONTENT_OPEN : "";
+  const compatClose = opts.compatContentWrapper ? COMPAT_CONTENT_CLOSE : "";
+  const compatStyleSection = opts.compatContentWrapper ? COMPAT_CONTENT_STYLE_SECTION : "";
+
+  return `<!doctype html>
+<html lang="${escapeAttr(opts.language)}">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${escapeHtml(opts.title)}</title>
+${headMetaSection}${headExtraSection}${headStyleSection}${compatStyleSection}</head>
+<body>
+${compatOpen}<main class="org2-document">
+${opts.mainBody}
+</main>
+${compatClose}${postambleSection}</body>
+</html>
+`;
+}
+
 export function renderOrgDocumentToHtml(
   doc: DocumentNode,
   opts: {
@@ -897,63 +1036,37 @@ export function renderOrgDocumentToHtml(
 ): { html: string; title: string; metadata: OrgExportMetadata } {
   const title = resolveTitle(doc, opts.title, opts.sourcePath);
   const metadata = collectKeywordMetadata(doc);
-  const exportOptions = collectKeywordOptions(doc);
-  const includeToc = opts.includeToc === true || (opts.includeToc !== false && exportOptions.toc === true);
-  const includeTocDepth =
-    normalizeTocDepth(opts.includeTocDepth) ?? normalizeTocDepth(exportOptions.tocDepth) ?? undefined;
-  const includeHeadlineNumbers =
-    opts.includeHeadlineNumbers === true ||
-    (opts.includeHeadlineNumbers !== false && exportOptions.num === true);
-  const includeHeadlineNumberDepth =
-    normalizeHeadlineNumberDepth(opts.includeHeadlineNumberDepth) ??
-    normalizeHeadlineNumberDepth(exportOptions.numDepth) ??
-    undefined;
-  const keywordSubtitle = findSubtitleFromKeywords(doc);
-
-  let tocItems: TocItem[] = [];
-  const includeHeadingAnchors = includeToc || opts.rewriteFileLinks === true || nodesNeedHeadingAnchors(doc.children);
-  const includeHeadlineData = includeHeadingAnchors || includeHeadlineNumbers;
-  const context: RenderContext = {
-    rewriteFileLinks: opts.rewriteFileLinks === true,
-  };
-  if (includeHeadlineData) {
-    const anchors = buildHeadlineAnchors(doc, {
-      includeToc,
-      includeTocDepth,
-      includeHeadlineNumbers,
-      includeHeadlineNumberDepth,
-    });
-    tocItems = anchors.items;
-    context.headlineIds = anchors.headlineIds;
-    context.headlineSlugIds = anchors.headlineSlugIds;
-    context.headlineNumbers = anchors.headlineNumbers;
-  }
-
-  const body = renderNodes(doc.children, context);
-  const tocHtml = includeToc ? renderToc(tocItems) : "";
-  const includeDocumentHeader = opts.includeDocumentHeader === true || (opts.includeDocumentHeader !== false && Boolean(keywordSubtitle));
-  const documentHeader = includeDocumentHeader ? renderDocumentHeader({ title, subtitle: metadata.subtitle }) : "";
-  const mainBody = [documentHeader, tocHtml, body]
-    .filter((segment) => String(segment || "").trim().length > 0)
-    .join("\n");
-  const postambleHtml = String(opts.postambleHtml || "").trim();
-  const language = metadata.language || "en";
-  const headMetaSection = renderHeadMetaSection(metadata);
-  const headExtraSection = renderHeadExtraSection(metadata, opts.headIncludes);
-  const headStyleSection = renderHeadStyleSection({
-    stylesheets: opts.stylesheets,
-    includeDefaultStyle: opts.includeDefaultStyle,
-    defaultStyle: includeToc ? `${DEFAULT_DOCUMENT_STYLE}
-${DOCUMENT_TOC_STYLE}` : DEFAULT_DOCUMENT_STYLE,
+  const renderOptions = resolveDocumentRenderOptions(doc, opts);
+  const { context, tocItems } = buildDocumentRenderContext(doc, {
+    includeToc: renderOptions.includeToc,
+    includeTocDepth: renderOptions.includeTocDepth,
+    includeHeadlineNumbers: renderOptions.includeHeadlineNumbers,
+    includeHeadlineNumberDepth: renderOptions.includeHeadlineNumberDepth,
+    rewriteFileLinks: opts.rewriteFileLinks,
   });
 
-  const postambleSection = postambleHtml ? `${postambleHtml}\n` : "";
-  const compatOpen = opts.compatContentWrapper ? '<div id="content" class="content">\n' : "";
-  const compatClose = opts.compatContentWrapper ? "</div>\n" : "";
-  const compatStyleSection = opts.compatContentWrapper
-    ? "<style>\n#content { max-width: 60em; margin: auto; line-height: 1.35; }\n#content li > p { margin: 0; }\n#content li + li { margin-top: 0.2rem; }\n</style>\n"
-    : "";
-  const html = `<!doctype html>\n<html lang="${escapeAttr(language)}">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n${headMetaSection}${headExtraSection}${headStyleSection}${compatStyleSection}</head>\n<body>\n${compatOpen}<main class="org2-document">\n${mainBody}\n</main>\n${compatClose}${postambleSection}</body>\n</html>\n`;
+  const mainBody = renderMainBody({
+    doc,
+    context,
+    includeToc: renderOptions.includeToc,
+    tocItems,
+    includeDocumentHeader: renderOptions.includeDocumentHeader,
+    title,
+    subtitle: metadata.subtitle,
+  });
+
+  const html = renderDocumentHtml({
+    title,
+    language: metadata.language || "en",
+    metadata,
+    headIncludes: opts.headIncludes,
+    stylesheets: opts.stylesheets,
+    includeDefaultStyle: opts.includeDefaultStyle,
+    includeToc: renderOptions.includeToc,
+    mainBody,
+    postambleHtml: String(opts.postambleHtml || "").trim(),
+    compatContentWrapper: opts.compatContentWrapper,
+  });
 
   return { html, title, metadata };
 }
