@@ -1,0 +1,15 @@
+{
+  "publish": {
+    "projects": {
+      "fixture": {
+        "baseDir": ".",
+        "outDir": "out",
+        "include": ["posts/**/*.org"],
+        "headIncludes": [
+          "<link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/prismjs/themes/prism.min.css\" />",
+          "<script defer src=\"https://cdn.jsdelivr.net/npm/prismjs/prism.min.js\"></script>"
+        ]
+      }
+    }
+  }
+}

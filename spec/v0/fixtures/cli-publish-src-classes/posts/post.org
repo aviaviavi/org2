@@ -1,0 +1,5 @@
+#+TITLE: Publish Src Class Fixture
+
+#+begin_src python
+print("ok")
+#+end_src
