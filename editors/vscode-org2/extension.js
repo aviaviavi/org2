@@ -3677,6 +3677,13 @@ function activate(context) {
     if (!doc) return;
     if (doc.languageId !== 'org2' && doc.languageId !== 'org') return;
 
+    const cfg = vscode.workspace.getConfiguration('org2');
+    const renderDescribedLinks = cfg.get('links.renderDescriptions', false);
+    if (!renderDescribedLinks) {
+      editor.setDecorations(org2LinkDescDecoration, []);
+      return;
+    }
+
     const options = [];
     // Only match described links: [[url][desc]]
     const org2LinkDescRe = /\[\[([^\]\n]+?)\]\[([^\]\n]*)\]\]/g;
@@ -3764,6 +3771,9 @@ function activate(context) {
       ) {
         autoFoldedForDoc.clear();
         vscode.window.visibleTextEditors.forEach((ed) => maybeAutoFold(ed));
+      }
+      if (e.affectsConfiguration('org2.links.renderDescriptions')) {
+        vscode.window.visibleTextEditors.forEach((ed) => updateLinkDecorations(ed));
       }
     })
   );

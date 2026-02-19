@@ -943,6 +943,11 @@
           "default": true,
           "description": "Auto-fold :PROPERTIES: drawers when a document is opened (once per file)."
         },
+        "org2.links.renderDescriptions": {
+          "type": "boolean",
+          "default": false,
+          "description": "Render described links ([[url][desc]]) as decoration labels. Disable to avoid visual spacing artifacts in long lines."
+        },
         "org2.keymap.power": {
           "type": "boolean",
           "default": true,
