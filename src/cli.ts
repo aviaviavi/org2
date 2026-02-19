@@ -29,8 +29,9 @@ import type {
 } from "./ast.js";
 
 const DEFAULT_SYNTAX_HEAD_INCLUDES = [
-  '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs/themes/prism.min.css" media="(prefers-color-scheme: light)" />',
-  '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs/themes/prism-okaidia.min.css" media="(prefers-color-scheme: dark)" />',
+  '<link id="org2-prism-light" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs/themes/prism.min.css" />',
+  '<link id="org2-prism-dark" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs/themes/prism-okaidia.min.css" disabled />',
+  '<script>(function(){var root=document.documentElement;function pick(){var explicit=(root.getAttribute("data-theme")||"").toLowerCase();var cls=(root.className||"").toLowerCase();var dark=(explicit==="dark")||(explicit!=="light"&&(cls.includes("dark")||window.matchMedia("(prefers-color-scheme: dark)").matches));var l=document.getElementById("org2-prism-light");var d=document.getElementById("org2-prism-dark");if(l&&d){l.disabled=dark;d.disabled=!dark;}}pick();try{window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",pick);}catch(_){}})();</script>',
   '<script defer src="https://cdn.jsdelivr.net/npm/prismjs/prism.min.js"></script>',
   '<script defer src="https://cdn.jsdelivr.net/npm/prismjs/components/prism-haskell.min.js"></script>',
   '<script defer src="https://cdn.jsdelivr.net/npm/prismjs/components/prism-bash.min.js"></script>',
