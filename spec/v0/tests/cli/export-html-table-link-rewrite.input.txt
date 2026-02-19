@@ -1,0 +1,4 @@
+#+title: Table links
+| Link |
+|------|
+| [[file:note.org][Note]] |

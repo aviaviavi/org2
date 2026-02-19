@@ -1,0 +1,4 @@
+#+title: Post B
+#+BEGIN_EXPORT html
+<span>raw</span>
+#+END_EXPORT
