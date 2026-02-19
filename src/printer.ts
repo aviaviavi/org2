@@ -345,18 +345,25 @@ export function printCanonicalAstToOrg(doc: DocumentNode): string {
     throw new Error("Unsupported AST: expected Document v0");
   }
 
-  const lines: string[] = [];
+  const isKeywordLike = (node: Node): boolean => node.type === "KeywordLine" || node.type === "DirectiveLine";
 
+  const chunks: string[] = [];
+  let prevChild: Node | undefined;
   for (const child of doc.children) {
-    lines.push(printNode(child));
+    if (prevChild) {
+      const needsBlankLine = !(isKeywordLike(prevChild) && isKeywordLike(child));
+      chunks.push(needsBlankLine ? "\n\n" : "\n");
+    }
+    chunks.push(printNode(child));
+    prevChild = child;
   }
 
-  const output = lines.join("\n\n");
-  
+  const output = chunks.join("");
+
   // Check if the last child is an unterminated block that ends at EOF (no newline)
   const lastChild = doc.children[doc.children.length - 1];
   const endsWithNewline = !lastChild || lastChild.type !== "SrcBlock" || (lastChild as SrcBlockNode).terminated;
-  
+
   // v0 fixtures generally include a trailing newline, except for unterminated blocks at EOF.
   return endsWithNewline ? `${output}\n` : output;
 }
