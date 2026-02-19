@@ -651,6 +651,11 @@ function renderInlineChildren(nodes: InlineNode[], context: RenderContext): stri
 }
 
 function renderParagraph(node: ParagraphNode, context: RenderContext): string {
+  if (node.children.length === 1 && node.children[0]?.type === "Text") {
+    const raw = String(node.children[0].value || "").trim();
+    if (raw === "--") return "<p>&#x2013;</p>";
+    if (raw === "---") return "<p>&#x2014;</p>";
+  }
   return `<p>${renderInlineChildren(node.children, context)}</p>`;
 }
 
