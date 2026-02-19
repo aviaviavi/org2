@@ -4,183 +4,37 @@
 
 A from-scratch successor to Org Mode, built to be editor-agnostic and platform-agnostic.
 
-As originally described in https://avi.press/posts/2024-01-15-standalone-org.html.
+Reference: https://avi.press/posts/2024-01-15-standalone-org.html
 
-Current development is workflow-driven: small, user-facing slices (especially CLI + VS Code integration) are implemented incrementally and validated in real daily use.
+** Status
 
-** Goals
+Org2 is *early alpha*.
 
-- A comprehensive org mode successor, decoupled from Emacs.
-- Build and support full featured org mode experiences in any text editor or any platform.
-- Work towards a formal specification of the Org format.
-- Support a thriving plug-in ecosystem that leverages more popular development environments.
+- Best-supported workflow today: CLI + VS Code
+- Core parsing/planning flows work well enough for daily use
+- APIs and command flags may still change
+- Not yet a full GNU Org Mode replacement
+
+** What’s working now
+
+- Core Org structures: headings, drawers/properties, links, planning lines, TODO states
+- Agenda workflows (CLI + VS Code)
+- Basic editing workflows (TODO/planning updates, archive/refile, capture)
+- HTML export (MVP)
+- LSP server (MVP) for links/navigation/completions/formatting
+
+** What’s not done yet
+
+- Full Org Mode parity
+- Mature recurring/habits/clocking ecosystem
+- Stable plugin ecosystem
+- Broad editor parity beyond VS Code
 
 ** Spec
 
-- v0 (draft): [[./spec/v0/SPEC.org]]
+- v0 draft: [[./spec/v0/SPEC.org]]
 
-** Project Status
-
-Org2 is active, but still *early alpha*. It is not yet a drop-in replacement for full GNU Org Mode.
-
-Current reality:
-- The parser/spec/tooling are evolving quickly.
-- CLI + VS Code workflows are the most actively developed and validated surfaces.
-- APIs/flags/behavior can still change between iterations.
-
-*** Org Mode feature status (high-level)
-
-**** Core syntax + structure
-- Headlines / hierarchy: *Available now*
-- Drawers + PROPERTIES: *Available now*
-- Planning lines (SCHEDULED/DEADLINE/CLOSED): *Available now*
-- TODO keywords + state transitions: *Available now*
-- Lists + checkboxes: *Available now* (basic)
-- Timestamps: *Available now* (basic)
-- Tables: *Available now* (basic)
-- Links (including ID links): *Available now*
-
-**** Task/planning workflows
-- Agenda (CLI + VS Code panel): *Available now*
-- Agenda status filtering (CLI + VS Code): *Available now* (MVP)
-- Agenda status exclusion filtering (CLI + VS Code): *Available now* (MVP)
-- Agenda planning-kind filtering (CLI + VS Code): *Available now* (MVP)
-- Agenda planning-kind exclusion filter (CLI + VS Code): *Available now* (MVP)
-- Agenda time-bucket filtering (CLI + VS Code): *Available now* (MVP)
-- Agenda time-bucket exclusion filter (CLI + VS Code): *Available now* (MVP)
-- Agenda weekday filtering (CLI + VS Code): *Available now* (MVP)
-- Agenda weekday exclusion filter (CLI + VS Code): *Available now* (MVP)
-- Agenda month filtering (CLI + VS Code): *Available now* (MVP)
-- Agenda month exclusion filter (CLI + VS Code): *Available now* (MVP)
-- Agenda quarter filtering (CLI + VS Code): *Available now* (MVP)
-- Agenda quarter exclusion filter (CLI + VS Code): *Available now* (MVP)
-- Agenda exact-date filtering (CLI + VS Code): *Available now* (MVP)
-- Agenda exact-date exclusion filter (CLI + VS Code): *Available now* (MVP)
-- Agenda headline-level filtering (CLI + VS Code): *Available now* (MVP)
-- Agenda headline-level exclusion filter (CLI + VS Code): *Available now* (MVP)
-- Agenda text matching filter (CLI + VS Code): *Available now* (MVP)
-- Agenda tag filter (CLI + VS Code): *Available now* (MVP)
-- Agenda ID/CUSTOM_ID filter (CLI + VS Code): *Available now* (MVP)
-- Agenda TODO keyword filter (CLI + VS Code): *Available now* (MVP)
-- Agenda ID/CUSTOM_ID exclusion filter (CLI + VS Code): *Available now* (MVP)
-- Agenda priority filter (CLI + VS Code): *Available now* (MVP)
-- Agenda clock-time filter (CLI + VS Code): *Available now* (MVP; exact times + inclusive ranges)
-- Agenda clock-time exclusion filter (CLI + VS Code): *Available now* (MVP; exact times + inclusive ranges)
-- Agenda effort-property filter (CLI + VS Code): *Available now* (MVP)
-- Agenda exclusion filters (CLI + VS Code): *Available now* (MVP)
-- Agenda source-file filtering (CLI + VS Code): *Available now* (MVP)
-- Agenda sort-order filtering (CLI + VS Code): *Available now* (MVP)
-- Agenda group-by controls (CLI + VS Code): *Available now* (MVP)
-- Agenda per-group row-limit controls (CLI + VS Code): *Available now* (MVP)
-- Agenda per-day row-limit controls (CLI + VS Code): *Available now* (MVP)
-- Agenda descending sort-order controls (CLI + VS Code): *Available now* (MVP)
-- Agenda priority sort-order controls (CLI + VS Code): *Available now* (MVP)
-- Agenda effort sort-order controls (CLI + VS Code): *Available now* (MVP)
-- Agenda tag sort-order controls (CLI + VS Code): *Available now* (MVP; includes explicit tag ordering)
-- Agenda timestamp-time sort/group controls (CLI + VS Code): *Available now* (MVP)
-- Agenda date-order controls (CLI + VS Code): *Available now* (MVP)
-- Agenda row-limit filtering (CLI + VS Code): *Available now* (MVP)
-- Agenda explicit date-range bounds (CLI + VS Code): *Available now* (MVP)
-- TODO set/toggle from CLI/editor: *Available now*
-- Set SCHEDULED/DEADLINE (including “today” fast paths): *Available now*
-- Archive subtree: *Available now* (MVP)
-- Roam node creation (CLI + VS Code command): *Available now* (MVP)
-- Roam ID open command (VS Code prompt/selection + id-link parsing): *Available now* (MVP)
-- Roam ID link copy commands (VS Code current heading/file + prompt/link target flows): *Available now* (MVP)
-- Roam backlink insert/show commands (VS Code current heading/file + prompt/link target flows): *Available now* (MVP)
-- Roam backlink source picker (VS Code quick pick + prompt/link target input): *Available now* (MVP)
-- Roam-ish ID/backlink workflows: *In progress*
-
-**** Language/tooling
-- Formatter drift detection (=org2 fmt --check=): *Available now* (MVP)
-- Formatter directory scans (=org2 fmt --dir ... --recursive=): *Available now* (MVP)
-- Formatter file-path filters (=org2 fmt --file-match/--exclude-file=): *Available now* (MVP)
-- Formatter structured check output (=org2 fmt --check --format json=): *Available now* (MVP)
-- Formatter single-file JSON preview (=org2 fmt --file ... --format json=): *Available now* (MVP)
-- Formatter apply JSON summary (=org2 fmt --apply --format json=): *Available now* (MVP)
-- Formatter config-driven target discovery (=org2 fmt --config PATH=): *Available now* (MVP)
-- Formatter workspace apply command (VS Code): *Available now* (MVP)
-- Formatter current-file check/apply commands (VS Code): *Available now* (MVP)
-- Formatter current-file diff preview command (VS Code): *Available now* (MVP)
-- Formatter (=org2 fmt=): *In progress*
-- HTML export (=org2 export html=): *Available now* (MVP, single-file + directory batch standalone export + optional index page + configurable stylesheet injection + optional/depth-limited table of contents (CLI =--toc-depth= + =#+OPTIONS: toc:N=) + optional/depth-limited heading numbering (CLI =--number-headings-depth= + =#+OPTIONS: num:N=) + optional Org file-link rewrite + automatic heading anchors for TOC/rewrite targets and in-document =[[* Heading]]= /=[[#custom-id]]= links [including =:CUSTOM_ID:= targets] + keyword-driven metadata/head controls + keyword-driven document title/subtitle header rendering)
-- LSP go-to-definition for file/id links (including file =::search= suffix targets) (=org2 lsp=): *Available now* (MVP)
-- LSP go-to-declaration for file/id links (including file =::search= suffix targets) (=textDocument/declaration= via =org2 lsp=): *Available now* (MVP)
-- LSP go-to-type-definition + go-to-implementation for file/id links (including file =::search= suffix targets) (=textDocument/typeDefinition= + =textDocument/implementation= via =org2 lsp=): *Available now* (MVP)
-- LSP find-references for file/id links (=org2 lsp=): *Available now* (MVP)
-- LSP workspace symbol search for headings (=org2 lsp=): *Available now* (MVP)
-- LSP document links for file/id/URL links (=org2 lsp=): *Available now* (MVP)
-- LSP completion for TODO/planning keywords, timestamps, and ID/file link targets (=org2 lsp=): *Available now* (MVP)
-- LSP signature help for planning timestamps (=textDocument/signatureHelp= via =org2 lsp=): *Available now* (MVP)
-- LSP hover tooltips for links/TODO/planning keywords (=org2 lsp=): *Available now* (MVP)
-- LSP document highlights for ID/file references (=org2 lsp=): *Available now* (MVP)
-- LSP rename for =[[id:...]]= links + =:ID:= properties and matching file-link targets (=org2 lsp=): *Available now* (MVP)
-- LSP workspace file-rename edits for Org file links (=workspace/willRenameFiles= via =org2 lsp=): *Available now* (MVP)
-- LSP quick-fix code actions for CRLF/tab parser issues (=org2 lsp=): *Available now* (MVP)
-- LSP document formatting (=textDocument/formatting= via =org2 lsp=): *Available now* (MVP)
-- LSP range formatting (=textDocument/rangeFormatting= via =org2 lsp=): *Available now* (MVP)
-- LSP on-type formatting for Org tables (=textDocument/onTypeFormatting= via =org2 lsp=): *Available now* (MVP)
-- LSP selection ranges (=textDocument/selectionRange= via =org2 lsp=): *Available now* (MVP)
-- LSP semantic tokens for TODO/planning/properties/links (=textDocument/semanticTokens/full= via =org2 lsp=): *Available now* (MVP)
-- LSP backlink code lenses for =:ID:= properties (=textDocument/codeLens= via =org2 lsp=): *Available now* (MVP)
-- LSP linked editing ranges for ID links/properties plus matching file links (=textDocument/linkedEditingRange= via =org2 lsp=): *Available now* (MVP)
-- LSP document colors for hex literals (=textDocument/documentColor= + =textDocument/colorPresentation= via =org2 lsp=): *Available now* (MVP)
-- LSP inlay hints for unlabeled ID/file links (=textDocument/inlayHint= via =org2 lsp=): *Available now* (MVP)
-- LSP call hierarchy for Org ID/file links (=textDocument/prepareCallHierarchy= + =callHierarchy/incomingCalls= + =callHierarchy/outgoingCalls= via =org2 lsp=): *Available now* (MVP)
-- LSP entrypoint (=org2 lsp=): *In progress*
-- Formal Org2 spec (v0 draft): *In progress*
-
-**** Org Mode parity areas (broader)
-- Export/publishing pipeline parity: *In progress* (MVP single-file + directory-batch HTML export + index generation + configurable stylesheet injection + optional/depth-limited table of contents (=--toc-depth= / =#+OPTIONS: toc:N=) + optional/depth-limited heading numbering (=--number-headings-depth= / =#+OPTIONS: num:N=) + optional Org file-link rewrite + automatic heading anchors [including =:CUSTOM_ID:= targets during file-link rewrite] + keyword-driven HTML metadata tags/lang/head snippets + keyword-driven title/subtitle header rendering available via CLI + VS Code)
-- Org crypt (encrypted sections/workflows): *Planned*
-- Recurring tasks / repeaters: *In progress* (agenda repeater expansion MVP available)
-- Habits: *Planned*
-- Clocking + effort/properties for time tracking: *Planned*
-- Capture templates / quick capture flow: *Available now* (CLI + VS Code MVP: note/task quick-capture templates with optional body text via =--body= / selection capture)
-- Refile workflows parity: *Available now* (CLI + VS Code MVP)
-- Advanced agenda customization parity: *Planned*
-- Mature extensibility/plugin ecosystem: *Planned*
-
-**** Editor support maturity
-- VS Code: *In progress* (primary integration target)
-- Vim/Neovim: *In progress* (minimal plugin)
-- Other editors: *Planned*
-
-If you need full, stable, mature Org Mode parity today, treat Org2 as experimental for now.
-
-** Editor Support
-
-Current editor status:
-
-- *VS Code* (=editors/vscode-org2/=): primary integration target right now.
-  - Provides language support + folding + agenda + TODO/planning/archive/refile/capture/export + roam commands via CLI-backed actions.
-  - Usable for daily workflows, but still evolving quickly.
-- *Vim/Neovim* (=editors/vim-org2/=): minimal support.
-  - Filetype + syntax + heading fold toggles.
-  - Not feature-parity with VS Code integration.
-- *Other editors*: no first-class integration yet.
-
-** Contributing
-
-Contributions are welcome.
-
-Fastest way to help:
-- start from active issues/PRs,
-- pick a small workflow slice,
-- keep changes focused and test-backed.
-
-For local development:
-- build + run CLI tests,
-- verify the workflow end-to-end (especially for editor-facing changes),
-- include clear behavior notes in PRs because the surface is still evolving.
-
-** CLI usage (local)
-
-Org2 ships a small CLI that you can run from a local checkout.
-
-Right now the CLI is primarily focused on *reading/planning workflows* (like =agenda=) plus a handful of experimental editing commands used by the VSCode extension. The exact set of commands changes quickly, so treat it as unstable and prefer =org2 --help= for the authoritative list.
-
-*** Install / setup
+** Quick start
 
 #+begin_src sh
 cd /path/to/org2
@@ -188,560 +42,65 @@ npm install
 npm run build
 #+end_src
 
-You can invoke the CLI in a few equivalent ways:
+Run CLI from source:
 
-- =npm run org2 -- <command> [...args]= (recommended for local development)
+- =npm run org2 -- <command> [...args]= (recommended)
 - =node dist/cli.js <command> [...args]=
-- =npm link= (optional) to get a global =org2= command
 
-*** Agenda (testing workflows)
-
-The agenda command scans one or more =.org= files for scheduled items and prints either human-readable text or JSON.
-
-#+begin_src sh
-# Run against a directory of .org files
-npm run org2 -- agenda --dir /path/to/org/files --recursive
-
-# Run against explicit files
-npm run org2 -- agenda --files /path/to/a.org /path/to/b.org
-
-# Control the date range
-npm run org2 -- agenda --dir /path/to/org --today 2026-01-25 --days 7
-
-# Explicitly bound the date range (start/end)
-npm run org2 -- agenda --dir /path/to/org --from 2026-01-25 --to 2026-02-01
-
-# JSON output (useful for tests/automation)
-npm run org2 -- agenda --dir /path/to/org --format json
-
-# Exclude overdue items from output
-npm run org2 -- agenda --dir /path/to/org --no-overdue
-
-# Filter by TODO status buckets (advanced agenda customization)
-npm run org2 -- agenda --dir /path/to/org --status active
-
-# Exclude TODO status buckets (advanced agenda customization)
-npm run org2 -- agenda --dir /path/to/org --exclude-status done,canceled
-
-# Filter by planning kind (SCHEDULED vs DEADLINE)
-npm run org2 -- agenda --dir /path/to/org --kind deadline
-
-# Exclude a planning kind (hide SCHEDULED or DEADLINE rows)
-npm run org2 -- agenda --dir /path/to/org --exclude-kind scheduled
-
-# Filter by time bucket (overdue, today, upcoming)
-npm run org2 -- agenda --dir /path/to/org --when today
-
-# Exclude time buckets (hide overdue/today/upcoming rows)
-npm run org2 -- agenda --dir /path/to/org --exclude-when overdue
-
-# Filter by weekday (mon/tue/... or full names; supports weekday/weekend aliases)
-npm run org2 -- agenda --dir /path/to/org --weekday mon,weekday
-
-# Exclude weekdays (for example, hide weekend rows)
-npm run org2 -- agenda --dir /path/to/org --exclude-weekday weekend
-
-# Filter by ISO week number (comma-separated 1..53, with wN/weekN aliases)
-npm run org2 -- agenda --dir /path/to/org --week w2,10
-
-# Exclude ISO week numbers (for example, hide holiday shutdown weeks)
-npm run org2 -- agenda --dir /path/to/org --exclude-week 52,53
-
-# Filter by day-of-month numbers (comma-separated 1..31 values)
-npm run org2 -- agenda --dir /path/to/org --day-of-month 1,15,31
-
-# Exclude day-of-month numbers (for example, hide first-of-month reminders)
-npm run org2 -- agenda --dir /path/to/org --exclude-day-of-month 1
-
-# Filter by month numbers/names (comma-separated values like jan,3,march)
-npm run org2 -- agenda --dir /path/to/org --month jan,3
-
-# Exclude months (for example, hide summer planning rows)
-npm run org2 -- agenda --dir /path/to/org --exclude-month jun,jul,aug
-
-# Filter by calendar quarter (comma-separated 1..4, q1..q4, or quarter1..quarter4)
-npm run org2 -- agenda --dir /path/to/org --quarter q1,3
-
-# Exclude calendar quarters (for example, hide end-of-year planning rows)
-npm run org2 -- agenda --dir /path/to/org --exclude-quarter q4
-
-# Filter by year (comma-separated positive year numbers)
-npm run org2 -- agenda --dir /path/to/org --year 2025,2027
-
-# Exclude years (for example, hide current-year planning rows)
-npm run org2 -- agenda --dir /path/to/org --exclude-year 2026
-
-# Filter by exact dates (comma-separated YYYY-MM-DD values)
-npm run org2 -- agenda --dir /path/to/org --date 2026-03-01,2026-03-15
-
-# Exclude exact dates (for example, hide a specific holiday/planning day)
-npm run org2 -- agenda --dir /path/to/org --exclude-date 2026-03-01
-
-# Filter by headline level (comma-separated positive integers)
-npm run org2 -- agenda --dir /path/to/org --level 1,2
-
-# Exclude headline levels (for example, hide top-level project headings)
-npm run org2 -- agenda --dir /path/to/org --exclude-level 1
-
-# Filter by headline text (case-insensitive, comma-separated OR terms)
-npm run org2 -- agenda --dir /path/to/org --match "release,retro"
-
-# Exclude rows by headline text (case-insensitive, comma-separated OR terms)
-npm run org2 -- agenda --dir /path/to/org --exclude-match "retro,parking lot"
-
-# Filter by headline tags (case-insensitive exact tag match, comma-separated OR terms)
-npm run org2 -- agenda --dir /path/to/org --tag "work,urgent"
-
-# Filter by headline :ID: / :CUSTOM_ID: values (case-insensitive exact match, comma-separated OR terms)
-npm run org2 -- agenda --dir /path/to/org --id "abc123,project-roadmap"
-
-# Filter by exact TODO keywords (case-insensitive, comma-separated OR terms)
-npm run org2 -- agenda --dir /path/to/org --todo "waiting,done"
-
-# Filter by headline priority markers (case-insensitive; accepts A,B or [#A],[#B])
-npm run org2 -- agenda --dir /path/to/org --priority "a,[#b]"
-
-# Filter by planning clock time (exact HH:MM matches, plus timed/untimed aliases)
-npm run org2 -- agenda --dir /path/to/org --time "09:30,timed"
-
-# Filter by planning clock-time ranges (inclusive; supports overnight windows too)
-npm run org2 -- agenda --dir /path/to/org --time "09:00-12:30,22:00-02:00"
-
-# Filter by :EFFORT: property values (case-insensitive exact match; supports 0:30/30m/1h forms)
-npm run org2 -- agenda --dir /path/to/org --effort "0:30,1h"
-
-# Filter by exact headline drawer properties (KEY=VALUE, case-insensitive)
-npm run org2 -- agenda --dir /path/to/org --property "owner=avi,team=platform"
-
-# Exclude rows with tags (case-insensitive exact tag match, comma-separated OR terms)
-npm run org2 -- agenda --dir /path/to/org --exclude-tag "someday,maybe"
-
-# Exclude rows by headline :ID: / :CUSTOM_ID: values (case-insensitive exact match)
-npm run org2 -- agenda --dir /path/to/org --exclude-id "archive-node,legacy-plan"
-
-# Exclude rows with exact TODO keywords (case-insensitive, comma-separated OR terms)
-npm run org2 -- agenda --dir /path/to/org --exclude-todo "done,canceled"
-
-# Exclude rows with headline priority markers (case-insensitive; accepts A,B or [#A],[#B])
-npm run org2 -- agenda --dir /path/to/org --exclude-priority "c"
-
-# Exclude rows by planning clock time (exact HH:MM matches, plus timed/untimed aliases)
-npm run org2 -- agenda --dir /path/to/org --exclude-time "17:00,untimed"
-
-# Exclude rows by planning clock-time ranges (inclusive; supports overnight windows too)
-npm run org2 -- agenda --dir /path/to/org --exclude-time "09:00-12:30,22:00-02:00"
-
-# Exclude rows with matching :EFFORT: values (case-insensitive exact match)
-npm run org2 -- agenda --dir /path/to/org --exclude-effort "15m,0:30"
-
-# Exclude rows by exact headline drawer properties (KEY=VALUE, case-insensitive)
-npm run org2 -- agenda --dir /path/to/org --exclude-property "owner=bot"
-
-# Keep only rows whose source file path contains any term (case-insensitive)
-npm run org2 -- agenda --dir /path/to/org --file-match "projects,work"
-
-# Hide rows whose source file path contains any term (case-insensitive)
-npm run org2 -- agenda --dir /path/to/org --exclude-file "archive,personal"
-
-# Sort rows within each day (comma-separated sort keys: file, headline, todo, status, priority, effort, id, level, time, kind, tags, line)
-npm run org2 -- agenda --dir /path/to/org --sort "file,headline"
-
-# Group rows within each day (same keys as --sort)
-npm run org2 -- agenda --dir /path/to/org --group "todo,file"
-
-# Group rows by exact :ID:/ :CUSTOM_ID: values
-npm run org2 -- agenda --dir /path/to/org --group "id"
-
-# Keep only the first N rows per day+group bucket (requires --group)
-npm run org2 -- agenda --dir /path/to/org --group "todo" --group-limit 3
-
-# Keep only the first N rows per day before applying global --limit
-npm run org2 -- agenda --dir /path/to/org --sort "priority,headline" --day-limit 10
-
-# Group normalized TODO status buckets first (todo -> in_progress -> done -> canceled -> custom)
-npm run org2 -- agenda --dir /path/to/org --sort "status,headline"
-
-# Override normalized status-bucket ordering for --sort status / --group status
-npm run org2 -- agenda --dir /path/to/org --sort "status,headline" --status-order "done,todo,custom,in_progress,canceled"
-
-# Override planning-kind ordering for --sort kind / --group kind
-npm run org2 -- agenda --dir /path/to/org --sort "kind,headline" --kind-order "scheduled,deadline"
-
-# Override priority marker ordering for --sort priority / --group priority
-npm run org2 -- agenda --dir /path/to/org --sort "priority,headline" --priority-order "C,B,A"
-
-# Override tag ordering for --sort tags / --group tags (listed tags rank first)
-npm run org2 -- agenda --dir /path/to/org --sort "tags,headline" --tag-order "urgent,client,deep-work"
-
-# Use an explicit TODO keyword sequence for --sort todo / --group todo
-npm run org2 -- agenda --dir /path/to/org --sort "todo,headline" --todo-order "TODO,NEXT,IN_PROGRESS,WAITING,DONE,CANCELED"
-
-# Prioritize highest-priority tasks first within each day (A before B before C)
-npm run org2 -- agenda --dir /path/to/org --sort "priority,headline"
-
-# Sort by shortest effort estimate first (supports Org-style values like 0:30, 45m, 1h)
-npm run org2 -- agenda --dir /path/to/org --sort "effort,headline"
-
-# Override effort ordering for --sort effort / --group effort (supports none/empty/unset/no-effort)
-npm run org2 -- agenda --dir /path/to/org --sort "effort,headline" --effort-order "none,2h,0:30,1:15"
-
-# Sort by exact :ID:/ :CUSTOM_ID: values (rows without IDs sort last)
-npm run org2 -- agenda --dir /path/to/org --sort "id,headline"
-
-# Sort by headline depth (top-level first by default; use -level for deepest-first)
-npm run org2 -- agenda --dir /path/to/org --sort "level,headline"
-
-# Sort timed rows by clock time (untimed rows come last)
-npm run org2 -- agenda --dir /path/to/org --sort "time,headline"
-
-# Descending sort: prefix any key with '-' (or use :desc)
-npm run org2 -- agenda --dir /path/to/org --sort "-headline,todo:desc"
-
-# Show newest dates first (default is ascending/oldest-first)
-npm run org2 -- agenda --dir /path/to/org --date-order desc
-
-# Limit total rows after sorting (across overdue + upcoming sections)
-npm run org2 -- agenda --dir /path/to/org --limit 25
-
-# Show parse errors instead of silently skipping broken files
-npm run org2 -- agenda --dir /path/to/org --verbose-errors
-#+end_src
-
-Notes:
-- If a file fails to parse, the CLI will skip it (use =--verbose-errors= to see why).
-- By default, overdue items are included; use =--no-overdue= to hide them.
-- =--when= filters by schedule bucket relative to =--today=: =overdue=, =today=, =upcoming=.
-- =--exclude-when= hides rows in matching schedule buckets (=overdue=, =today=, and/or =upcoming=).
-- =--weekday= filters rows to matching weekdays (supports =mon...sun= aliases, full names, and =weekday=/=weekend= aliases).
-- =--exclude-weekday= hides rows for matching weekdays (same allowed values as =--weekday=).
-- =--week= filters rows to matching ISO week numbers (comma-separated =1..53= values plus aliases like =w2= and =week10=).
-- =--exclude-week= hides rows for matching ISO week numbers (same allowed values as =--week=).
-- =--day-of-month= filters rows to matching day-of-month values (comma-separated =1..31= integers like =1,15,31=).
-- =--exclude-day-of-month= hides rows whose date day-of-month matches the provided =1..31= values.
-- =--month= filters rows to matching months (comma-separated values using =1..12= or name aliases like =jan=, =march=).
-- =--exclude-month= hides rows for matching months (same allowed values as =--month=).
-- =--quarter= filters rows to matching calendar quarters (comma-separated values using =1..4= plus aliases like =q1=, =quarter2=).
-- =--exclude-quarter= hides rows for matching calendar quarters (same allowed values as =--quarter=).
-- =--year= filters rows to matching calendar years (comma-separated positive year numbers like =2025,2026=).
-- =--exclude-year= hides rows for matching calendar years (same allowed values as =--year=).
-- =--date= filters rows to exact dates (comma-separated =YYYY-MM-DD= values like =2026-03-01,2026-03-15=).
-- =--exclude-date= hides rows for matching exact dates (same value format as =--date=).
-- =--level= filters rows to matching headline levels (comma-separated positive integers like =1,2,3=).
-- =--exclude-level= hides rows from matching headline levels (same value format as =--level=).
-- =--exclude-status= hides rows with matching TODO state buckets (=active=, =closed=, etc.; same allowed values as =--status=).
-- =--exclude-kind= hides rows with matching planning kinds (=scheduled= and/or =deadline=).
-- =--match= checks agenda headline text only, case-insensitively.
-- =--exclude-match= hides rows whose headline text matches any provided term.
-- =--tag= checks agenda headline tags only, case-insensitively (exact tag match).
-- =--id= checks headline =:ID:= / =:CUSTOM_ID:= property values only, case-insensitively (exact match).
-- =--sort id= / =--group id= use headline =:ID:= first, then =:CUSTOM_ID:= when =:ID:= is absent; rows without either ID value sort/group as =(none)= (and sort after rows with IDs).
-- =--todo= checks exact TODO keywords only, case-insensitively.
-- =--todo-order= sets explicit TODO keyword ordering for =--sort todo= / =--group todo= (comma-separated keywords like =TODO,IN_PROGRESS,DONE=). Keywords not listed in =--todo-order= fall back after ranked keywords in default alphabetical order.
-- =--status-order= sets explicit normalized status-bucket ordering for =--sort status= / =--group status= (comma-separated buckets: =todo=, =in_progress=, =done=, =canceled=, =custom=; aliases like =open=, =prog=, =completed=, and =closed= are accepted). Buckets not listed in =--status-order= fall back after ranked buckets using default status order.
-- =--kind-order= sets explicit planning-kind ordering for =--sort kind= / =--group kind= (comma-separated values: =scheduled=, =deadline=). Kinds not listed in =--kind-order= fall back after ranked kinds using the default lexical order.
-- =--priority-order= sets explicit priority-marker ordering for =--sort priority= / =--group priority= (comma-separated values: =A..Z= and/or =0..9=, bracketed forms like =[#A]= are accepted). Priorities not listed in =--priority-order= fall back after ranked values using the default =A→Z= then =0→9= ordering.
-- =--tag-order= sets explicit tag ordering for =--sort tags= / =--group tags= (comma-separated tag names, case-insensitive). Rows containing listed tags rank first in the provided order; unlisted tags keep lexical fallback ordering.
-- =--effort-order= sets explicit effort ordering for =--sort effort= / =--group effort= (comma-separated effort tokens like =0:30=, =45m=, =2h=; plus aliases =none= / =empty= / =unset= / =no-effort= for rows without =:EFFORT:=). Tokens not listed in =--effort-order= fall back after ranked values using default effort sorting.
-- =--priority= checks Org headline priority markers (for example =A=, =B=, or =[#A]= tokens).
-- =--time= checks planning clock-time values using exact =HH:MM= tokens and inclusive ranges (=HH:MM-HH:MM=, including overnight windows like =22:00-02:00=); special values =timed= and =untimed= match rows with/without explicit planning times.
-- =--effort= checks headline =:EFFORT:= property values (exact match after normalization; for example =0:30=, =30m=, and =1h=).
-- =--property= checks exact headline drawer properties using =KEY=VALUE= terms (case-insensitive; comma-separated OR matching).
-- =--exclude-tag= hides rows with matching headline tags.
-- =--exclude-id= hides rows with matching headline =:ID:= / =:CUSTOM_ID:= property values.
-- =--exclude-todo= hides rows with matching TODO keywords.
-- =--exclude-priority= hides rows with matching Org priority markers.
-- =--exclude-time= hides rows with matching planning clock-time values/ranges (same token support as =--time=).
-- =--exclude-effort= hides rows with matching =:EFFORT:= property values.
-- =--exclude-property= hides rows with matching headline drawer property terms (=KEY=VALUE=, case-insensitive).
-- =--file-match= keeps rows whose source file path contains any term.
-- =--exclude-file= hides rows whose source file path contains any term.
-- =--sort= reorders rows within each date bucket (always date-first overall sorting); supported keys are =file=, =headline=, =todo=, =status=, =priority=, =effort=, =id=, =level=, =time=, =kind=, =tags=, and =line=. Prefix a key with =-= (or suffix with =:desc=) for descending order.
-- =--group= clusters rows within each date bucket by one or more keys (same key set/syntax as =--sort=). In JSON output this also adds per-day =groups= arrays with grouped row subsets.
-- =--group-limit= caps rows per day+group bucket (applies after sorting; requires =--group= to have an effect).
-- =--day-limit= caps rows per day after sort/group ordering (applied before global =--limit=).
-- =--date-order= controls overall date ordering (=asc= oldest-first, =desc= newest-first) while still applying per-day =--group= and =--sort= tie-breakers.
-- =--limit= caps total rendered rows after sorting (across overdue + upcoming).
-- =--from= overrides agenda start date (default: =--today= / current date).
-- =--to= overrides agenda end date (default: start + =--days - 1=).
-- Repeater timestamps like =<2026-01-08 Thu +1w>= are expanded into recurring agenda rows (MVP: +/++/.+ with d/w/m/y units).
-
-*** Running against local data with =org2.json=
-
-If you don’t pass =--dir= or =--files=, the CLI will look for an =org2.json= config file in the current directory (or up to 10 parents).
-
-1) Create an =org2.json= in the root of your notes repo (or anywhere you plan to run the command from):
-
-#+begin_src json
-{
-  "agendaFiles": ["*.org", "notes/**/*.org"],
-  "recursive": true,
-  "ignorePatterns": [".git/**", "node_modules/**", ".#*"]
-}
-#+end_src
-
-2) Run agenda with no paths:
-
-If you want to run =org2= from your notes repo without typing a long path, you can do:
-
-#+begin_src sh
-# in the org2 checkout
-cd /path/to/org2
-npm link
-
-# in your notes repo
-cd /path/to/your/notes
-org2 agenda --format json
-#+end_src
-
-Or, without =npm link=, call the CLI via an absolute path:
-
-#+begin_src sh
-cd /path/to/your/notes
-# org2.json will be discovered automatically
-/path/to/org2-repo/node_modules/.bin/org2 agenda --format json
-
-# or from the org2 checkout:
-cd /path/to/org2
-npm run org2 -- agenda --format json
-#+end_src
-
-Tip: for a reproducible “fixture” when testing agenda output, create a small folder with a couple =.org= files (for example =./tmp/agenda-fixture/=) and run:
-
-#+begin_src sh
-npm run org2 -- agenda --dir ./tmp/agenda-fixture --today 2026-01-25 --days 14 --format json
-#+end_src
-
-*** Quick capture (MVP)
-
-#+begin_src sh
-# Preview a note capture append (prints full resulting file text)
-npm run org2 -- capture --file /path/to/inbox.org2 --template note --title "Call with design team"
-
-# Preview a task capture append with explicit TODO keyword
-npm run org2 -- capture --file /path/to/inbox.org2 --template task --todo IN_PROGRESS --title "Ship onboarding copy" --format json
-
-# Write the capture result to disk
-npm run org2 -- capture --file /path/to/inbox.org2 --template task --title "Plan Q2 roadmap" --apply
-
-# Emit a unified diff preview instead of full text/json
-npm run org2 -- capture --file /path/to/inbox.org2 --template note --title "Draft launch notes" --format diff
-
-# Include body text under the captured heading
-npm run org2 -- capture --file /path/to/inbox.org2 --template note --title "Standup notes" --body $'Blocked on API key\nWaiting on infra.' --apply
-#+end_src
-
-Notes:
-- =capture= appends a new heading to the end of the target file.
-- VS Code command =Org2: Capture Quick Entry= wraps this flow with file/template/title prompts, a diff preview, and apply confirmation.
-- =--template note= writes =* Title= + =CAPTURED: <...>=.
-- =--template task= writes =* TODO Title= by default (override keyword with =--todo=).
-- =--body TEXT= inserts optional body text below the =CAPTURED:= line.
-- In VS Code, capture can pass the active selection as =--body= (config: =org2.capture.useSelectionAsBody=).
-- Use =--now ISO= for deterministic tests.
-
-*** Refile subtree (MVP)
-
-#+begin_src sh
-# Preview moving the subtree at/above --pos into another file (append to file end)
-npm run org2 -- refile --file /path/to/inbox.org2 --pos 42 --to-file /path/to/projects.org2 --format json
-
-# Preview as diff
-npm run org2 -- refile --file /path/to/inbox.org2 --pos 42 --to-file /path/to/projects.org2 --format diff
-
-# Refile under a destination heading (line or cursor-like LINE[:COL])
-npm run org2 -- refile --file /path/to/inbox.org2 --pos 42 --to-file /path/to/projects.org2 --to-pos 10 --apply
-#+end_src
-
-Notes:
-- =refile= moves the headline subtree at/above =--pos= out of the source file and into =--to-file=.
-- Without =--to-pos=, the moved subtree is appended at end-of-file.
-- With =--to-pos=, the moved subtree is inserted at the end of the destination heading subtree and headline levels are adjusted so the moved root becomes a child of that heading.
-- Use =--format diff= to preview the exact source+destination edits before applying.
-
-*** HTML export (MVP)
-
-#+begin_src sh
-# Preview standalone HTML for a single file (prints HTML to stdout)
-npm run org2 -- export html --file /path/to/notes.org2
-
-# Preview as machine-readable JSON (includes title, outputPath, changed, html)
-npm run org2 -- export html --file /path/to/notes.org2 --format json
-
-# Write HTML to the default output path (same path with .html extension)
-npm run org2 -- export html --file /path/to/notes.org2 --apply
-
-# Write HTML to an explicit output path
-npm run org2 -- export html --file /path/to/notes.org2 --out /path/to/site/index.html --apply
-
-# Preview a whole directory tree as machine-readable JSON (includes per-file output paths)
-npm run org2 -- export html --dir /path/to/org --recursive --out-dir /path/to/site --format json
-
-# Export a whole directory tree to HTML (preserves subdirectory structure)
-npm run org2 -- export html --dir /path/to/org --recursive --out-dir /path/to/site --apply
-
-# Preview a generated index page for batch exports (links to exported files)
-npm run org2 -- export html --dir /path/to/org --recursive --out-dir /path/to/site --index index.html --index-title "Site Index" --format json
-
-# Export with custom stylesheet links and no built-in inline style
-npm run org2 -- export html --file /path/to/notes.org2 --css /assets/site.css,https://cdn.example.com/theme.css --no-default-style --apply
-
-# Export with an auto-generated table of contents + heading anchors
-npm run org2 -- export html --file /path/to/notes.org2 --toc --apply
-
-# Export with a depth-limited table of contents (only levels 1-2)
-npm run org2 -- export html --file /path/to/notes.org2 --toc-depth 2 --apply
-
-# Export with generated heading/section numbers
-npm run org2 -- export html --file /path/to/notes.org2 --number-headings --apply
-
-# Export with heading numbers limited to levels 1-2
-npm run org2 -- export html --file /path/to/notes.org2 --number-headings-depth 2 --apply
-
-# Rewrite Org file links (file:*.org / *.org2) to .html hrefs in exported output
-npm run org2 -- export html --file /path/to/notes.org2 --rewrite-file-links --apply
-#+end_src
-
-Notes:
-- =export html --file= renders one file and supports =--title= / =--out= overrides.
-- =export html --dir= batch-renders all =.org/=*.org2= files in the target directory (recursive when =--recursive= is set).
-- Directory exports preserve relative source paths under =--out-dir= (or under =--dir= when =--out-dir= is omitted), swapping source extensions to =.html=.
-- =--index FILE= (directory mode only) emits an HTML index file with links to every exported page; relative index paths are resolved under =--out-dir=.
-- =--index-title TITLE= overrides the index page title.
-- =--css HREF= injects an external stylesheet link (repeat flag or pass comma-separated values).
-- =--no-default-style= omits Org2's built-in inline stylesheet (useful when styling entirely via external CSS).
-- =--toc= prepends an auto-generated table of contents and heading anchor IDs to each exported HTML page.
-- =--toc-depth N= limits TOC entries to heading levels =<=N= (and enables TOC automatically).
-- =#+OPTIONS: toc:t= enables the same TOC + heading-anchor export behavior even without passing =--toc=; =#+OPTIONS: toc:N= applies a heading-depth limit.
-- =--number-headings= prefixes exported headings with generated section numbers (and prefixes TOC entries too when TOC is enabled).
-- =--number-headings-depth N= limits heading numbering to levels =<=N= (and enables heading numbering automatically).
-- =#+OPTIONS: num:t= enables heading numbering from file keywords; =#+OPTIONS: num:N= applies a numbering depth limit.
-- =--rewrite-file-links= rewrites Org file links (for example =file:notes.org2= or =../notes.org=) to =.html= hrefs during export and emits heading anchor IDs so rewritten =::* Heading= / =::#custom-id= targets resolve in published output.
-- In-document heading links (=[[* Heading]]= and =[[#custom-id]]=) are exported as hash anchors and trigger heading anchor IDs automatically (no =--toc= required).
-- When in-document heading/custom-id links omit a description, exported link text defaults to a cleaned label (=Heading= / =custom-id=) instead of raw Org target markup.
-- Exported HTML maps =#+AUTHOR=, =#+DATE=, =#+SUBTITLE=, =#+DESCRIPTION=, and =#+KEYWORDS= into corresponding HTML =<meta>= tags.
-- =#+LANGUAGE= sets the exported =<html lang="...">= attribute (defaults to =en= when omitted/invalid).
-- =#+HTML_HEAD= and =#+HTML_HEAD_EXTRA= inject raw snippets into the HTML =<head>= (in file order).
-- When =#+SUBTITLE= is present, exported HTML prepends a document header block with the resolved title and subtitle.
-- Single-file JSON export includes a =metadata= object when keyword metadata/head snippets are present.
-- Without =--apply=, output is preview-only (single-file emits HTML text by default; batch mode emits summary text or JSON).
-
-*** Project publish (=publish=)
-
-Use =publish= for project-level HTML publishing from =org2.json= (Org2 analog to =org-publish-project-alist=).
-
-#+begin_src sh
-# Publish a named project from org2.json (writes files by default)
-npm run org2 -- publish homepage
-
-# Preview publish plan/output metadata without writing files
-npm run org2 -- publish homepage --preview --format json
-
-# Use an explicit config path
-npm run org2 -- publish --project homepage --config /path/to/org2.json
-#+end_src
-
-Example =org2.json= project:
-
-#+begin_src json
-{
-  "publish": {
-    "projects": {
-      "homepage": {
-        "baseDir": "/Users/avi/dev/homepage",
-        "outDir": "/Users/avi/dev/homepage/docs",
-        "include": ["index.org", "posts/**/*.org", "sitemap.org"],
-        "ignore": [".git/**"],
-        "recursive": true,
-        "rewriteFileLinks": true,
-        "includeDefaultStyle": false,
-        "postambleHtml": "<div id=\"postamble\" class=\"status\">...</div>",
-        "index": { "file": "sitemap.html", "title": "Sitemap" }
-      }
-    }
-  }
-}
-#+end_src
-
-Notes:
-- =publish= reads project config from =publish.projects.<name>= in =org2.json=.
-- Required fields: =baseDir= + =outDir=.
-- =publish= exports matching =.org/.org2= files to HTML preserving relative paths under =outDir=.
-- =postambleHtml= appends raw HTML near the end of =<body>= on every exported page (for site-wide footers/postambles).
-- Publish project options support TOC/heading numbering/rewrite-file-links/index generation and stylesheet/default-style controls.
-
-*** Formatter (=fmt=) quick examples
-
-#+begin_src sh
-# Print formatted output for one file
-npm run org2 -- fmt --file /path/to/file.org
-
-# Apply formatting in place (supports multiple files)
-npm run org2 -- fmt --file /path/to/file.org --apply
-npm run org2 -- fmt --files /path/to/a.org /path/to/b.org --apply
-
-# Check formatting drift (exit 1 + print changed files)
-npm run org2 -- fmt --files /path/to/a.org /path/to/b.org --check
-
-# Check formatting drift across a directory tree
-npm run org2 -- fmt --dir /path/to/org --recursive --check
-
-# Check formatting drift as machine-readable JSON
-npm run org2 -- fmt --dir /path/to/org --recursive --check --format json
-
-# Preview single-file formatter output as JSON (safe-edit style)
-npm run org2 -- fmt --file /path/to/file.org --format json
-
-# Format stdin and emit JSON (changed + formattedText)
-cat /path/to/file.org | npm run org2 -- fmt --stdin --format json
-
-# Check formatting drift using org2.json agendaFiles/ignorePatterns
-npm run org2 -- fmt --check --config /path/to/org2.json
-
-# Apply formatting across a directory tree
-npm run org2 -- fmt --dir /path/to/org --recursive --apply
-
-# Apply formatting and emit machine-readable JSON summary
-npm run org2 -- fmt --dir /path/to/org --recursive --apply --format json
-
-# Filter directory checks/applies by file path substring
-npm run org2 -- fmt --dir /path/to/org --recursive --check --file-match projects,work
-npm run org2 -- fmt --dir /path/to/org --recursive --apply --exclude-file archive,tmp
-#+end_src
-
-Notes:
-- =fmt --check= is intended for CI/pre-commit-style drift detection.
-- =fmt --check --format json= emits =changed= plus =checkedFiles=/=changedFiles= arrays while preserving exit code semantics (0 clean, 1 drift).
-- =fmt --file ... --format json= emits a single-file preview payload with =formattedText= and =changed= (without mutating files).
-- =fmt --check= does not support =--stdin=.
-- =fmt --stdin --format json= emits =changed= plus =formattedText=.
-- =fmt --apply --format json= emits =changed= plus =processedFiles=/=changedFiles= arrays.
-- =fmt --config PATH= resolves files from =org2.json= (=agendaFiles= + =ignorePatterns=) before formatter path filters.
-- =fmt --dir= scans top-level files by default; add =--recursive= to include subdirectories.
-- =--file-match= and =--exclude-file= use case-insensitive path substring matching and support comma-separated terms.
-
-*** Language Server (=lsp=) quick example
-
-#+begin_src sh
-# Start the LSP server over stdio
-npm run org2 -- lsp
-#+end_src
-
-Current LSP features include parser diagnostics, document symbols, folding ranges, go-to-definition + go-to-declaration + go-to-type-definition + go-to-implementation (including file-link =::search= suffix targets like =::*Heading=, =::#custom-id=, and =::42=), find-references for both =[[file:...]]= and =[[id:...]]= links, document links for file/id/URL targets, document highlights for ID/file references, hover tooltips for links/TODO/planning keywords, rename support for =[[id:...]]= links plus =:ID:= property values and matching file-link targets, workspace file-rename edits for file links (=workspace/willRenameFiles=), linked editing ranges for synchronized ID edits across links/properties plus matching file links (=textDocument/linkedEditingRange=), completion for TODO/planning keywords, Org timestamps, and ID/file link targets, planning timestamp signature help (=textDocument/signatureHelp=), quick-fix code actions for CRLF/tab parser issues, document formatting (=textDocument/formatting=), range formatting (=textDocument/rangeFormatting=), table-aware on-type formatting (=textDocument/onTypeFormatting=), selection ranges (=textDocument/selectionRange=), semantic tokens for TODO/planning/properties/link targets (=textDocument/semanticTokens/full=), backlink code lenses for =:ID:= properties (=textDocument/codeLens=), document color extraction + hex presentations (=textDocument/documentColor= / =textDocument/colorPresentation=), inlay hints for unlabeled ID/file links (=textDocument/inlayHint=), call hierarchy for Org ID/file links (=textDocument/prepareCallHierarchy= + =callHierarchy/incomingCalls= + =callHierarchy/outgoingCalls=), and workspace symbol search over org/org2 headings.
-
-*** Other CLI commands (brief)
-
-Org2 also includes additional commands that are mostly used internally by editor integrations (for example, marking TODO states, setting SCHEDULED/DEADLINE dates, formatting, and the LSP server).
-
-Rather than documenting them here (they change often), run:
+Discover current commands/flags:
 
 #+begin_src sh
 npm run org2 -- --help
-# or
-node dist/cli.js --help
+npm run org2 -- agenda --help
 #+end_src
 
-** Tools
+** Common CLI usage
 
-See [[./tools/README.md]] for the fixture runner and reference parser.
+Agenda on a directory:
 
+#+begin_src sh
+npm run org2 -- agenda --dir /path/to/org --recursive
+#+end_src
 
+Agenda on explicit files:
+
+#+begin_src sh
+npm run org2 -- agenda --files a.org b.org
+#+end_src
+
+Bounded range + JSON:
+
+#+begin_src sh
+npm run org2 -- agenda --from 2026-01-01 --to 2026-01-31 --format json
+#+end_src
+
+Run language server:
+
+#+begin_src sh
+npm run org2 -- lsp
+#+end_src
+
+** Editor support
+
+- *VS Code* (=editors/vscode-org2/=): primary integration target
+- *Vim/Neovim* (=editors/vim-org2/=): minimal support
+- Other editors: planned
+
+** Contributing
+
+Contributions welcome.
+
+Keep PRs focused, test-backed, and workflow-oriented.
+
+Before opening a PR:
+- run tests/build
+- validate end-to-end behavior for the touched workflow
+- keep docs concise and user-centered
+
+** Repo map
+
+- Core parser/CLI/LSP: =src/=
+- VS Code extension: =editors/vscode-org2/=
+- Vim plugin: =editors/vim-org2/=
+- Spec draft: =spec/v0/SPEC.org=
+- Detailed LSP notes: =LSP_README.md=
