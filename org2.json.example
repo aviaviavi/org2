@@ -21,6 +21,11 @@
           "file": "sitemap.html",
           "title": "Sitemap"
         },
+        "sitemapXml": {
+          "file": "sitemap.xml",
+          "baseUrl": "https://avi.press",
+          "includeIndexPage": true
+        },
         "assets": {
           "include": ["css/**", "images/**", "CNAME"],
           "ignore": ["**/.DS_Store"]
