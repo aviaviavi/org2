@@ -690,7 +690,7 @@ function renderSrcBlock(node: SrcBlockNode): string {
   const languageClass = language ? ` language-${language}` : "";
   const codeClassAttr = language ? ` class="language-${escapeAttr(language)}"` : "";
   const body = escapeHtml(node.bodyRaw.replace(/\n$/, ""));
-  const baseStyle = "padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.45;";
+  const baseStyle = "padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;";
   return `<pre class="org2-src${languageClass}" style="${escapeAttr(baseStyle)}"><code${codeClassAttr}>${body}</code></pre>`;
 }
 
@@ -951,7 +951,7 @@ ${DOCUMENT_TOC_STYLE}` : DEFAULT_DOCUMENT_STYLE,
   const compatOpen = opts.compatContentWrapper ? '<div id="content" class="content">\n' : "";
   const compatClose = opts.compatContentWrapper ? "</div>\n" : "";
   const compatStyleSection = opts.compatContentWrapper
-    ? "<style>\n#content { max-width: 60em; margin: auto; }\n</style>\n"
+    ? "<style>\n#content { max-width: 60em; margin: auto; line-height: 1.35; }\n</style>\n"
     : "";
   const html = `<!doctype html>\n<html lang="${escapeAttr(language)}">\n<head>\n<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />\n<title>${escapeHtml(title)}</title>\n${headMetaSection}${headExtraSection}${headStyleSection}${compatStyleSection}</head>\n<body>\n${compatOpen}<main class="org2-document">\n${mainBody}\n</main>\n${compatClose}${postambleSection}</body>\n</html>\n`;
 
