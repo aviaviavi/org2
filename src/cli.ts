@@ -4792,13 +4792,15 @@ async function main(): Promise<void> {
         ? toDisplayPath(sitemapPathAbsolute)
         : path.join(outputRootInput, sitemapFileRaw);
 
+      const includeIndexPage = project.sitemapXml.includeIndexPage !== false;
       const urlEntries: string[] = [];
-      if (project.sitemapXml.includeIndexPage !== false) {
+      if (includeIndexPage) {
         urlEntries.push(`${baseUrl}/`);
       }
       for (const item of exported) {
         const rel = path.relative(outputRoot, item.outputPathAbsolute).split(path.sep).join("/");
         const relWithoutDot = rel.startsWith("./") ? rel.slice(2) : rel;
+        if (includeIndexPage && relWithoutDot === "index.html") continue;
         urlEntries.push(`${baseUrl}/${relWithoutDot}`);
       }
 
