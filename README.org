@@ -6,7 +6,7 @@ A from-scratch successor to Org Mode, built to be editor-agnostic and platform-a
 
 Reference: https://avi.press/posts/2024-01-15-standalone-org.html
 
-** Status (honest version)
+** Status
 
 Org2 is *early alpha*.
 
