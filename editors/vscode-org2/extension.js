@@ -944,7 +944,10 @@ async function pickAgendaStatusFilter(provider) {
   const pick = await vscode.window.showQuickPick(options, { placeHolder: 'Org2 agenda TODO status filter' });
   if (!pick) return;
 
-  await cfg.update('agenda.statusFilter', pick.value, vscode.ConfigurationTarget.Workspace);
+  const target = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0
+    ? vscode.ConfigurationTarget.Workspace
+    : vscode.ConfigurationTarget.Global;
+  await cfg.update('agenda.statusFilter', pick.value, target);
   if (provider) {
     await provider.load();
   }
