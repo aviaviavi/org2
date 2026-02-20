@@ -27,6 +27,9 @@
     "onCommand:org2.setTodoCanceled",
     "onCommand:org2.setScheduled",
     "onCommand:org2.setScheduledToday",
+    "onCommand:org2.setScheduledTomorrow",
+    "onCommand:org2.setScheduledNextWeek",
+    "onCommand:org2.setScheduledNextMonth",
     "onCommand:org2.setDeadline",
     "onCommand:org2.setDeadlineToday",
     "onCommand:org2.pickAgendaStatusFilter",
@@ -41,6 +44,7 @@
     "onCommand:org2.roamCopyIdLinkById",
     "onCommand:org2.roamInsertBacklink",
     "onCommand:org2.roamOpenId",
+    "onCommand:org2.roamOpenTitle",
     "onCommand:org2.roamShowBacklinks",
     "onCommand:org2.roamShowBacklinksById",
     "onCommand:org2.roamOpenBacklink",
@@ -183,6 +187,18 @@
         "title": "Org2: Set SCHEDULED to Today"
       },
       {
+        "command": "org2.setScheduledTomorrow",
+        "title": "Org2: Set SCHEDULED to Tomorrow"
+      },
+      {
+        "command": "org2.setScheduledNextWeek",
+        "title": "Org2: Set SCHEDULED to Next Week"
+      },
+      {
+        "command": "org2.setScheduledNextMonth",
+        "title": "Org2: Set SCHEDULED to Next Month"
+      },
+      {
         "command": "org2.setDeadline",
         "title": "Org2: Set DEADLINE"
       },
@@ -233,6 +249,10 @@
       {
         "command": "org2.roamOpenId",
         "title": "Org2: Roam \u2014 Open ID (Prompt/Link)"
+      },
+      {
+        "command": "org2.roamOpenTitle",
+        "title": "Org2: Roam \u2014 Open Title Link (Prompt/Link)"
       },
       {
         "command": "org2.roamShowBacklinks",
@@ -341,6 +361,21 @@
           "command": "org2.setScheduledToday",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@16"
+        },
+        {
+          "command": "org2.setScheduledTomorrow",
+          "when": "view == org2Agenda && viewItem == org2AgendaItem",
+          "group": "navigation@16.1"
+        },
+        {
+          "command": "org2.setScheduledNextWeek",
+          "when": "view == org2Agenda && viewItem == org2AgendaItem",
+          "group": "navigation@16.2"
+        },
+        {
+          "command": "org2.setScheduledNextMonth",
+          "when": "view == org2Agenda && viewItem == org2AgendaItem",
+          "group": "navigation@16.3"
         },
         {
           "command": "org2.setDeadline",

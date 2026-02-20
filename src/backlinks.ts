@@ -92,8 +92,6 @@ function findWikiLinksInLine(line: string): string[] {
   let m: RegExpExecArray | null;
   while ((m = bracketRe.exec(line)) !== null) {
     const targetRaw = String(m[1] || "").trim();
-    const descriptionRaw = m[2];
-    if (descriptionRaw !== undefined) continue;
     if (!isWikiLinkTargetCandidate(targetRaw)) continue;
     labels.push(targetRaw);
   }
