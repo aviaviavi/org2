@@ -3715,13 +3715,6 @@ function activate(context) {
     if (!doc) return;
     if (doc.languageId !== 'org2' && doc.languageId !== 'org') return;
 
-    const cfg = vscode.workspace.getConfiguration('org2');
-    const enabled = cfg.get('todo.highlightStates', true);
-    if (!enabled) {
-      editor.setDecorations(org2TodoStateDecoration, []);
-      return;
-    }
-
     const options = [];
     const re = /^(\*+)\s+([A-Z][A-Z0-9_\-]*)\b/;
 
@@ -3887,9 +3880,6 @@ function activate(context) {
         e.affectsConfiguration('org2.links.renderDescriptionsMode')
       ) {
         vscode.window.visibleTextEditors.forEach((ed) => updateLinkDecorations(ed));
-      }
-      if (e.affectsConfiguration('org2.todo.highlightStates')) {
-        vscode.window.visibleTextEditors.forEach((ed) => updateTodoStateDecorations(ed));
       }
     })
   );
