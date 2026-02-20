@@ -96,8 +96,25 @@
     "planning": {
       "patterns": [
         {
-          "name": "keyword.other.planning.org2",
-          "match": "^(?:\\s*)(?:SCHEDULED|DEADLINE|CLOSED):.*$"
+          "name": "meta.planning.org2",
+          "match": "^(\\s*)(SCHEDULED|DEADLINE|CLOSED)(:)(\\s*)(<[^>]+>|\\[[^\\]]+\\])(\\s+)(SCHEDULED|DEADLINE|CLOSED)(:)(\\s*)(<[^>]+>|\\[[^\\]]+\\])\\s*$",
+          "captures": {
+            "2": { "name": "keyword.control.planning.org2" },
+            "3": { "name": "punctuation.separator.key-value.org2" },
+            "5": { "name": "string.other.timestamp.org2" },
+            "7": { "name": "keyword.control.planning.org2" },
+            "8": { "name": "punctuation.separator.key-value.org2" },
+            "10": { "name": "string.other.timestamp.org2" }
+          }
+        },
+        {
+          "name": "meta.planning.org2",
+          "match": "^(\\s*)(SCHEDULED|DEADLINE|CLOSED)(:)(\\s*)(<[^>]+>|\\[[^\\]]+\\])\\s*$",
+          "captures": {
+            "2": { "name": "keyword.control.planning.org2" },
+            "3": { "name": "punctuation.separator.key-value.org2" },
+            "5": { "name": "string.other.timestamp.org2" }
+          }
         }
       ]
     },
