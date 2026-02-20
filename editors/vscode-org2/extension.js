@@ -13,6 +13,7 @@ const uuidExactRe = new RegExp(`^(${uuidSource})$`);
 const roamIdSchemeRe = new RegExp(`^id:(${uuidSource})$`, 'i');
 const roamIdLinkPartsRe = new RegExp(`^\\[\\[id:(${uuidSource})\\](?:\\[([^\\]\\n]*)\\])?\\]\\]$`, 'i');
 const roamUuidAnywhereRe = new RegExp(`(${uuidSource})`, 'i');
+const roamIdTokenGlobalRe = /\bid:[^\s\]\[(){}<>,"']+/gi;
 
 function parseRoamIdLink(value) {
   const raw = String(value || '').trim();
@@ -44,6 +45,38 @@ function extractRoamUuid(value) {
   if (any) return any[1].toLowerCase();
 
   return '';
+}
+
+function sanitizeBacklinkContextLine(value) {
+  const raw = String(value || '');
+  if (!raw) return '';
+  // Normalize full Org ID links first so we don't leave partial brackets.
+  // [[id:...][Title]] -> Title
+  // [[id:...]] -> (removed)
+  const withLinksNormalized = raw.replace(/\[\[\s*id:[^\]\n]+\](?:\[([^\]\n]*)\])?\]\]/gi, (_, desc) => {
+    const title = String(desc || '').trim();
+    return title;
+  });
+
+  const stripped = withLinksNormalized
+    .replace(roamIdTokenGlobalRe, '')
+    .replace(/\s+([,.;:!?])/g, '$1')
+    .replace(/\[\[\s*\]\[(.*?)\]\]/g, '$1')
+    .replace(/\[\[\s*\]\]/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return stripped;
+}
+
+function sanitizeBacklinkContextText(value) {
+  const raw = String(value || '');
+  if (!raw) return '';
+  return raw
+    .split(/\r?\n/)
+    .map((line) => sanitizeBacklinkContextLine(line))
+    .filter((line) => line.length > 0)
+    .join('\n')
+    .trim();
 }
 
 function findHeadingLinesAtLevel(document, level) {
@@ -272,6 +305,234 @@ class Org2AgendaItem {
     this.urgency = urgency || agendaUrgencyFromDate(date);
     this.statusBucket = agendaStatusBucket(todo);
   }
+}
+
+class Org2BacklinksFileGroup {
+  constructor(file, rootDir, items) {
+    this.file = file;
+    this.rootDir = rootDir;
+    this.items = items || [];
+  }
+}
+
+class Org2BacklinkItem {
+  constructor(entry, rootDir) {
+    this.file = String((entry && entry.file) || '');
+    this.line = typeof (entry && entry.line) === 'number' ? entry.line : 0;
+    this.srcId = String((entry && entry.srcId) || '');
+    this.srcTitle = String((entry && entry.srcTitle) || '').trim() || '(untitled)';
+    this.context = sanitizeBacklinkContextText(entry && entry.context);
+    this.contextLine = this.context ? this.context.split(/\r?\n/).map((s) => s.trim()).find(Boolean) || '' : '';
+    this.rootDir = rootDir;
+  }
+}
+
+class Org2BacklinksProvider {
+  constructor(context) {
+    this.context = context;
+    this._onDidChangeTreeData = new vscode.EventEmitter();
+    this.onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+    this.groups = [];
+    this.targetId = '';
+    this.targetFile = '';
+    this.emptyReason = 'Open an Org/Org2 file with a file-level ID to view backlinks.';
+    this.lastError = undefined;
+    this._loadSeq = 0;
+  }
+
+  refresh() {
+    this._onDidChangeTreeData.fire();
+  }
+
+  clear(reason) {
+    this.groups = [];
+    this.targetId = '';
+    this.targetFile = '';
+    this.emptyReason = String(reason || 'Open an Org/Org2 file with a file-level ID to view backlinks.');
+    this.lastError = undefined;
+    this.refresh();
+  }
+
+  async loadForEditor(editor, options = {}) {
+    const seq = ++this._loadSeq;
+    const focusView = options && options.focusView === true;
+
+    if (!editor || !editor.document) {
+      this.clear('Open an Org/Org2 file with a file-level ID to view backlinks.');
+      return;
+    }
+
+    const doc = editor.document;
+    if ((doc.languageId !== 'org2' && doc.languageId !== 'org') || !doc.uri || doc.uri.scheme !== 'file') {
+      this.clear('Backlinks are available for file-backed Org/Org2 documents.');
+      return;
+    }
+
+    const id = extractRoamUuid(findFileLevelIdInText(doc.getText()) || '');
+    if (!id) {
+      this.groups = [];
+      this.targetId = '';
+      this.targetFile = doc.uri.fsPath;
+      this.emptyReason = 'No file-level :ID: found in this file.';
+      this.lastError = undefined;
+      this.refresh();
+      return;
+    }
+
+    const rootDir = getRoamIndexRootDir();
+    const loaded = await loadBacklinksByIdWithContext(this.context, id, rootDir, { quiet: true });
+    if (seq !== this._loadSeq) return;
+
+    if (!loaded) {
+      this.groups = [];
+      this.targetId = id;
+      this.targetFile = doc.uri.fsPath;
+      this.emptyReason = 'Failed to load backlinks for current file ID.';
+      this.lastError = new Error('Failed to load backlinks.');
+      this.refresh();
+      return;
+    }
+
+    const grouped = new Map();
+    for (const backlink of loaded.backlinks || []) {
+      const file = String(backlink && backlink.file ? backlink.file : '');
+      if (!file) continue;
+      if (!grouped.has(file)) grouped.set(file, []);
+      grouped.get(file).push(new Org2BacklinkItem(backlink, rootDir));
+    }
+
+    this.groups = Array.from(grouped.entries())
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+      .map(([file, items]) => {
+        const sortedItems = items.slice().sort((aItem, bItem) => {
+          if (aItem.line !== bItem.line) return aItem.line - bItem.line;
+          return aItem.srcTitle.localeCompare(bItem.srcTitle);
+        });
+        return new Org2BacklinksFileGroup(file, rootDir, sortedItems);
+      });
+    this.targetId = id;
+    this.targetFile = doc.uri.fsPath;
+    this.emptyReason = `No backlinks found for id:${id}.`;
+    this.lastError = undefined;
+    this.refresh();
+
+    if (focusView) {
+      await focusBacklinksView().catch(() => {});
+    }
+  }
+
+  getTreeItem(element) {
+    if (element instanceof Org2BacklinksFileGroup) {
+      const count = element.items.length;
+      const rel = backlinkRelativePath(element.file, element.rootDir);
+      const item = new vscode.TreeItem(`${rel} (${count})`, vscode.TreeItemCollapsibleState.Expanded);
+      item.contextValue = 'org2BacklinksFileGroup';
+      item.tooltip = element.file;
+      item.description = path.basename(element.file);
+      return item;
+    }
+
+    if (element instanceof Org2BacklinkItem) {
+      const primaryLabel = element.contextLine || element.srcTitle;
+      const item = new vscode.TreeItem(primaryLabel, vscode.TreeItemCollapsibleState.None);
+      const shortId = element.srcId && /^([0-9a-fA-F-]{36})$/.test(element.srcId)
+        ? element.srcId.slice(0, 8).toLowerCase()
+        : '';
+      const descParts = [element.srcTitle, `L${element.line + 1}`];
+      if (shortId) descParts.push(shortId);
+      item.description = descParts.join(' • ');
+      item.contextValue = 'org2BacklinkItem';
+      item.command = {
+        command: 'org2.openFileAt',
+        title: 'Open Backlink',
+        arguments: [element.file, element.line],
+      };
+      const tooltipLines = [
+        `**${element.srcTitle}**`,
+        '',
+        `- File: ${element.file}:${element.line + 1}`,
+      ];
+      if (shortId) tooltipLines.push(`- Source ID: ${shortId}`);
+      if (element.context) {
+        tooltipLines.push('');
+        tooltipLines.push(element.context);
+      }
+      item.tooltip = new vscode.MarkdownString(tooltipLines.join('\n'));
+      return item;
+    }
+
+    const item = new vscode.TreeItem(String(element || 'Org2 backlinks'), vscode.TreeItemCollapsibleState.None);
+    item.contextValue = 'org2BacklinksMessage';
+    return item;
+  }
+
+  async getChildren(element) {
+    if (!element) {
+      if (this.lastError) return ['Org2 backlinks: failed to load'];
+      if (!this.targetId) return [this.emptyReason];
+      if (!this.groups.length) return [this.emptyReason];
+      return this.groups;
+    }
+
+    if (element instanceof Org2BacklinksFileGroup) return element.items;
+    return [];
+  }
+}
+
+function backlinkRelativePath(file, rootDir) {
+  const absFile = String(file || '');
+  const absRoot = String(rootDir || '');
+  if (!absFile) return '(unknown file)';
+  if (!absRoot) return path.basename(absFile);
+  try {
+    const rel = path.relative(absRoot, absFile);
+    if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) return rel;
+  } catch (_) {
+    // ignore
+  }
+  return path.basename(absFile);
+}
+
+async function loadBacklinksByIdWithContext(context, id, rootDir, options = {}) {
+  const quiet = options && options.quiet === true;
+  const normalizedId = extractRoamUuid(id);
+  if (!normalizedId) {
+    if (!quiet) {
+      vscode.window.showWarningMessage('Org2: invalid backlink target ID (expected UUID or id:UUID link).');
+    }
+    return null;
+  }
+
+  const backlinksArgs = ['roam', 'backlinks', '--id', normalizedId, '--dir', rootDir, '--recursive', '--format', 'json'];
+  const { cmd: backlinksCmd, args: backlinksFinalArgs } = resolveOrg2Command(context, backlinksArgs);
+
+  let backlinksOut;
+  try {
+    backlinksOut = await execFileAsync(backlinksCmd, backlinksFinalArgs, { cwd: rootDir });
+  } catch (e) {
+    if (!quiet) {
+      vscode.window.showErrorMessage(`Org2: failed to load backlinks: ${String(e && e.message ? e.message : e)}`);
+    }
+    return null;
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(String((backlinksOut && backlinksOut.stdout) || '').trim());
+  } catch (e) {
+    if (!quiet) {
+      vscode.window.showErrorMessage('Org2: failed to parse org2 backlinks output.');
+    }
+    return null;
+  }
+
+  const backlinks = Array.isArray(payload.backlinks) ? payload.backlinks : [];
+  return {
+    id: normalizedId,
+    backlinks,
+    rootDir,
+  };
 }
 
 function getAgendaUrgencyThemeColor(urgency) {
@@ -893,6 +1154,15 @@ function revealNavigationPosition(editor, pos, source) {
   if (mode === 'center') revealType = vscode.TextEditorRevealType.InCenter;
   if (mode === 'outside') revealType = vscode.TextEditorRevealType.InCenterIfOutsideViewport;
   editor.revealRange(new vscode.Range(pos, pos), revealType);
+}
+
+async function focusBacklinksView() {
+  await vscode.commands.executeCommand('workbench.view.explorer');
+  try {
+    await vscode.commands.executeCommand('org2Backlinks.focus');
+  } catch (_) {
+    // ignore: some VS Code builds may not expose focus command for custom views
+  }
 }
 
 async function openAgendaItem(item) {
@@ -1827,6 +2097,13 @@ function activate(context) {
   });
   context.subscriptions.push(agendaView);
 
+  const backlinksProvider = new Org2BacklinksProvider(context);
+  const backlinksView = vscode.window.createTreeView('org2Backlinks', {
+    treeDataProvider: backlinksProvider,
+    showCollapseAll: true,
+  });
+  context.subscriptions.push(backlinksView);
+
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.openAgenda', async () => {
       await vscode.commands.executeCommand('workbench.view.explorer');
@@ -1840,6 +2117,22 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.refreshAgenda', async () => {
       await agendaProvider.load();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.openBacklinks', async () => {
+      await focusBacklinksView();
+      await backlinksProvider.loadForEditor(vscode.window.activeTextEditor, { focusView: false });
+      if (backlinksProvider.groups[0]) {
+        backlinksView.reveal(backlinksProvider.groups[0], { focus: true, expand: true }).catch(() => {});
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.refreshBacklinks', async () => {
+      await backlinksProvider.loadForEditor(vscode.window.activeTextEditor, { focusView: false });
     })
   );
 
@@ -3175,38 +3468,8 @@ function activate(context) {
     return '';
   }
 
-  async function loadBacklinksById(id, rootDir) {
-    const normalizedId = extractRoamUuid(id);
-    if (!normalizedId) {
-      vscode.window.showWarningMessage('Org2: invalid backlink target ID (expected UUID or id:UUID link).');
-      return null;
-    }
-
-    const backlinksArgs = ['roam', 'backlinks', '--id', normalizedId, '--dir', rootDir, '--recursive', '--format', 'json'];
-    const { cmd: backlinksCmd, args: backlinksFinalArgs } = resolveOrg2Command(context, backlinksArgs);
-
-    let backlinksOut;
-    try {
-      backlinksOut = await execFileAsync(backlinksCmd, backlinksFinalArgs, { cwd: rootDir });
-    } catch (e) {
-      vscode.window.showErrorMessage(`Org2: failed to load backlinks: ${String(e && e.message ? e.message : e)}`);
-      return null;
-    }
-
-    let payload;
-    try {
-      payload = JSON.parse(String((backlinksOut && backlinksOut.stdout) || '').trim());
-    } catch (e) {
-      vscode.window.showErrorMessage('Org2: failed to parse org2 backlinks output.');
-      return null;
-    }
-
-    const backlinks = Array.isArray(payload.backlinks) ? payload.backlinks : [];
-    return {
-      id: normalizedId,
-      backlinks,
-      rootDir,
-    };
+  async function loadBacklinksById(id, rootDir, options = {}) {
+    return loadBacklinksByIdWithContext(context, id, rootDir, options);
   }
 
   async function loadBacklinksForActiveEditor() {
@@ -3301,7 +3564,7 @@ function activate(context) {
         const srcTitle = String(b.srcTitle || '(untitled)');
         const srcId = typeof b.srcId === 'string' ? b.srcId : '';
         const { meta } = formatBacklinkMeta(file, line0, srcId, rootDir);
-        const contextText = String(b.context || '').trim();
+        const contextText = sanitizeBacklinkContextText(b.context);
         const firstContextLine = contextText ? contextText.split(/\r?\n/)[0] : '';
 
         return {
@@ -3386,7 +3649,7 @@ function activate(context) {
 
       lines.push(`- [[${cmdUrl}][${srcTitle}]] :: ${meta}`);
 
-      const contextText = String(b.context || '').trim();
+      const contextText = sanitizeBacklinkContextText(b.context);
       if (contextText) {
         for (const ln of contextText.split(/\r?\n/)) {
           lines.push(`  ${ln}`);
@@ -3849,6 +4112,7 @@ function activate(context) {
       maybeAutoFold(editor);
       updateLinkDecorations(editor);
       updateTodoStateDecorations(editor);
+      backlinksProvider.loadForEditor(editor, { focusView: true }).catch(() => {});
     })
   );
 
@@ -3861,6 +4125,14 @@ function activate(context) {
       ) {
         autoFoldedForDoc.clear();
         vscode.window.visibleTextEditors.forEach((ed) => maybeAutoFold(ed));
+      }
+      if (
+        e.affectsConfiguration('org2.roam.indexDir') ||
+        e.affectsConfiguration('org2.roam.dailiesDir') ||
+        e.affectsConfiguration('org2.roam.nodesDir') ||
+        e.affectsConfiguration('org2.agenda.dir')
+      ) {
+        backlinksProvider.loadForEditor(vscode.window.activeTextEditor, { focusView: false }).catch(() => {});
       }
       if (
         e.affectsConfiguration('org2.links.renderDescriptions') ||
@@ -3877,6 +4149,7 @@ function activate(context) {
     updateLinkDecorations(ed);
     updateTodoStateDecorations(ed);
   });
+  backlinksProvider.loadForEditor(vscode.window.activeTextEditor, { focusView: false }).catch(() => {});
 
   context.subscriptions.push(
     vscode.workspace.onDidOpenTextDocument((doc) => {
@@ -3886,6 +4159,15 @@ function activate(context) {
         updateLinkDecorations(editor);
         updateTodoStateDecorations(editor);
       }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument((doc) => {
+      const active = vscode.window.activeTextEditor;
+      if (!active || !active.document) return;
+      if (active.document.uri.toString() !== doc.uri.toString()) return;
+      backlinksProvider.loadForEditor(active, { focusView: false }).catch(() => {});
     })
   );
 
