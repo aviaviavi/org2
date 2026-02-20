@@ -27,6 +27,7 @@
     "onCommand:org2.setScheduledToday",
     "onCommand:org2.setDeadline",
     "onCommand:org2.setDeadlineToday",
+    "onCommand:org2.pickAgendaStatusFilter",
     "onCommand:org2.archiveSubtree",
     "onCommand:org2.refileSubtree",
     "onCommand:org2.roamDailiesGotoToday",
@@ -128,6 +129,11 @@
         "command": "org2.pickAgendaFilter",
         "title": "Org2: Agenda Filter",
         "icon": "$(filter)"
+      },
+      {
+        "command": "org2.pickAgendaStatusFilter",
+        "title": "Org2: Agenda Status Filter",
+        "icon": "$(checklist)"
       },
       {
         "command": "org2.openAgendaItem",
@@ -271,6 +277,11 @@
         },
         {
           "command": "org2.pickAgendaFilter",
+          "when": "view == org2Agenda",
+          "group": "navigation"
+        },
+        {
+          "command": "org2.pickAgendaStatusFilter",
           "when": "view == org2Agenda",
           "group": "navigation"
         }
