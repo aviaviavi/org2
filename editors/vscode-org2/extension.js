@@ -928,6 +928,28 @@ async function pickAgendaFilter(provider) {
   await provider.load();
 }
 
+async function pickAgendaStatusFilter(provider) {
+  const cfg = vscode.workspace.getConfiguration('org2');
+  const current = String(cfg.get('agenda.statusFilter', 'all') || 'all').trim().toLowerCase();
+
+  const options = [
+    { label: 'All statuses', value: 'all', description: current === 'all' ? 'Current' : '' },
+    { label: 'Open', value: 'open', description: current === 'open' ? 'Current' : '' },
+    { label: 'TODO', value: 'todo', description: current === 'todo' ? 'Current' : '' },
+    { label: 'In progress', value: 'in_progress', description: current === 'in_progress' ? 'Current' : '' },
+    { label: 'Done', value: 'done', description: current === 'done' ? 'Current' : '' },
+    { label: 'Canceled', value: 'canceled', description: current === 'canceled' ? 'Current' : '' },
+  ];
+
+  const pick = await vscode.window.showQuickPick(options, { placeHolder: 'Org2 agenda TODO status filter' });
+  if (!pick) return;
+
+  await cfg.update('agenda.statusFilter', pick.value, vscode.ConfigurationTarget.Workspace);
+  if (provider) {
+    await provider.load();
+  }
+}
+
 function activate(context) {
   const selector = [{ language: 'org2' }, { language: 'org' }];
 
@@ -1863,6 +1885,12 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.pickAgendaFilter', async () => {
       await pickAgendaFilter(agendaProvider);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.pickAgendaStatusFilter', async () => {
+      await pickAgendaStatusFilter(agendaProvider);
     })
   );
 
