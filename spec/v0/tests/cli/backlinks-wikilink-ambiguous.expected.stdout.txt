@@ -1,0 +1,13 @@
+{
+  "$schema": "org2:backlinks:v1",
+  "id": "11111111-1111-1111-1111-111111111111",
+  "backlinks": [
+    {
+      "srcId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "srcTitle": "Source",
+      "file": "spec/v0/tests/cli/backlinks-wikilink-ambiguous.org2",
+      "line": 20,
+      "context": "see [[Target Note]]"
+    }
+  ]
+}

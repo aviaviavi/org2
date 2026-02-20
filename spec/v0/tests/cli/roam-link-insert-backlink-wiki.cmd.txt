@@ -1,0 +1,1 @@
+roam link insert-backlink --file "spec/v0/tests/cli/roam-link-insert-backlink-wiki.input.txt" --pos 1:5 --title "Target Note" --format text
