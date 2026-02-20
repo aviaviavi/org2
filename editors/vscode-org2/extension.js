@@ -3694,12 +3694,13 @@ function activate(context) {
     })
   );
 
-  // Render [[url][desc]] links as "desc" (best-effort) using decorations.
-  // Note: VS Code decorations cannot truly replace/collapse text width, so we hide
-  // the underlying link token and draw the description as a prefix.
+  // Style [[url][desc]] links for readability without changing underlying text layout.
   const org2LinkDescDecoration = vscode.window.createTextEditorDecorationType({
-    color: 'rgba(0,0,0,0)',
-    textDecoration: 'none; font-size: 0;',
+    color: new vscode.ThemeColor('textLink.foreground'),
+    textDecoration: 'underline',
+  });
+  const org2LinkRawDecoration = vscode.window.createTextEditorDecorationType({
+    opacity: '0.65',
   });
 
   function updateLinkDecorations(editor) {
@@ -3709,14 +3710,16 @@ function activate(context) {
     if (doc.languageId !== 'org2' && doc.languageId !== 'org') return;
 
     const cfg = vscode.workspace.getConfiguration('org2');
-    const renderDescribedLinks = cfg.get('links.renderDescriptions', true);
+    const renderDescribedLinks = cfg.get('links.renderDescriptions', false);
     const renderMode = String(cfg.get('links.renderDescriptionsMode', 'safe') || 'safe').toLowerCase();
     if (!renderDescribedLinks) {
       editor.setDecorations(org2LinkDescDecoration, []);
+      editor.setDecorations(org2LinkRawDecoration, []);
       return;
     }
 
-    const options = [];
+    const descOptions = [];
+    const rawOptions = [];
     // Only match described links: [[url][desc]]
     const org2LinkDescRe = /\[\[([^\]\n]+?)\]\[([^\]\n]*)\]\]/g;
 
@@ -3733,8 +3736,7 @@ function activate(context) {
         if (!desc.trim()) continue;
 
         if (renderMode !== 'full') {
-          // Safe mode currently mirrors full rendering behavior; keep the guard for future
-          // tuning knobs without changing default behavior.
+          // safe/full currently share layout-safe styling behavior.
         }
 
         const target = resolveOrg2LinkTarget(rawUrl, doc);
@@ -3743,21 +3745,29 @@ function activate(context) {
           : new vscode.MarkdownString(desc);
         hover.isTrusted = true;
 
-        options.push({
-          range: new vscode.Range(line, start, line, end),
-          hoverMessage: hover,
-          renderOptions: {
-            before: {
-              contentText: desc,
-              color: new vscode.ThemeColor('textLink.foreground'),
-              textDecoration: 'underline',
-            },
-          },
-        });
+        const descStart = start + 2 + rawUrl.length + 2; // [[url][
+        const descEnd = descStart + desc.length;
+        if (descEnd <= end - 2) {
+          descOptions.push({
+            range: new vscode.Range(line, descStart, line, descEnd),
+            hoverMessage: hover,
+          });
+        }
+
+        // Dim only the raw URL portion inside [[url][desc]] to make description stand out.
+        const rawStart = start + 2;
+        const rawEnd = rawStart + rawUrl.length;
+        if (rawEnd <= end) {
+          rawOptions.push({
+            range: new vscode.Range(line, rawStart, line, rawEnd),
+            hoverMessage: hover,
+          });
+        }
       }
     }
 
-    editor.setDecorations(org2LinkDescDecoration, options);
+    editor.setDecorations(org2LinkDescDecoration, descOptions);
+    editor.setDecorations(org2LinkRawDecoration, rawOptions);
   }
 
   // Fold headings + :PROPERTIES: drawers by default (once per document URI).
