@@ -8,6 +8,8 @@ export interface Backlink {
   context: string;
 }
 
+export type ResolveWikiLinkIds = (label: string) => string[];
+
 function basenameNoExt(p: string): string {
   const parts = p.replace(/\\/g, "/").split("/");
   const base = parts[parts.length - 1] ?? p;
@@ -47,8 +49,8 @@ function extractFileId(lines: string[]): string | null {
 function findIdLinksInLine(line: string): string[] {
   const ids: string[] = [];
 
-  // [[id:UUID][...]]
-  const bracketRe = /\[\[id:([0-9a-fA-F-]{36})\](?:\[[^\]]*\])?\]\]/g;
+  // [[id:UUID]] or [[id:UUID][...]]
+  const bracketRe = /\[\[id:([0-9a-fA-F-]{36})(?:\]\[[^\]\n]*\])?\]\]/g;
   let m: RegExpExecArray | null;
   while ((m = bracketRe.exec(line)) !== null) {
     const id = (m[1] ?? "").toLowerCase();
@@ -56,7 +58,7 @@ function findIdLinksInLine(line: string): string[] {
   }
 
   // Avoid double-counting `id:` inside [[id:...]] links.
-  const withoutBracketLinks = line.replace(/\[\[id:[0-9a-fA-F-]{36}\](?:\[[^\]]*\])?\]\]/g, "");
+  const withoutBracketLinks = line.replace(/\[\[id:[0-9a-fA-F-]{36}(?:\]\[[^\]\n]*\])?\]\]/g, "");
 
   // Bare id:UUID
   const bareRe = /\bid:([0-9a-fA-F-]{36})\b/g;
@@ -68,9 +70,46 @@ function findIdLinksInLine(line: string): string[] {
   return ids;
 }
 
-export function findBacklinksInText(content: string, filePath: string, targetIdRaw: string): Backlink[] {
+function isWikiLinkTargetCandidate(targetRaw: string): boolean {
+  const target = String(targetRaw || "").trim();
+  if (!target) return false;
+
+  const lower = target.toLowerCase();
+  if (lower.startsWith("id:")) return false;
+  if (lower.startsWith("file:")) return false;
+  if (lower.startsWith("http://") || lower.startsWith("https://")) return false;
+  if (lower.startsWith("mailto:")) return false;
+  if (target.startsWith("#") || target.startsWith("*")) return false;
+  if (target.startsWith("/") || target.startsWith("./") || target.startsWith("../")) return false;
+
+  return true;
+}
+
+function findWikiLinksInLine(line: string): string[] {
+  const labels: string[] = [];
+  const bracketRe = /\[\[([^\]\n]+?)(?:\]\[([^\]\n]*)\])?\]\]/g;
+
+  let m: RegExpExecArray | null;
+  while ((m = bracketRe.exec(line)) !== null) {
+    const targetRaw = String(m[1] || "").trim();
+    const descriptionRaw = m[2];
+    if (descriptionRaw !== undefined) continue;
+    if (!isWikiLinkTargetCandidate(targetRaw)) continue;
+    labels.push(targetRaw);
+  }
+
+  return labels;
+}
+
+export function findBacklinksInText(
+  content: string,
+  filePath: string,
+  targetIdRaw: string,
+  options?: { resolveWikiLinkIds?: ResolveWikiLinkIds },
+): Backlink[] {
   const targetId = targetIdRaw.toLowerCase();
   const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const resolveWikiLinkIds = options?.resolveWikiLinkIds;
 
   const fileId = extractFileId(lines);
 
@@ -123,6 +162,13 @@ export function findBacklinksInText(content: string, filePath: string, targetIdR
     }
 
     const ids = findIdLinksInLine(line);
+    if (resolveWikiLinkIds) {
+      const wikiLabels = findWikiLinksInLine(line);
+      for (const label of wikiLabels) {
+        const resolved = resolveWikiLinkIds(label).map((id) => id.toLowerCase());
+        ids.push(...resolved);
+      }
+    }
     if (ids.length === 0) continue;
 
     for (const id of ids) {

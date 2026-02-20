@@ -214,6 +214,218 @@ function getTodayString(): string {
   return `${year}-${month}-${day}`;
 }
 
+function normalizeRoamLinkLabel(raw: string): string {
+  return String(raw || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function parseRoamAliasTokens(raw: string): string[] {
+  const input = String(raw || "").trim();
+  if (!input) return [];
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const pushAlias = (value: string): void => {
+    const alias = String(value || "").trim();
+    if (!alias) return;
+    const key = alias.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(alias);
+  };
+
+  const quotedRe = /"([^"]+)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = quotedRe.exec(input)) !== null) {
+    pushAlias(m[1] || "");
+  }
+
+  const remainder = input.replace(quotedRe, " ").trim();
+  if (remainder) {
+    const commaSplit = remainder.split(/[;,]/).map((part) => part.trim()).filter(Boolean);
+    if (commaSplit.length > 1) {
+      for (const part of commaSplit) pushAlias(part);
+    } else {
+      pushAlias(remainder);
+    }
+  }
+
+  return out;
+}
+
+function parseHeadlineTitleForRoam(line: string): string {
+  const withoutStars = String(line || "").trim().replace(/^\*+\s+/, "");
+  const withoutTags = withoutStars.replace(/\s+:[^\s:]+(?::[^\s:]+)*:\s*$/, "").trim();
+  const withoutTodo = withoutTags.replace(/^(TODO|IN_PROGRESS|DONE|CANCELLED|CANCELED)\s+/, "").trim();
+  return withoutTodo;
+}
+
+type RoamNodeForIndex = {
+  id: string;
+  labels: string[];
+};
+
+function collectRoamNodesForIndex(content: string, filePath: string): RoamNodeForIndex[] {
+  const raw = content.replace(/\r\n/g, "\n");
+  const lines = raw.split("\n");
+  const nodes: RoamNodeForIndex[] = [];
+
+  const fileTitle = (() => {
+    for (let i = 0; i < Math.min(lines.length, 80); i += 1) {
+      const m = /^#\+title:\s*(.*?)\s*$/i.exec((lines[i] ?? "").trim());
+      if (m) return (m[1] || "").trim();
+    }
+    return path.basename(filePath).replace(/\.(org2|org)$/i, "");
+  })();
+
+  const fileAliases = (() => {
+    const aliases: string[] = [];
+    for (let i = 0; i < Math.min(lines.length, 80); i += 1) {
+      const m = /^#\+roam_alias(?:es)?:\s*(.*?)\s*$/i.exec((lines[i] ?? "").trim());
+      if (!m) continue;
+      aliases.push(...parseRoamAliasTokens(m[1] || ""));
+    }
+    return aliases;
+  })();
+
+  const seenNodeIds = new Set<string>();
+  const pushNode = (idRaw: string, labels: string[]) => {
+    const id = String(idRaw || "").trim().toLowerCase();
+    if (!id) return;
+    if (seenNodeIds.has(id)) return;
+
+    const uniqueLabels = Array.from(
+      new Set(
+        labels
+          .map((value) => String(value || "").trim())
+          .filter((value) => value.length > 0),
+      ),
+    );
+    if (uniqueLabels.length === 0) return;
+
+    seenNodeIds.add(id);
+    nodes.push({ id, labels: uniqueLabels });
+  };
+
+  // File-level #+id
+  for (let i = 0; i < Math.min(lines.length, 30); i += 1) {
+    const m = /^#\+id:\s*(\S+)\s*$/i.exec((lines[i] ?? "").trim());
+    if (!m) continue;
+    pushNode(m[1] || "", [fileTitle, ...fileAliases]);
+    break;
+  }
+
+  // File-level top drawer ID + aliases
+  {
+    let idx = 0;
+    while (idx < lines.length) {
+      const l = (lines[idx] ?? "").trim();
+      if (l === "" || l.startsWith("#")) {
+        idx += 1;
+        continue;
+      }
+      break;
+    }
+
+    if ((lines[idx] ?? "").trim() === ":PROPERTIES:") {
+      let topId = "";
+      const topAliases: string[] = [];
+      for (let j = idx + 1; j < lines.length; j += 1) {
+        const l = (lines[j] ?? "").trim();
+        if (l === ":END:") break;
+        const idMatch = /^:ID:\s*(\S+)\s*$/i.exec(l);
+        if (idMatch) topId = String(idMatch[1] || "").trim();
+        const aliasMatch = /^:ROAM_ALIASES:\s*(.*?)\s*$/i.exec(l);
+        if (aliasMatch) topAliases.push(...parseRoamAliasTokens(aliasMatch[1] || ""));
+      }
+      if (topId) pushNode(topId, [fileTitle, ...fileAliases, ...topAliases]);
+    }
+  }
+
+  let currentHeadlineTitle = "";
+  let currentHeadlineLine = -1;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+
+    const hm = /^(\*+)\s+/.exec(line);
+    if (hm) {
+      currentHeadlineTitle = parseHeadlineTitleForRoam(line);
+      currentHeadlineLine = i;
+      continue;
+    }
+
+    if (line.trim() !== ":PROPERTIES:") continue;
+
+    let belongsToHeadline = false;
+    if (currentHeadlineLine !== -1) {
+      const prev = (lines[i - 1] ?? "").trim();
+      if (i - 1 === currentHeadlineLine || (prev === "" && i - 2 === currentHeadlineLine)) {
+        belongsToHeadline = true;
+      }
+    }
+
+    let headlineId = "";
+    const headlineAliases: string[] = [];
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const l = (lines[j] ?? "").trim();
+      if (l === ":END:") {
+        i = j;
+        break;
+      }
+
+      const idMatch = /^:ID:\s*(\S+)\s*$/i.exec(l);
+      if (idMatch) headlineId = String(idMatch[1] || "").trim();
+
+      const aliasMatch = /^:ROAM_ALIASES:\s*(.*?)\s*$/i.exec(l);
+      if (aliasMatch) headlineAliases.push(...parseRoamAliasTokens(aliasMatch[1] || ""));
+    }
+
+    if (belongsToHeadline && headlineId && currentHeadlineTitle) {
+      pushNode(headlineId, [currentHeadlineTitle, ...headlineAliases]);
+    }
+  }
+
+  return nodes;
+}
+
+function buildRoamTitleIndex(files: string[]): Map<string, Set<string>> {
+  const index = new Map<string, Set<string>>();
+
+  const add = (labelRaw: string, idRaw: string): void => {
+    const label = normalizeRoamLinkLabel(labelRaw);
+    const id = String(idRaw || "").trim().toLowerCase();
+    if (!label || !id) return;
+
+    const existing = index.get(label);
+    if (existing) {
+      existing.add(id);
+      return;
+    }
+    index.set(label, new Set([id]));
+  };
+
+  for (const filePath of files) {
+    let content: string;
+    try {
+      content = fs.readFileSync(filePath, "utf8");
+    } catch {
+      continue;
+    }
+
+    const nodes = collectRoamNodesForIndex(content, filePath);
+    for (const node of nodes) {
+      for (const label of node.labels) {
+        add(label, node.id);
+      }
+    }
+  }
+
+  return index;
+}
+
 interface ScheduledItem {
   filePath: string;
   // 0-based (VS Code uses 0-based positions)
@@ -3333,6 +3545,7 @@ async function main(): Promise<void> {
   let roamLinkPos = "";
   let roamLinkId = "";
   let roamLinkTitle = "";
+  let roamLinkStyle: "wiki" | "id" = "wiki";
 
   // Parse arguments
   let i = 0;
@@ -4075,6 +4288,15 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--style" || arg === "--link-style") {
+      i++;
+      if (i < args.length) {
+        const v = String(args[i] || "").trim().toLowerCase();
+        if (command === "roam" && roamAction === "link" && (v === "wiki" || v === "id")) {
+          roamLinkStyle = v;
+        }
+        i++;
+      }
     } else if (arg === "--recursive") {
       recursive = true;
       i++;
@@ -4306,7 +4528,7 @@ async function main(): Promise<void> {
     );
     console.error(
       "       org2 roam node new --dir DIR --title TITLE [--id UUID] [--format text|json] [--apply]",
-      "       org2 roam link insert-backlink --file FILE --pos LINE[:COL] --id UUID --title TITLE [--format text|json] [--apply]",
+      "       org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--id UUID] [--style wiki|id] [--format text|json] [--apply]",
     );
     console.error(
       "       org2 lsp  # start the org2 Language Server (stdio)",
@@ -4360,7 +4582,7 @@ async function main(): Promise<void> {
     );
     console.error(
       "       org2 roam node new --dir DIR --title TITLE [--id UUID] [--format text|json] [--apply]",
-      "       org2 roam link insert-backlink --file FILE --pos LINE[:COL] --id UUID --title TITLE [--format text|json] [--apply]",
+      "       org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--id UUID] [--style wiki|id] [--format text|json] [--apply]",
     );
     console.error(
       "       org2 lsp  # start the org2 Language Server (stdio)",
@@ -4400,12 +4622,12 @@ async function main(): Promise<void> {
         console.error("Error: org2 roam link insert-backlink requires --pos LINE[:COL]");
         process.exit(1);
       }
-      if (!roamLinkId) {
-        console.error("Error: org2 roam link insert-backlink requires --id UUID");
-        process.exit(1);
-      }
       if (!roamLinkTitle) {
         console.error("Error: org2 roam link insert-backlink requires --title TITLE");
+        process.exit(1);
+      }
+      if (roamLinkStyle === "id" && !roamLinkId) {
+        console.error("Error: org2 roam link insert-backlink with --style id requires --id UUID");
         process.exit(1);
       }
 
@@ -4434,7 +4656,7 @@ async function main(): Promise<void> {
       }
 
       const lineText = lines[lineIndex] ?? "";
-      const linkText = `[[id:${roamLinkId}][${roamLinkTitle}]]`;
+      const linkText = roamLinkStyle === "id" ? `[[id:${roamLinkId}][${roamLinkTitle}]]` : `[[${roamLinkTitle}]]`;
       const insertCol = col === null ? lineText.length : Math.min(col, lineText.length);
       lines[lineIndex] = lineText.slice(0, insertCol) + linkText + lineText.slice(insertCol);
 
@@ -4451,8 +4673,10 @@ async function main(): Promise<void> {
             {
               action: "link-insert-backlink",
               file: roamLinkFile,
-              id: roamLinkId,
+              id: roamLinkId || null,
               title: roamLinkTitle,
+              style: roamLinkStyle,
+              link: linkText,
               pos: roamLinkPos,
               applied: roamApply,
               changed,
@@ -5694,12 +5918,25 @@ async function main(): Promise<void> {
     }
 
     const backlinks: Backlink[] = [];
+    const titleIndex = buildRoamTitleIndex(files);
+    const resolveWikiLinkIds = (label: string): string[] => {
+      const key = normalizeRoamLinkLabel(label);
+      if (!key) return [];
+
+      const ids = titleIndex.get(key);
+      if (!ids || ids.size === 0) return [];
+      return Array.from(ids);
+    };
     let skippedFileCount = 0;
 
     for (const filePath of files) {
       try {
         const content = fs.readFileSync(filePath, "utf8");
-        backlinks.push(...findBacklinksInText(content, filePath, backlinksId));
+        backlinks.push(
+          ...findBacklinksInText(content, filePath, backlinksId, {
+            resolveWikiLinkIds,
+          }),
+        );
       } catch (err) {
         skippedFileCount += 1;
         if (verboseErrors) {

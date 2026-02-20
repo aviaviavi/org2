@@ -1,0 +1,17 @@
+:PROPERTIES:
+:ID: ffffffff-ffff-ffff-ffff-ffffffffffff
+:END:
+
+#+title: Wiki Backlink Fixture
+
+* Target Note
+:PROPERTIES:
+:ID: 11111111-1111-1111-1111-111111111111
+:END:
+body
+
+* Source
+:PROPERTIES:
+:ID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+:END:
+see [[Target Note]]
