@@ -317,24 +317,31 @@ function collectRoamNodesForIndex(content: string, filePath: string): RoamNodeFo
     break;
   }
 
-  // File-level top drawer ID + aliases
+  // File-level drawer ID + aliases (allow any drawer before first headline).
   {
-    let idx = 0;
-    while (idx < lines.length) {
-      const l = (lines[idx] ?? "").trim();
-      if (l === "" || l.startsWith("#")) {
-        idx += 1;
-        continue;
+    const firstHeadlineIdx = lines.findIndex((line) => /^\*+\s+/.test(String(line || "")));
+    const scanEnd = firstHeadlineIdx === -1 ? lines.length : firstHeadlineIdx;
+
+    let propsStart = -1;
+    let propsEnd = -1;
+    for (let i = 0; i < scanEnd; i += 1) {
+      if ((lines[i] ?? "").trim() !== ":PROPERTIES:") continue;
+      propsStart = i;
+      for (let j = i + 1; j < scanEnd; j += 1) {
+        if ((lines[j] ?? "").trim() === ":END:") {
+          propsEnd = j;
+          break;
+        }
       }
-      break;
+      if (propsEnd !== -1) break;
+      propsStart = -1;
     }
 
-    if ((lines[idx] ?? "").trim() === ":PROPERTIES:") {
+    if (propsStart !== -1 && propsEnd !== -1) {
       let topId = "";
       const topAliases: string[] = [];
-      for (let j = idx + 1; j < lines.length; j += 1) {
+      for (let j = propsStart + 1; j < propsEnd; j += 1) {
         const l = (lines[j] ?? "").trim();
-        if (l === ":END:") break;
         const idMatch = /^:ID:\s*(\S+)\s*$/i.exec(l);
         if (idMatch) topId = String(idMatch[1] || "").trim();
         const aliasMatch = /^:ROAM_ALIASES:\s*(.*?)\s*$/i.exec(l);

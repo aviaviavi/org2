@@ -11,7 +11,7 @@ const drawerEndRe = /^\s*:END:\s*$/i;
 const uuidSource = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
 const uuidExactRe = new RegExp(`^(${uuidSource})$`);
 const roamIdSchemeRe = new RegExp(`^id:(${uuidSource})$`, 'i');
-const roamIdLinkPartsRe = new RegExp(`^\\[\\[id:(${uuidSource})\\](?:\\[([^\\]\\n]*)\\])?\\]\\]$`, 'i');
+const roamIdLinkPartsRe = new RegExp(`^\\[\\[id:(${uuidSource})(?:\\]\\[([^\\]\\n]*)\\])?\\]\\]$`, 'i');
 const roamUuidAnywhereRe = new RegExp(`(${uuidSource})`, 'i');
 const roamIdTokenGlobalRe = /\bid:[^\s\]\[(){}<>,"']+/gi;
 
@@ -237,10 +237,17 @@ function resolveOrg2LinkTarget(rawUrl, document) {
   }
 
   // Otherwise treat it as a filesystem path relative to the current document.
+  // If no file exists, treat bracket target as a roam-title link target.
   if (document.uri && document.uri.scheme === 'file') {
     const baseDir = path.dirname(document.uri.fsPath);
     const fsPath = path.resolve(baseDir, url);
-    return vscode.Uri.file(fsPath);
+    try {
+      fs.accessSync(fsPath);
+      return vscode.Uri.file(fsPath);
+    } catch (_) {
+      const payload = encodeURIComponent(JSON.stringify([url]));
+      return vscode.Uri.parse(`command:org2.roamOpenTitle?${payload}`);
+    }
   }
 
   return undefined;
@@ -250,7 +257,7 @@ function provideDocumentLinks(document) {
   const links = [];
 
   // Org2 links: [[url]] or [[url][desc]]
-  const org2LinkRe = /\[\[([^\]\n]+?)\](?:\[([^\]\n]*)\])?\]\]/g;
+  const org2LinkRe = /\[\[([^\]\n]+?)(?:\]\[([^\]\n]*)\])?\]\]/g;
   const bareUrlRe = /\bhttps?:\/\/[^\s<>()\[\]{}]+/g;
 
   for (let line = 0; line < document.lineCount; line++) {
@@ -927,6 +934,125 @@ async function* walkFiles(dir) {
       if (abs.endsWith('.org') || abs.endsWith('.org2')) yield abs;
     }
   }
+}
+
+function parseOrgTitleFromText(content, filePath) {
+  const lines = String(content || '').split(/\r?\n/);
+  for (let i = 0; i < Math.min(lines.length, 80); i += 1) {
+    const m = /^#\+title:\s*(.*?)\s*$/i.exec(String(lines[i] || '').trim());
+    if (m) {
+      const title = String(m[1] || '').trim();
+      if (title) return title;
+    }
+  }
+  return path.basename(String(filePath || '')).replace(/\.(org2|org)$/i, '');
+}
+
+function collectRoamNodesFromText(content, filePath) {
+  const lines = String(content || '').split(/\r?\n/);
+  const nodes = [];
+  const seenIds = new Set();
+  const fileTitle = parseOrgTitleFromText(content, filePath);
+
+  const addNode = (idRaw, titleRaw, kind, line0) => {
+    const id = extractRoamUuid(String(idRaw || '').trim());
+    const title = String(titleRaw || '').trim();
+    if (!id || !title) return;
+    if (seenIds.has(id)) return;
+    seenIds.add(id);
+    nodes.push({
+      id,
+      title,
+      file: filePath,
+      line0: typeof line0 === 'number' ? line0 : 0,
+      kind: kind === 'headline' ? 'headline' : 'file',
+    });
+  };
+
+  let fileId = extractRoamUuid(findFileLevelIdInText(content) || '');
+  if (!fileId) {
+    for (let i = 0; i < Math.min(lines.length, 40); i += 1) {
+      const m = /^#\+id:\s*(\S+)\s*$/i.exec(String(lines[i] || '').trim());
+      if (!m) continue;
+      fileId = extractRoamUuid(String(m[1] || '').trim());
+      if (fileId) break;
+    }
+  }
+  if (fileId) addNode(fileId, fileTitle, 'file', 0);
+
+  let currentHeadlineTitle = '';
+  let currentHeadlineLine = -1;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = String(lines[i] || '');
+    const hm = /^(\*+)\s+(.*)$/.exec(line);
+    if (hm) {
+      currentHeadlineLine = i;
+      currentHeadlineTitle = String(hm[2] || '')
+        .replace(/\s+:[^\s:]+(?::[^\s:]+)*:\s*$/, '')
+        .replace(/^(TODO|IN_PROGRESS|DONE|CANCELLED|CANCELED)\s+/i, '')
+        .trim();
+      continue;
+    }
+
+    if (String(line).trim() !== ':PROPERTIES:') continue;
+
+    let belongsToHeadline = false;
+    if (currentHeadlineLine >= 0) {
+      const prev = String(lines[i - 1] || '').trim();
+      if (i - 1 === currentHeadlineLine || (prev === '' && i - 2 === currentHeadlineLine)) {
+        belongsToHeadline = true;
+      }
+    }
+
+    let headlineId = '';
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const inner = String(lines[j] || '').trim();
+      if (inner === ':END:') {
+        i = j;
+        break;
+      }
+      const idMatch = /^:ID:\s*(\S+)\s*$/i.exec(inner);
+      if (idMatch) {
+        headlineId = extractRoamUuid(String(idMatch[1] || '').trim());
+      }
+    }
+
+    if (belongsToHeadline && headlineId && currentHeadlineTitle) {
+      addNode(headlineId, currentHeadlineTitle, 'headline', currentHeadlineLine);
+    }
+  }
+
+  return nodes;
+}
+
+async function collectRoamNodeCandidates(rootDir) {
+  const out = [];
+  const seenId = new Set();
+
+  for await (const filePath of walkFiles(rootDir)) {
+    let text = '';
+    try {
+      text = await fs.promises.readFile(filePath, 'utf8');
+    } catch (_) {
+      continue;
+    }
+
+    const nodes = collectRoamNodesFromText(text, filePath);
+    for (const node of nodes) {
+      if (!node || !node.id) continue;
+      if (seenId.has(node.id)) continue;
+      seenId.add(node.id);
+      out.push(node);
+    }
+  }
+
+  out.sort((a, b) => {
+    const t = String(a.title || '').localeCompare(String(b.title || ''));
+    if (t !== 0) return t;
+    return String(a.file || '').localeCompare(String(b.file || ''));
+  });
+  return out;
 }
 
 async function findFirstIdMatchInDir(rootDir, id) {
@@ -2466,9 +2592,12 @@ function activate(context) {
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
     const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
     const useToday = options && options.useToday ? true : false;
+    const dateOverride = options && typeof options.dateOverride === 'string' ? String(options.dateOverride).trim() : '';
 
     let date = '';
-    if (!useToday) {
+    if (dateOverride) {
+      date = dateOverride;
+    } else if (!useToday) {
       const input = await vscode.window.showInputBox({
         prompt: `Org2: set ${kind.toUpperCase()} (YYYY-MM-DD)`,
         placeHolder: 'YYYY-MM-DD',
@@ -3327,84 +3456,108 @@ function activate(context) {
 
       const root = getRoamIndexRootDir();
       const selected = editor.selection && !editor.selection.isEmpty ? doc.getText(editor.selection) : '';
-      const initialIdInput = extractRoamUuid(selected) ? String(selected).trim() : '';
+      const selectedQuery = String(selected || '').trim().replace(/\s+/g, ' ');
+      let chosen = null;
 
-      const idInput = await vscode.window.showInputBox({
-        prompt: 'Org2: Roam — insert backlink target',
-        placeHolder: 'UUID, id:UUID, or [[id:UUID][title]]',
-        value: initialIdInput,
-        validateInput: (v) => (extractRoamUuid(v) ? undefined : 'Expected UUID or id:UUID link'),
+      let candidates = [];
+      try {
+        candidates = await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: 'Org2: indexing roam nodes', cancellable: false },
+          async () => collectRoamNodeCandidates(root)
+        );
+      } catch (e) {
+        candidates = [];
+      }
+
+      if (Array.isArray(candidates) && candidates.length > 0) {
+        const loweredQuery = selectedQuery.toLowerCase();
+        const ranked = candidates.slice().sort((a, b) => {
+          const aTitle = String(a.title || '').toLowerCase();
+          const bTitle = String(b.title || '').toLowerCase();
+          const aStarts = loweredQuery && aTitle.startsWith(loweredQuery) ? 1 : 0;
+          const bStarts = loweredQuery && bTitle.startsWith(loweredQuery) ? 1 : 0;
+          if (aStarts !== bStarts) return bStarts - aStarts;
+          const aIncludes = loweredQuery && aTitle.includes(loweredQuery) ? 1 : 0;
+          const bIncludes = loweredQuery && bTitle.includes(loweredQuery) ? 1 : 0;
+          if (aIncludes !== bIncludes) return bIncludes - aIncludes;
+          return aTitle.localeCompare(bTitle);
+        });
+
+        const picks = ranked.map((node) => {
+          let rel = path.basename(node.file || '');
+          try {
+            const maybeRel = path.relative(root, node.file || '');
+            if (maybeRel && !maybeRel.startsWith('..') && !path.isAbsolute(maybeRel)) rel = maybeRel;
+          } catch (_) {
+            // ignore
+          }
+          const shortId = node.id ? String(node.id).slice(0, 8) : '';
+          return {
+            label: String(node.title || '').trim() || '(untitled)',
+            description: `${node.kind === 'headline' ? 'headline' : 'file'} · ${rel}`,
+            detail: `${shortId}${typeof node.line0 === 'number' ? ` · L${node.line0 + 1}` : ''}`,
+            node,
+          };
+        });
+
+        const pick = await vscode.window.showQuickPick(picks, {
+          placeHolder: 'Org2: Roam — insert backlink target (type to search node title)',
+          matchOnDescription: true,
+          matchOnDetail: true,
+        });
+        if (!pick) return;
+        chosen = pick.node;
+      }
+
+      let id = '';
+      let title = '';
+
+      if (chosen) {
+        id = String(chosen.id || '').trim().toLowerCase();
+        title = String(chosen.title || '').trim();
+      } else {
+        // Fallback for empty/missing index: preserve previous manual flow.
+        const idInput = await vscode.window.showInputBox({
+          prompt: 'Org2: Roam — insert backlink target (ID fallback)',
+          placeHolder: 'UUID, id:UUID, or [[id:UUID][title]]',
+          value: extractRoamUuid(selected) ? String(selected).trim() : '',
+          validateInput: (v) => (extractRoamUuid(v) ? undefined : 'Expected UUID or id:UUID link'),
+        });
+        if (idInput === undefined) return;
+
+        id = extractRoamUuid(idInput);
+        if (!id) {
+          vscode.window.showWarningMessage('Org2: invalid ID input (expected UUID or id:UUID link).');
+          return;
+        }
+
+        const parsedLink = parseRoamIdLink(idInput);
+        title = (parsedLink && parsedLink.title ? parsedLink.title : '') || await suggestRoamLinkTitleById(id, root) || id.slice(0, 8);
+      }
+
+      const linkText = `[[${title}]]`;
+      const currentSelection =
+        editor.selection && !editor.selection.isEmpty
+          ? new vscode.Selection(editor.selection.start, editor.selection.end)
+          : null;
+
+      let changed = false;
+      await editor.edit((editBuilder) => {
+        if (currentSelection) {
+          editBuilder.replace(new vscode.Range(currentSelection.start, currentSelection.end), linkText);
+        } else {
+          editBuilder.insert(editor.selection.active, linkText);
+        }
+      }).then((ok) => {
+        changed = !!ok;
       });
-      if (idInput === undefined) return;
 
-      const id = extractRoamUuid(idInput);
-      if (!id) {
-        vscode.window.showWarningMessage('Org2: invalid ID input (expected UUID or id:UUID link).');
+      if (!changed) {
+        vscode.window.showWarningMessage('Org2: failed to insert backlink.');
         return;
       }
 
-      const parsedLink = parseRoamIdLink(idInput);
-      let suggestedTitle = parsedLink && parsedLink.title ? parsedLink.title : '';
-
-      if (!suggestedTitle) {
-        suggestedTitle = await suggestRoamLinkTitleById(id, root);
-      }
-
-      if (!suggestedTitle) suggestedTitle = id.slice(0, 8);
-
-      const titleInput = await vscode.window.showInputBox({
-        prompt: 'Org2: Roam — backlink title',
-        placeHolder: 'Link text',
-        value: suggestedTitle,
-        validateInput: (v) => (String(v || '').trim() ? undefined : 'Title is required'),
-      });
-      if (titleInput === undefined) return;
-
-      const title = String(titleInput).trim();
-      const cursor = editor.selection.active;
-      const pos = `${cursor.line + 1}:${cursor.character}`;
-
-      const args = [
-        'roam',
-        'link',
-        'insert-backlink',
-        '--file',
-        String(doc.uri.fsPath),
-        '--pos',
-        String(pos),
-        '--id',
-        id,
-        '--title',
-        title,
-        '--format',
-        'json',
-        '--apply',
-      ];
-
-      const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
-
-      let out;
-      try {
-        out = await execFileAsync(finalCmd, finalArgs, { cwd: root });
-      } catch (e) {
-        vscode.window.showErrorMessage(`Org2: failed to insert backlink: ${String(e && e.message ? e.message : e)}`);
-        return;
-      }
-
-      try {
-        JSON.parse(String((out && out.stdout) || '').trim());
-      } catch (e) {
-        vscode.window.showErrorMessage('Org2: failed to parse org2 roam link output.');
-        return;
-      }
-
-      // CLI wrote to disk; refresh the editor view.
-      try {
-        await vscode.commands.executeCommand('workbench.action.files.revert');
-      } catch (e) {
-        // ignore
-      }
-
+      await doc.save();
       vscode.window.showInformationMessage('Org2: inserted backlink.');
     })
   );
@@ -3893,6 +4046,86 @@ function activate(context) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('org2.roamOpenTitle', async (title) => {
+      const initial = typeof title === 'string' ? String(title).trim() : '';
+      let query = initial;
+
+      if (!query) {
+        const input = await vscode.window.showInputBox({
+          prompt: 'Org2: Roam — open node by title',
+          placeHolder: 'Node title',
+          validateInput: (v) => (String(v || '').trim() ? undefined : 'Title is required'),
+        });
+        if (input === undefined) return;
+        query = String(input || '').trim();
+      }
+
+      if (!query) return;
+
+      const root = getRoamIndexRootDir();
+      let candidates = [];
+      try {
+        candidates = await collectRoamNodeCandidates(root);
+      } catch (_) {
+        candidates = [];
+      }
+
+      if (!Array.isArray(candidates) || candidates.length === 0) {
+        vscode.window.showWarningMessage('Org2: no roam nodes found to resolve title link.');
+        return;
+      }
+
+      const normalize = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      const needle = normalize(query);
+      const exact = candidates.filter((node) => normalize(node.title) === needle);
+      const matches = exact.length ? exact : candidates.filter((node) => normalize(node.title).includes(needle));
+
+      if (!matches.length) {
+        vscode.window.showWarningMessage(`Org2: no roam node found for title "${query}".`);
+        return;
+      }
+
+      const openNode = async (node) => {
+        const uri = vscode.Uri.file(String(node.file || ''));
+        const doc = await vscode.workspace.openTextDocument(uri);
+        const editor = await vscode.window.showTextDocument(doc, { preview: true });
+        const pos = new vscode.Position(Math.max(0, Number(node.line0) || 0), 0);
+        editor.selection = new vscode.Selection(pos, pos);
+        revealNavigationPosition(editor, pos);
+      };
+
+      if (matches.length === 1) {
+        await openNode(matches[0]);
+        return;
+      }
+
+      const picks = matches.map((node) => {
+        let rel = path.basename(String(node.file || ''));
+        try {
+          const maybeRel = path.relative(root, String(node.file || ''));
+          if (maybeRel && !maybeRel.startsWith('..') && !path.isAbsolute(maybeRel)) rel = maybeRel;
+        } catch (_) {
+          // ignore
+        }
+        return {
+          label: String(node.title || '').trim() || '(untitled)',
+          description: `${node.kind === 'headline' ? 'headline' : 'file'} · ${rel}`,
+          detail: node.id ? String(node.id).slice(0, 8) : '',
+          node,
+        };
+      });
+
+      const pick = await vscode.window.showQuickPick(picks, {
+        placeHolder: `Org2: choose node for "${query}"`,
+        matchOnDescription: true,
+        matchOnDetail: true,
+      });
+      if (!pick) return;
+      await openNode(pick.node);
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('org2.toggleTodo', async (item) => {
       await runTodoCli('toggle', undefined, item);
     })
@@ -3948,6 +4181,30 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.setScheduledToday', async (item) => {
       await runPlanCli('scheduled', item, { useToday: true });
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.setScheduledTomorrow', async (item) => {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      await runPlanCli('scheduled', item, { dateOverride: formatDateYYYYMMDD(d) });
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.setScheduledNextWeek', async (item) => {
+      const d = new Date();
+      d.setDate(d.getDate() + 7);
+      await runPlanCli('scheduled', item, { dateOverride: formatDateYYYYMMDD(d) });
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.setScheduledNextMonth', async (item) => {
+      const d = new Date();
+      d.setMonth(d.getMonth() + 1);
+      await runPlanCli('scheduled', item, { dateOverride: formatDateYYYYMMDD(d) });
     })
   );
 
