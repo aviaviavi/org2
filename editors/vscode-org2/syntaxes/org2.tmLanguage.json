@@ -71,7 +71,7 @@
         },
         {
           "name": "meta.directive.kv.org2",
-          "match": "^(\\s*)(#\\+)([A-Za-z0-9_\\-]+)(:)(\\s*)(.*)$",
+          "match": "^(\\s*)(#\\+)(?![Bb][Ee][Gg][Ii][Nn]_)(?![Ee][Nn][Dd]_)([A-Za-z0-9_\\-]+)(:)(\\s*)(.*)$",
           "captures": {
             "2": {
               "name": "punctuation.definition.directive.org2"
@@ -528,7 +528,7 @@
         },
         {
           "name": "meta.block.export.html.org2",
-          "begin": "^(\\s*)(#\\+begin_export)\\s+(html)\\b.*$",
+          "begin": "^(\\s*)(#\\+[Bb][Ee][Gg][Ii][Nn]_[Ee][Xx][Pp][Oo][Rr][Tt])\\s+([Hh][Tt][Mm][Ll])\\b.*$",
           "beginCaptures": {
             "2": {
               "name": "keyword.other.block.begin.org2"
@@ -537,7 +537,7 @@
               "name": "entity.name.tag.language.org2"
             }
           },
-          "end": "^(\\s*)(#\\+end_export)\\b.*$",
+          "end": "^(\\s*)(#\\+[Ee][Nn][Dd]_[Ee][Xx][Pp][Oo][Rr][Tt])\\b.*$",
           "endCaptures": {
             "2": {
               "name": "keyword.other.block.end.org2"
