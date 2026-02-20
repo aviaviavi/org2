@@ -55,8 +55,41 @@
     "directives": {
       "patterns": [
         {
+          "name": "meta.directive.html-head.org2",
+          "begin": "^(\\s*)(#\\+HTML_HEAD(?:_EXTRA)?:)(\\s*)",
+          "beginCaptures": {
+            "2": {
+              "name": "keyword.control.directive.org2"
+            }
+          },
+          "end": "$",
+          "patterns": [
+            {
+              "include": "text.html.basic"
+            }
+          ]
+        },
+        {
+          "name": "meta.directive.kv.org2",
+          "match": "^(\\s*)(#\\+)([A-Za-z0-9_\\-]+)(:)(\\s*)(.*)$",
+          "captures": {
+            "2": {
+              "name": "punctuation.definition.directive.org2"
+            },
+            "3": {
+              "name": "keyword.control.directive.org2"
+            },
+            "4": {
+              "name": "punctuation.separator.key-value.org2"
+            },
+            "6": {
+              "name": "string.unquoted.directive-value.org2"
+            }
+          }
+        },
+        {
           "name": "keyword.other.directive.org2",
-          "match": "^(?:\\s*)#\\+[A-Za-z0-9_\\-]+(?::\\s+.*)?$"
+          "match": "^(?:\\s*)#\\+[A-Za-z0-9_\\-]+$"
         }
       ]
     },
@@ -490,6 +523,29 @@
             {
               "name": "text.plain.org2",
               "match": ".+"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.export.html.org2",
+          "begin": "^(\\s*)(#\\+begin_export)\\s+(html)\\b.*$",
+          "beginCaptures": {
+            "2": {
+              "name": "keyword.other.block.begin.org2"
+            },
+            "3": {
+              "name": "entity.name.tag.language.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_export)\\b.*$",
+          "endCaptures": {
+            "2": {
+              "name": "keyword.other.block.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "text.html.basic"
             }
           ]
         },
