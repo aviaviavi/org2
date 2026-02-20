@@ -956,7 +956,7 @@
         },
         "org2.links.renderDescriptions": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "description": "Style described links ([[url][desc]]) for readability without changing layout/whitespace."
         },
         "org2.links.renderDescriptionsMode": {
