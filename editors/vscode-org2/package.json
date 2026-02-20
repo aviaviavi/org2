@@ -9,6 +9,8 @@
     "onLanguage:org2",
     "onLanguage:org",
     "onCommand:org2.openAgenda",
+    "onCommand:org2.openBacklinks",
+    "onCommand:org2.refreshBacklinks",
     "onCommand:org2.formatWorkspaceCheck",
     "onCommand:org2.formatWorkspaceApply",
     "onCommand:org2.formatCurrentFileCheck",
@@ -91,6 +93,15 @@
       {
         "command": "org2.refreshAgenda",
         "title": "Org2: Refresh Agenda",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "org2.openBacklinks",
+        "title": "Org2: Open Backlinks Pane"
+      },
+      {
+        "command": "org2.refreshBacklinks",
+        "title": "Org2: Refresh Backlinks Pane",
         "icon": "$(refresh)"
       },
       {
@@ -265,6 +276,10 @@
         {
           "id": "org2Agenda",
           "name": "Org2 Agenda"
+        },
+        {
+          "id": "org2Backlinks",
+          "name": "Org2 Backlinks"
         }
       ]
     },
@@ -283,6 +298,11 @@
         {
           "command": "org2.pickAgendaStatusFilter",
           "when": "view == org2Agenda",
+          "group": "navigation"
+        },
+        {
+          "command": "org2.refreshBacklinks",
+          "when": "view == org2Backlinks",
           "group": "navigation"
         }
       ],
@@ -1024,7 +1044,7 @@
       {
         "key": "ctrl+; r b",
         "mac": "cmd+; r b",
-        "command": "org2.roamShowBacklinks",
+        "command": "org2.openBacklinks",
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
