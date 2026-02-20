@@ -4,6 +4,19 @@ This is the initial, intentionally-scoped Org2 specification.
 
 The primary goal of v0 is to define a *lossless, round-trippable parse* of Org-like documents into a *canonical AST*.
 
+* v0 at a glance
+
+This document is intended to be a compact, self-contained overview of what Org2 v0 standardizes.
+
+- Primary contract: parse text into a canonical AST with lossless round-trip guarantees.
+- Primary syntax families in v0: headlines, drawers/properties, directives/comments, source/common blocks, lists, tables, timestamps, links, emphasis, keyword lines, planning lines.
+- Compatibility posture: standard Org forms remain canonical; selected Org2 syntax sugar/aliases are additive.
+- Semantic posture: parsing is normative in v0; most higher-level behavior modules (agenda/workflow/export semantics) are intentionally deferred.
+
+Related docs:
+- Conformance rules and invariants: [[file:CONFORMANCE.md][CONFORMANCE.md]]
+- Native org-roam-style module draft (v0 scope proposal): [[file:ROAM.org][ROAM.org]]
+
 * Scope
 
 ** In scope (normative)
@@ -46,6 +59,31 @@ Examples (not yet specified):
 - =org2-sem-links=
 
 An implementation may support any subset of modules, but MUST be explicit about which modules (and which versions) it supports.
+
+* Additive syntax sugar and aliases (v0)
+
+Org2 v0 keeps Org begin/end and inline forms as canonical, while allowing a small set of additive shorthand forms:
+
+- Fenced source blocks: =```lang= ... =```=
+  - Parsed as =SrcBlock=.
+  - Additive sugar only; parsers MUST remain compatible with =#+begin_src= / =#+end_src=.
+- Org2 source alias: =#+begin_org2= ... =#+end_org2=
+  - Parsed equivalently to =#+begin_src org2= ... =#+end_src= in v0.
+- Backtick inline code: =`...`=
+  - Parsed as inline code emphasis (same =kind: "code"= target as ~=...=~).
+
+These sugar forms are conveniences, not a replacement for standard Org forms.
+
+* Native org-roam support (v0 status)
+
+Org2 v0 includes parser-level primitives needed for org-roam-style workflows (notably IDs, ID links, file/headline structure, and lossless links), and tracks a native roam module as a first-class direction.
+
+Current status:
+- Parser support is normative in this spec.
+- Roam behavior module details (indexing/backlinks/dailies/database conventions) are documented in [[file:ROAM.org][ROAM.org]] as a v0 draft.
+- Source of truth remains plain files; any roam database is a derived cache.
+
+Practical implication: a reader can treat roam as a native Org2 capability direction, with the parser contract stable here and operational semantics evolving in the companion roam document.
 
 * Versioning
 
