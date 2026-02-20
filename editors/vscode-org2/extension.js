@@ -3733,11 +3733,8 @@ function activate(context) {
         if (!desc.trim()) continue;
 
         if (renderMode !== 'full') {
-          const before = text.slice(0, start);
-          const after = text.slice(end);
-          const safeBefore = /^\s*(?:[-+*]\s+)?$/.test(before);
-          const safeAfter = /^\s*$/.test(after);
-          if (!(safeBefore && safeAfter)) continue;
+          // In safe mode, skip table rows so visual alignment from formatter remains intact.
+          if (/^\s*\|/.test(text)) continue;
         }
 
         const target = resolveOrg2LinkTarget(rawUrl, doc);

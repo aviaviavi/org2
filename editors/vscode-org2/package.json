@@ -963,7 +963,7 @@
           "type": "string",
           "enum": ["safe", "full"],
           "default": "safe",
-          "description": "safe: render only when the described link occupies the full list/line context (avoids spacing artifacts). full: render all described links (may cause spacing artifacts due to VS Code decoration limits)."
+          "description": "safe: render described links everywhere except table rows (prevents table alignment artifacts). full: render all described links including table rows."
         },
         "org2.keymap.power": {
           "type": "boolean",
