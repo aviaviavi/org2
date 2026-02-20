@@ -3733,8 +3733,15 @@ function activate(context) {
         if (!desc.trim()) continue;
 
         if (renderMode !== 'full') {
-          // In safe mode, skip table rows so visual alignment from formatter remains intact.
-          if (/^\s*\|/.test(text)) continue;
+          // In safe mode, avoid table misalignment. Allow rendering in tables only when
+          // the entire cell is exactly one described link (plus surrounding spaces).
+          if (/^\s*\|/.test(text)) {
+            const leftPipe = text.lastIndexOf('|', start);
+            const rightPipe = text.indexOf('|', end);
+            if (leftPipe === -1 || rightPipe === -1 || rightPipe <= leftPipe) continue;
+            const cellText = text.slice(leftPipe + 1, rightPipe).trim();
+            if (cellText !== m[0]) continue;
+          }
         }
 
         const target = resolveOrg2LinkTarget(rawUrl, doc);

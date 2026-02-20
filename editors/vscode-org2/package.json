@@ -963,7 +963,7 @@
           "type": "string",
           "enum": ["safe", "full"],
           "default": "safe",
-          "description": "safe: render described links everywhere except table rows (prevents table alignment artifacts). full: render all described links including table rows."
+          "description": "safe: render described links broadly, and in table rows only when a cell is exactly one described link (prevents table alignment artifacts). full: render all described links including table rows."
         },
         "org2.keymap.power": {
           "type": "boolean",
