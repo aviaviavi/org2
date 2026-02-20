@@ -3724,34 +3724,21 @@ function activate(context) {
       if (!m) continue;
 
       const state = (m[2] || '').toUpperCase();
-      let styles = null;
-      if (state === 'TODO') {
-        styles = {
-          dark: { color: '#111111', backgroundColor: '#ffb020' },
-          light: { color: '#111111', backgroundColor: '#ffcc66' },
-        };
-      } else if (state === 'PROG' || state === 'IN_PROGRESS' || state === 'WIP' || state === 'DOING') {
-        styles = {
-          dark: { color: '#ffffff', backgroundColor: '#2563eb' },
-          light: { color: '#ffffff', backgroundColor: '#3b82f6' },
-        };
-      } else if (state === 'DONE' || state === 'CANCELLED' || state === 'CANCELED') {
-        styles = {
-          dark: { color: '#052e16', backgroundColor: '#34d399' },
-          light: { color: '#14532d', backgroundColor: '#86efac' },
-        };
-      } else {
+      if (!(state === 'TODO' || state === 'PROG' || state === 'IN_PROGRESS' || state === 'WIP' || state === 'DOING' || state === 'DONE' || state === 'CANCELLED' || state === 'CANCELED')) {
         continue;
       }
 
       const start = m[1].length + 1;
       const end = start + m[2].length;
+      const palette = state === 'TODO'
+        ? { color: '#111111', backgroundColor: '#ffcc66', border: '1px solid rgba(0,0,0,0.25)' }
+        : (state === 'PROG' || state === 'IN_PROGRESS' || state === 'WIP' || state === 'DOING')
+          ? { color: '#ffffff', backgroundColor: '#2563eb', border: '1px solid rgba(255,255,255,0.22)' }
+          : { color: '#052e16', backgroundColor: '#86efac', border: '1px solid rgba(0,0,0,0.22)' };
+
       options.push({
         range: new vscode.Range(line, start, line, end),
-        renderOptions: {
-          light: { ...styles.light, border: '1px solid rgba(0,0,0,0.18)' },
-          dark: { ...styles.dark, border: '1px solid rgba(255,255,255,0.18)' },
-        },
+        renderOptions: palette,
       });
     }
 
