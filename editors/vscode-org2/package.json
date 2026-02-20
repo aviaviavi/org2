@@ -956,14 +956,14 @@
         },
         "org2.links.renderDescriptions": {
           "type": "boolean",
-          "default": true,
-          "description": "Render described links ([[url][desc]]) as decoration labels."
+          "default": false,
+          "description": "Style described links ([[url][desc]]) for readability without changing layout/whitespace."
         },
         "org2.links.renderDescriptionsMode": {
           "type": "string",
           "enum": ["safe", "full"],
           "default": "safe",
-          "description": "safe: render described links with conservative internals for compatibility. full: render all described links. (Current behavior is effectively the same in both modes.)"
+          "description": "Reserved for future link-rendering modes. Currently both modes use layout-safe styling only."
         },
         "org2.keymap.power": {
           "type": "boolean",
