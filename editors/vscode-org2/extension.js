@@ -3734,18 +3734,18 @@ function activate(context) {
       let styles = null;
       if (state === 'TODO') {
         styles = {
-          dark: { color: '#ffd28a', backgroundColor: 'rgba(255, 166, 0, 0.22)' },
-          light: { color: '#8a4b00', backgroundColor: 'rgba(255, 166, 0, 0.18)' },
+          dark: { color: '#111111', backgroundColor: '#ffb020' },
+          light: { color: '#111111', backgroundColor: '#ffcc66' },
         };
       } else if (state === 'PROG' || state === 'IN_PROGRESS' || state === 'WIP' || state === 'DOING') {
         styles = {
-          dark: { color: '#93c5fd', backgroundColor: 'rgba(59, 130, 246, 0.26)' },
-          light: { color: '#1d4ed8', backgroundColor: 'rgba(59, 130, 246, 0.16)' },
+          dark: { color: '#ffffff', backgroundColor: '#2563eb' },
+          light: { color: '#ffffff', backgroundColor: '#3b82f6' },
         };
       } else if (state === 'DONE' || state === 'CANCELLED' || state === 'CANCELED') {
         styles = {
-          dark: { color: '#86efac', backgroundColor: 'rgba(34, 197, 94, 0.20)' },
-          light: { color: '#166534', backgroundColor: 'rgba(34, 197, 94, 0.14)' },
+          dark: { color: '#052e16', backgroundColor: '#34d399' },
+          light: { color: '#14532d', backgroundColor: '#86efac' },
         };
       } else {
         continue;
@@ -3756,8 +3756,8 @@ function activate(context) {
       options.push({
         range: new vscode.Range(line, start, line, end),
         renderOptions: {
-          light: styles.light,
-          dark: styles.dark,
+          light: { ...styles.light, border: '1px solid rgba(0,0,0,0.18)' },
+          dark: { ...styles.dark, border: '1px solid rgba(255,255,255,0.18)' },
         },
       });
     }
