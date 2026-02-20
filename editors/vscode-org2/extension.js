@@ -3699,7 +3699,7 @@ function activate(context) {
   // the underlying link token and draw the description as a prefix.
   const org2LinkDescDecoration = vscode.window.createTextEditorDecorationType({
     color: 'rgba(0,0,0,0)',
-    textDecoration: 'none',
+    textDecoration: 'none; font-size: 0;',
   });
 
   function updateLinkDecorations(editor) {
@@ -3733,15 +3733,8 @@ function activate(context) {
         if (!desc.trim()) continue;
 
         if (renderMode !== 'full') {
-          // In safe mode, avoid table misalignment. Allow rendering in tables only when
-          // the entire cell is exactly one described link (plus surrounding spaces).
-          if (/^\s*\|/.test(text)) {
-            const leftPipe = text.lastIndexOf('|', start);
-            const rightPipe = text.indexOf('|', end);
-            if (leftPipe === -1 || rightPipe === -1 || rightPipe <= leftPipe) continue;
-            const cellText = text.slice(leftPipe + 1, rightPipe).trim();
-            if (cellText !== m[0]) continue;
-          }
+          // Safe mode currently mirrors full rendering behavior; keep the guard for future
+          // tuning knobs without changing default behavior.
         }
 
         const target = resolveOrg2LinkTarget(rawUrl, doc);
