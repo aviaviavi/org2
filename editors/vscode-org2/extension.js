@@ -3703,6 +3703,68 @@ function activate(context) {
     opacity: '0.65',
   });
 
+  const org2TodoStateDecoration = vscode.window.createTextEditorDecorationType({
+    fontWeight: '700',
+    borderRadius: '3px',
+    padding: '0 4px',
+  });
+
+  function updateTodoStateDecorations(editor) {
+    if (!editor) return;
+    const doc = editor.document;
+    if (!doc) return;
+    if (doc.languageId !== 'org2' && doc.languageId !== 'org') return;
+
+    const cfg = vscode.workspace.getConfiguration('org2');
+    const enabled = cfg.get('todo.highlightStates', true);
+    if (!enabled) {
+      editor.setDecorations(org2TodoStateDecoration, []);
+      return;
+    }
+
+    const options = [];
+    const re = /^(\*+)\s+([A-Z][A-Z0-9_\-]*)\b/;
+
+    for (let line = 0; line < doc.lineCount; line++) {
+      const text = doc.lineAt(line).text;
+      const m = re.exec(text);
+      if (!m) continue;
+
+      const state = (m[2] || '').toUpperCase();
+      let styles = null;
+      if (state === 'TODO') {
+        styles = {
+          dark: { color: '#ffd28a', backgroundColor: 'rgba(255, 166, 0, 0.22)' },
+          light: { color: '#8a4b00', backgroundColor: 'rgba(255, 166, 0, 0.18)' },
+        };
+      } else if (state === 'PROG' || state === 'IN_PROGRESS' || state === 'WIP' || state === 'DOING') {
+        styles = {
+          dark: { color: '#93c5fd', backgroundColor: 'rgba(59, 130, 246, 0.26)' },
+          light: { color: '#1d4ed8', backgroundColor: 'rgba(59, 130, 246, 0.16)' },
+        };
+      } else if (state === 'DONE' || state === 'CANCELLED' || state === 'CANCELED') {
+        styles = {
+          dark: { color: '#86efac', backgroundColor: 'rgba(34, 197, 94, 0.20)' },
+          light: { color: '#166534', backgroundColor: 'rgba(34, 197, 94, 0.14)' },
+        };
+      } else {
+        continue;
+      }
+
+      const start = m[1].length + 1;
+      const end = start + m[2].length;
+      options.push({
+        range: new vscode.Range(line, start, line, end),
+        renderOptions: {
+          light: styles.light,
+          dark: styles.dark,
+        },
+      });
+    }
+
+    editor.setDecorations(org2TodoStateDecoration, options);
+  }
+
   function updateLinkDecorations(editor) {
     if (!editor) return;
     const doc = editor.document;
@@ -3806,6 +3868,7 @@ function activate(context) {
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       maybeAutoFold(editor);
       updateLinkDecorations(editor);
+      updateTodoStateDecorations(editor);
     })
   );
 
@@ -3825,6 +3888,9 @@ function activate(context) {
       ) {
         vscode.window.visibleTextEditors.forEach((ed) => updateLinkDecorations(ed));
       }
+      if (e.affectsConfiguration('org2.todo.highlightStates')) {
+        vscode.window.visibleTextEditors.forEach((ed) => updateTodoStateDecorations(ed));
+      }
     })
   );
 
@@ -3832,6 +3898,7 @@ function activate(context) {
   vscode.window.visibleTextEditors.forEach((ed) => {
     maybeAutoFold(ed);
     updateLinkDecorations(ed);
+    updateTodoStateDecorations(ed);
   });
 
   context.subscriptions.push(
@@ -3840,6 +3907,7 @@ function activate(context) {
       if (editor) {
         maybeAutoFold(editor);
         updateLinkDecorations(editor);
+        updateTodoStateDecorations(editor);
       }
     })
   );
@@ -3847,7 +3915,10 @@ function activate(context) {
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((e) => {
       const editor = vscode.window.visibleTextEditors.find((ed) => ed.document === e.document);
-      if (editor) updateLinkDecorations(editor);
+      if (editor) {
+        updateLinkDecorations(editor);
+        updateTodoStateDecorations(editor);
+      }
     })
   );
 

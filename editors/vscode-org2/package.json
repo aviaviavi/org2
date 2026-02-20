@@ -965,6 +965,11 @@
           "default": "safe",
           "description": "Reserved for future link-rendering modes. Currently both modes use layout-safe styling only."
         },
+        "org2.todo.highlightStates": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight TODO state keywords in headlines (e.g. TODO, PROG, DONE) to improve scanning."
+        },
         "org2.keymap.power": {
           "type": "boolean",
           "default": true,
