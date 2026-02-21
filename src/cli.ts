@@ -4489,112 +4489,50 @@ async function main(): Promise<void> {
     }
   }
 
+
+function printGeneralUsage(exitCode: number): never {
+  console.error(`org2 CLI
+
+Usage:
+  org2 <command> [options]
+
+Core commands:
+  org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
+  org2 todo <set|toggle> --file FILE (--line N | --pos LINE[:COL]) [--apply]
+  org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
+  org2 capture --file FILE --title TITLE [--template note|task] [--apply]
+  org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--apply]
+  org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--apply]
+
+Export / publish:
+  org2 export html --file FILE [--out FILE] [--apply]
+  org2 export html --dir DIR [--recursive] [--out-dir DIR] [--index FILE] [--apply]
+  org2 publish [PROJECT] [--config PATH] [--preview]
+
+Roam / IDs:
+  org2 id <get|ensure> --file FILE [--line N|--pos LINE[:COL]] [--apply]
+  org2 backlinks --id UUID [--dir DIR] [--recursive]
+  org2 query --id UUID [--dir DIR] [--recursive]
+  org2 roam db-sync --dir DIR [--recursive] [--apply]
+  org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply]
+  org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--style wiki|id] [--id UUID] [--apply]
+
+Other:
+  org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]
+  org2 lsp
+
+Tips:
+  - Use --help with subcommands for detailed flags (e.g., org2 agenda --help).
+  - Use --format json for scriptable output where supported.`);
+  process.exit(exitCode);
+}
+
   if (help) {
-    console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--exclude-when FILTER[,FILTER...]] [--weekday FILTER[,FILTER...]] [--exclude-weekday FILTER[,FILTER...]] [--week FILTER[,FILTER...]] [--exclude-week FILTER[,FILTER...]] [--day-of-month FILTER[,FILTER...]] [--exclude-day-of-month FILTER[,FILTER...]] [--month FILTER[,FILTER...]] [--exclude-month FILTER[,FILTER...]] [--quarter FILTER[,FILTER...]] [--exclude-quarter FILTER[,FILTER...]] [--year FILTER[,FILTER...]] [--exclude-year FILTER[,FILTER...]] [--date YYYY-MM-DD[,YYYY-MM-DD...]] [--exclude-date YYYY-MM-DD[,YYYY-MM-DD...]] [--level N[,N...]] [--exclude-level N[,N...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--id ID[,ID...]] [--todo KEYWORD[,KEYWORD...]] [--todo-order KEYWORD[,KEYWORD...]] [--status-order STATUS[,STATUS...]] [--kind-order KIND[,KIND...]] [--priority-order PRIORITY[,PRIORITY...]] [--tag-order TAG[,TAG...]] [--effort-order VALUE[,VALUE...]] [--priority A[,B...]] [--time VALUE[,VALUE...]] [--effort VALUE[,VALUE...]] [--property KEY=VALUE[,KEY=VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-id ID[,ID...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-time VALUE[,VALUE...]] [--exclude-effort VALUE[,VALUE...]] [--exclude-property KEY=VALUE[,KEY=VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--day-limit N] [--group-limit N] [--no-overdue] [--verbose-errors]",
-    );
-    console.error(
-      "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
-    );
-    console.error(
-      "       org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--format text|diff|json] [--apply]",
-    );
-    console.error(
-      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--css HREF[,HREF...]] [--no-default-style] [--toc] [--toc-depth N] [--number-headings] [--number-headings-depth N] [--rewrite-file-links] [--format text|json] [--apply]",
-    );
-    console.error(
-      "       org2 publish [PROJECT] [--project NAME] [--config PATH] [--preview] [--format text|json]",
-    );
-    console.error(
-      "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
-    );
-    console.error(
-      "       org2 capture --file FILE --title TITLE [--template note|task] [--todo KEYWORD] [--body TEXT] [--now ISO] [--format text|json|diff] [--apply]",
-    );
-    console.error(
-      "       org2 plan set --file FILE (--line N | --pos LINE[:COL]) --kind scheduled|deadline --date YYYY-MM-DD [--format text|json|diff] [--apply]",
-      "       org2 plan today --file FILE (--line N | --pos LINE[:COL]) --kind scheduled|deadline [--format text|json|diff] [--apply]",
-    );
-    console.error(
-      "       org2 id [get|ensure] --file FILE [--line N|--pos LINE[:COL]] [--id UUID] [--format text|json|diff] [--apply]",
-    );
-    console.error(
-      "       org2 backlinks --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
-    );
-    console.error(
-      "       org2 query --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
-    );
-    console.error(
-      "       org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--config PATH] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--check] [--apply] [--format text|json]",
-    );
-    console.error(
-      "       org2 roam db-sync --dir DIR [--recursive] [--format text|json] [--apply]",
-    );
-    console.error(
-      "       org2 roam backlinks --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
-    );
-    console.error(
-      "       org2 roam node new --dir DIR --title TITLE [--id UUID] [--format text|json] [--apply]",
-      "       org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--id UUID] [--style wiki|id] [--format text|json] [--apply]",
-    );
-    console.error(
-      "       org2 lsp  # start the org2 Language Server (stdio)",
-    );
-    process.exit(0);
+    printGeneralUsage(0);
   }
 
   if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
-    console.error(
-      "Usage: org2 agenda [--dir DIR] [--recursive] [--files FILE ...] [--days N] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format text|json] [--status FILTER[,FILTER...]] [--exclude-status FILTER[,FILTER...]] [--kind FILTER[,FILTER...]] [--exclude-kind FILTER[,FILTER...]] [--when FILTER[,FILTER...]] [--exclude-when FILTER[,FILTER...]] [--weekday FILTER[,FILTER...]] [--exclude-weekday FILTER[,FILTER...]] [--week FILTER[,FILTER...]] [--exclude-week FILTER[,FILTER...]] [--day-of-month FILTER[,FILTER...]] [--exclude-day-of-month FILTER[,FILTER...]] [--month FILTER[,FILTER...]] [--exclude-month FILTER[,FILTER...]] [--quarter FILTER[,FILTER...]] [--exclude-quarter FILTER[,FILTER...]] [--year FILTER[,FILTER...]] [--exclude-year FILTER[,FILTER...]] [--date YYYY-MM-DD[,YYYY-MM-DD...]] [--exclude-date YYYY-MM-DD[,YYYY-MM-DD...]] [--level N[,N...]] [--exclude-level N[,N...]] [--match TEXT[,TEXT...]] [--exclude-match TEXT[,TEXT...]] [--tag TAG[,TAG...]] [--id ID[,ID...]] [--todo KEYWORD[,KEYWORD...]] [--todo-order KEYWORD[,KEYWORD...]] [--status-order STATUS[,STATUS...]] [--kind-order KIND[,KIND...]] [--priority-order PRIORITY[,PRIORITY...]] [--tag-order TAG[,TAG...]] [--effort-order VALUE[,VALUE...]] [--priority A[,B...]] [--time VALUE[,VALUE...]] [--effort VALUE[,VALUE...]] [--property KEY=VALUE[,KEY=VALUE...]] [--exclude-tag TAG[,TAG...]] [--exclude-id ID[,ID...]] [--exclude-todo KEYWORD[,KEYWORD...]] [--exclude-priority A[,B...]] [--exclude-time VALUE[,VALUE...]] [--exclude-effort VALUE[,VALUE...]] [--exclude-property KEY=VALUE[,KEY=VALUE...]] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--sort KEY[,KEY...]] [--group KEY[,KEY...]] [--date-order asc|desc] [--limit N] [--day-limit N] [--group-limit N] [--no-overdue] [--verbose-errors]",
-    );
-    console.error(
-      "       org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--format text|diff|json] [--apply]",
-    );
-    console.error(
-      "       org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--format text|diff|json] [--apply]",
-    );
-    console.error(
-      "       org2 export html (--file FILE [--out FILE] [--title TITLE] | --dir DIR [--recursive] [--out-dir DIR] [--index FILE [--index-title TITLE]]) [--css HREF[,HREF...]] [--no-default-style] [--toc] [--toc-depth N] [--number-headings] [--number-headings-depth N] [--rewrite-file-links] [--format text|json] [--apply]",
-    );
-    console.error(
-      "       org2 publish [PROJECT] [--project NAME] [--config PATH] [--preview] [--format text|json]",
-    );
-    console.error(
-      "       org2 todo [set|toggle] --file FILE (--line N | --pos LINE[:COL]) [--status todo|in_progress|done|canceled] [--now ISO] [--logbook] [--format text|json|diff] [--apply]",
-    );
-    console.error(
-      "       org2 capture --file FILE --title TITLE [--template note|task] [--todo KEYWORD] [--body TEXT] [--now ISO] [--format text|json|diff] [--apply]",
-    );
-    console.error(
-      "       org2 plan set --file FILE (--line N | --pos LINE[:COL]) --kind scheduled|deadline --date YYYY-MM-DD [--format text|json|diff] [--apply]",
-      "       org2 plan today --file FILE (--line N | --pos LINE[:COL]) --kind scheduled|deadline [--format text|json|diff] [--apply]",
-    );
-    console.error(
-      "       org2 id [get|ensure] --file FILE [--line N|--pos LINE[:COL]] [--id UUID] [--format text|json|diff] [--apply]", 
-    );
-    console.error(
-      "       org2 backlinks --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
-    );
-    console.error(
-      "       org2 query --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
-    );
-    console.error(
-      "       org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--config PATH] [--file-match TEXT[,TEXT...]] [--exclude-file TEXT[,TEXT...]] [--check] [--apply] [--format text|json]",
-    );
-    console.error(
-      "       org2 roam db-sync --dir DIR [--recursive] [--format text|json] [--apply]",
-    );
-    console.error(
-      "       org2 roam backlinks --id UUID [--dir DIR] [--recursive] [--files FILE ...] [--format text|json] [--verbose-errors]",
-    );
-    console.error(
-      "       org2 roam node new --dir DIR --title TITLE [--id UUID] [--format text|json] [--apply]",
-      "       org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--id UUID] [--style wiki|id] [--format text|json] [--apply]",
-    );
-    console.error(
-      "       org2 lsp  # start the org2 Language Server (stdio)",
-    );
-    process.exit(1);
+    printGeneralUsage(1);
   }
 
   if (command === "lsp") {
