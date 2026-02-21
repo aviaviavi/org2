@@ -4921,6 +4921,7 @@ async function main(): Promise<void> {
         includeHeadlineNumbers: project.numberHeadings,
         includeHeadlineNumberDepth: project.numberHeadingsDepth,
         rewriteFileLinks: project.rewriteFileLinks,
+        preambleHtml: project.preambleHtml,
         postambleHtml: project.postambleHtml,
         headIncludes: resolvedHeadIncludes,
         includeDocumentHeader: true,
