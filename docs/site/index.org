@@ -26,10 +26,11 @@ Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standa
 
 ** Here
 
-- Practical core language constructs
-- CLI workflows for daily planning and editing
-- Roam-style ID/backlink support
-- Publish pipeline for docs/sites
+- Core Org language support is broadly implemented and already practical for real notes.
+- Usable today as a full Org-style note system in VS Code.
+- CLI workflows for planning/editing (agenda, todo, plan, capture, export, publish).
+- Roam-style workflows (IDs, backlinks, node creation, wiki + id links).
+- Publish pipeline for docs/sites.
 
 ** Not here yet
 

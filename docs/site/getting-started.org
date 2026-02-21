@@ -51,10 +51,11 @@ Why:
 
 ** Here today
 
-- CLI-first workflows (agenda/todo/plan/capture/export/publish)
-- Roam-ish workflows (IDs/backlinks/node creation/link insertion)
-- VS Code-first editor support
-- Spec draft + conformance fixtures
+- Core Org language support is broadly there already.
+- Full day-to-day Org-style note workflow is already viable in VS Code.
+- CLI workflows (agenda/todo/plan/capture/export/publish).
+- Roam workflows (IDs/backlinks/node creation/wiki+id links).
+- Spec draft + conformance fixtures.
 
 ** Not here yet
 
