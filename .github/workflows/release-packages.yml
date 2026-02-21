@@ -5,6 +5,17 @@ on:
     tags:
       - "v*.*.*"
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build/package only (skip publish steps)"
+        required: false
+        default: true
+        type: boolean
+      release_version:
+        description: "SemVer version (e.g. 0.1.0) for workflow_dispatch"
+        required: false
+        default: "0.1.0-rc.1"
+        type: string
 
 permissions:
   contents: write
@@ -24,14 +35,28 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
-      - name: Resolve release version
+      - name: Resolve release version + mode
         id: version
         run: |
-          RAW="${GITHUB_REF_NAME}"
-          VERSION="${RAW#v}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.release_version }}"
+            DRY_RUN="${{ inputs.dry_run }}"
+          else
+            RAW="${GITHUB_REF_NAME}"
+            VERSION="${RAW#v}"
+            DRY_RUN="false"
+          fi
 
-      - name: Validate release secrets
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
+            echo "Invalid release version: $VERSION" >&2
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$DRY_RUN" >> "$GITHUB_OUTPUT"
+
+      - name: Validate release secrets (publish mode)
+        if: ${{ steps.version.outputs.dry_run != 'true' }}
         run: |
           test -n "$NODE_AUTH_TOKEN" || (echo "Missing secret: NPM_TOKEN" && exit 1)
           test -n "$VSCE_PAT" || (echo "Missing secret: VSCE_PAT" && exit 1)
@@ -58,23 +83,35 @@ jobs:
           npx @vscode/vsce package
 
       - name: Publish npm package
+        if: ${{ steps.version.outputs.dry_run != 'true' }}
         run: npm publish --access public
 
       - name: Publish VS Code Marketplace extension
+        if: ${{ steps.version.outputs.dry_run != 'true' }}
         run: |
           cd editors/vscode-org2
           npx @vscode/vsce publish --no-update-package-json --pat "$VSCE_PAT"
 
       - name: Publish Open VSX extension (optional)
-        if: ${{ env.OVSX_PAT != '' }}
+        if: ${{ steps.version.outputs.dry_run != 'true' && env.OVSX_PAT != '' }}
         run: |
           cd editors/vscode-org2
           npx ovsx publish --no-update-package-json --pat "$OVSX_PAT"
 
       - name: Upload release artifacts
+        if: ${{ steps.version.outputs.dry_run != 'true' }}
         uses: softprops/action-gh-release@v2
         with:
           files: |
             *.tgz
             editors/vscode-org2/*.vsix
           generate_release_notes: true
+
+      - name: Upload dry-run artifacts
+        if: ${{ steps.version.outputs.dry_run == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dry-run-${{ steps.version.outputs.version }}
+          path: |
+            *.tgz
+            editors/vscode-org2/*.vsix
