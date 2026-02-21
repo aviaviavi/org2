@@ -59,7 +59,7 @@ Why:
 
 ** Not here yet
 
-- Full GNU Org Mode parity
+- 100% feature-for-feature GNU Org Mode parity (not the project goal)
 - Mature recurring/habits/clocking ecosystem
 - Broad editor parity beyond VS Code
 - Stable final APIs (project is still early alpha)

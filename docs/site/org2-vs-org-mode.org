@@ -20,7 +20,8 @@ Short version: Org2 is the long-term successor to Org Mode: portable, editor-agn
 
 - Existing =.org= files are supported as an everyday workflow.
 - New files are recommended as =.org2=.
-- Org2 intentionally implements a practical subset first, then expands.
+- Aim: drop-in replacement for most Org Mode users over time.
+- 100% feature-for-feature parity with GNU Org is not the goal.
 
 * What Org2 has today
 

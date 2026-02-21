@@ -97,6 +97,7 @@ h1 { margin-bottom: 0.5rem; }
   height: 1em;
   display: inline-block;
   flex: 0 0 auto;
+  transform: translateY(1.6px);
 }
 
 .org2-nav a:hover,
