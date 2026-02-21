@@ -1000,13 +1000,6 @@ ${DOCUMENT_TOC_STYLE}` : DEFAULT_DOCUMENT_STYLE,
   const postambleSection = opts.postambleHtml ? `${opts.postambleHtml}
 ` : "";
   const compatOpen = opts.compatContentWrapper ? COMPAT_CONTENT_OPEN : "";
-  const mainBodyWithPreamble = (() => {
-    if (!preambleSection) return opts.mainBody;
-    const headerMatch = opts.mainBody.match(/^<header[\s\S]*?<\/header>\n?/);
-    if (!headerMatch) return `${preambleSection}${opts.mainBody}`;
-    const header = headerMatch[0];
-    return `${header}${preambleSection}${opts.mainBody.slice(header.length)}`;
-  })();
   const compatClose = opts.compatContentWrapper ? COMPAT_CONTENT_CLOSE : "";
   const compatStyleSection = opts.compatContentWrapper ? COMPAT_CONTENT_STYLE_SECTION : "";
 
@@ -1019,7 +1012,7 @@ ${DOCUMENT_TOC_STYLE}` : DEFAULT_DOCUMENT_STYLE,
 ${headMetaSection}${headExtraSection}${headStyleSection}${compatStyleSection}</head>
 <body>
 ${compatOpen}<main class="org2-document">
-${mainBodyWithPreamble}
+${preambleSection}${opts.mainBody}
 </main>
 ${compatClose}${postambleSection}</body>
 </html>
