@@ -93,6 +93,7 @@ function printDrawer(node: DrawerNode): string {
 
 function printSrcBlock(node: SrcBlockNode): string {
   const directiveLineToRaw = (indent: string, keywordRaw: string, afterKeywordRaw: string): string => {
+    if (keywordRaw === "```") return `${indent}\`\`\`${afterKeywordRaw}`;
     return `${indent}#+${keywordRaw}${afterKeywordRaw}`;
   };
 
@@ -110,6 +111,7 @@ function printSrcBlock(node: SrcBlockNode): string {
 
   return `${begin}\n${node.bodyRaw}\n${end}`;
 }
+
 
 function printTable(node: TableNode): string {
   const tableRows = node.rows.filter((r) => r.type === "TableRow") as Array<Extract<TableNode["rows"][number], { type: "TableRow" }>>;
