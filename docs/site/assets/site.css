@@ -77,11 +77,18 @@ h1 { margin-bottom: 0.5rem; }
 }
 
 .org2-nav-github {
-  font-weight: 700;
-  border-color: color-mix(in srgb, var(--link) 45%, var(--border));
+  font-weight: 600;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  background: transparent;
+  border: 0;
+  padding: 0.2rem 0.1rem;
+}
+
+.org2-nav-github:hover {
+  color: var(--link);
+  border: 0;
 }
 
 .org2-nav-github-icon {
@@ -122,6 +129,9 @@ h1 { margin-bottom: 0.5rem; }
   }
   .org2-nav-github {
     margin-left: auto;
+    padding-left: 0.85rem;
+    border-left: 1px solid var(--border);
+    border-radius: 0;
   }
   .org2-nav-dropdown-menu {
     display: none;
