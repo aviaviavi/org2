@@ -69,6 +69,7 @@ Why:
 
 - [[file:language-reference.org][Language reference]]
 - [[file:tooling-reference.org][Tooling reference]]
+- [[file:editors.org][Editor integrations]]
 - [[file:semantics-status.org][Semantics and status]]
 - [[file:migration.org][Practical migration]]
 - [[file:org2-vs-org-mode.org][Org2 vs Org Mode]]
