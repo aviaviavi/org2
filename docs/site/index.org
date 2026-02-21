@@ -1,0 +1,28 @@
+#+TITLE: Org2
+#+SUBTITLE: A standalone, editor-agnostic successor to Org Mode
+
+Org2 is a from-scratch implementation of an Org-like format and toolchain.
+
+It is built around a simple idea: your notes and tasks should be *portable plain text*, and your workflow should not depend on one editor runtime.
+
+* Why Org2
+
+- *Portable by default*: plain text files, no lock-in.
+- *CLI-first architecture*: parse, agenda, publish, and editing workflows work outside any single editor.
+- *Editor-agnostic direction*: VS Code support is currently strongest, but the project is intentionally decoupled.
+- *Spec-driven core*: Org2 has a public spec + fixtures, so behavior can be reasoned about and tested.
+
+Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standalone Org rationale]]
+
+* Read this next
+
+- [[file:getting-started.org][Getting started]]
+- [[file:reference.org][Reference]]
+
+* Project status
+
+Org2 is early alpha. It is already useful for daily workflows, but APIs and flags can still change.
+
+* Repository
+
+- [[https://github.com/aviaviavi/org2][github.com/aviaviavi/org2]]
