@@ -116,8 +116,10 @@ Supported link forms:
 - Bracket links: =[[https://example.com][label]]=
 - Plain URLs: =https://example.com=
 - File links: =[[file:path/to/file.org]]=
-- ID links: =[[id:UUID][label]]=
-- Wiki links: =[[Node Title]]= (used by roam workflows)
+- ID links: =[[id:UUID][label]]= (roam-style link)
+- Wiki links: =[[Node Title]]= (roam-style link)
+
+Both ID links and Wiki links are first-class in Org2 roam workflows.
 
 * Inline emphasis
 
@@ -138,6 +140,26 @@ Recognized block forms include:
 - Verse blocks: =#+begin_verse ... #+end_verse=
 - Center blocks: =#+begin_center ... #+end_center=
 - Comment blocks: =#+begin_comment ... #+end_comment=
+
+** Syntactic sugar / aliases
+
+Org2 supports a friendlier fenced-code alias for source blocks:
+
+#+begin_src org
+```ts
+const x = 1
+```
+#+end_src
+
+This is treated as syntactic sugar for:
+
+#+begin_src org
+#+begin_src ts
+const x = 1
+#+end_src
+#+end_src
+
+Use whichever form you prefer; both map to source block semantics.
 
 * Tables
 
