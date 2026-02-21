@@ -2,7 +2,25 @@
 #+SUBTITLE: A standalone, editor-agnostic successor to Org Mode
 
 #+begin_export html
-<div class="org2-nav"><nav aria-label="Docs"><a href="index.html">Home</a><a href="getting-started.html">Getting started</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a><a href="sitemap.html">Sitemap</a></nav></div>
+<div class="org2-nav">
+<details class="org2-nav-menu" open>
+<summary>Menu</summary>
+<nav aria-label="Docs">
+<a href="index.html">Home</a>
+<a href="getting-started.html">Getting started</a>
+<a href="language-reference.html">Language reference</a>
+<a href="tooling-reference.html">Tooling reference</a>
+<details class="org2-nav-dropdown">
+<summary>Comparisons</summary>
+<div class="org2-nav-dropdown-menu">
+<a href="org2-vs-org-mode.html">Org2 vs Org Mode</a>
+<a href="org2-vs-markdown.html">Org2 vs Markdown</a>
+</div>
+</details>
+<a href="sitemap.html">Sitemap</a>
+</nav>
+</details>
+</div>
 #+end_export
 
 Org2 is a from-scratch implementation of an Org-like format and toolchain.

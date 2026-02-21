@@ -14,7 +14,8 @@
         "stylesheets": ["assets/site.css"],
         "syntaxHighlighting": false,
         "headIncludes": [
-          "<script type=\"module\" src=\"assets/shiki-vscode.js\"></script>"
+          "<script type=\"module\" src=\"assets/shiki-vscode.js\"></script>",
+          "<script defer src=\"assets/nav.js\"></script>"
         ],
         "postambleHtml": "<footer class=\"org2-footer\"><p>Org2 docs</p><img referrerpolicy=\"no-referrer-when-downgrade\" src=\"https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3\" alt=\"\" /></footer>",
         "index": {
