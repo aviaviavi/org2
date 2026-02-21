@@ -81,6 +81,7 @@ h1 { margin-bottom: 0.5rem; }
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  line-height: 1;
   background: transparent;
   border: 0;
   padding: 0.2rem 0.1rem;
@@ -94,6 +95,8 @@ h1 { margin-bottom: 0.5rem; }
 .org2-nav-github-icon {
   width: 0.95rem;
   height: 0.95rem;
+  display: block;
+  transform: translateY(1px);
 }
 
 .org2-nav a:hover,
