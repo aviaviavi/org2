@@ -15,6 +15,7 @@ export type Org2PublishProjectConfig = {
   numberHeadings?: boolean;
   numberHeadingsDepth?: number;
   rewriteFileLinks?: boolean;
+  preambleHtml?: string;
   postambleHtml?: string;
   headIncludes?: string[];
   syntaxHighlighting?: boolean;
