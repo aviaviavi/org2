@@ -48,23 +48,6 @@ async function run() {
     pre.replaceWith(shikiPre);
   }
 
-  // Inline code (best effort): highlight as text for a consistent VSCode-like token palette.
-  for (const codeEl of document.querySelectorAll('code')) {
-    if (codeEl.closest('pre')) continue;
-    const txt = codeEl.textContent || '';
-    if (!txt.trim()) continue;
-    const html = highlighter.codeToHtml(txt, { lang: 'text', theme });
-    const wrapper = document.createElement('div');
-    wrapper.innerHTML = html;
-    const inlineCode = wrapper.querySelector('code');
-    if (!inlineCode) continue;
-
-    const replacement = document.createElement('code');
-    replacement.className = 'org2-inline-code shiki-inline';
-    replacement.innerHTML = inlineCode.innerHTML;
-    codeEl.replaceWith(replacement);
-  }
-
   // Re-render on theme changes.
   const media = window.matchMedia('(prefers-color-scheme: dark)');
   media.addEventListener?.('change', () => window.location.reload());
