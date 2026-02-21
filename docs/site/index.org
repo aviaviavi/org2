@@ -14,14 +14,6 @@ It aims to be a drop-in replacement for most Org Mode users in Emacs, while givi
 
 Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standalone Org rationale]]
 
-* Read this next
-
-- [[file:getting-started.org][Getting started]]
-- [[file:language-reference.org][Language reference (syntax, keywords, constructs)]]
-- [[file:tooling-reference.org][Tooling reference (agenda, formatter, roam, publish, LSP)]]
-- [[file:org2-vs-org-mode.org][Org2 vs Org Mode]]
-- [[file:org2-vs-markdown.org][Org2 vs Markdown]]
-
 * What’s here and what is not
 
 ** Here
