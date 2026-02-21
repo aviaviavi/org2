@@ -1,0 +1,26 @@
+{
+  "agendaFiles": ["*.org", "*.org2", "spec/**/*.org", "docs/site/**/*.org"],
+  "recursive": true,
+  "ignorePatterns": [".git/**", "node_modules/**", ".#*", "site/**"],
+  "publish": {
+    "projects": {
+      "docs-site": {
+        "baseDir": "docs/site",
+        "outDir": "site",
+        "include": ["*.org", "**/*.org", "*.org2", "**/*.org2"],
+        "ignore": [".git/**"],
+        "recursive": true,
+        "rewriteFileLinks": true,
+        "stylesheets": ["assets/site.css"],
+        "index": {
+          "file": "sitemap.html",
+          "title": "Org2 docs sitemap"
+        },
+        "assets": {
+          "include": ["assets/**"],
+          "ignore": ["**/.DS_Store"]
+        }
+      }
+    }
+  }
+}
