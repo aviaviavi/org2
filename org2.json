@@ -17,7 +17,7 @@
           "<script type=\"module\" src=\"assets/shiki-vscode.js\"></script>",
           "<script defer src=\"assets/nav.js\"></script>"
         ],
-        "preambleHtml": "<div class=\"org2-nav\"><details class=\"org2-nav-menu\" open><summary>Menu</summary><nav aria-label=\"Docs\"><a href=\"index.html\">Home</a><a href=\"getting-started.html\">Getting started</a><a href=\"language-reference.html\">Language reference</a><a href=\"tooling-reference.html\">Tooling reference</a><details class=\"org2-nav-dropdown\"><summary>Comparisons</summary><div class=\"org2-nav-dropdown-menu\"><a href=\"org2-vs-org-mode.html\">Org2 vs Org Mode</a><a href=\"org2-vs-markdown.html\">Org2 vs Markdown</a></div></details><a href=\"sitemap.html\">Sitemap</a></nav></details></div>",
+        "preambleHtml": "<div class=\"org2-nav\"><details class=\"org2-nav-menu\" open><summary>Menu</summary><nav aria-label=\"Docs\"><a href=\"index.html\">Home</a><a href=\"getting-started.html\">Getting started</a><a href=\"language-reference.html\">Language reference</a><a href=\"tooling-reference.html\">Tooling reference</a><details class=\"org2-nav-dropdown\"><summary>Comparisons</summary><div class=\"org2-nav-dropdown-menu\"><a href=\"org2-vs-org-mode.html\">Org2 vs Org Mode</a><a href=\"org2-vs-markdown.html\">Org2 vs Markdown</a></div></details></nav></details></div>",
         "postambleHtml": "<footer class=\"org2-footer\"><p>Org2 docs</p><img referrerpolicy=\"no-referrer-when-downgrade\" src=\"https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3\" alt=\"\" /></footer>",
         "index": {
           "file": "sitemap.html",
