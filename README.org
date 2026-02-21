@@ -121,7 +121,7 @@ Before opening a PR:
 
 Tag-based releases publish both packages:
 
-- npm package (=org2=)
+- npm package (=@aviaviavi/org2=)
 - VS Code extension (=editors/vscode-org2=)
 
 Workflow: =.github/workflows/release-packages.yml=
