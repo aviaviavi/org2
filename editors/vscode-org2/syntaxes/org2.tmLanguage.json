@@ -139,8 +139,215 @@
     "blocks": {
       "patterns": [
         {
+          "name": "meta.block.fenced.json.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:json))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.json"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.yaml.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:yaml|yml))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.yaml"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.toml.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:toml))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.toml"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.shell.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:sh|bash|zsh|fish|shell))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.shell"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.javascript.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:js|javascript))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.js"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.typescript.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:ts|typescript))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.ts"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.python.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:py|python))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.python"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.go.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:go|golang))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.go"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.rust.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:rs|rust))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.rust"
+            }
+          ]
+        },
+        {
           "name": "meta.block.fenced.sql.org2",
-          "begin": "^(\\s*)(```)(\\s*)(sql)\\s*$",
+          "begin": "^(\\s*)(```)(\\s*)((?:sql))\\s*$",
           "beginCaptures": {
             "2": {
               "name": "punctuation.definition.fenced.begin.org2"
@@ -158,6 +365,259 @@
           "patterns": [
             {
               "include": "source.sql"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.haskell.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:hs|haskell))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.haskell"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.java.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:java))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.java"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.c.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:c))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.c"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.cpp.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:cpp|c\\+\\+|cc|cxx))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.cpp"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.csharp.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:csharp|cs))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.cs"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.ruby.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:rb|ruby))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.ruby"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.php.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:php))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.php"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.kotlin.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:kotlin|kt))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.kotlin"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.swift.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:swift))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.swift"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.scala.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:scala))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.scala"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.lua.org2",
+          "begin": "^(\\s*)(```)(\\s*)((?:lua))\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.lua"
             }
           ]
         },
@@ -658,6 +1118,325 @@
             {
               "name": "text.plain.org2",
               "match": ".+"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.haskell.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:hs|haskell))\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.haskell"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.java.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:java))\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.java"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.c.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:c))\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.c"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.cpp.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:cpp|c\\+\\+|cc|cxx))\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.cpp"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.csharp.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:csharp|cs))\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.cs"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.ruby.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:rb|ruby))\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.ruby"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.php.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:php))\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.php"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.kotlin.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:kotlin|kt))\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.kotlin"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.swift.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:swift))\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.swift"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.scala.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:scala))\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.scala"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.lua.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:lua))\\b.*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "3": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.lua"
             }
           ]
         }
