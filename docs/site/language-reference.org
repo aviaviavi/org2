@@ -1,0 +1,174 @@
+#+TITLE: Language reference
+
+#+begin_export html
+<div class="org2-nav"><p><a href="index.html">Home</a> · <a href="getting-started.html">Getting started</a> · <a href="language-reference.html">Language reference</a> · <a href="tooling-reference.html">Tooling reference</a> · <a href="sitemap.html">Sitemap</a></p></div>
+#+end_export
+
+This is the practical language reference for Org2 v0.
+
+For the normative draft spec, see [[file:../../spec/v0/SPEC.org][spec/v0/SPEC.org]].
+
+* Headings
+
+- Syntax: one or more stars, a space, then title text.
+- Example:
+
+#+begin_src org
+* Project
+** Subproject
+*** Task
+#+end_src
+
+- Heading level is the number of stars.
+- Level skips are accepted in v0.
+
+* TODO keywords
+
+Headline TODO states parsed by Org2 workflows:
+
+- =TODO=
+- =IN_PROGRESS=
+- =PROG=
+- =DONE=
+- =CANCELLED= / =CANCELED=
+
+Example:
+
+#+begin_src org
+* TODO Ship docs
+* IN_PROGRESS Implement parser tests
+* DONE Publish changelog
+#+end_src
+
+* Priority cookies
+
+- Syntax: =[#A]= style cookie after TODO keyword (or at headline start when no TODO keyword).
+
+#+begin_src org
+* TODO [#A] Critical task
+#+end_src
+
+* Tags
+
+- Tags are suffixes at headline end: =:tag:= or =:tag1:tag2:=
+
+#+begin_src org
+* TODO Draft docs :docs:website:
+#+end_src
+
+* Drawers
+
+** Property drawers
+
+- Drawer delimiters: =:PROPERTIES:= ... =:END:=
+- Common keys used by Org2 workflows:
+  - =:ID:=
+  - =:CUSTOM_ID:=
+  - =:EFFORT:=
+  - =:ROAM_ALIASES:=
+
+#+begin_src org
+:PROPERTIES:
+:ID: 123e4567-e89b-12d3-a456-426614174000
+:EFFORT: 45
+:END:
+#+end_src
+
+** Generic drawers
+
+- Generic =:NAME:= ... =:END:= drawers are preserved.
+
+* Planning lines
+
+Recognized planning keywords:
+
+- =SCHEDULED:=
+- =DEADLINE:=
+- =CLOSED:=
+
+#+begin_src org
+SCHEDULED: <2026-02-21 Sat>
+DEADLINE: <2026-02-25 Wed>
+CLOSED: [2026-02-20 Fri]
+#+end_src
+
+* Timestamps
+
+Supported timestamp forms:
+
+- Active: =<2026-02-21 Sat>=
+- Inactive: =[2026-02-21 Sat]=
+- With time: =<2026-02-21 Sat 09:30>=
+- Ranges: =<2026-02-21 Sat>--<2026-02-23 Mon>=
+- Repeaters (agenda projection): =+1w=, =++1m=, =.+2d=
+
+* Lists
+
+- Unordered markers: =-=, =+=, =*=
+- Ordered markers: =1.=, =1)=
+- Checkboxes: =[ ]=, =[X]=, =[-]=
+- Nested lists via indentation.
+
+* Links
+
+Supported link forms:
+
+- Bracket links: =[[https://example.com][label]]=
+- Plain URLs: =https://example.com=
+- File links: =[[file:path/to/file.org]]=
+- ID links: =[[id:UUID][label]]=
+- Wiki links: =[[Node Title]]= (used by roam workflows)
+
+* Inline emphasis
+
+- Bold: =*bold*=
+- Italic: =/italic/=
+- Underline: =_underline_=
+- Strike: =+strike+=
+- Verbatim: ==verbatim==
+- Code: =~code~=
+
+* Blocks
+
+Recognized block forms include:
+
+- Source blocks: =#+begin_src ... #+end_src=
+- Example blocks: =#+begin_example ... #+end_example=
+- Quote blocks: =#+begin_quote ... #+end_quote=
+- Verse blocks: =#+begin_verse ... #+end_verse=
+- Center blocks: =#+begin_center ... #+end_center=
+- Comment blocks: =#+begin_comment ... #+end_comment=
+
+* Tables
+
+- Pipe table rows: =| a | b |=
+- Horizontal separator rows: =|---+---|=
+- Table content is parsed and preserved.
+
+* Keyword/directive lines
+
+Org2 parses keyword lines in =#+KEY: VALUE= form.
+
+Commonly used in export/publish:
+
+- =#+TITLE:=
+- =#+SUBTITLE:=
+- =#+AUTHOR:=
+- =#+DATE:=
+- =#+DESCRIPTION:=
+- =#+KEYWORDS:=
+- =#+LANGUAGE:=
+- =#+HTML_HEAD:=
+- =#+ID:=
+
+Unknown directives are preserved for round-tripping.
+
+* Comments
+
+- Line comments: lines beginning with =#=.
+- Comment blocks are also supported (see Blocks).
+
+* Losslessness goal
+
+Org2 aims for practical round-tripping of supported constructs.
+When behavior is ambiguous, defer to the current implementation and spec fixtures.

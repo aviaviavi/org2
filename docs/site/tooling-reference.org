@@ -1,0 +1,159 @@
+#+TITLE: Tooling reference
+
+#+begin_export html
+<div class="org2-nav"><p><a href="index.html">Home</a> · <a href="getting-started.html">Getting started</a> · <a href="language-reference.html">Language reference</a> · <a href="tooling-reference.html">Tooling reference</a> · <a href="sitemap.html">Sitemap</a></p></div>
+#+end_export
+
+This page documents Org2 tooling workflows: agenda, formatter, roam, publish, and more.
+
+* Core CLI commands
+
+Run =npm run org2 -- --help= for exact current flags.
+
+Major command families:
+
+- =agenda=
+- =todo=
+- =plan=
+- =capture=
+- =archive=, =refile=
+- =fmt=
+- =id=, =query=, =backlinks=
+- =roam ...=
+- =export html=
+- =publish=
+- =lsp=
+
+* Agenda
+
+Purpose: query scheduled/deadline items from Org files.
+
+Example:
+
+#+begin_src sh
+npm run org2 -- agenda --dir ~/notes --recursive --from 2026-02-20 --to 2026-02-27
+#+end_src
+
+Notable capabilities:
+
+- Date windows: =--today=, =--days=, =--from=, =--to=
+- Status/kind filters: =--status=, =--kind=, =--when=
+- Time/date dimensions: weekday/week/month/quarter/year/date filters
+- Content filters: tags, TODO keyword, priority, effort, property, file match
+- Ordering and grouping: =--sort=, =--group=, =--date-order=
+- Output modes: =--format text|json=
+
+* TODO and planning edits
+
+** TODO transitions
+
+#+begin_src sh
+npm run org2 -- todo toggle --file notes.org --line 42 --apply
+npm run org2 -- todo set --file notes.org --line 42 --status in_progress --apply
+#+end_src
+
+** Planning updates
+
+#+begin_src sh
+npm run org2 -- plan set --file notes.org --line 42 --kind scheduled --date 2026-02-25 --apply
+#+end_src
+
+* Formatter
+
+Purpose: canonical formatting for Org2 files.
+
+Examples:
+
+#+begin_src sh
+npm run org2 -- fmt --dir ~/notes --recursive --check
+npm run org2 -- fmt --dir ~/notes --recursive --apply
+#+end_src
+
+Useful flags:
+
+- =--check= (report-only)
+- =--apply= (write changes)
+- =--file= / =--files=
+- =--file-match= / =--exclude-file=
+- =--config org2.json=
+
+* Roam workflows
+
+Org2 supports roam-style IDs, backlinks, node creation, and wiki linking.
+
+** Ensure IDs exist
+
+#+begin_src sh
+npm run org2 -- roam db-sync --dir ~/notes --recursive --apply
+#+end_src
+
+** Query backlinks for an ID
+
+#+begin_src sh
+npm run org2 -- roam backlinks --id 123e4567-e89b-12d3-a456-426614174000 --dir ~/notes --recursive --format json
+#+end_src
+
+** Create a node
+
+#+begin_src sh
+npm run org2 -- roam node new --dir ~/notes --title "Acme Corp" --apply
+#+end_src
+
+** Insert link at a position
+
+#+begin_src sh
+npm run org2 -- roam link insert-backlink --file notes.org --pos 30:0 --title "Acme Corp" --apply
+#+end_src
+
+* Export and publish
+
+** HTML export
+
+#+begin_src sh
+npm run org2 -- export html --file README.org --out README.html --apply
+npm run org2 -- export html --dir docs/site --recursive --out-dir site --apply
+#+end_src
+
+Common options:
+
+- =--toc=, =--toc-depth=
+- =--number-headings=, =--number-headings-depth=
+- =--css=
+- =--rewrite-file-links=
+
+** Publish projects
+
+Publish projects are defined in =org2.json= under =publish.projects=.
+
+Example:
+
+#+begin_src sh
+npm run org2 -- publish docs-site --config org2.json
+#+end_src
+
+This docs site itself is generated this way.
+
+* IDs, query, backlinks
+
+- =id get/ensure=: read or create IDs
+- =query --id=: locate node definitions
+- =backlinks --id=: find all references
+
+* LSP
+
+Start language server:
+
+#+begin_src sh
+npm run org2 -- lsp
+#+end_src
+
+Current focus is VS Code integration in =editors/vscode-org2/=.
+
+* CI and Pages deployment
+
+This repository includes a GitHub Actions workflow that:
+
+1. builds Org2,
+2. runs =org2 publish docs-site=,
+3. uploads =site/= artifact,
+4. deploys to GitHub Pages on =main=.

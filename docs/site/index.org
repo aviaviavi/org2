@@ -2,7 +2,7 @@
 #+SUBTITLE: A standalone, editor-agnostic successor to Org Mode
 
 #+begin_export html
-<div class="org2-nav"><p><a href="index.html">Home</a> · <a href="getting-started.html">Getting started</a> · <a href="reference.html">Reference</a> · <a href="sitemap.html">Sitemap</a></p></div>
+<div class="org2-nav"><p><a href="index.html">Home</a> · <a href="getting-started.html">Getting started</a> · <a href="language-reference.html">Language reference</a> · <a href="tooling-reference.html">Tooling reference</a> · <a href="sitemap.html">Sitemap</a></p></div>
 #+end_export
 
 Org2 is a from-scratch implementation of an Org-like format and toolchain.
@@ -21,7 +21,8 @@ Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standa
 * Read this next
 
 - [[file:getting-started.org][Getting started]]
-- [[file:reference.org][Reference]]
+- [[file:language-reference.org][Language reference (syntax, keywords, constructs)]]
+- [[file:tooling-reference.org][Tooling reference (agenda, formatter, roam, publish, LSP)]]
 
 * Project status
 
