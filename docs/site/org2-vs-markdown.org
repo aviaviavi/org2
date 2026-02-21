@@ -50,7 +50,3 @@ Markdown toolchains are powerful too, but task/agenda semantics are usually bolt
 - Lower syntax surface for basic writing
 - Huge ecosystem for static docs/blog engines
 
-* Best practical split
-
-- Keep Markdown for simple public prose where plain docs are enough.
-- Use Org2 for personal/work operating systems: tasks, planning, linked notes, and structured publishing.
