@@ -34,6 +34,18 @@ Org2 is *early alpha*.
 
 - v0 draft: [[./spec/v0/SPEC.org]]
 
+** Docs site
+
+The repo includes a basic docs site authored in Org files under =docs/site/=.
+
+Generate it locally:
+
+#+begin_src sh
+npm run org2 -- publish docs-site --config org2.json
+#+end_src
+
+Output is written to =site/=. On GitHub, =.github/workflows/docs-pages.yml= builds and deploys this to GitHub Pages.
+
 ** Quick start
 
 #+begin_src sh

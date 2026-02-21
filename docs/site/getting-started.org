@@ -1,0 +1,68 @@
+#+TITLE: Getting started
+
+#+begin_export html
+<div class="org2-nav"><p><a href="index.html">Home</a> · <a href="getting-started.html">Getting started</a> · <a href="reference.html">Reference</a> · <a href="sitemap.html">Sitemap</a></p></div>
+#+end_export
+
+This guide gets you from clone to a running CLI + docs publish in a few minutes.
+
+* 1) Install
+
+#+begin_src sh
+git clone https://github.com/aviaviavi/org2.git
+cd org2
+npm ci
+npm run build
+#+end_src
+
+* 2) Run the CLI
+
+#+begin_src sh
+# Show available commands
+npm run org2 -- --help
+
+# Example: agenda over a directory
+npm run org2 -- agenda --dir /path/to/org --recursive
+#+end_src
+
+* 3) Try common workflows
+
+** Toggle TODO state
+
+#+begin_src sh
+npm run org2 -- todo toggle --file notes.org --line 12 --apply
+#+end_src
+
+** Set a schedule/deadline
+
+#+begin_src sh
+npm run org2 -- plan set --file notes.org --line 12 --kind scheduled --date 2026-02-21 --apply
+#+end_src
+
+** Export a file to HTML
+
+#+begin_src sh
+npm run org2 -- export html --file README.org --out README.html --apply
+#+end_src
+
+* 4) Publish this docs site locally
+
+This repository includes a publish project named =docs-site= in =org2.json=.
+
+#+begin_src sh
+npm run org2 -- publish docs-site --config org2.json
+#+end_src
+
+Generated HTML goes to =site/=.
+
+* 5) Run tests
+
+#+begin_src sh
+npm test
+#+end_src
+
+* Notes
+
+- VS Code integration lives in =editors/vscode-org2/=.
+- The parser/CLI/LSP source is in =src/=.
+- The spec draft is in [[file:../../spec/v0/SPEC.org][spec/v0/SPEC.org]].

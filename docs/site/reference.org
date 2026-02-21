@@ -1,0 +1,89 @@
+#+TITLE: Reference
+
+#+begin_export html
+<div class="org2-nav"><p><a href="index.html">Home</a> · <a href="getting-started.html">Getting started</a> · <a href="reference.html">Reference</a> · <a href="sitemap.html">Sitemap</a></p></div>
+#+end_export
+
+This page is a practical reference for Org2 users.
+
+* CLI command surface
+
+Run =npm run org2 -- --help= for the latest command set.
+
+Current top-level workflows include:
+
+- =agenda= (planning views)
+- =todo= (state transitions)
+- =plan= (scheduled/deadline updates)
+- =capture= (quick entry append)
+- =archive= and =refile=
+- =export html=
+- =publish=
+- =id=, =backlinks=, =query=
+- =roam ...=
+- =fmt=
+- =lsp=
+
+* Publish config
+
+Org2 reads publish settings from =org2.json=.
+
+Minimal shape:
+
+#+begin_src json
+{
+  "publish": {
+    "projects": {
+      "docs-site": {
+        "baseDir": "docs/site",
+        "outDir": "site",
+        "include": ["**/*.org"],
+        "recursive": true,
+        "rewriteFileLinks": true
+      }
+    }
+  }
+}
+#+end_src
+
+Publish a project:
+
+#+begin_src sh
+npm run org2 -- publish docs-site --config org2.json
+#+end_src
+
+* HTML export flags
+
+Single file:
+
+#+begin_src sh
+npm run org2 -- export html --file README.org --out README.html --apply
+#+end_src
+
+Directory batch:
+
+#+begin_src sh
+npm run org2 -- export html --dir docs/site --recursive --out-dir site --apply
+#+end_src
+
+Useful options:
+
+- =--toc=, =--toc-depth N=
+- =--number-headings=, =--number-headings-depth N=
+- =--rewrite-file-links=
+- =--css HREF[,HREF...]=
+- =--format text|json=
+
+* Roam-related commands
+
+- =org2 roam db-sync ...=
+- =org2 roam backlinks --id ...=
+- =org2 roam node new --dir ... --title ... --apply=
+- =org2 roam link insert-backlink --file ... --pos ... --title ... --apply=
+
+* Spec + compatibility status
+
+- Spec draft: [[file:../../spec/v0/SPEC.org][spec/v0/SPEC.org]]
+- Conformance notes: [[file:../../spec/v0/CONFORMANCE.md][spec/v0/CONFORMANCE.md]]
+
+Org2 is intentionally early and evolving. Treat this reference as "current behavior" documentation, not long-term API guarantees.
