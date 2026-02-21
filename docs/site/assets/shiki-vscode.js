@@ -28,7 +28,7 @@ function activeTheme() {
 async function run() {
   const highlighter = await createHighlighter({
     themes: [THEME_LIGHT, THEME_DARK],
-    langs: ['text', 'bash', 'json', 'javascript', 'typescript', 'tsx', 'yaml', 'html', 'css', 'markdown']
+    langs: ['text', 'bash', 'json', 'javascript', 'typescript', 'tsx', 'yaml', 'html', 'css', 'markdown', 'sql']
   });
 
   const theme = activeTheme();

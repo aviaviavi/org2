@@ -99,27 +99,92 @@
           "name": "meta.planning.org2",
           "match": "^(\\s*)(SCHEDULED|DEADLINE|CLOSED)(:)(\\s*)(<[^>]+>|\\[[^\\]]+\\])(\\s+)(SCHEDULED|DEADLINE|CLOSED)(:)(\\s*)(<[^>]+>|\\[[^\\]]+\\])\\s*$",
           "captures": {
-            "2": { "name": "keyword.control.planning.org2" },
-            "3": { "name": "punctuation.separator.key-value.org2" },
-            "5": { "name": "string.other.timestamp.org2" },
-            "7": { "name": "keyword.control.planning.org2" },
-            "8": { "name": "punctuation.separator.key-value.org2" },
-            "10": { "name": "string.other.timestamp.org2" }
+            "2": {
+              "name": "keyword.control.planning.org2"
+            },
+            "3": {
+              "name": "punctuation.separator.key-value.org2"
+            },
+            "5": {
+              "name": "string.other.timestamp.org2"
+            },
+            "7": {
+              "name": "keyword.control.planning.org2"
+            },
+            "8": {
+              "name": "punctuation.separator.key-value.org2"
+            },
+            "10": {
+              "name": "string.other.timestamp.org2"
+            }
           }
         },
         {
           "name": "meta.planning.org2",
           "match": "^(\\s*)(SCHEDULED|DEADLINE|CLOSED)(:)(\\s*)(<[^>]+>|\\[[^\\]]+\\])\\s*$",
           "captures": {
-            "2": { "name": "keyword.control.planning.org2" },
-            "3": { "name": "punctuation.separator.key-value.org2" },
-            "5": { "name": "string.other.timestamp.org2" }
+            "2": {
+              "name": "keyword.control.planning.org2"
+            },
+            "3": {
+              "name": "punctuation.separator.key-value.org2"
+            },
+            "5": {
+              "name": "string.other.timestamp.org2"
+            }
           }
         }
       ]
     },
     "blocks": {
       "patterns": [
+        {
+          "name": "meta.block.fenced.sql.org2",
+          "begin": "^(\\s*)(```)(\\s*)(sql)\\s*$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "4": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.sql"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.fenced.generic.org2",
+          "begin": "^(\\s*)(```)([^`]*)$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            },
+            "3": {
+              "name": "storage.type.code-language.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "name": "markup.raw.block.org2",
+              "match": ".*"
+            }
+          ]
+        },
         {
           "name": "meta.block.src.json.org2",
           "begin": "^(\\s*)(#\\+begin_src)\\s+(json)\\b.*$",
