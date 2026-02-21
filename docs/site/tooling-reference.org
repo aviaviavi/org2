@@ -79,7 +79,7 @@ Useful flags:
 
 * Roam workflows
 
-Org2 supports roam-style IDs, backlinks, node creation, and wiki linking.
+Org2 supports roam-style IDs, backlinks, node creation, and both Wiki-link and ID-link based navigation.
 
 ** Ensure IDs exist
 
