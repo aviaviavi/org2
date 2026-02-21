@@ -4899,12 +4899,30 @@ Tips:
     };
 
     const resolvedHeadIncludes = resolvePublishHeadIncludes(project);
+    const ogBaseUrlRaw = String(project.sitemapXml?.baseUrl || "").trim();
+    const ogBaseUrl = ogBaseUrlRaw ? ogBaseUrlRaw.replace(/\/$/, "") : "";
+    const escapeHeadAttr = (value: string): string =>
+      String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
 
     const exported: Array<{ sourcePath: string; outputPath: string; outputPathAbsolute: string; title: string; changed: boolean; metadata?: ExportMetadataPayload; }> = [];
     for (const sourcePath of sourceFiles) {
       const sourceRaw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
       const sourceAst = parseOrgToCanonicalAst(sourceRaw);
-      const rendered = renderOrgDocumentToHtml(sourceAst, {
+
+      const relativeSourcePath = path.relative(sourceDir, sourcePath);
+      const outputRelativePath = /\.(org|org2)$/i.test(relativeSourcePath)
+        ? relativeSourcePath.replace(/\.(org|org2)$/i, ".html")
+        : `${relativeSourcePath}.html`;
+
+      const outputPathAbsolute = path.resolve(outputRoot, outputRelativePath);
+      const outputPathDisplay = path.join(outputRootInput, outputRelativePath);
+      const outputRelativePathPosix = outputRelativePath.split(path.sep).join("/");
+
+      const firstPass = renderOrgDocumentToHtml(sourceAst, {
         sourcePath: toDisplayPath(sourcePath),
         stylesheets: project.stylesheets,
         includeDefaultStyle: project.includeDefaultStyle,
@@ -4920,13 +4938,75 @@ Tips:
         compatContentWrapper: true,
       });
 
-      const relativeSourcePath = path.relative(sourceDir, sourcePath);
-      const outputRelativePath = /\.(org|org2)$/i.test(relativeSourcePath)
-        ? relativeSourcePath.replace(/\.(org|org2)$/i, ".html")
-        : `${relativeSourcePath}.html`;
+      const ogSlug = outputRelativePathPosix
+        .replace(/^\//, "")
+        .replace(/\.html$/i, "")
+        .replace(/\//g, "-") || "index";
+      const ogRelPath = `assets/og/${ogSlug}.svg`;
+      const ogAbsPath = path.resolve(outputRoot, ogRelPath);
+      const ogTitle = firstPass.title;
+      const ogSubtitle = String(firstPass.metadata?.subtitle || "").trim();
+      const ogDescRaw = String(firstPass.metadata?.description || firstPass.metadata?.subtitle || firstPass.title || "Org2 docs").trim();
+      const ogDesc = ogDescRaw.length > 220 ? `${ogDescRaw.slice(0, 217)}...` : ogDescRaw;
 
-      const outputPathAbsolute = path.resolve(outputRoot, outputRelativePath);
-      const outputPathDisplay = path.join(outputRootInput, outputRelativePath);
+      const ogSvg = [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">',
+        '  <defs>',
+        '    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">',
+        '      <stop offset="0%" stop-color="#0b1020" />',
+        '      <stop offset="100%" stop-color="#111827" />',
+        '    </linearGradient>',
+        '  </defs>',
+        '  <rect width="1200" height="630" fill="url(#bg)"/>',
+        '  <circle cx="1120" cy="88" r="190" fill="#1f2937" opacity="0.45"/>',
+        '  <text x="80" y="110" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="42" font-weight="700" fill="#5eead4">Org2</text>',
+        `  <text x="80" y="250" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="64" font-weight="700" fill="#e5e7eb">${escapeHeadAttr(ogTitle)}</text>`,
+        ogSubtitle
+          ? `  <text x="80" y="320" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="34" fill="#9ca3af">${escapeHeadAttr(ogSubtitle)}</text>`
+          : "",
+        `  <text x="80" y="560" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="28" fill="#9ca3af">${escapeHeadAttr(ogDesc)}</text>`,
+        '</svg>',
+        '',
+      ].filter(Boolean).join("\n");
+
+      const existingOg = fs.existsSync(ogAbsPath)
+        ? fs.readFileSync(ogAbsPath, "utf8").replace(/\r\n/g, "\n")
+        : "";
+      if (!publishPreview && existingOg !== ogSvg) {
+        fs.mkdirSync(path.dirname(ogAbsPath), { recursive: true });
+        fs.writeFileSync(ogAbsPath, ogSvg, "utf8");
+      }
+
+      const pageUrl = ogBaseUrl ? `${ogBaseUrl}/${outputRelativePathPosix}` : "";
+      const ogImageUrl = ogBaseUrl ? `${ogBaseUrl}/${ogRelPath}` : ogRelPath;
+      const ogHeadIncludes = [
+        '<meta property="og:type" content="website" />',
+        `<meta property="og:title" content="${escapeHeadAttr(ogTitle)}" />`,
+        `<meta property="og:description" content="${escapeHeadAttr(ogDesc)}" />`,
+        pageUrl ? `<meta property="og:url" content="${escapeHeadAttr(pageUrl)}" />` : "",
+        `<meta property="og:image" content="${escapeHeadAttr(ogImageUrl)}" />`,
+        '<meta name="twitter:card" content="summary_large_image" />',
+        `<meta name="twitter:title" content="${escapeHeadAttr(ogTitle)}" />`,
+        `<meta name="twitter:description" content="${escapeHeadAttr(ogDesc)}" />`,
+        `<meta name="twitter:image" content="${escapeHeadAttr(ogImageUrl)}" />`,
+      ].filter((item) => String(item || "").trim().length > 0);
+
+      const rendered = renderOrgDocumentToHtml(sourceAst, {
+        sourcePath: toDisplayPath(sourcePath),
+        stylesheets: project.stylesheets,
+        includeDefaultStyle: project.includeDefaultStyle,
+        includeToc: project.toc,
+        includeTocDepth: project.tocDepth,
+        includeHeadlineNumbers: project.numberHeadings,
+        includeHeadlineNumberDepth: project.numberHeadingsDepth,
+        rewriteFileLinks: project.rewriteFileLinks,
+        preambleHtml: project.preambleHtml,
+        postambleHtml: project.postambleHtml,
+        headIncludes: [...resolvedHeadIncludes, ...ogHeadIncludes],
+        includeDocumentHeader: true,
+        compatContentWrapper: true,
+      });
+
       const existingOutput = fs.existsSync(outputPathAbsolute)
         ? fs.readFileSync(outputPathAbsolute, "utf8").replace(/\r\n/g, "\n")
         : "";
