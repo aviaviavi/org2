@@ -1,10 +1,10 @@
 #+TITLE: Org2 vs Org Mode
 
 #+begin_export html
-<div class="org2-nav"><p><a href="index.html">Home</a> · <a href="getting-started.html">Getting started</a> · <a href="language-reference.html">Language reference</a> · <a href="tooling-reference.html">Tooling reference</a> · <a href="org2-vs-org-mode.html">Org2 vs Org Mode</a> · <a href="sitemap.html">Sitemap</a></p></div>
+<div class="org2-nav"><p><a href="index.html">Home</a> · <a href="getting-started.html">Getting started</a> · <a href="language-reference.html">Language reference</a> · <a href="tooling-reference.html">Tooling reference</a> · <a href="org2-vs-org-mode.html">Org2 vs Org Mode</a> · <a href="org2-vs-markdown.html">Org2 vs Markdown</a> · <a href="sitemap.html">Sitemap</a></p></div>
 #+end_export
 
-Short version: Org2 is not trying to be a clone of Emacs Org. It is trying to bring Org-style workflows to an editor-agnostic, CLI-first architecture.
+Short version: Org2 is the long-term successor to Org Mode: portable, editor-agnostic, and designed to keep the battle-tested core while dropping cruft.
 
 * High-level differences
 
@@ -40,7 +40,11 @@ Short version: Org2 is not trying to be a clone of Emacs Org. It is trying to br
 - Mature habits/clocking/recurrence ecosystem.
 - Equivalent depth of ecosystem integrations.
 
-* Why this direction
+* Direction
 
-The project goal is not to fork Org Mode behavior forever.
-The goal is a durable, portable Org-like foundation that works well across tools and editors.
+Org2 is meant to eventually replace Org Mode for most workflows.
+
+- Keep the battle-tested core ideas that made Org great.
+- Drop accumulated cruft that slows down portability and adoption.
+- Support more editors natively, while also supporting Emacs well.
+- Keep portability as the non-negotiable center.

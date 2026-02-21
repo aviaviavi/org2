@@ -1,7 +1,7 @@
 #+TITLE: Tooling reference
 
 #+begin_export html
-<div class="org2-nav"><p><a href="index.html">Home</a> · <a href="getting-started.html">Getting started</a> · <a href="language-reference.html">Language reference</a> · <a href="tooling-reference.html">Tooling reference</a> · <a href="org2-vs-org-mode.html">Org2 vs Org Mode</a> · <a href="sitemap.html">Sitemap</a></p></div>
+<div class="org2-nav"><p><a href="index.html">Home</a> · <a href="getting-started.html">Getting started</a> · <a href="language-reference.html">Language reference</a> · <a href="tooling-reference.html">Tooling reference</a> · <a href="org2-vs-org-mode.html">Org2 vs Org Mode</a> · <a href="org2-vs-markdown.html">Org2 vs Markdown</a> · <a href="sitemap.html">Sitemap</a></p></div>
 #+end_export
 
 This page documents Org2 tooling workflows: agenda, formatter, roam, publish, and more.
