@@ -35,6 +35,12 @@ Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standa
 
 Org2 is early alpha. It is already useful for daily workflows, but APIs and flags can still change.
 
+* Docs map
+
+- [[file:getting-started.org][Getting started]]
+- [[file:reference.org][Reference]]
+- [[file:editors.org][Editor integrations]]
+
 * Repository
 
 - [[https://github.com/aviaviavi/org2][github.com/aviaviavi/org2]]
