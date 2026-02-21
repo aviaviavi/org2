@@ -10,10 +10,11 @@ Reference: https://avi.press/posts/2024-01-15-standalone-org.html
 
 Org2 is *early alpha*.
 
-- Best-supported workflow today: CLI + VS Code
-- Core parsing/planning flows work well enough for daily use
+- Goal: drop-in replacement for most Org Mode users in Emacs, plus a full Org-style experience for non-Emacs users
+- Best-supported workflow today: VS Code + CLI (already practical for daily notes/tasks)
+- Core language support is broadly implemented
+- 100% feature-for-feature GNU Org parity is *not* the project goal
 - APIs and command flags may still change
-- Not yet a full GNU Org Mode replacement
 
 ** What’s working now
 

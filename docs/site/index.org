@@ -3,7 +3,7 @@
 
 Org2 is a from-scratch implementation of an Org-like format and toolchain.
 
-It is built around a simple idea: your notes and tasks should be *portable plain text*, and your workflow should not depend on one editor runtime.
+It aims to be a drop-in replacement for most Org Mode users in Emacs, while giving non-Emacs users a full Org-style experience with portability-first improvements.
 
 * Why Org2
 
@@ -34,8 +34,8 @@ Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standa
 
 ** Not here yet
 
-- Full Org Mode parity
-- Full ecosystem parity with Emacs integrations
+- 100% feature-for-feature GNU Org parity (not the project goal)
+- Full ecosystem parity with Emacs integrations (yet)
 - Fully stable API surface
 
 * Project status
