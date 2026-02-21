@@ -130,9 +130,10 @@ Trigger:
 - push a SemVer tag like =v0.1.0=
 
 Required GitHub secrets:
-- =NPM_TOKEN=
 - =VSCE_PAT=
 - =OVSX_PAT= (optional; publishes to Open VSX when provided)
+
+npm publishing uses Trusted Publishing (OIDC), so no long-lived =NPM_TOKEN= secret is required.
 
 The release workflow also uploads built artifacts (=*.tgz= and =*.vsix=) to the GitHub Release.
 

@@ -19,12 +19,12 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       VSCE_PAT: ${{ secrets.VSCE_PAT }}
       OVSX_PAT: ${{ secrets.OVSX_PAT }}
     steps:
@@ -58,7 +58,6 @@ jobs:
       - name: Validate release secrets (publish mode)
         if: ${{ steps.version.outputs.dry_run != 'true' }}
         run: |
-          test -n "$NODE_AUTH_TOKEN" || (echo "Missing secret: NPM_TOKEN" && exit 1)
           test -n "$VSCE_PAT" || (echo "Missing secret: VSCE_PAT" && exit 1)
 
       - name: Install deps
@@ -82,9 +81,9 @@ jobs:
           cd editors/vscode-org2
           npx @vscode/vsce package
 
-      - name: Publish npm package
+      - name: Publish npm package (Trusted Publishing / OIDC)
         if: ${{ steps.version.outputs.dry_run != 'true' }}
-        run: npm publish --access public
+        run: npm publish --access public --provenance
 
       - name: Publish VS Code Marketplace extension
         if: ${{ steps.version.outputs.dry_run != 'true' }}
