@@ -109,6 +109,10 @@ Before opening a PR:
 - validate end-to-end behavior for the touched workflow
 - keep docs concise and user-centered
 
+** License
+
+Apache License 2.0. See =LICENSE=.
+
 ** Repo map
 
 - Core parser/CLI/LSP: =src/=

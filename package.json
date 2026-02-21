@@ -1,6 +1,7 @@
 {
   "name": "org2",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "bin": {
     "org2": "dist/cli.js",
