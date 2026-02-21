@@ -44,6 +44,11 @@
           "file": "sitemap.html",
           "title": "Org2 docs sitemap"
         },
+        "sitemapXml": {
+          "file": "sitemap.xml",
+          "baseUrl": "https://aviaviavi.github.io/org2",
+          "includeIndexPage": true
+        },
         "assets": {
           "include": [
             "assets/**"
