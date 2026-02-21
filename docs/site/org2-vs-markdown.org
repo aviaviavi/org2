@@ -1,0 +1,56 @@
+#+TITLE: Org2 vs Markdown
+
+#+begin_export html
+<div class="org2-nav"><p><a href="index.html">Home</a> · <a href="getting-started.html">Getting started</a> · <a href="language-reference.html">Language reference</a> · <a href="tooling-reference.html">Tooling reference</a> · <a href="org2-vs-org-mode.html">Org2 vs Org Mode</a> · <a href="org2-vs-markdown.html">Org2 vs Markdown</a> · <a href="sitemap.html">Sitemap</a></p></div>
+#+end_export
+
+Markdown is great for lightweight prose. Org2 is better when your notes are also a planning system, a knowledge graph, and publishable docs.
+
+* Where Org2 beats Markdown
+
+** 1) Planning is native
+
+Org2 has first-class TODO states, scheduling, deadlines, and agenda workflows.
+In Markdown, this is usually plugin conventions or checklists with weak semantics.
+
+** 2) Rich structure without hacks
+
+- Property drawers
+- Planning lines
+- ID links and wiki links
+- Repeaters/timestamps
+- Structured lists/tables/blocks
+
+Markdown can emulate some of this, but usually through extensions that do not round-trip cleanly.
+
+** 3) Better long-term knowledge workflows
+
+Org2 supports roam-style workflows directly:
+
+- stable IDs
+- backlinks
+- node creation/linking
+
+In Markdown setups, this tends to be app-specific and less portable.
+
+** 4) CLI-first automation
+
+Org2 is designed to be scripted from day one:
+
+- agenda queries
+- TODO/planning edits
+- formatter
+- publish pipeline
+
+Markdown toolchains are powerful too, but task/agenda semantics are usually bolted on.
+
+* Where Markdown still wins
+
+- Ubiquity for simple README/docs prose
+- Lower syntax surface for basic writing
+- Huge ecosystem for static docs/blog engines
+
+* Best practical split
+
+- Keep Markdown for simple public prose where plain docs are enough.
+- Use Org2 for personal/work operating systems: tasks, planning, linked notes, and structured publishing.
