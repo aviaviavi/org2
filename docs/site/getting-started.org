@@ -55,6 +55,7 @@ Why:
 - Full day-to-day Org-style note workflow is already viable in VS Code.
 - CLI workflows (agenda/todo/plan/capture/export/publish).
 - Roam workflows (IDs/backlinks/node creation/wiki+id links).
+- Org-crypt subtree encrypt/decrypt workflows.
 - Spec draft + conformance fixtures.
 
 ** Not here yet
@@ -68,4 +69,6 @@ Why:
 
 - [[file:language-reference.org][Language reference]]
 - [[file:tooling-reference.org][Tooling reference]]
+- [[file:semantics-status.org][Semantics and status]]
+- [[file:migration.org][Practical migration]]
 - [[file:org2-vs-org-mode.org][Org2 vs Org Mode]]

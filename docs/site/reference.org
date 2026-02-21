@@ -11,6 +11,14 @@ Org2 reference is split into two detailed sections:
   - formatter behavior
   - roam workflows (IDs/backlinks/node creation/link insertion)
   - export/publish/LSP workflows
+- [[file:semantics-status.org][Semantics and status]]
+  - what is normative now
+  - what is stable but still implementation-defined
+  - what is roadmap
+- [[file:migration.org][Practical migration]]
+  - using existing =.org= files
+  - adopting =.org2= gradually
+  - mixing ID links and title links
 - [[file:features.org][Features]]
 - [[file:org2-vs-org-mode.org][Org2 vs Org Mode]]
 - [[file:org2-vs-markdown.org][Org2 vs Markdown]]

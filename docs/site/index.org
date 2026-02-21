@@ -22,6 +22,7 @@ Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standa
 - Usable today as a full Org-style note system in VS Code.
 - CLI workflows for planning/editing (agenda, todo, plan, capture, export, publish).
 - Roam-style workflows (IDs, backlinks, node creation, wiki + id links).
+- Org-crypt subtree encrypt/decrypt workflows.
 - Publish pipeline for docs/sites.
 
 ** Not here yet

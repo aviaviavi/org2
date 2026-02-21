@@ -1,0 +1,39 @@
+#+TITLE: Semantics and status
+
+This page is the compact contract for what is stable in Org2 today, what is implementation-defined, and what is roadmap.
+
+* Normative now
+
+- Parser behavior for supported syntax is normative in v0:
+  - [[file:../../spec/v0/SPEC.org][spec/v0/SPEC.org]]
+- Roam data model and link forms are normative for v0 roam:
+  - [[file:../../spec/v0/ROAM.org][spec/v0/ROAM.org]]
+- Normative parser fixtures and conformance rules:
+  - [[file:../../spec/v0/CONFORMANCE.md][spec/v0/CONFORMANCE.md]]
+
+* Stable implementation behavior (documented, but not yet fully spec-locked)
+
+- CLI workflows and flags in =org2 --help= families (=agenda=, =roam=, =crypt=, =publish=, etc.).
+- Agenda query semantics used by current CLI/editor integrations.
+- Backlinks presentation behavior in current VS Code extension.
+
+These are intended to remain stable for users, but details can still change across alpha releases.
+
+* Implementation-defined today
+
+- Exact editor UX choices (panes, command names, prompt flows, keybinding defaults).
+- Some advanced agenda UX semantics in editor commands (quick actions and display ordering details).
+- Some formatting details that may evolve with parser/printer convergence.
+
+* Roadmap / not yet normative
+
+- Full semantic modules beyond parser scope (deeper planning semantics, richer automation contracts).
+- Broader editor parity beyond VS Code.
+- Stable plugin API surface.
+
+* Practical reading order
+
+1. Start with [[file:language-reference.org][Language reference]] for syntax.
+2. Read [[file:tooling-reference.org][Tooling reference]] for actual workflows.
+3. Use this page to understand stability expectations.
+

@@ -40,7 +40,7 @@ Org2 improvement: backlinking/roam workflows are first-class in the core toolcha
 
 * Secrets storage
 
-- Encrypted subtree workflows are part of the Org2 toolchain direction.
+- Basic encrypted subtree workflows (org-crypt style) are available via CLI/editor tooling.
 - Goal: keep sensitive notes in plain-text workflows without giving up safety.
 
 * Other high-value capabilities from Org mode
