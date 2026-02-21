@@ -1,0 +1,1 @@
+backlinks --id ffffffff-ffff-ffff-ffff-ffffffffffff --files "spec/v0/tests/cli/backlinks-wikilink-headline.org2" --format json

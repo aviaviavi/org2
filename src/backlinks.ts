@@ -129,7 +129,6 @@ export function findBacklinksInText(
       currentHeadlineTitle = t;
       currentHeadlineLine = i;
       currentHeadlineId = null;
-      continue;
     }
 
     // Property drawer: headline-level if immediately after headline (ignoring blank lines)

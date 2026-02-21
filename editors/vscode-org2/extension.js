@@ -376,24 +376,37 @@ class Org2BacklinksProvider {
       return;
     }
 
-    const id = extractRoamUuid(findFileLevelIdInText(doc.getText()) || '');
-    if (!id) {
+    const text = doc.getText();
+    const cursorLine = editor.selection && editor.selection.active ? editor.selection.active.line : 0;
+    const headlineId = findHeadlineLevelIdAtLineInText(text, cursorLine);
+    const fileId = extractRoamUuid(findFileLevelIdInText(text) || '');
+    const candidateIds = [];
+    if (fileId) candidateIds.push(fileId);
+    if (headlineId && headlineId !== fileId) candidateIds.push(headlineId);
+
+    if (candidateIds.length === 0) {
       this.groups = [];
       this.targetId = '';
       this.targetFile = doc.uri.fsPath;
-      this.emptyReason = 'No file-level :ID: found in this file.';
+      this.emptyReason = 'No roam :ID: found at the current headline or file level.';
       this.lastError = undefined;
       this.refresh();
       return;
     }
 
     const rootDir = getRoamIndexRootDir();
-    const loaded = await loadBacklinksByIdWithContext(this.context, id, rootDir, { quiet: true });
+    let loaded = null;
+    for (const candidateId of candidateIds) {
+      const result = await loadBacklinksByIdWithContext(this.context, candidateId, rootDir, { quiet: true });
+      if (!result) continue;
+      loaded = result;
+      if (Array.isArray(result.backlinks) && result.backlinks.length > 0) break;
+    }
     if (seq !== this._loadSeq) return;
 
     if (!loaded) {
       this.groups = [];
-      this.targetId = id;
+      this.targetId = candidateIds[0] || '';
       this.targetFile = doc.uri.fsPath;
       this.emptyReason = 'Failed to load backlinks for current file ID.';
       this.lastError = new Error('Failed to load backlinks.');
@@ -418,9 +431,9 @@ class Org2BacklinksProvider {
         });
         return new Org2BacklinksFileGroup(file, rootDir, sortedItems);
       });
-    this.targetId = id;
+    this.targetId = loaded.id || candidateIds[0] || '';
     this.targetFile = doc.uri.fsPath;
-    this.emptyReason = `No backlinks found for id:${id}.`;
+    this.emptyReason = `No backlinks found for id:${this.targetId}.`;
     this.lastError = undefined;
     this.refresh();
 
@@ -868,6 +881,57 @@ function findFileLevelIdInText(text) {
   }
 
   return undefined;
+}
+
+function findHeadlineLevelIdAtLineInText(text, line0) {
+  const lines = String(text || '').split(/\r?\n/);
+  if (lines.length === 0) return '';
+
+  const clampedLine = Math.max(0, Math.min(Number(line0) || 0, lines.length - 1));
+
+  let headlineLine = -1;
+  let headlineLevel = 0;
+  for (let i = clampedLine; i >= 0; i -= 1) {
+    const m = headingRe.exec(String(lines[i] || ''));
+    if (!m) continue;
+    headlineLine = i;
+    headlineLevel = m[1].length;
+    break;
+  }
+  if (headlineLine < 0) return '';
+
+  let subtreeEnd = lines.length;
+  for (let i = headlineLine + 1; i < lines.length; i += 1) {
+    const m = headingRe.exec(String(lines[i] || ''));
+    if (!m) continue;
+    if (m[1].length <= headlineLevel) {
+      subtreeEnd = i;
+      break;
+    }
+  }
+
+  let drawerStart = -1;
+  for (let i = headlineLine + 1; i < subtreeEnd; i += 1) {
+    const raw = String(lines[i] || '');
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+
+    if (propertiesBeginRe.test(raw)) {
+      drawerStart = i;
+    }
+    break;
+  }
+  if (drawerStart < 0) return '';
+
+  for (let i = drawerStart + 1; i < subtreeEnd; i += 1) {
+    const raw = String(lines[i] || '');
+    if (drawerEndRe.test(raw)) break;
+    const m = /^\s*:ID:\s*(\S+)\s*$/i.exec(raw);
+    if (!m) continue;
+    return extractRoamUuid(String(m[1] || ''));
+  }
+
+  return '';
 }
 
 async function ensureFileHasTopLevelId(doc) {
@@ -4195,7 +4259,10 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.setScheduledNextWeek', async (item) => {
       const d = new Date();
-      d.setDate(d.getDate() + 7);
+      // "Next week" means the upcoming Monday, not "in 7 days".
+      const weekday = d.getDay(); // 0=Sun, 1=Mon, ... 6=Sat
+      const daysUntilMonday = (8 - weekday) % 7 || 7;
+      d.setDate(d.getDate() + daysUntilMonday);
       await runPlanCli('scheduled', item, { dateOverride: formatDateYYYYMMDD(d) });
     })
   );
