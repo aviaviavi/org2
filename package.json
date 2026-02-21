@@ -1,11 +1,20 @@
 {
   "name": "org2",
-  "private": true,
+  "version": "0.1.0",
+  "private": false,
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
     "org2": "dist/cli.js",
     "org2-lsp": "dist/lsp.js"
+  },
+  "files": [
+    "dist",
+    "README.org",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -17,6 +26,7 @@
     "cli-test": "node tools/cli-test-runner.mjs",
     "conformance-report": "node tools/conformance-report.mjs",
     "pretest": "npm run build",
+    "prepublishOnly": "npm run build && npm test",
     "test": "npm run fixtures && npm run cli-test"
   },
   "devDependencies": {

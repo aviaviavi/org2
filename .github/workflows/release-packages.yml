@@ -1,0 +1,80 @@
+name: Release packages
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Resolve release version
+        id: version
+        run: |
+          RAW="${GITHUB_REF_NAME}"
+          VERSION="${RAW#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Validate release secrets
+        run: |
+          test -n "$NODE_AUTH_TOKEN" || (echo "Missing secret: NPM_TOKEN" && exit 1)
+          test -n "$VSCE_PAT" || (echo "Missing secret: VSCE_PAT" && exit 1)
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build + test
+        run: |
+          npm run build
+          npm test
+
+      - name: Stamp package versions
+        run: |
+          npm version "${{ steps.version.outputs.version }}" --no-git-tag-version
+          npm --prefix editors/vscode-org2 version "${{ steps.version.outputs.version }}" --no-git-tag-version
+
+      - name: Pack npm package
+        run: npm pack
+
+      - name: Package VS Code extension (.vsix)
+        run: |
+          cd editors/vscode-org2
+          npx @vscode/vsce package
+
+      - name: Publish npm package
+        run: npm publish --access public
+
+      - name: Publish VS Code Marketplace extension
+        run: |
+          cd editors/vscode-org2
+          npx @vscode/vsce publish --no-update-package-json --pat "$VSCE_PAT"
+
+      - name: Publish Open VSX extension (optional)
+        if: ${{ env.OVSX_PAT != '' }}
+        run: |
+          cd editors/vscode-org2
+          npx ovsx publish --no-update-package-json --pat "$OVSX_PAT"
+
+      - name: Upload release artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            *.tgz
+            editors/vscode-org2/*.vsix
+          generate_release_notes: true

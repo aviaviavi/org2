@@ -117,6 +117,25 @@ Before opening a PR:
 - validate end-to-end behavior for the touched workflow
 - keep docs concise and user-centered
 
+** Release packaging
+
+Tag-based releases publish both packages:
+
+- npm package (=org2=)
+- VS Code extension (=editors/vscode-org2=)
+
+Workflow: =.github/workflows/release-packages.yml=
+
+Trigger:
+- push a SemVer tag like =v0.1.0=
+
+Required GitHub secrets:
+- =NPM_TOKEN=
+- =VSCE_PAT=
+- =OVSX_PAT= (optional; publishes to Open VSX when provided)
+
+The release workflow also uploads built artifacts (=*.tgz= and =*.vsix=) to the GitHub Release.
+
 ** License
 
 Apache License 2.0. See =LICENSE=.

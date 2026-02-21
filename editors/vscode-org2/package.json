@@ -112,23 +112,23 @@
       },
       {
         "command": "org2.formatWorkspaceCheck",
-        "title": "Org2: Formatter — Check Workspace Drift"
+        "title": "Org2: Formatter \u2014 Check Workspace Drift"
       },
       {
         "command": "org2.formatWorkspaceApply",
-        "title": "Org2: Formatter — Apply Workspace Formatting"
+        "title": "Org2: Formatter \u2014 Apply Workspace Formatting"
       },
       {
         "command": "org2.formatCurrentFileCheck",
-        "title": "Org2: Formatter — Check Current File Drift"
+        "title": "Org2: Formatter \u2014 Check Current File Drift"
       },
       {
         "command": "org2.formatCurrentFilePreviewDiff",
-        "title": "Org2: Formatter — Preview Current File Diff"
+        "title": "Org2: Formatter \u2014 Preview Current File Diff"
       },
       {
         "command": "org2.formatCurrentFileApply",
-        "title": "Org2: Formatter — Apply Current File Formatting"
+        "title": "Org2: Formatter \u2014 Apply Current File Formatting"
       },
       {
         "command": "org2.exportCurrentFileHtml",
@@ -166,19 +166,19 @@
       },
       {
         "command": "org2.setTodoTODO",
-        "title": "Org2: Set Todo → TODO"
+        "title": "Org2: Set Todo \u2192 TODO"
       },
       {
         "command": "org2.setTodoInProgress",
-        "title": "Org2: Set Todo → IN_PROGRESS"
+        "title": "Org2: Set Todo \u2192 IN_PROGRESS"
       },
       {
         "command": "org2.setTodoDone",
-        "title": "Org2: Set Todo → DONE"
+        "title": "Org2: Set Todo \u2192 DONE"
       },
       {
         "command": "org2.setTodoCanceled",
-        "title": "Org2: Set Todo → CANCELED"
+        "title": "Org2: Set Todo \u2192 CANCELED"
       },
       {
         "command": "org2.setScheduled",
@@ -789,7 +789,7 @@
         "org2.agenda.priorityOrder": {
           "type": "string",
           "default": "",
-          "description": "Optional custom ordering for priority markers used by `agenda --sort priority` / `--group priority` (comma-separated values from `A..Z` or `0..9`, accepts bracketed forms like `[#A]`; blank keeps default A→Z then 0→9 ordering)."
+          "description": "Optional custom ordering for priority markers used by `agenda --sort priority` / `--group priority` (comma-separated values from `A..Z` or `0..9`, accepts bracketed forms like `[#A]`; blank keeps default A\u2192Z then 0\u21929 ordering)."
         },
         "org2.agenda.tagOrder": {
           "type": "string",
@@ -884,7 +884,10 @@
         },
         "org2.agenda.dateOrder": {
           "type": "string",
-          "enum": ["asc", "desc"],
+          "enum": [
+            "asc",
+            "desc"
+          ],
           "default": "asc",
           "description": "Overall date ordering for agenda groups. Use `asc` for oldest-first or `desc` for newest-first."
         },
@@ -910,7 +913,10 @@
         },
         "org2.capture.defaultTemplate": {
           "type": "string",
-          "enum": ["note", "task"],
+          "enum": [
+            "note",
+            "task"
+          ],
           "default": "note",
           "description": "Default template ordering for `Org2: Capture Quick Entry` (`note` or `task`)."
         },
@@ -1008,13 +1014,23 @@
         },
         "org2.editor.navigationReveal": {
           "type": "string",
-          "enum": ["default", "center", "outside", "none"],
+          "enum": [
+            "default",
+            "center",
+            "outside",
+            "none"
+          ],
           "default": "outside",
           "description": "Reveal behavior after Org2 non-agenda navigation commands (backlinks/open-file/open-id): outside is default and only recenters when target is offscreen, default uses normal VS Code reveal, center always recenters, none avoids forced reveal to reduce fold auto-expansion."
         },
         "org2.editor.navigationRevealFromAgenda": {
           "type": "string",
-          "enum": ["default", "center", "outside", "none"],
+          "enum": [
+            "default",
+            "center",
+            "outside",
+            "none"
+          ],
           "default": "none",
           "description": "Reveal behavior specifically when opening items from the agenda. Default none avoids forced reveal calls (helps preserve folded context); default inherits org2.editor.navigationReveal, while outside/center force agenda-specific recentering."
         },
@@ -1036,7 +1052,10 @@
         },
         "org2.links.renderDescriptionsMode": {
           "type": "string",
-          "enum": ["safe", "full"],
+          "enum": [
+            "safe",
+            "full"
+          ],
           "default": "safe",
           "description": "Reserved for future link-rendering modes. Currently both modes use layout-safe styling only."
         },
@@ -1289,5 +1308,11 @@
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       }
     ]
+  },
+  "license": "Apache-2.0",
+  "scripts": {
+    "package": "npx @vscode/vsce package",
+    "publish:vsce": "npx @vscode/vsce publish",
+    "publish:ovsx": "npx ovsx publish"
   }
 }
