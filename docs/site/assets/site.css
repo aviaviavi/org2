@@ -76,6 +76,11 @@ h1 { margin-bottom: 0.5rem; }
   display: inline-block;
 }
 
+.org2-nav nav > a:first-child {
+  font-weight: 700;
+  border-color: color-mix(in srgb, var(--link) 45%, var(--border));
+}
+
 .org2-nav a:hover,
 .org2-nav-dropdown > summary:hover {
   border-color: color-mix(in srgb, var(--link) 60%, var(--border));
