@@ -2,6 +2,8 @@
 
 This page documents Org2 tooling workflows: agenda, formatter, roam, publish, and more.
 
+The CLI here is the shared backend surface that powers editor integrations and AI automation. Most users should interact through their editor; direct CLI use is optional.
+
 * Core CLI commands
 
 Run =npm run org2 -- --help= for exact current flags.

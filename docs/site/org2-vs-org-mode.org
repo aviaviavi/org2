@@ -10,7 +10,7 @@ Short version: Org2 is the long-term successor to Org Mode: portable, editor-agn
 
 - *Workflow center*
   - Org Mode: Emacs commands and buffers first.
-  - Org2: plain files + CLI workflows first.
+  - Org2: editor integrations first, powered by a shared CLI/LSP backend.
 
 - *Portability*
   - Org Mode: strongest inside Emacs.
@@ -45,3 +45,4 @@ Org2 is meant to eventually replace Org Mode for most workflows.
 - Drop accumulated cruft that slows down portability and adoption.
 - Support more editors natively, while also supporting Emacs well.
 - Keep portability as the non-negotiable center.
+- Treat CLI capabilities as shared infrastructure for editor integrations and automation, not as the primary end-user UX.
