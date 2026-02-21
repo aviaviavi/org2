@@ -40,15 +40,18 @@ h1 { margin-bottom: 0.5rem; }
 .org2-nav {
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 0.75rem 1rem;
+  padding: 0.55rem 0.65rem;
   margin: 0.5rem 0 1.5rem;
   background: color-mix(in srgb, var(--code-bg) 55%, transparent);
+  overflow-x: auto;
 }
 
 .org2-nav nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem 0.55rem;
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 0.45rem;
+  white-space: nowrap;
+  min-width: max-content;
 }
 
 .org2-nav a {
