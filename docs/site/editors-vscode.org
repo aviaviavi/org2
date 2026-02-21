@@ -1,0 +1,138 @@
+#+TITLE: VS Code
+
+Org2's most complete editor integration today is VS Code.
+
+* Install instructions
+
+The extension currently lives in this repository at =editors/vscode-org2/=.
+
+1. Build Org2 CLI and repository artifacts:
+
+#+begin_src sh
+git clone https://github.com/aviaviavi/org2.git
+cd org2
+npm ci
+npm run build
+#+end_src
+
+2. Install extension dependencies:
+
+#+begin_src sh
+cd editors/vscode-org2
+npm ci
+#+end_src
+
+3. Install/run the extension:
+
+- Use VS Code Extension Development Host from this folder, or
+- Package to VSIX and install via =Install from VSIX...=.
+
+4. Ensure =org2= CLI is available:
+
+- Repo-built fallback is supported, or
+- Provide =org2= on your =PATH=.
+
+For settings and command behavior details, see =editors/vscode-org2/README.md= and [[file:tooling-reference.org][Tooling reference]].
+
+* Keyboard shortcuts
+
+This list is comprehensive for current default bindings declared in =editors/vscode-org2/package.json=.
+
+** Direct bindings
+
+| Linux/Windows | macOS      | Command ID                 | Action |
+|---------------+------------+----------------------------+--------|
+| ctrl+alt+t    | ctrl+alt+t | =org2.toggleTodo=          | Toggle TODO status |
+| ctrl+alt+o    | ctrl+alt+o | =org2.toggleFoldHere=      | Toggle fold at cursor |
+| ctrl+alt+d    | ctrl+alt+d | =org2.debugFoldingRanges=  | Debug folding ranges |
+| j             | j          | =cursorDown=               | Visible-line down (with VSCodeVim + =org2.vim.visibleLineNavigation=true=) |
+| k             | k          | =cursorUp=                 | Visible-line up (with VSCodeVim + =org2.vim.visibleLineNavigation=true=) |
+
+** Power keymap
+
+When =org2.keymap.power=true= (default), prefix is:
+
+- Linux/Windows: =ctrl+;=
+- macOS: =cmd+;=
+
+Then use the second key (or namespace chord).
+
+*** Agenda
+
+| Linux/Windows | macOS      | Command ID              | Action |
+|---------------+------------+-------------------------+--------|
+| ctrl+; a o    | cmd+; a o  | =org2.openAgenda=       | Open agenda |
+| ctrl+; a r    | cmd+; a r  | =org2.refreshAgenda=    | Refresh agenda |
+| ctrl+; a f    | cmd+; a f  | =org2.pickAgendaFilter= | Agenda filter picker |
+
+*** Roam
+
+| Linux/Windows | macOS      | Command ID                      | Action |
+|---------------+------------+---------------------------------+--------|
+| ctrl+; r b    | cmd+; r b  | =org2.openBacklinks=            | Open backlinks pane |
+| ctrl+; r h    | cmd+; r h  | =org2.roamShowBacklinksById=    | Show backlinks for prompted link/ID |
+| ctrl+; r l    | cmd+; r l  | =org2.roamCopyIdLink=           | Copy ID link for current heading/file |
+| ctrl+; r c    | cmd+; r c  | =org2.roamCopyIdLinkById=       | Copy ID link for prompted target |
+| ctrl+; r i    | cmd+; r i  | =org2.roamInsertBacklink=       | Insert backlink |
+| ctrl+; r o    | cmd+; r o  | =org2.roamOpenId=               | Open ID link target |
+| ctrl+; r p    | cmd+; r p  | =org2.roamOpenBacklink=         | Open backlink source (current heading/file) |
+| ctrl+; r g    | cmd+; r g  | =org2.roamOpenBacklinkById=     | Open backlink source by prompt |
+| ctrl+; r t    | cmd+; r t  | =org2.roamDailiesGotoToday=     | Dailies: today |
+| ctrl+; r y    | cmd+; r y  | =org2.roamDailiesGotoYesterday= | Dailies: yesterday |
+| ctrl+; r m    | cmd+; r m  | =org2.roamDailiesGotoTomorrow=  | Dailies: tomorrow |
+| ctrl+; r d    | cmd+; r d  | =org2.roamDailiesGotoDate=      | Dailies: pick date |
+| ctrl+; r n    | cmd+; r n  | =org2.roamNodeNew=              | New roam node |
+| ctrl+; r s    | cmd+; r s  | =org2.roamDbSync=               | Roam DB sync |
+
+*** TODO status
+
+| Linux/Windows | macOS      | Command ID            | Action |
+|---------------+------------+-----------------------+--------|
+| ctrl+; t t    | cmd+; t t  | =org2.setTodoStatus= | Set TODO (args: =todo=) |
+| ctrl+; t i    | cmd+; t i  | =org2.setTodoStatus= | Set IN_PROGRESS (args: =in_progress=) |
+| ctrl+; t d    | cmd+; t d  | =org2.setTodoStatus= | Set DONE (args: =done=) |
+| ctrl+; t c    | cmd+; t c  | =org2.setTodoStatus= | Set CANCELED (args: =canceled=) |
+
+*** Planning, archive, capture, export, folding
+
+| Linux/Windows | macOS      | Command ID                   | Action |
+|---------------+------------+------------------------------+--------|
+| ctrl+; s      | cmd+; s    | =org2.setScheduled=          | Set SCHEDULED (prompt date) |
+| ctrl+; s t    | cmd+; s t  | =org2.setScheduledToday=     | Set SCHEDULED to today |
+| ctrl+; d      | cmd+; d    | =org2.setDeadline=           | Set DEADLINE (prompt date) |
+| ctrl+; d t    | cmd+; d t  | =org2.setDeadlineToday=      | Set DEADLINE to today |
+| ctrl+; x      | cmd+; x    | =org2.archiveSubtree=        | Archive subtree |
+| ctrl+; c q    | cmd+; c q  | =org2.captureQuickEntry=     | Quick capture |
+| ctrl+; p h    | cmd+; p h  | =org2.exportCurrentFileHtml= | Export current file HTML |
+| ctrl+; p w    | cmd+; p w  | =org2.exportWorkspaceHtml=   | Export workspace HTML |
+| ctrl+; 1      | cmd+; 1    | =editor.foldLevel1=          | Fold level 1 |
+| ctrl+; 2      | cmd+; 2    | =editor.foldLevel2=          | Fold level 2 |
+| ctrl+; 3      | cmd+; 3    | =editor.foldLevel3=          | Fold level 3 |
+| ctrl+; 4      | cmd+; 4    | =editor.foldLevel4=          | Fold level 4 |
+
+** Commands without default keybindings
+
+Available from command palette (=Cmd/Ctrl+Shift+P=):
+
+- =org2.refreshBacklinks=
+- =org2.formatWorkspaceCheck=
+- =org2.formatWorkspaceApply=
+- =org2.formatCurrentFileCheck=
+- =org2.formatCurrentFilePreviewDiff=
+- =org2.formatCurrentFileApply=
+- =org2.pickAgendaStatusFilter=
+- =org2.openAgendaItem=
+- =org2.setTodoTODO=
+- =org2.setTodoInProgress=
+- =org2.setTodoDone=
+- =org2.setTodoCanceled=
+- =org2.setScheduledTomorrow=
+- =org2.setScheduledNextWeek=
+- =org2.setScheduledNextMonth=
+- =org2.cryptDecryptSubtree=
+- =org2.cryptEncryptSubtree=
+- =org2.refileSubtree=
+- =org2.roamOpenTitle=
+- =org2.roamShowBacklinks=
+- =org2.rerunAutoFold=
+- =org2.debugListLinks=

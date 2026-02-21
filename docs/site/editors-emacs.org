@@ -1,0 +1,9 @@
+#+TITLE: Emacs
+
+Coming soon.
+
+Planned scope:
+
+- Org2 usage alongside org-mode
+- migration and coexistence patterns
+- command mapping and workflow notes
