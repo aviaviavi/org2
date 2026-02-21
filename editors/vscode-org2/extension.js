@@ -2718,6 +2718,105 @@ function activate(context) {
     }
   }
 
+  async function runCryptCli(action, item) {
+    const normalizedAction = String(action || '').trim().toLowerCase();
+    if (!(normalizedAction === 'encrypt' || normalizedAction === 'decrypt')) {
+      vscode.window.showWarningMessage('Org2: invalid crypt action (expected encrypt or decrypt).');
+      return;
+    }
+
+    let filePath;
+    let line;
+
+    if (item && item.file) {
+      filePath = resolveAgendaItemPath(item);
+      line = typeof item.line === 'number' ? item.line + 1 : 1;
+
+      const openDoc = findOpenDocumentForPath(filePath);
+      if (openDoc && openDoc.isDirty) {
+        vscode.window.showWarningMessage('Org2: please save the file before running org-crypt from the agenda.');
+        return;
+      }
+    } else {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+
+      const doc = editor.document;
+      if (!doc || doc.uri.scheme !== 'file') {
+        vscode.window.showWarningMessage('Org2: org-crypt requires a file-backed document.');
+        return;
+      }
+
+      if (doc.isDirty) {
+        const ok = await doc.save();
+        if (!ok) {
+          vscode.window.showWarningMessage('Org2: could not save file before running org-crypt.');
+          return;
+        }
+      }
+
+      filePath = doc.uri.fsPath;
+      line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
+    }
+
+    const passphraseInput = await vscode.window.showInputBox({
+      prompt: `Org2: crypt ${normalizedAction} subtree (passphrase)`,
+      password: true,
+      ignoreFocusOut: true,
+      validateInput: (v) => (String(v || '').trim().length > 0 ? undefined : 'Passphrase is required'),
+    });
+    if (!passphraseInput) return;
+    const passphrase = String(passphraseInput);
+
+    const cfg = vscode.workspace.getConfiguration('org2');
+    const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
+    const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
+    const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
+    const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
+
+    const args = [
+      'crypt',
+      normalizedAction,
+      '--file',
+      String(filePath),
+      '--line',
+      String(line),
+      '--passphrase',
+      passphrase,
+      '--format',
+      'json',
+      '--apply',
+    ];
+    const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
+
+    const activeEditorBefore = item ? undefined : vscode.window.activeTextEditor;
+    const activeUriBefore = activeEditorBefore && activeEditorBefore.document ? activeEditorBefore.document.uri.toString() : '';
+    const selectionBefore =
+      activeEditorBefore && activeEditorBefore.selection
+        ? new vscode.Selection(activeEditorBefore.selection.start, activeEditorBefore.selection.end)
+        : undefined;
+
+    try {
+      const { stdout } = await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
+      const changed = parseChangedFlagFromCliJson(stdout);
+
+      if (refreshAfterCliApply && changed !== false) {
+        await refreshFileFromDisk(filePath, {
+          selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
+          activeUri: activeUriBefore,
+          skipIfInSync: skipRefreshWhenInSync,
+          allowGlobalFallback: allowGlobalRefreshFallback,
+        });
+      }
+
+      if (item instanceof Org2AgendaItem && changed !== false) {
+        await agendaProvider.load();
+      }
+    } catch (e) {
+      vscode.window.showErrorMessage(`Org2: crypt ${normalizedAction} failed: ${String(e && e.message ? e.message : e)}`);
+    }
+  }
+
   async function runArchiveCli(item) {
     let filePath;
     let line;
@@ -4278,6 +4377,18 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.setDeadlineToday', async (item) => {
       await runPlanCli('deadline', item, { useToday: true });
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.cryptDecryptSubtree', async (item) => {
+      await runCryptCli('decrypt', item);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.cryptEncryptSubtree', async (item) => {
+      await runCryptCli('encrypt', item);
     })
   );
 
