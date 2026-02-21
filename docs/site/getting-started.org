@@ -1,12 +1,12 @@
 #+TITLE: Getting started
 
 #+begin_export html
-<div class="org2-nav"><p><a href="index.html">Home</a> · <a href="getting-started.html">Getting started</a> · <a href="language-reference.html">Language reference</a> · <a href="tooling-reference.html">Tooling reference</a> · <a href="sitemap.html">Sitemap</a></p></div>
+<div class="org2-nav"><p><a href="index.html">Home</a> · <a href="getting-started.html">Getting started</a> · <a href="language-reference.html">Language reference</a> · <a href="tooling-reference.html">Tooling reference</a> · <a href="org2-vs-org-mode.html">Org2 vs Org Mode</a> · <a href="sitemap.html">Sitemap</a></p></div>
 #+end_export
 
-This guide gets you from clone to a running CLI + docs publish in a few minutes.
+This guide is about starting *practically* with Org2: install CLI + editor tooling, point it at your existing notes, and know what works today.
 
-* 1) Install
+* 1) Install the CLI
 
 #+begin_src sh
 git clone https://github.com/aviaviavi/org2.git
@@ -15,54 +15,60 @@ npm ci
 npm run build
 #+end_src
 
-* 2) Run the CLI
+Run commands via:
 
 #+begin_src sh
-# Show available commands
 npm run org2 -- --help
-
-# Example: agenda over a directory
-npm run org2 -- agenda --dir /path/to/org --recursive
 #+end_src
 
-* 3) Try common workflows
+* 2) Install editor extension(s)
 
-** Toggle TODO state
+- VS Code extension: =editors/vscode-org2/=
+- Vim/Neovim support: =editors/vim-org2/=
+
+VS Code is currently the most complete editor integration.
+
+* 3) Use your existing Org notes immediately
+
+Org2 is designed as a drop-in workflow for existing Org files.
+
+- Keep your current =.org= files.
+- Point Org2 CLI/LSP/agenda at your existing notes directory.
+- You do not need to migrate everything up front.
+
+Example:
 
 #+begin_src sh
-npm run org2 -- todo toggle --file notes.org --line 12 --apply
+npm run org2 -- agenda --dir /path/to/your/org-notes --recursive
 #+end_src
 
-** Set a schedule/deadline
+* 4) Use =.org2= for new files
 
-#+begin_src sh
-npm run org2 -- plan set --file notes.org --line 12 --kind scheduled --date 2026-02-21 --apply
-#+end_src
+For *new* files, prefer =.org2= extension.
 
-** Export a file to HTML
+Why:
+- clearer intent that the file is in the Org2 workflow,
+- easier editor/tooling targeting,
+- cleaner long-term migration path.
 
-#+begin_src sh
-npm run org2 -- export html --file README.org --out README.html --apply
-#+end_src
+* 5) What’s here and what is not
 
-* 4) Publish this docs site locally
+** Here today
 
-This repository includes a publish project named =docs-site= in =org2.json=.
+- CLI-first workflows (agenda/todo/plan/capture/export/publish)
+- Roam-ish workflows (IDs/backlinks/node creation/link insertion)
+- VS Code-first editor support
+- Spec draft + conformance fixtures
 
-#+begin_src sh
-npm run org2 -- publish docs-site --config org2.json
-#+end_src
+** Not here yet
 
-Generated HTML goes to =site/=.
+- Full GNU Org Mode parity
+- Mature recurring/habits/clocking ecosystem
+- Broad editor parity beyond VS Code
+- Stable final APIs (project is still early alpha)
 
-* 5) Run tests
+* 6) Next docs
 
-#+begin_src sh
-npm test
-#+end_src
-
-* Notes
-
-- VS Code integration lives in =editors/vscode-org2/=.
-- The parser/CLI/LSP source is in =src/=.
-- The spec draft is in [[file:../../spec/v0/SPEC.org][spec/v0/SPEC.org]].
+- [[file:language-reference.org][Language reference]]
+- [[file:tooling-reference.org][Tooling reference]]
+- [[file:org2-vs-org-mode.org][Org2 vs Org Mode]]

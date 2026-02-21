@@ -2,7 +2,7 @@
 #+SUBTITLE: A standalone, editor-agnostic successor to Org Mode
 
 #+begin_export html
-<div class="org2-nav"><p><a href="index.html">Home</a> · <a href="getting-started.html">Getting started</a> · <a href="language-reference.html">Language reference</a> · <a href="tooling-reference.html">Tooling reference</a> · <a href="sitemap.html">Sitemap</a></p></div>
+<div class="org2-nav"><p><a href="index.html">Home</a> · <a href="getting-started.html">Getting started</a> · <a href="language-reference.html">Language reference</a> · <a href="tooling-reference.html">Tooling reference</a> · <a href="org2-vs-org-mode.html">Org2 vs Org Mode</a> · <a href="sitemap.html">Sitemap</a></p></div>
 #+end_export
 
 Org2 is a from-scratch implementation of an Org-like format and toolchain.
@@ -23,6 +23,22 @@ Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standa
 - [[file:getting-started.org][Getting started]]
 - [[file:language-reference.org][Language reference (syntax, keywords, constructs)]]
 - [[file:tooling-reference.org][Tooling reference (agenda, formatter, roam, publish, LSP)]]
+- [[file:org2-vs-org-mode.org][Org2 vs Org Mode]]
+
+* What’s here and what is not
+
+** Here
+
+- Practical core language constructs
+- CLI workflows for daily planning and editing
+- Roam-style ID/backlink support
+- Publish pipeline for docs/sites
+
+** Not here yet
+
+- Full Org Mode parity
+- Full ecosystem parity with Emacs integrations
+- Fully stable API surface
 
 * Project status
 
