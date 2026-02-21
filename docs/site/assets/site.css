@@ -76,9 +76,12 @@ h1 { margin-bottom: 0.5rem; }
   display: inline-block;
 }
 
-.org2-nav nav > a:first-child {
+.org2-nav-github {
   font-weight: 700;
   border-color: color-mix(in srgb, var(--link) 45%, var(--border));
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
 }
 
 .org2-nav a:hover,
@@ -111,6 +114,9 @@ h1 { margin-bottom: 0.5rem; }
   }
   .org2-nav-dropdown {
     position: relative;
+  }
+  .org2-nav-github {
+    margin-left: auto;
   }
   .org2-nav-dropdown-menu {
     display: none;
