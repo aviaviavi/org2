@@ -73,3 +73,19 @@ blockquote {
   padding-left: 0.9rem;
   color: var(--muted);
 }
+
+.org2-footer {
+  margin-top: 2.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.org2-footer img {
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  position: absolute;
+  pointer-events: none;
+}

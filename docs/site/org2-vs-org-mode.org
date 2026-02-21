@@ -1,0 +1,46 @@
+#+TITLE: Org2 vs Org Mode
+
+#+begin_export html
+<div class="org2-nav"><p><a href="index.html">Home</a> · <a href="getting-started.html">Getting started</a> · <a href="language-reference.html">Language reference</a> · <a href="tooling-reference.html">Tooling reference</a> · <a href="org2-vs-org-mode.html">Org2 vs Org Mode</a> · <a href="sitemap.html">Sitemap</a></p></div>
+#+end_export
+
+Short version: Org2 is not trying to be a clone of Emacs Org. It is trying to bring Org-style workflows to an editor-agnostic, CLI-first architecture.
+
+* High-level differences
+
+- *Runtime model*
+  - Org Mode: deeply integrated with Emacs runtime.
+  - Org2: standalone parser/CLI/LSP, editor integrations on top.
+
+- *Workflow center*
+  - Org Mode: Emacs commands and buffers first.
+  - Org2: plain files + CLI workflows first.
+
+- *Portability*
+  - Org Mode: strongest inside Emacs.
+  - Org2: designed for cross-editor usage from day one.
+
+* Compatibility stance
+
+- Existing =.org= files are supported as an everyday workflow.
+- New files are recommended as =.org2=.
+- Org2 intentionally implements a practical subset first, then expands.
+
+* What Org2 has today
+
+- Core syntax parsing: headings, drawers/properties, links, lists, blocks, tables, timestamps.
+- Task workflows: TODO state changes, planning updates.
+- Agenda querying with rich filtering.
+- Roam-adjacent workflows (IDs, backlinks, node creation, wiki links).
+- HTML export/publish pipeline.
+
+* What Org2 does not have yet
+
+- Full Org Mode feature parity.
+- Mature habits/clocking/recurrence ecosystem.
+- Equivalent depth of ecosystem integrations.
+
+* Why this direction
+
+The project goal is not to fork Org Mode behavior forever.
+The goal is a durable, portable Org-like foundation that works well across tools and editors.
