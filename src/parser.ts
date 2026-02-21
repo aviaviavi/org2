@@ -656,28 +656,42 @@ type ParseTableResult = {
 };
 
 function parseSrcBlockLine(line: string, lineNumber: number): SrcBlockLine | null {
-  const match = /^(\s*)#\+([^\s]+)(.*)$/.exec(line);
-  if (!match) return null;
+  const directiveMatch = /^(\s*)#\+([^\s]+)(.*)$/.exec(line);
+  if (directiveMatch) {
+    const indent = directiveMatch[1];
+    const keywordRaw = directiveMatch[2];
+    const afterKeywordRaw = directiveMatch[3];
 
-  const indent = match[1];
-  const keywordRaw = match[2];
-  const afterKeywordRaw = match[3];
+    if (indent.includes("\t") || afterKeywordRaw.includes("\t")) {
+      fail(makeError("Unsupported construct: tab character", lineNumber, line.indexOf("\t") + 1));
+    }
 
-  if (indent.includes("\t") || afterKeywordRaw.includes("\t")) {
-    fail(makeError("Unsupported construct: tab character", lineNumber, line.indexOf("\t") + 1));
+    return { indent, keywordRaw, afterKeywordRaw };
   }
 
-  return { indent, keywordRaw, afterKeywordRaw };
+  // Additive syntax sugar: fenced source blocks (```lang ... ```)
+  // Stored in the same SrcBlockLine shape for round-tripping.
+  const fenceMatch = /^(\s*)```(.*)$/.exec(line);
+  if (fenceMatch) {
+    const indent = fenceMatch[1] || "";
+    const afterKeywordRaw = fenceMatch[2] || "";
+    if (indent.includes("\t") || afterKeywordRaw.includes("\t")) {
+      fail(makeError("Unsupported construct: tab character", lineNumber, line.indexOf("\t") + 1));
+    }
+    return { indent, keywordRaw: "```", afterKeywordRaw };
+  }
+
+  return null;
 }
 
 function isBeginSrc(line: SrcBlockLine): boolean {
   const key = line.keywordRaw.toLowerCase();
-  return key === "begin_src" || key === "begin_org2";
+  return key === "begin_src" || key === "begin_org2" || key === "```";
 }
 
 function isEndSrc(line: SrcBlockLine): boolean {
   const key = line.keywordRaw.toLowerCase();
-  return key === "end_src" || key === "end_org2";
+  return key === "end_src" || key === "end_org2" || key === "```";
 }
 
 function getBlockKindFromBegin(line: SrcBlockLine): BlockKind | null {
@@ -746,15 +760,38 @@ function parseSrcBlock(lines: string[], startLineIndex: number): ParseSrcBlockRe
   const startLineNumber = startLineIndex + 1;
   const begin = parseSrcBlockLine(lines[startLineIndex] ?? "", startLineNumber);
   if (!begin || !isBeginSrc(begin)) {
-    fail(makeError("Invalid source block; expected #+begin_src or #+begin_org2", startLineNumber, 1));
+    fail(makeError("Invalid source block; expected #+begin_src, #+begin_org2, or ```", startLineNumber, 1));
   }
+
+  const beginKey = begin.keywordRaw.toLowerCase();
+  const beginIsFence = beginKey === "```";
 
   for (let i = startLineIndex + 1; i < lines.length; i += 1) {
     const lineNumber = i + 1;
     const line = lines[i] ?? "";
 
     const parsed = parseSrcBlockLine(line, lineNumber);
-    if (parsed && isEndSrc(parsed)) {
+    if (!parsed) continue;
+
+    if (beginIsFence) {
+      // Fenced opener must close with a bare triple-backtick fence line.
+      if (parsed.keywordRaw === "```" && String(parsed.afterKeywordRaw || "").trim().length === 0) {
+        const bodyLines = lines.slice(startLineIndex + 1, i);
+        return {
+          block: {
+            type: "SrcBlock",
+            terminated: true,
+            begin,
+            bodyRaw: bodyLines.join("\n"),
+            end: parsed,
+          },
+          nextLineIndex: i + 1,
+        };
+      }
+      continue;
+    }
+
+    if (isEndSrc(parsed) && parsed.keywordRaw !== "```") {
       const bodyLines = lines.slice(startLineIndex + 1, i);
       return {
         block: {
