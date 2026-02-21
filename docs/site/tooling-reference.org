@@ -18,6 +18,7 @@ Major command families:
 - =fmt=
 - =id=, =query=, =backlinks=
 - =roam ...=
+- =crypt ...=
 - =export html=
 - =publish=
 - =lsp=
@@ -40,6 +41,17 @@ Notable capabilities:
 - Content filters: tags, TODO keyword, priority, effort, property, file match
 - Ordering and grouping: =--sort=, =--group=, =--date-order=
 - Output modes: =--format text|json=
+
+** Date semantics (planner wording)
+
+To avoid ambiguity in scheduling UX and automation:
+
+- =tomorrow=: next calendar day.
+- =next week=: upcoming Monday (calendar-week boundary), not strictly +7 days.
+- =in one week=: exactly 7 days from today.
+- =next month=: first day of the next calendar month.
+
+Agenda includes both =SCHEDULED:= and =DEADLINE:= items when those planning timestamps are in range.
 
 * TODO and planning edits
 
@@ -102,6 +114,37 @@ npm run org2 -- roam node new --dir ~/notes --title "Acme Corp" --apply
 #+begin_src sh
 npm run org2 -- roam link insert-backlink --file notes.org --pos 30:0 --title "Acme Corp" --apply
 #+end_src
+
+** Link resolution rules
+
+When Org2 sees an internal roam link:
+
+- =[[id:UUID][desc]]= resolves directly to that node ID.
+- =[[Node Title]]= resolves by title lookup in the roam index.
+
+Backlinks include references from both forms.
+
+When rendering backlink context lines, Org2 may strip embedded link markup and show human-readable context text.
+
+If title collisions exist, prefer explicit ID links for deterministic targeting.
+
+* Org-crypt workflows
+
+Purpose: encrypt and decrypt sensitive subtrees while staying in plain-text Org workflows.
+
+Examples:
+
+#+begin_src sh
+npm run org2 -- crypt decrypt --file notes.org2 --line 42 --passphrase 'your-passphrase' --apply
+npm run org2 -- crypt encrypt --file notes.org2 --line 42 --passphrase 'your-passphrase' --apply
+#+end_src
+
+Current behavior:
+
+- Operates on the subtree at the provided cursor line.
+- Requires an explicit passphrase value for CLI calls.
+- =:crypt:= tags can be used by editor tooling to scope encrypted-note workflows.
+- Encrypt/decrypt behavior is supported now, with further hardening and ergonomics expected as alpha evolves.
 
 * Export and publish
 

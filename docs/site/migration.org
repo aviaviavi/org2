@@ -1,0 +1,33 @@
+#+TITLE: Practical migration
+
+This page keeps migration simple: keep existing notes working while you adopt Org2 workflow improvements incrementally.
+
+* Existing Org notes
+
+- Keep your current =.org= files.
+- Point Org2 CLI/editor tooling at your existing notes directory.
+- No bulk rewrite is required.
+
+* New files
+
+- Prefer =.org2= for new notes.
+- This keeps Org2-native intent clear and helps tooling/scoping.
+
+* Roam link migration
+
+- Existing =[[id:...]]= links stay supported.
+- New links can use =[[Node Title]]= when title-based linking is preferred.
+- In mixed bases, both forms can coexist.
+
+* Recommended transition policy
+
+1. Keep historical ID links untouched.
+2. Prefer =[[Title]]= links for new writing when titles are stable.
+3. Reserve explicit IDs for collision-prone or machine-generated workflows.
+
+* Compatibility caveats
+
+- Org2 targets practical parity, not bug-for-bug GNU Org behavior.
+- Some extension-specific editor UX differs from Emacs org-mode/org-roam.
+- Re-run CI/automation commands after migration changes (=agenda=, =roam db-sync=, =publish=) to validate behavior in your environment.
+

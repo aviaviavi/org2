@@ -4,6 +4,14 @@ This is the practical language reference for Org2 v0.
 
 For the normative draft spec, see [[file:../../spec/v0/SPEC.org][spec/v0/SPEC.org]].
 
+* Spec map
+
+Use this mapping when deciding where behavior is defined:
+
+- Core syntax and canonical AST: [[file:../../spec/v0/SPEC.org][spec/v0/SPEC.org]]
+- Roam semantics (IDs, links, backlinks model): [[file:../../spec/v0/ROAM.org][spec/v0/ROAM.org]]
+- CLI/editor workflow behavior: [[file:tooling-reference.org][Tooling reference]]
+
 * Headings
 
 - Syntax: one or more stars, a space, then title text.
