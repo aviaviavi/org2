@@ -243,6 +243,8 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
   - `Org2: Set SCHEDULED to Today` (`org2.setScheduledToday`)
   - `Org2: Set DEADLINE` (`org2.setDeadline`)
   - `Org2: Set DEADLINE to Today` (`org2.setDeadlineToday`)
+  - `Org2: Crypt Decrypt Subtree` (`org2.cryptDecryptSubtree`)
+  - `Org2: Crypt Encrypt Subtree` (`org2.cryptEncryptSubtree`)
   - `Org2: Capture Quick Entry` (`org2.captureQuickEntry`)
   - `Org2: Archive Subtree` (`org2.archiveSubtree`)
   - `Org2: Refile Subtree` (`org2.refileSubtree`)

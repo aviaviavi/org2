@@ -32,6 +32,8 @@
     "onCommand:org2.setScheduledNextMonth",
     "onCommand:org2.setDeadline",
     "onCommand:org2.setDeadlineToday",
+    "onCommand:org2.cryptDecryptSubtree",
+    "onCommand:org2.cryptEncryptSubtree",
     "onCommand:org2.pickAgendaStatusFilter",
     "onCommand:org2.archiveSubtree",
     "onCommand:org2.refileSubtree",
@@ -205,6 +207,14 @@
       {
         "command": "org2.setDeadlineToday",
         "title": "Org2: Set DEADLINE to Today"
+      },
+      {
+        "command": "org2.cryptDecryptSubtree",
+        "title": "Org2: Crypt Decrypt Subtree"
+      },
+      {
+        "command": "org2.cryptEncryptSubtree",
+        "title": "Org2: Crypt Encrypt Subtree"
       },
       {
         "command": "org2.archiveSubtree",
@@ -418,6 +428,16 @@
           "command": "org2.setDeadline",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@13"
+        },
+        {
+          "command": "org2.cryptDecryptSubtree",
+          "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
+          "group": "navigation@13.1"
+        },
+        {
+          "command": "org2.cryptEncryptSubtree",
+          "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
+          "group": "navigation@13.2"
         },
         {
           "command": "org2.archiveSubtree",
