@@ -1,0 +1,13 @@
+{
+  "$schema": "org2:backlinks:v1",
+  "id": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+  "backlinks": [
+    {
+      "srcId": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+      "srcTitle": "2026-01-23 [[Wiki Headline Backlink Fixture]]",
+      "file": "spec/v0/tests/cli/backlinks-wikilink-headline.org2",
+      "line": 12,
+      "context": "* 2026-01-23 [[Wiki Headline Backlink Fixture]]"
+    }
+  ]
+}
