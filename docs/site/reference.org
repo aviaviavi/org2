@@ -11,6 +11,7 @@ Org2 reference is split into two detailed sections:
   - formatter behavior
   - roam workflows (IDs/backlinks/node creation/link insertion)
   - export/publish/LSP workflows
+- [[file:features.org][Features]]
 - [[file:org2-vs-org-mode.org][Org2 vs Org Mode]]
 - [[file:org2-vs-markdown.org][Org2 vs Markdown]]
 

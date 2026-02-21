@@ -1,0 +1,59 @@
+#+TITLE: Features
+
+Org as a concept is a powerful plain-text system for planning, knowledge, and publishing. Org2 builds on that model with a portable, editor-agnostic architecture and native improvements like roam workflows.
+
+* Core value
+
+- One plain-text format that scales from quick notes to full workflows.
+- Works for both personal systems and team documentation.
+- Portable across editors and platforms.
+
+* Task management and agenda
+
+- TODO states, priorities, deadlines, and scheduled items.
+- Agenda views over many files.
+- Rich filtering/sorting/grouping for daily/weekly planning.
+
+Org2 status: strong and practical today.
+
+* Knowledge management (roam, dailies, linked notes)
+
+- Stable IDs and backlinks.
+- Wiki links and ID links.
+- Node creation/link insertion workflows.
+- Dailies-style note workflows are supported naturally through file structure + links.
+
+Org2 improvement: backlinking/roam workflows are first-class in the core toolchain.
+
+* Publishing and exports
+
+- Static site publishing from Org files.
+- Single-file and project-level export pipelines.
+- HTML is first-class today.
+- Additional export formats are part of the roadmap.
+
+* Capture from many places
+
+- Fast capture into Org files via templates/workflows.
+- Designed to ingest structured snippets from many sources.
+- AI automation can capture/edit directly in files and use CLI workflows when needed.
+
+* Secrets storage
+
+- Encrypted subtree workflows are part of the Org2 toolchain direction.
+- Goal: keep sensitive notes in plain-text workflows without giving up safety.
+
+* Other high-value capabilities from Org mode
+
+- Elegant markup that scales from simple notes to complex documents.
+- Structured editing with collapsible tree semantics.
+- Transparent plain-text tables, including spreadsheet-style formulas.
+- Literate-programming style source blocks and executable workflow integration.
+- Clocking/time tracking and reporting.
+- Deep extensibility and workflow customization.
+
+* Positioning
+
+Org2 is aiming to be a drop-in replacement for most Emacs Org users while giving non-Emacs users a full Org experience.
+
+100% feature-for-feature parity with GNU Org is not the goal. The goal is practical parity for real workflows, plus portability and targeted improvements.
