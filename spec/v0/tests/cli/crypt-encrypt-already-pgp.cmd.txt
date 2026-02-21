@@ -1,0 +1,1 @@
+crypt encrypt --file "spec/v0/tests/cli/crypt-encrypted.input.org2" --line 1 --passphrase test

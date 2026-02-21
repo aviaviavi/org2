@@ -1,0 +1,1 @@
+Error: crypt requires --line N (1-based) or --pos LINE[:COL]

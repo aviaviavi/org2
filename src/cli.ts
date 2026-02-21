@@ -3515,6 +3515,15 @@ async function main(): Promise<void> {
   let planApply = false;
   let planFormat: "text" | "json" | "diff" = "json";
 
+  // Org-crypt (basic)
+  let cryptAction: "encrypt" | "decrypt" = "decrypt";
+  let cryptFile = "";
+  let cryptLine = 0;
+  let cryptPassphrase = "";
+  let cryptApply = false;
+  let cryptFormat: "text" | "json" | "diff" = "json";
+  let cryptGpgProgram = "gpg";
+
   // Formatter
   let fmtStdin = false;
   let fmtApply = false;
@@ -3622,6 +3631,17 @@ async function main(): Promise<void> {
           i++;
         }
       }
+    } else if (arg === "crypt") {
+      command = "crypt";
+      i++;
+      // Optional subcommand: encrypt|decrypt (default decrypt)
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        const sub = String(args[i] || "").trim().toLowerCase();
+        if (sub === "encrypt" || sub === "decrypt") {
+          cryptAction = sub as "encrypt" | "decrypt";
+          i++;
+        }
+      }
     } else if (arg === "id") {
       command = "id";
       i++;
@@ -3698,6 +3718,8 @@ async function main(): Promise<void> {
           captureFile = args[i]!;
         } else if (command === "plan") {
           planFile = args[i]!;
+        } else if (command === "crypt") {
+          cryptFile = args[i]!;
         } else if (command === "id") {
           idFile = args[i]!;
         } else if (command === "refile") {
@@ -3719,6 +3741,8 @@ async function main(): Promise<void> {
           todoLine = n;
         } else if (command === "plan") {
           planLine = n;
+        } else if (command === "crypt") {
+          cryptLine = n;
         } else if (command === "id") {
           idLine = n;
         }
@@ -4234,6 +4258,22 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--passphrase") {
+      i++;
+      if (i < args.length) {
+        if (command === "crypt") {
+          cryptPassphrase = args[i]!;
+        }
+        i++;
+      }
+    } else if (arg === "--gpg-program") {
+      i++;
+      if (i < args.length) {
+        if (command === "crypt") {
+          cryptGpgProgram = args[i]!;
+        }
+        i++;
+      }
     } else if (arg === "--id") {
       i++;
       if (i < args.length) {
@@ -4276,6 +4316,8 @@ async function main(): Promise<void> {
           captureFormat = v as "text" | "json" | "diff";
         } else if (command === "plan" && (v === "text" || v === "json" || v === "diff")) {
           planFormat = v as "text" | "json" | "diff";
+        } else if (command === "crypt" && (v === "text" || v === "json" || v === "diff")) {
+          cryptFormat = v as "text" | "json" | "diff";
         } else if (command === "fmt" && (v === "text" || v === "json")) {
           fmtFormat = v;
         } else if (command === "id" && (v === "text" || v === "json" || v === "diff")) {
@@ -4445,6 +4487,8 @@ async function main(): Promise<void> {
           todoLine = parseInt(rawPos.split(":")[0]!, 10);
         } else if (command === "plan") {
           planLine = parseInt(rawPos.split(":")[0]!, 10);
+        } else if (command === "crypt") {
+          cryptLine = parseInt(rawPos.split(":")[0]!, 10);
         } else if (command === "id") {
           idLine = parseInt(rawPos.split(":")[0]!, 10);
         } else if (command === "roam" && roamAction === "link") {
@@ -4467,6 +4511,8 @@ async function main(): Promise<void> {
         captureApply = true;
       } else if (command === "plan") {
         planApply = true;
+      } else if (command === "crypt") {
+        cryptApply = true;
       } else if (command === "archive") {
         archiveApply = true;
       } else if (command === "refile") {
@@ -4500,6 +4546,7 @@ Core commands:
   org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
   org2 todo <set|toggle> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
+  org2 crypt <encrypt|decrypt> --file FILE (--line N | --pos LINE[:COL]) --passphrase PASS [--gpg-program PATH] [--apply]
   org2 capture --file FILE --title TITLE [--template note|task] [--apply]
   org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--apply]
   org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--apply]
@@ -4531,7 +4578,7 @@ Tips:
     printGeneralUsage(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
     printGeneralUsage(1);
   }
 
@@ -6327,6 +6374,210 @@ Tips:
       );
     }
 
+    return;
+  }
+
+  if (command === "crypt") {
+    if (!cryptFile) {
+      console.error("Error: crypt requires --file FILE");
+      process.exit(1);
+    }
+    if (!Number.isFinite(cryptLine) || cryptLine < 1) {
+      console.error("Error: crypt requires --line N (1-based) or --pos LINE[:COL]");
+      process.exit(1);
+    }
+    if (!cryptPassphrase) {
+      console.error("Error: crypt requires --passphrase PASS");
+      process.exit(1);
+    }
+    if (!cryptGpgProgram.trim()) {
+      console.error("Error: crypt requires --gpg-program PATH");
+      process.exit(1);
+    }
+
+    const beforeRaw = fs.readFileSync(cryptFile, "utf8").replace(/\r\n/g, "\n");
+    const lines = beforeRaw.split("\n");
+    const targetIdx = Math.min(Math.max(cryptLine - 1, 0), Math.max(lines.length - 1, 0));
+
+    let headingIdx = -1;
+    let headingLevel = 0;
+    for (let idx = targetIdx; idx >= 0; idx -= 1) {
+      const m = /^(\*+)\s+/.exec(lines[idx] ?? "");
+      if (!m) continue;
+      headingIdx = idx;
+      headingLevel = m[1]!.length;
+      break;
+    }
+    if (headingIdx < 0) {
+      console.error("Error: no headline found at or above --line/--pos");
+      process.exit(1);
+    }
+
+    let subtreeEnd = lines.length;
+    for (let idx = headingIdx + 1; idx < lines.length; idx += 1) {
+      const m = /^(\*+)\s+/.exec(lines[idx] ?? "");
+      if (m && m[1]!.length <= headingLevel) {
+        subtreeEnd = idx;
+        break;
+      }
+    }
+
+    const beginRe = /^\s*-----BEGIN PGP MESSAGE-----\s*$/;
+    const endRe = /^\s*-----END PGP MESSAGE-----\s*$/;
+    let blockStart = -1;
+    let blockEnd = -1;
+    for (let idx = headingIdx + 1; idx < subtreeEnd; idx += 1) {
+      if (blockStart === -1 && beginRe.test(lines[idx] ?? "")) {
+        blockStart = idx;
+        continue;
+      }
+      if (blockStart !== -1 && endRe.test(lines[idx] ?? "")) {
+        blockEnd = idx;
+        break;
+      }
+    }
+
+    const runGpg = (
+      action: "encrypt" | "decrypt",
+      inputText: string,
+    ): { ok: boolean; stdout: string; stderr: string; error?: string } => {
+      const commonArgs = [
+        "--batch",
+        "--yes",
+        "--pinentry-mode",
+        "loopback",
+        "--passphrase",
+        cryptPassphrase,
+      ];
+      const commandArgs =
+        action === "decrypt"
+          ? [...commonArgs, "--decrypt"]
+          : [...commonArgs, "--armor", "--symmetric", "--cipher-algo", "AES256"];
+
+      const res = spawnSync(cryptGpgProgram, commandArgs, {
+        input: inputText,
+        encoding: "utf8",
+      });
+
+      if (res.error) {
+        return {
+          ok: false,
+          stdout: String(res.stdout || ""),
+          stderr: String(res.stderr || ""),
+          error: String(res.error.message || res.error),
+        };
+      }
+
+      return {
+        ok: res.status === 0,
+        stdout: String(res.stdout || ""),
+        stderr: String(res.stderr || ""),
+      };
+    };
+
+    const splitPreservingTrailing = (raw: string): string[] => {
+      const normalized = String(raw || "").replace(/\r\n/g, "\n");
+      if (normalized.length === 0) return [];
+      const noTrailing = normalized.endsWith("\n") ? normalized.slice(0, -1) : normalized;
+      if (noTrailing.length === 0) return [];
+      return noTrailing.split("\n");
+    };
+
+    const buildDiff = (before: string, after: string): string => {
+      let tmpDir: string | null = null;
+      try {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-crypt-diff-"));
+        const aPath = path.join(tmpDir, "before.org2");
+        const bPath = path.join(tmpDir, "after.org2");
+        fs.writeFileSync(aPath, before, "utf8");
+        fs.writeFileSync(bPath, after, "utf8");
+        const diffRes = spawnSync("diff", ["-u", aPath, bPath], { encoding: "utf8" });
+        if (diffRes.status !== 0 && diffRes.status !== 1) {
+          throw new Error(diffRes.stderr || `diff exited with status ${diffRes.status}`);
+        }
+        return (diffRes.stdout || "").split(aPath).join(cryptFile).split(bPath).join(cryptFile);
+      } finally {
+        if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    };
+
+    let outText = beforeRaw;
+    let changed = false;
+
+    if (cryptAction === "decrypt") {
+      if (blockStart < 0 || blockEnd < blockStart) {
+        console.error("Error: crypt decrypt found no armored PGP block in target subtree");
+        process.exit(1);
+      }
+
+      const encryptedText = lines.slice(blockStart, blockEnd + 1).join("\n") + "\n";
+      const gpg = runGpg("decrypt", encryptedText);
+      if (!gpg.ok) {
+        const detail = [gpg.error, gpg.stderr.trim()].filter(Boolean).join(" | ");
+        console.error(`Error: crypt decrypt failed${detail ? `: ${detail}` : ""}`);
+        process.exit(1);
+      }
+
+      const plainLines = splitPreservingTrailing(gpg.stdout);
+      const outLines = [...lines.slice(0, blockStart), ...plainLines, ...lines.slice(blockEnd + 1)];
+      outText = outLines.join("\n");
+      changed = outText !== beforeRaw;
+    } else {
+      if (blockStart >= 0 && blockEnd >= blockStart) {
+        console.error("Error: crypt encrypt target subtree already contains an armored PGP block");
+        process.exit(1);
+      }
+
+      const plainBodyLines = lines.slice(headingIdx + 1, subtreeEnd);
+      const plainBody = plainBodyLines.join("\n").trim();
+      if (!plainBody) {
+        console.error("Error: crypt encrypt found no plaintext body in target subtree");
+        process.exit(1);
+      }
+
+      const gpgInput = plainBodyLines.join("\n") + "\n";
+      const gpg = runGpg("encrypt", gpgInput);
+      if (!gpg.ok) {
+        const detail = [gpg.error, gpg.stderr.trim()].filter(Boolean).join(" | ");
+        console.error(`Error: crypt encrypt failed${detail ? `: ${detail}` : ""}`);
+        process.exit(1);
+      }
+
+      const encryptedLines = splitPreservingTrailing(gpg.stdout);
+      const outLines = [...lines.slice(0, headingIdx + 1), ...encryptedLines, ...lines.slice(subtreeEnd)];
+      outText = outLines.join("\n");
+      changed = outText !== beforeRaw;
+    }
+
+    if (cryptApply && changed) {
+      fs.writeFileSync(cryptFile, outText, "utf8");
+    }
+
+    if (cryptFormat === "diff") {
+      if (changed) process.stdout.write(buildDiff(beforeRaw, outText));
+      return;
+    }
+
+    if (cryptFormat === "json") {
+      process.stdout.write(
+        JSON.stringify(
+          {
+            $schema: "org2:crypt:v1",
+            action: cryptAction,
+            file: cryptFile,
+            headingLine: headingIdx + 1,
+            applied: cryptApply,
+            changed,
+            gpgProgram: cryptGpgProgram,
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+      return;
+    }
+
+    process.stdout.write(outText + (outText.endsWith("\n") ? "" : "\n"));
     return;
   }
 

@@ -92,6 +92,13 @@ Run language server:
 npm run org2 -- lsp
 #+end_src
 
+Org-crypt basics (decrypt/encrypt subtree at cursor line):
+
+#+begin_src sh
+npm run org2 -- crypt decrypt --file notes.org2 --line 42 --passphrase 'your-passphrase' --apply
+npm run org2 -- crypt encrypt --file notes.org2 --line 42 --passphrase 'your-passphrase' --apply
+#+end_src
+
 ** Editor support
 
 - *VS Code* (=editors/vscode-org2/=): primary integration target

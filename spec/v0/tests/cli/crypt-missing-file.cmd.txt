@@ -1,0 +1,1 @@
+crypt decrypt --line 1 --passphrase test
