@@ -45,7 +45,26 @@ h1 { margin-bottom: 0.5rem; }
   background: color-mix(in srgb, var(--code-bg) 55%, transparent);
 }
 
-.org2-nav p { margin: 0; color: var(--muted); }
+.org2-nav nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.55rem;
+}
+
+.org2-nav a {
+  text-decoration: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.92rem;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+}
+
+.org2-nav a:hover {
+  border-color: color-mix(in srgb, var(--link) 60%, var(--border));
+  color: var(--link);
+}
 
 pre, code {
   background: var(--code-bg);
