@@ -1,5 +1,9 @@
 #+TITLE: Getting started
 
+#+begin_export html
+<div class="org2-nav"><p><a href="index.html">Home</a> · <a href="getting-started.html">Getting started</a> · <a href="reference.html">Reference</a> · <a href="sitemap.html">Sitemap</a></p></div>
+#+end_export
+
 This guide gets you from clone to a running CLI + docs publish in a few minutes.
 
 * 1) Install

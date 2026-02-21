@@ -1,6 +1,10 @@
 #+TITLE: Org2
 #+SUBTITLE: A standalone, editor-agnostic successor to Org Mode
 
+#+begin_export html
+<div class="org2-nav"><p><a href="index.html">Home</a> · <a href="getting-started.html">Getting started</a> · <a href="reference.html">Reference</a> · <a href="sitemap.html">Sitemap</a></p></div>
+#+end_export
+
 Org2 is a from-scratch implementation of an Org-like format and toolchain.
 
 It is built around a simple idea: your notes and tasks should be *portable plain text*, and your workflow should not depend on one editor runtime.

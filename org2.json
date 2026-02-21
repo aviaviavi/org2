@@ -11,6 +11,7 @@
         "ignore": [".git/**"],
         "recursive": true,
         "rewriteFileLinks": true,
+        "stylesheets": ["assets/site.css"],
         "index": {
           "file": "sitemap.html",
           "title": "Org2 docs sitemap"
