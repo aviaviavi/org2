@@ -1,0 +1,10 @@
+#+TITLE: Vim / Neovim
+
+Coming soon.
+
+Planned scope:
+
+- install instructions
+- keymaps and motions
+- agenda/roam workflows
+- known limitations and compatibility notes
