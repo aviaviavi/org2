@@ -1,7 +1,7 @@
 {
   "name": "org2-vscode",
   "displayName": "Org2",
-  "description": "Org2 language support (syntax highlighting + folding + agenda)",
+  "description": "Org2 for VS Code (requires org2 CLI): syntax, folding, agenda, roam, TODO/planning, export",
   "version": "0.0.1",
   "publisher": "org2",
   "main": "./extension.js",
@@ -62,7 +62,9 @@
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Formatters",
+    "Other"
   ],
   "contributes": {
     "languages": [
@@ -112,23 +114,23 @@
       },
       {
         "command": "org2.formatWorkspaceCheck",
-        "title": "Org2: Formatter \u2014 Check Workspace Drift"
+        "title": "Org2: Formatter — Check Workspace Drift"
       },
       {
         "command": "org2.formatWorkspaceApply",
-        "title": "Org2: Formatter \u2014 Apply Workspace Formatting"
+        "title": "Org2: Formatter — Apply Workspace Formatting"
       },
       {
         "command": "org2.formatCurrentFileCheck",
-        "title": "Org2: Formatter \u2014 Check Current File Drift"
+        "title": "Org2: Formatter — Check Current File Drift"
       },
       {
         "command": "org2.formatCurrentFilePreviewDiff",
-        "title": "Org2: Formatter \u2014 Preview Current File Diff"
+        "title": "Org2: Formatter — Preview Current File Diff"
       },
       {
         "command": "org2.formatCurrentFileApply",
-        "title": "Org2: Formatter \u2014 Apply Current File Formatting"
+        "title": "Org2: Formatter — Apply Current File Formatting"
       },
       {
         "command": "org2.exportCurrentFileHtml",
@@ -166,19 +168,19 @@
       },
       {
         "command": "org2.setTodoTODO",
-        "title": "Org2: Set Todo \u2192 TODO"
+        "title": "Org2: Set Todo → TODO"
       },
       {
         "command": "org2.setTodoInProgress",
-        "title": "Org2: Set Todo \u2192 IN_PROGRESS"
+        "title": "Org2: Set Todo → IN_PROGRESS"
       },
       {
         "command": "org2.setTodoDone",
-        "title": "Org2: Set Todo \u2192 DONE"
+        "title": "Org2: Set Todo → DONE"
       },
       {
         "command": "org2.setTodoCanceled",
-        "title": "Org2: Set Todo \u2192 CANCELED"
+        "title": "Org2: Set Todo → CANCELED"
       },
       {
         "command": "org2.setScheduled",
@@ -226,63 +228,63 @@
       },
       {
         "command": "org2.roamDailiesGotoToday",
-        "title": "Org2: Roam Dailies \u2014 Go to Today"
+        "title": "Org2: Roam Dailies — Go to Today"
       },
       {
         "command": "org2.roamDailiesGotoYesterday",
-        "title": "Org2: Roam Dailies \u2014 Go to Yesterday"
+        "title": "Org2: Roam Dailies — Go to Yesterday"
       },
       {
         "command": "org2.roamDailiesGotoTomorrow",
-        "title": "Org2: Roam Dailies \u2014 Go to Tomorrow"
+        "title": "Org2: Roam Dailies — Go to Tomorrow"
       },
       {
         "command": "org2.roamDailiesGotoDate",
-        "title": "Org2: Roam Dailies \u2014 Go to Date"
+        "title": "Org2: Roam Dailies — Go to Date"
       },
       {
         "command": "org2.roamNodeNew",
-        "title": "Org2: Roam \u2014 New Node"
+        "title": "Org2: Roam — New Node"
       },
       {
         "command": "org2.roamCopyIdLink",
-        "title": "Org2: Roam \u2014 Copy ID Link (Current Heading/File)"
+        "title": "Org2: Roam — Copy ID Link (Current Heading/File)"
       },
       {
         "command": "org2.roamCopyIdLinkById",
-        "title": "Org2: Roam \u2014 Copy ID Link (Prompt/Link)"
+        "title": "Org2: Roam — Copy ID Link (Prompt/Link)"
       },
       {
         "command": "org2.roamInsertBacklink",
-        "title": "Org2: Roam \u2014 Insert Backlink (Prompt/Link)"
+        "title": "Org2: Roam — Insert Backlink (Prompt/Link)"
       },
       {
         "command": "org2.roamOpenId",
-        "title": "Org2: Roam \u2014 Open ID (Prompt/Link)"
+        "title": "Org2: Roam — Open ID (Prompt/Link)"
       },
       {
         "command": "org2.roamOpenTitle",
-        "title": "Org2: Roam \u2014 Open Title Link (Prompt/Link)"
+        "title": "Org2: Roam — Open Title Link (Prompt/Link)"
       },
       {
         "command": "org2.roamShowBacklinks",
-        "title": "Org2: Roam \u2014 Show Backlinks (Current Heading/File)"
+        "title": "Org2: Roam — Show Backlinks (Current Heading/File)"
       },
       {
         "command": "org2.roamShowBacklinksById",
-        "title": "Org2: Roam \u2014 Show Backlinks (Prompt/Link)"
+        "title": "Org2: Roam — Show Backlinks (Prompt/Link)"
       },
       {
         "command": "org2.roamOpenBacklink",
-        "title": "Org2: Roam \u2014 Open Backlink Source (Current Heading/File)"
+        "title": "Org2: Roam — Open Backlink Source (Current Heading/File)"
       },
       {
         "command": "org2.roamOpenBacklinkById",
-        "title": "Org2: Roam \u2014 Open Backlink Source (Prompt/Link)"
+        "title": "Org2: Roam — Open Backlink Source (Prompt/Link)"
       },
       {
         "command": "org2.roamDbSync",
-        "title": "Org2: Roam \u2014 DB Sync (Ensure File IDs)"
+        "title": "Org2: Roam — DB Sync (Ensure File IDs)"
       },
       {
         "command": "org2.rerunAutoFold",
@@ -789,7 +791,7 @@
         "org2.agenda.priorityOrder": {
           "type": "string",
           "default": "",
-          "description": "Optional custom ordering for priority markers used by `agenda --sort priority` / `--group priority` (comma-separated values from `A..Z` or `0..9`, accepts bracketed forms like `[#A]`; blank keeps default A\u2192Z then 0\u21929 ordering)."
+          "description": "Optional custom ordering for priority markers used by `agenda --sort priority` / `--group priority` (comma-separated values from `A..Z` or `0..9`, accepts bracketed forms like `[#A]`; blank keeps default A→Z then 0→9 ordering)."
         },
         "org2.agenda.tagOrder": {
           "type": "string",
@@ -1314,5 +1316,34 @@
     "package": "npx @vscode/vsce package",
     "publish:vsce": "npx @vscode/vsce publish",
     "publish:ovsx": "npx ovsx publish"
-  }
+  },
+  "icon": "icon.png",
+  "homepage": "https://github.com/aviaviavi/org2/tree/main/editors/vscode-org2",
+  "bugs": {
+    "url": "https://github.com/aviaviavi/org2/issues"
+  },
+  "keywords": [
+    "org2",
+    "org mode",
+    "org-mode",
+    "org",
+    "agenda",
+    "roam",
+    "notes",
+    "knowledge-base",
+    "todo",
+    "outliner",
+    "plain-text"
+  ],
+  "files": [
+    "extension.js",
+    "agendaVisuals.js",
+    "language-configuration.json",
+    "syntaxes/**",
+    "README.md",
+    "LICENSE",
+    "icon.png",
+    "CHANGELOG.md"
+  ],
+  "markdown": "github"
 }

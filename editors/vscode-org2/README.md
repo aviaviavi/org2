@@ -1,8 +1,41 @@
 # Org2 (VS Code)
 
-Minimal VS Code language support for Org2.
+VS Code extension for Org2 workflows.
 
-## Features
+## Requirements
+
+- This extension requires the `org2` CLI.
+- If `org2` is not available, language-only features still work, but agenda/editing/roam/export commands will fail.
+
+## Quick start (60 seconds)
+
+1. Install and build Org2:
+
+```sh
+git clone https://github.com/aviaviavi/org2.git
+cd org2
+npm ci
+npm run build
+```
+
+2. Install this VS Code extension and open your notes folder.
+3. Ensure `org2` is on your `PATH` (or use the repo fallback).
+4. Run `Org2: Open Agenda` from command palette.
+
+## What you get
+
+- Language support for `*.org` and `*.org2`:
+  - syntax highlighting
+  - folding for headings/lists/property drawers
+  - clickable links
+- Command workflows powered by the `org2` CLI:
+  - agenda, TODO/planning edits, capture, archive/refile
+  - roam backlinks/IDs/dailies
+  - HTML export
+- LSP-backed editing:
+  - definitions, hovers, completion, rename, formatting, code lens, and more
+
+## Feature details
 
 - File association for `*.org` and `*.org2`
 - Syntax highlighting (headings, directives, blocks, drawers, properties, planning keywords, lists, checkboxes, timestamps, emphasis, links, tables)
@@ -10,30 +43,10 @@ Minimal VS Code language support for Org2.
 - Auto-fold on open/activation (configurable):
   - `org2.folding.autoFoldMaxHeadingLevel` (number; default 1; 0 = off)
   - `org2.folding.autoFoldPropertyDrawers` (boolean; default true)
-- Clickable links (via VS Code document links):
-  - `[[url]]`
-  - `[[url][desc]]`
-  - bare `https://...` URLs
-- Quick capture command with diff preview + apply confirmation (plus optional selection-as-body capture) (`Org2: Capture Quick Entry`)
-- HTML export commands for the active file and workspace (`Org2: Export Current File to HTML`, `Org2: Export Workspace Org Files to HTML`)
-- LSP go-to-definition + go-to-declaration + go-to-type-definition + go-to-implementation for Org file/id links, including file `::search` suffix targets (`textDocument/definition` + `textDocument/declaration` + `textDocument/typeDefinition` + `textDocument/implementation`)
-- LSP hover tooltips for Org links, TODO keywords, and planning keywords (`SCHEDULED:` / `DEADLINE:`)
-- LSP signature help for planning timestamps (`textDocument/signatureHelp` with active/inactive timestamp forms)
-- LSP completion for TODO/planning keywords, timestamps, and Org ID/file link targets (`textDocument/completion`)
-- LSP document highlights for in-file ID/file references under cursor
-- LSP rename for Org ID links (`[[id:...]]`), `:ID:` property values, and matching file-link targets
-- LSP workspace file-rename edits for Org file links (`workspace/willRenameFiles`)
-- LSP quick-fix code actions for parser whitespace issues (CRLF line endings and tab characters)
-- LSP document formatting (`textDocument/formatting`) for canonical Org table/layout alignment
-- LSP range formatting (`textDocument/rangeFormatting`) for selection-scoped canonical Org cleanup
-- LSP on-type formatting (`textDocument/onTypeFormatting`) for table-aware canonical alignment while typing (`|`/newline triggers)
-- LSP selection ranges (`textDocument/selectionRange`) for nested semantic expand-selection behavior
-- LSP semantic tokens (`textDocument/semanticTokens/full`) for TODO/planning/property/link-target highlighting
-- LSP backlink code lenses (`textDocument/codeLens`) on `:ID:` properties (click runs `org2.roamShowBacklinksById`)
-- LSP linked editing ranges (`textDocument/linkedEditingRange`) for synchronized Org ID edits across `[[id:...]]` links/`:ID:` properties and matching file-link targets
-- LSP document colors (`textDocument/documentColor` + `textDocument/colorPresentation`) for Org hex literals (`#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`)
-- LSP inlay hints (`textDocument/inlayHint`) for unlabeled Org ID/file links (`[[id:...]]`, `[[file:...]]`) using resolved heading/title metadata
-- LSP call hierarchy for Org ID/file links (`textDocument/prepareCallHierarchy` + `callHierarchy/incomingCalls` + `callHierarchy/outgoingCalls`)
+- Clickable links (via VS Code document links): `[[url]]`, `[[url][desc]]`, bare `https://...`
+- Quick capture command with diff preview + apply confirmation (`Org2: Capture Quick Entry`)
+- HTML export commands for active file/workspace (`Org2: Export Current File to HTML`, `Org2: Export Workspace Org Files to HTML`)
+- LSP features: definitions/declarations/type/implementation, hovers, signature help, completion, highlights, rename, file-rename edits, code actions, formatting, semantic tokens, inlay hints, call hierarchy
 
 ## Link rendering note (best-effort)
 
