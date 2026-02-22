@@ -3,7 +3,7 @@
   "displayName": "Org2",
   "description": "Org2 for VS Code (requires org2 CLI): syntax, folding, agenda, roam, TODO/planning, export",
   "version": "0.0.1",
-  "publisher": "org2",
+  "publisher": "AviPress",
   "main": "./extension.js",
   "activationEvents": [
     "onLanguage:org2",
