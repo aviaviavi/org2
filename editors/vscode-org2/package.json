@@ -1345,5 +1345,10 @@
     "icon.png",
     "CHANGELOG.md"
   ],
-  "markdown": "github"
+  "markdown": "github",
+  "preview": true,
+  "galleryBanner": {
+    "color": "#0b1020",
+    "theme": "dark"
+  }
 }
