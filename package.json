@@ -35,5 +35,8 @@
   },
   "dependencies": {
     "@scarf/scarf": "^1.4.0"
+  },
+  "scarfSettings": {
+    "allowTopLevel": true
   }
 }
