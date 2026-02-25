@@ -1,0 +1,1 @@
+export html --file spec/v0/tests/cli/export-html-link-abbrev-builtins.input.txt --format json

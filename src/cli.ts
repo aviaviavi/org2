@@ -4846,8 +4846,12 @@ Tips:
 
     let project: Org2PublishProjectConfig | null = null;
     let projectNames: string[] = [];
+    let configLinkAbbreviations: Record<string, string> | undefined;
+    let configLinearTeam: string | undefined;
     try {
       const cfg = loadConfig(configPathResolved);
+      configLinkAbbreviations = cfg.links?.abbreviations;
+      configLinearTeam = cfg.links?.linearTeam;
       const projects = cfg.publish?.projects || {};
       projectNames = Object.keys(projects).sort((a, b) => a.localeCompare(b));
       if (!publishProject) {
@@ -4936,6 +4940,8 @@ Tips:
         headIncludes: resolvedHeadIncludes,
         includeDocumentHeader: true,
         compatContentWrapper: true,
+        linkAbbreviations: configLinkAbbreviations,
+        linearTeam: configLinearTeam,
       });
 
       const ogSlug = outputRelativePathPosix
@@ -5005,6 +5011,8 @@ Tips:
         headIncludes: [...resolvedHeadIncludes, ...ogHeadIncludes],
         includeDocumentHeader: true,
         compatContentWrapper: true,
+        linkAbbreviations: configLinkAbbreviations,
+        linearTeam: configLinearTeam,
       });
 
       const existingOutput = fs.existsSync(outputPathAbsolute)
@@ -5290,6 +5298,20 @@ Tips:
       process.exit(1);
     }
 
+    let exportConfigLinkAbbreviations: Record<string, string> | undefined;
+    let exportConfigLinearTeam: string | undefined;
+    const exportConfigLookupStart = hasDirSource ? path.resolve(String(dir || "").trim()) : path.dirname(path.resolve(exportFile));
+    const exportConfigPath = findConfigFile(exportConfigLookupStart);
+    if (exportConfigPath) {
+      try {
+        const cfg = loadConfig(exportConfigPath);
+        exportConfigLinkAbbreviations = cfg.links?.abbreviations;
+        exportConfigLinearTeam = cfg.links?.linearTeam;
+      } catch {
+        // Ignore config errors for ad-hoc export flows.
+      }
+    }
+
     if (hasDirSource) {
       const sourceDirInput = String(dir || "").trim();
       const sourceDir = path.resolve(sourceDirInput);
@@ -5326,6 +5348,8 @@ Tips:
           includeHeadlineNumbers: exportIncludeHeadlineNumbers,
           includeHeadlineNumberDepth: exportHeadlineNumberDepth,
           rewriteFileLinks: exportRewriteFileLinks,
+          linkAbbreviations: exportConfigLinkAbbreviations,
+          linearTeam: exportConfigLinearTeam,
         });
 
         const relativeSourcePath = path.relative(sourceDir, sourcePath);
@@ -5458,6 +5482,8 @@ Tips:
       includeHeadlineNumbers: exportIncludeHeadlineNumbers,
       includeHeadlineNumberDepth: exportHeadlineNumberDepth,
       rewriteFileLinks: exportRewriteFileLinks,
+      linkAbbreviations: exportConfigLinkAbbreviations,
+      linearTeam: exportConfigLinearTeam,
     });
 
     const defaultOutputPath = (() => {

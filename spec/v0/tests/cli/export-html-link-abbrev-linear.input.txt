@@ -1,0 +1,4 @@
+#+TITLE: Link Abbrev Fixture
+#+LINK: linear https://linear.app/scarf/issue/%s
+
+See [[linear:APP-3718][APP-3718]] and [[linear:APP-3230]].
