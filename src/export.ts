@@ -20,6 +20,15 @@ import type {
   TimestampRangeNode,
 } from "./ast.js";
 import { parseInlinesFromText } from "./parser.js";
+import {
+  buildBuiltInLinkAbbreviations,
+  collectLinkAbbreviationsFromDoc,
+  collectLinkAbbreviationsFromRecord,
+  expandLinkAbbreviationTarget,
+  mergeLinkAbbreviations,
+  type LinkAbbreviationMap,
+  type LinkAbbreviationRecord,
+} from "./link-abbrev.js";
 import { COMPAT_CONTENT_CLOSE, COMPAT_CONTENT_OPEN, COMPAT_CONTENT_STYLE_SECTION } from "./publish-defaults.js";
 
 function escapeHtml(value: string): string {
@@ -117,6 +126,7 @@ type RenderContext = {
   headlineSlugIds?: Map<string, string>;
   headlineNumbers?: WeakMap<HeadlineNode, string>;
   rewriteFileLinks?: boolean;
+  linkAbbreviations?: LinkAbbreviationMap;
 };
 
 export type OrgExportMetadata = {
@@ -147,6 +157,7 @@ const HIDDEN_DOCUMENT_KEYWORDS = new Set([
   "HTML_HEAD",
   "HTML_HEAD_EXTRA",
   "OPTIONS",
+  "LINK",
 ]);
 
 function parseKeywordList(value: string): string[] {
@@ -626,14 +637,15 @@ function renderEmphasis(node: EmphasisNode): string {
 
 function renderLink(node: LinkNode, context: RenderContext): string {
   const hrefRaw = String(node.targetRaw || "").trim();
-  let href = hrefRaw;
+  const expandedHrefRaw = expandLinkAbbreviationTarget(hrefRaw, context.linkAbbreviations);
+  let href = expandedHrefRaw;
 
   if (context.rewriteFileLinks) {
-    href = rewriteOrgFileHrefForHtml(hrefRaw);
+    href = rewriteOrgFileHrefForHtml(expandedHrefRaw);
   }
 
-  if (linkTargetNeedsHeadingAnchor(hrefRaw)) {
-    href = rewriteOrgInternalHrefForHtml(hrefRaw, context);
+  if (linkTargetNeedsHeadingAnchor(expandedHrefRaw)) {
+    href = rewriteOrgInternalHrefForHtml(expandedHrefRaw, context);
   }
 
   const explicitDescription = String(node.descriptionRaw || "").trim();
@@ -928,13 +940,21 @@ function buildDocumentRenderContext(
     includeHeadlineNumbers: boolean;
     includeHeadlineNumberDepth?: number;
     rewriteFileLinks?: boolean;
+    linkAbbreviations?: LinkAbbreviationRecord;
+    linearTeam?: string;
   },
 ): { context: RenderContext; tocItems: TocItem[] } {
   let tocItems: TocItem[] = [];
   const includeHeadingAnchors = opts.includeToc || opts.rewriteFileLinks === true || nodesNeedHeadingAnchors(doc.children);
   const includeHeadlineData = includeHeadingAnchors || opts.includeHeadlineNumbers;
+  const builtIns = buildBuiltInLinkAbbreviations(opts.linearTeam);
+  const configAbbreviations = collectLinkAbbreviationsFromRecord(opts.linkAbbreviations);
+  const documentAbbreviations = collectLinkAbbreviationsFromDoc(doc);
+
   const context: RenderContext = {
     rewriteFileLinks: opts.rewriteFileLinks === true,
+    // Precedence: built-ins < config < document-local #+LINK
+    linkAbbreviations: mergeLinkAbbreviations([builtIns, configAbbreviations, documentAbbreviations]),
   };
 
   if (includeHeadlineData) {
@@ -1036,6 +1056,8 @@ export function renderOrgDocumentToHtml(
     headIncludes?: string[];
     includeDocumentHeader?: boolean;
     compatContentWrapper?: boolean;
+    linkAbbreviations?: LinkAbbreviationRecord;
+    linearTeam?: string;
   } = {},
 ): { html: string; title: string; metadata: OrgExportMetadata } {
   const title = resolveTitle(doc, opts.title, opts.sourcePath);
@@ -1047,6 +1069,8 @@ export function renderOrgDocumentToHtml(
     includeHeadlineNumbers: renderOptions.includeHeadlineNumbers,
     includeHeadlineNumberDepth: renderOptions.includeHeadlineNumberDepth,
     rewriteFileLinks: opts.rewriteFileLinks,
+    linkAbbreviations: opts.linkAbbreviations,
+    linearTeam: opts.linearTeam,
   });
 
   const mainBody = renderMainBody({
