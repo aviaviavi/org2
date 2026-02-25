@@ -1,0 +1,3 @@
+#+TITLE: Builtin Link Abbrev Fixture
+
+See [[gh:openclaw/openclaw][OpenClaw]], [[gl:gitlab-org/gitlab]], [[yt:dQw4w9WgXcQ][video]], and [[wiki:Open-source_software]].

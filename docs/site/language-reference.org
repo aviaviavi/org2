@@ -125,6 +125,39 @@ Supported link forms:
 
 Both ID links and Wiki links are first-class in Org2 roam workflows.
 
+Link abbreviations are supported with built-ins, config, and =#+LINK= directives.
+
+Built-in abbreviations:
+- =gh:= → =https://github.com/%s=
+- =gl:= → =https://gitlab.com/%s=
+- =yt:= → =https://www.youtube.com/watch?v=%s=
+- =wiki:= → =https://en.wikipedia.org/wiki/%s=
+
+You can add/override abbreviations in =org2.json=:
+
+#+begin_src json
+{
+  "links": {
+    "linearTeam": "scarf",
+    "abbreviations": {
+      "linear": "https://linear.app/scarf/issue/%s",
+      "gh": "https://github.example.com/%s"
+    }
+  }
+}
+#+end_src
+
+And define file-local abbreviations with Org-compatible syntax:
+- Define: =#+LINK: linear https://linear.app/scarf/issue/%s=
+- Use: =[[linear:APP-3718][APP-3718]]= or =[[linear:APP-3718]]=
+
+Precedence (highest to lowest):
+1) file-local =#+LINK=
+2) =org2.json= links.abbreviations
+3) built-ins
+
+Org2 expands abbreviation targets when rendering/exporting and for LSP document-link targets.
+
 * Inline emphasis
 
 - Bold: =*bold*=
