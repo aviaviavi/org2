@@ -1,3 +1,0 @@
-#+TITLE: Config Link Abbrev Fixture
-
-See [[gh:owner/repo][Repo]] and [[linear:APP-42][APP-42]].
