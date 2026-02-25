@@ -34,6 +34,10 @@ export interface Org2Config {
   agendaFiles?: string[];
   recursive?: boolean;
   ignorePatterns?: string[];
+  links?: {
+    abbreviations?: Record<string, string>;
+    linearTeam?: string;
+  };
   todo?: {
     writeTransitionLogbook?: boolean;
   };

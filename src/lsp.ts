@@ -13,6 +13,14 @@ import {
   type ParseError,
 } from "./parser.js";
 import { printCanonicalAstToOrg } from "./printer.js";
+import { findConfigFile, loadConfig } from "./config.js";
+import {
+  buildBuiltInLinkAbbreviations,
+  collectLinkAbbreviationsFromRecord,
+  collectLinkAbbreviationsFromText,
+  expandLinkAbbreviationTarget,
+  mergeLinkAbbreviations,
+} from "./link-abbrev.js";
 
 import fs from "node:fs";
 import path from "node:path";
@@ -2871,24 +2879,52 @@ class LSPServer {
     return links;
   }
 
+  private resolveLinkAbbreviationsForSource(sourceUri: string) {
+    const sourceText = this.readDocumentText(sourceUri) || "";
+    const sourcePath = this.filePathFromUri(sourceUri);
+
+    let configAbbreviations: ReturnType<typeof collectLinkAbbreviationsFromRecord> | undefined;
+    let linearTeam: string | undefined;
+
+    if (sourcePath) {
+      const configPath = findConfigFile(path.dirname(sourcePath));
+      if (configPath) {
+        try {
+          const cfg = loadConfig(configPath);
+          configAbbreviations = collectLinkAbbreviationsFromRecord(cfg.links?.abbreviations);
+          linearTeam = cfg.links?.linearTeam;
+        } catch {
+          // Ignore config load errors in link target resolution path.
+        }
+      }
+    }
+
+    const builtIns = buildBuiltInLinkAbbreviations(linearTeam);
+    const documentAbbreviations = collectLinkAbbreviationsFromText(sourceText);
+    return mergeLinkAbbreviations([builtIns, configAbbreviations, documentAbbreviations]);
+  }
+
   private resolveDocumentLinkTarget(sourceUri: string, target: string): string | null {
     const normalizedTarget = target.trim();
     if (!normalizedTarget) {
       return null;
     }
 
-    if (normalizedTarget.toLowerCase().startsWith("id:")) {
-      const location = this.resolveIdDefinitionLocation(sourceUri, normalizedTarget);
+    const linkAbbreviations = this.resolveLinkAbbreviationsForSource(sourceUri);
+    const expandedTarget = expandLinkAbbreviationTarget(normalizedTarget, linkAbbreviations) || normalizedTarget;
+
+    if (expandedTarget.toLowerCase().startsWith("id:")) {
+      const location = this.resolveIdDefinitionLocation(sourceUri, expandedTarget);
       return location?.uri ?? null;
     }
 
-    const absPath = this.normalizeFileLinkPath(sourceUri, normalizedTarget);
+    const absPath = this.normalizeFileLinkPath(sourceUri, expandedTarget);
     if (absPath && fs.existsSync(absPath)) {
       return pathToFileURL(absPath).toString();
     }
 
-    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(normalizedTarget)) {
-      return normalizedTarget;
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(expandedTarget)) {
+      return expandedTarget;
     }
 
     return null;

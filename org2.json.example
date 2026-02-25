@@ -2,6 +2,13 @@
   "agendaFiles": ["*.org", "notes/**/*.org", "agenda/*"],
   "recursive": true,
   "ignorePatterns": [".git/**", "node_modules/**", ".#*", "*_archive", "*.archive"],
+  "links": {
+    "linearTeam": "scarf",
+    "abbreviations": {
+      "gh": "https://github.com/%s",
+      "linear": "https://linear.app/scarf/issue/%s"
+    }
+  },
   "publish": {
     "projects": {
       "homepage": {
