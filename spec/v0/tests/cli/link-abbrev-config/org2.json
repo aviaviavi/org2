@@ -1,8 +1,0 @@
-{
-  "links": {
-    "linearTeam": "acme",
-    "abbreviations": {
-      "gh": "https://github.example.com/%s"
-    }
-  }
-}
