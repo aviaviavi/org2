@@ -598,9 +598,41 @@ class Org2AgendaProvider {
     this.filter = { type: 'next', days: 7 };
     this.groups = [];
     this.lastError = undefined;
+    this.view = null;
+  }
+
+  attachView(view) {
+    this.view = view || null;
+    this.updateViewSummary();
+  }
+
+  getSummary() {
+    const summary = { total: 0, overdue: 0, today: 0, upcoming: 0 };
+    for (const group of this.groups || []) {
+      if (!(group instanceof Org2AgendaGroup)) continue;
+      for (const item of group.items || []) {
+        summary.total += 1;
+        if (item.urgency === 'overdue') summary.overdue += 1;
+        else if (item.urgency === 'today') summary.today += 1;
+        else if (item.urgency === 'upcoming') summary.upcoming += 1;
+      }
+    }
+    return summary;
+  }
+
+  updateViewSummary() {
+    if (!this.view) return;
+    const summary = this.getSummary();
+    this.view.title = `Org2 Agenda (${summary.total})`;
+    const breakdown = [];
+    if (summary.overdue > 0) breakdown.push(`O:${summary.overdue}`);
+    if (summary.today > 0) breakdown.push(`T:${summary.today}`);
+    if (summary.upcoming > 0) breakdown.push(`U:${summary.upcoming}`);
+    this.view.description = breakdown.join(' ');
   }
 
   refresh() {
+    this.updateViewSummary();
     this._onDidChangeTreeData.fire();
   }
 
@@ -2285,6 +2317,7 @@ function activate(context) {
     treeDataProvider: agendaProvider,
     showCollapseAll: true,
   });
+  agendaProvider.attachView(agendaView);
   context.subscriptions.push(agendaView);
 
   const backlinksProvider = new Org2BacklinksProvider(context);
