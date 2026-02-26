@@ -25,7 +25,10 @@ test('agendaUrgencyFromDate buckets by day', () => {
 test('agendaStatusBucket maps common TODO states', () => {
   assert.equal(agendaStatusBucket('TODO'), 'todo');
   assert.equal(agendaStatusBucket('IN_PROGRESS'), 'inProgress');
+  assert.equal(agendaStatusBucket('in-progress'), 'inProgress');
+  assert.equal(agendaStatusBucket('PROG'), 'inProgress');
   assert.equal(agendaStatusBucket('DONE'), 'done');
+  assert.equal(agendaStatusBucket('CANCELLED'), 'canceled');
   assert.equal(agendaStatusBucket('CANCELED'), 'canceled');
   assert.equal(agendaStatusBucket('SOMEDAY'), 'custom');
   assert.equal(agendaStatusBucket(''), 'none');

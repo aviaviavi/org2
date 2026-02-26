@@ -30,12 +30,13 @@ function agendaUrgencyFromDate(dateStr, now) {
 }
 
 function agendaStatusBucket(todoKeyword) {
-  const key = String(todoKeyword || '').trim().toUpperCase();
-  if (!key) return 'none';
+  const raw = String(todoKeyword || '').trim().toUpperCase();
+  if (!raw) return 'none';
+  const key = raw.replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 
   if (['DONE', 'COMPLETED'].includes(key)) return 'done';
   if (['CANCELED', 'CANCELLED'].includes(key)) return 'canceled';
-  if (['IN_PROGRESS', 'DOING', 'STARTED', 'WAITING', 'BLOCKED', 'NEXT'].includes(key)) return 'inProgress';
+  if (['PROG', 'IN_PROGRESS', 'DOING', 'STARTED', 'WAITING', 'BLOCKED', 'NEXT'].includes(key)) return 'inProgress';
   if (['TODO', 'OPEN', 'BACKLOG'].includes(key)) return 'todo';
   return 'custom';
 }
