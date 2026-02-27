@@ -1313,6 +1313,7 @@
   },
   "license": "Apache-2.0",
   "scripts": {
+    "test": "node --test ./test/*.test.js",
     "package": "npx @vscode/vsce package",
     "publish:vsce": "npx @vscode/vsce publish",
     "publish:ovsx": "npx ovsx publish"
@@ -1350,5 +1351,9 @@
   "galleryBanner": {
     "color": "#0b1020",
     "theme": "dark"
+  },
+  "devDependencies": {
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.3.2"
   }
 }
