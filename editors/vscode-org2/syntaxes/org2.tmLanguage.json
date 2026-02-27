@@ -347,7 +347,7 @@
         },
         {
           "name": "meta.block.fenced.sql.org2",
-          "begin": "^(\\s*)(```)(\\s*)((?:sql))\\s*$",
+          "begin": "^(\\s*)(```)(\\s*)((?:sql|postgresql))\\s*$",
           "beginCaptures": {
             "2": {
               "name": "punctuation.definition.fenced.begin.org2"
@@ -640,8 +640,17 @@
           },
           "patterns": [
             {
-              "name": "markup.raw.block.org2",
-              "match": ".*"
+              "include": "#timestamps"
+            },
+            {
+              "include": "#emphasis"
+            },
+            {
+              "include": "#links"
+            },
+            {
+              "name": "text.plain.org2",
+              "match": ".+"
             }
           ]
         },
@@ -734,7 +743,7 @@
         },
         {
           "name": "meta.block.src.shell.org2",
-          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:sh|bash|zsh|fish))\\b.*$",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:sh|bash|zsh|fish|shell))\\b.*$",
           "beginCaptures": {
             "0": {
               "name": "comment.line.number-sign.org2"
@@ -821,7 +830,7 @@
         },
         {
           "name": "meta.block.src.python.org2",
-          "begin": "^(\\s*)(#\\+begin_src)\\s+(python)\\b.*$",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:py|python))\\b.*$",
           "beginCaptures": {
             "0": {
               "name": "comment.line.number-sign.org2"
@@ -850,7 +859,7 @@
         },
         {
           "name": "meta.block.src.go.org2",
-          "begin": "^(\\s*)(#\\+begin_src)\\s+(go)\\b.*$",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:go|golang))\\b.*$",
           "beginCaptures": {
             "0": {
               "name": "comment.line.number-sign.org2"
@@ -879,7 +888,7 @@
         },
         {
           "name": "meta.block.src.rust.org2",
-          "begin": "^(\\s*)(#\\+begin_src)\\s+(rust)\\b.*$",
+          "begin": "^(\\s*)(#\\+begin_src)\\s+((?:rs|rust))\\b.*$",
           "beginCaptures": {
             "0": {
               "name": "comment.line.number-sign.org2"

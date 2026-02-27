@@ -1,0 +1,79 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { Registry, parseRawGrammar } = require('vscode-textmate');
+const oniguruma = require('vscode-oniguruma');
+
+function fakeGrammar(scopeName) {
+  return {
+    scopeName,
+    patterns: [{ include: '#main' }],
+    repository: {
+      main: {
+        patterns: [
+          { name: `${scopeName}.const-token`, match: '\\bconst\\b' },
+          { name: `${scopeName}.identifier`, match: '\\b[a-zA-Z_][a-zA-Z0-9_]*\\b' }
+        ]
+      }
+    }
+  };
+}
+
+async function createRegistry() {
+  const wasmPath = require.resolve('vscode-oniguruma/release/onig.wasm');
+  const wasmBin = fs.readFileSync(wasmPath).buffer;
+  await oniguruma.loadWASM(wasmBin);
+
+  const orgGrammarPath = path.join(__dirname, '..', 'syntaxes', 'org2.tmLanguage.json');
+  const orgGrammar = fs.readFileSync(orgGrammarPath, 'utf8');
+
+  const registry = new Registry({
+    onigLib: Promise.resolve({
+      createOnigScanner(patterns) {
+        return new oniguruma.OnigScanner(patterns);
+      },
+      createOnigString(s) {
+        return new oniguruma.OnigString(s);
+      }
+    }),
+    loadGrammar: async (scopeName) => {
+      if (scopeName === 'source.org2') return parseRawGrammar(orgGrammar, orgGrammarPath);
+      if (scopeName === 'source.python') return parseRawGrammar(JSON.stringify(fakeGrammar(scopeName)), `${scopeName}.json`);
+      if (scopeName === 'source.shell') return parseRawGrammar(JSON.stringify(fakeGrammar(scopeName)), `${scopeName}.json`);
+      return null;
+    }
+  });
+
+  return registry;
+}
+
+test('fenced code blocks and #+begin_src aliases get equivalent tokenization', async () => {
+  const fixturePath = path.join(__dirname, 'fixtures', 'fenced-src-parity.org2');
+  const lines = fs.readFileSync(fixturePath, 'utf8').split(/\r?\n/);
+  const registry = await createRegistry();
+  const grammar = await registry.loadGrammar('source.org2');
+
+  let ruleStack = null;
+  const scopedByLine = [];
+  for (const line of lines) {
+    const result = grammar.tokenizeLine(line, ruleStack);
+    scopedByLine.push(result.tokens.map((t) => t.scopes));
+    ruleStack = result.ruleStack;
+  }
+
+  const pySrcScopes = scopedByLine[3].flat();
+  const pyFenceScopes = scopedByLine[7].flat();
+  assert(pySrcScopes.some((s) => s.includes('source.python.const-token')));
+  assert(pyFenceScopes.some((s) => s.includes('source.python.const-token')));
+
+  const shellSrcScopes = scopedByLine[11].flat();
+  const shellFenceScopes = scopedByLine[15].flat();
+  assert(shellSrcScopes.some((s) => s.includes('source.shell.const-token')));
+  assert(shellFenceScopes.some((s) => s.includes('source.shell.const-token')));
+
+  const unknownSrcScopes = scopedByLine[19].flat();
+  const unknownFenceScopes = scopedByLine[23].flat();
+  assert(unknownSrcScopes.includes('markup.bold.org2'));
+  assert(unknownFenceScopes.includes('markup.bold.org2'));
+});

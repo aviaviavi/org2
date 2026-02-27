@@ -1,0 +1,25 @@
+* Fenced/src parity fixture
+
+#+begin_src py
+const alpha = 1
+#+end_src
+
+```py
+const beta = 2
+```
+
+#+begin_src shell
+const gamma = 3
+#+end_src
+
+```shell
+const delta = 4
+```
+
+#+begin_src unknownlang
+*bold*
+#+end_src
+
+```unknownlang
+*bold*
+```
