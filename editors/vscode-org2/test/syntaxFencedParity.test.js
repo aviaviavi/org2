@@ -41,6 +41,7 @@ async function createRegistry() {
       if (scopeName === 'source.org2') return parseRawGrammar(orgGrammar, orgGrammarPath);
       if (scopeName === 'source.python') return parseRawGrammar(JSON.stringify(fakeGrammar(scopeName)), `${scopeName}.json`);
       if (scopeName === 'source.shell') return parseRawGrammar(JSON.stringify(fakeGrammar(scopeName)), `${scopeName}.json`);
+      if (scopeName === 'source.yaml') return parseRawGrammar(JSON.stringify(fakeGrammar(scopeName)), `${scopeName}.json`);
       return null;
     }
   });
@@ -76,4 +77,25 @@ test('fenced code blocks and #+begin_src aliases get equivalent tokenization', a
   const unknownFenceScopes = scopedByLine[23].flat();
   assert(unknownSrcScopes.includes('markup.bold.org2'));
   assert(unknownFenceScopes.includes('markup.bold.org2'));
+});
+
+test('unlabeled fenced and #+begin_src blocks use default embedded grammar scopes', async () => {
+  const fixturePath = path.join(__dirname, 'fixtures', 'unlabeled-src-fence-default.org2');
+  const lines = fs.readFileSync(fixturePath, 'utf8').split(/\r?\n/);
+  const registry = await createRegistry();
+  const grammar = await registry.loadGrammar('source.org2');
+
+  let ruleStack = null;
+  const scopedByLine = [];
+  for (const line of lines) {
+    const result = grammar.tokenizeLine(line, ruleStack);
+    scopedByLine.push(result.tokens.map((t) => t.scopes));
+    ruleStack = result.ruleStack;
+  }
+
+  const unlabeledFenceScopes = scopedByLine[3].flat();
+  const unlabeledSrcScopes = scopedByLine[7].flat();
+
+  assert(unlabeledFenceScopes.some((s) => s.includes('source.yaml.const-token')));
+  assert(unlabeledSrcScopes.some((s) => s.includes('source.yaml.const-token')));
 });
