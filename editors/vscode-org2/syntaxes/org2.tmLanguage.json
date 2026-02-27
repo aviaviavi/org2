@@ -89,7 +89,7 @@
         },
         {
           "name": "keyword.other.directive.org2",
-          "match": "^(?:\\s*)#\\+[A-Za-z0-9_\\-]+$"
+          "match": "^(?:\\s*)#\\+(?![Bb][Ee][Gg][Ii][Nn]_)(?![Ee][Nn][Dd]_)[A-Za-z0-9_\\-]+$"
         }
       ]
     },
@@ -622,13 +622,33 @@
           ]
         },
         {
+          "name": "meta.block.fenced.default.org2",
+          "begin": "^(\\s*)(```)(\\s*)$",
+          "beginCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.begin.org2"
+            }
+          },
+          "end": "^(\\s*)(```)(\\s*)$",
+          "endCaptures": {
+            "2": {
+              "name": "punctuation.definition.fenced.end.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.yaml"
+            }
+          ]
+        },
+        {
           "name": "meta.block.fenced.generic.org2",
-          "begin": "^(\\s*)(```)([^`]*)$",
+          "begin": "^(\\s*)(```)(\\s*)([^`\\s][^`]*)$",
           "beginCaptures": {
             "2": {
               "name": "punctuation.definition.fenced.begin.org2"
             },
-            "3": {
+            "4": {
               "name": "storage.type.code-language.org2"
             }
           },
@@ -1035,6 +1055,32 @@
             {
               "name": "text.plain.org2",
               "match": ".+"
+            }
+          ]
+        },
+        {
+          "name": "meta.block.src.default.org2",
+          "begin": "^(\\s*)(#\\+begin_src)\\s*$",
+          "beginCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "end": "^(\\s*)(#\\+end_src)\\b.*$",
+          "endCaptures": {
+            "0": {
+              "name": "comment.line.number-sign.org2"
+            },
+            "2": {
+              "name": "comment.line.number-sign.org2"
+            }
+          },
+          "patterns": [
+            {
+              "include": "source.yaml"
             }
           ]
         },
