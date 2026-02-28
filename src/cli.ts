@@ -6427,6 +6427,7 @@ Tips:
       planDate = today;
     }
 
+    planDate = planDate.trim();
     if (!planDate) {
       console.error("Error: plan requires --date YYYY-MM-DD (or use `plan today`)");
       process.exit(1);
