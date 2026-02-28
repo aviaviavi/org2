@@ -1,0 +1,9 @@
+* Unlabeled src/fence default highlighting fixture
+
+```
+const alpha = 1
+```
+
+#+begin_src
+const beta = 2
+#+end_src
