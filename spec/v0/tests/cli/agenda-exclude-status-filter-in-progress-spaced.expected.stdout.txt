@@ -1,0 +1,52 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-01-21",
+    "end": "2026-01-22",
+    "days": 2
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-01-21",
+      "weekday": "Wednesday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Ship MVP filter",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-status-filter.input.txt",
+          "line": 0
+        },
+        {
+          "todo": "DONE",
+          "headline": "Already wrapped",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-status-filter.input.txt",
+          "line": 9
+        },
+        {
+          "todo": "SOMEDAY",
+          "headline": "Custom bucket item",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-status-filter.input.txt",
+          "line": 15
+        }
+      ]
+    },
+    {
+      "date": "2026-01-22",
+      "weekday": "Thursday",
+      "items": [
+        {
+          "todo": "CANCELED",
+          "headline": "Skip this",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-status-filter.input.txt",
+          "line": 12
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}
