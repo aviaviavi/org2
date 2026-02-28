@@ -1,0 +1,1 @@
+plan set --file "spec/v0/tests/cli/plan-set-date-trimmed.input.txt" --pos 1 --kind scheduled --date " 2026-01-17 " --format text
