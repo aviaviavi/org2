@@ -567,6 +567,14 @@ function agendaStatusBucketForKeyword(todo: string | undefined): AgendaStatusBuc
   return "custom";
 }
 
+function normalizeAgendaStatusFilterToken(tokenRaw: string): string {
+  return tokenRaw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
 function parseAgendaStatusFilterArgs(rawArgs: string[]): {
   filter: AgendaStatusFilter;
   invalid: string[];
@@ -578,7 +586,7 @@ function parseAgendaStatusFilterArgs(rawArgs: string[]): {
   let sawAll = false;
 
   const addToken = (tokenRaw: string): void => {
-    const token = tokenRaw.trim().toLowerCase();
+    const token = normalizeAgendaStatusFilterToken(tokenRaw);
     if (!token) return;
 
     if (token === "all") {
@@ -604,7 +612,7 @@ function parseAgendaStatusFilterArgs(rawArgs: string[]): {
       return;
     }
 
-    if (token === "in_progress" || token === "in-progress" || token === "inprogress" || token === "prog") {
+    if (token === "in_progress" || token === "inprogress" || token === "prog") {
       selected.add("in_progress");
       return;
     }
@@ -1665,9 +1673,10 @@ function parseAgendaStatusOrderArgs(rawArgs: string[]): {
   const invalid: string[] = [];
   let nextRank = 0;
 
-  const normalizeToken = (token: string): AgendaStatusBucket | null => {
+  const normalizeToken = (tokenRaw: string): AgendaStatusBucket | null => {
+    const token = normalizeAgendaStatusFilterToken(tokenRaw);
     if (token === "todo" || token === "open") return "todo";
-    if (token === "in_progress" || token === "in-progress" || token === "inprogress" || token === "prog") {
+    if (token === "in_progress" || token === "inprogress" || token === "prog") {
       return "in_progress";
     }
     if (token === "done" || token === "completed") return "done";
@@ -1678,11 +1687,11 @@ function parseAgendaStatusOrderArgs(rawArgs: string[]): {
 
   for (const raw of rawArgs) {
     for (const tokenRaw of String(raw).split(",")) {
-      const token = tokenRaw.trim().toLowerCase();
+      const token = normalizeAgendaStatusFilterToken(tokenRaw);
       if (!token) continue;
       if (token === "default") continue;
 
-      const normalized = normalizeToken(token);
+      const normalized = normalizeToken(tokenRaw);
       if (!normalized) {
         invalid.push(tokenRaw.trim());
         continue;
@@ -6418,6 +6427,7 @@ Tips:
       planDate = today;
     }
 
+    planDate = planDate.trim();
     if (!planDate) {
       console.error("Error: plan requires --date YYYY-MM-DD (or use `plan today`)");
       process.exit(1);

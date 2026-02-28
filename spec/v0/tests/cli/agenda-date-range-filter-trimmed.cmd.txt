@@ -1,0 +1,1 @@
+agenda --files "spec/v0/tests/cli/simple-agenda.org" --today 2026-01-21 --days 10 --format json --from " 2026-01-22 " --to " 2026-01-28 " --no-overdue
