@@ -1338,6 +1338,7 @@
   ],
   "files": [
     "extension.js",
+    "agendaArgs.js",
     "agendaVisuals.js",
     "language-configuration.json",
     "syntaxes/**",
