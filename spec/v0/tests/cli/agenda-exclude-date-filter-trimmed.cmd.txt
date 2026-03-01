@@ -1,0 +1,1 @@
+agenda --files "spec/v0/tests/cli/agenda-date-filter.input.txt" --from 2026-03-01 --to 2026-04-30 --format json --exclude-date " 2026-03-15 , 2026-04-02 "
