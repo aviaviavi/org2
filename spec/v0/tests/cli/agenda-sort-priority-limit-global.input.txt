@@ -1,0 +1,5 @@
+* TODO [#C] Earlier low priority
+SCHEDULED: <2026-01-21 Wed>
+
+* TODO [#A] Later high priority
+SCHEDULED: <2026-01-22 Thu>
