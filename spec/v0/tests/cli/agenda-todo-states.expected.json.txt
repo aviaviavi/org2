@@ -7,6 +7,19 @@
   },
   "overdue": [
     {
+      "date": "2026-01-14",
+      "weekday": "Wednesday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Another overdue todo (should show)",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-todo-states.org",
+          "line": 15
+        }
+      ]
+    },
+    {
       "date": "2026-01-15",
       "weekday": "Thursday",
       "items": [
@@ -15,7 +28,7 @@
           "headline": "In progress and overdue (should show)",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-todo-states.org",
-          "line": 15
+          "line": 18
         }
       ]
     }
