@@ -2,7 +2,17 @@ const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
 const cp = require('child_process');
-const { agendaFileLabel, agendaStatusBucket, agendaStatusCue, agendaTreeItemLabel, agendaUrgencyFromDate } = require('./agendaVisuals');
+const {
+  agendaFileLabel,
+  agendaPriorityRank,
+  agendaStatusBucket,
+  agendaStatusCue,
+  agendaTreeItemLabel,
+  agendaUrgencyFromDate,
+  extractAgendaPriorityFromHeadline,
+  normalizeAgendaPriority,
+} = require('./agendaVisuals');
+const { buildAgendaTreeGroupsFromCli } = require('./agendaTreeModel');
 const { buildAgendaCliArgs } = require('./agendaArgs');
 const {
   resolveWorkspaceFormatterPathFilters,
@@ -326,7 +336,7 @@ class Org2AgendaSeparator {
 }
 
 class Org2AgendaItem {
-  constructor({ todo, headline, kind, file, line, date, time, urgency }) {
+  constructor({ todo, headline, kind, file, line, date, time, urgency, priority }) {
     this.todo = todo || '';
     this.headline = headline || '';
     this.kind = kind || '';
@@ -337,6 +347,7 @@ class Org2AgendaItem {
     this.time = typeof time === 'string' ? time.trim() : '';
     this.urgency = urgency || agendaUrgencyFromDate(date);
     this.statusBucket = agendaStatusBucket(todo);
+    this.priority = normalizeAgendaPriority(priority) || extractAgendaPriorityFromHeadline(this.headline);
   }
 }
 
@@ -688,7 +699,7 @@ class Org2AgendaProvider {
     }
 
     if (element instanceof Org2AgendaItem) {
-      const rowLabel = agendaTreeItemLabel(element.todo, element.headline, element.statusBucket);
+      const rowLabel = agendaTreeItemLabel(element.todo, element.headline, element.statusBucket, element.priority);
       const item = new vscode.TreeItem(rowLabel.label, vscode.TreeItemCollapsibleState.None);
       if (rowLabel.highlights.length) {
         item.label = { label: rowLabel.label, highlights: rowLabel.highlights };
@@ -1345,37 +1356,22 @@ async function fetchAgendaGroups(context, filter) {
     throw err;
   }
 
-  const groups = [];
-  const pushDay = (d, isOverdue) => {
-    const dayUrgency = isOverdue ? 'overdue' : agendaUrgencyFromDate(d.date);
-    const items = (d.items || []).map(
+  const descriptors = buildAgendaTreeGroupsFromCli(data, sortBy);
+  return descriptors.map((entry) => {
+    if (entry.type === 'separator') {
+      return new Org2AgendaSeparator(entry.label);
+    }
+
+    const items = (entry.items || []).map(
       (it) =>
         new Org2AgendaItem({
           ...it,
-          date: d.date,
-          urgency: dayUrgency,
+          date: entry.isOverdue ? (it && it.date) || '' : entry.date,
+          urgency: entry.isOverdue ? 'overdue' : agendaUrgencyFromDate(entry.date),
         })
     );
-    const label = `${d.weekday || ''} ${d.date || ''}`.trim();
-    groups.push(new Org2AgendaGroup(isOverdue ? `Overdue: ${label}` : label, d.date, d.weekday, isOverdue, items));
-  };
-
-  const hasOverdue = Array.isArray(data.overdue) && data.overdue.length > 0;
-  const hasUpcoming = Array.isArray(data.days) && data.days.length > 0;
-
-  if (hasOverdue) {
-    for (const d of data.overdue) pushDay(d, true);
-  }
-
-  if (hasOverdue && hasUpcoming) {
-    groups.push(new Org2AgendaSeparator('──────── Upcoming ────────'));
-  }
-
-  if (hasUpcoming) {
-    for (const d of data.days) pushDay(d, false);
-  }
-
-  return groups;
+    return new Org2AgendaGroup(entry.label, entry.date, entry.weekday, entry.isOverdue, items);
+  });
 }
 
 function revealNavigationPosition(editor, pos, source) {
