@@ -1390,8 +1390,7 @@
   "files": [
     "extension.js",
     "agendaArgs.js",
-    "agendaVisuals.js",
-    "formatterArgs.js",
+
     "roamArgs.js",
     "priorityToken.js",
     "language-configuration.json",
