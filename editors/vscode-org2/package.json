@@ -1118,6 +1118,12 @@
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
+        "key": "ctrl+; a s",
+        "mac": "cmd+; a s",
+        "command": "org2.pickAgendaStatusFilter",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
         "key": "ctrl+; r b",
         "mac": "cmd+; r b",
         "command": "org2.openBacklinks",
@@ -1292,9 +1298,33 @@
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
+        "key": "ctrl+; x r",
+        "mac": "cmd+; x r",
+        "command": "org2.refileSubtree",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
         "key": "ctrl+; c q",
         "mac": "cmd+; c q",
         "command": "org2.captureQuickEntry",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; f c",
+        "mac": "cmd+; f c",
+        "command": "org2.formatCurrentFileCheck",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; f p",
+        "mac": "cmd+; f p",
+        "command": "org2.formatCurrentFilePreviewDiff",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; f a",
+        "mac": "cmd+; f a",
+        "command": "org2.formatCurrentFileApply",
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
@@ -1340,6 +1370,7 @@
     "extension.js",
     "agendaArgs.js",
     "agendaVisuals.js",
+    "formatterArgs.js",
     "language-configuration.json",
     "syntaxes/**",
     "README.md",

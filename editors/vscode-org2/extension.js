@@ -4,6 +4,14 @@ const fs = require('fs');
 const cp = require('child_process');
 const { agendaFileLabel, agendaStatusBucket, agendaStatusCue, agendaTreeItemLabel, agendaUrgencyFromDate } = require('./agendaVisuals');
 const { buildAgendaCliArgs } = require('./agendaArgs');
+const {
+  resolveWorkspaceFormatterPathFilters,
+  buildWorkspaceFormatterCommandArgs,
+  buildCurrentFileFormatterPreviewArgs,
+  buildCurrentFileFormatterCheckArgs,
+  buildCurrentFileFormatterApplyArgs,
+  buildCurrentFileFormatterStdoutArgs,
+} = require('./formatterArgs');
 
 const headingRe = /^(\*+)\s+/;
 const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
@@ -1660,25 +1668,20 @@ function activate(context) {
 
   function getWorkspaceFormatterPathFilters(root) {
     const cfg = vscode.workspace.getConfiguration('org2');
-    const fileFilter = String(cfg.get('formatter.fileFilter', '') || '').trim();
-    const excludeFileFilter = String(cfg.get('formatter.excludeFileFilter', '') || '').trim();
-    const configFileRaw = String(cfg.get('formatter.configFile', '') || '').trim();
-    const configFile = configFileRaw
-      ? (path.isAbsolute(configFileRaw) ? configFileRaw : path.resolve(root || process.cwd(), configFileRaw))
-      : '';
-    return { fileFilter, excludeFileFilter, configFile };
+    return resolveWorkspaceFormatterPathFilters({
+      root,
+      fileFilter: cfg.get('formatter.fileFilter', ''),
+      excludeFileFilter: cfg.get('formatter.excludeFileFilter', ''),
+      configFile: cfg.get('formatter.configFile', ''),
+    });
   }
 
   async function getWorkspaceFormattingDrift(root, pathFilters = {}) {
-    const args = ['fmt'];
-    if (pathFilters.configFile) {
-      args.push('--config', pathFilters.configFile);
-    } else {
-      args.push('--dir', root, '--recursive');
-    }
-    args.push('--check');
-    if (pathFilters.fileFilter) args.push('--file-match', pathFilters.fileFilter);
-    if (pathFilters.excludeFileFilter) args.push('--exclude-file', pathFilters.excludeFileFilter);
+    const args = buildWorkspaceFormatterCommandArgs({
+      root,
+      pathFilters,
+      mode: 'check',
+    });
     return getFormattingDrift(args, root);
   }
 
@@ -1725,7 +1728,7 @@ function activate(context) {
 
   async function getCurrentFileFormattingDrift(filePath) {
     const cwd = getWorkspaceRoot() || path.dirname(filePath) || process.cwd();
-    const previewArgs = ['fmt', '--file', filePath, '--format', 'json'];
+    const previewArgs = buildCurrentFileFormatterPreviewArgs(filePath);
     const { cmd: previewCmd, args: previewFinalArgs } = resolveOrg2Command(context, previewArgs);
 
     try {
@@ -1741,12 +1744,12 @@ function activate(context) {
       // Fallback to --check for older CLI versions that don't support fmt preview JSON.
     }
 
-    return getFormattingDrift(['fmt', '--file', filePath, '--check'], cwd);
+    return getFormattingDrift(buildCurrentFileFormatterCheckArgs(filePath), cwd);
   }
 
   async function getCurrentFileFormattingPreview(filePath) {
     const cwd = getWorkspaceRoot() || path.dirname(filePath) || process.cwd();
-    const previewArgs = ['fmt', '--file', filePath, '--format', 'json'];
+    const previewArgs = buildCurrentFileFormatterPreviewArgs(filePath);
     const { cmd: previewCmd, args: previewFinalArgs } = resolveOrg2Command(context, previewArgs);
 
     try {
@@ -1763,7 +1766,7 @@ function activate(context) {
       // Fallback for older CLI versions that don't support fmt preview JSON.
     }
 
-    const { cmd: fallbackCmd, args: fallbackArgs } = resolveOrg2Command(context, ['fmt', '--file', filePath]);
+    const { cmd: fallbackCmd, args: fallbackArgs } = resolveOrg2Command(context, buildCurrentFileFormatterStdoutArgs(filePath));
     const { stdout, stderr } = await execFileAsync(fallbackCmd, fallbackArgs, { cwd });
     const currentText = fs.readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n');
     return {
@@ -1914,15 +1917,11 @@ function activate(context) {
 
     if (confirm !== 'Format Workspace') return;
 
-    const applyArgs = ['fmt'];
-    if (pathFilters.configFile) {
-      applyArgs.push('--config', pathFilters.configFile);
-    } else {
-      applyArgs.push('--dir', root, '--recursive');
-    }
-    applyArgs.push('--apply');
-    if (pathFilters.fileFilter) applyArgs.push('--file-match', pathFilters.fileFilter);
-    if (pathFilters.excludeFileFilter) applyArgs.push('--exclude-file', pathFilters.excludeFileFilter);
+    const applyArgs = buildWorkspaceFormatterCommandArgs({
+      root,
+      pathFilters,
+      mode: 'apply',
+    });
     try {
       const applyResult = await applyFormatting(applyArgs, root);
       const appliedFiles = applyResult.changedFiles.length > 0 ? applyResult.changedFiles : changedFiles;
@@ -1993,7 +1992,7 @@ function activate(context) {
         : undefined;
 
     const cwd = getWorkspaceRoot() || path.dirname(target.filePath) || process.cwd();
-    const applyArgs = ['fmt', '--file', target.filePath, '--apply'];
+    const applyArgs = buildCurrentFileFormatterApplyArgs(target.filePath);
 
     try {
       const applyResult = await applyFormatting(applyArgs, cwd);
