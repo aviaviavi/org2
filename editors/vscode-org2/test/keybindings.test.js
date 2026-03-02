@@ -19,11 +19,12 @@ function hasPowerBinding(keybindings, key, command) {
   );
 }
 
-test('power keymap includes agenda status-filter and refile shortcuts', () => {
+test('power keymap includes agenda status-filter, refile, and priority shortcuts', () => {
   const keybindings = loadPackageKeybindings();
 
   assert.equal(hasPowerBinding(keybindings, 'ctrl+; a s', 'org2.pickAgendaStatusFilter'), true);
   assert.equal(hasPowerBinding(keybindings, 'ctrl+; x r', 'org2.refileSubtree'), true);
+  assert.equal(hasPowerBinding(keybindings, 'ctrl+; t p', 'org2.setPriority'), true);
 });
 
 test('power keymap includes formatter check/preview/apply current-file shortcuts', () => {

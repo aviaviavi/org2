@@ -21,6 +21,7 @@
     "onCommand:org2.captureQuickEntry",
     "onCommand:org2.toggleTodo",
     "onCommand:org2.setTodoStatus",
+    "onCommand:org2.setPriority",
     "onCommand:org2.setTodoTODO",
     "onCommand:org2.setTodoInProgress",
     "onCommand:org2.setTodoDone",
@@ -165,6 +166,10 @@
       {
         "command": "org2.setTodoStatus",
         "title": "Org2: Set Todo Status"
+      },
+      {
+        "command": "org2.setPriority",
+        "title": "Org2: Set Priority"
       },
       {
         "command": "org2.setTodoTODO",
@@ -365,6 +370,11 @@
           "group": "navigation@14"
         },
         {
+          "command": "org2.setPriority",
+          "when": "view == org2Agenda && viewItem == org2AgendaItem",
+          "group": "navigation@14.1"
+        },
+        {
           "command": "org2.setScheduled",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@15"
@@ -420,6 +430,11 @@
           "command": "org2.setTodoStatus",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@11"
+        },
+        {
+          "command": "org2.setPriority",
+          "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
+          "group": "navigation@11.1"
         },
         {
           "command": "org2.setScheduled",
@@ -1244,6 +1259,12 @@
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
+        "key": "ctrl+; t p",
+        "mac": "cmd+; t p",
+        "command": "org2.setPriority",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
         "key": "ctrl+; 1",
         "mac": "cmd+; 1",
         "command": "editor.foldLevel1",
@@ -1372,6 +1393,7 @@
     "agendaVisuals.js",
     "formatterArgs.js",
     "roamArgs.js",
+    "priorityToken.js",
     "language-configuration.json",
     "syntaxes/**",
     "README.md",
