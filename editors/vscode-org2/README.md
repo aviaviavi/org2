@@ -60,11 +60,12 @@ The extension can toggle/set TODO keywords on the current headline via the `org2
 
 - Command: **Org2: Toggle Todo Status** (`org2.toggleTodo`)
 - Command: **Org2: Set Todo Status** (`org2.setTodoStatus`)
+- Command: **Org2: Set Priority** (`org2.setPriority`) → sets/clears headline priority token (`[#A]`/`[#B]`/`[#C]`)
 - Direct commands: `org2.setTodoTODO`, `org2.setTodoInProgress`, `org2.setTodoDone`, `org2.setTodoCanceled`
 - Default keybinding: `ctrl+alt+t`
 - Also available in the editor right-click context menu.
 
-Implementation detail: the extension saves the file (if needed), runs `org2 todo toggle|set --file ... --line ... --apply` (and adds `--logbook` when `org2.todo.writeTransitionLogbook` is enabled), then refreshes the buffer from disk. By default it restores the prior cursor/selection; this can be disabled with `org2.editor.restoreSelectionAfterCliApply` if your setup still auto-expands folds. You can also disable the explicit refresh (`org2.editor.refreshAfterCliApply`) to rely on VS Code file watching and avoid refresh-triggered fold churn. With refresh enabled, `org2.editor.skipRefreshWhenInSync` (default true) avoids unnecessary `revertResource` calls when the open document already matches disk after CLI apply, and `org2.editor.allowGlobalRefreshFallback` (default false) controls whether Org2 may fall back to global `workbench.action.files.revert` on older VS Code builds.
+Implementation detail: TODO status changes save the file (if needed), run `org2 todo toggle|set --file ... --line ... --apply` (and add `--logbook` when `org2.todo.writeTransitionLogbook` is enabled), then refresh the buffer from disk. Priority changes are applied directly in-editor on the current headline and saved immediately for file-backed documents. Agenda-invoked priority edits trigger an immediate agenda reload so priority sort/filter/group views update right away. By default the extension restores the prior cursor/selection after CLI-based edits; this can be disabled with `org2.editor.restoreSelectionAfterCliApply` if your setup still auto-expands folds. You can also disable the explicit refresh (`org2.editor.refreshAfterCliApply`) to rely on VS Code file watching and avoid refresh-triggered fold churn. With refresh enabled, `org2.editor.skipRefreshWhenInSync` (default true) avoids unnecessary `revertResource` calls when the open document already matches disk after CLI apply, and `org2.editor.allowGlobalRefreshFallback` (default false) controls whether Org2 may fall back to global `workbench.action.files.revert` on older VS Code builds.
 
 ## Planning + capture + archiving + refile + export (MVP)
 
@@ -248,6 +249,7 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
 - TODO + planning
   - `Org2: Toggle Todo Status` (`org2.toggleTodo`)
   - `Org2: Set Todo Status` (`org2.setTodoStatus`)
+  - `Org2: Set Priority` (`org2.setPriority`)
   - `Org2: Set Todo → TODO` (`org2.setTodoTODO`)
   - `Org2: Set Todo → IN_PROGRESS` (`org2.setTodoInProgress`)
   - `Org2: Set Todo → DONE` (`org2.setTodoDone`)
@@ -342,6 +344,7 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
   - `t i` → Set IN_PROGRESS
   - `t d` → Set DONE
   - `t c` → Set CANCELED
+  - `t p` → Set Priority (A/B/C/Clear)
 
 Note: heading promote/demote/set-level commands are not yet exposed by Org2 VS Code commands, so `cmd/ctrl+; 1/2/3/4` are currently wired to VS Code’s closest built-in heading-level operation: fold-to-level.
 
