@@ -4,6 +4,7 @@ const fs = require('fs');
 const cp = require('child_process');
 const { agendaFileLabel, agendaStatusBucket, agendaStatusCue, agendaTreeItemLabel, agendaUrgencyFromDate } = require('./agendaVisuals');
 const { buildAgendaCliArgs } = require('./agendaArgs');
+const { buildAgendaTreeGroups } = require('./agendaTreeGroups');
 const {
   resolveWorkspaceFormatterPathFilters,
   buildWorkspaceFormatterCommandArgs,
@@ -1345,37 +1346,17 @@ async function fetchAgendaGroups(context, filter) {
     throw err;
   }
 
-  const groups = [];
-  const pushDay = (d, isOverdue) => {
-    const dayUrgency = isOverdue ? 'overdue' : agendaUrgencyFromDate(d.date);
-    const items = (d.items || []).map(
-      (it) =>
-        new Org2AgendaItem({
-          ...it,
-          date: d.date,
-          urgency: dayUrgency,
-        })
-    );
-    const label = `${d.weekday || ''} ${d.date || ''}`.trim();
-    groups.push(new Org2AgendaGroup(isOverdue ? `Overdue: ${label}` : label, d.date, d.weekday, isOverdue, items));
-  };
-
-  const hasOverdue = Array.isArray(data.overdue) && data.overdue.length > 0;
-  const hasUpcoming = Array.isArray(data.days) && data.days.length > 0;
-
-  if (hasOverdue) {
-    for (const d of data.overdue) pushDay(d, true);
-  }
-
-  if (hasOverdue && hasUpcoming) {
-    groups.push(new Org2AgendaSeparator('──────── Upcoming ────────'));
-  }
-
-  if (hasUpcoming) {
-    for (const d of data.days) pushDay(d, false);
-  }
-
-  return groups;
+  return buildAgendaTreeGroups(data, {
+    makeItem: (it, date, bucket) =>
+      new Org2AgendaItem({
+        ...it,
+        date,
+        urgency: bucket === 'overdue' ? 'overdue' : agendaUrgencyFromDate(date),
+      }),
+    makeGroup: ({ label, date, weekday, isOverdue, items }) =>
+      new Org2AgendaGroup(label, date, weekday, isOverdue, items),
+    makeSeparator: (label) => new Org2AgendaSeparator(label),
+  });
 }
 
 function revealNavigationPosition(editor, pos, source) {
