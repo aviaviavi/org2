@@ -1370,6 +1370,7 @@
     "extension.js",
     "agendaArgs.js",
     "agendaVisuals.js",
+    "formatterArgs.js",
     "language-configuration.json",
     "syntaxes/**",
     "README.md",
