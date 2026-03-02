@@ -12,6 +12,12 @@ const {
   buildCurrentFileFormatterApplyArgs,
   buildCurrentFileFormatterStdoutArgs,
 } = require('./formatterArgs');
+const {
+  buildRoamBacklinksArgs,
+  buildRoamNodeNewArgs,
+  buildRoamDbSyncPreviewArgs,
+  buildRoamDbSyncApplyArgs,
+} = require('./roamArgs');
 
 const headingRe = /^(\*+)\s+/;
 const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
@@ -533,7 +539,7 @@ async function loadBacklinksByIdWithContext(context, id, rootDir, options = {}) 
     return null;
   }
 
-  const backlinksArgs = ['roam', 'backlinks', '--id', normalizedId, '--dir', rootDir, '--recursive', '--format', 'json'];
+  const backlinksArgs = buildRoamBacklinksArgs(normalizedId, rootDir);
   const { cmd: backlinksCmd, args: backlinksFinalArgs } = resolveOrg2Command(context, backlinksArgs);
 
   let backlinksOut;
@@ -3455,7 +3461,7 @@ function activate(context) {
       }
 
       const root = getRoamNodesRootDir();
-      const args = ['roam', 'node', 'new', '--dir', root, '--title', title, '--format', 'json', '--apply'];
+      const args = buildRoamNodeNewArgs(root, title);
       const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
 
       let out;
@@ -4080,8 +4086,7 @@ function activate(context) {
       const cfg = vscode.workspace.getConfiguration('org2');
       const recursive = cfg.get('agenda.recursive', true) ? true : false;
 
-      const previewArgs = ['roam', 'db-sync', '--dir', root, '--format', 'json'];
-      if (recursive) previewArgs.push('--recursive');
+      const previewArgs = buildRoamDbSyncPreviewArgs(root, recursive);
 
       const { cmd: previewCmd, args: previewFinalArgs } = resolveOrg2Command(context, previewArgs);
 
@@ -4123,8 +4128,7 @@ function activate(context) {
       );
       if (ok !== 'Apply') return;
 
-      const applyArgs = ['roam', 'db-sync', '--dir', root, '--format', 'json', '--apply'];
-      if (recursive) applyArgs.push('--recursive');
+      const applyArgs = buildRoamDbSyncApplyArgs(root, recursive);
       const { cmd: applyCmd, args: applyFinalArgs } = resolveOrg2Command(context, applyArgs);
 
       let applyOut;

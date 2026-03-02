@@ -1371,6 +1371,7 @@
     "agendaArgs.js",
     "agendaVisuals.js",
     "formatterArgs.js",
+    "roamArgs.js",
     "language-configuration.json",
     "syntaxes/**",
     "README.md",
