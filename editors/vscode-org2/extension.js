@@ -18,6 +18,7 @@ const {
   buildRoamDbSyncPreviewArgs,
   buildRoamDbSyncApplyArgs,
 } = require('./roamArgs');
+const { normalizeOrgPriorityToken, updateHeadlinePriorityToken } = require('./priorityToken');
 
 const headingRe = /^(\*+)\s+/;
 const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
@@ -92,6 +93,16 @@ function sanitizeBacklinkContextText(value) {
     .filter((line) => line.length > 0)
     .join('\n')
     .trim();
+}
+
+function findHeadlineLineAtOrAbove(document, line0) {
+  if (!document || typeof document.lineCount !== 'number' || document.lineCount <= 0) return -1;
+
+  const clamped = Math.max(0, Math.min(Number(line0) || 0, document.lineCount - 1));
+  for (let i = clamped; i >= 0; i -= 1) {
+    if (headingRe.test(document.lineAt(i).text)) return i;
+  }
+  return -1;
 }
 
 function findHeadingLinesAtLevel(document, level) {
@@ -2571,6 +2582,72 @@ function activate(context) {
     return undefined;
   }
 
+  async function runSetPriority(priority, item) {
+    const normalizedPriority = normalizeOrgPriorityToken(priority);
+
+    let filePath;
+    let line0;
+    let editor;
+    let doc;
+
+    if (item && item.file) {
+      filePath = resolveAgendaItemPath(item);
+      line0 = typeof item.line === 'number' ? item.line : 0;
+
+      const openDoc = findOpenDocumentForPath(filePath);
+      if (openDoc && openDoc.isDirty) {
+        vscode.window.showWarningMessage('Org2: please save the file before setting priority from the agenda.');
+        return;
+      }
+
+      doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+      editor = await vscode.window.showTextDocument(doc, { preview: true, preserveFocus: true });
+    } else {
+      editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+
+      doc = editor.document;
+      if (!doc || doc.uri.scheme !== 'file') {
+        vscode.window.showWarningMessage('Org2: setting priority requires a file-backed document.');
+        return;
+      }
+
+      filePath = doc.uri.fsPath;
+      line0 = editor.selection && editor.selection.active ? editor.selection.active.line : 0;
+    }
+
+    const headlineLine = findHeadlineLineAtOrAbove(doc, line0);
+    if (headlineLine < 0) {
+      vscode.window.showWarningMessage('Org2: move cursor to a headline before setting priority.');
+      return;
+    }
+
+    const currentLine = doc.lineAt(headlineLine).text;
+    const updated = updateHeadlinePriorityToken(currentLine, normalizedPriority);
+    if (!updated.changed) return;
+
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(
+      doc.uri,
+      new vscode.Range(headlineLine, 0, headlineLine, currentLine.length),
+      updated.lineText
+    );
+
+    const applied = await vscode.workspace.applyEdit(edit);
+    if (!applied) {
+      vscode.window.showWarningMessage('Org2: failed to update priority token.');
+      return;
+    }
+
+    if (doc.isDirty) {
+      await doc.save();
+    }
+
+    if (item instanceof Org2AgendaItem) {
+      await agendaProvider.load();
+    }
+  }
+
   async function runTodoCli(action, status, item) {
     let filePath;
     let line;
@@ -4354,6 +4431,32 @@ function activate(context) {
         : '';
       const item = requested ? maybeItem : argOrItem;
       await applySetTodoStatus(requested, item);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.setPriority', async (argOrItem, maybeItem) => {
+      const requested = argOrItem && typeof argOrItem === 'object' && Object.prototype.hasOwnProperty.call(argOrItem, 'priority')
+        ? argOrItem.priority
+        : '';
+      const item = requested !== '' ? maybeItem : argOrItem;
+
+      let priority = normalizeOrgPriorityToken(requested);
+      if (requested === '' || (!priority && requested !== '')) {
+        const pick = await vscode.window.showQuickPick(
+          [
+            { label: 'Priority A', value: 'A' },
+            { label: 'Priority B', value: 'B' },
+            { label: 'Priority C', value: 'C' },
+            { label: 'Clear priority', value: '' },
+          ],
+          { placeHolder: 'Org2: set headline priority' }
+        );
+        if (!pick) return;
+        priority = normalizeOrgPriorityToken(pick.value);
+      }
+
+      await runSetPriority(priority, item);
     })
   );
 
