@@ -3304,6 +3304,9 @@ function compareAgendaItems(
     }
   }
 
+  const byPriority = compareAgendaPriorityValues(a.priority, b.priority, priorityOrder);
+  if (byPriority !== 0) return byPriority;
+
   const byFile = a.filePath.localeCompare(b.filePath);
   if (byFile !== 0) return byFile;
 
