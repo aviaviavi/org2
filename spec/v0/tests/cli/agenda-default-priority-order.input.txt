@@ -1,0 +1,11 @@
+* TODO [#C] Charlie task
+SCHEDULED: <2026-01-21 Wed>
+
+* TODO [#A] Alpha task
+SCHEDULED: <2026-01-21 Wed>
+
+* TODO [#B] Bravo task
+SCHEDULED: <2026-01-21 Wed>
+
+* TODO No priority task
+SCHEDULED: <2026-01-21 Wed>
