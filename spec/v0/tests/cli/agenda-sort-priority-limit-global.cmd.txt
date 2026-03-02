@@ -1,0 +1,1 @@
+agenda --files "spec/v0/tests/cli/agenda-sort-priority-limit-global.input.txt" --today 2026-01-21 --days 3 --format json --sort priority --limit 1

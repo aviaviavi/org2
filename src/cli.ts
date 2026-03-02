@@ -2808,7 +2808,7 @@ function formatOutput(
 
   if (overdueItems.length > 0) {
     output += formatSectionHeader(`OVERDUE (before ${startIso})`);
-    output += formatByDate(overdueItems, dateOrder, groupOrder, tagOrder);
+    output += formatUnifiedSection(overdueItems, groupOrder, tagOrder);
 
     if (upcomingItems.length > 0) {
       output += formatSectionHeader(`UPCOMING (from ${startIso})`);
@@ -2816,6 +2816,41 @@ function formatOutput(
   }
 
   output += formatByDate(upcomingItems, dateOrder, groupOrder, tagOrder);
+  return output;
+}
+
+function formatUnifiedSection(
+  items: ScheduledItem[],
+  groupOrder: AgendaGroupOrder,
+  tagOrder: AgendaTagOrder,
+): string {
+  if (items.length === 0) return "";
+
+  let output = "\n";
+
+  if (groupOrder && groupOrder.length > 0) {
+    let previousGroupKey = "";
+    for (const item of items) {
+      const nextGroupKey = agendaGroupKeyForItem(item, groupOrder, tagOrder);
+      if (nextGroupKey !== previousGroupKey) {
+        if (previousGroupKey) output += "\n";
+        output += `  ─ ${agendaGroupLabelForItem(item, groupOrder, tagOrder)}\n`;
+        previousGroupKey = nextGroupKey;
+      }
+
+      const status = item.todo || "ITEM";
+      const timePrefix = item.time ? `${item.time} ` : "";
+      output += `    [${status}] ${timePrefix}${item.headline} (${item.kind}) ${item.filePath}\n`;
+    }
+  } else {
+    for (const item of items) {
+      const status = item.todo || "ITEM";
+      const timePrefix = item.time ? `${item.time} ` : "";
+      output += `  [${status}] ${timePrefix}${item.headline} (${item.kind}) ${item.filePath}\n`;
+    }
+  }
+
+  output += "\n";
   return output;
 }
 
@@ -3261,11 +3296,6 @@ function compareAgendaItems(
   effortOrder: AgendaEffortOrder,
   tagOrder: AgendaTagOrder,
 ): number {
-  const byDate = a.date.localeCompare(b.date);
-  if (byDate !== 0) {
-    return dateOrder === "desc" ? -byDate : byDate;
-  }
-
   if (groupOrder && groupOrder.length > 0) {
     for (const field of groupOrder) {
       const cmp = compareAgendaItemsByKey(
@@ -3303,6 +3333,14 @@ function compareAgendaItems(
       }
     }
   }
+
+  const byDate = a.date.localeCompare(b.date);
+  if (byDate !== 0) {
+    return dateOrder === "desc" ? -byDate : byDate;
+  }
+
+  const byPriority = compareAgendaPriorityValues(a.priority, b.priority, priorityOrder);
+  if (byPriority !== 0) return byPriority;
 
   const byFile = a.filePath.localeCompare(b.filePath);
   if (byFile !== 0) return byFile;

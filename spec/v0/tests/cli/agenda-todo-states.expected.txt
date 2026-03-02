@@ -4,10 +4,7 @@
 ═════════════════════════════
 
 
-═════════════════════
- 2026-01-15 Thursday
-═════════════════════
-
+  [TODO] Another overdue todo (should show) (SCHEDULED) spec/v0/tests/cli/agenda-todo-states.org
   [PROG] In progress and overdue (should show) (SCHEDULED) spec/v0/tests/cli/agenda-todo-states.org
 
 
