@@ -67,8 +67,15 @@ test('agendaTreeItemLabel renders explicit priority token before TODO keyword', 
 
 test('agendaTreeItemLabel can infer priority from headline token', () => {
   assert.deepEqual(agendaTreeItemLabel('TODO', '[#B] Plan launch'), {
-    label: '[T] TODO [#B] Plan launch',
-    highlights: [[4, 8]],
+    label: '[T] [#B] TODO Plan launch',
+    highlights: [[9, 13]],
+  });
+});
+
+test('agendaTreeItemLabel renders inferred priority for non-todo rows', () => {
+  assert.deepEqual(agendaTreeItemLabel('', '[#C] Plain scheduled note'), {
+    label: '[·] [#C] Plain scheduled note',
+    highlights: [],
   });
 });
 
