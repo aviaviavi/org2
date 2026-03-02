@@ -306,7 +306,11 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
   - `d` → Set DEADLINE (prompt)
   - `d t` → Set DEADLINE to Today
   - `x` → Archive Subtree
+  - `x r` → Refile Subtree
   - `c q` → Capture Quick Entry
+  - `f c` → Formatter Check Current File Drift
+  - `f p` → Formatter Preview Current File Diff
+  - `f a` → Formatter Apply Current File Formatting
   - `p h` → Export Current File to HTML
   - `p w` → Export Workspace Org Files to HTML
   - `1` → Fold to heading level 1 (`editor.foldLevel1`)
@@ -317,6 +321,7 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
   - `a o` → Open Agenda
   - `a r` → Refresh Agenda
   - `a f` → Agenda Filter
+  - `a s` → Agenda Status Filter
 - Roam namespace (`cmd/ctrl+; r ...`):
   - `r b` → Roam Show Backlinks
   - `r h` → Roam Show Backlinks (Prompt/Link)
