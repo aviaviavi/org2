@@ -3261,11 +3261,6 @@ function compareAgendaItems(
   effortOrder: AgendaEffortOrder,
   tagOrder: AgendaTagOrder,
 ): number {
-  const byDate = a.date.localeCompare(b.date);
-  if (byDate !== 0) {
-    return dateOrder === "desc" ? -byDate : byDate;
-  }
-
   if (groupOrder && groupOrder.length > 0) {
     for (const field of groupOrder) {
       const cmp = compareAgendaItemsByKey(
@@ -3302,6 +3297,11 @@ function compareAgendaItems(
         return field.direction === "desc" ? -cmp : cmp;
       }
     }
+  }
+
+  const byDate = a.date.localeCompare(b.date);
+  if (byDate !== 0) {
+    return dateOrder === "desc" ? -byDate : byDate;
   }
 
   const byPriority = compareAgendaPriorityValues(a.priority, b.priority, priorityOrder);
