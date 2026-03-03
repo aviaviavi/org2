@@ -74,12 +74,15 @@ function agendaPriorityRank(value) {
 
 function agendaTreeItemLabel(todoKeyword, headline, statusBucket, priorityToken) {
   const todo = String(todoKeyword || '').trim();
-  const title = String(headline || '').trim();
+  const rawTitle = String(headline || '').trim();
   const bucket = statusBucket || agendaStatusBucket(todoKeyword);
   const cue = agendaStatusCue(bucket);
+
   const explicitPriority = normalizeAgendaPriority(priorityToken);
-  const inferredPriority = extractAgendaPriorityFromHeadline(title);
-  const priorityPrefix = explicitPriority && !inferredPriority ? `[#${explicitPriority}] ` : '';
+  const inferredPriority = extractAgendaPriorityFromHeadline(rawTitle);
+  const resolvedPriority = explicitPriority || inferredPriority;
+  const priorityPrefix = resolvedPriority ? `[#${resolvedPriority}] ` : '';
+  const title = rawTitle.replace(/\s*\[#([A-Z])\]\s*/i, ' ').replace(/\s+/g, ' ').trim();
 
   if (!todo && !title) {
     return { label: `${cue} ${priorityPrefix}(untitled)`, highlights: [] };
