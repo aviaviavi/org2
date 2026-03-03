@@ -2354,6 +2354,7 @@ function activate(context) {
   const agendaView = vscode.window.createTreeView('org2Agenda', {
     treeDataProvider: agendaProvider,
     showCollapseAll: true,
+    canSelectMany: true,
   });
   agendaProvider.attachView(agendaView);
   context.subscriptions.push(agendaView);
@@ -2673,7 +2674,7 @@ function activate(context) {
     }
   }
 
-  async function runTodoCli(action, status, item) {
+  async function runTodoCli(action, status, item, options = {}) {
     let filePath;
     let line;
 
@@ -2744,7 +2745,7 @@ function activate(context) {
 
       // If this was invoked from an agenda row action, refresh the agenda view so
       // TODO/status edits are reflected immediately.
-      if (item instanceof Org2AgendaItem && changed !== false) {
+      if (item instanceof Org2AgendaItem && changed !== false && !options.skipAgendaReload) {
         await agendaProvider.load();
       }
     } catch (e) {
@@ -4429,10 +4430,36 @@ function activate(context) {
     })
   );
 
+  function resolveAgendaTodoTargets(item) {
+    const selected = agendaView && Array.isArray(agendaView.selection)
+      ? agendaView.selection.filter((x) => x instanceof Org2AgendaItem)
+      : [];
+
+    if (item instanceof Org2AgendaItem) {
+      if (selected.length > 1 && selected.includes(item)) return selected;
+      return [item];
+    }
+
+    if (!item && selected.length > 0) return selected;
+    return [];
+  }
+
   const applySetTodoStatus = async (status, item) => {
     const requested = String(status || '').trim().toLowerCase();
+    const targets = resolveAgendaTodoTargets(item);
+    const runSet = async (resolvedStatus) => {
+      if (targets.length > 1) {
+        for (const target of targets) {
+          await runTodoCli('set', resolvedStatus, target, { skipAgendaReload: true });
+        }
+        await agendaProvider.load();
+        return;
+      }
+      await runTodoCli('set', resolvedStatus, targets[0] || item);
+    };
+
     if (requested === 'todo' || requested === 'in_progress' || requested === 'done' || requested === 'canceled') {
-      await runTodoCli('set', requested, item);
+      await runSet(requested);
       return;
     }
 
@@ -4446,7 +4473,7 @@ function activate(context) {
       { placeHolder: 'Org2: set todo status' }
     );
     if (!pick) return;
-    await runTodoCli('set', pick.value, item);
+    await runSet(pick.value);
   };
 
   context.subscriptions.push(
