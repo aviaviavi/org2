@@ -6,13 +6,22 @@
       "type": "Headline",
       "level": 1,
       "todo": "TODO",
-      "title": [{ "type": "Text", "value": "Normal todo today" }],
+      "title": [
+        {
+          "type": "Text",
+          "value": "Normal todo today"
+        }
+      ],
       "children": [
         {
           "type": "Planning",
           "kind": "SCHEDULED",
           "raw": "SCHEDULED: <2026-01-21 Wed>",
-          "timestamp": { "type": "Timestamp", "active": true, "raw": "<2026-01-21 Wed>" }
+          "timestamp": {
+            "type": "Timestamp",
+            "active": true,
+            "raw": "<2026-01-21 Wed>"
+          }
         }
       ]
     },
@@ -20,13 +29,22 @@
       "type": "Headline",
       "level": 1,
       "todo": "DONE",
-      "title": [{ "type": "Text", "value": "Done but upcoming (should show)" }],
+      "title": [
+        {
+          "type": "Text",
+          "value": "Done but upcoming (should show)"
+        }
+      ],
       "children": [
         {
           "type": "Planning",
           "kind": "SCHEDULED",
           "raw": "SCHEDULED: <2026-01-22 Thu>",
-          "timestamp": { "type": "Timestamp", "active": true, "raw": "<2026-01-22 Thu>" }
+          "timestamp": {
+            "type": "Timestamp",
+            "active": true,
+            "raw": "<2026-01-22 Thu>"
+          }
         }
       ]
     },
@@ -34,13 +52,22 @@
       "type": "Headline",
       "level": 1,
       "todo": "DONE",
-      "title": [{ "type": "Text", "value": "Done and overdue (should NOT show)" }],
+      "title": [
+        {
+          "type": "Text",
+          "value": "Done and overdue (should NOT show)"
+        }
+      ],
       "children": [
         {
           "type": "Planning",
           "kind": "SCHEDULED",
           "raw": "SCHEDULED: <2026-01-15 Thu>",
-          "timestamp": { "type": "Timestamp", "active": true, "raw": "<2026-01-15 Thu>" }
+          "timestamp": {
+            "type": "Timestamp",
+            "active": true,
+            "raw": "<2026-01-15 Thu>"
+          }
         }
       ]
     },
@@ -48,13 +75,22 @@
       "type": "Headline",
       "level": 1,
       "todo": "CANCELLED",
-      "title": [{ "type": "Text", "value": "Cancelled and overdue (should NOT show)" }],
+      "title": [
+        {
+          "type": "Text",
+          "value": "Cancelled and overdue (should NOT show)"
+        }
+      ],
       "children": [
         {
           "type": "Planning",
           "kind": "SCHEDULED",
           "raw": "SCHEDULED: <2026-01-10 Sat>",
-          "timestamp": { "type": "Timestamp", "active": true, "raw": "<2026-01-10 Sat>" }
+          "timestamp": {
+            "type": "Timestamp",
+            "active": true,
+            "raw": "<2026-01-10 Sat>"
+          }
         }
       ]
     },
@@ -62,26 +98,67 @@
       "type": "Headline",
       "level": 1,
       "todo": "CANCELED",
-      "title": [{ "type": "Text", "value": "Canceled and overdue (should NOT show)" }],
+      "title": [
+        {
+          "type": "Text",
+          "value": "Canceled and overdue (should NOT show)"
+        }
+      ],
       "children": [
         {
           "type": "Planning",
           "kind": "SCHEDULED",
           "raw": "SCHEDULED: <2026-01-09 Fri>",
-          "timestamp": { "type": "Timestamp", "active": true, "raw": "<2026-01-09 Fri>" }
+          "timestamp": {
+            "type": "Timestamp",
+            "active": true,
+            "raw": "<2026-01-09 Fri>"
+          }
         }
       ]
     },
     {
       "type": "Headline",
       "level": 1,
-      "title": [{ "type": "Text", "value": "PROG In progress and overdue (should show)" }],
+      "todo": "TODO",
+      "title": [
+        {
+          "type": "Text",
+          "value": "Another overdue todo (should show)"
+        }
+      ],
+      "children": [
+        {
+          "type": "Planning",
+          "kind": "SCHEDULED",
+          "raw": "SCHEDULED: <2026-01-14 Wed>",
+          "timestamp": {
+            "type": "Timestamp",
+            "active": true,
+            "raw": "<2026-01-14 Wed>"
+          }
+        }
+      ]
+    },
+    {
+      "type": "Headline",
+      "level": 1,
+      "title": [
+        {
+          "type": "Text",
+          "value": "PROG In progress and overdue (should show)"
+        }
+      ],
       "children": [
         {
           "type": "Planning",
           "kind": "SCHEDULED",
           "raw": "SCHEDULED: <2026-01-15 Thu>",
-          "timestamp": { "type": "Timestamp", "active": true, "raw": "<2026-01-15 Thu>" }
+          "timestamp": {
+            "type": "Timestamp",
+            "active": true,
+            "raw": "<2026-01-15 Thu>"
+          }
         }
       ]
     }
