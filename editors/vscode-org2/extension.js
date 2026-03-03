@@ -1208,6 +1208,32 @@ async function findFirstIdMatchInDir(rootDir, id) {
   return undefined;
 }
 
+function getAgendaSourcePriorityToken(item, agendaRoot, fileCache) {
+  const fromPayload = normalizeAgendaPriority(item && item.priority);
+  if (fromPayload) return fromPayload;
+
+  const fromHeadline = extractAgendaPriorityFromHeadline(item && item.headline);
+  if (fromHeadline) return fromHeadline;
+
+  const relFile = String(item && item.file ? item.file : '').trim();
+  const line0 = Number(item && item.line);
+  if (!relFile || !Number.isInteger(line0) || line0 < 0) return '';
+
+  const absPath = path.isAbsolute(relFile) ? relFile : path.resolve(agendaRoot, relFile);
+  let lines = fileCache.get(absPath);
+  if (!lines) {
+    try {
+      lines = fs.readFileSync(absPath, 'utf8').split(/\r?\n/);
+    } catch (_) {
+      lines = [];
+    }
+    fileCache.set(absPath, lines);
+  }
+
+  const sourceLine = String(lines[line0] || '');
+  return extractAgendaPriorityFromHeadline(sourceLine);
+}
+
 async function fetchAgendaGroups(context, filter) {
   const cfg = vscode.workspace.getConfiguration('org2');
   const cwd = getWorkspaceRoot() || process.cwd();
@@ -1357,19 +1383,22 @@ async function fetchAgendaGroups(context, filter) {
   }
 
   const descriptors = buildAgendaTreeGroupsFromCli(data, sortBy);
+  const priorityFileCache = new Map();
+
   return descriptors.map((entry) => {
     if (entry.type === 'separator') {
       return new Org2AgendaSeparator(entry.label);
     }
 
-    const items = (entry.items || []).map(
-      (it) =>
-        new Org2AgendaItem({
-          ...it,
-          date: entry.isOverdue ? (it && it.date) || '' : entry.date,
-          urgency: entry.isOverdue ? 'overdue' : agendaUrgencyFromDate(entry.date),
-        })
-    );
+    const items = (entry.items || []).map((it) => {
+      const resolvedPriority = getAgendaSourcePriorityToken(it, agendaRoot, priorityFileCache);
+      return new Org2AgendaItem({
+        ...it,
+        priority: resolvedPriority,
+        date: entry.isOverdue ? (it && it.date) || '' : entry.date,
+        urgency: entry.isOverdue ? 'overdue' : agendaUrgencyFromDate(entry.date),
+      });
+    });
     return new Org2AgendaGroup(entry.label, entry.date, entry.weekday, entry.isOverdue, items);
   });
 }
