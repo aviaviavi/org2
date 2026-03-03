@@ -1390,6 +1390,7 @@
   "files": [
     "extension.js",
     "agendaArgs.js",
+    "agendaSettings.js",
     "agendaTreeModel.js",
     "agendaVisuals.js",
     "formatterArgs.js",
