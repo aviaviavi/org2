@@ -105,6 +105,52 @@ function sanitizeBacklinkContextText(value) {
     .trim();
 }
 
+function parseListItemPrefix(lineText) {
+  const text = String(lineText || '');
+  const m = /^(\s*)([-+*]|\d+[.)])(\s+)(\[(?: |x|X)\]\s+)?/.exec(text);
+  if (!m) return null;
+
+  const indent = m[1] || '';
+  const marker = m[2] || '-';
+  const spacing = m[3] || ' ';
+  const checkboxToken = m[4] || '';
+
+  let nextMarker = marker;
+  const ordered = /\d+[.)]/.test(marker);
+  if (ordered) {
+    const numMatch = /^(\d+)([.)])$/.exec(marker);
+    if (numMatch) {
+      const n = Number(numMatch[1]);
+      const punct = numMatch[2];
+      if (Number.isFinite(n)) nextMarker = `${n + 1}${punct}`;
+    }
+  }
+
+  const hasCheckbox = checkboxToken.length > 0;
+  const normalizedCheckbox = hasCheckbox ? '[ ] ' : '';
+  return `${indent}${nextMarker}${spacing}${normalizedCheckbox}`;
+}
+
+function resolveListItemPrefixFromEditor(editor) {
+  if (!editor || !editor.document) return { prefix: '', line: -1 };
+  const doc = editor.document;
+  const activeLine = editor.selection && editor.selection.active ? editor.selection.active.line : 0;
+  const start = Math.max(0, Math.min(activeLine, doc.lineCount - 1));
+
+  const direct = parseListItemPrefix(doc.lineAt(start).text);
+  if (direct) return { prefix: direct, line: start };
+
+  for (let i = start - 1; i >= 0; i -= 1) {
+    const lineText = doc.lineAt(i).text;
+    if (!lineText.trim()) continue;
+    const parsed = parseListItemPrefix(lineText);
+    if (parsed) return { prefix: parsed, line: i };
+    break;
+  }
+
+  return { prefix: '', line: -1 };
+}
+
 function findHeadlineLineAtOrAbove(document, line0) {
   if (!document || typeof document.lineCount !== 'number' || document.lineCount <= 0) return -1;
 
@@ -4427,6 +4473,42 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.toggleTodo', async (item) => {
       await runTodoCli('toggle', undefined, item);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.insertListItemBelow', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+
+      const doc = editor.document;
+      if (!doc || (doc.languageId !== 'org2' && doc.languageId !== 'org')) return;
+
+      if (doc.isDirty) {
+        const ok = await doc.save();
+        if (!ok) {
+          vscode.window.showWarningMessage('Org2: could not save file before inserting list item.');
+          return;
+        }
+      }
+
+      const resolved = resolveListItemPrefixFromEditor(editor);
+      if (!resolved.prefix) {
+        vscode.window.showWarningMessage('Org2: place cursor on (or just below) a list item to insert the next item.');
+        return;
+      }
+
+      const insertAfterLine = resolved.line;
+      const lineText = doc.lineAt(insertAfterLine).text;
+      const insertPos = new vscode.Position(insertAfterLine, lineText.length);
+      const applied = await editor.edit((eb) => {
+        eb.insert(insertPos, `\n${resolved.prefix}`);
+      });
+      if (!applied) return;
+
+      const nextPos = new vscode.Position(insertAfterLine + 1, resolved.prefix.length);
+      editor.selection = new vscode.Selection(nextPos, nextPos);
+      revealNavigationPosition(editor, nextPos);
     })
   );
 
