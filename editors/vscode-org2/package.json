@@ -40,6 +40,8 @@
     "onCommand:org2.refileSubtree",
     "onCommand:org2.promoteSubtree",
     "onCommand:org2.demoteSubtree",
+    "onCommand:org2.moveSubtreeUp",
+    "onCommand:org2.moveSubtreeDown",
     "onCommand:org2.roamDailiesGotoToday",
     "onCommand:org2.roamDailiesGotoYesterday",
     "onCommand:org2.roamDailiesGotoTomorrow",
@@ -240,6 +242,14 @@
       {
         "command": "org2.demoteSubtree",
         "title": "Org2: Demote Subtree"
+      },
+      {
+        "command": "org2.moveSubtreeUp",
+        "title": "Org2: Move Subtree Up"
+      },
+      {
+        "command": "org2.moveSubtreeDown",
+        "title": "Org2: Move Subtree Down"
       },
       {
         "command": "org2.roamDailiesGotoToday",
@@ -485,6 +495,16 @@
           "command": "org2.demoteSubtree",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@15.2"
+        },
+        {
+          "command": "org2.moveSubtreeUp",
+          "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
+          "group": "navigation@15.25"
+        },
+        {
+          "command": "org2.moveSubtreeDown",
+          "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
+          "group": "navigation@15.26"
         },
         {
           "command": "org2.captureQuickEntry",
@@ -1294,6 +1314,18 @@
         "key": "ctrl+; h d",
         "mac": "cmd+; h d",
         "command": "org2.demoteSubtree",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; h u",
+        "mac": "cmd+; h u",
+        "command": "org2.moveSubtreeUp",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; h n",
+        "mac": "cmd+; h n",
+        "command": "org2.moveSubtreeDown",
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
