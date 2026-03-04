@@ -48,6 +48,46 @@ function findHeadlineLineAtOrAbove(document, line0) {
   return -1;
 }
 
+function findSubtreeRangeAtOrAbove(document, line0) {
+  if (!document || typeof document.lineCount !== 'number' || document.lineCount <= 0) return null;
+
+  const headlineLine = findHeadlineLineAtOrAbove(document, line0);
+  if (headlineLine < 0) return null;
+
+  const headlineMatch = headingRe.exec(document.lineAt(headlineLine).text || '');
+  if (!headlineMatch) return null;
+
+  const level = headlineMatch[1].length;
+  let endLine = document.lineCount - 1;
+  for (let i = headlineLine + 1; i < document.lineCount; i += 1) {
+    const m = headingRe.exec(document.lineAt(i).text || '');
+    if (!m) continue;
+    if (m[1].length <= level) {
+      endLine = i - 1;
+      break;
+    }
+  }
+
+  return { startLine: headlineLine, endLine, level };
+}
+
+function findHeadingLevelEditTargets(document, range) {
+  if (!document || !range) return [];
+
+  const targets = [];
+  const startLine = Math.max(0, Math.min(Number(range.startLine) || 0, document.lineCount - 1));
+  const endLine = Math.max(startLine, Math.min(Number(range.endLine) || startLine, document.lineCount - 1));
+
+  for (let i = startLine; i <= endLine; i += 1) {
+    const text = document.lineAt(i).text || '';
+    const m = headingRe.exec(text);
+    if (!m) continue;
+    targets.push({ line: i, level: m[1].length, text });
+  }
+
+  return targets;
+}
+
 function findHeadingLinesAtLevel(document, level) {
   if (typeof level !== 'number' || level <= 0) return [];
 
@@ -3075,6 +3115,71 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.refileSubtree', async (item) => {
       await runRefileCli(item);
+    })
+  );
+
+  async function runShiftSubtreeLevels(step) {
+    const delta = Number(step);
+    if (!Number.isInteger(delta) || delta === 0) return;
+
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !editor.document) return;
+
+    const doc = editor.document;
+    if (doc.languageId !== 'org2' && doc.languageId !== 'org') {
+      vscode.window.showWarningMessage('Org2: heading level commands are only available for Org/Org2 files.');
+      return;
+    }
+
+    const subtreeRange = findSubtreeRangeAtOrAbove(doc, editor.selection && editor.selection.active ? editor.selection.active.line : 0);
+    if (!subtreeRange) {
+      vscode.window.showWarningMessage('Org2: place cursor on a headline to adjust subtree heading levels.');
+      return;
+    }
+
+    if (delta < 0 && subtreeRange.level <= 1) {
+      vscode.window.showInformationMessage('Org2: top-level headings cannot be promoted further.');
+      return;
+    }
+
+    const targets = findHeadingLevelEditTargets(doc, subtreeRange);
+    if (targets.length === 0) {
+      vscode.window.showInformationMessage('Org2: no headings found in subtree.');
+      return;
+    }
+
+    const edit = new vscode.WorkspaceEdit();
+    for (const target of targets) {
+      const nextLevel = target.level + delta;
+      if (nextLevel < 1) {
+        vscode.window.showInformationMessage('Org2: cannot promote heading above level 1.');
+        return;
+      }
+
+      const updated = `${'*'.repeat(nextLevel)}${target.text.slice(target.level)}`;
+      edit.replace(
+        doc.uri,
+        new vscode.Range(target.line, 0, target.line, target.text.length),
+        updated
+      );
+    }
+
+    const applied = await vscode.workspace.applyEdit(edit);
+    if (!applied) {
+      vscode.window.showErrorMessage('Org2: failed to update subtree heading levels.');
+      return;
+    }
+  }
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.promoteSubtree', async () => {
+      await runShiftSubtreeLevels(-1);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.demoteSubtree', async () => {
+      await runShiftSubtreeLevels(1);
     })
   );
 

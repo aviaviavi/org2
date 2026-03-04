@@ -345,8 +345,11 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
   - `t d` → Set DONE
   - `t c` → Set CANCELED
   - `t p` → Set Priority (A/B/C/Clear)
+- Heading namespace (`cmd/ctrl+; h ...`):
+  - `h p` → Promote subtree (decrease heading depth by one)
+  - `h d` → Demote subtree (increase heading depth by one)
 
-Note: heading promote/demote/set-level commands are not yet exposed by Org2 VS Code commands, so `cmd/ctrl+; 1/2/3/4` are currently wired to VS Code’s closest built-in heading-level operation: fold-to-level.
+`cmd/ctrl+; 1/2/3/4` remain wired to fold-to-level commands for quick heading-level visibility control.
 
 All defaults are scoped to `org`/`org2` editors.
 
