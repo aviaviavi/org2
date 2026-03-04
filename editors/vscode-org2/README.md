@@ -78,6 +78,8 @@ The extension can edit planning keywords, run quick capture, archive subtrees, r
 - Command: **Org2: Capture Quick Entry** (`org2.captureQuickEntry`) → pick file/template/title, optionally include current selection as body text, preview diff, then apply
 - Command: **Org2: Archive Subtree** (`org2.archiveSubtree`) → shows a diff preview, then asks for confirmation
 - Command: **Org2: Refile Subtree** (`org2.refileSubtree`) → pick destination file/heading, preview diff, then apply
+- Command: **Org2: Move Subtree Up** (`org2.moveSubtreeUp`) → move current subtree to the previous sibling slot
+- Command: **Org2: Move Subtree Down** (`org2.moveSubtreeDown`) → move current subtree to the next sibling slot
 - Command: **Org2: Export Current File to HTML** (`org2.exportCurrentFileHtml`) → preview generated HTML, then optionally write to disk
 - Command: **Org2: Export Workspace Org Files to HTML** (`org2.exportWorkspaceHtml`) → preview batch export count, then optionally write HTML for all workspace Org files (and an optional generated index page)
 
@@ -263,6 +265,8 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
   - `Org2: Capture Quick Entry` (`org2.captureQuickEntry`)
   - `Org2: Archive Subtree` (`org2.archiveSubtree`)
   - `Org2: Refile Subtree` (`org2.refileSubtree`)
+  - `Org2: Move Subtree Up` (`org2.moveSubtreeUp`)
+  - `Org2: Move Subtree Down` (`org2.moveSubtreeDown`)
 - Roam
   - `Org2: Roam Dailies — Go to Today` (`org2.roamDailiesGotoToday`)
   - `Org2: Roam Dailies — Go to Yesterday` (`org2.roamDailiesGotoYesterday`)
@@ -348,6 +352,8 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
 - Heading namespace (`cmd/ctrl+; h ...`):
   - `h p` → Promote subtree (decrease heading depth by one)
   - `h d` → Demote subtree (increase heading depth by one)
+  - `h u` → Move subtree up among siblings
+  - `h n` → Move subtree down among siblings
 
 `cmd/ctrl+; 1/2/3/4` remain wired to fold-to-level commands for quick heading-level visibility control.
 

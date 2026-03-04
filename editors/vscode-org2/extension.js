@@ -88,6 +88,57 @@ function findHeadingLevelEditTargets(document, range) {
   return targets;
 }
 
+function findPreviousSiblingSubtreeRange(document, range) {
+  if (!document || !range) return null;
+
+  const level = Number(range.level) || 0;
+  if (level <= 0) return null;
+
+  for (let i = Math.max(0, Number(range.startLine) - 1); i >= 0; i -= 1) {
+    const text = document.lineAt(i).text || '';
+    const m = headingRe.exec(text);
+    if (!m) continue;
+
+    const candidateLevel = m[1].length;
+    if (candidateLevel < level) break;
+    if (candidateLevel === level) return findSubtreeRangeAtOrAbove(document, i);
+  }
+
+  return null;
+}
+
+function findNextSiblingSubtreeRange(document, range) {
+  if (!document || !range) return null;
+
+  const level = Number(range.level) || 0;
+  if (level <= 0) return null;
+
+  for (let i = Math.max(0, Number(range.endLine) + 1); i < document.lineCount; i += 1) {
+    const text = document.lineAt(i).text || '';
+    const m = headingRe.exec(text);
+    if (!m) continue;
+
+    const candidateLevel = m[1].length;
+    if (candidateLevel < level) break;
+    if (candidateLevel === level) return findSubtreeRangeAtOrAbove(document, i);
+  }
+
+  return null;
+}
+
+function getSubtreeDocumentRange(document, range) {
+  if (!document || !range) return null;
+  const startLine = Math.max(0, Math.min(Number(range.startLine) || 0, document.lineCount - 1));
+  const endLine = Math.max(startLine, Math.min(Number(range.endLine) || startLine, document.lineCount - 1));
+  const start = document.lineAt(startLine).range.start;
+  const endLineRange = document.lineAt(endLine);
+  const end = endLine < document.lineCount - 1
+    ? endLineRange.rangeIncludingLineBreak.end
+    : endLineRange.range.end;
+
+  return new vscode.Range(start, end);
+}
+
 function findHeadingLinesAtLevel(document, level) {
   if (typeof level !== 'number' || level <= 0) return [];
 
@@ -3180,6 +3231,86 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.demoteSubtree', async () => {
       await runShiftSubtreeLevels(1);
+    })
+  );
+
+  async function runMoveSubtree(direction) {
+    const delta = Number(direction);
+    if (delta !== -1 && delta !== 1) return;
+
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !editor.document) return;
+
+    const doc = editor.document;
+    if (doc.languageId !== 'org2' && doc.languageId !== 'org') {
+      vscode.window.showWarningMessage('Org2: subtree move commands are only available for Org/Org2 files.');
+      return;
+    }
+
+    const subtreeRange = findSubtreeRangeAtOrAbove(doc, editor.selection && editor.selection.active ? editor.selection.active.line : 0);
+    if (!subtreeRange) {
+      vscode.window.showWarningMessage('Org2: place cursor on a headline to move a subtree.');
+      return;
+    }
+
+    const siblingRange = delta < 0
+      ? findPreviousSiblingSubtreeRange(doc, subtreeRange)
+      : findNextSiblingSubtreeRange(doc, subtreeRange);
+
+    if (!siblingRange) {
+      vscode.window.showInformationMessage(
+        delta < 0
+          ? 'Org2: subtree is already the first sibling.'
+          : 'Org2: subtree is already the last sibling.'
+      );
+      return;
+    }
+
+    const subtreeDocRange = getSubtreeDocumentRange(doc, subtreeRange);
+    const siblingDocRange = getSubtreeDocumentRange(doc, siblingRange);
+    if (!subtreeDocRange || !siblingDocRange) return;
+
+    const subtreeText = doc.getText(subtreeDocRange);
+    const siblingText = doc.getText(siblingDocRange);
+
+    const replacementRange = getSubtreeDocumentRange(doc, {
+      startLine: Math.min(subtreeRange.startLine, siblingRange.startLine),
+      endLine: Math.max(subtreeRange.endLine, siblingRange.endLine),
+    });
+    if (!replacementRange) return;
+
+    const replacementText = delta < 0
+      ? `${subtreeText}${siblingText}`
+      : `${siblingText}${subtreeText}`;
+
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(doc.uri, replacementRange, replacementText);
+
+    const applied = await vscode.workspace.applyEdit(edit);
+    if (!applied) {
+      vscode.window.showErrorMessage('Org2: failed to move subtree.');
+      return;
+    }
+
+    const siblingLineCount = siblingRange.endLine - siblingRange.startLine + 1;
+    const movedStartLine = delta < 0
+      ? siblingRange.startLine
+      : subtreeRange.startLine + siblingLineCount;
+
+    const movedCursor = new vscode.Position(Math.max(0, movedStartLine), 0);
+    editor.selection = new vscode.Selection(movedCursor, movedCursor);
+    editor.revealRange(new vscode.Range(movedCursor, movedCursor), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+  }
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.moveSubtreeUp', async () => {
+      await runMoveSubtree(-1);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.moveSubtreeDown', async () => {
+      await runMoveSubtree(1);
     })
   );
 
