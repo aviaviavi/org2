@@ -38,6 +38,8 @@
     "onCommand:org2.pickAgendaStatusFilter",
     "onCommand:org2.archiveSubtree",
     "onCommand:org2.refileSubtree",
+    "onCommand:org2.promoteSubtree",
+    "onCommand:org2.demoteSubtree",
     "onCommand:org2.roamDailiesGotoToday",
     "onCommand:org2.roamDailiesGotoYesterday",
     "onCommand:org2.roamDailiesGotoTomorrow",
@@ -230,6 +232,14 @@
       {
         "command": "org2.refileSubtree",
         "title": "Org2: Refile Subtree"
+      },
+      {
+        "command": "org2.promoteSubtree",
+        "title": "Org2: Promote Subtree"
+      },
+      {
+        "command": "org2.demoteSubtree",
+        "title": "Org2: Demote Subtree"
       },
       {
         "command": "org2.roamDailiesGotoToday",
@@ -465,6 +475,16 @@
           "command": "org2.refileSubtree",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@15"
+        },
+        {
+          "command": "org2.promoteSubtree",
+          "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
+          "group": "navigation@15.1"
+        },
+        {
+          "command": "org2.demoteSubtree",
+          "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
+          "group": "navigation@15.2"
         },
         {
           "command": "org2.captureQuickEntry",
@@ -1262,6 +1282,18 @@
         "key": "ctrl+; t p",
         "mac": "cmd+; t p",
         "command": "org2.setPriority",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; h p",
+        "mac": "cmd+; h p",
+        "command": "org2.promoteSubtree",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; h d",
+        "mac": "cmd+; h d",
+        "command": "org2.demoteSubtree",
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
