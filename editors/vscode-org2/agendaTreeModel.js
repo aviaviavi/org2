@@ -1,14 +1,39 @@
 const { agendaPriorityRank } = require('./agendaVisuals');
 
-function sortByPriorityIfRequested(items, sortBy) {
+function resolvePrioritySortDirection(sortBy) {
   const fields = String(sortBy || '')
     .split(',')
-    .map((v) => String(v || '').trim())
+    .map((v) => String(v || '').trim().toLowerCase())
     .filter(Boolean);
-  const token = fields.find((field) => field === 'priority' || field === '-priority');
-  if (!token) return items.slice();
 
-  const direction = token === '-priority' ? -1 : 1;
+  for (const field of fields) {
+    let token = field;
+    let direction = 1;
+
+    if (token.startsWith('-')) {
+      direction = -1;
+      token = token.slice(1).trim();
+    }
+
+    const m = token.match(/^([a-z_]+)(?::(asc|desc))?$/);
+    if (!m) continue;
+
+    const key = m[1];
+    if (m[2] === 'desc') direction = -1;
+    if (m[2] === 'asc') direction = 1;
+
+    if (key === 'priority' || key === 'prio') {
+      return direction;
+    }
+  }
+
+  return 0;
+}
+
+function sortByPriorityIfRequested(items, sortBy) {
+  const direction = resolvePrioritySortDirection(sortBy);
+  if (direction === 0) return items.slice();
+
   return items.slice().sort((a, b) => {
     const delta = agendaPriorityRank(a && a.priority) - agendaPriorityRank(b && b.priority);
     if (delta !== 0) return delta * direction;
