@@ -35,5 +35,12 @@ test('packaged extension files include all extension.js local runtime modules', 
       true,
       `package.json files[] is missing required runtime module: ${moduleFile}`
     );
+
+    const modulePath = path.join(__dirname, '..', moduleFile);
+    assert.equal(
+      fs.existsSync(modulePath),
+      true,
+      `required runtime module is missing on disk: ${moduleFile}`
+    );
   }
 });
