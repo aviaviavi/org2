@@ -13,7 +13,9 @@ const {
   normalizeAgendaPriority,
 } = require('./agendaVisuals');
 const { buildAgendaTreeGroupsFromCli } = require('./agendaTreeModel');
+const { resolveAgendaTargets } = require('./agendaSelection');
 const { buildAgendaCliArgs } = require('./agendaArgs');
+const { readAgendaCliOptions } = require('./agendaSettings');
 const {
   resolveWorkspaceFormatterPathFilters,
   buildWorkspaceFormatterCommandArgs,
@@ -29,148 +31,33 @@ const {
   buildRoamDbSyncApplyArgs,
 } = require('./roamArgs');
 const { normalizeOrgPriorityToken, updateHeadlinePriorityToken } = require('./priorityToken');
+const { parseRoamIdLink, extractRoamUuid, sanitizeBacklinkContextText } = require('./roamId');
+const {
+  findHeadlineLineAtOrAbove,
+  findSubtreeRangeAtOrAbove,
+  findHeadingLevelEditTargets,
+  findPreviousSiblingSubtreeRange,
+  findNextSiblingSubtreeRange,
+  findHeadingLinesAtLevel,
+} = require('./headingTree');
 
 const headingRe = /^(\*+)\s+/;
 const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
 const propertiesBeginRe = /^\s*:PROPERTIES:\s*$/i;
 const drawerEndRe = /^\s*:END:\s*$/i;
-const uuidSource = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
-const uuidExactRe = new RegExp(`^(${uuidSource})$`);
-const roamIdSchemeRe = new RegExp(`^id:(${uuidSource})$`, 'i');
-const roamIdLinkPartsRe = new RegExp(`^\\[\\[id:(${uuidSource})(?:\\]\\[([^\\]\\n]*)\\])?\\]\\]$`, 'i');
-const roamUuidAnywhereRe = new RegExp(`(${uuidSource})`, 'i');
-const roamIdTokenGlobalRe = /\bid:[^\s\]\[(){}<>,"']+/gi;
+const roamIdSchemeRe = /^id:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/i;
 
-function parseRoamIdLink(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return null;
+function getSubtreeDocumentRange(document, range) {
+  if (!document || !range) return null;
+  const startLine = Math.max(0, Math.min(Number(range.startLine) || 0, document.lineCount - 1));
+  const endLine = Math.max(startLine, Math.min(Number(range.endLine) || startLine, document.lineCount - 1));
+  const start = document.lineAt(startLine).range.start;
+  const endLineRange = document.lineAt(endLine);
+  const end = endLine < document.lineCount - 1
+    ? endLineRange.rangeIncludingLineBreak.end
+    : endLineRange.range.end;
 
-  const link = roamIdLinkPartsRe.exec(raw);
-  if (!link) return null;
-
-  return {
-    id: String(link[1] || '').toLowerCase(),
-    title: String(link[2] || '').trim(),
-  };
-}
-
-function extractRoamUuid(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-
-  const direct = uuidExactRe.exec(raw);
-  if (direct) return direct[1].toLowerCase();
-
-  const idScheme = roamIdSchemeRe.exec(raw);
-  if (idScheme) return idScheme[1].toLowerCase();
-
-  const idLink = parseRoamIdLink(raw);
-  if (idLink) return idLink.id;
-
-  const any = roamUuidAnywhereRe.exec(raw);
-  if (any) return any[1].toLowerCase();
-
-  return '';
-}
-
-function sanitizeBacklinkContextLine(value) {
-  const raw = String(value || '');
-  if (!raw) return '';
-  // Normalize full Org ID links first so we don't leave partial brackets.
-  // [[id:...][Title]] -> Title
-  // [[id:...]] -> (removed)
-  const withLinksNormalized = raw.replace(/\[\[\s*id:[^\]\n]+\](?:\[([^\]\n]*)\])?\]\]/gi, (_, desc) => {
-    const title = String(desc || '').trim();
-    return title;
-  });
-
-  const stripped = withLinksNormalized
-    .replace(roamIdTokenGlobalRe, '')
-    .replace(/\s+([,.;:!?])/g, '$1')
-    .replace(/\[\[\s*\]\[(.*?)\]\]/g, '$1')
-    .replace(/\[\[\s*\]\]/g, '')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
-  return stripped;
-}
-
-function sanitizeBacklinkContextText(value) {
-  const raw = String(value || '');
-  if (!raw) return '';
-  return raw
-    .split(/\r?\n/)
-    .map((line) => sanitizeBacklinkContextLine(line))
-    .filter((line) => line.length > 0)
-    .join('\n')
-    .trim();
-}
-
-function parseListItemPrefix(lineText) {
-  const text = String(lineText || '');
-  const m = /^(\s*)([-+*]|\d+[.)])(\s+)(\[(?: |x|X)\]\s+)?/.exec(text);
-  if (!m) return null;
-
-  const indent = m[1] || '';
-  const marker = m[2] || '-';
-  const spacing = m[3] || ' ';
-  const checkboxToken = m[4] || '';
-
-  let nextMarker = marker;
-  const ordered = /\d+[.)]/.test(marker);
-  if (ordered) {
-    const numMatch = /^(\d+)([.)])$/.exec(marker);
-    if (numMatch) {
-      const n = Number(numMatch[1]);
-      const punct = numMatch[2];
-      if (Number.isFinite(n)) nextMarker = `${n + 1}${punct}`;
-    }
-  }
-
-  const hasCheckbox = checkboxToken.length > 0;
-  const normalizedCheckbox = hasCheckbox ? '[ ] ' : '';
-  return `${indent}${nextMarker}${spacing}${normalizedCheckbox}`;
-}
-
-function resolveListItemPrefixFromEditor(editor) {
-  if (!editor || !editor.document) return { prefix: '', line: -1 };
-  const doc = editor.document;
-  const activeLine = editor.selection && editor.selection.active ? editor.selection.active.line : 0;
-  const start = Math.max(0, Math.min(activeLine, doc.lineCount - 1));
-
-  const direct = parseListItemPrefix(doc.lineAt(start).text);
-  if (direct) return { prefix: direct, line: start };
-
-  for (let i = start - 1; i >= 0; i -= 1) {
-    const lineText = doc.lineAt(i).text;
-    if (!lineText.trim()) continue;
-    const parsed = parseListItemPrefix(lineText);
-    if (parsed) return { prefix: parsed, line: i };
-    break;
-  }
-
-  return { prefix: '', line: -1 };
-}
-
-function findHeadlineLineAtOrAbove(document, line0) {
-  if (!document || typeof document.lineCount !== 'number' || document.lineCount <= 0) return -1;
-
-  const clamped = Math.max(0, Math.min(Number(line0) || 0, document.lineCount - 1));
-  for (let i = clamped; i >= 0; i -= 1) {
-    if (headingRe.test(document.lineAt(i).text)) return i;
-  }
-  return -1;
-}
-
-function findHeadingLinesAtLevel(document, level) {
-  if (typeof level !== 'number' || level <= 0) return [];
-
-  const starts = [];
-  for (let i = 0; i < document.lineCount; i++) {
-    const text = document.lineAt(i).text;
-    const m = headingRe.exec(text);
-    if (m && m[1].length === level) starts.push(i);
-  }
-  return starts;
+  return new vscode.Range(start, end);
 }
 
 function findPropertyDrawerStartLines(document) {
@@ -1282,135 +1169,12 @@ function getAgendaSourcePriorityToken(item, agendaRoot, fileCache) {
 
 async function fetchAgendaGroups(context, filter) {
   const cfg = vscode.workspace.getConfiguration('org2');
-  const cwd = getWorkspaceRoot() || process.cwd();
   const agendaRoot = getAgendaRootDir();
 
-  const scope = cfg.get('agenda.scope', 'workspace');
-  const files = cfg.get('agenda.files', []);
-  const includeOverdue = cfg.get('agenda.includeOverdue', true);
-  const statusFilter = String(cfg.get('agenda.statusFilter', 'all') || 'all').trim().toLowerCase();
-  const excludeStatusFilter = String(cfg.get('agenda.excludeStatusFilter', 'all') || 'all').trim().toLowerCase();
-  const kindFilter = String(cfg.get('agenda.kindFilter', 'all') || 'all').trim().toLowerCase();
-  const excludeKindFilter = String(cfg.get('agenda.excludeKindFilter', 'all') || 'all').trim().toLowerCase();
-  const whenFilter = String(cfg.get('agenda.whenFilter', 'all') || 'all').trim().toLowerCase();
-  const excludeWhenFilter = String(cfg.get('agenda.excludeWhenFilter', 'all') || 'all').trim().toLowerCase();
-  const weekdayFilter = String(cfg.get('agenda.weekdayFilter', 'all') || 'all').trim().toLowerCase();
-  const excludeWeekdayFilter = String(cfg.get('agenda.excludeWeekdayFilter', 'all') || 'all').trim().toLowerCase();
-  const weekFilter = String(cfg.get('agenda.weekFilter', 'all') || 'all').trim().toLowerCase();
-  const excludeWeekFilter = String(cfg.get('agenda.excludeWeekFilter', 'all') || 'all').trim().toLowerCase();
-  const dayOfMonthFilter = String(cfg.get('agenda.dayOfMonthFilter', 'all') || 'all').trim().toLowerCase();
-  const excludeDayOfMonthFilter = String(cfg.get('agenda.excludeDayOfMonthFilter', 'all') || 'all').trim().toLowerCase();
-  const monthFilter = String(cfg.get('agenda.monthFilter', 'all') || 'all').trim().toLowerCase();
-  const excludeMonthFilter = String(cfg.get('agenda.excludeMonthFilter', 'all') || 'all').trim().toLowerCase();
-  const quarterFilter = String(cfg.get('agenda.quarterFilter', 'all') || 'all').trim().toLowerCase();
-  const excludeQuarterFilter = String(cfg.get('agenda.excludeQuarterFilter', 'all') || 'all').trim().toLowerCase();
-  const yearFilter = String(cfg.get('agenda.yearFilter', 'all') || 'all').trim().toLowerCase();
-  const excludeYearFilter = String(cfg.get('agenda.excludeYearFilter', 'all') || 'all').trim().toLowerCase();
-  const dateFilter = String(cfg.get('agenda.dateFilter', 'all') || 'all').trim();
-  const excludeDateFilter = String(cfg.get('agenda.excludeDateFilter', 'all') || 'all').trim();
-  const levelFilter = String(cfg.get('agenda.levelFilter', '') || '').trim();
-  const excludeLevelFilter = String(cfg.get('agenda.excludeLevelFilter', '') || '').trim();
-  const matchFilter = String(cfg.get('agenda.matchFilter', '') || '').trim();
-  const excludeMatchFilter = String(cfg.get('agenda.excludeMatchFilter', '') || '').trim();
-  const tagFilter = String(cfg.get('agenda.tagFilter', '') || '').trim();
-  const idFilter = String(cfg.get('agenda.idFilter', '') || '').trim();
-  const todoKeywordFilter = String(cfg.get('agenda.todoKeywordFilter', '') || '').trim();
-  const todoOrder = String(cfg.get('agenda.todoOrder', '') || '').trim();
-  const statusOrder = String(cfg.get('agenda.statusOrder', '') || '').trim().toLowerCase();
-  const kindOrder = String(cfg.get('agenda.kindOrder', '') || '').trim().toLowerCase();
-  const priorityOrder = String(cfg.get('agenda.priorityOrder', '') || '').trim();
-  const tagOrder = String(cfg.get('agenda.tagOrder', '') || '').trim().toLowerCase();
-  const effortOrder = String(cfg.get('agenda.effortOrder', '') || '').trim().toLowerCase();
-  const priorityFilter = String(cfg.get('agenda.priorityFilter', '') || '').trim();
-  const timeFilter = String(cfg.get('agenda.timeFilter', '') || '').trim().toLowerCase();
-  const effortFilter = String(cfg.get('agenda.effortFilter', '') || '').trim();
-  const propertyFilter = String(cfg.get('agenda.propertyFilter', '') || '').trim();
-  const excludeTagFilter = String(cfg.get('agenda.excludeTagFilter', '') || '').trim();
-  const excludeIdFilter = String(cfg.get('agenda.excludeIdFilter', '') || '').trim();
-  const excludeTodoKeywordFilter = String(cfg.get('agenda.excludeTodoKeywordFilter', '') || '').trim();
-  const excludePriorityFilter = String(cfg.get('agenda.excludePriorityFilter', '') || '').trim();
-  const excludeTimeFilter = String(cfg.get('agenda.excludeTimeFilter', '') || '').trim().toLowerCase();
-  const excludeEffortFilter = String(cfg.get('agenda.excludeEffortFilter', '') || '').trim();
-  const excludePropertyFilter = String(cfg.get('agenda.excludePropertyFilter', '') || '').trim();
-  const fileFilter = String(cfg.get('agenda.fileFilter', '') || '').trim();
-  const excludeFileFilter = String(cfg.get('agenda.excludeFileFilter', '') || '').trim();
-  const sortBy = String(cfg.get('agenda.sortBy', 'default') || 'default').trim().toLowerCase();
-  const groupBy = String(cfg.get('agenda.groupBy', 'default') || 'default').trim().toLowerCase();
-  const dateOrder = String(cfg.get('agenda.dateOrder', 'asc') || 'asc').trim().toLowerCase();
-  const agendaLimit = Number(cfg.get('agenda.limit', 0) || 0);
-  const agendaDayLimit = Number(cfg.get('agenda.dayLimit', 0) || 0);
-  const agendaGroupLimit = Number(cfg.get('agenda.groupLimit', 0) || 0);
-  const startDate = String(cfg.get('agenda.startDate', '') || '').trim();
-  const endDate = String(cfg.get('agenda.endDate', '') || '').trim();
-  const defaultDays = cfg.get('agenda.days', 7);
+  const agendaOptions = readAgendaCliOptions(cfg, agendaRoot, filter, resolveAgendaFiles);
+  const { sortBy } = agendaOptions;
 
-  const days = filter && filter.type === 'today' ? 1 : (filter && filter.type === 'next' ? filter.days : defaultDays);
-
-  const resolvedFiles = scope === 'files' ? resolveAgendaFiles(files, agendaRoot) : [];
-  const recursive = cfg.get('agenda.recursive', true);
-
-  const { args, warnEmptyFiles } = buildAgendaCliArgs({
-    scope,
-    resolvedFiles,
-    agendaRoot,
-    recursive,
-    days,
-    startDate,
-    endDate,
-    includeOverdue,
-    statusFilter,
-    excludeStatusFilter,
-    kindFilter,
-    excludeKindFilter,
-    whenFilter,
-    excludeWhenFilter,
-    weekdayFilter,
-    excludeWeekdayFilter,
-    weekFilter,
-    excludeWeekFilter,
-    dayOfMonthFilter,
-    excludeDayOfMonthFilter,
-    monthFilter,
-    excludeMonthFilter,
-    quarterFilter,
-    excludeQuarterFilter,
-    yearFilter,
-    excludeYearFilter,
-    dateFilter,
-    excludeDateFilter,
-    levelFilter,
-    excludeLevelFilter,
-    matchFilter,
-    excludeMatchFilter,
-    tagFilter,
-    idFilter,
-    todoKeywordFilter,
-    todoOrder,
-    statusOrder,
-    kindOrder,
-    priorityOrder,
-    tagOrder,
-    effortOrder,
-    priorityFilter,
-    timeFilter,
-    effortFilter,
-    propertyFilter,
-    excludeTagFilter,
-    excludeIdFilter,
-    excludeTodoKeywordFilter,
-    excludePriorityFilter,
-    excludeTimeFilter,
-    excludeEffortFilter,
-    excludePropertyFilter,
-    fileFilter,
-    excludeFileFilter,
-    sortBy,
-    groupBy,
-    dateOrder,
-    agendaLimit,
-    agendaDayLimit,
-    agendaGroupLimit,
-  });
+  const { args, warnEmptyFiles } = buildAgendaCliArgs(agendaOptions);
 
   if (warnEmptyFiles) {
     vscode.window.showWarningMessage("Org2 agenda: org2.agenda.files is empty (set scope to 'workspace' or configure files).");
@@ -2654,7 +2418,7 @@ function activate(context) {
     return undefined;
   }
 
-  async function runSetPriority(priority, item) {
+  async function runSetPriority(priority, item, options = {}) {
     const normalizedPriority = normalizeOrgPriorityToken(priority);
 
     let filePath;
@@ -2715,7 +2479,7 @@ function activate(context) {
       await doc.save();
     }
 
-    if (item instanceof Org2AgendaItem) {
+    if (!options.skipAgendaReload && item instanceof Org2AgendaItem) {
       await agendaProvider.load();
     }
   }
@@ -3311,6 +3075,151 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.refileSubtree', async (item) => {
       await runRefileCli(item);
+    })
+  );
+
+  async function runShiftSubtreeLevels(step) {
+    const delta = Number(step);
+    if (!Number.isInteger(delta) || delta === 0) return;
+
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !editor.document) return;
+
+    const doc = editor.document;
+    if (doc.languageId !== 'org2' && doc.languageId !== 'org') {
+      vscode.window.showWarningMessage('Org2: heading level commands are only available for Org/Org2 files.');
+      return;
+    }
+
+    const subtreeRange = findSubtreeRangeAtOrAbove(doc, editor.selection && editor.selection.active ? editor.selection.active.line : 0);
+    if (!subtreeRange) {
+      vscode.window.showWarningMessage('Org2: place cursor on a headline to adjust subtree heading levels.');
+      return;
+    }
+
+    if (delta < 0 && subtreeRange.level <= 1) {
+      vscode.window.showInformationMessage('Org2: top-level headings cannot be promoted further.');
+      return;
+    }
+
+    const targets = findHeadingLevelEditTargets(doc, subtreeRange);
+    if (targets.length === 0) {
+      vscode.window.showInformationMessage('Org2: no headings found in subtree.');
+      return;
+    }
+
+    const edit = new vscode.WorkspaceEdit();
+    for (const target of targets) {
+      const nextLevel = target.level + delta;
+      if (nextLevel < 1) {
+        vscode.window.showInformationMessage('Org2: cannot promote heading above level 1.');
+        return;
+      }
+
+      const updated = `${'*'.repeat(nextLevel)}${target.text.slice(target.level)}`;
+      edit.replace(
+        doc.uri,
+        new vscode.Range(target.line, 0, target.line, target.text.length),
+        updated
+      );
+    }
+
+    const applied = await vscode.workspace.applyEdit(edit);
+    if (!applied) {
+      vscode.window.showErrorMessage('Org2: failed to update subtree heading levels.');
+      return;
+    }
+  }
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.promoteSubtree', async () => {
+      await runShiftSubtreeLevels(-1);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.demoteSubtree', async () => {
+      await runShiftSubtreeLevels(1);
+    })
+  );
+
+  async function runMoveSubtree(direction) {
+    const delta = Number(direction);
+    if (delta !== -1 && delta !== 1) return;
+
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !editor.document) return;
+
+    const doc = editor.document;
+    if (doc.languageId !== 'org2' && doc.languageId !== 'org') {
+      vscode.window.showWarningMessage('Org2: subtree move commands are only available for Org/Org2 files.');
+      return;
+    }
+
+    const subtreeRange = findSubtreeRangeAtOrAbove(doc, editor.selection && editor.selection.active ? editor.selection.active.line : 0);
+    if (!subtreeRange) {
+      vscode.window.showWarningMessage('Org2: place cursor on a headline to move a subtree.');
+      return;
+    }
+
+    const siblingRange = delta < 0
+      ? findPreviousSiblingSubtreeRange(doc, subtreeRange)
+      : findNextSiblingSubtreeRange(doc, subtreeRange);
+
+    if (!siblingRange) {
+      vscode.window.showInformationMessage(
+        delta < 0
+          ? 'Org2: subtree is already the first sibling.'
+          : 'Org2: subtree is already the last sibling.'
+      );
+      return;
+    }
+
+    const subtreeDocRange = getSubtreeDocumentRange(doc, subtreeRange);
+    const siblingDocRange = getSubtreeDocumentRange(doc, siblingRange);
+    if (!subtreeDocRange || !siblingDocRange) return;
+
+    const subtreeText = doc.getText(subtreeDocRange);
+    const siblingText = doc.getText(siblingDocRange);
+
+    const replacementRange = getSubtreeDocumentRange(doc, {
+      startLine: Math.min(subtreeRange.startLine, siblingRange.startLine),
+      endLine: Math.max(subtreeRange.endLine, siblingRange.endLine),
+    });
+    if (!replacementRange) return;
+
+    const replacementText = delta < 0
+      ? `${subtreeText}${siblingText}`
+      : `${siblingText}${subtreeText}`;
+
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(doc.uri, replacementRange, replacementText);
+
+    const applied = await vscode.workspace.applyEdit(edit);
+    if (!applied) {
+      vscode.window.showErrorMessage('Org2: failed to move subtree.');
+      return;
+    }
+
+    const siblingLineCount = siblingRange.endLine - siblingRange.startLine + 1;
+    const movedStartLine = delta < 0
+      ? siblingRange.startLine
+      : subtreeRange.startLine + siblingLineCount;
+
+    const movedCursor = new vscode.Position(Math.max(0, movedStartLine), 0);
+    editor.selection = new vscode.Selection(movedCursor, movedCursor);
+    editor.revealRange(new vscode.Range(movedCursor, movedCursor), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+  }
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.moveSubtreeUp', async () => {
+      await runMoveSubtree(-1);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.moveSubtreeDown', async () => {
+      await runMoveSubtree(1);
     })
   );
 
@@ -4476,54 +4385,18 @@ function activate(context) {
     })
   );
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand('org2.insertListItemBelow', async () => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) return;
-
-      const doc = editor.document;
-      if (!doc || (doc.languageId !== 'org2' && doc.languageId !== 'org')) return;
-
-      if (doc.isDirty) {
-        const ok = await doc.save();
-        if (!ok) {
-          vscode.window.showWarningMessage('Org2: could not save file before inserting list item.');
-          return;
-        }
-      }
-
-      const resolved = resolveListItemPrefixFromEditor(editor);
-      if (!resolved.prefix) {
-        vscode.window.showWarningMessage('Org2: place cursor on (or just below) a list item to insert the next item.');
-        return;
-      }
-
-      const insertAfterLine = resolved.line;
-      const lineText = doc.lineAt(insertAfterLine).text;
-      const insertPos = new vscode.Position(insertAfterLine, lineText.length);
-      const applied = await editor.edit((eb) => {
-        eb.insert(insertPos, `\n${resolved.prefix}`);
-      });
-      if (!applied) return;
-
-      const nextPos = new vscode.Position(insertAfterLine + 1, resolved.prefix.length);
-      editor.selection = new vscode.Selection(nextPos, nextPos);
-      revealNavigationPosition(editor, nextPos);
-    })
-  );
-
-  function resolveAgendaTodoTargets(item) {
-    const selected = agendaView && Array.isArray(agendaView.selection)
+  function getSelectedAgendaItems() {
+    return agendaView && Array.isArray(agendaView.selection)
       ? agendaView.selection.filter((x) => x instanceof Org2AgendaItem)
       : [];
+  }
 
-    if (item instanceof Org2AgendaItem) {
-      if (selected.length > 1 && selected.includes(item)) return selected;
-      return [item];
-    }
+  function resolveAgendaTodoTargets(item) {
+    return resolveAgendaTargets(getSelectedAgendaItems(), item instanceof Org2AgendaItem ? item : undefined);
+  }
 
-    if (!item && selected.length > 0) return selected;
-    return [];
+  function resolveAgendaPriorityTargets(item) {
+    return resolveAgendaTargets(getSelectedAgendaItems(), item instanceof Org2AgendaItem ? item : undefined);
   }
 
   const applySetTodoStatus = async (status, item) => {
@@ -4590,7 +4463,16 @@ function activate(context) {
         priority = normalizeOrgPriorityToken(pick.value);
       }
 
-      await runSetPriority(priority, item);
+      const targets = resolveAgendaPriorityTargets(item);
+      if (targets.length > 1) {
+        for (const target of targets) {
+          await runSetPriority(priority, target, { skipAgendaReload: true });
+        }
+        await agendaProvider.load();
+        return;
+      }
+
+      await runSetPriority(priority, targets[0] || item);
     })
   );
 
