@@ -1,14 +1,39 @@
 const { agendaPriorityRank } = require('./agendaVisuals');
 
-function sortByPriorityIfRequested(items, sortBy) {
-  const fields = String(sortBy || '')
+function parseSortFields(sortBy) {
+  return String(sortBy || '')
     .split(',')
-    .map((v) => String(v || '').trim())
+    .map((v) => String(v || '').trim().toLowerCase())
     .filter(Boolean);
-  const token = fields.find((field) => field === 'priority' || field === '-priority');
-  if (!token) return items.slice();
+}
 
-  const direction = token === '-priority' ? -1 : 1;
+function resolvePrioritySortDirection(sortBy) {
+  const fields = parseSortFields(sortBy);
+
+  for (const field of fields) {
+    if (field === 'priority' || field === 'prio' || field === '+priority' || field === '+prio') {
+      return 1;
+    }
+
+    if (field === '-priority' || field === '-prio') {
+      return -1;
+    }
+
+    if (field.startsWith('priority:') || field.startsWith('prio:')) {
+      const [, rawDirection] = field.split(':', 2);
+      const direction = String(rawDirection || '').trim().toLowerCase();
+      if (direction === 'desc' || direction === 'descending') return -1;
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+function sortByPriorityIfRequested(items, sortBy) {
+  const direction = resolvePrioritySortDirection(sortBy);
+  if (direction === 0) return items.slice();
+
   return items.slice().sort((a, b) => {
     const delta = agendaPriorityRank(a && a.priority) - agendaPriorityRank(b && b.priority);
     if (delta !== 0) return delta * direction;
@@ -70,4 +95,4 @@ function buildAgendaTreeGroupsFromCli(data, sortBy) {
   return groups;
 }
 
-module.exports = { buildAgendaTreeGroupsFromCli, sortByPriorityIfRequested };
+module.exports = { buildAgendaTreeGroupsFromCli, sortByPriorityIfRequested, resolvePrioritySortDirection };
