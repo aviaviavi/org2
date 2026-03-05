@@ -1407,6 +1407,7 @@
     "extension.js",
     "agendaArgs.js",
     "agendaTreeModel.js",
+    "agendaSelection.js",
     "agendaVisuals.js",
     "formatterArgs.js",
     "roamArgs.js",
