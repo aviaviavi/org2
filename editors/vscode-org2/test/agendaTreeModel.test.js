@@ -24,6 +24,32 @@ test('buildAgendaTreeGroupsFromCli merges all overdue days into one Overdue sect
   assert.equal(groups[2].label, 'Tue 2026-03-03');
 });
 
+test('buildAgendaTreeGroupsFromCli prioritizes overdue items by priority even on default sort', () => {
+  const groups = buildAgendaTreeGroupsFromCli(
+    {
+      overdue: [
+        {
+          date: '2026-03-01',
+          weekday: 'Sun',
+          items: [
+            { headline: 'none item' },
+            { headline: 'c item', priority: 'C' },
+            { headline: 'a item', priority: 'A' },
+            { headline: 'b item', priority: 'B' },
+          ],
+        },
+      ],
+      days: [],
+    },
+    'default'
+  );
+
+  assert.deepEqual(
+    groups[0].items.map((item) => item.headline),
+    ['a item', 'b item', 'c item', 'none item']
+  );
+});
+
 test('buildAgendaTreeGroupsFromCli applies priority ordering within section when requested', () => {
   const groups = buildAgendaTreeGroupsFromCli(
     {
