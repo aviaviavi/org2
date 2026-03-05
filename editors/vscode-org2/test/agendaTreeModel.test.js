@@ -75,3 +75,55 @@ test('buildAgendaTreeGroupsFromCli applies priority ordering within section when
     ['a item', 'b item', 'c item', 'none item']
   );
 });
+
+test('buildAgendaTreeGroupsFromCli supports priority:desc sort syntax', () => {
+  const groups = buildAgendaTreeGroupsFromCli(
+    {
+      overdue: [],
+      days: [
+        {
+          date: '2026-03-03',
+          weekday: 'Tue',
+          items: [
+            { headline: 'b item', priority: 'B' },
+            { headline: 'none item' },
+            { headline: 'a item', priority: 'A' },
+            { headline: 'c item', priority: 'C' },
+          ],
+        },
+      ],
+    },
+    'priority:desc'
+  );
+
+  assert.deepEqual(
+    groups[0].items.map((item) => item.headline),
+    ['none item', 'c item', 'b item', 'a item']
+  );
+});
+
+test('buildAgendaTreeGroupsFromCli supports prio alias for sort syntax', () => {
+  const groups = buildAgendaTreeGroupsFromCli(
+    {
+      overdue: [],
+      days: [
+        {
+          date: '2026-03-03',
+          weekday: 'Tue',
+          items: [
+            { headline: 'b item', priority: 'B' },
+            { headline: 'none item' },
+            { headline: 'a item', priority: 'A' },
+            { headline: 'c item', priority: 'C' },
+          ],
+        },
+      ],
+    },
+    'prio'
+  );
+
+  assert.deepEqual(
+    groups[0].items.map((item) => item.headline),
+    ['a item', 'b item', 'c item', 'none item']
+  );
+});
