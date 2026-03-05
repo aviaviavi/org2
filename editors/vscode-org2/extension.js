@@ -13,6 +13,7 @@ const {
   normalizeAgendaPriority,
 } = require('./agendaVisuals');
 const { buildAgendaTreeGroupsFromCli } = require('./agendaTreeModel');
+const { resolveAgendaTargets } = require('./agendaSelection');
 const { buildAgendaCliArgs } = require('./agendaArgs');
 const { readAgendaCliOptions } = require('./agendaSettings');
 const {
@@ -2417,7 +2418,7 @@ function activate(context) {
     return undefined;
   }
 
-  async function runSetPriority(priority, item) {
+  async function runSetPriority(priority, item, options = {}) {
     const normalizedPriority = normalizeOrgPriorityToken(priority);
 
     let filePath;
@@ -2478,7 +2479,7 @@ function activate(context) {
       await doc.save();
     }
 
-    if (item instanceof Org2AgendaItem) {
+    if (!options.skipAgendaReload && item instanceof Org2AgendaItem) {
       await agendaProvider.load();
     }
   }
@@ -4384,18 +4385,18 @@ function activate(context) {
     })
   );
 
-  function resolveAgendaTodoTargets(item) {
-    const selected = agendaView && Array.isArray(agendaView.selection)
+  function getSelectedAgendaItems() {
+    return agendaView && Array.isArray(agendaView.selection)
       ? agendaView.selection.filter((x) => x instanceof Org2AgendaItem)
       : [];
+  }
 
-    if (item instanceof Org2AgendaItem) {
-      if (selected.length > 1 && selected.includes(item)) return selected;
-      return [item];
-    }
+  function resolveAgendaTodoTargets(item) {
+    return resolveAgendaTargets(getSelectedAgendaItems(), item instanceof Org2AgendaItem ? item : undefined);
+  }
 
-    if (!item && selected.length > 0) return selected;
-    return [];
+  function resolveAgendaPriorityTargets(item) {
+    return resolveAgendaTargets(getSelectedAgendaItems(), item instanceof Org2AgendaItem ? item : undefined);
   }
 
   const applySetTodoStatus = async (status, item) => {
@@ -4462,7 +4463,16 @@ function activate(context) {
         priority = normalizeOrgPriorityToken(pick.value);
       }
 
-      await runSetPriority(priority, item);
+      const targets = resolveAgendaPriorityTargets(item);
+      if (targets.length > 1) {
+        for (const target of targets) {
+          await runSetPriority(priority, target, { skipAgendaReload: true });
+        }
+        await agendaProvider.load();
+        return;
+      }
+
+      await runSetPriority(priority, targets[0] || item);
     })
   );
 

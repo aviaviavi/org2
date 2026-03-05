@@ -41,6 +41,21 @@ function sortByPriorityIfRequested(items, sortBy) {
   });
 }
 
+function sortOverdueItems(items, sortBy) {
+  const requestedDirection = resolvePrioritySortDirection(sortBy);
+  if (requestedDirection !== 0) {
+    return sortByPriorityIfRequested(items, sortBy);
+  }
+
+  // Overdue should always surface highest priority first, even when agenda.sortBy
+  // is left at default/non-priority ordering.
+  return items.slice().sort((a, b) => {
+    const delta = agendaPriorityRank(a && a.priority) - agendaPriorityRank(b && b.priority);
+    if (delta !== 0) return delta;
+    return 0;
+  });
+}
+
 function buildAgendaTreeGroupsFromCli(data, sortBy) {
   const overdueDays = Array.isArray(data && data.overdue) ? data.overdue : [];
   const upcomingDays = Array.isArray(data && data.days) ? data.days : [];
@@ -58,7 +73,7 @@ function buildAgendaTreeGroupsFromCli(data, sortBy) {
       date: '',
       weekday: '',
       isOverdue: true,
-      items: sortByPriorityIfRequested(overdueItems, sortBy),
+      items: sortOverdueItems(overdueItems, sortBy),
     });
   }
 
