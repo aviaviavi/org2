@@ -3801,7 +3801,8 @@ async function main(): Promise<void> {
         if (command === "agenda") {
           agendaStatusFiltersRaw.push(args[i]!);
         } else {
-          todoStatus = args[i] as TodoStatus;
+          const rawTodoStatus = (args[i] ?? "").toLowerCase();
+          todoStatus = (rawTodoStatus === "cancelled" ? "canceled" : rawTodoStatus) as TodoStatus;
         }
         i++;
       }
@@ -6353,7 +6354,7 @@ Tips:
 
     if (todoAction === "set") {
       if (!todoStatus || (todoStatus !== "todo" && todoStatus !== "in_progress" && todoStatus !== "done" && todoStatus !== "canceled")) {
-        console.error("Error: todo set requires --status todo|in_progress|done|canceled");
+        console.error("Error: todo set requires --status todo|in_progress|done|canceled (cancelled alias also accepted)");
         process.exit(1);
       }
     }
