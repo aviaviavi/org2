@@ -1,0 +1,1 @@
+todo set --file "spec/v0/tests/cli/todo-set-done-logbook-reuse-existing.input.txt" --line 2 --status done --now 2026-01-21T12:34:00 --logbook --format text
