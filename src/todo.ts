@@ -251,8 +251,10 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
     }
 
     if (opts.logbook) {
-      // Ensure LOGBOOK drawer
-      let logbook = findDrawer(lines, insertAfterProps, endExclusive, "LOGBOOK");
+      // Prefer existing LOGBOOK drawer placement (even if it appears before PROPERTIES)
+      // to avoid creating duplicate drawers during status transitions.
+      const logbookSearchStart = afterPlanning;
+      let logbook = findDrawer(lines, logbookSearchStart, endExclusive, "LOGBOOK");
       if (!logbook || !logbook.terminated) {
         const created = ensureLogbookDrawer(lines, insertAfterProps);
         logbook = { start: created.start, end: created.end, terminated: true };
@@ -261,7 +263,7 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
       // Insert log entry before :END:
       // Find end again (may have shifted)
       endExclusive = subtreeEndExclusive();
-      const log2 = findDrawer(lines, insertAfterProps, endExclusive, "LOGBOOK");
+      const log2 = findDrawer(lines, logbookSearchStart, endExclusive, "LOGBOOK");
       if (log2 && log2.terminated) {
         const entry = `- State \"${newKeyword}\" from \"${keywordFromStatus(oldStatus)}\" ${stamp}`;
         lines.splice(log2.end, 0, entry);
