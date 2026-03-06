@@ -6,11 +6,11 @@ export type TodoKeyword = "TODO" | "IN_PROGRESS" | "DONE" | "CANCELED" | "CANCEL
 
 export const TODO_KEYWORDS: TodoKeyword[] = ["TODO", "IN_PROGRESS", "DONE", "CANCELED", "CANCELLED"];
 
-export function keywordFromStatus(status: TodoStatus): TodoKeyword {
+export function keywordFromStatus(status: TodoStatus, opts?: { canceledKeyword?: "CANCELED" | "CANCELLED" }): TodoKeyword {
   if (status === "todo") return "TODO";
   if (status === "in_progress") return "IN_PROGRESS";
   if (status === "done") return "DONE";
-  return "CANCELED";
+  return opts?.canceledKeyword === "CANCELLED" ? "CANCELLED" : "CANCELED";
 }
 
 export function statusFromKeyword(keyword: string | undefined): TodoStatus {
@@ -221,7 +221,10 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
     throw new Error("Must provide either status or toggle");
   }
 
-  const newKeyword = keywordFromStatus(targetStatus);
+  const canceledKeywordPreference = oldKeyword === "CANCELLED" ? "CANCELLED" : undefined;
+  const newKeyword = keywordFromStatus(targetStatus, {
+    ...(canceledKeywordPreference ? { canceledKeyword: canceledKeywordPreference } : {}),
+  });
 
   const { line: newHeadlineLine } = replaceOrInsertTodoKeyword(lines[headingIndex] ?? "", newKeyword);
   const changed = newHeadlineLine !== (lines[headingIndex] ?? "");
@@ -265,7 +268,13 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
       endExclusive = subtreeEndExclusive();
       const log2 = findDrawer(lines, logbookSearchStart, endExclusive, "LOGBOOK");
       if (log2 && log2.terminated) {
-        const entry = `- State \"${newKeyword}\" from \"${keywordFromStatus(oldStatus)}\" ${stamp}`;
+        const oldKeywordForLog =
+          oldKeyword && statusFromKeyword(oldKeyword) === oldStatus
+            ? oldKeyword
+            : keywordFromStatus(oldStatus, {
+                ...(canceledKeywordPreference ? { canceledKeyword: canceledKeywordPreference } : {}),
+              });
+        const entry = `- State \"${newKeyword}\" from \"${oldKeywordForLog}\" ${stamp}`;
         lines.splice(log2.end, 0, entry);
       }
     }
