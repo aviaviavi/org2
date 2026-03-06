@@ -97,21 +97,32 @@ function findPlanningBlockEnd(lines: string[], headingIndex: number, endExclusiv
 
 function upsertClosedPlanning(lines: string[], headingIndex: number, endExclusive: number, closedAt: string): void {
   const planningEnd = findPlanningBlockEnd(lines, headingIndex, endExclusive);
+  let firstClosedIndex = -1;
+
   for (let i = headingIndex + 1; i < planningEnd; i++) {
-    if (/^CLOSED:\s/.test(lines[i] ?? "")) {
-      lines[i] = `CLOSED: ${closedAt}`;
-      return;
+    if (!/^CLOSED:\s/.test(lines[i] ?? "")) continue;
+    if (firstClosedIndex < 0) {
+      firstClosedIndex = i;
+      continue;
     }
+    // Deduplicate stale duplicate CLOSED lines while preserving first position.
+    lines.splice(i, 1);
+    i--;
   }
+
+  if (firstClosedIndex >= 0) {
+    lines[firstClosedIndex] = `CLOSED: ${closedAt}`;
+    return;
+  }
+
   lines.splice(planningEnd, 0, `CLOSED: ${closedAt}`);
 }
 
 function removeClosedPlanning(lines: string[], headingIndex: number, endExclusive: number): void {
   const planningEnd = findPlanningBlockEnd(lines, headingIndex, endExclusive);
-  for (let i = headingIndex + 1; i < planningEnd; i++) {
+  for (let i = planningEnd - 1; i > headingIndex; i--) {
     if (/^CLOSED:\s/.test(lines[i] ?? "")) {
       lines.splice(i, 1);
-      return;
     }
   }
 }
