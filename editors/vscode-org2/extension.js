@@ -13,7 +13,7 @@ const {
   normalizeAgendaPriority,
 } = require('./agendaVisuals');
 const { buildAgendaTreeGroupsFromCli } = require('./agendaTreeModel');
-const { resolveAgendaTargets } = require('./agendaSelection');
+const { resolveAgendaTargets, orderAgendaTargetsForMutation } = require('./agendaSelection');
 const { buildAgendaCliArgs } = require('./agendaArgs');
 const { readAgendaCliOptions } = require('./agendaSettings');
 const {
@@ -2563,7 +2563,7 @@ function activate(context) {
     }
   }
 
-  async function runPlanCli(kind, item, options) {
+  async function runPlanCli(kind, item, options = {}) {
     let filePath;
     let line;
 
@@ -2603,8 +2603,9 @@ function activate(context) {
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
     const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
-    const useToday = options && options.useToday ? true : false;
-    const dateOverride = options && typeof options.dateOverride === 'string' ? String(options.dateOverride).trim() : '';
+    const useToday = options.useToday ? true : false;
+    const dateOverride = typeof options.dateOverride === 'string' ? String(options.dateOverride).trim() : '';
+    const skipAgendaReload = options.skipAgendaReload ? true : false;
 
     let date = '';
     if (dateOverride) {
@@ -2658,7 +2659,7 @@ function activate(context) {
       }
 
       // Keep agenda rows in sync after agenda-invoked planning updates.
-      if (item instanceof Org2AgendaItem && changed !== false) {
+      if (item instanceof Org2AgendaItem && changed !== false && !skipAgendaReload) {
         await agendaProvider.load();
       }
     } catch (e) {
@@ -2765,7 +2766,7 @@ function activate(context) {
     }
   }
 
-  async function runArchiveCli(item) {
+  async function runArchiveCli(item, options = {}) {
     let filePath;
     let line;
 
@@ -2805,6 +2806,7 @@ function activate(context) {
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
     const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
+    const skipAgendaReload = options.skipAgendaReload ? true : false;
 
     const activeEditorBefore = item ? undefined : vscode.window.activeTextEditor;
     const activeUriBefore = activeEditorBefore && activeEditorBefore.document ? activeEditorBefore.document.uri.toString() : '';
@@ -2857,7 +2859,7 @@ function activate(context) {
       }
 
       // Keep agenda rows in sync after agenda-invoked archive edits.
-      if (item instanceof Org2AgendaItem) {
+      if (item instanceof Org2AgendaItem && !skipAgendaReload) {
         await agendaProvider.load();
       }
     } catch (e) {
@@ -2871,11 +2873,11 @@ function activate(context) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.archiveSubtree', async (item) => {
-      await runArchiveCli(item);
+      await applyArchiveSubtreeCommand(item);
     })
   );
 
-  async function runRefileCli(item) {
+  async function runRefileCli(item, options = {}) {
     let filePath;
     let line;
 
@@ -2915,6 +2917,7 @@ function activate(context) {
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
     const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
+    const skipAgendaReload = options.skipAgendaReload ? true : false;
 
     const activeEditorBefore = item ? undefined : vscode.window.activeTextEditor;
     const activeUriBefore = activeEditorBefore && activeEditorBefore.document ? activeEditorBefore.document.uri.toString() : '';
@@ -3058,7 +3061,7 @@ function activate(context) {
         }
       }
 
-      if (item instanceof Org2AgendaItem && changed !== false) {
+      if (item instanceof Org2AgendaItem && changed !== false && !skipAgendaReload) {
         await agendaProvider.load();
       }
 
@@ -3074,7 +3077,7 @@ function activate(context) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.refileSubtree', async (item) => {
-      await runRefileCli(item);
+      await applyRefileSubtreeCommand(item);
     })
   );
 
@@ -4379,29 +4382,86 @@ function activate(context) {
     })
   );
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand('org2.toggleTodo', async (item) => {
-      await runTodoCli('toggle', undefined, item);
-    })
-  );
-
   function getSelectedAgendaItems() {
     return agendaView && Array.isArray(agendaView.selection)
       ? agendaView.selection.filter((x) => x instanceof Org2AgendaItem)
       : [];
   }
 
-  function resolveAgendaTodoTargets(item) {
-    return resolveAgendaTargets(getSelectedAgendaItems(), item instanceof Org2AgendaItem ? item : undefined);
+  function resolveAgendaMutationTargets(item) {
+    const targets = resolveAgendaTargets(getSelectedAgendaItems(), item instanceof Org2AgendaItem ? item : undefined);
+    return orderAgendaTargetsForMutation(targets);
   }
 
-  function resolveAgendaPriorityTargets(item) {
-    return resolveAgendaTargets(getSelectedAgendaItems(), item instanceof Org2AgendaItem ? item : undefined);
+  async function promptPlanDate(kind) {
+    const input = await vscode.window.showInputBox({
+      prompt: `Org2: set ${kind.toUpperCase()} (YYYY-MM-DD)`,
+      placeHolder: 'YYYY-MM-DD',
+      validateInput: (v) => (/^\d{4}-\d{2}-\d{2}$/.test((v || '').trim()) ? undefined : 'Expected YYYY-MM-DD'),
+    });
+    if (!input) return '';
+    return String(input).trim();
+  }
+
+  async function applyToggleTodoCommand(item) {
+    const targets = resolveAgendaMutationTargets(item);
+    if (targets.length > 1) {
+      for (const target of targets) {
+        await runTodoCli('toggle', undefined, target, { skipAgendaReload: true });
+      }
+      await agendaProvider.load();
+      return;
+    }
+    await runTodoCli('toggle', undefined, targets[0] || item);
+  }
+
+  async function applyArchiveSubtreeCommand(item) {
+    const targets = resolveAgendaMutationTargets(item);
+    if (targets.length > 1) {
+      for (const target of targets) {
+        await runArchiveCli(target, { skipAgendaReload: true });
+      }
+      await agendaProvider.load();
+      return;
+    }
+    await runArchiveCli(targets[0] || item);
+  }
+
+  async function applyRefileSubtreeCommand(item) {
+    const targets = resolveAgendaMutationTargets(item);
+    if (targets.length > 1) {
+      for (const target of targets) {
+        await runRefileCli(target, { skipAgendaReload: true });
+      }
+      await agendaProvider.load();
+      return;
+    }
+    await runRefileCli(targets[0] || item);
+  }
+
+  async function applyPlanCommand(kind, item, options = {}) {
+    const targets = resolveAgendaMutationTargets(item);
+    if (targets.length > 1) {
+      const runOptions = { ...options };
+      if (!runOptions.useToday && !runOptions.dateOverride) {
+        const pickedDate = await promptPlanDate(kind);
+        if (!pickedDate) return;
+        runOptions.dateOverride = pickedDate;
+      }
+
+      for (const target of targets) {
+        await runPlanCli(kind, target, { ...runOptions, skipAgendaReload: true });
+      }
+      await agendaProvider.load();
+      return;
+    }
+
+    await runPlanCli(kind, targets[0] || item, options);
   }
 
   const applySetTodoStatus = async (status, item) => {
     const requested = String(status || '').trim().toLowerCase();
-    const targets = resolveAgendaTodoTargets(item);
+    const targets = resolveAgendaMutationTargets(item);
     const runSet = async (resolvedStatus) => {
       if (targets.length > 1) {
         for (const target of targets) {
@@ -4430,6 +4490,12 @@ function activate(context) {
     if (!pick) return;
     await runSet(pick.value);
   };
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.toggleTodo', async (item) => {
+      await applyToggleTodoCommand(item);
+    })
+  );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.setTodoStatus', async (argOrItem, maybeItem) => {
@@ -4463,7 +4529,7 @@ function activate(context) {
         priority = normalizeOrgPriorityToken(pick.value);
       }
 
-      const targets = resolveAgendaPriorityTargets(item);
+      const targets = resolveAgendaMutationTargets(item);
       if (targets.length > 1) {
         for (const target of targets) {
           await runSetPriority(priority, target, { skipAgendaReload: true });
@@ -4483,19 +4549,19 @@ function activate(context) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.setScheduled', async (item) => {
-      await runPlanCli('scheduled', item);
+      await applyPlanCommand('scheduled', item);
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.setDeadline', async (item) => {
-      await runPlanCli('deadline', item);
+      await applyPlanCommand('deadline', item);
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.setScheduledToday', async (item) => {
-      await runPlanCli('scheduled', item, { useToday: true });
+      await applyPlanCommand('scheduled', item, { useToday: true });
     })
   );
 
@@ -4503,7 +4569,7 @@ function activate(context) {
     vscode.commands.registerCommand('org2.setScheduledTomorrow', async (item) => {
       const d = new Date();
       d.setDate(d.getDate() + 1);
-      await runPlanCli('scheduled', item, { dateOverride: formatDateYYYYMMDD(d) });
+      await applyPlanCommand('scheduled', item, { dateOverride: formatDateYYYYMMDD(d) });
     })
   );
 
@@ -4514,7 +4580,7 @@ function activate(context) {
       const weekday = d.getDay(); // 0=Sun, 1=Mon, ... 6=Sat
       const daysUntilMonday = (8 - weekday) % 7 || 7;
       d.setDate(d.getDate() + daysUntilMonday);
-      await runPlanCli('scheduled', item, { dateOverride: formatDateYYYYMMDD(d) });
+      await applyPlanCommand('scheduled', item, { dateOverride: formatDateYYYYMMDD(d) });
     })
   );
 
@@ -4522,13 +4588,13 @@ function activate(context) {
     vscode.commands.registerCommand('org2.setScheduledNextMonth', async (item) => {
       const d = new Date();
       d.setMonth(d.getMonth() + 1);
-      await runPlanCli('scheduled', item, { dateOverride: formatDateYYYYMMDD(d) });
+      await applyPlanCommand('scheduled', item, { dateOverride: formatDateYYYYMMDD(d) });
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.setDeadlineToday', async (item) => {
-      await runPlanCli('deadline', item, { useToday: true });
+      await applyPlanCommand('deadline', item, { useToday: true });
     })
   );
 
