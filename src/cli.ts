@@ -575,6 +575,18 @@ function normalizeAgendaStatusFilterToken(tokenRaw: string): string {
     .replace(/^_+|_+$/g, "");
 }
 
+function parseTodoStatusArg(rawStatus: string): TodoStatus | "" {
+  const token = normalizeAgendaStatusFilterToken(rawStatus);
+  if (!token) return "";
+
+  if (token === "todo" || token === "open") return "todo";
+  if (token === "in_progress" || token === "inprogress" || token === "prog") return "in_progress";
+  if (token === "done" || token === "completed") return "done";
+  if (token === "canceled" || token === "cancelled") return "canceled";
+
+  return "";
+}
+
 function parseAgendaStatusFilterArgs(rawArgs: string[]): {
   filter: AgendaStatusFilter;
   invalid: string[];
@@ -3801,8 +3813,7 @@ async function main(): Promise<void> {
         if (command === "agenda") {
           agendaStatusFiltersRaw.push(args[i]!);
         } else {
-          const rawTodoStatus = (args[i] ?? "").toLowerCase();
-          todoStatus = (rawTodoStatus === "cancelled" ? "canceled" : rawTodoStatus) as TodoStatus;
+          todoStatus = parseTodoStatusArg(args[i] ?? "");
         }
         i++;
       }
@@ -6354,7 +6365,7 @@ Tips:
 
     if (todoAction === "set") {
       if (!todoStatus || (todoStatus !== "todo" && todoStatus !== "in_progress" && todoStatus !== "done" && todoStatus !== "canceled")) {
-        console.error("Error: todo set requires --status todo|in_progress|done|canceled (cancelled alias also accepted)");
+        console.error("Error: todo set requires --status todo|in_progress|done|canceled (aliases: open, in-progress/in progress/prog, completed, cancelled)");
         process.exit(1);
       }
     }
