@@ -580,7 +580,7 @@ function parseTodoStatusArg(rawStatus: string): TodoStatus | "" {
   if (!token) return "";
 
   if (token === "todo" || token === "open") return "todo";
-  if (token === "in_progress" || token === "inprogress" || token === "prog") return "in_progress";
+  if (token === "in_progress" || token === "inprogress" || token === "prog" || token === "doing" || token === "started" || token === "waiting" || token === "blocked" || token === "next") return "in_progress";
   if (token === "done" || token === "complete" || token === "completed" || token === "finish" || token === "finished" || token === "closed" || token === "resolved") return "done";
   if (token === "canceled" || token === "cancelled" || token === "cancel") return "canceled";
 
@@ -6365,7 +6365,7 @@ Tips:
 
     if (todoAction === "set") {
       if (!todoStatus || (todoStatus !== "todo" && todoStatus !== "in_progress" && todoStatus !== "done" && todoStatus !== "canceled")) {
-        console.error("Error: todo set requires --status todo|in_progress|done|canceled (aliases: open, in-progress/in progress/prog, complete/completed/finish/finished/closed/resolved, cancel/cancelled)");
+        console.error("Error: todo set requires --status todo|in_progress|done|canceled (aliases: open, in-progress/in progress/prog/doing/started/waiting/blocked/next, complete/completed/finish/finished/closed/resolved, cancel/cancelled)");
         process.exit(1);
       }
     }
