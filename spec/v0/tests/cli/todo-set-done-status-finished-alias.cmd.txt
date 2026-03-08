@@ -1,0 +1,1 @@
+todo set --file "spec/v0/tests/cli/todo-set-done-status-finished-alias.input.txt" --line 1 --status finished --now 2026-01-22T09:45:00 --format text
