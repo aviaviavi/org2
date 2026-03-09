@@ -1393,6 +1393,7 @@
     "agendaVisuals.js",
     "formatterArgs.js",
     "roamArgs.js",
+    "roamId.js",
     "priorityToken.js",
     "language-configuration.json",
     "syntaxes/**",
