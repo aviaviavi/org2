@@ -42,3 +42,8 @@ test('expands project-config abbreviation from org2.json', () => {
   const expanded = expandLinkAbbreviationTarget('linear:APP-4675', abbreviations);
   assert.equal(expanded, 'https://linear.app/scarf/issue/APP-4675');
 });
+
+test('falls back to scarf Linear URL when abbreviation lookup is unavailable', () => {
+  const expanded = expandLinkAbbreviationTarget('linear:APP-3900', new Map());
+  assert.equal(expanded, 'https://linear.app/scarf/issue/APP-3900');
+});
