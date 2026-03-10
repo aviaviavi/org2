@@ -1413,6 +1413,7 @@
     "roamId.js",
     "linkAbbrev.js",
     "agendaSettings.js",
+    "agendaStatusFilter.js",
     "formatterArgs.js",
     "roamArgs.js",
     "priorityToken.js",

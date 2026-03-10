@@ -17,6 +17,10 @@ const { resolveAgendaTargets, orderAgendaTargetsForMutation } = require('./agend
 const { buildAgendaCliArgs } = require('./agendaArgs');
 const { readAgendaCliOptions } = require('./agendaSettings');
 const {
+  normalizeAgendaStatusFilterValue,
+  buildAgendaStatusFilterQuickPickOptions,
+} = require('./agendaStatusFilter');
+const {
   resolveWorkspaceFormatterPathFilters,
   buildWorkspaceFormatterCommandArgs,
   buildCurrentFileFormatterPreviewArgs,
@@ -1281,16 +1285,9 @@ async function pickAgendaFilter(provider) {
 
 async function pickAgendaStatusFilter(provider) {
   const cfg = vscode.workspace.getConfiguration('org2');
-  const current = String(cfg.get('agenda.statusFilter', 'all') || 'all').trim().toLowerCase();
-
-  const options = [
-    { label: 'All statuses', value: 'all', description: current === 'all' ? 'Current' : '' },
-    { label: 'Open', value: 'open', description: current === 'open' ? 'Current' : '' },
-    { label: 'TODO', value: 'todo', description: current === 'todo' ? 'Current' : '' },
-    { label: 'In progress', value: 'in_progress', description: current === 'in_progress' ? 'Current' : '' },
-    { label: 'Done', value: 'done', description: current === 'done' ? 'Current' : '' },
-    { label: 'Canceled', value: 'canceled', description: current === 'canceled' ? 'Current' : '' },
-  ];
+  const currentRaw = cfg.get('agenda.statusFilter', 'all');
+  const current = normalizeAgendaStatusFilterValue(currentRaw, 'all');
+  const options = buildAgendaStatusFilterQuickPickOptions(current);
 
   const pick = await vscode.window.showQuickPick(options, { placeHolder: 'Org2 agenda TODO status filter' });
   if (!pick) return;
@@ -1298,7 +1295,7 @@ async function pickAgendaStatusFilter(provider) {
   const target = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0
     ? vscode.ConfigurationTarget.Workspace
     : vscode.ConfigurationTarget.Global;
-  await cfg.update('agenda.statusFilter', pick.value, target);
+  await cfg.update('agenda.statusFilter', normalizeAgendaStatusFilterValue(pick.value, 'all'), target);
   if (provider) {
     await provider.load();
   }
