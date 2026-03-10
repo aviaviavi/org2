@@ -80,14 +80,7 @@ function expandLinkAbbreviationTarget(targetRaw, abbreviations) {
   const template = abbreviations && typeof abbreviations.get === 'function'
     ? abbreviations.get(prefix)
     : undefined;
-  if (!template) {
-    // Safety fallback: make linear:APP-123 clickable even when project/in-file
-    // link abbreviations failed to load for any reason.
-    if (prefix === 'linear' && suffix) {
-      return `https://linear.app/scarf/issue/${suffix}`;
-    }
-    return target;
-  }
+  if (!template) return target;
 
   if (template.includes('%s')) {
     return template.replace(/%s/g, suffix);
