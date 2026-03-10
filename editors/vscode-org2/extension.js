@@ -213,6 +213,11 @@ function resolveOrg2LinkTarget(rawUrl, document, linkAbbreviations) {
         return undefined;
       }
     }
+
+    // Looks like a URI scheme but unresolved (e.g. linear:APP-123 without an
+    // abbreviation mapping in scope). Do not reinterpret this as a roam-title
+    // or filesystem link.
+    return undefined;
   }
 
   // Otherwise treat it as a filesystem path relative to the current document.
