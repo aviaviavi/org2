@@ -199,13 +199,19 @@ function resolveOrg2LinkTarget(rawUrl, document, linkAbbreviations) {
     return vscode.Uri.parse(`command:org2.roamOpenId?${payload}`);
   }
 
-  // Heuristic: if it looks like it has a scheme, let VS Code/URI parser handle it.
-  // Examples: https://..., http://..., mailto:..., file:..., vscode:...
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url)) {
-    try {
-      return vscode.Uri.parse(url, true);
-    } catch (e) {
-      return undefined;
+  // Heuristic: only treat known schemes as directly openable URLs.
+  // Unknown schemes (e.g. unresolved link abbreviations like linear:APP-123)
+  // should not become dead cmd-click links.
+  const schemeMatch = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(url);
+  if (schemeMatch) {
+    const scheme = String(schemeMatch[1] || '').toLowerCase();
+    const openableSchemes = new Set(['https', 'http', 'mailto', 'file', 'vscode']);
+    if (openableSchemes.has(scheme)) {
+      try {
+        return vscode.Uri.parse(url, true);
+      } catch (e) {
+        return undefined;
+      }
     }
   }
 
