@@ -1,0 +1,51 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-04-08",
+    "end": "2026-04-11",
+    "days": 4
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-04-08",
+      "weekday": "Wednesday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Pay quarterly tax",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-deadline-warning-filter.input.txt",
+          "line": 0
+        }
+      ]
+    },
+    {
+      "date": "2026-04-09",
+      "weekday": "Thursday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Submit travel receipt",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-deadline-warning-filter.input.txt",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "date": "2026-04-10",
+      "weekday": "Friday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Pay quarterly tax",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-deadline-warning-filter.input.txt",
+          "line": 0
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}

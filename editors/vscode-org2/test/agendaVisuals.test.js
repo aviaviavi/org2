@@ -3,10 +3,13 @@ const assert = require('node:assert/strict');
 
 const {
   agendaFileLabel,
+  agendaPriorityRank,
   agendaStatusBucket,
   agendaStatusCue,
   agendaTreeItemLabel,
   agendaUrgencyFromDate,
+  extractAgendaPriorityFromHeadline,
+  normalizeAgendaPriority,
 } = require('../agendaVisuals');
 
 test('agendaFileLabel returns basename with fallback', () => {
@@ -55,6 +58,27 @@ test('agendaTreeItemLabel adds cue and highlights TODO keyword segment', () => {
   });
 });
 
+test('agendaTreeItemLabel renders explicit priority token before TODO keyword', () => {
+  assert.deepEqual(agendaTreeItemLabel('TODO', 'Write tests', 'todo', 'A'), {
+    label: '[T] [#A] TODO Write tests',
+    highlights: [[9, 13]],
+  });
+});
+
+test('agendaTreeItemLabel can infer priority from headline token', () => {
+  assert.deepEqual(agendaTreeItemLabel('TODO', '[#B] Plan launch'), {
+    label: '[T] [#B] TODO Plan launch',
+    highlights: [[9, 13]],
+  });
+});
+
+test('agendaTreeItemLabel renders inferred priority for non-todo rows', () => {
+  assert.deepEqual(agendaTreeItemLabel('', '[#C] Plain scheduled note'), {
+    label: '[·] [#C] Plain scheduled note',
+    highlights: [],
+  });
+});
+
 test('agendaTreeItemLabel handles missing status and title readably', () => {
   assert.deepEqual(agendaTreeItemLabel('', 'Plain scheduled note'), {
     label: '[·] Plain scheduled note',
@@ -65,4 +89,15 @@ test('agendaTreeItemLabel handles missing status and title readably', () => {
     label: '[·] (untitled)',
     highlights: [],
   });
+});
+
+test('priority helpers normalize and rank A/B/C before unprioritized', () => {
+  assert.equal(normalizeAgendaPriority('a'), 'A');
+  assert.equal(normalizeAgendaPriority('[#b]'), 'B');
+  assert.equal(normalizeAgendaPriority('Z'), '');
+
+  assert.equal(extractAgendaPriorityFromHeadline('TODO [#C] follow up'), 'C');
+  assert.equal(extractAgendaPriorityFromHeadline('TODO follow up'), '');
+
+  assert.deepEqual(['', 'C', 'A', 'B'].sort((a, b) => agendaPriorityRank(a) - agendaPriorityRank(b)), ['A', 'B', 'C', '']);
 });

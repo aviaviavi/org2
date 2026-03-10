@@ -6,11 +6,11 @@ export type TodoKeyword = "TODO" | "IN_PROGRESS" | "DONE" | "CANCELED" | "CANCEL
 
 export const TODO_KEYWORDS: TodoKeyword[] = ["TODO", "IN_PROGRESS", "DONE", "CANCELED", "CANCELLED"];
 
-export function keywordFromStatus(status: TodoStatus): TodoKeyword {
+export function keywordFromStatus(status: TodoStatus, opts?: { canceledKeyword?: "CANCELED" | "CANCELLED" }): TodoKeyword {
   if (status === "todo") return "TODO";
   if (status === "in_progress") return "IN_PROGRESS";
   if (status === "done") return "DONE";
-  return "CANCELED";
+  return opts?.canceledKeyword === "CANCELLED" ? "CANCELLED" : "CANCELED";
 }
 
 export function statusFromKeyword(keyword: string | undefined): TodoStatus {
@@ -97,13 +97,34 @@ function findPlanningBlockEnd(lines: string[], headingIndex: number, endExclusiv
 
 function upsertClosedPlanning(lines: string[], headingIndex: number, endExclusive: number, closedAt: string): void {
   const planningEnd = findPlanningBlockEnd(lines, headingIndex, endExclusive);
+  let firstClosedIndex = -1;
+
   for (let i = headingIndex + 1; i < planningEnd; i++) {
+    if (!/^CLOSED:\s/.test(lines[i] ?? "")) continue;
+    if (firstClosedIndex < 0) {
+      firstClosedIndex = i;
+      continue;
+    }
+    // Deduplicate stale duplicate CLOSED lines while preserving first position.
+    lines.splice(i, 1);
+    i--;
+  }
+
+  if (firstClosedIndex >= 0) {
+    lines[firstClosedIndex] = `CLOSED: ${closedAt}`;
+    return;
+  }
+
+  lines.splice(planningEnd, 0, `CLOSED: ${closedAt}`);
+}
+
+function removeClosedPlanning(lines: string[], headingIndex: number, endExclusive: number): void {
+  const planningEnd = findPlanningBlockEnd(lines, headingIndex, endExclusive);
+  for (let i = planningEnd - 1; i > headingIndex; i--) {
     if (/^CLOSED:\s/.test(lines[i] ?? "")) {
-      lines[i] = `CLOSED: ${closedAt}`;
-      return;
+      lines.splice(i, 1);
     }
   }
-  lines.splice(planningEnd, 0, `CLOSED: ${closedAt}`);
 }
 
 function findDrawer(lines: string[], start: number, endExclusive: number, name: string): { start: number; end: number; terminated: boolean } | null {
@@ -200,46 +221,43 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
     throw new Error("Must provide either status or toggle");
   }
 
-  const newKeyword = keywordFromStatus(targetStatus);
+  const canceledKeywordPreference = oldKeyword === "CANCELLED" ? "CANCELLED" : undefined;
+  const newKeyword = keywordFromStatus(targetStatus, {
+    ...(canceledKeywordPreference ? { canceledKeyword: canceledKeywordPreference } : {}),
+  });
 
   const { line: newHeadlineLine } = replaceOrInsertTodoKeyword(lines[headingIndex] ?? "", newKeyword);
   const changed = newHeadlineLine !== (lines[headingIndex] ?? "");
   lines[headingIndex] = newHeadlineLine;
 
-  const { endExclusive } = computeSubtreeRange(lines, headingIndex);
+  const subtreeEndExclusive = (): number => computeSubtreeRange(lines, headingIndex).endExclusive;
 
   // Optionally write state transition logbook entries.
   if (oldStatus !== targetStatus) {
-    // Figure insertion base: after planning block and property drawer if present.
-    const afterPlanning = findPlanningBlockEnd(lines, headingIndex, endExclusive);
+    // closedAt for done/canceled; reopening clears stale CLOSED metadata.
+    let closedAt: string | undefined;
+    if (targetStatus === "done" || targetStatus === "canceled") {
+      closedAt = stamp;
+      upsertClosedPlanning(lines, headingIndex, subtreeEndExclusive(), closedAt);
+    } else {
+      removeClosedPlanning(lines, headingIndex, subtreeEndExclusive());
+    }
 
-    let props = findDrawer(lines, afterPlanning, endExclusive, "PROPERTIES");
+    // Figure insertion base after planning block and property drawer (if present).
+    let endExclusive = subtreeEndExclusive();
+    const afterPlanning = findPlanningBlockEnd(lines, headingIndex, endExclusive);
     let insertAfterProps = afterPlanning;
 
+    const props = findDrawer(lines, afterPlanning, endExclusive, "PROPERTIES");
     if (props && props.terminated) {
       insertAfterProps = props.end + 1;
     }
 
-    // closedAt for done/canceled
-    let closedAt: string | undefined;
-    if (targetStatus === "done" || targetStatus === "canceled") {
-      closedAt = stamp;
-      upsertClosedPlanning(lines, headingIndex, endExclusive + 4, closedAt);
-
-      // Ensure logbook insertion stays after planning lines.
-      const afterPlanning2 = findPlanningBlockEnd(lines, headingIndex, endExclusive + 8);
-      insertAfterProps = Math.max(insertAfterProps, afterPlanning2);
-
-      // Re-find props in case line insert shifted indices.
-      const props2 = findDrawer(lines, afterPlanning2, endExclusive + 12, "PROPERTIES");
-      if (props2 && props2.terminated) {
-        insertAfterProps = props2.end + 1;
-      }
-    }
-
     if (opts.logbook) {
-      // Ensure LOGBOOK drawer
-      let logbook = findDrawer(lines, insertAfterProps, endExclusive + 10, "LOGBOOK");
+      // Prefer existing LOGBOOK drawer placement (even if it appears before PROPERTIES)
+      // to avoid creating duplicate drawers during status transitions.
+      const logbookSearchStart = afterPlanning;
+      let logbook = findDrawer(lines, logbookSearchStart, endExclusive, "LOGBOOK");
       if (!logbook || !logbook.terminated) {
         const created = ensureLogbookDrawer(lines, insertAfterProps);
         logbook = { start: created.start, end: created.end, terminated: true };
@@ -247,9 +265,16 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
 
       // Insert log entry before :END:
       // Find end again (may have shifted)
-      const log2 = findDrawer(lines, insertAfterProps, endExclusive + 20, "LOGBOOK");
+      endExclusive = subtreeEndExclusive();
+      const log2 = findDrawer(lines, logbookSearchStart, endExclusive, "LOGBOOK");
       if (log2 && log2.terminated) {
-        const entry = `- State \"${newKeyword}\" from \"${keywordFromStatus(oldStatus)}\" ${stamp}`;
+        const oldKeywordForLog =
+          oldKeyword && statusFromKeyword(oldKeyword) === oldStatus
+            ? oldKeyword
+            : keywordFromStatus(oldStatus, {
+                ...(canceledKeywordPreference ? { canceledKeyword: canceledKeywordPreference } : {}),
+              });
+        const entry = `- State \"${newKeyword}\" from \"${oldKeywordForLog}\" ${stamp}`;
         lines.splice(log2.end, 0, entry);
       }
     }
@@ -259,7 +284,7 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
       headingLineNumber: headingIndex + 1,
       oldStatus,
       newStatus: targetStatus,
-      ...(targetStatus === "done" || targetStatus === "canceled" ? { closedAt: stamp } : {}),
+      ...(closedAt ? { closedAt } : {}),
       changed,
       text: lines.join("\n"),
     };

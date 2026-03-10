@@ -21,6 +21,7 @@ test('parseRoamIdScheme/parseRoamIdLink: parse strict Org-roam id inputs', () =>
 });
 
 test('extractRoamUuid: resolves uuid from direct/id-scheme/id-link/embedded text forms', () => {
+  assert.equal(extractRoamUuid(UUID), UUID);
   assert.equal(extractRoamUuid(UUID.toUpperCase()), UUID);
   assert.equal(extractRoamUuid(`id:${UUID}`), UUID);
   assert.equal(extractRoamUuid(`[[id:${UUID}][Roadmap]]`), UUID);

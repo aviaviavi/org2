@@ -1,0 +1,5 @@
+* IN_PROGRESS Finish it
+:LOGBOOK:
+- State "IN_PROGRESS" from "DONE" <2026-01-21 Wed 12:34>
+:END:
+More

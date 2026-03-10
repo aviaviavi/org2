@@ -1,0 +1,6 @@
+* DONE Keep existing spelling
+CLOSED: <2026-01-21 Wed 12:34>
+:LOGBOOK:
+- State "DONE" from "CANCELLED" <2026-01-21 Wed 12:34>
+:END:
+Body

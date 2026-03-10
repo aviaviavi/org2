@@ -2,8 +2,24 @@ const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
 const cp = require('child_process');
-const { agendaFileLabel, agendaStatusBucket, agendaStatusCue, agendaTreeItemLabel, agendaUrgencyFromDate } = require('./agendaVisuals');
+const {
+  agendaFileLabel,
+  agendaPriorityRank,
+  agendaStatusBucket,
+  agendaStatusCue,
+  agendaTreeItemLabel,
+  agendaUrgencyFromDate,
+  extractAgendaPriorityFromHeadline,
+  normalizeAgendaPriority,
+} = require('./agendaVisuals');
+const { buildAgendaTreeGroupsFromCli } = require('./agendaTreeModel');
+const { resolveAgendaTargets, orderAgendaTargetsForMutation } = require('./agendaSelection');
 const { buildAgendaCliArgs } = require('./agendaArgs');
+const { readAgendaCliOptions } = require('./agendaSettings');
+const {
+  normalizeAgendaStatusFilterValue,
+  buildAgendaStatusFilterQuickPickOptions,
+} = require('./agendaStatusFilter');
 const {
   resolveWorkspaceFormatterPathFilters,
   buildWorkspaceFormatterCommandArgs,
@@ -20,31 +36,33 @@ const {
 } = require('./roamArgs');
 const { normalizeOrgPriorityToken, updateHeadlinePriorityToken } = require('./priorityToken');
 const { parseRoamIdScheme, parseRoamIdLink, extractRoamUuid, sanitizeBacklinkContextText } = require('./roamId');
+const { resolveDocumentLinkAbbreviations, expandLinkAbbreviationTarget } = require('./linkAbbrev');
+const {
+  findHeadlineLineAtOrAbove,
+  findSubtreeRangeAtOrAbove,
+  findHeadingLevelEditTargets,
+  findPreviousSiblingSubtreeRange,
+  findNextSiblingSubtreeRange,
+  findHeadingLinesAtLevel,
+} = require('./headingTree');
 
 const headingRe = /^(\*+)\s+/;
 const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
 const propertiesBeginRe = /^\s*:PROPERTIES:\s*$/i;
 const drawerEndRe = /^\s*:END:\s*$/i;
-function findHeadlineLineAtOrAbove(document, line0) {
-  if (!document || typeof document.lineCount !== 'number' || document.lineCount <= 0) return -1;
+const roamIdSchemeRe = /^id:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/i;
 
-  const clamped = Math.max(0, Math.min(Number(line0) || 0, document.lineCount - 1));
-  for (let i = clamped; i >= 0; i -= 1) {
-    if (headingRe.test(document.lineAt(i).text)) return i;
-  }
-  return -1;
-}
+function getSubtreeDocumentRange(document, range) {
+  if (!document || !range) return null;
+  const startLine = Math.max(0, Math.min(Number(range.startLine) || 0, document.lineCount - 1));
+  const endLine = Math.max(startLine, Math.min(Number(range.endLine) || startLine, document.lineCount - 1));
+  const start = document.lineAt(startLine).range.start;
+  const endLineRange = document.lineAt(endLine);
+  const end = endLine < document.lineCount - 1
+    ? endLineRange.rangeIncludingLineBreak.end
+    : endLineRange.range.end;
 
-function findHeadingLinesAtLevel(document, level) {
-  if (typeof level !== 'number' || level <= 0) return [];
-
-  const starts = [];
-  for (let i = 0; i < document.lineCount; i++) {
-    const text = document.lineAt(i).text;
-    const m = headingRe.exec(text);
-    if (m && m[1].length === level) starts.push(i);
-  }
-  return starts;
+  return new vscode.Range(start, end);
 }
 
 function findPropertyDrawerStartLines(document) {
@@ -169,8 +187,8 @@ function provideFoldingRanges(document) {
   return folds;
 }
 
-function resolveOrg2LinkTarget(rawUrl, document) {
-  const url = (rawUrl || '').trim();
+function resolveOrg2LinkTarget(rawUrl, document, linkAbbreviations) {
+  const url = expandLinkAbbreviationTarget((rawUrl || '').trim(), linkAbbreviations);
   if (!url) return undefined;
 
   // Org Roam id: links (id:<uuid>) → dispatch to our command.
@@ -210,6 +228,7 @@ function resolveOrg2LinkTarget(rawUrl, document) {
 
 function provideDocumentLinks(document) {
   const links = [];
+  const linkAbbreviations = resolveDocumentLinkAbbreviations(document);
 
   // Org2 links: [[url]] or [[url][desc]]
   const org2LinkRe = /\[\[([^\]\n]+?)(?:\]\[([^\]\n]*)\])?\]\]/g;
@@ -226,7 +245,7 @@ function provideDocumentLinks(document) {
         const end = m.index + m[0].length;
 
         const targetUrl = re === org2LinkRe ? m[1] : m[0];
-        const target = resolveOrg2LinkTarget(targetUrl, document);
+        const target = resolveOrg2LinkTarget(targetUrl, document, linkAbbreviations);
         if (!target) continue;
 
         // Keep range as the whole link token. This is what VS Code expects for ctrl/cmd+click.
@@ -255,7 +274,7 @@ class Org2AgendaSeparator {
 }
 
 class Org2AgendaItem {
-  constructor({ todo, headline, kind, file, line, date, time, urgency }) {
+  constructor({ todo, headline, kind, file, line, date, time, urgency, priority }) {
     this.todo = todo || '';
     this.headline = headline || '';
     this.kind = kind || '';
@@ -266,6 +285,7 @@ class Org2AgendaItem {
     this.time = typeof time === 'string' ? time.trim() : '';
     this.urgency = urgency || agendaUrgencyFromDate(date);
     this.statusBucket = agendaStatusBucket(todo);
+    this.priority = normalizeAgendaPriority(priority) || extractAgendaPriorityFromHeadline(this.headline);
   }
 }
 
@@ -617,7 +637,7 @@ class Org2AgendaProvider {
     }
 
     if (element instanceof Org2AgendaItem) {
-      const rowLabel = agendaTreeItemLabel(element.todo, element.headline, element.statusBucket);
+      const rowLabel = agendaTreeItemLabel(element.todo, element.headline, element.statusBucket, element.priority);
       const item = new vscode.TreeItem(rowLabel.label, vscode.TreeItemCollapsibleState.None);
       if (rowLabel.highlights.length) {
         item.label = { label: rowLabel.label, highlights: rowLabel.highlights };
@@ -1126,137 +1146,40 @@ async function findFirstIdMatchInDir(rootDir, id) {
   return undefined;
 }
 
+function getAgendaSourcePriorityToken(item, agendaRoot, fileCache) {
+  const fromPayload = normalizeAgendaPriority(item && item.priority);
+  if (fromPayload) return fromPayload;
+
+  const fromHeadline = extractAgendaPriorityFromHeadline(item && item.headline);
+  if (fromHeadline) return fromHeadline;
+
+  const relFile = String(item && item.file ? item.file : '').trim();
+  const line0 = Number(item && item.line);
+  if (!relFile || !Number.isInteger(line0) || line0 < 0) return '';
+
+  const absPath = path.isAbsolute(relFile) ? relFile : path.resolve(agendaRoot, relFile);
+  let lines = fileCache.get(absPath);
+  if (!lines) {
+    try {
+      lines = fs.readFileSync(absPath, 'utf8').split(/\r?\n/);
+    } catch (_) {
+      lines = [];
+    }
+    fileCache.set(absPath, lines);
+  }
+
+  const sourceLine = String(lines[line0] || '');
+  return extractAgendaPriorityFromHeadline(sourceLine);
+}
+
 async function fetchAgendaGroups(context, filter) {
   const cfg = vscode.workspace.getConfiguration('org2');
-  const cwd = getWorkspaceRoot() || process.cwd();
   const agendaRoot = getAgendaRootDir();
 
-  const scope = cfg.get('agenda.scope', 'workspace');
-  const files = cfg.get('agenda.files', []);
-  const includeOverdue = cfg.get('agenda.includeOverdue', true);
-  const statusFilter = String(cfg.get('agenda.statusFilter', 'all') || 'all').trim().toLowerCase();
-  const excludeStatusFilter = String(cfg.get('agenda.excludeStatusFilter', 'all') || 'all').trim().toLowerCase();
-  const kindFilter = String(cfg.get('agenda.kindFilter', 'all') || 'all').trim().toLowerCase();
-  const excludeKindFilter = String(cfg.get('agenda.excludeKindFilter', 'all') || 'all').trim().toLowerCase();
-  const whenFilter = String(cfg.get('agenda.whenFilter', 'all') || 'all').trim().toLowerCase();
-  const excludeWhenFilter = String(cfg.get('agenda.excludeWhenFilter', 'all') || 'all').trim().toLowerCase();
-  const weekdayFilter = String(cfg.get('agenda.weekdayFilter', 'all') || 'all').trim().toLowerCase();
-  const excludeWeekdayFilter = String(cfg.get('agenda.excludeWeekdayFilter', 'all') || 'all').trim().toLowerCase();
-  const weekFilter = String(cfg.get('agenda.weekFilter', 'all') || 'all').trim().toLowerCase();
-  const excludeWeekFilter = String(cfg.get('agenda.excludeWeekFilter', 'all') || 'all').trim().toLowerCase();
-  const dayOfMonthFilter = String(cfg.get('agenda.dayOfMonthFilter', 'all') || 'all').trim().toLowerCase();
-  const excludeDayOfMonthFilter = String(cfg.get('agenda.excludeDayOfMonthFilter', 'all') || 'all').trim().toLowerCase();
-  const monthFilter = String(cfg.get('agenda.monthFilter', 'all') || 'all').trim().toLowerCase();
-  const excludeMonthFilter = String(cfg.get('agenda.excludeMonthFilter', 'all') || 'all').trim().toLowerCase();
-  const quarterFilter = String(cfg.get('agenda.quarterFilter', 'all') || 'all').trim().toLowerCase();
-  const excludeQuarterFilter = String(cfg.get('agenda.excludeQuarterFilter', 'all') || 'all').trim().toLowerCase();
-  const yearFilter = String(cfg.get('agenda.yearFilter', 'all') || 'all').trim().toLowerCase();
-  const excludeYearFilter = String(cfg.get('agenda.excludeYearFilter', 'all') || 'all').trim().toLowerCase();
-  const dateFilter = String(cfg.get('agenda.dateFilter', 'all') || 'all').trim();
-  const excludeDateFilter = String(cfg.get('agenda.excludeDateFilter', 'all') || 'all').trim();
-  const levelFilter = String(cfg.get('agenda.levelFilter', '') || '').trim();
-  const excludeLevelFilter = String(cfg.get('agenda.excludeLevelFilter', '') || '').trim();
-  const matchFilter = String(cfg.get('agenda.matchFilter', '') || '').trim();
-  const excludeMatchFilter = String(cfg.get('agenda.excludeMatchFilter', '') || '').trim();
-  const tagFilter = String(cfg.get('agenda.tagFilter', '') || '').trim();
-  const idFilter = String(cfg.get('agenda.idFilter', '') || '').trim();
-  const todoKeywordFilter = String(cfg.get('agenda.todoKeywordFilter', '') || '').trim();
-  const todoOrder = String(cfg.get('agenda.todoOrder', '') || '').trim();
-  const statusOrder = String(cfg.get('agenda.statusOrder', '') || '').trim().toLowerCase();
-  const kindOrder = String(cfg.get('agenda.kindOrder', '') || '').trim().toLowerCase();
-  const priorityOrder = String(cfg.get('agenda.priorityOrder', '') || '').trim();
-  const tagOrder = String(cfg.get('agenda.tagOrder', '') || '').trim().toLowerCase();
-  const effortOrder = String(cfg.get('agenda.effortOrder', '') || '').trim().toLowerCase();
-  const priorityFilter = String(cfg.get('agenda.priorityFilter', '') || '').trim();
-  const timeFilter = String(cfg.get('agenda.timeFilter', '') || '').trim().toLowerCase();
-  const effortFilter = String(cfg.get('agenda.effortFilter', '') || '').trim();
-  const propertyFilter = String(cfg.get('agenda.propertyFilter', '') || '').trim();
-  const excludeTagFilter = String(cfg.get('agenda.excludeTagFilter', '') || '').trim();
-  const excludeIdFilter = String(cfg.get('agenda.excludeIdFilter', '') || '').trim();
-  const excludeTodoKeywordFilter = String(cfg.get('agenda.excludeTodoKeywordFilter', '') || '').trim();
-  const excludePriorityFilter = String(cfg.get('agenda.excludePriorityFilter', '') || '').trim();
-  const excludeTimeFilter = String(cfg.get('agenda.excludeTimeFilter', '') || '').trim().toLowerCase();
-  const excludeEffortFilter = String(cfg.get('agenda.excludeEffortFilter', '') || '').trim();
-  const excludePropertyFilter = String(cfg.get('agenda.excludePropertyFilter', '') || '').trim();
-  const fileFilter = String(cfg.get('agenda.fileFilter', '') || '').trim();
-  const excludeFileFilter = String(cfg.get('agenda.excludeFileFilter', '') || '').trim();
-  const sortBy = String(cfg.get('agenda.sortBy', 'default') || 'default').trim().toLowerCase();
-  const groupBy = String(cfg.get('agenda.groupBy', 'default') || 'default').trim().toLowerCase();
-  const dateOrder = String(cfg.get('agenda.dateOrder', 'asc') || 'asc').trim().toLowerCase();
-  const agendaLimit = Number(cfg.get('agenda.limit', 0) || 0);
-  const agendaDayLimit = Number(cfg.get('agenda.dayLimit', 0) || 0);
-  const agendaGroupLimit = Number(cfg.get('agenda.groupLimit', 0) || 0);
-  const startDate = String(cfg.get('agenda.startDate', '') || '').trim();
-  const endDate = String(cfg.get('agenda.endDate', '') || '').trim();
-  const defaultDays = cfg.get('agenda.days', 7);
+  const agendaOptions = readAgendaCliOptions(cfg, agendaRoot, filter, resolveAgendaFiles);
+  const { sortBy } = agendaOptions;
 
-  const days = filter && filter.type === 'today' ? 1 : (filter && filter.type === 'next' ? filter.days : defaultDays);
-
-  const resolvedFiles = scope === 'files' ? resolveAgendaFiles(files, agendaRoot) : [];
-  const recursive = cfg.get('agenda.recursive', true);
-
-  const { args, warnEmptyFiles } = buildAgendaCliArgs({
-    scope,
-    resolvedFiles,
-    agendaRoot,
-    recursive,
-    days,
-    startDate,
-    endDate,
-    includeOverdue,
-    statusFilter,
-    excludeStatusFilter,
-    kindFilter,
-    excludeKindFilter,
-    whenFilter,
-    excludeWhenFilter,
-    weekdayFilter,
-    excludeWeekdayFilter,
-    weekFilter,
-    excludeWeekFilter,
-    dayOfMonthFilter,
-    excludeDayOfMonthFilter,
-    monthFilter,
-    excludeMonthFilter,
-    quarterFilter,
-    excludeQuarterFilter,
-    yearFilter,
-    excludeYearFilter,
-    dateFilter,
-    excludeDateFilter,
-    levelFilter,
-    excludeLevelFilter,
-    matchFilter,
-    excludeMatchFilter,
-    tagFilter,
-    idFilter,
-    todoKeywordFilter,
-    todoOrder,
-    statusOrder,
-    kindOrder,
-    priorityOrder,
-    tagOrder,
-    effortOrder,
-    priorityFilter,
-    timeFilter,
-    effortFilter,
-    propertyFilter,
-    excludeTagFilter,
-    excludeIdFilter,
-    excludeTodoKeywordFilter,
-    excludePriorityFilter,
-    excludeTimeFilter,
-    excludeEffortFilter,
-    excludePropertyFilter,
-    fileFilter,
-    excludeFileFilter,
-    sortBy,
-    groupBy,
-    dateOrder,
-    agendaLimit,
-    agendaDayLimit,
-    agendaGroupLimit,
-  });
+  const { args, warnEmptyFiles } = buildAgendaCliArgs(agendaOptions);
 
   if (warnEmptyFiles) {
     vscode.window.showWarningMessage("Org2 agenda: org2.agenda.files is empty (set scope to 'workspace' or configure files).");
@@ -1274,37 +1197,25 @@ async function fetchAgendaGroups(context, filter) {
     throw err;
   }
 
-  const groups = [];
-  const pushDay = (d, isOverdue) => {
-    const dayUrgency = isOverdue ? 'overdue' : agendaUrgencyFromDate(d.date);
-    const items = (d.items || []).map(
-      (it) =>
-        new Org2AgendaItem({
-          ...it,
-          date: d.date,
-          urgency: dayUrgency,
-        })
-    );
-    const label = `${d.weekday || ''} ${d.date || ''}`.trim();
-    groups.push(new Org2AgendaGroup(isOverdue ? `Overdue: ${label}` : label, d.date, d.weekday, isOverdue, items));
-  };
+  const descriptors = buildAgendaTreeGroupsFromCli(data, sortBy);
+  const priorityFileCache = new Map();
 
-  const hasOverdue = Array.isArray(data.overdue) && data.overdue.length > 0;
-  const hasUpcoming = Array.isArray(data.days) && data.days.length > 0;
+  return descriptors.map((entry) => {
+    if (entry.type === 'separator') {
+      return new Org2AgendaSeparator(entry.label);
+    }
 
-  if (hasOverdue) {
-    for (const d of data.overdue) pushDay(d, true);
-  }
-
-  if (hasOverdue && hasUpcoming) {
-    groups.push(new Org2AgendaSeparator('──────── Upcoming ────────'));
-  }
-
-  if (hasUpcoming) {
-    for (const d of data.days) pushDay(d, false);
-  }
-
-  return groups;
+    const items = (entry.items || []).map((it) => {
+      const resolvedPriority = getAgendaSourcePriorityToken(it, agendaRoot, priorityFileCache);
+      return new Org2AgendaItem({
+        ...it,
+        priority: resolvedPriority,
+        date: entry.isOverdue ? (it && it.date) || '' : entry.date,
+        urgency: entry.isOverdue ? 'overdue' : agendaUrgencyFromDate(entry.date),
+      });
+    });
+    return new Org2AgendaGroup(entry.label, entry.date, entry.weekday, entry.isOverdue, items);
+  });
 }
 
 function revealNavigationPosition(editor, pos, source) {
@@ -1373,16 +1284,9 @@ async function pickAgendaFilter(provider) {
 
 async function pickAgendaStatusFilter(provider) {
   const cfg = vscode.workspace.getConfiguration('org2');
-  const current = String(cfg.get('agenda.statusFilter', 'all') || 'all').trim().toLowerCase();
-
-  const options = [
-    { label: 'All statuses', value: 'all', description: current === 'all' ? 'Current' : '' },
-    { label: 'Open', value: 'open', description: current === 'open' ? 'Current' : '' },
-    { label: 'TODO', value: 'todo', description: current === 'todo' ? 'Current' : '' },
-    { label: 'In progress', value: 'in_progress', description: current === 'in_progress' ? 'Current' : '' },
-    { label: 'Done', value: 'done', description: current === 'done' ? 'Current' : '' },
-    { label: 'Canceled', value: 'canceled', description: current === 'canceled' ? 'Current' : '' },
-  ];
+  const currentRaw = cfg.get('agenda.statusFilter', 'all');
+  const current = normalizeAgendaStatusFilterValue(currentRaw, 'all');
+  const options = buildAgendaStatusFilterQuickPickOptions(current);
 
   const pick = await vscode.window.showQuickPick(options, { placeHolder: 'Org2 agenda TODO status filter' });
   if (!pick) return;
@@ -1390,7 +1294,7 @@ async function pickAgendaStatusFilter(provider) {
   const target = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0
     ? vscode.ConfigurationTarget.Workspace
     : vscode.ConfigurationTarget.Global;
-  await cfg.update('agenda.statusFilter', pick.value, target);
+  await cfg.update('agenda.statusFilter', normalizeAgendaStatusFilterValue(pick.value, 'all'), target);
   if (provider) {
     await provider.load();
   }
@@ -2258,6 +2162,7 @@ function activate(context) {
   const agendaView = vscode.window.createTreeView('org2Agenda', {
     treeDataProvider: agendaProvider,
     showCollapseAll: true,
+    canSelectMany: true,
   });
   agendaProvider.attachView(agendaView);
   context.subscriptions.push(agendaView);
@@ -2511,7 +2416,7 @@ function activate(context) {
     return undefined;
   }
 
-  async function runSetPriority(priority, item) {
+  async function runSetPriority(priority, item, options = {}) {
     const normalizedPriority = normalizeOrgPriorityToken(priority);
 
     let filePath;
@@ -2572,12 +2477,12 @@ function activate(context) {
       await doc.save();
     }
 
-    if (item instanceof Org2AgendaItem) {
+    if (!options.skipAgendaReload && item instanceof Org2AgendaItem) {
       await agendaProvider.load();
     }
   }
 
-  async function runTodoCli(action, status, item) {
+  async function runTodoCli(action, status, item, options = {}) {
     let filePath;
     let line;
 
@@ -2648,7 +2553,7 @@ function activate(context) {
 
       // If this was invoked from an agenda row action, refresh the agenda view so
       // TODO/status edits are reflected immediately.
-      if (item instanceof Org2AgendaItem && changed !== false) {
+      if (item instanceof Org2AgendaItem && changed !== false && !options.skipAgendaReload) {
         await agendaProvider.load();
       }
     } catch (e) {
@@ -2656,7 +2561,7 @@ function activate(context) {
     }
   }
 
-  async function runPlanCli(kind, item, options) {
+  async function runPlanCli(kind, item, options = {}) {
     let filePath;
     let line;
 
@@ -2696,8 +2601,9 @@ function activate(context) {
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
     const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
-    const useToday = options && options.useToday ? true : false;
-    const dateOverride = options && typeof options.dateOverride === 'string' ? String(options.dateOverride).trim() : '';
+    const useToday = options.useToday ? true : false;
+    const dateOverride = typeof options.dateOverride === 'string' ? String(options.dateOverride).trim() : '';
+    const skipAgendaReload = options.skipAgendaReload ? true : false;
 
     let date = '';
     if (dateOverride) {
@@ -2751,7 +2657,7 @@ function activate(context) {
       }
 
       // Keep agenda rows in sync after agenda-invoked planning updates.
-      if (item instanceof Org2AgendaItem && changed !== false) {
+      if (item instanceof Org2AgendaItem && changed !== false && !skipAgendaReload) {
         await agendaProvider.load();
       }
     } catch (e) {
@@ -2858,7 +2764,7 @@ function activate(context) {
     }
   }
 
-  async function runArchiveCli(item) {
+  async function runArchiveCli(item, options = {}) {
     let filePath;
     let line;
 
@@ -2898,6 +2804,7 @@ function activate(context) {
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
     const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
+    const skipAgendaReload = options.skipAgendaReload ? true : false;
 
     const activeEditorBefore = item ? undefined : vscode.window.activeTextEditor;
     const activeUriBefore = activeEditorBefore && activeEditorBefore.document ? activeEditorBefore.document.uri.toString() : '';
@@ -2950,7 +2857,7 @@ function activate(context) {
       }
 
       // Keep agenda rows in sync after agenda-invoked archive edits.
-      if (item instanceof Org2AgendaItem) {
+      if (item instanceof Org2AgendaItem && !skipAgendaReload) {
         await agendaProvider.load();
       }
     } catch (e) {
@@ -2964,11 +2871,11 @@ function activate(context) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.archiveSubtree', async (item) => {
-      await runArchiveCli(item);
+      await applyArchiveSubtreeCommand(item);
     })
   );
 
-  async function runRefileCli(item) {
+  async function runRefileCli(item, options = {}) {
     let filePath;
     let line;
 
@@ -3008,6 +2915,7 @@ function activate(context) {
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
     const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
+    const skipAgendaReload = options.skipAgendaReload ? true : false;
 
     const activeEditorBefore = item ? undefined : vscode.window.activeTextEditor;
     const activeUriBefore = activeEditorBefore && activeEditorBefore.document ? activeEditorBefore.document.uri.toString() : '';
@@ -3151,7 +3059,7 @@ function activate(context) {
         }
       }
 
-      if (item instanceof Org2AgendaItem && changed !== false) {
+      if (item instanceof Org2AgendaItem && changed !== false && !skipAgendaReload) {
         await agendaProvider.load();
       }
 
@@ -3167,7 +3075,152 @@ function activate(context) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.refileSubtree', async (item) => {
-      await runRefileCli(item);
+      await applyRefileSubtreeCommand(item);
+    })
+  );
+
+  async function runShiftSubtreeLevels(step) {
+    const delta = Number(step);
+    if (!Number.isInteger(delta) || delta === 0) return;
+
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !editor.document) return;
+
+    const doc = editor.document;
+    if (doc.languageId !== 'org2' && doc.languageId !== 'org') {
+      vscode.window.showWarningMessage('Org2: heading level commands are only available for Org/Org2 files.');
+      return;
+    }
+
+    const subtreeRange = findSubtreeRangeAtOrAbove(doc, editor.selection && editor.selection.active ? editor.selection.active.line : 0);
+    if (!subtreeRange) {
+      vscode.window.showWarningMessage('Org2: place cursor on a headline to adjust subtree heading levels.');
+      return;
+    }
+
+    if (delta < 0 && subtreeRange.level <= 1) {
+      vscode.window.showInformationMessage('Org2: top-level headings cannot be promoted further.');
+      return;
+    }
+
+    const targets = findHeadingLevelEditTargets(doc, subtreeRange);
+    if (targets.length === 0) {
+      vscode.window.showInformationMessage('Org2: no headings found in subtree.');
+      return;
+    }
+
+    const edit = new vscode.WorkspaceEdit();
+    for (const target of targets) {
+      const nextLevel = target.level + delta;
+      if (nextLevel < 1) {
+        vscode.window.showInformationMessage('Org2: cannot promote heading above level 1.');
+        return;
+      }
+
+      const updated = `${'*'.repeat(nextLevel)}${target.text.slice(target.level)}`;
+      edit.replace(
+        doc.uri,
+        new vscode.Range(target.line, 0, target.line, target.text.length),
+        updated
+      );
+    }
+
+    const applied = await vscode.workspace.applyEdit(edit);
+    if (!applied) {
+      vscode.window.showErrorMessage('Org2: failed to update subtree heading levels.');
+      return;
+    }
+  }
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.promoteSubtree', async () => {
+      await runShiftSubtreeLevels(-1);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.demoteSubtree', async () => {
+      await runShiftSubtreeLevels(1);
+    })
+  );
+
+  async function runMoveSubtree(direction) {
+    const delta = Number(direction);
+    if (delta !== -1 && delta !== 1) return;
+
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !editor.document) return;
+
+    const doc = editor.document;
+    if (doc.languageId !== 'org2' && doc.languageId !== 'org') {
+      vscode.window.showWarningMessage('Org2: subtree move commands are only available for Org/Org2 files.');
+      return;
+    }
+
+    const subtreeRange = findSubtreeRangeAtOrAbove(doc, editor.selection && editor.selection.active ? editor.selection.active.line : 0);
+    if (!subtreeRange) {
+      vscode.window.showWarningMessage('Org2: place cursor on a headline to move a subtree.');
+      return;
+    }
+
+    const siblingRange = delta < 0
+      ? findPreviousSiblingSubtreeRange(doc, subtreeRange)
+      : findNextSiblingSubtreeRange(doc, subtreeRange);
+
+    if (!siblingRange) {
+      vscode.window.showInformationMessage(
+        delta < 0
+          ? 'Org2: subtree is already the first sibling.'
+          : 'Org2: subtree is already the last sibling.'
+      );
+      return;
+    }
+
+    const subtreeDocRange = getSubtreeDocumentRange(doc, subtreeRange);
+    const siblingDocRange = getSubtreeDocumentRange(doc, siblingRange);
+    if (!subtreeDocRange || !siblingDocRange) return;
+
+    const subtreeText = doc.getText(subtreeDocRange);
+    const siblingText = doc.getText(siblingDocRange);
+
+    const replacementRange = getSubtreeDocumentRange(doc, {
+      startLine: Math.min(subtreeRange.startLine, siblingRange.startLine),
+      endLine: Math.max(subtreeRange.endLine, siblingRange.endLine),
+    });
+    if (!replacementRange) return;
+
+    const replacementText = delta < 0
+      ? `${subtreeText}${siblingText}`
+      : `${siblingText}${subtreeText}`;
+
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(doc.uri, replacementRange, replacementText);
+
+    const applied = await vscode.workspace.applyEdit(edit);
+    if (!applied) {
+      vscode.window.showErrorMessage('Org2: failed to move subtree.');
+      return;
+    }
+
+    const siblingLineCount = siblingRange.endLine - siblingRange.startLine + 1;
+    const movedStartLine = delta < 0
+      ? siblingRange.startLine
+      : subtreeRange.startLine + siblingLineCount;
+
+    const movedCursor = new vscode.Position(Math.max(0, movedStartLine), 0);
+    editor.selection = new vscode.Selection(movedCursor, movedCursor);
+    editor.revealRange(new vscode.Range(movedCursor, movedCursor), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+  }
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.moveSubtreeUp', async () => {
+      await runMoveSubtree(-1);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.moveSubtreeDown', async () => {
+      await runMoveSubtree(1);
     })
   );
 
@@ -4327,16 +4380,99 @@ function activate(context) {
     })
   );
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand('org2.toggleTodo', async (item) => {
-      await runTodoCli('toggle', undefined, item);
-    })
-  );
+  function getSelectedAgendaItems() {
+    return agendaView && Array.isArray(agendaView.selection)
+      ? agendaView.selection.filter((x) => x instanceof Org2AgendaItem)
+      : [];
+  }
+
+  function resolveAgendaMutationTargets(item) {
+    const targets = resolveAgendaTargets(getSelectedAgendaItems(), item instanceof Org2AgendaItem ? item : undefined);
+    return orderAgendaTargetsForMutation(targets);
+  }
+
+  async function promptPlanDate(kind) {
+    const input = await vscode.window.showInputBox({
+      prompt: `Org2: set ${kind.toUpperCase()} (YYYY-MM-DD)`,
+      placeHolder: 'YYYY-MM-DD',
+      validateInput: (v) => (/^\d{4}-\d{2}-\d{2}$/.test((v || '').trim()) ? undefined : 'Expected YYYY-MM-DD'),
+    });
+    if (!input) return '';
+    return String(input).trim();
+  }
+
+  async function applyToggleTodoCommand(item) {
+    const targets = resolveAgendaMutationTargets(item);
+    if (targets.length > 1) {
+      for (const target of targets) {
+        await runTodoCli('toggle', undefined, target, { skipAgendaReload: true });
+      }
+      await agendaProvider.load();
+      return;
+    }
+    await runTodoCli('toggle', undefined, targets[0] || item);
+  }
+
+  async function applyArchiveSubtreeCommand(item) {
+    const targets = resolveAgendaMutationTargets(item);
+    if (targets.length > 1) {
+      for (const target of targets) {
+        await runArchiveCli(target, { skipAgendaReload: true });
+      }
+      await agendaProvider.load();
+      return;
+    }
+    await runArchiveCli(targets[0] || item);
+  }
+
+  async function applyRefileSubtreeCommand(item) {
+    const targets = resolveAgendaMutationTargets(item);
+    if (targets.length > 1) {
+      for (const target of targets) {
+        await runRefileCli(target, { skipAgendaReload: true });
+      }
+      await agendaProvider.load();
+      return;
+    }
+    await runRefileCli(targets[0] || item);
+  }
+
+  async function applyPlanCommand(kind, item, options = {}) {
+    const targets = resolveAgendaMutationTargets(item);
+    if (targets.length > 1) {
+      const runOptions = { ...options };
+      if (!runOptions.useToday && !runOptions.dateOverride) {
+        const pickedDate = await promptPlanDate(kind);
+        if (!pickedDate) return;
+        runOptions.dateOverride = pickedDate;
+      }
+
+      for (const target of targets) {
+        await runPlanCli(kind, target, { ...runOptions, skipAgendaReload: true });
+      }
+      await agendaProvider.load();
+      return;
+    }
+
+    await runPlanCli(kind, targets[0] || item, options);
+  }
 
   const applySetTodoStatus = async (status, item) => {
     const requested = String(status || '').trim().toLowerCase();
+    const targets = resolveAgendaMutationTargets(item);
+    const runSet = async (resolvedStatus) => {
+      if (targets.length > 1) {
+        for (const target of targets) {
+          await runTodoCli('set', resolvedStatus, target, { skipAgendaReload: true });
+        }
+        await agendaProvider.load();
+        return;
+      }
+      await runTodoCli('set', resolvedStatus, targets[0] || item);
+    };
+
     if (requested === 'todo' || requested === 'in_progress' || requested === 'done' || requested === 'canceled') {
-      await runTodoCli('set', requested, item);
+      await runSet(requested);
       return;
     }
 
@@ -4350,8 +4486,14 @@ function activate(context) {
       { placeHolder: 'Org2: set todo status' }
     );
     if (!pick) return;
-    await runTodoCli('set', pick.value, item);
+    await runSet(pick.value);
   };
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.toggleTodo', async (item) => {
+      await applyToggleTodoCommand(item);
+    })
+  );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.setTodoStatus', async (argOrItem, maybeItem) => {
@@ -4385,7 +4527,16 @@ function activate(context) {
         priority = normalizeOrgPriorityToken(pick.value);
       }
 
-      await runSetPriority(priority, item);
+      const targets = resolveAgendaMutationTargets(item);
+      if (targets.length > 1) {
+        for (const target of targets) {
+          await runSetPriority(priority, target, { skipAgendaReload: true });
+        }
+        await agendaProvider.load();
+        return;
+      }
+
+      await runSetPriority(priority, targets[0] || item);
     })
   );
 
@@ -4396,19 +4547,19 @@ function activate(context) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.setScheduled', async (item) => {
-      await runPlanCli('scheduled', item);
+      await applyPlanCommand('scheduled', item);
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.setDeadline', async (item) => {
-      await runPlanCli('deadline', item);
+      await applyPlanCommand('deadline', item);
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.setScheduledToday', async (item) => {
-      await runPlanCli('scheduled', item, { useToday: true });
+      await applyPlanCommand('scheduled', item, { useToday: true });
     })
   );
 
@@ -4416,7 +4567,7 @@ function activate(context) {
     vscode.commands.registerCommand('org2.setScheduledTomorrow', async (item) => {
       const d = new Date();
       d.setDate(d.getDate() + 1);
-      await runPlanCli('scheduled', item, { dateOverride: formatDateYYYYMMDD(d) });
+      await applyPlanCommand('scheduled', item, { dateOverride: formatDateYYYYMMDD(d) });
     })
   );
 
@@ -4427,7 +4578,7 @@ function activate(context) {
       const weekday = d.getDay(); // 0=Sun, 1=Mon, ... 6=Sat
       const daysUntilMonday = (8 - weekday) % 7 || 7;
       d.setDate(d.getDate() + daysUntilMonday);
-      await runPlanCli('scheduled', item, { dateOverride: formatDateYYYYMMDD(d) });
+      await applyPlanCommand('scheduled', item, { dateOverride: formatDateYYYYMMDD(d) });
     })
   );
 
@@ -4435,13 +4586,13 @@ function activate(context) {
     vscode.commands.registerCommand('org2.setScheduledNextMonth', async (item) => {
       const d = new Date();
       d.setMonth(d.getMonth() + 1);
-      await runPlanCli('scheduled', item, { dateOverride: formatDateYYYYMMDD(d) });
+      await applyPlanCommand('scheduled', item, { dateOverride: formatDateYYYYMMDD(d) });
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.setDeadlineToday', async (item) => {
-      await runPlanCli('deadline', item, { useToday: true });
+      await applyPlanCommand('deadline', item, { useToday: true });
     })
   );
 
@@ -4612,7 +4763,7 @@ function activate(context) {
       maybeAutoFold(editor);
       updateLinkDecorations(editor);
       updateTodoStateDecorations(editor);
-      backlinksProvider.loadForEditor(editor, { focusView: true }).catch(() => {});
+      backlinksProvider.loadForEditor(editor, { focusView: false }).catch(() => {});
     })
   );
 
