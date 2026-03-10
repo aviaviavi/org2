@@ -32,6 +32,7 @@ const {
 } = require('./roamArgs');
 const { normalizeOrgPriorityToken, updateHeadlinePriorityToken } = require('./priorityToken');
 const { parseRoamIdLink, extractRoamUuid, sanitizeBacklinkContextText } = require('./roamId');
+const { resolveDocumentLinkAbbreviations, expandLinkAbbreviationTarget } = require('./linkAbbrev');
 const {
   findHeadlineLineAtOrAbove,
   findSubtreeRangeAtOrAbove,
@@ -182,8 +183,8 @@ function provideFoldingRanges(document) {
   return folds;
 }
 
-function resolveOrg2LinkTarget(rawUrl, document) {
-  const url = (rawUrl || '').trim();
+function resolveOrg2LinkTarget(rawUrl, document, linkAbbreviations) {
+  const url = expandLinkAbbreviationTarget((rawUrl || '').trim(), linkAbbreviations);
   if (!url) return undefined;
 
   // Org Roam id: links (id:<uuid>) → dispatch to our command.
@@ -224,6 +225,7 @@ function resolveOrg2LinkTarget(rawUrl, document) {
 
 function provideDocumentLinks(document) {
   const links = [];
+  const linkAbbreviations = resolveDocumentLinkAbbreviations(document);
 
   // Org2 links: [[url]] or [[url][desc]]
   const org2LinkRe = /\[\[([^\]\n]+?)(?:\]\[([^\]\n]*)\])?\]\]/g;
@@ -240,7 +242,7 @@ function provideDocumentLinks(document) {
         const end = m.index + m[0].length;
 
         const targetUrl = re === org2LinkRe ? m[1] : m[0];
-        const target = resolveOrg2LinkTarget(targetUrl, document);
+        const target = resolveOrg2LinkTarget(targetUrl, document, linkAbbreviations);
         if (!target) continue;
 
         // Keep range as the whole link token. This is what VS Code expects for ctrl/cmd+click.
