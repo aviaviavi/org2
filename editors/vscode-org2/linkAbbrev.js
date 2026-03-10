@@ -68,7 +68,7 @@ function mergeLinkAbbreviations(sources) {
 
 function expandLinkAbbreviationTarget(targetRaw, abbreviations) {
   const target = String(targetRaw || '').trim();
-  if (!target || !abbreviations || abbreviations.size === 0) return target;
+  if (!target) return target;
 
   const match = /^([A-Za-z][A-Za-z0-9+.-]*):(.*)$/.exec(target);
   if (!match) return target;
@@ -77,8 +77,17 @@ function expandLinkAbbreviationTarget(targetRaw, abbreviations) {
   if (!prefix || RESERVED_PREFIXES.has(prefix)) return target;
 
   const suffix = match[2] || '';
-  const template = abbreviations.get(prefix);
-  if (!template) return target;
+  const template = abbreviations && typeof abbreviations.get === 'function'
+    ? abbreviations.get(prefix)
+    : undefined;
+  if (!template) {
+    // Safety fallback: make linear:APP-123 clickable even when project/in-file
+    // link abbreviations failed to load for any reason.
+    if (prefix === 'linear' && suffix) {
+      return `https://linear.app/scarf/issue/${suffix}`;
+    }
+    return target;
+  }
 
   if (template.includes('%s')) {
     return template.replace(/%s/g, suffix);
