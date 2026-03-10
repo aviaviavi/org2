@@ -17,7 +17,8 @@ test('readAgendaCliOptions resolves file scope + next filter days', () => {
     'agenda.files': ['notes.org2'],
     'agenda.days': 7,
     'agenda.sortBy': ' PRioRity:desc ',
-    'agenda.statusFilter': ' In_Progress ',
+    'agenda.statusFilter': ' In Progress ',
+    'agenda.excludeStatusFilter': ' cancelled ',
   });
 
   const opts = readAgendaCliOptions(cfg, '/tmp/org2', { type: 'next', days: 3 }, (files, root) => {
@@ -31,6 +32,7 @@ test('readAgendaCliOptions resolves file scope + next filter days', () => {
   assert.equal(opts.days, 3);
   assert.equal(opts.sortBy, 'priority:desc');
   assert.equal(opts.statusFilter, 'in_progress');
+  assert.equal(opts.excludeStatusFilter, 'canceled');
 });
 
 test('readAgendaCliOptions resolves today filter to one day', () => {
