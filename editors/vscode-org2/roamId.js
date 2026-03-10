@@ -1,7 +1,7 @@
 const uuidSource = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
 const uuidExactRe = new RegExp(`^(${uuidSource})$`);
 const roamIdSchemeRe = new RegExp(`^id:(${uuidSource})$`, 'i');
-const roamIdLinkPartsRe = new RegExp(`^\[\[id:(${uuidSource})\](?:\[([^\]\n]*)\])?\]$`, 'i');
+const roamIdLinkPartsRe = new RegExp(String.raw`^\[\[id:(${uuidSource})(?:\]\[([^\]\n]*))?\]\]$`, 'i');
 const roamUuidAnywhereRe = new RegExp(`(${uuidSource})`, 'i');
 const roamIdTokenGlobalRe = /\bid:[^\s\]\[(){}<>,"']+/gi;
 
