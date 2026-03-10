@@ -13,6 +13,7 @@ import {
   type ParseError,
 } from "./parser.js";
 import { printCanonicalAstToOrg } from "./printer.js";
+import { protectPgpBlocks, restorePgpBlocks } from "./pgp.js";
 import { findConfigFile, loadConfig } from "./config.js";
 import {
   buildBuiltInLinkAbbreviations,
@@ -2555,8 +2556,11 @@ class LSPServer {
 
   private formatCanonicalOrgText(rawText: string): string | null {
     try {
-      const ast = parseOrgToCanonicalAst(rawText.replace(/\r\n/g, "\n"));
-      return printCanonicalAstToOrg(ast);
+      const normalized = rawText.replace(/\r\n/g, "\n");
+      const { text: protectedText, blocks } = protectPgpBlocks(normalized);
+      const ast = parseOrgToCanonicalAst(protectedText);
+      const formatted = printCanonicalAstToOrg(ast);
+      return restorePgpBlocks(formatted, blocks);
     } catch {
       return null;
     }

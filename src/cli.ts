@@ -8,6 +8,7 @@ import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { parseOrgToCanonicalAst } from "./parser.js";
 import { printCanonicalAstToOrg } from "./printer.js";
+import { normalizePgpArmorForDecrypt, protectPgpBlocks, restorePgpBlocks } from "./pgp.js";
 import {
   findConfigFile,
   loadConfig,
@@ -80,6 +81,12 @@ type TimestampRepeater = {
   unit: "d" | "w" | "m" | "y";
 };
 
+type TimestampWarning = {
+  mode: "-" | "--";
+  value: number;
+  unit: "d" | "w" | "m" | "y";
+};
+
 type ExportMetadataPayload = {
   author?: string;
   date?: string;
@@ -124,27 +131,62 @@ function parseTimestampRepeater(raw: string): TimestampRepeater | null {
   };
 }
 
-function addRepeaterInterval(date: Date, repeater: TimestampRepeater): Date {
-  const next = new Date(date.getTime());
+function parseTimestampWarning(raw: string): TimestampWarning | null {
+  const match = raw.match(/(?:^|\s)(--|-)(\d+)([dwmy])(?=[^A-Za-z0-9]|$)/i);
+  if (!match) return null;
 
-  // For agenda projection we treat +, ++, and .+ as fixed intervals from the
-  // timestamp date and expand occurrences that fall within the requested range.
-  switch (repeater.unit) {
+  const modeRaw = match[1] ?? "-";
+  const valueRaw = match[2] ?? "";
+  const unitRaw = (match[3] ?? "").toLowerCase();
+
+  const value = Number.parseInt(valueRaw, 10);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  if (unitRaw !== "d" && unitRaw !== "w" && unitRaw !== "m" && unitRaw !== "y") return null;
+
+  if (modeRaw !== "-" && modeRaw !== "--") return null;
+
+  return {
+    mode: modeRaw,
+    value,
+    unit: unitRaw,
+  };
+}
+
+function addTimestampInterval(
+  date: Date,
+  value: number,
+  unit: "d" | "w" | "m" | "y",
+  direction: 1 | -1,
+): Date {
+  const next = new Date(date.getTime());
+  const signedValue = direction * value;
+
+  switch (unit) {
     case "d":
-      next.setUTCDate(next.getUTCDate() + repeater.value);
+      next.setUTCDate(next.getUTCDate() + signedValue);
       break;
     case "w":
-      next.setUTCDate(next.getUTCDate() + repeater.value * 7);
+      next.setUTCDate(next.getUTCDate() + signedValue * 7);
       break;
     case "m":
-      next.setUTCMonth(next.getUTCMonth() + repeater.value);
+      next.setUTCMonth(next.getUTCMonth() + signedValue);
       break;
     case "y":
-      next.setUTCFullYear(next.getUTCFullYear() + repeater.value);
+      next.setUTCFullYear(next.getUTCFullYear() + signedValue);
       break;
   }
 
   return next;
+}
+
+function addRepeaterInterval(date: Date, repeater: TimestampRepeater): Date {
+  // For agenda projection we treat +, ++, and .+ as fixed intervals from the
+  // timestamp date and expand occurrences that fall within the requested range.
+  return addTimestampInterval(date, repeater.value, repeater.unit, 1);
+}
+
+function subtractWarningInterval(date: Date, warning: TimestampWarning): Date {
+  return addTimestampInterval(date, warning.value, warning.unit, -1);
 }
 
 function formatIsoDateUtc(date: Date): string {
@@ -159,16 +201,18 @@ function resolveAgendaDatesFromTimestamp(
   startDate: Date,
   endDate: Date,
   wantsOverdue: boolean,
+  planningKind: "SCHEDULED" | "DEADLINE",
 ): string[] {
   const dateStr = extractDateFromTimestamp(raw);
   if (!dateStr) return [];
 
-  const repeater = parseTimestampRepeater(raw);
-  if (!repeater) return [dateStr];
-
   const firstDate = parseIsoDate(dateStr);
+  const repeater = parseTimestampRepeater(raw);
+  const warning = planningKind === "DEADLINE" ? parseTimestampWarning(raw) : null;
+
   const seen = new Set<string>();
   const resolved: string[] = [];
+  let latestBeforeStart: Date | null = null;
 
   const addResolved = (date: Date): void => {
     const iso = formatIsoDateUtc(date);
@@ -177,29 +221,55 @@ function resolveAgendaDatesFromTimestamp(
     resolved.push(iso);
   };
 
-  const maxIterations = 10000;
-  let cursor = new Date(firstDate.getTime());
-  let previousBeforeStart: Date | null = null;
-
-  for (let i = 0; i < maxIterations && cursor < startDate; i += 1) {
-    previousBeforeStart = cursor;
-    const next = addRepeaterInterval(cursor, repeater);
-    if (next.getTime() <= cursor.getTime()) break;
-    cursor = next;
-  }
-
-  if (wantsOverdue && previousBeforeStart) {
-    addResolved(previousBeforeStart);
-  }
-
-  for (let i = 0; i < maxIterations && cursor <= endDate; i += 1) {
-    if (cursor >= startDate) {
-      addResolved(cursor);
+  const consider = (date: Date): void => {
+    if (date >= startDate && date <= endDate) {
+      addResolved(date);
+      return;
     }
 
+    if (date < startDate && (!latestBeforeStart || date.getTime() > latestBeforeStart.getTime())) {
+      latestBeforeStart = new Date(date.getTime());
+    }
+  };
+
+  const considerOccurrence = (occurrenceDate: Date): void => {
+    consider(occurrenceDate);
+
+    if (!warning) return;
+    const warningDate = subtractWarningInterval(occurrenceDate, warning);
+    consider(warningDate);
+  };
+
+  if (!repeater) {
+    considerOccurrence(firstDate);
+    if (wantsOverdue && latestBeforeStart) addResolved(latestBeforeStart);
+    return resolved.sort();
+  }
+
+  const maxIterations = 10000;
+  let cursor = new Date(firstDate.getTime());
+
+  for (let i = 0; i < maxIterations && cursor < startDate; i += 1) {
+    considerOccurrence(cursor);
     const next = addRepeaterInterval(cursor, repeater);
     if (next.getTime() <= cursor.getTime()) break;
     cursor = next;
+  }
+
+  const repeatUpperBound = warning
+    ? addTimestampInterval(endDate, warning.value, warning.unit, 1)
+    : new Date(endDate.getTime());
+
+  for (let i = 0; i < maxIterations && cursor <= repeatUpperBound; i += 1) {
+    considerOccurrence(cursor);
+
+    const next = addRepeaterInterval(cursor, repeater);
+    if (next.getTime() <= cursor.getTime()) break;
+    cursor = next;
+  }
+
+  if (wantsOverdue && latestBeforeStart) {
+    addResolved(latestBeforeStart);
   }
 
   return resolved.sort();
@@ -573,6 +643,18 @@ function normalizeAgendaStatusFilterToken(tokenRaw: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
+}
+
+function parseTodoStatusArg(rawStatus: string): TodoStatus | "" {
+  const token = normalizeAgendaStatusFilterToken(rawStatus);
+  if (!token) return "";
+
+  if (token === "todo" || token === "open") return "todo";
+  if (token === "in_progress" || token === "inprogress" || token === "prog" || token === "doing" || token === "started" || token === "waiting" || token === "blocked" || token === "next" || token === "wip") return "in_progress";
+  if (token === "done" || token === "complete" || token === "completed" || token === "finish" || token === "finished" || token === "closed" || token === "resolved") return "done";
+  if (token === "canceled" || token === "cancelled" || token === "cancel") return "canceled";
+
+  return "";
 }
 
 function parseAgendaStatusFilterArgs(rawArgs: string[]): {
@@ -2564,7 +2646,7 @@ function findScheduledItemsInText(
       if (!matchesAgendaTimeFilter(planningTime, timeFilter)) continue;
       if (!matchesAgendaExcludeTimeFilter(planningTime, excludeTimeFilter)) continue;
       const wantsOverdue = agendaWantsOverdue(includeOverdue, whenFilter, excludeWhenFilter);
-      const agendaDates = resolveAgendaDatesFromTimestamp(tsRaw, startDate, endDate, wantsOverdue);
+      const agendaDates = resolveAgendaDatesFromTimestamp(tsRaw, startDate, endDate, wantsOverdue, kind as AgendaPlanningKind);
 
       for (const dateStr of agendaDates) {
         const itemDate = parseIsoDate(dateStr);
@@ -2657,7 +2739,13 @@ function findScheduledItems(
               const raw = "start" in ts ? ts.start.raw : ts.raw;
               const planningTime = extractTimeFromTimestamp(raw);
               const wantsOverdue = agendaWantsOverdue(includeOverdue, whenFilter, excludeWhenFilter);
-              const agendaDates = resolveAgendaDatesFromTimestamp(raw, startDate, endDate, wantsOverdue);
+              const agendaDates = resolveAgendaDatesFromTimestamp(
+                raw,
+                startDate,
+                endDate,
+                wantsOverdue,
+                planning.kind as AgendaPlanningKind,
+              );
               if (agendaDates.length === 0) continue;
 
               const todo = headline.todo;
@@ -3801,7 +3889,7 @@ async function main(): Promise<void> {
         if (command === "agenda") {
           agendaStatusFiltersRaw.push(args[i]!);
         } else {
-          todoStatus = args[i] as TodoStatus;
+          todoStatus = parseTodoStatusArg(args[i] ?? "");
         }
         i++;
       }
@@ -6353,7 +6441,7 @@ Tips:
 
     if (todoAction === "set") {
       if (!todoStatus || (todoStatus !== "todo" && todoStatus !== "in_progress" && todoStatus !== "done" && todoStatus !== "canceled")) {
-        console.error("Error: todo set requires --status todo|in_progress|done|canceled");
+        console.error("Error: todo set requires --status todo|in_progress|done|canceled (aliases: open, in-progress/in progress/prog/doing/started/waiting/blocked/next/wip, complete/completed/finish/finished/closed/resolved, cancel/cancelled)");
         process.exit(1);
       }
     }
@@ -6665,7 +6753,8 @@ Tips:
       }
 
       const encryptedText = lines.slice(blockStart, blockEnd + 1).join("\n") + "\n";
-      const gpg = runGpg("decrypt", encryptedText);
+      const normalizedEncryptedText = normalizePgpArmorForDecrypt(encryptedText);
+      const gpg = runGpg("decrypt", normalizedEncryptedText);
       if (!gpg.ok) {
         const detail = [gpg.error, gpg.stderr.trim()].filter(Boolean).join(" | ");
         console.error(`Error: crypt decrypt failed${detail ? `: ${detail}` : ""}`);
@@ -6737,8 +6826,11 @@ Tips:
 
   if (command === "fmt") {
     const formatOne = (rawIn: string): string => {
-      const ast = parseOrgToCanonicalAst(rawIn.replace(/\r\n/g, "\n"));
-      return printCanonicalAstToOrg(ast);
+      const normalized = rawIn.replace(/\r\n/g, "\n");
+      const { text: protectedText, blocks } = protectPgpBlocks(normalized);
+      const ast = parseOrgToCanonicalAst(protectedText);
+      const formatted = printCanonicalAstToOrg(ast);
+      return restorePgpBlocks(formatted, blocks);
     };
 
     const emitFmtCheckJson = (checkedFiles: string[], changedFiles: string[]): void => {

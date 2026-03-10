@@ -1,0 +1,5 @@
+* DONE Finish it
+CLOSED: <2026-01-20 Tue 09:00>
+CLOSED: <2026-01-19 Mon 08:00>
+SCHEDULED: <2026-01-22 Thu>
+More

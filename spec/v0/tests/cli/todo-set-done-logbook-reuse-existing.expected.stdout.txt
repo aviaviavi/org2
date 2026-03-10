@@ -1,0 +1,10 @@
+* DONE Finish it
+CLOSED: <2026-01-21 Wed 12:34>
+:LOGBOOK:
+- State "IN_PROGRESS" from "TODO" <2026-01-20 Tue 09:00>
+- State "DONE" from "IN_PROGRESS" <2026-01-21 Wed 12:34>
+:END:
+:PROPERTIES:
+:OWNER: Avi
+:END:
+More

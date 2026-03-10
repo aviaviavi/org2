@@ -1,0 +1,8 @@
+* IN_PROGRESS Finish it
+:LOGBOOK:
+- State "IN_PROGRESS" from "TODO" <2026-01-20 Tue 09:00>
+:END:
+:PROPERTIES:
+:OWNER: Avi
+:END:
+More
