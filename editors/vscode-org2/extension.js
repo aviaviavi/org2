@@ -4817,7 +4817,7 @@ function activate(context) {
       maybeAutoFold(editor);
       updateLinkDecorations(editor);
       updateTodoStateDecorations(editor);
-      backlinksProvider.loadForEditor(editor, { focusView: true }).catch(() => {});
+      backlinksProvider.loadForEditor(editor, { focusView: false }).catch(() => {});
     })
   );
 
