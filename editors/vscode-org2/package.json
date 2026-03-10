@@ -1411,6 +1411,7 @@
     "agendaVisuals.js",
     "headingTree.js",
     "roamId.js",
+    "linkAbbrev.js",
     "agendaSettings.js",
     "formatterArgs.js",
     "roamArgs.js",
