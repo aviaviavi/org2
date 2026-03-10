@@ -1,0 +1,5 @@
+* TODO Pay quarterly tax
+DEADLINE: <2026-04-10 Fri -2d>
+
+* TODO Submit travel receipt
+DEADLINE: <2026-04-12 Sun -3d>
