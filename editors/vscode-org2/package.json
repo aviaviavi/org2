@@ -1415,6 +1415,7 @@
     "agendaSettings.js",
     "agendaStatusFilter.js",
     "formatterArgs.js",
+    "planningArgs.js",
     "roamArgs.js",
     "roamId.js",
     "priorityToken.js",
