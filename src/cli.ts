@@ -8,6 +8,7 @@ import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { parseOrgToCanonicalAst } from "./parser.js";
 import { printCanonicalAstToOrg } from "./printer.js";
+import { normalizePgpArmorForDecrypt, protectPgpBlocks, restorePgpBlocks } from "./pgp.js";
 import {
   findConfigFile,
   loadConfig,
@@ -6665,7 +6666,8 @@ Tips:
       }
 
       const encryptedText = lines.slice(blockStart, blockEnd + 1).join("\n") + "\n";
-      const gpg = runGpg("decrypt", encryptedText);
+      const normalizedEncryptedText = normalizePgpArmorForDecrypt(encryptedText);
+      const gpg = runGpg("decrypt", normalizedEncryptedText);
       if (!gpg.ok) {
         const detail = [gpg.error, gpg.stderr.trim()].filter(Boolean).join(" | ");
         console.error(`Error: crypt decrypt failed${detail ? `: ${detail}` : ""}`);
@@ -6737,8 +6739,11 @@ Tips:
 
   if (command === "fmt") {
     const formatOne = (rawIn: string): string => {
-      const ast = parseOrgToCanonicalAst(rawIn.replace(/\r\n/g, "\n"));
-      return printCanonicalAstToOrg(ast);
+      const normalized = rawIn.replace(/\r\n/g, "\n");
+      const { text: protectedText, blocks } = protectPgpBlocks(normalized);
+      const ast = parseOrgToCanonicalAst(protectedText);
+      const formatted = printCanonicalAstToOrg(ast);
+      return restorePgpBlocks(formatted, blocks);
     };
 
     const emitFmtCheckJson = (checkedFiles: string[], changedFiles: string[]): void => {
