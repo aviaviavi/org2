@@ -80,7 +80,15 @@ function expandLinkAbbreviationTarget(targetRaw, abbreviations) {
   const template = abbreviations && typeof abbreviations.get === 'function'
     ? abbreviations.get(prefix)
     : undefined;
-  if (!template) return target;
+  if (!template) {
+    // Non-hardcoded fallback for Linear issue shorthand when project/in-file
+    // abbreviations are unavailable. This keeps cmd-click useful without
+    // assuming a team slug.
+    if (prefix === 'linear' && suffix) {
+      return `https://linear.app/issue/${suffix}`;
+    }
+    return target;
+  }
 
   if (template.includes('%s')) {
     return template.replace(/%s/g, suffix);
