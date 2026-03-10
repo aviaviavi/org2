@@ -1,9 +1,11 @@
+const { normalizeAgendaStatusFilterValue } = require('./agendaStatusFilter');
+
 function readAgendaCliOptions(cfg, agendaRoot, filter, resolveAgendaFiles) {
   const scope = cfg.get('agenda.scope', 'workspace');
   const files = cfg.get('agenda.files', []);
   const includeOverdue = cfg.get('agenda.includeOverdue', true);
-  const statusFilter = String(cfg.get('agenda.statusFilter', 'all') || 'all').trim().toLowerCase();
-  const excludeStatusFilter = String(cfg.get('agenda.excludeStatusFilter', 'all') || 'all').trim().toLowerCase();
+  const statusFilter = normalizeAgendaStatusFilterValue(cfg.get('agenda.statusFilter', 'all'), 'all');
+  const excludeStatusFilter = normalizeAgendaStatusFilterValue(cfg.get('agenda.excludeStatusFilter', 'all'), 'all');
   const kindFilter = String(cfg.get('agenda.kindFilter', 'all') || 'all').trim().toLowerCase();
   const excludeKindFilter = String(cfg.get('agenda.excludeKindFilter', 'all') || 'all').trim().toLowerCase();
   const whenFilter = String(cfg.get('agenda.whenFilter', 'all') || 'all').trim().toLowerCase();
