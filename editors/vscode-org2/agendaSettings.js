@@ -1,5 +1,12 @@
 const { normalizeAgendaStatusFilterValue } = require('./agendaStatusFilter');
 
+function normalizeAgendaDateBoundary(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (raw.toLowerCase() === 'all') return '';
+  return raw;
+}
+
 function readAgendaCliOptions(cfg, agendaRoot, filter, resolveAgendaFiles) {
   const scope = cfg.get('agenda.scope', 'workspace');
   const files = cfg.get('agenda.files', []);
@@ -56,8 +63,8 @@ function readAgendaCliOptions(cfg, agendaRoot, filter, resolveAgendaFiles) {
   const agendaLimit = Number(cfg.get('agenda.limit', 0) || 0);
   const agendaDayLimit = Number(cfg.get('agenda.dayLimit', 0) || 0);
   const agendaGroupLimit = Number(cfg.get('agenda.groupLimit', 0) || 0);
-  const startDate = String(cfg.get('agenda.startDate', '') || '').trim();
-  const endDate = String(cfg.get('agenda.endDate', '') || '').trim();
+  const startDate = normalizeAgendaDateBoundary(cfg.get('agenda.startDate', ''));
+  const endDate = normalizeAgendaDateBoundary(cfg.get('agenda.endDate', ''));
   const defaultDays = cfg.get('agenda.days', 7);
 
   const days = filter && filter.type === 'today' ? 1 : (filter && filter.type === 'next' ? filter.days : defaultDays);
