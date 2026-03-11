@@ -4,6 +4,13 @@ function toPositiveInt(value) {
   return Math.floor(n);
 }
 
+function normalizeAgendaDateBoundary(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (raw.toLowerCase() === 'all') return '';
+  return raw;
+}
+
 function buildAgendaCliArgs(options = {}) {
   const {
     scope = 'workspace',
@@ -83,8 +90,10 @@ function buildAgendaCliArgs(options = {}) {
 
   args.push('--days', String(days), '--format', 'json');
 
-  if (startDate) args.push('--from', startDate);
-  if (endDate) args.push('--to', endDate);
+  const normalizedStartDate = normalizeAgendaDateBoundary(startDate);
+  const normalizedEndDate = normalizeAgendaDateBoundary(endDate);
+  if (normalizedStartDate) args.push('--from', normalizedStartDate);
+  if (normalizedEndDate) args.push('--to', normalizedEndDate);
   if (!includeOverdue) args.push('--no-overdue');
   if (statusFilter && statusFilter !== 'all') args.push('--status', statusFilter);
   if (excludeStatusFilter && excludeStatusFilter !== 'all') args.push('--exclude-status', excludeStatusFilter);
