@@ -1,1 +1,1 @@
-Error: invalid agenda --status-order value(s): wat. Allowed: default, todo|open, in_progress|in-progress|prog, done|completed, canceled|cancelled|closed, custom
+Error: invalid agenda --status-order value(s): wat. Allowed: default, todo|open|backlog, in_progress|in-progress|prog|doing|started|waiting|blocked|next|wip, done|complete|completed|finish|finished|resolved, canceled|cancel|cancelled|closed, custom
