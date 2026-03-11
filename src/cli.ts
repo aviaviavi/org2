@@ -152,6 +152,51 @@ function parseTimestampWarning(raw: string): TimestampWarning | null {
   };
 }
 
+function daysInUtcMonth(year: number, monthZeroBased: number): number {
+  return new Date(Date.UTC(year, monthZeroBased + 1, 0)).getUTCDate();
+}
+
+function addMonthsUtcClamped(date: Date, monthDelta: number): Date {
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth();
+  const day = date.getUTCDate();
+
+  const totalMonths = year * 12 + month + monthDelta;
+  const targetYear = Math.floor(totalMonths / 12);
+  const targetMonth = ((totalMonths % 12) + 12) % 12;
+  const targetDay = Math.min(day, daysInUtcMonth(targetYear, targetMonth));
+
+  return new Date(
+    Date.UTC(
+      targetYear,
+      targetMonth,
+      targetDay,
+      date.getUTCHours(),
+      date.getUTCMinutes(),
+      date.getUTCSeconds(),
+      date.getUTCMilliseconds(),
+    ),
+  );
+}
+
+function addYearsUtcClamped(date: Date, yearDelta: number): Date {
+  const targetYear = date.getUTCFullYear() + yearDelta;
+  const targetMonth = date.getUTCMonth();
+  const targetDay = Math.min(date.getUTCDate(), daysInUtcMonth(targetYear, targetMonth));
+
+  return new Date(
+    Date.UTC(
+      targetYear,
+      targetMonth,
+      targetDay,
+      date.getUTCHours(),
+      date.getUTCMinutes(),
+      date.getUTCSeconds(),
+      date.getUTCMilliseconds(),
+    ),
+  );
+}
+
 function addTimestampInterval(
   date: Date,
   value: number,
@@ -169,11 +214,9 @@ function addTimestampInterval(
       next.setUTCDate(next.getUTCDate() + signedValue * 7);
       break;
     case "m":
-      next.setUTCMonth(next.getUTCMonth() + signedValue);
-      break;
+      return addMonthsUtcClamped(date, signedValue);
     case "y":
-      next.setUTCFullYear(next.getUTCFullYear() + signedValue);
-      break;
+      return addYearsUtcClamped(date, signedValue);
   }
 
   return next;
