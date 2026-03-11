@@ -29,6 +29,11 @@ const {
   buildCurrentFileFormatterStdoutArgs,
 } = require('./formatterArgs');
 const {
+  normalizePlanKind,
+  normalizePlanDateInput,
+  buildPlanCliArgs,
+} = require('./planningArgs');
+const {
   buildRoamBacklinksArgs,
   buildRoamNodeNewArgs,
   buildRoamDbSyncPreviewArgs,
@@ -2612,39 +2617,38 @@ function activate(context) {
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
     const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
+    const normalizedKind = normalizePlanKind(kind);
+    if (!normalizedKind) {
+      vscode.window.showWarningMessage('Org2: invalid planning kind (expected scheduled or deadline).');
+      return;
+    }
+
     const useToday = options.useToday ? true : false;
-    const dateOverride = typeof options.dateOverride === 'string' ? String(options.dateOverride).trim() : '';
+    const dateOverrideRaw = typeof options.dateOverride === 'string' ? options.dateOverride : '';
+    const dateOverride = normalizePlanDateInput(dateOverrideRaw);
+    if (dateOverrideRaw && !dateOverride) {
+      vscode.window.showWarningMessage('Org2: invalid planning date override (expected YYYY-MM-DD).');
+      return;
+    }
     const skipAgendaReload = options.skipAgendaReload ? true : false;
 
     let date = '';
     if (dateOverride) {
       date = dateOverride;
     } else if (!useToday) {
-      const input = await vscode.window.showInputBox({
-        prompt: `Org2: set ${kind.toUpperCase()} (YYYY-MM-DD)`,
-        placeHolder: 'YYYY-MM-DD',
-        validateInput: (v) => (/^\d{4}-\d{2}-\d{2}$/.test((v || '').trim()) ? undefined : 'Expected YYYY-MM-DD'),
-      });
+      const input = await promptPlanDate(normalizedKind);
       if (!input) return;
-      date = String(input).trim();
+      date = input;
     }
 
-    const args = [
-      'plan',
-      useToday ? 'today' : 'set',
-      '--file',
-      String(filePath),
-      '--line',
-      String(line),
-      '--kind',
-      kind,
-      ...(useToday ? [] : ['--date', date]),
-      '--format',
-      'json',
-      '--apply',
-    ];
+    const args = buildPlanCliArgs({
+      filePath: String(filePath),
+      line: String(line),
+      kind: normalizedKind,
+      useToday,
+      date,
+    });
 
-    const cwd = getWorkspaceRoot() || process.cwd();
     const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
 
     const activeEditorBefore = item ? undefined : vscode.window.activeTextEditor;
@@ -4403,13 +4407,14 @@ function activate(context) {
   }
 
   async function promptPlanDate(kind) {
+    const normalizedKind = normalizePlanKind(kind);
     const input = await vscode.window.showInputBox({
-      prompt: `Org2: set ${kind.toUpperCase()} (YYYY-MM-DD)`,
+      prompt: `Org2: set ${String(normalizedKind || kind || '').toUpperCase()} (YYYY-MM-DD)`,
       placeHolder: 'YYYY-MM-DD',
-      validateInput: (v) => (/^\d{4}-\d{2}-\d{2}$/.test((v || '').trim()) ? undefined : 'Expected YYYY-MM-DD'),
+      validateInput: (v) => (normalizePlanDateInput(v) ? undefined : 'Expected YYYY-MM-DD'),
     });
     if (!input) return '';
-    return String(input).trim();
+    return normalizePlanDateInput(input);
   }
 
   async function applyToggleTodoCommand(item) {
@@ -4452,7 +4457,16 @@ function activate(context) {
     const targets = resolveAgendaMutationTargets(item);
     if (targets.length > 1) {
       const runOptions = { ...options };
-      if (!runOptions.useToday && !runOptions.dateOverride) {
+      const dateOverrideRaw = typeof runOptions.dateOverride === 'string' ? runOptions.dateOverride : '';
+      const normalizedDateOverride = normalizePlanDateInput(dateOverrideRaw);
+      if (dateOverrideRaw && !normalizedDateOverride) {
+        vscode.window.showWarningMessage('Org2: invalid planning date override (expected YYYY-MM-DD).');
+        return;
+      }
+
+      if (normalizedDateOverride) {
+        runOptions.dateOverride = normalizedDateOverride;
+      } else if (!runOptions.useToday) {
         const pickedDate = await promptPlanDate(kind);
         if (!pickedDate) return;
         runOptions.dateOverride = pickedDate;
