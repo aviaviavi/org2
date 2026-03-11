@@ -49,3 +49,18 @@ test('readAgendaCliOptions resolves today filter to one day', () => {
   assert.deepEqual(opts.resolvedFiles, []);
   assert.equal(opts.days, 1);
 });
+
+test('readAgendaCliOptions normalizes date-range boundaries and clears all sentinels', () => {
+  const cfg = fakeCfg({
+    'agenda.scope': 'workspace',
+    'agenda.startDate': ' 2026-03-01 ',
+    'agenda.endDate': ' all ',
+  });
+
+  const opts = readAgendaCliOptions(cfg, '/tmp/org2', null, () => {
+    throw new Error('resolveAgendaFiles should not be called for workspace scope');
+  });
+
+  assert.equal(opts.startDate, '2026-03-01');
+  assert.equal(opts.endDate, '');
+});

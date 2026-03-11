@@ -101,3 +101,16 @@ test('buildAgendaCliArgs: maps non-default agenda filters and ordering into CLI 
     '20',
   ]);
 });
+
+test('buildAgendaCliArgs: does not emit from/to flags when date boundaries are set to all', () => {
+  const out = buildAgendaCliArgs({
+    scope: 'workspace',
+    agendaRoot: '/tmp/org',
+    days: 7,
+    startDate: ' all ',
+    endDate: 'ALL',
+  });
+
+  assert.equal(out.warnEmptyFiles, false);
+  assert.deepEqual(out.args, ['agenda', '--dir', '/tmp/org', '--recursive', '--days', '7', '--format', 'json']);
+});
