@@ -598,7 +598,7 @@ type AgendaDateOrder = "asc" | "desc";
 const AGENDA_STATUS_ALLOWED_HINT =
   "all, active, actionable, open, todo, in_progress, done, canceled, closed, custom";
 const AGENDA_STATUS_ORDER_ALLOWED_HINT =
-  "default, todo|open, in_progress|in-progress|prog, done|completed, canceled|cancelled|closed, custom";
+  "default, todo|open|backlog, in_progress|in-progress|prog|doing|started|waiting|blocked|next|wip, done|complete|completed|finish|finished|resolved, canceled|cancel|cancelled|closed, custom";
 const AGENDA_KIND_ORDER_ALLOWED_HINT = "default, scheduled, deadline";
 const AGENDA_PRIORITY_ORDER_ALLOWED_HINT = "default, A-Z or 0-9 (for example: A,[#B],9)";
 const AGENDA_EFFORT_ORDER_EMPTY = "__none__";
@@ -689,22 +689,39 @@ function parseAgendaStatusFilterArgs(rawArgs: string[]): {
       return;
     }
 
-    if (token === "open" || token === "todo") {
+    if (token === "open" || token === "todo" || token === "backlog") {
       selected.add("todo");
       return;
     }
 
-    if (token === "in_progress" || token === "inprogress" || token === "prog") {
+    if (
+      token === "in_progress" ||
+      token === "inprogress" ||
+      token === "prog" ||
+      token === "doing" ||
+      token === "started" ||
+      token === "waiting" ||
+      token === "blocked" ||
+      token === "next" ||
+      token === "wip"
+    ) {
       selected.add("in_progress");
       return;
     }
 
-    if (token === "done") {
+    if (
+      token === "done" ||
+      token === "complete" ||
+      token === "completed" ||
+      token === "finish" ||
+      token === "finished" ||
+      token === "resolved"
+    ) {
       selected.add("done");
       return;
     }
 
-    if (token === "canceled" || token === "cancelled") {
+    if (token === "canceled" || token === "cancelled" || token === "cancel") {
       selected.add("canceled");
       return;
     }
@@ -1757,12 +1774,31 @@ function parseAgendaStatusOrderArgs(rawArgs: string[]): {
 
   const normalizeToken = (tokenRaw: string): AgendaStatusBucket | null => {
     const token = normalizeAgendaStatusFilterToken(tokenRaw);
-    if (token === "todo" || token === "open") return "todo";
-    if (token === "in_progress" || token === "inprogress" || token === "prog") {
+    if (token === "todo" || token === "open" || token === "backlog") return "todo";
+    if (
+      token === "in_progress" ||
+      token === "inprogress" ||
+      token === "prog" ||
+      token === "doing" ||
+      token === "started" ||
+      token === "waiting" ||
+      token === "blocked" ||
+      token === "next" ||
+      token === "wip"
+    ) {
       return "in_progress";
     }
-    if (token === "done" || token === "completed") return "done";
-    if (token === "canceled" || token === "cancelled" || token === "closed") return "canceled";
+    if (
+      token === "done" ||
+      token === "complete" ||
+      token === "completed" ||
+      token === "finish" ||
+      token === "finished" ||
+      token === "resolved"
+    ) {
+      return "done";
+    }
+    if (token === "canceled" || token === "cancelled" || token === "cancel" || token === "closed") return "canceled";
     if (token === "custom") return "custom";
     return null;
   };
