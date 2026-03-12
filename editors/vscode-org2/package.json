@@ -1410,6 +1410,7 @@
     "agendaSelection.js",
     "agendaVisuals.js",
     "headingTree.js",
+    "listItem.js",
     "roamId.js",
     "linkAbbrev.js",
     "agendaSettings.js",

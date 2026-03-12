@@ -50,6 +50,7 @@ const {
   findNextSiblingSubtreeRange,
   findHeadingLinesAtLevel,
 } = require('./headingTree');
+const { buildInsertedListItemPrefix } = require('./listItem');
 
 const headingRe = /^(\*+)\s+/;
 const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
@@ -4522,15 +4523,7 @@ function activate(context) {
     const line = editor.selection && editor.selection.active ? editor.selection.active.line : 0;
     const lineText = doc.lineAt(line).text;
 
-    let prefix = '';
-    const listMatch = lineText.match(/^(\s*)([-+*]|\d+[.)])(\s+)(\[(?: |x|X|-)\]\s+)?/);
-    if (listMatch) {
-      const indent = listMatch[1] || '';
-      const marker = listMatch[2] || '-';
-      const spacing = listMatch[3] || ' ';
-      const hasCheckbox = !!listMatch[4];
-      prefix = `${indent}${marker}${spacing}${hasCheckbox ? '[ ] ' : ''}`;
-    }
+    const prefix = buildInsertedListItemPrefix(lineText);
 
     const insertPos = doc.lineAt(line).range.end;
     const ok = await editor.edit((editBuilder) => {
