@@ -1,0 +1,1 @@
+agenda --files "spec/v0/tests/cli/agenda-scheduled-delay-repeater.input.txt" --today 2026-03-12 --days 15 --format json

@@ -1,0 +1,2 @@
+* TODO Repeating first delayed only
+SCHEDULED: <2026-03-10 Tue +1w --2d>
