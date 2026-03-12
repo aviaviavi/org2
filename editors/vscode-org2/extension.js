@@ -4514,9 +4514,44 @@ function activate(context) {
     await runSet(pick.value);
   };
 
+  async function insertListItemBelow() {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) return;
+
+    const doc = editor.document;
+    const line = editor.selection && editor.selection.active ? editor.selection.active.line : 0;
+    const lineText = doc.lineAt(line).text;
+
+    let prefix = '';
+    const listMatch = lineText.match(/^(\s*)([-+*]|\d+[.)])(\s+)(\[(?: |x|X|-)\]\s+)?/);
+    if (listMatch) {
+      const indent = listMatch[1] || '';
+      const marker = listMatch[2] || '-';
+      const spacing = listMatch[3] || ' ';
+      const hasCheckbox = !!listMatch[4];
+      prefix = `${indent}${marker}${spacing}${hasCheckbox ? '[ ] ' : ''}`;
+    }
+
+    const insertPos = doc.lineAt(line).range.end;
+    const ok = await editor.edit((editBuilder) => {
+      editBuilder.insert(insertPos, `\n${prefix}`);
+    });
+    if (!ok) return;
+
+    const target = new vscode.Position(line + 1, prefix.length);
+    editor.selection = new vscode.Selection(target, target);
+    editor.revealRange(new vscode.Range(target, target));
+  }
+
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.toggleTodo', async (item) => {
       await applyToggleTodoCommand(item);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.insertListItemBelow', async () => {
+      await insertListItemBelow();
     })
   );
 

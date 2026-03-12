@@ -34,3 +34,24 @@ test('power keymap includes formatter check/preview/apply current-file shortcuts
   assert.equal(hasPowerBinding(keybindings, 'ctrl+; f p', 'org2.formatCurrentFilePreviewDiff'), true);
   assert.equal(hasPowerBinding(keybindings, 'ctrl+; f a', 'org2.formatCurrentFileApply'), true);
 });
+
+test('insert list item command is contributed and registered in extension runtime', () => {
+  const keybindings = loadPackageKeybindings();
+  const packagePath = path.join(__dirname, '..', 'package.json');
+  const extensionPath = path.join(__dirname, '..', 'extension.js');
+  const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+  const extensionSource = fs.readFileSync(extensionPath, 'utf8');
+
+  assert.equal(
+    pkg.contributes?.commands?.some((command) => command.command === 'org2.insertListItemBelow') ?? false,
+    true
+  );
+  assert.equal(
+    keybindings.some((binding) => binding.command === 'org2.insertListItemBelow'),
+    true
+  );
+  assert.equal(
+    extensionSource.includes("registerCommand('org2.insertListItemBelow'"),
+    true
+  );
+});
