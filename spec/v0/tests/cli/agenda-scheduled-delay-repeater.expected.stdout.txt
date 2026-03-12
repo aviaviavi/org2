@@ -1,0 +1,58 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-03-12",
+    "end": "2026-03-26",
+    "days": 15
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-03-12",
+      "weekday": "Thursday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Delay once",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-scheduled-delay-repeater.input.txt",
+          "line": 0
+        },
+        {
+          "todo": "TODO",
+          "headline": "Repeating delayed",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-scheduled-delay-repeater.input.txt",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "date": "2026-03-19",
+      "weekday": "Thursday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Repeating delayed",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-scheduled-delay-repeater.input.txt",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "date": "2026-03-26",
+      "weekday": "Thursday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Repeating delayed",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-scheduled-delay-repeater.input.txt",
+          "line": 3
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}
