@@ -1,0 +1,52 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-02-27",
+    "end": "2026-04-02",
+    "days": 35
+  },
+  "overdue": [
+    {
+      "date": "2026-01-31",
+      "weekday": "Saturday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Month-end billing",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-repeater-month-clamp.input.txt",
+          "line": 0
+        }
+      ]
+    }
+  ],
+  "days": [
+    {
+      "date": "2026-02-28",
+      "weekday": "Saturday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Month-end billing",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-repeater-month-clamp.input.txt",
+          "line": 0
+        }
+      ]
+    },
+    {
+      "date": "2026-03-28",
+      "weekday": "Saturday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Month-end billing",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-repeater-month-clamp.input.txt",
+          "line": 0
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}

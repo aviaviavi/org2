@@ -1,0 +1,1 @@
+agenda --files "spec/v0/tests/cli/agenda-repeater-month-clamp.input.txt" --today 2026-02-27 --days 35 --format json
