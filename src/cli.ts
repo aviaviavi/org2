@@ -232,6 +232,10 @@ function subtractWarningInterval(date: Date, warning: TimestampWarning): Date {
   return addTimestampInterval(date, warning.value, warning.unit, -1);
 }
 
+function addWarningInterval(date: Date, warning: TimestampWarning): Date {
+  return addTimestampInterval(date, warning.value, warning.unit, 1);
+}
+
 function formatIsoDateUtc(date: Date): string {
   const year = String(date.getUTCFullYear());
   const month = String(date.getUTCMonth() + 1).padStart(2, "0");
@@ -251,7 +255,7 @@ function resolveAgendaDatesFromTimestamp(
 
   const firstDate = parseIsoDate(dateStr);
   const repeater = parseTimestampRepeater(raw);
-  const warning = planningKind === "DEADLINE" ? parseTimestampWarning(raw) : null;
+  const warning = parseTimestampWarning(raw);
 
   const seen = new Set<string>();
   const resolved: string[] = [];
@@ -275,7 +279,19 @@ function resolveAgendaDatesFromTimestamp(
     }
   };
 
-  const considerOccurrence = (occurrenceDate: Date): void => {
+  const considerOccurrence = (occurrenceDate: Date, occurrenceIndex: number): void => {
+    if (planningKind === "SCHEDULED") {
+      let scheduledDate = occurrenceDate;
+      if (warning) {
+        const warningApplies = warning.mode === "-" || !repeater || occurrenceIndex === 0;
+        if (warningApplies) {
+          scheduledDate = addWarningInterval(occurrenceDate, warning);
+        }
+      }
+      consider(scheduledDate);
+      return;
+    }
+
     consider(occurrenceDate);
 
     if (!warning) return;
@@ -284,27 +300,31 @@ function resolveAgendaDatesFromTimestamp(
   };
 
   if (!repeater) {
-    considerOccurrence(firstDate);
+    considerOccurrence(firstDate, 0);
     if (wantsOverdue && latestBeforeStart) addResolved(latestBeforeStart);
     return resolved.sort();
   }
 
   const maxIterations = 10000;
   let cursor = new Date(firstDate.getTime());
+  let occurrenceIndex = 0;
 
   for (let i = 0; i < maxIterations && cursor < startDate; i += 1) {
-    considerOccurrence(cursor);
+    considerOccurrence(cursor, occurrenceIndex);
+    occurrenceIndex += 1;
+
     const next = addRepeaterInterval(cursor, repeater);
     if (next.getTime() <= cursor.getTime()) break;
     cursor = next;
   }
 
-  const repeatUpperBound = warning
+  const repeatUpperBound = warning && planningKind === "DEADLINE"
     ? addTimestampInterval(endDate, warning.value, warning.unit, 1)
     : new Date(endDate.getTime());
 
   for (let i = 0; i < maxIterations && cursor <= repeatUpperBound; i += 1) {
-    considerOccurrence(cursor);
+    considerOccurrence(cursor, occurrenceIndex);
+    occurrenceIndex += 1;
 
     const next = addRepeaterInterval(cursor, repeater);
     if (next.getTime() <= cursor.getTime()) break;

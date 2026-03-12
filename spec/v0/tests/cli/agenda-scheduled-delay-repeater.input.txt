@@ -1,0 +1,5 @@
+* TODO Delay once
+SCHEDULED: <2026-03-10 Tue -2d>
+
+* TODO Repeating delayed
+SCHEDULED: <2026-03-10 Tue +1w -2d>
