@@ -296,6 +296,29 @@ function resolveAgendaDatesFromTimestamp(
 
     if (!warning) return;
     const warningDate = subtractWarningInterval(occurrenceDate, warning);
+
+    if (warning.mode === "--") {
+      if (warningDate < startDate) {
+        const latestWindowBeforeStart = occurrenceDate < startDate
+          ? new Date(occurrenceDate.getTime())
+          : addTimestampInterval(startDate, 1, "d", -1);
+        if (latestWindowBeforeStart.getTime() >= warningDate.getTime()) {
+          consider(latestWindowBeforeStart);
+        }
+      }
+
+      const inRangeStartMs = Math.max(warningDate.getTime(), startDate.getTime());
+      const inRangeEndMs = Math.min(occurrenceDate.getTime(), endDate.getTime());
+      if (inRangeStartMs <= inRangeEndMs) {
+        let cursorDate = new Date(inRangeStartMs);
+        while (cursorDate.getTime() <= inRangeEndMs) {
+          consider(cursorDate);
+          cursorDate = addTimestampInterval(cursorDate, 1, "d", 1);
+        }
+      }
+      return;
+    }
+
     consider(warningDate);
   };
 
