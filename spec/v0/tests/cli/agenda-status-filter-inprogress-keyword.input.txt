@@ -1,0 +1,8 @@
+* IN-PROGRESS Hyphen keyword
+SCHEDULED: <2026-01-22 Thu>
+
+* INPROGRESS Flat keyword
+SCHEDULED: <2026-01-22 Thu>
+
+* TODO Not in progress
+SCHEDULED: <2026-01-22 Thu>
