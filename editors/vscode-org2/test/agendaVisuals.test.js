@@ -29,6 +29,7 @@ test('agendaStatusBucket maps common TODO states', () => {
   assert.equal(agendaStatusBucket('TODO'), 'todo');
   assert.equal(agendaStatusBucket('IN_PROGRESS'), 'inProgress');
   assert.equal(agendaStatusBucket('in-progress'), 'inProgress');
+  assert.equal(agendaStatusBucket('INPROGRESS'), 'inProgress');
   assert.equal(agendaStatusBucket('PROG'), 'inProgress');
   assert.equal(agendaStatusBucket('WIP'), 'inProgress');
   assert.equal(agendaStatusBucket('DONE'), 'done');
