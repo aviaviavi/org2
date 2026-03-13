@@ -710,12 +710,14 @@ const AGENDA_GROUP_ALLOWED_HINT = AGENDA_SORT_ALLOWED_HINT;
 const AGENDA_DATE_ORDER_ALLOWED_HINT = "asc, desc";
 
 function agendaStatusBucketForKeyword(todo: string | undefined): AgendaStatusBucket | null {
-  const key = String(todo || "").trim().toUpperCase();
+  const raw = String(todo || "").trim().toUpperCase();
+  if (!raw) return null;
+  const key = raw.replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   if (!key) return null;
 
   if (key === "DONE" || key === "COMPLETED") return "done";
   if (key === "CANCELED" || key === "CANCELLED") return "canceled";
-  if (["PROG", "IN_PROGRESS", "DOING", "STARTED", "WAITING", "BLOCKED", "NEXT", "WIP"].includes(key)) {
+  if (["PROG", "IN_PROGRESS", "INPROGRESS", "DOING", "STARTED", "WAITING", "BLOCKED", "NEXT", "WIP"].includes(key)) {
     return "in_progress";
   }
   if (["TODO", "OPEN", "BACKLOG"].includes(key)) return "todo";
