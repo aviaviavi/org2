@@ -715,7 +715,7 @@ function agendaStatusBucketForKeyword(todo: string | undefined): AgendaStatusBuc
 
   if (key === "DONE" || key === "COMPLETED") return "done";
   if (key === "CANCELED" || key === "CANCELLED") return "canceled";
-  if (["PROG", "IN_PROGRESS", "DOING", "STARTED", "WAITING", "BLOCKED", "NEXT"].includes(key)) {
+  if (["PROG", "IN_PROGRESS", "DOING", "STARTED", "WAITING", "BLOCKED", "NEXT", "WIP"].includes(key)) {
     return "in_progress";
   }
   if (["TODO", "OPEN", "BACKLOG"].includes(key)) return "todo";
