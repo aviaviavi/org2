@@ -1,0 +1,51 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-04-15",
+    "end": "2026-04-18",
+    "days": 4
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-04-15",
+      "weekday": "Wednesday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Repeating compliance check",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-deadline-warning-window-repeater.input.txt",
+          "line": 0
+        }
+      ]
+    },
+    {
+      "date": "2026-04-16",
+      "weekday": "Thursday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Repeating compliance check",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-deadline-warning-window-repeater.input.txt",
+          "line": 0
+        }
+      ]
+    },
+    {
+      "date": "2026-04-17",
+      "weekday": "Friday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Repeating compliance check",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-deadline-warning-window-repeater.input.txt",
+          "line": 0
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}
