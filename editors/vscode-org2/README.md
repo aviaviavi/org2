@@ -59,7 +59,7 @@ Limitation: VS Code decorations cannot truly replace/collapse the underlying tex
 The extension can toggle/set TODO keywords on the current headline via the `org2` CLI.
 
 - Command: **Org2: Toggle Todo Status** (`org2.toggleTodo`)
-- Command: **Org2: Set Todo Status** (`org2.setTodoStatus`)
+- Command: **Org2: Set Todo Status** (`org2.setTodoStatus`) — command args accept the same aliases as CLI `todo set --status` (e.g. `open`, `backlog`, `in-progress`, `completed`, `cancelled`).
 - Command: **Org2: Set Priority** (`org2.setPriority`) → sets/clears headline priority token (`[#A]`/`[#B]`/`[#C]`)
 - Direct commands: `org2.setTodoTODO`, `org2.setTodoInProgress`, `org2.setTodoDone`, `org2.setTodoCanceled`
 - Default keybinding: `ctrl+alt+t`
