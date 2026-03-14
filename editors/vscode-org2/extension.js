@@ -52,6 +52,10 @@ const {
 } = require('./headingTree');
 const { buildInsertedListItemPrefix } = require('./listItem');
 const { normalizeTodoStatusValue } = require('./todoStatus');
+const {
+  findPropertyDrawerStartLines: findPropertyDrawerStartLinesForFolding,
+  provideFoldingRanges: provideFoldingRangesForDocument,
+} = require('./foldingRanges');
 
 const headingRe = /^(\*+)\s+/;
 const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
@@ -73,125 +77,11 @@ function getSubtreeDocumentRange(document, range) {
 }
 
 function findPropertyDrawerStartLines(document) {
-  const starts = [];
-  const lineCount = document.lineCount;
-
-  let inProperties = false;
-  for (let i = 0; i < lineCount; i++) {
-    const text = document.lineAt(i).text;
-
-    if (!inProperties && propertiesBeginRe.test(text)) {
-      inProperties = true;
-      starts.push(i);
-      continue;
-    }
-
-    if (inProperties && drawerEndRe.test(text)) {
-      inProperties = false;
-    }
-  }
-
-  return starts;
+  return findPropertyDrawerStartLinesForFolding(document);
 }
 
 function provideFoldingRanges(document) {
-  const lineCount = document.lineCount;
-  const folds = [];
-
-  const headingStack = [];
-  const listStack = [];
-
-  // :PROPERTIES: drawers only (do not fold arbitrary drawers).
-  const propertiesStack = [];
-
-  const flushStackTo = (stack, endLine) => {
-    while (stack.length > 0) {
-      const top = stack.pop();
-      if (endLine > top.startLine) {
-        folds.push(new vscode.FoldingRange(top.startLine, endLine, top.kind));
-      }
-    }
-  };
-
-  const closeHeadingsToLevel = (level, endLine) => {
-    while (headingStack.length > 0 && headingStack[headingStack.length - 1].level >= level) {
-      const top = headingStack.pop();
-      const foldEnd = endLine;
-      if (foldEnd > top.startLine) {
-        folds.push(new vscode.FoldingRange(top.startLine, foldEnd, vscode.FoldingRangeKind.Region));
-      }
-    }
-  };
-
-  const closeListsToIndent = (indent, endLine) => {
-    while (listStack.length > 0 && listStack[listStack.length - 1].indent >= indent) {
-      const top = listStack.pop();
-      if (endLine > top.startLine) {
-        folds.push(new vscode.FoldingRange(top.startLine, endLine, vscode.FoldingRangeKind.Region));
-      }
-    }
-  };
-
-  const closePropertiesTo = (endLine) => {
-    while (propertiesStack.length > 0) {
-      const top = propertiesStack.pop();
-      if (endLine > top.startLine) {
-        folds.push(new vscode.FoldingRange(top.startLine, endLine, vscode.FoldingRangeKind.Region));
-      }
-    }
-  };
-
-  for (let i = 0; i < lineCount; i++) {
-    const text = document.lineAt(i).text;
-
-    // Property drawer folding (:PROPERTIES: ... :END:)
-    if (propertiesBeginRe.test(text)) {
-      propertiesStack.push({ startLine: i, kind: vscode.FoldingRangeKind.Region });
-      continue;
-    }
-    if (drawerEndRe.test(text) && propertiesStack.length > 0) {
-      const top = propertiesStack.pop();
-      if (i > top.startLine) {
-        folds.push(new vscode.FoldingRange(top.startLine, i, vscode.FoldingRangeKind.Region));
-      }
-      continue;
-    }
-
-    const headingMatch = headingRe.exec(text);
-    if (headingMatch) {
-      flushStackTo(listStack, i - 1);
-      const level = headingMatch[1].length;
-      closeHeadingsToLevel(level, i - 1);
-      headingStack.push({ level, startLine: i, kind: vscode.FoldingRangeKind.Region });
-      continue;
-    }
-
-    const listMatch = listItemRe.exec(text);
-    if (listMatch) {
-      const indent = listMatch[1].length;
-
-      // If a list starts at or above a previous list indent, close previous list folds.
-      closeListsToIndent(indent, i - 1);
-      listStack.push({ indent, startLine: i, kind: vscode.FoldingRangeKind.Region });
-      continue;
-    }
-
-    // Close list folds when leaving list indentation (blank lines included).
-    if (text.trim().length === 0) {
-      continue;
-    }
-
-    // Non-list content at indentation 0 closes any top-level lists.
-    if (!/^\s+/.test(text)) {
-      closeListsToIndent(0, i - 1);
-    }
-  }
-
-  flushStackTo(listStack, lineCount - 1);
-  closeHeadingsToLevel(1, lineCount - 1);
-  closePropertiesTo(lineCount - 1);
-
-  return folds;
+  return provideFoldingRangesForDocument(document, vscode);
 }
 
 function resolveOrg2LinkTarget(rawUrl, document, linkAbbreviations) {
