@@ -1411,6 +1411,7 @@
     "agendaVisuals.js",
     "headingTree.js",
     "listItem.js",
+    "todoStatus.js",
     "roamId.js",
     "linkAbbrev.js",
     "agendaSettings.js",
