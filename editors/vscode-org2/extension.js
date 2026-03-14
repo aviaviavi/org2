@@ -51,6 +51,7 @@ const {
   findHeadingLinesAtLevel,
 } = require('./headingTree');
 const { buildInsertedListItemPrefix } = require('./listItem');
+const { normalizeTodoStatusValue } = require('./todoStatus');
 
 const headingRe = /^(\*+)\s+/;
 const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
@@ -4497,8 +4498,9 @@ function activate(context) {
       await runTodoCli('set', resolvedStatus, targets[0] || item);
     };
 
-    if (requested === 'todo' || requested === 'in_progress' || requested === 'done' || requested === 'canceled') {
-      await runSet(requested);
+    const normalizedRequested = normalizeTodoStatusValue(requested);
+    if (normalizedRequested) {
+      await runSet(normalizedRequested);
       return;
     }
 
