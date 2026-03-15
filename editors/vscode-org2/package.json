@@ -632,7 +632,7 @@
             "custom"
           ],
           "default": "all",
-          "description": "Filter agenda rows by TODO state bucket before rendering. all=everything, active=todo+in_progress, actionable=active+custom, closed=done+canceled."
+          "description": "Filter agenda rows by TODO state bucket before rendering. all=everything, active=todo+in_progress, actionable=active+custom, closed=done+canceled. Alias inputs (for example default/backlog/wip/completed/cancelled) normalize automatically."
         },
         "org2.agenda.excludeStatusFilter": {
           "type": "string",
@@ -649,7 +649,7 @@
             "custom"
           ],
           "default": "all",
-          "description": "Exclude agenda rows by TODO state bucket before rendering. all=no exclusion, active hides todo+in_progress, closed hides done+canceled."
+          "description": "Exclude agenda rows by TODO state bucket before rendering. all=no exclusion, active hides todo+in_progress, closed hides done+canceled. Alias inputs (for example default/backlog/wip/completed/cancelled) normalize automatically."
         },
         "org2.agenda.kindFilter": {
           "type": "string",

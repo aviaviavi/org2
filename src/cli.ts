@@ -682,7 +682,7 @@ type AgendaGroupOrder = AgendaGroupField[] | null;
 type AgendaDateOrder = "asc" | "desc";
 
 const AGENDA_STATUS_ALLOWED_HINT =
-  "all, active, actionable, open, todo, in_progress, done, canceled, closed, custom";
+  "default, all, active(=todo,in_progress), actionable(=todo,in_progress,custom), open|todo|backlog, in_progress|in-progress|prog|doing|started|waiting|blocked|next|wip, done|complete|completed|finish|finished|resolved, canceled|cancel|cancelled, closed(=done,canceled), custom";
 const AGENDA_STATUS_ORDER_ALLOWED_HINT =
   "default, all(=todo,in_progress,done,canceled,custom), active(=todo,in_progress), actionable(=todo,in_progress,custom), todo|open|backlog, in_progress|in-progress|prog|doing|started|waiting|blocked|next|wip, done|complete|completed|finish|finished|resolved, canceled|cancel|cancelled, closed(=done,canceled), custom";
 const AGENDA_KIND_ORDER_ALLOWED_HINT = "default, scheduled, deadline";
@@ -759,7 +759,7 @@ function parseAgendaStatusFilterArgs(rawArgs: string[]): {
     const token = normalizeAgendaStatusFilterToken(tokenRaw);
     if (!token) return;
 
-    if (token === "all") {
+    if (token === "all" || token === "default") {
       sawAll = true;
       return;
     }
