@@ -50,6 +50,21 @@ test('readAgendaCliOptions resolves today filter to one day', () => {
   assert.equal(opts.days, 1);
 });
 
+test('readAgendaCliOptions normalizes status default sentinel to all', () => {
+  const cfg = fakeCfg({
+    'agenda.scope': 'workspace',
+    'agenda.statusFilter': 'default',
+    'agenda.excludeStatusFilter': 'Default',
+  });
+
+  const opts = readAgendaCliOptions(cfg, '/tmp/org2', null, () => {
+    throw new Error('resolveAgendaFiles should not be called for workspace scope');
+  });
+
+  assert.equal(opts.statusFilter, 'all');
+  assert.equal(opts.excludeStatusFilter, 'all');
+});
+
 test('readAgendaCliOptions normalizes date-range boundaries and clears all sentinels', () => {
   const cfg = fakeCfg({
     'agenda.scope': 'workspace',

@@ -13,6 +13,7 @@ test('normalizeAgendaStatusFilterValue canonicalizes aliases and separators', ()
   assert.equal(normalizeAgendaStatusFilterValue('cancelled'), 'canceled');
   assert.equal(normalizeAgendaStatusFilterValue('CLOSED'), 'closed');
   assert.equal(normalizeAgendaStatusFilterValue(' actionable '), 'actionable');
+  assert.equal(normalizeAgendaStatusFilterValue('default'), 'all');
   assert.equal(normalizeAgendaStatusFilterValue(''), 'all');
 });
 
