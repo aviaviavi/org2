@@ -1,0 +1,53 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-01-21",
+    "end": "2026-01-21",
+    "days": 1
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-01-21",
+      "weekday": "Wednesday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Alpha todo",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-sort-filter-status.input.txt",
+          "line": 0
+        },
+        {
+          "todo": "WAITING",
+          "headline": "Beta in progress",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-sort-filter-status.input.txt",
+          "line": 2
+        },
+        {
+          "todo": "REVIEW",
+          "headline": "Echo custom",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-sort-filter-status.input.txt",
+          "line": 8
+        },
+        {
+          "todo": "DONE",
+          "headline": "Charlie done",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-sort-filter-status.input.txt",
+          "line": 4
+        },
+        {
+          "todo": "CANCELED",
+          "headline": "Delta canceled",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-sort-filter-status.input.txt",
+          "line": 6
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}
