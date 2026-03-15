@@ -684,7 +684,7 @@ type AgendaDateOrder = "asc" | "desc";
 const AGENDA_STATUS_ALLOWED_HINT =
   "all, active, actionable, open, todo, in_progress, done, canceled, closed, custom";
 const AGENDA_STATUS_ORDER_ALLOWED_HINT =
-  "default, todo|open|backlog, in_progress|in-progress|prog|doing|started|waiting|blocked|next|wip, done|complete|completed|finish|finished|resolved, canceled|cancel|cancelled|closed, custom";
+  "default, todo|open|backlog, in_progress|in-progress|prog|doing|started|waiting|blocked|next|wip, done|complete|completed|finish|finished|resolved, canceled|cancel|cancelled, closed(=done,canceled), custom";
 const AGENDA_KIND_ORDER_ALLOWED_HINT = "default, scheduled, deadline";
 const AGENDA_PRIORITY_ORDER_ALLOWED_HINT = "default, A-Z or 0-9 (for example: A,[#B],9)";
 const AGENDA_EFFORT_ORDER_EMPTY = "__none__";
@@ -1860,9 +1860,9 @@ function parseAgendaStatusOrderArgs(rawArgs: string[]): {
   const invalid: string[] = [];
   let nextRank = 0;
 
-  const normalizeToken = (tokenRaw: string): AgendaStatusBucket | null => {
+  const expandToken = (tokenRaw: string): AgendaStatusBucket[] | null => {
     const token = normalizeAgendaStatusFilterToken(tokenRaw);
-    if (token === "todo" || token === "open" || token === "backlog") return "todo";
+    if (token === "todo" || token === "open" || token === "backlog") return ["todo"];
     if (
       token === "in_progress" ||
       token === "inprogress" ||
@@ -1874,7 +1874,7 @@ function parseAgendaStatusOrderArgs(rawArgs: string[]): {
       token === "next" ||
       token === "wip"
     ) {
-      return "in_progress";
+      return ["in_progress"];
     }
     if (
       token === "done" ||
@@ -1884,10 +1884,11 @@ function parseAgendaStatusOrderArgs(rawArgs: string[]): {
       token === "finished" ||
       token === "resolved"
     ) {
-      return "done";
+      return ["done"];
     }
-    if (token === "canceled" || token === "cancelled" || token === "cancel" || token === "closed") return "canceled";
-    if (token === "custom") return "custom";
+    if (token === "canceled" || token === "cancelled" || token === "cancel") return ["canceled"];
+    if (token === "closed") return ["done", "canceled"];
+    if (token === "custom") return ["custom"];
     return null;
   };
 
@@ -1897,14 +1898,15 @@ function parseAgendaStatusOrderArgs(rawArgs: string[]): {
       if (!token) continue;
       if (token === "default") continue;
 
-      const normalized = normalizeToken(tokenRaw);
-      if (!normalized) {
+      const expanded = expandToken(tokenRaw);
+      if (!expanded || expanded.length === 0) {
         invalid.push(tokenRaw.trim());
         continue;
       }
 
-      if (!rank.has(normalized)) {
-        rank.set(normalized, nextRank);
+      for (const bucket of expanded) {
+        if (rank.has(bucket)) continue;
+        rank.set(bucket, nextRank);
         nextRank += 1;
       }
     }
