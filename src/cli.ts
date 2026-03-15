@@ -684,7 +684,7 @@ type AgendaDateOrder = "asc" | "desc";
 const AGENDA_STATUS_ALLOWED_HINT =
   "all, active, actionable, open, todo, in_progress, done, canceled, closed, custom";
 const AGENDA_STATUS_ORDER_ALLOWED_HINT =
-  "default, todo|open|backlog, in_progress|in-progress|prog|doing|started|waiting|blocked|next|wip, done|complete|completed|finish|finished|resolved, canceled|cancel|cancelled, closed(=done,canceled), custom";
+  "default, all(=todo,in_progress,done,canceled,custom), active(=todo,in_progress), actionable(=todo,in_progress,custom), todo|open|backlog, in_progress|in-progress|prog|doing|started|waiting|blocked|next|wip, done|complete|completed|finish|finished|resolved, canceled|cancel|cancelled, closed(=done,canceled), custom";
 const AGENDA_KIND_ORDER_ALLOWED_HINT = "default, scheduled, deadline";
 const AGENDA_PRIORITY_ORDER_ALLOWED_HINT = "default, A-Z or 0-9 (for example: A,[#B],9)";
 const AGENDA_EFFORT_ORDER_EMPTY = "__none__";
@@ -1862,6 +1862,9 @@ function parseAgendaStatusOrderArgs(rawArgs: string[]): {
 
   const expandToken = (tokenRaw: string): AgendaStatusBucket[] | null => {
     const token = normalizeAgendaStatusFilterToken(tokenRaw);
+    if (token === "all") return ["todo", "in_progress", "done", "canceled", "custom"];
+    if (token === "active") return ["todo", "in_progress"];
+    if (token === "actionable") return ["todo", "in_progress", "custom"];
     if (token === "todo" || token === "open" || token === "backlog") return ["todo"];
     if (
       token === "in_progress" ||

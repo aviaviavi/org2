@@ -806,7 +806,7 @@
         "org2.agenda.statusOrder": {
           "type": "string",
           "default": "",
-          "description": "Optional custom ordering for normalized status buckets used by `agenda --sort status` / `--group status` (comma-separated values from `todo`, `in_progress`, `done`, `canceled`, `custom`; aliases like `open`, `prog`, `completed`, and `closed` are accepted)."
+          "description": "Optional custom ordering for normalized status buckets used by `agenda --sort status` / `--group status` (comma-separated values from `todo`, `in_progress`, `done`, `canceled`, `custom`; aliases like `all`, `active`, `actionable`, `open`, `prog`, `completed`, and `closed` are accepted)."
         },
         "org2.agenda.kindOrder": {
           "type": "string",
