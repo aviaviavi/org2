@@ -1,4 +1,7 @@
-const { normalizeAgendaStatusFilterValue } = require('./agendaStatusFilter');
+const {
+  normalizeAgendaStatusFilterValue,
+  normalizeAgendaStatusOrderValue,
+} = require('./agendaStatusFilter');
 
 function normalizeAgendaDateBoundary(value) {
   const raw = String(value || '').trim();
@@ -39,7 +42,7 @@ function readAgendaCliOptions(cfg, agendaRoot, filter, resolveAgendaFiles) {
   const idFilter = String(cfg.get('agenda.idFilter', '') || '').trim();
   const todoKeywordFilter = String(cfg.get('agenda.todoKeywordFilter', '') || '').trim();
   const todoOrder = String(cfg.get('agenda.todoOrder', '') || '').trim();
-  const statusOrder = String(cfg.get('agenda.statusOrder', '') || '').trim().toLowerCase();
+  const statusOrder = normalizeAgendaStatusOrderValue(cfg.get('agenda.statusOrder', ''));
   const kindOrder = String(cfg.get('agenda.kindOrder', '') || '').trim().toLowerCase();
   const priorityOrder = String(cfg.get('agenda.priorityOrder', '') || '').trim();
   const tagOrder = String(cfg.get('agenda.tagOrder', '') || '').trim().toLowerCase();
