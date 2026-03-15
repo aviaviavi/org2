@@ -23,7 +23,7 @@ function normalizeAgendaStatusFilterValue(raw, fallback = 'all') {
   const token = normalizeStatusToken(raw);
   if (!token) return fallback;
 
-  if (token === 'all') return 'all';
+  if (token === 'all' || token === 'default') return 'all';
   if (token === 'active') return 'active';
   if (token === 'actionable') return 'actionable';
   if (token === 'open' || token === 'backlog') return 'open';
