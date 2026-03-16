@@ -95,7 +95,7 @@ function normalizeAgendaStatusOrderValue(raw) {
     if (token === 'canceled' || token === 'cancelled' || token === 'cancel') return ['canceled'];
     if (token === 'closed') return ['done', 'canceled'];
     if (token === 'custom') return ['custom'];
-    return [token];
+    return [];
   };
 
   for (const tokenRaw of String(raw || '').split(',')) {
