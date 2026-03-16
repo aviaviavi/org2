@@ -65,6 +65,21 @@ test('readAgendaCliOptions normalizes status default sentinel to all', () => {
   assert.equal(opts.excludeStatusFilter, 'all');
 });
 
+test('readAgendaCliOptions keeps valid status filters when mixed with invalid tokens', () => {
+  const cfg = fakeCfg({
+    'agenda.scope': 'workspace',
+    'agenda.statusFilter': ' todo , unknown , done ',
+    'agenda.excludeStatusFilter': ' blocked , made-up ',
+  });
+
+  const opts = readAgendaCliOptions(cfg, '/tmp/org2', null, () => {
+    throw new Error('resolveAgendaFiles should not be called for workspace scope');
+  });
+
+  assert.equal(opts.statusFilter, 'todo,done');
+  assert.equal(opts.excludeStatusFilter, 'in_progress');
+});
+
 test('readAgendaCliOptions normalizes status-order aliases for stable CLI mapping', () => {
   const cfg = fakeCfg({
     'agenda.scope': 'workspace',
