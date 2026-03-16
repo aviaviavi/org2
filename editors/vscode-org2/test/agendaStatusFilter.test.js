@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   normalizeAgendaStatusFilterValue,
+  normalizeAgendaStatusOrderValue,
   buildAgendaStatusFilterQuickPickOptions,
 } = require('../agendaStatusFilter');
 
@@ -15,6 +16,14 @@ test('normalizeAgendaStatusFilterValue canonicalizes aliases and separators', ()
   assert.equal(normalizeAgendaStatusFilterValue(' actionable '), 'actionable');
   assert.equal(normalizeAgendaStatusFilterValue('default'), 'all');
   assert.equal(normalizeAgendaStatusFilterValue(''), 'all');
+});
+
+test('normalizeAgendaStatusOrderValue canonicalizes aliases, expands macros, and drops default sentinel', () => {
+  assert.equal(normalizeAgendaStatusOrderValue('active,closed'), 'todo,in_progress,done,canceled');
+  assert.equal(normalizeAgendaStatusOrderValue(' default , completed, cancelled '), 'done,canceled');
+  assert.equal(normalizeAgendaStatusOrderValue('all,todo,custom'), 'todo,in_progress,done,canceled,custom');
+  assert.equal(normalizeAgendaStatusOrderValue('In Progress, todo, in-progress, blocked'), 'in_progress,todo');
+  assert.equal(normalizeAgendaStatusOrderValue(''), '');
 });
 
 test('buildAgendaStatusFilterQuickPickOptions includes full status set and marks current', () => {
