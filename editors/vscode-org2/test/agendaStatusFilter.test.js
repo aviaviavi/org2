@@ -24,6 +24,7 @@ test('normalizeAgendaStatusOrderValue canonicalizes aliases, expands macros, and
   assert.equal(normalizeAgendaStatusOrderValue(' none , completed, cancelled '), 'done,canceled');
   assert.equal(normalizeAgendaStatusOrderValue('all,todo,custom'), 'todo,in_progress,done,canceled,custom');
   assert.equal(normalizeAgendaStatusOrderValue('In Progress, todo, in-progress, blocked'), 'in_progress,todo');
+  assert.equal(normalizeAgendaStatusOrderValue('todo,unknown,done,made-up'), 'todo,done');
   assert.equal(normalizeAgendaStatusOrderValue(''), '');
 });
 
