@@ -684,7 +684,7 @@ type AgendaDateOrder = "asc" | "desc";
 const AGENDA_STATUS_ALLOWED_HINT =
   "default, all, active(=todo,in_progress), actionable(=todo,in_progress,custom), open|todo|backlog, in_progress|in-progress|prog|doing|started|waiting|blocked|next|wip, done|complete|completed|finish|finished|resolved, canceled|cancel|cancelled, closed(=done,canceled), custom";
 const AGENDA_STATUS_ORDER_ALLOWED_HINT =
-  "default, all(=todo,in_progress,done,canceled,custom), active(=todo,in_progress), actionable(=todo,in_progress,custom), todo|open|backlog, in_progress|in-progress|prog|doing|started|waiting|blocked|next|wip, done|complete|completed|finish|finished|resolved, canceled|cancel|cancelled, closed(=done,canceled), custom";
+  "default|none, all(=todo,in_progress,done,canceled,custom), active(=todo,in_progress), actionable(=todo,in_progress,custom), todo|open|backlog, in_progress|in-progress|prog|doing|started|waiting|blocked|next|wip, done|complete|completed|finish|finished|resolved, canceled|cancel|cancelled, closed(=done,canceled), custom";
 const AGENDA_KIND_ORDER_ALLOWED_HINT = "default, scheduled, deadline";
 const AGENDA_PRIORITY_ORDER_ALLOWED_HINT = "default, A-Z or 0-9 (for example: A,[#B],9)";
 const AGENDA_EFFORT_ORDER_EMPTY = "__none__";
@@ -1899,7 +1899,7 @@ function parseAgendaStatusOrderArgs(rawArgs: string[]): {
     for (const tokenRaw of String(raw).split(",")) {
       const token = normalizeAgendaStatusFilterToken(tokenRaw);
       if (!token) continue;
-      if (token === "default") continue;
+      if (token === "default" || token === "none") continue;
 
       const expanded = expandToken(tokenRaw);
       if (!expanded || expanded.length === 0) {
