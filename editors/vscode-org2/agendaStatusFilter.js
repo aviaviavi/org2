@@ -68,7 +68,7 @@ function normalizeAgendaStatusOrderValue(raw) {
 
   const expand = (tokenRaw) => {
     const token = normalizeStatusToken(tokenRaw);
-    if (!token || token === 'default') return [];
+    if (!token || token === 'default' || token === 'none') return [];
     if (token === 'all') return AGENDA_STATUS_ORDER_BUCKETS;
     if (token === 'active') return ['todo', 'in_progress'];
     if (token === 'actionable') return ['todo', 'in_progress', 'custom'];

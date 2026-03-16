@@ -68,7 +68,7 @@ test('readAgendaCliOptions normalizes status default sentinel to all', () => {
 test('readAgendaCliOptions normalizes status-order aliases for stable CLI mapping', () => {
   const cfg = fakeCfg({
     'agenda.scope': 'workspace',
-    'agenda.statusOrder': ' active,closed,default ',
+    'agenda.statusOrder': ' none,active,closed,default ',
   });
 
   const opts = readAgendaCliOptions(cfg, '/tmp/org2', null, () => {
