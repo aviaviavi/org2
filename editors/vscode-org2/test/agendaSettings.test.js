@@ -65,6 +65,19 @@ test('readAgendaCliOptions normalizes status default sentinel to all', () => {
   assert.equal(opts.excludeStatusFilter, 'all');
 });
 
+test('readAgendaCliOptions normalizes status-order aliases for stable CLI mapping', () => {
+  const cfg = fakeCfg({
+    'agenda.scope': 'workspace',
+    'agenda.statusOrder': ' active,closed,default ',
+  });
+
+  const opts = readAgendaCliOptions(cfg, '/tmp/org2', null, () => {
+    throw new Error('resolveAgendaFiles should not be called for workspace scope');
+  });
+
+  assert.equal(opts.statusOrder, 'todo,in_progress,done,canceled');
+});
+
 test('readAgendaCliOptions normalizes date-range boundaries and clears all sentinels', () => {
   const cfg = fakeCfg({
     'agenda.scope': 'workspace',
