@@ -682,9 +682,9 @@ type AgendaGroupOrder = AgendaGroupField[] | null;
 type AgendaDateOrder = "asc" | "desc";
 
 const AGENDA_STATUS_ALLOWED_HINT =
-  "default|none, all, active(=todo,in_progress), actionable(=todo,in_progress,custom), open|todo|backlog, in_progress|in-progress|prog|doing|started|waiting|blocked|next|wip, done|complete|completed|finish|finished|resolved, canceled|cancel|cancelled, closed(=done,canceled), custom";
+  "default|none, all, active(=todo,in_progress), actionable(=todo,in_progress,custom), open|todo|backlog, in_progress|in-progress|prog|doing|started|waiting|wait|blocked|next|wip|hold|on-hold|paused, done|complete|completed|finish|finished|resolved, canceled|cancel|cancelled, closed(=done,canceled), custom";
 const AGENDA_STATUS_ORDER_ALLOWED_HINT =
-  "default|none, all(=todo,in_progress,done,canceled,custom), active(=todo,in_progress), actionable(=todo,in_progress,custom), todo|open|backlog, in_progress|in-progress|prog|doing|started|waiting|blocked|next|wip, done|complete|completed|finish|finished|resolved, canceled|cancel|cancelled, closed(=done,canceled), custom";
+  "default|none, all(=todo,in_progress,done,canceled,custom), active(=todo,in_progress), actionable(=todo,in_progress,custom), todo|open|backlog, in_progress|in-progress|prog|doing|started|waiting|wait|blocked|next|wip|hold|on-hold|paused, done|complete|completed|finish|finished|resolved, canceled|cancel|cancelled, closed(=done,canceled), custom";
 const AGENDA_KIND_ORDER_ALLOWED_HINT = "default, scheduled, deadline";
 const AGENDA_PRIORITY_ORDER_ALLOWED_HINT = "default, A-Z or 0-9 (for example: A,[#B],9)";
 const AGENDA_EFFORT_ORDER_EMPTY = "__none__";
@@ -717,7 +717,11 @@ function agendaStatusBucketForKeyword(todo: string | undefined): AgendaStatusBuc
 
   if (key === "DONE" || key === "COMPLETED") return "done";
   if (key === "CANCELED" || key === "CANCELLED") return "canceled";
-  if (["PROG", "IN_PROGRESS", "INPROGRESS", "DOING", "STARTED", "WAITING", "BLOCKED", "NEXT", "WIP"].includes(key)) {
+  if (
+    ["PROG", "IN_PROGRESS", "INPROGRESS", "DOING", "STARTED", "WAITING", "WAIT", "BLOCKED", "NEXT", "WIP", "HOLD", "ON_HOLD", "ONHOLD", "PAUSED", "PAUSE"].includes(
+      key,
+    )
+  ) {
     return "in_progress";
   }
   if (["TODO", "OPEN", "BACKLOG"].includes(key)) return "todo";
@@ -742,7 +746,7 @@ function parseTodoStatusArg(rawStatus: string): TodoStatus | "" {
   if (!token) return "";
 
   if (token === "todo" || token === "open" || token === "backlog") return "todo";
-  if (token === "in_progress" || token === "inprogress" || token === "prog" || token === "doing" || token === "started" || token === "waiting" || token === "blocked" || token === "next" || token === "wip") return "in_progress";
+  if (token === "in_progress" || token === "inprogress" || token === "prog" || token === "doing" || token === "started" || token === "waiting" || token === "wait" || token === "blocked" || token === "next" || token === "wip" || token === "hold" || token === "on_hold" || token === "onhold" || token === "paused" || token === "pause") return "in_progress";
   if (token === "done" || token === "complete" || token === "completed" || token === "finish" || token === "finished" || token === "closed" || token === "resolved") return "done";
   if (token === "canceled" || token === "cancelled" || token === "cancel") return "canceled";
 
@@ -797,9 +801,15 @@ function parseAgendaStatusFilterArgs(rawArgs: string[]): {
       token === "doing" ||
       token === "started" ||
       token === "waiting" ||
+      token === "wait" ||
       token === "blocked" ||
       token === "next" ||
-      token === "wip"
+      token === "wip" ||
+      token === "hold" ||
+      token === "on_hold" ||
+      token === "onhold" ||
+      token === "paused" ||
+      token === "pause"
     ) {
       selected.add("in_progress");
       return;
@@ -1881,9 +1891,15 @@ function parseAgendaStatusOrderArgs(rawArgs: string[]): {
       token === "doing" ||
       token === "started" ||
       token === "waiting" ||
+      token === "wait" ||
       token === "blocked" ||
       token === "next" ||
-      token === "wip"
+      token === "wip" ||
+      token === "hold" ||
+      token === "on_hold" ||
+      token === "onhold" ||
+      token === "paused" ||
+      token === "pause"
     ) {
       return ["in_progress"];
     }

@@ -36,7 +36,7 @@ function agendaStatusBucket(todoKeyword) {
 
   if (['DONE', 'COMPLETED'].includes(key)) return 'done';
   if (['CANCELED', 'CANCELLED'].includes(key)) return 'canceled';
-  if (['PROG', 'IN_PROGRESS', 'INPROGRESS', 'DOING', 'STARTED', 'WAITING', 'BLOCKED', 'NEXT', 'WIP'].includes(key)) return 'inProgress';
+  if (['PROG', 'IN_PROGRESS', 'INPROGRESS', 'DOING', 'STARTED', 'WAITING', 'WAIT', 'BLOCKED', 'NEXT', 'WIP', 'HOLD', 'ON_HOLD', 'ONHOLD', 'PAUSED', 'PAUSE'].includes(key)) return 'inProgress';
   if (['TODO', 'OPEN', 'BACKLOG'].includes(key)) return 'todo';
   return 'custom';
 }
