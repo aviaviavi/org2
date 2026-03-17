@@ -21,6 +21,10 @@ function normalizeStatusToken(raw) {
     .replace(/^_+|_+$/g, '');
 }
 
+function splitAgendaStatusTokens(raw) {
+  return String(raw || '').split(/[;,\n]/);
+}
+
 function canonicalizeAgendaStatusFilterToken(tokenRaw) {
   const token = normalizeStatusToken(tokenRaw);
   if (!token) return '';
@@ -70,7 +74,7 @@ function normalizeAgendaStatusFilterValue(raw, fallback = 'all') {
   const rawValues = Array.isArray(raw) ? raw : [raw];
 
   for (const value of rawValues) {
-    for (const tokenRaw of String(value || '').split(',')) {
+    for (const tokenRaw of splitAgendaStatusTokens(value)) {
       const token = canonicalizeAgendaStatusFilterToken(tokenRaw);
       if (!token) continue;
       if (token === 'all') return 'all';
@@ -126,7 +130,7 @@ function normalizeAgendaStatusOrderValue(raw) {
     return [];
   };
 
-  for (const tokenRaw of String(raw || '').split(',')) {
+  for (const tokenRaw of splitAgendaStatusTokens(raw)) {
     for (const token of expand(tokenRaw)) push(token);
   }
 

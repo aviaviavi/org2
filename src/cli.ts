@@ -733,6 +733,10 @@ function normalizeAgendaStatusFilterToken(tokenRaw: string): string {
     .replace(/^_+|_+$/g, "");
 }
 
+function splitAgendaStatusFilterTokens(raw: string): string[] {
+  return String(raw || "").split(/[;,\n]/);
+}
+
 function parseTodoStatusArg(rawStatus: string): TodoStatus | "" {
   const token = normalizeAgendaStatusFilterToken(rawStatus);
   if (!token) return "";
@@ -833,7 +837,7 @@ function parseAgendaStatusFilterArgs(rawArgs: string[]): {
   };
 
   for (const raw of rawArgs) {
-    for (const token of String(raw).split(",")) {
+    for (const token of splitAgendaStatusFilterTokens(raw)) {
       addToken(token);
     }
   }
@@ -1900,7 +1904,7 @@ function parseAgendaStatusOrderArgs(rawArgs: string[]): {
   };
 
   for (const raw of rawArgs) {
-    for (const tokenRaw of String(raw).split(",")) {
+    for (const tokenRaw of splitAgendaStatusFilterTokens(raw)) {
       const token = normalizeAgendaStatusFilterToken(tokenRaw);
       if (!token) continue;
       if (token === "default" || token === "none") continue;
