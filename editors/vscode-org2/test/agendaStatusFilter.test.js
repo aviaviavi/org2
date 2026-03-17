@@ -18,6 +18,8 @@ test('normalizeAgendaStatusFilterValue canonicalizes aliases, supports comma lis
   assert.equal(normalizeAgendaStatusFilterValue(['In Progress', 'cancelled']), 'in_progress,canceled');
   assert.equal(normalizeAgendaStatusFilterValue('all,done'), 'all');
   assert.equal(normalizeAgendaStatusFilterValue('default'), 'all');
+  assert.equal(normalizeAgendaStatusFilterValue('none'), 'all');
+  assert.equal(normalizeAgendaStatusFilterValue('none,done'), 'done');
   assert.equal(normalizeAgendaStatusFilterValue(''), 'all');
   assert.equal(normalizeAgendaStatusFilterValue('wat'), 'all');
 });

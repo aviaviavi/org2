@@ -25,6 +25,7 @@ function canonicalizeAgendaStatusFilterToken(tokenRaw) {
   const token = normalizeStatusToken(tokenRaw);
   if (!token) return '';
 
+  if (token === 'none') return '';
   if (token === 'all' || token === 'default') return 'all';
   if (token === 'active') return 'active';
   if (token === 'actionable') return 'actionable';
