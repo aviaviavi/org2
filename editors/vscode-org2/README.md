@@ -116,8 +116,8 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.dayLimit`: optional per-day row cap applied after sort/group ordering and before `org2.agenda.limit` (`0` = unlimited)
 - `org2.agenda.groupLimit`: optional per-day per-group row cap when `org2.agenda.groupBy` is set (`0` = unlimited)
 - `org2.agenda.includeOverdue`: include overdue items
-- `org2.agenda.statusFilter`: filter by TODO state bucket (`all`, `active`, `actionable`, `open`, `todo`, `in_progress`, `done`, `canceled`, `closed`, `custom`; aliases like `default`, `backlog`, `wip`, `completed`, and `cancelled` normalize automatically). Comma-separated values are accepted, deduped, and invalid tokens are ignored.
-- `org2.agenda.excludeStatusFilter`: exclude TODO state buckets (`all`, `active`, `actionable`, `open`, `todo`, `in_progress`, `done`, `canceled`, `closed`, `custom`; same aliases are normalized). Comma-separated values are accepted, deduped, and invalid tokens are ignored.
+- `org2.agenda.statusFilter`: filter by TODO state bucket (`all`, `active`, `actionable`, `open`, `todo`, `in_progress`, `done`, `canceled`, `closed`, `custom`; aliases like `default`, `none`, `backlog`, `wip`, `completed`, and `cancelled` normalize automatically, with `none` acting as a no-op sentinel). Comma-separated values are accepted, deduped, and invalid tokens are ignored.
+- `org2.agenda.excludeStatusFilter`: exclude TODO state buckets (`all`, `active`, `actionable`, `open`, `todo`, `in_progress`, `done`, `canceled`, `closed`, `custom`; same aliases are normalized, and `none` is treated as a no-op sentinel). Comma-separated values are accepted, deduped, and invalid tokens are ignored.
 - `org2.agenda.kindFilter`: filter by planning kind (`all`, `scheduled`, `deadline`)
 - `org2.agenda.excludeKindFilter`: exclude rows by planning kind (`all`, `scheduled`, `deadline`)
 - `org2.agenda.whenFilter`: filter by time bucket (`all`, `overdue`, `today`, `upcoming`)
