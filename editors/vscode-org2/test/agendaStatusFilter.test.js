@@ -15,6 +15,8 @@ test('normalizeAgendaStatusFilterValue canonicalizes aliases, supports comma lis
   assert.equal(normalizeAgendaStatusFilterValue('CLOSED'), 'closed');
   assert.equal(normalizeAgendaStatusFilterValue(' actionable '), 'actionable');
   assert.equal(normalizeAgendaStatusFilterValue('todo,unknown,done,made-up'), 'todo,done');
+  assert.equal(normalizeAgendaStatusFilterValue('todo;done'), 'todo,done');
+  assert.equal(normalizeAgendaStatusFilterValue(['In Progress;cancelled']), 'in_progress,canceled');
   assert.equal(normalizeAgendaStatusFilterValue(['In Progress', 'cancelled']), 'in_progress,canceled');
   assert.equal(normalizeAgendaStatusFilterValue('all,done'), 'all');
   assert.equal(normalizeAgendaStatusFilterValue('default'), 'all');
@@ -26,6 +28,7 @@ test('normalizeAgendaStatusFilterValue canonicalizes aliases, supports comma lis
 
 test('normalizeAgendaStatusOrderValue canonicalizes aliases, expands macros, and drops default sentinel', () => {
   assert.equal(normalizeAgendaStatusOrderValue('active,closed'), 'todo,in_progress,done,canceled');
+  assert.equal(normalizeAgendaStatusOrderValue('active;closed'), 'todo,in_progress,done,canceled');
   assert.equal(normalizeAgendaStatusOrderValue(' default , completed, cancelled '), 'done,canceled');
   assert.equal(normalizeAgendaStatusOrderValue(' none , completed, cancelled '), 'done,canceled');
   assert.equal(normalizeAgendaStatusOrderValue('all,todo,custom'), 'todo,in_progress,done,canceled,custom');
