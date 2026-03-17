@@ -114,3 +114,29 @@ test('buildAgendaCliArgs: does not emit from/to flags when date boundaries are s
   assert.equal(out.warnEmptyFiles, false);
   assert.deepEqual(out.args, ['agenda', '--dir', '/tmp/org', '--recursive', '--days', '7', '--format', 'json']);
 });
+
+test('buildAgendaCliArgs: forwards normalized comma-separated status filters as single CLI args', () => {
+  const out = buildAgendaCliArgs({
+    scope: 'workspace',
+    agendaRoot: '/tmp/org',
+    days: 7,
+    statusFilter: 'todo,done',
+    excludeStatusFilter: 'in_progress,canceled',
+  });
+
+  assert.equal(out.warnEmptyFiles, false);
+  assert.deepEqual(out.args, [
+    'agenda',
+    '--dir',
+    '/tmp/org',
+    '--recursive',
+    '--days',
+    '7',
+    '--format',
+    'json',
+    '--status',
+    'todo,done',
+    '--exclude-status',
+    'in_progress,canceled',
+  ]);
+});
