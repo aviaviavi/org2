@@ -21,9 +21,9 @@ function normalizeStatusToken(raw) {
     .replace(/^_+|_+$/g, '');
 }
 
-function normalizeAgendaStatusFilterValue(raw, fallback = 'all') {
-  const token = normalizeStatusToken(raw);
-  if (!token) return fallback;
+function canonicalizeAgendaStatusFilterToken(tokenRaw) {
+  const token = normalizeStatusToken(tokenRaw);
+  if (!token) return '';
 
   if (token === 'all' || token === 'default') return 'all';
   if (token === 'active') return 'active';
@@ -53,7 +53,34 @@ function normalizeAgendaStatusFilterValue(raw, fallback = 'all') {
   if (token === 'closed') return 'closed';
   if (token === 'custom') return 'custom';
 
-  return fallback;
+  return '';
+}
+
+function normalizeAgendaStatusFilterValue(raw, fallback = 'all') {
+  const seen = new Set();
+  const ordered = [];
+
+  const push = (token) => {
+    if (!token || seen.has(token)) return;
+    seen.add(token);
+    ordered.push(token);
+  };
+
+  const rawValues = Array.isArray(raw) ? raw : [raw];
+
+  for (const value of rawValues) {
+    for (const tokenRaw of String(value || '').split(',')) {
+      const token = canonicalizeAgendaStatusFilterToken(tokenRaw);
+      if (!token) continue;
+      if (token === 'all') return 'all';
+      push(token);
+    }
+  }
+
+  if (ordered.length > 0) return ordered.join(',');
+
+  const fallbackToken = canonicalizeAgendaStatusFilterToken(fallback);
+  return fallbackToken || 'all';
 }
 
 function normalizeAgendaStatusOrderValue(raw) {
