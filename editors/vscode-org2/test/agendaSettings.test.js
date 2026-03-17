@@ -65,6 +65,21 @@ test('readAgendaCliOptions normalizes status default sentinel to all', () => {
   assert.equal(opts.excludeStatusFilter, 'all');
 });
 
+test('readAgendaCliOptions treats status none sentinel as no-op when mixed with concrete values', () => {
+  const cfg = fakeCfg({
+    'agenda.scope': 'workspace',
+    'agenda.statusFilter': 'none,done',
+    'agenda.excludeStatusFilter': 'none',
+  });
+
+  const opts = readAgendaCliOptions(cfg, '/tmp/org2', null, () => {
+    throw new Error('resolveAgendaFiles should not be called for workspace scope');
+  });
+
+  assert.equal(opts.statusFilter, 'done');
+  assert.equal(opts.excludeStatusFilter, 'all');
+});
+
 test('readAgendaCliOptions keeps valid status filters when mixed with invalid tokens', () => {
   const cfg = fakeCfg({
     'agenda.scope': 'workspace',
