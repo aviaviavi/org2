@@ -42,9 +42,15 @@ function canonicalizeAgendaStatusFilterToken(tokenRaw) {
     token === 'doing' ||
     token === 'started' ||
     token === 'waiting' ||
+    token === 'wait' ||
     token === 'blocked' ||
     token === 'next' ||
-    token === 'wip'
+    token === 'wip' ||
+    token === 'hold' ||
+    token === 'on_hold' ||
+    token === 'onhold' ||
+    token === 'paused' ||
+    token === 'pause'
   ) return 'in_progress';
   if (
     token === 'done' ||
@@ -112,9 +118,15 @@ function normalizeAgendaStatusOrderValue(raw) {
       token === 'doing' ||
       token === 'started' ||
       token === 'waiting' ||
+      token === 'wait' ||
       token === 'blocked' ||
       token === 'next' ||
-      token === 'wip'
+      token === 'wip' ||
+      token === 'hold' ||
+      token === 'on_hold' ||
+      token === 'onhold' ||
+      token === 'paused' ||
+      token === 'pause'
     ) return ['in_progress'];
     if (
       token === 'done' ||

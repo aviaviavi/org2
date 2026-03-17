@@ -10,6 +10,9 @@ const {
 test('normalizeAgendaStatusFilterValue canonicalizes aliases, supports comma lists, and drops invalid tokens', () => {
   assert.equal(normalizeAgendaStatusFilterValue(' In-Progress '), 'in_progress');
   assert.equal(normalizeAgendaStatusFilterValue('wip'), 'in_progress');
+  assert.equal(normalizeAgendaStatusFilterValue('wait'), 'in_progress');
+  assert.equal(normalizeAgendaStatusFilterValue('on-hold'), 'in_progress');
+  assert.equal(normalizeAgendaStatusFilterValue('paused'), 'in_progress');
   assert.equal(normalizeAgendaStatusFilterValue('completed'), 'done');
   assert.equal(normalizeAgendaStatusFilterValue('cancelled'), 'canceled');
   assert.equal(normalizeAgendaStatusFilterValue('CLOSED'), 'closed');
@@ -32,7 +35,7 @@ test('normalizeAgendaStatusOrderValue canonicalizes aliases, expands macros, and
   assert.equal(normalizeAgendaStatusOrderValue(' default , completed, cancelled '), 'done,canceled');
   assert.equal(normalizeAgendaStatusOrderValue(' none , completed, cancelled '), 'done,canceled');
   assert.equal(normalizeAgendaStatusOrderValue('all,todo,custom'), 'todo,in_progress,done,canceled,custom');
-  assert.equal(normalizeAgendaStatusOrderValue('In Progress, todo, in-progress, blocked'), 'in_progress,todo');
+  assert.equal(normalizeAgendaStatusOrderValue('In Progress, todo, in-progress, blocked, paused'), 'in_progress,todo');
   assert.equal(normalizeAgendaStatusOrderValue('todo,unknown,done,made-up'), 'todo,done');
   assert.equal(normalizeAgendaStatusOrderValue(''), '');
 });
