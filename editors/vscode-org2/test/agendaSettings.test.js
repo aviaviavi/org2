@@ -108,6 +108,23 @@ test('readAgendaCliOptions normalizes status-order aliases for stable CLI mappin
   assert.equal(opts.statusOrder, 'todo,in_progress,done,canceled');
 });
 
+test('readAgendaCliOptions supports semicolon-separated status filters and status-order', () => {
+  const cfg = fakeCfg({
+    'agenda.scope': 'workspace',
+    'agenda.statusFilter': 'todo;done',
+    'agenda.excludeStatusFilter': 'none;cancelled',
+    'agenda.statusOrder': 'active;closed',
+  });
+
+  const opts = readAgendaCliOptions(cfg, '/tmp/org2', null, () => {
+    throw new Error('resolveAgendaFiles should not be called for workspace scope');
+  });
+
+  assert.equal(opts.statusFilter, 'todo,done');
+  assert.equal(opts.excludeStatusFilter, 'canceled');
+  assert.equal(opts.statusOrder, 'todo,in_progress,done,canceled');
+});
+
 test('readAgendaCliOptions normalizes date-range boundaries and clears all sentinels', () => {
   const cfg = fakeCfg({
     'agenda.scope': 'workspace',
