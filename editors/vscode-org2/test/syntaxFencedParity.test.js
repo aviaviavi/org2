@@ -99,3 +99,24 @@ test('unlabeled fenced and #+begin_src blocks use default embedded grammar scope
   assert(unlabeledFenceScopes.some((s) => s.includes('source.yaml.const-token')));
   assert(unlabeledSrcScopes.some((s) => s.includes('source.yaml.const-token')));
 });
+
+test('headline TODO aliases still receive TODO keyword syntax highlighting', async () => {
+  const registry = await createRegistry();
+  const grammar = await registry.loadGrammar('source.org2');
+  const lines = [
+    '* OPEN Inbox capture',
+    '* BACKLOG Later maybe',
+    '* BLOCKED Waiting on review',
+    '* PAUSED On ice',
+    '* CANCELED Duplicate',
+  ];
+
+  for (const line of lines) {
+    const keyword = line.split(/\s+/)[1];
+    const result = grammar.tokenizeLine(line, null);
+    const keywordToken = result.tokens.find((token) => line.slice(token.startIndex, token.endIndex) === keyword);
+
+    assert(keywordToken, `expected token for ${keyword}`);
+    assert(keywordToken.scopes.includes('keyword.other.todo.org2'), `expected TODO scope for ${keyword}`);
+  }
+});
