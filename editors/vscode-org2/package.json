@@ -632,7 +632,7 @@
             "custom"
           ],
           "default": "all",
-          "description": "Filter agenda rows by TODO state bucket before rendering. all=everything, active=todo+in_progress, actionable=active+custom, closed=done+canceled. Alias inputs (for example default/none/backlog/wip/completed/cancelled) normalize automatically; `none` is treated as a no-op sentinel. Comma- or semicolon-separated values are accepted, deduped, and unknown tokens are ignored."
+          "description": "Filter agenda rows by TODO state bucket before rendering. all=everything, active=todo+in_progress, actionable=active+custom, closed=done+canceled. Alias inputs (for example default/none/backlog/wip/wait/hold/paused/completed/cancelled) normalize automatically; `none` is treated as a no-op sentinel. Comma- or semicolon-separated values are accepted, deduped, and unknown tokens are ignored."
         },
         "org2.agenda.excludeStatusFilter": {
           "type": "string",
@@ -649,7 +649,7 @@
             "custom"
           ],
           "default": "all",
-          "description": "Exclude agenda rows by TODO state bucket before rendering. all=no exclusion, active hides todo+in_progress, closed hides done+canceled. Alias inputs (for example default/none/backlog/wip/completed/cancelled) normalize automatically; `none` is treated as a no-op sentinel. Comma- or semicolon-separated values are accepted, deduped, and unknown tokens are ignored."
+          "description": "Exclude agenda rows by TODO state bucket before rendering. all=no exclusion, active hides todo+in_progress, closed hides done+canceled. Alias inputs (for example default/none/backlog/wip/wait/hold/paused/completed/cancelled) normalize automatically; `none` is treated as a no-op sentinel. Comma- or semicolon-separated values are accepted, deduped, and unknown tokens are ignored."
         },
         "org2.agenda.kindFilter": {
           "type": "string",
@@ -806,7 +806,7 @@
         "org2.agenda.statusOrder": {
           "type": "string",
           "default": "",
-          "description": "Optional custom ordering for normalized status buckets used by `agenda --sort status` / `--group status` (comma- or semicolon-separated values from `todo`, `in_progress`, `done`, `canceled`, `custom`; aliases like `default`, `none`, `all`, `active`, `actionable`, `open`, `prog`, `completed`, and `closed` are accepted and normalized before CLI args are built)."
+          "description": "Optional custom ordering for normalized status buckets used by `agenda --sort status` / `--group status` (comma- or semicolon-separated values from `todo`, `in_progress`, `done`, `canceled`, `custom`; aliases like `default`, `none`, `all`, `active`, `actionable`, `open`, `prog`, `wait`, `hold`, `paused`, `completed`, and `closed` are accepted and normalized before CLI args are built)."
         },
         "org2.agenda.kindOrder": {
           "type": "string",
