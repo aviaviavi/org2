@@ -1501,7 +1501,7 @@
       "patterns": [
         {
           "name": "markup.heading.1.org2",
-          "match": "^(\\*)\\s+(?:(TODO|OPEN|BACKLOG|PROG|IN_PROGRESS|INPROGRESS|DOING|STARTED|WAITING|WAIT|BLOCKED|NEXT|WIP|HOLD|ON_HOLD|ONHOLD|PAUSED|PAUSE|DONE|COMPLETED|CANCELED|CANCELLED)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
+          "match": "^(\\*)\\s+(?:(TODO|OPEN|BACKLOG|PROG|IN_PROGRESS|INPROGRESS|DOING|STARTED|WAITING|WAIT|BLOCKED|NEXT|WIP|HOLD|ON_HOLD|ONHOLD|PAUSED|PAUSE|DONE|COMPLETE|COMPLETED|FINISH|FINISHED|CLOSED|RESOLVED|CANCELED|CANCELLED)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
           "captures": {
             "1": {
               "name": "punctuation.definition.heading.org2"
@@ -1519,7 +1519,7 @@
         },
         {
           "name": "markup.heading.2.org2",
-          "match": "^(\\*\\*)\\s+(?:(TODO|OPEN|BACKLOG|PROG|IN_PROGRESS|INPROGRESS|DOING|STARTED|WAITING|WAIT|BLOCKED|NEXT|WIP|HOLD|ON_HOLD|ONHOLD|PAUSED|PAUSE|DONE|COMPLETED|CANCELED|CANCELLED)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
+          "match": "^(\\*\\*)\\s+(?:(TODO|OPEN|BACKLOG|PROG|IN_PROGRESS|INPROGRESS|DOING|STARTED|WAITING|WAIT|BLOCKED|NEXT|WIP|HOLD|ON_HOLD|ONHOLD|PAUSED|PAUSE|DONE|COMPLETE|COMPLETED|FINISH|FINISHED|CLOSED|RESOLVED|CANCELED|CANCELLED)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
           "captures": {
             "1": {
               "name": "punctuation.definition.heading.org2"
@@ -1537,7 +1537,7 @@
         },
         {
           "name": "markup.heading.3.org2",
-          "match": "^(\\*\\*\\*)\\s+(?:(TODO|OPEN|BACKLOG|PROG|IN_PROGRESS|INPROGRESS|DOING|STARTED|WAITING|WAIT|BLOCKED|NEXT|WIP|HOLD|ON_HOLD|ONHOLD|PAUSED|PAUSE|DONE|COMPLETED|CANCELED|CANCELLED)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
+          "match": "^(\\*\\*\\*)\\s+(?:(TODO|OPEN|BACKLOG|PROG|IN_PROGRESS|INPROGRESS|DOING|STARTED|WAITING|WAIT|BLOCKED|NEXT|WIP|HOLD|ON_HOLD|ONHOLD|PAUSED|PAUSE|DONE|COMPLETE|COMPLETED|FINISH|FINISHED|CLOSED|RESOLVED|CANCELED|CANCELLED)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
           "captures": {
             "1": {
               "name": "punctuation.definition.heading.org2"
@@ -1555,7 +1555,7 @@
         },
         {
           "name": "markup.heading.4.org2",
-          "match": "^(\\*\\*\\*\\*)\\s+(?:(TODO|OPEN|BACKLOG|PROG|IN_PROGRESS|INPROGRESS|DOING|STARTED|WAITING|WAIT|BLOCKED|NEXT|WIP|HOLD|ON_HOLD|ONHOLD|PAUSED|PAUSE|DONE|COMPLETED|CANCELED|CANCELLED)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
+          "match": "^(\\*\\*\\*\\*)\\s+(?:(TODO|OPEN|BACKLOG|PROG|IN_PROGRESS|INPROGRESS|DOING|STARTED|WAITING|WAIT|BLOCKED|NEXT|WIP|HOLD|ON_HOLD|ONHOLD|PAUSED|PAUSE|DONE|COMPLETE|COMPLETED|FINISH|FINISHED|CLOSED|RESOLVED|CANCELED|CANCELLED)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
           "captures": {
             "1": {
               "name": "punctuation.definition.heading.org2"
@@ -1573,7 +1573,7 @@
         },
         {
           "name": "markup.heading.5.org2",
-          "match": "^(\\*\\*\\*\\*\\*)\\s+(?:(TODO|OPEN|BACKLOG|PROG|IN_PROGRESS|INPROGRESS|DOING|STARTED|WAITING|WAIT|BLOCKED|NEXT|WIP|HOLD|ON_HOLD|ONHOLD|PAUSED|PAUSE|DONE|COMPLETED|CANCELED|CANCELLED)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
+          "match": "^(\\*\\*\\*\\*\\*)\\s+(?:(TODO|OPEN|BACKLOG|PROG|IN_PROGRESS|INPROGRESS|DOING|STARTED|WAITING|WAIT|BLOCKED|NEXT|WIP|HOLD|ON_HOLD|ONHOLD|PAUSED|PAUSE|DONE|COMPLETE|COMPLETED|FINISH|FINISHED|CLOSED|RESOLVED|CANCELED|CANCELLED)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
           "captures": {
             "1": {
               "name": "punctuation.definition.heading.org2"
@@ -1591,7 +1591,7 @@
         },
         {
           "name": "markup.heading.6.org2",
-          "match": "^(\\*\\*\\*\\*\\*\\*)\\s+(?:(TODO|OPEN|BACKLOG|PROG|IN_PROGRESS|INPROGRESS|DOING|STARTED|WAITING|WAIT|BLOCKED|NEXT|WIP|HOLD|ON_HOLD|ONHOLD|PAUSED|PAUSE|DONE|COMPLETED|CANCELED|CANCELLED)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
+          "match": "^(\\*\\*\\*\\*\\*\\*)\\s+(?:(TODO|OPEN|BACKLOG|PROG|IN_PROGRESS|INPROGRESS|DOING|STARTED|WAITING|WAIT|BLOCKED|NEXT|WIP|HOLD|ON_HOLD|ONHOLD|PAUSED|PAUSE|DONE|COMPLETE|COMPLETED|FINISH|FINISHED|CLOSED|RESOLVED|CANCELED|CANCELLED)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
           "captures": {
             "1": {
               "name": "punctuation.definition.heading.org2"
@@ -1609,7 +1609,7 @@
         },
         {
           "name": "markup.heading.org2",
-          "match": "^(\\*{7,})\\s+(?:(TODO|OPEN|BACKLOG|PROG|IN_PROGRESS|INPROGRESS|DOING|STARTED|WAITING|WAIT|BLOCKED|NEXT|WIP|HOLD|ON_HOLD|ONHOLD|PAUSED|PAUSE|DONE|COMPLETED|CANCELED|CANCELLED)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
+          "match": "^(\\*{7,})\\s+(?:(TODO|OPEN|BACKLOG|PROG|IN_PROGRESS|INPROGRESS|DOING|STARTED|WAITING|WAIT|BLOCKED|NEXT|WIP|HOLD|ON_HOLD|ONHOLD|PAUSED|PAUSE|DONE|COMPLETE|COMPLETED|FINISH|FINISHED|CLOSED|RESOLVED|CANCELED|CANCELLED)\\s+)?(.+?)(\\s+(:[^\\n:]+:)+)?$",
           "captures": {
             "1": {
               "name": "punctuation.definition.heading.org2"
