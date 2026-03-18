@@ -10,7 +10,21 @@ test('normalizeTodoStatusValue canonicalizes known aliases', () => {
 
   assert.equal(normalizeTodoStatusValue('IN-PROGRESS'), 'in_progress');
   assert.equal(normalizeTodoStatusValue('in progress'), 'in_progress');
+  assert.equal(normalizeTodoStatusValue('inprogress'), 'in_progress');
+  assert.equal(normalizeTodoStatusValue('prog'), 'in_progress');
+  assert.equal(normalizeTodoStatusValue('doing'), 'in_progress');
+  assert.equal(normalizeTodoStatusValue('started'), 'in_progress');
+  assert.equal(normalizeTodoStatusValue('waiting'), 'in_progress');
+  assert.equal(normalizeTodoStatusValue('wait'), 'in_progress');
+  assert.equal(normalizeTodoStatusValue('blocked'), 'in_progress');
+  assert.equal(normalizeTodoStatusValue('next'), 'in_progress');
   assert.equal(normalizeTodoStatusValue('wip'), 'in_progress');
+  assert.equal(normalizeTodoStatusValue('hold'), 'in_progress');
+  assert.equal(normalizeTodoStatusValue('on-hold'), 'in_progress');
+  assert.equal(normalizeTodoStatusValue('on_hold'), 'in_progress');
+  assert.equal(normalizeTodoStatusValue('onhold'), 'in_progress');
+  assert.equal(normalizeTodoStatusValue('paused'), 'in_progress');
+  assert.equal(normalizeTodoStatusValue('pause'), 'in_progress');
 
   assert.equal(normalizeTodoStatusValue('done'), 'done');
   assert.equal(normalizeTodoStatusValue('completed'), 'done');
