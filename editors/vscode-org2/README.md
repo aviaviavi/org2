@@ -116,8 +116,8 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.dayLimit`: optional per-day row cap applied after sort/group ordering and before `org2.agenda.limit` (`0` = unlimited)
 - `org2.agenda.groupLimit`: optional per-day per-group row cap when `org2.agenda.groupBy` is set (`0` = unlimited)
 - `org2.agenda.includeOverdue`: include overdue items
-- `org2.agenda.statusFilter`: filter by TODO state bucket (`all`, `active`, `actionable`, `open`, `todo`, `in_progress`, `done`, `canceled`, `closed`, `custom`; aliases like `default`, `none`, `backlog`, `wip`, `completed`, and `cancelled` normalize automatically, with `none` acting as a no-op sentinel). Comma- or semicolon-separated values are accepted, deduped, and invalid tokens are ignored.
-- `org2.agenda.excludeStatusFilter`: exclude TODO state buckets (`all`, `active`, `actionable`, `open`, `todo`, `in_progress`, `done`, `canceled`, `closed`, `custom`; same aliases are normalized, and `none` is treated as a no-op sentinel). Comma- or semicolon-separated values are accepted, deduped, and invalid tokens are ignored.
+- `org2.agenda.statusFilter`: filter by TODO state bucket (`all`, `active`, `actionable`, `open`, `todo`, `in_progress`, `done`, `canceled`, `closed`, `custom`; aliases like `default`, `none`, `backlog`, `wip`, `wait`, `hold`, `paused`, `completed`, and `cancelled` normalize automatically, with `none` acting as a no-op sentinel). Comma- or semicolon-separated values are accepted, deduped, and invalid tokens are ignored.
+- `org2.agenda.excludeStatusFilter`: exclude TODO state buckets (`all`, `active`, `actionable`, `open`, `todo`, `in_progress`, `done`, `canceled`, `closed`, `custom`; same aliases are normalized, including `wait`, `hold`, and `paused`, and `none` is treated as a no-op sentinel). Comma- or semicolon-separated values are accepted, deduped, and invalid tokens are ignored.
 - `org2.agenda.kindFilter`: filter by planning kind (`all`, `scheduled`, `deadline`)
 - `org2.agenda.excludeKindFilter`: exclude rows by planning kind (`all`, `scheduled`, `deadline`)
 - `org2.agenda.whenFilter`: filter by time bucket (`all`, `overdue`, `today`, `upcoming`)
@@ -144,7 +144,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.idFilter`: filter by headline `:ID:` / `:CUSTOM_ID:` values (case-insensitive exact match; comma-separated IDs use OR matching)
 - `org2.agenda.todoKeywordFilter`: filter by exact TODO keyword (case-insensitive; comma-separated keywords use OR matching)
 - `org2.agenda.todoOrder`: optional custom TODO keyword ordering used by `sortBy=todo` / `groupBy=todo` (comma-separated, e.g. `TODO,IN_PROGRESS,BLOCKED,DONE`; blank keeps default alphabetical ordering)
-- `org2.agenda.statusOrder`: optional custom normalized status-bucket ordering used by `sortBy=status` / `groupBy=status` (comma- or semicolon-separated values from `todo,in_progress,done,canceled,custom`; aliases like `default`, `none`, `all`, `active`, `actionable`, `open`, `prog`, `completed`, and `closed` are accepted and normalized before CLI args are built)
+- `org2.agenda.statusOrder`: optional custom normalized status-bucket ordering used by `sortBy=status` / `groupBy=status` (comma- or semicolon-separated values from `todo,in_progress,done,canceled,custom`; aliases like `default`, `none`, `all`, `active`, `actionable`, `open`, `prog`, `wait`, `hold`, `paused`, `completed`, and `closed` are accepted and normalized before CLI args are built)
 - `org2.agenda.kindOrder`: optional custom planning-kind ordering used by `sortBy=kind` / `groupBy=kind` (comma-separated values from `scheduled,deadline`; blank keeps default lexical ordering)
 - `org2.agenda.priorityOrder`: optional custom priority ordering used by `sortBy=priority` / `groupBy=priority` (comma-separated `A..Z`/`0..9`, accepts bracketed tokens like `[#A]`; blank keeps default `A→Z` then `0→9` ordering)
 - `org2.agenda.tagOrder`: optional custom tag ordering used by `sortBy=tags` / `groupBy=tags` (comma-separated tag names, case-insensitive; rows containing listed tags rank first, then lexical fallback)
@@ -207,7 +207,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
   - coming up → deemphasized/neutral color
 - TODO status is visually differentiated with **both** color and a compact non-color cue prefix:
   - `[T]` planned (TODO/open/backlog)
-  - `[~]` in progress (in_progress/doing/started/waiting/blocked/next)
+  - `[~]` in progress (in_progress/doing/started/waiting/wait/blocked/next/wip/hold/paused)
   - `[✓]` completed (done/completed)
   - `[×]` canceled (canceled/cancelled)
   - `[?]` custom keyword, `[·]` no keyword
