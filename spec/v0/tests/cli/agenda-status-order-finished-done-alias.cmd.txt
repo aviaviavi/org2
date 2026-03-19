@@ -1,0 +1,1 @@
+agenda --files "spec/v0/tests/cli/agenda-status-order-finished-done-alias.input.txt" --today 2026-01-21 --days 1 --format json --sort status,headline --status-order "done,todo,in_progress,custom"

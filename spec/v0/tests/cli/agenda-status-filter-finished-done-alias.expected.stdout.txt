@@ -1,0 +1,39 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-01-21",
+    "end": "2026-01-21",
+    "days": 1
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-01-21",
+      "weekday": "Wednesday",
+      "items": [
+        {
+          "todo": "FINISHED",
+          "headline": "Wrapped up",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-status-filter-finished-done-alias.input.txt",
+          "line": 0
+        },
+        {
+          "todo": "RESOLVED",
+          "headline": "Fixed elsewhere",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-status-filter-finished-done-alias.input.txt",
+          "line": 3
+        },
+        {
+          "todo": "COMPLETE",
+          "headline": "Final pass",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-status-filter-finished-done-alias.input.txt",
+          "line": 6
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}
