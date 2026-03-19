@@ -11,6 +11,7 @@ const {
   agendaUrgencyFromDate,
   extractAgendaPriorityFromHeadline,
   normalizeAgendaPriority,
+  parseHeadlineTitleForRoam,
 } = require('./agendaVisuals');
 const { buildAgendaTreeGroupsFromCli } = require('./agendaTreeModel');
 const { resolveAgendaTargets, orderAgendaTargetsForMutation } = require('./agendaSelection');
@@ -967,10 +968,7 @@ function collectRoamNodesFromText(content, filePath) {
     const hm = /^(\*+)\s+(.*)$/.exec(line);
     if (hm) {
       currentHeadlineLine = i;
-      currentHeadlineTitle = String(hm[2] || '')
-        .replace(/\s+:[^\s:]+(?::[^\s:]+)*:\s*$/, '')
-        .replace(/^(TODO|IN_PROGRESS|DONE|CANCELLED|CANCELED)\s+/i, '')
-        .trim();
+      currentHeadlineTitle = parseHeadlineTitleForRoam(String(hm[2] || ''));
       continue;
     }
 

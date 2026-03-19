@@ -9,7 +9,10 @@ const {
   agendaTreeItemLabel,
   agendaUrgencyFromDate,
   extractAgendaPriorityFromHeadline,
+  hasRecognizedHeadlineTodoKeyword,
   normalizeAgendaPriority,
+  parseHeadlineTitleForRoam,
+  stripHeadlineTodoKeyword,
 } = require('../agendaVisuals');
 
 test('agendaFileLabel returns basename with fallback', () => {
@@ -52,6 +55,26 @@ test('agendaStatusBucket maps common TODO states and aliases', () => {
   assert.equal(agendaStatusBucket('CANCELED'), 'canceled');
   assert.equal(agendaStatusBucket('SOMEDAY'), 'custom');
   assert.equal(agendaStatusBucket(''), 'none');
+});
+
+test('roam headline title parsing strips recognized TODO aliases only', () => {
+  assert.equal(hasRecognizedHeadlineTodoKeyword('BACKLOG'), true);
+  assert.equal(hasRecognizedHeadlineTodoKeyword('WAIT'), true);
+  assert.equal(hasRecognizedHeadlineTodoKeyword('COMPLETED'), true);
+  assert.equal(hasRecognizedHeadlineTodoKeyword('CANCELLED'), true);
+  assert.equal(hasRecognizedHeadlineTodoKeyword('SOMEDAY'), false);
+
+  assert.equal(stripHeadlineTodoKeyword('BACKLOG Ship parser'), 'Ship parser');
+  assert.equal(stripHeadlineTodoKeyword('WAIT On review'), 'On review');
+  assert.equal(stripHeadlineTodoKeyword('COMPLETED Shipped'), 'Shipped');
+  assert.equal(stripHeadlineTodoKeyword('CANCELLED Duplicate'), 'Duplicate');
+  assert.equal(stripHeadlineTodoKeyword('SOMEDAY Maybe later'), 'SOMEDAY Maybe later');
+
+  assert.equal(parseHeadlineTitleForRoam('* BACKLOG Ship parser :tag:'), 'Ship parser');
+  assert.equal(parseHeadlineTitleForRoam('** WAIT On review :blocked:'), 'On review');
+  assert.equal(parseHeadlineTitleForRoam('*** COMPLETED Shipped cleanly'), 'Shipped cleanly');
+  assert.equal(parseHeadlineTitleForRoam('* CANCELLED Duplicate :archived:'), 'Duplicate');
+  assert.equal(parseHeadlineTitleForRoam('* SOMEDAY Maybe later :idea:'), 'SOMEDAY Maybe later');
 });
 
 test('agendaStatusCue provides compact non-color status cues', () => {
