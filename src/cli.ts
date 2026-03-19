@@ -715,7 +715,7 @@ function agendaStatusBucketForKeyword(todo: string | undefined): AgendaStatusBuc
   const key = raw.replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   if (!key) return null;
 
-  if (key === "DONE" || key === "COMPLETED") return "done";
+  if (["DONE", "COMPLETE", "COMPLETED", "FINISH", "FINISHED", "CLOSED", "RESOLVED"].includes(key)) return "done";
   if (key === "CANCELED" || key === "CANCELLED") return "canceled";
   if (
     ["PROG", "IN_PROGRESS", "INPROGRESS", "DOING", "STARTED", "WAITING", "WAIT", "BLOCKED", "NEXT", "WIP", "HOLD", "ON_HOLD", "ONHOLD", "PAUSED", "PAUSE"].includes(
