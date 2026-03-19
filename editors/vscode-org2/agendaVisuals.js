@@ -41,6 +41,27 @@ function agendaStatusBucket(todoKeyword) {
   return 'custom';
 }
 
+function hasRecognizedHeadlineTodoKeyword(value) {
+  const bucket = agendaStatusBucket(value);
+  return bucket === 'todo' || bucket === 'inProgress' || bucket === 'done' || bucket === 'canceled';
+}
+
+function stripHeadlineTodoKeyword(headline) {
+  const text = String(headline || '').trim();
+  if (!text) return '';
+
+  const match = /^(\S+)\s+(.+)$/.exec(text);
+  if (!match) return text;
+  if (!hasRecognizedHeadlineTodoKeyword(match[1])) return text;
+  return String(match[2] || '').trim();
+}
+
+function parseHeadlineTitleForRoam(line) {
+  const withoutStars = String(line || '').trim().replace(/^\*+\s+/, '');
+  const withoutTags = withoutStars.replace(/\s+:[^\s:]+(?::[^\s:]+)*:\s*$/, '').trim();
+  return stripHeadlineTodoKeyword(withoutTags);
+}
+
 function agendaStatusCue(statusBucket) {
   if (statusBucket === 'todo') return '[T]';
   if (statusBucket === 'inProgress') return '[~]';
@@ -116,5 +137,8 @@ module.exports = {
   agendaTreeItemLabel,
   agendaUrgencyFromDate,
   extractAgendaPriorityFromHeadline,
+  hasRecognizedHeadlineTodoKeyword,
   normalizeAgendaPriority,
+  parseHeadlineTitleForRoam,
+  stripHeadlineTodoKeyword,
 };
