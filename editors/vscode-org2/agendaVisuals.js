@@ -34,7 +34,7 @@ function agendaStatusBucket(todoKeyword) {
   if (!raw) return 'none';
   const key = raw.replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 
-  if (['DONE', 'COMPLETED'].includes(key)) return 'done';
+  if (['DONE', 'COMPLETE', 'COMPLETED', 'FINISH', 'FINISHED', 'CLOSED', 'RESOLVED'].includes(key)) return 'done';
   if (['CANCELED', 'CANCELLED'].includes(key)) return 'canceled';
   if (['PROG', 'IN_PROGRESS', 'INPROGRESS', 'DOING', 'STARTED', 'WAITING', 'WAIT', 'BLOCKED', 'NEXT', 'WIP', 'HOLD', 'ON_HOLD', 'ONHOLD', 'PAUSED', 'PAUSE'].includes(key)) return 'inProgress';
   if (['TODO', 'OPEN', 'BACKLOG'].includes(key)) return 'todo';

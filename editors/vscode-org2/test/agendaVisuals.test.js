@@ -25,17 +25,29 @@ test('agendaUrgencyFromDate buckets by day', () => {
   assert.equal(agendaUrgencyFromDate('not-a-date', now), 'unknown');
 });
 
-test('agendaStatusBucket maps common TODO states', () => {
+test('agendaStatusBucket maps common TODO states and aliases', () => {
   assert.equal(agendaStatusBucket('TODO'), 'todo');
+  assert.equal(agendaStatusBucket('OPEN'), 'todo');
+  assert.equal(agendaStatusBucket('BACKLOG'), 'todo');
+
   assert.equal(agendaStatusBucket('IN_PROGRESS'), 'inProgress');
   assert.equal(agendaStatusBucket('in-progress'), 'inProgress');
   assert.equal(agendaStatusBucket('INPROGRESS'), 'inProgress');
   assert.equal(agendaStatusBucket('PROG'), 'inProgress');
   assert.equal(agendaStatusBucket('WIP'), 'inProgress');
   assert.equal(agendaStatusBucket('WAIT'), 'inProgress');
+  assert.equal(agendaStatusBucket('BLOCKED'), 'inProgress');
   assert.equal(agendaStatusBucket('ON-HOLD'), 'inProgress');
   assert.equal(agendaStatusBucket('PAUSED'), 'inProgress');
+
   assert.equal(agendaStatusBucket('DONE'), 'done');
+  assert.equal(agendaStatusBucket('COMPLETE'), 'done');
+  assert.equal(agendaStatusBucket('COMPLETED'), 'done');
+  assert.equal(agendaStatusBucket('FINISH'), 'done');
+  assert.equal(agendaStatusBucket('FINISHED'), 'done');
+  assert.equal(agendaStatusBucket('CLOSED'), 'done');
+  assert.equal(agendaStatusBucket('RESOLVED'), 'done');
+
   assert.equal(agendaStatusBucket('CANCELLED'), 'canceled');
   assert.equal(agendaStatusBucket('CANCELED'), 'canceled');
   assert.equal(agendaStatusBucket('SOMEDAY'), 'custom');

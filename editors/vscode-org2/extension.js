@@ -4583,15 +4583,16 @@ function activate(context) {
       if (!m) continue;
 
       const state = (m[2] || '').toUpperCase();
-      if (!(state === 'TODO' || state === 'PROG' || state === 'IN_PROGRESS' || state === 'WIP' || state === 'DOING' || state === 'DONE' || state === 'CANCELLED' || state === 'CANCELED')) {
+      const statusBucket = agendaStatusBucket(state);
+      if (statusBucket !== 'todo' && statusBucket !== 'inProgress' && statusBucket !== 'done' && statusBucket !== 'canceled') {
         continue;
       }
 
       const start = m[1].length + 1;
       const end = start + m[2].length;
-      const palette = state === 'TODO'
+      const palette = statusBucket === 'todo'
         ? { color: '#111111', backgroundColor: '#ffcc66', border: '1px solid rgba(0,0,0,0.25)' }
-        : (state === 'PROG' || state === 'IN_PROGRESS' || state === 'WIP' || state === 'DOING')
+        : statusBucket === 'inProgress'
           ? { color: '#ffffff', backgroundColor: '#2563eb', border: '1px solid rgba(255,255,255,0.22)' }
           : { color: '#052e16', backgroundColor: '#86efac', border: '1px solid rgba(0,0,0,0.22)' };
 
