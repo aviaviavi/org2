@@ -108,6 +108,10 @@ test('headline TODO aliases still receive TODO keyword syntax highlighting', asy
     '* BACKLOG Later maybe',
     '* BLOCKED Waiting on review',
     '* PAUSED On ice',
+    '* COMPLETED Wrapped up',
+    '* FINISHED Wrapped up for real',
+    '* CLOSED Duplicate path',
+    '* RESOLVED Fixed elsewhere',
     '* CANCELED Duplicate',
   ];
 
