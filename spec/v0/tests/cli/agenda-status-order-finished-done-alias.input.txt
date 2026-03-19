@@ -1,0 +1,12 @@
+* TODO Alpha todo
+SCHEDULED: <2026-01-21 Wed>
+* FINISHED Bravo finished
+SCHEDULED: <2026-01-21 Wed>
+* WAITING Charlie waiting
+SCHEDULED: <2026-01-21 Wed>
+* RESOLVED Delta resolved
+SCHEDULED: <2026-01-21 Wed>
+* COMPLETE Echo complete
+SCHEDULED: <2026-01-21 Wed>
+* REVIEW Foxtrot custom
+SCHEDULED: <2026-01-21 Wed>
