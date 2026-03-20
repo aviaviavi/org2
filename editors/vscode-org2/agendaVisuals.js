@@ -56,10 +56,16 @@ function stripHeadlineTodoKeyword(headline) {
   return String(match[2] || '').trim();
 }
 
+function stripHeadlinePriorityCookie(headline) {
+  return String(headline || '')
+    .replace(/^\s*\[#([A-Z0-9])\]\s+/, '')
+    .trim();
+}
+
 function parseHeadlineTitleForRoam(line) {
   const withoutStars = String(line || '').trim().replace(/^\*+\s+/, '');
   const withoutTags = withoutStars.replace(/\s+:[^\s:]+(?::[^\s:]+)*:\s*$/, '').trim();
-  return stripHeadlineTodoKeyword(withoutTags);
+  return stripHeadlinePriorityCookie(stripHeadlineTodoKeyword(withoutTags));
 }
 
 function agendaStatusCue(statusBucket) {
@@ -140,5 +146,6 @@ module.exports = {
   hasRecognizedHeadlineTodoKeyword,
   normalizeAgendaPriority,
   parseHeadlineTitleForRoam,
+  stripHeadlinePriorityCookie,
   stripHeadlineTodoKeyword,
 };

@@ -21,6 +21,7 @@ import { formatOrgTimestamp, TODO_KEYWORDS, updateTodoInText, type TodoStatus } 
 import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from "./planning.js";
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
+import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import type {
   DocumentNode,
   HeadlineNode,
@@ -409,13 +410,6 @@ function parseRoamAliasTokens(raw: string): string[] {
   }
 
   return out;
-}
-
-function parseHeadlineTitleForRoam(line: string): string {
-  const withoutStars = String(line || "").trim().replace(/^\*+\s+/, "");
-  const withoutTags = withoutStars.replace(/\s+:[^\s:]+(?::[^\s:]+)*:\s*$/, "").trim();
-  const withoutTodo = withoutTags.replace(/^(TODO|IN_PROGRESS|DONE|CANCELLED|CANCELED)\s+/, "").trim();
-  return withoutTodo;
 }
 
 type RoamNodeForIndex = {
@@ -6450,11 +6444,7 @@ Tips:
       return null;
     };
 
-    const parseHeadlineTitle = (headlineLine: string): string => {
-      // "** TODO My title" → "My title"
-      const raw = headlineLine.trim().replace(/^\*+\s+/, "");
-      return raw.replace(/^(TODO|IN_PROGRESS|DONE|CANCELLED|CANCELED)\s+/, "");
-    };
+    const parseHeadlineTitle = (headlineLine: string): string => parseHeadlineTitleForRoam(headlineLine);
 
     for (const filePath of files) {
       try {
