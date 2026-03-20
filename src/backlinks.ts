@@ -1,3 +1,5 @@
+import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
+
 export interface Backlink {
   targetId: string;
   srcId: string | null;
@@ -123,10 +125,7 @@ export function findBacklinksInText(
     // Headline
     const hm = /^(\*+)\s+(.*)$/.exec(line);
     if (hm) {
-      // Title includes TODO keywords/tags; for now keep it simple: strip tags suffix.
-      let t = (hm[2] ?? "").trimEnd();
-      t = t.replace(/\s+:[^\s:]+(?::[^\s:]+)*:\s*$/, "");
-      currentHeadlineTitle = t;
+      currentHeadlineTitle = parseHeadlineTitleForRoam(line);
       currentHeadlineLine = i;
       currentHeadlineId = null;
     }
