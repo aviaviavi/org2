@@ -12,6 +12,7 @@ const {
   hasRecognizedHeadlineTodoKeyword,
   normalizeAgendaPriority,
   parseHeadlineTitleForRoam,
+  stripHeadlinePriorityCookie,
   stripHeadlineTodoKeyword,
 } = require('../agendaVisuals');
 
@@ -57,7 +58,7 @@ test('agendaStatusBucket maps common TODO states and aliases', () => {
   assert.equal(agendaStatusBucket(''), 'none');
 });
 
-test('roam headline title parsing strips recognized TODO aliases only', () => {
+test('roam headline title parsing strips recognized TODO aliases and priority cookies', () => {
   assert.equal(hasRecognizedHeadlineTodoKeyword('BACKLOG'), true);
   assert.equal(hasRecognizedHeadlineTodoKeyword('WAIT'), true);
   assert.equal(hasRecognizedHeadlineTodoKeyword('COMPLETED'), true);
@@ -69,10 +70,14 @@ test('roam headline title parsing strips recognized TODO aliases only', () => {
   assert.equal(stripHeadlineTodoKeyword('COMPLETED Shipped'), 'Shipped');
   assert.equal(stripHeadlineTodoKeyword('CANCELLED Duplicate'), 'Duplicate');
   assert.equal(stripHeadlineTodoKeyword('SOMEDAY Maybe later'), 'SOMEDAY Maybe later');
+  assert.equal(stripHeadlinePriorityCookie('[#A] Ship parser'), 'Ship parser');
+  assert.equal(stripHeadlinePriorityCookie('SOMEDAY Maybe later'), 'SOMEDAY Maybe later');
 
   assert.equal(parseHeadlineTitleForRoam('* BACKLOG Ship parser :tag:'), 'Ship parser');
+  assert.equal(parseHeadlineTitleForRoam('* TODO [#A] Ship parser :tag:'), 'Ship parser');
   assert.equal(parseHeadlineTitleForRoam('** WAIT On review :blocked:'), 'On review');
   assert.equal(parseHeadlineTitleForRoam('*** COMPLETED Shipped cleanly'), 'Shipped cleanly');
+  assert.equal(parseHeadlineTitleForRoam('*** [#B] Plain headline :focus:'), 'Plain headline');
   assert.equal(parseHeadlineTitleForRoam('* CANCELLED Duplicate :archived:'), 'Duplicate');
   assert.equal(parseHeadlineTitleForRoam('* SOMEDAY Maybe later :idea:'), 'SOMEDAY Maybe later');
 });

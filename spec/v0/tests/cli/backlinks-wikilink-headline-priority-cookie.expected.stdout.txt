@@ -5,7 +5,7 @@
     {
       "srcId": "22222222-2222-2222-2222-222222222222",
       "srcTitle": "Mention target",
-      "file": "spec/v0/tests/cli/backlinks-wikilink-headline-todo-alias.org2",
+      "file": "spec/v0/tests/cli/backlinks-wikilink-headline-priority-cookie.org2",
       "line": 12,
       "context": "See [[Target Note]]"
     }
