@@ -8,9 +8,9 @@ Custom link: [[file:target.org::#anchor-1]]
 Line link: [[file:target.org::7]]
 `;
 
-const targetDoc = `* Root
+const targetDoc = `* TODO [#C] Root :meta:
 Intro line
-* Deep Node
+* BACKLOG [#A] Deep Node :project:urgent:
 :PROPERTIES:
 :CUSTOM_ID: anchor-1
 :END:
