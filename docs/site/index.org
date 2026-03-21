@@ -3,43 +3,43 @@
 
 Org2 is a from-scratch implementation of an Org-like format and toolchain.
 
-It aims to be a drop-in replacement for most Org Mode users in Emacs, while giving non-Emacs users a full Org-style experience with portability-first improvements.
-
-* Why Org2
-
-- *Portable by default*: plain text files, no lock-in.
-- *CLI-first architecture*: parse, agenda, publish, and editing workflows work outside any single editor.
-- *Editor-agnostic direction*: VS Code support is currently strongest, but the project is intentionally decoupled.
-- *Spec-driven core*: Org2 has a public spec + fixtures, so behavior can be reasoned about and tested.
+It is aiming for *practical parity* with the workflows people actually use in Org Mode, without being tied to Emacs.
 
 Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standalone Org rationale]]
 
-* What’s here and what is not
+* What Org2 is good at today
 
-** Here
+- *Portable plain-text workflow*: notes, tasks, links, and publishing all stay in files.
+- *CLI-backed editing + planning*: agenda, TODO/planning edits, capture, archive/refile, formatting, export, publish.
+- *Strong VS Code support*: Org2 is already practical as a daily driver in VS Code.
+- *Roam-style knowledge workflows*: IDs, backlinks, dailies, node creation, and link insertion are first-class.
+- *LSP-powered editing*: navigation, rename, completion, formatting, semantic tokens, inlay hints, call hierarchy, and more.
 
-- Core Org language support is broadly implemented and already practical for real notes.
-- Usable today as a full Org-style note system in VS Code.
-- CLI workflows for planning/editing (agenda, todo, plan, capture, export, publish).
-- Roam-style workflows (IDs, backlinks, node creation, wiki + id links).
-- Org-crypt subtree encrypt/decrypt workflows.
-- Publish pipeline for docs/sites.
+* What Org2 is not trying to be
 
-** Not here yet
+- A byte-for-byte reimplementation of GNU Org internals.
+- An Emacs-only system.
+- A “100% feature parity before usefulness” project.
 
-- 100% feature-for-feature GNU Org parity (not the project goal)
-- Full ecosystem parity with Emacs integrations (yet)
-- Fully stable API surface
+The goal is a portable Org-style system that is useful *now* and keeps getting deeper.
 
-* Project status
+* Current status
 
-Org2 is early alpha. It is already useful for daily workflows, but APIs and flags can still change.
+Org2 is still early alpha, but it is already credible for real work if your stack is:
+
+- *VS Code + CLI* → best supported today
+- *Org files on disk* → supported immediately; you do not need a big migration
+- *Publishing / notes / planning / roam workflows* → all already live
 
 * Docs map
 
 - [[file:getting-started.org][Getting started]]
-- [[file:reference.org][Reference]]
+- [[file:features.org][Features]]
+- [[file:tooling-reference.org][Tooling reference]]
 - [[file:editors.org][Editor integrations]]
+- [[file:language-reference.org][Language reference]]
+- [[file:semantics-status.org][Semantics and status]]
+- [[file:migration.org][Migration guidance]]
 
 * Repository
 
