@@ -1,8 +1,8 @@
 #+TITLE: Getting started
 
-This guide is about starting *practically* with Org2: install CLI + editor tooling, point it at your existing notes, and know what works today.
+This guide is about getting to a *useful* Org2 setup quickly, not performing a ceremonial migration.
 
-* 1) Install the CLI
+* 1) Install Org2
 
 #+begin_src sh
 git clone https://github.com/aviaviavi/org2.git
@@ -11,65 +11,98 @@ npm ci
 npm run build
 #+end_src
 
-Run commands via:
+Sanity check:
 
 #+begin_src sh
 npm run org2 -- --help
+npm run org2 -- agenda --help
 #+end_src
 
-* 2) Install editor extension(s)
+* 2) Start with your existing Org files
 
-- VS Code extension: =editors/vscode-org2/=
-- Vim/Neovim support: =editors/vim-org2/=
+You do *not* need to convert everything first.
 
-VS Code is currently the most complete editor integration.
-
-* 3) Use your existing Org notes immediately
-
-Org2 is designed as a drop-in workflow for existing Org files.
-
-- Keep your current =.org= files.
-- Point Org2 CLI/LSP/agenda at your existing notes directory.
-- You do not need to migrate everything up front.
+Org2 is designed to work with existing =.org= files right away.
 
 Example:
 
 #+begin_src sh
-npm run org2 -- agenda --dir /path/to/your/org-notes --recursive
+npm run org2 -- agenda --dir /path/to/your/notes --recursive
 #+end_src
 
-* 4) Use =.org2= for new files
+That means you can start by pointing the CLI and editor tooling at your current notes directory, then adopt =.org2= for new files when you want to.
 
-For *new* files, prefer =.org2= extension.
+* 3) Use VS Code if you want the best editor experience today
+
+VS Code is currently the strongest Org2 editor target.
+
+High-value workflows already available there:
+
+- agenda UI
+- TODO / planning edits
+- capture / archive / refile
+- formatter preview + apply flows
+- roam backlinks / IDs / dailies
+- HTML export
+- LSP-powered navigation and editing features
+
+See [[file:editors-vscode.org][VS Code]] for the current command/keybinding surface.
+
+* 4) Prefer =.org2= for new files
+
+For new files, using =.org2= is a good default.
 
 Why:
-- clearer intent that the file is in the Org2 workflow,
-- easier editor/tooling targeting,
+
+- clearer intent,
+- easier editor/tool targeting,
 - cleaner long-term migration path.
 
-* 5) What’s here and what is not
+But =.org= remains a first-class input format for current workflows.
 
-** Here today
+* 5) Learn the core CLI workflows
 
-- Core Org language support is broadly there already.
-- Full day-to-day Org-style note workflow is already viable in VS Code.
-- CLI workflows (agenda/todo/plan/capture/export/publish).
-- Roam workflows (IDs/backlinks/node creation/wiki+id links).
-- Org-crypt subtree encrypt/decrypt workflows.
-- Spec draft + conformance fixtures.
+The most useful commands to know first are:
 
-** Not here yet
+- =agenda= — inspect scheduled/deadline items across files
+- =todo= / =plan= — edit task state and planning metadata
+- =capture= — append quick entries
+- =archive= / =refile= — reorganize trees
+- =fmt= — canonical formatting
+- =roam ...= / =id= / =query= / =backlinks= — linked-note workflows
+- =export html= / =publish= — produce docs and sites
+- =lsp= — shared editor backend
 
-- 100% feature-for-feature GNU Org Mode parity (not the project goal)
-- Mature recurring/habits/clocking ecosystem
-- Broad editor parity beyond VS Code
-- Stable final APIs (project is still early alpha)
+* 6) Generate the docs site locally
 
-* 6) Next docs
+The repository includes a docs site authored in Org files under =docs/site/= and published with Org2 itself.
 
-- [[file:language-reference.org][Language reference]]
+#+begin_src sh
+npm run org2 -- publish docs-site --config org2.json
+#+end_src
+
+* 7) What to expect right now
+
+** Strong today
+
+- core Org language support
+- practical planning workflows
+- strong VS Code support
+- roam-style linked-note workflows
+- HTML export + publish pipeline
+- useful LSP support
+
+** Still evolving
+
+- final CLI/API stability
+- broader editor parity beyond VS Code
+- full long-tail Org ecosystem depth (habits, clocking, etc.)
+
+* 8) Next docs
+
+- [[file:features.org][Features]]
 - [[file:tooling-reference.org][Tooling reference]]
 - [[file:editors.org][Editor integrations]]
+- [[file:language-reference.org][Language reference]]
 - [[file:semantics-status.org][Semantics and status]]
-- [[file:migration.org][Practical migration]]
-- [[file:org2-vs-org-mode.org][Org2 vs Org Mode]]
+- [[file:migration.org][Migration guidance]]
