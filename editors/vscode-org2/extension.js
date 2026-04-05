@@ -1570,6 +1570,44 @@ function activate(context) {
     }
   }
 
+  async function runWorkspaceCorpusLint() {
+    const root = getAgendaRootDir();
+    const args = ['lint', '--dir', root, '--recursive', '--format', 'json'];
+
+    try {
+      const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
+      const { stdout, stderr } = await execFileAsync(finalCmd, finalArgs, { cwd: root });
+      const parsed = JSON.parse(String(stdout || '{}'));
+      const issues = Array.isArray(parsed.issues) ? parsed.issues : [];
+
+      formatterOutput.clear();
+      formatterOutput.appendLine(`Org2 corpus lint: ${issues.length} issue(s)`);
+      formatterOutput.appendLine(`Checked files: ${Number(parsed.checkedFiles || 0)} | Skipped files: ${Number(parsed.skippedFiles || 0)}`);
+
+      for (const issue of issues) {
+        formatterOutput.appendLine(
+          `${String(issue.severity || 'warning').toUpperCase()} ${issue.rule || ''} ${issue.file || ''}:${issue.line || ''} ${issue.message || ''}`.trim()
+        );
+      }
+
+      if (stderr && String(stderr).trim()) {
+        formatterOutput.appendLine('');
+        formatterOutput.appendLine(String(stderr).trim());
+      }
+
+      formatterOutput.show(true);
+
+      if (issues.length === 0) {
+        vscode.window.showInformationMessage('Org2: corpus lint passed (no artifact metadata issues).');
+      } else {
+        vscode.window.showWarningMessage(`Org2: corpus lint found ${issues.length} issue(s). See "Org2 Formatter" output.`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(msg);
+    }
+  }
+
   async function checkCurrentFileFormattingDrift() {
     const target = getActiveFormatterTarget();
     if (!target) return;
@@ -2121,6 +2159,12 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.formatWorkspaceApply', async () => {
       await applyWorkspaceFormatting();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.lintWorkspaceCorpus', async () => {
+      await runWorkspaceCorpusLint();
     })
   );
 

@@ -22,6 +22,7 @@ import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from 
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
+import { lintArtifactMetadataInText, type ArtifactLintIssue } from "./artifactLint.js";
 import type {
   DocumentNode,
   HeadlineNode,
@@ -3831,6 +3832,9 @@ async function main(): Promise<void> {
   let queryId = "";
   let queryFormat: "text" | "json" = "text";
 
+  // Lint / corpus health
+  let lintFormat: "text" | "json" = "text";
+
   // Roam meta
   let roamAction: "db-sync" | "backlinks" | "node" | "link" = "db-sync";
   let roamNodeAction: "new" = "new";
@@ -3940,6 +3944,9 @@ async function main(): Promise<void> {
       i++;
     } else if (arg === "query") {
       command = "query";
+      i++;
+    } else if (arg === "lint") {
+      command = "lint";
       i++;
     } else if (arg === "roam") {
       command = "roam";
@@ -4608,6 +4615,8 @@ async function main(): Promise<void> {
           backlinksFormat = v;
         } else if (command === "query" && (v === "text" || v === "json")) {
           queryFormat = v;
+        } else if (command === "lint" && (v === "text" || v === "json")) {
+          lintFormat = v;
         } else if (
           command === "roam" &&
           roamAction === "backlinks" &&
@@ -4842,6 +4851,7 @@ Roam / IDs:
   org2 id <get|ensure> --file FILE [--line N|--pos LINE[:COL]] [--apply]
   org2 backlinks --id UUID [--dir DIR] [--recursive]
   org2 query --id UUID [--dir DIR] [--recursive]
+  org2 lint [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
   org2 roam db-sync --dir DIR [--recursive] [--apply]
   org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply]
   org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--style wiki|id] [--id UUID] [--apply]
@@ -4860,7 +4870,7 @@ Tips:
     printGeneralUsage(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "lint" && command !== "roam") {
     printGeneralUsage(1);
   }
 
@@ -6567,6 +6577,94 @@ Tips:
     for (const h of hits) {
       // Print 1-based line for humans
       process.stdout.write(`${h.kind} ${h.title} ${h.file}:${h.line + 1}\n`);
+    }
+
+    return;
+  }
+
+  if (command === "lint") {
+    // Determine files to lint (same fallback logic as agenda/backlinks/query).
+    if (!dir && files.length === 0) {
+      const configPath = findConfigFile(process.cwd());
+      if (configPath) {
+        try {
+          const config = loadConfig(configPath);
+          const configDir = path.dirname(configPath);
+          files = resolveFilesFromConfig(config, configDir);
+
+          if (files.length === 0) {
+            console.error(
+              `Error: config found at ${configPath} but no matching files for patterns: ${config.agendaFiles?.join(", ") || "*.org"}`,
+            );
+            process.exit(1);
+          }
+        } catch (err) {
+          console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`);
+          process.exit(1);
+        }
+      } else {
+        console.error("Error: provide either --dir, --files, or org2.json config");
+        process.exit(1);
+      }
+    }
+
+    if (dir && files.length === 0) {
+      files = listOrgLikeFiles(dir, recursive);
+    }
+
+    const issues: ArtifactLintIssue[] = [];
+    let skippedFileCount = 0;
+
+    for (const filePath of files) {
+      try {
+        const raw = fs.readFileSync(filePath, "utf8");
+        issues.push(...lintArtifactMetadataInText(raw, filePath));
+      } catch (err) {
+        skippedFileCount += 1;
+        if (verboseErrors) {
+          console.error(`Error processing ${filePath}:`, err instanceof Error ? err.message : err);
+        }
+      }
+    }
+
+    issues.sort((a, b) => {
+      const fileCmp = a.file.localeCompare(b.file);
+      if (fileCmp !== 0) return fileCmp;
+      return a.line - b.line;
+    });
+
+    if (lintFormat === "json") {
+      process.stdout.write(
+        JSON.stringify(
+          {
+            $schema: "org2:lint:v1",
+            checkedFiles: files.length,
+            skippedFiles: skippedFileCount,
+            issueCount: issues.length,
+            issues,
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+      return;
+    }
+
+    if (issues.length === 0) {
+      process.stdout.write(`OK: checked ${files.length} file(s), no artifact metadata issues found.\n`);
+    } else {
+      for (const issue of issues) {
+        process.stdout.write(
+          `${issue.severity.toUpperCase()} ${issue.rule} ${issue.file}:${issue.line} ${issue.message}\n`,
+        );
+      }
+      process.stdout.write(`\nFound ${issues.length} issue(s) across ${files.length} file(s).\n`);
+    }
+
+    if (skippedFileCount > 0) {
+      process.stderr.write(
+        `Skipped ${skippedFileCount} file(s) due to read/parse errors (use --verbose-errors to see details).\n`,
+      );
     }
 
     return;
