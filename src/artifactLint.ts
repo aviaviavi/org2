@@ -10,6 +10,13 @@ export interface ArtifactLintIssue {
   message: string;
 }
 
+export interface ArtifactProvenanceRef {
+  file: string;
+  line: number; // 1-based
+  kind: string;
+  value: string;
+}
+
 const PROVENANCE_ENTRY_KINDS = ["id", "file", "query", "run", "url", "note", "artifact"] as const;
 
 function normalizePropertyValue(raw: string): string {
@@ -112,12 +119,19 @@ function splitProvenance(raw: string): string[] {
     .filter(Boolean);
 }
 
-function isValidProvenanceEntry(entry: string): boolean {
+function parseProvenanceEntry(entry: string): { kind: string; value: string } | null {
   const match = /^([a-z][a-z0-9_-]*):(\S.*)$/.exec(String(entry || "").trim());
-  if (!match) return false;
+  if (!match) return null;
+  return {
+    kind: String(match[1] || "").toLowerCase(),
+    value: String(match[2] || "").trim(),
+  };
+}
 
-  const kind = String(match[1] || "").toLowerCase();
-  return PROVENANCE_ENTRY_KINDS.includes(kind as (typeof PROVENANCE_ENTRY_KINDS)[number]);
+function isValidProvenanceEntry(entry: string): boolean {
+  const parsed = parseProvenanceEntry(entry);
+  if (!parsed) return false;
+  return PROVENANCE_ENTRY_KINDS.includes(parsed.kind as (typeof PROVENANCE_ENTRY_KINDS)[number]);
 }
 
 function evaluateArtifactProperties(
@@ -193,6 +207,44 @@ function evaluateArtifactProperties(
       message: `Artifacts with role '${role}' should set ID for stable identity.`,
     });
   }
+}
+
+function collectArtifactProvenanceRefsFromProperties(
+  props: Map<string, string>,
+  filePath: string,
+  line: number,
+  refs: ArtifactProvenanceRef[],
+): void {
+  const provenanceRaw = normalizePropertyValue(props.get("ORG2_PROVENANCE") || "");
+  const provenanceEntries = splitProvenance(provenanceRaw);
+
+  for (const entry of provenanceEntries) {
+    const parsed = parseProvenanceEntry(entry);
+    if (!parsed) continue;
+    refs.push({
+      file: filePath,
+      line,
+      kind: parsed.kind,
+      value: parsed.value,
+    });
+  }
+}
+
+export function collectArtifactProvenanceRefsInText(content: string, filePath: string): ArtifactProvenanceRef[] {
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const refs: ArtifactProvenanceRef[] = [];
+
+  const topFileDrawer = parseTopFilePropertyDrawer(lines);
+  if (topFileDrawer) {
+    collectArtifactProvenanceRefsFromProperties(topFileDrawer.properties, filePath, topFileDrawer.startLine, refs);
+  }
+
+  const headlineDrawers = collectHeadlinePropertyDrawers(lines);
+  for (const drawer of headlineDrawers) {
+    collectArtifactProvenanceRefsFromProperties(drawer.properties, filePath, drawer.startLine, refs);
+  }
+
+  return refs;
 }
 
 export function lintArtifactMetadataInText(content: string, filePath: string): ArtifactLintIssue[] {

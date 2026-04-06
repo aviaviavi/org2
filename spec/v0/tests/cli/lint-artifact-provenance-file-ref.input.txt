@@ -1,0 +1,15 @@
+#+TITLE: Lint Artifact Provenance File Ref Fixture
+
+* Saved Report With Existing File Ref
+:PROPERTIES:
+:ID: report-ok
+:ORG2_ARTIFACT_ROLE: report
+:ORG2_PROVENANCE: file:../../fixtures/lint-artifact-provenance-file-ref.source.org
+:END:
+
+* Saved Report With Missing File Ref
+:PROPERTIES:
+:ID: report-missing
+:ORG2_ARTIFACT_ROLE: report
+:ORG2_PROVENANCE: file:does-not-exist.org
+:END:

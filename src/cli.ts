@@ -22,7 +22,11 @@ import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from 
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
-import { lintArtifactMetadataInText, type ArtifactLintIssue } from "./artifactLint.js";
+import {
+  collectArtifactProvenanceRefsInText,
+  lintArtifactMetadataInText,
+  type ArtifactLintIssue,
+} from "./artifactLint.js";
 import type {
   DocumentNode,
   HeadlineNode,
@@ -6619,6 +6623,21 @@ Tips:
       try {
         const raw = fs.readFileSync(filePath, "utf8");
         issues.push(...lintArtifactMetadataInText(raw, filePath));
+
+        for (const ref of collectArtifactProvenanceRefsInText(raw, filePath)) {
+          if (ref.kind !== "file") continue;
+
+          const resolvedPath = path.resolve(path.dirname(filePath), ref.value);
+          if (fs.existsSync(resolvedPath)) continue;
+
+          issues.push({
+            severity: "error",
+            rule: "artifact-provenance-file-missing",
+            file: ref.file,
+            line: ref.line,
+            message: `ORG2_PROVENANCE file reference '${ref.value}' does not exist relative to ${path.dirname(filePath) || "."}.`,
+          });
+        }
       } catch (err) {
         skippedFileCount += 1;
         if (verboseErrors) {
