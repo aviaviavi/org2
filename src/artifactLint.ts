@@ -10,6 +10,8 @@ export interface ArtifactLintIssue {
   message: string;
 }
 
+const PROVENANCE_ENTRY_KINDS = ["id", "file", "query", "run", "url", "note", "artifact"] as const;
+
 function normalizePropertyValue(raw: string): string {
   return String(raw || "").trim();
 }
@@ -110,6 +112,14 @@ function splitProvenance(raw: string): string[] {
     .filter(Boolean);
 }
 
+function isValidProvenanceEntry(entry: string): boolean {
+  const match = /^([a-z][a-z0-9_-]*):(\S.*)$/.exec(String(entry || "").trim());
+  if (!match) return false;
+
+  const kind = String(match[1] || "").toLowerCase();
+  return PROVENANCE_ENTRY_KINDS.includes(kind as (typeof PROVENANCE_ENTRY_KINDS)[number]);
+}
+
 function evaluateArtifactProperties(
   props: Map<string, string>,
   filePath: string,
@@ -140,6 +150,18 @@ function evaluateArtifactProperties(
       line,
       message: "ORG2_PROVENANCE is set but empty after normalization.",
     });
+  }
+
+  for (const entry of provenanceEntries) {
+    if (!isValidProvenanceEntry(entry)) {
+      issues.push({
+        severity: "error",
+        rule: "artifact-provenance-entry-invalid",
+        file: filePath,
+        line,
+        message: `Invalid ORG2_PROVENANCE entry '${entry}'. Expected '<kind>:<value>' where kind is one of: ${PROVENANCE_ENTRY_KINDS.join(", ")}`,
+      });
+    }
   }
 
   if (role && ["compiled", "view", "report"].includes(role) && provenanceEntries.length === 0) {

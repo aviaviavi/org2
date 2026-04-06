@@ -25,3 +25,9 @@
 :PROPERTIES:
 :ORG2_ARTIFACT_ROLE: scratch
 :END:
+
+* Malformed Provenance Entry
+:PROPERTIES:
+:ORG2_ARTIFACT_ROLE: report
+:ORG2_PROVENANCE: just-text-without-kind
+:END:
