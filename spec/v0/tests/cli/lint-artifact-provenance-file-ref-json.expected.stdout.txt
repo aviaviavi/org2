@@ -1,0 +1,15 @@
+{
+  "$schema": "org2:lint:v1",
+  "checkedFiles": 1,
+  "skippedFiles": 0,
+  "issueCount": 1,
+  "issues": [
+    {
+      "severity": "error",
+      "rule": "artifact-provenance-file-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-provenance-file-ref.input.txt",
+      "line": 11,
+      "message": "ORG2_PROVENANCE file reference 'does-not-exist.org' does not exist relative to spec/v0/tests/cli."
+    }
+  ]
+}
