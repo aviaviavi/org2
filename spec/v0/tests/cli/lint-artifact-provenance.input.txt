@@ -1,0 +1,33 @@
+#+TITLE: Lint Artifact Provenance Fixture
+
+:PROPERTIES:
+:ORG2_ARTIFACT_ROLE: compiled
+:END:
+
+* Canonical Note
+:PROPERTIES:
+:ORG2_ARTIFACT_ROLE: canonical
+:END:
+
+* Generated Brief
+:PROPERTIES:
+:ID: brief-1
+:ORG2_ARTIFACT_ROLE: report
+:ORG2_PROVENANCE:
+:END:
+
+* Provenance But No Role
+:PROPERTIES:
+:ORG2_PROVENANCE: id:abc123
+:END:
+
+* Invalid Role
+:PROPERTIES:
+:ORG2_ARTIFACT_ROLE: scratch
+:END:
+
+* Malformed Provenance Entry
+:PROPERTIES:
+:ORG2_ARTIFACT_ROLE: report
+:ORG2_PROVENANCE: just-text-without-kind
+:END:

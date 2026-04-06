@@ -80,6 +80,7 @@ The extension can edit planning keywords, run quick capture, archive subtrees, r
 - Command: **Org2: Refile Subtree** (`org2.refileSubtree`) → pick destination file/heading, preview diff, then apply
 - Command: **Org2: Export Current File to HTML** (`org2.exportCurrentFileHtml`) → preview generated HTML, then optionally write to disk
 - Command: **Org2: Export Workspace Org Files to HTML** (`org2.exportWorkspaceHtml`) → preview batch export count, then optionally write HTML for all workspace Org files (and an optional generated index page)
+- Command: **Org2: Corpus Lint — Artifact Roles & Provenance** (`org2.lintWorkspaceCorpus`) → runs `org2 lint` recursively in the workspace and reports artifact-role/provenance health issues in the output pane
 
 Implementation detail: the extension saves the file (if needed).
 - Planning edits run `org2 plan set ... --apply`.
