@@ -1,0 +1,15 @@
+{
+  "$schema": "org2:lint:v1",
+  "checkedFiles": 2,
+  "skippedFiles": 0,
+  "issueCount": 1,
+  "issues": [
+    {
+      "severity": "error",
+      "rule": "artifact-id-duplicate",
+      "file": "spec/v0/fixtures/lint-artifact-duplicate-id.source.org",
+      "line": 4,
+      "message": "ID 'shared-artifact-id' appears multiple times in the scanned corpus (also at spec/v0/tests/cli/lint-artifact-duplicate-id.input.txt:3)."
+    }
+  ]
+}
