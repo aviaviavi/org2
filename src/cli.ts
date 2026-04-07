@@ -6677,16 +6677,19 @@ Tips:
           continue;
         }
 
-        if (ref.kind === "id") {
+        if (ref.kind === "id" || ref.kind === "artifact") {
           const normalizedId = String(ref.value || "").trim().toLowerCase();
           if (!normalizedId || allArtifactIds.has(normalizedId)) continue;
 
+          const rule = ref.kind === "artifact" ? "artifact-provenance-artifact-missing" : "artifact-provenance-id-missing";
+          const label = ref.kind === "artifact" ? "artifact" : "id";
+
           issues.push({
             severity: "error",
-            rule: "artifact-provenance-id-missing",
+            rule,
             file: ref.file,
             line: ref.line,
-            message: `ORG2_PROVENANCE id reference '${ref.value}' was not found in the scanned corpus.`,
+            message: `ORG2_PROVENANCE ${label} reference '${ref.value}' was not found in the scanned corpus.`,
           });
         }
       }
