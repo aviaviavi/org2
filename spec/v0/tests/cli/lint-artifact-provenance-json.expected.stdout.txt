@@ -2,7 +2,7 @@
   "$schema": "org2:lint:v1",
   "checkedFiles": 1,
   "skippedFiles": 0,
-  "issueCount": 9,
+  "issueCount": 12,
   "issues": [
     {
       "severity": "error",
@@ -10,6 +10,13 @@
       "file": "spec/v0/tests/cli/lint-artifact-provenance.input.txt",
       "line": 3,
       "message": "Artifacts with role 'compiled' must set ORG2_PROVENANCE."
+    },
+    {
+      "severity": "warning",
+      "rule": "artifact-generated-at-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-provenance.input.txt",
+      "line": 3,
+      "message": "Artifacts with role 'compiled' should set ORG2_GENERATED_AT to record when they were produced."
     },
     {
       "severity": "warning",
@@ -31,6 +38,13 @@
       "file": "spec/v0/tests/cli/lint-artifact-provenance.input.txt",
       "line": 13,
       "message": "Artifacts with role 'report' must set ORG2_PROVENANCE."
+    },
+    {
+      "severity": "warning",
+      "rule": "artifact-generated-at-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-provenance.input.txt",
+      "line": 13,
+      "message": "Artifacts with role 'report' should set ORG2_GENERATED_AT to record when they were produced."
     },
     {
       "severity": "warning",
@@ -59,6 +73,13 @@
       "file": "spec/v0/tests/cli/lint-artifact-provenance.input.txt",
       "line": 30,
       "message": "Invalid ORG2_PROVENANCE entry 'just-text-without-kind'. Expected '<kind>:<value>' where kind is one of: id, file, query, run, url, note, artifact"
+    },
+    {
+      "severity": "warning",
+      "rule": "artifact-generated-at-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-provenance.input.txt",
+      "line": 30,
+      "message": "Artifacts with role 'report' should set ORG2_GENERATED_AT to record when they were produced."
     },
     {
       "severity": "warning",

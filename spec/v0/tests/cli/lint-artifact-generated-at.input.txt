@@ -1,0 +1,24 @@
+#+TITLE: Lint Artifact Generated At Fixture
+
+* Compiled Artifact Missing Generated Timestamp
+:PROPERTIES:
+:ID: compiled-missing-generated-at
+:ORG2_ARTIFACT_ROLE: compiled
+:ORG2_PROVENANCE: file:../../fixtures/lint-artifact-provenance-id-ref.source.org
+:END:
+
+* Report With Invalid Generated Timestamp
+:PROPERTIES:
+:ID: report-invalid-generated-at
+:ORG2_ARTIFACT_ROLE: report
+:ORG2_PROVENANCE: id:compiled-missing-generated-at
+:ORG2_GENERATED_AT: yesterday-ish
+:END:
+
+* View With Valid Generated Timestamp
+:PROPERTIES:
+:ID: view-valid-generated-at
+:ORG2_ARTIFACT_ROLE: view
+:ORG2_PROVENANCE: artifact:compiled-missing-generated-at
+:ORG2_GENERATED_AT: 2026-04-07T20:33:00Z
+:END:
