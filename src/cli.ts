@@ -23,6 +23,7 @@ import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import {
+  collectArtifactIdsInText,
   collectArtifactProvenanceRefsInText,
   lintArtifactMetadataInText,
   type ArtifactLintIssue,
@@ -6618,15 +6619,32 @@ Tips:
 
     const issues: ArtifactLintIssue[] = [];
     let skippedFileCount = 0;
+    const allArtifactIds = new Set<string>();
+    const fileContents = new Map<string, string>();
 
     for (const filePath of files) {
       try {
         const raw = fs.readFileSync(filePath, "utf8");
-        issues.push(...lintArtifactMetadataInText(raw, filePath));
+        fileContents.set(filePath, raw);
+        for (const ref of collectArtifactIdsInText(raw, filePath)) {
+          allArtifactIds.add(ref.id);
+        }
+      } catch (err) {
+        skippedFileCount += 1;
+        if (verboseErrors) {
+          console.error(`Error processing ${filePath}:`, err instanceof Error ? err.message : err);
+        }
+      }
+    }
 
-        for (const ref of collectArtifactProvenanceRefsInText(raw, filePath)) {
-          if (ref.kind !== "file") continue;
+    for (const filePath of files) {
+      const raw = fileContents.get(filePath);
+      if (typeof raw !== "string") continue;
 
+      issues.push(...lintArtifactMetadataInText(raw, filePath));
+
+      for (const ref of collectArtifactProvenanceRefsInText(raw, filePath)) {
+        if (ref.kind === "file") {
           const resolvedPath = path.resolve(path.dirname(filePath), ref.value);
           if (fs.existsSync(resolvedPath)) continue;
 
@@ -6637,11 +6655,20 @@ Tips:
             line: ref.line,
             message: `ORG2_PROVENANCE file reference '${ref.value}' does not exist relative to ${path.dirname(filePath) || "."}.`,
           });
+          continue;
         }
-      } catch (err) {
-        skippedFileCount += 1;
-        if (verboseErrors) {
-          console.error(`Error processing ${filePath}:`, err instanceof Error ? err.message : err);
+
+        if (ref.kind === "id") {
+          const normalizedId = String(ref.value || "").trim().toLowerCase();
+          if (!normalizedId || allArtifactIds.has(normalizedId)) continue;
+
+          issues.push({
+            severity: "error",
+            rule: "artifact-provenance-id-missing",
+            file: ref.file,
+            line: ref.line,
+            message: `ORG2_PROVENANCE id reference '${ref.value}' was not found in the scanned corpus.`,
+          });
         }
       }
     }

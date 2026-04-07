@@ -17,6 +17,12 @@ export interface ArtifactProvenanceRef {
   value: string;
 }
 
+export interface ArtifactIdRef {
+  file: string;
+  line: number; // 1-based
+  id: string;
+}
+
 const PROVENANCE_ENTRY_KINDS = ["id", "file", "query", "run", "url", "note", "artifact"] as const;
 
 function normalizePropertyValue(raw: string): string {
@@ -230,6 +236,22 @@ function collectArtifactProvenanceRefsFromProperties(
   }
 }
 
+function collectArtifactIdsFromProperties(
+  props: Map<string, string>,
+  filePath: string,
+  line: number,
+  refs: ArtifactIdRef[],
+): void {
+  const idRaw = normalizePropertyValue(props.get("ID") || "");
+  if (!idRaw) return;
+
+  refs.push({
+    file: filePath,
+    line,
+    id: idRaw.toLowerCase(),
+  });
+}
+
 export function collectArtifactProvenanceRefsInText(content: string, filePath: string): ArtifactProvenanceRef[] {
   const lines = content.replace(/\r\n/g, "\n").split("\n");
   const refs: ArtifactProvenanceRef[] = [];
@@ -242,6 +264,23 @@ export function collectArtifactProvenanceRefsInText(content: string, filePath: s
   const headlineDrawers = collectHeadlinePropertyDrawers(lines);
   for (const drawer of headlineDrawers) {
     collectArtifactProvenanceRefsFromProperties(drawer.properties, filePath, drawer.startLine, refs);
+  }
+
+  return refs;
+}
+
+export function collectArtifactIdsInText(content: string, filePath: string): ArtifactIdRef[] {
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const refs: ArtifactIdRef[] = [];
+
+  const topFileDrawer = parseTopFilePropertyDrawer(lines);
+  if (topFileDrawer) {
+    collectArtifactIdsFromProperties(topFileDrawer.properties, filePath, topFileDrawer.startLine, refs);
+  }
+
+  const headlineDrawers = collectHeadlinePropertyDrawers(lines);
+  for (const drawer of headlineDrawers) {
+    collectArtifactIdsFromProperties(drawer.properties, filePath, drawer.startLine, refs);
   }
 
   return refs;
