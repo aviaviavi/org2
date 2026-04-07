@@ -1,0 +1,19 @@
+#+TITLE: Lint Artifact Provenance ID Ref Fixture
+
+* Saved Report With Existing ID Ref
+:PROPERTIES:
+:ID: report-existing-id-ref
+:ORG2_ARTIFACT_ROLE: report
+:ORG2_PROVENANCE: id:source-artifact-123
+:END:
+
+This compiled report points at a source artifact ID that exists in the scanned corpus.
+
+* Saved Report With Missing ID Ref
+:PROPERTIES:
+:ID: report-missing-id-ref
+:ORG2_ARTIFACT_ROLE: report
+:ORG2_PROVENANCE: id:missing-source-999
+:END:
+
+This compiled report points at a source artifact ID that is missing.

@@ -1,0 +1,15 @@
+{
+  "$schema": "org2:lint:v1",
+  "checkedFiles": 2,
+  "skippedFiles": 0,
+  "issueCount": 1,
+  "issues": [
+    {
+      "severity": "error",
+      "rule": "artifact-provenance-id-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-provenance-id-ref.input.txt",
+      "line": 13,
+      "message": "ORG2_PROVENANCE id reference 'missing-source-999' was not found in the scanned corpus."
+    }
+  ]
+}

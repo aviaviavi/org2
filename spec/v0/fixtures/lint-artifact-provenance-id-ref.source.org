@@ -1,0 +1,9 @@
+#+TITLE: Source Artifact For Provenance ID Ref Fixture
+
+* Canonical Source
+:PROPERTIES:
+:ID: source-artifact-123
+:ORG2_ARTIFACT_ROLE: canonical
+:END:
+
+This source note exists so corpus lint can resolve the provenance ID reference.

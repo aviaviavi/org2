@@ -2,7 +2,7 @@
   "$schema": "org2:lint:v1",
   "checkedFiles": 1,
   "skippedFiles": 0,
-  "issueCount": 8,
+  "issueCount": 9,
   "issues": [
     {
       "severity": "error",
@@ -38,6 +38,13 @@
       "file": "spec/v0/tests/cli/lint-artifact-provenance.input.txt",
       "line": 20,
       "message": "ORG2_PROVENANCE is present but ORG2_ARTIFACT_ROLE is missing."
+    },
+    {
+      "severity": "error",
+      "rule": "artifact-provenance-id-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-provenance.input.txt",
+      "line": 20,
+      "message": "ORG2_PROVENANCE id reference 'abc123' was not found in the scanned corpus."
     },
     {
       "severity": "error",
