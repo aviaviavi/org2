@@ -23,6 +23,11 @@ export interface ArtifactIdRef {
   id: string;
 }
 
+export interface ArtifactDuplicateIdIssue {
+  id: string;
+  refs: ArtifactIdRef[];
+}
+
 const PROVENANCE_ENTRY_KINDS = ["id", "file", "query", "run", "url", "note", "artifact"] as const;
 
 function normalizePropertyValue(raw: string): string {
@@ -301,4 +306,28 @@ export function lintArtifactMetadataInText(content: string, filePath: string): A
   }
 
   return issues;
+}
+
+export function findDuplicateArtifactIds(refs: ArtifactIdRef[]): ArtifactDuplicateIdIssue[] {
+  const refsById = new Map<string, ArtifactIdRef[]>();
+
+  for (const ref of refs) {
+    const normalizedId = String(ref.id || "").trim().toLowerCase();
+    if (!normalizedId) continue;
+    const existing = refsById.get(normalizedId) || [];
+    existing.push(ref);
+    refsById.set(normalizedId, existing);
+  }
+
+  return Array.from(refsById.entries())
+    .filter(([, idRefs]) => idRefs.length > 1)
+    .map(([id, idRefs]) => ({
+      id,
+      refs: [...idRefs].sort((a, b) => {
+        const fileCmp = a.file.localeCompare(b.file);
+        if (fileCmp !== 0) return fileCmp;
+        return a.line - b.line;
+      }),
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
 }

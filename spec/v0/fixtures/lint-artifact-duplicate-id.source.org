@@ -1,0 +1,7 @@
+#+TITLE: Duplicate ID Source Fixture
+
+* Canonical Note
+:PROPERTIES:
+:ID: shared-artifact-id
+:ORG2_ARTIFACT_ROLE: canonical
+:END:

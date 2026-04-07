@@ -1,0 +1,1 @@
+lint --files spec/v0/tests/cli/lint-artifact-duplicate-id.input.txt spec/v0/fixtures/lint-artifact-duplicate-id.source.org --format json

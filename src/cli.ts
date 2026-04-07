@@ -25,6 +25,7 @@ import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import {
   collectArtifactIdsInText,
   collectArtifactProvenanceRefsInText,
+  findDuplicateArtifactIds,
   lintArtifactMetadataInText,
   type ArtifactLintIssue,
 } from "./artifactLint.js";
@@ -6620,6 +6621,7 @@ Tips:
     const issues: ArtifactLintIssue[] = [];
     let skippedFileCount = 0;
     const allArtifactIds = new Set<string>();
+    const artifactIdRefs = [] as ReturnType<typeof collectArtifactIdsInText>;
     const fileContents = new Map<string, string>();
 
     for (const filePath of files) {
@@ -6628,6 +6630,7 @@ Tips:
         fileContents.set(filePath, raw);
         for (const ref of collectArtifactIdsInText(raw, filePath)) {
           allArtifactIds.add(ref.id);
+          artifactIdRefs.push(ref);
         }
       } catch (err) {
         skippedFileCount += 1;
@@ -6635,6 +6638,22 @@ Tips:
           console.error(`Error processing ${filePath}:`, err instanceof Error ? err.message : err);
         }
       }
+    }
+
+    for (const duplicate of findDuplicateArtifactIds(artifactIdRefs)) {
+      const primary = duplicate.refs[0];
+      const alsoSeen = duplicate.refs
+        .slice(1)
+        .map((ref) => `${ref.file}:${ref.line}`)
+        .join(", ");
+
+      issues.push({
+        severity: "error",
+        rule: "artifact-id-duplicate",
+        file: primary.file,
+        line: primary.line,
+        message: `ID '${duplicate.id}' appears multiple times in the scanned corpus (also at ${alsoSeen}).`,
+      });
     }
 
     for (const filePath of files) {
