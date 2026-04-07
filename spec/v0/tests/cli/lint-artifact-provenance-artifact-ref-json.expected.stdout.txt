@@ -1,0 +1,15 @@
+{
+  "$schema": "org2:lint:v1",
+  "checkedFiles": 1,
+  "skippedFiles": 0,
+  "issueCount": 1,
+  "issues": [
+    {
+      "severity": "error",
+      "rule": "artifact-provenance-artifact-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-provenance-artifact-ref.input.txt",
+      "line": 20,
+      "message": "ORG2_PROVENANCE artifact reference 'missing-artifact-999' was not found in the scanned corpus."
+    }
+  ]
+}
