@@ -24,3 +24,18 @@
 :ORG2_GENERATED_AT: 2026-04-07T20:33:00Z
 :ORG2_GENERATOR: org2 lint --format json
 :END:
+
+* Canonical Note With Generated Metadata
+:PROPERTIES:
+:ID: canonical-unexpected-generated-metadata
+:ORG2_ARTIFACT_ROLE: canonical
+:ORG2_GENERATED_AT: 2026-04-07
+:ORG2_GENERATOR: imported by script
+:END:
+
+* Raw Source With Generator Stamp
+:PROPERTIES:
+:ID: raw-unexpected-generator
+:ORG2_ARTIFACT_ROLE: raw
+:ORG2_GENERATOR: browser capture
+:END:
