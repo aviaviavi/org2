@@ -163,6 +163,7 @@ function evaluateArtifactProperties(
   const roleRaw = normalizePropertyValue(props.get("ORG2_ARTIFACT_ROLE") || "");
   const provenanceRaw = normalizePropertyValue(props.get("ORG2_PROVENANCE") || "");
   const generatedAtRaw = normalizePropertyValue(props.get("ORG2_GENERATED_AT") || "");
+  const generatorRaw = normalizePropertyValue(props.get("ORG2_GENERATOR") || "");
   const idRaw = normalizePropertyValue(props.get("ID") || "");
 
   const role = parseArtifactRole(roleRaw);
@@ -226,6 +227,16 @@ function evaluateArtifactProperties(
       file: filePath,
       line,
       message: `Artifacts with role '${role}' should set ORG2_GENERATED_AT to record when they were produced.`,
+    });
+  }
+
+  if (role && ["compiled", "view", "report"].includes(role) && !generatorRaw) {
+    issues.push({
+      severity: "warning",
+      rule: "artifact-generator-missing",
+      file: filePath,
+      line,
+      message: `Artifacts with role '${role}' should set ORG2_GENERATOR to record what produced them.`,
     });
   }
 

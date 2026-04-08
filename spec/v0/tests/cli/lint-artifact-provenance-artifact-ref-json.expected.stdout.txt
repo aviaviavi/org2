@@ -2,7 +2,7 @@
   "$schema": "org2:lint:v1",
   "checkedFiles": 1,
   "skippedFiles": 0,
-  "issueCount": 4,
+  "issueCount": 7,
   "issues": [
     {
       "severity": "warning",
@@ -13,6 +13,13 @@
     },
     {
       "severity": "warning",
+      "rule": "artifact-generator-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-provenance-artifact-ref.input.txt",
+      "line": 4,
+      "message": "Artifacts with role 'compiled' should set ORG2_GENERATOR to record what produced them."
+    },
+    {
+      "severity": "warning",
       "rule": "artifact-generated-at-missing",
       "file": "spec/v0/tests/cli/lint-artifact-provenance-artifact-ref.input.txt",
       "line": 11,
@@ -20,10 +27,24 @@
     },
     {
       "severity": "warning",
+      "rule": "artifact-generator-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-provenance-artifact-ref.input.txt",
+      "line": 11,
+      "message": "Artifacts with role 'report' should set ORG2_GENERATOR to record what produced them."
+    },
+    {
+      "severity": "warning",
       "rule": "artifact-generated-at-missing",
       "file": "spec/v0/tests/cli/lint-artifact-provenance-artifact-ref.input.txt",
       "line": 20,
       "message": "Artifacts with role 'report' should set ORG2_GENERATED_AT to record when they were produced."
+    },
+    {
+      "severity": "warning",
+      "rule": "artifact-generator-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-provenance-artifact-ref.input.txt",
+      "line": 20,
+      "message": "Artifacts with role 'report' should set ORG2_GENERATOR to record what produced them."
     },
     {
       "severity": "error",
