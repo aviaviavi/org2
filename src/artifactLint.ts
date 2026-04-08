@@ -17,7 +17,21 @@ export interface ArtifactProvenanceRef {
   value: string;
 }
 
+export interface ArtifactIdRef {
+  file: string;
+  line: number; // 1-based
+  id: string;
+}
+
+export interface ArtifactDuplicateIdIssue {
+  id: string;
+  refs: ArtifactIdRef[];
+}
+
 const PROVENANCE_ENTRY_KINDS = ["id", "file", "query", "run", "url", "note", "artifact"] as const;
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_DATE_TIME_RE =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 function normalizePropertyValue(raw: string): string {
   return String(raw || "").trim();
@@ -134,6 +148,12 @@ function isValidProvenanceEntry(entry: string): boolean {
   return PROVENANCE_ENTRY_KINDS.includes(parsed.kind as (typeof PROVENANCE_ENTRY_KINDS)[number]);
 }
 
+function isValidGeneratedAt(raw: string): boolean {
+  const value = String(raw || "").trim();
+  if (!value) return false;
+  return ISO_DATE_RE.test(value) || ISO_DATE_TIME_RE.test(value);
+}
+
 function evaluateArtifactProperties(
   props: Map<string, string>,
   filePath: string,
@@ -142,6 +162,8 @@ function evaluateArtifactProperties(
 ): void {
   const roleRaw = normalizePropertyValue(props.get("ORG2_ARTIFACT_ROLE") || "");
   const provenanceRaw = normalizePropertyValue(props.get("ORG2_PROVENANCE") || "");
+  const generatedAtRaw = normalizePropertyValue(props.get("ORG2_GENERATED_AT") || "");
+  const generatorRaw = normalizePropertyValue(props.get("ORG2_GENERATOR") || "");
   const idRaw = normalizePropertyValue(props.get("ID") || "");
 
   const role = parseArtifactRole(roleRaw);
@@ -188,6 +210,36 @@ function evaluateArtifactProperties(
     });
   }
 
+  if (generatedAtRaw && !isValidGeneratedAt(generatedAtRaw)) {
+    issues.push({
+      severity: "error",
+      rule: "artifact-generated-at-invalid",
+      file: filePath,
+      line,
+      message: `Invalid ORG2_GENERATED_AT '${generatedAtRaw}'. Expected ISO date (YYYY-MM-DD) or ISO timestamp (YYYY-MM-DDTHH:MM[:SS][.sss]Z|±HH:MM).`,
+    });
+  }
+
+  if (role && ["compiled", "view", "report"].includes(role) && !generatedAtRaw) {
+    issues.push({
+      severity: "warning",
+      rule: "artifact-generated-at-missing",
+      file: filePath,
+      line,
+      message: `Artifacts with role '${role}' should set ORG2_GENERATED_AT to record when they were produced.`,
+    });
+  }
+
+  if (role && ["compiled", "view", "report"].includes(role) && !generatorRaw) {
+    issues.push({
+      severity: "warning",
+      rule: "artifact-generator-missing",
+      file: filePath,
+      line,
+      message: `Artifacts with role '${role}' should set ORG2_GENERATOR to record what produced them.`,
+    });
+  }
+
   if (!role && provenanceEntries.length > 0) {
     issues.push({
       severity: "warning",
@@ -230,6 +282,22 @@ function collectArtifactProvenanceRefsFromProperties(
   }
 }
 
+function collectArtifactIdsFromProperties(
+  props: Map<string, string>,
+  filePath: string,
+  line: number,
+  refs: ArtifactIdRef[],
+): void {
+  const idRaw = normalizePropertyValue(props.get("ID") || "");
+  if (!idRaw) return;
+
+  refs.push({
+    file: filePath,
+    line,
+    id: idRaw.toLowerCase(),
+  });
+}
+
 export function collectArtifactProvenanceRefsInText(content: string, filePath: string): ArtifactProvenanceRef[] {
   const lines = content.replace(/\r\n/g, "\n").split("\n");
   const refs: ArtifactProvenanceRef[] = [];
@@ -242,6 +310,23 @@ export function collectArtifactProvenanceRefsInText(content: string, filePath: s
   const headlineDrawers = collectHeadlinePropertyDrawers(lines);
   for (const drawer of headlineDrawers) {
     collectArtifactProvenanceRefsFromProperties(drawer.properties, filePath, drawer.startLine, refs);
+  }
+
+  return refs;
+}
+
+export function collectArtifactIdsInText(content: string, filePath: string): ArtifactIdRef[] {
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const refs: ArtifactIdRef[] = [];
+
+  const topFileDrawer = parseTopFilePropertyDrawer(lines);
+  if (topFileDrawer) {
+    collectArtifactIdsFromProperties(topFileDrawer.properties, filePath, topFileDrawer.startLine, refs);
+  }
+
+  const headlineDrawers = collectHeadlinePropertyDrawers(lines);
+  for (const drawer of headlineDrawers) {
+    collectArtifactIdsFromProperties(drawer.properties, filePath, drawer.startLine, refs);
   }
 
   return refs;
@@ -262,4 +347,28 @@ export function lintArtifactMetadataInText(content: string, filePath: string): A
   }
 
   return issues;
+}
+
+export function findDuplicateArtifactIds(refs: ArtifactIdRef[]): ArtifactDuplicateIdIssue[] {
+  const refsById = new Map<string, ArtifactIdRef[]>();
+
+  for (const ref of refs) {
+    const normalizedId = String(ref.id || "").trim().toLowerCase();
+    if (!normalizedId) continue;
+    const existing = refsById.get(normalizedId) || [];
+    existing.push(ref);
+    refsById.set(normalizedId, existing);
+  }
+
+  return Array.from(refsById.entries())
+    .filter(([, idRefs]) => idRefs.length > 1)
+    .map(([id, idRefs]) => ({
+      id,
+      refs: [...idRefs].sort((a, b) => {
+        const fileCmp = a.file.localeCompare(b.file);
+        if (fileCmp !== 0) return fileCmp;
+        return a.line - b.line;
+      }),
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
 }

@@ -1,0 +1,1 @@
+org2 lint --file spec/v0/tests/cli/lint-artifact-generated-at.input.txt --format json
