@@ -1,0 +1,1 @@
+lint --files spec/v0/tests/cli/lint-artifact-provenance-artifact-ref.input.txt --format json

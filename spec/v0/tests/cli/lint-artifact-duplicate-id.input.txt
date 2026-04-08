@@ -1,0 +1,14 @@
+#+TITLE: Duplicate ID Lint Fixture
+
+:PROPERTIES:
+:ID: shared-artifact-id
+:ORG2_ARTIFACT_ROLE: compiled
+:ORG2_PROVENANCE: file:../../fixtures/lint-artifact-duplicate-id.source.org
+:END:
+
+* Report Copy
+:PROPERTIES:
+:ID: report-1
+:ORG2_ARTIFACT_ROLE: report
+:ORG2_PROVENANCE: id:shared-artifact-id
+:END:

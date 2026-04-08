@@ -1,0 +1,43 @@
+{
+  "$schema": "org2:lint:v1",
+  "checkedFiles": 2,
+  "skippedFiles": 0,
+  "issueCount": 5,
+  "issues": [
+    {
+      "severity": "error",
+      "rule": "artifact-id-duplicate",
+      "file": "spec/v0/fixtures/lint-artifact-duplicate-id.source.org",
+      "line": 4,
+      "message": "ID 'shared-artifact-id' appears multiple times in the scanned corpus (also at spec/v0/tests/cli/lint-artifact-duplicate-id.input.txt:3)."
+    },
+    {
+      "severity": "warning",
+      "rule": "artifact-generated-at-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-duplicate-id.input.txt",
+      "line": 3,
+      "message": "Artifacts with role 'compiled' should set ORG2_GENERATED_AT to record when they were produced."
+    },
+    {
+      "severity": "warning",
+      "rule": "artifact-generator-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-duplicate-id.input.txt",
+      "line": 3,
+      "message": "Artifacts with role 'compiled' should set ORG2_GENERATOR to record what produced them."
+    },
+    {
+      "severity": "warning",
+      "rule": "artifact-generated-at-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-duplicate-id.input.txt",
+      "line": 10,
+      "message": "Artifacts with role 'report' should set ORG2_GENERATED_AT to record when they were produced."
+    },
+    {
+      "severity": "warning",
+      "rule": "artifact-generator-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-duplicate-id.input.txt",
+      "line": 10,
+      "message": "Artifacts with role 'report' should set ORG2_GENERATOR to record what produced them."
+    }
+  ]
+}

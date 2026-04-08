@@ -1,0 +1,26 @@
+#+TITLE: Lint Artifact Provenance Artifact Ref Fixture
+
+* Upstream Compiled Artifact
+:PROPERTIES:
+:ID: upstream-artifact-123
+:ORG2_ARTIFACT_ROLE: compiled
+:ORG2_PROVENANCE: file:../../fixtures/lint-artifact-provenance-id-ref.source.org
+:END:
+
+* Saved Report With Existing Artifact Ref
+:PROPERTIES:
+:ID: report-existing-artifact-ref
+:ORG2_ARTIFACT_ROLE: report
+:ORG2_PROVENANCE: artifact:upstream-artifact-123
+:END:
+
+This saved report points at another artifact ID that exists in the scanned corpus.
+
+* Saved Report With Missing Artifact Ref
+:PROPERTIES:
+:ID: report-missing-artifact-ref
+:ORG2_ARTIFACT_ROLE: report
+:ORG2_PROVENANCE: artifact:missing-artifact-999
+:END:
+
+This saved report points at another artifact ID that is missing.
