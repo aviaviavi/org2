@@ -22,6 +22,7 @@ import {
   expandLinkAbbreviationTarget,
   mergeLinkAbbreviations,
 } from "./link-abbrev.js";
+import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 
 import fs from "node:fs";
 import path from "node:path";
@@ -1194,7 +1195,7 @@ class LSPServer {
         const headlineMatch = line.match(/^\*+\s+(.*)$/);
         if (headlineMatch) {
           const headlineTitle = (headlineMatch[1] || "").trim();
-          currentHeadline = headlineTitle.replace(/^[A-Z][A-Z0-9_-]*\s+/, "");
+          currentHeadline = parseHeadlineTitleForRoam(headlineTitle);
         }
 
         const idMatch = line.match(/^\s*:ID:\s*(\S+)\s*$/i);
@@ -2125,7 +2126,7 @@ class LSPServer {
       return null;
     }
 
-    const normalizedTitle = rawTitle.replace(/^[A-Z][A-Z0-9_-]*\s+/, "").trim();
+    const normalizedTitle = parseHeadlineTitleForRoam(rawTitle);
     return normalizedTitle || rawTitle;
   }
 
@@ -2227,7 +2228,7 @@ class LSPServer {
         const headlineMatch = line.match(/^\*+\s+(.*)$/);
         if (headlineMatch) {
           const headlineTitle = (headlineMatch[1] || "").trim();
-          currentHeadline = headlineTitle.replace(/^[A-Z][A-Z0-9_-]*\s+/, "");
+          currentHeadline = parseHeadlineTitleForRoam(headlineTitle);
         }
 
         const idMatch = line.match(/^\s*:ID:\s*(\S+)\s*$/i);
@@ -2294,7 +2295,7 @@ class LSPServer {
       }
 
       const rawHeadline = (headlineMatch[1] || "").trim();
-      const normalizedHeadline = rawHeadline.replace(/^[A-Z][A-Z0-9_-]*\s+/, "").trim();
+      const normalizedHeadline = parseHeadlineTitleForRoam(rawHeadline);
       if (normalizedHeadline) {
         return normalizedHeadline;
       }
