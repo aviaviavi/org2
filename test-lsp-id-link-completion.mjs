@@ -2,12 +2,12 @@
 
 import { spawn } from "node:child_process";
 
-const idCatalogContent = `* Alpha Node
+const idCatalogContent = `* BACKLOG [#A] Alpha Node :work:
 :PROPERTIES:
 :ID: abc-123
 :END:
 
-* Beta Node
+* WAIT [#B] Beta Node :ops:
 :PROPERTIES:
 :ID: abd-456
 :END:
@@ -143,9 +143,18 @@ async function run() {
     });
 
     const broadResponse = await waitForResponse(2);
-    const broadLabels = Array.isArray(broadResponse?.result) ? broadResponse.result.map((item) => item?.label) : [];
+    const broadItems = Array.isArray(broadResponse?.result) ? broadResponse.result : [];
+    const broadLabels = broadItems.map((item) => item?.label);
     if (!broadLabels.includes("abc-123") || !broadLabels.includes("abd-456")) {
       throw new Error(`Expected broad ID completion suggestions, got ${JSON.stringify(broadResponse?.result)}`);
+    }
+    const alphaItem = broadItems.find((item) => item?.label === "abc-123");
+    const betaItem = broadItems.find((item) => item?.label === "abd-456");
+    if (!String(alphaItem?.detail || "").includes("Alpha Node") || !String(betaItem?.detail || "").includes("Beta Node")) {
+      throw new Error(`Expected completion details to include normalized headline titles, got ${JSON.stringify(broadResponse?.result)}`);
+    }
+    if (/\[#|:work:|:ops:|\bBACKLOG\b|\bWAIT\b/.test(`${alphaItem?.detail || ""}\n${betaItem?.detail || ""}`)) {
+      throw new Error(`Expected completion details to strip TODO/priority/tag syntax, got ${JSON.stringify(broadResponse?.result)}`);
     }
 
     sendMessage(server, {

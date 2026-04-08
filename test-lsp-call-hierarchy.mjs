@@ -2,28 +2,28 @@
 
 import { spawn } from "node:child_process";
 
-const hierarchyContent = `* Target Node
+const hierarchyContent = `* TODO [#A] Target Node :focus:
 :PROPERTIES:
 :ID: abc-123
 :END:
 Outgoing link: [[id:def-456]]
 
-* Referenced Node
+* DONE [#B] Referenced Node :done:
 :PROPERTIES:
 :ID: def-456
 :END:
 
-* Incoming Node
+* WAIT Incoming Node :blocked:
 Calls target here: [[id:abc-123]]
 Calls target file: [[file:target.org]]
 `;
 
-const fileTargetContent = `* File Target
+const fileTargetContent = `* BACKLOG [#C] File Target :archive:
 Links to another file: [[file:next.org]]
 Links to referenced id: [[id:def-456]]
 `;
 
-const nextFileContent = `* Next File
+const nextFileContent = `* TODO Next File :next:
 `;
 
 function findPosition(haystack, needle) {
@@ -173,6 +173,9 @@ async function run() {
     if (idItems.length === 0 || !String(idItems[0]?.detail || "").toLowerCase().startsWith("id:abc-123")) {
       throw new Error(`Expected prepareCallHierarchy item for id:abc-123, got ${JSON.stringify(prepareIdResponse?.result)}`);
     }
+    if (idItems[0]?.name !== "Target Node") {
+      throw new Error(`Expected normalized call hierarchy title for id target, got ${JSON.stringify(prepareIdResponse?.result)}`);
+    }
 
     sendMessage(server, {
       jsonrpc: "2.0",
@@ -227,6 +230,9 @@ async function run() {
     const fileItems = Array.isArray(prepareFileResponse?.result) ? prepareFileResponse.result : [];
     if (fileItems.length === 0 || fileItems[0]?.data?.kind !== "file") {
       throw new Error(`Expected prepareCallHierarchy item for file target, got ${JSON.stringify(prepareFileResponse?.result)}`);
+    }
+    if (fileItems[0]?.name !== "File Target") {
+      throw new Error(`Expected normalized call hierarchy title for file target, got ${JSON.stringify(prepareFileResponse?.result)}`);
     }
 
     sendMessage(server, {
