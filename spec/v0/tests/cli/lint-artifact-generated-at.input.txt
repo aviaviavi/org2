@@ -13,6 +13,7 @@
 :ORG2_ARTIFACT_ROLE: report
 :ORG2_PROVENANCE: id:compiled-missing-generated-at
 :ORG2_GENERATED_AT: yesterday-ish
+:ORG2_GENERATOR:
 :END:
 
 * View With Valid Generated Timestamp
@@ -21,4 +22,5 @@
 :ORG2_ARTIFACT_ROLE: view
 :ORG2_PROVENANCE: artifact:compiled-missing-generated-at
 :ORG2_GENERATED_AT: 2026-04-07T20:33:00Z
+:ORG2_GENERATOR: org2 lint --format json
 :END:

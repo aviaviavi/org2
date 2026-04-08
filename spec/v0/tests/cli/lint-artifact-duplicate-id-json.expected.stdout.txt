@@ -2,7 +2,7 @@
   "$schema": "org2:lint:v1",
   "checkedFiles": 2,
   "skippedFiles": 0,
-  "issueCount": 3,
+  "issueCount": 5,
   "issues": [
     {
       "severity": "error",
@@ -20,10 +20,24 @@
     },
     {
       "severity": "warning",
+      "rule": "artifact-generator-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-duplicate-id.input.txt",
+      "line": 3,
+      "message": "Artifacts with role 'compiled' should set ORG2_GENERATOR to record what produced them."
+    },
+    {
+      "severity": "warning",
       "rule": "artifact-generated-at-missing",
       "file": "spec/v0/tests/cli/lint-artifact-duplicate-id.input.txt",
       "line": 10,
       "message": "Artifacts with role 'report' should set ORG2_GENERATED_AT to record when they were produced."
+    },
+    {
+      "severity": "warning",
+      "rule": "artifact-generator-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-duplicate-id.input.txt",
+      "line": 10,
+      "message": "Artifacts with role 'report' should set ORG2_GENERATOR to record what produced them."
     }
   ]
 }

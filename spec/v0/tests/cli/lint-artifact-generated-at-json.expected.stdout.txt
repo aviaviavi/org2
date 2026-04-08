@@ -2,7 +2,7 @@
   "$schema": "org2:lint:v1",
   "checkedFiles": 1,
   "skippedFiles": 0,
-  "issueCount": 2,
+  "issueCount": 4,
   "issues": [
     {
       "severity": "warning",
@@ -12,11 +12,25 @@
       "message": "Artifacts with role 'compiled' should set ORG2_GENERATED_AT to record when they were produced."
     },
     {
+      "severity": "warning",
+      "rule": "artifact-generator-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-generated-at.input.txt",
+      "line": 4,
+      "message": "Artifacts with role 'compiled' should set ORG2_GENERATOR to record what produced them."
+    },
+    {
       "severity": "error",
       "rule": "artifact-generated-at-invalid",
       "file": "spec/v0/tests/cli/lint-artifact-generated-at.input.txt",
       "line": 11,
       "message": "Invalid ORG2_GENERATED_AT 'yesterday-ish'. Expected ISO date (YYYY-MM-DD) or ISO timestamp (YYYY-MM-DDTHH:MM[:SS][.sss]Z|±HH:MM)."
+    },
+    {
+      "severity": "warning",
+      "rule": "artifact-generator-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-generated-at.input.txt",
+      "line": 11,
+      "message": "Artifacts with role 'report' should set ORG2_GENERATOR to record what produced them."
     }
   ]
 }
