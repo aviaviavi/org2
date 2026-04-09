@@ -3921,7 +3921,7 @@ async function runAgendaTui(opts: {
 
     lines.push("─".repeat(Math.max(1, width)));
     lines.push(truncateCell(message || (activeRow?.kind === "item" ? `Selected ${selected + 1}/${rows.length}` : "No overdue or today items."), width));
-    stdout.write("\x1b[?25l\x1b[2J\x1b[H" + lines.join("\\n"));
+    stdout.write("\x1b[?25l\x1b[2J\x1b[H" + lines.join("\n"));
   };
 
   const cleanup = () => {
