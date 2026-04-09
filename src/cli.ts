@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import readline from "node:readline";
 import crypto from "node:crypto";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
@@ -3670,6 +3671,158 @@ function listOrgLikeFiles(rootDir: string, recursiveScan: boolean): string[] {
   return out;
 }
 
+function truncateCell(text: string, width: number): string {
+  if (width <= 0) return "";
+  if (text.length <= width) return text.padEnd(width, " ");
+  if (width === 1) return "…";
+  return `${text.slice(0, width - 1)}…`;
+}
+
+function formatAgendaTuiItem(item: ScheduledItem, selected: boolean, width: number, todayIso: string): string {
+  const pointer = selected ? ">" : " ";
+  const todo = item.todo ? `[${item.todo}] ` : "";
+  const time = item.time ? `${item.time} ` : "";
+  const overdue = item.date < todayIso ? "! " : "";
+  const body = `${pointer} ${item.date} ${time}${overdue}${todo}${item.headline}`.trimEnd();
+  return truncateCell(body, width);
+}
+
+async function runAgendaTui(opts: {
+  title: string;
+  todayIso: string;
+  load: () => { outputItems: ScheduledItem[]; skippedFileCount: number };
+}): Promise<void> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error("agenda --tui requires an interactive TTY");
+  }
+
+  const stdin = process.stdin;
+  const stdout = process.stdout;
+  readline.emitKeypressEvents(stdin);
+  if (stdin.isTTY) stdin.setRawMode(true);
+
+  let selected = 0;
+  let showDetail = true;
+  let message = "";
+  let items: ScheduledItem[] = [];
+  let skippedFileCount = 0;
+  let cleanedUp = false;
+
+  const reload = (nextMessage?: string) => {
+    const loaded = opts.load();
+    items = loaded.outputItems.filter((item) => item.date <= opts.todayIso);
+    skippedFileCount = loaded.skippedFileCount;
+    if (selected >= items.length) selected = Math.max(0, items.length - 1);
+    if (nextMessage !== undefined) message = nextMessage;
+  };
+
+  const render = () => {
+    const width = stdout.columns || 100;
+    const height = stdout.rows || 30;
+    const selectedItem = items[selected] || null;
+    const listWidth = Math.max(30, Math.floor(width * 0.58));
+    const detailWidth = Math.max(20, width - listWidth - 3);
+    const visibleRows = Math.max(5, height - 6);
+    const start = Math.max(0, Math.min(selected - Math.floor(visibleRows / 2), Math.max(0, items.length - visibleRows)));
+    const visible = items.slice(start, start + visibleRows);
+    const detailLines = showDetail && selectedItem
+      ? [
+          `Headline: ${selectedItem.headline}`,
+          `TODO: ${selectedItem.todo || "-"}`,
+          `Date: ${selectedItem.date}${selectedItem.time ? ` ${selectedItem.time}` : ""}`,
+          `Kind: ${selectedItem.kind}`,
+          `File: ${selectedItem.filePath}`,
+          `Line: ${selectedItem.lineNumber}`,
+          `Tags: ${selectedItem.tags.length ? selectedItem.tags.join(", ") : "-"}`,
+          `Priority: ${selectedItem.priority || "-"}`,
+          `Effort: ${selectedItem.effort || "-"}`,
+          selectedItem.date < opts.todayIso ? "Status: overdue" : "Status: today",
+        ]
+      : ["Detail hidden, press Enter to show it again."];
+    const lines: string[] = [];
+
+    lines.push(truncateCell(`${opts.title}  overdue + today  items:${items.length}  skipped:${skippedFileCount}`, width));
+    lines.push(truncateCell("j/k or arrows move, enter toggle detail, r refresh, x toggle done, c clear detail, q quit", width));
+    lines.push("─".repeat(Math.max(1, width)));
+
+    for (let i = 0; i < visibleRows; i += 1) {
+      const item = visible[i];
+      const listLine = item ? formatAgendaTuiItem(item, start + i === selected, listWidth, opts.todayIso) : " ".repeat(listWidth);
+      const detailLine = truncateCell(detailLines[i] || "", detailWidth);
+      lines.push(`${listLine} │ ${detailLine}`);
+    }
+
+    lines.push("─".repeat(Math.max(1, width)));
+    lines.push(truncateCell(message || (selectedItem ? `Selected ${selected + 1}/${items.length}` : "No overdue or today items."), width));
+    stdout.write("\x1b[?25l\x1b[2J\x1b[H" + lines.join("\n"));
+  };
+
+  const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    stdout.write("\x1b[?25h\x1b[2J\x1b[H");
+    stdin.removeAllListeners("keypress");
+    if (stdin.isTTY) stdin.setRawMode(false);
+    stdin.pause();
+  };
+
+  const mutateSelectedTodo = () => {
+    const item = items[selected];
+    if (!item) {
+      message = "Nothing selected.";
+      render();
+      return;
+    }
+    if (item.lineNumber < 0) {
+      message = "Selected row has no editable heading line.";
+      render();
+      return;
+    }
+    const beforeRaw = fs.readFileSync(item.filePath, "utf8");
+    const nextStatus: TodoStatus = item.todo === "DONE" ? "todo" : "done";
+    const res = updateTodoInText(beforeRaw, {
+      filePath: item.filePath,
+      lineNumber: item.lineNumber + 1,
+      status: nextStatus,
+      now: new Date(),
+      logbook: false,
+    });
+    fs.writeFileSync(item.filePath, res.text, "utf8");
+    reload(`Updated ${path.basename(item.filePath)}:${res.headingLineNumber} to ${res.newStatus}.`);
+    render();
+  };
+
+  try {
+    reload("Loaded overdue + today agenda.");
+    render();
+
+    await new Promise<void>((resolve, reject) => {
+      stdin.on("keypress", (_str, key) => {
+        try {
+          if (key?.sequence === "\u0003" || key?.name === "q") {
+            resolve();
+            return;
+          }
+          if (key?.name === "down" || key?.name === "j") selected = Math.min(items.length - 1, selected + 1);
+          if (key?.name === "up" || key?.name === "k") selected = Math.max(0, selected - 1);
+          if (key?.name === "return" || key?.name === "space") showDetail = !showDetail;
+          if (key?.name === "c") showDetail = false;
+          if (key?.name === "r") reload("Refreshed agenda.");
+          if (key?.name === "x") {
+            mutateSelectedTodo();
+            return;
+          }
+          render();
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+  } finally {
+    cleanup();
+  }
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -3679,6 +3832,7 @@ async function main(): Promise<void> {
   let days = 7;
   let today = getTodayString();
   let format: "text" | "json" = "text";
+  let agendaTui = false;
   let recursive = false;
   let includeOverdue = true;
   let agendaStatusFiltersRaw: string[] = [];
@@ -4634,6 +4788,9 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--tui") {
+      if (command === "agenda") agendaTui = true;
+      i++;
     } else if (arg === "--style" || arg === "--link-style") {
       i++;
       if (i < args.length) {
@@ -4840,7 +4997,7 @@ Usage:
   org2 <command> [options]
 
 Core commands:
-  org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
+  org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
   org2 todo <set|toggle> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 crypt <encrypt|decrypt> --file FILE (--line N | --pos LINE[:COL]) --passphrase PASS [--gpg-program PATH] [--apply]
@@ -8170,109 +8327,123 @@ Tips:
   const rangeDays = Math.floor((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
 
   // Process files
-  const allItems: ScheduledItem[] = [];
-  let skippedFileCount = 0;
+  const startIso = startDate.toISOString().slice(0, 10);
+  const endIso = endDate.toISOString().slice(0, 10);
 
-  for (const filePath of files) {
-    if (!matchesAgendaFileFilter(filePath, parsedAgendaFile)) continue;
-    if (!matchesAgendaExcludeFileFilter(filePath, parsedAgendaExcludeFile)) continue;
+  const loadAgendaOutput = () => {
+    const allItems: ScheduledItem[] = [];
+    let skippedFileCount = 0;
 
-    try {
-      const content = fs.readFileSync(filePath, "utf8");
-      const normalized = content.replace(/\r\n/g, "\n");
+    for (const filePath of files) {
+      if (!matchesAgendaFileFilter(filePath, parsedAgendaFile)) continue;
+      if (!matchesAgendaExcludeFileFilter(filePath, parsedAgendaExcludeFile)) continue;
 
-      // Agenda intentionally uses a lightweight line-based scan so we can provide
-      // stable 0-based line numbers for editor integrations (VS Code agenda → open file).
-      // The canonical parser does not currently preserve source locations.
-      const items = findScheduledItemsInText(
-        normalized,
-        filePath,
-        startDate,
-        endDate,
-        includeOverdue,
-        parsedAgendaStatus.filter,
-        parsedAgendaExcludeStatus.filter,
-        parsedAgendaKind.filter,
-        parsedAgendaExcludeKind.filter,
-        parsedAgendaWhen.filter,
-        parsedAgendaExcludeWhen.filter,
-        parsedAgendaWeekday.filter,
-        parsedAgendaExcludeWeekday.filter,
-        parsedAgendaWeek.filter,
-        parsedAgendaExcludeWeek.filter,
-        parsedAgendaDayOfMonth.filter,
-        parsedAgendaExcludeDayOfMonth.filter,
-        parsedAgendaMonth.filter,
-        parsedAgendaExcludeMonth.filter,
-        parsedAgendaQuarter.filter,
-        parsedAgendaExcludeQuarter.filter,
-        parsedAgendaYear.filter,
-        parsedAgendaExcludeYear.filter,
-        parsedAgendaDate.filter,
-        parsedAgendaExcludeDate.filter,
-        parsedAgendaLevel.filter,
-        parsedAgendaExcludeLevel.filter,
-        parsedAgendaMatch,
-        parsedAgendaExcludeMatch,
-        parsedAgendaTag,
-        parsedAgendaId.filter,
-        parsedAgendaTodo,
-        parsedAgendaPriority.filter,
-        parsedAgendaTime.filter,
-        parsedAgendaEffort,
-        parsedAgendaProperty.filter,
-        parsedAgendaExcludeTag,
-        parsedAgendaExcludeId.filter,
-        parsedAgendaExcludeTodo,
-        parsedAgendaExcludePriority.filter,
-        parsedAgendaExcludeTime.filter,
-        parsedAgendaExcludeEffort,
-        parsedAgendaExcludeProperty.filter,
-      );
-      allItems.push(...items);
-    } catch (err) {
-      skippedFileCount += 1;
-      if (verboseErrors) {
-        console.error(`Error processing ${filePath}:`, err instanceof Error ? err.message : err);
+      try {
+        const content = fs.readFileSync(filePath, "utf8");
+        const normalized = content.replace(/\r\n/g, "\n");
+
+        // Agenda intentionally uses a lightweight line-based scan so we can provide
+        // stable 0-based line numbers for editor integrations (VS Code agenda → open file).
+        // The canonical parser does not currently preserve source locations.
+        const items = findScheduledItemsInText(
+          normalized,
+          filePath,
+          startDate,
+          endDate,
+          includeOverdue,
+          parsedAgendaStatus.filter,
+          parsedAgendaExcludeStatus.filter,
+          parsedAgendaKind.filter,
+          parsedAgendaExcludeKind.filter,
+          parsedAgendaWhen.filter,
+          parsedAgendaExcludeWhen.filter,
+          parsedAgendaWeekday.filter,
+          parsedAgendaExcludeWeekday.filter,
+          parsedAgendaWeek.filter,
+          parsedAgendaExcludeWeek.filter,
+          parsedAgendaDayOfMonth.filter,
+          parsedAgendaExcludeDayOfMonth.filter,
+          parsedAgendaMonth.filter,
+          parsedAgendaExcludeMonth.filter,
+          parsedAgendaQuarter.filter,
+          parsedAgendaExcludeQuarter.filter,
+          parsedAgendaYear.filter,
+          parsedAgendaExcludeYear.filter,
+          parsedAgendaDate.filter,
+          parsedAgendaExcludeDate.filter,
+          parsedAgendaLevel.filter,
+          parsedAgendaExcludeLevel.filter,
+          parsedAgendaMatch,
+          parsedAgendaExcludeMatch,
+          parsedAgendaTag,
+          parsedAgendaId.filter,
+          parsedAgendaTodo,
+          parsedAgendaPriority.filter,
+          parsedAgendaTime.filter,
+          parsedAgendaEffort,
+          parsedAgendaProperty.filter,
+          parsedAgendaExcludeTag,
+          parsedAgendaExcludeId.filter,
+          parsedAgendaExcludeTodo,
+          parsedAgendaExcludePriority.filter,
+          parsedAgendaExcludeTime.filter,
+          parsedAgendaExcludeEffort,
+          parsedAgendaExcludeProperty.filter,
+        );
+        allItems.push(...items);
+      } catch (err) {
+        skippedFileCount += 1;
+        if (verboseErrors) {
+          console.error(`Error processing ${filePath}:`, err instanceof Error ? err.message : err);
+        }
       }
     }
-  }
 
-  if (skippedFileCount > 0 && !verboseErrors) {
-    console.error(
-      `Skipped ${skippedFileCount} file(s) due to parse errors (use --verbose-errors to see details).`,
+    if (skippedFileCount > 0 && !verboseErrors) {
+      console.error(
+        `Skipped ${skippedFileCount} file(s) due to parse errors (use --verbose-errors to see details).`,
+      );
+    }
+
+    allItems.sort((a, b) =>
+      compareAgendaItems(
+        a,
+        b,
+        parsedAgendaGroup.groupOrder,
+        parsedAgendaSort.sortOrder,
+        parsedAgendaDateOrder.dateOrder,
+        parsedAgendaTodoOrder,
+        parsedAgendaStatusOrder.statusOrder,
+        parsedAgendaKindOrder.kindOrder,
+        parsedAgendaPriorityOrder.priorityOrder,
+        parsedAgendaEffortOrder,
+        parsedAgendaTagOrder,
+      ),
     );
+
+    const groupLimitedItems = applyAgendaGroupLimit(
+      allItems,
+      parsedAgendaGroup.groupOrder,
+      agendaGroupLimit,
+      parsedAgendaTagOrder,
+    );
+    const dayLimitedItems = applyAgendaDayLimit(groupLimitedItems, agendaDayLimit);
+    const outputItems = agendaLimit ? dayLimitedItems.slice(0, agendaLimit) : dayLimitedItems;
+    return { outputItems, skippedFileCount };
+  };
+
+  if (agendaTui) {
+    await runAgendaTui({
+      title: "org2 agenda --tui",
+      todayIso: startIso,
+      load: loadAgendaOutput,
+    });
+    return;
   }
 
-  // Sort by date first, then optional user-selected tie-breakers.
-  allItems.sort((a, b) =>
-    compareAgendaItems(
-      a,
-      b,
-      parsedAgendaGroup.groupOrder,
-      parsedAgendaSort.sortOrder,
-      parsedAgendaDateOrder.dateOrder,
-      parsedAgendaTodoOrder,
-      parsedAgendaStatusOrder.statusOrder,
-      parsedAgendaKindOrder.kindOrder,
-      parsedAgendaPriorityOrder.priorityOrder,
-      parsedAgendaEffortOrder,
-      parsedAgendaTagOrder,
-    ),
-  );
-
-  const groupLimitedItems = applyAgendaGroupLimit(
-    allItems,
-    parsedAgendaGroup.groupOrder,
-    agendaGroupLimit,
-    parsedAgendaTagOrder,
-  );
-  const dayLimitedItems = applyAgendaDayLimit(groupLimitedItems, agendaDayLimit);
-  const outputItems = agendaLimit ? dayLimitedItems.slice(0, agendaLimit) : dayLimitedItems;
+  const { outputItems, skippedFileCount } = loadAgendaOutput();
 
   if (format === "json") {
-    const startIso = startDate.toISOString().slice(0, 10);
-    const endIso = endDate.toISOString().slice(0, 10);
 
     const overdue = outputItems.filter((it) => it.date < startIso);
     const upcoming = outputItems.filter((it) => it.date >= startIso);
