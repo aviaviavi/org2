@@ -76,6 +76,8 @@ npm run org2 -- agenda --dir /path/to/org --recursive
 npm run org2 -- agenda --dir /path/to/org --recursive --tui
 #+end_src
 
+The TUI groups overdue and today items into collapsible left-pane sections. Use =j/k= or arrow keys to move, =h=/left to collapse the current section, =l=/right to expand it, =Enter= or =Space= to toggle the wrapped detail pane, =x= to toggle TODO/DONE, =r= to refresh, and =q= to quit.
+
 Agenda on explicit files:
 
 #+begin_src sh
