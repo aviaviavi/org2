@@ -73,6 +73,7 @@ Agenda on a directory:
 
 #+begin_src sh
 npm run org2 -- agenda --dir /path/to/org --recursive
+npm run org2 -- agenda --dir /path/to/org --recursive --tui
 #+end_src
 
 Agenda on explicit files:
