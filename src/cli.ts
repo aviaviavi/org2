@@ -3850,7 +3850,7 @@ async function runAgendaTui(opts: {
 
   const reload = (nextMessage?: string) => {
     const loaded = opts.load();
-    items = loaded.outputItems.filter((item) => item.date <= opts.todayIso);
+    items = loaded.outputItems;
     skippedFileCount = loaded.skippedFileCount;
     sections = buildAgendaTuiSections(items, opts.todayIso);
     rows = buildAgendaTuiRows(sections, collapsedSections);
