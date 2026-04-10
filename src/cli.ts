@@ -3755,8 +3755,10 @@ function wrapText(text: string, width: number): string[] {
   return lines;
 }
 
-function agendaTuiWhen(item: ScheduledItem, todayIso: string): "overdue" | "today" {
-  return item.date < todayIso ? "overdue" : "today";
+function agendaTuiWhen(item: ScheduledItem, todayIso: string): "overdue" | "today" | "upcoming" {
+  if (item.date < todayIso) return "overdue";
+  if (item.date === todayIso) return "today";
+  return "upcoming";
 }
 
 function agendaTuiStatusColor(todo: string | undefined): string {
@@ -3792,9 +3794,11 @@ type AgendaTuiRow =
 function buildAgendaTuiSections(items: ScheduledItem[], todayIso: string): AgendaTuiSection[] {
   const overdue = items.filter((item) => item.date < todayIso);
   const today = items.filter((item) => item.date === todayIso);
+  const upcoming = items.filter((item) => item.date > todayIso);
   return [
     { key: "overdue", label: "Overdue", color: ANSI_RED, items: overdue },
     { key: "today", label: "Today", color: ANSI_YELLOW, items: today },
+    { key: "upcoming", label: "Next 7 Days", color: ANSI_GREEN, items: upcoming },
   ];
 }
 
@@ -3811,6 +3815,13 @@ function buildAgendaTuiRows(sections: AgendaTuiSection[], collapsed: Set<number>
 function firstSelectableAgendaTuiRow(rows: AgendaTuiRow[]): number {
   const firstItem = rows.findIndex((row) => row.kind === "item");
   return firstItem >= 0 ? firstItem : 0;
+}
+
+function lastSelectableAgendaTuiRow(rows: AgendaTuiRow[]): number {
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    if (rows[i]?.kind === "item" || rows[i]?.kind === "section") return i;
+  }
+  return 0;
 }
 
 async function runAgendaTui(opts: {
@@ -3856,21 +3867,21 @@ async function runAgendaTui(opts: {
 
   const moveSelection = (delta: number) => {
     if (rows.length === 0) return;
-    let next = selected;
-    while (true) {
-      const candidate = Math.max(0, Math.min(rows.length - 1, next + delta));
-      if (candidate === next) break;
-      next = candidate;
-      if (rows[next]?.kind === "item") break;
-    }
-    if (rows[next]?.kind === "item") selected = next;
+    selected = Math.max(0, Math.min(rows.length - 1, selected + delta));
   };
 
   const setSectionCollapsed = (sectionIndex: number, collapsed: boolean) => {
+    const row = selectedRow();
+    const shouldSnapToSection = row?.kind === "item" && row.sectionIndex === sectionIndex && collapsed;
     if (collapsed) collapsedSections.add(sectionIndex);
     else collapsedSections.delete(sectionIndex);
     rows = buildAgendaTuiRows(sections, collapsedSections);
-    if (rows[selected]?.kind !== "item") selected = firstSelectableAgendaTuiRow(rows);
+    if (shouldSnapToSection) {
+      selected = rows.findIndex((candidate) => candidate.kind === "section" && candidate.sectionIndex === sectionIndex);
+      if (selected < 0) selected = firstSelectableAgendaTuiRow(rows);
+      return;
+    }
+    selected = Math.max(0, Math.min(selected, rows.length - 1));
   };
 
   const render = () => {
@@ -3896,11 +3907,11 @@ async function runAgendaTui(opts: {
           ...wrapText(`Effort: ${activeItem.effort || "-"}`, detailWidth),
           ...wrapText(`Status: ${agendaTuiWhen(activeItem, opts.todayIso)}`, detailWidth),
         ]
-      : ["Detail hidden, press Enter to show it again."];
+      : [activeRow?.kind === "section" ? "Section selected. Use left/right to collapse or expand." : "Detail hidden, press Enter to show it again."];
     const lines: string[] = [];
 
-    lines.push(truncateAnsi(`${ANSI_BOLD}${opts.title}${ANSI_RESET}  ${ANSI_RED}overdue${ANSI_RESET} + ${ANSI_YELLOW}today${ANSI_RESET}  items:${items.length}  skipped:${skippedFileCount}`, width));
-    lines.push(truncateCell("j/k or arrows move, h/left collapse, l/right expand, enter detail, r refresh, x toggle done, c hide detail, q quit", width));
+    lines.push(truncateAnsi(`${ANSI_BOLD}${opts.title}${ANSI_RESET}  ${ANSI_RED}overdue${ANSI_RESET} + ${ANSI_YELLOW}today${ANSI_RESET} + ${ANSI_GREEN}next 7 days${ANSI_RESET}  items:${items.length}  skipped:${skippedFileCount}`, width));
+    lines.push(truncateCell("j/k or arrows move, gg/G jump, h/left collapse, l/right expand, enter detail, r refresh, x toggle done, c hide detail, q quit", width));
     lines.push("─".repeat(Math.max(1, width)));
 
     for (let i = 0; i < visibleRows; i += 1) {
@@ -3920,7 +3931,7 @@ async function runAgendaTui(opts: {
     }
 
     lines.push("─".repeat(Math.max(1, width)));
-    lines.push(truncateCell(message || (activeRow?.kind === "item" ? `Selected ${selected + 1}/${rows.length}` : "No overdue or today items."), width));
+    lines.push(truncateCell(message || (activeRow ? `Selected ${selected + 1}/${rows.length}` : "No overdue, today, or upcoming items."), width));
     stdout.write("\x1b[?25l\x1b[2J\x1b[H" + lines.join("\n"));
   };
 
@@ -3960,15 +3971,34 @@ async function runAgendaTui(opts: {
   };
 
   try {
-    reload("Loaded overdue + today agenda.");
+    reload("Loaded overdue + today + next 7 days agenda.");
     render();
 
+    let pendingG = false;
     await new Promise<void>((resolve, reject) => {
       stdin.on("keypress", (_str, key) => {
         try {
           if (key?.sequence === "\u0003" || key?.name === "q") {
             resolve();
             return;
+          }
+          if (key?.shift && key?.name === "g") {
+            selected = lastSelectableAgendaTuiRow(rows);
+            pendingG = false;
+            render();
+            return;
+          }
+          if (key?.name === "g") {
+            if (pendingG) {
+              selected = 0;
+              pendingG = false;
+            } else {
+              pendingG = true;
+              render();
+              return;
+            }
+          } else {
+            pendingG = false;
           }
           if (key?.name === "down" || key?.name === "j") moveSelection(1);
           if (key?.name === "up" || key?.name === "k") moveSelection(-1);
