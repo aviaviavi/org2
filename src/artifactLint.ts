@@ -240,6 +240,26 @@ function evaluateArtifactProperties(
     });
   }
 
+  if (role && ["raw", "canonical"].includes(role) && generatedAtRaw) {
+    issues.push({
+      severity: "warning",
+      rule: "artifact-generated-at-unexpected",
+      file: filePath,
+      line,
+      message: `Artifacts with role '${role}' should not set ORG2_GENERATED_AT; generated timestamps belong on compiled/view/report outputs.`,
+    });
+  }
+
+  if (role && ["raw", "canonical"].includes(role) && generatorRaw) {
+    issues.push({
+      severity: "warning",
+      rule: "artifact-generator-unexpected",
+      file: filePath,
+      line,
+      message: `Artifacts with role '${role}' should not set ORG2_GENERATOR; generator metadata belongs on compiled/view/report outputs.`,
+    });
+  }
+
   if (!role && provenanceEntries.length > 0) {
     issues.push({
       severity: "warning",
