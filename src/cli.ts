@@ -3,7 +3,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import readline from "node:readline";
 import crypto from "node:crypto";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
@@ -682,6 +681,11 @@ type AgendaSortOrder = AgendaSortField[] | null;
 type AgendaGroupField = { key: AgendaSortKey; direction: AgendaSortDirection };
 type AgendaGroupOrder = AgendaGroupField[] | null;
 type AgendaDateOrder = "asc" | "desc";
+type AgendaTuiMode = "focus" | "today" | "range";
+
+type AgendaTuiRow =
+  | { type: "section"; label: string }
+  | { type: "item"; item: ScheduledItem; hint?: string };
 
 const AGENDA_STATUS_ALLOWED_HINT =
   "default|none, all, active(=todo,in_progress), actionable(=todo,in_progress,custom), open|todo|backlog, in_progress|in-progress|prog|doing|started|waiting|wait|blocked|next|wip|hold|on-hold|paused, done|complete|completed|finish|finished|resolved, canceled|cancel|cancelled, closed(=done,canceled), custom";
@@ -3159,6 +3163,358 @@ function formatByDate(
   return output;
 }
 
+function truncateForTerminal(input: string, width: number): string {
+  if (width <= 0) return "";
+  if (input.length <= width) return input;
+  if (width <= 1) return input.slice(0, width);
+  return `${input.slice(0, width - 1)}…`;
+}
+
+function padTerminalLine(input: string, width: number): string {
+  return truncateForTerminal(input, width).padEnd(Math.max(width, 0), " ");
+}
+
+function agendaTuiStatus(item: ScheduledItem): string {
+  return item.todo || "ITEM";
+}
+
+function isAgendaTuiActionable(item: ScheduledItem): boolean {
+  const bucket = agendaStatusBucketForKeyword(item.todo);
+  return bucket !== "done" && bucket !== "canceled";
+}
+
+function buildAgendaTuiRows(items: ScheduledItem[], startIso: string, mode: AgendaTuiMode): AgendaTuiRow[] {
+  const overdue = items.filter((item) => item.date < startIso);
+  const today = items.filter((item) => item.date === startIso);
+  const upcoming = items.filter((item) => item.date > startIso);
+  const overdueActionable = overdue.filter(isAgendaTuiActionable);
+  const todayActionable = today.filter(isAgendaTuiActionable);
+
+  const sections: Array<{ label: string; items: ScheduledItem[]; hint?: string }> = [];
+
+  if (mode === "focus") {
+    sections.push({
+      label: `Today, do these first (${todayActionable.length})`,
+      items: todayActionable,
+      hint: "today",
+    });
+    if (overdueActionable.length > 0) {
+      sections.push({
+        label: `Still hanging over you (${overdueActionable.length})`,
+        items: overdueActionable,
+        hint: "overdue",
+      });
+    }
+    if (today.length > todayActionable.length) {
+      sections.push({
+        label: `Today, already done or canceled (${today.length - todayActionable.length})`,
+        items: today.filter((item) => !isAgendaTuiActionable(item)),
+        hint: "today",
+      });
+    }
+  } else if (mode === "today") {
+    sections.push({ label: `Today (${today.length})`, items: today, hint: "today" });
+    if (overdue.length > 0) {
+      sections.push({ label: `Overdue (${overdue.length})`, items: overdue, hint: "overdue" });
+    }
+  } else {
+    if (overdue.length > 0) sections.push({ label: `Overdue (${overdue.length})`, items: overdue, hint: "overdue" });
+    if (today.length > 0) sections.push({ label: `Today (${today.length})`, items: today, hint: "today" });
+    if (upcoming.length > 0) sections.push({ label: `Next up (${upcoming.length})`, items: upcoming, hint: "upcoming" });
+  }
+
+  const rows: AgendaTuiRow[] = [];
+  for (const section of sections) {
+    rows.push({ type: "section", label: section.label });
+    for (const item of section.items) {
+      rows.push({ type: "item", item, hint: section.hint });
+    }
+  }
+
+  if (rows.length === 0) {
+    rows.push({ type: "section", label: "Nothing scheduled in this view. Nice." });
+  }
+
+  return rows;
+}
+
+function nextAgendaTuiMode(mode: AgendaTuiMode, key: string): AgendaTuiMode {
+  if (key === "1") return "focus";
+  if (key === "2") return "today";
+  if (key === "3") return "range";
+  return mode;
+}
+
+function cycleAgendaTuiStatus(item: ScheduledItem): TodoStatus {
+  const bucket = parseTodoStatusArg(String(item.todo || ""));
+  if (bucket === "todo") return "in_progress";
+  if (bucket === "in_progress") return "done";
+  return "todo";
+}
+
+function formatAgendaTuiIsoDate(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addAgendaTuiUtcDays(date: Date, daysToAdd: number): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + daysToAdd));
+}
+
+function computeAgendaTuiUpcomingMonday(date: Date): Date {
+  const weekday = date.getUTCDay();
+  const delta = weekday === 1 ? 7 : ((8 - weekday) % 7 || 7);
+  return addAgendaTuiUtcDays(date, delta);
+}
+
+function computeAgendaTuiNextMonthFirst(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
+}
+
+function formatAgendaTuiPlanningLabel(dateIso: string): string {
+  const [year, month, day] = dateIso.split("-").map((value) => Number.parseInt(value, 10));
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][date.getUTCDay()] || "";
+  return `<${dateIso} ${weekday}>`;
+}
+
+function applyAgendaTuiPlanning(item: ScheduledItem, kind: "scheduled" | "deadline", dateIso: string): ScheduledItem {
+  const input = fs.readFileSync(item.filePath, "utf8");
+  const updated = updatePlanningInText(input, {
+    filePath: item.filePath,
+    lineNumber: item.lineNumber + 1,
+    kind: planningKindFromArg(kind),
+    date: dateIso,
+  });
+  fs.writeFileSync(item.filePath, updated.text, "utf8");
+  return { ...item, date: dateIso, kind: planningKindFromArg(kind) };
+}
+
+function applyAgendaTuiTodo(item: ScheduledItem, status: TodoStatus): ScheduledItem {
+  const input = fs.readFileSync(item.filePath, "utf8");
+  const updated = updateTodoInText(input, {
+    filePath: item.filePath,
+    lineNumber: item.lineNumber + 1,
+    status,
+  });
+  fs.writeFileSync(item.filePath, updated.text, "utf8");
+  return { ...item, todo: status === "in_progress" ? "IN_PROGRESS" : status.toUpperCase() };
+}
+
+function openAgendaTuiItem(item: ScheduledItem): void {
+  const line = item.lineNumber + 1;
+  const target = `${item.filePath}:${line}`;
+  const editor = String(process.env.EDITOR || "").trim();
+
+  if (editor) {
+    spawnSync(editor, [item.filePath], { stdio: "inherit", shell: true });
+    return;
+  }
+
+  const code = spawnSync("code", ["-g", target], { stdio: "inherit" });
+  if ((code.status ?? 1) === 0) return;
+
+  spawnSync("open", [item.filePath], { stdio: "inherit" });
+}
+
+async function runAgendaTui(options: {
+  startIso: string;
+  rangeLabel: string;
+  refreshMs: number;
+  collect: () => { items: ScheduledItem[]; skippedFiles: number };
+}): Promise<void> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    console.error("Error: --tui requires an interactive terminal.");
+    process.exit(1);
+  }
+
+  let mode: AgendaTuiMode = "focus";
+  let selected = 0;
+  let scrollOffset = 0;
+  let message = "";
+  let items: ScheduledItem[] = [];
+  let skippedFiles = 0;
+  let rows: AgendaTuiRow[] = [];
+  let lastRefresh = new Date(0);
+  let disposed = false;
+  let refreshTimer: NodeJS.Timeout | null = null;
+
+  const itemIndexes = (): number[] =>
+    rows.map((row, index) => (row.type === "item" ? index : -1)).filter((index) => index >= 0);
+  const selectedRow = (): AgendaTuiRow | undefined => rows[selected];
+
+  const ensureSelection = (): void => {
+    const indexes = itemIndexes();
+    if (indexes.length === 0) {
+      selected = 0;
+      return;
+    }
+    if (!indexes.includes(selected)) {
+      selected = indexes[0]!;
+    }
+  };
+
+  const refresh = (): void => {
+    const result = options.collect();
+    items = result.items;
+    skippedFiles = result.skippedFiles;
+    rows = buildAgendaTuiRows(items, options.startIso, mode);
+    ensureSelection();
+    lastRefresh = new Date();
+  };
+
+  const moveSelection = (delta: number): void => {
+    const indexes = itemIndexes();
+    if (indexes.length === 0) return;
+    const current = Math.max(0, indexes.indexOf(selected));
+    const next = Math.min(indexes.length - 1, Math.max(0, current + delta));
+    selected = indexes[next]!;
+  };
+
+  const render = (): void => {
+    const width = process.stdout.columns || 100;
+    const height = process.stdout.rows || 30;
+    const bodyHeight = Math.max(8, height - 5);
+    const header = [
+      `Org2 agenda, ${mode === "focus" ? "focus" : mode === "today" ? "today" : "range"} view, ${options.rangeLabel}`,
+      `today ${items.filter((item) => item.date === options.startIso && isAgendaTuiActionable(item)).length} actionable, overdue ${items.filter((item) => item.date < options.startIso && isAgendaTuiActionable(item)).length}, refresh ${Math.max(1, Math.round(options.refreshMs / 1000))}s, updated ${lastRefresh.toLocaleTimeString()}`,
+      "keys: j/k or arrows move, 1 focus, 2 today, 3 range, space cycle, t/i/d/x set status, s today, n tomorrow, w next week, m next month, S/N/W/M deadlines, o open, r refresh, q quit",
+    ];
+
+    if (selected < scrollOffset) scrollOffset = selected;
+    if (selected >= scrollOffset + bodyHeight) scrollOffset = selected - bodyHeight + 1;
+
+    const visibleRows = rows.slice(scrollOffset, scrollOffset + bodyHeight);
+    const body = visibleRows.map((row, visibleIndex) => {
+      const absoluteIndex = scrollOffset + visibleIndex;
+      if (row.type === "section") {
+        return `[1m${padTerminalLine(row.label, width)}[0m`;
+      }
+
+      const marker = absoluteIndex === selected ? "❯" : " ";
+      const status = `[${agendaTuiStatus(row.item)}]`;
+      const timing = row.item.date === options.startIso ? "today" : row.item.date < options.startIso ? `late ${row.item.date}` : row.item.date;
+      const time = row.item.time ? `${row.item.time} ` : "";
+      const priority = row.item.priority ? ` [#${row.item.priority}]` : "";
+      const file = path.basename(row.item.filePath);
+      const summary = `${marker} ${status} ${time}${row.item.headline}${priority} · ${timing} · ${row.item.kind} · ${file}:${row.item.lineNumber + 1}`;
+      const padded = padTerminalLine(summary, width);
+      return absoluteIndex === selected ? `[7m${padded}[0m` : padded;
+    });
+
+    const footer = padTerminalLine(message || `skipped files: ${skippedFiles}`, width);
+    const screen = ["[?25l[2J[H", ...header.map((line) => padTerminalLine(line, width)), "", ...body];
+    while (screen.length < height - 1) screen.push(" ".repeat(width));
+    screen.push(footer);
+    process.stdout.write(screen.join("\n"));
+  };
+
+  const cleanup = (): void => {
+    if (disposed) return;
+    disposed = true;
+    if (refreshTimer) clearInterval(refreshTimer);
+    process.stdin.setRawMode(false);
+    process.stdin.pause();
+    process.stdout.write("[0m[?25h[2J[H");
+  };
+
+  const withSuspendedTty = (fn: () => void): void => {
+    process.stdout.write("[0m[?25h");
+    process.stdin.setRawMode(false);
+    try {
+      fn();
+    } finally {
+      process.stdin.setRawMode(true);
+      process.stdin.resume();
+    }
+  };
+
+  refresh();
+  render();
+  refreshTimer = setInterval(() => {
+    try {
+      refresh();
+      message = "";
+      render();
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+      render();
+    }
+  }, options.refreshMs);
+
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+
+  await new Promise<void>((resolve, reject) => {
+    const onData = (chunk: Buffer) => {
+      const key = chunk.toString("utf8");
+      try {
+        if (key === "q" || key === "") {
+          cleanup();
+          process.stdin.off("data", onData);
+          resolve();
+          return;
+        }
+
+        if (key === "j" || key === "[B") moveSelection(1);
+        else if (key === "k" || key === "[A") moveSelection(-1);
+        else if (key === "r") refresh();
+        else if (key === "1" || key === "2" || key === "3") {
+          mode = nextAgendaTuiMode(mode, key);
+          refresh();
+        } else if ([" ", "t", "i", "d", "x", "o", "s", "n", "w", "m", "S", "N", "W", "M"].includes(key)) {
+          const row = selectedRow();
+          if (row?.type === "item") {
+            if (key === "o") {
+              withSuspendedTty(() => openAgendaTuiItem(row.item));
+            } else if (["s", "n", "w", "m", "S", "N", "W", "M"].includes(key)) {
+              const now = new Date();
+              const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+              const kind = ["S", "N", "W", "M"].includes(key) ? "deadline" : "scheduled";
+              const target =
+                key === "s" || key === "S"
+                  ? today
+                  : key === "n" || key === "N"
+                    ? addAgendaTuiUtcDays(today, 1)
+                    : key === "w" || key === "W"
+                      ? computeAgendaTuiUpcomingMonday(today)
+                      : computeAgendaTuiNextMonthFirst(today);
+              const dateIso = formatAgendaTuiIsoDate(target);
+              applyAgendaTuiPlanning(row.item, kind, dateIso);
+              message = `${kind.toUpperCase()} ${formatAgendaTuiPlanningLabel(dateIso)} → ${row.item.headline}`;
+              refresh();
+            } else {
+              const nextStatus: TodoStatus =
+                key === " "
+                  ? cycleAgendaTuiStatus(row.item)
+                  : key === "t"
+                    ? "todo"
+                    : key === "i"
+                      ? "in_progress"
+                      : key === "d"
+                        ? "done"
+                        : "canceled";
+              applyAgendaTuiTodo(row.item, nextStatus);
+              message = `${nextStatus} → ${row.item.headline}`;
+              refresh();
+            }
+          }
+        }
+
+        render();
+      } catch (error) {
+        cleanup();
+        process.stdin.off("data", onData);
+        reject(error);
+      }
+    };
+
+    process.stdin.on("data", onData);
+  }).finally(() => cleanup());
+}
+
 function compareAgendaPriorityValues(
   aPriority: string | undefined,
   bPriority: string | undefined,
@@ -3671,363 +4027,6 @@ function listOrgLikeFiles(rootDir: string, recursiveScan: boolean): string[] {
   return out;
 }
 
-function truncateCell(text: string, width: number): string {
-  if (width <= 0) return "";
-  if (text.length <= width) return text.padEnd(width, " ");
-  if (width === 1) return "…";
-  return `${text.slice(0, width - 1)}…`;
-}
-
-const ANSI_RESET = "\x1b[0m";
-const ANSI_DIM = "\x1b[2m";
-const ANSI_BOLD = "\x1b[1m";
-const ANSI_REVERSE = "\x1b[7m";
-const ANSI_CYAN = "\x1b[36m";
-const ANSI_BLUE = "\x1b[34m";
-const ANSI_YELLOW = "\x1b[33m";
-const ANSI_RED = "\x1b[31m";
-const ANSI_GREEN = "\x1b[32m";
-const ANSI_MAGENTA = "\x1b[35m";
-const ANSI_GRAY = "\x1b[90m";
-
-function stripAnsi(text: string): string {
-  return text.replace(/\x1b\[[0-9;]*m/g, "");
-}
-
-function padAnsi(text: string, width: number): string {
-  const visible = stripAnsi(text).length;
-  if (visible >= width) return text;
-  return text + " ".repeat(width - visible);
-}
-
-function truncateAnsi(text: string, width: number): string {
-  if (width <= 0) return "";
-  let out = "";
-  let visible = 0;
-  for (let i = 0; i < text.length; i += 1) {
-    if (text[i] === "\x1b") {
-      const match = /^\x1b\[[0-9;]*m/.exec(text.slice(i));
-      if (match) {
-        out += match[0];
-        i += match[0].length - 1;
-        continue;
-      }
-    }
-    if (visible >= width) break;
-    out += text[i];
-    visible += 1;
-  }
-  if (visible < stripAnsi(text).length && width >= 1) {
-    if (visible === width && width > 1) out = out.slice(0, -1) + "…";
-    else if (visible < width) out += "…";
-  }
-  return padAnsi(out + ANSI_RESET, width);
-}
-
-function wrapText(text: string, width: number): string[] {
-  if (width <= 1) return [truncateCell(text, Math.max(1, width))];
-  const words = String(text || "").split(/\s+/).filter(Boolean);
-  if (words.length === 0) return [""];
-  const lines: string[] = [];
-  let current = "";
-  for (const word of words) {
-    if (!current) {
-      current = word;
-      continue;
-    }
-    if (`${current} ${word}`.length <= width) {
-      current = `${current} ${word}`;
-      continue;
-    }
-    lines.push(current);
-    if (word.length > width) {
-      let remaining = word;
-      while (remaining.length > width) {
-        lines.push(remaining.slice(0, width - 1) + "…");
-        remaining = remaining.slice(width - 1);
-      }
-      current = remaining;
-    } else {
-      current = word;
-    }
-  }
-  if (current) lines.push(current);
-  return lines;
-}
-
-function agendaTuiWhen(item: ScheduledItem, todayIso: string): "overdue" | "today" | "upcoming" {
-  if (item.date < todayIso) return "overdue";
-  if (item.date === todayIso) return "today";
-  return "upcoming";
-}
-
-function agendaTuiStatusColor(todo: string | undefined): string {
-  const normalized = String(todo || "").trim().toUpperCase();
-  if (!normalized) return ANSI_GRAY;
-  if (["DONE", "COMPLETE", "COMPLETED", "CLOSED", "RESOLVED"].includes(normalized)) return ANSI_GREEN;
-  if (["BLOCKED", "WAIT", "WAITING", "ON-HOLD", "PAUSED", "WIP", "IN_PROGRESS", "IN-PROGRESS"].includes(normalized)) return ANSI_MAGENTA;
-  return ANSI_CYAN;
-}
-
-function formatAgendaTuiItem(item: ScheduledItem, selected: boolean, width: number, todayIso: string): string {
-  const when = agendaTuiWhen(item, todayIso);
-  const pointer = selected ? `${ANSI_REVERSE}>${ANSI_RESET}` : `${ANSI_DIM}›${ANSI_RESET}`;
-  const whenBadge = when === "overdue" ? `${ANSI_RED}!${ANSI_RESET}` : `${ANSI_YELLOW}●${ANSI_RESET}`;
-  const time = item.time ? `${ANSI_BLUE}${item.time}${ANSI_RESET} ` : "";
-  const todo = item.todo ? `${agendaTuiStatusColor(item.todo)}[${item.todo}]${ANSI_RESET} ` : "";
-  const priority = item.priority ? `${ANSI_YELLOW}[#${item.priority}]${ANSI_RESET} ` : "";
-  const body = `${pointer} ${whenBadge} ${ANSI_DIM}${item.date}${ANSI_RESET} ${time}${priority}${todo}${item.headline}`.trimEnd();
-  return truncateAnsi(body, width);
-}
-
-interface AgendaTuiSection {
-  key: string;
-  label: string;
-  color: string;
-  items: ScheduledItem[];
-}
-
-type AgendaTuiRow =
-  | { kind: "section"; sectionIndex: number }
-  | { kind: "item"; sectionIndex: number; itemIndex: number; item: ScheduledItem };
-
-function buildAgendaTuiSections(items: ScheduledItem[], todayIso: string): AgendaTuiSection[] {
-  const overdue = items.filter((item) => item.date < todayIso);
-  const today = items.filter((item) => item.date === todayIso);
-  const upcoming = items.filter((item) => item.date > todayIso);
-  return [
-    { key: "overdue", label: "Overdue", color: ANSI_RED, items: overdue },
-    { key: "today", label: "Today", color: ANSI_YELLOW, items: today },
-    { key: "upcoming", label: "Next 7 Days", color: ANSI_GREEN, items: upcoming },
-  ];
-}
-
-function buildAgendaTuiRows(sections: AgendaTuiSection[], collapsed: Set<number>): AgendaTuiRow[] {
-  const rows: AgendaTuiRow[] = [];
-  sections.forEach((section, sectionIndex) => {
-    rows.push({ kind: "section", sectionIndex });
-    if (collapsed.has(sectionIndex)) return;
-    section.items.forEach((item, itemIndex) => rows.push({ kind: "item", sectionIndex, itemIndex, item }));
-  });
-  return rows;
-}
-
-function firstSelectableAgendaTuiRow(rows: AgendaTuiRow[]): number {
-  const firstItem = rows.findIndex((row) => row.kind === "item");
-  return firstItem >= 0 ? firstItem : 0;
-}
-
-function lastSelectableAgendaTuiRow(rows: AgendaTuiRow[]): number {
-  for (let i = rows.length - 1; i >= 0; i -= 1) {
-    if (rows[i]?.kind === "item" || rows[i]?.kind === "section") return i;
-  }
-  return 0;
-}
-
-async function runAgendaTui(opts: {
-  title: string;
-  todayIso: string;
-  load: () => { outputItems: ScheduledItem[]; skippedFileCount: number };
-}): Promise<void> {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error("agenda --tui requires an interactive TTY");
-  }
-
-  const stdin = process.stdin;
-  const stdout = process.stdout;
-  readline.emitKeypressEvents(stdin);
-  if (stdin.isTTY) stdin.setRawMode(true);
-
-  let selected = 0;
-  let showDetail = true;
-  let message = "";
-  let items: ScheduledItem[] = [];
-  let skippedFileCount = 0;
-  let sections: AgendaTuiSection[] = [];
-  let rows: AgendaTuiRow[] = [];
-  const collapsedSections = new Set<number>();
-  let cleanedUp = false;
-
-  const reload = (nextMessage?: string) => {
-    const loaded = opts.load();
-    items = loaded.outputItems;
-    skippedFileCount = loaded.skippedFileCount;
-    sections = buildAgendaTuiSections(items, opts.todayIso);
-    rows = buildAgendaTuiRows(sections, collapsedSections);
-    if (selected >= rows.length) selected = Math.max(0, rows.length - 1);
-    if (rows[selected]?.kind !== "item") selected = firstSelectableAgendaTuiRow(rows);
-    if (nextMessage !== undefined) message = nextMessage;
-  };
-
-  const selectedRow = (): AgendaTuiRow | null => rows[selected] || null;
-  const selectedItem = (): ScheduledItem | null => {
-    const row = selectedRow();
-    return row && row.kind === "item" ? row.item : null;
-  };
-
-  const moveSelection = (delta: number) => {
-    if (rows.length === 0) return;
-    selected = Math.max(0, Math.min(rows.length - 1, selected + delta));
-  };
-
-  const setSectionCollapsed = (sectionIndex: number, collapsed: boolean) => {
-    const row = selectedRow();
-    const shouldSnapToSection = row?.kind === "item" && row.sectionIndex === sectionIndex && collapsed;
-    if (collapsed) collapsedSections.add(sectionIndex);
-    else collapsedSections.delete(sectionIndex);
-    rows = buildAgendaTuiRows(sections, collapsedSections);
-    if (shouldSnapToSection) {
-      selected = rows.findIndex((candidate) => candidate.kind === "section" && candidate.sectionIndex === sectionIndex);
-      if (selected < 0) selected = firstSelectableAgendaTuiRow(rows);
-      return;
-    }
-    selected = Math.max(0, Math.min(selected, rows.length - 1));
-  };
-
-  const render = () => {
-    const width = stdout.columns || 100;
-    const height = stdout.rows || 30;
-    const activeItem = selectedItem();
-    const activeRow = selectedRow();
-    const listWidth = Math.max(30, Math.floor(width * 0.52));
-    const detailWidth = Math.max(20, width - listWidth - 3);
-    const visibleRows = Math.max(5, height - 6);
-    const start = Math.max(0, Math.min(selected - Math.floor(visibleRows / 2), Math.max(0, rows.length - visibleRows)));
-    const visible = rows.slice(start, start + visibleRows);
-    const detailLines = showDetail && activeItem
-      ? [
-          ...wrapText(`Headline: ${activeItem.headline}`, detailWidth),
-          ...wrapText(`TODO: ${activeItem.todo || "-"}`, detailWidth),
-          ...wrapText(`Date: ${activeItem.date}${activeItem.time ? ` ${activeItem.time}` : ""}`, detailWidth),
-          ...wrapText(`Kind: ${activeItem.kind}`, detailWidth),
-          ...wrapText(`File: ${activeItem.filePath}`, detailWidth),
-          ...wrapText(`Line: ${activeItem.lineNumber}`, detailWidth),
-          ...wrapText(`Tags: ${activeItem.tags.length ? activeItem.tags.join(", ") : "-"}`, detailWidth),
-          ...wrapText(`Priority: ${activeItem.priority || "-"}`, detailWidth),
-          ...wrapText(`Effort: ${activeItem.effort || "-"}`, detailWidth),
-          ...wrapText(`Status: ${agendaTuiWhen(activeItem, opts.todayIso)}`, detailWidth),
-        ]
-      : [activeRow?.kind === "section" ? "Section selected. Use left/right to collapse or expand." : "Detail hidden, press Enter to show it again."];
-    const lines: string[] = [];
-
-    lines.push(truncateAnsi(`${ANSI_BOLD}${opts.title}${ANSI_RESET}  ${ANSI_RED}overdue${ANSI_RESET} + ${ANSI_YELLOW}today${ANSI_RESET} + ${ANSI_GREEN}next 7 days${ANSI_RESET}  items:${items.length}  skipped:${skippedFileCount}`, width));
-    lines.push(truncateCell("j/k or arrows move, gg/G jump, h/left collapse, l/right expand, enter detail, r refresh, x toggle done, c hide detail, q quit", width));
-    lines.push("─".repeat(Math.max(1, width)));
-
-    for (let i = 0; i < visibleRows; i += 1) {
-      const row = visible[i];
-      let listLine = " ".repeat(listWidth);
-      if (row?.kind === "section") {
-        const section = sections[row.sectionIndex];
-        const isCollapsed = collapsedSections.has(row.sectionIndex);
-        const marker = isCollapsed ? "+" : "−";
-        const sectionText = `${section.color}${ANSI_BOLD}${marker} ${section.label}${ANSI_RESET} ${ANSI_DIM}(${section.items.length})${ANSI_RESET}`;
-        listLine = truncateAnsi(sectionText, listWidth);
-      } else if (row?.kind === "item") {
-        listLine = formatAgendaTuiItem(row.item, start + i === selected, listWidth, opts.todayIso);
-      }
-      const detailLine = truncateCell(detailLines[i] || "", detailWidth);
-      lines.push(`${listLine} │ ${detailLine}`);
-    }
-
-    lines.push("─".repeat(Math.max(1, width)));
-    lines.push(truncateCell(message || (activeRow ? `Selected ${selected + 1}/${rows.length}` : "No overdue, today, or upcoming items."), width));
-    stdout.write("\x1b[?25l\x1b[2J\x1b[H" + lines.join("\n"));
-  };
-
-  const cleanup = () => {
-    if (cleanedUp) return;
-    cleanedUp = true;
-    stdout.write("\x1b[?25h\x1b[2J\x1b[H");
-    stdin.removeAllListeners("keypress");
-    if (stdin.isTTY) stdin.setRawMode(false);
-    stdin.pause();
-  };
-
-  const mutateSelectedTodo = () => {
-    const item = selectedItem();
-    if (!item) {
-      message = "Nothing selected.";
-      render();
-      return;
-    }
-    if (item.lineNumber < 0) {
-      message = "Selected row has no editable heading line.";
-      render();
-      return;
-    }
-    const beforeRaw = fs.readFileSync(item.filePath, "utf8");
-    const nextStatus: TodoStatus = item.todo === "DONE" ? "todo" : "done";
-    const res = updateTodoInText(beforeRaw, {
-      filePath: item.filePath,
-      lineNumber: item.lineNumber + 1,
-      status: nextStatus,
-      now: new Date(),
-      logbook: false,
-    });
-    fs.writeFileSync(item.filePath, res.text, "utf8");
-    reload(`Updated ${path.basename(item.filePath)}:${res.headingLineNumber} to ${res.newStatus}.`);
-    render();
-  };
-
-  try {
-    reload("Loaded overdue + today + next 7 days agenda.");
-    render();
-
-    let pendingG = false;
-    await new Promise<void>((resolve, reject) => {
-      stdin.on("keypress", (_str, key) => {
-        try {
-          if (key?.sequence === "\u0003" || key?.name === "q") {
-            resolve();
-            return;
-          }
-          if (key?.shift && key?.name === "g") {
-            selected = lastSelectableAgendaTuiRow(rows);
-            pendingG = false;
-            render();
-            return;
-          }
-          if (key?.name === "g") {
-            if (pendingG) {
-              selected = 0;
-              pendingG = false;
-            } else {
-              pendingG = true;
-              render();
-              return;
-            }
-          } else {
-            pendingG = false;
-          }
-          if (key?.name === "down" || key?.name === "j") moveSelection(1);
-          if (key?.name === "up" || key?.name === "k") moveSelection(-1);
-          if (key?.name === "left" || key?.name === "h") {
-            const row = selectedRow();
-            if (row) setSectionCollapsed(row.sectionIndex, true);
-          }
-          if (key?.name === "right" || key?.name === "l") {
-            const row = selectedRow();
-            if (row) setSectionCollapsed(row.sectionIndex, false);
-          }
-          if (key?.name === "return" || key?.name === "space") showDetail = !showDetail;
-          if (key?.name === "c") showDetail = false;
-          if (key?.name === "r") reload("Refreshed agenda.");
-          if (key?.name === "x") {
-            mutateSelectedTodo();
-            return;
-          }
-          render();
-        } catch (error) {
-          reject(error);
-        }
-      });
-    });
-  } finally {
-    cleanup();
-  }
-}
-
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -4038,6 +4037,7 @@ async function main(): Promise<void> {
   let today = getTodayString();
   let format: "text" | "json" = "text";
   let agendaTui = false;
+  let agendaTuiRefreshSeconds = 30;
   let recursive = false;
   let includeOverdue = true;
   let agendaStatusFiltersRaw: string[] = [];
@@ -4449,6 +4449,20 @@ async function main(): Promise<void> {
       i++;
       if (i < args.length) {
         today = args[i];
+        i++;
+      }
+    } else if (arg === "--tui") {
+      if (command === "agenda") {
+        agendaTui = true;
+      }
+      i++;
+    } else if (arg === "--refresh-seconds") {
+      i++;
+      if (i < args.length) {
+        if (command === "agenda") {
+          const parsed = parseInt(args[i]!, 10);
+          if (!isNaN(parsed) && parsed >= 1) agendaTuiRefreshSeconds = parsed;
+        }
         i++;
       }
     } else if (arg === "--from") {
@@ -4993,9 +5007,6 @@ async function main(): Promise<void> {
         }
         i++;
       }
-    } else if (arg === "--tui") {
-      if (command === "agenda") agendaTui = true;
-      i++;
     } else if (arg === "--style" || arg === "--link-style") {
       i++;
       if (i < args.length) {
@@ -5202,7 +5213,7 @@ Usage:
   org2 <command> [options]
 
 Core commands:
-  org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
+  org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
   org2 todo <set|toggle> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 crypt <encrypt|decrypt> --file FILE (--line N | --pos LINE[:COL]) --passphrase PASS [--gpg-program PATH] [--apply]
@@ -8535,7 +8546,7 @@ Tips:
   const startIso = startDate.toISOString().slice(0, 10);
   const endIso = endDate.toISOString().slice(0, 10);
 
-  const loadAgendaOutput = () => {
+  const collectAgendaOutput = (): { outputItems: ScheduledItem[]; skippedFileCount: number } => {
     const allItems: ScheduledItem[] = [];
     let skippedFileCount = 0;
 
@@ -8545,7 +8556,7 @@ Tips:
 
       try {
         const content = fs.readFileSync(filePath, "utf8");
-        const normalized = content.replace(/\r\n/g, "\n");
+        const normalized = content.replace(/\r?\n/g, "\n");
 
         // Agenda intentionally uses a lightweight line-based scan so we can provide
         // stable 0-based line numbers for editor integrations (VS Code agenda → open file).
@@ -8604,12 +8615,6 @@ Tips:
       }
     }
 
-    if (skippedFileCount > 0 && !verboseErrors) {
-      console.error(
-        `Skipped ${skippedFileCount} file(s) due to parse errors (use --verbose-errors to see details).`,
-      );
-    }
-
     allItems.sort((a, b) =>
       compareAgendaItems(
         a,
@@ -8634,22 +8639,33 @@ Tips:
     );
     const dayLimitedItems = applyAgendaDayLimit(groupLimitedItems, agendaDayLimit);
     const outputItems = agendaLimit ? dayLimitedItems.slice(0, agendaLimit) : dayLimitedItems;
+
     return { outputItems, skippedFileCount };
   };
 
+  const { outputItems, skippedFileCount } = collectAgendaOutput();
+
+  if (skippedFileCount > 0 && !verboseErrors) {
+    console.error(
+      `Skipped ${skippedFileCount} file(s) due to parse errors (use --verbose-errors to see details).`,
+    );
+  }
+
   if (agendaTui) {
+    const explicitRange = args.includes("--from") || args.includes("--to") || args.includes("--days");
     await runAgendaTui({
-      title: "org2 agenda --tui",
-      todayIso: startIso,
-      load: loadAgendaOutput,
+      startIso,
+      rangeLabel: explicitRange ? `${startIso} → ${endIso}` : `${startIso} (today-first)`,
+      refreshMs: agendaTuiRefreshSeconds * 1000,
+      collect: () => {
+        const { outputItems: refreshed, skippedFileCount: refreshedSkipped } = collectAgendaOutput();
+        return { items: refreshed, skippedFiles: refreshedSkipped };
+      },
     });
     return;
   }
 
-  const { outputItems, skippedFileCount } = loadAgendaOutput();
-
   if (format === "json") {
-
     const overdue = outputItems.filter((it) => it.date < startIso);
     const upcoming = outputItems.filter((it) => it.date >= startIso);
 
