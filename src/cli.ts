@@ -3346,7 +3346,7 @@ async function runAgendaTui(options: {
     magenta: "\u001b[35m",
   } as const;
 
-  let mode: AgendaTuiMode = "focus";
+  let mode: AgendaTuiMode = "range";
   let selected = 0;
   let scrollOffset = 0;
   let message = "";
