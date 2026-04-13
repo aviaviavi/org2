@@ -3203,12 +3203,12 @@ function buildAgendaTuiSections(items: ScheduledItem[], startIso: string, mode: 
   };
 
   if (mode === "focus") {
-    pushSection("focus-today", `Today, do these first`, todayActionable, "today");
+    pushSection("focus-today", `Today`, todayActionable, "today");
     if (overdueActionable.length > 0) {
-      pushSection("focus-overdue", `Still hanging over you`, overdueActionable, "overdue");
+      pushSection("focus-overdue", `Overdue`, overdueActionable, "overdue");
     }
     if (today.length > todayActionable.length) {
-      pushSection("focus-closed", `Today, already done or canceled`, today.filter((item) => !isAgendaTuiActionable(item)), "today");
+      pushSection("focus-closed", `Done or canceled`, today.filter((item) => !isAgendaTuiActionable(item)), "today");
     }
   } else if (mode === "today") {
     pushSection("today", "Today", today, "today");
