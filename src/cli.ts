@@ -683,9 +683,16 @@ type AgendaGroupOrder = AgendaGroupField[] | null;
 type AgendaDateOrder = "asc" | "desc";
 type AgendaTuiMode = "focus" | "today" | "range";
 
+type AgendaTuiSection = {
+  key: string;
+  label: string;
+  items: ScheduledItem[];
+  hint?: string;
+};
+
 type AgendaTuiRow =
-  | { type: "section"; label: string }
-  | { type: "item"; item: ScheduledItem; hint?: string };
+  | { type: "section"; key: string; label: string; count: number; hint?: string; collapsed: boolean }
+  | { type: "item"; item: ScheduledItem; sectionKey: string; hint?: string };
 
 const AGENDA_STATUS_ALLOWED_HINT =
   "default|none, all, active(=todo,in_progress), actionable(=todo,in_progress,custom), open|todo|backlog, in_progress|in-progress|prog|doing|started|waiting|wait|blocked|next|wip|hold|on-hold|paused, done|complete|completed|finish|finished|resolved, canceled|cancel|cancelled, closed(=done,canceled), custom";
@@ -3183,56 +3190,53 @@ function isAgendaTuiActionable(item: ScheduledItem): boolean {
   return bucket !== "done" && bucket !== "canceled";
 }
 
-function buildAgendaTuiRows(items: ScheduledItem[], startIso: string, mode: AgendaTuiMode): AgendaTuiRow[] {
+function buildAgendaTuiSections(items: ScheduledItem[], startIso: string, mode: AgendaTuiMode): AgendaTuiSection[] {
   const overdue = items.filter((item) => item.date < startIso);
   const today = items.filter((item) => item.date === startIso);
   const upcoming = items.filter((item) => item.date > startIso);
   const overdueActionable = overdue.filter(isAgendaTuiActionable);
   const todayActionable = today.filter(isAgendaTuiActionable);
 
-  const sections: Array<{ label: string; items: ScheduledItem[]; hint?: string }> = [];
+  const sections: AgendaTuiSection[] = [];
+  const pushSection = (key: string, label: string, sectionItems: ScheduledItem[], hint?: string): void => {
+    sections.push({ key, label, items: sectionItems, hint });
+  };
 
   if (mode === "focus") {
-    sections.push({
-      label: `Today, do these first (${todayActionable.length})`,
-      items: todayActionable,
-      hint: "today",
-    });
+    pushSection("focus-today", `Today, do these first`, todayActionable, "today");
     if (overdueActionable.length > 0) {
-      sections.push({
-        label: `Still hanging over you (${overdueActionable.length})`,
-        items: overdueActionable,
-        hint: "overdue",
-      });
+      pushSection("focus-overdue", `Still hanging over you`, overdueActionable, "overdue");
     }
     if (today.length > todayActionable.length) {
-      sections.push({
-        label: `Today, already done or canceled (${today.length - todayActionable.length})`,
-        items: today.filter((item) => !isAgendaTuiActionable(item)),
-        hint: "today",
-      });
+      pushSection("focus-closed", `Today, already done or canceled`, today.filter((item) => !isAgendaTuiActionable(item)), "today");
     }
   } else if (mode === "today") {
-    sections.push({ label: `Today (${today.length})`, items: today, hint: "today" });
-    if (overdue.length > 0) {
-      sections.push({ label: `Overdue (${overdue.length})`, items: overdue, hint: "overdue" });
-    }
+    pushSection("today", "Today", today, "today");
+    if (overdue.length > 0) pushSection("overdue", "Overdue", overdue, "overdue");
   } else {
-    if (overdue.length > 0) sections.push({ label: `Overdue (${overdue.length})`, items: overdue, hint: "overdue" });
-    if (today.length > 0) sections.push({ label: `Today (${today.length})`, items: today, hint: "today" });
-    if (upcoming.length > 0) sections.push({ label: `Next up (${upcoming.length})`, items: upcoming, hint: "upcoming" });
+    if (overdue.length > 0) pushSection("overdue", "Overdue", overdue, "overdue");
+    if (today.length > 0) pushSection("today", "Today", today, "today");
+    if (upcoming.length > 0) pushSection("upcoming", "Next up", upcoming, "upcoming");
   }
 
+  return sections;
+}
+
+function buildAgendaTuiRows(sections: AgendaTuiSection[], collapsedSections: Set<string>): AgendaTuiRow[] {
   const rows: AgendaTuiRow[] = [];
+
   for (const section of sections) {
-    rows.push({ type: "section", label: section.label });
-    for (const item of section.items) {
-      rows.push({ type: "item", item, hint: section.hint });
+    const collapsed = collapsedSections.has(section.key);
+    rows.push({ type: "section", key: section.key, label: section.label, count: section.items.length, hint: section.hint, collapsed });
+    if (!collapsed) {
+      for (const item of section.items) {
+        rows.push({ type: "item", item, sectionKey: section.key, hint: section.hint });
+      }
     }
   }
 
   if (rows.length === 0) {
-    rows.push({ type: "section", label: "Nothing scheduled in this view. Nice." });
+    rows.push({ type: "section", key: "empty", label: "Nothing scheduled in this view. Nice.", count: 0, collapsed: false });
   }
 
   return rows;
@@ -3330,83 +3334,187 @@ async function runAgendaTui(options: {
     process.exit(1);
   }
 
+  const ansi = {
+    reset: "\u001b[0m",
+    dim: "\u001b[2m",
+    bold: "\u001b[1m",
+    reverse: "\u001b[7m",
+    cyan: "\u001b[36m",
+    yellow: "\u001b[33m",
+    green: "\u001b[32m",
+    red: "\u001b[31m",
+    magenta: "\u001b[35m",
+  } as const;
+
   let mode: AgendaTuiMode = "focus";
   let selected = 0;
   let scrollOffset = 0;
   let message = "";
   let items: ScheduledItem[] = [];
   let skippedFiles = 0;
+  let sections: AgendaTuiSection[] = [];
   let rows: AgendaTuiRow[] = [];
   let lastRefresh = new Date(0);
   let disposed = false;
   let refreshTimer: NodeJS.Timeout | null = null;
+  const collapsedSections = new Set<string>();
 
-  const itemIndexes = (): number[] =>
-    rows.map((row, index) => (row.type === "item" ? index : -1)).filter((index) => index >= 0);
+  const stripAnsi = (input: string): string => input.replace(/\u001b\[[0-9;]*m/g, "");
+  const visibleLength = (input: string): number => stripAnsi(input).length;
+  const padPlain = (input: string, width: number): string => truncateForTerminal(input, width).padEnd(Math.max(width, 0), " ");
+  const padStyled = (input: string, width: number): string => {
+    const plain = truncateForTerminal(stripAnsi(input), width);
+    return plain.padEnd(Math.max(width, 0), " ");
+  };
+  const colorize = (text: string, color: string): string => `${color}${text}${ansi.reset}`;
+  const bucketForItem = (item: ScheduledItem): AgendaStatusBucket | null => agendaStatusBucketForKeyword(item.todo);
+  const colorForBucket = (bucket: AgendaStatusBucket | null): string => {
+    if (bucket === "todo") return ansi.yellow;
+    if (bucket === "in_progress") return ansi.cyan;
+    if (bucket === "done") return ansi.green;
+    if (bucket === "canceled") return ansi.dim;
+    if (bucket === "custom") return ansi.magenta;
+    return ansi.reset;
+  };
+
   const selectedRow = (): AgendaTuiRow | undefined => rows[selected];
 
   const ensureSelection = (): void => {
-    const indexes = itemIndexes();
-    if (indexes.length === 0) {
+    if (rows.length === 0) {
       selected = 0;
       return;
     }
-    if (!indexes.includes(selected)) {
-      selected = indexes[0]!;
-    }
+    selected = Math.max(0, Math.min(selected, rows.length - 1));
   };
 
   const refresh = (): void => {
     const result = options.collect();
     items = result.items;
     skippedFiles = result.skippedFiles;
-    rows = buildAgendaTuiRows(items, options.startIso, mode);
+    sections = buildAgendaTuiSections(items, options.startIso, mode);
+    const liveKeys = new Set(sections.map((section) => section.key));
+    for (const key of Array.from(collapsedSections)) {
+      if (!liveKeys.has(key)) collapsedSections.delete(key);
+    }
+    rows = buildAgendaTuiRows(sections, collapsedSections);
     ensureSelection();
     lastRefresh = new Date();
   };
 
   const moveSelection = (delta: number): void => {
-    const indexes = itemIndexes();
-    if (indexes.length === 0) return;
-    const current = Math.max(0, indexes.indexOf(selected));
-    const next = Math.min(indexes.length - 1, Math.max(0, current + delta));
-    selected = indexes[next]!;
+    if (rows.length === 0) return;
+    selected = Math.max(0, Math.min(rows.length - 1, selected + delta));
+  };
+
+  const toggleCollapse = (): void => {
+    const row = selectedRow();
+    if (!row) return;
+    const key = row.type === "section" ? row.key : row.sectionKey;
+    if (!key) return;
+    if (collapsedSections.has(key)) collapsedSections.delete(key);
+    else collapsedSections.add(key);
+    rows = buildAgendaTuiRows(sections, collapsedSections);
+    if (row.type === "item") {
+      selected = Math.max(0, rows.findIndex((candidate) => candidate.type === "section" && candidate.key === key));
+    }
+    ensureSelection();
+  };
+
+  const buildDetailLines = (row: AgendaTuiRow | undefined, width: number, bodyHeight: number): string[] => {
+    const lines: string[] = [];
+    if (!row) return [padPlain("No items.", width)];
+
+    if (row.type === "section") {
+      const section = sections.find((candidate) => candidate.key === row.key);
+      lines.push(padPlain(`${row.label} (${row.count})`, width));
+      lines.push(padPlain(row.collapsed ? "collapsed, press enter/l to expand" : "expanded, press enter/h to collapse", width));
+      if (row.hint) lines.push(padPlain(`bucket: ${row.hint}`, width));
+      if (section && section.items.length > 0) {
+        lines.push(padPlain("", width));
+        lines.push(padPlain("first items:", width));
+        for (const item of section.items.slice(0, Math.max(0, bodyHeight - lines.length - 1))) {
+          lines.push(padPlain(`• ${item.headline}`, width));
+        }
+      }
+    } else {
+      const item = row.item;
+      const status = agendaTuiStatus(item);
+      const timing = item.date === options.startIso ? "today" : item.date < options.startIso ? `overdue since ${item.date}` : item.date;
+      const kind = String(item.kind || "").toUpperCase();
+      lines.push(padPlain(item.headline, width));
+      lines.push(padPlain(`${status || "ITEM"} · ${kind || "ITEM"} · ${timing}`, width));
+      lines.push(padPlain(`${path.basename(item.filePath)}:${item.lineNumber + 1}`, width));
+      if (item.time) lines.push(padPlain(`time: ${item.time}`, width));
+      if (item.priority) lines.push(padPlain(`priority: ${item.priority}`, width));
+      if (item.effort) lines.push(padPlain(`effort: ${item.effort}`, width));
+      if (item.tags && item.tags.length > 0) lines.push(padPlain(`tags: ${item.tags.join(", ")}`, width));
+      if (item.id) lines.push(padPlain(`id: ${item.id}`, width));
+      lines.push(padPlain("", width));
+      lines.push(padPlain("t/i/d/x status   s/n/w/m schedule", width));
+      lines.push(padPlain("S/N/W/M deadline  o open  enter collapse", width));
+    }
+
+    while (lines.length < bodyHeight) lines.push(" ".repeat(width));
+    return lines.slice(0, bodyHeight);
   };
 
   const render = (): void => {
     const width = process.stdout.columns || 100;
     const height = process.stdout.rows || 30;
-    const bodyHeight = Math.max(8, height - 5);
+    const headerHeight = 4;
+    const bodyHeight = Math.max(8, height - headerHeight - 1);
+    const leftWidth = Math.max(30, Math.min(width - 22, Math.floor(width * 0.58)));
+    const rightWidth = Math.max(20, width - leftWidth - 3);
+    const actionableToday = items.filter((item) => item.date === options.startIso && isAgendaTuiActionable(item)).length;
+    const actionableOverdue = items.filter((item) => item.date < options.startIso && isAgendaTuiActionable(item)).length;
     const header = [
-      `Org2 agenda, ${mode === "focus" ? "focus" : mode === "today" ? "today" : "range"} view, ${options.rangeLabel}`,
-      `today ${items.filter((item) => item.date === options.startIso && isAgendaTuiActionable(item)).length} actionable, overdue ${items.filter((item) => item.date < options.startIso && isAgendaTuiActionable(item)).length}, refresh ${Math.max(1, Math.round(options.refreshMs / 1000))}s, updated ${lastRefresh.toLocaleTimeString()}`,
-      "keys: j/k or arrows move, 1 focus, 2 today, 3 range, space cycle, t/i/d/x set status, s today, n tomorrow, w next week, m next month, S/N/W/M deadlines, o open, r refresh, q quit",
+      `${ansi.bold}Org2 agenda${ansi.reset}  ${mode === "focus" ? "focus" : mode === "today" ? "today" : "range"}  ${options.rangeLabel}`,
+      `${actionableToday} actionable today, ${actionableOverdue} overdue, refresh ${Math.max(1, Math.round(options.refreshMs / 1000))}s, updated ${lastRefresh.toLocaleTimeString()}`,
+      "j/k or arrows move, 1/2/3 views, enter collapse, t/i/d/x status, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit",
+      "",
     ];
 
     if (selected < scrollOffset) scrollOffset = selected;
     if (selected >= scrollOffset + bodyHeight) scrollOffset = selected - bodyHeight + 1;
 
     const visibleRows = rows.slice(scrollOffset, scrollOffset + bodyHeight);
-    const body = visibleRows.map((row, visibleIndex) => {
+    const leftLines = visibleRows.map((row, visibleIndex) => {
       const absoluteIndex = scrollOffset + visibleIndex;
+      const isSelected = absoluteIndex === selected;
+      let text: string;
+      let color: string = ansi.reset;
+
       if (row.type === "section") {
-        return `[1m${padTerminalLine(row.label, width)}[0m`;
+        const marker = row.collapsed ? "▶" : "▼";
+        text = `${marker} ${row.label} (${row.count})`;
+        color = row.hint === "overdue" ? ansi.red : ansi.bold + ansi.cyan;
+      } else {
+        const item = row.item;
+        const status = `[${agendaTuiStatus(item)}]`;
+        const timing = item.date === options.startIso ? "today" : item.date < options.startIso ? `late ${item.date}` : item.date;
+        const time = item.time ? `${item.time} ` : "";
+        const priority = item.priority ? ` [#${item.priority}]` : "";
+        text = `  ${status} ${time}${item.headline}${priority} · ${timing}`;
+        color = colorForBucket(bucketForItem(item));
       }
 
-      const marker = absoluteIndex === selected ? "❯" : " ";
-      const status = `[${agendaTuiStatus(row.item)}]`;
-      const timing = row.item.date === options.startIso ? "today" : row.item.date < options.startIso ? `late ${row.item.date}` : row.item.date;
-      const time = row.item.time ? `${row.item.time} ` : "";
-      const priority = row.item.priority ? ` [#${row.item.priority}]` : "";
-      const file = path.basename(row.item.filePath);
-      const summary = `${marker} ${status} ${time}${row.item.headline}${priority} · ${timing} · ${row.item.kind} · ${file}:${row.item.lineNumber + 1}`;
-      const padded = padTerminalLine(summary, width);
-      return absoluteIndex === selected ? `[7m${padded}[0m` : padded;
+      const padded = padStyled(text, leftWidth);
+      const tinted = color === ansi.reset ? padded : colorize(padded, color);
+      return isSelected ? `${ansi.reverse}${tinted}${ansi.reset}` : tinted;
     });
 
-    const footer = padTerminalLine(message || `skipped files: ${skippedFiles}`, width);
-    const screen = ["[?25l[2J[H", ...header.map((line) => padTerminalLine(line, width)), "", ...body];
-    while (screen.length < height - 1) screen.push(" ".repeat(width));
+    while (leftLines.length < bodyHeight) leftLines.push(" ".repeat(leftWidth));
+    const rightLines = buildDetailLines(selectedRow(), rightWidth, bodyHeight);
+
+    const screen = ["\u001b[?25l\u001b[2J\u001b[H", ...header.map((line) => padPlain(line, width))];
+    for (let index = 0; index < bodyHeight; index += 1) {
+      const left = leftLines[index] || " ".repeat(leftWidth);
+      const gap = `${ansi.dim} │ ${ansi.reset}`;
+      const right = rightLines[index] || " ".repeat(rightWidth);
+      screen.push(`${left}${gap}${right}`);
+    }
+
+    const footer = padPlain(message || `skipped files: ${skippedFiles}`, width);
     screen.push(footer);
     process.stdout.write(screen.join("\n"));
   };
@@ -3417,11 +3525,11 @@ async function runAgendaTui(options: {
     if (refreshTimer) clearInterval(refreshTimer);
     process.stdin.setRawMode(false);
     process.stdin.pause();
-    process.stdout.write("[0m[?25h[2J[H");
+    process.stdout.write("\u001b[0m\u001b[?25h\u001b[2J\u001b[H");
   };
 
   const withSuspendedTty = (fn: () => void): void => {
-    process.stdout.write("[0m[?25h");
+    process.stdout.write("\u001b[0m\u001b[?25h");
     process.stdin.setRawMode(false);
     try {
       fn();
@@ -3451,19 +3559,21 @@ async function runAgendaTui(options: {
     const onData = (chunk: Buffer) => {
       const key = chunk.toString("utf8");
       try {
-        if (key === "q" || key === "") {
+        if (key === "q" || key === "\u0003") {
           cleanup();
           process.stdin.off("data", onData);
           resolve();
           return;
         }
 
-        if (key === "j" || key === "[B") moveSelection(1);
-        else if (key === "k" || key === "[A") moveSelection(-1);
+        if (key === "j" || key === "\u001b[B") moveSelection(1);
+        else if (key === "k" || key === "\u001b[A") moveSelection(-1);
         else if (key === "r") refresh();
         else if (key === "1" || key === "2" || key === "3") {
           mode = nextAgendaTuiMode(mode, key);
           refresh();
+        } else if (key === "\r" || key === "\n" || key === "h" || key === "l") {
+          toggleCollapse();
         } else if ([" ", "t", "i", "d", "x", "o", "s", "n", "w", "m", "S", "N", "W", "M"].includes(key)) {
           const row = selectedRow();
           if (row?.type === "item") {
