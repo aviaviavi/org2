@@ -5,7 +5,6 @@ import path from "node:path";
 import process from "node:process";
 import crypto from "node:crypto";
 import os from "node:os";
-import readline from "node:readline/promises";
 import { spawnSync } from "node:child_process";
 import { parseOrgToCanonicalAst } from "./parser.js";
 import { printCanonicalAstToOrg } from "./printer.js";
@@ -3371,17 +3370,6 @@ function resolveAgendaTuiTodayDailyNotePath(config: Org2Config | null, baseDir: 
   return path.join(dailiesRoot, `${getTodayString()}.org2`);
 }
 
-async function promptAgendaTuiTodoTitle(): Promise<string | null> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const raw = await rl.question("New TODO for today's daily note: ");
-    const title = raw.trim().replace(/[\r\n]+/g, " ");
-    return title.length > 0 ? title : null;
-  } finally {
-    rl.close();
-  }
-}
-
 function appendAgendaTuiTodoToDailyNote(dailyNotePath: string, title: string): void {
   fs.mkdirSync(path.dirname(dailyNotePath), { recursive: true });
   const entry = `* TODO ${title}\n`;
@@ -3430,6 +3418,8 @@ async function runAgendaTui(options: {
   let lastRefresh = new Date(0);
   let disposed = false;
   let refreshTimer: NodeJS.Timeout | null = null;
+  let captureInputActive = false;
+  let captureInputValue = "";
   const collapsedSections = new Set<string>();
 
   const stripAnsi = (input: string): string => input.replace(/\u001b\[[0-9;]*m/g, "");
@@ -3561,7 +3551,7 @@ async function runAgendaTui(options: {
   const render = (): void => {
     const width = process.stdout.columns || 100;
     const height = process.stdout.rows || 30;
-    const headerHeight = 4;
+    const headerHeight = captureInputActive ? 6 : 4;
     const bodyHeight = Math.max(8, height - headerHeight - 1);
     const leftWidth = Math.max(30, Math.min(width - 22, Math.floor(width * 0.58)));
     const rightWidth = Math.max(20, width - leftWidth - 3);
@@ -3570,7 +3560,12 @@ async function runAgendaTui(options: {
     const header = [
       `${ansi.bold}Org2 agenda${ansi.reset}  ${mode === "focus" ? "focus" : mode === "today" ? "today" : "range"}  ${options.rangeLabel}`,
       `${actionableToday} actionable today, ${actionableOverdue} overdue, refresh ${Math.max(1, Math.round(options.refreshMs / 1000))}s, updated ${lastRefresh.toLocaleTimeString()}`,
-      "j/k or arrows move, gg/G jump, 1/2/3 views, enter collapse, c capture TODO, t/i/d/x status, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit",
+      captureInputActive
+        ? `CAPTURE TODO: ${captureInputValue}`
+        : "j/k or arrows move, gg/G jump, 1/2/3 views, enter collapse, c capture TODO, t/i/d/x status, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit",
+      captureInputActive
+        ? "type title, enter save, esc cancel, backspace delete"
+        : "",
       "",
     ];
 
@@ -3674,6 +3669,49 @@ async function runAgendaTui(options: {
     const onData = async (chunk: Buffer) => {
       const key = chunk.toString("utf8");
       try {
+        if (captureInputActive) {
+          if (key === "\u0003") {
+            cleanup();
+            process.stdin.off("data", onData);
+            resolve();
+            return;
+          }
+          if (key === "\u001b") {
+            captureInputActive = false;
+            captureInputValue = "";
+            message = "capture canceled";
+            render();
+            return;
+          }
+          if (key === "\r" || key === "\n") {
+            const title = captureInputValue.trim().replace(/[\r\n]+/g, " ");
+            captureInputActive = false;
+            captureInputValue = "";
+            if (title) {
+              const dailyNotePath = options.getTodayDailyNotePath();
+              appendAgendaTuiTodoToDailyNote(dailyNotePath, title);
+              message = `captured TODO → ${path.basename(dailyNotePath)}`;
+              refresh();
+            } else {
+              message = "capture canceled";
+            }
+            render();
+            return;
+          }
+          if (key === "\u007f" || key === "\b" || key === "\x08") {
+            captureInputValue = captureInputValue.slice(0, -1);
+            render();
+            return;
+          }
+          if (key >= " " && key !== "\u007f" && !key.startsWith("\u001b")) {
+            captureInputValue += key.replace(/[\r\n]+/g, " ");
+            render();
+            return;
+          }
+          render();
+          return;
+        }
+
         if (key === "q" || key === "\u0003") {
           cleanup();
           process.stdin.off("data", onData);
@@ -3693,15 +3731,9 @@ async function runAgendaTui(options: {
         else if (key === "j" || key === "\u001b[B") moveSelection(1);
         else if (key === "k" || key === "\u001b[A") moveSelection(-1);
         else if (key === "c") {
-          const title = await withSuspendedTtyAsync(() => promptAgendaTuiTodoTitle());
-          if (title) {
-            const dailyNotePath = options.getTodayDailyNotePath();
-            appendAgendaTuiTodoToDailyNote(dailyNotePath, title);
-            message = `captured TODO → ${path.basename(dailyNotePath)}`;
-            refresh();
-          } else {
-            message = "capture canceled";
-          }
+          captureInputActive = true;
+          captureInputValue = "";
+          message = "";
         } else if (key === "r") refresh();
         else if (key === "1" || key === "2" || key === "3") {
           mode = nextAgendaTuiMode(mode, key);
