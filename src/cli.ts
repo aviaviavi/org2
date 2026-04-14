@@ -3236,6 +3236,9 @@ function buildAgendaTuiSections(items: ScheduledItem[], startIso: string, mode: 
   const overdue = items.filter((item) => item.date < startIso);
   const today = items.filter((item) => item.date === startIso);
   const upcoming = items.filter((item) => item.date > startIso);
+  const next7EndIso = formatAgendaTuiIsoDate(addAgendaTuiUtcDays(parseIsoDate(startIso), 7));
+  const next7Days = upcoming.filter((item) => item.date <= next7EndIso);
+  const laterUpcoming = upcoming.filter((item) => item.date > next7EndIso);
   const overdueActionable = overdue.filter(isAgendaTuiActionable);
   const todayActionable = today.filter(isAgendaTuiActionable);
 
@@ -3258,7 +3261,8 @@ function buildAgendaTuiSections(items: ScheduledItem[], startIso: string, mode: 
   } else {
     if (overdue.length > 0) pushSection("overdue", "Overdue", overdue, "overdue");
     if (today.length > 0) pushSection("today", "Today", today, "today");
-    if (upcoming.length > 0) pushSection("upcoming", "Next up", upcoming, "upcoming");
+    if (next7Days.length > 0) pushSection("next-7-days", "Next 7 days", next7Days, "upcoming");
+    if (laterUpcoming.length > 0) pushSection("later", "Later", laterUpcoming, "upcoming");
   }
 
   return sections;
