@@ -34,6 +34,11 @@ export interface Org2Config {
   agendaFiles?: string[];
   recursive?: boolean;
   ignorePatterns?: string[];
+  roam?: {
+    indexDir?: string;
+    dailiesDir?: string;
+    nodesDir?: string;
+  };
   links?: {
     abbreviations?: Record<string, string>;
     linearTeam?: string;
@@ -185,4 +190,16 @@ export function resolveFilesFromConfig(
   const recursive = config.recursive !== false;
 
   return resolveFilesFromDir(baseDir, patterns, ignorePatterns, recursive);
+}
+
+export function resolveRoamIndexRootDir(config: Org2Config, baseDir: string = process.cwd()): string {
+  const configured = String(config.roam?.indexDir || "").trim();
+  if (!configured) return baseDir;
+  return path.isAbsolute(configured) ? configured : path.resolve(baseDir, configured);
+}
+
+export function resolveRoamDailiesRootDir(config: Org2Config, baseDir: string = process.cwd()): string {
+  const configured = String(config.roam?.dailiesDir || "").trim();
+  if (!configured) return resolveRoamIndexRootDir(config, baseDir);
+  return path.isAbsolute(configured) ? configured : path.resolve(baseDir, configured);
 }
