@@ -5,6 +5,7 @@ import path from "node:path";
 import process from "node:process";
 import crypto from "node:crypto";
 import os from "node:os";
+import readline from "node:readline/promises";
 import { spawnSync } from "node:child_process";
 import { parseOrgToCanonicalAst } from "./parser.js";
 import { printCanonicalAstToOrg } from "./printer.js";
@@ -14,6 +15,8 @@ import {
   loadConfig,
   resolveFilesFromConfig,
   resolveFilesFromDir,
+  resolveRoamDailiesRootDir,
+  type Org2Config,
   type Org2PublishProjectConfig,
 } from "./config.js";
 import { resolvePublishHeadIncludes } from "./publish-defaults.js";
@@ -3363,11 +3366,41 @@ function openAgendaTuiItem(item: ScheduledItem): void {
   spawnSync("open", [item.filePath], { stdio: "inherit" });
 }
 
+function resolveAgendaTuiTodayDailyNotePath(config: Org2Config | null, baseDir: string): string {
+  const dailiesRoot = resolveRoamDailiesRootDir(config || {}, baseDir);
+  return path.join(dailiesRoot, `${getTodayString()}.org2`);
+}
+
+async function promptAgendaTuiTodoTitle(): Promise<string | null> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const raw = await rl.question("New TODO for today's daily note: ");
+    const title = raw.trim().replace(/[\r\n]+/g, " ");
+    return title.length > 0 ? title : null;
+  } finally {
+    rl.close();
+  }
+}
+
+function appendAgendaTuiTodoToDailyNote(dailyNotePath: string, title: string): void {
+  fs.mkdirSync(path.dirname(dailyNotePath), { recursive: true });
+  const entry = `* TODO ${title}\n`;
+  if (!fs.existsSync(dailyNotePath)) {
+    fs.writeFileSync(dailyNotePath, entry, "utf8");
+    return;
+  }
+
+  const existing = fs.readFileSync(dailyNotePath, "utf8");
+  const prefix = existing.length === 0 || existing.endsWith("\n") ? existing : `${existing}\n`;
+  fs.writeFileSync(dailyNotePath, `${prefix}${entry}`, "utf8");
+}
+
 async function runAgendaTui(options: {
   startIso: string;
   rangeLabel: string;
   refreshMs: number;
   collect: () => { items: ScheduledItem[]; skippedFiles: number };
+  getTodayDailyNotePath: () => string;
 }): Promise<void> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     console.error("Error: --tui requires an interactive terminal.");
@@ -3495,7 +3528,7 @@ async function runAgendaTui(options: {
       if (item.tags && item.tags.length > 0) pushWrapped(`tags: ${item.tags.join(", ")}`, "tags: ".length);
       if (item.id) pushWrapped(`id: ${item.id}`);
       lines.push(padPlain("", width));
-      pushWrapped("t/i/d/x status   s/n/w/m schedule");
+      pushWrapped("c capture TODO    t/i/d/x status   s/n/w/m schedule");
       pushWrapped("S/N/W/M deadline  o open  enter collapse");
     }
 
@@ -3537,7 +3570,7 @@ async function runAgendaTui(options: {
     const header = [
       `${ansi.bold}Org2 agenda${ansi.reset}  ${mode === "focus" ? "focus" : mode === "today" ? "today" : "range"}  ${options.rangeLabel}`,
       `${actionableToday} actionable today, ${actionableOverdue} overdue, refresh ${Math.max(1, Math.round(options.refreshMs / 1000))}s, updated ${lastRefresh.toLocaleTimeString()}`,
-      "j/k or arrows move, gg/G jump, 1/2/3 views, enter collapse, t/i/d/x status, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit",
+      "j/k or arrows move, gg/G jump, 1/2/3 views, enter collapse, c capture TODO, t/i/d/x status, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit",
       "",
     ];
 
@@ -3609,6 +3642,17 @@ async function runAgendaTui(options: {
     }
   };
 
+  const withSuspendedTtyAsync = async <T>(fn: () => Promise<T>): Promise<T> => {
+    process.stdout.write("\u001b[0m\u001b[?25h");
+    process.stdin.setRawMode(false);
+    try {
+      return await fn();
+    } finally {
+      process.stdin.setRawMode(true);
+      process.stdin.resume();
+    }
+  };
+
   refresh();
   render();
   refreshTimer = setInterval(() => {
@@ -3627,7 +3671,7 @@ async function runAgendaTui(options: {
 
   await new Promise<void>((resolve, reject) => {
     let pendingG = false;
-    const onData = (chunk: Buffer) => {
+    const onData = async (chunk: Buffer) => {
       const key = chunk.toString("utf8");
       try {
         if (key === "q" || key === "\u0003") {
@@ -3648,7 +3692,17 @@ async function runAgendaTui(options: {
         else if (key === "G") selected = Math.max(0, rows.length - 1);
         else if (key === "j" || key === "\u001b[B") moveSelection(1);
         else if (key === "k" || key === "\u001b[A") moveSelection(-1);
-        else if (key === "r") refresh();
+        else if (key === "c") {
+          const title = await withSuspendedTtyAsync(() => promptAgendaTuiTodoTitle());
+          if (title) {
+            const dailyNotePath = options.getTodayDailyNotePath();
+            appendAgendaTuiTodoToDailyNote(dailyNotePath, title);
+            message = `captured TODO → ${path.basename(dailyNotePath)}`;
+            refresh();
+          } else {
+            message = "capture canceled";
+          }
+        } else if (key === "r") refresh();
         else if (key === "1" || key === "2" || key === "3") {
           mode = nextAgendaTuiMode(mode, key);
           refresh();
@@ -8304,6 +8358,9 @@ Tips:
   }
 
   // agenda
+  let agendaConfig: Org2Config | null = null;
+  let agendaConfigBaseDir = process.cwd();
+
   // Determine files to process
   if (!dir && files.length === 0) {
     // Try to load from config
@@ -8312,6 +8369,8 @@ Tips:
       try {
         const config = loadConfig(configPath);
         const configDir = path.dirname(configPath);
+        agendaConfig = config;
+        agendaConfigBaseDir = configDir;
         files = resolveFilesFromConfig(config, configDir);
 
         if (files.length === 0) {
@@ -8351,6 +8410,19 @@ Tips:
     };
 
     files = listOrgFiles(dir);
+  }
+
+  if (dir && files.length > 0) agendaConfigBaseDir = path.resolve(dir);
+
+  if (!agendaConfig) {
+    const configLookupStart = dir ? path.resolve(dir) : process.cwd();
+    const configPath = findConfigFile(configLookupStart);
+    if (configPath) {
+      try {
+        agendaConfig = loadConfig(configPath);
+        agendaConfigBaseDir = path.dirname(configPath);
+      } catch {}
+    }
   }
 
   const parsedAgendaStatus = parseAgendaStatusFilterArgs(agendaStatusFiltersRaw);
@@ -8847,6 +8919,7 @@ Tips:
       startIso,
       rangeLabel: explicitRange ? `${startIso} → ${endIso}` : `${startIso} (today-first)`,
       refreshMs: agendaTuiRefreshSeconds * 1000,
+      getTodayDailyNotePath: () => resolveAgendaTuiTodayDailyNotePath(agendaConfig, agendaConfigBaseDir),
       collect: () => {
         const { outputItems: refreshed, skippedFileCount: refreshedSkipped } = collectAgendaOutput();
         return { items: refreshed, skippedFiles: refreshedSkipped };
