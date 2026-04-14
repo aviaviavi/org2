@@ -3177,6 +3177,46 @@ function truncateForTerminal(input: string, width: number): string {
   return `${input.slice(0, width - 1)}…`;
 }
 
+function wrapTerminalLine(input: string, width: number, continuationIndent = 0): string[] {
+  if (width <= 0) return [""];
+
+  const text = input.trimEnd();
+  if (!text) return [""];
+
+  const indent = Math.max(0, Math.min(continuationIndent, Math.max(0, width - 1)));
+  const indentText = " ".repeat(indent);
+  const available = Math.max(1, width - indent);
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+
+  const pushCurrent = (): void => {
+    if (current) lines.push(current);
+    current = "";
+  };
+
+  for (const word of words) {
+    const lineWidth = lines.length === 0 ? width : available;
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= lineWidth) {
+      current = candidate;
+      continue;
+    }
+
+    if (current) pushCurrent();
+
+    let remainder = word;
+    while (remainder.length > lineWidth) {
+      lines.push(remainder.slice(0, lineWidth));
+      remainder = remainder.slice(lineWidth);
+    }
+    current = remainder;
+  }
+
+  pushCurrent();
+  return lines.map((line, index) => (index === 0 ? line : `${indentText}${line}`));
+}
+
 function padTerminalLine(input: string, width: number): string {
   return truncateForTerminal(input, width).padEnd(Math.max(width, 0), " ");
 }
@@ -3458,6 +3498,28 @@ async function runAgendaTui(options: {
     return lines.slice(0, bodyHeight);
   };
 
+  const buildRowLines = (row: AgendaTuiRow, width: number): { lines: string[]; color: string } => {
+    if (row.type === "section") {
+      const marker = row.collapsed ? "▶" : "▼";
+      const text = `${marker} ${row.label} (${row.count})`;
+      return {
+        lines: [padPlain(text, width)],
+        color: row.hint === "overdue" ? ansi.red : ansi.bold + ansi.cyan,
+      };
+    }
+
+    const item = row.item;
+    const status = `[${agendaTuiStatus(item)}]`;
+    const timing = item.date === options.startIso ? "today" : item.date < options.startIso ? `late ${item.date}` : item.date;
+    const prefix = `  ${status} ${item.time ? `${item.time} ` : ""}`;
+    const suffix = `${item.headline}${item.priority ? ` [#${item.priority}]` : ""} · ${timing}`;
+    const wrapped = wrapTerminalLine(`${prefix}${suffix}`, width, prefix.length);
+    return {
+      lines: wrapped.map((line) => padPlain(line, width)),
+      color: colorForBucket(bucketForItem(item)),
+    };
+  };
+
   const render = (): void => {
     const width = process.stdout.columns || 100;
     const height = process.stdout.rows || 30;
@@ -3470,38 +3532,41 @@ async function runAgendaTui(options: {
     const header = [
       `${ansi.bold}Org2 agenda${ansi.reset}  ${mode === "focus" ? "focus" : mode === "today" ? "today" : "range"}  ${options.rangeLabel}`,
       `${actionableToday} actionable today, ${actionableOverdue} overdue, refresh ${Math.max(1, Math.round(options.refreshMs / 1000))}s, updated ${lastRefresh.toLocaleTimeString()}`,
-      "j/k or arrows move, 1/2/3 views, enter collapse, t/i/d/x status, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit",
+      "j/k or arrows move, gg/G jump, 1/2/3 views, enter collapse, t/i/d/x status, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit",
       "",
     ];
 
-    if (selected < scrollOffset) scrollOffset = selected;
-    if (selected >= scrollOffset + bodyHeight) scrollOffset = selected - bodyHeight + 1;
+    const renderedRows = rows.map((row) => buildRowLines(row, leftWidth));
+    const rowOffsets: number[] = [];
+    let totalLeftLines = 0;
+    for (const rendered of renderedRows) {
+      rowOffsets.push(totalLeftLines);
+      totalLeftLines += rendered.lines.length;
+    }
 
-    const visibleRows = rows.slice(scrollOffset, scrollOffset + bodyHeight);
-    const leftLines = visibleRows.map((row, visibleIndex) => {
-      const absoluteIndex = scrollOffset + visibleIndex;
-      const isSelected = absoluteIndex === selected;
-      let text: string;
-      let color: string = ansi.reset;
+    const selectedStart = rowOffsets[selected] || 0;
+    const selectedHeight = renderedRows[selected]?.lines.length || 1;
+    const selectedEnd = selectedStart + selectedHeight;
+    if (selectedStart < scrollOffset) scrollOffset = selectedStart;
+    if (selectedEnd > scrollOffset + bodyHeight) scrollOffset = selectedEnd - bodyHeight;
+    scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, totalLeftLines - bodyHeight)));
 
-      if (row.type === "section") {
-        const marker = row.collapsed ? "▶" : "▼";
-        text = `${marker} ${row.label} (${row.count})`;
-        color = row.hint === "overdue" ? ansi.red : ansi.bold + ansi.cyan;
-      } else {
-        const item = row.item;
-        const status = `[${agendaTuiStatus(item)}]`;
-        const timing = item.date === options.startIso ? "today" : item.date < options.startIso ? `late ${item.date}` : item.date;
-        const time = item.time ? `${item.time} ` : "";
-        const priority = item.priority ? ` [#${item.priority}]` : "";
-        text = `  ${status} ${time}${item.headline}${priority} · ${timing}`;
-        color = colorForBucket(bucketForItem(item));
+    const leftLines: string[] = [];
+    for (let rowIndex = 0; rowIndex < renderedRows.length; rowIndex += 1) {
+      const rowStart = rowOffsets[rowIndex] || 0;
+      const rowEnd = rowStart + renderedRows[rowIndex].lines.length;
+      if (rowEnd <= scrollOffset) continue;
+      if (rowStart >= scrollOffset + bodyHeight) break;
+      const isSelected = rowIndex === selected;
+      for (let lineIndex = 0; lineIndex < renderedRows[rowIndex].lines.length; lineIndex += 1) {
+        const absoluteLine = rowStart + lineIndex;
+        if (absoluteLine < scrollOffset) continue;
+        if (absoluteLine >= scrollOffset + bodyHeight) break;
+        const padded = padStyled(renderedRows[rowIndex].lines[lineIndex] || "", leftWidth);
+        const tinted = renderedRows[rowIndex].color === ansi.reset ? padded : colorize(padded, renderedRows[rowIndex].color);
+        leftLines.push(isSelected ? `${ansi.reverse}${tinted}${ansi.reset}` : tinted);
       }
-
-      const padded = padStyled(text, leftWidth);
-      const tinted = color === ansi.reset ? padded : colorize(padded, color);
-      return isSelected ? `${ansi.reverse}${tinted}${ansi.reset}` : tinted;
-    });
+    }
 
     while (leftLines.length < bodyHeight) leftLines.push(" ".repeat(leftWidth));
     const rightLines = buildDetailLines(selectedRow(), rightWidth, bodyHeight);
@@ -3556,6 +3621,7 @@ async function runAgendaTui(options: {
   process.stdin.resume();
 
   await new Promise<void>((resolve, reject) => {
+    let pendingG = false;
     const onData = (chunk: Buffer) => {
       const key = chunk.toString("utf8");
       try {
@@ -3566,7 +3632,16 @@ async function runAgendaTui(options: {
           return;
         }
 
-        if (key === "j" || key === "\u001b[B") moveSelection(1);
+        if (pendingG) {
+          if (key === "g") selected = 0;
+          pendingG = false;
+          render();
+          return;
+        }
+
+        if (key === "g") pendingG = true;
+        else if (key === "G") selected = Math.max(0, rows.length - 1);
+        else if (key === "j" || key === "\u001b[B") moveSelection(1);
         else if (key === "k" || key === "\u001b[A") moveSelection(-1);
         else if (key === "r") refresh();
         else if (key === "1" || key === "2" || key === "3") {
