@@ -3462,18 +3462,23 @@ async function runAgendaTui(options: {
 
   const buildDetailLines = (row: AgendaTuiRow | undefined, width: number, bodyHeight: number): string[] => {
     const lines: string[] = [];
+    const pushWrapped = (text = "", continuationIndent = 0): void => {
+      for (const line of wrapTerminalLine(text, width, continuationIndent)) {
+        lines.push(padPlain(line, width));
+      }
+    };
     if (!row) return [padPlain("No items.", width)];
 
     if (row.type === "section") {
       const section = sections.find((candidate) => candidate.key === row.key);
-      lines.push(padPlain(`${row.label} (${row.count})`, width));
-      lines.push(padPlain(row.collapsed ? "collapsed, press enter/l to expand" : "expanded, press enter/h to collapse", width));
-      if (row.hint) lines.push(padPlain(`bucket: ${row.hint}`, width));
+      pushWrapped(`${row.label} (${row.count})`);
+      pushWrapped(row.collapsed ? "collapsed, press enter/l to expand" : "expanded, press enter/h to collapse");
+      if (row.hint) pushWrapped(`bucket: ${row.hint}`);
       if (section && section.items.length > 0) {
         lines.push(padPlain("", width));
-        lines.push(padPlain("first items:", width));
+        pushWrapped("first items:");
         for (const item of section.items.slice(0, Math.max(0, bodyHeight - lines.length - 1))) {
-          lines.push(padPlain(`• ${item.headline}`, width));
+          pushWrapped(`• ${item.headline}`, 2);
         }
       }
     } else {
@@ -3481,17 +3486,17 @@ async function runAgendaTui(options: {
       const status = agendaTuiStatus(item);
       const timing = item.date === options.startIso ? "today" : item.date < options.startIso ? `overdue since ${item.date}` : item.date;
       const kind = String(item.kind || "").toUpperCase();
-      lines.push(padPlain(item.headline, width));
-      lines.push(padPlain(`${status || "ITEM"} · ${kind || "ITEM"} · ${timing}`, width));
-      lines.push(padPlain(`${path.basename(item.filePath)}:${item.lineNumber + 1}`, width));
-      if (item.time) lines.push(padPlain(`time: ${item.time}`, width));
-      if (item.priority) lines.push(padPlain(`priority: ${item.priority}`, width));
-      if (item.effort) lines.push(padPlain(`effort: ${item.effort}`, width));
-      if (item.tags && item.tags.length > 0) lines.push(padPlain(`tags: ${item.tags.join(", ")}`, width));
-      if (item.id) lines.push(padPlain(`id: ${item.id}`, width));
+      pushWrapped(item.headline);
+      pushWrapped(`${status || "ITEM"} · ${kind || "ITEM"} · ${timing}`);
+      pushWrapped(`${path.basename(item.filePath)}:${item.lineNumber + 1}`);
+      if (item.time) pushWrapped(`time: ${item.time}`);
+      if (item.priority) pushWrapped(`priority: ${item.priority}`);
+      if (item.effort) pushWrapped(`effort: ${item.effort}`);
+      if (item.tags && item.tags.length > 0) pushWrapped(`tags: ${item.tags.join(", ")}`, "tags: ".length);
+      if (item.id) pushWrapped(`id: ${item.id}`);
       lines.push(padPlain("", width));
-      lines.push(padPlain("t/i/d/x status   s/n/w/m schedule", width));
-      lines.push(padPlain("S/N/W/M deadline  o open  enter collapse", width));
+      pushWrapped("t/i/d/x status   s/n/w/m schedule");
+      pushWrapped("S/N/W/M deadline  o open  enter collapse");
     }
 
     while (lines.length < bodyHeight) lines.push(" ".repeat(width));
