@@ -6,6 +6,7 @@ import process from "node:process";
 import crypto from "node:crypto";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { parseOrgToCanonicalAst } from "./parser.js";
 import { printCanonicalAstToOrg } from "./printer.js";
 import { normalizePgpArmorForDecrypt, protectPgpBlocks, restorePgpBlocks } from "./pgp.js";
@@ -3369,7 +3370,7 @@ function openAgendaTuiItem(item: ScheduledItem): void {
   spawnSync("open", [item.filePath], { stdio: "inherit" });
 }
 
-function resolveAgendaTuiTodayDailyNotePath(config: Org2Config | null, baseDir: string): string {
+export function resolveAgendaTuiTodayDailyNotePath(config: Org2Config | null, baseDir: string): string {
   const dailiesRoot = resolveRoamDailiesRootDir(config || {}, baseDir);
   return path.join(dailiesRoot, `${getTodayString()}.org2`);
 }
@@ -3389,7 +3390,7 @@ function formatAgendaTuiDateTimestamp(dateIso: string): string {
   return `<${dateIso} ${dow}>`;
 }
 
-function appendAgendaTuiTodoToDailyNote(dailyNotePath: string, title: string): void {
+export function appendAgendaTuiTodoToDailyNote(dailyNotePath: string, title: string): void {
   fs.mkdirSync(path.dirname(dailyNotePath), { recursive: true });
   const scheduled = formatAgendaTuiDateTimestamp(getTodayString());
   const entry = `* TODO ${title}\nSCHEDULED: ${scheduled}\n`;
@@ -3401,6 +3402,18 @@ function appendAgendaTuiTodoToDailyNote(dailyNotePath: string, title: string): v
   const existing = fs.readFileSync(dailyNotePath, "utf8");
   const prefix = existing.length === 0 || existing.endsWith("\n") ? existing : `${existing}\n`;
   fs.writeFileSync(dailyNotePath, `${prefix}${entry}`, "utf8");
+}
+
+export function formatAgendaTuiDailyNotePathLabel(dailyNotePath: string, baseDir: string = process.cwd()): string {
+  const relative = path.relative(baseDir, dailyNotePath);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+    return dailyNotePath;
+  }
+  return relative;
+}
+
+export function isAgendaTuiCaptureKey(key: string): boolean {
+  return key === "a" || key === "c";
 }
 
 async function runAgendaTui(options: {
@@ -3459,6 +3472,8 @@ async function runAgendaTui(options: {
     if (bucket === "custom") return ansi.magenta;
     return ansi.reset;
   };
+  const todayDailyNotePath = (): string => options.getTodayDailyNotePath();
+  const todayDailyNoteLabel = (): string => formatAgendaTuiDailyNotePathLabel(todayDailyNotePath());
 
   const selectedRow = (): AgendaTuiRow | undefined => rows[selected];
 
@@ -3538,7 +3553,7 @@ async function runAgendaTui(options: {
       if (item.tags && item.tags.length > 0) pushWrapped(`tags: ${item.tags.join(", ")}`, "tags: ".length);
       if (item.id) pushWrapped(`id: ${item.id}`);
       lines.push(padPlain("", width));
-      pushWrapped("c capture TODO    t/i/d/x status   s/n/w/m schedule");
+      pushWrapped(`a/c add TODO → ${todayDailyNoteLabel()}    t/i/d/x status   s/n/w/m schedule`);
       pushWrapped("S/N/W/M deadline  o open  enter collapse");
     }
 
@@ -3581,8 +3596,8 @@ async function runAgendaTui(options: {
       `${ansi.bold}Org2 agenda${ansi.reset}  ${mode === "focus" ? "focus" : mode === "today" ? "today" : "range"}  ${options.rangeLabel}`,
       `${actionableToday} actionable today, ${actionableOverdue} overdue, refresh ${Math.max(1, Math.round(options.refreshMs / 1000))}s, updated ${lastRefresh.toLocaleTimeString()}`,
       captureInputActive
-        ? `CAPTURE TODO: ${captureInputValue}`
-        : "j/k or arrows move, gg/G jump, 1/2/3 views, enter collapse, c capture TODO, t/i/d/x status, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit",
+        ? `NEW TODO → ${todayDailyNoteLabel()}: ${captureInputValue}`
+        : `j/k or arrows move, gg/G jump, 1/2/3 views, enter collapse, a/c add TODO → ${todayDailyNoteLabel()}, t/i/d/x status, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit`,
       captureInputActive
         ? "type title, enter save, esc cancel, backspace delete"
         : "",
@@ -3708,9 +3723,9 @@ async function runAgendaTui(options: {
             captureInputActive = false;
             captureInputValue = "";
             if (title) {
-              const dailyNotePath = options.getTodayDailyNotePath();
+              const dailyNotePath = todayDailyNotePath();
               appendAgendaTuiTodoToDailyNote(dailyNotePath, title);
-              message = `captured TODO → ${path.basename(dailyNotePath)}`;
+              message = `captured TODO → ${formatAgendaTuiDailyNotePathLabel(dailyNotePath)}`;
               refresh();
             } else {
               message = "capture canceled";
@@ -3750,7 +3765,7 @@ async function runAgendaTui(options: {
         else if (key === "G") selected = Math.max(0, rows.length - 1);
         else if (key === "j" || key === "\u001b[B") moveSelection(1);
         else if (key === "k" || key === "\u001b[A") moveSelection(-1);
-        else if (key === "c") {
+        else if (isAgendaTuiCaptureKey(key)) {
           captureInputActive = true;
           captureInputValue = "";
           message = "";
@@ -4323,7 +4338,7 @@ function listOrgLikeFiles(rootDir: string, recursiveScan: boolean): string[] {
   return out;
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
   let command = "";
@@ -9067,7 +9082,12 @@ Tips:
   process.stdout.write(output);
 }
 
-main().catch((err) => {
-  console.error("Error:", err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : null;
+const modulePath = fileURLToPath(import.meta.url);
+
+if (invokedPath && modulePath === invokedPath) {
+  main().catch((err) => {
+    console.error("Error:", err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
+}
