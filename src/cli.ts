@@ -3370,9 +3370,25 @@ function resolveAgendaTuiTodayDailyNotePath(config: Org2Config | null, baseDir: 
   return path.join(dailiesRoot, `${getTodayString()}.org2`);
 }
 
+function formatAgendaTuiDateTimestamp(dateIso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateIso);
+  if (!m) throw new Error(`Invalid date: ${dateIso}`);
+
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const d = new Date(Date.UTC(year, month - 1, day));
+  if (Number.isNaN(d.getTime())) throw new Error(`Invalid date: ${dateIso}`);
+
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const dow = days[d.getUTCDay()];
+  return `<${dateIso} ${dow}>`;
+}
+
 function appendAgendaTuiTodoToDailyNote(dailyNotePath: string, title: string): void {
   fs.mkdirSync(path.dirname(dailyNotePath), { recursive: true });
-  const entry = `* TODO ${title}\n`;
+  const scheduled = formatAgendaTuiDateTimestamp(getTodayString());
+  const entry = `* TODO ${title}\nSCHEDULED: ${scheduled}\n`;
   if (!fs.existsSync(dailyNotePath)) {
     fs.writeFileSync(dailyNotePath, entry, "utf8");
     return;
