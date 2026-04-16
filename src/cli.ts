@@ -3353,6 +3353,29 @@ function applyAgendaTuiTodo(item: ScheduledItem, status: TodoStatus): ScheduledI
   return { ...item, todo: status === "in_progress" ? "IN_PROGRESS" : status.toUpperCase() };
 }
 
+function applyAgendaTuiPriority(item: ScheduledItem, priority: string | null): ScheduledItem {
+  const lines = fs.readFileSync(item.filePath, "utf8").split(/\r?\n/);
+  const lineIndex = item.lineNumber;
+  const originalLine = lines[lineIndex] ?? "";
+  const parsed = parseHeadlineLine(originalLine);
+  if (!parsed) {
+    throw new Error(`Could not parse headline at ${item.filePath}:${lineIndex + 1}`);
+  }
+
+  const starsMatch = /^(\*+)\s+/.exec(originalLine);
+  if (!starsMatch) {
+    throw new Error(`Could not locate headline stars at ${item.filePath}:${lineIndex + 1}`);
+  }
+
+  const nextPriority = normalizeAgendaPriorityToken(priority ?? "");
+  const todoPrefix = parsed.todo ? `${parsed.todo} ` : "";
+  const priorityPrefix = nextPriority ? `[#${nextPriority}] ` : "";
+  const tagsSuffix = parsed.tags.length > 0 ? ` :${parsed.tags.join(":")}:` : "";
+  lines[lineIndex] = `${starsMatch[1]} ${todoPrefix}${priorityPrefix}${parsed.title}${tagsSuffix}`;
+  fs.writeFileSync(item.filePath, lines.join("\n"), "utf8");
+  return { ...item, priority: nextPriority ?? undefined };
+}
+
 function openAgendaTuiItem(item: ScheduledItem): void {
   const line = item.lineNumber + 1;
   const target = `${item.filePath}:${line}`;
@@ -3438,6 +3461,7 @@ async function runAgendaTui(options: {
   let lastRefresh = new Date(0);
   let disposed = false;
   let refreshTimer: NodeJS.Timeout | null = null;
+  let pendingPriorityKey: "p" | null = null;
   let captureInputActive = false;
   let captureInputValue = "";
   const collapsedSections = new Set<string>();
@@ -3582,7 +3606,9 @@ async function runAgendaTui(options: {
       `${actionableToday} actionable today, ${actionableOverdue} overdue, refresh ${Math.max(1, Math.round(options.refreshMs / 1000))}s, updated ${lastRefresh.toLocaleTimeString()}`,
       captureInputActive
         ? `CAPTURE TODO: ${captureInputValue}`
-        : "j/k or arrows move, gg/G jump, 1/2/3 views, enter collapse, c capture TODO, t/i/d/x status, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit",
+        : pendingPriorityKey
+          ? "priority mode: a/b/c set priority, 0 clears, esc cancels"
+          : "j/k or arrows move, gg/G jump, 1/2/3 views, enter collapse, c capture TODO, t/i/d/x status, p then a/b/c set priority, p then 0 clears, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit",
       captureInputActive
         ? "type title, enter save, esc cancel, backspace delete"
         : "",
@@ -3746,7 +3772,23 @@ async function runAgendaTui(options: {
           return;
         }
 
-        if (key === "g") pendingG = true;
+        if (pendingPriorityKey) {
+          if (key === "\u001b") {
+            pendingPriorityKey = null;
+            message = "Priority change canceled";
+          } else {
+            const row = selectedRow();
+            const nextPriority = key === "0" ? null : normalizeAgendaPriorityToken(key);
+            if (row?.type === "item" && (nextPriority || key === "0")) {
+              applyAgendaTuiPriority(row.item, nextPriority);
+              message = nextPriority ? `priority [#${nextPriority}] → ${row.item.headline}` : `priority cleared → ${row.item.headline}`;
+              refresh();
+            } else {
+              message = "Priority mode: press a, b, c, or 0 to clear";
+            }
+            pendingPriorityKey = null;
+          }
+        } else if (key === "g") pendingG = true;
         else if (key === "G") selected = Math.max(0, rows.length - 1);
         else if (key === "j" || key === "\u001b[B") moveSelection(1);
         else if (key === "k" || key === "\u001b[A") moveSelection(-1);
@@ -3755,7 +3797,10 @@ async function runAgendaTui(options: {
           captureInputValue = "";
           message = "";
         } else if (key === "r") refresh();
-        else if (key === "1" || key === "2" || key === "3") {
+        else if (key === "p") {
+          pendingPriorityKey = "p";
+          message = "Priority mode: press a, b, c, or 0 to clear";
+        } else if (key === "1" || key === "2" || key === "3") {
           mode = nextAgendaTuiMode(mode, key);
           refresh();
         } else if (key === "\r" || key === "\n" || key === "h" || key === "l") {
