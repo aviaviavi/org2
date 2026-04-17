@@ -3430,7 +3430,7 @@ async function runAgendaTui(options: {
   startIso: string;
   rangeLabel: string;
   refreshMs: number;
-  collect: () => { items: ScheduledItem[]; skippedFiles: number };
+  collect: (runtime: { startIso: string }) => { items: ScheduledItem[]; skippedFiles: number };
   getTodayDailyNotePath: () => string;
 }): Promise<void> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
@@ -3459,6 +3459,7 @@ async function runAgendaTui(options: {
   let sections: AgendaTuiSection[] = [];
   let rows: AgendaTuiRow[] = [];
   let lastRefresh = new Date(0);
+  let currentStartIso = options.startIso;
   let disposed = false;
   let refreshTimer: NodeJS.Timeout | null = null;
   let pendingPriorityKey: "p" | null = null;
@@ -3495,10 +3496,11 @@ async function runAgendaTui(options: {
   };
 
   const refresh = (): void => {
-    const result = options.collect();
+    currentStartIso = getTodayString();
+    const result = options.collect({ startIso: currentStartIso });
     items = result.items;
     skippedFiles = result.skippedFiles;
-    sections = buildAgendaTuiSections(items, options.startIso, mode);
+    sections = buildAgendaTuiSections(items, currentStartIso, mode);
     const liveKeys = new Set(sections.map((section) => section.key));
     for (const key of Array.from(collapsedSections)) {
       if (!liveKeys.has(key)) collapsedSections.delete(key);
@@ -3551,7 +3553,7 @@ async function runAgendaTui(options: {
     } else {
       const item = row.item;
       const status = agendaTuiStatus(item);
-      const timing = item.date === options.startIso ? "today" : item.date < options.startIso ? `overdue since ${item.date}` : item.date;
+      const timing = item.date === currentStartIso ? "today" : item.date < currentStartIso ? `overdue since ${item.date}` : item.date;
       const kind = String(item.kind || "").toUpperCase();
       pushWrapped(item.headline);
       pushWrapped(`${status || "ITEM"} · ${kind || "ITEM"} · ${timing}`);
@@ -3582,7 +3584,7 @@ async function runAgendaTui(options: {
 
     const item = row.item;
     const status = `[${agendaTuiStatus(item)}]`;
-    const timing = item.date === options.startIso ? "today" : item.date < options.startIso ? `late ${item.date}` : item.date;
+    const timing = item.date === currentStartIso ? "today" : item.date < currentStartIso ? `late ${item.date}` : item.date;
     const prefix = `  ${status} ${item.time ? `${item.time} ` : ""}`;
     const suffix = `${item.headline}${item.priority ? ` [#${item.priority}]` : ""} · ${timing}`;
     const wrapped = wrapTerminalLine(`${prefix}${suffix}`, width, prefix.length);
@@ -3599,10 +3601,11 @@ async function runAgendaTui(options: {
     const bodyHeight = Math.max(8, height - headerHeight - 1);
     const leftWidth = Math.max(30, Math.min(width - 22, Math.floor(width * 0.58)));
     const rightWidth = Math.max(20, width - leftWidth - 3);
-    const actionableToday = items.filter((item) => item.date === options.startIso && isAgendaTuiActionable(item)).length;
-    const actionableOverdue = items.filter((item) => item.date < options.startIso && isAgendaTuiActionable(item)).length;
+    const actionableToday = items.filter((item) => item.date === currentStartIso && isAgendaTuiActionable(item)).length;
+    const actionableOverdue = items.filter((item) => item.date < currentStartIso && isAgendaTuiActionable(item)).length;
+    const rangeLabel = options.rangeLabel.replace(options.startIso, currentStartIso);
     const header = [
-      `${ansi.bold}Org2 agenda${ansi.reset}  ${mode === "focus" ? "focus" : mode === "today" ? "today" : "range"}  ${options.rangeLabel}`,
+      `${ansi.bold}Org2 agenda${ansi.reset}  ${mode === "focus" ? "focus" : mode === "today" ? "today" : "range"}  ${rangeLabel}`,
       `${actionableToday} actionable today, ${actionableOverdue} overdue, refresh ${Math.max(1, Math.round(options.refreshMs / 1000))}s, updated ${lastRefresh.toLocaleTimeString()}`,
       captureInputActive
         ? `CAPTURE TODO: ${captureInputValue}`
@@ -9017,9 +9020,103 @@ Tips:
       rangeLabel: explicitRange ? `${startIso} → ${endIso}` : `${startIso} (today-first)`,
       refreshMs: agendaTuiRefreshSeconds * 1000,
       getTodayDailyNotePath: () => resolveAgendaTuiTodayDailyNotePath(agendaConfig, agendaConfigBaseDir),
-      collect: () => {
-        const { outputItems: refreshed, skippedFileCount: refreshedSkipped } = collectAgendaOutput();
-        return { items: refreshed, skippedFiles: refreshedSkipped };
+      collect: (runtime) => {
+        const runtimeStartDate = parseIsoDate(runtime.startIso);
+        const runtimeEndDate = agendaToDate ? new Date(agendaToDate) : new Date(runtimeStartDate);
+        if (!agendaToDate) {
+          runtimeEndDate.setUTCDate(runtimeEndDate.getUTCDate() + days - 1);
+        }
+
+        const allItems: ScheduledItem[] = [];
+        let skippedFileCount = 0;
+
+        for (const filePath of files) {
+          if (!matchesAgendaFileFilter(filePath, parsedAgendaFile)) continue;
+          if (!matchesAgendaExcludeFileFilter(filePath, parsedAgendaExcludeFile)) continue;
+
+          try {
+            const content = fs.readFileSync(filePath, "utf8");
+            const normalized = content.replace(/\r?\n/g, "\n");
+            const refreshedItems = findScheduledItemsInText(
+              normalized,
+              filePath,
+              runtimeStartDate,
+              runtimeEndDate,
+              includeOverdue,
+              parsedAgendaStatus.filter,
+              parsedAgendaExcludeStatus.filter,
+              parsedAgendaKind.filter,
+              parsedAgendaExcludeKind.filter,
+              parsedAgendaWhen.filter,
+              parsedAgendaExcludeWhen.filter,
+              parsedAgendaWeekday.filter,
+              parsedAgendaExcludeWeekday.filter,
+              parsedAgendaWeek.filter,
+              parsedAgendaExcludeWeek.filter,
+              parsedAgendaDayOfMonth.filter,
+              parsedAgendaExcludeDayOfMonth.filter,
+              parsedAgendaMonth.filter,
+              parsedAgendaExcludeMonth.filter,
+              parsedAgendaQuarter.filter,
+              parsedAgendaExcludeQuarter.filter,
+              parsedAgendaYear.filter,
+              parsedAgendaExcludeYear.filter,
+              parsedAgendaDate.filter,
+              parsedAgendaExcludeDate.filter,
+              parsedAgendaLevel.filter,
+              parsedAgendaExcludeLevel.filter,
+              parsedAgendaMatch,
+              parsedAgendaExcludeMatch,
+              parsedAgendaTag,
+              parsedAgendaId.filter,
+              parsedAgendaTodo,
+              parsedAgendaPriority.filter,
+              parsedAgendaTime.filter,
+              parsedAgendaEffort,
+              parsedAgendaProperty.filter,
+              parsedAgendaExcludeTag,
+              parsedAgendaExcludeId.filter,
+              parsedAgendaExcludeTodo,
+              parsedAgendaExcludePriority.filter,
+              parsedAgendaExcludeTime.filter,
+              parsedAgendaExcludeEffort,
+              parsedAgendaExcludeProperty.filter,
+            );
+            allItems.push(...refreshedItems);
+          } catch (err) {
+            skippedFileCount += 1;
+            if (verboseErrors) {
+              console.error(`Error processing ${filePath}:`, err instanceof Error ? err.message : err);
+            }
+          }
+        }
+
+        allItems.sort((a, b) =>
+          compareAgendaItems(
+            a,
+            b,
+            parsedAgendaGroup.groupOrder,
+            parsedAgendaSort.sortOrder,
+            parsedAgendaDateOrder.dateOrder,
+            parsedAgendaTodoOrder,
+            parsedAgendaStatusOrder.statusOrder,
+            parsedAgendaKindOrder.kindOrder,
+            parsedAgendaPriorityOrder.priorityOrder,
+            parsedAgendaEffortOrder,
+            parsedAgendaTagOrder,
+          ),
+        );
+
+        const groupLimitedItems = applyAgendaGroupLimit(
+          allItems,
+          parsedAgendaGroup.groupOrder,
+          agendaGroupLimit,
+          parsedAgendaTagOrder,
+        );
+        const dayLimitedItems = applyAgendaDayLimit(groupLimitedItems, agendaDayLimit);
+        const refreshedOutputItems = agendaLimit ? dayLimitedItems.slice(0, agendaLimit) : dayLimitedItems;
+
+        return { items: refreshedOutputItems, skippedFiles: skippedFileCount };
       },
     });
     return;
