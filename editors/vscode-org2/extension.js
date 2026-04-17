@@ -483,6 +483,8 @@ class Org2AgendaProvider {
     this.groups = [];
     this.lastError = undefined;
     this.view = null;
+    this._loadTimer = null;
+    this._lastLoadDay = '';
   }
 
   attachView(view) {
@@ -524,11 +526,28 @@ class Org2AgendaProvider {
     try {
       this.lastError = undefined;
       this.groups = await fetchAgendaGroups(this.context, this.filter);
+      this._lastLoadDay = formatDateYYYYMMDD(new Date());
     } catch (e) {
       this.lastError = e;
       this.groups = [];
     }
     this.refresh();
+  }
+
+  ensureMidnightRolloverWatcher() {
+    if (this._loadTimer) return;
+    this._loadTimer = setInterval(() => {
+      const today = formatDateYYYYMMDD(new Date());
+      if (today === this._lastLoadDay) return;
+      this.load().catch(() => {});
+    }, 60 * 1000);
+  }
+
+  dispose() {
+    if (this._loadTimer) {
+      clearInterval(this._loadTimer);
+      this._loadTimer = null;
+    }
   }
 
   getTreeItem(element) {
@@ -2103,6 +2122,8 @@ function activate(context) {
 
   // Agenda view
   const agendaProvider = new Org2AgendaProvider(context);
+  agendaProvider.ensureMidnightRolloverWatcher();
+  context.subscriptions.push({ dispose: () => agendaProvider.dispose() });
   const agendaView = vscode.window.createTreeView('org2Agenda', {
     treeDataProvider: agendaProvider,
     showCollapseAll: true,
@@ -4774,6 +4795,13 @@ function activate(context) {
         backlinksProvider.loadForEditor(vscode.window.activeTextEditor, { focusView: false }).catch(() => {});
       }
       if (
+        e.affectsConfiguration('org2.agenda') ||
+        e.affectsConfiguration('org2.roam.dailiesDir') ||
+        e.affectsConfiguration('org2.roam.indexDir')
+      ) {
+        agendaProvider.load().catch(() => {});
+      }
+      if (
         e.affectsConfiguration('org2.links.renderDescriptions') ||
         e.affectsConfiguration('org2.links.renderDescriptionsMode')
       ) {
@@ -4798,15 +4826,21 @@ function activate(context) {
         updateLinkDecorations(editor);
         updateTodoStateDecorations(editor);
       }
+      if (doc && doc.uri && doc.uri.scheme === 'file' && /\.(org|org2)$/i.test(doc.uri.fsPath || '')) {
+        agendaProvider.load().catch(() => {});
+      }
     })
   );
 
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument((doc) => {
       const active = vscode.window.activeTextEditor;
-      if (!active || !active.document) return;
-      if (active.document.uri.toString() !== doc.uri.toString()) return;
-      backlinksProvider.loadForEditor(active, { focusView: false }).catch(() => {});
+      if (active && active.document && active.document.uri.toString() === doc.uri.toString()) {
+        backlinksProvider.loadForEditor(active, { focusView: false }).catch(() => {});
+      }
+      if (doc && doc.uri && doc.uri.scheme === 'file' && /\.(org|org2)$/i.test(doc.uri.fsPath || '')) {
+        agendaProvider.load().catch(() => {});
+      }
     })
   );
 
