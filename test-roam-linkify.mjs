@@ -32,4 +32,21 @@ assert.match(notes, /\[\[id:33333333-3333-3333-3333-333333333333\]\[D Topic\]\] 
 assert.match(notes, /\[\[Alpha Topic\]\] already linked\./);
 assert.match(notes, /#\+begin_src text\nAlpha Topic inside code should stay plain\./);
 
+const inserted = path.join(tmpDir, 'inserted.org2');
+fs.writeFileSync(inserted, 'hello world\n');
+const insertResult = JSON.parse(execFileSync('node', [
+  cli,
+  'roam', 'link', 'insert-backlink',
+  '--file', inserted,
+  '--pos', '1:6',
+  '--title', 'Delta Topic',
+  '--style', 'id',
+  '--id', deltaId,
+  '--apply',
+  '--format', 'json',
+], { encoding: 'utf8' }));
+assert.equal(insertResult.action, 'link-insert-backlink');
+assert.equal(insertResult.changed, true);
+assert.equal(fs.readFileSync(inserted, 'utf8'), `hello [[id:${deltaId}][Delta Topic]]world\n`);
+
 console.log('✓ roam-linkify');
