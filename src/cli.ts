@@ -652,6 +652,43 @@ function escapeRegExp(raw: string): string {
   return raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function renderRoamLink(title: string, opts?: { style?: "wiki" | "id"; id?: string | null }): string {
+  const style = opts?.style || "wiki";
+  if (style === "id") return `[[id:${opts?.id || ""}][${title}]]`;
+  return `[[${title}]]`;
+}
+
+function insertTextAtLinePosition(raw: string, pos: string, insertText: string): { outText: string; changed: boolean } {
+  const normalized = raw.replace(/\r\n/g, "\n");
+  const [lineRaw, colRaw] = pos.split(":");
+  const line1 = parseInt(lineRaw, 10);
+  if (!Number.isFinite(line1) || line1 < 1) {
+    throw new Error(`invalid --pos ${pos}`);
+  }
+
+  let col: number | null = null;
+  if (colRaw !== undefined) {
+    const c = parseInt(colRaw, 10);
+    if (!Number.isFinite(c) || c < 0) {
+      throw new Error(`invalid --pos ${pos}`);
+    }
+    col = c;
+  }
+
+  const lines = normalized.split("\n");
+  const lineIndex = line1 - 1;
+  if (lineIndex >= lines.length) {
+    throw new Error(`--pos line out of range: ${pos}`);
+  }
+
+  const lineText = lines[lineIndex] ?? "";
+  const insertCol = col === null ? lineText.length : Math.min(col, lineText.length);
+  lines[lineIndex] = lineText.slice(0, insertCol) + insertText + lineText.slice(insertCol);
+
+  const outText = lines.join("\n");
+  return { outText, changed: outText !== normalized };
+}
+
 function isRoamLinkifyLabelEligible(labelRaw: string): boolean {
   const label = String(labelRaw || "").trim();
   if (!label) return false;
@@ -690,7 +727,7 @@ function replaceRoamLinkifyOutsideLinks(
       if (replaced) return match;
       replaced = true;
       count += 1;
-      return `${prefix}[[id:${candidate.id}][${labelText}]]`;
+      return `${prefix}${renderRoamLink(labelText, { style: "id", id: candidate.id })}`;
     });
     parts[i] = next;
     if (replaced) break;
@@ -5831,37 +5868,19 @@ Tips:
         process.exit(1);
       }
 
-      const raw = fs.readFileSync(roamLinkFile, "utf8").replace(/\r\n/g, "\n");
-      const [lineRaw, colRaw] = roamLinkPos.split(":");
-      const line1 = parseInt(lineRaw, 10);
-      if (!Number.isFinite(line1) || line1 < 1) {
-        console.error(`Error: invalid --pos ${roamLinkPos}`);
+      const raw = fs.readFileSync(roamLinkFile, "utf8");
+      const linkText = renderRoamLink(roamLinkTitle, { style: roamLinkStyle, id: roamLinkId || null });
+      let outText = raw.replace(/\r\n/g, "\n");
+      let changed = false;
+      try {
+        const result = insertTextAtLinePosition(raw, roamLinkPos, linkText);
+        outText = result.outText;
+        changed = result.changed;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error(`Error: ${msg}`);
         process.exit(1);
       }
-      let col: number | null = null;
-      if (colRaw !== undefined) {
-        const c = parseInt(colRaw, 10);
-        if (!Number.isFinite(c) || c < 0) {
-          console.error(`Error: invalid --pos ${roamLinkPos}`);
-          process.exit(1);
-        }
-        col = c;
-      }
-
-      const lines = raw.split("\n");
-      const lineIndex = line1 - 1;
-      if (lineIndex >= lines.length) {
-        console.error(`Error: --pos line out of range: ${roamLinkPos}`);
-        process.exit(1);
-      }
-
-      const lineText = lines[lineIndex] ?? "";
-      const linkText = roamLinkStyle === "id" ? `[[id:${roamLinkId}][${roamLinkTitle}]]` : `[[${roamLinkTitle}]]`;
-      const insertCol = col === null ? lineText.length : Math.min(col, lineText.length);
-      lines[lineIndex] = lineText.slice(0, insertCol) + linkText + lineText.slice(insertCol);
-
-      const outText = lines.join("\n");
-      const changed = outText !== raw;
 
       if (roamApply) {
         fs.writeFileSync(roamLinkFile, outText, "utf8");
