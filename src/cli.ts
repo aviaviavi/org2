@@ -4780,6 +4780,7 @@ async function main(): Promise<void> {
   let roamTitle = "";
   let roamIdForced = "";
   let roamLinkFile = "";
+  let roamLinkifyFile = "";
   let roamLinkPos = "";
   let roamLinkId = "";
   let roamLinkTitle = "";
@@ -4956,6 +4957,8 @@ async function main(): Promise<void> {
           exportFile = args[i]!;
         } else if (command === "roam" && roamAction === "link") {
           roamLinkFile = args[i]!;
+        } else if (command === "roam" && roamAction === "linkify") {
+          roamLinkifyFile = args[i]!;
         } else {
           files.push(args[i]!);
         }
@@ -5808,6 +5811,7 @@ Roam / IDs:
   org2 roam db-sync --dir DIR [--recursive] [--apply]
   org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply]
   org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--style wiki|id] [--id UUID] [--apply]
+  org2 roam linkify --dir DIR [--recursive] [--file FILE] [--apply] [--format text|json]
 
 Other:
   org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]
@@ -5983,11 +5987,14 @@ Tips:
     if (roamAction === "linkify") {
       const allFiles = listOrgLikeFiles(dir, recursive);
       const labelIndex = buildRoamLinkifyIndex(allFiles);
+      const targetFiles = roamLinkifyFile
+        ? [path.resolve(roamLinkifyFile)]
+        : allFiles;
       const results: RoamLinkifyFileResult[] = [];
       let appliedCount = 0;
       let skippedUnreadable = 0;
 
-      for (const filePath of allFiles) {
+      for (const filePath of targetFiles) {
         let raw: string;
         try {
           raw = fs.readFileSync(filePath, "utf8");
@@ -6017,7 +6024,8 @@ Tips:
               action: "linkify",
               dir,
               recursive,
-              scanned: allFiles.length,
+              scanned: targetFiles.length,
+              indexFileCount: allFiles.length,
               skippedUnreadable,
               candidateLabelCount: labelIndex.size,
               changedFileCount: changedFiles.length,
@@ -6043,7 +6051,7 @@ Tips:
           process.stdout.write(`${result.file}\t${result.replacements}\n`);
         }
         console.error(
-          `org2 roam linkify: scanned ${allFiles.length} file(s); ` +
+          `org2 roam linkify: scanned ${targetFiles.length} target file(s) from ${allFiles.length} indexed file(s); ` +
             `${changedFiles.length} file(s) changed; ` +
             `${replacementCount} link(s) inserted; ` +
             `${ambiguousSkipCount} ambiguous match(es) skipped` +
