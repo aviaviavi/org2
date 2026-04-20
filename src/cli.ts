@@ -426,6 +426,26 @@ type RoamNodeForIndex = {
   labels: string[];
 };
 
+type RoamLinkifyNode = {
+  id: string;
+  file: string;
+  labels: string[];
+};
+
+type RoamLinkifyCandidate = {
+  id: string;
+  label: string;
+  file: string;
+};
+
+type RoamLinkifyFileResult = {
+  file: string;
+  changed: boolean;
+  replacements: number;
+  ambiguousSkips: number;
+  outText: string;
+};
+
 function collectRoamNodesForIndex(content: string, filePath: string): RoamNodeForIndex[] {
   const raw = content.replace(/\r\n/g, "\n");
   const lines = raw.split("\n");
@@ -590,6 +610,213 @@ function buildRoamTitleIndex(files: string[]): Map<string, Set<string>> {
   }
 
   return index;
+}
+
+
+function buildRoamLinkifyIndex(files: string[]): Map<string, RoamLinkifyCandidate[]> {
+  const index = new Map<string, RoamLinkifyCandidate[]>();
+
+  const add = (labelRaw: string, node: RoamLinkifyNode): void => {
+    const label = normalizeRoamLinkLabel(labelRaw);
+    if (!label) return;
+
+    const existing = index.get(label) || [];
+    if (!existing.some((entry) => entry.id === node.id)) {
+      existing.push({ id: node.id, label: labelRaw.trim(), file: node.file });
+      index.set(label, existing);
+    }
+  };
+
+  for (const filePath of files) {
+    let content: string;
+    try {
+      content = fs.readFileSync(filePath, "utf8");
+    } catch {
+      continue;
+    }
+
+    const nodes = collectRoamNodesForIndex(content, filePath).map((node) => ({
+      ...node,
+      file: filePath,
+    }));
+
+    for (const node of nodes) {
+      for (const label of node.labels) add(label, node);
+    }
+  }
+
+  return index;
+}
+
+function escapeRegExp(raw: string): string {
+  return raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function renderRoamLink(title: string, opts?: { style?: "wiki" | "id"; id?: string | null }): string {
+  const style = opts?.style || "wiki";
+  if (style === "id") return `[[id:${opts?.id || ""}][${title}]]`;
+  return `[[${title}]]`;
+}
+
+function insertTextAtLinePosition(raw: string, pos: string, insertText: string): { outText: string; changed: boolean } {
+  const normalized = raw.replace(/\r\n/g, "\n");
+  const [lineRaw, colRaw] = pos.split(":");
+  const line1 = parseInt(lineRaw, 10);
+  if (!Number.isFinite(line1) || line1 < 1) {
+    throw new Error(`invalid --pos ${pos}`);
+  }
+
+  let col: number | null = null;
+  if (colRaw !== undefined) {
+    const c = parseInt(colRaw, 10);
+    if (!Number.isFinite(c) || c < 0) {
+      throw new Error(`invalid --pos ${pos}`);
+    }
+    col = c;
+  }
+
+  const lines = normalized.split("\n");
+  const lineIndex = line1 - 1;
+  if (lineIndex >= lines.length) {
+    throw new Error(`--pos line out of range: ${pos}`);
+  }
+
+  const lineText = lines[lineIndex] ?? "";
+  const insertCol = col === null ? lineText.length : Math.min(col, lineText.length);
+  lines[lineIndex] = lineText.slice(0, insertCol) + insertText + lineText.slice(insertCol);
+
+  const outText = lines.join("\n");
+  return { outText, changed: outText !== normalized };
+}
+
+function isRoamLinkifyLabelEligible(labelRaw: string): boolean {
+  const label = String(labelRaw || "").trim();
+  if (!label) return false;
+  if (label.length < 4) return false;
+  if (!/[A-Za-z]/.test(label)) return false;
+  if (/^[a-z]+$/.test(label)) return false;
+  return true;
+}
+
+function lineAllowsRoamLinkify(line: string, inBlock: boolean, inDrawer: boolean): boolean {
+  if (inBlock || inDrawer) return false;
+
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (/^#\+/.test(trimmed)) return false;
+  if (/^# /.test(trimmed)) return false;
+  if (/^\*+\s+/.test(line)) return false;
+
+  return true;
+}
+
+function replaceRoamLinkifyOutsideLinks(
+  line: string,
+  candidate: RoamLinkifyCandidate,
+): { line: string; replaced: boolean; count: number } {
+  const escaped = escapeRegExp(candidate.label);
+  const regex = new RegExp(`(^|[^A-Za-z0-9_])(${escaped})(?=$|[^A-Za-z0-9_])`, "i");
+  const parts = line.split(/(\[\[[^\]]+\](?:\[[^\]]*\])?\])/g);
+  let replaced = false;
+  let count = 0;
+
+  for (let i = 0; i < parts.length; i += 1) {
+    if (i % 2 === 1) continue;
+    const part = parts[i] || "";
+    const next = part.replace(regex, (match, prefix: string, labelText: string) => {
+      if (replaced) return match;
+      replaced = true;
+      count += 1;
+      return `${prefix}${renderRoamLink(labelText, { style: "id", id: candidate.id })}`;
+    });
+    parts[i] = next;
+    if (replaced) break;
+  }
+
+  return { line: parts.join(""), replaced, count };
+}
+
+function applyRoamLinkifyToFile(
+  content: string,
+  filePath: string,
+  labelIndex: Map<string, RoamLinkifyCandidate[]>,
+): RoamLinkifyFileResult {
+  const normalized = content.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+  const ownNodes = collectRoamNodesForIndex(normalized, filePath);
+  const ownNodeIds = new Set(ownNodes.map((node) => node.id.toLowerCase()));
+  const ownLabels = new Set(ownNodes.flatMap((node) => node.labels).map((label) => normalizeRoamLinkLabel(label)));
+  const appliedLabels = new Set<string>();
+
+  const labels = Array.from(labelIndex.keys())
+    .filter(isRoamLinkifyLabelEligible)
+    .sort((a, b) => b.length - a.length || a.localeCompare(b));
+
+  let inBlock = false;
+  let inDrawer = false;
+  let replacements = 0;
+  let ambiguousSkips = 0;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] || "";
+    const trimmed = line.trim();
+
+    if (/^#\+begin_/i.test(trimmed)) {
+      inBlock = true;
+      continue;
+    }
+    if (/^#\+end_/i.test(trimmed)) {
+      inBlock = false;
+      continue;
+    }
+    if (trimmed === ":PROPERTIES:" || trimmed === ":LOGBOOK:") {
+      inDrawer = true;
+      continue;
+    }
+    if (trimmed === ":END:") {
+      inDrawer = false;
+      continue;
+    }
+    if (!lineAllowsRoamLinkify(line, inBlock, inDrawer)) continue;
+
+    for (const normalizedLabel of labels) {
+      if (appliedLabels.has(normalizedLabel)) continue;
+      if (ownLabels.has(normalizedLabel)) continue;
+      const candidates = (labelIndex.get(normalizedLabel) || []).filter(
+        (candidate) => !ownNodeIds.has(candidate.id.toLowerCase()),
+      );
+      if (candidates.length == 0) continue;
+
+      const boundaryRegex = new RegExp(
+        `(^|[^A-Za-z0-9_])(${escapeRegExp(candidates[0]?.label || normalizedLabel)})(?=$|[^A-Za-z0-9_])`,
+        "i",
+      );
+      if (!boundaryRegex.test(line)) continue;
+
+      if (candidates.length > 1) {
+        ambiguousSkips += 1;
+        appliedLabels.add(normalizedLabel);
+        continue;
+      }
+
+      const replaced = replaceRoamLinkifyOutsideLinks(line, candidates[0]!);
+      if (!replaced.replaced) continue;
+
+      lines[i] = replaced.line;
+      replacements += replaced.count;
+      appliedLabels.add(normalizedLabel);
+      break;
+    }
+  }
+
+  const outText = lines.join("\n");
+  return {
+    file: filePath,
+    changed: outText !== normalized,
+    replacements,
+    ambiguousSkips,
+    outText,
+  };
 }
 
 interface ScheduledItem {
@@ -4545,7 +4772,7 @@ async function main(): Promise<void> {
   let lintFormat: "text" | "json" = "text";
 
   // Roam meta
-  let roamAction: "db-sync" | "backlinks" | "node" | "link" = "db-sync";
+  let roamAction: "db-sync" | "backlinks" | "node" | "link" | "linkify" = "db-sync";
   let roamNodeAction: "new" = "new";
   let roamLinkAction: "insert-backlink" = "insert-backlink";
   let roamFormat: "text" | "json" = "text";
@@ -4553,6 +4780,7 @@ async function main(): Promise<void> {
   let roamTitle = "";
   let roamIdForced = "";
   let roamLinkFile = "";
+  let roamLinkifyFile = "";
   let roamLinkPos = "";
   let roamLinkId = "";
   let roamLinkTitle = "";
@@ -4672,6 +4900,9 @@ async function main(): Promise<void> {
         } else if (sub === "backlinks") {
           roamAction = "backlinks";
           i++;
+        } else if (sub === "linkify") {
+          roamAction = "linkify";
+          i++;
         } else if (sub === "node") {
           roamAction = "node";
           i++;
@@ -4726,6 +4957,8 @@ async function main(): Promise<void> {
           exportFile = args[i]!;
         } else if (command === "roam" && roamAction === "link") {
           roamLinkFile = args[i]!;
+        } else if (command === "roam" && roamAction === "linkify") {
+          roamLinkifyFile = args[i]!;
         } else {
           files.push(args[i]!);
         }
@@ -5578,6 +5811,7 @@ Roam / IDs:
   org2 roam db-sync --dir DIR [--recursive] [--apply]
   org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply]
   org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--style wiki|id] [--id UUID] [--apply]
+  org2 roam linkify --dir DIR [--recursive] [--file FILE] [--apply] [--format text|json]
 
 Other:
   org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]
@@ -5638,37 +5872,19 @@ Tips:
         process.exit(1);
       }
 
-      const raw = fs.readFileSync(roamLinkFile, "utf8").replace(/\r\n/g, "\n");
-      const [lineRaw, colRaw] = roamLinkPos.split(":");
-      const line1 = parseInt(lineRaw, 10);
-      if (!Number.isFinite(line1) || line1 < 1) {
-        console.error(`Error: invalid --pos ${roamLinkPos}`);
+      const raw = fs.readFileSync(roamLinkFile, "utf8");
+      const linkText = renderRoamLink(roamLinkTitle, { style: roamLinkStyle, id: roamLinkId || null });
+      let outText = raw.replace(/\r\n/g, "\n");
+      let changed = false;
+      try {
+        const result = insertTextAtLinePosition(raw, roamLinkPos, linkText);
+        outText = result.outText;
+        changed = result.changed;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error(`Error: ${msg}`);
         process.exit(1);
       }
-      let col: number | null = null;
-      if (colRaw !== undefined) {
-        const c = parseInt(colRaw, 10);
-        if (!Number.isFinite(c) || c < 0) {
-          console.error(`Error: invalid --pos ${roamLinkPos}`);
-          process.exit(1);
-        }
-        col = c;
-      }
-
-      const lines = raw.split("\n");
-      const lineIndex = line1 - 1;
-      if (lineIndex >= lines.length) {
-        console.error(`Error: --pos line out of range: ${roamLinkPos}`);
-        process.exit(1);
-      }
-
-      const lineText = lines[lineIndex] ?? "";
-      const linkText = roamLinkStyle === "id" ? `[[id:${roamLinkId}][${roamLinkTitle}]]` : `[[${roamLinkTitle}]]`;
-      const insertCol = col === null ? lineText.length : Math.min(col, lineText.length);
-      lines[lineIndex] = lineText.slice(0, insertCol) + linkText + lineText.slice(insertCol);
-
-      const outText = lines.join("\n");
-      const changed = outText !== raw;
 
       if (roamApply) {
         fs.writeFileSync(roamLinkFile, outText, "utf8");
@@ -5762,6 +5978,85 @@ Tips:
         );
       } else {
         process.stdout.write(filePath + "\n");
+      }
+
+      return;
+    }
+
+
+    if (roamAction === "linkify") {
+      const allFiles = listOrgLikeFiles(dir, recursive);
+      const labelIndex = buildRoamLinkifyIndex(allFiles);
+      const targetFiles = roamLinkifyFile
+        ? [path.resolve(roamLinkifyFile)]
+        : allFiles;
+      const results: RoamLinkifyFileResult[] = [];
+      let appliedCount = 0;
+      let skippedUnreadable = 0;
+
+      for (const filePath of targetFiles) {
+        let raw: string;
+        try {
+          raw = fs.readFileSync(filePath, "utf8");
+        } catch {
+          skippedUnreadable += 1;
+          continue;
+        }
+
+        const result = applyRoamLinkifyToFile(raw, filePath, labelIndex);
+        results.push(result);
+        if (!result.changed) continue;
+
+        if (roamApply) {
+          fs.writeFileSync(filePath, result.outText, "utf8");
+          appliedCount += 1;
+        }
+      }
+
+      const changedFiles = results.filter((result) => result.changed);
+      const replacementCount = results.reduce((sum, result) => sum + result.replacements, 0);
+      const ambiguousSkipCount = results.reduce((sum, result) => sum + result.ambiguousSkips, 0);
+
+      if (roamFormat === "json") {
+        process.stdout.write(
+          JSON.stringify(
+            {
+              action: "linkify",
+              dir,
+              recursive,
+              scanned: targetFiles.length,
+              indexFileCount: allFiles.length,
+              skippedUnreadable,
+              candidateLabelCount: labelIndex.size,
+              changedFileCount: changedFiles.length,
+              replacementCount,
+              ambiguousSkipCount,
+              applied: roamApply,
+              appliedCount,
+              files: results
+                .filter((result) => result.changed || result.ambiguousSkips > 0)
+                .map((result) => ({
+                  file: result.file,
+                  changed: result.changed,
+                  replacements: result.replacements,
+                  ambiguousSkips: result.ambiguousSkips,
+                })),
+            },
+            null,
+            2,
+          ) + "\n",
+        );
+      } else {
+        for (const result of changedFiles) {
+          process.stdout.write(`${result.file}\t${result.replacements}\n`);
+        }
+        console.error(
+          `org2 roam linkify: scanned ${targetFiles.length} target file(s) from ${allFiles.length} indexed file(s); ` +
+            `${changedFiles.length} file(s) changed; ` +
+            `${replacementCount} link(s) inserted; ` +
+            `${ambiguousSkipCount} ambiguous match(es) skipped` +
+            (roamApply ? `; wrote ${appliedCount} file(s)` : ""),
+        );
       }
 
       return;
