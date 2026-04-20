@@ -798,6 +798,7 @@ function applyRoamLinkifyToFile(
 
   let inBlock = false;
   let inDrawer = false;
+  let inBacklinksSectionLevel: number | null = null;
   let replacements = 0;
   let ambiguousSkips = 0;
   const debugMatches: Array<{ label: string; candidate: string; line: number; count: number }> = [];
@@ -806,6 +807,20 @@ function applyRoamLinkifyToFile(
   for (let i = 0; i < lines.length; i += 1) {
     let line = lines[i] || "";
     const trimmed = line.trim();
+    const headlineMatch = /^(\*+)\s+/.exec(line);
+    if (headlineMatch) {
+      const level = headlineMatch[1]!.length;
+      if (inBacklinksSectionLevel !== null && level <= inBacklinksSectionLevel) {
+        inBacklinksSectionLevel = null;
+      }
+      const headlineTitle = normalizeRoamLinkLabel(parseHeadlineTitleForRoam(line));
+      if (headlineTitle === "backlinks") {
+        inBacklinksSectionLevel = level;
+        continue;
+      }
+    }
+
+    if (inBacklinksSectionLevel !== null) continue;
 
     if (/^#\+begin_/i.test(trimmed)) {
       inBlock = true;
