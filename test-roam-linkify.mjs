@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
-const repo = '/Users/avi/dev/org2';
+const repo = path.dirname(fileURLToPath(import.meta.url));
 const cli = path.join(repo, 'dist', 'cli.js');
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'org2-roam-linkify-'));
 
