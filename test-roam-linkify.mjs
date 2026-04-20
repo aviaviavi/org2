@@ -19,7 +19,7 @@ fs.writeFileSync(path.join(tmpDir, 'alpha.org2'), `#+TITLE: Alpha Topic\n\n:PROP
 fs.writeFileSync(path.join(tmpDir, 'delta.org2'), `#+TITLE: Delta Topic\n#+ROAM_ALIASES: D Topic\n\n:PROPERTIES:\n:ID: ${deltaId}\n:END:\n\n`);
 fs.writeFileSync(path.join(tmpDir, 'databricks.org2'), `#+TITLE: Databricks\n\n:PROPERTIES:\n:ID: ${databricksId}\n:END:\n\n`);
 fs.writeFileSync(path.join(tmpDir, 'sonatype.org2'), `#+TITLE: Sonatype\n\n:PROPERTIES:\n:ID: ${sonatypeId}\n:END:\n\n`);
-fs.writeFileSync(path.join(tmpDir, 'notes.org2'), `#+TITLE: Notes\n\n* TODO Delta Topic follow-up\n\nWe discussed Alpha Topic yesterday.\nAlpha Topic came up twice.\nD Topic is shorthand.\nDatabricks and Sonatype both came up.\nDatabricks came up twice.\n[[Alpha Topic]] already linked.\n#+begin_src text\nAlpha Topic inside code should stay plain.\n#+end_src\n`);
+fs.writeFileSync(path.join(tmpDir, 'notes.org2'), `#+TITLE: Notes\n\n* TODO Delta Topic follow-up\n\nWe discussed Alpha Topic yesterday.\nAlpha Topic came up twice.\nD Topic is shorthand.\nDatabricks and Sonatype both came up.\nDatabricks came up twice.\n[[Alpha Topic]] already linked.\n\n* Backlinks\n- Databricks should stay plain here.\n- Sonatype should stay plain here too.\n\n#+begin_src text\nAlpha Topic inside code should stay plain.\n#+end_src\n`);
 fs.writeFileSync(path.join(tmpDir, 'ambiguous.org2'), `#+TITLE: Alpha Topic\n\n:PROPERTIES:\n:ID: ${gammaId}\n:END:\n\nA duplicate node title exists here.\n`);
 
 const preview = JSON.parse(execFileSync('node', [cli, 'roam', 'linkify', '--dir', tmpDir, '--recursive', '--format', 'json'], { encoding: 'utf8' }));
@@ -45,6 +45,7 @@ assert.match(notes, /\[\[id:44444444-4444-4444-4444-444444444444\]\[Databricks\]
 assert.match(notes, /\[\[id:44444444-4444-4444-4444-444444444444\]\[Databricks\]\] came up twice\./);
 assert.match(notes, /\[\[Alpha Topic\]\] already linked\./);
 assert.match(notes, /#\+begin_src text\nAlpha Topic inside code should stay plain\./);
+assert.match(notes, /\* Backlinks\n- Databricks should stay plain here\.\n- Sonatype should stay plain here too\./);
 
 const inserted = path.join(tmpDir, 'inserted.org2');
 fs.writeFileSync(inserted, 'hello world\n');
