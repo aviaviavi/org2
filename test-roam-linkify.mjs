@@ -15,24 +15,25 @@ const deltaId = '33333333-3333-3333-3333-333333333333';
 
 fs.writeFileSync(path.join(tmpDir, 'alpha.org2'), `#+TITLE: Alpha Topic\n\n:PROPERTIES:\n:ID: ${alphaId}\n:END:\n\nAlpha Topic stands alone here.\n`);
 fs.writeFileSync(path.join(tmpDir, 'delta.org2'), `#+TITLE: Delta Topic\n#+ROAM_ALIASES: D Topic\n\n:PROPERTIES:\n:ID: ${deltaId}\n:END:\n\n`);
-fs.writeFileSync(path.join(tmpDir, 'notes.org2'), `#+TITLE: Notes\n\nWe discussed Alpha Topic yesterday.\nAlpha Topic came up twice.\nD Topic is shorthand.\n[[Alpha Topic]] already linked.\n#+begin_src text\nAlpha Topic inside code should stay plain.\n#+end_src\n`);
+fs.writeFileSync(path.join(tmpDir, 'notes.org2'), `#+TITLE: Notes\n\n* TODO Delta Topic follow-up\n\nWe discussed Alpha Topic yesterday.\nAlpha Topic came up twice.\nD Topic is shorthand.\n[[Alpha Topic]] already linked.\n#+begin_src text\nAlpha Topic inside code should stay plain.\n#+end_src\n`);
 fs.writeFileSync(path.join(tmpDir, 'ambiguous.org2'), `#+TITLE: Alpha Topic\n\n:PROPERTIES:\n:ID: ${gammaId}\n:END:\n\nA duplicate node title exists here.\n`);
 
 const preview = JSON.parse(execFileSync('node', [cli, 'roam', 'linkify', '--dir', tmpDir, '--recursive', '--format', 'json'], { encoding: 'utf8' }));
 assert.equal(preview.action, 'linkify');
 assert.equal(preview.changedFileCount, 1);
-assert.equal(preview.replacementCount, 1);
+assert.equal(preview.replacementCount, 2);
 assert.ok(preview.ambiguousSkipCount >= 1);
 
 const singleFilePreview = JSON.parse(execFileSync('node', [cli, 'roam', 'linkify', '--dir', tmpDir, '--recursive', '--file', path.join(tmpDir, 'notes.org2'), '--format', 'json'], { encoding: 'utf8' }));
 assert.equal(singleFilePreview.scanned, 1);
 assert.equal(singleFilePreview.indexFileCount, 4);
 assert.equal(singleFilePreview.changedFileCount, 1);
-assert.equal(singleFilePreview.replacementCount, 1);
+assert.equal(singleFilePreview.replacementCount, 2);
 
 execFileSync('node', [cli, 'roam', 'linkify', '--dir', tmpDir, '--recursive', '--file', path.join(tmpDir, 'notes.org2'), '--apply', '--format', 'json'], { encoding: 'utf8' });
 
 const notes = fs.readFileSync(path.join(tmpDir, 'notes.org2'), 'utf8');
+assert.match(notes, /\* TODO \[\[id:33333333-3333-3333-3333-333333333333\]\[Delta Topic\]\] follow-up/);
 assert.match(notes, /We discussed Alpha Topic yesterday\./);
 assert.match(notes, /Alpha Topic came up twice\./);
 assert.match(notes, /\[\[id:33333333-3333-3333-3333-333333333333\]\[D Topic\]\] is shorthand\./);

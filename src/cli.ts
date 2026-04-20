@@ -705,7 +705,6 @@ function lineAllowsRoamLinkify(line: string, inBlock: boolean, inDrawer: boolean
   if (!trimmed) return false;
   if (/^#\+/.test(trimmed)) return false;
   if (/^# /.test(trimmed)) return false;
-  if (/^\*+\s+/.test(line)) return false;
 
   return true;
 }
