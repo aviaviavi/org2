@@ -24,7 +24,13 @@ assert.equal(preview.changedFileCount, 1);
 assert.equal(preview.replacementCount, 1);
 assert.ok(preview.ambiguousSkipCount >= 1);
 
-execFileSync('node', [cli, 'roam', 'linkify', '--dir', tmpDir, '--recursive', '--apply', '--format', 'json'], { encoding: 'utf8' });
+const singleFilePreview = JSON.parse(execFileSync('node', [cli, 'roam', 'linkify', '--dir', tmpDir, '--recursive', '--file', path.join(tmpDir, 'notes.org2'), '--format', 'json'], { encoding: 'utf8' }));
+assert.equal(singleFilePreview.scanned, 1);
+assert.equal(singleFilePreview.indexFileCount, 4);
+assert.equal(singleFilePreview.changedFileCount, 1);
+assert.equal(singleFilePreview.replacementCount, 1);
+
+execFileSync('node', [cli, 'roam', 'linkify', '--dir', tmpDir, '--recursive', '--file', path.join(tmpDir, 'notes.org2'), '--apply', '--format', 'json'], { encoding: 'utf8' });
 
 const notes = fs.readFileSync(path.join(tmpDir, 'notes.org2'), 'utf8');
 assert.match(notes, /We discussed Alpha Topic yesterday\./);
