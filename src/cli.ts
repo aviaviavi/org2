@@ -444,6 +444,8 @@ type RoamLinkifyFileResult = {
   replacements: number;
   ambiguousSkips: number;
   outText: string;
+  debugMatches?: Array<{ label: string; candidate: string; line: number; count: number }>;
+  debugAmbiguous?: Array<{ label: string; line: number; candidates: string[] }>;
 };
 
 function collectRoamNodesForIndex(content: string, filePath: string): RoamNodeForIndex[] {
@@ -692,9 +694,8 @@ function insertTextAtLinePosition(raw: string, pos: string, insertText: string):
 function isRoamLinkifyLabelEligible(labelRaw: string): boolean {
   const label = String(labelRaw || "").trim();
   if (!label) return false;
-  if (label.length < 4) return false;
+  if (label.length < 3) return false;
   if (!/[A-Za-z]/.test(label)) return false;
-  if (/^[a-z]+$/.test(label)) return false;
   return true;
 }
 
@@ -714,7 +715,7 @@ function replaceRoamLinkifyOutsideLinks(
   candidate: RoamLinkifyCandidate,
 ): { line: string; replaced: boolean; count: number } {
   const escaped = escapeRegExp(candidate.label);
-  const regex = new RegExp(`(^|[^A-Za-z0-9_])(${escaped})(?=$|[^A-Za-z0-9_])`, "i");
+  const regex = new RegExp(`(^|[^A-Za-z0-9_])(${escaped})(?=$|[^A-Za-z0-9_])`, "gi");
   const parts = line.split(/(\[\[[^\]]+\](?:\[[^\]]*\])?\])/g);
   let replaced = false;
   let count = 0;
@@ -722,17 +723,61 @@ function replaceRoamLinkifyOutsideLinks(
   for (let i = 0; i < parts.length; i += 1) {
     if (i % 2 === 1) continue;
     const part = parts[i] || "";
-    const next = part.replace(regex, (match, prefix: string, labelText: string) => {
-      if (replaced) return match;
+    parts[i] = part.replace(regex, (match, prefix: string, labelText: string) => {
       replaced = true;
       count += 1;
       return `${prefix}${renderRoamLink(labelText, { style: "id", id: candidate.id })}`;
     });
-    parts[i] = next;
-    if (replaced) break;
   }
 
   return { line: parts.join(""), replaced, count };
+}
+
+function isRoamLinkifyGenericLabel(labelRaw: string): boolean {
+  const label = normalizeRoamLinkLabel(labelRaw);
+  if (!label) return true;
+  if (/\b(meeting|meetings|call|sync|standup|retro|backlinks)\b/.test(label)) return true;
+  return false;
+}
+
+function isRoamLinkifyDateLikeBaseName(filePath: string): boolean {
+  const base = path.basename(filePath).replace(/\.(org2|org)$/i, "");
+  return /^\d{4}[-_]\d{2}[-_]\d{2}(?:[T_]\d+)?$/.test(base) || /^\d{14,}$/.test(base);
+}
+
+function scoreRoamLinkifyCandidate(candidate: RoamLinkifyCandidate, normalizedLabel: string): number {
+  let score = 0;
+  const base = path.basename(candidate.file).replace(/\.(org2|org)$/i, "");
+  const normalizedBase = normalizeRoamLinkLabel(base);
+
+  if (normalizedBase === normalizedLabel) score += 100;
+  if (!isRoamLinkifyDateLikeBaseName(candidate.file)) score += 20;
+  if (!/\.bak\b|\.archive\b|\/archive\//i.test(candidate.file)) score += 10;
+  if (/\.(org2|org)$/i.test(candidate.file)) score += 5;
+  if (candidate.file.endsWith('.org2')) score += 3;
+  if (candidate.label.trim() === candidate.label && normalizeRoamLinkLabel(candidate.label) === normalizedLabel) score += 2;
+
+  return score;
+}
+
+function resolveRoamLinkifyCandidate(
+  normalizedLabel: string,
+  candidates: RoamLinkifyCandidate[],
+): RoamLinkifyCandidate | null {
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0] || null;
+
+  const ranked = [...candidates].sort((a, b) => {
+    const diff = scoreRoamLinkifyCandidate(b, normalizedLabel) - scoreRoamLinkifyCandidate(a, normalizedLabel);
+    if (diff !== 0) return diff;
+    return a.file.localeCompare(b.file);
+  });
+
+  const first = ranked[0]!;
+  const second = ranked[1];
+  if (!second) return first;
+  if (scoreRoamLinkifyCandidate(first, normalizedLabel) > scoreRoamLinkifyCandidate(second, normalizedLabel)) return first;
+  return null;
 }
 
 function applyRoamLinkifyToFile(
@@ -745,19 +790,21 @@ function applyRoamLinkifyToFile(
   const ownNodes = collectRoamNodesForIndex(normalized, filePath);
   const ownNodeIds = new Set(ownNodes.map((node) => node.id.toLowerCase()));
   const ownLabels = new Set(ownNodes.flatMap((node) => node.labels).map((label) => normalizeRoamLinkLabel(label)));
-  const appliedLabels = new Set<string>();
 
   const labels = Array.from(labelIndex.keys())
     .filter(isRoamLinkifyLabelEligible)
+    .filter((label) => !isRoamLinkifyGenericLabel(label))
     .sort((a, b) => b.length - a.length || a.localeCompare(b));
 
   let inBlock = false;
   let inDrawer = false;
   let replacements = 0;
   let ambiguousSkips = 0;
+  const debugMatches: Array<{ label: string; candidate: string; line: number; count: number }> = [];
+  const debugAmbiguous: Array<{ label: string; line: number; candidates: string[] }> = [];
 
   for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i] || "";
+    let line = lines[i] || "";
     const trimmed = line.trim();
 
     if (/^#\+begin_/i.test(trimmed)) {
@@ -779,32 +826,42 @@ function applyRoamLinkifyToFile(
     if (!lineAllowsRoamLinkify(line, inBlock, inDrawer)) continue;
 
     for (const normalizedLabel of labels) {
-      if (appliedLabels.has(normalizedLabel)) continue;
       if (ownLabels.has(normalizedLabel)) continue;
       const candidates = (labelIndex.get(normalizedLabel) || []).filter(
         (candidate) => !ownNodeIds.has(candidate.id.toLowerCase()),
       );
       if (candidates.length == 0) continue;
 
+      const resolved = resolveRoamLinkifyCandidate(normalizedLabel, candidates);
+      const probeLabel = resolved?.label || candidates[0]?.label || normalizedLabel;
       const boundaryRegex = new RegExp(
-        `(^|[^A-Za-z0-9_])(${escapeRegExp(candidates[0]?.label || normalizedLabel)})(?=$|[^A-Za-z0-9_])`,
+        `(^|[^A-Za-z0-9_])(${escapeRegExp(probeLabel)})(?=$|[^A-Za-z0-9_])`,
         "i",
       );
       if (!boundaryRegex.test(line)) continue;
 
-      if (candidates.length > 1) {
+      if (!resolved) {
         ambiguousSkips += 1;
-        appliedLabels.add(normalizedLabel);
+        debugAmbiguous.push({
+          label: normalizedLabel,
+          line: i + 1,
+          candidates: candidates.slice(0, 8).map((candidate) => `${candidate.label} @ ${candidate.file}`),
+        });
         continue;
       }
 
-      const replaced = replaceRoamLinkifyOutsideLinks(line, candidates[0]!);
+      const replaced = replaceRoamLinkifyOutsideLinks(line, resolved);
       if (!replaced.replaced) continue;
 
       lines[i] = replaced.line;
       replacements += replaced.count;
-      appliedLabels.add(normalizedLabel);
-      break;
+      debugMatches.push({
+        label: normalizedLabel,
+        candidate: `${resolved.label} @ ${resolved.file}`,
+        line: i + 1,
+        count: replaced.count,
+      });
+      line = lines[i] || line;
     }
   }
 
@@ -815,6 +872,8 @@ function applyRoamLinkifyToFile(
     replacements,
     ambiguousSkips,
     outText,
+    debugMatches,
+    debugAmbiguous,
   };
 }
 
@@ -6033,12 +6092,13 @@ Tips:
               applied: roamApply,
               appliedCount,
               files: results
-                .filter((result) => result.changed || result.ambiguousSkips > 0)
                 .map((result) => ({
                   file: result.file,
                   changed: result.changed,
                   replacements: result.replacements,
                   ambiguousSkips: result.ambiguousSkips,
+                  debugMatches: result.debugMatches,
+                  debugAmbiguous: result.debugAmbiguous,
                 })),
             },
             null,
