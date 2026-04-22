@@ -1,0 +1,6 @@
+:PROPERTIES:
+:ORG2_ARTIFACT_ROLE: raw
+:END:
+#+TITLE: Raw source
+
+Original capture.

@@ -1,0 +1,10 @@
+:PROPERTIES:
+:ORG2_ARTIFACT_ROLE: compiled
+:ID: compiled-summary-123
+:ORG2_PROVENANCE: file:../raw/source.org
+:ORG2_GENERATED_AT: 2026-04-22
+:ORG2_GENERATOR: org2 query save --format report
+:END:
+#+TITLE: Compiled summary
+
+Generated summary.

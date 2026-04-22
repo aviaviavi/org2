@@ -22,6 +22,7 @@ Org2 is *early alpha*.
 - Agenda workflows (CLI + VS Code)
 - Basic editing workflows (TODO/planning updates, archive/refile, capture)
 - HTML export (MVP)
+- Corpus lint for artifact roles, provenance, IDs, and corpus-flow conventions
 - LSP server (MVP) for links/navigation/completions/formatting
 
 ** What’s not done yet
@@ -89,6 +90,14 @@ Bounded range + JSON:
 #+begin_src sh
 npm run org2 -- agenda --from 2026-01-01 --to 2026-01-31 --format json
 #+end_src
+
+Run corpus lint:
+
+#+begin_src sh
+npm run org2 -- lint --dir /path/to/org --recursive
+#+end_src
+
+This catches artifact-role/provenance issues and now also checks the conventional corpus flow of =raw/= -> =notes/= -> =compiled/= -> =views/= -> =publish/= when you use those directories.
 
 Run language server:
 

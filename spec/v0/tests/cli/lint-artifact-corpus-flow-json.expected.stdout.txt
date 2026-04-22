@@ -1,0 +1,29 @@
+{
+  "$schema": "org2:lint:v1",
+  "checkedFiles": 4,
+  "skippedFiles": 0,
+  "issueCount": 3,
+  "issues": [
+    {
+      "severity": "warning",
+      "rule": "artifact-role-path-mismatch",
+      "file": "spec/v0/fixtures/lint-artifact-corpus-flow/notes/wiki.org",
+      "line": 1,
+      "message": "Files under 'notes/' should use ORG2_ARTIFACT_ROLE 'canonical', but found 'raw'."
+    },
+    {
+      "severity": "warning",
+      "rule": "artifact-role-path-missing",
+      "file": "spec/v0/fixtures/lint-artifact-corpus-flow/publish/report.org",
+      "line": 1,
+      "message": "Files under 'publish/' should set ORG2_ARTIFACT_ROLE 'report' to match the raw -> notes -> compiled -> views -> publish corpus flow."
+    },
+    {
+      "severity": "warning",
+      "rule": "artifact-role-missing",
+      "file": "spec/v0/fixtures/lint-artifact-corpus-flow/publish/report.org",
+      "line": 1,
+      "message": "ORG2_PROVENANCE is present but ORG2_ARTIFACT_ROLE is missing."
+    }
+  ]
+}
