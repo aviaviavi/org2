@@ -1,0 +1,1 @@
+org2 lint --files spec/v0/fixtures/lint-artifact-corpus-flow/raw/source.org spec/v0/fixtures/lint-artifact-corpus-flow/notes/wiki.org spec/v0/fixtures/lint-artifact-corpus-flow/compiled/summary.org spec/v0/fixtures/lint-artifact-corpus-flow/publish/report.org --format json
