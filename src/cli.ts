@@ -902,7 +902,7 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
   <style>
     :root { color-scheme: light dark; }
     body { margin: 0; font: 14px/1.4 -apple-system, BlinkMacSystemFont, sans-serif; background: #0b1020; color: #e5e7eb; }
-    .wrap { display: grid; grid-template-columns: 300px 1fr; min-height: 100vh; }
+    .wrap { display: grid; grid-template-columns: 300px 1fr; min-height: 100vh; align-items: stretch; }
     .sidebar { padding: 16px; background: rgba(15, 23, 42, 0.92); border-right: 1px solid rgba(148, 163, 184, 0.2); overflow: auto; }
     h1 { margin: 0 0 6px; font-size: 18px; }
     .sub { color: #94a3b8; margin-bottom: 14px; word-break: break-word; }
@@ -912,8 +912,8 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
     ol { margin: 8px 0 0 18px; padding: 0; }
     li { margin: 0 0 8px; }
     .hint { color: #94a3b8; margin-top: 14px; }
-    .stage { position: relative; min-width: 0; }
-    canvas { display: block; width: 100%; height: 100vh; }
+    .stage { position: relative; min-width: 0; min-height: 100vh; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; min-height: 100vh; }
     .tooltip { position: absolute; right: 16px; bottom: 16px; max-width: 320px; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 10px; padding: 10px 12px; color: #e5e7eb; }
   </style>
 </head>
@@ -944,6 +944,7 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
   <script>
     const payload = ${payload};
     const canvas = document.getElementById('graph');
+    const stage = canvas.parentElement;
     const tooltip = document.getElementById('tooltip');
     const ctx = canvas.getContext('2d');
     const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -963,8 +964,9 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
     let hovered = null;
 
     function resize() {
-      width = canvas.clientWidth;
-      height = canvas.clientHeight;
+      width = Math.max(1, stage ? stage.clientWidth : canvas.clientWidth);
+      height = Math.max(window.innerHeight, stage ? stage.clientHeight : canvas.clientHeight);
+      canvas.style.height = height + 'px';
       canvas.width = Math.floor(width * dpr);
       canvas.height = Math.floor(height * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, width / 2, height / 2);
