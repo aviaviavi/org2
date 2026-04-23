@@ -6342,7 +6342,282 @@ Tips:
   process.exit(exitCode);
 }
 
+function printScopedUsage(
+  command: string,
+  options: {
+    exportAction: "html";
+    todoAction: "set" | "toggle";
+    planAction: "set" | "today";
+    cryptAction: "encrypt" | "decrypt";
+    idAction: "get" | "ensure";
+    roamAction: "db-sync" | "backlinks" | "node" | "link" | "linkify" | "graph";
+    roamNodeAction: "new";
+    roamLinkAction: "insert-backlink";
+  },
+  exitCode: number,
+): never {
+  let text = "";
+
+  if (command === "agenda") {
+    text = `org2 agenda
+
+Usage:
+  org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
+
+Flags:
+  --dir DIR           Root directory to scan
+  --recursive         Recurse into subdirectories
+  --from YYYY-MM-DD   Start date filter
+  --to YYYY-MM-DD     End date filter
+  --format text|json  Output format`;
+  } else if (command === "todo") {
+    text = `org2 todo ${options.todoAction}
+
+Usage:
+  org2 todo <set|toggle> --file FILE (--line N | --pos LINE[:COL]) [--apply]
+
+Flags:
+  --file FILE         Target file
+  --line N            Heading line number
+  --pos LINE[:COL]    Heading position
+  --to TODO           Target TODO keyword for 'set'
+  --apply             Write changes instead of previewing`;
+  } else if (command === "plan") {
+    text = `org2 plan ${options.planAction}
+
+Usage:
+  org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
+
+Flags:
+  --file FILE         Target file
+  --line N            Heading line number
+  --pos LINE[:COL]    Heading position
+  --date YYYY-MM-DD   Planned date for 'set'
+  --apply             Write changes instead of previewing`;
+  } else if (command === "crypt") {
+    text = `org2 crypt ${options.cryptAction}
+
+Usage:
+  org2 crypt <encrypt|decrypt> --file FILE (--line N | --pos LINE[:COL]) --passphrase PASS [--gpg-program PATH] [--apply]
+
+Flags:
+  --file FILE         Target file
+  --line N            Heading line number
+  --pos LINE[:COL]    Heading position
+  --passphrase PASS   Passphrase to use
+  --gpg-program PATH  Optional gpg binary path
+  --apply             Write changes instead of previewing`;
+  } else if (command === "capture") {
+    text = `org2 capture
+
+Usage:
+  org2 capture --file FILE --title TITLE [--template note|task] [--apply]
+
+Flags:
+  --file FILE           Target file
+  --title TITLE         Heading title
+  --template note|task  Capture template
+  --apply               Write changes instead of previewing`;
+  } else if (command === "archive") {
+    text = `org2 archive
+
+Usage:
+  org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--apply]
+
+Flags:
+  --file FILE          Source file
+  --pos LINE[:COL]     Heading position
+  --archive-file FILE  Destination archive file
+  --apply              Write changes instead of previewing`;
+  } else if (command === "refile") {
+    text = `org2 refile
+
+Usage:
+  org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--apply]
+
+Flags:
+  --file FILE        Source file
+  --pos LINE[:COL]   Source heading position
+  --to-file FILE     Destination file
+  --to-pos LINE[:COL] Destination position
+  --apply            Write changes instead of previewing`;
+  } else if (command === "export") {
+    text = `org2 export ${options.exportAction}
+
+Usage:
+  org2 export html --file FILE [--out FILE] [--apply]
+  org2 export html --dir DIR [--recursive] [--out-dir DIR] [--index FILE] [--apply]
+
+Flags:
+  --file FILE      Single input file
+  --dir DIR        Input directory
+  --recursive      Recurse into subdirectories
+  --out FILE       Output file for single-file export
+  --out-dir DIR    Output directory for multi-file export
+  --index FILE     Optional index file name
+  --apply          Write files instead of previewing`;
+  } else if (command === "publish") {
+    text = `org2 publish
+
+Usage:
+  org2 publish [PROJECT] [--config PATH] [--preview]
+
+Flags:
+  --config PATH   Publish config file
+  --preview       Do not write outputs`;
+  } else if (command === "fmt") {
+    text = `org2 fmt
+
+Usage:
+  org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]
+
+Flags:
+  --stdin         Read input from stdin
+  --dir DIR       Root directory to scan
+  --recursive     Recurse into subdirectories
+  --file FILE     Single target file
+  --files FILE    One or more target files
+  --check         Exit non-zero if formatting would change files
+  --apply         Write changes instead of previewing`;
+  } else if (command === "lsp") {
+    text = `org2 lsp
+
+Usage:
+  org2 lsp`;
+  } else if (command === "id") {
+    text = `org2 id ${options.idAction}
+
+Usage:
+  org2 id <get|ensure> --file FILE [--line N|--pos LINE[:COL]] [--apply]
+
+Flags:
+  --file FILE       Target file
+  --line N          Heading line number
+  --pos LINE[:COL]  Heading position
+  --format text|json Output format
+  --apply           Write changes for 'ensure'`;
+  } else if (command === "backlinks") {
+    text = `org2 backlinks
+
+Usage:
+  org2 backlinks --id UUID [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+
+Flags:
+  --id UUID         Target ID
+  --dir DIR         Root directory to scan
+  --recursive       Recurse into subdirectories
+  --file FILE       Single target file
+  --files FILE      One or more target files
+  --format text|json Output format`;
+  } else if (command === "query") {
+    text = `org2 query
+
+Usage:
+  org2 query --id UUID [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+
+Flags:
+  --id UUID         Target ID
+  --dir DIR         Root directory to scan
+  --recursive       Recurse into subdirectories
+  --file FILE       Single target file
+  --files FILE      One or more target files
+  --format text|json Output format`;
+  } else if (command === "lint") {
+    text = `org2 lint
+
+Usage:
+  org2 lint [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+
+Flags:
+  --dir DIR         Root directory to scan
+  --recursive       Recurse into subdirectories
+  --file FILE       Single target file
+  --files FILE      One or more target files
+  --format text|json Output format`;
+  } else if (command === "roam") {
+    if (options.roamAction === "db-sync") {
+      text = `org2 roam db-sync
+
+Usage:
+  org2 roam db-sync --dir DIR [--recursive] [--apply] [--format text|json]
+
+Flags:
+  --dir DIR         Root directory to scan
+  --recursive       Recurse into subdirectories
+  --format text|json Output format
+  --apply           Write missing file IDs`;
+    } else if (options.roamAction === "backlinks") {
+      text = `org2 roam backlinks
+
+Usage:
+  org2 roam backlinks --id UUID [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+
+Notes:
+  Alias for org2 backlinks, kept for namespaced editor flows.`;
+    } else if (options.roamAction === "node") {
+      text = `org2 roam node ${options.roamNodeAction}
+
+Usage:
+  org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply] [--format text|json]
+
+Flags:
+  --dir DIR         Output directory
+  --title TITLE     Node title
+  --id UUID         Optional explicit ID
+  --format text|json Output format
+  --apply           Write the file instead of previewing`;
+    } else if (options.roamAction === "link") {
+      text = `org2 roam link ${options.roamLinkAction}
+
+Usage:
+  org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--style wiki|id] [--id UUID] [--apply] [--format text|json]
+
+Flags:
+  --file FILE       Target file
+  --pos LINE[:COL]  Insert position
+  --title TITLE     Link title
+  --style wiki|id   Render as wiki or id link
+  --id UUID         Required when --style id
+  --format text|json Output format
+  --apply           Write changes instead of previewing`;
+    } else if (options.roamAction === "linkify") {
+      text = `org2 roam linkify
+
+Usage:
+  org2 roam linkify --dir DIR [--recursive] [--file FILE] [--apply] [--format text|json]
+
+Flags:
+  --dir DIR         Root directory to scan
+  --recursive       Recurse into subdirectories
+  --file FILE       Restrict rewrites to one file
+  --format text|json Output format
+  --apply           Write linkified content instead of previewing`;
+    } else if (options.roamAction === "graph") {
+      text = `org2 roam graph
+
+Usage:
+  org2 roam graph --dir DIR [--recursive] [--out FILE] [--format text|json]
+
+Flags:
+  --dir DIR         Root directory to scan
+  --recursive       Recurse into subdirectories
+  --out FILE        Output HTML file
+  --format text|json Output format`;
+    }
+  }
+
+  if (!text) {
+    printGeneralUsage(exitCode);
+  }
+
+  console.error(text);
+  process.exit(exitCode);
+}
+
   if (help) {
+    if (command) {
+      printScopedUsage(command, { exportAction, todoAction, planAction, cryptAction, idAction, roamAction, roamNodeAction, roamLinkAction }, 0);
+    }
     printGeneralUsage(0);
   }
 
