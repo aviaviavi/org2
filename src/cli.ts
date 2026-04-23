@@ -884,13 +884,21 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
   const title = opts?.title || "Org2 Roam Graph";
   const subtitle = opts?.dir ? `Source: ${opts.dir}` : "Static debug view";
   const isolatedCount = graph.nodes.filter((node) => node.degree === 0).length;
-  const topNodes = graph.nodes.slice(0, 12).map((node) => ({
+  const connectedNodes = graph.nodes.filter((node) => node.degree > 0);
+  const maxNodes = 500;
+  const graphNodes = (connectedNodes.length > 0 ? connectedNodes : graph.nodes)
+    .slice()
+    .sort((a, b) => b.degree - a.degree || a.label.localeCompare(b.label))
+    .slice(0, maxNodes);
+  const graphNodeIds = new Set(graphNodes.map((node) => node.id));
+  const graphEdges = graph.edges.filter((edge) => graphNodeIds.has(edge.source) && graphNodeIds.has(edge.target));
+  const topNodes = graphNodes.slice(0, 12).map((node) => ({
     label: node.label,
     degree: node.degree,
   }));
   const payload = JSON.stringify({
-    nodes: graph.nodes,
-    edges: graph.edges,
+    nodes: graphNodes,
+    edges: graphEdges,
   });
 
   return `<!doctype html>
@@ -926,7 +934,7 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
         <div class="card"><strong>${graph.nodes.length}</strong>nodes</div>
         <div class="card"><strong>${graph.edges.length}</strong>edges</div>
         <div class="card"><strong>${isolatedCount}</strong>isolated</div>
-        <div class="card"><strong>${graph.nodes.filter((node) => node.degree > 0).length}</strong>connected</div>
+        <div class="card"><strong>${connectedNodes.length}</strong>connected</div>
       </div>
       <div class="card">
         <div><strong style="font-size:14px">Top connected nodes</strong></div>
@@ -934,7 +942,7 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
           ${topNodes.map((node) => `<li>${escapeHtml(node.label)} <span style="color:#94a3b8">(${node.degree})</span></li>`).join("")}
         </ol>
       </div>
-      <div class="hint">Very basic on purpose. Bigger dots mean higher degree. Hover a node to inspect it.</div>
+      <div class="hint">Showing up to ${graphNodes.length} connected nodes, ranked by degree. Bigger dots mean higher degree. Hover a node to inspect it.</div>
     </aside>
     <main class="stage">
       <canvas id="graph"></canvas>
@@ -950,17 +958,18 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
     const esc = (value) => String(value || '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
     const nodes = payload.nodes.map((node, index) => ({
       ...node,
-      x: Math.cos((index / Math.max(1, payload.nodes.length)) * Math.PI * 2) * 180,
-      y: Math.sin((index / Math.max(1, payload.nodes.length)) * Math.PI * 2) * 180,
+      x: Math.cos((index / Math.max(1, payload.nodes.length)) * Math.PI * 2) * (220 + Math.min(420, payload.nodes.length * 0.35)),
+      y: Math.sin((index / Math.max(1, payload.nodes.length)) * Math.PI * 2) * (220 + Math.min(420, payload.nodes.length * 0.35)),
       vx: 0,
       vy: 0,
-      r: 4 + Math.min(18, Math.sqrt(node.degree || 0) * 2.2),
+      r: 3 + Math.min(12, Math.sqrt(node.degree || 0) * 1.4),
     }));
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
     const edges = payload.edges.map((edge) => ({ ...edge, a: nodeById.get(edge.source), b: nodeById.get(edge.target) })).filter((edge) => edge.a && edge.b);
     let width = 0;
     let height = 0;
     let hovered = null;
+    const simulationSteps = nodes.length > 350 ? 160 : 220;
 
     function resize() {
       width = Math.max(1, canvas.clientWidth);
@@ -972,8 +981,8 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
 
     function step() {
       for (const node of nodes) {
-        node.vx *= 0.92;
-        node.vy *= 0.92;
+        node.vx *= 0.88;
+        node.vy *= 0.88;
       }
       for (let i = 0; i < nodes.length; i += 1) {
         const a = nodes[i];
@@ -981,10 +990,11 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
           const b = nodes[j];
           let dx = b.x - a.x;
           let dy = b.y - a.y;
-          const dist2 = Math.max(30, dx * dx + dy * dy);
-          const force = 2200 / dist2;
-          dx /= Math.sqrt(dist2);
-          dy /= Math.sqrt(dist2);
+          const dist2 = Math.max(120, dx * dx + dy * dy);
+          const dist = Math.sqrt(dist2);
+          const force = 900 / dist2;
+          dx /= dist;
+          dy /= dist;
           a.vx -= dx * force;
           a.vy -= dy * force;
           b.vx += dx * force;
@@ -995,8 +1005,8 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
         const dx = edge.b.x - edge.a.x;
         const dy = edge.b.y - edge.a.y;
         const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-        const target = 40 + Math.min(120, (edge.count || 1) * 12);
-        const force = (dist - target) * 0.0009;
+        const target = 24 + Math.min(80, (edge.count || 1) * 8);
+        const force = (dist - target) * 0.0012;
         const nx = dx / dist;
         const ny = dy / dist;
         edge.a.vx += nx * force;
@@ -1015,29 +1025,28 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
       ctx.fillRect(-width / 2, -height / 2, width, height);
       ctx.lineWidth = 1;
       for (const edge of edges) {
-        ctx.strokeStyle = 'rgba(148, 163, 184, 0.18)';
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
         ctx.beginPath();
         ctx.moveTo(edge.a.x, edge.a.y);
         ctx.lineTo(edge.b.x, edge.b.y);
         ctx.stroke();
       }
       for (const node of nodes) {
-        ctx.fillStyle = hovered && hovered.id === node.id ? '#f59e0b' : (node.degree > 0 ? '#60a5fa' : '#475569');
+        ctx.fillStyle = hovered && hovered.id === node.id ? '#f59e0b' : '#60a5fa';
         ctx.beginPath();
         ctx.arc(node.x, node.y, node.r, 0, Math.PI * 2);
         ctx.fill();
-        if (node.degree >= 4 || (hovered && hovered.id === node.id)) {
-          ctx.fillStyle = '#e5e7eb';
-          ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
-          ctx.fillText(node.label, node.x + node.r + 4, node.y + 4);
-        }
+      }
+      if (hovered) {
+        ctx.fillStyle = '#e5e7eb';
+        ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.fillText(hovered.label, hovered.x + hovered.r + 4, hovered.y + 4);
       }
     }
 
-    function frame() {
-      step();
+    function runLayout() {
+      for (let i = 0; i < simulationSteps; i += 1) step();
       draw();
-      requestAnimationFrame(frame);
     }
 
     canvas.addEventListener('mousemove', (event) => {
@@ -1060,11 +1069,21 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
       } else {
         tooltip.textContent = 'Hover a node';
       }
+      draw();
     });
 
-    window.addEventListener('resize', resize);
+    canvas.addEventListener('mouseleave', () => {
+      hovered = null;
+      tooltip.textContent = 'Hover a node';
+      draw();
+    });
+
+    window.addEventListener('resize', () => {
+      resize();
+      draw();
+    });
     resize();
-    frame();
+    runLayout();
   </script>
 </body>
 </html>`;
