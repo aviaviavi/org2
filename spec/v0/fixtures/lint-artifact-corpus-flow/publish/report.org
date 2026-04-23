@@ -1,0 +1,9 @@
+:PROPERTIES:
+:ID: published-report-123
+:ORG2_PROVENANCE: artifact:compiled-summary-123
+:ORG2_GENERATED_AT: 2026-04-22
+:ORG2_GENERATOR: org2 publish docs-site --config org2.json
+:END:
+#+TITLE: Published report
+
+Should declare report role in publish/.
