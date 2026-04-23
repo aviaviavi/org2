@@ -1,0 +1,7 @@
+:PROPERTIES:
+:ORG2_ARTIFACT_ROLE: raw
+:ID: wiki-note-123
+:END:
+#+TITLE: Canonical note
+
+Should be canonical in notes/.

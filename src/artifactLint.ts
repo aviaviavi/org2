@@ -32,6 +32,13 @@ const PROVENANCE_ENTRY_KINDS = ["id", "file", "query", "run", "url", "note", "ar
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_DATE_TIME_RE =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+const CORPUS_FLOW_ROLE_BY_DIR = new Map<string, ArtifactRole>([
+  ["raw", "raw"],
+  ["notes", "canonical"],
+  ["compiled", "compiled"],
+  ["views", "view"],
+  ["publish", "report"],
+]);
 
 function normalizePropertyValue(raw: string): string {
   return String(raw || "").trim();
@@ -154,6 +161,21 @@ function isValidGeneratedAt(raw: string): boolean {
   return ISO_DATE_RE.test(value) || ISO_DATE_TIME_RE.test(value);
 }
 
+function inferExpectedArtifactRoleFromPath(filePath: string): { dir: string; role: ArtifactRole } | null {
+  const normalized = String(filePath || "").replace(/\\/g, "/");
+  const segments = normalized.split("/").map((segment) => segment.trim().toLowerCase()).filter(Boolean);
+
+  for (let i = segments.length - 2; i >= 0; i -= 1) {
+    const dir = segments[i] || "";
+    const role = CORPUS_FLOW_ROLE_BY_DIR.get(dir);
+    if (role) {
+      return { dir, role };
+    }
+  }
+
+  return null;
+}
+
 function evaluateArtifactProperties(
   props: Map<string, string>,
   filePath: string,
@@ -174,6 +196,27 @@ function evaluateArtifactProperties(
       file: filePath,
       line,
       message: `Invalid ORG2_ARTIFACT_ROLE '${roleRaw}'. Expected one of: ${ARTIFACT_ROLE_VALUES.join(", ")}`,
+    });
+  }
+
+  const expectedRoleFromPath = inferExpectedArtifactRoleFromPath(filePath);
+  if (expectedRoleFromPath && !role) {
+    issues.push({
+      severity: "warning",
+      rule: "artifact-role-path-missing",
+      file: filePath,
+      line,
+      message: `Files under '${expectedRoleFromPath.dir}/' should set ORG2_ARTIFACT_ROLE '${expectedRoleFromPath.role}' to match the raw -> notes -> compiled -> views -> publish corpus flow.`,
+    });
+  }
+
+  if (expectedRoleFromPath && role && role !== expectedRoleFromPath.role) {
+    issues.push({
+      severity: "warning",
+      rule: "artifact-role-path-mismatch",
+      file: filePath,
+      line,
+      message: `Files under '${expectedRoleFromPath.dir}/' should use ORG2_ARTIFACT_ROLE '${expectedRoleFromPath.role}', but found '${role}'.`,
     });
   }
 

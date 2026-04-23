@@ -21,6 +21,7 @@ Main workflows:
 - =crypt ...=
 - =export html=
 - =publish=
+- =lint=
 - =lsp=
 
 * Agenda
@@ -61,6 +62,21 @@ Canonical formatting for Org2 files.
 npm run org2 -- fmt --dir ~/notes --recursive --check
 npm run org2 -- fmt --dir ~/notes --recursive --apply
 #+end_src
+
+* Corpus lint
+
+Lint is the first compiler-style health pass for artifact metadata and corpus structure.
+
+#+begin_src sh
+npm run org2 -- lint --dir ~/notes --recursive
+#+end_src
+
+Current checks include:
+
+- invalid or missing =ORG2_ARTIFACT_ROLE= on generated outputs
+- missing/invalid provenance, generator, and generated-at metadata
+- duplicate IDs and unresolved provenance references
+- conventional corpus-flow checks when you organize notes as =raw/= -> =notes/= -> =compiled/= -> =views/= -> =publish/=
 
 * Roam workflows
 
