@@ -448,6 +448,27 @@ type RoamLinkifyFileResult = {
   debugAmbiguous?: Array<{ label: string; line: number; candidates: string[] }>;
 };
 
+type RoamGraphNode = {
+  id: string;
+  label: string;
+  labels: string[];
+  file: string;
+  degreeIn: number;
+  degreeOut: number;
+  degree: number;
+};
+
+type RoamGraphEdge = {
+  source: string;
+  target: string;
+  count: number;
+};
+
+type RoamGraphData = {
+  nodes: RoamGraphNode[];
+  edges: RoamGraphEdge[];
+};
+
 function collectRoamNodesForIndex(content: string, filePath: string): RoamNodeForIndex[] {
   const raw = content.replace(/\r\n/g, "\n");
   const lines = raw.split("\n");
@@ -650,6 +671,404 @@ function buildRoamLinkifyIndex(files: string[]): Map<string, RoamLinkifyCandidat
   return index;
 }
 
+function extractRoamFileId(content: string): string | null {
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+
+  for (let i = 0; i < Math.min(lines.length, 30); i += 1) {
+    const m = /^#\+id:\s*(\S+)\s*$/i.exec((lines[i] ?? "").trim());
+    if (m) return String(m[1] || "").trim().toLowerCase();
+  }
+
+  let idx = 0;
+  while (idx < lines.length) {
+    const line = (lines[idx] ?? "").trim();
+    if (line === "" || line.startsWith("#")) {
+      idx += 1;
+      continue;
+    }
+    break;
+  }
+
+  if ((lines[idx] ?? "").trim() !== ":PROPERTIES:") return null;
+
+  for (let j = idx + 1; j < lines.length; j += 1) {
+    const line = (lines[j] ?? "").trim();
+    if (line === ":END:") return null;
+    const m = /^:ID:\s*(\S+)\s*$/i.exec(line);
+    if (m) return String(m[1] || "").trim().toLowerCase();
+  }
+
+  return null;
+}
+
+function findRoamIdLinksInLine(line: string): string[] {
+  const ids: string[] = [];
+  const bracketRe = /\[\[id:([0-9a-fA-F-]{36})(?:\]\[[^\]\n]*\])?\]\]/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = bracketRe.exec(line)) !== null) {
+    ids.push(String(match[1] || "").toLowerCase());
+  }
+
+  const withoutBracketLinks = line.replace(/\[\[id:[0-9a-fA-F-]{36}(?:\]\[[^\]\n]*\])?\]\]/g, "");
+  const bareRe = /\bid:([0-9a-fA-F-]{36})\b/g;
+  while ((match = bareRe.exec(withoutBracketLinks)) !== null) {
+    ids.push(String(match[1] || "").toLowerCase());
+  }
+
+  return ids;
+}
+
+function findRoamWikiLinksInLine(line: string): string[] {
+  const labels: string[] = [];
+  const bracketRe = /\[\[([^\]\n]+?)(?:\]\[[^\]\n]*)?\]\]/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = bracketRe.exec(line)) !== null) {
+    const targetRaw = String(match[1] || "").trim();
+    const lower = targetRaw.toLowerCase();
+    if (!targetRaw) continue;
+    if (lower.startsWith("id:")) continue;
+    if (lower.startsWith("file:")) continue;
+    if (lower.startsWith("http://") || lower.startsWith("https://")) continue;
+    if (lower.startsWith("mailto:")) continue;
+    if (targetRaw.startsWith("#") || targetRaw.startsWith("*")) continue;
+    if (targetRaw.startsWith("/") || targetRaw.startsWith("./") || targetRaw.startsWith("../")) continue;
+    labels.push(targetRaw);
+  }
+
+  return labels;
+}
+
+function buildRoamGraph(files: string[]): RoamGraphData {
+  const nodesById = new Map<string, { id: string; label: string; labels: string[]; file: string }>();
+  const titleIndex = buildRoamTitleIndex(files);
+
+  for (const filePath of files) {
+    let content: string;
+    try {
+      content = fs.readFileSync(filePath, "utf8");
+    } catch {
+      continue;
+    }
+
+    for (const node of collectRoamNodesForIndex(content, filePath)) {
+      if (nodesById.has(node.id)) continue;
+      nodesById.set(node.id, {
+        id: node.id,
+        label: node.labels[0] || node.id,
+        labels: node.labels,
+        file: filePath,
+      });
+    }
+  }
+
+  const edgeCounts = new Map<string, number>();
+  const degreeIn = new Map<string, number>();
+  const degreeOut = new Map<string, number>();
+
+  const bump = (map: Map<string, number>, id: string): void => {
+    map.set(id, (map.get(id) || 0) + 1);
+  };
+
+  for (const filePath of files) {
+    let content: string;
+    try {
+      content = fs.readFileSync(filePath, "utf8");
+    } catch {
+      continue;
+    }
+
+    const lines = content.replace(/\r\n/g, "\n").split("\n");
+    const fileId = extractRoamFileId(content);
+    let currentHeadlineLine = -1;
+    let currentHeadlineId: string | null = null;
+    let inBlock = false;
+
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i] ?? "";
+      const trimmed = line.trim();
+
+      if (/^#\+begin_/i.test(trimmed)) {
+        inBlock = true;
+        continue;
+      }
+      if (/^#\+end_/i.test(trimmed)) {
+        inBlock = false;
+        continue;
+      }
+      if (inBlock) continue;
+      if (/^: /.test(line)) continue;
+
+      if (/^\*+\s+/.test(line)) {
+        currentHeadlineLine = i;
+        currentHeadlineId = null;
+        continue;
+      }
+
+      if (trimmed === ":PROPERTIES:") {
+        let belongsToHeadline = false;
+        if (currentHeadlineLine !== -1) {
+          const prev = (lines[i - 1] ?? "").trim();
+          if (i - 1 === currentHeadlineLine || (prev === "" && i - 2 === currentHeadlineLine)) {
+            belongsToHeadline = true;
+          }
+        }
+
+        for (let j = i + 1; j < lines.length; j += 1) {
+          const drawerLine = (lines[j] ?? "").trim();
+          if (drawerLine === ":END:") {
+            i = j;
+            break;
+          }
+          const idMatch = /^:ID:\s*(\S+)\s*$/i.exec(drawerLine);
+          if (belongsToHeadline && idMatch) currentHeadlineId = String(idMatch[1] || "").trim().toLowerCase();
+        }
+        continue;
+      }
+
+      const sourceId = currentHeadlineId || fileId;
+      if (!sourceId || !nodesById.has(sourceId)) continue;
+
+      const targets = new Set<string>();
+      for (const id of findRoamIdLinksInLine(line)) {
+        if (nodesById.has(id)) targets.add(id);
+      }
+      for (const label of findRoamWikiLinksInLine(line)) {
+        const resolved = Array.from(titleIndex.get(normalizeRoamLinkLabel(label)) || []);
+        if (resolved.length === 1 && nodesById.has(resolved[0]!)) targets.add(resolved[0]!);
+      }
+
+      for (const targetId of targets) {
+        if (targetId === sourceId) continue;
+        const key = `${sourceId}\t${targetId}`;
+        edgeCounts.set(key, (edgeCounts.get(key) || 0) + 1);
+        bump(degreeOut, sourceId);
+        bump(degreeIn, targetId);
+      }
+    }
+  }
+
+  const nodes: RoamGraphNode[] = Array.from(nodesById.values())
+    .map((node) => {
+      const incoming = degreeIn.get(node.id) || 0;
+      const outgoing = degreeOut.get(node.id) || 0;
+      return {
+        ...node,
+        degreeIn: incoming,
+        degreeOut: outgoing,
+        degree: incoming + outgoing,
+      };
+    })
+    .sort((a, b) => b.degree - a.degree || a.label.localeCompare(b.label));
+
+  const edges: RoamGraphEdge[] = Array.from(edgeCounts.entries())
+    .map(([key, count]) => {
+      const [source, target] = key.split("\t");
+      return { source: source || "", target: target || "", count };
+    })
+    .sort((a, b) => b.count - a.count || `${a.source}:${a.target}`.localeCompare(`${b.source}:${b.target}`));
+
+  return { nodes, edges };
+}
+
+function escapeHtml(raw: string): string {
+  return String(raw || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;");
+}
+
+function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?: string }): string {
+  const title = opts?.title || "Org2 Roam Graph";
+  const subtitle = opts?.dir ? `Source: ${opts.dir}` : "Static debug view";
+  const isolatedCount = graph.nodes.filter((node) => node.degree === 0).length;
+  const topNodes = graph.nodes.slice(0, 12).map((node) => ({
+    label: node.label,
+    degree: node.degree,
+  }));
+  const payload = JSON.stringify({
+    nodes: graph.nodes,
+    edges: graph.edges,
+  });
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(title)}</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; font: 14px/1.4 -apple-system, BlinkMacSystemFont, sans-serif; background: #0b1020; color: #e5e7eb; }
+    .wrap { display: grid; grid-template-columns: 300px 1fr; min-height: 100vh; }
+    .sidebar { padding: 16px; background: rgba(15, 23, 42, 0.92); border-right: 1px solid rgba(148, 163, 184, 0.2); overflow: auto; }
+    h1 { margin: 0 0 6px; font-size: 18px; }
+    .sub { color: #94a3b8; margin-bottom: 14px; word-break: break-word; }
+    .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
+    .card { background: rgba(30, 41, 59, 0.85); border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 10px; padding: 10px; }
+    .card strong { display: block; font-size: 18px; }
+    ol { margin: 8px 0 0 18px; padding: 0; }
+    li { margin: 0 0 8px; }
+    .hint { color: #94a3b8; margin-top: 14px; }
+    .stage { position: relative; min-width: 0; }
+    canvas { display: block; width: 100%; height: 100vh; }
+    .tooltip { position: absolute; right: 16px; bottom: 16px; max-width: 320px; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 10px; padding: 10px 12px; color: #e5e7eb; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <aside class="sidebar">
+      <h1>${escapeHtml(title)}</h1>
+      <div class="sub">${escapeHtml(subtitle)}</div>
+      <div class="stats">
+        <div class="card"><strong>${graph.nodes.length}</strong>nodes</div>
+        <div class="card"><strong>${graph.edges.length}</strong>edges</div>
+        <div class="card"><strong>${isolatedCount}</strong>isolated</div>
+        <div class="card"><strong>${graph.nodes.filter((node) => node.degree > 0).length}</strong>connected</div>
+      </div>
+      <div class="card">
+        <div><strong style="font-size:14px">Top connected nodes</strong></div>
+        <ol>
+          ${topNodes.map((node) => `<li>${escapeHtml(node.label)} <span style="color:#94a3b8">(${node.degree})</span></li>`).join("")}
+        </ol>
+      </div>
+      <div class="hint">Very basic on purpose. Bigger dots mean higher degree. Hover a node to inspect it.</div>
+    </aside>
+    <main class="stage">
+      <canvas id="graph"></canvas>
+      <div class="tooltip" id="tooltip">Hover a node</div>
+    </main>
+  </div>
+  <script>
+    const payload = ${payload};
+    const canvas = document.getElementById('graph');
+    const tooltip = document.getElementById('tooltip');
+    const ctx = canvas.getContext('2d');
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const esc = (value) => String(value || '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const nodes = payload.nodes.map((node, index) => ({
+      ...node,
+      x: Math.cos((index / Math.max(1, payload.nodes.length)) * Math.PI * 2) * 180,
+      y: Math.sin((index / Math.max(1, payload.nodes.length)) * Math.PI * 2) * 180,
+      vx: 0,
+      vy: 0,
+      r: 4 + Math.min(18, Math.sqrt(node.degree || 0) * 2.2),
+    }));
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const edges = payload.edges.map((edge) => ({ ...edge, a: nodeById.get(edge.source), b: nodeById.get(edge.target) })).filter((edge) => edge.a && edge.b);
+    let width = 0;
+    let height = 0;
+    let hovered = null;
+
+    function resize() {
+      width = canvas.clientWidth;
+      height = canvas.clientHeight;
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, width / 2, height / 2);
+    }
+
+    function step() {
+      for (const node of nodes) {
+        node.vx *= 0.92;
+        node.vy *= 0.92;
+      }
+      for (let i = 0; i < nodes.length; i += 1) {
+        const a = nodes[i];
+        for (let j = i + 1; j < nodes.length; j += 1) {
+          const b = nodes[j];
+          let dx = b.x - a.x;
+          let dy = b.y - a.y;
+          const dist2 = Math.max(30, dx * dx + dy * dy);
+          const force = 2200 / dist2;
+          dx /= Math.sqrt(dist2);
+          dy /= Math.sqrt(dist2);
+          a.vx -= dx * force;
+          a.vy -= dy * force;
+          b.vx += dx * force;
+          b.vy += dy * force;
+        }
+      }
+      for (const edge of edges) {
+        const dx = edge.b.x - edge.a.x;
+        const dy = edge.b.y - edge.a.y;
+        const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+        const target = 40 + Math.min(120, (edge.count || 1) * 12);
+        const force = (dist - target) * 0.0009;
+        const nx = dx / dist;
+        const ny = dy / dist;
+        edge.a.vx += nx * force;
+        edge.a.vy += ny * force;
+        edge.b.vx -= nx * force;
+        edge.b.vy -= ny * force;
+      }
+      for (const node of nodes) {
+        node.x += node.vx;
+        node.y += node.vy;
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(-width / 2, -height / 2, width, height);
+      ctx.lineWidth = 1;
+      for (const edge of edges) {
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.18)';
+        ctx.beginPath();
+        ctx.moveTo(edge.a.x, edge.a.y);
+        ctx.lineTo(edge.b.x, edge.b.y);
+        ctx.stroke();
+      }
+      for (const node of nodes) {
+        ctx.fillStyle = hovered && hovered.id === node.id ? '#f59e0b' : (node.degree > 0 ? '#60a5fa' : '#475569');
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, node.r, 0, Math.PI * 2);
+        ctx.fill();
+        if (node.degree >= 4 || (hovered && hovered.id === node.id)) {
+          ctx.fillStyle = '#e5e7eb';
+          ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
+          ctx.fillText(node.label, node.x + node.r + 4, node.y + 4);
+        }
+      }
+    }
+
+    function frame() {
+      step();
+      draw();
+      requestAnimationFrame(frame);
+    }
+
+    canvas.addEventListener('mousemove', (event) => {
+      const rect = canvas.getBoundingClientRect();
+      const mx = event.clientX - rect.left - width / 2;
+      const my = event.clientY - rect.top - height / 2;
+      hovered = null;
+      for (const node of nodes) {
+        const dx = mx - node.x;
+        const dy = my - node.y;
+        if ((dx * dx + dy * dy) <= node.r * node.r) {
+          hovered = node;
+          break;
+        }
+      }
+      if (hovered) {
+        tooltip.innerHTML = '<strong>' + esc(hovered.label) + '</strong><br>' +
+          'degree: ' + hovered.degree + ' (' + hovered.degreeIn + ' in, ' + hovered.degreeOut + ' out)<br>' +
+          '<span style="color:#94a3b8">' + esc(hovered.file) + '</span>';
+      } else {
+        tooltip.textContent = 'Hover a node';
+      }
+    });
+
+    window.addEventListener('resize', resize);
+    resize();
+    frame();
+  </script>
+</body>
+</html>`;
+}
+
 function escapeRegExp(raw: string): string {
   return raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -706,8 +1125,28 @@ function lineAllowsRoamLinkify(line: string, inBlock: boolean, inDrawer: boolean
   if (!trimmed) return false;
   if (/^#\+/.test(trimmed)) return false;
   if (/^# /.test(trimmed)) return false;
+  if (/^: /.test(line)) return false;
 
   return true;
+}
+
+function splitRoamLinkifyProtectedSegments(line: string): Array<{ text: string; protected: boolean }> {
+  const segments: Array<{ text: string; protected: boolean }> = [];
+  const protectedPattern = /(\[\[[^\]]+\](?:\[[^\]]*\])?\]|https?:\/\/[^\s'"`<>]+|'[^'\n]*'|"[^"\n]*"|=[^=\n]+=|~[^~\n]+~)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = protectedPattern.exec(line)) !== null) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (start > lastIndex) segments.push({ text: line.slice(lastIndex, start), protected: false });
+    segments.push({ text: match[0], protected: true });
+    lastIndex = end;
+  }
+
+  if (lastIndex < line.length) segments.push({ text: line.slice(lastIndex), protected: false });
+  if (segments.length === 0) segments.push({ text: line, protected: false });
+  return segments;
 }
 
 function replaceRoamLinkifyOutsideLinks(
@@ -716,21 +1155,21 @@ function replaceRoamLinkifyOutsideLinks(
 ): { line: string; replaced: boolean; count: number } {
   const escaped = escapeRegExp(candidate.label);
   const regex = new RegExp(`(^|[^A-Za-z0-9_])(${escaped})(?=$|[^A-Za-z0-9_])`, "gi");
-  const parts = line.split(/(\[\[[^\]]+\](?:\[[^\]]*\])?\])/g);
+  const parts = splitRoamLinkifyProtectedSegments(line);
   let replaced = false;
   let count = 0;
 
   for (let i = 0; i < parts.length; i += 1) {
-    if (i % 2 === 1) continue;
-    const part = parts[i] || "";
-    parts[i] = part.replace(regex, (match, prefix: string, labelText: string) => {
+    if (parts[i]?.protected) continue;
+    const part = parts[i]?.text || "";
+    parts[i]!.text = part.replace(regex, (match, prefix: string, labelText: string) => {
       replaced = true;
       count += 1;
       return `${prefix}${renderRoamLink(labelText, { style: "id", id: candidate.id })}`;
     });
   }
 
-  return { line: parts.join(""), replaced, count };
+  return { line: parts.map((part) => part.text).join(""), replaced, count };
 }
 
 function isRoamLinkifyGenericLabel(labelRaw: string): boolean {
@@ -4845,7 +5284,7 @@ async function main(): Promise<void> {
   let lintFormat: "text" | "json" = "text";
 
   // Roam meta
-  let roamAction: "db-sync" | "backlinks" | "node" | "link" | "linkify" = "db-sync";
+  let roamAction: "db-sync" | "backlinks" | "node" | "link" | "linkify" | "graph" = "db-sync";
   let roamNodeAction: "new" = "new";
   let roamLinkAction: "insert-backlink" = "insert-backlink";
   let roamFormat: "text" | "json" = "text";
@@ -4854,6 +5293,7 @@ async function main(): Promise<void> {
   let roamIdForced = "";
   let roamLinkFile = "";
   let roamLinkifyFile = "";
+  let roamGraphOut = "";
   let roamLinkPos = "";
   let roamLinkId = "";
   let roamLinkTitle = "";
@@ -4975,6 +5415,9 @@ async function main(): Promise<void> {
           i++;
         } else if (sub === "linkify") {
           roamAction = "linkify";
+          i++;
+        } else if (sub === "graph") {
+          roamAction = "graph";
           i++;
         } else if (sub === "node") {
           roamAction = "node";
@@ -5693,6 +6136,8 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "export") {
           exportOut = args[i]!;
+        } else if (command === "roam" && roamAction === "graph") {
+          roamGraphOut = args[i]!;
         }
         i++;
       }
@@ -5885,6 +6330,7 @@ Roam / IDs:
   org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply]
   org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--style wiki|id] [--id UUID] [--apply]
   org2 roam linkify --dir DIR [--recursive] [--file FILE] [--apply] [--format text|json]
+  org2 roam graph --dir DIR [--recursive] [--out FILE] [--format text|json]
 
 Other:
   org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]
@@ -6131,6 +6577,39 @@ Tips:
             `${ambiguousSkipCount} ambiguous match(es) skipped` +
             (roamApply ? `; wrote ${appliedCount} file(s)` : ""),
         );
+      }
+
+      return;
+    }
+
+    if (roamAction === "graph") {
+      const allFiles = listOrgLikeFiles(dir, recursive);
+      const graph = buildRoamGraph(allFiles);
+      const outputPath = path.resolve(roamGraphOut || path.join(dir, "org2-roam-graph.html"));
+
+      if (roamFormat === "json") {
+        process.stdout.write(
+          JSON.stringify(
+            {
+              action: "graph",
+              dir,
+              recursive,
+              scanned: allFiles.length,
+              output: outputPath,
+              nodeCount: graph.nodes.length,
+              edgeCount: graph.edges.length,
+              nodes: graph.nodes,
+              edges: graph.edges,
+            },
+            null,
+            2,
+          ) + "\n",
+        );
+      } else {
+        const html = renderRoamGraphHtml(graph, { title: "Org2 Roam Graph", dir });
+        fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+        fs.writeFileSync(outputPath, html, "utf8");
+        process.stdout.write(outputPath + "\n");
       }
 
       return;
