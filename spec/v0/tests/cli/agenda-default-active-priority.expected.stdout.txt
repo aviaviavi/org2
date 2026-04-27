@@ -1,0 +1,53 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-01-21",
+    "end": "2026-01-21",
+    "days": 1
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-01-21",
+      "weekday": "Wednesday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Todo A",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-default-active-priority.input.txt",
+          "line": 12
+        },
+        {
+          "todo": "IN_PROGRESS",
+          "headline": "In progress B",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-default-active-priority.input.txt",
+          "line": 9
+        },
+        {
+          "todo": "TODO",
+          "headline": "Todo C",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-default-active-priority.input.txt",
+          "line": 3
+        },
+        {
+          "todo": "DONE",
+          "headline": "Done A",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-default-active-priority.input.txt",
+          "line": 0
+        },
+        {
+          "todo": "CANCELED",
+          "headline": "Canceled A",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-default-active-priority.input.txt",
+          "line": 6
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}

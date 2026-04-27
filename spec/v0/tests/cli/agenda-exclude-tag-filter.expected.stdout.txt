@@ -25,18 +25,18 @@
       "weekday": "Thursday",
       "items": [
         {
-          "todo": "CANCELED",
-          "headline": "Cancel trip",
-          "kind": "DEADLINE",
-          "file": "spec/v0/tests/cli/agenda-exclude-filters.input.txt",
-          "line": 6
-        },
-        {
           "todo": "TODO",
           "headline": "Planning sync",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-exclude-filters.input.txt",
           "line": 12
+        },
+        {
+          "todo": "CANCELED",
+          "headline": "Cancel trip",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-exclude-filters.input.txt",
+          "line": 6
         }
       ]
     }

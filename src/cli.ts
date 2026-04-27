@@ -4702,6 +4702,17 @@ function agendaStatusSortBucketForItem(item: ScheduledItem): AgendaStatusBucket 
   return agendaStatusBucketForKeyword(item.todo);
 }
 
+function agendaActiveTerminalSortRankForItem(item: ScheduledItem): number {
+  const bucket = agendaStatusSortBucketForItem(item);
+  if (bucket === "todo" || bucket === "in_progress") return 0;
+  if (bucket === "done" || bucket === "canceled") return 1;
+  return 2;
+}
+
+function compareAgendaActiveTerminalStatusBuckets(a: ScheduledItem, b: ScheduledItem): number {
+  return agendaActiveTerminalSortRankForItem(a) - agendaActiveTerminalSortRankForItem(b);
+}
+
 function compareAgendaStatusBuckets(a: ScheduledItem, b: ScheduledItem, statusOrder: AgendaStatusOrder): number {
   const defaultRankForBucket = (bucket: AgendaStatusBucket | null): number => {
     if (bucket === "todo") return 0;
@@ -5040,6 +5051,9 @@ function compareAgendaItems(
   if (byDate !== 0) {
     return dateOrder === "desc" ? -byDate : byDate;
   }
+
+  const byActiveTerminalStatus = compareAgendaActiveTerminalStatusBuckets(a, b);
+  if (byActiveTerminalStatus !== 0) return byActiveTerminalStatus;
 
   const byPriority = compareAgendaPriorityValues(a.priority, b.priority, priorityOrder);
   if (byPriority !== 0) return byPriority;

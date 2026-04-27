@@ -1,0 +1,14 @@
+* DONE [#A] Done A
+SCHEDULED: <2026-01-21 Wed>
+
+* TODO [#C] Todo C
+SCHEDULED: <2026-01-21 Wed>
+
+* CANCELED [#A] Canceled A
+SCHEDULED: <2026-01-21 Wed>
+
+* IN_PROGRESS [#B] In progress B
+SCHEDULED: <2026-01-21 Wed>
+
+* TODO [#A] Todo A
+SCHEDULED: <2026-01-21 Wed>
