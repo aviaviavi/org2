@@ -894,16 +894,33 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
 
   let paragraphLines: string[] = [];
   let currentList: ListNode | null = null;
+  let pendingBlankLinesBeforeNextNode = 0;
 
   function currentContainer(): DocumentNode | HeadlineNode {
     return headlineStack.length > 0 ? headlineStack[headlineStack.length - 1] : doc;
+  }
+
+  function attachBlankLinesBefore<T extends Node>(node: T): T {
+    if (pendingBlankLinesBeforeNextNode > 0) {
+      Object.defineProperty(node, "blankLinesBefore", {
+        value: pendingBlankLinesBeforeNextNode,
+        enumerable: false,
+        configurable: true,
+      });
+      pendingBlankLinesBeforeNextNode = 0;
+    }
+    return node;
+  }
+
+  function pushCurrent(node: Node): void {
+    getChildrenArray(currentContainer()).push(attachBlankLinesBefore(node));
   }
 
   function flushParagraph(): void {
     if (paragraphLines.length === 0) return;
 
     const node = paragraphFromLines(paragraphLines);
-    getChildrenArray(currentContainer()).push(node);
+    pushCurrent(node);
     paragraphLines = [];
   }
 
@@ -920,7 +937,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
       items: [],
     };
 
-    getChildrenArray(currentContainer()).push(list);
+    pushCurrent(list);
     currentList = list;
     return list;
   }
@@ -947,7 +964,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
       if (keyword) {
         flushParagraph();
         endList();
-        getChildrenArray(currentContainer()).push(keyword);
+        pushCurrent(keyword);
         i += 1;
         continue;
       }
@@ -956,7 +973,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
       if (planning) {
         flushParagraph();
         endList();
-        getChildrenArray(currentContainer()).push(...planning);
+        for (const node of planning) pushCurrent(node);
         i += 1;
         continue;
       }
@@ -965,7 +982,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
       if (comment) {
         flushParagraph();
         endList();
-        getChildrenArray(currentContainer()).push(comment);
+        pushCurrent(comment);
         i += 1;
         continue;
       }
@@ -977,7 +994,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
           endList();
 
           const { block, nextLineIndex } = parseSrcBlock(lines, i);
-          getChildrenArray(currentContainer()).push(block);
+          pushCurrent(block);
           i = nextLineIndex;
           continue;
         }
@@ -988,14 +1005,14 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
           endList();
 
           const { block, nextLineIndex } = parseBlock(lines, i, kind);
-          getChildrenArray(currentContainer()).push(block);
+          pushCurrent(block);
           i = nextLineIndex;
           continue;
         }
 
         flushParagraph();
         endList();
-        getChildrenArray(currentContainer()).push({
+        pushCurrent({
           type: "DirectiveLine",
           raw: line,
           indent: directive.indent,
@@ -1012,7 +1029,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
       endList();
 
       const { table, nextLineIndex } = parseTable(lines, i, "");
-      getChildrenArray(currentContainer()).push(table);
+      pushCurrent(table);
       i = nextLineIndex;
       continue;
     }
@@ -1036,7 +1053,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
         children: [],
       };
 
-      getChildrenArray(currentContainer()).push(node);
+      pushCurrent(node);
       headlineStack.push(node);
       i += 1;
       continue;
@@ -1047,7 +1064,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
       endList();
 
       const { drawer, nextLineIndex } = parsePropertyDrawer(lines, i);
-      getChildrenArray(currentContainer()).push(drawer);
+      pushCurrent(drawer);
       i = nextLineIndex;
       continue;
     }
@@ -1061,7 +1078,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
         endList();
 
         const { drawer, nextLineIndex } = parseDrawer(lines, i);
-        getChildrenArray(currentContainer()).push(drawer);
+        pushCurrent(drawer);
         i = nextLineIndex;
         continue;
       }
@@ -1070,6 +1087,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
     if (isBlank(line)) {
       flushParagraph();
       endList();
+      pendingBlankLinesBeforeNextNode += 1;
       i += 1;
       continue;
     }

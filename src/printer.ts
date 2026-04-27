@@ -246,6 +246,15 @@ function printNode(node: any): string {
   }
 }
 
+function blankLinesBefore(node: Node): number | undefined {
+  const value = (node as any).blankLinesBefore;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function separatorForBlankLines(blankLines: number): string {
+  return "\n".repeat(blankLines + 1);
+}
+
 function printHeadline(node: HeadlineNode): string {
   const stars = "*".repeat(node.level);
 
@@ -282,7 +291,16 @@ function printHeadline(node: HeadlineNode): string {
       lastRaw = undefined;
     }
     
-    // Determine if we should add a blank line before this child
+    const explicitBlankLinesBefore = blankLinesBefore(child);
+
+    if (explicitBlankLinesBefore !== undefined) {
+      childLines.push(...Array.from({ length: explicitBlankLinesBefore }, () => ""));
+      childLines.push(printNode(child));
+      continue;
+    }
+
+    // Determine if we should add a blank line before this child when printing
+    // canonical AST fixtures that do not carry source spacing metadata.
     let addBlankLineBefore = false;
     
     if (childLines.length === 0) {
@@ -353,8 +371,13 @@ export function printCanonicalAstToOrg(doc: DocumentNode): string {
   let prevChild: Node | undefined;
   for (const child of doc.children) {
     if (prevChild) {
-      const needsBlankLine = !(isKeywordLike(prevChild) && isKeywordLike(child));
-      chunks.push(needsBlankLine ? "\n\n" : "\n");
+      const explicitBlankLinesBefore = blankLinesBefore(child);
+      if (explicitBlankLinesBefore !== undefined) {
+        chunks.push(separatorForBlankLines(explicitBlankLinesBefore));
+      } else {
+        const needsBlankLine = !(isKeywordLike(prevChild) && isKeywordLike(child));
+        chunks.push(needsBlankLine ? "\n\n" : "\n");
+      }
     }
     chunks.push(printNode(child));
     prevChild = child;
