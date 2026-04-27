@@ -897,8 +897,8 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
     degree: node.degree,
   }));
   const payload = JSON.stringify({
-    nodes: graphNodes,
-    edges: graphEdges,
+    nodes: graph.nodes,
+    edges: graph.edges,
   });
 
   return `<!doctype html>
