@@ -5144,6 +5144,28 @@ function listOrgLikeFiles(rootDir: string, recursiveScan: boolean): string[] {
   return out;
 }
 
+function listAgendaFiles(dirPath: string, recursiveScan: boolean): string[] {
+  const out: string[] = [];
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      if (!recursiveScan) continue;
+      if (entry.name.startsWith(".")) continue;
+      out.push(...listAgendaFiles(fullPath, recursiveScan));
+      continue;
+    }
+
+    if (!entry.isFile()) continue;
+    if (!(entry.name.endsWith(".org") || entry.name.endsWith(".org2"))) continue;
+    if (entry.name.startsWith(".#")) continue; // Emacs lockfile
+    out.push(fullPath);
+  }
+
+  return out;
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -9647,26 +9669,7 @@ Flags:
   }
 
   if (dir && files.length === 0) {
-    const listOrgFiles = (dirPath: string): string[] => {
-      const out: string[] = [];
-      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-      for (const entry of entries) {
-        const fullPath = path.join(dirPath, entry.name);
-        if (entry.isDirectory()) {
-          if (!recursive) continue;
-          if (entry.name.startsWith(".")) continue;
-          out.push(...listOrgFiles(fullPath));
-          continue;
-        }
-        if (!entry.isFile()) continue;
-        if (!(entry.name.endsWith(".org") || entry.name.endsWith(".org2"))) continue;
-        if (entry.name.startsWith(".#")) continue; // Emacs lockfile
-        out.push(fullPath);
-      }
-      return out;
-    };
-
-    files = listOrgFiles(dir);
+    files = listAgendaFiles(dir, recursive);
   }
 
   if (dir && files.length > 0) agendaConfigBaseDir = path.resolve(dir);
@@ -10061,6 +10064,14 @@ Flags:
 
   const rangeDays = Math.floor((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
 
+  const agendaUsesExplicitFiles = args.includes("--file") || args.includes("--files");
+  const collectAgendaFiles = (): string[] => {
+    if (agendaUsesExplicitFiles) return files;
+    if (dir) return listAgendaFiles(dir, recursive);
+    if (agendaConfig) return resolveFilesFromConfig(agendaConfig, agendaConfigBaseDir);
+    return files;
+  };
+
   // Process files
   const startIso = startDate.toISOString().slice(0, 10);
   const endIso = endDate.toISOString().slice(0, 10);
@@ -10187,7 +10198,7 @@ Flags:
         const allItems: ScheduledItem[] = [];
         let skippedFileCount = 0;
 
-        for (const filePath of files) {
+        for (const filePath of collectAgendaFiles()) {
           if (!matchesAgendaFileFilter(filePath, parsedAgendaFile)) continue;
           if (!matchesAgendaExcludeFileFilter(filePath, parsedAgendaExcludeFile)) continue;
 
