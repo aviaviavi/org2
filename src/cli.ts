@@ -5334,7 +5334,17 @@ async function main(): Promise<void> {
 
   // Query (Roam)
   let queryId = "";
+  let queryTerm = "";
   let queryFormat: "text" | "json" = "text";
+
+  // Cited search
+  let searchTerm = "";
+  let searchFormat: "text" | "json" = "text";
+  let searchContextRaw = "1";
+  let searchLimitRaw = "50";
+  let searchTodoFiltersRaw: string[] = [];
+  let searchTagFiltersRaw: string[] = [];
+  let searchHeadingFilter = "";
 
   // Lint / corpus health
   let lintFormat: "text" | "json" = "text";
@@ -5448,9 +5458,21 @@ async function main(): Promise<void> {
     } else if (arg === "backlinks") {
       command = "backlinks";
       i++;
+    } else if (arg === "search") {
+      command = "search";
+      i++;
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        searchTerm = args[i]!;
+        i++;
+      }
     } else if (arg === "query") {
       command = "query";
       i++;
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        queryTerm = args[i]!;
+        searchTerm = queryTerm;
+        i++;
+      }
     } else if (arg === "lint") {
       command = "lint";
       i++;
@@ -5797,6 +5819,8 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "agenda") {
           agendaTagFiltersRaw.push(args[i]!);
+        } else if (command === "search" || command === "query") {
+          searchTagFiltersRaw.push(args[i]!);
         }
         i++;
       }
@@ -5805,6 +5829,8 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "agenda") {
           agendaTodoFiltersRaw.push(args[i]!);
+        } else if (command === "search" || command === "query") {
+          searchTodoFiltersRaw.push(args[i]!);
         } else if (command === "capture") {
           captureTodoKeywordRaw = args[i]!;
           captureTodoKeywordFlagSet = true;
@@ -6006,6 +6032,8 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "agenda") {
           agendaLimitRaw = args[i]!;
+        } else if (command === "search" || command === "query") {
+          searchLimitRaw = args[i]!;
         }
         i++;
       }
@@ -6143,6 +6171,9 @@ async function main(): Promise<void> {
           backlinksFormat = v;
         } else if (command === "query" && (v === "text" || v === "json")) {
           queryFormat = v;
+          searchFormat = v;
+        } else if (command === "search" && (v === "text" || v === "json")) {
+          searchFormat = v;
         } else if (command === "lint" && (v === "text" || v === "json")) {
           lintFormat = v;
         } else if (
@@ -6154,6 +6185,25 @@ async function main(): Promise<void> {
         } else if (command === "roam" && (v === "text" || v === "json")) {
           roamFormat = v;
         }
+        i++;
+      }
+    } else if (arg === "--context") {
+      i++;
+      if (i < args.length) {
+        if (command === "search" || command === "query") searchContextRaw = args[i]!;
+        i++;
+      }
+    } else if (arg === "--heading") {
+      i++;
+      if (i < args.length) {
+        if (command === "search" || command === "query") searchHeadingFilter = args[i]!;
+        i++;
+      }
+    } else if (arg === "--q" || arg === "--term") {
+      i++;
+      if (i < args.length) {
+        if (command === "search") searchTerm = args[i]!;
+        else if (command === "query") { queryTerm = args[i]!; searchTerm = args[i]!; }
         i++;
       }
     } else if (arg === "--style" || arg === "--link-style") {
@@ -6380,6 +6430,8 @@ Export / publish:
 Roam / IDs:
   org2 id <get|ensure> --file FILE [--line N|--pos LINE[:COL]] [--apply]
   org2 backlinks --id UUID [--dir DIR] [--recursive]
+  org2 search QUERY [--dir DIR] [--recursive] [--format text|json]
+  org2 query QUERY [--dir DIR] [--recursive] [--format text|json]
   org2 query --id UUID [--dir DIR] [--recursive]
   org2 lint [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
   org2 roam db-sync --dir DIR [--recursive] [--apply]
@@ -6565,18 +6617,41 @@ Flags:
   --file FILE       Single target file
   --files FILE      One or more target files
   --format text|json Output format`;
+  } else if (command === "search") {
+    text = `org2 search
+
+Usage:
+  org2 search QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+
+Flags:
+  --dir DIR          Root directory to scan
+  --recursive        Recurse into subdirectories
+  --file FILE        Single target file
+  --files FILE       One or more target files
+  --todo TODO        Require nearest heading TODO keyword
+  --tag TAG          Require nearest heading tag
+  --heading TEXT     Require nearest heading title text
+  --limit N          Maximum matches (default 50)
+  --context N        Context lines around each match (default 1)
+  --format text|json Output format`;
   } else if (command === "query") {
     text = `org2 query
 
 Usage:
+  org2 query QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
   org2 query --id UUID [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
 
 Flags:
-  --id UUID         Target ID
+  --id UUID         Target ID lookup (legacy)
   --dir DIR         Root directory to scan
   --recursive       Recurse into subdirectories
   --file FILE       Single target file
   --files FILE      One or more target files
+  --todo TODO       Require nearest heading TODO keyword
+  --tag TAG         Require nearest heading tag
+  --heading TEXT    Require nearest heading title text
+  --limit N         Maximum matches (default 50)
+  --context N       Context lines around each match (default 1)
   --format text|json Output format`;
   } else if (command === "lint") {
     text = `org2 lint
@@ -6677,7 +6752,7 @@ Flags:
     printGeneralUsage(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "lint" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "lint" && command !== "roam") {
     printGeneralUsage(1);
   }
 
@@ -8277,6 +8352,134 @@ Flags:
       process.stdout.write(`${b.srcTitle} (${b.srcId ?? ""}) ${b.file}:${b.line + 1} ${b.context}\n`);
     }
 
+    return;
+  }
+
+  if (command === "search" || (command === "query" && searchTerm)) {
+    if (!searchTerm) {
+      console.error(`Error: ${command} requires a search term`);
+      process.exit(1);
+    }
+
+    if (!dir && files.length === 0) {
+      const configPath = findConfigFile(process.cwd());
+      if (configPath) {
+        try {
+          const config = loadConfig(configPath);
+          files = resolveFilesFromConfig(config, path.dirname(configPath));
+          if (files.length === 0) {
+            console.error(
+              `Error: config found at ${configPath} but no matching files for patterns: ${config.agendaFiles?.join(", ") || "*.org"}`,
+            );
+            process.exit(1);
+          }
+        } catch (err) {
+          console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`);
+          process.exit(1);
+        }
+      } else {
+        console.error("Error: provide either --dir, --files, or org2.json config");
+        process.exit(1);
+      }
+    }
+
+    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive);
+
+    const context = Math.max(0, Number.parseInt(searchContextRaw, 10) || 0);
+    const limit = Math.max(1, Number.parseInt(searchLimitRaw, 10) || 50);
+    const needle = searchTerm.toLowerCase();
+    const todoFilters = new Set(searchTodoFiltersRaw.map((t) => t.toUpperCase()));
+    const tagFilters = new Set(searchTagFiltersRaw.map((t) => t.replace(/^:/, "").replace(/:$/, "").toLowerCase()));
+    const headingNeedle = searchHeadingFilter.toLowerCase();
+
+    type SearchHeading = { line: number; level: number; title: string; todo?: string; tags: string[]; id?: string };
+    type SearchHit = {
+      file: string;
+      line: number;
+      lineEnd: number;
+      heading?: string;
+      headingLine?: number;
+      id?: string;
+      todo?: string;
+      tags: string[];
+      snippet: string;
+      context: { startLine: number; endLine: number; lines: string[] };
+    };
+
+    const parseHeading = (line: string): Omit<SearchHeading, "line"> | null => {
+      const m = /^(\*+)\s+(.*)$/.exec(line);
+      if (!m) return null;
+      let rest = (m[2] || "").trim();
+      const tagMatch = /\s+:([A-Za-z0-9_@#%:.-]+):\s*$/.exec(rest);
+      const tags = tagMatch ? (tagMatch[1] || "").split(":").filter(Boolean) : [];
+      if (tagMatch) rest = rest.slice(0, tagMatch.index).trim();
+      const parts = rest.split(/\s+/);
+      const maybeTodo = parts[0]?.toUpperCase();
+      const todo = maybeTodo && (TODO_KEYWORDS as string[]).includes(maybeTodo) ? maybeTodo : undefined;
+      if (todo) rest = parts.slice(1).join(" ").trim();
+      return { level: (m[1] || "").length, title: parseHeadlineTitleForRoam(`${m[1]} ${rest}`), todo, tags };
+    };
+
+    const hits: SearchHit[] = [];
+    let skippedFileCount = 0;
+
+    for (const filePath of files) {
+      if (hits.length >= limit) break;
+      try {
+        const raw = fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
+        const lines = raw.split("\n");
+        const stack: SearchHeading[] = [];
+        for (let j = 0; j < lines.length && hits.length < limit; j += 1) {
+          const line = lines[j] || "";
+          const parsed = parseHeading(line);
+          if (parsed) {
+            while (stack.length && stack[stack.length - 1]!.level >= parsed.level) stack.pop();
+            stack.push({ line: j, ...parsed });
+          }
+          const current = stack[stack.length - 1];
+          const idMatch = /^:ID:\s*(\S+)\s*$/.exec(line.trim());
+          if (idMatch && current) current.id = idMatch[1];
+          if (!line.toLowerCase().includes(needle)) continue;
+          if (todoFilters.size && (!current?.todo || !todoFilters.has(current.todo.toUpperCase()))) continue;
+          if (tagFilters.size && !Array.from(tagFilters).every((tag) => current?.tags.map((t) => t.toLowerCase()).includes(tag))) continue;
+          if (headingNeedle && !(current?.title || "").toLowerCase().includes(headingNeedle)) continue;
+          const start = Math.max(0, j - context);
+          const end = Math.min(lines.length - 1, j + context);
+          hits.push({
+            file: filePath,
+            line: j + 1,
+            lineEnd: j + 1,
+            heading: current?.title,
+            headingLine: current ? current.line + 1 : undefined,
+            id: current?.id,
+            todo: current?.todo,
+            tags: current?.tags || [],
+            snippet: line.trim(),
+            context: { startLine: start + 1, endLine: end + 1, lines: lines.slice(start, end + 1) },
+          });
+        }
+      } catch (err) {
+        skippedFileCount += 1;
+        if (verboseErrors) console.error(`Error processing ${filePath}:`, err instanceof Error ? err.message : err);
+      }
+    }
+
+    if (skippedFileCount > 0 && !verboseErrors) {
+      console.error(`Skipped ${skippedFileCount} file(s) due to parse errors (use --verbose-errors to see details).`);
+    }
+
+    if (searchFormat === "json") {
+      process.stdout.write(JSON.stringify({ $schema: "org2:search:v1", query: searchTerm, results: hits }, null, 2) + "\n");
+      return;
+    }
+    if (hits.length === 0) {
+      process.stdout.write("No matches found.\n");
+      return;
+    }
+    for (const h of hits) {
+      const meta = [h.todo, ...(h.tags || []).map((t) => `:${t}:`)].filter(Boolean).join(" ");
+      process.stdout.write(`${h.file}:${h.line}${h.heading ? ` ${h.heading}` : ""}${meta ? ` [${meta}]` : ""}\n  ${h.snippet}\n`);
+    }
     return;
   }
 
