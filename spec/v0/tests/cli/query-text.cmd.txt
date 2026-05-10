@@ -1,0 +1,1 @@
+query --text Timefold --file spec/v0/tests/cli/query-text.fixture --format json

@@ -1,12 +1,12 @@
 #+TITLE: Org2 vs Org Mode
 
-Short version: Org2 is the long-term successor to Org Mode: portable, editor-agnostic, and designed to keep the battle-tested core while dropping cruft.
+Short version: Org2 is not just a replacement editor experience for Org Mode. It is a local-first knowledge compiler that keeps Org's durable plain-text strengths while making the semantic/runtime layer portable across editors, automation, and publishing workflows.
 
 * High-level differences
 
 - *Runtime model*
   - Org Mode: deeply integrated with Emacs runtime.
-  - Org2: standalone parser/CLI/LSP, editor integrations on top.
+  - Org2: standalone parser/CLI/LSP/compiler model, editor integrations on top.
 
 - *Workflow center*
   - Org Mode: Emacs commands and buffers first.
@@ -20,8 +20,8 @@ Short version: Org2 is the long-term successor to Org Mode: portable, editor-agn
 
 - Existing =.org= files are supported as an everyday workflow.
 - New files are recommended as =.org2=.
-- Aim: drop-in replacement for most Org Mode users over time.
-- 100% feature-for-feature parity with GNU Org is not the goal.
+- Org Mode compatibility is valuable, especially for migration and shared plain-text habits.
+- Org2 is not constrained to be a drop-in clone; 100% feature-for-feature parity with GNU Org is not the goal.
 
 * What Org2 has today
 
@@ -39,10 +39,11 @@ Short version: Org2 is the long-term successor to Org Mode: portable, editor-agn
 
 * Direction
 
-Org2 is meant to eventually replace Org Mode for most workflows.
+Org2 is meant to make a plain-text knowledge corpus more computable, maintainable, and portable.
 
 - Keep the battle-tested core ideas that made Org great.
+- Make structured semantics, derived artifacts, and local knowledge operations the primary value proposition.
 - Drop accumulated cruft that slows down portability and adoption.
 - Support more editors natively, while also supporting Emacs well.
 - Keep portability as the non-negotiable center.
-- Treat CLI capabilities as shared infrastructure for editor integrations and automation, not as the primary end-user UX.
+- Treat CLI capabilities as shared infrastructure for editor integrations, publishing, health checks, and automation, not as the primary end-user UX.

@@ -1,0 +1,1 @@
+Error: query accepts either --id UUID or --text TEXT, not both
