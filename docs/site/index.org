@@ -1,14 +1,16 @@
 #+TITLE: Org2
-#+SUBTITLE: A standalone, editor-agnostic successor to Org Mode
+#+SUBTITLE: A local-first knowledge compiler for Org-shaped plain text
 
-Org2 is a from-scratch implementation of an Org-like format and toolchain.
+Org2 turns a folder of notes, tasks, links, and metadata into a computable corpus.
 
-It is aiming for *practical parity* with the workflows people actually use in Org Mode, without being tied to Emacs.
+It parses Org-shaped plain text into structured semantics, then uses that model to power agendas, graph operations, lint/health passes, publishing, and editor tooling without tying the workflow to one editor or hosted service.
 
 Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standalone Org rationale]]
 
 * What Org2 is good at today
 
+- *Structured semantics*: headings, tasks, planning lines, links, drawers, IDs, and source ranges become data the toolchain can reason about.
+- *Derived artifacts*: agendas, HTML sites, lint reports, graph views, and editor intelligence are generated from the same corpus model.
 - *Portable plain-text workflow*: notes, tasks, links, and publishing all stay in files.
 - *CLI-backed editing + planning*: agenda, TODO/planning edits, capture, archive/refile, formatting, export, publish.
 - *Strong VS Code support*: Org2 is already practical as a daily driver in VS Code.
@@ -21,7 +23,7 @@ Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standa
 - An Emacs-only system.
 - A “100% feature parity before usefulness” project.
 
-The goal is a portable Org-style system that is useful *now* and keeps getting deeper.
+The goal is a portable knowledge-compiler stack that is useful *now* and keeps getting deeper.
 
 * Current status
 
