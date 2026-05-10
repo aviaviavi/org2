@@ -24,6 +24,7 @@ Org2 reference is split into two detailed sections:
   - adopting =.org2= gradually
   - mixing ID links and title links
 - [[file:features.org][Features]]
+- [[file:knowledge-compiler-roadmap.org][Knowledge compiler roadmap]]
 - [[file:org2-vs-org-mode.org][Org2 vs Org Mode]]
 - [[file:org2-vs-markdown.org][Org2 vs Markdown]]
 
