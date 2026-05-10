@@ -1,0 +1,17 @@
+{
+  "$schema": "org2:query:v1",
+  "text": "Timefold",
+  "results": [
+    {
+      "kind": "text",
+      "file": "spec/v0/tests/cli/query-text.fixture",
+      "line": 3,
+      "lineNumber": 4,
+      "title": "Project Alpha",
+      "headingLine": 2,
+      "headingLineNumber": 3,
+      "snippet": "This note records a customer decision about Timefold unique sources.",
+      "citation": "spec/v0/tests/cli/query-text.fixture:4"
+    }
+  ]
+}

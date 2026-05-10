@@ -7,8 +7,11 @@
       "id": "22222222-2222-2222-2222-222222222222",
       "file": "spec/v0/tests/cli/query-id-basic.org2",
       "line": 8,
+      "lineNumber": 9,
       "title": "Note",
-      "headingLine": 6
+      "headingLine": 6,
+      "headingLineNumber": 7,
+      "citation": "spec/v0/tests/cli/query-id-basic.org2:9"
     }
   ]
 }
