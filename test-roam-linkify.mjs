@@ -27,6 +27,9 @@ assert.equal(preview.action, 'linkify');
 assert.equal(preview.changedFileCount, 1);
 assert.equal(preview.replacementCount, 5);
 assert.ok(preview.ambiguousSkipCount >= 1);
+const notesReport = preview.files.find((entry) => entry.file.endsWith('notes.org2'));
+assert.ok(notesReport.debugMatches.some((entry) => entry.reason.includes('alias') && entry.confidence === 'high' && entry.ranges.length > 0));
+assert.ok(notesReport.debugAmbiguous.some((entry) => entry.confidence === 'low' && entry.ranges.length > 0));
 
 const singleFilePreview = JSON.parse(execFileSync('node', [cli, 'roam', 'linkify', '--dir', tmpDir, '--recursive', '--file', path.join(tmpDir, 'notes.org2'), '--format', 'json'], { encoding: 'utf8' }));
 assert.equal(singleFilePreview.scanned, 1);

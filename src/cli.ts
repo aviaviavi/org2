@@ -444,8 +444,8 @@ type RoamLinkifyFileResult = {
   replacements: number;
   ambiguousSkips: number;
   outText: string;
-  debugMatches?: Array<{ label: string; candidate: string; line: number; count: number }>;
-  debugAmbiguous?: Array<{ label: string; line: number; candidates: string[] }>;
+  debugMatches?: Array<{ label: string; candidate: string; line: number; count: number; ranges: Array<{ start: number; end: number }>; reason: string; confidence: "high" }>;
+  debugAmbiguous?: Array<{ label: string; line: number; ranges: Array<{ start: number; end: number }>; candidates: string[]; reason: string; confidence: "low" }>;
 };
 
 type RoamGraphNode = {
@@ -1172,30 +1172,39 @@ function splitRoamLinkifyProtectedSegments(line: string): Array<{ text: string; 
 function replaceRoamLinkifyOutsideLinks(
   line: string,
   candidate: RoamLinkifyCandidate,
-): { line: string; replaced: boolean; count: number } {
+): { line: string; replaced: boolean; count: number; ranges: Array<{ start: number; end: number }> } {
   const escaped = escapeRegExp(candidate.label);
   const regex = new RegExp(`(^|[^A-Za-z0-9_])(${escaped})(?=$|[^A-Za-z0-9_])`, "gi");
   const parts = splitRoamLinkifyProtectedSegments(line);
   let replaced = false;
   let count = 0;
+  const ranges: Array<{ start: number; end: number }> = [];
+  let lineOffset = 0;
 
   for (let i = 0; i < parts.length; i += 1) {
-    if (parts[i]?.protected) continue;
+    if (parts[i]?.protected) {
+      lineOffset += (parts[i]?.text || "").length;
+      continue;
+    }
     const part = parts[i]?.text || "";
-    parts[i]!.text = part.replace(regex, (match, prefix: string, labelText: string) => {
+    parts[i]!.text = part.replace(regex, (match, prefix: string, labelText: string, offset: number) => {
       replaced = true;
       count += 1;
+      const start = lineOffset + offset + String(prefix || "").length;
+      ranges.push({ start, end: start + String(labelText || "").length });
       return `${prefix}${renderRoamLink(labelText, { style: "id", id: candidate.id })}`;
     });
+    lineOffset += part.length;
   }
 
-  return { line: parts.map((part) => part.text).join(""), replaced, count };
+  return { line: parts.map((part) => part.text).join(""), replaced, count, ranges };
 }
 
 function isRoamLinkifyGenericLabel(labelRaw: string): boolean {
   const label = normalizeRoamLinkLabel(labelRaw);
   if (!label) return true;
   if (/\b(meeting|meetings|call|sync|standup|retro|backlinks)\b/.test(label)) return true;
+  if (!label.includes(" ") && /^(ann|anne|ben|bob|dan|dave|john|jon|jane|joe|mike|nick|pat|sam|tom)$/i.test(label)) return true;
   return false;
 }
 
@@ -1260,8 +1269,8 @@ function applyRoamLinkifyToFile(
   let inBacklinksSectionLevel: number | null = null;
   let replacements = 0;
   let ambiguousSkips = 0;
-  const debugMatches: Array<{ label: string; candidate: string; line: number; count: number }> = [];
-  const debugAmbiguous: Array<{ label: string; line: number; candidates: string[] }> = [];
+  const debugMatches: Array<{ label: string; candidate: string; line: number; count: number; ranges: Array<{ start: number; end: number }>; reason: string; confidence: "high" }> = [];
+  const debugAmbiguous: Array<{ label: string; line: number; ranges: Array<{ start: number; end: number }>; candidates: string[]; reason: string; confidence: "low" }> = [];
 
   for (let i = 0; i < lines.length; i += 1) {
     let line = lines[i] || "";
@@ -1310,16 +1319,27 @@ function applyRoamLinkifyToFile(
       const probeLabel = resolved?.label || candidates[0]?.label || normalizedLabel;
       const boundaryRegex = new RegExp(
         `(^|[^A-Za-z0-9_])(${escapeRegExp(probeLabel)})(?=$|[^A-Za-z0-9_])`,
-        "i",
+        "gi",
       );
-      if (!boundaryRegex.test(line)) continue;
+      const mentionRanges: Array<{ start: number; end: number }> = [];
+      let boundaryMatch: RegExpExecArray | null;
+      while ((boundaryMatch = boundaryRegex.exec(line)) !== null) {
+        const prefix = String(boundaryMatch[1] || "");
+        const labelText = String(boundaryMatch[2] || "");
+        const start = boundaryMatch.index + prefix.length;
+        mentionRanges.push({ start, end: start + labelText.length });
+      }
+      if (mentionRanges.length === 0) continue;
 
       if (!resolved) {
         ambiguousSkips += 1;
         debugAmbiguous.push({
           label: normalizedLabel,
           line: i + 1,
+          ranges: mentionRanges,
           candidates: candidates.slice(0, 8).map((candidate) => `${candidate.label} @ ${candidate.file}`),
+          reason: "label matched multiple existing roam nodes with no safe winner",
+          confidence: "low",
         });
         continue;
       }
@@ -1334,6 +1354,9 @@ function applyRoamLinkifyToFile(
         candidate: `${resolved.label} @ ${resolved.file}`,
         line: i + 1,
         count: replaced.count,
+        ranges: replaced.ranges,
+        reason: "unambiguous label or alias matched an existing roam node outside links/protected regions",
+        confidence: "high",
       });
       line = lines[i] || line;
     }
