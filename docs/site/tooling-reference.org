@@ -1,6 +1,6 @@
 #+TITLE: Tooling reference
 
-This page covers the practical Org2 tooling surface today.
+This page covers the practical Org2 tooling surface today. For the product framing around compiler-style corpus checks, see [[file:maintenance-workflows.org][Maintenance and health workflows]].
 
 The CLI is the shared backend for editor integrations and automation. You can use it directly or through VS Code commands.
 
@@ -65,7 +65,7 @@ npm run org2 -- fmt --dir ~/notes --recursive --apply
 
 * Corpus lint
 
-Lint is the first compiler-style health pass for artifact metadata and corpus structure.
+Lint is the first compiler-style health pass for artifact metadata and corpus structure. It belongs to the broader [[file:maintenance-workflows.org][maintenance and health workflow]] alongside formatter checks, graph queries, publish previews, and ID/index repair passes.
 
 #+begin_src sh
 npm run org2 -- lint --dir ~/notes --recursive

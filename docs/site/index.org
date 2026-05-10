@@ -38,6 +38,7 @@ Org2 is still early alpha, but it is already credible for real work if your stac
 - [[file:getting-started.org][Getting started]]
 - [[file:features.org][Features]]
 - [[file:tooling-reference.org][Tooling reference]]
+- [[file:maintenance-workflows.org][Maintenance and health workflows]]
 - [[file:editors.org][Editor integrations]]
 - [[file:language-reference.org][Language reference]]
 - [[file:semantics-status.org][Semantics and status]]
