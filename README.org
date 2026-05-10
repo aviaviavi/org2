@@ -2,7 +2,9 @@
 #+attr_html: :width 100px
 [[./logo.png]]
 
-A from-scratch successor to Org Mode, built to be editor-agnostic and platform-agnostic.
+Org2 is a local-first knowledge compiler for Org-shaped plain text: it parses notes, tasks, links, and metadata into structured semantics, then derives useful artifacts such as agendas, graph views, lint reports, websites, and editor intelligence.
+
+It keeps the portable, hackable spirit of Org Mode, but the center of gravity is the compiler/runtime layer rather than any single editor.
 
 Reference: https://avi.press/posts/2024-01-15-standalone-org.html
 
@@ -10,19 +12,31 @@ Reference: https://avi.press/posts/2024-01-15-standalone-org.html
 
 Org2 is *early alpha*.
 
-- Goal: drop-in replacement for most Org Mode users in Emacs, plus a full Org-style experience for non-Emacs users
+- Primary goal: make a plain-text corpus computable through structured semantics, derived artifacts, and local knowledge operations
 - Best-supported workflow today: VS Code + CLI (already practical for daily notes/tasks)
 - Core language support is broadly implemented
-- 100% feature-for-feature GNU Org parity is *not* the project goal
+- Org Mode compatibility matters, but 100% feature-for-feature GNU Org parity is *not* the project goal
 - APIs and command flags may still change
+
+** Compiler model
+
+Org2 treats a folder of Org files as a corpus that can be analyzed, checked, transformed, and published.
+
+- *Parse* plain text into a typed AST with headings, drawers, links, planning lines, TODO states, blocks, tables, and source ranges.
+- *Resolve* IDs, links, artifact roles, provenance, agenda semantics, and roam-style graph relationships.
+- *Derive* artifacts from that semantic model: agendas, lint/health reports, HTML sites, graph views, LSP features, and agent-readable structure.
+- *Operate locally* on files without requiring a hosted database or proprietary workspace.
+
+Compatibility and editor support are important, but they sit on top of this compiler/runtime layer.
 
 ** What’s working now
 
 - Core Org structures: headings, drawers/properties, links, planning lines, TODO states
 - Agenda workflows (CLI + VS Code)
 - Basic editing workflows (TODO/planning updates, archive/refile, capture)
-- HTML export (MVP)
+- HTML export/publish pipeline
 - Corpus lint for artifact roles, provenance, IDs, and corpus-flow conventions
+- Roam/knowledge graph operations for IDs, backlinks, node creation, and link insertion
 - LSP server (MVP) for links/navigation/completions/formatting
 
 ** What’s not done yet
