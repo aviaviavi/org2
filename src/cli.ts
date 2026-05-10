@@ -5334,6 +5334,7 @@ async function main(): Promise<void> {
 
   // Query (Roam)
   let queryId = "";
+  let queryText = "";
   let queryFormat: "text" | "json" = "text";
 
   // Lint / corpus health
@@ -6091,6 +6092,14 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--text" || arg === "--contains") {
+      i++;
+      if (i < args.length) {
+        if (command === "query") {
+          queryText = args[i]!;
+        }
+        i++;
+      }
     } else if (arg === "--id") {
       i++;
       if (i < args.length) {
@@ -6380,7 +6389,7 @@ Export / publish:
 Roam / IDs:
   org2 id <get|ensure> --file FILE [--line N|--pos LINE[:COL]] [--apply]
   org2 backlinks --id UUID [--dir DIR] [--recursive]
-  org2 query --id UUID [--dir DIR] [--recursive]
+  org2 query (--id UUID|--text TEXT) [--dir DIR] [--recursive]
   org2 lint [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
   org2 roam db-sync --dir DIR [--recursive] [--apply]
   org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply]
@@ -6570,9 +6579,11 @@ Flags:
 
 Usage:
   org2 query --id UUID [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+  org2 query --text TEXT [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
 
 Flags:
   --id UUID         Target ID
+  --text TEXT       Text to search for; returns cited file/line snippets
   --dir DIR         Root directory to scan
   --recursive       Recurse into subdirectories
   --file FILE       Single target file
@@ -8281,12 +8292,17 @@ Flags:
   }
 
   if (command === "query") {
-    if (!queryId) {
-      console.error("Error: query requires --id UUID");
+    if (!queryId && !queryText) {
+      console.error("Error: query requires --id UUID or --text TEXT");
+      process.exit(1);
+    }
+    if (queryId && queryText) {
+      console.error("Error: query accepts either --id UUID or --text TEXT, not both");
       process.exit(1);
     }
 
     const needle = queryId.toLowerCase();
+    const textNeedle = queryText.toLowerCase();
 
     // Determine files to search (same logic as backlinks/agenda)
     if (!dir && files.length === 0) {
@@ -8337,12 +8353,13 @@ Flags:
     }
 
     type QueryHit = {
-      kind: "file" | "headline";
-      id: string;
+      kind: "file" | "headline" | "text";
+      id?: string;
       file: string;
       line: number; // 0-based
       title: string;
       headingLine?: number; // 0-based
+      snippet?: string;
     };
 
     const hits: QueryHit[] = [];
@@ -8365,9 +8382,28 @@ Flags:
 
         let inProps = false;
         let propsStart = -1; // 0-based
+        let currentHeadingLine = -1;
+        let currentHeadingTitle = findFileTitle(lines) ?? path.basename(filePath);
 
         for (let j = 0; j < lines.length; j += 1) {
-          const l = (lines[j] ?? "").trim();
+          const rawLine = lines[j] ?? "";
+          const l = rawLine.trim();
+
+          if (/^\*+\s+/.test(rawLine)) {
+            currentHeadingLine = j;
+            currentHeadingTitle = parseHeadlineTitle(rawLine);
+          }
+
+          if (queryText && rawLine.toLowerCase().includes(textNeedle)) {
+            hits.push({
+              kind: "text",
+              file: filePath,
+              line: j,
+              title: currentHeadingTitle,
+              ...(currentHeadingLine >= 0 ? { headingLine: currentHeadingLine } : {}),
+              snippet: rawLine.trim(),
+            });
+          }
 
           if (l === ":PROPERTIES:") {
             inProps = true;
@@ -8381,6 +8417,8 @@ Flags:
           }
 
           if (!inProps) continue;
+
+          if (!queryId) continue;
 
           const m = /^:ID:\s*(\S+)\s*$/.exec(l);
           if (!m) continue;
@@ -8454,14 +8492,17 @@ Flags:
         JSON.stringify(
           {
             $schema: "org2:query:v1",
-            id: needle,
+            ...(queryId ? { id: needle } : { text: queryText }),
             results: hits.map((h) => ({
               kind: h.kind,
-              id: h.id,
+              ...(h.id !== undefined ? { id: h.id } : {}),
               file: h.file,
               line: h.line,
+              lineNumber: h.line + 1,
               title: h.title,
-              ...(h.headingLine !== undefined ? { headingLine: h.headingLine } : {}),
+              ...(h.headingLine !== undefined ? { headingLine: h.headingLine, headingLineNumber: h.headingLine + 1 } : {}),
+              ...(h.snippet !== undefined ? { snippet: h.snippet } : {}),
+              citation: `${h.file}:${h.line + 1}`,
             })),
           },
           null,
@@ -8478,7 +8519,8 @@ Flags:
 
     for (const h of hits) {
       // Print 1-based line for humans
-      process.stdout.write(`${h.kind} ${h.title} ${h.file}:${h.line + 1}\n`);
+      const suffix = h.snippet ? ` — ${h.snippet}` : "";
+      process.stdout.write(`${h.kind} ${h.title} ${h.file}:${h.line + 1}${suffix}\n`);
     }
 
     return;
