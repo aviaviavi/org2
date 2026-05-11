@@ -14,12 +14,14 @@ const gammaId = '22222222-2222-2222-2222-222222222222';
 const deltaId = '33333333-3333-3333-3333-333333333333';
 const databricksId = '44444444-4444-4444-4444-444444444444';
 const sonatypeId = '55555555-5555-5555-5555-555555555555';
+const semanticId = '66666666-6666-6666-6666-666666666666';
 
 fs.writeFileSync(path.join(tmpDir, 'alpha.org2'), `#+TITLE: Alpha Topic\n\n:PROPERTIES:\n:ID: ${alphaId}\n:END:\n\nAlpha Topic stands alone here.\n`);
 fs.writeFileSync(path.join(tmpDir, 'delta.org2'), `#+TITLE: Delta Topic\n#+ROAM_ALIASES: D Topic\n\n:PROPERTIES:\n:ID: ${deltaId}\n:END:\n\n`);
 fs.writeFileSync(path.join(tmpDir, 'databricks.org2'), `#+TITLE: Databricks\n\n:PROPERTIES:\n:ID: ${databricksId}\n:END:\n\n`);
 fs.writeFileSync(path.join(tmpDir, 'sonatype.org2'), `#+TITLE: Sonatype\n\n:PROPERTIES:\n:ID: ${sonatypeId}\n:END:\n\n`);
-fs.writeFileSync(path.join(tmpDir, 'notes.org2'), `#+TITLE: Notes\n\n* TODO Delta Topic follow-up\n\nWe discussed Alpha Topic yesterday.\nAlpha Topic came up twice.\nD Topic is shorthand.\nDatabricks and Sonatype both came up.\nDatabricks came up twice.\n[[Alpha Topic]] already linked.\n: Databricks inside fixed-width should stay plain.\nQuoted string: "Databricks" should stay plain.\nShell string: 'Sonatype' should stay plain.\nInline code =Databricks= should stay plain.\nInline verbatim ~Sonatype~ should stay plain.\nURL https://databricks.example.com/sonatype should stay plain.\n\n* Backlinks\n- Databricks should stay plain here.\n- Sonatype should stay plain here too.\n\n#+begin_quote\nDatabricks inside quote block should stay plain.\n#+end_quote\n\n#+begin_src text\nAlpha Topic inside code should stay plain.\n#+end_src\n`);
+fs.writeFileSync(path.join(tmpDir, 'knowledge-base.org2'), `#+TITLE: Knowledge Base\n\n:PROPERTIES:\n:ID: ${semanticId}\n:END:\n\n`);
+fs.writeFileSync(path.join(tmpDir, 'notes.org2'), `#+TITLE: Notes\n\n* TODO Delta Topic follow-up\n* Base knowledge cleanup\n\nWe discussed Alpha Topic yesterday.\nAlpha Topic came up twice.\nD Topic is shorthand.\nDatabricks and Sonatype both came up.\nDatabricks came up twice.\n[[Alpha Topic]] already linked.\n: Databricks inside fixed-width should stay plain.\nQuoted string: "Databricks" should stay plain.\nShell string: 'Sonatype' should stay plain.\nInline code =Databricks= should stay plain.\nInline verbatim ~Sonatype~ should stay plain.\nURL https://databricks.example.com/sonatype should stay plain.\n\n* Backlinks\n- Databricks should stay plain here.\n- Sonatype should stay plain here too.\n\n#+begin_quote\nDatabricks inside quote block should stay plain.\n#+end_quote\n\n#+begin_src text\nAlpha Topic inside code should stay plain.\n#+end_src\n`);
 fs.writeFileSync(path.join(tmpDir, 'ambiguous.org2'), `#+TITLE: Alpha Topic\n\n:PROPERTIES:\n:ID: ${gammaId}\n:END:\n\nA duplicate node title exists here.\n`);
 
 const preview = JSON.parse(execFileSync('node', [cli, 'roam', 'linkify', '--dir', tmpDir, '--recursive', '--format', 'json'], { encoding: 'utf8' }));
@@ -27,12 +29,18 @@ assert.equal(preview.action, 'linkify');
 assert.equal(preview.changedFileCount, 1);
 assert.equal(preview.replacementCount, 5);
 assert.ok(preview.ambiguousSkipCount >= 1);
+assert.ok(preview.representedSuggestionCount >= 1);
+const semanticSuggestion = preview.files.flatMap((file) => file.debugRepresented || []).find((item) => item.label === 'knowledge base');
+assert.ok(semanticSuggestion);
+assert.equal(semanticSuggestion.confidence, 0.78);
+assert.match(semanticSuggestion.reason, /not as exact contiguous title text/);
 
 const singleFilePreview = JSON.parse(execFileSync('node', [cli, 'roam', 'linkify', '--dir', tmpDir, '--recursive', '--file', path.join(tmpDir, 'notes.org2'), '--format', 'json'], { encoding: 'utf8' }));
 assert.equal(singleFilePreview.scanned, 1);
-assert.equal(singleFilePreview.indexFileCount, 6);
+assert.equal(singleFilePreview.indexFileCount, 7);
 assert.equal(singleFilePreview.changedFileCount, 1);
 assert.equal(singleFilePreview.replacementCount, 5);
+assert.ok(singleFilePreview.representedSuggestionCount >= 1);
 
 execFileSync('node', [cli, 'roam', 'linkify', '--dir', tmpDir, '--recursive', '--file', path.join(tmpDir, 'notes.org2'), '--apply', '--format', 'json'], { encoding: 'utf8' });
 
