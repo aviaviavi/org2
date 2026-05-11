@@ -636,6 +636,35 @@ function buildRoamTitleIndex(files: string[]): Map<string, Set<string>> {
 }
 
 
+
+function getRoamLinkifyLabelVariants(labelRaw: string): string[] {
+  const label = String(labelRaw || "").trim();
+  if (!label) return [];
+
+  const variants: string[] = [];
+  const seen = new Set<string>();
+  const push = (value: string): void => {
+    const variant = String(value || "").replace(/\s+/g, " ").trim();
+    const key = normalizeRoamLinkLabel(variant);
+    if (!key || key === normalizeRoamLinkLabel(label)) return;
+    if (seen.has(key)) return;
+    seen.add(key);
+    variants.push(variant);
+  };
+
+  // Common represented-node phrasing drift: hyphenated file/title text is often
+  // mentioned with spaces in prose, and vice versa. Keep this conservative: no
+  // stemming or fuzzy edit-distance auto-links.
+  if (/[\u2010-\u2015-]/.test(label)) push(label.replace(/[\u2010-\u2015-]+/g, " "));
+  if (/\s/.test(label)) push(label.replace(/\s+/g, "-"));
+
+  // Allow explicit aliases/titles like "Research & Development" to match
+  // prose spelling out "Research and Development".
+  if (/&/.test(label)) push(label.replace(/\s*&\s*/g, " and "));
+
+  return variants;
+}
+
 function buildRoamLinkifyIndex(files: string[]): Map<string, RoamLinkifyCandidate[]> {
   const index = new Map<string, RoamLinkifyCandidate[]>();
 
@@ -664,7 +693,10 @@ function buildRoamLinkifyIndex(files: string[]): Map<string, RoamLinkifyCandidat
     }));
 
     for (const node of nodes) {
-      for (const label of node.labels) add(label, node);
+      for (const label of node.labels) {
+        add(label, node);
+        for (const variant of getRoamLinkifyLabelVariants(label)) add(variant, node);
+      }
     }
   }
 
