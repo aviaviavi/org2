@@ -662,6 +662,24 @@ function getRoamLinkifyLabelVariants(labelRaw: string): string[] {
   // prose spelling out "Research and Development".
   if (/&/.test(label)) push(label.replace(/\s*&\s*/g, " and "));
 
+  // Conservative acronym support for represented-node mentions where the full
+  // title/alias is not repeated in prose, e.g. "Large Language Models" ->
+  // "LLM"/"LLMs". Avoid very short two-letter acronyms because they collide
+  // too easily in natural language.
+  const words = label
+    .replace(/&/g, " and ")
+    .split(/[^A-Za-z0-9]+/)
+    .map((word) => word.trim())
+    .filter(Boolean);
+  const acronymWords = words.filter((word) => !/^(and|or|of|the|a|an|to|for|in|on|at|by|with)$/i.test(word));
+  if (acronymWords.length >= 3 && acronymWords.length <= 6) {
+    const acronym = acronymWords.map((word) => word[0]?.toUpperCase() || "").join("");
+    if (/^[A-Z0-9]{3,8}$/.test(acronym)) {
+      push(acronym);
+      push(`${acronym}s`);
+    }
+  }
+
   return variants;
 }
 
@@ -5170,6 +5188,15 @@ function applyAgendaDayLimit(items: ScheduledItem[], dayLimit: number | null): S
   return kept;
 }
 
+function isRoamLinkifyExcludedFile(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, "/");
+  const segments = normalized.split("/").map((segment) => segment.toLowerCase());
+  const base = segments[segments.length - 1] || "";
+  if (base.startsWith(".#")) return true;
+  if (/\.(archive|bak)(?:\.|$)/i.test(base)) return true;
+  return segments.some((segment) => segment === "archive" || segment === "archives" || segment === ".archive" || segment === "generated" || segment === "agent");
+}
+
 function listOrgLikeFiles(rootDir: string, recursiveScan: boolean): string[] {
   const out: string[] = [];
 
@@ -6901,7 +6928,7 @@ Flags:
 
 
     if (roamAction === "linkify") {
-      const allFiles = listOrgLikeFiles(dir, recursive);
+      const allFiles = listOrgLikeFiles(dir, recursive).filter((filePath) => !isRoamLinkifyExcludedFile(filePath));
       const labelIndex = buildRoamLinkifyIndex(allFiles);
       const targetFiles = roamLinkifyFile
         ? [path.resolve(roamLinkifyFile)]
