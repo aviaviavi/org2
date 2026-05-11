@@ -15,19 +15,24 @@ const deltaId = '33333333-3333-3333-3333-333333333333';
 const databricksId = '44444444-4444-4444-4444-444444444444';
 const sonatypeId = '55555555-5555-5555-5555-555555555555';
 const rdId = '66666666-6666-6666-6666-666666666666';
+const llmId = '77777777-7777-7777-7777-777777777777';
+const archivedId = '88888888-8888-8888-8888-888888888888';
 
 fs.writeFileSync(path.join(tmpDir, 'alpha.org2'), `#+TITLE: Alpha Topic\n\n:PROPERTIES:\n:ID: ${alphaId}\n:END:\n\nAlpha Topic stands alone here.\n`);
 fs.writeFileSync(path.join(tmpDir, 'delta.org2'), `#+TITLE: Delta Topic\n#+ROAM_ALIASES: D Topic\n\n:PROPERTIES:\n:ID: ${deltaId}\n:END:\n\n`);
 fs.writeFileSync(path.join(tmpDir, 'databricks.org2'), `#+TITLE: Databricks\n\n:PROPERTIES:\n:ID: ${databricksId}\n:END:\n\n`);
 fs.writeFileSync(path.join(tmpDir, 'rd.org2'), `#+TITLE: Research & Development\n\n:PROPERTIES:\n:ID: ${rdId}\n:END:\n\n`);
 fs.writeFileSync(path.join(tmpDir, 'sonatype.org2'), `#+TITLE: Sonatype\n\n:PROPERTIES:\n:ID: ${sonatypeId}\n:END:\n\n`);
-fs.writeFileSync(path.join(tmpDir, 'notes.org2'), `#+TITLE: Notes\n\n* TODO Delta Topic follow-up\n\nWe discussed Alpha Topic yesterday.\nAlpha Topic came up twice.\nD Topic is shorthand.\nDatabricks and Sonatype both came up.\nDatabricks came up twice.\nResearch and Development joined too.\n[[Alpha Topic]] already linked.\n: Databricks inside fixed-width should stay plain.\nQuoted string: "Databricks" should stay plain.\nShell string: 'Sonatype' should stay plain.\nInline code =Databricks= should stay plain.\nInline verbatim ~Sonatype~ should stay plain.\nURL https://databricks.example.com/sonatype should stay plain.\n\n* Backlinks\n- Databricks should stay plain here.\n- Sonatype should stay plain here too.\n\n#+begin_quote\nDatabricks inside quote block should stay plain.\n#+end_quote\n\n#+begin_src text\nAlpha Topic inside code should stay plain.\n#+end_src\n`);
+fs.writeFileSync(path.join(tmpDir, 'llm.org2'), `#+TITLE: Large Language Models\n#+ROAM_ALIASES: "Generative AI Systems"\n\n:PROPERTIES:\n:ID: ${llmId}\n:END:\n\n`);
+fs.mkdirSync(path.join(tmpDir, 'archive'));
+fs.writeFileSync(path.join(tmpDir, 'archive', 'archived.org2'), `#+TITLE: Archived Topic\n\n:PROPERTIES:\n:ID: ${archivedId}\n:END:\n\n`);
+fs.writeFileSync(path.join(tmpDir, 'notes.org2'), `#+TITLE: Notes\n\n* TODO Delta Topic follow-up\n\nWe discussed Alpha Topic yesterday.\nAlpha Topic came up twice.\nD Topic is shorthand.\nDatabricks and Sonatype both came up.\nDatabricks came up twice.\nResearch and Development joined too.\nLLMs can summarize a paragraph.\nArchived Topic should not link from archived directories.\n[[Alpha Topic]] already linked.\n: Databricks inside fixed-width should stay plain.\nQuoted string: "Databricks" should stay plain.\nShell string: 'Sonatype' should stay plain.\nInline code =Databricks= should stay plain.\nInline verbatim ~Sonatype~ should stay plain.\nURL https://databricks.example.com/sonatype should stay plain.\n\n* Backlinks\n- Databricks should stay plain here.\n- Sonatype should stay plain here too.\n\n#+begin_quote\nDatabricks inside quote block should stay plain.\n#+end_quote\n\n#+begin_src text\nAlpha Topic inside code should stay plain.\n#+end_src\n`);
 fs.writeFileSync(path.join(tmpDir, 'ambiguous.org2'), `#+TITLE: Alpha Topic\n\n:PROPERTIES:\n:ID: ${gammaId}\n:END:\n\nA duplicate node title exists here.\n`);
 
 const preview = JSON.parse(execFileSync('node', [cli, 'roam', 'linkify', '--dir', tmpDir, '--recursive', '--format', 'json'], { encoding: 'utf8' }));
 assert.equal(preview.action, 'linkify');
 assert.equal(preview.changedFileCount, 1);
-assert.equal(preview.replacementCount, 6);
+assert.equal(preview.replacementCount, 7);
 assert.ok(preview.ambiguousSkipCount >= 1);
 const notesReport = preview.files.find((entry) => entry.file.endsWith('notes.org2'));
 assert.ok(notesReport.debugMatches.some((entry) => entry.reason.includes('alias') && entry.confidence === 'high' && entry.ranges.length > 0));
@@ -35,9 +40,9 @@ assert.ok(notesReport.debugAmbiguous.some((entry) => entry.confidence === 'low' 
 
 const singleFilePreview = JSON.parse(execFileSync('node', [cli, 'roam', 'linkify', '--dir', tmpDir, '--recursive', '--file', path.join(tmpDir, 'notes.org2'), '--format', 'json'], { encoding: 'utf8' }));
 assert.equal(singleFilePreview.scanned, 1);
-assert.equal(singleFilePreview.indexFileCount, 7);
+assert.equal(singleFilePreview.indexFileCount, 8);
 assert.equal(singleFilePreview.changedFileCount, 1);
-assert.equal(singleFilePreview.replacementCount, 6);
+assert.equal(singleFilePreview.replacementCount, 7);
 
 execFileSync('node', [cli, 'roam', 'linkify', '--dir', tmpDir, '--recursive', '--file', path.join(tmpDir, 'notes.org2'), '--apply', '--format', 'json'], { encoding: 'utf8' });
 
@@ -49,6 +54,8 @@ assert.match(notes, /\[\[id:33333333-3333-3333-3333-333333333333\]\[D Topic\]\] 
 assert.match(notes, /\[\[id:44444444-4444-4444-4444-444444444444\]\[Databricks\]\] and \[\[id:55555555-5555-5555-5555-555555555555\]\[Sonatype\]\] both came up\./);
 assert.match(notes, /\[\[id:44444444-4444-4444-4444-444444444444\]\[Databricks\]\] came up twice\./);
 assert.match(notes, /\[\[id:66666666-6666-6666-6666-666666666666\]\[Research and Development\]\] joined too\./);
+assert.match(notes, /\[\[id:77777777-7777-7777-7777-777777777777\]\[LLMs\]\] can summarize a paragraph\./);
+assert.match(notes, /Archived Topic should not link from archived directories\./);
 assert.match(notes, /\[\[Alpha Topic\]\] already linked\./);
 assert.match(notes, /: Databricks inside fixed-width should stay plain\./);
 assert.match(notes, /Quoted string: "Databricks" should stay plain\./);
