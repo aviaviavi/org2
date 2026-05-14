@@ -37,6 +37,7 @@ Org2 is still early alpha, but it is already credible for real work if your stac
 
 - [[file:getting-started.org][Getting started]]
 - [[file:features.org][Features]]
+- [[file:corpus-flow.org][Corpus flow]]
 - [[file:tooling-reference.org][Tooling reference]]
 - [[file:editors.org][Editor integrations]]
 - [[file:language-reference.org][Language reference]]
