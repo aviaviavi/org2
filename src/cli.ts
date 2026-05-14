@@ -5115,6 +5115,38 @@ function applyAgendaDayLimit(items: ScheduledItem[], dayLimit: number | null): S
   return kept;
 }
 
+function isDefaultRoamLinkifyArchivedPath(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, "/").toLowerCase();
+  const base = path.basename(normalized);
+  return (
+    normalized.includes("/archive/") ||
+    normalized.includes("/archives/") ||
+    base.endsWith(".archive") ||
+    base.includes(".archive.") ||
+    base.endsWith("_archive")
+  );
+}
+
+function resolveRoamLinkifyExclude(rootDir: string, rawExclude: string): string {
+  const expanded = rawExclude.replace(/^~(?=$|\/|\\)/, os.homedir());
+  return path.resolve(path.isAbsolute(expanded) ? expanded : path.join(rootDir, expanded));
+}
+
+function isPathWithinOrEqual(child: string, parent: string): boolean {
+  const relative = path.relative(parent, child);
+  return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function filterRoamLinkifyFiles(files: string[], rootDir: string, excludes: string[]): string[] {
+  const root = path.resolve(rootDir);
+  const excludePaths = excludes.map((exclude) => resolveRoamLinkifyExclude(root, exclude));
+  return files.filter((file) => {
+    const resolved = path.resolve(file);
+    if (isDefaultRoamLinkifyArchivedPath(resolved)) return false;
+    return !excludePaths.some((excludePath) => isPathWithinOrEqual(resolved, excludePath));
+  });
+}
+
 function listOrgLikeFiles(rootDir: string, recursiveScan: boolean): string[] {
   const out: string[] = [];
 
@@ -5350,6 +5382,7 @@ async function main(): Promise<void> {
   let roamIdForced = "";
   let roamLinkFile = "";
   let roamLinkifyFile = "";
+  let roamLinkifyExcludes: string[] = [];
   let roamGraphOut = "";
   let roamLinkPos = "";
   let roamLinkId = "";
@@ -6177,6 +6210,14 @@ async function main(): Promise<void> {
     } else if (arg === "--recursive") {
       recursive = true;
       i++;
+    } else if (arg === "--exclude") {
+      i++;
+      if (i < args.length) {
+        if (command === "roam" && roamAction === "linkify") {
+          roamLinkifyExcludes.push(args[i]!);
+        }
+        i++;
+      }
     } else if (arg === "--no-overdue") {
       includeOverdue = false;
       i++;
@@ -6394,7 +6435,7 @@ Roam / IDs:
   org2 roam db-sync --dir DIR [--recursive] [--apply]
   org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply]
   org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--style wiki|id] [--id UUID] [--apply]
-  org2 roam linkify --dir DIR [--recursive] [--file FILE] [--apply] [--format text|json]
+  org2 roam linkify --dir DIR [--recursive] [--file FILE] [--exclude PATH]... [--apply] [--format text|json]
   org2 roam graph --dir DIR [--recursive] [--out FILE] [--format text|json]
 
 Other:
@@ -6651,7 +6692,7 @@ Flags:
       text = `org2 roam linkify
 
 Usage:
-  org2 roam linkify --dir DIR [--recursive] [--file FILE] [--apply] [--format text|json]
+  org2 roam linkify --dir DIR [--recursive] [--file FILE] [--exclude PATH]... [--apply] [--format text|json]
 
 Flags:
   --dir DIR         Root directory to scan
@@ -6846,10 +6887,11 @@ Flags:
 
 
     if (roamAction === "linkify") {
-      const allFiles = listOrgLikeFiles(dir, recursive);
+      const allFilesUnfiltered = listOrgLikeFiles(dir, recursive);
+      const allFiles = filterRoamLinkifyFiles(allFilesUnfiltered, dir, roamLinkifyExcludes);
       const labelIndex = buildRoamLinkifyIndex(allFiles);
       const targetFiles = roamLinkifyFile
-        ? [path.resolve(roamLinkifyFile)]
+        ? filterRoamLinkifyFiles([path.resolve(roamLinkifyFile)], dir, roamLinkifyExcludes)
         : allFiles;
       const results: RoamLinkifyFileResult[] = [];
       let appliedCount = 0;
@@ -6887,6 +6929,7 @@ Flags:
               recursive,
               scanned: targetFiles.length,
               indexFileCount: allFiles.length,
+              excludedFileCount: allFilesUnfiltered.length - allFiles.length,
               skippedUnreadable,
               candidateLabelCount: labelIndex.size,
               changedFileCount: changedFiles.length,
@@ -6913,8 +6956,9 @@ Flags:
           process.stdout.write(`${result.file}\t${result.replacements}\n`);
         }
         console.error(
-          `org2 roam linkify: scanned ${targetFiles.length} target file(s) from ${allFiles.length} indexed file(s); ` +
-            `${changedFiles.length} file(s) changed; ` +
+          `org2 roam linkify: scanned ${targetFiles.length} target file(s) from ${allFiles.length} indexed file(s)` +
+            (allFilesUnfiltered.length > allFiles.length ? `; excluded ${allFilesUnfiltered.length - allFiles.length} file(s)` : "") +
+            `; ${changedFiles.length} file(s) changed; ` +
             `${replacementCount} link(s) inserted; ` +
             `${ambiguousSkipCount} ambiguous match(es) skipped` +
             (roamApply ? `; wrote ${appliedCount} file(s)` : ""),
