@@ -5444,6 +5444,7 @@ async function main(): Promise<void> {
   let searchTodoFiltersRaw: string[] = [];
   let searchTagFiltersRaw: string[] = [];
   let searchHeadingFilter = "";
+  let searchSort = "scan";
 
   // Lint / corpus health
   let lintFormat: "text" | "json" = "text";
@@ -6108,6 +6109,8 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "agenda") {
           agendaSortRaw.push(args[i]!);
+        } else if (command === "search" || command === "query") {
+          searchSort = args[i]!;
         }
         i++;
       }
@@ -6772,6 +6775,7 @@ Flags:
   --heading TEXT    Require nearest heading title text
   --limit N         Maximum matches (default 50)
   --context N       Context lines around each match (default 1)
+  --sort MODE       scan|date-desc|date-asc (use date-desc for “last met” style lookups)
   --format text|json Output format`;
   } else if (command === "lint") {
     text = `org2 lint
@@ -8556,12 +8560,11 @@ Flags:
     let skippedFileCount = 0;
 
     for (const filePath of files) {
-      if (hits.length >= limit) break;
       try {
         const raw = fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
         const lines = raw.split("\n");
         const stack: SearchHeading[] = [];
-        for (let j = 0; j < lines.length && hits.length < limit; j += 1) {
+        for (let j = 0; j < lines.length; j += 1) {
           const line = lines[j] || "";
           const parsed = parseHeading(line);
           if (parsed) {
@@ -8600,15 +8603,28 @@ Flags:
       console.error(`Skipped ${skippedFileCount} file(s) due to parse errors (use --verbose-errors to see details).`);
     }
 
+    const dateKey = (file: string): string => {
+      const base = path.basename(file);
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(base) || /^(\d{4})(\d{2})(\d{2})/.exec(base);
+      return m ? `${m[1]}-${m[2]}-${m[3]}` : "";
+    };
+    const normalizedSort = String(searchSort || "scan").toLowerCase();
+    if (["date-desc", "newest", "recent"].includes(normalizedSort)) {
+      hits.sort((a, b) => dateKey(b.file).localeCompare(dateKey(a.file)) || a.file.localeCompare(b.file) || a.line - b.line);
+    } else if (["date-asc", "oldest"].includes(normalizedSort)) {
+      hits.sort((a, b) => dateKey(a.file).localeCompare(dateKey(b.file)) || a.file.localeCompare(b.file) || a.line - b.line);
+    }
+    const limitedHits = hits.slice(0, limit);
+
     if (searchFormat === "json") {
-      process.stdout.write(JSON.stringify({ $schema: "org2:search:v1", query: searchTerm, results: hits }, null, 2) + "\n");
+      process.stdout.write(JSON.stringify({ $schema: "org2:search:v1", query: searchTerm, results: limitedHits }, null, 2) + "\n");
       return;
     }
-    if (hits.length === 0) {
+    if (limitedHits.length === 0) {
       process.stdout.write("No matches found.\n");
       return;
     }
-    for (const h of hits) {
+    for (const h of limitedHits) {
       const meta = [h.todo, ...(h.tags || []).map((t) => `:${t}:`)].filter(Boolean).join(" ");
       process.stdout.write(`${h.file}:${h.line}${h.heading ? ` ${h.heading}` : ""}${meta ? ` [${meta}]` : ""}\n  ${h.snippet}\n`);
     }
