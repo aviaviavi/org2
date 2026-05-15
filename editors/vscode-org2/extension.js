@@ -1697,6 +1697,75 @@ function activate(context) {
     }
   }
 
+  function renderCompilerOutput(title, stdout, stderr) {
+    formatterOutput.clear();
+    formatterOutput.appendLine(title);
+    const out = String(stdout || '').trim();
+    if (out) formatterOutput.appendLine(out);
+    const err = String(stderr || '').trim();
+    if (err) {
+      formatterOutput.appendLine('');
+      formatterOutput.appendLine(err);
+    }
+    formatterOutput.show(true);
+  }
+
+  async function runOrg2CompilerCommand(title, args, options = {}) {
+    const root = getAgendaRootDir();
+    const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
+    try {
+      const { stdout, stderr } = await execFileAsync(finalCmd, finalArgs, { cwd: root });
+      renderCompilerOutput(title, stdout, stderr);
+      if (options.successMessage) vscode.window.showInformationMessage(options.successMessage);
+      return { stdout, stderr };
+    } catch (err) {
+      const stdout = String((err && err.stdout) || '');
+      const stderr = String((err && err.stderr) || '');
+      if (stdout.trim() || stderr.trim()) renderCompilerOutput(`${title} failed`, stdout, stderr);
+      const msg = stderr.trim() || (err instanceof Error ? err.message : String(err));
+      vscode.window.showErrorMessage(`Org2: ${msg}`);
+      return undefined;
+    }
+  }
+
+  async function promptWorkspaceQuery(kind) {
+    const label = kind === 'search' ? 'Search' : 'Query';
+    const value = await vscode.window.showInputBox({
+      prompt: `Org2 ${label}: text to find in workspace notes`,
+      placeHolder: kind === 'search' ? 'plain text / regexp-ish term' : 'text or ID to cite back to source files',
+    });
+    if (!value || !String(value).trim()) return;
+    const root = getAgendaRootDir();
+    const args = [kind, String(value).trim(), '--dir', root, '--recursive', '--format', 'text', '--sort', 'date-desc'];
+    await runOrg2CompilerCommand(`Org2 ${label}: ${String(value).trim()}`, args);
+  }
+
+  async function runRoamLinkifyPreview() {
+    const root = getAgendaRootDir();
+    await runOrg2CompilerCommand('Org2 Roam Linkify Preview', ['roam', 'linkify', '--dir', root, '--recursive', '--format', 'text']);
+  }
+
+  async function runRoamLinkifyApply() {
+    const root = getAgendaRootDir();
+    const preview = await runOrg2CompilerCommand('Org2 Roam Linkify Preview', ['roam', 'linkify', '--dir', root, '--recursive', '--format', 'text']);
+    if (!preview) return;
+    const confirm = await vscode.window.showWarningMessage(
+      'Org2: apply roam linkify changes to workspace files?',
+      { modal: true },
+      'Apply Linkify'
+    );
+    if (confirm !== 'Apply Linkify') return;
+    await runOrg2CompilerCommand('Org2 Roam Linkify Apply', ['roam', 'linkify', '--dir', root, '--recursive', '--apply', '--format', 'text'], {
+      successMessage: 'Org2: roam linkify applied. Review the changed files.',
+    });
+  }
+
+  async function runRoamGraphReport() {
+    const root = getAgendaRootDir();
+    await runOrg2CompilerCommand('Org2 Roam Graph', ['roam', 'graph', '--dir', root, '--recursive', '--format', 'text']);
+  }
+
+
   async function applyWorkspaceFormatting() {
     const root = getAgendaRootDir();
     const pathFilters = getWorkspaceFormatterPathFilters(root);
@@ -2186,6 +2255,38 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.lintWorkspaceCorpus', async () => {
       await runWorkspaceCorpusLint();
+    })
+  );
+
+
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.searchWorkspace', async () => {
+      await promptWorkspaceQuery('search');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.queryWorkspace', async () => {
+      await promptWorkspaceQuery('query');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.roamLinkifyPreview', async () => {
+      await runRoamLinkifyPreview();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.roamLinkifyApply', async () => {
+      await runRoamLinkifyApply();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.roamGraph', async () => {
+      await runRoamGraphReport();
     })
   );
 
