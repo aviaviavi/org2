@@ -438,14 +438,25 @@ type RoamLinkifyCandidate = {
   file: string;
 };
 
+type RoamLinkifyRepresentedSuggestion = {
+  label: string;
+  candidate: string;
+  line: number;
+  text: string;
+  confidence: number;
+  reason: string;
+};
+
 type RoamLinkifyFileResult = {
   file: string;
   changed: boolean;
   replacements: number;
   ambiguousSkips: number;
+  representedSuggestions: number;
   outText: string;
   debugMatches?: Array<{ label: string; candidate: string; line: number; count: number }>;
   debugAmbiguous?: Array<{ label: string; line: number; candidates: string[] }>;
+  debugRepresented?: RoamLinkifyRepresentedSuggestion[];
 };
 
 type RoamGraphNode = {
@@ -1199,6 +1210,47 @@ function isRoamLinkifyGenericLabel(labelRaw: string): boolean {
   return false;
 }
 
+function roamLinkifySemanticTokens(raw: string): string[] {
+  const stop = new Set([
+    "a", "an", "and", "about", "for", "from", "in", "into", "of", "on", "or", "the", "to", "with",
+    "follow", "followup", "review", "reviews", "notes", "note", "plan", "plans", "planning", "strategy",
+  ]);
+  const tokens = String(raw || "")
+    .toLowerCase()
+    .replace(/\[\[[^\]]+\](?:\[[^\]]*\])?\]/g, " ")
+    .match(/[a-z0-9]+/g) || [];
+  return tokens.filter((token) => token.length >= 3 && !stop.has(token));
+}
+
+function findRoamLinkifyRepresentedSuggestion(
+  line: string,
+  normalizedLabel: string,
+  candidates: RoamLinkifyCandidate[],
+  lineNumber: number,
+): RoamLinkifyRepresentedSuggestion | null {
+  const labelTokens = roamLinkifySemanticTokens(normalizedLabel);
+  if (labelTokens.length < 2) return null;
+
+  const lineForTokens = /^\*+\s+/.test(line) ? parseHeadlineTitleForRoam(line) : line;
+  const lineTokens = new Set(roamLinkifySemanticTokens(lineForTokens));
+  if (!labelTokens.every((token) => lineTokens.has(token))) return null;
+
+  const contiguous = new RegExp(`(^|[^A-Za-z0-9_])(${escapeRegExp(normalizedLabel)})(?=$|[^A-Za-z0-9_])`, "i");
+  if (contiguous.test(line)) return null;
+
+  const resolved = resolveRoamLinkifyCandidate(normalizedLabel, candidates);
+  if (!resolved) return null;
+
+  return {
+    label: normalizedLabel,
+    candidate: `${resolved.label} @ ${resolved.file}`,
+    line: lineNumber,
+    text: line.trim(),
+    confidence: 0.78,
+    reason: "all significant label tokens appear in this heading/paragraph, but not as exact contiguous title text",
+  };
+}
+
 function isRoamLinkifyDateLikeBaseName(filePath: string): boolean {
   const base = path.basename(filePath).replace(/\.(org2|org)$/i, "");
   return /^\d{4}[-_]\d{2}[-_]\d{2}(?:[T_]\d+)?$/.test(base) || /^\d{14,}$/.test(base);
@@ -1262,6 +1314,8 @@ function applyRoamLinkifyToFile(
   let ambiguousSkips = 0;
   const debugMatches: Array<{ label: string; candidate: string; line: number; count: number }> = [];
   const debugAmbiguous: Array<{ label: string; line: number; candidates: string[] }> = [];
+  const debugRepresented: RoamLinkifyRepresentedSuggestion[] = [];
+  const representedSeen = new Set<string>();
 
   for (let i = 0; i < lines.length; i += 1) {
     let line = lines[i] || "";
@@ -1312,7 +1366,17 @@ function applyRoamLinkifyToFile(
         `(^|[^A-Za-z0-9_])(${escapeRegExp(probeLabel)})(?=$|[^A-Za-z0-9_])`,
         "i",
       );
-      if (!boundaryRegex.test(line)) continue;
+      if (!boundaryRegex.test(line)) {
+        const suggestion = findRoamLinkifyRepresentedSuggestion(line, normalizedLabel, candidates, i + 1);
+        if (suggestion) {
+          const key = `${suggestion.line}\t${suggestion.label}\t${suggestion.candidate}`;
+          if (!representedSeen.has(key)) {
+            representedSeen.add(key);
+            debugRepresented.push(suggestion);
+          }
+        }
+        continue;
+      }
 
       if (!resolved) {
         ambiguousSkips += 1;
@@ -1345,9 +1409,11 @@ function applyRoamLinkifyToFile(
     changed: outText !== normalized,
     replacements,
     ambiguousSkips,
+    representedSuggestions: debugRepresented.length,
     outText,
     debugMatches,
     debugAmbiguous,
+    debugRepresented,
   };
 }
 
@@ -7000,6 +7066,7 @@ Flags:
       const changedFiles = results.filter((result) => result.changed);
       const replacementCount = results.reduce((sum, result) => sum + result.replacements, 0);
       const ambiguousSkipCount = results.reduce((sum, result) => sum + result.ambiguousSkips, 0);
+      const representedSuggestionCount = results.reduce((sum, result) => sum + result.representedSuggestions, 0);
 
       if (roamFormat === "json") {
         process.stdout.write(
@@ -7016,6 +7083,7 @@ Flags:
               changedFileCount: changedFiles.length,
               replacementCount,
               ambiguousSkipCount,
+              representedSuggestionCount,
               applied: roamApply,
               appliedCount,
               files: results
@@ -7024,8 +7092,10 @@ Flags:
                   changed: result.changed,
                   replacements: result.replacements,
                   ambiguousSkips: result.ambiguousSkips,
+                  representedSuggestions: result.representedSuggestions,
                   debugMatches: result.debugMatches,
                   debugAmbiguous: result.debugAmbiguous,
+                  debugRepresented: result.debugRepresented,
                 })),
             },
             null,
@@ -7041,7 +7111,8 @@ Flags:
             (allFilesUnfiltered.length > allFiles.length ? `; excluded ${allFilesUnfiltered.length - allFiles.length} file(s)` : "") +
             `; ${changedFiles.length} file(s) changed; ` +
             `${replacementCount} link(s) inserted; ` +
-            `${ambiguousSkipCount} ambiguous match(es) skipped` +
+            `${ambiguousSkipCount} ambiguous match(es) skipped; ` +
+            `${representedSuggestionCount} represented-node suggestion(s)` +
             (roamApply ? `; wrote ${appliedCount} file(s)` : ""),
         );
       }
