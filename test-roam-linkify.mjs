@@ -14,17 +14,67 @@ const gammaId = '22222222-2222-2222-2222-222222222222';
 const deltaId = '33333333-3333-3333-3333-333333333333';
 const databricksId = '44444444-4444-4444-4444-444444444444';
 const sonatypeId = '55555555-5555-5555-5555-555555555555';
-const excludedId = '66666666-6666-6666-6666-666666666666';
+const semanticId = '66666666-6666-6666-6666-666666666666';
+const excludedId = '77777777-7777-7777-7777-777777777777';
 
 fs.writeFileSync(path.join(tmpDir, 'alpha.org2'), `#+TITLE: Alpha Topic\n\n:PROPERTIES:\n:ID: ${alphaId}\n:END:\n\nAlpha Topic stands alone here.\n`);
 fs.writeFileSync(path.join(tmpDir, 'delta.org2'), `#+TITLE: Delta Topic\n#+ROAM_ALIASES: D Topic\n\n:PROPERTIES:\n:ID: ${deltaId}\n:END:\n\n`);
 fs.writeFileSync(path.join(tmpDir, 'databricks.org2'), `#+TITLE: Databricks\n\n:PROPERTIES:\n:ID: ${databricksId}\n:END:\n\n`);
 fs.writeFileSync(path.join(tmpDir, 'sonatype.org2'), `#+TITLE: Sonatype\n\n:PROPERTIES:\n:ID: ${sonatypeId}\n:END:\n\n`);
+fs.writeFileSync(path.join(tmpDir, 'knowledge-base.org2'), `#+TITLE: Knowledge Base
+
+:PROPERTIES:
+:ID: ${semanticId}
+:END:
+
+`);
 fs.mkdirSync(path.join(tmpDir, 'agents'));
 fs.mkdirSync(path.join(tmpDir, 'archive'));
-fs.writeFileSync(path.join(tmpDir, 'agents', 'private.org2'), `#+TITLE: Private Agent\n\n:PROPERTIES:\n:ID: ${excludedId}\n:END:\n\n`);
-fs.writeFileSync(path.join(tmpDir, 'archive', 'old.org2'), `#+TITLE: Archived Topic\n\n:PROPERTIES:\n:ID: 77777777-7777-7777-7777-777777777777\n:END:\n\n`);
-fs.writeFileSync(path.join(tmpDir, 'notes.org2'), `#+TITLE: Notes\n\n* TODO Delta Topic follow-up\n\nWe discussed Alpha Topic yesterday.\nAlpha Topic came up twice.\nD Topic is shorthand.\nDatabricks and Sonatype both came up.\nDatabricks came up twice.\n[[Alpha Topic]] already linked.\n: Databricks inside fixed-width should stay plain.\nQuoted string: "Databricks" should stay plain.\nShell string: 'Sonatype' should stay plain.\nInline code =Databricks= should stay plain.\nInline verbatim ~Sonatype~ should stay plain.\nURL https://databricks.example.com/sonatype should stay plain.\nPrivate Agent and Archived Topic should stay plain when excluded.\n\n* Backlinks\n- Databricks should stay plain here.\n- Sonatype should stay plain here too.\n\n#+begin_quote\nDatabricks inside quote block should stay plain.\n#+end_quote\n\n#+begin_src text\nAlpha Topic inside code should stay plain.\n#+end_src\n`);
+fs.writeFileSync(path.join(tmpDir, 'agents', 'private.org2'), `#+TITLE: Private Agent
+
+:PROPERTIES:
+:ID: ${excludedId}
+:END:
+
+`);
+fs.writeFileSync(path.join(tmpDir, 'archive', 'old.org2'), `#+TITLE: Archived Topic
+
+:PROPERTIES:
+:ID: 88888888-8888-8888-8888-888888888888
+:END:
+
+`);
+fs.writeFileSync(path.join(tmpDir, 'notes.org2'), `#+TITLE: Notes
+
+* TODO Delta Topic follow-up
+* Base knowledge cleanup
+
+We discussed Alpha Topic yesterday.
+Alpha Topic came up twice.
+D Topic is shorthand.
+Databricks and Sonatype both came up.
+Databricks came up twice.
+[[Alpha Topic]] already linked.
+: Databricks inside fixed-width should stay plain.
+Quoted string: "Databricks" should stay plain.
+Shell string: 'Sonatype' should stay plain.
+Inline code =Databricks= should stay plain.
+Inline verbatim ~Sonatype~ should stay plain.
+URL https://databricks.example.com/sonatype should stay plain.
+Private Agent and Archived Topic should stay plain when excluded.
+
+* Backlinks
+- Databricks should stay plain here.
+- Sonatype should stay plain here too.
+
+#+begin_quote
+Databricks inside quote block should stay plain.
+#+end_quote
+
+#+begin_src text
+Alpha Topic inside code should stay plain.
+#+end_src
+`);
 fs.writeFileSync(path.join(tmpDir, 'ambiguous.org2'), `#+TITLE: Alpha Topic\n\n:PROPERTIES:\n:ID: ${gammaId}\n:END:\n\nA duplicate node title exists here.\n`);
 
 const preview = JSON.parse(execFileSync('node', [cli, 'roam', 'linkify', '--dir', tmpDir, '--recursive', '--exclude', 'agents/', '--format', 'json'], { encoding: 'utf8' }));
@@ -32,13 +82,19 @@ assert.equal(preview.action, 'linkify');
 assert.equal(preview.changedFileCount, 1);
 assert.equal(preview.replacementCount, 5);
 assert.ok(preview.ambiguousSkipCount >= 1);
+assert.ok(preview.representedSuggestionCount >= 1);
+const semanticSuggestion = preview.files.flatMap((file) => file.debugRepresented || []).find((item) => item.label === 'knowledge base');
+assert.ok(semanticSuggestion);
+assert.equal(semanticSuggestion.confidence, 0.78);
+assert.match(semanticSuggestion.reason, /not as exact contiguous title text/);
 
 const singleFilePreview = JSON.parse(execFileSync('node', [cli, 'roam', 'linkify', '--dir', tmpDir, '--recursive', '--exclude', 'agents/', '--file', path.join(tmpDir, 'notes.org2'), '--format', 'json'], { encoding: 'utf8' }));
 assert.equal(singleFilePreview.scanned, 1);
-assert.equal(singleFilePreview.indexFileCount, 6);
+assert.equal(singleFilePreview.indexFileCount, 7);
 assert.equal(singleFilePreview.excludedFileCount, 2);
 assert.equal(singleFilePreview.changedFileCount, 1);
 assert.equal(singleFilePreview.replacementCount, 5);
+assert.ok(singleFilePreview.representedSuggestionCount >= 1);
 
 execFileSync('node', [cli, 'roam', 'linkify', '--dir', tmpDir, '--recursive', '--exclude', 'agents/', '--file', path.join(tmpDir, 'notes.org2'), '--apply', '--format', 'json'], { encoding: 'utf8' });
 
@@ -69,7 +125,7 @@ const excludedPreview = JSON.parse(execFileSync('node', [
   '--exclude', 'agents/',
   '--format', 'json',
 ], { encoding: 'utf8' }));
-assert.equal(excludedPreview.indexFileCount, 6);
+assert.equal(excludedPreview.indexFileCount, 7);
 assert.equal(excludedPreview.excludedFileCount, 2);
 const notesExcludedResult = excludedPreview.files.find((file) => file.file.endsWith('notes.org2'));
 assert.ok(notesExcludedResult);
