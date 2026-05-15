@@ -1,16 +1,25 @@
 #+TITLE: Org2
 #+SUBTITLE: A local-first knowledge compiler for Org-shaped plain text
 
-Org2 turns a folder of notes, tasks, links, and metadata into a computable corpus.
+Org2 turns a folder of raw notes, tasks, links, and metadata into a computable corpus.
 
-It parses Org-shaped plain text into structured semantics, then uses that model to power agendas, graph operations, lint/health passes, publishing, and editor tooling without tying the workflow to one editor or hosted service.
+Think of it as a local-first compiler pipeline for personal knowledge:
+
+- *raw* capture and source material stay in plain files,
+- *notes* become structured headings, tasks, links, IDs, and properties,
+- *compiled* semantics resolve agenda state, graph edges, provenance, and artifact roles,
+- *views* such as agendas, backlinks, diagnostics, and editor intelligence are derived from that model,
+- *publish* outputs turn the same corpus into HTML sites and shareable artifacts.
+
+The notes remain yours on disk; Org2 supplies the compiler/runtime layer that makes them queryable, checkable, refactorable, and publishable without tying the workflow to one editor or hosted service.
 
 Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standalone Org rationale]]
 
 * What Org2 is good at today
 
-- *Structured semantics*: headings, tasks, planning lines, links, drawers, IDs, and source ranges become data the toolchain can reason about.
-- *Derived artifacts*: agendas, HTML sites, lint reports, graph views, and editor intelligence are generated from the same corpus model.
+- *Knowledge compiler pipeline*: raw files become notes; notes compile into resolved semantics; those semantics drive views, checks, and publishing.
+- *Structured semantics*: headings, tasks, planning lines, links, drawers, IDs, artifact roles, provenance, and source ranges become data the toolchain can reason about.
+- *Derived artifacts*: agendas, HTML sites, lint reports, graph views, backlinks, and editor intelligence are generated from the same corpus model.
 - *Portable plain-text workflow*: notes, tasks, links, and publishing all stay in files.
 - *CLI-backed editing + planning*: agenda, TODO/planning edits, capture, archive/refile, formatting, export, publish.
 - *Strong VS Code support*: Org2 is already practical as a daily driver in VS Code.
@@ -37,6 +46,7 @@ Org2 is still early alpha, but it is already credible for real work if your stac
 
 - [[file:getting-started.org][Getting started]]
 - [[file:features.org][Features]]
+- [[file:corpus-flow.org][Corpus flow]]
 - [[file:knowledge-compiler-roadmap.org][Knowledge compiler roadmap]]
 - [[file:tooling-reference.org][Tooling reference]]
 - [[file:editors.org][Editor integrations]]
