@@ -1,0 +1,68 @@
+#+TITLE: Knowledge compiler roadmap
+
+Org2 is a local-first knowledge compiler. Plain-text notes are the source corpus; the product value is the structured, queryable, maintainable system compiled from that corpus.
+
+This page is the product/technical direction behind the current implementation work.
+
+* Product frame
+
+Org2 should not compete by being a slightly nicer Markdown editor. Markdown is already good for plain prose.
+
+Org2 earns its complexity when it makes a personal knowledge base operational:
+
+- tasks and planning become agenda data
+- links, IDs, aliases, and properties become graph data
+- raw notes and captured material become curated notes
+- curated notes compile into views, reports, lint results, and published sites
+- provenance makes generated artifacts inspectable instead of mysterious
+
+* Compiler model
+
+The intended corpus flow is:
+
+#+begin_src text
+raw/ -> notes/ -> compiled/ -> views/ -> publish/
+#+end_src
+
+- =raw/= holds inboxes, imports, transcripts, scraped material, and other source inputs.
+- =notes/= holds the human-edited canonical corpus.
+- =compiled/= holds generated machine-readable artifacts.
+- =views/= holds generated human-facing local reports and review surfaces.
+- =publish/= holds deployable/public artifacts.
+
+Generated zones should be marked, lintable, and reproducible from source notes where possible.
+
+* First-class semantics
+
+The compiler layer should keep moving more behavior out of editor-specific conventions and into portable Org2 semantics:
+
+- tasks, TODO states, planning timestamps, priorities, and tags
+- IDs, aliases, file links, wiki links, backlinks, and graph edges
+- properties, provenance, generated status, and artifact roles
+- source ranges that let tools point back to the original file and heading
+- health checks that detect broken links, duplicate IDs, stale generated files, and unsafe corpus boundaries
+
+* Implementation direction
+
+Near-term work should bias toward small compiler passes and CLI-backed workflows that editor integrations can reuse.
+
+Good examples:
+
+- richer =org2 lint= checks for corpus structure and generated artifacts
+- explicit provenance fields for generated outputs
+- query/search commands that include citations back to source files
+- safer roam/linkify passes that can preview changes and exclude generated or archived paths
+- publishing docs that explain the corpus model instead of only listing editor features
+
+This keeps Org2 useful today while preventing the project from collapsing into editor-specific glue.
+
+* Non-goals
+
+- No Emacs runtime dependency.
+- No need to win as a generic prose editor.
+- No byte-for-byte clone of every Org Mode behavior before shipping useful workflows.
+- No opaque generated artifacts that cannot be traced back to source notes.
+
+* Done means compiled artifacts matter
+
+A mature Org2 setup should make notes feel like source code for a personal knowledge system: easy to edit, but also compilable into agenda views, graph artifacts, maintenance reports, and published outputs.
