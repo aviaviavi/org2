@@ -6483,15 +6483,17 @@ Roam / IDs:
   org2 search QUERY [--dir DIR] [--recursive] [--format text|json]
   org2 query QUERY [--dir DIR] [--recursive] [--format text|json]
   org2 query (--id UUID|--text TEXT) [--dir DIR] [--recursive]
-  org2 lint [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
   org2 roam db-sync --dir DIR [--recursive] [--apply]
   org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply]
   org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--style wiki|id] [--id UUID] [--apply]
   org2 roam linkify --dir DIR [--recursive] [--file FILE] [--exclude PATH]... [--apply] [--format text|json]
   org2 roam graph --dir DIR [--recursive] [--out FILE] [--format text|json]
 
-Other:
+Maintenance / health:
+  org2 lint [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
   org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]
+
+Other:
   org2 lsp
 
 Tips:
@@ -6716,7 +6718,11 @@ Flags:
   --recursive       Recurse into subdirectories
   --file FILE       Single target file
   --files FILE      One or more target files
-  --format text|json Output format`;
+  --format text|json Output format
+
+Checks:
+  Artifact metadata, duplicate IDs, unresolved provenance references,
+  and conventional corpus-flow role/path mismatches.`;
   } else if (command === "roam") {
     if (options.roamAction === "db-sync") {
       text = `org2 roam db-sync

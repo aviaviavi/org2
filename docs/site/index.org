@@ -49,6 +49,7 @@ Org2 is still early alpha, but it is already credible for real work if your stac
 - [[file:corpus-flow.org][Corpus flow]]
 - [[file:knowledge-compiler-roadmap.org][Knowledge compiler roadmap]]
 - [[file:tooling-reference.org][Tooling reference]]
+- [[file:maintenance-workflows.org][Maintenance and health workflows]]
 - [[file:editors.org][Editor integrations]]
 - [[file:language-reference.org][Language reference]]
 - [[file:semantics-status.org][Semantics and status]]
