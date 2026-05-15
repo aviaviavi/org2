@@ -37,3 +37,46 @@ These are intended to remain stable for users, but details can still change acro
 2. Read [[file:tooling-reference.org][Tooling reference]] for actual workflows.
 3. Use this page to understand stability expectations.
 
+
+* Identity, provenance, and graph operations
+
+Org2 treats linked knowledge as compiler state, not just editor decoration. A note corpus should be able to answer three practical questions reliably:
+
+- What is this node's stable identity?
+- Where did this fact, link, or derived artifact come from?
+- What graph operations can tools safely build on?
+
+** Identity contract
+
+- =ID= properties are the primary stable identity for headings/nodes.
+- =id:= links should target those stable IDs rather than fragile heading text.
+- Wiki links and aliases are useful authoring conveniences, but tooling should resolve them into concrete represented nodes before making graph claims.
+- File links identify files or file-local targets; they should not be silently conflated with roam node identity.
+
+** Provenance contract
+
+Generated views should preserve enough source context for users and tools to audit them. For compiler-style workflows, that means derived output should prefer citations that include at least:
+
+- source file path,
+- heading or node identity when available,
+- line/section context when available,
+- the command or workflow that produced the derived artifact.
+
+This keeps search results, backlinks, exports, and future maintenance passes explainable instead of becoming anonymous generated text.
+
+** Graph operation contract
+
+Graph-aware commands should separate three phases:
+
+1. parse source files into syntax and metadata,
+2. resolve identities, aliases, links, and backlinks into a graph model,
+3. emit derived operations such as link suggestions, reports, exports, or maintenance fixes.
+
+That separation matters because users need dry-run reports and safe, reviewable edits. A linkify command, for example, should be able to explain why it suggested a link before it changes a file.
+
+** High-leverage next slices
+
+- Make cited query/search output available as a stable CLI surface for knowledge-base workflows.
+- Expand roam linkify reports so suggestions include represented-node/alias reasoning.
+- Document which generated artifacts are safe to commit and which are cache-like rebuild outputs.
+- Add maintenance commands that detect duplicate IDs, unresolved aliases, broken links, and stale derived graph artifacts.

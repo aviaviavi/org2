@@ -1,6 +1,17 @@
 #+TITLE: Features
 
-Org2 is not just “an Org parser.” It is a portable workflow stack: language, CLI, editor integration, roam workflows, and publishing.
+Org2 is not just “an Org parser” or an editor replacement. It is a local-first knowledge compiler: a pipeline that turns raw plain-text notes into structured semantics, then derives views, checks, editor behavior, and publishable artifacts from that shared model.
+
+* Compiler workflow
+
+The central loop is:
+
+1. capture raw source material and working notes in plain files,
+2. parse headings, tasks, links, drawers, properties, timestamps, blocks, tables, and source ranges,
+3. resolve IDs, backlinks, planning state, artifact roles, provenance, and graph relationships,
+4. compile that corpus into useful outputs: agendas, diagnostics, graph views, editor intelligence, HTML pages, and published sites.
+
+Because every output comes from the same semantic model, Org2 can support planning, knowledge management, publishing, and automation without locking you into one app.
 
 * Core workflow surface
 
@@ -89,10 +100,11 @@ Publishing is already a first-class workflow, not an afterthought.
 
 * Positioning
 
-Org2 is trying to preserve what is powerful about Org while dropping the assumption that the only serious home for it is Emacs.
+Org2 preserves what is powerful about Org-shaped plain text, but the primary pitch is not “Org Mode somewhere else.” The bet is that a personal knowledge base should behave like a local compiler target:
 
-That is the whole bet:
+- keep raw notes portable and inspectable,
+- compile them into explicit semantics,
+- generate many views and artifacts from one corpus model,
+- meet users where they already work, including VS Code, CLI automation, and publishing pipelines.
 
-- keep the plain-text power,
-- make the backend portable,
-- meet users where they already work.
+Compatibility matters because existing notes matter. It is secondary to making the corpus computable.
