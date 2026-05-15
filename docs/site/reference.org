@@ -18,6 +18,9 @@ Org2 reference is split into two detailed sections:
   - VS Code installation
   - complete default keyboard shortcut map
   - Vim/Emacs status placeholders
+- [[file:maintenance-workflows.org][Maintenance and health workflows]]
+  - compiler-style lint, health, and repair passes
+  - trust boundaries for generated artifacts
 - [[file:semantics-status.org][Semantics and status]]
   - what is normative now
   - what is stable but still implementation-defined
