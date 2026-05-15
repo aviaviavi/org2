@@ -4625,48 +4625,8 @@ function activate(context) {
     opacity: '0.65',
   });
 
-  const org2TodoStateDecoration = vscode.window.createTextEditorDecorationType({
-    fontWeight: '700',
-    borderRadius: '3px',
-    padding: '0 4px',
-  });
-
-  function updateTodoStateDecorations(editor) {
-    if (!editor) return;
-    const doc = editor.document;
-    if (!doc) return;
-    if (doc.languageId !== 'org2' && doc.languageId !== 'org') return;
-
-    const options = [];
-    const re = /^(\*+)\s+([A-Z][A-Z0-9_\-]*)\b/;
-
-    for (let line = 0; line < doc.lineCount; line++) {
-      const text = doc.lineAt(line).text;
-      const m = re.exec(text);
-      if (!m) continue;
-
-      const state = (m[2] || '').toUpperCase();
-      const statusBucket = agendaStatusBucket(state);
-      if (statusBucket !== 'todo' && statusBucket !== 'inProgress' && statusBucket !== 'done' && statusBucket !== 'canceled') {
-        continue;
-      }
-
-      const start = m[1].length + 1;
-      const end = start + m[2].length;
-      const palette = statusBucket === 'todo'
-        ? { color: '#111111', backgroundColor: '#ffcc66', border: '1px solid rgba(0,0,0,0.25)' }
-        : statusBucket === 'inProgress'
-          ? { color: '#ffffff', backgroundColor: '#2563eb', border: '1px solid rgba(255,255,255,0.22)' }
-          : { color: '#052e16', backgroundColor: '#86efac', border: '1px solid rgba(0,0,0,0.22)' };
-
-      options.push({
-        range: new vscode.Range(line, start, line, end),
-        renderOptions: palette,
-      });
-    }
-
-    editor.setDecorations(org2TodoStateDecoration, options);
-  }
+  // TODO keywords are highlighted by the TextMate grammar. Avoid editor
+  // decorations here so headings do not render as intrusive color boxes.
 
   function updateLinkDecorations(editor) {
     if (!editor) return;
@@ -4771,7 +4731,6 @@ function activate(context) {
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       maybeAutoFold(editor);
       updateLinkDecorations(editor);
-      updateTodoStateDecorations(editor);
       backlinksProvider.loadForEditor(editor, { focusView: false }).catch(() => {});
     })
   );
@@ -4814,7 +4773,6 @@ function activate(context) {
   vscode.window.visibleTextEditors.forEach((ed) => {
     maybeAutoFold(ed);
     updateLinkDecorations(ed);
-    updateTodoStateDecorations(ed);
   });
   backlinksProvider.loadForEditor(vscode.window.activeTextEditor, { focusView: false }).catch(() => {});
 
@@ -4824,7 +4782,6 @@ function activate(context) {
       if (editor) {
         maybeAutoFold(editor);
         updateLinkDecorations(editor);
-        updateTodoStateDecorations(editor);
       }
       if (doc && doc.uri && doc.uri.scheme === 'file' && /\.(org|org2)$/i.test(doc.uri.fsPath || '')) {
         agendaProvider.load().catch(() => {});
@@ -4849,7 +4806,6 @@ function activate(context) {
       const editor = vscode.window.visibleTextEditors.find((ed) => ed.document === e.document);
       if (editor) {
         updateLinkDecorations(editor);
-        updateTodoStateDecorations(editor);
       }
     })
   );

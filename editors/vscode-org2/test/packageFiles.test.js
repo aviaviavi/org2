@@ -44,3 +44,16 @@ test('packaged extension files include all extension.js local runtime modules', 
     );
   }
 });
+
+test('org prose disables VS Code Unicode highlight boxes by default', () => {
+  const packagePath = path.join(__dirname, '..', 'package.json');
+  const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+  const defaults = pkg.contributes.configurationDefaults || {};
+
+  for (const language of ['[org2]', '[org]']) {
+    assert.equal(defaults[language]?.['editor.unicodeHighlight.nonBasicASCII'], false);
+    assert.equal(defaults[language]?.['editor.unicodeHighlight.invisibleCharacters'], false);
+    assert.equal(defaults[language]?.['editor.unicodeHighlight.ambiguousCharacters'], false);
+  }
+});
+

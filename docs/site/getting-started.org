@@ -1,6 +1,6 @@
 #+TITLE: Getting started
 
-This guide is about getting to a *useful* Org2 setup quickly, not performing a ceremonial migration.
+This guide is about getting to a *useful* Org2 setup quickly: point the compiler at notes you already own, then start deriving agendas, graph views, editor features, and published artifacts from the same corpus.
 
 * 1) Install Org2
 
@@ -18,7 +18,7 @@ npm run org2 -- --help
 npm run org2 -- agenda --help
 #+end_src
 
-* 2) Start with your existing Org files
+* 2) Start with your existing Org files as compiler input
 
 You do *not* need to convert everything first.
 
@@ -30,7 +30,7 @@ Example:
 npm run org2 -- agenda --dir /path/to/your/notes --recursive
 #+end_src
 
-That means you can start by pointing the CLI and editor tooling at your current notes directory, then adopt =.org2= for new files when you want to.
+That means you can start by pointing Org2 at your current notes directory and treating it as input to the compiler pipeline: raw files → structured notes → compiled semantics → views and published outputs. Adopt =.org2= for new files when you want to.
 
 * 3) Use VS Code if you want the best editor experience today
 

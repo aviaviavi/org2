@@ -5181,6 +5181,38 @@ function applyAgendaDayLimit(items: ScheduledItem[], dayLimit: number | null): S
   return kept;
 }
 
+function isDefaultRoamLinkifyArchivedPath(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, "/").toLowerCase();
+  const base = path.basename(normalized);
+  return (
+    normalized.includes("/archive/") ||
+    normalized.includes("/archives/") ||
+    base.endsWith(".archive") ||
+    base.includes(".archive.") ||
+    base.endsWith("_archive")
+  );
+}
+
+function resolveRoamLinkifyExclude(rootDir: string, rawExclude: string): string {
+  const expanded = rawExclude.replace(/^~(?=$|\/|\\)/, os.homedir());
+  return path.resolve(path.isAbsolute(expanded) ? expanded : path.join(rootDir, expanded));
+}
+
+function isPathWithinOrEqual(child: string, parent: string): boolean {
+  const relative = path.relative(parent, child);
+  return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function filterRoamLinkifyFiles(files: string[], rootDir: string, excludes: string[]): string[] {
+  const root = path.resolve(rootDir);
+  const excludePaths = excludes.map((exclude) => resolveRoamLinkifyExclude(root, exclude));
+  return files.filter((file) => {
+    const resolved = path.resolve(file);
+    if (isDefaultRoamLinkifyArchivedPath(resolved)) return false;
+    return !excludePaths.some((excludePath) => isPathWithinOrEqual(resolved, excludePath));
+  });
+}
+
 function listOrgLikeFiles(rootDir: string, recursiveScan: boolean): string[] {
   const out: string[] = [];
 
@@ -5207,6 +5239,28 @@ function listOrgLikeFiles(rootDir: string, recursiveScan: boolean): string[] {
   };
 
   walk(rootDir);
+  return out;
+}
+
+function listAgendaFiles(dirPath: string, recursiveScan: boolean): string[] {
+  const out: string[] = [];
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      if (!recursiveScan) continue;
+      if (entry.name.startsWith(".")) continue;
+      out.push(...listAgendaFiles(fullPath, recursiveScan));
+      continue;
+    }
+
+    if (!entry.isFile()) continue;
+    if (!(entry.name.endsWith(".org") || entry.name.endsWith(".org2"))) continue;
+    if (entry.name.startsWith(".#")) continue; // Emacs lockfile
+    out.push(fullPath);
+  }
+
   return out;
 }
 
@@ -5378,7 +5432,18 @@ async function main(): Promise<void> {
 
   // Query (Roam)
   let queryId = "";
+  let queryTerm = "";
+  let queryText = "";
   let queryFormat: "text" | "json" = "text";
+
+  // Cited search
+  let searchTerm = "";
+  let searchFormat: "text" | "json" = "text";
+  let searchContextRaw = "1";
+  let searchLimitRaw = "50";
+  let searchTodoFiltersRaw: string[] = [];
+  let searchTagFiltersRaw: string[] = [];
+  let searchHeadingFilter = "";
 
   // Lint / corpus health
   let lintFormat: "text" | "json" = "text";
@@ -5393,6 +5458,7 @@ async function main(): Promise<void> {
   let roamIdForced = "";
   let roamLinkFile = "";
   let roamLinkifyFile = "";
+  let roamLinkifyExcludes: string[] = [];
   let roamGraphOut = "";
   let roamLinkPos = "";
   let roamLinkId = "";
@@ -5492,9 +5558,21 @@ async function main(): Promise<void> {
     } else if (arg === "backlinks") {
       command = "backlinks";
       i++;
+    } else if (arg === "search") {
+      command = "search";
+      i++;
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        searchTerm = args[i]!;
+        i++;
+      }
     } else if (arg === "query") {
       command = "query";
       i++;
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        queryTerm = args[i]!;
+        searchTerm = queryTerm;
+        i++;
+      }
     } else if (arg === "lint") {
       command = "lint";
       i++;
@@ -5841,6 +5919,8 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "agenda") {
           agendaTagFiltersRaw.push(args[i]!);
+        } else if (command === "search" || command === "query") {
+          searchTagFiltersRaw.push(args[i]!);
         }
         i++;
       }
@@ -5849,6 +5929,8 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "agenda") {
           agendaTodoFiltersRaw.push(args[i]!);
+        } else if (command === "search" || command === "query") {
+          searchTodoFiltersRaw.push(args[i]!);
         } else if (command === "capture") {
           captureTodoKeywordRaw = args[i]!;
           captureTodoKeywordFlagSet = true;
@@ -6050,6 +6132,8 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "agenda") {
           agendaLimitRaw = args[i]!;
+        } else if (command === "search" || command === "query") {
+          searchLimitRaw = args[i]!;
         }
         i++;
       }
@@ -6135,6 +6219,14 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--text" || arg === "--contains") {
+      i++;
+      if (i < args.length) {
+        if (command === "query") {
+          queryText = args[i]!;
+        }
+        i++;
+      }
     } else if (arg === "--id") {
       i++;
       if (i < args.length) {
@@ -6187,6 +6279,9 @@ async function main(): Promise<void> {
           backlinksFormat = v;
         } else if (command === "query" && (v === "text" || v === "json")) {
           queryFormat = v;
+          searchFormat = v;
+        } else if (command === "search" && (v === "text" || v === "json")) {
+          searchFormat = v;
         } else if (command === "lint" && (v === "text" || v === "json")) {
           lintFormat = v;
         } else if (
@@ -6198,6 +6293,25 @@ async function main(): Promise<void> {
         } else if (command === "roam" && (v === "text" || v === "json")) {
           roamFormat = v;
         }
+        i++;
+      }
+    } else if (arg === "--context") {
+      i++;
+      if (i < args.length) {
+        if (command === "search" || command === "query") searchContextRaw = args[i]!;
+        i++;
+      }
+    } else if (arg === "--heading") {
+      i++;
+      if (i < args.length) {
+        if (command === "search" || command === "query") searchHeadingFilter = args[i]!;
+        i++;
+      }
+    } else if (arg === "--q" || arg === "--term") {
+      i++;
+      if (i < args.length) {
+        if (command === "search") searchTerm = args[i]!;
+        else if (command === "query") { queryTerm = args[i]!; searchTerm = args[i]!; }
         i++;
       }
     } else if (arg === "--style" || arg === "--link-style") {
@@ -6212,6 +6326,14 @@ async function main(): Promise<void> {
     } else if (arg === "--recursive") {
       recursive = true;
       i++;
+    } else if (arg === "--exclude") {
+      i++;
+      if (i < args.length) {
+        if (command === "roam" && roamAction === "linkify") {
+          roamLinkifyExcludes.push(args[i]!);
+        }
+        i++;
+      }
     } else if (arg === "--no-overdue") {
       includeOverdue = false;
       i++;
@@ -6424,12 +6546,14 @@ Export / publish:
 Roam / IDs:
   org2 id <get|ensure> --file FILE [--line N|--pos LINE[:COL]] [--apply]
   org2 backlinks --id UUID [--dir DIR] [--recursive]
-  org2 query --id UUID [--dir DIR] [--recursive]
+  org2 search QUERY [--dir DIR] [--recursive] [--format text|json]
+  org2 query QUERY [--dir DIR] [--recursive] [--format text|json]
+  org2 query (--id UUID|--text TEXT) [--dir DIR] [--recursive]
   org2 lint [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
   org2 roam db-sync --dir DIR [--recursive] [--apply]
   org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply]
   org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--style wiki|id] [--id UUID] [--apply]
-  org2 roam linkify --dir DIR [--recursive] [--file FILE] [--apply] [--format text|json]
+  org2 roam linkify --dir DIR [--recursive] [--file FILE] [--exclude PATH]... [--apply] [--format text|json]
   org2 roam graph --dir DIR [--recursive] [--out FILE] [--format text|json]
 
 Other:
@@ -6609,18 +6733,43 @@ Flags:
   --file FILE       Single target file
   --files FILE      One or more target files
   --format text|json Output format`;
+  } else if (command === "search") {
+    text = `org2 search
+
+Usage:
+  org2 search QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+
+Flags:
+  --dir DIR          Root directory to scan
+  --recursive        Recurse into subdirectories
+  --file FILE        Single target file
+  --files FILE       One or more target files
+  --todo TODO        Require nearest heading TODO keyword
+  --tag TAG          Require nearest heading tag
+  --heading TEXT     Require nearest heading title text
+  --limit N          Maximum matches (default 50)
+  --context N        Context lines around each match (default 1)
+  --format text|json Output format`;
   } else if (command === "query") {
     text = `org2 query
 
 Usage:
+  org2 query QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
   org2 query --id UUID [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+  org2 query --text TEXT [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
 
 Flags:
-  --id UUID         Target ID
+  --id UUID         Target ID lookup (legacy)
+  --text TEXT       Text to search for; returns cited file/line snippets
   --dir DIR         Root directory to scan
   --recursive       Recurse into subdirectories
   --file FILE       Single target file
   --files FILE      One or more target files
+  --todo TODO       Require nearest heading TODO keyword
+  --tag TAG         Require nearest heading tag
+  --heading TEXT    Require nearest heading title text
+  --limit N         Maximum matches (default 50)
+  --context N       Context lines around each match (default 1)
   --format text|json Output format`;
   } else if (command === "lint") {
     text = `org2 lint
@@ -6684,7 +6833,7 @@ Flags:
       text = `org2 roam linkify
 
 Usage:
-  org2 roam linkify --dir DIR [--recursive] [--file FILE] [--apply] [--format text|json]
+  org2 roam linkify --dir DIR [--recursive] [--file FILE] [--exclude PATH]... [--apply] [--format text|json]
 
 Flags:
   --dir DIR         Root directory to scan
@@ -6721,7 +6870,7 @@ Flags:
     printGeneralUsage(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "lint" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "lint" && command !== "roam") {
     printGeneralUsage(1);
   }
 
@@ -6879,10 +7028,11 @@ Flags:
 
 
     if (roamAction === "linkify") {
-      const allFiles = listOrgLikeFiles(dir, recursive);
+      const allFilesUnfiltered = listOrgLikeFiles(dir, recursive);
+      const allFiles = filterRoamLinkifyFiles(allFilesUnfiltered, dir, roamLinkifyExcludes);
       const labelIndex = buildRoamLinkifyIndex(allFiles);
       const targetFiles = roamLinkifyFile
-        ? [path.resolve(roamLinkifyFile)]
+        ? filterRoamLinkifyFiles([path.resolve(roamLinkifyFile)], dir, roamLinkifyExcludes)
         : allFiles;
       const results: RoamLinkifyFileResult[] = [];
       let appliedCount = 0;
@@ -6921,6 +7071,7 @@ Flags:
               recursive,
               scanned: targetFiles.length,
               indexFileCount: allFiles.length,
+              excludedFileCount: allFilesUnfiltered.length - allFiles.length,
               skippedUnreadable,
               candidateLabelCount: labelIndex.size,
               changedFileCount: changedFiles.length,
@@ -6950,8 +7101,9 @@ Flags:
           process.stdout.write(`${result.file}\t${result.replacements}\n`);
         }
         console.error(
-          `org2 roam linkify: scanned ${targetFiles.length} target file(s) from ${allFiles.length} indexed file(s); ` +
-            `${changedFiles.length} file(s) changed; ` +
+          `org2 roam linkify: scanned ${targetFiles.length} target file(s) from ${allFiles.length} indexed file(s)` +
+            (allFilesUnfiltered.length > allFiles.length ? `; excluded ${allFilesUnfiltered.length - allFiles.length} file(s)` : "") +
+            `; ${changedFiles.length} file(s) changed; ` +
             `${replacementCount} link(s) inserted; ` +
             `${ambiguousSkipCount} ambiguous match(es) skipped; ` +
             `${representedSuggestionCount} represented-node suggestion(s)` +
@@ -8329,13 +8481,146 @@ Flags:
     return;
   }
 
+  if (command === "search" || (command === "query" && searchTerm)) {
+    if (!searchTerm) {
+      console.error(`Error: ${command} requires a search term`);
+      process.exit(1);
+    }
+
+    if (!dir && files.length === 0) {
+      const configPath = findConfigFile(process.cwd());
+      if (configPath) {
+        try {
+          const config = loadConfig(configPath);
+          files = resolveFilesFromConfig(config, path.dirname(configPath));
+          if (files.length === 0) {
+            console.error(
+              `Error: config found at ${configPath} but no matching files for patterns: ${config.agendaFiles?.join(", ") || "*.org"}`,
+            );
+            process.exit(1);
+          }
+        } catch (err) {
+          console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`);
+          process.exit(1);
+        }
+      } else {
+        console.error("Error: provide either --dir, --files, or org2.json config");
+        process.exit(1);
+      }
+    }
+
+    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive);
+
+    const context = Math.max(0, Number.parseInt(searchContextRaw, 10) || 0);
+    const limit = Math.max(1, Number.parseInt(searchLimitRaw, 10) || 50);
+    const needle = searchTerm.toLowerCase();
+    const todoFilters = new Set(searchTodoFiltersRaw.map((t) => t.toUpperCase()));
+    const tagFilters = new Set(searchTagFiltersRaw.map((t) => t.replace(/^:/, "").replace(/:$/, "").toLowerCase()));
+    const headingNeedle = searchHeadingFilter.toLowerCase();
+
+    type SearchHeading = { line: number; level: number; title: string; todo?: string; tags: string[]; id?: string };
+    type SearchHit = {
+      file: string;
+      line: number;
+      lineEnd: number;
+      heading?: string;
+      headingLine?: number;
+      id?: string;
+      todo?: string;
+      tags: string[];
+      snippet: string;
+      context: { startLine: number; endLine: number; lines: string[] };
+    };
+
+    const parseHeading = (line: string): Omit<SearchHeading, "line"> | null => {
+      const m = /^(\*+)\s+(.*)$/.exec(line);
+      if (!m) return null;
+      let rest = (m[2] || "").trim();
+      const tagMatch = /\s+:([A-Za-z0-9_@#%:.-]+):\s*$/.exec(rest);
+      const tags = tagMatch ? (tagMatch[1] || "").split(":").filter(Boolean) : [];
+      if (tagMatch) rest = rest.slice(0, tagMatch.index).trim();
+      const parts = rest.split(/\s+/);
+      const maybeTodo = parts[0]?.toUpperCase();
+      const todo = maybeTodo && (TODO_KEYWORDS as string[]).includes(maybeTodo) ? maybeTodo : undefined;
+      if (todo) rest = parts.slice(1).join(" ").trim();
+      return { level: (m[1] || "").length, title: parseHeadlineTitleForRoam(`${m[1]} ${rest}`), todo, tags };
+    };
+
+    const hits: SearchHit[] = [];
+    let skippedFileCount = 0;
+
+    for (const filePath of files) {
+      if (hits.length >= limit) break;
+      try {
+        const raw = fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
+        const lines = raw.split("\n");
+        const stack: SearchHeading[] = [];
+        for (let j = 0; j < lines.length && hits.length < limit; j += 1) {
+          const line = lines[j] || "";
+          const parsed = parseHeading(line);
+          if (parsed) {
+            while (stack.length && stack[stack.length - 1]!.level >= parsed.level) stack.pop();
+            stack.push({ line: j, ...parsed });
+          }
+          const current = stack[stack.length - 1];
+          const idMatch = /^:ID:\s*(\S+)\s*$/.exec(line.trim());
+          if (idMatch && current) current.id = idMatch[1];
+          if (!line.toLowerCase().includes(needle)) continue;
+          if (todoFilters.size && (!current?.todo || !todoFilters.has(current.todo.toUpperCase()))) continue;
+          if (tagFilters.size && !Array.from(tagFilters).every((tag) => current?.tags.map((t) => t.toLowerCase()).includes(tag))) continue;
+          if (headingNeedle && !(current?.title || "").toLowerCase().includes(headingNeedle)) continue;
+          const start = Math.max(0, j - context);
+          const end = Math.min(lines.length - 1, j + context);
+          hits.push({
+            file: filePath,
+            line: j + 1,
+            lineEnd: j + 1,
+            heading: current?.title,
+            headingLine: current ? current.line + 1 : undefined,
+            id: current?.id,
+            todo: current?.todo,
+            tags: current?.tags || [],
+            snippet: line.trim(),
+            context: { startLine: start + 1, endLine: end + 1, lines: lines.slice(start, end + 1) },
+          });
+        }
+      } catch (err) {
+        skippedFileCount += 1;
+        if (verboseErrors) console.error(`Error processing ${filePath}:`, err instanceof Error ? err.message : err);
+      }
+    }
+
+    if (skippedFileCount > 0 && !verboseErrors) {
+      console.error(`Skipped ${skippedFileCount} file(s) due to parse errors (use --verbose-errors to see details).`);
+    }
+
+    if (searchFormat === "json") {
+      process.stdout.write(JSON.stringify({ $schema: "org2:search:v1", query: searchTerm, results: hits }, null, 2) + "\n");
+      return;
+    }
+    if (hits.length === 0) {
+      process.stdout.write("No matches found.\n");
+      return;
+    }
+    for (const h of hits) {
+      const meta = [h.todo, ...(h.tags || []).map((t) => `:${t}:`)].filter(Boolean).join(" ");
+      process.stdout.write(`${h.file}:${h.line}${h.heading ? ` ${h.heading}` : ""}${meta ? ` [${meta}]` : ""}\n  ${h.snippet}\n`);
+    }
+    return;
+  }
+
   if (command === "query") {
-    if (!queryId) {
-      console.error("Error: query requires --id UUID");
+    if (!queryId && !queryText) {
+      console.error("Error: query requires --id UUID or --text TEXT");
+      process.exit(1);
+    }
+    if (queryId && queryText) {
+      console.error("Error: query accepts either --id UUID or --text TEXT, not both");
       process.exit(1);
     }
 
     const needle = queryId.toLowerCase();
+    const textNeedle = queryText.toLowerCase();
 
     // Determine files to search (same logic as backlinks/agenda)
     if (!dir && files.length === 0) {
@@ -8386,12 +8671,13 @@ Flags:
     }
 
     type QueryHit = {
-      kind: "file" | "headline";
-      id: string;
+      kind: "file" | "headline" | "text";
+      id?: string;
       file: string;
       line: number; // 0-based
       title: string;
       headingLine?: number; // 0-based
+      snippet?: string;
     };
 
     const hits: QueryHit[] = [];
@@ -8414,9 +8700,28 @@ Flags:
 
         let inProps = false;
         let propsStart = -1; // 0-based
+        let currentHeadingLine = -1;
+        let currentHeadingTitle = findFileTitle(lines) ?? path.basename(filePath);
 
         for (let j = 0; j < lines.length; j += 1) {
-          const l = (lines[j] ?? "").trim();
+          const rawLine = lines[j] ?? "";
+          const l = rawLine.trim();
+
+          if (/^\*+\s+/.test(rawLine)) {
+            currentHeadingLine = j;
+            currentHeadingTitle = parseHeadlineTitle(rawLine);
+          }
+
+          if (queryText && rawLine.toLowerCase().includes(textNeedle)) {
+            hits.push({
+              kind: "text",
+              file: filePath,
+              line: j,
+              title: currentHeadingTitle,
+              ...(currentHeadingLine >= 0 ? { headingLine: currentHeadingLine } : {}),
+              snippet: rawLine.trim(),
+            });
+          }
 
           if (l === ":PROPERTIES:") {
             inProps = true;
@@ -8430,6 +8735,8 @@ Flags:
           }
 
           if (!inProps) continue;
+
+          if (!queryId) continue;
 
           const m = /^:ID:\s*(\S+)\s*$/.exec(l);
           if (!m) continue;
@@ -8503,14 +8810,17 @@ Flags:
         JSON.stringify(
           {
             $schema: "org2:query:v1",
-            id: needle,
+            ...(queryId ? { id: needle } : { text: queryText }),
             results: hits.map((h) => ({
               kind: h.kind,
-              id: h.id,
+              ...(h.id !== undefined ? { id: h.id } : {}),
               file: h.file,
               line: h.line,
+              lineNumber: h.line + 1,
               title: h.title,
-              ...(h.headingLine !== undefined ? { headingLine: h.headingLine } : {}),
+              ...(h.headingLine !== undefined ? { headingLine: h.headingLine, headingLineNumber: h.headingLine + 1 } : {}),
+              ...(h.snippet !== undefined ? { snippet: h.snippet } : {}),
+              citation: `${h.file}:${h.line + 1}`,
             })),
           },
           null,
@@ -8527,7 +8837,8 @@ Flags:
 
     for (const h of hits) {
       // Print 1-based line for humans
-      process.stdout.write(`${h.kind} ${h.title} ${h.file}:${h.line + 1}\n`);
+      const suffix = h.snippet ? ` — ${h.snippet}` : "";
+      process.stdout.write(`${h.kind} ${h.title} ${h.file}:${h.line + 1}${suffix}\n`);
     }
 
     return;
@@ -9718,26 +10029,7 @@ Flags:
   }
 
   if (dir && files.length === 0) {
-    const listOrgFiles = (dirPath: string): string[] => {
-      const out: string[] = [];
-      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-      for (const entry of entries) {
-        const fullPath = path.join(dirPath, entry.name);
-        if (entry.isDirectory()) {
-          if (!recursive) continue;
-          if (entry.name.startsWith(".")) continue;
-          out.push(...listOrgFiles(fullPath));
-          continue;
-        }
-        if (!entry.isFile()) continue;
-        if (!(entry.name.endsWith(".org") || entry.name.endsWith(".org2"))) continue;
-        if (entry.name.startsWith(".#")) continue; // Emacs lockfile
-        out.push(fullPath);
-      }
-      return out;
-    };
-
-    files = listOrgFiles(dir);
+    files = listAgendaFiles(dir, recursive);
   }
 
   if (dir && files.length > 0) agendaConfigBaseDir = path.resolve(dir);
@@ -10132,6 +10424,14 @@ Flags:
 
   const rangeDays = Math.floor((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
 
+  const agendaUsesExplicitFiles = args.includes("--file") || args.includes("--files");
+  const collectAgendaFiles = (): string[] => {
+    if (agendaUsesExplicitFiles) return files;
+    if (dir) return listAgendaFiles(dir, recursive);
+    if (agendaConfig) return resolveFilesFromConfig(agendaConfig, agendaConfigBaseDir);
+    return files;
+  };
+
   // Process files
   const startIso = startDate.toISOString().slice(0, 10);
   const endIso = endDate.toISOString().slice(0, 10);
@@ -10258,7 +10558,7 @@ Flags:
         const allItems: ScheduledItem[] = [];
         let skippedFileCount = 0;
 
-        for (const filePath of files) {
+        for (const filePath of collectAgendaFiles()) {
           if (!matchesAgendaFileFilter(filePath, parsedAgendaFile)) continue;
           if (!matchesAgendaExcludeFileFilter(filePath, parsedAgendaExcludeFile)) continue;
 

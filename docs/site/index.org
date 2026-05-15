@@ -1,14 +1,25 @@
 #+TITLE: Org2
-#+SUBTITLE: A standalone, editor-agnostic successor to Org Mode
+#+SUBTITLE: A local-first knowledge compiler for Org-shaped plain text
 
-Org2 is a from-scratch implementation of an Org-like format and toolchain.
+Org2 turns a folder of raw notes, tasks, links, and metadata into a computable corpus.
 
-It is aiming for *practical parity* with the workflows people actually use in Org Mode, without being tied to Emacs.
+Think of it as a local-first compiler pipeline for personal knowledge:
+
+- *raw* capture and source material stay in plain files,
+- *notes* become structured headings, tasks, links, IDs, and properties,
+- *compiled* semantics resolve agenda state, graph edges, provenance, and artifact roles,
+- *views* such as agendas, backlinks, diagnostics, and editor intelligence are derived from that model,
+- *publish* outputs turn the same corpus into HTML sites and shareable artifacts.
+
+The notes remain yours on disk; Org2 supplies the compiler/runtime layer that makes them queryable, checkable, refactorable, and publishable without tying the workflow to one editor or hosted service.
 
 Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standalone Org rationale]]
 
 * What Org2 is good at today
 
+- *Knowledge compiler pipeline*: raw files become notes; notes compile into resolved semantics; those semantics drive views, checks, and publishing.
+- *Structured semantics*: headings, tasks, planning lines, links, drawers, IDs, artifact roles, provenance, and source ranges become data the toolchain can reason about.
+- *Derived artifacts*: agendas, HTML sites, lint reports, graph views, backlinks, and editor intelligence are generated from the same corpus model.
 - *Portable plain-text workflow*: notes, tasks, links, and publishing all stay in files.
 - *CLI-backed editing + planning*: agenda, TODO/planning edits, capture, archive/refile, formatting, export, publish.
 - *Strong VS Code support*: Org2 is already practical as a daily driver in VS Code.
@@ -21,7 +32,7 @@ Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standa
 - An Emacs-only system.
 - A “100% feature parity before usefulness” project.
 
-The goal is a portable Org-style system that is useful *now* and keeps getting deeper.
+The goal is a portable knowledge-compiler stack that is useful *now* and keeps getting deeper.
 
 * Current status
 
@@ -35,6 +46,7 @@ Org2 is still early alpha, but it is already credible for real work if your stac
 
 - [[file:getting-started.org][Getting started]]
 - [[file:features.org][Features]]
+- [[file:corpus-flow.org][Corpus flow]]
 - [[file:tooling-reference.org][Tooling reference]]
 - [[file:editors.org][Editor integrations]]
 - [[file:language-reference.org][Language reference]]

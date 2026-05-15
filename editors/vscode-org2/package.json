@@ -93,7 +93,16 @@
     ],
     "configurationDefaults": {
       "[org2]": {
-        "editor.foldingStrategy": "auto"
+        "editor.foldingStrategy": "auto",
+        "editor.unicodeHighlight.nonBasicASCII": false,
+        "editor.unicodeHighlight.invisibleCharacters": false,
+        "editor.unicodeHighlight.ambiguousCharacters": false
+      },
+      "[org]": {
+        "editor.foldingStrategy": "auto",
+        "editor.unicodeHighlight.nonBasicASCII": false,
+        "editor.unicodeHighlight.invisibleCharacters": false,
+        "editor.unicodeHighlight.ambiguousCharacters": false
       }
     },
     "commands": [
