@@ -1,0 +1,49 @@
+#+TITLE: Maintenance and health workflows
+
+Org2 treats corpus maintenance as a core compiler capability, not just a cleanup task.
+
+A knowledge corpus has source files, derived artifacts, links, IDs, provenance, publish outputs, editor indexes, and generated views. The compiler model gives Org2 one place to parse those files, check trust boundaries, and report or repair drift before it reaches publishing or daily planning.
+
+* Core passes Org2 should own
+
+The maintenance story groups existing and planned checks into a few explicit passes:
+
+- *Format normalization* with =org2 fmt=: keep syntax and prose layout stable enough for clean diffs and generated edits.
+- *Corpus lint / health* with =org2 lint=: validate artifact metadata, IDs, provenance references, and corpus-flow conventions.
+- *Link graph health* with =org2 backlinks=, =org2 query=, and =org2 roam graph=: surface broken or ambiguous knowledge links before they become stale navigation.
+- *Generated artifact maintenance* with =org2 publish= and export options: rebuild HTML/views from source files instead of editing generated outputs by hand.
+- *Editor index maintenance* with =org2 roam db-sync= and LSP features: keep file IDs and editor intelligence aligned with the corpus model.
+
+* Recommended maintenance loop
+
+Run a lightweight check before committing note changes:
+
+#+begin_src sh
+npm run org2 -- fmt --dir ~/notes --recursive --check
+npm run org2 -- lint --dir ~/notes --recursive
+#+end_src
+
+Run the repair-style passes intentionally, review their diffs, then commit the result:
+
+#+begin_src sh
+npm run org2 -- fmt --dir ~/notes --recursive --apply
+npm run org2 -- roam db-sync --dir ~/notes --recursive --apply
+npm run org2 -- publish docs-site --config org2.json --preview
+#+end_src
+
+Use =--format json= on lint, backlink, query, graph, and roam workflows when wiring these checks into scripts or CI.
+
+* Trust boundaries
+
+Org2 should preserve a clear distinction between source files and generated artifacts.
+
+- Source notes are edited by people and tools.
+- Compiled views, publish outputs, and generated reports should carry artifact role/provenance metadata when they live in the corpus.
+- Lint should flag missing or stale provenance before derived content is trusted as source.
+- Repair passes should default to preview/check modes where possible and require =--apply= before writing.
+
+* Current concrete workflow
+
+Today, =org2 lint= is the main corpus-health command. It checks artifact metadata, duplicate IDs, unresolved provenance references, and conventional corpus-flow directories such as =raw/=, =notes/=, =compiled/=, =views/=, and =publish/=.
+
+For command details, see [[file:tooling-reference.org::*Corpus lint][Tooling reference: Corpus lint]].
