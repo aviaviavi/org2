@@ -6,6 +6,9 @@ Org2 reference is split into two detailed sections:
   - every core syntax construct
   - TODO/priority/tags/drawers/planning/timestamps
   - links, lists, blocks, tables, directives, comments
+- [[file:corpus-flow.org][Corpus flow]]
+  - canonical =raw/= -> =notes/= -> =compiled/= -> =views/= -> =publish/= zones
+  - artifact roles, provenance, and generated-output boundaries
 - [[file:tooling-reference.org][Tooling reference]]
   - agenda filters and views
   - formatter behavior

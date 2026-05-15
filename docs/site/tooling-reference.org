@@ -78,6 +78,8 @@ Current checks include:
 - duplicate IDs and unresolved provenance references
 - conventional corpus-flow checks when you organize notes as =raw/= -> =notes/= -> =compiled/= -> =views/= -> =publish/=
 
+See [[file:corpus-flow.org][Corpus flow]] for the canonical zone model, artifact roles, and generated-output trust boundaries.
+
 * Roam workflows
 
 #+begin_src sh
