@@ -1,0 +1,99 @@
+#+TITLE: Corpus flow
+#+SUBTITLE: Canonical zones for Org2 knowledge corpora
+
+Org2 treats a corpus like a small local knowledge compiler. Source material moves through explicit zones so humans and tools can tell which files are authored, which files are derived, and which boundaries need provenance.
+
+The canonical flow is:
+
+#+begin_src text
+raw/ -> notes/ -> compiled/ -> views/ -> publish/
+#+end_src
+
+You do not need every zone on day one. The value is that when a corpus adopts these names, Org2 lint can check the trust boundary instead of relying on convention alone.
+
+* Zones
+
+| Directory | Role | Canonical? | Purpose |
+|---+---+---+---|
+| =raw/= | =raw= | source evidence | Inbox material, imports, captures, transcripts, clippings, and other minimally edited inputs. |
+| =notes/= | =canonical= | yes | Human-authored durable notes, tasks, decisions, IDs, links, and properties. This is the primary corpus. |
+| =compiled/= | =compiled= | generated | Normalized or aggregated machine outputs derived from raw/canonical inputs. |
+| =views/= | =view= | generated | Query results, indexes, dashboards, agenda snapshots, graph slices, or other read models. |
+| =publish/= | =report= | generated/public-facing | Exported reports, sites, feeds, handoff documents, or other presentation outputs. |
+
+Canonical authorship lives in =notes/=. Generated outputs may be useful and may be committed, but they should be reproducible from provenance whenever possible.
+
+* Trust boundaries
+
+The most important boundary is between canonical material and generated material:
+
+- =raw/= can be messy and externally sourced; preserve it when evidence matters.
+- =notes/= is the reviewed human source of truth.
+- =compiled/=, =views/=, and =publish/= are derived outputs and should say where they came from.
+- Generated outputs should not silently become canonical notes. Promote useful generated text by copying or rewriting it into =notes/= and reviewing it there.
+
+* Artifact metadata
+
+Use file-level or headline-level property drawers to declare artifact roles and provenance.
+
+Canonical note example:
+
+#+begin_src org
+:PROPERTIES:
+:ID: project-alpha
+:ORG2_ARTIFACT_ROLE: canonical
+:END:
+#+end_src
+
+Generated view example:
+
+#+begin_src org
+:PROPERTIES:
+:ID: project-alpha-dashboard
+:ORG2_ARTIFACT_ROLE: view
+:ORG2_PROVENANCE: id:project-alpha, query:todo-status-open
+:ORG2_GENERATOR: org2 query --format org
+:ORG2_GENERATED_AT: 2026-05-10T22:30:00Z
+:END:
+#+end_src
+
+The supported =ORG2_ARTIFACT_ROLE= values are:
+
+- =raw=
+- =canonical=
+- =compiled=
+- =view=
+- =report=
+
+The conventional directory mapping is:
+
+- =raw/= -> =raw=
+- =notes/= -> =canonical=
+- =compiled/= -> =compiled=
+- =views/= -> =view=
+- =publish/= -> =report=
+
+=ORG2_PROVENANCE= entries use =kind:value= tokens separated by commas or semicolons. Supported kinds are =id=, =file=, =query=, =run=, =url=, =note=, and =artifact=.
+
+* Lint workflow
+
+Run lint over the corpus root:
+
+#+begin_src sh
+npm run org2 -- lint --dir /path/to/corpus --recursive
+#+end_src
+
+When files live under the conventional directories, lint checks that their declared =ORG2_ARTIFACT_ROLE= matches the path. It also checks generated artifacts for provenance, generator metadata, generated timestamps, duplicate IDs, and unresolved provenance references.
+
+A minimal corpus can start like this:
+
+#+begin_src text
+corpus/
+  raw/
+  notes/
+  compiled/
+  views/
+  publish/
+#+end_src
+
+Then wire editor, query, export, and publish commands to read from =notes/= and write derived results into =compiled/=, =views/=, or =publish/= rather than back into canonical notes.
