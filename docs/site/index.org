@@ -19,11 +19,11 @@ Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standa
 
 - *Knowledge compiler pipeline*: raw files become notes; notes compile into resolved semantics; those semantics drive views, checks, and publishing.
 - *Structured semantics*: headings, tasks, planning lines, links, drawers, IDs, artifact roles, provenance, and source ranges become data the toolchain can reason about.
-- *Derived artifacts*: agendas, HTML sites, lint reports, graph views, backlinks, and editor intelligence are generated from the same corpus model.
+- *Derived artifacts*: agendas, HTML sites, lint reports, graph views, backlinks, cited query results, and editor intelligence are generated from the same corpus model.
 - *Portable plain-text workflow*: notes, tasks, links, and publishing all stay in files.
-- *CLI-backed editing + planning*: agenda, TODO/planning edits, capture, archive/refile, formatting, export, publish.
-- *Strong VS Code support*: Org2 is already practical as a daily driver in VS Code.
-- *Roam-style knowledge workflows*: IDs, backlinks, dailies, node creation, and link insertion are first-class.
+- *CLI-backed editing + planning*: agenda, TODO/planning edits, capture, archive/refile, formatting, export, publish, search, and cited query.
+- *Strong VS Code support*: Org2 is already practical as a daily driver in VS Code, including command-palette access to workspace search/query, agenda, formatter, corpus lint, and roam graph/linkify workflows.
+- *Roam-style knowledge workflows*: IDs, backlinks, dailies, node creation, link insertion, linkify previews, and graph reports are first-class.
 - *LSP-powered editing*: navigation, rename, completion, formatting, semantic tokens, inlay hints, call hierarchy, and more.
 
 * What Org2 is not trying to be

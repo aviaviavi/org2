@@ -16,7 +16,7 @@ Main workflows:
 - =capture=
 - =archive=, =refile=
 - =fmt=
-- =id=, =query=, =backlinks=
+- =search=, =id=, =query=, =backlinks=
 - =roam ...=
 - =crypt ...=
 - =export html=
@@ -80,15 +80,33 @@ Current checks include:
 
 See [[file:corpus-flow.org][Corpus flow]] for the canonical zone model, artifact roles, and generated-output trust boundaries.
 
+* Search + cited query
+
+Use =search= for workspace text lookup and =query= when you want cited context suitable for answering factual questions from notes.
+
+#+begin_src sh
+npm run org2 -- search "Chris Martin" --dir ~/notes --recursive --context 3 --sort date-desc
+npm run org2 -- query "Sentra" --dir ~/notes --recursive --format json
+#+end_src
+
+Useful flags:
+
+- =--context N= includes surrounding source lines.
+- =--limit N= caps returned matches.
+- =--sort date-desc= is useful for “when did I last...” style questions over date-named daily files.
+- =--format json= returns machine-readable file, line, heading, snippet, and context fields.
+
 * Roam workflows
 
 #+begin_src sh
 npm run org2 -- roam db-sync --dir ~/notes --recursive --apply
 npm run org2 -- roam node new --dir ~/notes --title "Acme Corp" --apply
 npm run org2 -- roam backlinks --id 123e4567-e89b-12d3-a456-426614174000 --dir ~/notes --recursive --format json
+npm run org2 -- roam linkify --dir ~/notes --recursive
+npm run org2 -- roam graph --dir ~/notes --recursive --format json
 #+end_src
 
-Org2 supports both title-based wiki links and explicit =id:= links, with backlinks across both forms.
+Org2 supports both title-based wiki links and explicit =id:= links, with backlinks across both forms. Linkify and graph reports are intended as compiler-style maintenance passes: preview references, strengthen links deliberately, and inspect corpus connectivity without leaving plain files.
 
 * Org-crypt
 
