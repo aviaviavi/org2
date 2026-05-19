@@ -101,7 +101,7 @@ Use JSONL for larger corpora when downstream tools prefer one record per line. I
 
 * Search + cited query
 
-Use =search= for workspace text lookup and =query= when you want cited context suitable for answering factual questions from notes.
+Use =search= for workspace text lookup and =query= when you want cited context suitable for answering factual questions from notes. The [[file:llm-consumers.org][External LLM consumer pattern]] page shows how provider-agnostic agents can turn this JSON into cited model context without adding LLM calls to Org2 core.
 
 #+begin_src sh
 npm run org2 -- search "Chris Martin" --dir ~/notes --recursive --context 3 --sort date-desc

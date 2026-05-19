@@ -35,6 +35,7 @@ Compatibility and editor support are important, but they sit on top of this comp
 - Agenda workflows (CLI + VS Code)
 - Basic editing workflows (TODO/planning updates, archive/refile, capture)
 - HTML export/publish pipeline
+- Provider-free external LLM context pattern built from cited local query output
 - Corpus lint for artifact roles, provenance, IDs, and corpus-flow conventions
 - Roam/knowledge graph operations for IDs, backlinks, node creation, and link insertion
 - LSP server (MVP) for links/navigation/completions/formatting
