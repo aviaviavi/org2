@@ -6874,8 +6874,9 @@ Flags:
 
 Output:
   Stable schema-versioned corpus artifact for LLM/tool clients. Includes
-  headings, IDs, aliases, links, backlinks, TODO/planning state, properties,
-  source ranges, and snippets. Org2 emits data only; it does not call an LLM.`;
+  standardized generated-artifact metadata, source hashes, headings, IDs,
+  aliases, links, backlinks, TODO/planning state, properties, source ranges,
+  and snippets. Org2 emits data only; it does not call an LLM.`;
   } else if (command === "lint") {
     text = `org2 lint
 
@@ -6890,8 +6891,9 @@ Flags:
   --format text|json Output format
 
 Checks:
-  Artifact metadata, duplicate IDs, unresolved provenance references,
-  and conventional corpus-flow role/path mismatches.`;
+  Artifact metadata, source hash/review status syntax, duplicate IDs,
+  unresolved provenance references, and conventional corpus-flow role/path
+  mismatches.`;
   } else if (command === "ai") {
     text = `org2 ai ${options.aiAction || "validate-job"}
 
