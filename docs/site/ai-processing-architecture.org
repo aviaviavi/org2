@@ -85,6 +85,8 @@ org2 ai suggest-links --dir notes --recursive --out views/link-suggestions.org2
 org2 ai validate-job --job jobs/weekly-summary.org2-ai.json
 #+end_src
 
+The first implemented slice is provider-free manifest validation; see [[file:ai-job-manifests.org][AI job manifests]] and =spec/v0/ai-job-manifest.schema.json=.
+
 Command responsibilities:
 
 | Command | Responsibility | Writes canonical notes? |
@@ -155,7 +157,6 @@ A user can then review =views/team-sync-summary.org2= and copy, rewrite, or expl
 
 This design sets the boundary. Follow-up issues can implement it incrementally:
 
-- job manifest schema and validation
 - adapter interfaces and mock adapters
 - generated draft artifact helpers and lint rules
 - meeting/transcript summarization

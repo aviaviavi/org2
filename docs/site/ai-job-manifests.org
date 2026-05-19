@@ -1,0 +1,122 @@
+#+TITLE: AI job manifests
+#+SUBTITLE: Repeatable, inspectable task definitions for optional AI processing
+
+AI job manifests describe what an optional AI workflow should do without embedding provider credentials or making Org2's compiler core depend on an LLM. They are JSON files that can be checked into a repo, reviewed in code review, validated locally, and rerun against cited Org2 corpus/query outputs.
+
+The v1 manifest format is documented by =spec/v0/ai-job-manifest.schema.json=. Org2 currently ships provider-free validation:
+
+#+begin_src sh
+npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
+npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json --format json
+#+end_src
+
+Validation checks the manifest shape, corpus selection, task type, symbolic adapter name, output target, provenance requirements, review policy, and common accidental secret leaks. It does not call a model.
+
+* Example manifest
+
+#+begin_src json
+{
+  "$schema": "https://avi.press/org2/spec/v0/ai-job-manifest.schema.json",
+  "schemaVersion": "org2-ai-job/v1",
+  "id": "weekly-summary",
+  "description": "Summarize this week's meeting notes into a reviewable generated view.",
+  "input": {
+    "files": ["notes/meetings/*.org", "raw/transcripts/*.org"],
+    "recursive": true,
+    "tags": ["meeting"],
+    "dateRange": { "from": "2026-05-12", "to": "2026-05-19" },
+    "rawZones": ["raw/transcripts"]
+  },
+  "task": {
+    "type": "summarize-meeting",
+    "template": "weekly-summary@v1",
+    "instructions": "Return decisions, action-item suggestions, open questions, and cited evidence from the selected Org2 context."
+  },
+  "adapter": {
+    "name": "work-summary",
+    "model": "summary-profile"
+  },
+  "output": {
+    "target": "views",
+    "path": "views/weekly-summary.org2"
+  },
+  "provenance": {
+    "requireSourceRefs": true,
+    "promptTemplateVersion": "weekly-summary@v1",
+    "recordModelMetadata": true,
+    "recordGeneratedAt": true
+  },
+  "review": {
+    "policy": "require-approval",
+    "reviewer": "human"
+  }
+}
+#+end_src
+
+The same file lives at =examples/jobs/weekly-summary.org2-ai.json=.
+
+* Top-level fields
+
+| Field | Required | Purpose |
+|---+---+---|
+| =schemaVersion= | yes | Must be =org2-ai-job/v1= so future changes can be versioned. |
+| =id= | yes | Stable job identifier for logs and generated artifact metadata. |
+| =description= | no | Human-readable review context. |
+| =input= | yes | Corpus selection: files, headings, tags, date ranges, raw zones, or query text. |
+| =task= | yes | Task type plus prompt template and/or instructions. |
+| =adapter= | yes | Symbolic adapter name resolved from user config outside the manifest. |
+| =output= | yes | Output target such as =stdout=, =compiled=, =views=, =draft-note=, or =patch-file=. |
+| =provenance= | yes | Audit requirements for source refs, template version, model metadata, and generated time. |
+| =review= | yes | Review policy before generated output can affect canonical notes. |
+
+* Input selection
+
+The =input= object must include at least one selector:
+
+- =files=: glob-like file patterns or explicit paths
+- =headings=: heading IDs or stable selectors
+- =tags=: Org tags to require
+- =dateRange=: =from= and/or =to= dates in =YYYY-MM-DD= format
+- =rawZones=: raw/source directories such as =raw/transcripts=
+- =query=: a cited search/query string
+
+This keeps selection inspectable before a provider adapter receives context.
+
+* Task and adapter
+
+Supported task labels are deliberately broad: =summarize=, =summarize-meeting=, =extract-entities=, =suggest-links=, =generate-todos=, =classify=, =digest=, and =answer=. A job must include either a =template= or explicit =instructions=.
+
+The =adapter.name= field is a symbolic name, such as =local-default= or =work-summary=. It is resolved from local configuration by a future runner. Do not put API keys, tokens, passwords, secret-bearing URLs, or provider SDK configuration in the manifest.
+
+* Output, provenance, and review
+
+AI output should be reviewable before it becomes canonical. Prefer =views/= or =compiled/= for generated artifacts, with provenance fields that make reruns and audits possible:
+
+- source references required or not
+- prompt/template version
+- model metadata recording requirement
+- generated-at timestamp recording requirement
+
+=draft-note= outputs must use =review.policy: "require-approval"=. Promotion into =notes/= should remain an explicit human-reviewed step.
+
+* Validation output
+
+Text output is short and script-friendly:
+
+#+begin_src sh
+$ npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
+AI job manifest OK: examples/jobs/weekly-summary.org2-ai.json
+#+end_src
+
+JSON output can feed CI or editor integrations:
+
+#+begin_src json
+{
+  "$schema": "org2:ai-job-validation:v1",
+  "job": "examples/jobs/weekly-summary.org2-ai.json",
+  "valid": true,
+  "issues": []
+}
+#+end_src
+
+Invalid manifests return exit code 1 and list concrete paths, for example =$.adapter.apiKey= when a provider secret is accidentally embedded.
