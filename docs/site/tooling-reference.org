@@ -103,13 +103,14 @@ npm run org2 -- compile corpus --dir ~/notes --recursive --format jsonl --out co
 
 The JSON form includes:
 
+- standardized =artifact= metadata: role, generator, generated-at timestamp, source provenance, source hashes, and review status
 - files with relative paths, absolute paths, SHA-256 hashes, line counts, titles, and IDs
 - file and heading nodes with source ranges for citations
 - heading TODO state, tags, planning timestamps, properties, IDs, and aliases
 - links and resolved backlinks for explicit =id:= links and unambiguous wiki links
 - text snippets suitable for previews or retrieval pipelines
 
-Use JSONL for larger corpora when downstream tools prefer one record per line. If you write compiled artifacts into a conventional =compiled/= zone, add normal =ORG2_ARTIFACT_*= metadata/provenance to any Org wrapper files and keep using =org2 lint= for generated-output health checks.
+Use JSONL for larger corpora when downstream tools prefer one record per line; the first JSONL record carries the same artifact metadata header as the JSON form. If you wrap compiled artifacts in Org files, stamp the wrapper with the same =ORG2_ARTIFACT_*=, =ORG2_SOURCE_HASHES=, and =ORG2_REVIEW_STATUS= fields and keep using =org2 lint= for generated-output health checks.
 
 * Search + cited query
 

@@ -54,8 +54,19 @@ Generated view example:
 :ORG2_PROVENANCE: id:project-alpha, query:todo-status-open
 :ORG2_GENERATOR: org2 query --format org
 :ORG2_GENERATED_AT: 2026-05-10T22:30:00Z
+:ORG2_SOURCE_HASHES: file:notes/project-alpha.org2=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+:ORG2_REVIEW_STATUS: review-required
 :END:
 #+end_src
+
+The standard generated-artifact property set is:
+
+- =ORG2_ARTIFACT_ROLE= records the trust boundary: =raw=, =canonical=, =compiled=, =view=, or =report=.
+- =ORG2_PROVENANCE= records source references as =kind:value= tokens.
+- =ORG2_GENERATOR= records the deterministic command, job, or workflow that produced the artifact.
+- =ORG2_GENERATED_AT= records an ISO date or timestamp for the generation run.
+- =ORG2_SOURCE_HASHES= optionally records content hashes for specific inputs as ~kind:value=sha256:<64 hex chars>~.
+- =ORG2_REVIEW_STATUS= records whether generated content is =generated=, =review-required=, =reviewed=, or =promoted=.
 
 The supported =ORG2_ARTIFACT_ROLE= values are:
 
@@ -73,7 +84,7 @@ The conventional directory mapping is:
 - =views/= -> =view=
 - =publish/= -> =report=
 
-=ORG2_PROVENANCE= entries use =kind:value= tokens separated by commas or semicolons. Supported kinds are =id=, =file=, =query=, =run=, =url=, =note=, and =artifact=.
+=ORG2_PROVENANCE= entries use =kind:value= tokens separated by commas or semicolons. Supported kinds are =id=, =file=, =query=, =run=, =url=, =note=, and =artifact=. =ORG2_SOURCE_HASHES= uses the same source kinds plus a SHA-256 digest, for example ~file:notes/project-alpha.org2=sha256:...~.
 
 * Lint workflow
 
@@ -83,7 +94,7 @@ Run lint over the corpus root:
 npm run org2 -- lint --dir /path/to/corpus --recursive
 #+end_src
 
-When files live under the conventional directories, lint checks that their declared =ORG2_ARTIFACT_ROLE= matches the path. It also checks generated artifacts for provenance, generator metadata, generated timestamps, duplicate IDs, and unresolved provenance references.
+When files live under the conventional directories, lint checks that their declared =ORG2_ARTIFACT_ROLE= matches the path. It also checks generated artifacts for provenance, generator metadata, generated timestamps, source-hash syntax, review-status values, duplicate IDs, and unresolved provenance references.
 
 A minimal corpus can start like this:
 

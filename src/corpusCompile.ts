@@ -1,6 +1,6 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { buildGeneratedArtifactMetadata, sha256Hex, type Org2GeneratedArtifactMetadata } from "./artifactMetadata.js";
 import { TODO_KEYWORDS } from "./todo.js";
 
 export type CompiledCorpusLink = {
@@ -49,6 +49,7 @@ export type CompiledCorpusFile = {
 export type CompiledCorpus = {
   schemaVersion: "org2-compiled-corpus/v1";
   generatedBy: "org2 compile corpus";
+  artifact: Org2GeneratedArtifactMetadata;
   rootDir: string;
   files: CompiledCorpusFile[];
   nodes: CompiledCorpusNode[];
@@ -80,7 +81,7 @@ function relativePath(rootDir: string, filePath: string): string {
 }
 
 function sha256(raw: string): string {
-  return crypto.createHash("sha256").update(raw).digest("hex");
+  return sha256Hex(raw);
 }
 
 function parseAliasTokens(raw: string): string[] {
@@ -290,7 +291,7 @@ function nodeLabels(node: CompiledCorpusNode): string[] {
   return Array.from(new Set([node.title, ...node.aliases].map((value) => value.trim()).filter(Boolean)));
 }
 
-export function compileCorpus(files: string[], opts?: { rootDir?: string }): CompiledCorpus {
+export function compileCorpus(files: string[], opts?: { rootDir?: string; generatedAt?: string }): CompiledCorpus {
   const rootDir = path.resolve(opts?.rootDir || process.cwd());
   const sortedFiles = Array.from(new Set(files.map((file) => path.resolve(file)))).sort();
   const corpusFiles: CompiledCorpusFile[] = [];
@@ -409,6 +410,14 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string }): Com
   return {
     schemaVersion: "org2-compiled-corpus/v1",
     generatedBy: "org2 compile corpus",
+    artifact: buildGeneratedArtifactMetadata({
+      role: "compiled",
+      generator: "org2 compile corpus",
+      generatedAt: opts?.generatedAt,
+      provenance: corpusFiles.map((file) => `file:${file.file}`),
+      sourceHashes: corpusFiles.map((file) => ({ kind: "file", value: file.file, sha256: file.sha256 })),
+      reviewStatus: "generated",
+    }),
     rootDir,
     files: corpusFiles.sort((a, b) => a.file.localeCompare(b.file)),
     nodes: nodes.sort((a, b) => a.file.localeCompare(b.file) || a.sourceRange.startLine - b.sourceRange.startLine || a.kind.localeCompare(b.kind)),
@@ -424,7 +433,7 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string }): Com
 
 export function renderCompiledCorpus(corpus: CompiledCorpus, format: "json" | "jsonl" = "json"): string {
   if (format === "jsonl") {
-    const header = { schemaVersion: corpus.schemaVersion, generatedBy: corpus.generatedBy, rootDir: corpus.rootDir, stats: corpus.stats };
+    const header = { schemaVersion: corpus.schemaVersion, generatedBy: corpus.generatedBy, artifact: corpus.artifact, rootDir: corpus.rootDir, stats: corpus.stats };
     return [header, ...corpus.nodes].map((entry) => JSON.stringify(entry)).join("\n") + "\n";
   }
   return JSON.stringify(corpus, null, 2) + "\n";
