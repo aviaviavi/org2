@@ -3,7 +3,7 @@
 
 AI job manifests describe what an optional AI workflow should do without embedding provider credentials or making Org2's compiler core depend on an LLM. They are JSON files that can be checked into a repo, reviewed in code review, validated locally, and rerun against cited Org2 corpus/query outputs.
 
-The v1 manifest format is documented by =spec/v0/ai-job-manifest.schema.json=. Org2 currently ships provider-free validation:
+The v1 manifest format is documented by =spec/v0/ai-job-manifest.schema.json=. The manifest's =adapter.name= maps to the provider boundary documented in [[file:ai-adapters.org][AI adapter interface]]. Org2 currently ships provider-free validation:
 
 #+begin_src sh
 npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json

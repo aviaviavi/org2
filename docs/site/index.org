@@ -52,6 +52,7 @@ Org2 is still early alpha, but it is already credible for real work if your stac
 - [[file:llm-consumers.org][External LLM consumer pattern]]
 - [[file:ai-processing-architecture.org][AI processing architecture]]
 - [[file:ai-job-manifests.org][AI job manifests]]
+- [[file:ai-adapters.org][AI adapter interface]]
 - [[file:maintenance-workflows.org][Maintenance and health workflows]]
 - [[file:editors.org][Editor integrations]]
 - [[file:language-reference.org][Language reference]]

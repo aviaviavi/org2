@@ -1,0 +1,101 @@
+#+TITLE: AI adapter interface
+#+SUBTITLE: Provider boundaries for optional model calls
+
+Org2's AI layer is provider-agnostic. Core parsing, formatting, linting, publishing, corpus compilation, query, and manifest validation do not require an LLM provider. When an AI workflow eventually needs model output, it should call a small adapter boundary instead of importing a vendor SDK throughout Org2.
+
+The TypeScript contract lives in =src/aiAdapter.ts=. It defines:
+
+- =AiProviderAdapter=: the interface implemented by local or hosted model adapters
+- =AiAdapterRequest=: structured prompt, task, context, output, and provenance requirements
+- =AiAdapterResponse=: text/JSON output, citations, and model metadata
+- =MockAiAdapter=: deterministic test adapter for job orchestration tests
+
+* Request contract
+
+An adapter request packages context already selected and prepared by Org2:
+
+#+begin_src js
+{
+  schema: "org2:ai-adapter-request:v1",
+  jobId: "weekly-summary",
+  task: {
+    type: "summarize-meeting",
+    template: "weekly-summary@v1",
+    instructions: "Summarize decisions with citations."
+  },
+  prompt: [
+    { role: "system", content: "Use only the supplied Org2 context." },
+    { role: "user", content: "Create a weekly summary." }
+  ],
+  context: [
+    {
+      id: "meeting-1",
+      type: "org-headline",
+      title: "Team Sync",
+      text: "Decision: ship the adapter interface first.",
+      sourceRefs: [{ file: "notes/team.org", id: "abc", line: 12, endLine: 16 }]
+    }
+  ],
+  output: { contentType: "text+json", schemaHint: "weekly-summary@v1" },
+  provenance: { requireSourceRefs: true, promptTemplateVersion: "weekly-summary@v1" }
+}
+#+end_src
+
+The adapter receives already-curated context. It should not crawl notes, mutate canonical files, or decide review policy.
+
+* Response contract
+
+Adapters return text and/or structured JSON plus metadata:
+
+#+begin_src js
+{
+  schema: "org2:ai-adapter-response:v1",
+  text: "Decisions: ...",
+  json: { decisions: [] },
+  citations: [{ source: { file: "notes/team.org", line: 12, endLine: 16 } }],
+  metadata: {
+    adapterName: "work-summary",
+    model: "summary-profile",
+    provider: "local-or-hosted-provider",
+    invocationId: "optional-provider-run-id",
+    usage: { inputTokens: 1200, outputTokens: 300 }
+  }
+}
+#+end_src
+
+Job orchestration can write this metadata into generated artifacts without knowing which provider produced it.
+
+* Adapter responsibilities
+
+Adapters should:
+
+- accept =AiAdapterRequest= and return =AiAdapterResponse=
+- keep provider credentials in local config/environment, never in notes, manifests, or generated artifacts
+- report provider/model metadata needed for provenance
+- support deterministic mock behavior in tests
+- avoid changing non-AI Org2 command behavior
+
+Adapters should not:
+
+- modify canonical notes directly
+- embed secrets in response metadata
+- require provider configuration for parser/compiler/lint/publish/query commands
+- bypass manifest review/provenance policies
+
+* Mock adapter
+
+=MockAiAdapter= gives future job orchestration deterministic tests before real providers exist:
+
+#+begin_src js
+import { MockAiAdapter, createAiAdapterRequest } from "./dist/aiAdapter.js";
+
+const adapter = new MockAiAdapter({ name: "local-test", model: "deterministic-v1" });
+const response = await adapter.generate(createAiAdapterRequest({
+  task: { type: "summarize-meeting" },
+  prompt: [{ role: "user", content: "Summarize." }],
+  context: [{ id: "a", type: "text", text: "Decision: ship it." }],
+  output: { contentType: "text+json" }
+}));
+#+end_src
+
+The default mock response records calls, echoes task/context counts, and emits citations from supplied context source refs. A custom =responder= can simulate structured model output, failures, or provider metadata without changing orchestration code.
