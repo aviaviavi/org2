@@ -1,0 +1,164 @@
+#+TITLE: AI processing architecture
+#+SUBTITLE: Provider-agnostic jobs on top of compiled Org2 corpus data
+
+Org2 can support AI-assisted workflows without turning the compiler core into an LLM client. The architecture is a layered pipeline: deterministic compiler commands produce cited corpus artifacts, an optional AI processing layer consumes those artifacts through provider adapters, and review/promotion workflows decide what becomes canonical.
+
+This page is the design boundary for future =org2 ai ...= commands. It is intentionally provider-agnostic and keeps existing parse, lint, query, compile, publish, LSP, and editor workflows usable with no network access.
+
+* Layer model
+
+#+begin_src text
+raw/ + notes/
+  -> compiler core
+  -> compiled corpus + cited query/context packets
+  -> AI job runner (optional)
+  -> provider adapter (optional network/local model boundary)
+  -> generated draft artifacts in compiled/ or views/
+  -> review/promote into notes/
+#+end_src
+
+** Compiler core
+
+The core stays deterministic and local. It owns:
+
+- parsing Org2 files, headings, drawers, planning lines, links, IDs, aliases, tags, and properties
+- resolving graph data, backlinks, source ranges, and corpus zones
+- emitting =org2 compile corpus= and =org2 query --format json= artifacts
+- linting artifact metadata, provenance, generated-output boundaries, and graph health
+- powering editor integrations through CLI/LSP commands
+
+The compiler core must not require model credentials, provider SDKs, hosted services, retries, billing concepts, or network access for non-AI commands.
+
+** AI processing layer
+
+The AI layer is optional orchestration around compiler outputs. It owns:
+
+- loading an AI job manifest or command-line task
+- selecting source files, headings, query results, graph nodes, or compiled corpus slices
+- building structured prompt/context payloads with citations
+- invoking a configured provider adapter by symbolic name
+- validating model output shape when a workflow expects JSON or Org2 sections
+- writing reviewable generated artifacts with provenance metadata
+
+This layer can live behind =org2 ai ...= commands, but it should consume stable compiler artifacts instead of reaching into editor-specific state.
+
+** Provider adapter boundary
+
+Adapters are thin model-call boundaries. A provider adapter should receive structured input and return generated text or structured output plus model metadata.
+
+A minimal interface is:
+
+#+begin_src ts
+export interface AiProviderAdapter {
+  readonly name: string;
+  generate(request: AiGenerateRequest): Promise<AiGenerateResult>;
+}
+
+export interface AiGenerateRequest {
+  task: string;
+  instructions: string;
+  context: Org2CitedContext[];
+  outputSchema?: unknown;
+  metadata?: Record<string, string>;
+}
+
+export interface AiGenerateResult {
+  text?: string;
+  json?: unknown;
+  model: string;
+  provider: string;
+  usage?: Record<string, number>;
+  rawMetadata?: Record<string, string>;
+}
+#+end_src
+
+Secrets and provider-specific configuration stay outside note files, manifests, compiled corpus artifacts, and generated Org output. Manifests should refer to providers by symbolic names such as =local-default= or =work-summary=, not API keys or full secret-bearing URLs.
+
+* Proposed CLI surface
+
+The proposed command family is:
+
+#+begin_src sh
+org2 ai run --task summarize-meeting --file raw/team-sync.org2 --out views/team-sync-summary.org2
+org2 ai run --job jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2
+org2 ai suggest-links --dir notes --recursive --out views/link-suggestions.org2
+org2 ai validate-job --job jobs/weekly-summary.org2-ai.json
+#+end_src
+
+Command responsibilities:
+
+| Command | Responsibility | Writes canonical notes? |
+|---+---+---|
+| =ai run= | Execute a configured task/job and write a draft artifact. | No |
+| =ai suggest-links= | Produce ranked link/entity suggestions with reasons and source refs. | No |
+| =ai validate-job= | Validate manifest shape and unsafe settings. | No |
+| future =ai promote= | Apply an explicit reviewed artifact or patch. | Only with explicit user action |
+
+All write-capable AI commands default to generated zones such as =views/= or =compiled/=. They should require an explicit apply/promote step before modifying =notes/=.
+
+* Data flow contract
+
+A job runner should record each transformation with enough data to review and reproduce it:
+
+1. Select source material from =raw/= and/or =notes/= using file paths, heading IDs, tags, date ranges, query terms, or graph selections.
+2. Compile or query that material into a cited context packet with file paths, line ranges, heading ancestry, snippets, and source hashes when available.
+3. Call one provider adapter with a named task, instructions, cited context, optional output schema, and non-secret metadata.
+4. Validate the returned output against the workflow contract.
+5. Write a generated artifact under =views/= or =compiled/= with =ORG2_ARTIFACT_ROLE=, =ORG2_PROVENANCE=, =ORG2_GENERATOR=, =ORG2_GENERATED_AT=, and review status metadata.
+6. Run =org2 lint= so missing provenance or unsafe generated/canonical boundaries become visible.
+7. Promote only the human-approved parts into =notes/= through an explicit patch, editor command, or future promote workflow.
+
+* End-to-end example
+
+Meeting summary flow:
+
+#+begin_src sh
+npm run org2 -- query "team sync" \
+  --dir raw \
+  --recursive \
+  --subtree \
+  --answer-context \
+  --format json \
+  > compiled/team-sync-context.json
+
+# Proposed future command: consumes the cited context and configured provider alias.
+npm run org2 -- ai run \
+  --task summarize-meeting \
+  --context compiled/team-sync-context.json \
+  --provider work-summary \
+  --out views/team-sync-summary.org2
+
+npm run org2 -- lint --dir . --recursive
+#+end_src
+
+The generated summary should include:
+
+- a short summary
+- decisions with citations back to transcript/source lines
+- action-item suggestions as draft TODOs
+- people, org, and project entities found in the context
+- suggested links to existing nodes
+- provenance metadata showing the source context, task name, provider alias, model metadata, and generation time
+
+A user can then review =views/team-sync-summary.org2= and copy, rewrite, or explicitly promote accepted sections into =notes/=.
+
+* Review and safety rules
+
+- No hardcoded provider in compiler core.
+- No provider secrets in notes, manifests, compiled corpus artifacts, or generated Org files.
+- No automatic canonical edits from AI output.
+- Every factual generated claim should trace to cited Org2 source ranges or say that evidence is missing.
+- Generated artifacts should be overwriteable and lintable; canonical notes should require review.
+- Editor integrations should call the same CLI surfaces rather than reimplementing provider behavior.
+
+* Relationship to follow-up work
+
+This design sets the boundary. Follow-up issues can implement it incrementally:
+
+- job manifest schema and validation
+- adapter interfaces and mock adapters
+- generated draft artifact helpers and lint rules
+- meeting/transcript summarization
+- link/entity suggestion reports
+
+Each slice should remain useful without forcing every Org2 user to configure an AI provider.
