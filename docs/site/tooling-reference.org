@@ -6,7 +6,7 @@ The CLI is the shared backend for editor integrations and automation. You can us
 
 * Core command families
 
-Run =npm run org2 -- --help= for current top-level usage.
+Run =npm run org2 -- --help= for current top-level usage. Proposed AI job commands are documented separately in [[file:ai-processing-architecture.org][AI processing architecture]] so the current deterministic CLI surface stays clear.
 
 Main workflows:
 
