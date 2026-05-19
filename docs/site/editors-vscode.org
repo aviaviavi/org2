@@ -117,6 +117,7 @@ Available from command palette (=Cmd/Ctrl+Shift+P=):
 - =org2.refreshBacklinks=
 - =org2.searchWorkspace=
 - =org2.queryWorkspace=
+- =org2.compileWorkspaceCorpus=
 - =org2.roamLinkifyPreview=
 - =org2.roamLinkifyApply=
 - =org2.roamGraph=

@@ -27,7 +27,7 @@
     "conformance-report": "node tools/conformance-report.mjs",
     "pretest": "npm run build",
     "prepublishOnly": "npm run build && npm test",
-    "test": "npm run fixtures && npm run cli-test && node test-roam-linkify.mjs && node test-roam-graph.mjs && node test-formatter-preserve-prose.mjs && node test-cli-search.mjs"
+    "test": "npm run fixtures && npm run cli-test && node test-roam-linkify.mjs && node test-roam-graph.mjs && node test-compile-corpus.mjs && node test-formatter-preserve-prose.mjs && node test-cli-search.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.7",
