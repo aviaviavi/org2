@@ -80,6 +80,25 @@ Current checks include:
 
 See [[file:corpus-flow.org][Corpus flow]] for the canonical zone model, artifact roles, and generated-output trust boundaries.
 
+* Compiled corpus artifacts
+
+=org2 compile corpus= emits a stable, schema-versioned knowledge artifact that LLM tools, search indexes, and other automation can consume. Org2 only compiles local plain-text notes into structured data; it does not call an LLM or require any hosted AI service.
+
+#+begin_src sh
+npm run org2 -- compile corpus --dir ~/notes --recursive --out compiled/corpus.json
+npm run org2 -- compile corpus --dir ~/notes --recursive --format jsonl --out compiled/corpus.jsonl
+#+end_src
+
+The JSON form includes:
+
+- files with relative paths, absolute paths, SHA-256 hashes, line counts, titles, and IDs
+- file and heading nodes with source ranges for citations
+- heading TODO state, tags, planning timestamps, properties, IDs, and aliases
+- links and resolved backlinks for explicit =id:= links and unambiguous wiki links
+- text snippets suitable for previews or retrieval pipelines
+
+Use JSONL for larger corpora when downstream tools prefer one record per line. If you write compiled artifacts into a conventional =compiled/= zone, add normal =ORG2_ARTIFACT_*= metadata/provenance to any Org wrapper files and keep using =org2 lint= for generated-output health checks.
+
 * Search + cited query
 
 Use =search= for workspace text lookup and =query= when you want cited context suitable for answering factual questions from notes.

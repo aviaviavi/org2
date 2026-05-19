@@ -23,6 +23,7 @@ import { formatOrgTimestamp, TODO_KEYWORDS, updateTodoInText, type TodoStatus } 
 import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from "./planning.js";
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
+import { compileCorpus, renderCompiledCorpus } from "./corpusCompile.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import {
   collectArtifactIdsInText,
@@ -5449,6 +5450,11 @@ async function main(): Promise<void> {
   // Lint / corpus health
   let lintFormat: "text" | "json" = "text";
 
+  // Compile / machine-readable corpus artifacts
+  let compileAction: "corpus" = "corpus";
+  let compileFormat: "json" | "jsonl" = "json";
+  let compileOut = "";
+
   // Roam meta
   let roamAction: "db-sync" | "backlinks" | "node" | "link" | "linkify" | "graph" = "db-sync";
   let roamNodeAction: "new" = "new";
@@ -5577,6 +5583,16 @@ async function main(): Promise<void> {
     } else if (arg === "lint") {
       command = "lint";
       i++;
+    } else if (arg === "compile") {
+      command = "compile";
+      i++;
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        const sub = args[i]!;
+        if (sub === "corpus") {
+          compileAction = "corpus";
+          i++;
+        }
+      }
     } else if (arg === "roam") {
       command = "roam";
       i++;
@@ -6287,6 +6303,8 @@ async function main(): Promise<void> {
           searchFormat = v;
         } else if (command === "lint" && (v === "text" || v === "json")) {
           lintFormat = v;
+        } else if (command === "compile" && (v === "json" || v === "jsonl")) {
+          compileFormat = v;
         } else if (
           command === "roam" &&
           roamAction === "backlinks" &&
@@ -6363,6 +6381,8 @@ async function main(): Promise<void> {
           exportOut = args[i]!;
         } else if (command === "roam" && roamAction === "graph") {
           roamGraphOut = args[i]!;
+        } else if (command === "compile") {
+          compileOut = args[i]!;
         }
         i++;
       }
@@ -6552,6 +6572,7 @@ Roam / IDs:
   org2 search QUERY [--dir DIR] [--recursive] [--format text|json]
   org2 query QUERY [--dir DIR] [--recursive] [--format text|json]
   org2 query (--id UUID|--text TEXT) [--dir DIR] [--recursive]
+  org2 compile corpus --dir DIR [--recursive] [--out FILE] [--format json|jsonl]
   org2 roam db-sync --dir DIR [--recursive] [--apply]
   org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply]
   org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--style wiki|id] [--id UUID] [--apply]
@@ -6559,6 +6580,7 @@ Roam / IDs:
   org2 roam graph --dir DIR [--recursive] [--out FILE] [--format text|json]
 
 Maintenance / health:
+  org2 compile corpus [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl]
   org2 lint [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
   org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]
 
@@ -6777,6 +6799,24 @@ Flags:
   --context N       Context lines around each match (default 1)
   --sort MODE       scan|date-desc|date-asc (use date-desc for “last met” style lookups)
   --format text|json Output format`;
+  } else if (command === "compile") {
+    text = `org2 compile corpus
+
+Usage:
+  org2 compile corpus [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl]
+
+Flags:
+  --dir DIR          Root directory to scan
+  --recursive        Recurse into subdirectories
+  --file FILE        Single target file
+  --files FILE       One or more target files
+  --out FILE         Write the compiled corpus artifact to a file
+  --format json|jsonl Output format (default json)
+
+Output:
+  Stable schema-versioned corpus artifact for LLM/tool clients. Includes
+  headings, IDs, aliases, links, backlinks, TODO/planning state, properties,
+  source ranges, and snippets. Org2 emits data only; it does not call an LLM.`;
   } else if (command === "lint") {
     text = `org2 lint
 
@@ -6880,7 +6920,7 @@ Flags:
     printGeneralUsage(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "lint" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "compile" && command !== "lint" && command !== "roam") {
     printGeneralUsage(1);
   }
 
@@ -8861,6 +8901,62 @@ Flags:
       // Print 1-based line for humans
       const suffix = h.snippet ? ` — ${h.snippet}` : "";
       process.stdout.write(`${h.kind} ${h.title} ${h.file}:${h.line + 1}${suffix}\n`);
+    }
+
+    return;
+  }
+
+  if (command === "compile") {
+    if (compileAction !== "corpus") {
+      console.error("Error: org2 compile requires a subcommand (corpus)");
+      process.exit(1);
+    }
+
+    if (!dir && files.length === 0) {
+      const configPath = findConfigFile(process.cwd());
+      if (configPath) {
+        try {
+          const config = loadConfig(configPath);
+          const configDir = path.dirname(configPath);
+          files = resolveFilesFromConfig(config, configDir);
+
+          if (files.length === 0) {
+            console.error(
+              `Error: config found at ${configPath} but no matching files for patterns: ${config.agendaFiles?.join(", ") || "*.org"}`,
+            );
+            process.exit(1);
+          }
+          dir = configDir;
+        } catch (err) {
+          console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`);
+          process.exit(1);
+        }
+      } else {
+        console.error("Error: provide either --dir, --files, or org2.json config");
+        process.exit(1);
+      }
+    }
+
+    if (dir && files.length === 0) {
+      files = listOrgLikeFiles(dir, recursive);
+    }
+
+    if (files.length === 0) {
+      console.error("Error: no Org files found to compile");
+      process.exit(1);
+    }
+
+    const rootDir = dir ? path.resolve(dir) : path.dirname(path.resolve(files[0]!));
+    const corpus = compileCorpus(files, { rootDir });
+    const outText = renderCompiledCorpus(corpus, compileFormat);
+
+    if (compileOut) {
+      const outPath = path.resolve(compileOut);
+      fs.mkdirSync(path.dirname(outPath), { recursive: true });
+      fs.writeFileSync(outPath, outText, "utf8");
+      process.stdout.write(outPath + "\n");
+    } else {
+      process.stdout.write(outText);
     }
 
     return;

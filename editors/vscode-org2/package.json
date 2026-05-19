@@ -14,6 +14,7 @@
     "onCommand:org2.formatWorkspaceCheck",
     "onCommand:org2.formatWorkspaceApply",
     "onCommand:org2.lintWorkspaceCorpus",
+    "onCommand:org2.compileWorkspaceCorpus",
     "onCommand:org2.searchWorkspace",
     "onCommand:org2.queryWorkspace",
     "onCommand:org2.roamLinkifyPreview",
@@ -140,6 +141,10 @@
       {
         "command": "org2.lintWorkspaceCorpus",
         "title": "Org2: Corpus Lint — Artifact Roles & Provenance"
+      },
+      {
+        "command": "org2.compileWorkspaceCorpus",
+        "title": "Org2: Compile Workspace Corpus Artifact"
       },
       {
         "command": "org2.searchWorkspace",

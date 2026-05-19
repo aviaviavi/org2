@@ -1627,6 +1627,35 @@ function activate(context) {
     }
   }
 
+  async function compileWorkspaceCorpus() {
+    const root = getAgendaRootDir();
+    const defaultUri = vscode.Uri.file(path.join(root, 'compiled', 'corpus.json'));
+    const targetUri = await vscode.window.showSaveDialog({
+      defaultUri,
+      filters: {
+        'JSON corpus artifacts': ['json', 'jsonl'],
+      },
+      title: 'Write Org2 compiled corpus artifact',
+    });
+    if (!targetUri || targetUri.scheme !== 'file') return;
+
+    const outPath = targetUri.fsPath;
+    const format = outPath.toLowerCase().endsWith('.jsonl') ? 'jsonl' : 'json';
+    const result = await runOrg2CompilerCommand(
+      'Org2 Compile Corpus',
+      ['compile', 'corpus', '--dir', root, '--recursive', '--format', format, '--out', outPath],
+      { successMessage: `Org2: compiled corpus to ${path.basename(outPath)}.` }
+    );
+    if (!result) return;
+
+    try {
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(outPath));
+      await vscode.window.showTextDocument(doc, { preview: false });
+    } catch {
+      // The output window already contains the path if VS Code cannot open it immediately.
+    }
+  }
+
   async function checkCurrentFileFormattingDrift() {
     const target = getActiveFormatterTarget();
     if (!target) return;
@@ -2258,7 +2287,11 @@ function activate(context) {
     })
   );
 
-
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.compileWorkspaceCorpus', async () => {
+      await compileWorkspaceCorpus();
+    })
+  );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.searchWorkspace', async () => {
