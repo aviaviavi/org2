@@ -85,7 +85,7 @@ org2 ai suggest-links --dir notes --recursive --out views/link-suggestions.org2
 org2 ai validate-job --job jobs/weekly-summary.org2-ai.json
 #+end_src
 
-The first implemented slice is provider-free manifest validation; see [[file:ai-job-manifests.org][AI job manifests]] and =spec/v0/ai-job-manifest.schema.json=.
+Implemented slices so far are provider-free manifest validation and the provider-agnostic adapter boundary; see [[file:ai-job-manifests.org][AI job manifests]], [[file:ai-adapters.org][AI adapter interface]], =spec/v0/ai-job-manifest.schema.json=, and =src/aiAdapter.ts=.
 
 Command responsibilities:
 
@@ -157,7 +157,7 @@ A user can then review =views/team-sync-summary.org2= and copy, rewrite, or expl
 
 This design sets the boundary. Follow-up issues can implement it incrementally:
 
-- adapter interfaces and mock adapters
+- concrete adapter implementations behind the stable interface
 - generated draft artifact helpers and lint rules
 - meeting/transcript summarization
 - link/entity suggestion reports
