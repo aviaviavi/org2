@@ -106,7 +106,7 @@ A job runner should record each transformation with enough data to review and re
 2. Compile or query that material into a cited context packet with file paths, line ranges, heading ancestry, snippets, and source hashes when available.
 3. Call one provider adapter with a named task, instructions, cited context, optional output schema, and non-secret metadata.
 4. Validate the returned output against the workflow contract.
-5. Write a generated artifact under =views/= or =compiled/= with =ORG2_ARTIFACT_ROLE=, =ORG2_PROVENANCE=, =ORG2_GENERATOR=, =ORG2_GENERATED_AT=, and review status metadata.
+5. Write a generated artifact under =views/= or =compiled/= with =ORG2_ARTIFACT_ROLE=, =ORG2_PROVENANCE=, =ORG2_GENERATOR=, =ORG2_GENERATED_AT=, optional =ORG2_SOURCE_HASHES=, and =ORG2_REVIEW_STATUS= (=generated=, =review-required=, =reviewed=, or =promoted=).
 6. Run =org2 lint= so missing provenance or unsafe generated/canonical boundaries become visible.
 7. Promote only the human-approved parts into =notes/= through an explicit patch, editor command, or future promote workflow.
 

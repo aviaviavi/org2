@@ -46,6 +46,14 @@ Mention [[Alpha Initiative]] from here.
 const json = JSON.parse(execFileSync('node', [cli, 'compile', 'corpus', '--dir', tmpDir, '--recursive'], { encoding: 'utf8' }));
 assert.equal(json.schemaVersion, 'org2-compiled-corpus/v1');
 assert.equal(json.generatedBy, 'org2 compile corpus');
+assert.equal(json.artifact.schemaVersion, 'org2-artifact-metadata/v1');
+assert.equal(json.artifact.role, 'compiled');
+assert.equal(json.artifact.generator, 'org2 compile corpus');
+assert.equal(json.artifact.reviewStatus, 'generated');
+assert.match(json.artifact.generatedAt, /^\d{4}-\d{2}-\d{2}T/);
+assert.deepEqual(json.artifact.provenance.sort(), ['file:meeting.org2', 'file:project.org2']);
+assert.equal(json.artifact.sourceHashes.length, 2);
+assert.ok(json.artifact.sourceHashes.every((entry) => entry.kind === 'file' && /^[a-f0-9]{64}$/.test(entry.sha256)));
 assert.equal(json.stats.files, 2);
 assert.equal(json.files.length, 2);
 
@@ -75,6 +83,7 @@ const stdout = execFileSync('node', [cli, 'compile', 'corpus', '--dir', tmpDir, 
 assert.equal(stdout.trim(), out);
 const jsonl = fs.readFileSync(out, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
 assert.equal(jsonl[0].schemaVersion, 'org2-compiled-corpus/v1');
+assert.equal(jsonl[0].artifact.schemaVersion, 'org2-artifact-metadata/v1');
 assert.ok(jsonl.some((entry) => entry.id === alphaId && entry.file === 'project.org2'));
 
 console.log('✓ compile-corpus');

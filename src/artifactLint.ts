@@ -1,3 +1,5 @@
+import { ORG2_ARTIFACT_REVIEW_STATUS_VALUES } from "./artifactMetadata.js";
+
 export type ArtifactRole = "raw" | "canonical" | "compiled" | "view" | "report";
 
 export const ARTIFACT_ROLE_VALUES: ArtifactRole[] = ["raw", "canonical", "compiled", "view", "report"];
@@ -29,6 +31,7 @@ export interface ArtifactDuplicateIdIssue {
 }
 
 const PROVENANCE_ENTRY_KINDS = ["id", "file", "query", "run", "url", "note", "artifact"] as const;
+const SHA256_SOURCE_HASH_RE = /^([a-z][a-z0-9_-]*):(\S.+)=sha256:([a-fA-F0-9]{64})$/;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_DATE_TIME_RE =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -161,6 +164,25 @@ function isValidGeneratedAt(raw: string): boolean {
   return ISO_DATE_RE.test(value) || ISO_DATE_TIME_RE.test(value);
 }
 
+function splitSourceHashes(raw: string): string[] {
+  return String(raw || "")
+    .split(/[,;]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function isValidSourceHashEntry(entry: string): boolean {
+  const match = SHA256_SOURCE_HASH_RE.exec(String(entry || "").trim());
+  if (!match) return false;
+  const kind = String(match[1] || "").toLowerCase();
+  return PROVENANCE_ENTRY_KINDS.includes(kind as (typeof PROVENANCE_ENTRY_KINDS)[number]);
+}
+
+function isValidReviewStatus(raw: string): boolean {
+  const value = String(raw || "").trim().toLowerCase();
+  return ORG2_ARTIFACT_REVIEW_STATUS_VALUES.includes(value as (typeof ORG2_ARTIFACT_REVIEW_STATUS_VALUES)[number]);
+}
+
 function inferExpectedArtifactRoleFromPath(filePath: string): { dir: string; role: ArtifactRole } | null {
   const normalized = String(filePath || "").replace(/\\/g, "/");
   const segments = normalized.split("/").map((segment) => segment.trim().toLowerCase()).filter(Boolean);
@@ -186,6 +208,8 @@ function evaluateArtifactProperties(
   const provenanceRaw = normalizePropertyValue(props.get("ORG2_PROVENANCE") || "");
   const generatedAtRaw = normalizePropertyValue(props.get("ORG2_GENERATED_AT") || "");
   const generatorRaw = normalizePropertyValue(props.get("ORG2_GENERATOR") || "");
+  const sourceHashesRaw = normalizePropertyValue(props.get("ORG2_SOURCE_HASHES") || "");
+  const reviewStatusRaw = normalizePropertyValue(props.get("ORG2_REVIEW_STATUS") || "");
   const idRaw = normalizePropertyValue(props.get("ID") || "");
 
   const role = parseArtifactRole(roleRaw);
@@ -260,6 +284,39 @@ function evaluateArtifactProperties(
       file: filePath,
       line,
       message: `Invalid ORG2_GENERATED_AT '${generatedAtRaw}'. Expected ISO date (YYYY-MM-DD) or ISO timestamp (YYYY-MM-DDTHH:MM[:SS][.sss]Z|±HH:MM).`,
+    });
+  }
+
+  const sourceHashEntries = splitSourceHashes(sourceHashesRaw);
+  if (sourceHashesRaw && sourceHashEntries.length === 0) {
+    issues.push({
+      severity: "warning",
+      rule: "artifact-source-hashes-empty",
+      file: filePath,
+      line,
+      message: "ORG2_SOURCE_HASHES is set but empty after normalization.",
+    });
+  }
+
+  for (const entry of sourceHashEntries) {
+    if (!isValidSourceHashEntry(entry)) {
+      issues.push({
+        severity: "error",
+        rule: "artifact-source-hash-entry-invalid",
+        file: filePath,
+        line,
+        message: `Invalid ORG2_SOURCE_HASHES entry '${entry}'. Expected '<kind>:<value>=sha256:<64 hex chars>' where kind is one of: ${PROVENANCE_ENTRY_KINDS.join(", ")}`,
+      });
+    }
+  }
+
+  if (reviewStatusRaw && !isValidReviewStatus(reviewStatusRaw)) {
+    issues.push({
+      severity: "error",
+      rule: "artifact-review-status-invalid",
+      file: filePath,
+      line,
+      message: `Invalid ORG2_REVIEW_STATUS '${reviewStatusRaw}'. Expected one of: ${ORG2_ARTIFACT_REVIEW_STATUS_VALUES.join(", ")}`,
     });
   }
 
