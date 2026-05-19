@@ -482,6 +482,51 @@ type RoamGraphData = {
   edges: RoamGraphEdge[];
 };
 
+type RoamGraphMaintenanceLinkFinding = {
+  rule: "unresolved-id-link" | "unresolved-wiki-link" | "ambiguous-wiki-link";
+  severity: "warning";
+  file: string;
+  line: number;
+  target: string;
+  message: string;
+  candidates?: string[];
+};
+
+type RoamGraphMaintenanceAliasCollision = {
+  label: string;
+  nodes: Array<{ id: string; label: string; file: string }>;
+};
+
+type RoamGraphMaintenanceLinkifySuggestion = {
+  kind: "exact" | "represented-node";
+  file: string;
+  line: number;
+  label: string;
+  candidate: string;
+  count?: number;
+  confidence?: number;
+  reason: string;
+  text?: string;
+};
+
+type RoamGraphMaintenanceReport = {
+  summary: {
+    scannedFiles: number;
+    nodeCount: number;
+    edgeCount: number;
+    orphanNodeCount: number;
+    aliasCollisionCount: number;
+    unresolvedLinkCount: number;
+    ambiguousLinkCount: number;
+    linkifySuggestionCount: number;
+  };
+  orphanNodes: RoamGraphNode[];
+  highDegreeNodes: RoamGraphNode[];
+  aliasCollisions: RoamGraphMaintenanceAliasCollision[];
+  linkFindings: RoamGraphMaintenanceLinkFinding[];
+  linkifySuggestions: RoamGraphMaintenanceLinkifySuggestion[];
+};
+
 function collectRoamNodesForIndex(content: string, filePath: string): RoamNodeForIndex[] {
   const raw = content.replace(/\r\n/g, "\n");
   const lines = raw.split("\n");
@@ -883,6 +928,231 @@ function buildRoamGraph(files: string[]): RoamGraphData {
     .sort((a, b) => b.count - a.count || `${a.source}:${a.target}`.localeCompare(`${b.source}:${b.target}`));
 
   return { nodes, edges };
+}
+
+
+function buildRoamGraphMaintenanceReport(files: string[], graph: RoamGraphData): RoamGraphMaintenanceReport {
+  const nodeIds = new Set(graph.nodes.map((node) => node.id.toLowerCase()));
+  const nodeById = new Map(graph.nodes.map((node) => [node.id.toLowerCase(), node]));
+  const titleIndex = buildRoamTitleIndex(files);
+  const labelIndex = buildRoamLinkifyIndex(files);
+  const linkFindings: RoamGraphMaintenanceLinkFinding[] = [];
+  const linkifySuggestions: RoamGraphMaintenanceLinkifySuggestion[] = [];
+
+  const aliasCollisions = Array.from(titleIndex.entries())
+    .filter(([, ids]) => ids.size > 1)
+    .map(([label, ids]) => ({
+      label,
+      nodes: Array.from(ids)
+        .map((id) => nodeById.get(id.toLowerCase()))
+        .filter((node): node is RoamGraphNode => Boolean(node))
+        .map((node) => ({ id: node.id, label: node.label, file: node.file }))
+        .sort((a, b) => a.label.localeCompare(b.label) || a.file.localeCompare(b.file)),
+    }))
+    .filter((collision) => collision.nodes.length > 1)
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  for (const filePath of files) {
+    let content: string;
+    try {
+      content = fs.readFileSync(filePath, "utf8");
+    } catch {
+      continue;
+    }
+
+    const lines = content.replace(/\r\n/g, "\n").split("\n");
+    let inBlock = false;
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i] ?? "";
+      const trimmed = line.trim();
+
+      if (/^#\+begin_/i.test(trimmed)) {
+        inBlock = true;
+        continue;
+      }
+      if (/^#\+end_/i.test(trimmed)) {
+        inBlock = false;
+        continue;
+      }
+      if (inBlock) continue;
+      if (/^: /.test(line)) continue;
+
+      for (const id of findRoamIdLinksInLine(line)) {
+        if (nodeIds.has(id.toLowerCase())) continue;
+        linkFindings.push({
+          rule: "unresolved-id-link",
+          severity: "warning",
+          file: filePath,
+          line: i + 1,
+          target: id,
+          message: `id:${id} does not resolve to a scanned roam node.`,
+        });
+      }
+
+      for (const label of findRoamWikiLinksInLine(line)) {
+        const normalizedLabel = normalizeRoamLinkLabel(label);
+        if (!normalizedLabel) continue;
+        const candidates = Array.from(titleIndex.get(normalizedLabel) || []);
+        if (candidates.length === 0) {
+          linkFindings.push({
+            rule: "unresolved-wiki-link",
+            severity: "warning",
+            file: filePath,
+            line: i + 1,
+            target: label,
+            message: `[[${label}]] does not resolve to a scanned title or alias.`,
+          });
+        } else if (candidates.length > 1) {
+          linkFindings.push({
+            rule: "ambiguous-wiki-link",
+            severity: "warning",
+            file: filePath,
+            line: i + 1,
+            target: label,
+            candidates,
+            message: `[[${label}]] resolves to ${candidates.length} nodes; use an id link or disambiguate aliases.`,
+          });
+        }
+      }
+    }
+
+    const linkifyResult = applyRoamLinkifyToFile(content, filePath, labelIndex);
+    for (const match of linkifyResult.debugMatches || []) {
+      linkifySuggestions.push({
+        kind: "exact",
+        file: filePath,
+        line: match.line,
+        label: match.label,
+        candidate: match.candidate,
+        count: match.count,
+        reason: "exact eligible label occurrence can be linked safely in preview/apply mode",
+      });
+    }
+    for (const suggestion of linkifyResult.debugRepresented || []) {
+      linkifySuggestions.push({
+        kind: "represented-node",
+        file: filePath,
+        line: suggestion.line,
+        label: suggestion.label,
+        candidate: suggestion.candidate,
+        confidence: suggestion.confidence,
+        reason: suggestion.reason,
+        text: suggestion.text,
+      });
+    }
+  }
+
+  const orphanNodes = graph.nodes
+    .filter((node) => node.degree === 0)
+    .sort((a, b) => a.file.localeCompare(b.file) || a.label.localeCompare(b.label));
+  const highDegreeNodes = graph.nodes
+    .filter((node) => node.degree > 0)
+    .slice()
+    .sort((a, b) => b.degree - a.degree || a.label.localeCompare(b.label))
+    .slice(0, 20);
+  const unresolvedLinkCount = linkFindings.filter((finding) => finding.rule !== "ambiguous-wiki-link").length;
+  const ambiguousLinkCount = linkFindings.filter((finding) => finding.rule === "ambiguous-wiki-link").length;
+
+  return {
+    summary: {
+      scannedFiles: files.length,
+      nodeCount: graph.nodes.length,
+      edgeCount: graph.edges.length,
+      orphanNodeCount: orphanNodes.length,
+      aliasCollisionCount: aliasCollisions.length,
+      unresolvedLinkCount,
+      ambiguousLinkCount,
+      linkifySuggestionCount: linkifySuggestions.length,
+    },
+    orphanNodes,
+    highDegreeNodes,
+    aliasCollisions,
+    linkFindings: linkFindings.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.rule.localeCompare(b.rule)),
+    linkifySuggestions: linkifySuggestions.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.label.localeCompare(b.label)),
+  };
+}
+
+function renderRoamGraphReportText(report: RoamGraphMaintenanceReport): string {
+  const lines: string[] = [];
+  lines.push("Org2 roam maintenance report");
+  lines.push("============================");
+  lines.push("");
+  lines.push(`Scanned files: ${report.summary.scannedFiles}`);
+  lines.push(`Nodes: ${report.summary.nodeCount}`);
+  lines.push(`Edges: ${report.summary.edgeCount}`);
+  lines.push(`Orphan nodes: ${report.summary.orphanNodeCount}`);
+  lines.push(`Alias collisions: ${report.summary.aliasCollisionCount}`);
+  lines.push(`Unresolved links: ${report.summary.unresolvedLinkCount}`);
+  lines.push(`Ambiguous links: ${report.summary.ambiguousLinkCount}`);
+  lines.push(`Linkify suggestions: ${report.summary.linkifySuggestionCount}`);
+  lines.push("");
+
+  lines.push("High-degree nodes");
+  lines.push("-----------------");
+  if (report.highDegreeNodes.length === 0) {
+    lines.push("- none");
+  } else {
+    for (const node of report.highDegreeNodes.slice(0, 12)) {
+      lines.push(`- ${node.label} (${node.degree}; in ${node.degreeIn}, out ${node.degreeOut}) — ${node.file}`);
+    }
+  }
+  lines.push("");
+
+  lines.push("Orphan nodes");
+  lines.push("------------");
+  if (report.orphanNodes.length === 0) {
+    lines.push("- none");
+  } else {
+    for (const node of report.orphanNodes.slice(0, 20)) {
+      lines.push(`- ${node.label} — ${node.file}`);
+    }
+    if (report.orphanNodes.length > 20) lines.push(`- … ${report.orphanNodes.length - 20} more`);
+  }
+  lines.push("");
+
+  lines.push("Alias/title collisions");
+  lines.push("----------------------");
+  if (report.aliasCollisions.length === 0) {
+    lines.push("- none");
+  } else {
+    for (const collision of report.aliasCollisions.slice(0, 20)) {
+      const nodes = collision.nodes.map((node) => `${node.label} (${node.id}, ${node.file})`).join("; ");
+      lines.push(`- ${collision.label}: ${nodes}`);
+    }
+    if (report.aliasCollisions.length > 20) lines.push(`- … ${report.aliasCollisions.length - 20} more`);
+  }
+  lines.push("");
+
+  lines.push("Link findings");
+  lines.push("-------------");
+  if (report.linkFindings.length === 0) {
+    lines.push("- none");
+  } else {
+    for (const finding of report.linkFindings.slice(0, 40)) {
+      const candidates = finding.candidates?.length ? ` Candidates: ${finding.candidates.join(", ")}` : "";
+      lines.push(`- ${finding.rule} ${finding.file}:${finding.line} ${finding.message}${candidates}`);
+    }
+    if (report.linkFindings.length > 40) lines.push(`- … ${report.linkFindings.length - 40} more`);
+  }
+  lines.push("");
+
+  lines.push("Linkify suggestions");
+  lines.push("-------------------");
+  if (report.linkifySuggestions.length === 0) {
+    lines.push("- none");
+  } else {
+    for (const suggestion of report.linkifySuggestions.slice(0, 40)) {
+      const confidence = typeof suggestion.confidence === "number" ? ` confidence=${suggestion.confidence.toFixed(2)}` : "";
+      const count = typeof suggestion.count === "number" ? ` count=${suggestion.count}` : "";
+      lines.push(
+        `- ${suggestion.kind} ${suggestion.file}:${suggestion.line} ${suggestion.label} -> ${suggestion.candidate}${count}${confidence}; ${suggestion.reason}`,
+      );
+    }
+    if (report.linkifySuggestions.length > 40) lines.push(`- … ${report.linkifySuggestions.length - 40} more`);
+  }
+  lines.push("");
+
+  return lines.join("\n");
 }
 
 function escapeHtml(raw: string): string {
@@ -5470,7 +5740,7 @@ async function main(): Promise<void> {
   let roamAction: "db-sync" | "backlinks" | "node" | "link" | "linkify" | "graph" = "db-sync";
   let roamNodeAction: "new" = "new";
   let roamLinkAction: "insert-backlink" = "insert-backlink";
-  let roamFormat: "text" | "json" = "text";
+  let roamFormat: "text" | "json" | "report" = "text";
   let roamApply = false;
   let roamTitle = "";
   let roamIdForced = "";
@@ -6348,7 +6618,7 @@ async function main(): Promise<void> {
           (v === "text" || v === "json")
         ) {
           backlinksFormat = v;
-        } else if (command === "roam" && (v === "text" || v === "json")) {
+        } else if (command === "roam" && (v === "text" || v === "json" || v === "report")) {
           roamFormat = v;
         }
         i++;
@@ -6624,7 +6894,7 @@ Roam / IDs:
   org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply]
   org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--style wiki|id] [--id UUID] [--apply]
   org2 roam linkify --dir DIR [--recursive] [--file FILE] [--exclude PATH]... [--apply] [--format text|json]
-  org2 roam graph --dir DIR [--recursive] [--out FILE] [--format text|json]
+  org2 roam graph --dir DIR [--recursive] [--out FILE] [--format text|report|json]
 
 Maintenance / health:
   org2 compile corpus [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl]
@@ -6969,13 +7239,13 @@ Flags:
       text = `org2 roam graph
 
 Usage:
-  org2 roam graph --dir DIR [--recursive] [--out FILE] [--format text|json]
+  org2 roam graph --dir DIR [--recursive] [--out FILE] [--format text|report|json]
 
 Flags:
   --dir DIR         Root directory to scan
   --recursive       Recurse into subdirectories
-  --out FILE        Output HTML file
-  --format text|json Output format`;
+  --out FILE        Output HTML/report file
+  --format text|report|json Output format (text writes the interactive HTML graph)`;
     }
   }
 
@@ -7281,6 +7551,7 @@ Flags:
       const outputPath = path.resolve(roamGraphOut || path.join(dir, "org2-roam-graph.html"));
 
       if (roamFormat === "json") {
+        const maintenance = buildRoamGraphMaintenanceReport(allFiles, graph);
         process.stdout.write(
           JSON.stringify(
             {
@@ -7293,11 +7564,22 @@ Flags:
               edgeCount: graph.edges.length,
               nodes: graph.nodes,
               edges: graph.edges,
+              maintenance,
             },
             null,
             2,
           ) + "\n",
         );
+      } else if (roamFormat === "report") {
+        const maintenance = buildRoamGraphMaintenanceReport(allFiles, graph);
+        const reportText = renderRoamGraphReportText(maintenance);
+        if (roamGraphOut) {
+          fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+          fs.writeFileSync(outputPath, reportText, "utf8");
+          process.stdout.write(outputPath + "\n");
+        } else {
+          process.stdout.write(reportText);
+        }
       } else {
         const html = renderRoamGraphHtml(graph, { title: "Org2 Roam Graph", dir });
         fs.mkdirSync(path.dirname(outputPath), { recursive: true });

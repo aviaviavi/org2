@@ -1791,7 +1791,7 @@ function activate(context) {
 
   async function runRoamGraphReport() {
     const root = getAgendaRootDir();
-    await runOrg2CompilerCommand('Org2 Roam Graph', ['roam', 'graph', '--dir', root, '--recursive', '--format', 'text']);
+    await runOrg2CompilerCommand('Org2 Roam Maintenance Report', ['roam', 'graph', '--dir', root, '--recursive', '--format', 'report']);
   }
 
 
