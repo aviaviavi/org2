@@ -24,6 +24,7 @@ import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from 
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
 import { compileCorpus, renderCompiledCorpus } from "./corpusCompile.js";
+import { loadAiJobManifest, validateAiJobManifest } from "./aiJobManifest.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import {
   collectArtifactIdsInText,
@@ -5460,6 +5461,11 @@ async function main(): Promise<void> {
   let compileFormat: "json" | "jsonl" = "json";
   let compileOut = "";
 
+  // AI job manifests (provider-free validation only)
+  let aiAction: "validate-job" | "" = "";
+  let aiJobFile = "";
+  let aiFormat: "text" | "json" = "text";
+
   // Roam meta
   let roamAction: "db-sync" | "backlinks" | "node" | "link" | "linkify" | "graph" = "db-sync";
   let roamNodeAction: "new" = "new";
@@ -5598,6 +5604,16 @@ async function main(): Promise<void> {
           i++;
         }
       }
+    } else if (arg === "ai") {
+      command = "ai";
+      i++;
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        const sub = args[i]!;
+        if (sub === "validate-job" || sub === "validate") {
+          aiAction = "validate-job";
+        }
+        i++;
+      }
     } else if (arg === "roam") {
       command = "roam";
       i++;
@@ -5652,6 +5668,14 @@ async function main(): Promise<void> {
       // Collect all following non-flag arguments as files
       while (i < args.length && !args[i].startsWith("--")) {
         files.push(args[i]);
+        i++;
+      }
+    } else if (arg === "--job") {
+      i++;
+      if (i < args.length) {
+        if (command === "ai") {
+          aiJobFile = args[i]!;
+        }
         i++;
       }
     } else if (arg === "--file") {
@@ -6316,6 +6340,8 @@ async function main(): Promise<void> {
           lintFormat = v;
         } else if (command === "compile" && (v === "json" || v === "jsonl")) {
           compileFormat = v;
+        } else if (command === "ai" && (v === "text" || v === "json")) {
+          aiFormat = v;
         } else if (
           command === "roam" &&
           roamAction === "backlinks" &&
@@ -6593,6 +6619,7 @@ Roam / IDs:
   org2 query QUERY [--dir DIR] [--recursive] [--format text|json]
   org2 query (--id UUID|--text TEXT) [--dir DIR] [--recursive]
   org2 compile corpus --dir DIR [--recursive] [--out FILE] [--format json|jsonl]
+  org2 ai validate-job --job FILE [--format text|json]
   org2 roam db-sync --dir DIR [--recursive] [--apply]
   org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply]
   org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--style wiki|id] [--id UUID] [--apply]
@@ -6601,6 +6628,7 @@ Roam / IDs:
 
 Maintenance / health:
   org2 compile corpus [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl]
+  org2 ai validate-job --job FILE [--format text|json]
   org2 lint [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
   org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]
 
@@ -6624,6 +6652,7 @@ function printScopedUsage(
     roamAction: "db-sync" | "backlinks" | "node" | "link" | "linkify" | "graph";
     roamNodeAction: "new";
     roamLinkAction: "insert-backlink";
+    aiAction: "validate-job" | "";
   },
   exitCode: number,
 ): never {
@@ -6863,6 +6892,19 @@ Flags:
 Checks:
   Artifact metadata, duplicate IDs, unresolved provenance references,
   and conventional corpus-flow role/path mismatches.`;
+  } else if (command === "ai") {
+    text = `org2 ai ${options.aiAction || "validate-job"}
+
+Usage:
+  org2 ai validate-job --job FILE [--format text|json]
+
+Flags:
+  --job FILE        AI job manifest JSON file
+  --format text|json Output format
+
+Checks:
+  Provider-free AI job manifest shape, input selection, task, symbolic adapter,
+  output target, provenance requirements, review policy, and accidental secrets.`;
   } else if (command === "roam") {
     if (options.roamAction === "db-sync") {
       text = `org2 roam db-sync
@@ -6945,12 +6987,12 @@ Flags:
 
   if (help) {
     if (command) {
-      printScopedUsage(command, { exportAction, todoAction, planAction, cryptAction, idAction, roamAction, roamNodeAction, roamLinkAction }, 0);
+      printScopedUsage(command, { exportAction, todoAction, planAction, cryptAction, idAction, roamAction, roamNodeAction, roamLinkAction, aiAction }, 0);
     }
     printGeneralUsage(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "compile" && command !== "lint" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "compile" && command !== "lint" && command !== "ai" && command !== "roam") {
     printGeneralUsage(1);
   }
 
@@ -6959,6 +7001,43 @@ Flags:
     // Importing this module starts the server.
     await import("./lsp.js");
     return;
+  }
+
+  if (command === "ai") {
+    if (aiAction !== "validate-job") {
+      console.error("Error: org2 ai requires a subcommand (validate-job)");
+      process.exit(1);
+    }
+    if (!aiJobFile) {
+      console.error("Error: org2 ai validate-job requires --job FILE");
+      process.exit(1);
+    }
+
+    let manifest: unknown;
+    try {
+      manifest = loadAiJobManifest(aiJobFile);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (aiFormat === "json") {
+        console.log(JSON.stringify({ $schema: "org2:ai-job-validation:v1", job: aiJobFile, valid: false, issues: [{ path: "$", message }] }, null, 2));
+      } else {
+        console.error(`Error: ${message}`);
+      }
+      process.exit(1);
+    }
+
+    const validation = validateAiJobManifest(manifest);
+    if (aiFormat === "json") {
+      console.log(JSON.stringify({ $schema: "org2:ai-job-validation:v1", job: aiJobFile, ...validation }, null, 2));
+    } else if (validation.valid) {
+      console.log(`AI job manifest OK: ${aiJobFile}`);
+    } else {
+      console.error(`AI job manifest invalid: ${aiJobFile}`);
+      for (const issue of validation.issues) {
+        console.error(`- ${issue.path}: ${issue.message}`);
+      }
+    }
+    process.exit(validation.valid ? 0 : 1);
   }
 
   // Treat `org2 roam backlinks ...` as a namespaced alias for `org2 backlinks ...`.

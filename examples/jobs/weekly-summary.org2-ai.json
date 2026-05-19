@@ -1,0 +1,39 @@
+{
+  "$schema": "https://avi.press/org2/spec/v0/ai-job-manifest.schema.json",
+  "schemaVersion": "org2-ai-job/v1",
+  "id": "weekly-summary",
+  "description": "Summarize this week's meeting notes into a reviewable generated view.",
+  "input": {
+    "files": ["notes/meetings/*.org", "raw/transcripts/*.org"],
+    "recursive": true,
+    "tags": ["meeting"],
+    "dateRange": {
+      "from": "2026-05-12",
+      "to": "2026-05-19"
+    },
+    "rawZones": ["raw/transcripts"]
+  },
+  "task": {
+    "type": "summarize-meeting",
+    "template": "weekly-summary@v1",
+    "instructions": "Return decisions, action-item suggestions, open questions, and cited evidence from the selected Org2 context."
+  },
+  "adapter": {
+    "name": "work-summary",
+    "model": "summary-profile"
+  },
+  "output": {
+    "target": "views",
+    "path": "views/weekly-summary.org2"
+  },
+  "provenance": {
+    "requireSourceRefs": true,
+    "promptTemplateVersion": "weekly-summary@v1",
+    "recordModelMetadata": true,
+    "recordGeneratedAt": true
+  },
+  "review": {
+    "policy": "require-approval",
+    "reviewer": "human"
+  }
+}
