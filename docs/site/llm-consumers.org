@@ -1,0 +1,92 @@
+#+TITLE: External LLM consumer pattern
+#+SUBTITLE: Cited Org2 context without provider calls in core
+
+Org2 is useful to LLM assistants because it compiles local plain-text notes into cited, machine-readable evidence. The core Org2 CLI should stay deterministic: it parses, queries, lints, and compiles a corpus, but it does not need an LLM provider or hosted service to do that work.
+
+This page describes the recommended boundary for OpenClaw, Claude, Codex, local models, or any other external agent.
+
+* Boundary
+
+Org2 guarantees local compiler outputs:
+
+- stable command outputs such as =org2 query --format json= and =org2 compile corpus=
+- source files, line ranges, heading ancestry, matched lines, and snippets for citations
+- artifact roles, provenance metadata, graph links, backlinks, agenda state, and lint diagnostics
+- no network or provider dependency for non-AI commands
+
+External LLM consumers handle model-specific work:
+
+- ranking which cited sources matter for a prompt
+- summarizing or answering from the provided context
+- proposing edits, links, TODOs, or generated draft artifacts
+- choosing providers, model names, credentials, and retry policy outside note files
+
+Generated text should remain reviewable. Write it to =views/=, =compiled/=, or a patch/draft artifact with provenance; promote it to =notes/= only after human review.
+
+* Query-to-context workflow
+
+Use =org2 query= to fetch grounded context before asking an LLM to answer a question.
+
+#+begin_src sh
+npm run org2 -- query "What did we decide about Project Alpha?" \
+  --dir ~/notes \
+  --recursive \
+  --subtree \
+  --answer-context \
+  --format json \
+  > /tmp/org2-query.json
+
+node examples/external-llm-context.mjs --limit=6 < /tmp/org2-query.json \
+  > /tmp/org2-llm-context.txt
+#+end_src
+
+The formatter is intentionally tiny and provider-free. It turns Org2 query JSON into a context packet with source markers such as =[S1]= and explicit =file:line= citations. An external model prompt can then say: “Use only the evidence below. Preserve citations as =[S1]=, =[S2]=.”
+
+* Prompt skeleton
+
+#+begin_src text
+You answer questions from an Org2 knowledge base.
+
+Rules:
+- Use only the supplied Org2 context packet.
+- Cite every factual claim with [S1], [S2], etc.
+- If the evidence is missing or contradictory, say so.
+- Do not invent file paths, dates, people, or decisions.
+
+<context>
+... contents of /tmp/org2-llm-context.txt ...
+</context>
+
+Question: What did we decide about Project Alpha?
+#+end_src
+
+* Compiled-corpus workflow
+
+For larger agents, compile a corpus artifact and let the external orchestration layer decide retrieval, ranking, and model calls.
+
+#+begin_src sh
+npm run org2 -- compile corpus --dir ~/notes --recursive --out compiled/corpus.json
+npm run org2 -- lint --dir ~/notes --recursive --format json > views/corpus-health.json
+#+end_src
+
+The compiled artifact supplies file hashes, heading nodes, IDs, aliases, links, backlinks, planning data, properties, snippets, and source ranges. Keep provider credentials and model configuration outside the corpus artifact. If an agent saves a report or summary, stamp it with generated-artifact metadata described in [[file:corpus-flow.org][Corpus flow]].
+
+* What to save back
+
+Good generated outputs are inspectable artifacts, not silent canonical edits:
+
+- =views/project-alpha-brief.org2= for a cited briefing
+- =views/weekly-digest.org2= for a generated report
+- =compiled/retrieval-index.json= for a derived machine artifact
+- patch files or draft notes for proposed canonical changes
+
+Generated Org files should include properties such as =ORG2_ARTIFACT_ROLE=, =ORG2_PROVENANCE=, =ORG2_GENERATOR=, and =ORG2_GENERATED_AT=. Run =org2 lint= before trusting or publishing generated outputs.
+
+* Minimal answer contract
+
+When an external agent answers from Org2 data, require:
+
+- cited claims using Org2 source markers
+- a short list of source files or IDs used
+- a caveat when the answer came from stale or generated artifacts
+- no automatic write to canonical notes unless the user explicitly applies/promotes it
