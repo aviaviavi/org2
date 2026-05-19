@@ -31,7 +31,7 @@ npm run org2 -- roam db-sync --dir ~/notes --recursive --apply
 npm run org2 -- publish docs-site --config org2.json --preview
 #+end_src
 
-Use =--format json= on lint, backlink, query, graph, and roam workflows when wiring these checks into scripts or CI.
+Use =org2 roam graph --format report= for an inspectable local maintenance view, including orphan/high-degree nodes, alias collisions, unresolved/ambiguous links, and linkify suggestions with source locations. Use =--format json= on lint, backlink, query, graph, and roam workflows when wiring these checks into scripts or CI; graph JSON carries the same maintenance payload under =maintenance=.
 
 * Trust boundaries
 
