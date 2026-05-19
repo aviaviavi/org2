@@ -105,6 +105,7 @@ Use =search= for workspace text lookup and =query= when you want cited context s
 
 #+begin_src sh
 npm run org2 -- search "Chris Martin" --dir ~/notes --recursive --context 3 --sort date-desc
+npm run org2 -- query "Chris Martin" --dir ~/notes --recursive --subtree --sort date-desc --format json
 npm run org2 -- query "Sentra" --dir ~/notes --recursive --format json
 #+end_src
 
@@ -112,8 +113,11 @@ Useful flags:
 
 - =--context N= includes surrounding source lines.
 - =--limit N= caps returned matches.
-- =--sort date-desc= is useful for “when did I last...” style questions over date-named daily files.
-- =--format json= returns machine-readable file, line, heading, snippet, and context fields.
+- =--sort date-desc= is useful for “when did I last...” style questions over date-named daily files and heading timestamps.
+- =--subtree= deduplicates matches to cited heading/subtree sections with =sourceRange=, =headingAncestry=, =matchedLines=, and full subtree context.
+- =--answer-context= adds a plain subtree text block for downstream local LLM prompts.
+- =--date-from= / =--date-to= and =--file-zone= narrow results by local corpus zones and source dates.
+- =--format json= returns machine-readable file, line, heading, snippet, source range, and context fields.
 
 * Roam workflows
 

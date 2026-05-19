@@ -5444,8 +5444,13 @@ async function main(): Promise<void> {
   let searchLimitRaw = "50";
   let searchTodoFiltersRaw: string[] = [];
   let searchTagFiltersRaw: string[] = [];
+  let searchFileZoneFiltersRaw: string[] = [];
   let searchHeadingFilter = "";
   let searchSort = "scan";
+  let searchDateFrom = "";
+  let searchDateTo = "";
+  let querySubtree = false;
+  let queryAnswerContext = false;
 
   // Lint / corpus health
   let lintFormat: "text" | "json" = "text";
@@ -5753,19 +5758,23 @@ async function main(): Promise<void> {
         }
         i++;
       }
-    } else if (arg === "--from") {
+    } else if (arg === "--from" || arg === "--date-from") {
       i++;
       if (i < args.length) {
         if (command === "agenda") {
           agendaFromRaw = args[i]!;
+        } else if (command === "search" || command === "query") {
+          searchDateFrom = args[i]!;
         }
         i++;
       }
-    } else if (arg === "--to") {
+    } else if (arg === "--to" || arg === "--date-to") {
       i++;
       if (i < args.length) {
         if (command === "agenda") {
           agendaToRaw = args[i]!;
+        } else if (command === "search" || command === "query") {
+          searchDateTo = args[i]!;
         }
         i++;
       }
@@ -6090,13 +6099,15 @@ async function main(): Promise<void> {
         }
         i++;
       }
-    } else if (arg === "--file-match") {
+    } else if (arg === "--file-match" || arg === "--file-zone") {
       i++;
       if (i < args.length) {
         if (command === "agenda") {
           agendaFileFiltersRaw.push(args[i]!);
         } else if (command === "fmt") {
           fmtFileFiltersRaw.push(args[i]!);
+        } else if (command === "search" || command === "query") {
+          searchFileZoneFiltersRaw.push(args[i]!);
         }
         i++;
       }
@@ -6344,6 +6355,15 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--subtree") {
+      if (command === "query" || command === "search") querySubtree = true;
+      i++;
+    } else if (arg === "--answer-context") {
+      if (command === "query" || command === "search") {
+        querySubtree = true;
+        queryAnswerContext = true;
+      }
+      i++;
     } else if (arg === "--recursive") {
       recursive = true;
       i++;
@@ -6776,6 +6796,11 @@ Flags:
   --heading TEXT     Require nearest heading title text
   --limit N          Maximum matches (default 50)
   --context N        Context lines around each match (default 1)
+  --subtree          Return one cited heading/subtree per matching section
+  --answer-context   Include subtree text for downstream answer prompts (JSON)
+  --date-from DATE   Filter by file/heading date (YYYY-MM-DD)
+  --date-to DATE     Filter by file/heading date (YYYY-MM-DD)
+  --file-zone TEXT   Require TEXT in the file path
   --format text|json Output format`;
   } else if (command === "query") {
     text = `org2 query
@@ -6797,6 +6822,11 @@ Flags:
   --heading TEXT    Require nearest heading title text
   --limit N         Maximum matches (default 50)
   --context N       Context lines around each match (default 1)
+  --subtree         Return one cited heading/subtree per matching section
+  --answer-context  Include subtree text for downstream answer prompts (JSON)
+  --date-from DATE  Filter by file/heading date (YYYY-MM-DD)
+  --date-to DATE    Filter by file/heading date (YYYY-MM-DD)
+  --file-zone TEXT  Require TEXT in the file path
   --sort MODE       scan|date-desc|date-asc (use date-desc for “last met” style lookups)
   --format text|json Output format`;
   } else if (command === "compile") {
@@ -8566,20 +8596,44 @@ Flags:
     const needle = searchTerm.toLowerCase();
     const todoFilters = new Set(searchTodoFiltersRaw.map((t) => t.toUpperCase()));
     const tagFilters = new Set(searchTagFiltersRaw.map((t) => t.replace(/^:/, "").replace(/:$/, "").toLowerCase()));
+    const fileZoneFilters = searchFileZoneFiltersRaw.map((t) => t.toLowerCase()).filter(Boolean);
     const headingNeedle = searchHeadingFilter.toLowerCase();
+    const normalizeSearchDate = (raw: string): string => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(raw || "").trim());
+      return m ? `${m[1]}-${m[2]}-${m[3]}` : "";
+    };
+    const dateFrom = normalizeSearchDate(searchDateFrom);
+    const dateTo = normalizeSearchDate(searchDateTo);
+
+    if (searchDateFrom && !dateFrom) {
+      console.error(`Error: invalid --date-from/--from value '${searchDateFrom}' (expected YYYY-MM-DD)`);
+      process.exit(1);
+    }
+    if (searchDateTo && !dateTo) {
+      console.error(`Error: invalid --date-to/--to value '${searchDateTo}' (expected YYYY-MM-DD)`);
+      process.exit(1);
+    }
 
     type SearchHeading = { line: number; level: number; title: string; todo?: string; tags: string[]; id?: string };
+    type SearchHeadingRef = { level: number; title: string; line: number; lineNumber: number };
     type SearchHit = {
       file: string;
       line: number;
       lineEnd: number;
       heading?: string;
       headingLine?: number;
+      headingLevel?: number;
+      headingAncestry: SearchHeadingRef[];
       id?: string;
       todo?: string;
       tags: string[];
       snippet: string;
       context: { startLine: number; endLine: number; lines: string[] };
+      sourceRange: { startLine: number; endLine: number };
+      matchedLines: { line: number; snippet: string }[];
+      date?: string;
+      sortDate?: string;
+      answerContext?: string;
     };
 
     const parseHeading = (line: string): Omit<SearchHeading, "line"> | null => {
@@ -8596,11 +8650,46 @@ Flags:
       return { level: (m[1] || "").length, title: parseHeadlineTitleForRoam(`${m[1]} ${rest}`), todo, tags };
     };
 
+    const dateKeyFromFile = (file: string): string => {
+      const base = path.basename(file);
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(base) || /^(\d{4})(\d{2})(\d{2})/.exec(base);
+      return m ? `${m[1]}-${m[2]}-${m[3]}` : "";
+    };
+
+    const dateKeyFromLines = (lines: string[], start: number, end: number): string => {
+      for (let j = Math.max(0, start); j <= Math.min(lines.length - 1, end); j += 1) {
+        const found = extractDateFromTimestamp(lines[j] || "");
+        if (found) return found;
+      }
+      return "";
+    };
+
+    const subtreeEndLine = (lines: string[], heading: SearchHeading | undefined, matchLine: number): number => {
+      if (!heading) return matchLine;
+      for (let j = heading.line + 1; j < lines.length; j += 1) {
+        const parsed = parseHeading(lines[j] || "");
+        if (parsed && parsed.level <= heading.level) return Math.max(heading.line, j - 1);
+      }
+      return Math.max(heading.line, lines.length - 1);
+    };
+
+    const inDateWindow = (date: string): boolean => {
+      if (!dateFrom && !dateTo) return true;
+      if (!date) return false;
+      if (dateFrom && date < dateFrom) return false;
+      if (dateTo && date > dateTo) return false;
+      return true;
+    };
+
     const hits: SearchHit[] = [];
+    const subtreeHits = new Map<string, SearchHit>();
     let skippedFileCount = 0;
 
     for (const filePath of files) {
       try {
+        const normalizedFile = filePath.toLowerCase();
+        if (fileZoneFilters.length && !fileZoneFilters.some((zone) => normalizedFile.includes(zone))) continue;
+
         const raw = fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
         const lines = raw.split("\n");
         const stack: SearchHeading[] = [];
@@ -8618,20 +8707,58 @@ Flags:
           if (todoFilters.size && (!current?.todo || !todoFilters.has(current.todo.toUpperCase()))) continue;
           if (tagFilters.size && !Array.from(tagFilters).every((tag) => current?.tags.map((t) => t.toLowerCase()).includes(tag))) continue;
           if (headingNeedle && !(current?.title || "").toLowerCase().includes(headingNeedle)) continue;
-          const start = Math.max(0, j - context);
-          const end = Math.min(lines.length - 1, j + context);
-          hits.push({
+
+          const fileDate = dateKeyFromFile(filePath);
+          const headingEnd = subtreeEndLine(lines, current, j);
+          const headingDate = current ? dateKeyFromLines(lines, current.line, headingEnd) : dateKeyFromLines(lines, j, j);
+          const sortDate = headingDate || fileDate;
+          if (!inDateWindow(sortDate)) continue;
+
+          const headingAncestry: SearchHeadingRef[] = stack.map((h) => ({
+            level: h.level,
+            title: h.title,
+            line: h.line,
+            lineNumber: h.line + 1,
+          }));
+
+          const sourceStart = querySubtree && current ? current.line : j;
+          const sourceEnd = querySubtree && current ? headingEnd : j;
+          const start = querySubtree ? sourceStart : Math.max(0, j - context);
+          const end = querySubtree ? sourceEnd : Math.min(lines.length - 1, j + context);
+          const key = `${filePath}:${sourceStart + 1}:${sourceEnd + 1}`;
+          const match = { line: j + 1, snippet: line.trim() };
+
+          if (querySubtree) {
+            const existing = subtreeHits.get(key);
+            if (existing) {
+              existing.matchedLines.push(match);
+              if (!existing.snippet && match.snippet) existing.snippet = match.snippet;
+              continue;
+            }
+          }
+
+          const hit: SearchHit = {
             file: filePath,
-            line: j + 1,
-            lineEnd: j + 1,
+            line: querySubtree ? sourceStart + 1 : j + 1,
+            lineEnd: querySubtree ? sourceEnd + 1 : j + 1,
             heading: current?.title,
             headingLine: current ? current.line + 1 : undefined,
+            headingLevel: current?.level,
+            headingAncestry,
             id: current?.id,
             todo: current?.todo,
             tags: current?.tags || [],
             snippet: line.trim(),
             context: { startLine: start + 1, endLine: end + 1, lines: lines.slice(start, end + 1) },
-          });
+            sourceRange: { startLine: sourceStart + 1, endLine: sourceEnd + 1 },
+            matchedLines: [match],
+            date: sortDate || undefined,
+            sortDate: sortDate || undefined,
+            ...(queryAnswerContext ? { answerContext: lines.slice(start, end + 1).join("\n") } : {}),
+          };
+
+          if (querySubtree) subtreeHits.set(key, hit);
+          hits.push(hit);
         }
       } catch (err) {
         skippedFileCount += 1;
@@ -8639,25 +8766,39 @@ Flags:
       }
     }
 
+    if (querySubtree) {
+      hits.splice(0, hits.length, ...Array.from(subtreeHits.values()));
+    }
+
     if (skippedFileCount > 0 && !verboseErrors) {
       console.error(`Skipped ${skippedFileCount} file(s) due to parse errors (use --verbose-errors to see details).`);
     }
 
-    const dateKey = (file: string): string => {
-      const base = path.basename(file);
-      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(base) || /^(\d{4})(\d{2})(\d{2})/.exec(base);
-      return m ? `${m[1]}-${m[2]}-${m[3]}` : "";
-    };
     const normalizedSort = String(searchSort || "scan").toLowerCase();
     if (["date-desc", "newest", "recent"].includes(normalizedSort)) {
-      hits.sort((a, b) => dateKey(b.file).localeCompare(dateKey(a.file)) || a.file.localeCompare(b.file) || a.line - b.line);
+      hits.sort((a, b) => (b.sortDate || "").localeCompare(a.sortDate || "") || a.file.localeCompare(b.file) || a.line - b.line);
     } else if (["date-asc", "oldest"].includes(normalizedSort)) {
-      hits.sort((a, b) => dateKey(a.file).localeCompare(dateKey(b.file)) || a.file.localeCompare(b.file) || a.line - b.line);
+      hits.sort((a, b) => (a.sortDate || "").localeCompare(b.sortDate || "") || a.file.localeCompare(b.file) || a.line - b.line);
     }
     const limitedHits = hits.slice(0, limit);
 
     if (searchFormat === "json") {
-      process.stdout.write(JSON.stringify({ $schema: "org2:search:v1", query: searchTerm, results: limitedHits }, null, 2) + "\n");
+      process.stdout.write(
+        JSON.stringify(
+          {
+            $schema: "org2:search:v1",
+            query: searchTerm,
+            mode: querySubtree ? "subtree" : "line",
+            sort: normalizedSort,
+            ...(dateFrom ? { dateFrom } : {}),
+            ...(dateTo ? { dateTo } : {}),
+            ...(fileZoneFilters.length ? { fileZones: searchFileZoneFiltersRaw } : {}),
+            results: limitedHits,
+          },
+          null,
+          2,
+        ) + "\n",
+      );
       return;
     }
     if (limitedHits.length === 0) {
