@@ -61,6 +61,7 @@ Org2 is still early alpha, but it is already credible for real work if your stac
 - [[file:knowledge-compiler-roadmap.org][Knowledge compiler roadmap]]
 - [[file:tooling-reference.org][Tooling reference]]
 - [[file:llm-consumers.org][External LLM consumer pattern]]
+- [[file:openclaw-knowledge-layer.org][OpenClaw knowledge layer]]
 - [[file:ai-processing-architecture.org][AI processing architecture]]
 - [[file:ai-job-manifests.org][AI job manifests]]
 - [[file:ai-draft-artifacts.org][AI draft artifacts]]
