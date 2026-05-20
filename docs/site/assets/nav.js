@@ -43,8 +43,12 @@
 
       el.addEventListener('mouseleave', function () {
         if (isMobile()) return;
-        el.removeAttribute('open');
-        summary.setAttribute('aria-expanded', 'false');
+        window.setTimeout(function () {
+          if (!el.matches(':hover') && !el.contains(document.activeElement)) {
+            el.removeAttribute('open');
+            summary.setAttribute('aria-expanded', 'false');
+          }
+        }, 120);
       });
 
       summary.addEventListener('click', function (event) {
