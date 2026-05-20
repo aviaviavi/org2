@@ -25,6 +25,7 @@ import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
 import { compileCorpus, renderCompiledCorpus } from "./corpusCompile.js";
 import { loadAiJobManifest, validateAiJobManifest } from "./aiJobManifest.js";
+import { createAiAdapterRequest, MockAiAdapter, type AiAdapterContextItem, type AiAdapterResponse } from "./aiAdapter.js";
 import { buildGeneratedArtifactMetadata, formatOrg2ArtifactPropertyDrawer, sha256Hex } from "./artifactMetadata.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import {
@@ -5888,27 +5889,267 @@ function sourceExcerptBullets(sources: AiDraftSource[], maxPerFile: number): str
   return out;
 }
 
-function renderEntityExtraction(sources: AiDraftSource[]): string {
-  const counts = new Map<string, number>();
-  const re = /\b[A-Z][A-Za-z0-9]*(?:[\s-]+[A-Z][A-Za-z0-9]*){0,3}\b/g;
+const GENERIC_ENTITY_STOP_WORDS = new Set([
+  "TODO",
+  "DONE",
+  "CANCELLED",
+  "IN",
+  "PROPERTIES",
+  "END",
+  "TITLE",
+  "ID",
+  "THE",
+  "A",
+  "AN",
+  "MONDAY",
+  "TUESDAY",
+  "WEDNESDAY",
+  "THURSDAY",
+  "FRIDAY",
+  "SATURDAY",
+  "SUNDAY",
+]);
+
+type AiDraftSourceLine = {
+  source: AiDraftSource;
+  line: number;
+  text: string;
+  citation: string;
+};
+
+type MeetingSummaryJson = {
+  summary: string[];
+  decisions: Array<{ text: string; citations: string[] }>;
+  actionItems: Array<{ text: string; todo: string; citations: string[] }>;
+  entities: Array<{ name: string; mentions: number; citations: string[] }>;
+  suggestedLinks: Array<{ label: string; reason: string; confidence: string; citations: string[] }>;
+  citations: Array<{ file: string; line: number; label: string }>;
+};
+
+function orgCitationLink(source: AiDraftSource, line: number): string {
+  return `[[file:${source.relativePath}::${line}][${source.relativePath}:${line}]]`;
+}
+
+function collectAiDraftSourceLines(sources: AiDraftSource[]): AiDraftSourceLine[] {
+  const out: AiDraftSourceLine[] = [];
   for (const source of sources) {
+    const lines = source.text.split("\n");
+    for (let index = 0; index < lines.length; index += 1) {
+      const text = stripOrgMarkupForSnippet(lines[index] || "");
+      if (!text || text.length < 3) continue;
+      out.push({
+        source,
+        line: index + 1,
+        text,
+        citation: orgCitationLink(source, index + 1),
+      });
+    }
+  }
+  return out;
+}
+
+function normalizeMeetingItemText(raw: string): string {
+  return String(raw || "")
+    .replace(/^[-+*]\s+/, "")
+    .replace(/^TODO\s+/i, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.;:]?$/, ".");
+}
+
+function firstUniqueMeetingLines(lines: AiDraftSourceLine[], predicate: (line: AiDraftSourceLine) => boolean, limit: number): AiDraftSourceLine[] {
+  const seen = new Set<string>();
+  const out: AiDraftSourceLine[] = [];
+  for (const line of lines) {
+    if (!predicate(line)) continue;
+    const key = normalizeMeetingItemText(line.text).toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(line);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function collectMeetingEntities(lines: AiDraftSourceLine[]): Array<{ name: string; mentions: number; citations: string[] }> {
+  const entities = new Map<string, { mentions: number; citations: string[] }>();
+  const re = /\b[A-Z][A-Za-z0-9]*(?:[\s-]+[A-Z][A-Za-z0-9]*){0,3}\b/g;
+  for (const line of lines) {
     let match: RegExpExecArray | null;
-    while ((match = re.exec(source.text)) !== null) {
+    while ((match = re.exec(line.text)) !== null) {
       const entity = String(match[0] || "").trim();
       if (entity.length < 3) continue;
-      counts.set(entity, (counts.get(entity) || 0) + 1);
+      if (GENERIC_ENTITY_STOP_WORDS.has(entity.toUpperCase())) continue;
+      const current = entities.get(entity) || { mentions: 0, citations: [] };
+      current.mentions += 1;
+      if (!current.citations.includes(line.citation)) current.citations.push(line.citation);
+      entities.set(entity, current);
     }
   }
 
-  const entities = Array.from(counts.entries())
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  return Array.from(entities.entries())
+    .map(([name, value]) => ({ name, mentions: value.mentions, citations: value.citations.slice(0, 3) }))
+    .sort((a, b) => b.mentions - a.mentions || a.name.localeCompare(b.name))
     .slice(0, 25);
-
-  if (entities.length === 0) return "- No obvious title-case entities found; review the source excerpts manually.\n";
-  return entities.map(([entity, count]) => `- ${entity} (${count})`).join("\n") + "\n";
 }
 
-function renderAiGeneratedDraft(manifest: Record<string, unknown>, sources: AiDraftSource[], outputPath: string): string {
+function renderEntityExtraction(sources: AiDraftSource[]): string {
+  const entities = collectMeetingEntities(collectAiDraftSourceLines(sources));
+
+  if (entities.length === 0) return "- No obvious title-case entities found; review the source excerpts manually.\n";
+  return entities.map((entity) => `- ${entity.name} (${entity.mentions})`).join("\n") + "\n";
+}
+
+function buildMeetingSummaryJson(sources: AiDraftSource[]): MeetingSummaryJson {
+  const lines = collectAiDraftSourceLines(sources);
+  const decisionLines = firstUniqueMeetingLines(
+    lines,
+    (line) => /\b(decided|decision|agreed|approved|resolved|chose|committed|ship(?:ped)?)\b/i.test(line.text),
+    8,
+  );
+  const actionLines = firstUniqueMeetingLines(
+    lines,
+    (line) => /\b(TODO|will|needs? to|follow[- ]?up|action(?: item)?|owner|next step|before|by\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|launch))\b/i.test(line.text),
+    10,
+  );
+  const summaryLines = firstUniqueMeetingLines(
+    lines,
+    (line) => !/^#+/.test(line.text) && !/^:/.test(line.text),
+    5,
+  );
+  const entities = collectMeetingEntities(lines);
+  const citedLines = [...decisionLines, ...actionLines, ...summaryLines]
+    .filter((line, index, arr) => arr.findIndex((candidate) => candidate.source.relativePath === line.source.relativePath && candidate.line === line.line) === index)
+    .slice(0, 20);
+
+  return {
+    summary: summaryLines.length > 0
+      ? summaryLines.slice(0, 3).map((line) => `${normalizeMeetingItemText(line.text)} ${line.citation}`)
+      : ["Review the cited source excerpts; no substantive transcript lines were detected."],
+    decisions: decisionLines.map((line) => ({ text: normalizeMeetingItemText(line.text), citations: [line.citation] })),
+    actionItems: actionLines.map((line) => ({ text: normalizeMeetingItemText(line.text), todo: `TODO ${normalizeMeetingItemText(line.text)}`, citations: [line.citation] })),
+    entities,
+    suggestedLinks: entities.slice(0, 8).map((entity) => ({
+      label: entity.name,
+      reason: `Title-case entity mentioned ${entity.mentions} time${entity.mentions === 1 ? "" : "s"}; review whether it matches an existing Org2 node before promoting.`,
+      confidence: entity.mentions > 1 ? "medium" : "low",
+      citations: entity.citations,
+    })),
+    citations: citedLines.map((line) => ({ file: line.source.relativePath, line: line.line, label: `${line.source.relativePath}:${line.line}` })),
+  };
+}
+
+function createMeetingSummaryAdapterResponse(manifest: Record<string, unknown>, sources: AiDraftSource[]): AiAdapterResponse {
+  const adapter = nestedRecord(manifest, "adapter");
+  const adapterName = stringField(adapter, "name") || "mock";
+  const model = stringField(adapter, "model") || "deterministic-meeting-summary";
+  const json = buildMeetingSummaryJson(sources);
+  const text = [
+    "Meeting summary draft generated from supplied Org2 source context.",
+    "Review all sections against the citations before promotion.",
+  ].join("\n");
+
+  return {
+    schema: "org2:ai-adapter-response:v1",
+    text,
+    json,
+    citations: json.citations.map((citation) => ({ source: { file: citation.file, line: citation.line } })),
+    metadata: {
+      adapterName,
+      model,
+      provider: "mock",
+      invocationId: `mock-${sha256Hex(sources.map((source) => source.sha256).join(":")).slice(0, 12)}`,
+      completedAt: new Date().toISOString(),
+    },
+  };
+}
+
+function buildAiAdapterContextItems(sources: AiDraftSource[]): AiAdapterContextItem[] {
+  return sources.map((source, index) => ({
+    id: `source-${index + 1}`,
+    type: "raw-transcript",
+    title: source.relativePath,
+    text: source.text,
+    sourceRefs: [{ file: source.relativePath, line: 1, endLine: source.lineCount }],
+    metadata: { sha256: source.sha256 },
+  }));
+}
+
+async function generateAiDraftResponse(manifest: Record<string, unknown>, sources: AiDraftSource[]): Promise<AiAdapterResponse | null> {
+  const task = nestedRecord(manifest, "task");
+  const adapter = nestedRecord(manifest, "adapter");
+  const provenance = nestedRecord(manifest, "provenance");
+  const taskType = stringField(task, "type") || "summarize";
+  if (taskType !== "summarize-meeting") return null;
+
+  const adapterName = stringField(adapter, "name") || "mock";
+  const model = stringField(adapter, "model") || "deterministic-meeting-summary";
+  const response = createMeetingSummaryAdapterResponse(manifest, sources);
+  const mock = new MockAiAdapter({
+    name: adapterName,
+    model,
+    responder: () => response,
+  });
+  return mock.generate(createAiAdapterRequest({
+    jobId: stringField(manifest, "id"),
+    task: {
+      type: taskType,
+      template: stringField(task, "template"),
+      instructions: stringField(task, "instructions"),
+    },
+    prompt: [
+      { role: "system", content: "Use only supplied Org2 transcript context. Preserve citations and produce reviewable output." },
+      { role: "user", content: stringField(task, "instructions") || `Run ${taskType}.` },
+    ],
+    context: buildAiAdapterContextItems(sources),
+    output: { contentType: "text+json", schemaHint: stringField(task, "template") || taskType },
+    provenance: {
+      requireSourceRefs: Boolean(provenance.requireSourceRefs),
+      promptTemplateVersion: stringField(provenance, "promptTemplateVersion") || stringField(task, "template"),
+    },
+  }));
+}
+
+function bulletOrFallback(items: string[], fallback: string): string {
+  return items.length > 0 ? items.map((item) => `- ${item}`).join("\n") + "\n" : `- ${fallback}\n`;
+}
+
+function renderCitedItems(items: Array<{ text: string; citations: string[] }>, fallback: string): string {
+  if (items.length === 0) return `- ${fallback}\n`;
+  return items.map((item) => `- ${item.text} ${item.citations.join(" ")}`).join("\n") + "\n";
+}
+
+function renderTodoItems(items: Array<{ todo: string; citations: string[] }>, fallback: string): string {
+  if (items.length === 0) return `- ${fallback}\n`;
+  return items.map((item) => `- ${item.todo} ${item.citations.join(" ")}`).join("\n") + "\n";
+}
+
+function renderMeetingSummarySections(response: AiAdapterResponse | null | undefined): string | null {
+  if (!response || !response.json || typeof response.json !== "object" || Array.isArray(response.json)) return null;
+  const json = response.json as Partial<MeetingSummaryJson>;
+  const summary = Array.isArray(json.summary) ? json.summary.map((item) => String(item || "").trim()).filter(Boolean) : [];
+  const decisions = Array.isArray(json.decisions) ? json.decisions : [];
+  const actionItems = Array.isArray(json.actionItems) ? json.actionItems : [];
+  const entities = Array.isArray(json.entities) ? json.entities : [];
+  const suggestedLinks = Array.isArray(json.suggestedLinks) ? json.suggestedLinks : [];
+  const citations = Array.isArray(json.citations) ? json.citations : [];
+
+  return `* Generated meeting summary
+** Summary
+${bulletOrFallback(summary, "Review the source excerpts manually; no generated summary was returned.")}
+** Key decisions
+${renderCitedItems(decisions, "No explicit decisions detected; verify against source excerpts.")}
+** Action items / TODO suggestions
+${renderTodoItems(actionItems, "No explicit action items detected; verify against source excerpts.")}
+** People, orgs, and project entities
+${entities.length > 0 ? entities.map((entity) => `- ${entity.name} (${entity.mentions} mention${entity.mentions === 1 ? "" : "s"}) ${entity.citations.join(" ")}`).join("\n") + "\n" : "- No obvious people/org/project entities detected.\n"}
+** Suggested links
+${suggestedLinks.length > 0 ? suggestedLinks.map((link) => `- =${link.label}= (${link.confidence} confidence): ${link.reason} ${link.citations.join(" ")}`).join("\n") + "\n" : "- No suggested links; add links manually after review.\n"}
+** Source citations
+${citations.length > 0 ? citations.map((citation) => `- [[file:${citation.file}::${citation.line}][${citation.label}]]`).join("\n") + "\n" : "- See source excerpts below.\n"}`;
+}
+
+function renderAiGeneratedDraft(manifest: Record<string, unknown>, sources: AiDraftSource[], outputPath: string, adapterResponse?: AiAdapterResponse | null): string {
   const id = stringField(manifest, "id") || "ai-draft";
   const description = stringField(manifest, "description");
   const task = nestedRecord(manifest, "task");
@@ -5918,8 +6159,8 @@ function renderAiGeneratedDraft(manifest: Record<string, unknown>, sources: AiDr
   const taskType = stringField(task, "type") || "summarize";
   const promptTemplate = stringField(task, "template");
   const instructions = stringField(task, "instructions");
-  const adapterName = stringField(adapter, "name") || "unspecified";
-  const model = stringField(adapter, "model") || "unspecified";
+  const adapterName = adapterResponse?.metadata.adapterName || stringField(adapter, "name") || "unspecified";
+  const model = adapterResponse?.metadata.model || stringField(adapter, "model") || "unspecified";
   const target = stringField(output, "target") || "views";
   const reviewPolicy = stringField(review, "policy") || "require-approval";
   const reviewStatus = reviewPolicy === "require-approval" ? "review-required" : "generated";
@@ -5942,8 +6183,12 @@ function renderAiGeneratedDraft(manifest: Record<string, unknown>, sources: AiDr
   const sourceList = sources.map((source) => `- ${source.relativePath} (${source.lineCount} lines, sha256:${source.sha256.slice(0, 12)}…)`).join("\n");
   const summaryBullets = excerpts.length > 0 ? excerpts.slice(0, 10).join("\n") : "- No substantive source lines found.";
   const extraction = taskType === "extract-entities" ? renderEntityExtraction(sources) : "";
+  const generatedBody = taskType === "summarize-meeting"
+    ? renderMeetingSummarySections(adapterResponse) || `* Generated meeting summary\n** Summary\n${summaryBullets}\n`
+    : `* Generated ${taskType === "extract-entities" ? "extraction" : "summary"}\n${taskType === "extract-entities" ? extraction : summaryBullets + "\n"}`;
+  const modelRun = adapterResponse?.metadata.invocationId ? `- Adapter invocation: =${adapterResponse.metadata.invocationId}=\n` : "";
 
-  return `#+TITLE: ${title}\n${drawer}\n* Review checklist\n- [ ] Verify every generated claim against the cited source lines.\n- [ ] Edit this draft until it is safe for canonical notes.\n- [ ] Set =ORG2_REVIEW_STATUS= to =reviewed= before running =org2 ai promote=.\n\n* Job\n- Job: =${id}=\n- Task: =${taskType}=\n- Adapter: =${adapterName}=\n- Model: =${model}=\n${promptTemplate ? `- Prompt/template: =${promptTemplate}=\n` : ""}${instructions ? `- Instructions: ${instructions}\n` : ""}\n* Sources\n${sourceList}\n\n* Generated ${taskType === "extract-entities" ? "extraction" : "summary"}\n${taskType === "extract-entities" ? extraction : summaryBullets + "\n"}\n* Source excerpts\n${excerpts.length > 0 ? excerpts.join("\n") : "- No source excerpts available."}\n`;
+  return `#+TITLE: ${title}\n${drawer}\n* Review checklist\n- [ ] Verify every generated claim against the cited source lines.\n- [ ] Edit this draft until it is safe for canonical notes.\n- [ ] Set =ORG2_REVIEW_STATUS= to =reviewed= before running =org2 ai promote=.\n\n* Job\n- Job: =${id}=\n- Task: =${taskType}=\n- Adapter: =${adapterName}=\n- Model: =${model}=\n${modelRun}${promptTemplate ? `- Prompt/template: =${promptTemplate}=\n` : ""}${instructions ? `- Instructions: ${instructions}\n` : ""}\n* Sources\n${sourceList}\n\n${generatedBody}\n* Source excerpts\n${excerpts.length > 0 ? excerpts.join("\n") : "- No source excerpts available."}\n`;
 }
 
 function removeTopPropertyDrawer(raw: string): string {
@@ -6175,6 +6420,7 @@ async function main(): Promise<void> {
   let aiJobFile = "";
   let aiFormat: "text" | "json" = "text";
   let aiOut = "";
+  let aiTask = "";
   let aiPromoteFile = "";
   let aiPromoteToFile = "";
   let aiApply = false;
@@ -6952,6 +7198,14 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--task") {
+      i++;
+      if (i < args.length) {
+        if (command === "ai") {
+          aiTask = args[i]!;
+        }
+        i++;
+      }
     } else if (arg === "--title") {
       i++;
       if (i < args.length) {
@@ -7346,6 +7600,7 @@ Roam / IDs:
   org2 compile corpus --dir DIR [--recursive] [--out FILE] [--format json|jsonl]
   org2 ai validate-job --job FILE [--format text|json]
   org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
+  org2 ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
   org2 ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
   org2 roam db-sync --dir DIR [--recursive] [--apply]
   org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply]
@@ -7357,6 +7612,7 @@ Maintenance / health:
   org2 compile corpus [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl]
   org2 ai validate-job --job FILE [--format text|json]
   org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
+  org2 ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
   org2 ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
   org2 lint [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
   org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]
@@ -7630,6 +7886,7 @@ Checks:
 Usage:
   org2 ai validate-job --job FILE [--format text|json]
   org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
+  org2 ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
   org2 ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
 
 Flags:
@@ -7793,22 +8050,42 @@ Flags:
       return;
     }
 
-    if (!aiJobFile) {
-      console.error(`Error: org2 ai ${aiAction} requires --job FILE`);
+    if (!aiJobFile && !(aiAction === "run" && aiTask && files.length > 0)) {
+      console.error(`Error: org2 ai ${aiAction} requires --job FILE${aiAction === "run" ? " or --task TASK --file FILE" : ""}`);
       process.exit(1);
     }
 
     let manifest: unknown;
-    try {
-      manifest = loadAiJobManifest(aiJobFile);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (aiFormat === "json") {
-        console.log(JSON.stringify({ $schema: "org2:ai-job-validation:v1", job: aiJobFile, valid: false, issues: [{ path: "$", message }] }, null, 2));
-      } else {
-        console.error(`Error: ${message}`);
+    if (aiJobFile) {
+      try {
+        manifest = loadAiJobManifest(aiJobFile);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (aiFormat === "json") {
+          console.log(JSON.stringify({ $schema: "org2:ai-job-validation:v1", job: aiJobFile, valid: false, issues: [{ path: "$", message }] }, null, 2));
+        } else {
+          console.error(`Error: ${message}`);
+        }
+        process.exit(1);
       }
-      process.exit(1);
+    } else {
+      manifest = {
+        schemaVersion: "org2-ai-job/v1",
+        id: `inline-${aiTask.replace(/[^a-z0-9_.-]+/gi, "-").replace(/^-+|-+$/g, "") || "ai-run"}`,
+        description: `Inline ${aiTask} AI draft run`,
+        input: { files },
+        task: {
+          type: aiTask,
+          template: aiTask === "summarize-meeting" ? "meeting-summary@v1" : aiTask,
+          instructions: aiTask === "summarize-meeting"
+            ? "Summarize the meeting into a concise brief with key decisions, action items, entities, suggested links, and source citations."
+            : `Run ${aiTask} on the supplied Org2 source files.`,
+        },
+        adapter: { name: "local-test", model: aiTask === "summarize-meeting" ? "deterministic-meeting-summary" : "deterministic-fixture" },
+        output: { target: aiOut ? "views" : "stdout", path: aiOut || undefined },
+        provenance: { requireSourceRefs: true, promptTemplateVersion: aiTask === "summarize-meeting" ? "meeting-summary@v1" : aiTask, recordModelMetadata: true, recordGeneratedAt: true },
+        review: { policy: "require-approval", reviewer: "human" },
+      };
     }
 
     const validation = validateAiJobManifest(manifest);
@@ -7850,7 +8127,8 @@ Flags:
       const outputPathRaw = aiOut || manifestOutputPath;
       const outputPath = outputPathRaw ? resolveWorkspaceRelative(workspaceDir, outputPathRaw, "output.path") : "";
       const sources = readAiDraftSources(manifest, workspaceDir);
-      const artifactText = renderAiGeneratedDraft(manifest, sources, outputPathRaw || "stdout.org2");
+      const adapterResponse = await generateAiDraftResponse(manifest, sources);
+      const artifactText = renderAiGeneratedDraft(manifest, sources, outputPathRaw || "stdout.org2", adapterResponse);
 
       if (outputTarget === "stdout" && !aiOut) {
         if (aiFormat === "json") {

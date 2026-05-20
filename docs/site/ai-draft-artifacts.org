@@ -12,6 +12,32 @@ npm run org2 -- ai run --job jobs/team-sync.org2-ai.json --out views/team-sync-s
 
 Without =--apply=, the command prints a safe preview and writes nothing.
 
+* Meeting/transcript summarization
+
+=summarize-meeting= is the first concrete AI workflow. A manifest such as =examples/jobs/meeting-summary.org2-ai.json= turns raw meeting or transcript material into a reviewable Org2 artifact:
+
+#+begin_src sh
+npm run org2 -- ai run \
+  --task summarize-meeting \
+  --file raw/meeting.org2 \
+  --out views/meeting-summary.org2
+
+npm run org2 -- ai run \
+  --job examples/jobs/meeting-summary.org2-ai.json \
+  --out views/meeting-summary.org2
+#+end_src
+
+The generated draft is safe-by-default: preview-only unless =--apply= is passed, stored as a generated =view= artifact, and marked =ORG2_REVIEW_STATUS: review-required=. The body includes:
+
+- a concise meeting summary
+- key decisions with =file:path::line= citations
+- TODO-style action item suggestions
+- people/org/project entity candidates
+- suggested link candidates that must be reviewed before promotion
+- source citation and provenance metadata, including source hashes and adapter/model metadata
+
+The built-in deterministic mock adapter keeps tests and local examples provider-free while exercising the same adapter/request boundary that hosted or local model adapters can implement later.
+
 * Draft format
 
 A generated draft starts with an Org2 property drawer:
