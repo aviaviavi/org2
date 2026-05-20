@@ -6268,11 +6268,11 @@ function collectAiEntitySuggestions(targetFiles: string[], labelIndex: Map<strin
 }
 
 async function buildAiLinkSuggestionReport(options: { dir: string; recursive: boolean; targetFiles: string[]; out?: string }): Promise<AiLinkSuggestionReport> {
-  const allFiles = listOrgLikeFiles(options.dir, options.recursive);
+  const explicitTargets = new Set(options.targetFiles.map((file) => path.resolve(file)));
+  const allFiles = explicitTargets.size > 0 ? Array.from(explicitTargets) : listOrgLikeFiles(options.dir, options.recursive);
   const labelIndex = buildRoamLinkifyIndex(allFiles);
   const graph = buildRoamGraph(allFiles);
   const maintenance = buildRoamGraphMaintenanceReport(allFiles, graph);
-  const explicitTargets = new Set(options.targetFiles.map((file) => path.resolve(file)));
   const targetFiles = explicitTargets.size > 0 ? allFiles.filter((file) => explicitTargets.has(path.resolve(file))) : allFiles;
   const targetSet = new Set(targetFiles.map((file) => path.resolve(file)));
   const suggestions: AiLinkEntitySuggestion[] = [];
@@ -8751,11 +8751,14 @@ Flags:
 
 
     if (roamAction === "linkify") {
-      const allFilesUnfiltered = listOrgLikeFiles(dir, recursive);
+      const explicitTargetFiles = roamLinkifyFile ? [roamLinkifyFile] : files;
+      const allFilesUnfiltered = explicitTargetFiles.length > 0
+        ? Array.from(new Set([...listOrgLikeFiles(dir, recursive), ...explicitTargetFiles.map((file) => path.resolve(file))]))
+        : listOrgLikeFiles(dir, recursive);
       const allFiles = filterRoamLinkifyFiles(allFilesUnfiltered, dir, roamLinkifyExcludes);
       const labelIndex = buildRoamLinkifyIndex(allFiles);
-      const targetFiles = roamLinkifyFile
-        ? filterRoamLinkifyFiles([path.resolve(roamLinkifyFile)], dir, roamLinkifyExcludes)
+      const targetFiles = explicitTargetFiles.length > 0
+        ? filterRoamLinkifyFiles(explicitTargetFiles.map((file) => path.resolve(file)), dir, roamLinkifyExcludes)
         : allFiles;
       const results: RoamLinkifyFileResult[] = [];
       let appliedCount = 0;
@@ -8838,7 +8841,7 @@ Flags:
     }
 
     if (roamAction === "graph") {
-      const allFiles = listOrgLikeFiles(dir, recursive);
+      const allFiles = files.length > 0 ? files.map((file) => path.resolve(file)) : listOrgLikeFiles(dir, recursive);
       const graph = buildRoamGraph(allFiles);
       const outputPath = path.resolve(roamGraphOut || path.join(dir, "org2-roam-graph.html"));
 
