@@ -51,6 +51,15 @@ assert.match(preview.stdout, /ORG2_REVIEW_STATUS: review-required/);
 assert.match(preview.stdout, /file:notes\/meeting\.org2/);
 assert.equal(fs.existsSync(path.join(tmp, 'views', 'team-sync-summary.org2')), false);
 
+const inlinePreview = run(['ai', 'run', '--task', 'summarize-meeting', '--file', 'notes/meeting.org2', '--out', 'views/inline-summary.org2', '--format', 'json'], tmp);
+assert.equal(inlinePreview.status, 0, inlinePreview.stderr || inlinePreview.stdout);
+const inlinePreviewJson = JSON.parse(inlinePreview.stdout);
+assert.equal(inlinePreviewJson.applied, false);
+assert.match(inlinePreviewJson.artifact, /Task: =summarize-meeting=/);
+assert.match(inlinePreviewJson.artifact, /Key decisions/);
+assert.match(inlinePreviewJson.artifact, /ORG2_PROMPT_TEMPLATE: meeting-summary@v1/);
+assert.equal(fs.existsSync(path.join(tmp, 'views', 'inline-summary.org2')), false);
+
 const applied = run(['ai', 'run', '--job', 'job.json', '--apply', '--format', 'json'], tmp);
 assert.equal(applied.status, 0, applied.stderr || applied.stdout);
 const appliedJson = JSON.parse(applied.stdout);
@@ -59,6 +68,15 @@ const draftPath = path.join(tmp, 'views', 'team-sync-summary.org2');
 let draft = fs.readFileSync(draftPath, 'utf8');
 assert.match(draft, /:ORG2_PROMPT_TEMPLATE: meeting-summary@v1/);
 assert.match(draft, /\[\[file:notes\/meeting\.org2::2\]\[notes\/meeting\.org2:2\]\]/);
+assert.match(draft, /\* Generated meeting summary/);
+assert.match(draft, /\*\* Key decisions/);
+assert.match(draft, /Alice decided to ship the parser cleanup/);
+assert.match(draft, /\*\* Action items \/ TODO suggestions/);
+assert.match(draft, /TODO Bob will update the release checklist/);
+assert.match(draft, /\*\* People, orgs, and project entities/);
+assert.match(draft, /=Search Alpha=.*review whether it matches an existing Org2 node/s);
+assert.match(draft, /\*\* Source citations/);
+assert.match(draft, /Adapter invocation: =mock-/);
 
 const lint = run(['lint', '--file', 'views/team-sync-summary.org2', '--format', 'json'], tmp);
 assert.equal(lint.status, 0, lint.stderr || lint.stdout);

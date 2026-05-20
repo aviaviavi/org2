@@ -32,6 +32,7 @@ npm run build
   - agenda, TODO/planning edits, capture, archive/refile
   - roam backlinks/IDs/dailies
   - HTML export
+  - AI draft review workflows, including meeting/transcript summary drafts
 - LSP-backed editing:
   - definitions, hovers, completion, rename, formatting, code lens, and more
 
@@ -82,6 +83,8 @@ The extension can edit planning keywords, run quick capture, archive subtrees, r
 - Command: **Org2: Export Workspace Org Files to HTML** (`org2.exportWorkspaceHtml`) → preview batch export count, then optionally write HTML for all workspace Org files (and an optional generated index page)
 - Command: **Org2: Corpus Lint — Graph & Artifact Health** (`org2.lintWorkspaceCorpus`) → runs `org2 lint` recursively in the workspace and reports graph/artifact health issues, including broken `id:` links, unresolved or ambiguous wiki links, raw/canonical vs generated trust-boundary mistakes, and raw -> notes -> compiled -> views -> publish corpus-flow mismatches, in the output pane
 - Command: **Org2: Compile Workspace Corpus Artifact** (`org2.compileWorkspaceCorpus`) → prompts for a JSON/JSONL output path, runs `org2 compile corpus` recursively against the workspace, and opens the generated machine-readable corpus artifact
+- Command: **Org2: AI — Write Draft Artifact** (`org2.aiRunDraft`) → picks an AI job manifest, previews `org2 ai run`, then writes review-required draft artifacts such as meeting/transcript summaries with citations and TODO/link suggestions after confirmation
+- Command: **Org2: AI — Promote Reviewed Draft** (`org2.aiPromoteDraft`) → previews and appends only reviewed generated artifacts into canonical notes
 
 Implementation detail: the extension saves the file (if needed).
 - Planning edits run `org2 plan set ... --apply`.
@@ -90,6 +93,7 @@ Implementation detail: the extension saves the file (if needed).
 - Refile runs `org2 refile ... --format diff` for preview, then `org2 refile ... --apply --format json` if confirmed.
 - Current-file HTML export runs `org2 export html --file ... --format json` for preview and `org2 export html --file ... --out ... --apply --format json` when writing, plus optional export flags from settings (`--css` / `--no-default-style` / `--toc` / `--toc-depth` / `--number-headings` / `--number-headings-depth` / `--rewrite-file-links`).
 - Workspace HTML export runs `org2 export html --dir <agenda-root> --recursive --out-dir <org2.export.outputDir> --format json` for preview, adds optional `--index/--index-title` and export flags (`--css` / `--no-default-style` / `--toc` / `--toc-depth` / `--number-headings` / `--number-headings-depth` / `--rewrite-file-links`) from settings, and adds `--apply` when writing.
+- AI draft writing runs `org2 ai run --job ... --out ...` (or the inline `org2 ai run --task summarize-meeting --file ... --out ...` flow) for preview and adds `--apply` only after confirmation. For `summarize-meeting` jobs, the generated draft includes summary, decisions, TODO suggestions, entity/link candidates, and source citations; promotion remains a separate reviewed-draft command.
 - Exported HTML maps `#+AUTHOR`, `#+DATE`, `#+SUBTITLE`, `#+DESCRIPTION`, and `#+KEYWORDS` into standard HTML `<meta>` tags, respects `#+LANGUAGE` for `<html lang="...">`, injects `#+HTML_HEAD` / `#+HTML_HEAD_EXTRA` snippets into `<head>`, prepends a document title/subtitle header when `#+SUBTITLE` is present, treats `#+OPTIONS: toc:t` like passing `--toc` and `#+OPTIONS: toc:N` like `--toc-depth N` (auto TOC + heading anchors), treats `#+OPTIONS: num:t` like passing `--number-headings` and `#+OPTIONS: num:N` like `--number-headings-depth N`, emits heading anchor IDs for `--toc`, `--toc-depth`, `--rewrite-file-links`, and in-document `[[* Heading]]` / `[[#custom-id]]` links (including `:CUSTOM_ID:` targets), and uses cleaned default labels (`Heading` / `custom-id`) when those in-document links omit descriptions.
 Afterward, the extension refreshes edited files from disk (unless `org2.editor.refreshAfterCliApply` is disabled). Agenda-invoked archive/refile edits also refresh the agenda view immediately.
 
