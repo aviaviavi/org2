@@ -527,6 +527,197 @@ type RoamGraphMaintenanceReport = {
   linkifySuggestions: RoamGraphMaintenanceLinkifySuggestion[];
 };
 
+function findRoamLabelLineForLint(content: string, labelRaw: string): number {
+  const target = normalizeRoamLinkLabel(labelRaw);
+  if (!target) return 1;
+
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    const titleMatch = /^#\+title:\s*(.*?)\s*$/i.exec(line.trim());
+    if (titleMatch && normalizeRoamLinkLabel(titleMatch[1] || "") === target) return i + 1;
+
+    const fileAliasMatch = /^#\+roam_alias(?:es)?:\s*(.*?)\s*$/i.exec(line.trim());
+    if (fileAliasMatch && parseRoamAliasTokens(fileAliasMatch[1] || "").some((alias) => normalizeRoamLinkLabel(alias) === target)) {
+      return i + 1;
+    }
+
+    const headlineMatch = /^(\*+)\s+/.exec(line);
+    if (headlineMatch && normalizeRoamLinkLabel(parseHeadlineTitleForRoam(line)) === target) return i + 1;
+
+    const drawerAliasMatch = /^:ROAM_ALIASES:\s*(.*?)\s*$/i.exec(line.trim());
+    if (drawerAliasMatch && parseRoamAliasTokens(drawerAliasMatch[1] || "").some((alias) => normalizeRoamLinkLabel(alias) === target)) {
+      return i + 1;
+    }
+  }
+
+  return 1;
+}
+
+function appendRoamGraphLintIssues(files: string[], issues: ArtifactLintIssue[]): void {
+  if (files.length === 0) return;
+
+  const graph = buildRoamGraph(files);
+  const maintenance = buildRoamGraphMaintenanceReport(files, graph);
+
+  for (const finding of maintenance.linkFindings) {
+    issues.push({
+      severity: finding.severity,
+      rule: finding.rule,
+      file: finding.file,
+      line: finding.line,
+      message: finding.message,
+    });
+  }
+
+  for (const collision of maintenance.aliasCollisions) {
+    if (collision.nodes.length < 2) continue;
+    const primary = collision.nodes[0];
+    if (!primary) continue;
+
+    let raw = "";
+    try {
+      raw = fs.readFileSync(primary.file, "utf8");
+    } catch {
+      raw = "";
+    }
+
+    const alsoSeen = collision.nodes
+      .slice(1)
+      .map((node) => `${node.label} (${node.file})`)
+      .join(", ");
+
+    issues.push({
+      severity: "warning",
+      rule: "ambiguous-wiki-label",
+      file: primary.file,
+      line: findRoamLabelLineForLint(raw, collision.label),
+      message: `Title/alias '${collision.label}' resolves to multiple roam nodes; ambiguous wiki links should use an id link or a more specific alias (also at ${alsoSeen}).`,
+    });
+  }
+}
+
+function parseLintPropertyLine(rawLine: string): { key: string; value: string } | null {
+  const match = /^:([A-Za-z0-9_\-]+):\s*(.*?)\s*$/.exec(String(rawLine || ""));
+  if (!match) return null;
+  return { key: String(match[1] || "").toUpperCase(), value: String(match[2] || "").trim() };
+}
+
+function collectLintPropertyDrawers(content: string): Array<{ line: number; properties: Map<string, string> }> {
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const drawers: Array<{ line: number; properties: Map<string, string> }> = [];
+
+  const collectDrawerAt = (idx: number): number => {
+    const properties = new Map<string, string>();
+    let endIdx = idx;
+    for (let j = idx + 1; j < lines.length; j += 1) {
+      endIdx = j;
+      const trimmed = (lines[j] || "").trim();
+      if (trimmed === ":END:") {
+        drawers.push({ line: idx + 1, properties });
+        return endIdx;
+      }
+      const parsed = parseLintPropertyLine(trimmed);
+      if (parsed) properties.set(parsed.key, parsed.value);
+    }
+    return endIdx;
+  };
+
+  let idx = 0;
+  while (idx < lines.length) {
+    const trimmed = (lines[idx] || "").trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      idx += 1;
+      continue;
+    }
+    break;
+  }
+  if ((lines[idx] || "").trim() === ":PROPERTIES:") collectDrawerAt(idx);
+
+  let currentHeadlineLine = -1;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] || "";
+    if (/^(\*+)\s+/.test(line)) {
+      currentHeadlineLine = i;
+      continue;
+    }
+    if (line.trim() !== ":PROPERTIES:") continue;
+
+    const prev = (lines[i - 1] || "").trim();
+    const prev2 = (lines[i - 2] || "").trim();
+    const belongsToHeadline =
+      currentHeadlineLine >= 0 && (i - 1 === currentHeadlineLine || (prev === "" && i - 2 === currentHeadlineLine && prev2 !== ""));
+    if (belongsToHeadline) i = collectDrawerAt(i);
+  }
+
+  return drawers;
+}
+
+function splitLintList(raw: string): string[] {
+  return String(raw || "")
+    .split(/[,;]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function parseLintSourceHashEntry(entry: string): { kind: string; value: string; hash: string } | null {
+  const match = /^([a-z][a-z0-9_-]*):(\S.+)=sha256:([a-fA-F0-9]{64})$/.exec(String(entry || "").trim());
+  if (!match) return null;
+  return { kind: String(match[1] || "").toLowerCase(), value: String(match[2] || "").trim(), hash: String(match[3] || "").toLowerCase() };
+}
+
+function appendArtifactFreshnessLintIssues(content: string, filePath: string, issues: ArtifactLintIssue[]): void {
+  for (const drawer of collectLintPropertyDrawers(content)) {
+    const role = String(drawer.properties.get("ORG2_ARTIFACT_ROLE") || "").trim().toLowerCase();
+    if (!["compiled", "view", "report"].includes(role)) continue;
+
+    const generatedAtRaw = String(drawer.properties.get("ORG2_GENERATED_AT") || "").trim();
+    const generatedAt = generatedAtRaw ? new Date(generatedAtRaw) : null;
+
+    if (generatedAt && !Number.isNaN(generatedAt.getTime())) {
+      for (const entry of splitLintList(drawer.properties.get("ORG2_PROVENANCE") || "")) {
+        const match = /^file:(\S.*)$/.exec(entry);
+        if (!match) continue;
+        const sourcePath = path.resolve(path.dirname(filePath), String(match[1] || "").trim());
+        try {
+          const stat = fs.statSync(sourcePath);
+          if (stat.mtime.getTime() > generatedAt.getTime()) {
+            issues.push({
+              severity: "warning",
+              rule: "artifact-stale-source-mtime",
+              file: filePath,
+              line: drawer.line,
+              message: `Generated artifact is older than provenance source '${match[1]}'; regenerate or review before trusting this output.`,
+            });
+          }
+        } catch {
+          // Missing provenance file references are reported by artifact-provenance-file-missing.
+        }
+      }
+    }
+
+    for (const entry of splitLintList(drawer.properties.get("ORG2_SOURCE_HASHES") || "")) {
+      const parsed = parseLintSourceHashEntry(entry);
+      if (!parsed || parsed.kind !== "file") continue;
+      const sourcePath = path.resolve(path.dirname(filePath), parsed.value);
+      try {
+        const actualHash = crypto.createHash("sha256").update(fs.readFileSync(sourcePath)).digest("hex");
+        if (actualHash !== parsed.hash) {
+          issues.push({
+            severity: "warning",
+            rule: "artifact-source-hash-mismatch",
+            file: filePath,
+            line: drawer.line,
+            message: `ORG2_SOURCE_HASHES entry for '${parsed.value}' does not match current file content; regenerate or review before trusting this output.`,
+          });
+        }
+      } catch {
+        // Missing provenance/source files are reported separately when they appear in ORG2_PROVENANCE.
+      }
+    }
+  }
+}
+
 function collectRoamNodesForIndex(content: string, filePath: string): RoamNodeForIndex[] {
   const raw = content.replace(/\r\n/g, "\n");
   const lines = raw.split("\n");
@@ -7162,7 +7353,8 @@ Flags:
 
 Checks:
   Artifact metadata, source hash/review status syntax, duplicate IDs,
-  unresolved provenance references, and conventional corpus-flow role/path
+  unresolved provenance references, graph link health (broken id/wiki links
+  and ambiguous wiki labels), and conventional corpus-flow role/path
   mismatches.`;
   } else if (command === "ai") {
     text = `org2 ai ${options.aiAction || "validate-job"}
@@ -9539,6 +9731,7 @@ Flags:
       if (typeof raw !== "string") continue;
 
       issues.push(...lintArtifactMetadataInText(raw, filePath));
+      appendArtifactFreshnessLintIssues(raw, filePath, issues);
 
       for (const ref of collectArtifactProvenanceRefsInText(raw, filePath)) {
         if (ref.kind === "file") {
@@ -9573,6 +9766,8 @@ Flags:
       }
     }
 
+    appendRoamGraphLintIssues(files, issues);
+
     issues.sort((a, b) => {
       const fileCmp = a.file.localeCompare(b.file);
       if (fileCmp !== 0) return fileCmp;
@@ -9597,7 +9792,7 @@ Flags:
     }
 
     if (issues.length === 0) {
-      process.stdout.write(`OK: checked ${files.length} file(s), no artifact metadata issues found.\n`);
+      process.stdout.write(`OK: checked ${files.length} file(s), no graph/artifact health issues found.\n`);
     } else {
       for (const issue of issues) {
         process.stdout.write(

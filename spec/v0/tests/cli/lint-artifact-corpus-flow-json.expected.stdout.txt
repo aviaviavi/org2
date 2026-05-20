@@ -2,8 +2,15 @@
   "$schema": "org2:lint:v1",
   "checkedFiles": 4,
   "skippedFiles": 0,
-  "issueCount": 3,
+  "issueCount": 4,
   "issues": [
+    {
+      "severity": "warning",
+      "rule": "artifact-stale-source-mtime",
+      "file": "spec/v0/fixtures/lint-artifact-corpus-flow/compiled/summary.org",
+      "line": 1,
+      "message": "Generated artifact is older than provenance source '../raw/source.org'; regenerate or review before trusting this output."
+    },
     {
       "severity": "warning",
       "rule": "artifact-role-path-mismatch",
