@@ -140,9 +140,10 @@ h1 { margin-bottom: 0.5rem; }
   .org2-nav-dropdown-menu {
     display: none;
     position: absolute;
-    top: calc(100% + 0.4rem);
+    top: 100%;
     left: 0;
     min-width: 220px;
+    margin-top: 0;
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 10px;
