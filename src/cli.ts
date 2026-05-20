@@ -25,6 +25,7 @@ import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
 import { compileCorpus, renderCompiledCorpus } from "./corpusCompile.js";
 import { loadAiJobManifest, validateAiJobManifest } from "./aiJobManifest.js";
+import { buildGeneratedArtifactMetadata, formatOrg2ArtifactPropertyDrawer, sha256Hex } from "./artifactMetadata.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import {
   collectArtifactIdsInText,
@@ -5727,6 +5728,253 @@ function listAgendaFiles(dirPath: string, recursiveScan: boolean): string[] {
   return out;
 }
 
+
+type AiDraftSource = {
+  absolutePath: string;
+  relativePath: string;
+  text: string;
+  sha256: string;
+  lineCount: number;
+};
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringField(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function nestedRecord(record: Record<string, unknown>, key: string): Record<string, unknown> {
+  const value = record[key];
+  return isPlainRecord(value) ? value : {};
+}
+
+function stringArrayField(record: Record<string, unknown>, key: string): string[] {
+  const value = record[key];
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean);
+}
+
+function slugForOrg2Id(raw: string): string {
+  const slug = String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "ai-draft";
+}
+
+function aiDraftRoleForTarget(target: string): "compiled" | "view" | "report" {
+  if (target === "compiled") return "compiled";
+  if (target === "patch-file") return "report";
+  return "view";
+}
+
+function resolveWorkspaceRelative(baseDir: string, rawPath: string, label: string): string {
+  const value = String(rawPath || "").trim();
+  if (!value) throw new Error(`${label} is required`);
+  if (path.isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value)) {
+    throw new Error(`${label} must be a relative path inside the workspace`);
+  }
+  const segments = value.split(/[\\/]+/);
+  if (segments.includes("..")) throw new Error(`${label} must not contain '..' path traversal segments`);
+  return path.resolve(baseDir, value);
+}
+
+
+function containsGlob(rawPath: string): boolean {
+  return /[*?[{]/.test(rawPath);
+}
+
+function globPatternToRegExp(pattern: string): RegExp {
+  const normalized = pattern.replace(/\\/g, "/");
+  let out = "^";
+  for (let i = 0; i < normalized.length; i += 1) {
+    const ch = normalized[i] || "";
+    const next = normalized[i + 1] || "";
+    if (ch === "*" && next === "*") {
+      out += ".*";
+      i += 1;
+    } else if (ch === "*") {
+      out += "[^/]*";
+    } else if (ch === "?") {
+      out += "[^/]";
+    } else {
+      out += ch.replace(/[\^$+?.()|[\]{}]/g, "\\$&");
+    }
+  }
+  out += "$";
+  return new RegExp(out);
+}
+
+function walkFiles(root: string): string[] {
+  const out: string[] = [];
+  const stack = [root];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    if (!fs.existsSync(current)) continue;
+    const stat = fs.statSync(current);
+    if (stat.isFile()) {
+      out.push(current);
+    } else if (stat.isDirectory()) {
+      for (const entry of fs.readdirSync(current).sort().reverse()) {
+        if (entry === ".git" || entry === "node_modules" || entry === "dist") continue;
+        stack.push(path.join(current, entry));
+      }
+    }
+  }
+  return out;
+}
+
+function expandAiSourceFiles(manifestDir: string, sourceFiles: string[]): string[] {
+  const expanded: string[] = [];
+  for (const file of sourceFiles) {
+    if (!containsGlob(file)) {
+      expanded.push(file);
+      continue;
+    }
+    const regex = globPatternToRegExp(file.replace(/\\/g, "/"));
+    const matches = walkFiles(manifestDir)
+      .map((absolutePath) => path.relative(manifestDir, absolutePath).replace(/\\/g, "/"))
+      .filter((relativePath) => regex.test(relativePath));
+    expanded.push(...matches);
+  }
+  return Array.from(new Set(expanded)).sort();
+}
+
+function readAiDraftSources(manifest: Record<string, unknown>, manifestDir: string): AiDraftSource[] {
+  const input = nestedRecord(manifest, "input");
+  const sourceFiles = expandAiSourceFiles(manifestDir, stringArrayField(input, "files"));
+  if (sourceFiles.length === 0) {
+    throw new Error("org2 ai run currently writes draft artifacts from manifest input.files; add at least one matching input file");
+  }
+
+  return sourceFiles.map((file) => {
+    const absolutePath = resolveWorkspaceRelative(manifestDir, file, "input.files entry");
+    const text = fs.readFileSync(absolutePath, "utf8").replace(/\r\n/g, "\n");
+    return {
+      absolutePath,
+      relativePath: file.replace(/\\/g, "/"),
+      text,
+      sha256: sha256Hex(text),
+      lineCount: text.split("\n").length,
+    };
+  });
+}
+
+function stripOrgMarkupForSnippet(raw: string): string {
+  return String(raw || "")
+    .replace(/^\*+\s+/, "")
+    .replace(/^#\+\w+:\s*/i, "")
+    .replace(/^:[A-Z0-9_]+:\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function sourceExcerptBullets(sources: AiDraftSource[], maxPerFile: number): string[] {
+  const out: string[] = [];
+  for (const source of sources) {
+    const lines = source.text.split("\n");
+    let emitted = 0;
+    for (let i = 0; i < lines.length && emitted < maxPerFile; i += 1) {
+      const snippet = stripOrgMarkupForSnippet(lines[i] || "");
+      if (!snippet || snippet.length < 8) continue;
+      out.push(`- [[file:${source.relativePath}::${i + 1}][${source.relativePath}:${i + 1}]] ${snippet.slice(0, 180)}`);
+      emitted += 1;
+    }
+  }
+  return out;
+}
+
+function renderEntityExtraction(sources: AiDraftSource[]): string {
+  const counts = new Map<string, number>();
+  const re = /\b[A-Z][A-Za-z0-9]*(?:[\s-]+[A-Z][A-Za-z0-9]*){0,3}\b/g;
+  for (const source of sources) {
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(source.text)) !== null) {
+      const entity = String(match[0] || "").trim();
+      if (entity.length < 3) continue;
+      counts.set(entity, (counts.get(entity) || 0) + 1);
+    }
+  }
+
+  const entities = Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 25);
+
+  if (entities.length === 0) return "- No obvious title-case entities found; review the source excerpts manually.\n";
+  return entities.map(([entity, count]) => `- ${entity} (${count})`).join("\n") + "\n";
+}
+
+function renderAiGeneratedDraft(manifest: Record<string, unknown>, sources: AiDraftSource[], outputPath: string): string {
+  const id = stringField(manifest, "id") || "ai-draft";
+  const description = stringField(manifest, "description");
+  const task = nestedRecord(manifest, "task");
+  const adapter = nestedRecord(manifest, "adapter");
+  const review = nestedRecord(manifest, "review");
+  const output = nestedRecord(manifest, "output");
+  const taskType = stringField(task, "type") || "summarize";
+  const promptTemplate = stringField(task, "template");
+  const instructions = stringField(task, "instructions");
+  const adapterName = stringField(adapter, "name") || "unspecified";
+  const model = stringField(adapter, "model") || "unspecified";
+  const target = stringField(output, "target") || "views";
+  const reviewPolicy = stringField(review, "policy") || "require-approval";
+  const reviewStatus = reviewPolicy === "require-approval" ? "review-required" : "generated";
+  const generator = `org2 ai run ${id} adapter=${adapterName} model=${model}`;
+  const metadata = buildGeneratedArtifactMetadata({
+    role: aiDraftRoleForTarget(target),
+    generator,
+    provenance: sources.map((source) => `file:${source.relativePath}`),
+    sourceHashes: sources.map((source) => ({ kind: "file", value: source.relativePath, sha256: source.sha256 })),
+    reviewStatus,
+    aiJobId: id,
+    aiTask: taskType,
+    promptTemplate,
+    adapter: adapterName,
+    model,
+  });
+  const drawer = formatOrg2ArtifactPropertyDrawer(metadata, slugForOrg2Id(`${id}-${path.basename(outputPath || "draft")}`));
+  const title = description || `AI draft: ${id}`;
+  const excerpts = sourceExcerptBullets(sources, taskType.includes("meeting") ? 8 : 5);
+  const sourceList = sources.map((source) => `- ${source.relativePath} (${source.lineCount} lines, sha256:${source.sha256.slice(0, 12)}…)`).join("\n");
+  const summaryBullets = excerpts.length > 0 ? excerpts.slice(0, 10).join("\n") : "- No substantive source lines found.";
+  const extraction = taskType === "extract-entities" ? renderEntityExtraction(sources) : "";
+
+  return `#+TITLE: ${title}\n${drawer}\n* Review checklist\n- [ ] Verify every generated claim against the cited source lines.\n- [ ] Edit this draft until it is safe for canonical notes.\n- [ ] Set =ORG2_REVIEW_STATUS= to =reviewed= before running =org2 ai promote=.\n\n* Job\n- Job: =${id}=\n- Task: =${taskType}=\n- Adapter: =${adapterName}=\n- Model: =${model}=\n${promptTemplate ? `- Prompt/template: =${promptTemplate}=\n` : ""}${instructions ? `- Instructions: ${instructions}\n` : ""}\n* Sources\n${sourceList}\n\n* Generated ${taskType === "extract-entities" ? "extraction" : "summary"}\n${taskType === "extract-entities" ? extraction : summaryBullets + "\n"}\n* Source excerpts\n${excerpts.length > 0 ? excerpts.join("\n") : "- No source excerpts available."}\n`;
+}
+
+function removeTopPropertyDrawer(raw: string): string {
+  const lines = raw.replace(/\r\n/g, "\n").split("\n");
+  const firstHeading = lines.findIndex((line) => /^\*+\s+/.test(line || ""));
+  const scanEnd = firstHeading === -1 ? lines.length : firstHeading;
+  const start = lines.findIndex((line, index) => index < scanEnd && (line || "").trim().toUpperCase() === ":PROPERTIES:");
+  if (start === -1) return raw.replace(/\r\n/g, "\n").trim() + "\n";
+  let end = -1;
+  for (let i = start + 1; i < lines.length && i < scanEnd; i += 1) {
+    if ((lines[i] || "").trim().toUpperCase() === ":END:") {
+      end = i;
+      break;
+    }
+  }
+  if (end === -1) return raw.replace(/\r\n/g, "\n").trim() + "\n";
+  const kept = [...lines.slice(0, start), ...lines.slice(end + 1)];
+  return kept.join("\n").replace(/^\n+/, "").trim() + "\n";
+}
+
+function hasReviewedArtifactStatus(raw: string): boolean {
+  return /^:ORG2_REVIEW_STATUS:\s*(reviewed|promoted)\s*$/im.test(raw);
+}
+
+function markArtifactPromoted(raw: string): string {
+  if (/^:ORG2_REVIEW_STATUS:\s*(reviewed|generated|review-required)\s*$/im.test(raw)) {
+    return raw.replace(/^:ORG2_REVIEW_STATUS:\s*(reviewed|generated|review-required)\s*$/im, ":ORG2_REVIEW_STATUS: promoted");
+  }
+  return raw;
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -5922,10 +6170,14 @@ async function main(): Promise<void> {
   let compileFormat: "json" | "jsonl" = "json";
   let compileOut = "";
 
-  // AI job manifests (provider-free validation only)
-  let aiAction: "validate-job" | "" = "";
+  // AI job manifests and provider-free draft artifact workflows
+  let aiAction: "validate-job" | "run" | "promote" | "" = "";
   let aiJobFile = "";
   let aiFormat: "text" | "json" = "text";
+  let aiOut = "";
+  let aiPromoteFile = "";
+  let aiPromoteToFile = "";
+  let aiApply = false;
 
   // Roam meta
   let roamAction: "db-sync" | "backlinks" | "node" | "link" | "linkify" | "graph" = "db-sync";
@@ -6072,6 +6324,10 @@ async function main(): Promise<void> {
         const sub = args[i]!;
         if (sub === "validate-job" || sub === "validate") {
           aiAction = "validate-job";
+        } else if (sub === "run") {
+          aiAction = "run";
+        } else if (sub === "promote") {
+          aiAction = "promote";
         }
         i++;
       }
@@ -6158,6 +6414,8 @@ async function main(): Promise<void> {
           exportFile = args[i]!;
         } else if (command === "roam" && roamAction === "link") {
           roamLinkFile = args[i]!;
+        } else if (command === "ai" && aiAction === "promote") {
+          aiPromoteFile = args[i]!;
         } else if (command === "roam" && roamAction === "linkify") {
           roamLinkifyFile = args[i]!;
         } else {
@@ -6890,6 +7148,8 @@ async function main(): Promise<void> {
           roamGraphOut = args[i]!;
         } else if (command === "compile") {
           compileOut = args[i]!;
+        } else if (command === "ai") {
+          aiOut = args[i]!;
         }
         i++;
       }
@@ -6978,6 +7238,8 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "refile") {
           refileToFile = args[i]!;
+        } else if (command === "ai" && aiAction === "promote") {
+          aiPromoteToFile = args[i]!;
         }
         i++;
       }
@@ -7042,6 +7304,8 @@ async function main(): Promise<void> {
         idApply = true;
       } else if (command === "roam") {
         roamApply = true;
+      } else if (command === "ai") {
+        aiApply = true;
       }
       i++;
     } else if (arg === "--verbose" || arg === "--verbose-errors") {
@@ -7081,6 +7345,8 @@ Roam / IDs:
   org2 query (--id UUID|--text TEXT) [--dir DIR] [--recursive]
   org2 compile corpus --dir DIR [--recursive] [--out FILE] [--format json|jsonl]
   org2 ai validate-job --job FILE [--format text|json]
+  org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
+  org2 ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
   org2 roam db-sync --dir DIR [--recursive] [--apply]
   org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply]
   org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--style wiki|id] [--id UUID] [--apply]
@@ -7090,6 +7356,8 @@ Roam / IDs:
 Maintenance / health:
   org2 compile corpus [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl]
   org2 ai validate-job --job FILE [--format text|json]
+  org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
+  org2 ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
   org2 lint [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
   org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]
 
@@ -7113,7 +7381,7 @@ function printScopedUsage(
     roamAction: "db-sync" | "backlinks" | "node" | "link" | "linkify" | "graph";
     roamNodeAction: "new";
     roamLinkAction: "insert-backlink";
-    aiAction: "validate-job" | "";
+    aiAction: "validate-job" | "run" | "promote" | "";
   },
   exitCode: number,
 ): never {
@@ -7361,14 +7629,21 @@ Checks:
 
 Usage:
   org2 ai validate-job --job FILE [--format text|json]
+  org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
+  org2 ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
 
 Flags:
-  --job FILE        AI job manifest JSON file
+  --job FILE         AI job manifest JSON file
+  --out FILE         Override manifest output.path for ai run
+  --file DRAFT       Reviewed generated artifact for ai promote
+  --to-file NOTE     Canonical note file to append promoted body to
+  --apply            Write changes; without it, print a safe preview
   --format text|json Output format
 
 Checks:
-  Provider-free AI job manifest shape, input selection, task, symbolic adapter,
-  output target, provenance requirements, review policy, and accidental secrets.`;
+  validate-job checks provider-free manifest shape and accidental secrets.
+  run writes a generated draft artifact with provenance/source hashes and review status.
+  promote appends only reviewed drafts to canonical notes and marks the source promoted.`;
   } else if (command === "roam") {
     if (options.roamAction === "db-sync") {
       text = `org2 roam db-sync
@@ -7468,12 +7743,58 @@ Flags:
   }
 
   if (command === "ai") {
-    if (aiAction !== "validate-job") {
-      console.error("Error: org2 ai requires a subcommand (validate-job)");
+    if (!aiAction) {
+      console.error("Error: org2 ai requires a subcommand (validate-job, run, or promote)");
       process.exit(1);
     }
+
+    if (aiAction === "promote") {
+      if (!aiPromoteFile) {
+        console.error("Error: org2 ai promote requires --file DRAFT");
+        process.exit(1);
+      }
+      if (!aiPromoteToFile) {
+        console.error("Error: org2 ai promote requires --to-file NOTE");
+        process.exit(1);
+      }
+
+      const draftPath = path.resolve(aiPromoteFile);
+      const toPath = path.resolve(aiPromoteToFile);
+      const draftText = fs.readFileSync(draftPath, "utf8").replace(/\r\n/g, "\n");
+      if (!hasReviewedArtifactStatus(draftText)) {
+        const message = "generated artifact must have ORG2_REVIEW_STATUS reviewed before promotion";
+        if (aiFormat === "json") {
+          console.log(JSON.stringify({ $schema: "org2:ai-promote:v1", source: aiPromoteFile, target: aiPromoteToFile, applied: false, valid: false, issues: [{ message }] }, null, 2));
+        } else {
+          console.error(`Error: ${message}`);
+        }
+        process.exit(1);
+      }
+
+      const promotedBody = removeTopPropertyDrawer(draftText);
+      if (!aiApply) {
+        if (aiFormat === "json") {
+          console.log(JSON.stringify({ $schema: "org2:ai-promote:v1", source: aiPromoteFile, target: aiPromoteToFile, applied: false, preview: promotedBody }, null, 2));
+        } else {
+          process.stdout.write(`Would append reviewed artifact body from ${aiPromoteFile} to ${aiPromoteToFile}.\nUse --apply to write changes.\n\n${promotedBody}`);
+        }
+        return;
+      }
+
+      const existing = fs.existsSync(toPath) ? fs.readFileSync(toPath, "utf8").replace(/\r\n/g, "\n").trimEnd() : "";
+      fs.mkdirSync(path.dirname(toPath), { recursive: true });
+      fs.writeFileSync(toPath, `${existing}${existing ? "\n\n" : ""}${promotedBody.trimEnd()}\n`, "utf8");
+      fs.writeFileSync(draftPath, markArtifactPromoted(draftText), "utf8");
+      if (aiFormat === "json") {
+        console.log(JSON.stringify({ $schema: "org2:ai-promote:v1", source: aiPromoteFile, target: aiPromoteToFile, applied: true }, null, 2));
+      } else {
+        process.stdout.write(`Promoted reviewed artifact to ${aiPromoteToFile}\n`);
+      }
+      return;
+    }
+
     if (!aiJobFile) {
-      console.error("Error: org2 ai validate-job requires --job FILE");
+      console.error(`Error: org2 ai ${aiAction} requires --job FILE`);
       process.exit(1);
     }
 
@@ -7491,17 +7812,81 @@ Flags:
     }
 
     const validation = validateAiJobManifest(manifest);
-    if (aiFormat === "json") {
-      console.log(JSON.stringify({ $schema: "org2:ai-job-validation:v1", job: aiJobFile, ...validation }, null, 2));
-    } else if (validation.valid) {
-      console.log(`AI job manifest OK: ${aiJobFile}`);
-    } else {
-      console.error(`AI job manifest invalid: ${aiJobFile}`);
-      for (const issue of validation.issues) {
-        console.error(`- ${issue.path}: ${issue.message}`);
+    if (aiAction === "validate-job") {
+      if (aiFormat === "json") {
+        console.log(JSON.stringify({ $schema: "org2:ai-job-validation:v1", job: aiJobFile, ...validation }, null, 2));
+      } else if (validation.valid) {
+        console.log(`AI job manifest OK: ${aiJobFile}`);
+      } else {
+        console.error(`AI job manifest invalid: ${aiJobFile}`);
+        for (const issue of validation.issues) {
+          console.error(`- ${issue.path}: ${issue.message}`);
+        }
       }
+      process.exit(validation.valid ? 0 : 1);
     }
-    process.exit(validation.valid ? 0 : 1);
+
+    if (!validation.valid) {
+      if (aiFormat === "json") {
+        console.log(JSON.stringify({ $schema: "org2:ai-run:v1", job: aiJobFile, valid: false, applied: false, issues: validation.issues }, null, 2));
+      } else {
+        console.error(`AI job manifest invalid: ${aiJobFile}`);
+        for (const issue of validation.issues) {
+          console.error(`- ${issue.path}: ${issue.message}`);
+        }
+      }
+      process.exit(1);
+    }
+
+    if (aiAction === "run") {
+      if (!isPlainRecord(manifest)) {
+        console.error("Error: AI job manifest must be an object");
+        process.exit(1);
+      }
+      const workspaceDir = process.cwd();
+      const output = nestedRecord(manifest, "output");
+      const outputTarget = stringField(output, "target") || "stdout";
+      const manifestOutputPath = stringField(output, "path");
+      const outputPathRaw = aiOut || manifestOutputPath;
+      const outputPath = outputPathRaw ? resolveWorkspaceRelative(workspaceDir, outputPathRaw, "output.path") : "";
+      const sources = readAiDraftSources(manifest, workspaceDir);
+      const artifactText = renderAiGeneratedDraft(manifest, sources, outputPathRaw || "stdout.org2");
+
+      if (outputTarget === "stdout" && !aiOut) {
+        if (aiFormat === "json") {
+          console.log(JSON.stringify({ $schema: "org2:ai-run:v1", job: aiJobFile, target: "stdout", applied: false, artifact: artifactText }, null, 2));
+        } else {
+          process.stdout.write(artifactText);
+        }
+        return;
+      }
+
+      if (!outputPath) {
+        console.error("Error: org2 ai run requires manifest output.path or --out FILE for non-stdout outputs");
+        process.exit(1);
+      }
+
+      if (!aiApply) {
+        if (aiFormat === "json") {
+          console.log(JSON.stringify({ $schema: "org2:ai-run:v1", job: aiJobFile, output: outputPathRaw, applied: false, artifact: artifactText }, null, 2));
+        } else {
+          process.stdout.write(`Would write generated draft artifact to ${outputPathRaw}.\nUse --apply to write changes.\n\n${artifactText}`);
+        }
+        return;
+      }
+
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fs.writeFileSync(outputPath, artifactText, "utf8");
+      if (aiFormat === "json") {
+        console.log(JSON.stringify({ $schema: "org2:ai-run:v1", job: aiJobFile, output: outputPathRaw, applied: true, bytes: Buffer.byteLength(artifactText) }, null, 2));
+      } else {
+        process.stdout.write(`${outputPath}\n`);
+      }
+      return;
+    }
+
+    console.error("Error: org2 ai requires a subcommand (validate-job, run, or promote)");
+    process.exit(1);
   }
 
   // Treat `org2 roam backlinks ...` as a namespaced alias for `org2 backlinks ...`.

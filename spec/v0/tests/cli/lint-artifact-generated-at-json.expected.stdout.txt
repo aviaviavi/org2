@@ -36,21 +36,21 @@
       "severity": "warning",
       "rule": "artifact-generated-at-unexpected",
       "file": "spec/v0/tests/cli/lint-artifact-generated-at.input.txt",
-      "line": 29,
+      "line": 30,
       "message": "Artifacts with role 'canonical' should not set ORG2_GENERATED_AT; generated timestamps belong on compiled/view/report outputs."
     },
     {
       "severity": "warning",
       "rule": "artifact-generator-unexpected",
       "file": "spec/v0/tests/cli/lint-artifact-generated-at.input.txt",
-      "line": 29,
+      "line": 30,
       "message": "Artifacts with role 'canonical' should not set ORG2_GENERATOR; generator metadata belongs on compiled/view/report outputs."
     },
     {
       "severity": "warning",
       "rule": "artifact-generator-unexpected",
       "file": "spec/v0/tests/cli/lint-artifact-generated-at.input.txt",
-      "line": 37,
+      "line": 38,
       "message": "Artifacts with role 'raw' should not set ORG2_GENERATOR; generator metadata belongs on compiled/view/report outputs."
     }
   ]

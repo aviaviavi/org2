@@ -5,12 +5,18 @@ export const ORG2_ARTIFACT_METADATA_SCHEMA_VERSION = "org2-artifact-metadata/v1"
 
 export const ORG2_ARTIFACT_PROPERTY_NAMES = {
   id: "ID",
+  schemaVersion: "ORG2_ARTIFACT_SCHEMA",
   role: "ORG2_ARTIFACT_ROLE",
   provenance: "ORG2_PROVENANCE",
   generator: "ORG2_GENERATOR",
   generatedAt: "ORG2_GENERATED_AT",
   sourceHashes: "ORG2_SOURCE_HASHES",
   reviewStatus: "ORG2_REVIEW_STATUS",
+  aiJobId: "ORG2_AI_JOB_ID",
+  aiTask: "ORG2_AI_TASK",
+  promptTemplate: "ORG2_PROMPT_TEMPLATE",
+  adapter: "ORG2_AI_ADAPTER",
+  model: "ORG2_AI_MODEL",
 } as const;
 
 export const ORG2_ARTIFACT_REVIEW_STATUS_VALUES = ["generated", "review-required", "reviewed", "promoted"] as const;
@@ -33,6 +39,11 @@ export interface Org2GeneratedArtifactMetadata {
   provenance: string[];
   sourceHashes: Org2ArtifactSourceHash[];
   reviewStatus: Org2ArtifactReviewStatus;
+  aiJobId?: string;
+  aiTask?: string;
+  promptTemplate?: string;
+  adapter?: string;
+  model?: string;
 }
 
 export interface BuildGeneratedArtifactMetadataOptions {
@@ -42,6 +53,16 @@ export interface BuildGeneratedArtifactMetadataOptions {
   provenance?: string[];
   sourceHashes?: Org2ArtifactSourceHash[];
   reviewStatus?: Org2ArtifactReviewStatus;
+  aiJobId?: string;
+  aiTask?: string;
+  promptTemplate?: string;
+  adapter?: string;
+  model?: string;
+}
+
+function cleanOptional(raw: string | undefined): string | undefined {
+  const value = String(raw || "").trim();
+  return value || undefined;
 }
 
 export function sha256Hex(raw: string): string {
@@ -59,7 +80,7 @@ export function buildGeneratedArtifactMetadata(opts: BuildGeneratedArtifactMetad
     }))
     .filter((entry) => entry.value && entry.sha256);
 
-  return {
+  const metadata: Org2GeneratedArtifactMetadata = {
     schemaVersion: ORG2_ARTIFACT_METADATA_SCHEMA_VERSION,
     role: opts.role,
     generator: String(opts.generator || "").trim(),
@@ -68,6 +89,19 @@ export function buildGeneratedArtifactMetadata(opts: BuildGeneratedArtifactMetad
     sourceHashes,
     reviewStatus: opts.reviewStatus || "generated",
   };
+
+  const aiJobId = cleanOptional(opts.aiJobId);
+  const aiTask = cleanOptional(opts.aiTask);
+  const promptTemplate = cleanOptional(opts.promptTemplate);
+  const adapter = cleanOptional(opts.adapter);
+  const model = cleanOptional(opts.model);
+  if (aiJobId) metadata.aiJobId = aiJobId;
+  if (aiTask) metadata.aiTask = aiTask;
+  if (promptTemplate) metadata.promptTemplate = promptTemplate;
+  if (adapter) metadata.adapter = adapter;
+  if (model) metadata.model = model;
+
+  return metadata;
 }
 
 export function formatSourceHashEntry(entry: Org2ArtifactSourceHash): string {
@@ -78,10 +112,16 @@ export function formatOrg2ArtifactPropertyDrawer(metadata: Org2GeneratedArtifact
   const lines = [":PROPERTIES:"];
   const trimmedId = String(id || "").trim();
   if (trimmedId) lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.id}: ${trimmedId}`);
+  lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.schemaVersion}: ${metadata.schemaVersion}`);
   lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.role}: ${metadata.role}`);
   lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.provenance}: ${metadata.provenance.join(", ")}`);
   lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.generator}: ${metadata.generator}`);
   lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.generatedAt}: ${metadata.generatedAt}`);
+  if (metadata.aiJobId) lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.aiJobId}: ${metadata.aiJobId}`);
+  if (metadata.aiTask) lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.aiTask}: ${metadata.aiTask}`);
+  if (metadata.promptTemplate) lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.promptTemplate}: ${metadata.promptTemplate}`);
+  if (metadata.adapter) lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.adapter}: ${metadata.adapter}`);
+  if (metadata.model) lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.model}: ${metadata.model}`);
   if (metadata.sourceHashes.length > 0) {
     lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.sourceHashes}: ${metadata.sourceHashes.map(formatSourceHashEntry).join(", ")}`);
   }
