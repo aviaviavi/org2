@@ -1711,6 +1711,45 @@ function activate(context) {
     }
   }
 
+  async function runAiLinkSuggestionReport() {
+    const root = getAgendaRootDir();
+    const defaultUri = vscode.Uri.file(path.join(root, 'views', 'link-suggestions.org2'));
+    const targetUri = await vscode.window.showSaveDialog({
+      defaultUri,
+      filters: { 'Org2 suggestion reports': ['org2', 'org'], 'JSON suggestion reports': ['json'] },
+      title: 'Write review-only Org2 AI link/entity suggestion report',
+    });
+    if (!targetUri || targetUri.scheme !== 'file') return;
+
+    const outRel = relativeWorkspacePath(root, targetUri.fsPath);
+    if (!outRel) {
+      vscode.window.showErrorMessage('Org2: AI link/entity suggestion report must be inside the workspace.');
+      return;
+    }
+
+    const format = targetUri.fsPath.toLowerCase().endsWith('.json') ? 'json' : 'text';
+    const preview = await runOrg2CompilerCommand('Org2 AI Link/Entity Suggestions Preview', ['ai', 'suggest-links', '--dir', root, '--recursive', '--out', outRel, '--format', format]);
+    if (!preview) return;
+    const confirm = await vscode.window.showWarningMessage(
+      `Org2: write review-only AI link/entity suggestion report to ${outRel}? Canonical notes will not be edited.`,
+      { modal: true },
+      'Write Report'
+    );
+    if (confirm !== 'Write Report') return;
+
+    const applied = await runOrg2CompilerCommand('Org2 AI Link/Entity Suggestions Write', ['ai', 'suggest-links', '--dir', root, '--recursive', '--out', outRel, '--apply', '--format', format], {
+      successMessage: `Org2: wrote review-only AI link/entity suggestion report to ${outRel}.`,
+    });
+    if (!applied) return;
+
+    try {
+      const doc = await vscode.workspace.openTextDocument(targetUri);
+      await vscode.window.showTextDocument(doc, { preview: false });
+    } catch {
+      // The output window already contains the path if VS Code cannot open it immediately.
+    }
+  }
+
   async function promoteAiDraftArtifact() {
     const root = getAgendaRootDir();
     const active = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document && vscode.window.activeTextEditor.document.uri.scheme === 'file'
@@ -2408,6 +2447,12 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.queryWorkspace', async () => {
       await promptWorkspaceQuery('query');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.aiSuggestLinks', async () => {
+      await runAiLinkSuggestionReport();
     })
   );
 
