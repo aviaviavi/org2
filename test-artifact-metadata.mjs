@@ -26,10 +26,13 @@ assert.deepEqual(metadata.provenance, ['id:project-alpha', 'query:todo-status-op
 assert.equal(formatSourceHashEntry(sourceHash), `file:notes/project.org2=sha256:${'a'.repeat(64)}`);
 
 const drawer = formatOrg2ArtifactPropertyDrawer(metadata, 'project-alpha-dashboard');
+assert.match(drawer, /:ORG2_ARTIFACT_SCHEMA: org2-artifact-metadata\/v1/);
 assert.match(drawer, /:ORG2_ARTIFACT_ROLE: view/);
 assert.match(drawer, /:ORG2_SOURCE_HASHES: file:notes\/project\.org2=sha256:a{64}/);
 assert.match(drawer, /:ORG2_REVIEW_STATUS: review-required/);
-assert.deepEqual(lintArtifactMetadataInText(drawer, 'views/dashboard.org2'), []);
+const generatedIssues = lintArtifactMetadataInText(drawer, 'views/dashboard.org2');
+assert.ok(generatedIssues.some((issue) => issue.rule === 'artifact-generated-unreviewed'));
+assert.ok(generatedIssues.every((issue) => issue.severity === 'warning'));
 
 const invalid = `:PROPERTIES:
 :ID: bad-dashboard

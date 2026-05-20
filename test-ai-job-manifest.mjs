@@ -33,8 +33,8 @@ const missingJob = run(["ai", "validate-job"]);
 assert.equal(missingJob.status, 1);
 assert.match(missingJob.stderr, /requires --job FILE/);
 
-const unknownSubcommand = run(["ai", "run", "--job", "examples/jobs/weekly-summary.org2-ai.json"]);
-assert.equal(unknownSubcommand.status, 1);
-assert.match(unknownSubcommand.stderr, /requires a subcommand \(validate-job\)/);
+const missingRunJob = run(["ai", "run"]);
+assert.equal(missingRunJob.status, 1);
+assert.match(missingRunJob.stderr, /requires --job FILE/);
 
 console.log("AI job manifest validation tests passed");

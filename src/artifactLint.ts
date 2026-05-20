@@ -320,6 +320,22 @@ function evaluateArtifactProperties(
     });
   }
 
+  if (
+    role &&
+    ["compiled", "view", "report"].includes(role) &&
+    generatedAtRaw &&
+    generatorRaw &&
+    (!reviewStatusRaw || reviewStatusRaw === "generated" || reviewStatusRaw === "review-required")
+  ) {
+    issues.push({
+      severity: "warning",
+      rule: "artifact-generated-unreviewed",
+      file: filePath,
+      line,
+      message: `Generated artifact has ORG2_REVIEW_STATUS '${reviewStatusRaw || "missing"}'; review it and set ORG2_REVIEW_STATUS to 'reviewed' before promotion, or 'promoted' after acceptance.`,
+    });
+  }
+
   if (role && ["compiled", "view", "report"].includes(role) && !generatedAtRaw) {
     issues.push({
       severity: "warning",

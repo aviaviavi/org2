@@ -23,6 +23,7 @@
 :ORG2_PROVENANCE: artifact:compiled-missing-generated-at
 :ORG2_GENERATED_AT: 2026-04-07T20:33:00Z
 :ORG2_GENERATOR: org2 lint --format json
+:ORG2_REVIEW_STATUS: reviewed
 :END:
 
 * Canonical Note With Generated Metadata

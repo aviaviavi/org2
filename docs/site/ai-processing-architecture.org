@@ -85,16 +85,16 @@ org2 ai suggest-links --dir notes --recursive --out views/link-suggestions.org2
 org2 ai validate-job --job jobs/weekly-summary.org2-ai.json
 #+end_src
 
-Implemented slices so far are provider-free manifest validation and the provider-agnostic adapter boundary; see [[file:ai-job-manifests.org][AI job manifests]], [[file:ai-adapters.org][AI adapter interface]], =spec/v0/ai-job-manifest.schema.json=, and =src/aiAdapter.ts=.
+Implemented slices so far are provider-free manifest validation, reviewable draft artifact writing/promotion, and the provider-agnostic adapter boundary; see [[file:ai-job-manifests.org][AI job manifests]], [[file:ai-draft-artifacts.org][AI draft artifacts]], [[file:ai-adapters.org][AI adapter interface]], =spec/v0/ai-job-manifest.schema.json=, and =src/aiAdapter.ts=.
 
 Command responsibilities:
 
 | Command | Responsibility | Writes canonical notes? |
 |---+---+---|
 | =ai run= | Execute a configured task/job and write a draft artifact. | No |
+| =ai promote= | Append reviewed draft bodies into canonical notes and mark drafts promoted. | Only with explicit =--apply= after review |
 | =ai suggest-links= | Produce ranked link/entity suggestions with reasons and source refs. | No |
 | =ai validate-job= | Validate manifest shape and unsafe settings. | No |
-| future =ai promote= | Apply an explicit reviewed artifact or patch. | Only with explicit user action |
 
 All write-capable AI commands default to generated zones such as =views/= or =compiled/=. They should require an explicit apply/promote step before modifying =notes/=.
 
