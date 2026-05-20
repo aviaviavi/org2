@@ -118,9 +118,9 @@ Available from command palette (=Cmd/Ctrl+Shift+P=):
 - =org2.searchWorkspace=
 - =org2.queryWorkspace=
 - =org2.compileWorkspaceCorpus=
-- =org2.roamLinkifyPreview=
-- =org2.roamLinkifyApply=
-- =org2.roamGraph=
+- =org2.roamLinkifyPreview= (shows exact replacements plus review-only semantic/alias represented-node suggestions)
+- =org2.roamLinkifyApply= (applies exact safe replacements only)
+- =org2.roamGraph= (includes linkify maintenance suggestions with source ranges)
 - =org2.formatWorkspaceCheck=
 - =org2.formatWorkspaceApply=
 - =org2.formatCurrentFileCheck=

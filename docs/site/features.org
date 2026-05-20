@@ -24,7 +24,7 @@ What already works well today:
 - Canonical formatting
 - HTML export and multi-file publishing
 - Cited workspace search/query for asking factual questions against source notes
-- Roam-style IDs, backlinks, dailies, node creation, linkify previews, and graph reports
+- Roam-style IDs, backlinks, dailies, node creation, linkify previews with semantic/alias-aware suggestions, and graph reports
 - Org-crypt subtree encryption/decryption workflows
 - LSP-backed editor features
 
@@ -54,7 +54,8 @@ Org2 has first-class support for linked-note workflows:
 - Link insertion helpers
 - Cited search/query output for answering questions with source file + line references
 - Workspace graph operations via Roam DB sync and graph reports
-- Linkify preview/apply flows for safely strengthening weak text references into links
+- Linkify preview/apply flows for safely strengthening exact weak text references into links
+- Review-only represented-node suggestions that explain semantic/alias matches with confidence, evidence tokens, and source ranges
 
 This matters because Org-style notes get dramatically better once links, references, dailies, and fact lookup stop feeling bolted on.
 
@@ -71,7 +72,7 @@ That includes:
 - Formatter commands with preview/apply flows
 - HTML export commands
 - Workspace search/query commands for cited note lookup
-- Roam commands for IDs/backlinks/dailies/linkify/graph reports
+- Roam commands for IDs/backlinks/dailies/linkify/graph reports, including semantic suggestion previews
 - Power-keymap shortcuts for fast workflows
 
 If you want to *use* Org2 today instead of just admire the idea, this is the path.

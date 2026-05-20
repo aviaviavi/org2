@@ -72,11 +72,11 @@ Graph-aware commands should separate three phases:
 2. resolve identities, aliases, links, and backlinks into a graph model,
 3. emit derived operations such as link suggestions, reports, exports, or maintenance fixes.
 
-That separation matters because users need dry-run reports and safe, reviewable edits. A linkify command, for example, should be able to explain why it suggested a link before it changes a file.
+That separation matters because users need dry-run reports and safe, reviewable edits. A linkify command, for example, can now distinguish exact title/alias replacements from represented-node suggestions, explain the evidence tokens and source range behind a semantic match, and keep review-only suggestions out of automatic writes.
 
 ** High-leverage next slices
 
 - Make cited query/search output available as a stable CLI surface for knowledge-base workflows.
-- Expand roam linkify reports so suggestions include represented-node/alias reasoning.
+- Build AI-assisted ranking on top of the existing roam linkify represented-node/alias reports without weakening the safe-apply boundary.
 - Document which generated artifacts are safe to commit and which are cache-like rebuild outputs.
 - Add maintenance commands that detect duplicate IDs, unresolved aliases, broken links, and stale derived graph artifacts.

@@ -15,6 +15,7 @@ const deltaId = '33333333-3333-3333-3333-333333333333';
 const databricksId = '44444444-4444-4444-4444-444444444444';
 const sonatypeId = '55555555-5555-5555-5555-555555555555';
 const semanticId = '66666666-6666-6666-6666-666666666666';
+const compilerId = '99999999-9999-9999-9999-999999999999';
 const excludedId = '77777777-7777-7777-7777-777777777777';
 
 fs.writeFileSync(path.join(tmpDir, 'alpha.org2'), `#+TITLE: Alpha Topic\n\n:PROPERTIES:\n:ID: ${alphaId}\n:END:\n\nAlpha Topic stands alone here.\n`);
@@ -25,6 +26,13 @@ fs.writeFileSync(path.join(tmpDir, 'knowledge-base.org2'), `#+TITLE: Knowledge B
 
 :PROPERTIES:
 :ID: ${semanticId}
+:END:
+
+`);
+fs.writeFileSync(path.join(tmpDir, 'knowledge-compiler.org2'), `#+TITLE: Knowledge Compiler
+
+:PROPERTIES:
+:ID: ${compilerId}
 :END:
 
 `);
@@ -54,6 +62,8 @@ Alpha Topic came up twice.
 D Topic is shorthand.
 Databricks and Sonatype both came up.
 Databricks came up twice.
+This compiler keeps our
+knowledge graph reviewable.
 [[Alpha Topic]] already linked.
 : Databricks inside fixed-width should stay plain.
 Quoted string: "Databricks" should stay plain.
@@ -87,10 +97,17 @@ const semanticSuggestion = preview.files.flatMap((file) => file.debugRepresented
 assert.ok(semanticSuggestion);
 assert.equal(semanticSuggestion.confidence, 0.78);
 assert.match(semanticSuggestion.reason, /not as exact contiguous title text/);
+assert.deepEqual(semanticSuggestion.sourceRange, { startLine: semanticSuggestion.line, endLine: semanticSuggestion.lineEnd });
+const paragraphSuggestion = preview.files.flatMap((file) => file.debugRepresented || []).find((item) => item.label === 'knowledge compiler');
+assert.ok(paragraphSuggestion);
+assert.equal(paragraphSuggestion.sourceKind, 'paragraph');
+assert.ok(paragraphSuggestion.lineEnd > paragraphSuggestion.line);
+assert.deepEqual(paragraphSuggestion.evidence.sort(), ['compiler', 'knowledge']);
+assert.match(paragraphSuggestion.reason, /across this paragraph/);
 
 const singleFilePreview = JSON.parse(execFileSync('node', [cli, 'roam', 'linkify', '--dir', tmpDir, '--recursive', '--exclude', 'agents/', '--file', path.join(tmpDir, 'notes.org2'), '--format', 'json'], { encoding: 'utf8' }));
 assert.equal(singleFilePreview.scanned, 1);
-assert.equal(singleFilePreview.indexFileCount, 7);
+assert.equal(singleFilePreview.indexFileCount, 8);
 assert.equal(singleFilePreview.excludedFileCount, 2);
 assert.equal(singleFilePreview.changedFileCount, 1);
 assert.equal(singleFilePreview.replacementCount, 5);
@@ -105,6 +122,7 @@ assert.match(notes, /Alpha Topic came up twice\./);
 assert.match(notes, /\[\[id:33333333-3333-3333-3333-333333333333\]\[D Topic\]\] is shorthand\./);
 assert.match(notes, /\[\[id:44444444-4444-4444-4444-444444444444\]\[Databricks\]\] and \[\[id:55555555-5555-5555-5555-555555555555\]\[Sonatype\]\] both came up\./);
 assert.match(notes, /\[\[id:44444444-4444-4444-4444-444444444444\]\[Databricks\]\] came up twice\./);
+assert.match(notes, /This compiler keeps our\nknowledge graph reviewable\./);
 assert.match(notes, /\[\[Alpha Topic\]\] already linked\./);
 assert.match(notes, /: Databricks inside fixed-width should stay plain\./);
 assert.match(notes, /Quoted string: "Databricks" should stay plain\./);
@@ -125,7 +143,7 @@ const excludedPreview = JSON.parse(execFileSync('node', [
   '--exclude', 'agents/',
   '--format', 'json',
 ], { encoding: 'utf8' }));
-assert.equal(excludedPreview.indexFileCount, 7);
+assert.equal(excludedPreview.indexFileCount, 8);
 assert.equal(excludedPreview.excludedFileCount, 2);
 const notesExcludedResult = excludedPreview.files.find((file) => file.file.endsWith('notes.org2'));
 assert.ok(notesExcludedResult);
