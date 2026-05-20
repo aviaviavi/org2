@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "org2-ai-job/v1",
+  "id": "meeting-summary",
+  "description": "Summarize raw meeting or transcript material into a reviewable Org2 note draft.",
+  "input": {
+    "files": ["raw/meeting.org2"]
+  },
+  "task": {
+    "type": "summarize-meeting",
+    "template": "meeting-summary@v1",
+    "instructions": "Summarize the meeting into a concise brief with key decisions, action items, entities, suggested links, and source citations."
+  },
+  "adapter": {
+    "name": "local-test",
+    "model": "deterministic-meeting-summary"
+  },
+  "output": {
+    "target": "views",
+    "path": "views/meeting-summary.org2"
+  },
+  "provenance": {
+    "requireSourceRefs": true,
+    "promptTemplateVersion": "meeting-summary@v1",
+    "recordModelMetadata": true,
+    "recordGeneratedAt": true
+  },
+  "review": {
+    "policy": "require-approval",
+    "reviewer": "human"
+  }
+}
