@@ -446,9 +446,13 @@ type RoamLinkifyRepresentedSuggestion = {
   label: string;
   candidate: string;
   line: number;
+  lineEnd: number;
+  sourceRange: { startLine: number; endLine: number };
+  sourceKind: "line" | "paragraph";
   text: string;
   confidence: number;
   reason: string;
+  evidence: string[];
 };
 
 type RoamLinkifyFileResult = {
@@ -503,12 +507,16 @@ type RoamGraphMaintenanceLinkifySuggestion = {
   kind: "exact" | "represented-node";
   file: string;
   line: number;
+  lineEnd?: number;
+  sourceRange?: { startLine: number; endLine: number };
+  sourceKind?: "line" | "paragraph";
   label: string;
   candidate: string;
   count?: number;
   confidence?: number;
   reason: string;
   text?: string;
+  evidence?: string[];
 };
 
 type RoamGraphMaintenanceReport = {
@@ -1226,11 +1234,15 @@ function buildRoamGraphMaintenanceReport(files: string[], graph: RoamGraphData):
         kind: "represented-node",
         file: filePath,
         line: suggestion.line,
+        lineEnd: suggestion.lineEnd,
+        sourceRange: suggestion.sourceRange,
+        sourceKind: suggestion.sourceKind,
         label: suggestion.label,
         candidate: suggestion.candidate,
         confidence: suggestion.confidence,
         reason: suggestion.reason,
         text: suggestion.text,
+        evidence: suggestion.evidence,
       });
     }
   }
@@ -1337,8 +1349,10 @@ function renderRoamGraphReportText(report: RoamGraphMaintenanceReport): string {
     for (const suggestion of report.linkifySuggestions.slice(0, 40)) {
       const confidence = typeof suggestion.confidence === "number" ? ` confidence=${suggestion.confidence.toFixed(2)}` : "";
       const count = typeof suggestion.count === "number" ? ` count=${suggestion.count}` : "";
+      const lineRange = suggestion.lineEnd && suggestion.lineEnd !== suggestion.line ? `${suggestion.line}-${suggestion.lineEnd}` : `${suggestion.line}`;
+      const sourceKind = suggestion.sourceKind ? ` ${suggestion.sourceKind}` : "";
       lines.push(
-        `- ${suggestion.kind} ${suggestion.file}:${suggestion.line} ${suggestion.label} -> ${suggestion.candidate}${count}${confidence}; ${suggestion.reason}`,
+        `- ${suggestion.kind}${sourceKind} ${suggestion.file}:${lineRange} ${suggestion.label} -> ${suggestion.candidate}${count}${confidence}; ${suggestion.reason}`,
       );
     }
     if (report.linkifySuggestions.length > 40) lines.push(`- … ${report.linkifySuggestions.length - 40} more`);
@@ -1688,32 +1702,115 @@ function roamLinkifySemanticTokens(raw: string): string[] {
 }
 
 function findRoamLinkifyRepresentedSuggestion(
-  line: string,
+  text: string,
   normalizedLabel: string,
   candidates: RoamLinkifyCandidate[],
-  lineNumber: number,
+  sourceRange: { startLine: number; endLine: number },
+  sourceKind: "line" | "paragraph",
 ): RoamLinkifyRepresentedSuggestion | null {
   const labelTokens = roamLinkifySemanticTokens(normalizedLabel);
   if (labelTokens.length < 2) return null;
 
-  const lineForTokens = /^\*+\s+/.test(line) ? parseHeadlineTitleForRoam(line) : line;
-  const lineTokens = new Set(roamLinkifySemanticTokens(lineForTokens));
-  if (!labelTokens.every((token) => lineTokens.has(token))) return null;
+  const sourceForTokens = sourceKind === "line" && /^\*+\s+/.test(text) ? parseHeadlineTitleForRoam(text) : text;
+  const sourceTokens = new Set(roamLinkifySemanticTokens(sourceForTokens));
+  if (!labelTokens.every((token) => sourceTokens.has(token))) return null;
 
   const contiguous = new RegExp(`(^|[^A-Za-z0-9_])(${escapeRegExp(normalizedLabel)})(?=$|[^A-Za-z0-9_])`, "i");
-  if (contiguous.test(line)) return null;
+  if (contiguous.test(text)) return null;
 
   const resolved = resolveRoamLinkifyCandidate(normalizedLabel, candidates);
   if (!resolved) return null;
 
+  const textTrimmed = text.trim().replace(/\s+/g, " ");
+  const textSnippet = textTrimmed.length > 320 ? `${textTrimmed.slice(0, 317)}…` : textTrimmed;
+  const evidence = labelTokens.filter((token) => sourceTokens.has(token));
+
   return {
     label: normalizedLabel,
     candidate: `${resolved.label} @ ${resolved.file}`,
-    line: lineNumber,
-    text: line.trim(),
-    confidence: 0.78,
-    reason: "all significant label tokens appear in this heading/paragraph, but not as exact contiguous title text",
+    line: sourceRange.startLine,
+    lineEnd: sourceRange.endLine,
+    sourceRange,
+    sourceKind,
+    text: textSnippet,
+    confidence: sourceKind === "paragraph" ? 0.72 : 0.78,
+    reason: sourceKind === "paragraph"
+      ? "all significant label tokens appear across this paragraph, but not as exact contiguous title text"
+      : "all significant label tokens appear in this heading/paragraph, but not as exact contiguous title text",
+    evidence,
   };
+}
+
+function collectRoamLinkifySemanticParagraphs(lines: string[]): Array<{ startLine: number; endLine: number; text: string }> {
+  const paragraphs: Array<{ startLine: number; endLine: number; text: string }> = [];
+  let current: Array<{ lineNumber: number; text: string }> = [];
+  let inBlock = false;
+  let inDrawer = false;
+  let inBacklinksSectionLevel: number | null = null;
+
+  const flush = (): void => {
+    if (current.length > 1) {
+      const first = current[0]!;
+      const last = current[current.length - 1]!;
+      paragraphs.push({
+        startLine: first.lineNumber,
+        endLine: last.lineNumber,
+        text: current.map((entry) => entry.text.trim()).join("\n"),
+      });
+    }
+    current = [];
+  };
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] || "";
+    const trimmed = line.trim();
+    const headlineMatch = /^(\*+)\s+/.exec(line);
+    if (headlineMatch) {
+      flush();
+      const level = headlineMatch[1]!.length;
+      if (inBacklinksSectionLevel !== null && level <= inBacklinksSectionLevel) {
+        inBacklinksSectionLevel = null;
+      }
+      const headlineTitle = normalizeRoamLinkLabel(parseHeadlineTitleForRoam(line));
+      if (headlineTitle === "backlinks") inBacklinksSectionLevel = level;
+      continue;
+    }
+
+    if (inBacklinksSectionLevel !== null) {
+      flush();
+      continue;
+    }
+
+    if (/^#\+begin_/i.test(trimmed)) {
+      flush();
+      inBlock = true;
+      continue;
+    }
+    if (/^#\+end_/i.test(trimmed)) {
+      flush();
+      inBlock = false;
+      continue;
+    }
+    if (trimmed === ":PROPERTIES:" || trimmed === ":LOGBOOK:") {
+      flush();
+      inDrawer = true;
+      continue;
+    }
+    if (trimmed === ":END:") {
+      flush();
+      inDrawer = false;
+      continue;
+    }
+    if (!trimmed || !lineAllowsRoamLinkify(line, inBlock, inDrawer)) {
+      flush();
+      continue;
+    }
+
+    current.push({ lineNumber: i + 1, text: line });
+  }
+
+  flush();
+  return paragraphs;
 }
 
 function isRoamLinkifyDateLikeBaseName(filePath: string): boolean {
@@ -1832,9 +1929,15 @@ function applyRoamLinkifyToFile(
         "i",
       );
       if (!boundaryRegex.test(line)) {
-        const suggestion = findRoamLinkifyRepresentedSuggestion(line, normalizedLabel, candidates, i + 1);
+        const suggestion = findRoamLinkifyRepresentedSuggestion(
+          line,
+          normalizedLabel,
+          candidates,
+          { startLine: i + 1, endLine: i + 1 },
+          "line",
+        );
         if (suggestion) {
-          const key = `${suggestion.line}\t${suggestion.label}\t${suggestion.candidate}`;
+          const key = `${suggestion.sourceRange.startLine}\t${suggestion.sourceRange.endLine}\t${suggestion.label}\t${suggestion.candidate}`;
           if (!representedSeen.has(key)) {
             representedSeen.add(key);
             debugRepresented.push(suggestion);
@@ -1865,6 +1968,37 @@ function applyRoamLinkifyToFile(
         count: replaced.count,
       });
       line = lines[i] || line;
+    }
+  }
+
+  for (const paragraph of collectRoamLinkifySemanticParagraphs(lines)) {
+    for (const normalizedLabel of labels) {
+      if (ownLabels.has(normalizedLabel)) continue;
+      const candidates = (labelIndex.get(normalizedLabel) || []).filter(
+        (candidate) => !ownNodeIds.has(candidate.id.toLowerCase()),
+      );
+      if (candidates.length === 0) continue;
+
+      const resolved = resolveRoamLinkifyCandidate(normalizedLabel, candidates);
+      const probeLabel = resolved?.label || candidates[0]?.label || normalizedLabel;
+      const boundaryRegex = new RegExp(
+        `(^|[^A-Za-z0-9_])(${escapeRegExp(probeLabel)})(?=$|[^A-Za-z0-9_])`,
+        "i",
+      );
+      if (boundaryRegex.test(paragraph.text)) continue;
+
+      const suggestion = findRoamLinkifyRepresentedSuggestion(
+        paragraph.text,
+        normalizedLabel,
+        candidates,
+        { startLine: paragraph.startLine, endLine: paragraph.endLine },
+        "paragraph",
+      );
+      if (!suggestion) continue;
+      const key = `${suggestion.sourceRange.startLine}\t${suggestion.sourceRange.endLine}\t${suggestion.label}\t${suggestion.candidate}`;
+      if (representedSeen.has(key)) continue;
+      representedSeen.add(key);
+      debugRepresented.push(suggestion);
     }
   }
 

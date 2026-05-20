@@ -160,7 +160,7 @@ npm run org2 -- roam graph --dir ~/notes --recursive --format report
 npm run org2 -- roam graph --dir ~/notes --recursive --format json
 #+end_src
 
-Org2 supports both title-based wiki links and explicit =id:= links, with backlinks across both forms. Linkify and graph reports are intended as compiler-style maintenance passes: preview references, strengthen links deliberately, and inspect corpus connectivity without leaving plain files. =org2 roam graph --format report= emits a human-readable maintenance view with graph summary, orphan/high-degree nodes, alias/title collisions, unresolved or ambiguous links with file/line citations, and linkify suggestions; =--format json= includes the same =maintenance= payload for scripts and CI.
+Org2 supports both title-based wiki links and explicit =id:= links, with backlinks across both forms. Linkify and graph reports are intended as compiler-style maintenance passes: preview references, strengthen links deliberately, and inspect corpus connectivity without leaving plain files. =org2 roam linkify --format json= reports exact title/alias replacements plus review-only represented-node suggestions with confidence, evidence tokens, and source ranges for headings or multi-line paragraphs; =--apply= only writes exact safe replacements, never semantic suggestions. =org2 roam graph --format report= emits a human-readable maintenance view with graph summary, orphan/high-degree nodes, alias/title collisions, unresolved or ambiguous links with file/line citations, and linkify suggestions; =--format json= includes the same =maintenance= payload for scripts and CI.
 
 * Org-crypt
 
