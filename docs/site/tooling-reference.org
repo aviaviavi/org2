@@ -101,6 +101,13 @@ npm run org2 -- ai run --job examples/jobs/weekly-summary.org2-ai.json --out vie
 npm run org2 -- ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2 --apply
 #+end_src
 
+=org2 ai suggest-links= ranks compiler-provided roam/linkify candidates with the deterministic mock adapter. It scans the graph, aliases, exact linkify matches, represented-node semantic suggestions, and title-case entity mentions, then emits review-only suggestions with confidence, reasons, source context, and citations. It never edits canonical notes directly; =--apply= only writes the suggestion report when =--out= is provided.
+
+#+begin_src sh
+npm run org2 -- ai suggest-links --dir ~/notes --recursive --format json
+npm run org2 -- ai suggest-links --dir ~/notes --recursive --out views/link-suggestions.org2 --apply
+#+end_src
+
 =org2 ai promote= is the safe acceptance path. It refuses drafts until =ORG2_REVIEW_STATUS= is =reviewed=, then appends the reviewed body to a canonical note only when =--apply= is present and marks the draft =promoted=.
 
 #+begin_src sh

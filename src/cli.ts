@@ -6060,6 +6060,52 @@ type MeetingSummaryJson = {
   citations: Array<{ file: string; line: number; label: string }>;
 };
 
+
+type AiLinkSuggestionCandidateNode = {
+  id: string;
+  label: string;
+  file: string;
+  aliases: string[];
+  degree: number;
+};
+
+type AiLinkSuggestionSourceRef = {
+  file: string;
+  line: number;
+  endLine?: number;
+};
+
+type AiLinkEntitySuggestion = {
+  kind: "link" | "entity";
+  strategy: "roam-linkify-exact" | "roam-linkify-represented-node" | "entity-extraction";
+  label: string;
+  candidate?: AiLinkSuggestionCandidateNode;
+  file: string;
+  line: number;
+  lineEnd?: number;
+  sourceKind: "line" | "paragraph";
+  sourceContext: string;
+  confidence: number;
+  reason: string;
+  evidence: string[];
+  sourceRefs: AiLinkSuggestionSourceRef[];
+  reviewOnly: true;
+};
+
+type AiLinkSuggestionReport = {
+  $schema: "org2:ai-link-suggestions:v1";
+  action: "ai-suggest-links";
+  dir: string;
+  recursive: boolean;
+  scanned: number;
+  targetFileCount: number;
+  graph: { nodeCount: number; edgeCount: number; aliasCollisionCount: number };
+  adapter: AiAdapterResponse["metadata"];
+  applied: false;
+  output?: string;
+  suggestions: AiLinkEntitySuggestion[];
+};
+
 function orgCitationLink(source: AiDraftSource, line: number): string {
   return `[[file:${source.relativePath}::${line}][${source.relativePath}:${line}]]`;
 }
@@ -6125,6 +6171,228 @@ function collectMeetingEntities(lines: AiDraftSourceLine[]): Array<{ name: strin
     .map(([name, value]) => ({ name, mentions: value.mentions, citations: value.citations.slice(0, 3) }))
     .sort((a, b) => b.mentions - a.mentions || a.name.localeCompare(b.name))
     .slice(0, 25);
+}
+
+
+function clampConfidence(value: number): number {
+  return Math.max(0, Math.min(1, Math.round(value * 100) / 100));
+}
+
+function sourceLineContext(filePath: string, startLine: number, endLine = startLine): string {
+  try {
+    const lines = fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n").split("\n");
+    return lines
+      .slice(Math.max(0, startLine - 1), Math.max(startLine, endLine))
+      .map((line) => stripOrgMarkupForSnippet(line))
+      .filter(Boolean)
+      .join(" ")
+      .slice(0, 280);
+  } catch {
+    return "";
+  }
+}
+
+function aiLinkSuggestionNodeForCandidate(graph: RoamGraphData, candidateRaw: string, labelRaw: string): AiLinkSuggestionCandidateNode | undefined {
+  const raw = String(candidateRaw || "").trim();
+  const normalizedLabel = normalizeRoamLinkLabel(labelRaw);
+  let node = graph.nodes.find((candidate) => candidate.id.toLowerCase() === raw.toLowerCase());
+  if (!node) {
+    const atIndex = raw.lastIndexOf(" @ ");
+    const candidateLabel = atIndex >= 0 ? raw.slice(0, atIndex) : raw;
+    const candidateFile = atIndex >= 0 ? path.resolve(raw.slice(atIndex + 3)) : "";
+    const normalizedCandidateLabel = normalizeRoamLinkLabel(candidateLabel) || normalizedLabel;
+    node = graph.nodes.find((candidate) => {
+      const fileMatches = !candidateFile || path.resolve(candidate.file) === candidateFile;
+      return fileMatches && candidate.labels.some((alias) => normalizeRoamLinkLabel(alias) === normalizedCandidateLabel);
+    });
+  }
+  if (!node) return undefined;
+  return { id: node.id, label: node.label, file: node.file, aliases: node.labels, degree: node.degree };
+}
+
+function collectAiEntitySuggestions(targetFiles: string[], labelIndex: Map<string, RoamLinkifyCandidate[]>): AiLinkEntitySuggestion[] {
+  const entities = new Map<string, { label: string; mentions: number; refs: AiLinkSuggestionSourceRef[]; contexts: string[] }>();
+  const re = /\b[A-Z][A-Za-z0-9]*(?:[\s-]+[A-Z][A-Za-z0-9]*){0,3}\b/g;
+
+  for (const file of targetFiles) {
+    let lines: string[];
+    try {
+      lines = fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n").split("\n");
+    } catch {
+      continue;
+    }
+
+    for (let index = 0; index < lines.length; index += 1) {
+      const rawLine = lines[index] || "";
+      const trimmed = rawLine.trim();
+      if (!trimmed || /^#\+/.test(trimmed) || /^:/.test(trimmed) || /^\*+\s+/.test(trimmed)) continue;
+      if (/\[\[|id:[0-9a-f-]{32,}/i.test(rawLine)) continue;
+
+      const context = stripOrgMarkupForSnippet(rawLine);
+      if (!context || context.length < 8) continue;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(context)) !== null) {
+        const label = String(match[0] || "").trim();
+        const normalized = normalizeRoamLinkLabel(label);
+        if (label.length < 3 || GENERIC_ENTITY_STOP_WORDS.has(label.toUpperCase()) || labelIndex.has(normalized)) continue;
+        const current = entities.get(normalized) || { label, mentions: 0, refs: [], contexts: [] };
+        current.mentions += 1;
+        const ref = { file, line: index + 1 };
+        if (!current.refs.some((existing) => existing.file === ref.file && existing.line === ref.line)) current.refs.push(ref);
+        if (!current.contexts.includes(context)) current.contexts.push(context);
+        entities.set(normalized, current);
+      }
+    }
+  }
+
+  return Array.from(entities.values())
+    .sort((a, b) => b.mentions - a.mentions || a.label.localeCompare(b.label))
+    .slice(0, 20)
+    .map((entity) => {
+      const firstRef = entity.refs[0] || { file: "", line: 1 };
+      return {
+        kind: "entity" as const,
+        strategy: "entity-extraction" as const,
+        label: entity.label,
+        file: firstRef.file,
+        line: firstRef.line,
+        sourceKind: "line" as const,
+        sourceContext: entity.contexts[0] || "",
+        confidence: clampConfidence(entity.mentions > 1 ? 0.62 : 0.45),
+        reason: `Title-case entity mentioned ${entity.mentions} time${entity.mentions === 1 ? "" : "s"}; review whether it should become a new node or alias.`,
+        evidence: entity.contexts.slice(0, 3),
+        sourceRefs: entity.refs.slice(0, 3),
+        reviewOnly: true as const,
+      };
+    });
+}
+
+async function buildAiLinkSuggestionReport(options: { dir: string; recursive: boolean; targetFiles: string[]; out?: string }): Promise<AiLinkSuggestionReport> {
+  const allFiles = listOrgLikeFiles(options.dir, options.recursive);
+  const labelIndex = buildRoamLinkifyIndex(allFiles);
+  const graph = buildRoamGraph(allFiles);
+  const maintenance = buildRoamGraphMaintenanceReport(allFiles, graph);
+  const explicitTargets = new Set(options.targetFiles.map((file) => path.resolve(file)));
+  const targetFiles = explicitTargets.size > 0 ? allFiles.filter((file) => explicitTargets.has(path.resolve(file))) : allFiles;
+  const targetSet = new Set(targetFiles.map((file) => path.resolve(file)));
+  const suggestions: AiLinkEntitySuggestion[] = [];
+
+  for (const suggestion of maintenance.linkifySuggestions) {
+    if (!targetSet.has(path.resolve(suggestion.file))) continue;
+    const candidate = aiLinkSuggestionNodeForCandidate(graph, suggestion.candidate, suggestion.label);
+    suggestions.push({
+      kind: "link",
+      strategy: suggestion.kind === "exact" ? "roam-linkify-exact" : "roam-linkify-represented-node",
+      label: suggestion.label,
+      candidate,
+      file: suggestion.file,
+      line: suggestion.line,
+      lineEnd: suggestion.lineEnd,
+      sourceKind: suggestion.sourceKind || "line",
+      sourceContext: suggestion.text || sourceLineContext(suggestion.file, suggestion.line, suggestion.lineEnd || suggestion.line),
+      confidence: clampConfidence(typeof suggestion.confidence === "number" ? suggestion.confidence : 0.9),
+      reason: suggestion.reason,
+      evidence: suggestion.evidence || [],
+      sourceRefs: [{ file: suggestion.file, line: suggestion.line, endLine: suggestion.lineEnd }],
+      reviewOnly: true,
+    });
+  }
+
+  suggestions.push(...collectAiEntitySuggestions(targetFiles, labelIndex));
+  const ranked = suggestions
+    .sort((a, b) => b.confidence - a.confidence || a.file.localeCompare(b.file) || a.line - b.line || a.label.localeCompare(b.label))
+    .slice(0, 80);
+
+  const adapter = new MockAiAdapter({
+    name: "local-link-suggester",
+    model: "deterministic-link-entity-ranker",
+    responder: (request) => ({
+      schema: "org2:ai-adapter-response:v1",
+      text: "Ranked review-only link and entity suggestions from Org2 compiler graph/linkify context.",
+      json: { suggestions: ranked, graph: { nodeCount: graph.nodes.length, edgeCount: graph.edges.length } },
+      citations: ranked.flatMap((suggestion) => suggestion.sourceRefs.map((source) => ({ source }))),
+      metadata: {
+        adapterName: "placeholder",
+        model: "placeholder",
+        provider: "mock",
+        invocationId: `mock-link-${sha256Hex(request.context.map((item) => item.text).join("\n")).slice(0, 12)}`,
+        completedAt: new Date().toISOString(),
+      },
+    }),
+  });
+  const response = await adapter.generate(createAiAdapterRequest({
+    jobId: "inline-link-entity-suggestions",
+    task: {
+      type: "suggest-links",
+      template: "link-entity-suggestions@v1",
+      instructions: "Rank and explain candidate links/entities using only compiler-provided Org2 graph, aliases, linkify suggestions, and source context.",
+    },
+    prompt: [
+      { role: "system", content: "Use only supplied Org2 compiler context. Return review-only suggestions with citations; never edit canonical notes." },
+      { role: "user", content: "Rank likely links and entities with confidence, reason, and source context." },
+    ],
+    context: [
+      {
+        id: "graph-state",
+        type: "compiled-corpus",
+        title: "Org2 roam graph state",
+        text: JSON.stringify({ nodes: graph.nodes, edges: graph.edges, aliasCollisions: maintenance.aliasCollisions }, null, 2),
+      },
+      {
+        id: "compiler-candidates",
+        type: "query-result",
+        title: "Compiler linkify/entity candidates",
+        text: JSON.stringify(ranked, null, 2),
+        sourceRefs: ranked.flatMap((suggestion) => suggestion.sourceRefs),
+      },
+    ],
+    output: { contentType: "text+json", schemaHint: "org2:ai-link-suggestions:v1" },
+    provenance: { requireSourceRefs: true, promptTemplateVersion: "link-entity-suggestions@v1" },
+  }));
+
+  return {
+    $schema: "org2:ai-link-suggestions:v1",
+    action: "ai-suggest-links",
+    dir: options.dir,
+    recursive: options.recursive,
+    scanned: allFiles.length,
+    targetFileCount: targetFiles.length,
+    graph: {
+      nodeCount: graph.nodes.length,
+      edgeCount: graph.edges.length,
+      aliasCollisionCount: maintenance.aliasCollisions.length,
+    },
+    adapter: response.metadata,
+    applied: false,
+    output: options.out,
+    suggestions: ranked,
+  };
+}
+
+function renderAiLinkSuggestionReportText(report: AiLinkSuggestionReport): string {
+  const lines: string[] = [];
+  lines.push("Org2 AI-assisted link/entity suggestions");
+  lines.push("=========================================");
+  lines.push("");
+  lines.push(`Scanned files: ${report.scanned}`);
+  lines.push(`Target files: ${report.targetFileCount}`);
+  lines.push(`Graph: ${report.graph.nodeCount} nodes, ${report.graph.edgeCount} edges, ${report.graph.aliasCollisionCount} alias collisions`);
+  lines.push(`Adapter: ${report.adapter.adapterName} ${report.adapter.model}${report.adapter.provider ? ` (${report.adapter.provider})` : ""}`);
+  lines.push("Mode: review-only; no canonical notes were edited.");
+  lines.push("");
+  if (report.suggestions.length === 0) {
+    lines.push("- No link or entity suggestions found.");
+  } else {
+    for (const suggestion of report.suggestions) {
+      const lineRange = suggestion.lineEnd && suggestion.lineEnd !== suggestion.line ? `${suggestion.line}-${suggestion.lineEnd}` : `${suggestion.line}`;
+      const target = suggestion.candidate ? ` -> ${suggestion.candidate.label} (${suggestion.candidate.id})` : "";
+      const evidence = suggestion.evidence.length > 0 ? ` Evidence: ${suggestion.evidence.join("; ")}` : "";
+      lines.push(`- ${suggestion.kind} ${suggestion.strategy} ${suggestion.file}:${lineRange} ${suggestion.label}${target} confidence=${suggestion.confidence.toFixed(2)}; ${suggestion.reason}${evidence}`);
+      if (suggestion.sourceContext) lines.push(`  Context: ${suggestion.sourceContext}`);
+    }
+  }
+  lines.push("");
+  return lines.join("\n");
 }
 
 function renderEntityExtraction(sources: AiDraftSource[]): string {
@@ -6550,7 +6818,7 @@ async function main(): Promise<void> {
   let compileOut = "";
 
   // AI job manifests and provider-free draft artifact workflows
-  let aiAction: "validate-job" | "run" | "promote" | "" = "";
+  let aiAction: "validate-job" | "run" | "promote" | "suggest-links" | "" = "";
   let aiJobFile = "";
   let aiFormat: "text" | "json" = "text";
   let aiOut = "";
@@ -6708,6 +6976,8 @@ async function main(): Promise<void> {
           aiAction = "run";
         } else if (sub === "promote") {
           aiAction = "promote";
+        } else if (sub === "suggest-links" || sub === "suggest" || sub === "links") {
+          aiAction = "suggest-links";
         }
         i++;
       }
@@ -7735,6 +8005,7 @@ Roam / IDs:
   org2 ai validate-job --job FILE [--format text|json]
   org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
   org2 ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
+  org2 ai suggest-links --dir DIR [--recursive] [--file FILE] [--out FILE --apply] [--format text|json]
   org2 ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
   org2 roam db-sync --dir DIR [--recursive] [--apply]
   org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply]
@@ -7747,6 +8018,7 @@ Maintenance / health:
   org2 ai validate-job --job FILE [--format text|json]
   org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
   org2 ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
+  org2 ai suggest-links --dir DIR [--recursive] [--file FILE] [--out FILE --apply] [--format text|json]
   org2 ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
   org2 lint [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
   org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]
@@ -7771,7 +8043,7 @@ function printScopedUsage(
     roamAction: "db-sync" | "backlinks" | "node" | "link" | "linkify" | "graph";
     roamNodeAction: "new";
     roamLinkAction: "insert-backlink";
-    aiAction: "validate-job" | "run" | "promote" | "";
+    aiAction: "validate-job" | "run" | "promote" | "suggest-links" | "";
   },
   exitCode: number,
 ): never {
@@ -8021,6 +8293,7 @@ Usage:
   org2 ai validate-job --job FILE [--format text|json]
   org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
   org2 ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
+  org2 ai suggest-links --dir DIR [--recursive] [--file FILE] [--out FILE --apply] [--format text|json]
   org2 ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
 
 Flags:
@@ -8135,7 +8408,7 @@ Flags:
 
   if (command === "ai") {
     if (!aiAction) {
-      console.error("Error: org2 ai requires a subcommand (validate-job, run, or promote)");
+      console.error("Error: org2 ai requires a subcommand (validate-job, run, suggest-links, or promote)");
       process.exit(1);
     }
 
@@ -8180,6 +8453,36 @@ Flags:
         console.log(JSON.stringify({ $schema: "org2:ai-promote:v1", source: aiPromoteFile, target: aiPromoteToFile, applied: true }, null, 2));
       } else {
         process.stdout.write(`Promoted reviewed artifact to ${aiPromoteToFile}\n`);
+      }
+      return;
+    }
+
+    if (aiAction === "suggest-links") {
+      if (!dir) {
+        console.error("Error: org2 ai suggest-links requires --dir DIR");
+        process.exit(1);
+      }
+      const report = await buildAiLinkSuggestionReport({ dir, recursive, targetFiles: files, out: aiOut || undefined });
+      if (aiApply) {
+        if (!aiOut) {
+          console.error("Error: org2 ai suggest-links --apply requires --out FILE; canonical notes are never edited directly");
+          process.exit(1);
+        }
+        const outputPath = resolveWorkspaceRelative(process.cwd(), aiOut, "--out");
+        fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+        const writtenReport = { ...report, applied: true, output: aiOut };
+        fs.writeFileSync(outputPath, aiFormat === "json" ? JSON.stringify(writtenReport, null, 2) + "\n" : renderAiLinkSuggestionReportText(report), "utf8");
+        if (aiFormat === "json") {
+          console.log(JSON.stringify(writtenReport, null, 2));
+        } else {
+          process.stdout.write(`Wrote review-only AI link/entity suggestion report to ${aiOut}\n`);
+        }
+        return;
+      }
+      if (aiFormat === "json") {
+        console.log(JSON.stringify(report, null, 2));
+      } else {
+        process.stdout.write(renderAiLinkSuggestionReportText(report));
       }
       return;
     }
@@ -8297,7 +8600,7 @@ Flags:
       return;
     }
 
-    console.error("Error: org2 ai requires a subcommand (validate-job, run, or promote)");
+    console.error("Error: org2 ai requires a subcommand (validate-job, run, suggest-links, or promote)");
     process.exit(1);
   }
 

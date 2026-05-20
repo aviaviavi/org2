@@ -74,9 +74,9 @@ export interface AiGenerateResult {
 
 Secrets and provider-specific configuration stay outside note files, manifests, compiled corpus artifacts, and generated Org output. Manifests should refer to providers by symbolic names such as =local-default= or =work-summary=, not API keys or full secret-bearing URLs.
 
-* Proposed CLI surface
+* CLI surface
 
-The proposed command family is:
+The command family is:
 
 #+begin_src sh
 org2 ai run --task summarize-meeting --file raw/team-sync.org2 --out views/team-sync-summary.org2
@@ -85,7 +85,7 @@ org2 ai suggest-links --dir notes --recursive --out views/link-suggestions.org2
 org2 ai validate-job --job jobs/weekly-summary.org2-ai.json
 #+end_src
 
-Implemented slices so far are provider-free manifest validation, reviewable draft artifact writing/promotion, and the provider-agnostic adapter boundary; see [[file:ai-job-manifests.org][AI job manifests]], [[file:ai-draft-artifacts.org][AI draft artifacts]], [[file:ai-adapters.org][AI adapter interface]], =spec/v0/ai-job-manifest.schema.json=, and =src/aiAdapter.ts=.
+Implemented slices so far are provider-free manifest validation, reviewable draft artifact writing/promotion, AI-assisted link/entity suggestion reports using the deterministic mock adapter, and the provider-agnostic adapter boundary; see [[file:ai-job-manifests.org][AI job manifests]], [[file:ai-draft-artifacts.org][AI draft artifacts]], [[file:ai-adapters.org][AI adapter interface]], =spec/v0/ai-job-manifest.schema.json=, and =src/aiAdapter.ts=.
 
 Command responsibilities:
 
