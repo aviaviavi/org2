@@ -6115,8 +6115,12 @@ function collectAiDraftSourceLines(sources: AiDraftSource[]): AiDraftSourceLine[
   for (const source of sources) {
     const lines = source.text.split("\n");
     for (let index = 0; index < lines.length; index += 1) {
-      const text = stripOrgMarkupForSnippet(lines[index] || "");
+      const raw = lines[index] || "";
+      const trimmed = raw.trim();
+      if (!trimmed || /^#\+/.test(trimmed) || /^:/.test(trimmed) || /^\*+\s+/.test(trimmed) || /^- \[ \]/.test(trimmed)) continue;
+      const text = stripOrgMarkupForSnippet(raw);
       if (!text || text.length < 3) continue;
+      if (/^(PROPERTIES|END|Notes|Raw transcript|AI Summary|Summary|TODO items|Review checklist|Job|Sources|Source excerpts)$/i.test(text)) continue;
       out.push({
         source,
         line: index + 1,
@@ -6411,8 +6415,9 @@ function buildMeetingSummaryJson(sources: AiDraftSource[]): MeetingSummaryJson {
   );
   const actionLines = firstUniqueMeetingLines(
     lines,
-    (line) => /\b(TODO|will|needs? to|follow[- ]?up|action(?: item)?|owner|next step|before|by\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|launch))\b/i.test(line.text),
-    10,
+    (line) => /\b(?:TODO|ACTION|follow[- ]?up|next step|bug|fix(?:ing)? a bug|owner:)\b/i.test(line.text)
+      && !/\b(?:Action items \/ TODO suggestions|Transcript-derived action cues|Source citations|Suggested links)\b/i.test(line.text),
+    5,
   );
   const summaryLines = firstUniqueMeetingLines(
     lines,
@@ -6429,15 +6434,10 @@ function buildMeetingSummaryJson(sources: AiDraftSource[]): MeetingSummaryJson {
       ? summaryLines.slice(0, 3).map((line) => `${normalizeMeetingItemText(line.text)} ${line.citation}`)
       : ["Review the cited source excerpts; no substantive transcript lines were detected."],
     decisions: decisionLines.map((line) => ({ text: normalizeMeetingItemText(line.text), citations: [line.citation] })),
-    actionItems: actionLines.map((line) => ({ text: normalizeMeetingItemText(line.text), todo: `TODO ${normalizeMeetingItemText(line.text)}`, citations: [line.citation] })),
+    actionItems: actionLines.map((line) => ({ text: normalizeMeetingItemText(line.text), todo: normalizeMeetingItemText(line.text), citations: [line.citation] })),
     entities,
-    suggestedLinks: entities.slice(0, 8).map((entity) => ({
-      label: entity.name,
-      reason: `Title-case entity mentioned ${entity.mentions} time${entity.mentions === 1 ? "" : "s"}; review whether it matches an existing Org2 node before promoting.`,
-      confidence: entity.mentions > 1 ? "medium" : "low",
-      citations: entity.citations,
-    })),
-    citations: citedLines.map((line) => ({ file: line.source.relativePath, line: line.line, label: `${line.source.relativePath}:${line.line}` })),
+    suggestedLinks: [],
+    citations: [],
   };
 }
 
@@ -6522,33 +6522,21 @@ function renderCitedItems(items: Array<{ text: string; citations: string[] }>, f
 }
 
 function renderTodoItems(items: Array<{ todo: string; citations: string[] }>, fallback: string): string {
-  if (items.length === 0) return `- ${fallback}\n`;
-  return items.map((item) => `- ${item.todo} ${item.citations.join(" ")}`).join("\n") + "\n";
+  if (items.length === 0) return `${fallback}\n`;
+  return items.map((item) => `* TODO ${item.todo}\nSCHEDULED: <${new Date().toISOString().slice(0, 10)}>`).join("\n") + "\n";
 }
 
 function renderMeetingSummarySections(response: AiAdapterResponse | null | undefined): string | null {
   if (!response || !response.json || typeof response.json !== "object" || Array.isArray(response.json)) return null;
   const json = response.json as Partial<MeetingSummaryJson>;
   const summary = Array.isArray(json.summary) ? json.summary.map((item) => String(item || "").trim()).filter(Boolean) : [];
-  const decisions = Array.isArray(json.decisions) ? json.decisions : [];
   const actionItems = Array.isArray(json.actionItems) ? json.actionItems : [];
-  const entities = Array.isArray(json.entities) ? json.entities : [];
-  const suggestedLinks = Array.isArray(json.suggestedLinks) ? json.suggestedLinks : [];
-  const citations = Array.isArray(json.citations) ? json.citations : [];
 
   return `* Generated meeting summary
 ** Summary
-${bulletOrFallback(summary, "Review the source excerpts manually; no generated summary was returned.")}
-** Key decisions
-${renderCitedItems(decisions, "No explicit decisions detected; verify against source excerpts.")}
-** Action items / TODO suggestions
-${renderTodoItems(actionItems, "No explicit action items detected; verify against source excerpts.")}
-** People, orgs, and project entities
-${entities.length > 0 ? entities.map((entity) => `- ${entity.name} (${entity.mentions} mention${entity.mentions === 1 ? "" : "s"}) ${entity.citations.join(" ")}`).join("\n") + "\n" : "- No obvious people/org/project entities detected.\n"}
-** Suggested links
-${suggestedLinks.length > 0 ? suggestedLinks.map((link) => `- =${link.label}= (${link.confidence} confidence): ${link.reason} ${link.citations.join(" ")}`).join("\n") + "\n" : "- No suggested links; add links manually after review.\n"}
-** Source citations
-${citations.length > 0 ? citations.map((citation) => `- [[file:${citation.file}::${citation.line}][${citation.label}]]`).join("\n") + "\n" : "- See source excerpts below.\n"}`;
+${bulletOrFallback(summary, "Review the transcript manually; no generated summary was returned.")}
+** TODO items
+${renderTodoItems(actionItems, "No explicit action items detected.")}`;
 }
 
 function renderAiGeneratedDraft(manifest: Record<string, unknown>, sources: AiDraftSource[], outputPath: string, adapterResponse?: AiAdapterResponse | null): string {
