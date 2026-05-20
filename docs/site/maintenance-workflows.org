@@ -44,6 +44,8 @@ Org2 should preserve a clear distinction between source files and generated arti
 
 * Current concrete workflow
 
-Today, =org2 lint= is the main corpus-health command. It checks artifact metadata, duplicate IDs, unresolved provenance references, and conventional corpus-flow directories such as =raw/=, =notes/=, =compiled/=, =views/=, and =publish/=.
+Today, =org2 lint= is the main corpus-health command. It checks artifact metadata, duplicate IDs, unresolved provenance references, graph link health (broken =id:= links, unresolved wiki links, and ambiguous wiki labels), and conventional corpus-flow directories such as =raw/=, =notes/=, =compiled/=, =views/=, and =publish/=.
+
+The same diagnostics are available in =--format json= for CI/editor consumers, so VS Code and scripts can surface corpus trust-boundary problems without scraping report text.
 
 For command details, see [[file:tooling-reference.org::*Corpus lint][Tooling reference: Corpus lint]].

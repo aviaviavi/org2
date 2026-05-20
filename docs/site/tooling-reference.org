@@ -77,6 +77,8 @@ Current checks include:
 - invalid or missing =ORG2_ARTIFACT_ROLE= on generated outputs
 - missing/invalid provenance, generator, and generated-at metadata
 - duplicate IDs and unresolved provenance references
+- stale generated artifacts when provenance file mtimes or =ORG2_SOURCE_HASHES= no longer match
+- unresolved =id:= links, unresolved wiki links, and ambiguous wiki links/aliases using the same graph index as roam workflows
 - conventional corpus-flow checks when you organize notes as =raw/= -> =notes/= -> =compiled/= -> =views/= -> =publish/=
 
 See [[file:corpus-flow.org][Corpus flow]] for the canonical zone model, artifact roles, and generated-output trust boundaries.
