@@ -17,6 +17,7 @@
     "onCommand:org2.compileWorkspaceCorpus",
     "onCommand:org2.aiPromoteDraft",
     "onCommand:org2.aiRunDraft",
+    "onCommand:org2.aiSuggestLinks",
     "onCommand:org2.searchWorkspace",
     "onCommand:org2.queryWorkspace",
     "onCommand:org2.roamLinkifyPreview",
@@ -151,6 +152,10 @@
       {
         "command": "org2.aiRunDraft",
         "title": "Org2: AI — Write Draft Artifact"
+      },
+      {
+        "command": "org2.aiSuggestLinks",
+        "title": "Org2: AI — Suggest Links & Entities"
       },
       {
         "command": "org2.aiPromoteDraft",

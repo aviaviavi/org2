@@ -121,6 +121,7 @@ Available from command palette (=Cmd/Ctrl+Shift+P=):
 - =org2.roamLinkifyPreview= (shows exact replacements plus review-only semantic/alias represented-node suggestions)
 - =org2.roamLinkifyApply= (applies exact safe replacements only)
 - =org2.roamGraph= (includes linkify maintenance suggestions with source ranges)
+- =org2.aiSuggestLinks= (writes a review-only AI-assisted link/entity suggestion report; canonical notes are not edited)
 - =org2.formatWorkspaceCheck=
 - =org2.formatWorkspaceApply=
 - =org2.formatCurrentFileCheck=
