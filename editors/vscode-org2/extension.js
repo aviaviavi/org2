@@ -1617,7 +1617,7 @@ function activate(context) {
       formatterOutput.show(true);
 
       if (issues.length === 0) {
-        vscode.window.showInformationMessage('Org2: corpus lint passed (no artifact metadata issues).');
+        vscode.window.showInformationMessage('Org2: corpus lint passed (no graph/artifact health issues).');
       } else {
         vscode.window.showWarningMessage(`Org2: corpus lint found ${issues.length} issue(s). See "Org2 Formatter" output.`);
       }

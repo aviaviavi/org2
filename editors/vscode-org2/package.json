@@ -140,7 +140,7 @@
       },
       {
         "command": "org2.lintWorkspaceCorpus",
-        "title": "Org2: Corpus Lint — Artifact Roles & Provenance"
+        "title": "Org2: Corpus Lint — Graph & Artifact Health"
       },
       {
         "command": "org2.compileWorkspaceCorpus",
