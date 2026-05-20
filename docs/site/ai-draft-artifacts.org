@@ -1,0 +1,70 @@
+#+TITLE: AI draft artifacts
+#+SUBTITLE: Reviewable generated output with provenance and safe promotion
+
+AI commands write into generated zones first. The goal is to make model output useful without letting it silently become canonical truth.
+
+=org2 ai run= currently provides a provider-free draft writer for manifest-selected source files. It reads local Org2 source files, records source hashes, stamps artifact metadata, and writes a review-required draft under =views/= or =compiled/=.
+
+#+begin_src sh
+npm run org2 -- ai run --job jobs/team-sync.org2-ai.json --apply
+npm run org2 -- ai run --job jobs/team-sync.org2-ai.json --out views/team-sync-summary.org2 --apply
+#+end_src
+
+Without =--apply=, the command prints a safe preview and writes nothing.
+
+* Draft format
+
+A generated draft starts with an Org2 property drawer:
+
+#+begin_src org
+:PROPERTIES:
+:ID: team-sync-summary-team-sync-summary.org2
+:ORG2_ARTIFACT_SCHEMA: org2-artifact-metadata/v1
+:ORG2_ARTIFACT_ROLE: view
+:ORG2_PROVENANCE: file:raw/team-sync.org2
+:ORG2_GENERATOR: org2 ai run team-sync-summary adapter=local-default model=fixture-model
+:ORG2_GENERATED_AT: 2026-05-20T01:00:00.000Z
+:ORG2_AI_JOB_ID: team-sync-summary
+:ORG2_AI_TASK: summarize-meeting
+:ORG2_PROMPT_TEMPLATE: meeting-summary@v1
+:ORG2_AI_ADAPTER: local-default
+:ORG2_AI_MODEL: fixture-model
+:ORG2_SOURCE_HASHES: file:raw/team-sync.org2=sha256:...
+:ORG2_REVIEW_STATUS: review-required
+:END:
+#+end_src
+
+The body includes a review checklist, job metadata, source list, generated summary or extraction section, and cited source excerpts using =file:path::line= links.
+
+* Review and promotion
+
+Promotion is explicit:
+
+1. Inspect the draft and verify generated claims against cited source lines.
+2. Edit the draft until the accepted content is safe for canonical notes.
+3. Change =ORG2_REVIEW_STATUS= from =review-required= to =reviewed=.
+4. Run =org2 ai promote= with =--apply= to append the reviewed body to a canonical note file.
+
+#+begin_src sh
+npm run org2 -- ai promote \
+  --file views/team-sync-summary.org2 \
+  --to-file notes/team-sync.org2 \
+  --apply
+#+end_src
+
+Promotion refuses drafts that are still =generated= or =review-required=. On success it appends only the draft body to the target note, omits the generated artifact drawer from canonical notes, and marks the source draft =promoted=.
+
+* Lint rules
+
+=org2 lint= flags generated artifacts that still need review with =artifact-generated-unreviewed=. Existing artifact checks also catch missing provenance, stale provenance mtimes, invalid or mismatched source hashes, and invalid review statuses.
+
+This makes AI output behave like a build artifact: useful, traceable, lintable, and overwriteable until a human explicitly reviews and promotes it.
+
+* VS Code commands
+
+The VS Code extension exposes the same safe path through command-palette actions:
+
+- =Org2: AI — Write Draft Artifact= picks a job manifest, previews =org2 ai run=, confirms, writes the draft, and opens it for review.
+- =Org2: AI — Promote Reviewed Draft= previews =org2 ai promote= for the active/selected draft, requires confirmation, and opens the canonical target after promotion.
+
+Both commands use the CLI; the editor does not bypass review status checks or write canonical notes without the explicit promote confirmation.

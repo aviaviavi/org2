@@ -6,7 +6,7 @@ The CLI is the shared backend for editor integrations and automation. You can us
 
 * Core command families
 
-Run =npm run org2 -- --help= for current top-level usage. AI architecture, job design, and provider boundaries are documented separately in [[file:ai-processing-architecture.org][AI processing architecture]], [[file:ai-job-manifests.org][AI job manifests]], and [[file:ai-adapters.org][AI adapter interface]] so the deterministic CLI surface stays clear.
+Run =npm run org2 -- --help= for current top-level usage. AI architecture, job design, draft artifacts, and provider boundaries are documented separately in [[file:ai-processing-architecture.org][AI processing architecture]], [[file:ai-job-manifests.org][AI job manifests]], [[file:ai-draft-artifacts.org][AI draft artifacts]], and [[file:ai-adapters.org][AI adapter interface]] so the deterministic CLI surface stays clear.
 
 Main workflows:
 
@@ -93,6 +93,21 @@ npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json 
 #+end_src
 
 Use this in CI or editor workflows before a future AI runner consumes a job. The validator checks corpus input selection, task type, symbolic adapter names, generated output targets, provenance/review requirements, and common accidental secret leaks. See [[file:ai-job-manifests.org][AI job manifests]] for the schema and examples.
+
+=org2 ai run= writes a reviewable generated draft artifact from a validated job. The current implementation is provider-free and uses manifest =input.files= as deterministic source material, including simple glob patterns. It stamps =ORG2_PROVENANCE=, =ORG2_SOURCE_HASHES=, prompt/template, adapter/model, generated-at, and =ORG2_REVIEW_STATUS= metadata. Without =--apply= it previews the draft.
+
+#+begin_src sh
+npm run org2 -- ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2
+npm run org2 -- ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2 --apply
+#+end_src
+
+=org2 ai promote= is the safe acceptance path. It refuses drafts until =ORG2_REVIEW_STATUS= is =reviewed=, then appends the reviewed body to a canonical note only when =--apply= is present and marks the draft =promoted=.
+
+#+begin_src sh
+npm run org2 -- ai promote --file views/weekly-summary.org2 --to-file notes/weekly-summary.org2 --apply
+#+end_src
+
+See [[file:ai-draft-artifacts.org][AI draft artifacts]] for the full format, review checklist, and VS Code command-palette entry points.
 
 * Compiled corpus artifacts
 

@@ -15,6 +15,8 @@
     "onCommand:org2.formatWorkspaceApply",
     "onCommand:org2.lintWorkspaceCorpus",
     "onCommand:org2.compileWorkspaceCorpus",
+    "onCommand:org2.aiPromoteDraft",
+    "onCommand:org2.aiRunDraft",
     "onCommand:org2.searchWorkspace",
     "onCommand:org2.queryWorkspace",
     "onCommand:org2.roamLinkifyPreview",
@@ -145,6 +147,14 @@
       {
         "command": "org2.compileWorkspaceCorpus",
         "title": "Org2: Compile Workspace Corpus Artifact"
+      },
+      {
+        "command": "org2.aiRunDraft",
+        "title": "Org2: AI — Write Draft Artifact"
+      },
+      {
+        "command": "org2.aiPromoteDraft",
+        "title": "Org2: AI — Promote Reviewed Draft"
       },
       {
         "command": "org2.searchWorkspace",

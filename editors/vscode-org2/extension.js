@@ -1656,6 +1656,112 @@ function activate(context) {
     }
   }
 
+  function relativeWorkspacePath(root, filePath) {
+    const rel = path.relative(root, filePath).replace(/\\/g, '/');
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return undefined;
+    return rel;
+  }
+
+  async function runAiDraftFromJob() {
+    const root = getAgendaRootDir();
+    const jobUris = await vscode.window.showOpenDialog({
+      defaultUri: vscode.Uri.file(root),
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      filters: { 'AI job manifests': ['json'], 'All files': ['*'] },
+      title: 'Select Org2 AI job manifest',
+    });
+    if (!jobUris || jobUris.length === 0 || jobUris[0].scheme !== 'file') return;
+
+    const jobPath = jobUris[0].fsPath;
+    const defaultName = `${path.basename(jobPath, path.extname(jobPath))}.org2`;
+    const targetUri = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file(path.join(root, 'views', defaultName)),
+      filters: { 'Org2 draft artifacts': ['org2', 'org'] },
+      title: 'Write Org2 AI draft artifact',
+    });
+    if (!targetUri || targetUri.scheme !== 'file') return;
+
+    const outRel = relativeWorkspacePath(root, targetUri.fsPath);
+    if (!outRel) {
+      vscode.window.showErrorMessage('Org2: AI draft output must be inside the workspace.');
+      return;
+    }
+
+    const preview = await runOrg2CompilerCommand('Org2 AI Draft Preview', ['ai', 'run', '--job', jobPath, '--out', outRel, '--format', 'text']);
+    if (!preview) return;
+    const confirm = await vscode.window.showWarningMessage(
+      `Org2: write AI draft artifact to ${outRel}?`,
+      { modal: true },
+      'Write Draft'
+    );
+    if (confirm !== 'Write Draft') return;
+
+    const applied = await runOrg2CompilerCommand('Org2 AI Draft Write', ['ai', 'run', '--job', jobPath, '--out', outRel, '--apply', '--format', 'text'], {
+      successMessage: `Org2: wrote AI draft artifact to ${outRel}. Review it before promotion.`,
+    });
+    if (!applied) return;
+
+    try {
+      const doc = await vscode.workspace.openTextDocument(targetUri);
+      await vscode.window.showTextDocument(doc, { preview: false });
+    } catch {
+      // The output window already contains the path if VS Code cannot open it immediately.
+    }
+  }
+
+  async function promoteAiDraftArtifact() {
+    const root = getAgendaRootDir();
+    const active = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document && vscode.window.activeTextEditor.document.uri.scheme === 'file'
+      ? vscode.window.activeTextEditor.document.uri
+      : undefined;
+    const draftUris = active ? [active] : await vscode.window.showOpenDialog({
+      defaultUri: vscode.Uri.file(path.join(root, 'views')),
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      filters: { 'Org2 draft artifacts': ['org2', 'org'], 'All files': ['*'] },
+      title: 'Select reviewed Org2 AI draft artifact',
+    });
+    if (!draftUris || draftUris.length === 0 || draftUris[0].scheme !== 'file') return;
+
+    const targetUri = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file(path.join(root, 'notes', path.basename(draftUris[0].fsPath))),
+      filters: { 'Org2 notes': ['org2', 'org'], 'All files': ['*'] },
+      title: 'Append reviewed draft into canonical note',
+    });
+    if (!targetUri || targetUri.scheme !== 'file') return;
+
+    const draftRel = relativeWorkspacePath(root, draftUris[0].fsPath);
+    const targetRel = relativeWorkspacePath(root, targetUri.fsPath);
+    if (!draftRel || !targetRel) {
+      vscode.window.showErrorMessage('Org2: AI promote source and target must be inside the workspace.');
+      return;
+    }
+
+    const preview = await runOrg2CompilerCommand('Org2 AI Promote Preview', ['ai', 'promote', '--file', draftRel, '--to-file', targetRel, '--format', 'text']);
+    if (!preview) return;
+    const confirm = await vscode.window.showWarningMessage(
+      `Org2: append reviewed draft ${draftRel} to ${targetRel}?`,
+      { modal: true },
+      'Promote Draft'
+    );
+    if (confirm !== 'Promote Draft') return;
+
+    const applied = await runOrg2CompilerCommand('Org2 AI Promote Apply', ['ai', 'promote', '--file', draftRel, '--to-file', targetRel, '--apply', '--format', 'text'], {
+      successMessage: `Org2: promoted reviewed draft into ${targetRel}.`,
+    });
+    if (!applied) return;
+
+    try {
+      const doc = await vscode.workspace.openTextDocument(targetUri);
+      await vscode.window.showTextDocument(doc, { preview: false });
+    } catch {
+      // The output window already contains the path if VS Code cannot open it immediately.
+    }
+  }
+
   async function checkCurrentFileFormattingDrift() {
     const target = getActiveFormatterTarget();
     if (!target) return;

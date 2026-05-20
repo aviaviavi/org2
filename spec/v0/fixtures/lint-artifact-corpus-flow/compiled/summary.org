@@ -4,6 +4,7 @@
 :ORG2_PROVENANCE: file:../raw/source.org
 :ORG2_GENERATED_AT: 2026-04-22
 :ORG2_GENERATOR: org2 query save --format report
+:ORG2_REVIEW_STATUS: reviewed
 :END:
 #+TITLE: Compiled summary
 
