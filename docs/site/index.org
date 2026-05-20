@@ -1,7 +1,7 @@
 #+TITLE: Org2
 #+SUBTITLE: A local-first knowledge compiler for Org-shaped plain text
 
-Org2 turns a folder of raw notes, tasks, links, and metadata into a computable corpus.
+Org2 turns a folder of raw notes, tasks, links, and metadata into a computable corpus you can plan from, query, maintain, and publish.
 
 Think of it as a local-first compiler pipeline for personal knowledge:
 
@@ -11,7 +11,7 @@ Think of it as a local-first compiler pipeline for personal knowledge:
 - *views* such as agendas, backlinks, diagnostics, and editor intelligence are derived from that model,
 - *publish* outputs turn the same corpus into HTML sites and shareable artifacts.
 
-The notes remain yours on disk; Org2 supplies the compiler/runtime layer that makes them queryable, checkable, refactorable, and publishable without tying the workflow to one editor or hosted service.
+The notes remain yours on disk; Org2 supplies the compiler/runtime layer that makes them queryable, checkable, refactorable, and publishable without tying the workflow to one editor or hosted service. The practical payoff is that one source tree can drive your daily agenda, backlinks, editor features, corpus-health checks, AI/automation handoffs, and a published website.
 
 Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standalone Org rationale]]
 
@@ -25,6 +25,17 @@ Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standa
 - *Strong VS Code support*: Org2 is already practical as a daily driver in VS Code, including command-palette access to workspace search/query, agenda, formatter, corpus lint, and roam graph/linkify workflows.
 - *Roam-style knowledge workflows*: IDs, backlinks, dailies, node creation, link insertion, linkify previews, and graph reports are first-class.
 - *LSP-powered editing*: navigation, rename, completion, formatting, semantic tokens, inlay hints, call hierarchy, and more.
+
+* Concrete workflows
+
+Org2 is useful when your notes are not just prose, but source material for tools:
+
+- *Plan the day*: run an agenda across many files, group/filter by status or date window, or open the interactive terminal agenda with =org2 agenda --dir ~/notes --recursive --tui=.
+- *Keep a linked knowledge base healthy*: generate stable IDs, insert backlinks, preview/apply linkification, and run graph/lint checks before links silently rot.
+- *Use AI without losing provenance*: keep transcripts/imports in =raw/=, promote reviewed notes into =notes/=, write generated drafts and reports to =views/=, and compile machine artifacts into =compiled/=.
+- *Publish from the same source*: export one file or publish a whole site from the same Org-shaped corpus used for planning and automation.
+
+That is the value proposition: plain text stays editable and portable, while the surrounding compiler makes it behave like an app.
 
 * What Org2 is not trying to be
 

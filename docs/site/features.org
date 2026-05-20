@@ -40,7 +40,13 @@ Highlights:
 - Sort and group controls for daily planning views
 - Practical handling of real-world TODO vocabularies (for example WAIT/HOLD/PAUSED normalize into in-progress-style buckets)
 
-This is not just “show me tasks due today.” It is shaping into a real backend for agenda tooling.
+This is not just “show me tasks due today.” It is shaping into a real backend for agenda tooling, including an interactive terminal agenda for keyboard-driven planning:
+
+#+begin_src sh
+npm run org2 -- agenda --dir ~/notes --recursive --tui
+#+end_src
+
+Use the TUI when you want a live, scannable planning surface without leaving the terminal; use =--format json= when another tool should consume the same agenda model.
 
 * Knowledge management / roam workflows
 
@@ -59,6 +65,16 @@ Org2 has first-class support for linked-note workflows:
 - AI-assisted link/entity suggestion reports that rank compiler candidates with the mock adapter while preserving the review-only boundary
 
 This matters because Org-style notes get dramatically better once links, references, dailies, and fact lookup stop feeling bolted on.
+
+
+* Example usage patterns
+
+A few concrete ways Org2 fits into a real workflow:
+
+- *Daily planning*: keep TODOs, scheduled dates, deadlines, priorities, effort, and tags in plain files; derive agenda views in the CLI, VS Code, or the agenda TUI.
+- *Meeting pipeline*: store transcripts as raw evidence, curate summaries/TODOs/Linear candidates into notes, then run backlinking and lint to keep the result connected and auditable.
+- *Research corpus*: capture source material, assign IDs, strengthen weak references into links, query with file/line citations, and publish selected pages.
+- *Automation boundary*: let scripts and agents read compiled corpus artifacts instead of scraping editor state, while generated outputs remain reviewable under =views/= or =compiled/=.
 
 * VS Code experience
 

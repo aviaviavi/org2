@@ -30,6 +30,12 @@ Example:
 npm run org2 -- agenda --dir /path/to/your/notes --recursive
 #+end_src
 
+For a keyboard-driven planning view, add the agenda TUI:
+
+#+begin_src sh
+npm run org2 -- agenda --dir /path/to/your/notes --recursive --tui
+#+end_src
+
 That means you can start by pointing Org2 at your current notes directory and treating it as input to the compiler pipeline: raw files → structured notes → compiled semantics → views and published outputs. Adopt =.org2= for new files when you want to.
 
 * 3) Use VS Code if you want the best editor experience today
@@ -64,7 +70,7 @@ But =.org= remains a first-class input format for current workflows.
 
 The most useful commands to know first are:
 
-- =agenda= — inspect scheduled/deadline items across files
+- =agenda= — inspect scheduled/deadline items across files; add =--tui= for the interactive terminal agenda
 - =todo= / =plan= — edit task state and planning metadata
 - =capture= — append quick entries
 - =archive= / =refile= — reorganize trees

@@ -6419,11 +6419,18 @@ function buildMeetingSummaryJson(sources: AiDraftSource[]): MeetingSummaryJson {
       && !/\b(?:Action items \/ TODO suggestions|Transcript-derived action cues|Source citations|Suggested links)\b/i.test(line.text),
     5,
   );
-  const summaryLines = firstUniqueMeetingLines(
+  const substantiveSummaryLine = (line: AiDraftSourceLine) => !/^#+/.test(line.text)
+    && !/^:/.test(line.text)
+    && !/\b(?:thanks for watching|patio door|sliding glass|bathroom|fence|quote|10 grand)\b/i.test(line.text);
+  const relevantSummaryLines = firstUniqueMeetingLines(
     lines,
-    (line) => !/^#+/.test(line.text) && !/^:/.test(line.text),
-    5,
+    (line) => substantiveSummaryLine(line)
+      && /\b(?:Scarf|Clickhouse|ClickHouse|unlock|credits?|billing|model|companies|filters?|segments?|downloads?|telemetry|Maven|HubSpot|Slack|webhooks?|exports?|package|registry|customer|contract|premium|runs?)\b/i.test(line.text),
+    8,
   );
+  const summaryLines = relevantSummaryLines.length > 0
+    ? relevantSummaryLines
+    : firstUniqueMeetingLines(lines, substantiveSummaryLine, 5);
   const entities = collectMeetingEntities(lines);
   const citedLines = [...decisionLines, ...actionLines, ...summaryLines]
     .filter((line, index, arr) => arr.findIndex((candidate) => candidate.source.relativePath === line.source.relativePath && candidate.line === line.line) === index)
@@ -6431,8 +6438,8 @@ function buildMeetingSummaryJson(sources: AiDraftSource[]): MeetingSummaryJson {
 
   return {
     summary: summaryLines.length > 0
-      ? summaryLines.slice(0, 3).map((line) => `${normalizeMeetingItemText(line.text)} ${line.citation}`)
-      : ["Review the cited source excerpts; no substantive transcript lines were detected."],
+      ? summaryLines.slice(0, 3).map((line) => normalizeMeetingItemText(line.text))
+      : ["Review the transcript manually; no substantive meeting discussion was detected."],
     decisions: decisionLines.map((line) => ({ text: normalizeMeetingItemText(line.text), citations: [line.citation] })),
     actionItems: actionLines.map((line) => ({ text: normalizeMeetingItemText(line.text), todo: normalizeMeetingItemText(line.text), citations: [line.citation] })),
     entities,
@@ -6532,11 +6539,13 @@ function renderMeetingSummarySections(response: AiAdapterResponse | null | undef
   const summary = Array.isArray(json.summary) ? json.summary.map((item) => String(item || "").trim()).filter(Boolean) : [];
   const actionItems = Array.isArray(json.actionItems) ? json.actionItems : [];
 
+  const todoSection = actionItems.length > 0 ? `
+** TODO items
+${renderTodoItems(actionItems, "")}` : "";
+
   return `* Generated meeting summary
 ** Summary
-${bulletOrFallback(summary, "Review the transcript manually; no generated summary was returned.")}
-** TODO items
-${renderTodoItems(actionItems, "No explicit action items detected.")}`;
+${bulletOrFallback(summary, "Review the transcript manually; no generated summary was returned.")}${todoSection}`;
 }
 
 function renderAiGeneratedDraft(manifest: Record<string, unknown>, sources: AiDraftSource[], outputPath: string, adapterResponse?: AiAdapterResponse | null): string {
@@ -7970,7 +7979,7 @@ Usage:
   org2 <command> [options]
 
 Core commands:
-  org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
+  org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
   org2 todo <set|toggle> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 crypt <encrypt|decrypt> --file FILE (--line N | --pos LINE[:COL]) --passphrase PASS [--gpg-program PATH] [--apply]
@@ -8041,13 +8050,14 @@ function printScopedUsage(
     text = `org2 agenda
 
 Usage:
-  org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
+  org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
 
 Flags:
   --dir DIR           Root directory to scan
   --recursive         Recurse into subdirectories
   --from YYYY-MM-DD   Start date filter
   --to YYYY-MM-DD     End date filter
+  --tui               Open the interactive terminal agenda
   --format text|json  Output format`;
   } else if (command === "todo") {
     text = `org2 todo ${options.todoAction}
