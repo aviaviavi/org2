@@ -149,6 +149,8 @@ h1 { margin-bottom: 0.5rem; }
     padding: 0.45rem;
     z-index: 20;
   }
+  .org2-nav-dropdown:hover .org2-nav-dropdown-menu,
+  .org2-nav-dropdown:focus-within .org2-nav-dropdown-menu,
   .org2-nav-dropdown[open] .org2-nav-dropdown-menu {
     display: flex;
   }
