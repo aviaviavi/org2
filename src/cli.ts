@@ -24,6 +24,7 @@ import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from 
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
 import { compileCorpus, compileCorpusIncremental, renderCompiledCorpus } from "./corpusCompile.js";
+import { buildAgentContextPayload, type AgentInclude } from "./agentContext.js";
 import { loadAiJobManifest, validateAiJobManifest } from "./aiJobManifest.js";
 import { createAiAdapterRequest, MockAiAdapter, type AiAdapterContextItem, type AiAdapterResponse } from "./aiAdapter.js";
 import { buildGeneratedArtifactMetadata, formatOrg2ArtifactPropertyDrawer, sha256Hex } from "./artifactMetadata.js";
@@ -6816,6 +6817,14 @@ async function main(): Promise<void> {
   let compileIncremental = false;
   let compileCache = "";
 
+  // Agent-ready retrieval/context API
+  let agentAction: "context" | "search" | "fetch" | "" = "";
+  let agentQuery = "";
+  let agentId = "";
+  let agentLimitRaw = "10";
+  let agentMaxCharsRaw = "12000";
+  let agentIncludeRaw = "sources";
+
   // AI job manifests and provider-free draft artifact workflows
   let aiAction: "validate-job" | "run" | "promote" | "suggest-links" | "" = "";
   let aiJobFile = "";
@@ -6963,6 +6972,20 @@ async function main(): Promise<void> {
           compileAction = "corpus";
           i++;
         }
+      }
+    } else if (arg === "agent") {
+      command = "agent";
+      i++;
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        const sub = args[i]!;
+        if (sub === "context" || sub === "search" || sub === "fetch") {
+          agentAction = sub;
+          i++;
+        }
+      }
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        agentQuery = args[i]!;
+        i++;
       }
     } else if (arg === "ai") {
       command = "ai";
@@ -7556,6 +7579,8 @@ async function main(): Promise<void> {
           agendaLimitRaw = args[i]!;
         } else if (command === "search" || command === "query") {
           searchLimitRaw = args[i]!;
+        } else if (command === "agent") {
+          agentLimitRaw = args[i]!;
         }
         i++;
       }
@@ -7649,6 +7674,24 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--query" && command === "agent") {
+      i++;
+      if (i < args.length) {
+        agentQuery = args[i]!;
+        i++;
+      }
+    } else if (arg === "--include" && command === "agent") {
+      i++;
+      if (i < args.length) {
+        agentIncludeRaw = args[i]!;
+        i++;
+      }
+    } else if ((arg === "--max-chars" || arg === "--max-bytes") && command === "agent") {
+      i++;
+      if (i < args.length) {
+        agentMaxCharsRaw = args[i]!;
+        i++;
+      }
     } else if (arg === "--text" || arg === "--contains") {
       i++;
       if (i < args.length) {
@@ -7668,6 +7711,8 @@ async function main(): Promise<void> {
           backlinksId = args[i]!;
         } else if (command === "query") {
           queryId = args[i]!;
+        } else if (command === "agent") {
+          agentId = args[i]!;
         } else if (command === "roam") {
           if (roamAction === "link") {
             roamLinkId = args[i]!;
@@ -8052,6 +8097,7 @@ function printScopedUsage(
     roamNodeAction: "new";
     roamLinkAction: "insert-backlink";
     aiAction: "validate-job" | "run" | "promote" | "suggest-links" | "";
+    agentAction: "context" | "search" | "fetch" | "";
   },
   exitCode: number,
 ): never {
@@ -8277,6 +8323,29 @@ Output:
   standardized generated-artifact metadata, source hashes, headings, IDs,
   aliases, links, backlinks, TODO/planning state, properties, source ranges,
   and snippets. Org2 emits data only; it does not call an LLM.`;
+  } else if (command === "agent") {
+    text = `org2 agent ${options.agentAction || "context"}
+
+Usage:
+  org2 agent context --query QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...]
+  org2 agent search --query QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...]
+  org2 agent fetch --id ID [--dir DIR] [--recursive] [--file FILE|--files FILE ...]
+
+Flags:
+  --query QUERY      Retrieval query for context/search
+  --id ID            Heading/file ID or compiled node key for fetch
+  --dir DIR          Root directory to scan
+  --recursive        Recurse into subdirectories
+  --file FILE        Single target file
+  --files FILE       One or more target files
+  --limit N          Maximum result count (default 10)
+  --max-chars N      Maximum context text characters (default 12000)
+  --include LIST     Comma-separated sources,backlinks,neighbors
+  --format json      Stable JSON output (default)
+
+Output:
+  Schema org2:agent-context:v1 with source ranges, citations, IDs, titles,
+  tags, properties, optional backlinks/neighbors, and bounded context text.`;
   } else if (command === "lint") {
     text = `org2 lint
 
@@ -8399,12 +8468,12 @@ Flags:
 
   if (help) {
     if (command) {
-      printScopedUsage(command, { exportAction, todoAction, planAction, cryptAction, idAction, roamAction, roamNodeAction, roamLinkAction, aiAction }, 0);
+      printScopedUsage(command, { exportAction, todoAction, planAction, cryptAction, idAction, roamAction, roamNodeAction, roamLinkAction, aiAction, agentAction }, 0);
     }
     printGeneralUsage(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "compile" && command !== "lint" && command !== "ai" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "compile" && command !== "agent" && command !== "lint" && command !== "ai" && command !== "roam") {
     printGeneralUsage(1);
   }
 
@@ -8412,6 +8481,28 @@ Flags:
     // The LSP server runs over stdio and expects to own stdin/stdout.
     // Importing this module starts the server.
     await import("./lsp.js");
+    return;
+  }
+
+  if (command === "agent") {
+    if (!agentAction) { console.error("Error: org2 agent requires a subcommand (context, search, or fetch)"); process.exit(1); }
+    if ((agentAction === "context" || agentAction === "search") && !agentQuery.trim()) { console.error("Error: org2 agent context/search requires --query QUERY"); process.exit(1); }
+    if (agentAction === "fetch" && !agentId.trim()) { console.error("Error: org2 agent fetch requires --id ID"); process.exit(1); }
+    if (!dir && files.length === 0) {
+      const configPath = findConfigFile(process.cwd());
+      if (configPath) {
+        try { const config = loadConfig(configPath); const configDir = path.dirname(configPath); files = resolveFilesFromConfig(config, configDir); if (files.length === 0) { console.error(`Error: config found at ${configPath} but no matching files for patterns: ${config.agendaFiles?.join(", ") || "*.org"}`); process.exit(1); } dir = configDir; }
+        catch (err) { console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`); process.exit(1); }
+      } else { console.error("Error: provide either --dir, --files, --file, or org2.json config for org2 agent"); process.exit(1); }
+    }
+    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive);
+    files = Array.from(new Set(files)).sort((a, b) => a.localeCompare(b));
+    if (files.length === 0) { console.error("Error: no Org files found for org2 agent retrieval"); process.exit(1); }
+    const rootDir = dir ? path.resolve(dir) : path.dirname(path.resolve(files[0]!));
+    const include = Array.from(new Set(agentIncludeRaw.split(",").map((value) => value.trim().toLowerCase()).filter((value): value is AgentInclude => value === "sources" || value === "backlinks" || value === "neighbors")));
+    const corpus = compileCorpus(files, { rootDir });
+    const payload = buildAgentContextPayload(corpus, { action: agentAction, query: agentQuery, id: agentId, limit: Number.parseInt(agentLimitRaw, 10) || 10, maxChars: Number.parseInt(agentMaxCharsRaw, 10) || 12000, include });
+    process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
     return;
   }
 
