@@ -202,7 +202,7 @@ blockquote {
 .org2-shot-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 1.25rem;
+  gap: 1.5rem;
   margin: 1.25rem 0 2rem;
 }
 
@@ -230,10 +230,6 @@ blockquote {
 
 @media (min-width: 960px) {
   #content:has(.org2-shot-grid) {
-    max-width: 72rem;
-  }
-
-  .org2-shot-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-width: 84rem;
   }
 }
