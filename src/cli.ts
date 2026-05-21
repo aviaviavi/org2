@@ -1554,8 +1554,11 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
     degree: node.degree,
   }));
   const payload = JSON.stringify({
-    nodes: graph.nodes,
-    edges: graph.edges,
+    totalNodes: graph.nodes.length,
+    totalEdges: graph.edges.length,
+    allNodes: graph.nodes,
+    nodes: graphNodes,
+    edges: graphEdges,
   });
 
   return `<!doctype html>
@@ -1577,6 +1580,12 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
     ol { margin: 8px 0 0 18px; padding: 0; }
     li { margin: 0 0 8px; }
     .hint { color: #94a3b8; margin-top: 14px; }
+    .node-list { margin-top: 14px; }
+    .node-list input { box-sizing: border-box; width: 100%; margin: 8px 0; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(148, 163, 184, 0.28); background: rgba(15, 23, 42, 0.9); color: #e5e7eb; }
+    .node-list ul { list-style: none; margin: 0; padding: 0; max-height: 34vh; overflow: auto; }
+    .node-list li { margin: 0; padding: 7px 8px; border-radius: 8px; cursor: pointer; }
+    .node-list li:hover, .node-list li.active { background: rgba(96, 165, 250, 0.18); }
+    .node-list .meta { display: block; color: #94a3b8; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .stage { position: relative; min-width: 0; height: 100vh; overflow: hidden; }
     canvas { display: block; width: 100%; height: 100%; }
     .tooltip { position: absolute; right: 16px; bottom: 16px; max-width: 320px; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 10px; padding: 10px 12px; color: #e5e7eb; }
@@ -1599,7 +1608,12 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
           ${topNodes.map((node) => `<li>${escapeHtml(node.label)} <span style="color:#94a3b8">(${node.degree})</span></li>`).join("")}
         </ol>
       </div>
-      <div class="hint">Showing up to ${graphNodes.length} connected nodes, ranked by degree. Bigger dots mean higher degree. Hover a node to inspect it.</div>
+      <div class="hint">Showing ${graphNodes.length} of ${graph.nodes.length} nodes, ranked by degree. Bigger dots mean higher degree. Hover or click a node to inspect it.</div>
+      <div class="node-list card">
+        <strong style="font-size:14px">Visible nodes</strong>
+        <input id="nodeSearch" placeholder="Filter visible nodes" />
+        <ul id="nodeList"></ul>
+      </div>
     </aside>
     <main class="stage">
       <canvas id="graph"></canvas>
@@ -1610,6 +1624,8 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
     const payload = ${payload};
     const canvas = document.getElementById('graph');
     const tooltip = document.getElementById('tooltip');
+    const nodeSearch = document.getElementById('nodeSearch');
+    const nodeList = document.getElementById('nodeList');
     const ctx = canvas.getContext('2d');
     const dpr = Math.max(1, window.devicePixelRatio || 1);
     const esc = (value) => String(value || '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
@@ -1626,6 +1642,7 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
     let width = 0;
     let height = 0;
     let hovered = null;
+    let selected = null;
     const simulationSteps = nodes.length > 350 ? 160 : 220;
 
     function resize() {
@@ -1689,16 +1706,43 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
         ctx.stroke();
       }
       for (const node of nodes) {
-        ctx.fillStyle = hovered && hovered.id === node.id ? '#f59e0b' : '#60a5fa';
+        ctx.fillStyle = selected && selected.id === node.id ? '#f97316' : hovered && hovered.id === node.id ? '#f59e0b' : '#60a5fa';
         ctx.beginPath();
         ctx.arc(node.x, node.y, node.r, 0, Math.PI * 2);
         ctx.fill();
       }
-      if (hovered) {
+      const labelNode = hovered || selected;
+      if (labelNode) {
         ctx.fillStyle = '#e5e7eb';
         ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
-        ctx.fillText(hovered.label, hovered.x + hovered.r + 4, hovered.y + 4);
+        if (Number.isFinite(labelNode.x) && Number.isFinite(labelNode.y)) {
+          ctx.fillText(labelNode.label, labelNode.x + labelNode.r + 4, labelNode.y + 4);
+        }
       }
+    }
+
+    function renderDetails(node) {
+      if (!node) {
+        tooltip.textContent = 'Hover or click a node';
+        return;
+      }
+      tooltip.innerHTML = '<strong>' + esc(node.label) + '</strong><br>' +
+        'degree: ' + node.degree + ' (' + node.degreeIn + ' in, ' + node.degreeOut + ' out)<br>' +
+        '<span style="color:#94a3b8">' + esc(node.file) + '</span>';
+    }
+
+    function renderNodeList() {
+      const q = String(nodeSearch.value || '').toLowerCase();
+      const searchable = q ? payload.allNodes : nodes;
+      const matches = searchable.filter((node) => !q || node.label.toLowerCase().includes(q) || String(node.file || '').toLowerCase().includes(q)).slice(0, 80);
+      nodeList.innerHTML = matches.map((node) => '<li data-id="' + esc(node.id) + '"' + (selected && selected.id === node.id ? ' class="active"' : '') + '>' + esc(node.label) + '<span class="meta">' + esc(node.file) + ' · degree ' + node.degree + '</span></li>').join('');
+    }
+
+    function selectNode(node) {
+      selected = node;
+      renderDetails(node);
+      renderNodeList();
+      draw();
     }
 
     function runLayout() {
@@ -1720,19 +1764,29 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
         }
       }
       if (hovered) {
-        tooltip.innerHTML = '<strong>' + esc(hovered.label) + '</strong><br>' +
-          'degree: ' + hovered.degree + ' (' + hovered.degreeIn + ' in, ' + hovered.degreeOut + ' out)<br>' +
-          '<span style="color:#94a3b8">' + esc(hovered.file) + '</span>';
+        renderDetails(hovered);
       } else {
-        tooltip.textContent = 'Hover a node';
+        renderDetails(selected);
       }
       draw();
     });
 
+    canvas.addEventListener('click', () => {
+      if (hovered) selectNode(hovered);
+    });
+
     canvas.addEventListener('mouseleave', () => {
       hovered = null;
-      tooltip.textContent = 'Hover a node';
+      renderDetails(selected);
       draw();
+    });
+
+    nodeSearch.addEventListener('input', renderNodeList);
+    nodeList.addEventListener('click', (event) => {
+      const li = event.target.closest('li[data-id]');
+      if (!li) return;
+      const node = nodeById.get(li.dataset.id) || payload.allNodes.find((candidate) => candidate.id === li.dataset.id);
+      if (node) selectNode(node);
     });
 
     window.addEventListener('resize', () => {
@@ -1741,6 +1795,7 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
     });
     resize();
     runLayout();
+    renderNodeList();
   </script>
 </body>
 </html>`;
