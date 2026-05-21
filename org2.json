@@ -46,7 +46,7 @@
         },
         "sitemapXml": {
           "file": "sitemap.xml",
-          "baseUrl": "https://aviaviavi.github.io/org2",
+          "baseUrl": "https://org2.avi.press",
           "includeIndexPage": true
         },
         "assets": {
