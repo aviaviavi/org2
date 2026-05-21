@@ -1691,7 +1691,7 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
       const center = centerId ? nodes.find((node) => node.id === centerId) : null;
       const others = center ? nodes.filter((node) => node.id !== centerId) : nodes;
       if (center) { center.x = 0; center.y = 0; }
-      const rings = center ? [48, 170, 300, 440] : [80, 210, 350, 500];
+      const rings = center ? [170, 300, 440, 580] : [170, 320, 470, 620];
       others.forEach((node, index) => {
         const ring = rings[Math.min(rings.length - 1, Math.floor(index / 36))];
         const inRing = index % 36;
