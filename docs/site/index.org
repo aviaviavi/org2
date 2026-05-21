@@ -15,6 +15,15 @@ The notes remain yours on disk; Org2 supplies the compiler/runtime layer that ma
 
 Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standalone Org rationale]]
 
+* Screenshots
+
+#+HTML: <div class="org2-shot-grid">
+#+HTML: <figure><img src="assets/screenshots/graph.png" alt="Org2 knowledge graph showing a selected neighborhood of linked notes" loading="lazy" /><figcaption>Knowledge graph: inspect readable neighborhoods instead of a giant hairball.</figcaption></figure>
+#+HTML: <figure><img src="assets/screenshots/agenda.png" alt="Org2 interactive agenda terminal UI" loading="lazy" /><figcaption>Agenda TUI: plan from tasks, deadlines, tags, and corpus metadata.</figcaption></figure>
+#+HTML: <figure><img src="assets/screenshots/basic.png" alt="A basic Org2 file open in Visual Studio Code" loading="lazy" /><figcaption>VS Code editing: plain files with TODOs, IDs, links, tags, and dates.</figcaption></figure>
+#+HTML: <figure><img src="assets/screenshots/meeting.png" alt="An Org2 meeting transcript with AI summary and action items open in Visual Studio Code" loading="lazy" /><figcaption>AI workflow: transcript, generated summary, and action items stay linked in source.</figcaption></figure>
+#+HTML: </div>
+
 * What Org2 is good at today
 
 - *Knowledge compiler pipeline*: raw files become notes; notes compile into resolved semantics; those semantics drive views, checks, and publishing.
