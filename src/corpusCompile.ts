@@ -46,6 +46,24 @@ export type CompiledCorpusFile = {
   id: string | null;
 };
 
+export type CompiledCorpusIndexState = {
+  mode: "full" | "incremental";
+  status: "fresh" | "stale";
+  cacheFile?: string;
+  reusedFiles: number;
+  parsedFiles: number;
+  deletedFiles: number;
+  reason?: string;
+};
+
+export type CompiledCorpusLookupIndex = {
+  ids: Record<string, string[]>;
+  titles: Record<string, string[]>;
+  tags: Record<string, string[]>;
+  dates: Record<string, string[]>;
+  files: Record<string, string[]>;
+};
+
 export type CompiledCorpus = {
   schemaVersion: "org2-compiled-corpus/v1";
   generatedBy: "org2 compile corpus";
@@ -60,6 +78,8 @@ export type CompiledCorpus = {
     links: number;
     backlinks: number;
   };
+  index?: CompiledCorpusLookupIndex;
+  indexState?: CompiledCorpusIndexState;
 };
 
 function normalizeText(raw: string): string {
@@ -407,6 +427,7 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
 
   const totalLinks = nodes.reduce((sum, node) => sum + node.links.length, 0);
   const totalBacklinks = nodes.reduce((sum, node) => sum + node.backlinks.length, 0);
+  const sortedNodes = nodes.sort((a, b) => a.file.localeCompare(b.file) || a.sourceRange.startLine - b.sourceRange.startLine || a.kind.localeCompare(b.kind));
   return {
     schemaVersion: "org2-compiled-corpus/v1",
     generatedBy: "org2 compile corpus",
@@ -420,7 +441,7 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
     }),
     rootDir,
     files: corpusFiles.sort((a, b) => a.file.localeCompare(b.file)),
-    nodes: nodes.sort((a, b) => a.file.localeCompare(b.file) || a.sourceRange.startLine - b.sourceRange.startLine || a.kind.localeCompare(b.kind)),
+    nodes: sortedNodes,
     stats: {
       files: corpusFiles.length,
       nodes: nodes.length,
@@ -428,12 +449,69 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       links: totalLinks,
       backlinks: totalBacklinks,
     },
+    index: buildLookupIndex(sortedNodes),
+    indexState: { mode: "full", status: "fresh", reusedFiles: 0, parsedFiles: corpusFiles.length, deletedFiles: 0 },
   };
+}
+
+
+type IncrementalCorpusCache = {
+  schemaVersion: "org2-incremental-corpus-cache/v1";
+  rootDir: string;
+  files: Array<{ file: string; absolutePath: string; size: number; mtimeMs: number; sha256: string }>;
+  corpus: CompiledCorpus;
+};
+
+function buildLookupIndex(nodes: CompiledCorpusNode[]): CompiledCorpusLookupIndex {
+  const index: CompiledCorpusLookupIndex = { ids: {}, titles: {}, tags: {}, dates: {}, files: {} };
+  const add = (bucket: Record<string, string[]>, key: string, value: string) => { const normalized = normalizeLabel(key); if (!normalized) return; (bucket[normalized] ||= []).push(value); };
+  for (const node of nodes) {
+    if (node.id) add(index.ids, node.id, node.key);
+    add(index.titles, node.title, node.key);
+    add(index.files, node.file, node.key);
+    for (const tag of node.tags) add(index.tags, tag, node.key);
+    for (const plan of node.planning) for (const match of plan.raw.matchAll(/\d{4}-\d{2}-\d{2}/g)) add(index.dates, match[0] || "", node.key);
+  }
+  for (const bucket of Object.values(index)) for (const key of Object.keys(bucket)) bucket[key] = Array.from(new Set(bucket[key])).sort();
+  return index;
+}
+
+function fileFingerprint(filePath: string, rootDir: string): { file: string; absolutePath: string; size: number; mtimeMs: number; sha256: string } {
+  const stat = fs.statSync(filePath);
+  return { file: relativePath(rootDir, filePath), absolutePath: filePath, size: stat.size, mtimeMs: stat.mtimeMs, sha256: "" };
+}
+
+function withIndexState(corpus: CompiledCorpus, state: CompiledCorpusIndexState): CompiledCorpus {
+  return { ...corpus, index: buildLookupIndex(corpus.nodes), indexState: state };
+}
+
+export function compileCorpusIncremental(files: string[], opts: { rootDir?: string; cacheFile: string; generatedAt?: string }): CompiledCorpus {
+  const rootDir = path.resolve(opts.rootDir || process.cwd());
+  const sortedFiles = Array.from(new Set(files.map((file) => path.resolve(file)))).sort();
+  const cacheFile = path.resolve(opts.cacheFile);
+  const current = sortedFiles.map((filePath) => fileFingerprint(filePath, rootDir));
+  let cache: IncrementalCorpusCache | null = null;
+  let reason: string | undefined;
+  try {
+    if (fs.existsSync(cacheFile)) {
+      const parsed = JSON.parse(fs.readFileSync(cacheFile, "utf8")) as IncrementalCorpusCache;
+      if (parsed.schemaVersion === "org2-incremental-corpus-cache/v1" && parsed.rootDir === rootDir && parsed.corpus && Array.isArray(parsed.files)) cache = parsed;
+      else reason = "cache schema or rootDir mismatch";
+    }
+  } catch (err) { reason = `cache unreadable: ${err instanceof Error ? err.message : String(err)}`; }
+  const same = cache && cache.files.length === current.length && current.every((entry, i) => { const cached = cache!.files[i]; return cached && cached.file === entry.file && cached.absolutePath === entry.absolutePath && cached.size === entry.size && cached.mtimeMs === entry.mtimeMs; });
+  if (same) return withIndexState(cache!.corpus, { mode: "incremental", status: "fresh", cacheFile, reusedFiles: current.length, parsedFiles: 0, deletedFiles: 0 });
+  const deletedFiles = cache ? cache.files.filter((entry) => !current.some((now) => now.file === entry.file)).length : 0;
+  const corpus = compileCorpus(sortedFiles, { rootDir, generatedAt: opts.generatedAt });
+  const result = withIndexState(corpus, { mode: "incremental", status: reason ? "stale" : "fresh", cacheFile, reusedFiles: 0, parsedFiles: current.length, deletedFiles, ...(reason ? { reason } : {}) });
+  try { fs.mkdirSync(path.dirname(cacheFile), { recursive: true }); fs.writeFileSync(cacheFile, JSON.stringify({ schemaVersion: "org2-incremental-corpus-cache/v1", rootDir, files: current, corpus: result }, null, 2) + "\n"); }
+  catch (err) { return withIndexState(corpus, { mode: "incremental", status: "stale", cacheFile, reusedFiles: 0, parsedFiles: current.length, deletedFiles, reason: `cache write failed: ${err instanceof Error ? err.message : String(err)}` }); }
+  return result;
 }
 
 export function renderCompiledCorpus(corpus: CompiledCorpus, format: "json" | "jsonl" = "json"): string {
   if (format === "jsonl") {
-    const header = { schemaVersion: corpus.schemaVersion, generatedBy: corpus.generatedBy, artifact: corpus.artifact, rootDir: corpus.rootDir, stats: corpus.stats };
+    const header = { schemaVersion: corpus.schemaVersion, generatedBy: corpus.generatedBy, artifact: corpus.artifact, rootDir: corpus.rootDir, stats: corpus.stats, index: corpus.index, indexState: corpus.indexState };
     return [header, ...corpus.nodes].map((entry) => JSON.stringify(entry)).join("\n") + "\n";
   }
   return JSON.stringify(corpus, null, 2) + "\n";

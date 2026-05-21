@@ -23,7 +23,7 @@ import { formatOrgTimestamp, TODO_KEYWORDS, updateTodoInText, type TodoStatus } 
 import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from "./planning.js";
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
-import { compileCorpus, renderCompiledCorpus } from "./corpusCompile.js";
+import { compileCorpus, compileCorpusIncremental, renderCompiledCorpus } from "./corpusCompile.js";
 import { buildAgentContextPayload, type AgentInclude } from "./agentContext.js";
 import { loadAiJobManifest, validateAiJobManifest } from "./aiJobManifest.js";
 import { createAiAdapterRequest, MockAiAdapter, type AiAdapterContextItem, type AiAdapterResponse } from "./aiAdapter.js";
@@ -6814,6 +6814,8 @@ async function main(): Promise<void> {
   let compileAction: "corpus" = "corpus";
   let compileFormat: "json" | "jsonl" = "json";
   let compileOut = "";
+  let compileIncremental = false;
+  let compileCache = "";
 
   // Agent-ready retrieval/context API
   let agentAction: "context" | "search" | "fetch" | "" = "";
@@ -7812,6 +7814,15 @@ async function main(): Promise<void> {
     } else if (arg === "--recursive") {
       recursive = true;
       i++;
+    } else if (arg === "--incremental") {
+      if (command === "compile") compileIncremental = true;
+      i++;
+    } else if (arg === "--cache") {
+      i++;
+      if (i < args.length) {
+        if (command === "compile") compileCache = args[i]!;
+        i++;
+      }
     } else if (arg === "--exclude") {
       i++;
       if (i < args.length) {
@@ -8056,7 +8067,7 @@ Roam / IDs:
   org2 roam graph --dir DIR [--recursive] [--out FILE] [--format text|report|json]
 
 Maintenance / health:
-  org2 compile corpus [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl]
+  org2 compile corpus [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl] [--incremental] [--cache FILE]
   org2 ai validate-job --job FILE [--format text|json]
   org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
   org2 ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
@@ -8297,7 +8308,7 @@ Flags:
     text = `org2 compile corpus
 
 Usage:
-  org2 compile corpus [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl]
+  org2 compile corpus [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl] [--incremental] [--cache FILE]
 
 Flags:
   --dir DIR          Root directory to scan
@@ -10835,7 +10846,10 @@ Flags:
     }
 
     const rootDir = dir ? path.resolve(dir) : path.dirname(path.resolve(files[0]!));
-    const corpus = compileCorpus(files, { rootDir });
+    const defaultCache = path.join(rootDir, ".org2", "corpus-index-cache.json");
+    const corpus = compileIncremental
+      ? compileCorpusIncremental(files, { rootDir, cacheFile: compileCache || defaultCache })
+      : compileCorpus(files, { rootDir });
     const outText = renderCompiledCorpus(corpus, compileFormat);
 
     if (compileOut) {
