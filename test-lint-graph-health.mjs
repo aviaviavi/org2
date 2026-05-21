@@ -72,9 +72,22 @@ fs.writeFileSync(path.join(tmpDir, 'compiled', 'report.org2'), `#+TITLE: Compile
 Compiled output.
 `);
 
+
+fs.writeFileSync(path.join(tmpDir, 'compiled', 'report-copy.org2'), `#+TITLE: Compiled Report Copy
+
+:PROPERTIES:
+:ID: ${compiledId}
+:ORG2_ARTIFACT_ROLE: report
+:ORG2_GENERATED_AT: 2000-01-01T00:00:00Z
+:ORG2_GENERATOR: test-fixture
+:END:
+
+Duplicate generated artifact ID.
+`);
+
 const json = JSON.parse(execFileSync('node', [cli, 'lint', '--dir', tmpDir, '--recursive', '--format', 'json'], { encoding: 'utf8' }));
 assert.equal(json.$schema, 'org2:lint:v1');
-assert.equal(json.checkedFiles, 6);
+assert.equal(json.checkedFiles, 7);
 
 const rules = new Set(json.issues.map((issue) => issue.rule));
 assert.ok(rules.has('unresolved-wiki-link'));
@@ -97,3 +110,25 @@ assert.match(text, /WARNING ambiguous-wiki-label/);
 assert.match(text, /WARNING artifact-source-hash-mismatch/);
 
 console.log('✓ lint-graph-health');
+
+const audit = JSON.parse(execFileSync('node', [cli, 'graph', 'audit', '--dir', tmpDir, '--recursive', '--format', 'json'], { encoding: 'utf8' }));
+assert.equal(audit.$schema, 'org2:graph-audit:v1');
+assert.equal(audit.summary.scannedFiles, 7);
+const auditTypes = new Set(audit.findings.map((finding) => finding.type));
+assert.ok(auditTypes.has('broken-link'));
+assert.ok(auditTypes.has('orphan-note'));
+assert.ok(auditTypes.has('duplicate-entity'));
+assert.ok(auditTypes.has('duplicate-id'));
+assert.ok(auditTypes.has('stale-generated-artifact'));
+assert.ok(audit.findings.some((finding) => finding.rule === 'unresolved-id-link' && finding.deterministicFix));
+assert.ok(audit.findings.some((finding) => finding.type === 'duplicate-entity' && finding.reviewSuggestion));
+assert.ok(audit.findings.some((finding) => finding.rule === 'artifact-source-hash-mismatch' && finding.deterministicFix && finding.reviewSuggestion));
+
+const auditText = execFileSync('node', [cli, 'graph', 'audit', '--dir', tmpDir, '--recursive'], { encoding: 'utf8' });
+assert.match(auditText, /Org2 graph quality audit/);
+assert.match(auditText, /deterministic fix:/);
+assert.match(auditText, /review suggestion:/);
+
+const candidates = JSON.parse(execFileSync('node', [cli, 'graph', 'repair-candidates', '--dir', tmpDir, '--recursive', '--format', 'json'], { encoding: 'utf8' }));
+assert.equal(candidates.$schema, 'org2:graph-repair-candidates:v1');
+assert.ok(candidates.candidates.length > 0);
