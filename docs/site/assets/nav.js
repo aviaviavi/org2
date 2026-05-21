@@ -29,6 +29,18 @@
     });
   }
 
+  function closeDropdown(el) {
+    var summary = el.querySelector(':scope > summary');
+    el.removeAttribute('open');
+    if (summary) summary.setAttribute('aria-expanded', 'false');
+  }
+
+  function closeOtherDropdowns(active) {
+    document.querySelectorAll('.org2-nav-dropdown[open]').forEach(function (el) {
+      if (el !== active) closeDropdown(el);
+    });
+  }
+
   function setupHoverDropdowns() {
     document.querySelectorAll('.org2-nav-dropdown').forEach(function (el) {
       var summary = el.querySelector(':scope > summary');
@@ -37,18 +49,14 @@
 
       el.addEventListener('mouseenter', function () {
         if (isMobile()) return;
+        closeOtherDropdowns(el);
         el.setAttribute('open', '');
         summary.setAttribute('aria-expanded', 'true');
       });
 
       el.addEventListener('mouseleave', function () {
         if (isMobile()) return;
-        window.setTimeout(function () {
-          if (!el.matches(':hover') && !el.contains(document.activeElement)) {
-            el.removeAttribute('open');
-            summary.setAttribute('aria-expanded', 'false');
-          }
-        }, 120);
+        if (!el.contains(document.activeElement)) closeDropdown(el);
       });
 
       summary.addEventListener('click', function (event) {
@@ -57,6 +65,7 @@
 
       el.addEventListener('focusin', function () {
         if (isMobile()) return;
+        closeOtherDropdowns(el);
         el.setAttribute('open', '');
         summary.setAttribute('aria-expanded', 'true');
       });
