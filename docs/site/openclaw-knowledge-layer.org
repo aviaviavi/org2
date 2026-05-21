@@ -1,0 +1,333 @@
+#+TITLE: OpenClaw knowledge layer
+#+SUBTITLE: Corpus layout, safe writes, and review-gated memory promotion
+
+OpenClaw can use an Org2 corpus as a local-first knowledge layer: raw observations stay auditable, deterministic Org2 commands derive indexes and views, and AI or external integrations write reviewable artifacts before anything becomes durable memory.
+
+This page is the integration contract. An OpenClaw integration should be able to implement the layout and safety rules here without reaching into Org2 internals.
+
+* Corpus zones
+
+Use predictable top-level zones so humans, Org2, and automation agree on what each file means:
+
+| Zone | Example paths | Owner | Meaning |
+|---+---+---+---|
+| =raw/= | =raw/meetings/2026-05-20-team-sync.transcript.org2=, =raw/imports/slack/2026-05-20.json= | capture/import tools | Source material and append-only observations. Prefer minimal rewriting. |
+| =notes/= | =notes/daily/2026-05-20.org2=, =notes/people/alex.org2=, =notes/projects/openclaw.org2= | humans plus safe agent edits | Canonical working notes, TODOs, durable memory, and curated entities. |
+| =compiled/= | =compiled/corpus.json=, =compiled/team-sync-context.json= | deterministic Org2 commands | Machine artifacts derived from =raw/= and =notes/=. Safe to regenerate. |
+| =views/= | =views/meeting-summaries/2026-05-20-team-sync.org2=, =views/link-suggestions.org2= | deterministic reports or generated drafts | Review surfaces, summaries, diagnostics, backlinks, and suggestions. Usually not canonical. |
+| =publish/= | =publish/team-handbook/=, =publish/openclaw-memory.html= | publish/export jobs | Shareable output created from reviewed source material. |
+
+Recommended placement:
+
+- Daily notes: =notes/daily/YYYY-MM-DD.org2=
+- Imported transcripts and logs: =raw/<source>/YYYY-MM-DD-<slug>.<kind>.org2= or original machine format under =raw/imports/=
+- Generated summaries: =views/<workflow>/<slug>.org2= with =ORG2_REVIEW_STATUS: review-required=
+- Review artifacts and suggestion reports: =views/review/<slug>.org2= or =views/link-suggestions.org2=
+- Compiled query/context packets: =compiled/<slug>.json=
+- Published outputs: =publish/<audience-or-project>/= or the configured publish output directory
+
+Keep canonical memory in =notes/=. Treat =raw/= as evidence and =views/= / =compiled/= as rebuildable until promoted.
+
+* Safe agent write patterns
+
+OpenClaw integrations should make the smallest useful write, preserve provenance, and run lint/check commands around changes.
+
+** Append daily notes
+
+Daily capture is the safest canonical write because it is chronological and easy to review.
+
+Before:
+
+#+begin_src org
+* 2026-05-20
+
+** Inbox
+#+end_src
+
+Agent append:
+
+#+begin_src org
+*** Observation
+:PROPERTIES:
+:ID: obs-2026-05-20-fran-vet-reminder
+:ORG2_SOURCE: openclaw:chat
+:ORG2_CAPTURED_AT: 2026-05-20T16:10:00-07:00
+:ORG2_REVIEW_STATUS: reviewed
+:ORG2_CURATED: true
+:END:
+Fran needs her heartworm medication refill checked this week.
+#+end_src
+
+Rules:
+
+- Append under an existing day/inbox heading when possible.
+- Add a stable ID for any entry that may be linked later.
+- Use =ORG2_SOURCE= and =ORG2_CAPTURED_AT= for provenance.
+- Avoid rewriting unrelated daily content.
+
+** Create or update TODOs
+
+Agents may add clear task candidates to =notes/daily/= or a project note. If the source is generated or uncertain, mark it for review.
+
+#+begin_src org
+** TODO Send follow-up to Dana about launch checklist
+SCHEDULED: <2026-05-21 Thu>
+:PROPERTIES:
+:ID: todo-2026-05-20-launch-followup-dana
+:ORG2_SOURCE: file:raw/meetings/2026-05-20-launch.transcript.org2::128-135
+:ORG2_REVIEW_STATUS: review-required
+:END:
+Candidate from meeting transcript. Verify owner/date before acting externally.
+#+end_src
+
+Do not mark externally consequential tasks as done, send messages, create tickets, or change third-party state unless the human explicitly approves that side effect.
+
+** Promote generated summaries
+
+Generated drafts belong in =views/= first:
+
+#+begin_src org
+:PROPERTIES:
+:ID: view-2026-05-20-team-sync-summary
+:ORG2_ARTIFACT_SCHEMA: org2-artifact-metadata/v1
+:ORG2_ARTIFACT_ROLE: view
+:ORG2_PROVENANCE: file:raw/meetings/2026-05-20-team-sync.transcript.org2
+:ORG2_GENERATOR: openclaw meeting-summary adapter=work-summary model=example-model
+:ORG2_GENERATED_AT: 2026-05-20T23:00:00Z
+:ORG2_SOURCE_HASHES: file:raw/meetings/2026-05-20-team-sync.transcript.org2=sha256:...
+:ORG2_REVIEW_STATUS: review-required
+:END:
+
+* Summary
+- The team agreed to defer billing launch until the migration checklist is complete. [cite: file:raw/meetings/2026-05-20-team-sync.transcript.org2::88-94]
+
+* Candidate TODOs
+** TODO Confirm migration owner
+:PROPERTIES:
+:ORG2_SOURCE: file:raw/meetings/2026-05-20-team-sync.transcript.org2::101-106
+:ORG2_REVIEW_STATUS: review-required
+:END:
+#+end_src
+
+After human review, promote only accepted content into =notes/= and mark it curated:
+
+#+begin_src org
+* Billing launch migration
+:PROPERTIES:
+:ID: mem-billing-launch-migration
+:ORG2_SOURCE: file:raw/meetings/2026-05-20-team-sync.transcript.org2::88-106
+:ORG2_PROMOTED_FROM: file:views/meeting-summaries/2026-05-20-team-sync.org2
+:ORG2_REVIEW_STATUS: reviewed
+:ORG2_CURATED: true
+:END:
+The team deferred billing launch until the migration checklist is complete.
+
+** TODO Confirm migration owner
+#+end_src
+
+** Add backlinks and linkify output
+
+Prefer deterministic previews before mutating notes:
+
+#+begin_src sh
+npm run org2 -- roam linkify --dir notes --recursive --dry-run
+npm run org2 -- roam linkify --dir notes --recursive --apply
+npm run org2 -- lint --dir . --recursive
+#+end_src
+
+Generated link suggestions from AI should be written to =views/link-suggestions.org2= with citations and =review-required= status. Apply only reviewed links to =notes/=.
+
+** Avoid duplicate IDs
+
+Before assigning an ID, search or lint the corpus. Use IDs that include date, entity, and purpose instead of random duplicates:
+
+#+begin_src text
+obs-2026-05-20-fran-vet-reminder
+mem-billing-launch-migration
+todo-2026-05-20-launch-followup-dana
+view-2026-05-20-team-sync-summary
+#+end_src
+
+Run =org2 lint= after writes so duplicate IDs, stale provenance, invalid artifact metadata, and unsafe generated artifacts surface immediately.
+
+** Lint before and after writes
+
+For automated write flows, use this shape:
+
+#+begin_src sh
+npm run org2 -- lint --dir . --recursive
+# perform one focused write
+npm run org2 -- lint --dir . --recursive
+#+end_src
+
+If the pre-write corpus is already dirty, record the existing diagnostics and ensure the integration does not introduce new ones.
+
+* Memory promotion lifecycle
+
+Memory promotion is a state machine, not a blind copy operation.
+
+** 1. Raw observation or transcript → candidate note
+
+- Capture source material in =raw/= or append an observation to =notes/daily/=
+- Preserve timestamps, source refs, and source hashes when available
+- Generate summaries or extracted facts into =views/=, not =notes/=
+- Every generated factual claim cites source material or says evidence is missing
+
+** 2. Candidate note → reviewed durable memory
+
+A human or trusted review workflow verifies the candidate, edits wording, removes unsupported claims, and promotes accepted content into =notes/=.
+
+Required promoted-memory properties:
+
+#+begin_src org
+:PROPERTIES:
+:ID: mem-<stable-slug>
+:ORG2_SOURCE: file:raw/...::line-line
+:ORG2_PROMOTED_FROM: file:views/...
+:ORG2_REVIEW_STATUS: reviewed
+:ORG2_CURATED: true
+:ORG2_CURATED_AT: 2026-05-20T23:30:00Z
+:END:
+#+end_src
+
+** 3. Old memory → updated, merged, or deprecated
+
+Do not silently overwrite old durable memory. Prefer an explicit update trail:
+
+#+begin_src org
+:PROPERTIES:
+:ID: mem-old-launch-date
+:ORG2_REVIEW_STATUS: reviewed
+:ORG2_MEMORY_STATUS: deprecated
+:ORG2_DEPRECATED_BY: id:mem-current-launch-plan
+:ORG2_DEPRECATED_AT: 2026-05-20T23:45:00Z
+:END:
+#+end_src
+
+For merges, keep backlinks from deprecated nodes to the surviving memory so old references remain explainable.
+
+** 4. Generated claims cite source material
+
+Acceptable generated claim:
+
+#+begin_src org
+The billing launch was deferred until migration checklist completion. [cite: file:raw/meetings/2026-05-20-team-sync.transcript.org2::88-94]
+#+end_src
+
+Unsafe claim:
+
+#+begin_src org
+The billing launch is delayed because the payments provider failed certification.
+#+end_src
+
+If the source does not support the reason, the generated artifact should say =Evidence missing= or leave a review question.
+
+* Metadata and properties
+
+Use normal Org property drawers. Recommended properties:
+
+| Property | Applies to | Meaning |
+|---+---+---|
+| =ID= | durable headings, tasks, artifacts | Stable link target. Must be unique in the corpus. |
+| =ORG2_SOURCE= | observations, TODOs, promoted memory | Source path, URL, message ref, or =openclaw:<channel>= reference. |
+| =ORG2_PROVENANCE= | generated artifacts | Primary source files or query/context packet used to derive an artifact. |
+| =ORG2_SOURCE_HASHES= | generated artifacts | Source file hashes used to detect stale summaries. |
+| =ORG2_PROMOTED_FROM= | promoted notes | Draft/review artifact that produced the curated note. |
+| =ORG2_REVIEW_STATUS= | generated and canonical review flows | One of =generated=, =review-required=, =reviewed=, or =promoted=. Use =ORG2_CURATED: true= for curated memory and =ORG2_MEMORY_STATUS: deprecated= for retired memory. |
+| =ORG2_ARTIFACT_ROLE= | =compiled/=, =views/=, =publish/= artifacts | Artifact class such as =compiled=, =view=, or =publish=. |
+| =ORG2_GENERATOR= | generated artifacts | Tool/workflow/adapter/model name without secrets. |
+| =ORG2_GENERATED_AT= | generated artifacts | Generation timestamp. |
+| =ORG2_MEETING_REF= | meeting-derived notes | Meeting ID, calendar URL, or transcript path. |
+| =ORG2_LINEAR_REF= | tasks/project notes | Linear issue/team ref, e.g. =LIN-123=. |
+| =ORG2_EXTERNAL_REF= | external entities | URL, Slack/Discord message ref, email message ID, CRM ID, etc. |
+| =ORG2_GENERATED= | generated sections | =true= when a section remains machine-generated and uncurated. |
+| =ORG2_CURATED_AT= | promoted notes | Review/promotion timestamp. |
+
+Never store API keys, OAuth tokens, cookies, or private provider credentials in Org2 properties, job manifests, compiled artifacts, or published output.
+
+* Deterministic transforms vs review-gated side effects
+
+Org2 deterministic transforms are local, reproducible operations over files:
+
+- parse, format, lint, agenda, query, compile corpus
+- generate backlinks and linkify previews
+- export/publish from reviewed source
+- produce cited context packets in =compiled/=
+- write deterministic reports whose inputs are local files
+
+These may be automated when they write only generated zones or reviewed deterministic output.
+
+Review-gated AI or external side effects require a human approval boundary:
+
+- LLM-generated summaries, extracted claims, inferred TODOs, entity matching, and link suggestions
+- promotion from =views/= into canonical =notes/=
+- edits that delete, merge, or deprecate durable memory
+- sending email/chat, opening or updating Linear/GitHub tickets, calendar changes, or other third-party writes
+- publishing externally visible output if it contains private or newly generated claims
+
+Rule of thumb: deterministic Org2 transforms can build and check the map; AI and external tools can propose changes; reviewed promotion decides what becomes territory.
+
+* MeetingBot-style flow
+
+Example flow from transcript to curated note:
+
+#+begin_src sh
+# 1. Capture raw transcript.
+mkdir -p raw/meetings views/meeting-summaries notes/meetings compiled
+cp ~/Downloads/team-sync.txt raw/meetings/2026-05-20-team-sync.transcript.org2
+
+# 2. Build cited local context deterministically.
+npm run org2 -- query "team sync" \
+  --dir raw/meetings \
+  --recursive \
+  --subtree \
+  --answer-context \
+  --format json \
+  > compiled/2026-05-20-team-sync-context.json
+
+# 3. Ask AI to write a reviewable draft, not canonical memory.
+npm run org2 -- ai run \
+  --task summarize-meeting \
+  --context compiled/2026-05-20-team-sync-context.json \
+  --out views/meeting-summaries/2026-05-20-team-sync.org2 \
+  --apply
+
+# 4. Check generated artifact metadata and graph health.
+npm run org2 -- lint --dir . --recursive
+
+# 5. After review, promote accepted content.
+npm run org2 -- ai promote \
+  --file views/meeting-summaries/2026-05-20-team-sync.org2 \
+  --to-file notes/meetings/team-sync.org2 \
+  --apply
+
+# 6. Re-check canonical corpus.
+npm run org2 -- lint --dir . --recursive
+#+end_src
+
+Before promotion, the draft is a =view= artifact with =review-required= status. After promotion, the accepted note in =notes/meetings/team-sync.org2= carries source/provenance properties and the draft can be marked =promoted=.
+
+* Integration checklist
+
+Before writing:
+
+- Identify the target zone: =raw/=, =notes/=, =compiled/=, =views/=, or =publish/=.
+- Decide whether the operation is deterministic or review-gated.
+- Run or inspect recent =org2 lint= output when practical.
+- Search for existing IDs/entities to avoid duplicates.
+- Prepare provenance: source path/message ref, line range, hash, generator, and timestamp.
+
+When writing:
+
+- Append or patch the smallest relevant section.
+- Write generated or uncertain content to =views/= with =review-required=.
+- Keep secrets out of files.
+- Include citations for generated factual claims.
+- Do not perform external side effects from generated TODOs without approval.
+
+After writing:
+
+- Run =org2 lint --dir . --recursive= or the repository's equivalent check.
+- Confirm no duplicate IDs or invalid review/provenance metadata were introduced.
+- If promoting memory, ensure the promoted note says where it came from and the source draft is marked reviewed/promoted.
+- If publishing, verify the output contains only intended reviewed content.
