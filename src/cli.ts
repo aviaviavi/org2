@@ -538,6 +538,35 @@ type RoamGraphMaintenanceReport = {
   linkifySuggestions: RoamGraphMaintenanceLinkifySuggestion[];
 };
 
+type GraphAuditFinding = {
+  type: "broken-link" | "orphan-note" | "duplicate-id" | "duplicate-entity" | "stale-generated-artifact";
+  severity: "error" | "warning" | "info";
+  file: string;
+  line?: number;
+  id?: string;
+  target?: string;
+  label?: string;
+  rule: string;
+  explanation: string;
+  deterministicFix?: string;
+  reviewSuggestion?: string;
+  related?: unknown;
+};
+
+type GraphAuditReport = {
+  $schema: "org2:graph-audit:v1";
+  summary: {
+    scannedFiles: number;
+    nodeCount: number;
+    edgeCount: number;
+    findingCount: number;
+    errorCount: number;
+    warningCount: number;
+    infoCount: number;
+  };
+  findings: GraphAuditFinding[];
+};
+
 function findRoamLabelLineForLint(content: string, labelRaw: string): number {
   const target = normalizeRoamLinkLabel(labelRaw);
   if (!target) return 1;
@@ -1361,6 +1390,143 @@ function renderRoamGraphReportText(report: RoamGraphMaintenanceReport): string {
   lines.push("");
 
   return lines.join("\n");
+}
+
+
+function buildGraphAuditReport(files: string[]): GraphAuditReport {
+  const graph = buildRoamGraph(files);
+  const maintenance = buildRoamGraphMaintenanceReport(files, graph);
+  const findings: GraphAuditFinding[] = [];
+
+  for (const finding of maintenance.linkFindings) {
+    findings.push({
+      type: "broken-link",
+      severity: finding.rule === "ambiguous-wiki-link" ? "warning" : "error",
+      file: finding.file,
+      line: finding.line,
+      target: finding.target,
+      rule: finding.rule,
+      explanation: finding.message,
+      deterministicFix:
+        finding.rule === "unresolved-id-link"
+          ? "Create or restore a node with this ID, or update the id: link to an existing node."
+          : undefined,
+      reviewSuggestion:
+        finding.rule === "ambiguous-wiki-link"
+          ? "Pick the intended node and replace the wiki link with an id link, or rename aliases to remove the ambiguity."
+          : "Review whether the target was renamed, moved outside the scan, or should be created.",
+      related: finding.candidates?.length ? { candidates: finding.candidates } : undefined,
+    });
+  }
+
+  for (const node of maintenance.orphanNodes) {
+    findings.push({
+      type: "orphan-note",
+      severity: "info",
+      file: node.file,
+      id: node.id,
+      label: node.label,
+      rule: "orphan-note",
+      explanation: `Node '${node.label}' has no inbound or outbound graph edges in the scanned corpus.`,
+      reviewSuggestion: "Review whether this note should link to related notes, receive backlinks, or be archived.",
+    });
+  }
+
+  for (const collision of maintenance.aliasCollisions) {
+    findings.push({
+      type: "duplicate-entity",
+      severity: "warning",
+      file: collision.nodes[0]?.file || files[0] || ".",
+      label: collision.label,
+      rule: "duplicate-entity-label",
+      explanation: `Label/alias '${collision.label}' resolves to multiple nodes and can make entity links ambiguous.`,
+      reviewSuggestion: "Merge duplicate entities, rename aliases, or use explicit id links for ambiguous references.",
+      related: { nodes: collision.nodes },
+    });
+  }
+
+  const artifactIdRefs = [] as ReturnType<typeof collectArtifactIdsInText>;
+  const fileContents = new Map<string, string>();
+  for (const filePath of files) {
+    try {
+      const raw = fs.readFileSync(filePath, "utf8");
+      fileContents.set(filePath, raw);
+      artifactIdRefs.push(...collectArtifactIdsInText(raw, filePath));
+    } catch {
+      // Ignore unreadable files here; lint reports parse/read failures separately.
+    }
+  }
+
+  for (const duplicate of findDuplicateArtifactIds(artifactIdRefs)) {
+    const primary = duplicate.refs[0];
+    if (!primary) continue;
+    findings.push({
+      type: "duplicate-id",
+      severity: "error",
+      file: primary.file,
+      line: primary.line,
+      id: duplicate.id,
+      rule: "artifact-id-duplicate",
+      explanation: `ID '${duplicate.id}' appears ${duplicate.refs.length} times in the scanned corpus.`,
+      deterministicFix: "Generate a new stable ID for all but the canonical occurrence, then update inbound id/provenance references deterministically.",
+      reviewSuggestion: "Choose which occurrence is canonical before changing references if the duplicated records may represent the same entity.",
+      related: { refs: duplicate.refs },
+    });
+  }
+
+  for (const [filePath, raw] of fileContents) {
+    const lintIssues: ArtifactLintIssue[] = [];
+    appendArtifactFreshnessLintIssues(raw, filePath, lintIssues);
+    for (const issue of lintIssues) {
+      findings.push({
+        type: "stale-generated-artifact",
+        severity: issue.severity,
+        file: issue.file,
+        line: issue.line,
+        rule: issue.rule,
+        explanation: issue.message,
+        deterministicFix: "Regenerate this artifact from its declared provenance/source inputs, then update ORG2_GENERATED_AT and ORG2_SOURCE_HASHES.",
+        reviewSuggestion: "If the artifact was edited by hand or source provenance changed, review before replacing generated content.",
+      });
+    }
+  }
+
+  findings.sort((a, b) => a.file.localeCompare(b.file) || (a.line || 0) - (b.line || 0) || a.type.localeCompare(b.type));
+  return {
+    $schema: "org2:graph-audit:v1",
+    summary: {
+      scannedFiles: files.length,
+      nodeCount: graph.nodes.length,
+      edgeCount: graph.edges.length,
+      findingCount: findings.length,
+      errorCount: findings.filter((finding) => finding.severity === "error").length,
+      warningCount: findings.filter((finding) => finding.severity === "warning").length,
+      infoCount: findings.filter((finding) => finding.severity === "info").length,
+    },
+    findings,
+  };
+}
+
+function renderGraphAuditReportText(report: GraphAuditReport): string {
+  const lines: string[] = [];
+  lines.push("Org2 graph quality audit");
+  lines.push("========================");
+  lines.push(`Scanned files: ${report.summary.scannedFiles}`);
+  lines.push(`Graph: ${report.summary.nodeCount} nodes, ${report.summary.edgeCount} edges`);
+  lines.push(`Findings: ${report.summary.findingCount} (${report.summary.errorCount} error, ${report.summary.warningCount} warning, ${report.summary.infoCount} info)`);
+  lines.push("");
+  if (report.findings.length === 0) {
+    lines.push("No graph quality findings.");
+    return lines.join("\n") + "\n";
+  }
+  for (const finding of report.findings) {
+    const loc = `${finding.file}${finding.line ? `:${finding.line}` : ""}`;
+    lines.push(`- ${finding.severity.toUpperCase()} ${finding.type}/${finding.rule} ${loc}`);
+    lines.push(`  ${finding.explanation}`);
+    if (finding.deterministicFix) lines.push(`  deterministic fix: ${finding.deterministicFix}`);
+    if (finding.reviewSuggestion) lines.push(`  review suggestion: ${finding.reviewSuggestion}`);
+  }
+  return lines.join("\n") + "\n";
 }
 
 function escapeHtml(raw: string): string {
@@ -6809,6 +6975,8 @@ async function main(): Promise<void> {
 
   // Lint / corpus health
   let lintFormat: "text" | "json" = "text";
+  let graphAction: "audit" | "repair-candidates" = "audit";
+  let graphFormat: "report" | "json" = "report";
 
   // Compile / machine-readable corpus artifacts
   let compileAction: "corpus" = "corpus";
@@ -6963,6 +7131,16 @@ async function main(): Promise<void> {
     } else if (arg === "lint") {
       command = "lint";
       i++;
+    } else if (arg === "graph") {
+      command = "graph";
+      i++;
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        const sub = args[i]!;
+        if (sub === "audit" || sub === "repair-candidates") {
+          graphAction = sub;
+          i++;
+        }
+      }
     } else if (arg === "compile") {
       command = "compile";
       i++;
@@ -7759,6 +7937,8 @@ async function main(): Promise<void> {
           searchFormat = v;
         } else if (command === "lint" && (v === "text" || v === "json")) {
           lintFormat = v;
+        } else if (command === "graph" && (v === "report" || v === "json")) {
+          graphFormat = v;
         } else if (command === "compile" && (v === "json" || v === "jsonl")) {
           compileFormat = v;
         } else if (command === "ai" && (v === "text" || v === "json")) {
@@ -8065,6 +8245,7 @@ Roam / IDs:
   org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--style wiki|id] [--id UUID] [--apply]
   org2 roam linkify --dir DIR [--recursive] [--file FILE] [--exclude PATH]... [--apply] [--format text|json]
   org2 roam graph --dir DIR [--recursive] [--out FILE] [--format text|report|json]
+  org2 graph audit --dir DIR [--recursive] [--format report|json]
 
 Maintenance / health:
   org2 compile corpus [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl] [--incremental] [--cache FILE]
@@ -8073,6 +8254,7 @@ Maintenance / health:
   org2 ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
   org2 ai suggest-links --dir DIR [--recursive] [--file FILE] [--out FILE --apply] [--format text|json]
   org2 ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
+  org2 graph audit [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format report|json]
   org2 lint [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
   org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]
 
@@ -8094,6 +8276,7 @@ function printScopedUsage(
     cryptAction: "encrypt" | "decrypt";
     idAction: "get" | "ensure";
     roamAction: "db-sync" | "backlinks" | "node" | "link" | "linkify" | "graph";
+    graphAction: "audit" | "repair-candidates";
     roamNodeAction: "new";
     roamLinkAction: "insert-backlink";
     aiAction: "validate-job" | "run" | "promote" | "suggest-links" | "";
@@ -8346,6 +8529,16 @@ Flags:
 Output:
   Schema org2:agent-context:v1 with source ranges, citations, IDs, titles,
   tags, properties, optional backlinks/neighbors, and bounded context text.`;
+  } else if (command === "graph") {
+    text = `org2 graph ${options.graphAction || "audit"}
+
+Usage:
+  org2 graph audit [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format report|json]
+  org2 graph repair-candidates [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format json]
+
+Checks:
+  Broken links, orphan notes, duplicate IDs/entities, and stale generated artifacts.
+  Findings separate deterministic fixes from review-gated suggestions.`;
   } else if (command === "lint") {
     text = `org2 lint
 
@@ -8468,12 +8661,12 @@ Flags:
 
   if (help) {
     if (command) {
-      printScopedUsage(command, { exportAction, todoAction, planAction, cryptAction, idAction, roamAction, roamNodeAction, roamLinkAction, aiAction, agentAction }, 0);
+      printScopedUsage(command, { exportAction, todoAction, planAction, cryptAction, idAction, roamAction, graphAction, roamNodeAction, roamLinkAction, aiAction, agentAction }, 0);
     }
     printGeneralUsage(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "compile" && command !== "agent" && command !== "lint" && command !== "ai" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "compile" && command !== "agent" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
     printGeneralUsage(1);
   }
 
@@ -10861,6 +11054,41 @@ Flags:
       process.stdout.write(outText);
     }
 
+    return;
+  }
+
+  if (command === "graph") {
+    if (!dir && files.length === 0) {
+      const configPath = findConfigFile(process.cwd());
+      if (configPath) {
+        try {
+          const config = loadConfig(configPath);
+          const configDir = path.dirname(configPath);
+          files = resolveFilesFromConfig(config, configDir);
+          if (files.length === 0) {
+            console.error(`Error: config found at ${configPath} but no matching files for patterns: ${config.agendaFiles?.join(", ") || "*.org"}`);
+            process.exit(1);
+          }
+        } catch (err) {
+          console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`);
+          process.exit(1);
+        }
+      } else {
+        console.error("Error: provide either --dir, --files, or org2.json config");
+        process.exit(1);
+      }
+    }
+    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive);
+
+    const report = buildGraphAuditReport(files);
+    if (graphFormat === "json" || graphAction === "repair-candidates") {
+      const payload = graphAction === "repair-candidates"
+        ? { $schema: "org2:graph-repair-candidates:v1", candidates: report.findings.filter((finding) => finding.deterministicFix || finding.reviewSuggestion), summary: report.summary }
+        : report;
+      process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+    } else {
+      process.stdout.write(renderGraphAuditReportText(report));
+    }
     return;
   }
 
