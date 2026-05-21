@@ -1542,23 +1542,18 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
   const subtitle = opts?.dir ? `Source: ${opts.dir}` : "Static debug view";
   const isolatedCount = graph.nodes.filter((node) => node.degree === 0).length;
   const connectedNodes = graph.nodes.filter((node) => node.degree > 0);
-  const maxNodes = 500;
-  const graphNodes = (connectedNodes.length > 0 ? connectedNodes : graph.nodes)
+  const topNodes = graph.nodes
     .slice()
     .sort((a, b) => b.degree - a.degree || a.label.localeCompare(b.label))
-    .slice(0, maxNodes);
-  const graphNodeIds = new Set(graphNodes.map((node) => node.id));
-  const graphEdges = graph.edges.filter((edge) => graphNodeIds.has(edge.source) && graphNodeIds.has(edge.target));
-  const topNodes = graphNodes.slice(0, 12).map((node) => ({
-    label: node.label,
-    degree: node.degree,
-  }));
+    .slice(0, 12)
+    .map((node) => ({ label: node.label, degree: node.degree }));
   const payload = JSON.stringify({
     totalNodes: graph.nodes.length,
     totalEdges: graph.edges.length,
-    allNodes: graph.nodes,
-    nodes: graphNodes,
-    edges: graphEdges,
+    isolatedCount,
+    connectedCount: connectedNodes.length,
+    nodes: graph.nodes,
+    edges: graph.edges,
   });
 
   return `<!doctype html>
@@ -1568,27 +1563,30 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${escapeHtml(title)}</title>
   <style>
-    :root { color-scheme: light dark; }
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
     body { margin: 0; font: 14px/1.4 -apple-system, BlinkMacSystemFont, sans-serif; background: #0b1020; color: #e5e7eb; }
-    .wrap { display: grid; grid-template-columns: 300px 1fr; height: 100vh; align-items: stretch; overflow: hidden; }
-    .sidebar { padding: 16px; background: rgba(15, 23, 42, 0.92); border-right: 1px solid rgba(148, 163, 184, 0.2); overflow: auto; }
+    .wrap { display: grid; grid-template-columns: 360px 1fr; height: 100vh; overflow: hidden; }
+    .sidebar { padding: 16px; background: rgba(15, 23, 42, 0.96); border-right: 1px solid rgba(148, 163, 184, 0.22); overflow: auto; }
     h1 { margin: 0 0 6px; font-size: 18px; }
     .sub { color: #94a3b8; margin-bottom: 14px; word-break: break-word; }
-    .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
-    .card { background: rgba(30, 41, 59, 0.85); border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 10px; padding: 10px; }
+    .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+    .card { background: rgba(30, 41, 59, 0.86); border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 10px; padding: 10px; }
     .card strong { display: block; font-size: 18px; }
-    ol { margin: 8px 0 0 18px; padding: 0; }
-    li { margin: 0 0 8px; }
-    .hint { color: #94a3b8; margin-top: 14px; }
-    .node-list { margin-top: 14px; }
-    .node-list input { box-sizing: border-box; width: 100%; margin: 8px 0; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(148, 163, 184, 0.28); background: rgba(15, 23, 42, 0.9); color: #e5e7eb; }
-    .node-list ul { list-style: none; margin: 0; padding: 0; max-height: 34vh; overflow: auto; }
-    .node-list li { margin: 0; padding: 7px 8px; border-radius: 8px; cursor: pointer; }
-    .node-list li:hover, .node-list li.active { background: rgba(96, 165, 250, 0.18); }
-    .node-list .meta { display: block; color: #94a3b8; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hint { color: #94a3b8; margin: 12px 0; }
+    .controls { display: flex; gap: 8px; margin: 10px 0; }
+    button { border: 1px solid rgba(148, 163, 184, 0.28); background: rgba(15, 23, 42, 0.9); color: #e5e7eb; border-radius: 8px; padding: 7px 9px; cursor: pointer; }
+    button:hover { background: rgba(96, 165, 250, 0.18); }
+    input { width: 100%; margin: 8px 0; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(148, 163, 184, 0.28); background: rgba(15, 23, 42, 0.9); color: #e5e7eb; }
+    ul { list-style: none; margin: 0; padding: 0; max-height: 36vh; overflow: auto; }
+    li { margin: 0; padding: 7px 8px; border-radius: 8px; cursor: pointer; }
+    li:hover, li.active { background: rgba(96, 165, 250, 0.2); }
+    .meta { display: block; color: #94a3b8; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .details { margin-top: 12px; word-break: break-word; }
     .stage { position: relative; min-width: 0; height: 100vh; overflow: hidden; }
-    canvas { display: block; width: 100%; height: 100%; }
-    .tooltip { position: absolute; right: 16px; bottom: 16px; max-width: 320px; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 10px; padding: 10px 12px; color: #e5e7eb; }
+    canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+    .overlay { position: absolute; left: 16px; top: 16px; right: 16px; display: flex; justify-content: space-between; gap: 16px; pointer-events: none; }
+    .pill { pointer-events: auto; max-width: min(680px, 70vw); background: rgba(15, 23, 42, 0.86); border: 1px solid rgba(148, 163, 184, 0.24); border-radius: 999px; padding: 8px 12px; color: #cbd5e1; }
   </style>
 </head>
 <body>
@@ -1602,200 +1600,183 @@ function renderRoamGraphHtml(graph: RoamGraphData, opts?: { title?: string; dir?
         <div class="card"><strong>${isolatedCount}</strong>isolated</div>
         <div class="card"><strong>${connectedNodes.length}</strong>connected</div>
       </div>
-      <div class="card">
-        <div><strong style="font-size:14px">Top connected nodes</strong></div>
-        <ol>
-          ${topNodes.map((node) => `<li>${escapeHtml(node.label)} <span style="color:#94a3b8">(${node.degree})</span></li>`).join("")}
-        </ol>
+      <div class="hint">Search includes the full graph. The canvas shows a readable neighborhood for the selected node instead of trying to draw all ${graph.nodes.length} nodes at once.</div>
+      <input id="nodeSearch" placeholder="Search all nodes/files" autofocus />
+      <ul id="nodeList"></ul>
+      <div class="controls">
+        <button id="resetBtn">Top nodes</button>
+        <button id="fitBtn">Fit view</button>
       </div>
-      <div class="hint">Showing ${graphNodes.length} of ${graph.nodes.length} nodes, ranked by degree. Bigger dots mean higher degree. Hover or click a node to inspect it.</div>
-      <div class="node-list card">
-        <strong style="font-size:14px">Visible nodes</strong>
-        <input id="nodeSearch" placeholder="Filter visible nodes" />
-        <ul id="nodeList"></ul>
+      <div class="details card" id="details">Select a node to inspect its links.</div>
+      <div class="card" style="margin-top:12px">
+        <strong style="font-size:14px">Top connected nodes</strong>
+        <ol>${topNodes.map((node) => `<li style="cursor:pointer" data-top-label="${escapeHtml(node.label)}">${escapeHtml(node.label)} <span style="color:#94a3b8">(${node.degree})</span></li>`).join("")}</ol>
       </div>
     </aside>
     <main class="stage">
       <canvas id="graph"></canvas>
-      <div class="tooltip" id="tooltip">Hover a node</div>
+      <div class="overlay"><div class="pill" id="status">Top connected nodes overview</div><div class="pill">Hover a node or click dots • drag to pan • wheel to zoom</div></div>
     </main>
   </div>
   <script>
     const payload = ${payload};
     const canvas = document.getElementById('graph');
-    const tooltip = document.getElementById('tooltip');
+    const ctx = canvas.getContext('2d');
     const nodeSearch = document.getElementById('nodeSearch');
     const nodeList = document.getElementById('nodeList');
-    const ctx = canvas.getContext('2d');
+    const details = document.getElementById('details');
+    const statusEl = document.getElementById('status');
+    const resetBtn = document.getElementById('resetBtn');
+    const fitBtn = document.getElementById('fitBtn');
     const dpr = Math.max(1, window.devicePixelRatio || 1);
     const esc = (value) => String(value || '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-    const nodes = payload.nodes.map((node, index) => ({
-      ...node,
-      x: Math.cos((index / Math.max(1, payload.nodes.length)) * Math.PI * 2) * (220 + Math.min(420, payload.nodes.length * 0.35)),
-      y: Math.sin((index / Math.max(1, payload.nodes.length)) * Math.PI * 2) * (220 + Math.min(420, payload.nodes.length * 0.35)),
-      vx: 0,
-      vy: 0,
-      r: 3 + Math.min(12, Math.sqrt(node.degree || 0) * 1.4),
-    }));
-    const nodeById = new Map(nodes.map((node) => [node.id, node]));
-    const edges = payload.edges.map((edge) => ({ ...edge, a: nodeById.get(edge.source), b: nodeById.get(edge.target) })).filter((edge) => edge.a && edge.b);
-    let width = 0;
-    let height = 0;
-    let hovered = null;
-    let selected = null;
-    const simulationSteps = nodes.length > 350 ? 160 : 220;
+    const allNodes = payload.nodes.slice().sort((a, b) => b.degree - a.degree || a.label.localeCompare(b.label));
+    const nodeById = new Map(allNodes.map((node) => [node.id, node]));
+    const edgeByNode = new Map();
+    for (const edge of payload.edges) {
+      if (!edgeByNode.has(edge.source)) edgeByNode.set(edge.source, []);
+      if (!edgeByNode.has(edge.target)) edgeByNode.set(edge.target, []);
+      edgeByNode.get(edge.source).push(edge);
+      edgeByNode.get(edge.target).push(edge);
+    }
+    let width = 1, height = 1, scale = 1, panX = 0, panY = 0;
+    let viewNodes = [], viewEdges = [], selected = null, hovered = null;
+    let dragging = false, dragStart = null;
 
     function resize() {
       width = Math.max(1, canvas.clientWidth);
       height = Math.max(1, canvas.clientHeight);
       canvas.width = Math.floor(width * dpr);
       canvas.height = Math.floor(height * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, width / 2, height / 2);
+      draw();
     }
-
-    function step() {
-      for (const node of nodes) {
-        node.vx *= 0.88;
-        node.vy *= 0.88;
-      }
-      for (let i = 0; i < nodes.length; i += 1) {
-        const a = nodes[i];
-        for (let j = i + 1; j < nodes.length; j += 1) {
-          const b = nodes[j];
-          let dx = b.x - a.x;
-          let dy = b.y - a.y;
-          const dist2 = Math.max(120, dx * dx + dy * dy);
-          const dist = Math.sqrt(dist2);
-          const force = 900 / dist2;
-          dx /= dist;
-          dy /= dist;
-          a.vx -= dx * force;
-          a.vy -= dy * force;
-          b.vx += dx * force;
-          b.vy += dy * force;
-        }
-      }
-      for (const edge of edges) {
-        const dx = edge.b.x - edge.a.x;
-        const dy = edge.b.y - edge.a.y;
-        const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-        const target = 24 + Math.min(80, (edge.count || 1) * 8);
-        const force = (dist - target) * 0.0012;
-        const nx = dx / dist;
-        const ny = dy / dist;
-        edge.a.vx += nx * force;
-        edge.a.vy += ny * force;
-        edge.b.vx -= nx * force;
-        edge.b.vy -= ny * force;
-      }
-      for (const node of nodes) {
-        node.x += node.vx;
-        node.y += node.vy;
-      }
+    function screenToWorld(clientX, clientY) {
+      const rect = canvas.getBoundingClientRect();
+      return { x: (clientX - rect.left - width / 2 - panX) / scale, y: (clientY - rect.top - height / 2 - panY) / scale };
     }
-
-    function draw() {
-      ctx.fillStyle = '#0b1020';
-      ctx.fillRect(-width / 2, -height / 2, width, height);
-      ctx.lineWidth = 1;
-      for (const edge of edges) {
-        ctx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
-        ctx.beginPath();
-        ctx.moveTo(edge.a.x, edge.a.y);
-        ctx.lineTo(edge.b.x, edge.b.y);
-        ctx.stroke();
-      }
-      for (const node of nodes) {
-        ctx.fillStyle = selected && selected.id === node.id ? '#f97316' : hovered && hovered.id === node.id ? '#f59e0b' : '#60a5fa';
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, node.r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      const labelNode = hovered || selected;
-      if (labelNode) {
-        ctx.fillStyle = '#e5e7eb';
-        ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
-        if (Number.isFinite(labelNode.x) && Number.isFinite(labelNode.y)) {
-          ctx.fillText(labelNode.label, labelNode.x + labelNode.r + 4, labelNode.y + 4);
-        }
-      }
-    }
-
-    function renderDetails(node) {
-      if (!node) {
-        tooltip.textContent = 'Hover or click a node';
-        return;
-      }
-      tooltip.innerHTML = '<strong>' + esc(node.label) + '</strong><br>' +
-        'degree: ' + node.degree + ' (' + node.degreeIn + ' in, ' + node.degreeOut + ' out)<br>' +
-        '<span style="color:#94a3b8">' + esc(node.file) + '</span>';
-    }
-
-    function renderNodeList() {
-      const q = String(nodeSearch.value || '').toLowerCase();
-      const searchable = q ? payload.allNodes : nodes;
-      const matches = searchable.filter((node) => !q || node.label.toLowerCase().includes(q) || String(node.file || '').toLowerCase().includes(q)).slice(0, 80);
-      nodeList.innerHTML = matches.map((node) => '<li data-id="' + esc(node.id) + '"' + (selected && selected.id === node.id ? ' class="active"' : '') + '>' + esc(node.label) + '<span class="meta">' + esc(node.file) + ' · degree ' + node.degree + '</span></li>').join('');
-    }
-
-    function selectNode(node) {
-      selected = node;
-      renderDetails(node);
+    function setTransform() { ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * (width / 2 + panX), dpr * (height / 2 + panY)); }
+    function radius(node) { return 5 + Math.min(16, Math.sqrt(node.degree || 0) * 1.7); }
+    function cloneNode(node) { return { ...node, x: 0, y: 0, r: radius(node) }; }
+    function topOverview() {
+      selected = null;
+      const top = allNodes.filter((node) => node.degree > 0).slice(0, 80);
+      viewNodes = top.map(cloneNode);
+      const ids = new Set(viewNodes.map((node) => node.id));
+      viewEdges = payload.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target));
+      layoutRadial(viewNodes, null);
+      fitView();
+      statusEl.textContent = 'Top connected nodes overview';
+      renderDetails(null);
       renderNodeList();
       draw();
     }
-
-    function runLayout() {
-      for (let i = 0; i < simulationSteps; i += 1) step();
+    function selectNodeById(id) {
+      const center = nodeById.get(id);
+      if (!center) return;
+      selected = center;
+      const rawEdges = (edgeByNode.get(id) || []).slice().sort((a, b) => (b.count || 1) - (a.count || 1)).slice(0, 140);
+      const ids = new Set([id]);
+      for (const edge of rawEdges) ids.add(edge.source === id ? edge.target : edge.source);
+      const nodes = [...ids].map((nodeId) => nodeById.get(nodeId)).filter(Boolean);
+      viewNodes = nodes.map(cloneNode);
+      viewEdges = rawEdges.filter((edge) => ids.has(edge.source) && ids.has(edge.target));
+      layoutRadial(viewNodes, id);
+      fitView();
+      statusEl.textContent = center.label + ' · ' + viewEdges.length + ' visible links';
+      renderDetails(center);
+      renderNodeList();
       draw();
     }
-
-    canvas.addEventListener('mousemove', (event) => {
-      const rect = canvas.getBoundingClientRect();
-      const mx = event.clientX - rect.left - width / 2;
-      const my = event.clientY - rect.top - height / 2;
-      hovered = null;
-      for (const node of nodes) {
-        const dx = mx - node.x;
-        const dy = my - node.y;
-        if ((dx * dx + dy * dy) <= node.r * node.r) {
-          hovered = node;
-          break;
+    function layoutRadial(nodes, centerId) {
+      const center = centerId ? nodes.find((node) => node.id === centerId) : null;
+      const others = center ? nodes.filter((node) => node.id !== centerId) : nodes;
+      if (center) { center.x = 0; center.y = 0; }
+      const rings = center ? [48, 170, 300, 440] : [80, 210, 350, 500];
+      others.forEach((node, index) => {
+        const ring = rings[Math.min(rings.length - 1, Math.floor(index / 36))];
+        const inRing = index % 36;
+        const count = Math.min(36, others.length - Math.floor(index / 36) * 36);
+        const angle = (inRing / Math.max(1, count)) * Math.PI * 2 + (Math.floor(index / 36) * 0.37);
+        node.x = Math.cos(angle) * ring;
+        node.y = Math.sin(angle) * ring;
+      });
+    }
+    function fitView() {
+      if (!viewNodes.length) return;
+      const minX = Math.min(...viewNodes.map((node) => node.x - node.r));
+      const maxX = Math.max(...viewNodes.map((node) => node.x + node.r));
+      const minY = Math.min(...viewNodes.map((node) => node.y - node.r));
+      const maxY = Math.max(...viewNodes.map((node) => node.y + node.r));
+      scale = Math.max(0.35, Math.min(1.6, Math.min((width - 80) / Math.max(1, maxX - minX), (height - 80) / Math.max(1, maxY - minY))));
+      panX = -((minX + maxX) / 2) * scale;
+      panY = -((minY + maxY) / 2) * scale;
+    }
+    function hitTest(world) {
+      let best = null, bestD = Infinity;
+      for (const node of viewNodes) {
+        const dx = world.x - node.x, dy = world.y - node.y;
+        const hit = Math.max(node.r + 5 / scale, 10 / scale);
+        const d = dx * dx + dy * dy;
+        if (d <= hit * hit && d < bestD) { best = node; bestD = d; }
+      }
+      return best;
+    }
+    function draw() {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.fillStyle = '#0b1020';
+      ctx.fillRect(0, 0, width, height);
+      setTransform();
+      ctx.lineWidth = Math.max(1 / scale, 0.6);
+      const viewById = new Map(viewNodes.map((node) => [node.id, node]));
+      for (const edge of viewEdges) {
+        const a = viewById.get(edge.source), b = viewById.get(edge.target);
+        if (!a || !b) continue;
+        const active = hovered && (edge.source === hovered.id || edge.target === hovered.id);
+        ctx.strokeStyle = active ? 'rgba(251, 191, 36, 0.75)' : 'rgba(148, 163, 184, 0.18)';
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      }
+      for (const node of viewNodes) {
+        const isSelected = selected && selected.id === node.id;
+        const isHovered = hovered && hovered.id === node.id;
+        ctx.fillStyle = isSelected ? '#f97316' : isHovered ? '#fbbf24' : '#60a5fa';
+        ctx.beginPath(); ctx.arc(node.x, node.y, node.r, 0, Math.PI * 2); ctx.fill();
+        if (isSelected || isHovered || node.degree >= 25 || viewNodes.length <= 40) {
+          ctx.fillStyle = '#e5e7eb'; ctx.font = Math.max(11 / scale, 10) + 'px -apple-system, BlinkMacSystemFont, sans-serif';
+          ctx.fillText(node.label.slice(0, 70), node.x + node.r + 5 / scale, node.y + 4 / scale);
         }
       }
-      if (hovered) {
-        renderDetails(hovered);
-      } else {
-        renderDetails(selected);
-      }
+    }
+    function renderDetails(node) {
+      if (!node) { details.innerHTML = 'Select a node to inspect its links.'; return; }
+      const edges = (edgeByNode.get(node.id) || []).slice(0, 12).map((edge) => nodeById.get(edge.source === node.id ? edge.target : edge.source)).filter(Boolean);
+      details.innerHTML = '<strong>' + esc(node.label) + '</strong>' +
+        '<div class="meta">degree ' + node.degree + ' · ' + node.degreeIn + ' in / ' + node.degreeOut + ' out</div>' +
+        '<div class="meta">' + esc(node.file) + '</div>' +
+        (edges.length ? '<hr style="border-color:rgba(148,163,184,.18)"><div class="meta">linked nodes</div>' + edges.map((n) => '<div>• ' + esc(n.label) + '</div>').join('') : '');
+    }
+    function renderNodeList() {
+      const q = String(nodeSearch.value || '').toLowerCase();
+      const matches = allNodes.filter((node) => !q || node.label.toLowerCase().includes(q) || String(node.file || '').toLowerCase().includes(q)).slice(0, 120);
+      nodeList.innerHTML = matches.map((node) => '<li data-id="' + esc(node.id) + '"' + (selected && selected.id === node.id ? ' class="active"' : '') + '>' + esc(node.label) + '<span class="meta">' + esc(node.file) + ' · degree ' + node.degree + '</span></li>').join('');
+    }
+    canvas.addEventListener('mousemove', (event) => {
+      if (dragging && dragStart) { panX = dragStart.panX + event.clientX - dragStart.x; panY = dragStart.panY + event.clientY - dragStart.y; draw(); return; }
+      hovered = hitTest(screenToWorld(event.clientX, event.clientY));
+      if (hovered) renderDetails(hovered); else renderDetails(selected);
       draw();
     });
-
-    canvas.addEventListener('click', () => {
-      if (hovered) selectNode(hovered);
-    });
-
-    canvas.addEventListener('mouseleave', () => {
-      hovered = null;
-      renderDetails(selected);
-      draw();
-    });
-
+    canvas.addEventListener('mousedown', (event) => { dragging = true; dragStart = { x: event.clientX, y: event.clientY, panX, panY }; });
+    window.addEventListener('mouseup', () => { dragging = false; dragStart = null; });
+    canvas.addEventListener('click', (event) => { const node = hitTest(screenToWorld(event.clientX, event.clientY)); if (node) selectNodeById(node.id); });
+    canvas.addEventListener('wheel', (event) => { event.preventDefault(); const factor = event.deltaY < 0 ? 1.12 : 0.9; scale = Math.max(0.2, Math.min(4, scale * factor)); draw(); }, { passive: false });
+    canvas.addEventListener('mouseleave', () => { hovered = null; renderDetails(selected); draw(); });
     nodeSearch.addEventListener('input', renderNodeList);
-    nodeList.addEventListener('click', (event) => {
-      const li = event.target.closest('li[data-id]');
-      if (!li) return;
-      const node = nodeById.get(li.dataset.id) || payload.allNodes.find((candidate) => candidate.id === li.dataset.id);
-      if (node) selectNode(node);
-    });
-
-    window.addEventListener('resize', () => {
-      resize();
-      draw();
-    });
-    resize();
-    runLayout();
-    renderNodeList();
+    nodeList.addEventListener('click', (event) => { const li = event.target.closest('li[data-id]'); if (li) selectNodeById(li.dataset.id); });
+    document.querySelectorAll('[data-top-label]').forEach((li) => li.addEventListener('click', () => { const node = allNodes.find((candidate) => candidate.label === li.dataset.topLabel); if (node) selectNodeById(node.id); }));
+    resetBtn.addEventListener('click', topOverview);
+    fitBtn.addEventListener('click', () => { fitView(); draw(); });
+    window.addEventListener('resize', resize);
+    resize(); topOverview(); renderNodeList();
   </script>
 </body>
 </html>`;
