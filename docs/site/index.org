@@ -19,7 +19,7 @@ Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standa
 
 #+BEGIN_EXPORT html
 <div class="org2-shot-grid">
-  <figure><img src="assets/screenshots/graph.png" alt="Org2 knowledge graph showing a selected neighborhood of linked notes" loading="lazy" /><figcaption>Knowledge graph: inspect readable neighborhoods instead of a giant hairball.</figcaption></figure>
+  <figure><img src="assets/screenshots/graph.png" alt="Org2 knowledge graph showing a selected neighborhood of linked notes" loading="lazy" /><figcaption>Knowledge graph: explore linked notes, backlinks, and source relationships from the same corpus.</figcaption></figure>
   <figure><img src="assets/screenshots/agenda.png" alt="Org2 interactive agenda terminal UI" loading="lazy" /><figcaption>Agenda TUI: plan from tasks, deadlines, tags, and corpus metadata.</figcaption></figure>
   <figure><img src="assets/screenshots/basic.png" alt="A basic Org2 file open in Visual Studio Code" loading="lazy" /><figcaption>VS Code editing: plain files with TODOs, IDs, links, tags, and dates.</figcaption></figure>
   <figure><img src="assets/screenshots/meeting.png" alt="An Org2 meeting transcript with AI summary and action items open in Visual Studio Code" loading="lazy" /><figcaption>AI workflow: transcript, generated summary, and action items stay linked in source.</figcaption></figure>
