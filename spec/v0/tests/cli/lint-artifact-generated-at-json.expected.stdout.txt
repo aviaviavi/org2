@@ -2,7 +2,7 @@
   "$schema": "org2:lint:v1",
   "checkedFiles": 1,
   "skippedFiles": 0,
-  "issueCount": 7,
+  "issueCount": 13,
   "issues": [
     {
       "severity": "warning",
@@ -20,6 +20,20 @@
     },
     {
       "severity": "error",
+      "rule": "artifact-claim-state-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-generated-at.input.txt",
+      "line": 4,
+      "message": "Generated artifacts with role 'compiled' must set ORG2_CLAIM_STATE to distinguish source-backed facts, inference, or reviewed notes."
+    },
+    {
+      "severity": "error",
+      "rule": "artifact-freshness-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-generated-at.input.txt",
+      "line": 4,
+      "message": "Generated artifacts with role 'compiled' must set ORG2_OBSERVED_AT or ORG2_VALID_AS_OF for freshness scoring."
+    },
+    {
+      "severity": "error",
       "rule": "artifact-generated-at-invalid",
       "file": "spec/v0/tests/cli/lint-artifact-generated-at.input.txt",
       "line": 11,
@@ -31,6 +45,34 @@
       "file": "spec/v0/tests/cli/lint-artifact-generated-at.input.txt",
       "line": 11,
       "message": "Artifacts with role 'report' should set ORG2_GENERATOR to record what produced them."
+    },
+    {
+      "severity": "error",
+      "rule": "artifact-claim-state-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-generated-at.input.txt",
+      "line": 11,
+      "message": "Generated artifacts with role 'report' must set ORG2_CLAIM_STATE to distinguish source-backed facts, inference, or reviewed notes."
+    },
+    {
+      "severity": "error",
+      "rule": "artifact-freshness-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-generated-at.input.txt",
+      "line": 11,
+      "message": "Generated artifacts with role 'report' must set ORG2_OBSERVED_AT or ORG2_VALID_AS_OF for freshness scoring."
+    },
+    {
+      "severity": "error",
+      "rule": "artifact-claim-state-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-generated-at.input.txt",
+      "line": 20,
+      "message": "Generated artifacts with role 'view' must set ORG2_CLAIM_STATE to distinguish source-backed facts, inference, or reviewed notes."
+    },
+    {
+      "severity": "error",
+      "rule": "artifact-freshness-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-generated-at.input.txt",
+      "line": 20,
+      "message": "Generated artifacts with role 'view' must set ORG2_OBSERVED_AT or ORG2_VALID_AS_OF for freshness scoring."
     },
     {
       "severity": "warning",

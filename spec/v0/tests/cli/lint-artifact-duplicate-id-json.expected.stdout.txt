@@ -2,7 +2,7 @@
   "$schema": "org2:lint:v1",
   "checkedFiles": 2,
   "skippedFiles": 0,
-  "issueCount": 5,
+  "issueCount": 9,
   "issues": [
     {
       "severity": "error",
@@ -26,6 +26,20 @@
       "message": "Artifacts with role 'compiled' should set ORG2_GENERATOR to record what produced them."
     },
     {
+      "severity": "error",
+      "rule": "artifact-claim-state-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-duplicate-id.input.txt",
+      "line": 3,
+      "message": "Generated artifacts with role 'compiled' must set ORG2_CLAIM_STATE to distinguish source-backed facts, inference, or reviewed notes."
+    },
+    {
+      "severity": "error",
+      "rule": "artifact-freshness-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-duplicate-id.input.txt",
+      "line": 3,
+      "message": "Generated artifacts with role 'compiled' must set ORG2_OBSERVED_AT or ORG2_VALID_AS_OF for freshness scoring."
+    },
+    {
       "severity": "warning",
       "rule": "artifact-generated-at-missing",
       "file": "spec/v0/tests/cli/lint-artifact-duplicate-id.input.txt",
@@ -38,6 +52,20 @@
       "file": "spec/v0/tests/cli/lint-artifact-duplicate-id.input.txt",
       "line": 10,
       "message": "Artifacts with role 'report' should set ORG2_GENERATOR to record what produced them."
+    },
+    {
+      "severity": "error",
+      "rule": "artifact-claim-state-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-duplicate-id.input.txt",
+      "line": 10,
+      "message": "Generated artifacts with role 'report' must set ORG2_CLAIM_STATE to distinguish source-backed facts, inference, or reviewed notes."
+    },
+    {
+      "severity": "error",
+      "rule": "artifact-freshness-missing",
+      "file": "spec/v0/tests/cli/lint-artifact-duplicate-id.input.txt",
+      "line": 10,
+      "message": "Generated artifacts with role 'report' must set ORG2_OBSERVED_AT or ORG2_VALID_AS_OF for freshness scoring."
     }
   ]
 }
