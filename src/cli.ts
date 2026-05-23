@@ -6811,6 +6811,50 @@ function removeTopPropertyDrawer(raw: string): string {
   return kept.join("\n").replace(/^\n+/, "").trim() + "\n";
 }
 
+type AiReviewQueueItem = {
+  file: string;
+  title: string;
+  status: string;
+  jobId: string;
+  task: string;
+  todos: string[];
+  sources: string[];
+};
+
+function artifactProperty(raw: string, key: string): string {
+  const match = raw.match(new RegExp(`^:${key}:\\s*(.+?)\\s*$`, "im"));
+  return match ? String(match[1] || "").trim() : "";
+}
+function setArtifactReviewStatus(raw: string, status: "reviewed" | "rejected" | "deferred"): string {
+  if (/^:ORG2_REVIEW_STATUS:\s*.+$/im.test(raw)) {
+    return raw.replace(/^:ORG2_REVIEW_STATUS:\s*.+$/im, `:ORG2_REVIEW_STATUS: ${status}`);
+  }
+  return raw.replace(/:PROPERTIES:\n/i, `:PROPERTIES:\n:ORG2_REVIEW_STATUS: ${status}\n`);
+}
+
+function collectAiReviewQueue(filesToScan: string[]): AiReviewQueueItem[] {
+  const items: AiReviewQueueItem[] = [];
+  for (const file of filesToScan) {
+    if (!fs.existsSync(file) || !fs.statSync(file).isFile()) continue;
+    const raw = fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");
+    const status = artifactProperty(raw, "ORG2_REVIEW_STATUS");
+    if (status !== "review-required" && status !== "deferred") continue;
+    const title = (raw.match(/^#\+TITLE:\s*(.+)$/im)?.[1] || path.basename(file)).trim();
+    const todos = Array.from(raw.matchAll(/^\*+\s+TODO\s+(.+)$/gm)).map((match) => String(match[1] || "").trim()).filter((todo) => Boolean(todo) && todo.toLowerCase() !== "items");
+    const sources = Array.from(raw.matchAll(/(?:file:|\[\[file:)([^\]\s:]+(?:\.org2|\.org)?)/g)).map((match) => String(match[1] || "").trim());
+    items.push({
+      file,
+      title,
+      status,
+      jobId: artifactProperty(raw, "ORG2_AI_JOB_ID"),
+      task: artifactProperty(raw, "ORG2_AI_TASK"),
+      todos: Array.from(new Set(todos)),
+      sources: Array.from(new Set(sources)),
+    });
+  }
+  return items.sort((a, b) => a.file.localeCompare(b.file));
+}
+
 function hasReviewedArtifactStatus(raw: string): boolean {
   return /^:ORG2_REVIEW_STATUS:\s*(reviewed|promoted)\s*$/im.test(raw);
 }
@@ -7034,7 +7078,7 @@ async function main(): Promise<void> {
   let agentReviewStatus = "";
 
   // AI job manifests and provider-free draft artifact workflows
-  let aiAction: "validate-job" | "run" | "promote" | "suggest-links" | "" = "";
+  let aiAction: "validate-job" | "run" | "promote" | "suggest-links" | "review" | "" = "";
   let aiJobFile = "";
   let aiFormat: "text" | "json" = "text";
   let aiOut = "";
@@ -7042,6 +7086,7 @@ async function main(): Promise<void> {
   let aiPromoteFile = "";
   let aiPromoteToFile = "";
   let aiApply = false;
+  let aiReviewStatus: "reviewed" | "rejected" | "deferred" | "" = "";
 
   // Roam meta
   let roamAction: "db-sync" | "backlinks" | "node" | "link" | "linkify" | "graph" = "db-sync";
@@ -7216,6 +7261,8 @@ async function main(): Promise<void> {
           aiAction = "run";
         } else if (sub === "promote") {
           aiAction = "promote";
+        } else if (sub === "review" || sub === "queue") {
+          aiAction = "review";
         } else if (sub === "suggest-links" || sub === "suggest" || sub === "links") {
           aiAction = "suggest-links";
         }
@@ -7304,7 +7351,7 @@ async function main(): Promise<void> {
           exportFile = args[i]!;
         } else if (command === "roam" && roamAction === "link") {
           roamLinkFile = args[i]!;
-        } else if (command === "ai" && aiAction === "promote") {
+        } else if (command === "ai" && (aiAction === "promote" || aiAction === "review")) {
           aiPromoteFile = args[i]!;
         } else if (command === "roam" && roamAction === "linkify") {
           roamLinkifyFile = args[i]!;
@@ -7333,6 +7380,9 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "agenda") {
           agendaStatusFiltersRaw.push(args[i]!);
+        } else if (command === "ai" && aiAction === "review") {
+          const raw = String(args[i] || "").trim().toLowerCase();
+          if (raw === "reviewed" || raw === "rejected" || raw === "deferred") aiReviewStatus = raw;
         } else {
           todoStatus = parseTodoStatusArg(args[i] ?? "");
         }
@@ -8291,6 +8341,8 @@ Roam / IDs:
   org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
   org2 ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
   org2 ai suggest-links --dir DIR [--recursive] [--file FILE] [--out FILE --apply] [--format text|json]
+  org2 ai review --dir DIR [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+  org2 ai review --file DRAFT --status reviewed|rejected|deferred [--apply] [--format text|json]
   org2 ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
   org2 roam db-sync --dir DIR [--recursive] [--apply]
   org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply]
@@ -8305,6 +8357,8 @@ Maintenance / health:
   org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
   org2 ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
   org2 ai suggest-links --dir DIR [--recursive] [--file FILE] [--out FILE --apply] [--format text|json]
+  org2 ai review --dir DIR [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+  org2 ai review --file DRAFT --status reviewed|rejected|deferred [--apply] [--format text|json]
   org2 ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
   org2 graph audit [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format report|json]
   org2 lint [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
@@ -8331,7 +8385,7 @@ function printScopedUsage(
     graphAction: "audit" | "repair-candidates";
     roamNodeAction: "new";
     roamLinkAction: "insert-backlink";
-    aiAction: "validate-job" | "run" | "promote" | "suggest-links" | "";
+    aiAction: "validate-job" | "run" | "promote" | "suggest-links" | "review" | "";
     agentAction: "context" | "search" | "fetch" | "bundle" | "";
   },
   exitCode: number,
@@ -8618,12 +8672,15 @@ Usage:
   org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
   org2 ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
   org2 ai suggest-links --dir DIR [--recursive] [--file FILE] [--out FILE --apply] [--format text|json]
+  org2 ai review --dir DIR [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+  org2 ai review --file DRAFT --status reviewed|rejected|deferred [--apply] [--format text|json]
   org2 ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
 
 Flags:
   --job FILE         AI job manifest JSON file
   --out FILE         Override manifest output.path for ai run
-  --file DRAFT       Reviewed generated artifact for ai promote
+  --file FILE        Draft artifact for review/promote, or source for ai run
+  --status STATUS    Review status for ai review: reviewed, rejected, or deferred
   --to-file NOTE     Canonical note file to append promoted body to
   --apply            Write changes; without it, print a safe preview
   --format text|json Output format
@@ -8631,6 +8688,7 @@ Flags:
 Checks:
   validate-job checks provider-free manifest shape and accidental secrets.
   run writes a generated draft artifact with provenance/source hashes and review status.
+  review lists pending artifacts and marks candidates reviewed/rejected/deferred.
   promote appends only reviewed drafts to canonical notes and marks the source promoted.`;
   } else if (command === "roam") {
     if (options.roamAction === "db-sync") {
@@ -8754,8 +8812,52 @@ Flags:
 
   if (command === "ai") {
     if (!aiAction) {
-      console.error("Error: org2 ai requires a subcommand (validate-job, run, suggest-links, or promote)");
+      console.error("Error: org2 ai requires a subcommand (validate-job, run, review, suggest-links, or promote)");
       process.exit(1);
+    }
+
+    if (aiAction === "review") {
+      let reviewFiles = files.length > 0 ? files.map((file) => path.resolve(file)) : [];
+      if (dir) reviewFiles = listOrgLikeFiles(dir, recursive);
+      if (aiPromoteFile && aiReviewStatus) {
+        const reviewPath = path.resolve(aiPromoteFile);
+        const raw = fs.readFileSync(reviewPath, "utf8").replace(/\r\n/g, "\n");
+        const updated = setArtifactReviewStatus(raw, aiReviewStatus);
+        if (!aiApply) {
+          if (aiFormat === "json") {
+            console.log(JSON.stringify({ $schema: "org2:ai-review:v1", file: aiPromoteFile, applied: false, status: aiReviewStatus }, null, 2));
+          } else {
+            process.stdout.write(`Would mark ${aiPromoteFile} as ${aiReviewStatus}. Use --apply to write changes.\n`);
+          }
+          return;
+        }
+        fs.writeFileSync(reviewPath, updated, "utf8");
+        if (aiFormat === "json") {
+          console.log(JSON.stringify({ $schema: "org2:ai-review:v1", file: aiPromoteFile, applied: true, status: aiReviewStatus }, null, 2));
+        } else {
+          process.stdout.write(`Marked ${aiPromoteFile} as ${aiReviewStatus}\n`);
+        }
+        return;
+      }
+
+      if (reviewFiles.length === 0) {
+        console.error("Error: org2 ai review requires --dir DIR or --files FILE... to list, or --file DRAFT --status reviewed|rejected|deferred to update");
+        process.exit(1);
+      }
+      const queue = collectAiReviewQueue(reviewFiles);
+      if (aiFormat === "json") {
+        console.log(JSON.stringify({ $schema: "org2:ai-review-queue:v1", count: queue.length, items: queue }, null, 2));
+      } else if (queue.length === 0) {
+        process.stdout.write("No generated artifacts pending review.\n");
+      } else {
+        for (const item of queue) {
+          process.stdout.write(`${item.file} [${item.status}] ${item.title}\n`);
+          if (item.jobId) process.stdout.write(`  job: ${item.jobId}${item.task ? ` (${item.task})` : ""}\n`);
+          if (item.sources.length > 0) process.stdout.write(`  sources: ${item.sources.join(", ")}\n`);
+          if (item.todos.length > 0) process.stdout.write(`  todos: ${item.todos.join("; ")}\n`);
+        }
+      }
+      return;
     }
 
     if (aiAction === "promote") {
@@ -8946,7 +9048,7 @@ Flags:
       return;
     }
 
-    console.error("Error: org2 ai requires a subcommand (validate-job, run, suggest-links, or promote)");
+    console.error("Error: org2 ai requires a subcommand (validate-job, run, review, suggest-links, or promote)");
     process.exit(1);
   }
 
