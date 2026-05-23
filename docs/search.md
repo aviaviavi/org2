@@ -51,3 +51,19 @@ JSON output uses the `org2:search:v1` schema:
 ## Agent consumption guidance
 
 Agents should treat search results as evidence, not answers. Quote or summarize only from returned `snippet`/`context`, preserve `file:line` citations, and run narrower follow-up searches when results are ambiguous or insufficient. Do not infer facts that are not grounded in cited lines.
+
+## Claim provenance, review, and freshness metadata
+
+Agents should prefer claims that are source-backed, reviewed, and fresh enough for the task. Org2 models this with optional org property drawer fields on files/headings and generated artifacts:
+
+- `ORG2_PROVENANCE`: comma-separated refs like `file:notes/foo.org2`, `id:project-alpha`, `url:https://...`, `query:...`, or `artifact:...`.
+- `ORG2_CLAIM_STATE`: one of `source-backed`, `inference`, `human-reviewed`, or `raw-source`.
+- `ORG2_REVIEW_STATUS`: one of `generated`, `review-required`, `reviewed`, or `promoted`.
+- `ORG2_OBSERVED_AT`: when the source was observed.
+- `ORG2_VALID_AS_OF`: date/time the claim was known valid.
+- `ORG2_STALE_AFTER`: date/time after which the claim should be treated as stale.
+- `ORG2_EXPIRES_AT`: date/time after which the claim should be treated as expired.
+
+Generated `compiled`, `view`, and `report` artifacts must include provenance plus either `ORG2_OBSERVED_AT` or `ORG2_VALID_AS_OF`, and must set `ORG2_CLAIM_STATE`. The artifact linter reports missing or invalid values.
+
+Agent context output exposes these fields as `claimState` for every result and includes a compact review/freshness line in text context. Search scoring gives a small boost to reviewed/promoted and fresh claims, and penalizes stale or expired claims so equally relevant fresh reviewed facts rank ahead of older generated ones.
