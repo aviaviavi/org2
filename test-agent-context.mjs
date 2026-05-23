@@ -14,6 +14,10 @@ fs.writeFileSync(a, `#+title: Alpha File
 :PROPERTIES:
 :ID: alpha-1
 :CUSTOM: value
+:ORG2_REVIEW_STATUS: reviewed
+:ORG2_CLAIM_STATE: human-reviewed
+:ORG2_VALID_AS_OF: 2026-05-20
+:ORG2_STALE_AFTER: 2099-01-01
 :END:
 We decided to ship the retrieval API.
 See [[id:beta-1][Beta note]].
@@ -34,12 +38,15 @@ assert.equal(context.$schema, "org2:agent-context:v1");
 assert.equal(context.action, "context");
 assert.equal(context.results[0].id, "alpha-1");
 assert.equal(context.results[0].file, "alpha.org2");
-assert.deepEqual(context.results[0].sourceRange, { startLine: 3, endLine: 10 });
+assert.deepEqual(context.results[0].sourceRange, { startLine: 3, endLine: 14 });
 assert.equal(context.results[0].properties.CUSTOM, "value");
-assert.ok(context.results[0].citation.endsWith("alpha.org2:3-10"));
+assert.equal(context.results[0].claimState.reviewStatus, "reviewed");
+assert.equal(context.results[0].claimState.freshness, "fresh");
+assert.ok(context.results[0].citation.endsWith("alpha.org2:3-14"));
 assert.ok(context.results[0].neighbors.some((n) => n.id === "beta-1" && n.direction === "out"));
-assert.ok(context.context.text.includes("Source: alpha.org2:3-10"));
-assert.ok(context.context.citations[0].citation.endsWith("alpha.org2:3-10"));
+assert.ok(context.context.text.includes("Source: alpha.org2:3-14"));
+assert.ok(context.context.text.includes("Review: reviewed; freshness: fresh"));
+assert.ok(context.context.citations[0].citation.endsWith("alpha.org2:3-14"));
 
 const fetched = runJson("agent", "fetch", "--id", "beta-1", "--dir", tmp, "--include", "backlinks,neighbors");
 assert.equal(fetched.results.length, 1);
@@ -109,3 +116,33 @@ assert.ok(bundle.results[0].sources[0].citation.endsWith("bundle.org2:3-12"));
 assert.ok(bundle.context.citations[0].citation.endsWith("bundle.org2:3-12"));
 assert.ok(!bundle.context.text.includes("Noisy Scarf draft"));
 assert.ok(!bundle.context.text.includes("Old reviewed note"));
+
+const staleDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-agent-freshness-test-"));
+fs.writeFileSync(path.join(staleDir, "old.org2"), `#+title: Old
+
+* Project memory
+:PROPERTIES:
+:ID: old-memory
+:ORG2_REVIEW_STATUS: generated
+:ORG2_CLAIM_STATE: source-backed
+:ORG2_VALID_AS_OF: 2020-01-01
+:ORG2_STALE_AFTER: 2020-02-01
+:END:
+pricing policy copper
+`, "utf8");
+fs.writeFileSync(path.join(staleDir, "fresh.org2"), `#+title: Fresh
+
+* Project memory
+:PROPERTIES:
+:ID: fresh-memory
+:ORG2_REVIEW_STATUS: reviewed
+:ORG2_CLAIM_STATE: human-reviewed
+:ORG2_VALID_AS_OF: 2026-05-20
+:ORG2_STALE_AFTER: 2099-01-01
+:END:
+pricing policy copper
+`, "utf8");
+const freshnessSearch = runJson("agent", "search", "--query", "pricing policy copper", "--dir", staleDir, "--limit", "2");
+assert.equal(freshnessSearch.results[0].id, "fresh-memory");
+assert.equal(freshnessSearch.results[0].claimState.freshness, "fresh");
+assert.equal(freshnessSearch.results[1].claimState.freshness, "stale");

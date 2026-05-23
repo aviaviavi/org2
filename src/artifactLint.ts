@@ -1,4 +1,4 @@
-import { ORG2_ARTIFACT_REVIEW_STATUS_VALUES } from "./artifactMetadata.js";
+import { ORG2_ARTIFACT_REVIEW_STATUS_VALUES, ORG2_CLAIM_STATE_VALUES } from "./artifactMetadata.js";
 
 export type ArtifactRole = "raw" | "canonical" | "compiled" | "view" | "report";
 
@@ -158,6 +158,11 @@ function isValidProvenanceEntry(entry: string): boolean {
   return PROVENANCE_ENTRY_KINDS.includes(parsed.kind as (typeof PROVENANCE_ENTRY_KINDS)[number]);
 }
 
+function isValidClaimState(raw: string): boolean {
+  const value = String(raw || "").trim().toLowerCase();
+  return ORG2_CLAIM_STATE_VALUES.includes(value as (typeof ORG2_CLAIM_STATE_VALUES)[number]);
+}
+
 function isValidGeneratedAt(raw: string): boolean {
   const value = String(raw || "").trim();
   if (!value) return false;
@@ -211,6 +216,11 @@ function evaluateArtifactProperties(
   const sourceHashesRaw = normalizePropertyValue(props.get("ORG2_SOURCE_HASHES") || "");
   const reviewStatusRaw = normalizePropertyValue(props.get("ORG2_REVIEW_STATUS") || "");
   const idRaw = normalizePropertyValue(props.get("ID") || "");
+  const claimStateRaw = normalizePropertyValue(props.get("ORG2_CLAIM_STATE") || "");
+  const observedAtRaw = normalizePropertyValue(props.get("ORG2_OBSERVED_AT") || "");
+  const validAsOfRaw = normalizePropertyValue(props.get("ORG2_VALID_AS_OF") || "");
+  const staleAfterRaw = normalizePropertyValue(props.get("ORG2_STALE_AFTER") || "");
+  const expiresAtRaw = normalizePropertyValue(props.get("ORG2_EXPIRES_AT") || "");
 
   const role = parseArtifactRole(roleRaw);
   if (roleRaw && !role) {
@@ -320,6 +330,28 @@ function evaluateArtifactProperties(
     });
   }
 
+  if (claimStateRaw && !isValidClaimState(claimStateRaw)) {
+    issues.push({
+      severity: "error",
+      rule: "artifact-claim-state-invalid",
+      file: filePath,
+      line,
+      message: `Invalid ORG2_CLAIM_STATE '${claimStateRaw}'. Expected one of: ${ORG2_CLAIM_STATE_VALUES.join(", ")}`,
+    });
+  }
+
+  for (const [field, value] of Object.entries({ ORG2_OBSERVED_AT: observedAtRaw, ORG2_VALID_AS_OF: validAsOfRaw, ORG2_STALE_AFTER: staleAfterRaw, ORG2_EXPIRES_AT: expiresAtRaw })) {
+    if (value && !isValidGeneratedAt(value)) {
+      issues.push({
+        severity: "error",
+        rule: "artifact-freshness-date-invalid",
+        file: filePath,
+        line,
+        message: `Invalid ${field} '${value}'. Expected ISO date or timestamp.`,
+      });
+    }
+  }
+
   if (
     role &&
     ["compiled", "view", "report"].includes(role) &&
@@ -353,6 +385,26 @@ function evaluateArtifactProperties(
       file: filePath,
       line,
       message: `Artifacts with role '${role}' should set ORG2_GENERATOR to record what produced them.`,
+    });
+  }
+
+  if (role && ["compiled", "view", "report"].includes(role) && !claimStateRaw) {
+    issues.push({
+      severity: "error",
+      rule: "artifact-claim-state-missing",
+      file: filePath,
+      line,
+      message: `Generated artifacts with role '${role}' must set ORG2_CLAIM_STATE to distinguish source-backed facts, inference, or reviewed notes.`,
+    });
+  }
+
+  if (role && ["compiled", "view", "report"].includes(role) && !observedAtRaw && !validAsOfRaw) {
+    issues.push({
+      severity: "error",
+      rule: "artifact-freshness-missing",
+      file: filePath,
+      line,
+      message: `Generated artifacts with role '${role}' must set ORG2_OBSERVED_AT or ORG2_VALID_AS_OF for freshness scoring.`,
     });
   }
 

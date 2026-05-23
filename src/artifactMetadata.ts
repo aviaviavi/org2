@@ -12,6 +12,11 @@ export const ORG2_ARTIFACT_PROPERTY_NAMES = {
   generatedAt: "ORG2_GENERATED_AT",
   sourceHashes: "ORG2_SOURCE_HASHES",
   reviewStatus: "ORG2_REVIEW_STATUS",
+  claimState: "ORG2_CLAIM_STATE",
+  observedAt: "ORG2_OBSERVED_AT",
+  validAsOf: "ORG2_VALID_AS_OF",
+  staleAfter: "ORG2_STALE_AFTER",
+  expiresAt: "ORG2_EXPIRES_AT",
   aiJobId: "ORG2_AI_JOB_ID",
   aiTask: "ORG2_AI_TASK",
   promptTemplate: "ORG2_PROMPT_TEMPLATE",
@@ -20,8 +25,10 @@ export const ORG2_ARTIFACT_PROPERTY_NAMES = {
 } as const;
 
 export const ORG2_ARTIFACT_REVIEW_STATUS_VALUES = ["generated", "review-required", "reviewed", "promoted"] as const;
+export const ORG2_CLAIM_STATE_VALUES = ["source-backed", "inference", "human-reviewed", "raw-source"] as const;
 
 export type Org2ArtifactReviewStatus = (typeof ORG2_ARTIFACT_REVIEW_STATUS_VALUES)[number];
+export type Org2ClaimState = (typeof ORG2_CLAIM_STATE_VALUES)[number];
 
 export type Org2ArtifactProvenanceKind = "id" | "file" | "query" | "run" | "url" | "note" | "artifact";
 
@@ -39,6 +46,11 @@ export interface Org2GeneratedArtifactMetadata {
   provenance: string[];
   sourceHashes: Org2ArtifactSourceHash[];
   reviewStatus: Org2ArtifactReviewStatus;
+  claimState?: Org2ClaimState;
+  observedAt?: string;
+  validAsOf?: string;
+  staleAfter?: string;
+  expiresAt?: string;
   aiJobId?: string;
   aiTask?: string;
   promptTemplate?: string;
@@ -53,6 +65,11 @@ export interface BuildGeneratedArtifactMetadataOptions {
   provenance?: string[];
   sourceHashes?: Org2ArtifactSourceHash[];
   reviewStatus?: Org2ArtifactReviewStatus;
+  claimState?: Org2ClaimState;
+  observedAt?: string;
+  validAsOf?: string;
+  staleAfter?: string;
+  expiresAt?: string;
   aiJobId?: string;
   aiTask?: string;
   promptTemplate?: string;
@@ -90,11 +107,21 @@ export function buildGeneratedArtifactMetadata(opts: BuildGeneratedArtifactMetad
     reviewStatus: opts.reviewStatus || "generated",
   };
 
+  const claimState = cleanOptional(opts.claimState);
+  const observedAt = cleanOptional(opts.observedAt);
+  const validAsOf = cleanOptional(opts.validAsOf);
+  const staleAfter = cleanOptional(opts.staleAfter);
+  const expiresAt = cleanOptional(opts.expiresAt);
   const aiJobId = cleanOptional(opts.aiJobId);
   const aiTask = cleanOptional(opts.aiTask);
   const promptTemplate = cleanOptional(opts.promptTemplate);
   const adapter = cleanOptional(opts.adapter);
   const model = cleanOptional(opts.model);
+  if (claimState) metadata.claimState = claimState as Org2ClaimState;
+  if (observedAt) metadata.observedAt = observedAt;
+  if (validAsOf) metadata.validAsOf = validAsOf;
+  if (staleAfter) metadata.staleAfter = staleAfter;
+  if (expiresAt) metadata.expiresAt = expiresAt;
   if (aiJobId) metadata.aiJobId = aiJobId;
   if (aiTask) metadata.aiTask = aiTask;
   if (promptTemplate) metadata.promptTemplate = promptTemplate;
@@ -117,6 +144,11 @@ export function formatOrg2ArtifactPropertyDrawer(metadata: Org2GeneratedArtifact
   lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.provenance}: ${metadata.provenance.join(", ")}`);
   lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.generator}: ${metadata.generator}`);
   lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.generatedAt}: ${metadata.generatedAt}`);
+  if (metadata.claimState) lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.claimState}: ${metadata.claimState}`);
+  if (metadata.observedAt) lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.observedAt}: ${metadata.observedAt}`);
+  if (metadata.validAsOf) lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.validAsOf}: ${metadata.validAsOf}`);
+  if (metadata.staleAfter) lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.staleAfter}: ${metadata.staleAfter}`);
+  if (metadata.expiresAt) lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.expiresAt}: ${metadata.expiresAt}`);
   if (metadata.aiJobId) lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.aiJobId}: ${metadata.aiJobId}`);
   if (metadata.aiTask) lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.aiTask}: ${metadata.aiTask}`);
   if (metadata.promptTemplate) lines.push(`:${ORG2_ARTIFACT_PROPERTY_NAMES.promptTemplate}: ${metadata.promptTemplate}`);

@@ -22,6 +22,19 @@ type AgentSource = {
   citation: string;
 };
 
+type AgentFreshnessState = "fresh" | "stale" | "expired" | "unknown";
+type AgentReviewState = "generated" | "review-required" | "reviewed" | "promoted" | "unknown";
+
+type AgentClaimState = {
+  reviewStatus: AgentReviewState;
+  claimState: string | null;
+  observedAt: string | null;
+  validAsOf: string | null;
+  staleAfter: string | null;
+  expiresAt: string | null;
+  freshness: AgentFreshnessState;
+};
+
 type AgentNode = {
   key: string;
   kind: "file" | "heading";
@@ -39,6 +52,7 @@ type AgentNode = {
   snippet: string;
   score?: number;
   matchedTerms?: string[];
+  claimState: AgentClaimState;
   sources?: AgentSource[];
   backlinks?: Array<{ sourceKey: string; sourceId: string | null; sourceTitle: string; file: string; line: number; citation: string; linkType: "id" | "wiki" }>;
   neighbors?: Array<{ key: string; id: string | null; title: string; file: string; citation: string; direction: "out" | "in"; linkType: "id" | "wiki" }>;
@@ -79,7 +93,6 @@ function titlePathFor(corpus: CompiledCorpus, node: CompiledCorpusNode): string[
     .filter((candidate, index, all) => index === all.length - 1 || (candidate.level || 0) < (all[index + 1]!.level || 0))
     .map((candidate) => candidate.title);
 }
-
 
 function propertyValue(node: CompiledCorpusNode, names: string[]): string {
   for (const name of names) {
@@ -139,6 +152,34 @@ function nodeMatchesFilters(node: CompiledCorpusNode, opts: AgentContextOptions)
   return true;
 }
 
+function parseDateMs(raw: string | null | undefined): number | null {
+  const value = String(raw || "").trim();
+  if (!value) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function claimStateFor(node: CompiledCorpusNode, nowMs = Date.now()): AgentClaimState {
+  const props = node.properties || {};
+  const reviewStatus = String(props.ORG2_REVIEW_STATUS || "unknown").trim().toLowerCase() as AgentReviewState;
+  const observedAt = props.ORG2_OBSERVED_AT || null;
+  const validAsOf = props.ORG2_VALID_AS_OF || null;
+  const staleAfter = props.ORG2_STALE_AFTER || null;
+  const expiresAt = props.ORG2_EXPIRES_AT || null;
+  const expiresMs = parseDateMs(expiresAt);
+  const staleMs = parseDateMs(staleAfter);
+  const freshness: AgentFreshnessState = expiresMs !== null && expiresMs < nowMs ? "expired" : staleMs !== null && staleMs < nowMs ? "stale" : (observedAt || validAsOf) ? "fresh" : "unknown";
+  return {
+    reviewStatus: ["generated", "review-required", "reviewed", "promoted"].includes(reviewStatus) ? reviewStatus : "unknown",
+    claimState: props.ORG2_CLAIM_STATE || null,
+    observedAt,
+    validAsOf,
+    staleAfter,
+    expiresAt,
+    freshness,
+  };
+}
+
 function scoreNode(node: CompiledCorpusNode, terms: string[]): { score: number; matchedTerms: string[] } {
   const haystack = [node.title, node.snippet, node.id || "", ...node.tags, ...node.aliases, ...Object.keys(node.properties), ...Object.values(node.properties)].join("\n").toLowerCase();
   const matchedTerms = terms.filter((term) => haystack.includes(term));
@@ -148,6 +189,11 @@ function scoreNode(node: CompiledCorpusNode, terms: string[]): { score: number; 
     if ((node.id || "").toLowerCase() === term) score += 10;
     if (node.tags.some((tag) => tag.toLowerCase() === term)) score += 3;
   }
+  const claim = claimStateFor(node);
+  if (claim.reviewStatus === "reviewed" || claim.reviewStatus === "promoted") score += 2;
+  if (claim.freshness === "fresh") score += 1;
+  if (claim.freshness === "stale") score -= 2;
+  if (claim.freshness === "expired") score -= 4;
   return { score, matchedTerms };
 }
 
@@ -220,6 +266,7 @@ function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: 
     properties: node.properties,
     snippet: node.snippet,
     ...(score ? { score: score.score, matchedTerms: score.matchedTerms } : {}),
+    claimState: claimStateFor(node),
     ...(include.has("sources") ? { sources: [source] } : {}),
     ...(include.has("backlinks") ? { backlinks: inferredBacklinksFor(corpus, node) } : {}),
     ...(include.has("neighbors") ? { neighbors: neighborsFor(corpus, node) } : {}),
@@ -267,7 +314,7 @@ export function buildAgentContextPayload(corpus: CompiledCorpus, opts: AgentCont
     let text = "";
     let truncated = false;
     for (const result of results) {
-      const chunk = [`## ${result.title}`, `Source: ${result.citation}`, result.snippet].filter(Boolean).join("\n") + "\n\n";
+      const chunk = [`## ${result.title}`, `Source: ${result.citation}`, `Review: ${result.claimState.reviewStatus}; freshness: ${result.claimState.freshness}`, result.snippet].filter(Boolean).join("\n") + "\n\n";
       if (text.length + chunk.length > maxChars) {
         truncated = true;
         break;
