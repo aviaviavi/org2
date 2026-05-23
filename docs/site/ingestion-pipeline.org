@@ -1,0 +1,49 @@
+#+TITLE: Agent ingestion pipeline
+
+Org2 ingestion keeps external context as reviewable source material before anything becomes durable memory or canonical notes.
+
+* Data model
+
+Raw connector output uses =org2-ingestion/v1= and is stored in a raw/source zone such as =raw/slack/=, =raw/gmail/=, or a configured equivalent.
+
+Required raw capture fields:
+
+- =sourceType= :: =slack=, =gmail=, =meeting=, =linear=, =github=, =note=, or =demo=
+- =externalId= :: stable upstream id, e.g. Slack timestamp or GitHub issue id
+- =authors= :: one or more source authors
+- =capturedAt= / =occurredAt= :: ingestion time and source event time
+- =visibility= and =sensitivity= :: source access/safety hints
+- =contentHash= :: SHA-256 of normalized raw content
+- =sourceRef= :: source URL/ref when available
+- =rawRef= :: stable provenance ref, =sourceType:externalId@sha256:contentHash=
+- =content= :: normalized raw text/body
+
+Derived review artifacts are generated beside, not over, durable notes. They include:
+
+- summary candidates
+- decisions
+- TODO candidates
+- entity candidates
+- claims
+- source citations back to =rawRef=
+- =ORG2_REVIEW_STATUS= / artifact metadata so promotion is explicit
+
+* Pipeline
+
+1. A source connector emits a raw capture.
+2. Org2 writes the raw capture under the raw/source zone using a deterministic filename derived from =sourceType=, =externalId=, and =contentHash=.
+3. Org2 generates a review artifact under a review zone with provenance and review status.
+4. A human or agent reviews selected facts and promotes only intentional durable notes/TODOs.
+
+* Idempotency
+
+Re-ingesting the same =sourceType= + =externalId= + normalized content hash writes the same raw and review paths, so repeated runs update/dedupe instead of duplicating files. If the upstream item changes, the content hash changes and a new capture/review artifact preserves the source version boundary.
+
+* Demo fixture
+
+The provider-free demo implementation lives in =src/ingestionPipeline.ts=. It accepts one raw capture input and produces:
+
+- =raw/<source>-<external-id>-<hash>.json=
+- =review/<source>-<external-id>-<hash>.org=
+
+The review artifact contains =ORG2_ARTIFACT_SCHEMA=, =ORG2_PROVENANCE=, =ORG2_SOURCE_HASHES=, and =ORG2_REVIEW_STATUS: review-required=.
