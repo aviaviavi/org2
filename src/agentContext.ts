@@ -1,14 +1,19 @@
 import type { CompiledCorpus, CompiledCorpusNode } from "./corpusCompile.js";
 
 export type AgentInclude = "backlinks" | "neighbors" | "sources";
+export type AgentAction = "context" | "search" | "fetch" | "bundle";
 
 export type AgentContextOptions = {
-  action: "context" | "search" | "fetch";
+  action: AgentAction;
   query?: string;
   id?: string;
   limit?: number;
   maxChars?: number;
   include?: AgentInclude[];
+  scope?: string;
+  since?: string;
+  sourceType?: string;
+  reviewStatus?: string;
 };
 
 type AgentSource = {
@@ -41,11 +46,12 @@ type AgentNode = {
 
 export type AgentPayload = {
   $schema: "org2:agent-context:v1";
-  action: "context" | "search" | "fetch";
+  action: AgentAction;
   query?: string;
   id?: string;
   limit: number;
   maxChars: number;
+  filters?: { scope?: string; since?: string; sourceType?: string; reviewStatus?: string };
   corpus: { schemaVersion: string; rootDir: string; generatedAt: string; stats: CompiledCorpus["stats"] };
   results: AgentNode[];
   context?: { text: string; truncated: boolean; charCount: number; citations: AgentSource[] };
@@ -72,6 +78,65 @@ function titlePathFor(corpus: CompiledCorpus, node: CompiledCorpusNode): string[
     .sort((a, b) => (a.level || 0) - (b.level || 0) || a.sourceRange.startLine - b.sourceRange.startLine)
     .filter((candidate, index, all) => index === all.length - 1 || (candidate.level || 0) < (all[index + 1]!.level || 0))
     .map((candidate) => candidate.title);
+}
+
+
+function propertyValue(node: CompiledCorpusNode, names: string[]): string {
+  for (const name of names) {
+    const value = node.properties[name.toUpperCase()];
+    if (value) return value;
+  }
+  return "";
+}
+
+function parseSinceCutoff(raw: string | undefined, now = new Date()): Date | null {
+  const value = String(raw || "").trim().toLowerCase();
+  if (!value) return null;
+  const rel = /^(\d+)([dwmy])$/.exec(value);
+  if (rel) {
+    const amount = Number.parseInt(rel[1] || "0", 10);
+    const unit = rel[2] || "d";
+    const days = unit === "w" ? amount * 7 : unit === "m" ? amount * 30 : unit === "y" ? amount * 365 : amount;
+    return new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function dateForNode(node: CompiledCorpusNode): Date | null {
+  const raw = propertyValue(node, ["UPDATED", "DATE", "CREATED", "CLOSED"]) || node.planning.find((p) => p.kind === "CLOSED")?.raw || node.planning[0]?.raw || "";
+  const match = String(raw).match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const parsed = new Date(`${match[1]}-${match[2]}-${match[3]}T00:00:00Z`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function nodeMatchesFilters(node: CompiledCorpusNode, opts: AgentContextOptions): boolean {
+  if (opts.scope) {
+    const raw = opts.scope.trim().toLowerCase();
+    const [kind, valueRaw] = raw.includes(":") ? raw.split(/:(.*)/s, 2) : ["", raw];
+    const value = (valueRaw || "").trim();
+    const haystack = [node.title, node.file, node.snippet, node.id || "", ...node.tags, ...node.aliases, ...Object.values(node.properties)].join("\n").toLowerCase();
+    if (kind === "project" && !node.tags.map((t) => t.toLowerCase()).includes(value) && propertyValue(node, ["PROJECT"]).toLowerCase() !== value && !haystack.includes(value)) return false;
+    else if (kind === "person" && propertyValue(node, ["PERSON", "PEOPLE"]).toLowerCase() !== value && !haystack.includes(value)) return false;
+    else if (kind === "entity" && !haystack.includes(value)) return false;
+    else if (!kind && !haystack.includes(value)) return false;
+  }
+  if (opts.sourceType) {
+    const wanted = opts.sourceType.trim().toLowerCase();
+    const actual = (propertyValue(node, ["SOURCE_TYPE", "TYPE"]) || node.file.split(".").pop() || "").toLowerCase();
+    if (actual !== wanted) return false;
+  }
+  if (opts.reviewStatus) {
+    const actual = propertyValue(node, ["REVIEW_STATUS", "REVIEW", "STATUS"]).toLowerCase();
+    if (actual !== opts.reviewStatus.trim().toLowerCase()) return false;
+  }
+  const cutoff = parseSinceCutoff(opts.since);
+  if (cutoff) {
+    const nodeDate = dateForNode(node);
+    if (!nodeDate || nodeDate < cutoff) return false;
+  }
+  return true;
 }
 
 function scoreNode(node: CompiledCorpusNode, terms: string[]): { score: number; matchedTerms: string[] } {
@@ -176,6 +241,7 @@ export function buildAgentContextPayload(corpus: CompiledCorpus, opts: AgentCont
     const terms = termsFor(opts.query || "");
     if (terms.length === 0) errors.push("Query must include at least one searchable term.");
     selected = corpus.nodes
+      .filter((node) => nodeMatchesFilters(node, opts))
       .map((node) => ({ node, score: scoreNode(node, terms) }))
       .filter((item) => (item.score?.score || 0) > 0)
       .sort((a, b) => (b.score!.score - a.score!.score) || a.node.file.localeCompare(b.node.file) || a.node.sourceRange.startLine - b.node.sourceRange.startLine)
@@ -190,12 +256,13 @@ export function buildAgentContextPayload(corpus: CompiledCorpus, opts: AgentCont
     ...(opts.id ? { id: opts.id } : {}),
     limit,
     maxChars,
+    ...((opts.scope || opts.since || opts.sourceType || opts.reviewStatus) ? { filters: { ...(opts.scope ? { scope: opts.scope } : {}), ...(opts.since ? { since: opts.since } : {}), ...(opts.sourceType ? { sourceType: opts.sourceType } : {}), ...(opts.reviewStatus ? { reviewStatus: opts.reviewStatus } : {}) } } : {}),
     corpus: { schemaVersion: corpus.schemaVersion, rootDir: corpus.rootDir, generatedAt: corpus.artifact.generatedAt, stats: corpus.stats },
     results,
     errors,
   };
 
-  if (opts.action === "context") {
+  if (opts.action === "context" || opts.action === "bundle") {
     const citations: AgentSource[] = [];
     let text = "";
     let truncated = false;

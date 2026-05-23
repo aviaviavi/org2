@@ -7022,12 +7022,16 @@ async function main(): Promise<void> {
   let compileCache = "";
 
   // Agent-ready retrieval/context API
-  let agentAction: "context" | "search" | "fetch" | "" = "";
+  let agentAction: "context" | "search" | "fetch" | "bundle" | "" = "";
   let agentQuery = "";
   let agentId = "";
   let agentLimitRaw = "10";
   let agentMaxCharsRaw = "12000";
   let agentIncludeRaw = "sources";
+  let agentScope = "";
+  let agentSince = "";
+  let agentSourceType = "";
+  let agentReviewStatus = "";
 
   // AI job manifests and provider-free draft artifact workflows
   let aiAction: "validate-job" | "run" | "promote" | "suggest-links" | "" = "";
@@ -7192,7 +7196,7 @@ async function main(): Promise<void> {
       i++;
       if (i < args.length && !args[i]!.startsWith("--")) {
         const sub = args[i]!;
-        if (sub === "context" || sub === "search" || sub === "fetch") {
+        if (sub === "context" || sub === "search" || sub === "fetch" || sub === "bundle") {
           agentAction = sub;
           i++;
         }
@@ -7900,7 +7904,19 @@ async function main(): Promise<void> {
         agentIncludeRaw = args[i]!;
         i++;
       }
-    } else if ((arg === "--max-chars" || arg === "--max-bytes") && command === "agent") {
+    } else if (arg === "--scope" && command === "agent") {
+      i++;
+      if (i < args.length) { agentScope = args[i]!; i++; }
+    } else if (arg === "--since" && command === "agent") {
+      i++;
+      if (i < args.length) { agentSince = args[i]!; i++; }
+    } else if ((arg === "--source-type" || arg === "--type") && command === "agent") {
+      i++;
+      if (i < args.length) { agentSourceType = args[i]!; i++; }
+    } else if ((arg === "--review-status" || arg === "--review") && command === "agent") {
+      i++;
+      if (i < args.length) { agentReviewStatus = args[i]!; i++; }
+    } else if ((arg === "--max-tokens" || arg === "--max-chars" || arg === "--max-bytes") && command === "agent") {
       i++;
       if (i < args.length) {
         agentMaxCharsRaw = args[i]!;
@@ -8316,7 +8332,7 @@ function printScopedUsage(
     roamNodeAction: "new";
     roamLinkAction: "insert-backlink";
     aiAction: "validate-job" | "run" | "promote" | "suggest-links" | "";
-    agentAction: "context" | "search" | "fetch" | "";
+    agentAction: "context" | "search" | "fetch" | "bundle" | "";
   },
   exitCode: number,
 ): never {
@@ -8546,6 +8562,7 @@ Output:
     text = `org2 agent ${options.agentAction || "context"}
 
 Usage:
+  org2 agent bundle --query QUERY [--scope project:NAME] [--since 90d] [--source-type TYPE] [--review-status STATUS] [--max-tokens N]
   org2 agent context --query QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...]
   org2 agent search --query QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...]
   org2 agent fetch --id ID [--dir DIR] [--recursive] [--file FILE|--files FILE ...]
@@ -8714,8 +8731,8 @@ Flags:
   }
 
   if (command === "agent") {
-    if (!agentAction) { console.error("Error: org2 agent requires a subcommand (context, search, or fetch)"); process.exit(1); }
-    if ((agentAction === "context" || agentAction === "search") && !agentQuery.trim()) { console.error("Error: org2 agent context/search requires --query QUERY"); process.exit(1); }
+    if (!agentAction) { console.error("Error: org2 agent requires a subcommand (bundle, context, search, or fetch)"); process.exit(1); }
+    if ((agentAction === "bundle" || agentAction === "context" || agentAction === "search") && !agentQuery.trim()) { console.error("Error: org2 agent context/search requires --query QUERY"); process.exit(1); }
     if (agentAction === "fetch" && !agentId.trim()) { console.error("Error: org2 agent fetch requires --id ID"); process.exit(1); }
     if (!dir && files.length === 0) {
       const configPath = findConfigFile(process.cwd());
@@ -8730,7 +8747,7 @@ Flags:
     const rootDir = dir ? path.resolve(dir) : path.dirname(path.resolve(files[0]!));
     const include = Array.from(new Set(agentIncludeRaw.split(",").map((value) => value.trim().toLowerCase()).filter((value): value is AgentInclude => value === "sources" || value === "backlinks" || value === "neighbors")));
     const corpus = compileCorpus(files, { rootDir });
-    const payload = buildAgentContextPayload(corpus, { action: agentAction, query: agentQuery, id: agentId, limit: Number.parseInt(agentLimitRaw, 10) || 10, maxChars: Number.parseInt(agentMaxCharsRaw, 10) || 12000, include });
+    const payload = buildAgentContextPayload(corpus, { action: agentAction, query: agentQuery, id: agentId, limit: Number.parseInt(agentLimitRaw, 10) || 10, maxChars: Number.parseInt(agentMaxCharsRaw, 10) || 12000, include, scope: agentScope, since: agentSince, sourceType: agentSourceType, reviewStatus: agentReviewStatus });
     process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
     return;
   }
