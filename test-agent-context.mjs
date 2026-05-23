@@ -51,3 +51,61 @@ const search = runJson("agent", "search", "--query", "work value", "--dir", tmp,
 assert.equal(search.results.length, 1);
 assert.equal(search.results[0].id, "alpha-1");
 assert.ok(search.results[0].matchedTerms.includes("work"));
+
+const c = path.join(tmp, "bundle.org2");
+fs.writeFileSync(c, `#+title: Bundle File
+
+* TODO Scarf pricing decision :scarf:
+:PROPERTIES:
+:ID: scarf-price-1
+:PROJECT: scarf
+:SOURCE_TYPE: meeting
+:REVIEW_STATUS: reviewed
+:UPDATED: 2026-05-01
+:END:
+Decision: ClickHouse-backed Scarf pricing bundle should cite reviewed customer-call context.
+
+* Noisy Scarf draft :scarf:
+:PROPERTIES:
+:ID: scarf-noise-1
+:PROJECT: scarf
+:SOURCE_TYPE: draft
+:REVIEW_STATUS: draft
+:UPDATED: 2026-05-01
+:END:
+ClickHouse pricing maybe maybe maybe.
+
+* Old reviewed note :scarf:
+:PROPERTIES:
+:ID: scarf-old-1
+:PROJECT: scarf
+:SOURCE_TYPE: meeting
+:REVIEW_STATUS: reviewed
+:UPDATED: 2020-01-01
+:END:
+ClickHouse Scarf pricing old context.
+`, "utf8");
+
+const bundle = runJson(
+  "agent", "bundle",
+  "--query", "ClickHouse Scarf pricing",
+  "--scope", "project:scarf",
+  "--since", "365d",
+  "--source-type", "meeting",
+  "--review-status", "reviewed",
+  "--dir", tmp,
+  "--recursive",
+  "--include", "sources,neighbors,backlinks",
+  "--max-tokens", "12000",
+  "--format", "json",
+);
+assert.equal(bundle.$schema, "org2:agent-context:v1");
+assert.equal(bundle.action, "bundle");
+assert.deepEqual(bundle.filters, { scope: "project:scarf", since: "365d", sourceType: "meeting", reviewStatus: "reviewed" });
+assert.equal(bundle.results.length, 1);
+assert.equal(bundle.results[0].id, "scarf-price-1");
+assert.equal(bundle.results[0].todo, "TODO");
+assert.ok(bundle.results[0].sources[0].citation.endsWith("bundle.org2:3-12"));
+assert.ok(bundle.context.citations[0].citation.endsWith("bundle.org2:3-12"));
+assert.ok(!bundle.context.text.includes("Noisy Scarf draft"));
+assert.ok(!bundle.context.text.includes("Old reviewed note"));
