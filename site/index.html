@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Org2</title>
+<meta name="subtitle" content="Plain-text knowledge for humans and agents working together" />
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Org2" />
+<meta property="og:description" content="Plain-text knowledge for humans and agents working together" />
+<meta property="og:url" content="https://org2.avi.press/index.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/index.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Org2" />
+<meta name="twitter:description" content="Plain-text knowledge for humans and agents working together" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/index.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">Org2</h1>
+<p class="org2-document-subtitle" role="doc-subtitle">Plain-text knowledge for humans and agents working together</p>
+</header>
+<section class="org2-hero">
+  <p class="org2-hero-lede">Org2 keeps notes, tasks, sources, and agent work in plain files. Humans can write and plan naturally; agents get enough structure to query the graph, track work, cite sources, and promote useful output without losing the trail.</p>
+  <div class="org2-hero-points" aria-label="Org2 value summary">
+    <div><strong>Local files.</strong><span>Readable text on disk, not a hosted workspace.</span></div>
+    <div><strong>Real planning.</strong><span>TODOs, dates, tags, agendas, and work views come from the same corpus.</span></div>
+    <div><strong>Grounded agents.</strong><span>Generated work can cite sources and move from draft to knowledge.</span></div>
+  </div>
+</section>
+<p>Org2 is an early OSS project for turning a folder of notes, transcripts, tasks, links, and metadata into a corpus you can search, plan from, lint, refactor, hand to agents, and publish.</p>
+<section class="org2-headline level-1">
+<h1 id="the-idea">The idea</h1>
+<p>Org2 combines three useful traditions:</p>
+<ul>
+<li><p>the portability and low friction of plain-text notes,</p></li>
+<li><p>the structured programmability of Org-style TODOs, links, dates, tags, and properties,</p></li>
+<li><p>the provenance and workflow boundaries agents need to work safely in a real knowledge base.</p></li>
+</ul>
+<p>The result is not just indexed markdown. It is a shared working graph: notes, tasks, plans, sources, generated drafts, and durable knowledge can stay connected while still living in ordinary files. Raw imports can live in <code>raw/</code>, durable notes in the normal corpus, generated drafts in <code>views/</code>, and compiled indexes in <code>compiled/</code>. Agents can automate the pipeline, while humans still have natural places to inspect or steer when judgment matters.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="what-you-can-do-with-it">What you can do with it</h1>
+<ul>
+<li><p><strong>Plan from the same files you write in</strong>: build agendas and work views from TODOs, deadlines, scheduled dates, tags, and metadata across a whole workspace.</p></li>
+<li><p><strong>Track work without a separate app</strong>: keep project notes, decisions, follow-ups, and next actions connected in the same graph.</p></li>
+<li><p><strong>Ask better questions of your own notes</strong>: query headings, links, tasks, IDs, dates, and provenance instead of grepping a pile of text.</p></li>
+<li><p><strong>Use AI without losing the trail</strong>: keep transcripts and imports as sources, generate drafts with citations, and promote outputs into lasting notes when they are ready.</p></li>
+<li><p><strong>Keep links from rotting</strong>: generate IDs, inspect backlinks, linkify likely references, and lint graph health.</p></li>
+<li><p><strong>Publish when useful</strong>: turn the same source tree into HTML docs, a digital garden, or project documentation.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="screenshots">Screenshots</h1>
+<div class="org2-shot-grid">
+  <figure><img src="assets/screenshots/graph.png" alt="Org2 knowledge graph showing a selected neighborhood of linked notes" loading="lazy" /><figcaption>Knowledge graph: explore linked notes, backlinks, and source relationships from the same corpus.</figcaption></figure>
+  <figure><img src="assets/screenshots/agenda.png" alt="Org2 interactive agenda terminal UI" loading="lazy" /><figcaption>Agenda TUI: plan from tasks, deadlines, tags, and corpus metadata.</figcaption></figure>
+  <figure><img src="assets/screenshots/basic.png" alt="A basic Org2 file open in Visual Studio Code" loading="lazy" /><figcaption>VS Code editing: plain files with TODOs, IDs, links, tags, and dates.</figcaption></figure>
+  <figure><img src="assets/screenshots/meeting.png" alt="An Org2 meeting transcript with AI summary and action items open in Visual Studio Code" loading="lazy" /><figcaption>AI workflow: transcript, generated summary, and action items stay linked in source.</figcaption></figure>
+</div>
+</section>
+<section class="org2-headline level-1">
+<h1 id="how-it-works">How it works</h1>
+<p>Org2 is a compiler/runtime for plain-text knowledge:</p>
+<ul>
+<li><p><strong>raw</strong> captures source material,</p></li>
+<li><p><strong>notes</strong> hold reviewed knowledge in normal editable files,</p></li>
+<li><p><strong>compiled</strong> stores resolved semantics such as agenda state, graph edges, provenance, and artifact roles,</p></li>
+<li><p><strong>views</strong> hold derived artifacts like agendas, work plans, diagnostics, AI drafts, and backlinks,</p></li>
+<li><p><strong>publish</strong> turns selected material into websites or shareable reports.</p></li>
+</ul>
+<p>The practical payoff: one source tree can drive daily planning, work tracking, editor features, corpus-health checks, AI handoffs, and a public website without locking the work into one app.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="who-it-is-for">Who it is for</h1>
+<p>Org2 is a good fit if you want:</p>
+<ul>
+<li><p>local notes that remain useful outside any single app,</p></li>
+<li><p>planning and work tracking that live beside the notes,</p></li>
+<li><p>AI workflows with citations and clear promotion paths,</p></li>
+<li><p>a queryable personal or team knowledge base,</p></li>
+<li><p>automation that can read and write structured notes safely,</p></li>
+<li><p>publishing from the same corpus you use privately.</p></li>
+</ul>
+<p>It is early alpha, but already practical for CLI + VS Code workflows.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="what-org2-is-not-trying-to-be">What Org2 is not trying to be</h1>
+<ul>
+<li><p>A hosted notes service.</p></li>
+<li><p>An Emacs-only system.</p></li>
+<li><p>A byte-for-byte clone of GNU Org internals.</p></li>
+<li><p>A tool that hides where generated knowledge came from.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="start-here">Start here</h1>
+<ul>
+<li><p><a href="getting-started.html">Getting started</a></p></li>
+<li><p><a href="features.html">Features</a></p></li>
+<li><p><a href="corpus-flow.html">Corpus flow</a></p></li>
+<li><p><a href="ai-processing-architecture.html">AI processing architecture</a></p></li>
+<li><p><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a></p></li>
+<li><p><a href="org2-vs-markdown.html">Org2 vs Markdown</a></p></li>
+<li><p><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a></p></li>
+</ul>
+<p>Reference post: <a href="https://avi.press/posts/2024-01-15-standalone-org.html">Standalone Org rationale</a></p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="repository">Repository</h1>
+<ul>
+<li><p><a href="https://github.com/aviaviavi/org2">github.com/aviaviavi/org2</a></p></li>
+</ul>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

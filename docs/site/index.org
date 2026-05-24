@@ -1,19 +1,37 @@
 #+TITLE: Org2
-#+SUBTITLE: A local-first knowledge compiler for Org-shaped plain text
+#+SUBTITLE: Plain-text knowledge for humans and agents working together
 
-Org2 turns a folder of raw notes, tasks, links, and metadata into a computable corpus you can plan from, query, maintain, and publish.
+#+BEGIN_EXPORT html
+<section class="org2-hero">
+  <p class="org2-hero-lede">Org2 keeps notes, tasks, sources, and agent work in plain files. Humans can write and plan naturally; agents get enough structure to query the graph, track work, cite sources, and promote useful output without losing the trail.</p>
+  <div class="org2-hero-points" aria-label="Org2 value summary">
+    <div><strong>Local files.</strong><span>Readable text on disk, not a hosted workspace.</span></div>
+    <div><strong>Real planning.</strong><span>TODOs, dates, tags, agendas, and work views come from the same corpus.</span></div>
+    <div><strong>Grounded agents.</strong><span>Generated work can cite sources and move from draft to knowledge.</span></div>
+  </div>
+</section>
+#+END_EXPORT
 
-Think of it as a local-first compiler pipeline for personal knowledge:
+Org2 is an early OSS project for turning a folder of notes, transcripts, tasks, links, and metadata into a corpus you can search, plan from, lint, refactor, hand to agents, and publish.
 
-- *raw* capture and source material stay in plain files,
-- *notes* become structured headings, tasks, links, IDs, and properties,
-- *compiled* semantics resolve agenda state, graph edges, provenance, and artifact roles,
-- *views* such as agendas, backlinks, diagnostics, and editor intelligence are derived from that model,
-- *publish* outputs turn the same corpus into HTML sites and shareable artifacts.
+* The idea
 
-The notes remain yours on disk; Org2 supplies the compiler/runtime layer that makes them queryable, checkable, refactorable, and publishable without tying the workflow to one editor or hosted service. The practical payoff is that one source tree can drive your daily agenda, backlinks, editor features, corpus-health checks, AI/automation handoffs, and a published website.
+Org2 combines three useful traditions:
 
-Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standalone Org rationale]]
+- the portability and low friction of plain-text notes,
+- the structured programmability of Org-style TODOs, links, dates, tags, and properties,
+- the provenance and workflow boundaries agents need to work safely in a real knowledge base.
+
+The result is not just indexed markdown. It is a shared working graph: notes, tasks, plans, sources, generated drafts, and durable knowledge can stay connected while still living in ordinary files. Raw imports can live in =raw/=, durable notes in the normal corpus, generated drafts in =views/=, and compiled indexes in =compiled/=. Agents can automate the pipeline, while humans still have natural places to inspect or steer when judgment matters.
+
+* What you can do with it
+
+- *Plan from the same files you write in*: build agendas and work views from TODOs, deadlines, scheduled dates, tags, and metadata across a whole workspace.
+- *Track work without a separate app*: keep project notes, decisions, follow-ups, and next actions connected in the same graph.
+- *Ask better questions of your own notes*: query headings, links, tasks, IDs, dates, and provenance instead of grepping a pile of text.
+- *Use AI without losing the trail*: keep transcripts and imports as sources, generate drafts with citations, and promote outputs into lasting notes when they are ready.
+- *Keep links from rotting*: generate IDs, inspect backlinks, linkify likely references, and lint graph health.
+- *Publish when useful*: turn the same source tree into HTML docs, a digital garden, or project documentation.
 
 * Screenshots
 
@@ -26,62 +44,49 @@ Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standa
 </div>
 #+END_EXPORT
 
-* What Org2 is good at today
+* How it works
 
-- *Knowledge compiler pipeline*: raw files become notes; notes compile into resolved semantics; those semantics drive views, checks, and publishing.
-- *Structured semantics*: headings, tasks, planning lines, links, drawers, IDs, artifact roles, provenance, and source ranges become data the toolchain can reason about.
-- *Derived artifacts*: agendas, HTML sites, lint reports, graph views, backlinks, cited query results, and editor intelligence are generated from the same corpus model.
-- *Portable plain-text workflow*: notes, tasks, links, and publishing all stay in files.
-- *CLI-backed editing + planning*: agenda, TODO/planning edits, capture, archive/refile, formatting, export, publish, search, and cited query.
-- *Strong VS Code support*: Org2 is already practical as a daily driver in VS Code, including command-palette access to workspace search/query, agenda, formatter, corpus lint, and roam graph/linkify workflows.
-- *Roam-style knowledge workflows*: IDs, backlinks, dailies, node creation, link insertion, linkify previews, and graph reports are first-class.
-- *LSP-powered editing*: navigation, rename, completion, formatting, semantic tokens, inlay hints, call hierarchy, and more.
+Org2 is a compiler/runtime for plain-text knowledge:
 
-* Concrete workflows
+- *raw* captures source material,
+- *notes* hold reviewed knowledge in normal editable files,
+- *compiled* stores resolved semantics such as agenda state, graph edges, provenance, and artifact roles,
+- *views* hold derived artifacts like agendas, work plans, diagnostics, AI drafts, and backlinks,
+- *publish* turns selected material into websites or shareable reports.
 
-Org2 is useful when your notes are not just prose, but source material for tools:
+The practical payoff: one source tree can drive daily planning, work tracking, editor features, corpus-health checks, AI handoffs, and a public website without locking the work into one app.
 
-- *Plan the day*: run an agenda across many files, group/filter by status or date window, or open the interactive terminal agenda with =org2 agenda --dir ~/notes --recursive --tui=.
-- *Keep a linked knowledge base healthy*: generate stable IDs, insert backlinks, preview/apply linkification, and run graph/lint checks before links silently rot.
-- *Use AI without losing provenance*: keep transcripts/imports in =raw/=, promote reviewed notes into =notes/=, write generated drafts and reports to =views/=, and compile machine artifacts into =compiled/=.
-- *Publish from the same source*: export one file or publish a whole site from the same Org-shaped corpus used for planning and automation.
+* Who it is for
 
-That is the value proposition: plain text stays editable and portable, while the surrounding compiler makes it behave like an app.
+Org2 is a good fit if you want:
+
+- local notes that remain useful outside any single app,
+- planning and work tracking that live beside the notes,
+- AI workflows with citations and clear promotion paths,
+- a queryable personal or team knowledge base,
+- automation that can read and write structured notes safely,
+- publishing from the same corpus you use privately.
+
+It is early alpha, but already practical for CLI + VS Code workflows.
 
 * What Org2 is not trying to be
 
-- A byte-for-byte reimplementation of GNU Org internals.
+- A hosted notes service.
 - An Emacs-only system.
-- A “100% feature parity before usefulness” project.
+- A byte-for-byte clone of GNU Org internals.
+- A tool that hides where generated knowledge came from.
 
-The goal is a portable knowledge-compiler stack that is useful *now* and keeps getting deeper.
-
-* Current status
-
-Org2 is still early alpha, but it is already credible for real work if your stack is:
-
-- *VS Code + CLI* → best supported today
-- *Org files on disk* → supported immediately; you do not need a big migration
-- *Publishing / notes / planning / roam workflows* → all already live
-
-* Docs map
+* Start here
 
 - [[file:getting-started.org][Getting started]]
 - [[file:features.org][Features]]
 - [[file:corpus-flow.org][Corpus flow]]
-- [[file:knowledge-compiler-roadmap.org][Knowledge compiler roadmap]]
-- [[file:tooling-reference.org][Tooling reference]]
-- [[file:llm-consumers.org][External LLM consumer pattern]]
-- [[file:openclaw-knowledge-layer.org][OpenClaw knowledge layer]]
 - [[file:ai-processing-architecture.org][AI processing architecture]]
-- [[file:ai-job-manifests.org][AI job manifests]]
-- [[file:ai-draft-artifacts.org][AI draft artifacts]]
-- [[file:ai-adapters.org][AI adapter interface]]
-- [[file:maintenance-workflows.org][Maintenance and health workflows]]
-- [[file:editors.org][Editor integrations]]
-- [[file:language-reference.org][Language reference]]
-- [[file:semantics-status.org][Semantics and status]]
-- [[file:migration.org][Migration guidance]]
+- [[file:openclaw-knowledge-layer.org][OpenClaw knowledge layer]]
+- [[file:org2-vs-markdown.org][Org2 vs Markdown]]
+- [[file:org2-vs-org-mode.org][Org2 vs Org Mode]]
+
+Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standalone Org rationale]]
 
 * Repository
 
