@@ -4846,6 +4846,17 @@ function wrapTerminalLine(input: string, width: number, continuationIndent = 0):
   return lines.map((line, index) => (index === 0 ? line : `${indentText}${line}`));
 }
 
+function stripRoamLinksForAgendaTui(input: string): string {
+  return String(input || "")
+    .replace(/\[\[id:[^\]\[]+\](?:\[[^\]\[]+\])?\]/gi, "")
+    .replace(/\[\[[^\]\[]+\]\]/g, "")
+    .replace(/(?:\s*\/\s*){2,}/g, " / ")
+    .replace(/(^|\s)\/(\s|$)/g, " ")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function padTerminalLine(input: string, width: number): string {
   return truncateForTerminal(input, width).padEnd(Math.max(width, 0), " ");
 }
@@ -5174,7 +5185,7 @@ async function runAgendaTui(options: {
         lines.push(padPlain("", width));
         pushWrapped("first items:");
         for (const item of section.items.slice(0, Math.max(0, bodyHeight - lines.length - 1))) {
-          pushWrapped(`• ${item.headline}`, 2);
+          pushWrapped(`• ${stripRoamLinksForAgendaTui(item.headline)}`, 2);
         }
       }
     } else {
@@ -5182,7 +5193,7 @@ async function runAgendaTui(options: {
       const status = agendaTuiStatus(item);
       const timing = item.date === currentStartIso ? "today" : item.date < currentStartIso ? `overdue since ${item.date}` : item.date;
       const kind = String(item.kind || "").toUpperCase();
-      pushWrapped(item.headline);
+      pushWrapped(stripRoamLinksForAgendaTui(item.headline));
       pushWrapped(`${status || "ITEM"} · ${kind || "ITEM"} · ${timing}`);
       pushWrapped(`${path.basename(item.filePath)}:${item.lineNumber + 1}`);
       if (item.time) pushWrapped(`time: ${item.time}`);
@@ -5213,7 +5224,8 @@ async function runAgendaTui(options: {
     const status = `[${agendaTuiStatus(item)}]`;
     const timing = item.date === currentStartIso ? "today" : item.date < currentStartIso ? `late ${item.date}` : item.date;
     const prefix = `  ${status} ${item.time ? `${item.time} ` : ""}`;
-    const suffix = `${item.headline}${item.priority ? ` [#${item.priority}]` : ""} · ${timing}`;
+    const displayHeadline = stripRoamLinksForAgendaTui(item.headline);
+    const suffix = `${displayHeadline}${item.priority ? ` [#${item.priority}]` : ""} · ${timing}`;
     const wrapped = wrapTerminalLine(`${prefix}${suffix}`, width, prefix.length);
     return {
       lines: wrapped.map((line) => padPlain(line, width)),
@@ -5224,26 +5236,27 @@ async function runAgendaTui(options: {
   const render = (): void => {
     const width = process.stdout.columns || 100;
     const height = process.stdout.rows || 30;
-    const headerHeight = captureInputActive ? 6 : 4;
-    const bodyHeight = Math.max(8, height - headerHeight - 1);
-    const leftWidth = Math.max(30, Math.min(width - 22, Math.floor(width * 0.58)));
-    const rightWidth = Math.max(20, width - leftWidth - 3);
     const actionableToday = items.filter((item) => item.date === currentStartIso && isAgendaTuiActionable(item)).length;
     const actionableOverdue = items.filter((item) => item.date < currentStartIso && isAgendaTuiActionable(item)).length;
     const rangeLabel = options.rangeLabel.replace(options.startIso, currentStartIso);
+    const keyHelp = pendingPriorityKey
+      ? "priority mode: a/b/c set priority, 0 clears, esc cancels"
+      : "j/k arrows move, gg/G jump, 1/2/3 views, enter collapse, c capture, t/i/d/x status, p+a/b/c priority, p+0 clear, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit";
     const header = [
       `${ansi.bold}Org2 agenda${ansi.reset}  ${mode === "focus" ? "focus" : mode === "today" ? "today" : "range"}  ${rangeLabel}`,
       `${actionableToday} actionable today, ${actionableOverdue} overdue, refresh ${Math.max(1, Math.round(options.refreshMs / 1000))}s, updated ${lastRefresh.toLocaleTimeString()}`,
-      captureInputActive
-        ? `CAPTURE TODO: ${captureInputValue}`
-        : pendingPriorityKey
-          ? "priority mode: a/b/c set priority, 0 clears, esc cancels"
-          : "j/k or arrows move, gg/G jump, 1/2/3 views, enter collapse, c capture TODO, t/i/d/x status, p then a/b/c set priority, p then 0 clears, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit",
-      captureInputActive
-        ? "type title, enter save, esc cancel, backspace delete"
-        : "",
+      ...(captureInputActive
+        ? [
+            `CAPTURE TODO: ${captureInputValue}`,
+            "type title, enter save, esc cancel, backspace delete",
+          ]
+        : wrapTerminalLine(keyHelp, width).slice(0, 2)),
       "",
     ];
+    const headerHeight = header.length;
+    const bodyHeight = Math.max(8, height - headerHeight - 1);
+    const leftWidth = Math.max(30, Math.min(width - 22, Math.floor(width * 0.58)));
+    const rightWidth = Math.max(20, width - leftWidth - 3);
 
     const renderedRows = rows.map((row) => buildRowLines(row, leftWidth));
     const rowOffsets: number[] = [];
@@ -5411,7 +5424,7 @@ async function runAgendaTui(options: {
             const nextPriority = key === "0" ? null : normalizeAgendaPriorityToken(key);
             if (row?.type === "item" && (nextPriority || key === "0")) {
               applyAgendaTuiPriority(row.item, nextPriority);
-              message = nextPriority ? `priority [#${nextPriority}] → ${row.item.headline}` : `priority cleared → ${row.item.headline}`;
+              message = nextPriority ? `priority [#${nextPriority}] → ${stripRoamLinksForAgendaTui(row.item.headline)}` : `priority cleared → ${stripRoamLinksForAgendaTui(row.item.headline)}`;
               refresh();
             } else {
               message = "Priority mode: press a, b, c, or 0 to clear";
@@ -5454,7 +5467,7 @@ async function runAgendaTui(options: {
                       : computeAgendaTuiNextMonthFirst(today);
               const dateIso = formatAgendaTuiIsoDate(target);
               applyAgendaTuiPlanning(row.item, kind, dateIso);
-              message = `${kind.toUpperCase()} ${formatAgendaTuiPlanningLabel(dateIso)} → ${row.item.headline}`;
+              message = `${kind.toUpperCase()} ${formatAgendaTuiPlanningLabel(dateIso)} → ${stripRoamLinksForAgendaTui(row.item.headline)}`;
               refresh();
             } else {
               const nextStatus: TodoStatus =
@@ -5468,7 +5481,7 @@ async function runAgendaTui(options: {
                         ? "done"
                         : "canceled";
               applyAgendaTuiTodo(row.item, nextStatus);
-              message = `${nextStatus} → ${row.item.headline}`;
+              message = `${nextStatus} → ${stripRoamLinksForAgendaTui(row.item.headline)}`;
               refresh();
             }
           }

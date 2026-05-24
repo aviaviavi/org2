@@ -82,8 +82,11 @@ The extension can edit planning keywords, run quick capture, archive subtrees, r
 - Command: **Org2: Export Current File to HTML** (`org2.exportCurrentFileHtml`) → preview generated HTML, then optionally write to disk
 - Command: **Org2: Export Workspace Org Files to HTML** (`org2.exportWorkspaceHtml`) → preview batch export count, then optionally write HTML for all workspace Org files (and an optional generated index page)
 - Command: **Org2: Corpus Lint — Graph & Artifact Health** (`org2.lintWorkspaceCorpus`) → runs `org2 lint` recursively in the workspace and reports graph/artifact health issues, including broken `id:` links, unresolved or ambiguous wiki links, raw/canonical vs generated trust-boundary mistakes, and raw -> notes -> compiled -> views -> publish corpus-flow mismatches, in the output pane
+- Command: **Org2: Graph Audit Workspace** (`org2.graphAuditWorkspace`) → runs `org2 graph audit` recursively and opens a human-readable graph-health report
 - Command: **Org2: Compile Workspace Corpus Artifact** (`org2.compileWorkspaceCorpus`) → prompts for a JSON/JSONL output path, runs `org2 compile corpus` recursively against the workspace, and opens the generated machine-readable corpus artifact
+- Command: **Org2: AI — Review Workspace / Active File** (`org2.aiReviewWorkspace`) → runs `org2 ai review` for either the active file or the workspace and reports generated-artifact lifecycle issues
 - Command: **Org2: AI — Write Draft Artifact** (`org2.aiRunDraft`) → picks an AI job manifest, previews `org2 ai run`, then writes review-required draft artifacts such as meeting/transcript summaries with citations and TODO/link suggestions after confirmation
+- Command: **Org2: AI — Mark Draft Reviewed/Rejected/Deferred** (`org2.aiMarkReviewed` / `org2.aiMarkRejected` / `org2.aiMarkDeferred`) → stamps the active draft artifact review status before promotion
 - Command: **Org2: AI — Promote Reviewed Draft** (`org2.aiPromoteDraft`) → previews and appends only reviewed generated artifacts into canonical notes
 
 Implementation detail: the extension saves the file (if needed).
@@ -269,12 +272,14 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
   - `Org2: Capture Quick Entry` (`org2.captureQuickEntry`)
   - `Org2: Archive Subtree` (`org2.archiveSubtree`)
   - `Org2: Refile Subtree` (`org2.refileSubtree`)
+  - `Org2: Promote Subtree` / `Org2: Demote Subtree` (`org2.promoteSubtree` / `org2.demoteSubtree`)
+  - `Org2: Move Subtree Up` / `Org2: Move Subtree Down` (`org2.moveSubtreeUp` / `org2.moveSubtreeDown`)
 - Roam
   - `Org2: Roam Dailies — Go to Today` (`org2.roamDailiesGotoToday`)
   - `Org2: Roam Dailies — Go to Yesterday` (`org2.roamDailiesGotoYesterday`)
   - `Org2: Roam Dailies — Go to Tomorrow` (`org2.roamDailiesGotoTomorrow`)
   - `Org2: Roam Dailies — Go to Date` (`org2.roamDailiesGotoDate`)
-  - `Org2: Roam — New Node` (`org2.roamNodeNew`)
+  - `Org2: Roam — New Node` (`org2.roamNodeNew`) — pre-fills the title from the current selection/highlighted text when present
   - `Org2: Roam — Copy ID Link (Current Heading/File)` (`org2.roamCopyIdLink`)
   - `Org2: Roam — Copy ID Link (Prompt/Link)` (`org2.roamCopyIdLinkById`)
   - `Org2: Roam — Insert Backlink (Prompt/Link)` (`org2.roamInsertBacklink`)
@@ -315,6 +320,9 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
   - `d t` → Set DEADLINE to Today
   - `x` → Archive Subtree
   - `x r` → Refile Subtree
+  - `h left` / `h right` → Promote / Demote Subtree
+  - `h up` / `h down` → Move Subtree Up / Down
+  - `g a` → Graph Audit Workspace
   - `c q` → Capture Quick Entry
   - `f c` → Formatter Check Current File Drift
   - `f p` → Formatter Preview Current File Diff
@@ -343,16 +351,19 @@ Power keymap (enabled by default via `org2.keymap.power: true`):
   - `r y` → Roam Dailies: Yesterday
   - `r m` → Roam Dailies: Tomorrow
   - `r d` → Roam Dailies: Go to Date
-  - `r n` → Roam New Node
+  - `r n` → Roam New Node (uses selected text as the default title)
   - `r s` → Roam DB Sync
+- AI lifecycle namespace (`cmd/ctrl+; i ...`):
+  - `i v` → AI Review Workspace / Active File
+  - `i r` → Mark Draft Reviewed
+  - `i x` → Mark Draft Rejected
+  - `i d` → Mark Draft Deferred
 - TODO namespace (`cmd/ctrl+; t ...`):
   - `t t` → Set TODO
   - `t i` → Set IN_PROGRESS
   - `t d` → Set DONE
   - `t c` → Set CANCELED
   - `t p` → Set Priority (A/B/C/Clear)
-
-Note: heading promote/demote/set-level commands are not yet exposed by Org2 VS Code commands, so `cmd/ctrl+; 1/2/3/4` are currently wired to VS Code’s closest built-in heading-level operation: fold-to-level.
 
 All defaults are scoped to `org`/`org2` editors.
 

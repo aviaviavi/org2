@@ -1627,6 +1627,72 @@ function activate(context) {
     }
   }
 
+  async function runWorkspaceGraphAudit() {
+    const root = getAgendaRootDir();
+    await runOrg2CompilerCommand('Org2 Graph Audit', ['graph', 'audit', '--dir', root, '--recursive', '--format', 'report']);
+  }
+
+  async function runAiReviewReport() {
+    const root = getAgendaRootDir();
+    const active = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document && vscode.window.activeTextEditor.document.uri.scheme === 'file'
+      ? vscode.window.activeTextEditor.document.uri
+      : undefined;
+
+    const scope = await vscode.window.showQuickPick([
+      { label: 'Review active file', value: 'file', picked: !!active },
+      { label: 'Review workspace', value: 'workspace', picked: !active },
+    ], { placeHolder: 'Org2 AI review scope' });
+    if (!scope) return;
+
+    const args = ['ai', 'review'];
+    if (scope.value === 'file') {
+      if (!active) {
+        vscode.window.showWarningMessage('Org2: open a file-backed Org/Org2 document to review the active file.');
+        return;
+      }
+      const fileRel = relativeWorkspacePath(root, active.fsPath) || active.fsPath;
+      args.push('--file', fileRel);
+    } else {
+      args.push('--dir', root, '--recursive');
+    }
+    args.push('--format', 'text');
+    await runOrg2CompilerCommand(scope.value === 'file' ? 'Org2 AI Review: Active File' : 'Org2 AI Review: Workspace', args);
+  }
+
+  async function markAiReviewStatus(status) {
+    const root = getAgendaRootDir();
+    const active = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document && vscode.window.activeTextEditor.document.uri.scheme === 'file'
+      ? vscode.window.activeTextEditor.document.uri
+      : undefined;
+    const draftUris = active ? [active] : await vscode.window.showOpenDialog({
+      defaultUri: vscode.Uri.file(path.join(root, 'views')),
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      filters: { 'Org2 draft artifacts': ['org2', 'org'], 'All files': ['*'] },
+      title: `Select Org2 AI draft to mark ${status}`,
+    });
+    if (!draftUris || draftUris.length === 0 || draftUris[0].scheme !== 'file') return;
+
+    const draftRel = relativeWorkspacePath(root, draftUris[0].fsPath);
+    if (!draftRel) {
+      vscode.window.showErrorMessage('Org2: AI review status source must be inside the workspace.');
+      return;
+    }
+
+    const label = status.charAt(0).toUpperCase() + status.slice(1);
+    const confirm = await vscode.window.showWarningMessage(
+      `Org2: mark ${draftRel} as ${status}?`,
+      { modal: true },
+      label
+    );
+    if (confirm !== label) return;
+
+    await runOrg2CompilerCommand(`Org2 AI Review Status: ${status}`, ['ai', 'review', '--file', draftRel, '--status', status, '--apply', '--format', 'text'], {
+      successMessage: `Org2: marked ${draftRel} as ${status}.`,
+    });
+  }
+
   async function compileWorkspaceCorpus() {
     const root = getAgendaRootDir();
     const defaultUri = vscode.Uri.file(path.join(root, 'compiled', 'corpus.json'));
@@ -2429,6 +2495,36 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.lintWorkspaceCorpus', async () => {
       await runWorkspaceCorpusLint();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.graphAuditWorkspace', async () => {
+      await runWorkspaceGraphAudit();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.aiReviewWorkspace', async () => {
+      await runAiReviewReport();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.aiMarkReviewed', async () => {
+      await markAiReviewStatus('reviewed');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.aiMarkRejected', async () => {
+      await markAiReviewStatus('rejected');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.aiMarkDeferred', async () => {
+      await markAiReviewStatus('deferred');
     })
   );
 
@@ -3759,11 +3855,25 @@ function activate(context) {
     })
   );
 
+  function getActiveSelectionTextForTitle() {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !editor.document || !editor.selection || editor.selection.isEmpty) return '';
+    const text = editor.document.getText(editor.selection);
+    return String(text || '')
+      .replace(/\s+/g, ' ')
+      .replace(/^#+\s*/, '')
+      .replace(/^[-+*]\s+/, '')
+      .trim();
+  }
+
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.roamNodeNew', async () => {
+      const selectedTitle = getActiveSelectionTextForTitle();
       const titleRaw = await vscode.window.showInputBox({
-        prompt: 'Org2: Roam — new node title',
+        prompt: selectedTitle ? 'Org2: Roam — new node title (from selection)' : 'Org2: Roam — new node title',
         placeHolder: 'Node title',
+        value: selectedTitle,
+        valueSelection: selectedTitle ? [0, selectedTitle.length] : undefined,
         validateInput: (v) => (String(v || '').trim() ? undefined : 'Title is required'),
       });
       if (titleRaw === undefined) return;

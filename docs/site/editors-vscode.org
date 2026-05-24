@@ -81,8 +81,17 @@ Then use the second key (or namespace chord).
 | ctrl+; r y    | cmd+; r y  | =org2.roamDailiesGotoYesterday= | Dailies: yesterday |
 | ctrl+; r m    | cmd+; r m  | =org2.roamDailiesGotoTomorrow=  | Dailies: tomorrow |
 | ctrl+; r d    | cmd+; r d  | =org2.roamDailiesGotoDate=      | Dailies: pick date |
-| ctrl+; r n    | cmd+; r n  | =org2.roamNodeNew=              | New roam node |
+| ctrl+; r n    | cmd+; r n  | =org2.roamNodeNew=              | New roam node (selected text becomes the default title) |
 | ctrl+; r s    | cmd+; r s  | =org2.roamDbSync=               | Roam DB sync |
+
+*** AI lifecycle
+
+| Linux/Windows | macOS      | Command ID              | Action |
+|---------------+------------+-------------------------+--------|
+| ctrl+; i v    | cmd+; i v  | =org2.aiReviewWorkspace= | Review workspace / active file |
+| ctrl+; i r    | cmd+; i r  | =org2.aiMarkReviewed=    | Mark draft reviewed |
+| ctrl+; i x    | cmd+; i x  | =org2.aiMarkRejected=    | Mark draft rejected |
+| ctrl+; i d    | cmd+; i d  | =org2.aiMarkDeferred=    | Mark draft deferred |
 
 *** TODO status
 
@@ -102,6 +111,12 @@ Then use the second key (or namespace chord).
 | ctrl+; d      | cmd+; d    | =org2.setDeadline=           | Set DEADLINE (prompt date) |
 | ctrl+; d t    | cmd+; d t  | =org2.setDeadlineToday=      | Set DEADLINE to today |
 | ctrl+; x      | cmd+; x    | =org2.archiveSubtree=        | Archive subtree |
+| ctrl+; x r    | cmd+; x r  | =org2.refileSubtree=         | Refile subtree |
+| ctrl+; h left | cmd+; h left | =org2.promoteSubtree=       | Promote subtree |
+| ctrl+; h right | cmd+; h right | =org2.demoteSubtree=      | Demote subtree |
+| ctrl+; h up   | cmd+; h up | =org2.moveSubtreeUp=         | Move subtree up |
+| ctrl+; h down | cmd+; h down | =org2.moveSubtreeDown=     | Move subtree down |
+| ctrl+; g a    | cmd+; g a  | =org2.graphAuditWorkspace=   | Graph audit workspace |
 | ctrl+; c q    | cmd+; c q  | =org2.captureQuickEntry=     | Quick capture |
 | ctrl+; p h    | cmd+; p h  | =org2.exportCurrentFileHtml= | Export current file HTML |
 | ctrl+; p w    | cmd+; p w  | =org2.exportWorkspaceHtml=   | Export workspace HTML |
@@ -143,3 +158,12 @@ Available from command palette (=Cmd/Ctrl+Shift+P=):
 - =org2.roamShowBacklinks=
 - =org2.rerunAutoFold=
 - =org2.debugListLinks=
+- =org2.graphAuditWorkspace=
+- =org2.aiReviewWorkspace=
+- =org2.aiMarkReviewed=
+- =org2.aiMarkRejected=
+- =org2.aiMarkDeferred=
+- =org2.promoteSubtree=
+- =org2.demoteSubtree=
+- =org2.moveSubtreeUp=
+- =org2.moveSubtreeDown=
