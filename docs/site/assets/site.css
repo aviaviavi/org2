@@ -14,7 +14,6 @@
 
 html, body {
   max-width: 100%;
-  overflow-x: hidden;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -169,11 +168,10 @@ h1 { margin-bottom: 0.5rem; }
 
 
 table {
-  display: block;
+  width: 100%;
   max-width: 100%;
-  overflow-x: auto;
   border-collapse: collapse;
-  -webkit-overflow-scrolling: touch;
+  table-layout: fixed;
 }
 
 th, td {
@@ -187,8 +185,26 @@ th {
   background: color-mix(in srgb, var(--code-bg) 70%, transparent);
 }
 
-td code, th code {
+td, th {
   overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+td code, th code,
+p code,
+li code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+@media (max-width: 720px) {
+  table {
+    display: block;
+    overflow-x: auto;
+    table-layout: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 pre, code {
