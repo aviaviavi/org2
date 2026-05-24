@@ -2,7 +2,7 @@
   "name": "org2-vscode",
   "displayName": "Org2",
   "description": "Org2 for VS Code (requires org2 CLI): syntax, folding, agenda, roam, TODO/planning, export",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "publisher": "AviPress",
   "main": "./extension.js",
   "activationEvents": [

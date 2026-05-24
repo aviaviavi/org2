@@ -2,6 +2,17 @@
 
 All notable changes to the Org2 VS Code extension are documented in this file.
 
+## 0.1.0 - 2026-05-24
+
+Minor release for the expanded editor workflow surface.
+
+Highlights:
+
+- New-node creation now pre-fills the title from selected/highlighted text.
+- Added graph audit and AI review/status commands to the command palette.
+- Added power-keymap bindings for graph audit, AI draft lifecycle status, and subtree promote/demote/move commands.
+- Documented the new editor commands and shortcuts.
+
 ## 0.0.2 - 2026-03-26
 
 Patch release for Marketplace publishing.
