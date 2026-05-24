@@ -7,6 +7,16 @@
   --code-bg: #f8fafc;
 }
 
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0b1020;
@@ -155,6 +165,30 @@ h1 { margin-bottom: 0.5rem; }
   .org2-nav-dropdown[open] .org2-nav-dropdown-menu {
     display: flex;
   }
+}
+
+
+table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  -webkit-overflow-scrolling: touch;
+}
+
+th, td {
+  border: 1px solid var(--border);
+  padding: 0.45rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: color-mix(in srgb, var(--code-bg) 70%, transparent);
+}
+
+td code, th code {
+  overflow-wrap: anywhere;
 }
 
 pre, code {
