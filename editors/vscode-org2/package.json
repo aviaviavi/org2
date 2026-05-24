@@ -64,7 +64,16 @@
     "onCommand:org2.roamOpenBacklink",
     "onCommand:org2.roamOpenBacklinkById",
     "onCommand:org2.roamDbSync",
-    "onCommand:org2.rerunAutoFold"
+    "onCommand:org2.rerunAutoFold",
+    "onCommand:org2.graphAuditWorkspace",
+    "onCommand:org2.aiReviewWorkspace",
+    "onCommand:org2.aiMarkReviewed",
+    "onCommand:org2.aiMarkRejected",
+    "onCommand:org2.aiMarkDeferred",
+    "onCommand:org2.promoteSubtree",
+    "onCommand:org2.demoteSubtree",
+    "onCommand:org2.moveSubtreeUp",
+    "onCommand:org2.moveSubtreeDown"
   ],
   "repository": {
     "type": "git",
@@ -148,6 +157,42 @@
       {
         "command": "org2.compileWorkspaceCorpus",
         "title": "Org2: Compile Workspace Corpus Artifact"
+      },
+      {
+        "command": "org2.moveSubtreeDown",
+        "title": "Org2: Move Subtree Down"
+      },
+      {
+        "command": "org2.moveSubtreeUp",
+        "title": "Org2: Move Subtree Up"
+      },
+      {
+        "command": "org2.demoteSubtree",
+        "title": "Org2: Demote Subtree"
+      },
+      {
+        "command": "org2.promoteSubtree",
+        "title": "Org2: Promote Subtree"
+      },
+      {
+        "command": "org2.aiMarkDeferred",
+        "title": "Org2: AI — Mark Draft Deferred"
+      },
+      {
+        "command": "org2.aiMarkRejected",
+        "title": "Org2: AI — Mark Draft Rejected"
+      },
+      {
+        "command": "org2.aiMarkReviewed",
+        "title": "Org2: AI — Mark Draft Reviewed"
+      },
+      {
+        "command": "org2.aiReviewWorkspace",
+        "title": "Org2: AI — Review Workspace / Active File"
+      },
+      {
+        "command": "org2.graphAuditWorkspace",
+        "title": "Org2: Graph Audit Workspace"
       },
       {
         "command": "org2.aiRunDraft",
@@ -1433,6 +1478,60 @@
         "key": "ctrl+; p w",
         "mac": "cmd+; p w",
         "command": "org2.exportWorkspaceHtml",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; g a",
+        "mac": "cmd+; g a",
+        "command": "org2.graphAuditWorkspace",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; i v",
+        "mac": "cmd+; i v",
+        "command": "org2.aiReviewWorkspace",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; i r",
+        "mac": "cmd+; i r",
+        "command": "org2.aiMarkReviewed",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; i x",
+        "mac": "cmd+; i x",
+        "command": "org2.aiMarkRejected",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; i d",
+        "mac": "cmd+; i d",
+        "command": "org2.aiMarkDeferred",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; h left",
+        "mac": "cmd+; h left",
+        "command": "org2.promoteSubtree",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; h right",
+        "mac": "cmd+; h right",
+        "command": "org2.demoteSubtree",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; h up",
+        "mac": "cmd+; h up",
+        "command": "org2.moveSubtreeUp",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; h down",
+        "mac": "cmd+; h down",
+        "command": "org2.moveSubtreeDown",
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       }
     ]
