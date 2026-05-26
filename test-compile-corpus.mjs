@@ -24,7 +24,7 @@ fs.writeFileSync(path.join(tmpDir, 'project.org2'), `#+TITLE: Project Hub
 :ORG2_ENTITY_TYPE: company
 :END:
 
-* TODO Alpha Work :work:alpha:
+* TODO [#A] Alpha Work :work:alpha:
 SCHEDULED: <2026-05-19 Tue> DEADLINE: <2026-05-20 Wed>
 :PROPERTIES:
 :ID: ${alphaId}
@@ -85,6 +85,7 @@ assert.ok(alpha, 'expected heading node with explicit ID');
 assert.equal(alpha.kind, 'heading');
 assert.equal(alpha.title, 'Alpha Work');
 assert.equal(alpha.todo, 'TODO');
+assert.equal(alpha.priority, 'A');
 assert.deepEqual(alpha.tags, ['work', 'alpha']);
 assert.deepEqual(alpha.aliases, ['Alpha Initiative']);
 assert.equal(alpha.properties.OWNER, 'Avi');
