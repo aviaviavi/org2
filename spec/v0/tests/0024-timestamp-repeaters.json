@@ -6,7 +6,13 @@
       "type": "Paragraph",
       "children": [
         { "type": "Text", "value": "Every " },
-        { "type": "Timestamp", "active": true, "raw": "<2026-01-16 Fri +1w -2d>" },
+        {
+          "type": "Timestamp",
+          "active": true,
+          "raw": "<2026-01-16 Fri +1w -2d>",
+          "repeater": { "mode": "+", "value": 1, "unit": "w", "raw": "+1w" },
+          "warning": { "mode": "-", "value": 2, "unit": "d", "raw": "-2d" }
+        },
         { "type": "Text", "value": "." }
       ]
     }

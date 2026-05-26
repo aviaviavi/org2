@@ -3,10 +3,26 @@ export type TextNode = {
   value: string;
 };
 
+export type TimestampRepeater = {
+  mode: "+" | "++" | ".+";
+  value: number;
+  unit: "d" | "w" | "m" | "y";
+  raw: string;
+};
+
+export type TimestampWarning = {
+  mode: "-" | "--";
+  value: number;
+  unit: "d" | "w" | "m" | "y";
+  raw: string;
+};
+
 export type TimestampNode = {
   type: "Timestamp";
   active: boolean;
   raw: string;
+  repeater?: TimestampRepeater;
+  warning?: TimestampWarning;
 };
 
 export type TimestampRangeNode = {
