@@ -212,16 +212,20 @@ h1 { margin-bottom: 0.5rem; }
     flex-wrap: wrap;
     align-items: center;
   }
-  .org2-site-search {
-    margin-left: auto;
-  }
   .org2-nav-dropdown {
     position: relative;
   }
   .org2-nav-github {
+    margin-left: auto;
     padding-left: 0.85rem;
     border-left: 1px solid var(--border);
     border-radius: 0;
+  }
+  .org2-site-search {
+    order: 2;
+    flex: 1 0 100%;
+    max-width: 32rem;
+    margin-top: 0.15rem;
   }
   .org2-nav-dropdown-menu {
     display: none;
