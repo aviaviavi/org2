@@ -19,6 +19,31 @@ export type CompiledCorpusBacklink = {
   linkType: "id" | "wiki";
 };
 
+export type CompiledCorpusEntity = {
+  nodeKey: string;
+  id: string | null;
+  title: string;
+  entityType: string;
+  file: string;
+  line: number;
+  source: "property" | "tag";
+};
+
+export type CompiledCorpusRelation = {
+  subjectKey: string;
+  subjectId: string | null;
+  subjectTitle: string;
+  predicate: string;
+  objectId: string | null;
+  objectTitle?: string;
+  objectRef: string;
+  file: string;
+  line: number;
+  evidence: string;
+  confidence: "explicit" | "inferred-pattern";
+  method: string;
+};
+
 export type CompiledCorpusNode = {
   key: string;
   kind: "file" | "heading";
@@ -34,6 +59,7 @@ export type CompiledCorpusNode = {
   planning: Array<{ kind: "SCHEDULED" | "DEADLINE" | "CLOSED"; raw: string; line: number }>;
   links: CompiledCorpusLink[];
   backlinks: CompiledCorpusBacklink[];
+  entityType?: string;
   snippet: string;
 };
 
@@ -77,7 +103,11 @@ export type CompiledCorpus = {
     headings: number;
     links: number;
     backlinks: number;
+    entities: number;
+    relations: number;
   };
+  entities: CompiledCorpusEntity[];
+  relations: CompiledCorpusRelation[];
   index?: CompiledCorpusLookupIndex;
   indexState?: CompiledCorpusIndexState;
 };
@@ -307,6 +337,22 @@ function normalizeLabel(raw: string): string {
   return String(raw || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+function normalizeEntityType(raw: string | null | undefined): string | undefined {
+  const value = String(raw || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
+  return value || undefined;
+}
+
+function normalizePredicate(raw: string): string {
+  return String(raw || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function nodeEntityType(node: CompiledCorpusNode): string | undefined {
+  const propertyType = normalizeEntityType(node.properties.ORG2_ENTITY_TYPE || node.properties.ENTITY_TYPE);
+  if (propertyType) return propertyType;
+  const typedTag = node.tags.find((tag) => /^type[-_:]/i.test(tag));
+  return typedTag ? normalizeEntityType(typedTag.replace(/^type[-_:]/i, "")) : undefined;
+}
+
 function nodeLabels(node: CompiledCorpusNode): string[] {
   return Array.from(new Set([node.title, ...node.aliases].map((value) => value.trim()).filter(Boolean)));
 }
@@ -422,8 +468,12 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
   }
 
   for (const node of nodes) {
+    node.entityType = nodeEntityType(node);
     node.backlinks.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.sourceKey.localeCompare(b.sourceKey));
   }
+
+  const entities = buildEntityIndex(nodes);
+  const relations = buildRelationIndex(nodes, byId, labels);
 
   const totalLinks = nodes.reduce((sum, node) => sum + node.links.length, 0);
   const totalBacklinks = nodes.reduce((sum, node) => sum + node.backlinks.length, 0);
@@ -451,7 +501,11 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       headings: nodes.filter((node) => node.kind === "heading").length,
       links: totalLinks,
       backlinks: totalBacklinks,
+      entities: entities.length,
+      relations: relations.length,
     },
+    entities,
+    relations,
     index: buildLookupIndex(sortedNodes),
     indexState: { mode: "full", status: "fresh", reusedFiles: 0, parsedFiles: corpusFiles.length, deletedFiles: 0 },
   };
@@ -464,6 +518,112 @@ type IncrementalCorpusCache = {
   files: Array<{ file: string; absolutePath: string; size: number; mtimeMs: number; sha256: string }>;
   corpus: CompiledCorpus;
 };
+
+function buildEntityIndex(nodes: CompiledCorpusNode[]): CompiledCorpusEntity[] {
+  return nodes
+    .filter((node) => !!node.entityType)
+    .map((node) => ({
+      nodeKey: node.key,
+      id: node.id,
+      title: node.title,
+      entityType: node.entityType!,
+      file: node.file,
+      line: node.sourceRange.startLine,
+      source: ((node.properties.ORG2_ENTITY_TYPE || node.properties.ENTITY_TYPE) ? "property" : "tag") as "property" | "tag",
+    }))
+    .sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.title.localeCompare(b.title));
+}
+
+function parseRelationObject(raw: string): { objectRef: string; objectId: string | null; objectTitle?: string } {
+  const value = String(raw || "").trim();
+  const idMatch = /(?:^|\s)(?:id:)?([0-9a-fA-F-]{36})(?:\s|$)/.exec(value);
+  if (idMatch) return { objectRef: `id:${String(idMatch[1]).toLowerCase()}`, objectId: String(idMatch[1]).toLowerCase() };
+  const linkMatch = /\[\[([^\]\n]+?)(?:\]\[([^\]\n]*))?\]\]/.exec(value);
+  if (linkMatch) {
+    const target = String(linkMatch[1] || "").trim();
+    const description = String(linkMatch[2] || "").trim();
+    const linkId = /^id:([0-9a-fA-F-]{36})$/i.exec(target);
+    return { objectRef: target, objectId: linkId ? String(linkId[1]).toLowerCase() : null, ...(description ? { objectTitle: description } : {}) };
+  }
+  return { objectRef: value, objectId: null };
+}
+
+function resolveLinkObject(rawTarget: string, rawDescription: string | undefined, byId: Map<string, CompiledCorpusNode>, labels: Map<string, Set<string>>): { objectId: string | null; objectRef: string; objectTitle?: string } {
+  const target = String(rawTarget || "").trim();
+  const description = String(rawDescription || "").trim();
+  const idMatch = /^id:([0-9a-fA-F-]{36})$/i.exec(target);
+  if (idMatch) {
+    const objectId = String(idMatch[1]).toLowerCase();
+    return { objectId, objectRef: `id:${objectId}`, objectTitle: description || byId.get(objectId)?.title };
+  }
+  const candidates = Array.from(labels.get(normalizeLabel(target)) || []);
+  const objectId = candidates.length === 1 ? candidates[0] || null : null;
+  return { objectId, objectRef: target, objectTitle: description || byId.get(objectId || "")?.title || target };
+}
+
+function addRelationOnce(relations: CompiledCorpusRelation[], relation: CompiledCorpusRelation): void {
+  const key = `${relation.subjectKey}\0${relation.predicate}\0${relation.objectRef}\0${relation.file}\0${relation.line}\0${relation.method}`;
+  if (relations.some((existing) => `${existing.subjectKey}\0${existing.predicate}\0${existing.objectRef}\0${existing.file}\0${existing.line}\0${existing.method}` === key)) return;
+  relations.push(relation);
+}
+
+function buildRelationIndex(nodes: CompiledCorpusNode[], byId: Map<string, CompiledCorpusNode>, labels: Map<string, Set<string>>): CompiledCorpusRelation[] {
+  const relations: CompiledCorpusRelation[] = [];
+  for (const node of nodes) {
+    const explicitValues = Object.entries(node.properties).filter(([key]) => key === "ORG2_RELATION" || key.startsWith("ORG2_RELATION_"));
+    for (const [key, value] of explicitValues) {
+      const suffix = key === "ORG2_RELATION" ? "" : key.slice("ORG2_RELATION_".length);
+      const parts = String(value || "").trim().split(/\s+/);
+      const predicate = normalizePredicate(suffix || parts.shift() || "");
+      if (!predicate || parts.length === 0) continue;
+      const object = parseRelationObject(parts.join(" "));
+      addRelationOnce(relations, {
+        subjectKey: node.key,
+        subjectId: node.id,
+        subjectTitle: node.title,
+        predicate,
+        objectId: object.objectId,
+        ...(object.objectTitle ? { objectTitle: object.objectTitle } : {}),
+        objectRef: object.objectRef,
+        file: node.file,
+        line: node.sourceRange.startLine,
+        evidence: `${key}: ${value}`,
+        confidence: "explicit",
+        method: "property",
+      });
+    }
+
+    for (const link of node.links) {
+      if (link.type !== "id" && link.type !== "wiki") continue;
+      const object = resolveLinkObject(link.target, link.description, byId, labels);
+      const title = (link.description || link.target).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const evidence = node.snippet || node.title;
+      const patterns: Array<{ predicate: string; re: RegExp; method: string }> = [
+        { predicate: "advisor_to", re: new RegExp(`\\b(?:advisor|adviser)\\s+(?:for|to|at)\\s+.*${title}`, "i"), method: "pattern:advisor-for-to-at" },
+        { predicate: "advisor_to", re: new RegExp(`\\badvising\\s+.*${title}`, "i"), method: "pattern:advising" },
+        { predicate: "advisor_to", re: new RegExp(`\\bstrategic\\s+(?:advisor|adviser)\\s+at\\s+.*${title}`, "i"), method: "pattern:strategic-advisor-at" },
+      ];
+      for (const pattern of patterns) {
+        if (!pattern.re.test(evidence)) continue;
+        addRelationOnce(relations, {
+          subjectKey: node.key,
+          subjectId: node.id,
+          subjectTitle: node.title,
+          predicate: pattern.predicate,
+          objectId: object.objectId,
+          ...(object.objectTitle ? { objectTitle: object.objectTitle } : {}),
+          objectRef: object.objectRef,
+          file: node.file,
+          line: link.line,
+          evidence,
+          confidence: "inferred-pattern",
+          method: pattern.method,
+        });
+      }
+    }
+  }
+  return relations.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.subjectTitle.localeCompare(b.subjectTitle));
+}
 
 function buildLookupIndex(nodes: CompiledCorpusNode[]): CompiledCorpusLookupIndex {
   const index: CompiledCorpusLookupIndex = { ids: {}, titles: {}, tags: {}, dates: {}, files: {} };
@@ -514,7 +674,7 @@ export function compileCorpusIncremental(files: string[], opts: { rootDir?: stri
 
 export function renderCompiledCorpus(corpus: CompiledCorpus, format: "json" | "jsonl" = "json"): string {
   if (format === "jsonl") {
-    const header = { schemaVersion: corpus.schemaVersion, generatedBy: corpus.generatedBy, artifact: corpus.artifact, rootDir: corpus.rootDir, stats: corpus.stats, index: corpus.index, indexState: corpus.indexState };
+    const header = { schemaVersion: corpus.schemaVersion, generatedBy: corpus.generatedBy, artifact: corpus.artifact, rootDir: corpus.rootDir, stats: corpus.stats, entities: corpus.entities, relations: corpus.relations, index: corpus.index, indexState: corpus.indexState };
     return [header, ...corpus.nodes].map((entry) => JSON.stringify(entry)).join("\n") + "\n";
   }
   return JSON.stringify(corpus, null, 2) + "\n";

@@ -12,6 +12,7 @@ const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'org2-compile-corpus-'));
 const projectId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const meetingId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const alphaId = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+const advisorId = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 
 fs.writeFileSync(path.join(tmpDir, 'project.org2'), `#+TITLE: Project Hub
 #+ROAM_ALIASES: "Hub" project-home
@@ -19,6 +20,7 @@ fs.writeFileSync(path.join(tmpDir, 'project.org2'), `#+TITLE: Project Hub
 :PROPERTIES:
 :ID: ${projectId}
 :ORG2_ROLE: source
+:ORG2_ENTITY_TYPE: company
 :END:
 
 * TODO Alpha Work :work:alpha:
@@ -30,6 +32,18 @@ SCHEDULED: <2026-05-19 Tue> DEADLINE: <2026-05-20 Wed>
 :END:
 
 Use [[Meeting Notes]] and [[id:${meetingId}][meeting]] for context.
+`);
+fs.writeFileSync(path.join(tmpDir, 'advisor.org2'), `#+TITLE: Ada Advisor
+
+:PROPERTIES:
+:ID: ${advisorId}
+:ORG2_ENTITY_TYPE: person
+:ORG2_RELATION: advisor_to id:${projectId}
+:END:
+
+- Advisor to [[id:${projectId}][Project Hub]]
+
+* Details
 `);
 fs.writeFileSync(path.join(tmpDir, 'meeting.org2'), `#+TITLE: Meeting Notes
 
@@ -51,11 +65,11 @@ assert.equal(json.artifact.role, 'compiled');
 assert.equal(json.artifact.generator, 'org2 compile corpus');
 assert.equal(json.artifact.reviewStatus, 'generated');
 assert.match(json.artifact.generatedAt, /^\d{4}-\d{2}-\d{2}T/);
-assert.deepEqual(json.artifact.provenance.sort(), ['file:meeting.org2', 'file:project.org2']);
-assert.equal(json.artifact.sourceHashes.length, 2);
+assert.deepEqual(json.artifact.provenance.sort(), ['file:advisor.org2', 'file:meeting.org2', 'file:project.org2']);
+assert.equal(json.artifact.sourceHashes.length, 3);
 assert.ok(json.artifact.sourceHashes.every((entry) => entry.kind === 'file' && /^[a-f0-9]{64}$/.test(entry.sha256)));
-assert.equal(json.stats.files, 2);
-assert.equal(json.files.length, 2);
+assert.equal(json.stats.files, 3);
+assert.equal(json.files.length, 3);
 
 const alpha = json.nodes.find((node) => node.id === alphaId);
 assert.ok(alpha, 'expected heading node with explicit ID');
@@ -65,7 +79,7 @@ assert.equal(alpha.todo, 'TODO');
 assert.deepEqual(alpha.tags, ['work', 'alpha']);
 assert.deepEqual(alpha.aliases, ['Alpha Initiative']);
 assert.equal(alpha.properties.OWNER, 'Avi');
-assert.equal(alpha.sourceRange.startLine, 9);
+assert.equal(alpha.sourceRange.startLine, 10);
 assert.ok(alpha.sourceRange.endLine >= alpha.sourceRange.startLine);
 assert.ok(alpha.planning.some((entry) => entry.kind === 'SCHEDULED' && entry.raw.includes('2026-05-19')));
 assert.ok(alpha.planning.some((entry) => entry.kind === 'DEADLINE' && entry.raw.includes('2026-05-20')));
@@ -77,6 +91,18 @@ const projectFile = json.nodes.find((node) => node.kind === 'file' && node.id ==
 assert.ok(projectFile, 'expected file node with ID from property drawer');
 assert.deepEqual(projectFile.aliases, ['Hub', 'project-home']);
 assert.equal(projectFile.properties.ORG2_ROLE, 'source');
+assert.equal(projectFile.entityType, 'company');
+assert.ok(json.entities.some((entity) => entity.id === projectId && entity.entityType === 'company'));
+assert.ok(json.entities.some((entity) => entity.id === advisorId && entity.entityType === 'person'));
+assert.ok(json.relations.some((relation) => relation.subjectId === advisorId && relation.objectId === projectId && relation.predicate === 'advisor_to' && relation.confidence === 'explicit'));
+assert.ok(json.relations.some((relation) => relation.subjectId === advisorId && relation.objectId === projectId && relation.predicate === 'advisor_to' && relation.confidence === 'inferred-pattern'));
+const relationQuery = execFileSync('node', [cli, 'query', 'relations', '--object', projectId, '--predicate', 'advisor_to', '--dir', tmpDir, '--recursive', '--format', 'json'], { encoding: 'utf8' });
+const relationJson = JSON.parse(relationQuery);
+assert.equal(relationJson.$schema, 'org2:relation-query:v1');
+assert.ok(relationJson.relations.some((relation) => relation.subjectTitle === 'Ada Advisor' && relation.predicate === 'advisor_to'));
+const relationLinkQuery = execFileSync('node', [cli, 'query', 'relations', '--object', `[[id:${projectId}][Project Hub]]`, '--predicate', 'advisor_to', '--dir', tmpDir, '--recursive', '--format', 'json'], { encoding: 'utf8' });
+const relationLinkJson = JSON.parse(relationLinkQuery);
+assert.ok(relationLinkJson.relations.some((relation) => relation.subjectTitle === 'Ada Advisor' && relation.objectId === projectId));
 
 const out = path.join(tmpDir, 'compiled', 'corpus.jsonl');
 const stdout = execFileSync('node', [cli, 'compile', 'corpus', '--dir', tmpDir, '--recursive', '--format', 'jsonl', '--out', out], { encoding: 'utf8' });
@@ -84,6 +110,8 @@ assert.equal(stdout.trim(), out);
 const jsonl = fs.readFileSync(out, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
 assert.equal(jsonl[0].schemaVersion, 'org2-compiled-corpus/v1');
 assert.equal(jsonl[0].artifact.schemaVersion, 'org2-artifact-metadata/v1');
+assert.ok(jsonl[0].entities.some((entity) => entity.id === advisorId && entity.entityType === 'person'));
+assert.ok(jsonl[0].relations.some((relation) => relation.subjectId === advisorId && relation.predicate === 'advisor_to'));
 assert.ok(jsonl.some((entry) => entry.id === alphaId && entry.file === 'project.org2'));
 
 console.log('✓ compile-corpus');
