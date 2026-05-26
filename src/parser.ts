@@ -24,6 +24,8 @@ import type {
   TextNode,
   TimestampNode,
   TimestampRangeNode,
+  TimestampRepeater,
+  TimestampWarning,
 } from "./ast.js";
 
 export type ParseError = {
@@ -45,8 +47,36 @@ function text(value: string): TextNode {
   return { type: "Text", value };
 }
 
+function parseTimestampRepeater(raw: string): TimestampRepeater | undefined {
+  const match = raw.match(/(?:^|\s)(\+\+|\.\+|\+)(\d+)([dwmy])(?=[^A-Za-z0-9]|$)/i);
+  if (!match) return undefined;
+
+  const mode = match[1] as TimestampRepeater["mode"];
+  const value = Number.parseInt(match[2] ?? "", 10);
+  const unit = (match[3] ?? "").toLowerCase() as TimestampRepeater["unit"];
+  if (!Number.isFinite(value) || value <= 0) return undefined;
+  if (unit !== "d" && unit !== "w" && unit !== "m" && unit !== "y") return undefined;
+
+  return { mode, value, unit, raw: match[0].trim() };
+}
+
+function parseTimestampWarning(raw: string): TimestampWarning | undefined {
+  const match = raw.match(/(?:^|\s)(--|-)(\d+)([dwmy])(?=[^A-Za-z0-9]|$)/i);
+  if (!match) return undefined;
+
+  const mode = match[1] as TimestampWarning["mode"];
+  const value = Number.parseInt(match[2] ?? "", 10);
+  const unit = (match[3] ?? "").toLowerCase() as TimestampWarning["unit"];
+  if (!Number.isFinite(value) || value <= 0) return undefined;
+  if (unit !== "d" && unit !== "w" && unit !== "m" && unit !== "y") return undefined;
+
+  return { mode, value, unit, raw: match[0].trim() };
+}
+
 function timestamp(active: boolean, raw: string): TimestampNode {
-  return { type: "Timestamp", active, raw };
+  const repeater = parseTimestampRepeater(raw);
+  const warning = parseTimestampWarning(raw);
+  return { type: "Timestamp", active, raw, ...(repeater ? { repeater } : {}), ...(warning ? { warning } : {}) };
 }
 
 function timestampRange(start: TimestampNode, separatorRaw: string, end: TimestampNode): TimestampRangeNode {

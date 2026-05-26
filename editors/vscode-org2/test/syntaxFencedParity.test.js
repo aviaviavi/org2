@@ -100,6 +100,26 @@ test('unlabeled fenced and #+begin_src blocks use default embedded grammar scope
   assert(unlabeledSrcScopes.some((s) => s.includes('source.yaml.const-token')));
 });
 
+test('timestamp repeaters and warnings stay within timestamp syntax highlighting', async () => {
+  const registry = await createRegistry();
+  const grammar = await registry.loadGrammar('source.org2');
+  const line = 'SCHEDULED: <2026-05-20 Wed ++1w --2d> DEADLINE: [2026-05-21 Thu .+2d -1w]';
+  const result = grammar.tokenizeLine(line, null);
+
+  for (const fragment of ['++1w', '--2d', '.+2d', '-1w']) {
+    const token = result.tokens.find((candidate) => {
+      const tokenText = line.slice(candidate.startIndex, candidate.endIndex);
+      return tokenText.includes(fragment);
+    });
+
+    assert(token, `expected token containing ${fragment}`);
+    assert(
+      token.scopes.includes('constant.other.timestamp.org2') || token.scopes.includes('string.other.timestamp.org2'),
+      `expected timestamp scope for ${fragment}`
+    );
+  }
+});
+
 test('headline TODO aliases still receive TODO keyword syntax highlighting', async () => {
   const registry = await createRegistry();
   const grammar = await registry.loadGrammar('source.org2');
