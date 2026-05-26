@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Corpus flow</title>
+<meta name="subtitle" content="Canonical zones for Org2 knowledge corpora" />
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Corpus flow" />
+<meta property="og:description" content="Canonical zones for Org2 knowledge corpora" />
+<meta property="og:url" content="https://org2.avi.press/corpus-flow.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/corpus-flow.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Corpus flow" />
+<meta name="twitter:description" content="Canonical zones for Org2 knowledge corpora" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/corpus-flow.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a></div></details><form class="org2-site-search" role="search"><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">Corpus flow</h1>
+<p class="org2-document-subtitle" role="doc-subtitle">Canonical zones for Org2 knowledge corpora</p>
+</header>
+<p>Org2 treats a corpus like a small local knowledge compiler. Source material moves through explicit zones so humans and tools can tell which files are authored, which files are derived, and which boundaries need provenance.</p>
+<p>The canonical flow is:</p>
+<pre class="org2-src language-text" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-text">raw/ -&gt; notes/ -&gt; compiled/ -&gt; views/ -&gt; publish/</code></pre>
+<p>You do not need every zone on day one. The value is that when a corpus adopts these names, Org2 lint can check the trust boundary instead of relying on convention alone.</p>
+<section class="org2-headline level-1">
+<h1 id="zones">Zones</h1>
+<table>
+<thead>
+<tr><th>Directory</th><th>Role</th><th>Canonical?</th><th>Purpose</th></tr>
+</thead>
+<tbody>
+<tr><td><code>raw/</code></td><td><code>raw</code></td><td>source evidence</td><td>Inbox material, imports, captures, transcripts, clippings, and other minimally edited inputs.</td></tr>
+<tr><td><code>notes/</code></td><td><code>canonical</code></td><td>yes</td><td>Human-authored durable notes, tasks, decisions, IDs, links, and properties. This is the primary corpus.</td></tr>
+<tr><td><code>compiled/</code></td><td><code>compiled</code></td><td>generated</td><td>Normalized or aggregated machine outputs derived from raw/canonical inputs.</td></tr>
+<tr><td><code>views/</code></td><td><code>view</code></td><td>generated</td><td>Query results, indexes, dashboards, agenda snapshots, graph slices, or other read models.</td></tr>
+<tr><td><code>publish/</code></td><td><code>report</code></td><td>generated/public-facing</td><td>Exported reports, sites, feeds, handoff documents, or other presentation outputs.</td></tr>
+</tbody>
+</table>
+<p>Canonical authorship lives in <code>notes/</code>. Generated outputs may be useful and may be committed, but they should be reproducible from provenance whenever possible.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="trust-boundaries">Trust boundaries</h1>
+<p>The most important boundary is between canonical material and generated material:</p>
+<ul>
+<li><p><code>raw/</code> can be messy and externally sourced; preserve it when evidence matters.</p></li>
+<li><p><code>notes/</code> is the reviewed human source of truth.</p></li>
+<li><p><code>compiled/</code>, <code>views/</code>, and <code>publish/</code> are derived outputs and should say where they came from.</p></li>
+<li><p>Generated outputs should not silently become canonical notes. Promote useful generated text by copying or rewriting it into <code>notes/</code> and reviewing it there.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="artifact-metadata">Artifact metadata</h1>
+<p>Use file-level or headline-level property drawers to declare artifact roles and provenance.</p>
+<p>Canonical note example:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">:PROPERTIES:
+:ID: project-alpha
+:ORG2_ARTIFACT_ROLE: canonical
+:END:</code></pre>
+<p>Generated view example:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">:PROPERTIES:
+:ID: project-alpha-dashboard
+:ORG2_ARTIFACT_ROLE: view
+:ORG2_PROVENANCE: id:project-alpha, query:todo-status-open
+:ORG2_GENERATOR: org2 query --format org
+:ORG2_GENERATED_AT: 2026-05-10T22:30:00Z
+:ORG2_SOURCE_HASHES: file:notes/project-alpha.org2=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+:ORG2_REVIEW_STATUS: review-required
+:END:</code></pre>
+<p>The standard generated-artifact property set is:</p>
+<ul>
+<li><p><code>ORG2_ARTIFACT_ROLE</code> records the trust boundary: <code>raw</code>, <code>canonical</code>, <code>compiled</code>, <code>view</code>, or <code>report</code>.</p></li>
+<li><p><code>ORG2_PROVENANCE</code> records source references as <code>kind:value</code> tokens.</p></li>
+<li><p><code>ORG2_GENERATOR</code> records the deterministic command, job, or workflow that produced the artifact.</p></li>
+<li><p><code>ORG2_GENERATED_AT</code> records an ISO date or timestamp for the generation run.</p></li>
+<li><p><code>ORG2_SOURCE_HASHES</code> optionally records content hashes for specific inputs as <code>kind:value=sha256:&lt;64 hex chars&gt;</code>.</p></li>
+<li><p><code>ORG2_REVIEW_STATUS</code> records whether generated content is <code>generated</code>, <code>review-required</code>, <code>reviewed</code>, or <code>promoted</code>.</p></li>
+</ul>
+<p>The supported <code>ORG2_ARTIFACT_ROLE</code> values are:</p>
+<ul>
+<li><p><code>raw</code></p></li>
+<li><p><code>canonical</code></p></li>
+<li><p><code>compiled</code></p></li>
+<li><p><code>view</code></p></li>
+<li><p><code>report</code></p></li>
+</ul>
+<p>The conventional directory mapping is:</p>
+<ul>
+<li><p><code>raw/</code> -&gt; <code>raw</code></p></li>
+<li><p><code>notes/</code> -&gt; <code>canonical</code></p></li>
+<li><p><code>compiled/</code> -&gt; <code>compiled</code></p></li>
+<li><p><code>views/</code> -&gt; <code>view</code></p></li>
+<li><p><code>publish/</code> -&gt; <code>report</code></p></li>
+</ul>
+<p><code>ORG2_PROVENANCE</code> entries use <code>kind:value</code> tokens separated by commas or semicolons. Supported kinds are <code>id</code>, <code>file</code>, <code>query</code>, <code>run</code>, <code>url</code>, <code>note</code>, and <code>artifact</code>. <code>ORG2_SOURCE_HASHES</code> uses the same source kinds plus a SHA-256 digest, for example <code>file:notes/project-alpha.org2=sha256:...</code>.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="lint-workflow">Lint workflow</h1>
+<p>Run lint over the corpus root:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- lint --dir /path/to/corpus --recursive</code></pre>
+<p>When files live under the conventional directories, lint checks that their declared <code>ORG2_ARTIFACT_ROLE</code> matches the path. It also checks generated artifacts for provenance, generator metadata, generated timestamps, source-hash syntax, review-status values, duplicate IDs, and unresolved provenance references.</p>
+<p>A minimal corpus can start like this:</p>
+<pre class="org2-src language-text" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-text">corpus/
+  raw/
+  notes/
+  compiled/
+  views/
+  publish/</code></pre>
+<p>Then wire editor, query, export, and publish commands to read from <code>notes/</code> and write derived results into <code>compiled/</code>, <code>views/</code>, or <code>publish/</code> rather than back into canonical notes.</p>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

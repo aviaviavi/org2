@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI draft artifacts</title>
+<meta name="subtitle" content="Reviewable generated output with provenance and safe promotion" />
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="AI draft artifacts" />
+<meta property="og:description" content="Reviewable generated output with provenance and safe promotion" />
+<meta property="og:url" content="https://org2.avi.press/ai-draft-artifacts.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/ai-draft-artifacts.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="AI draft artifacts" />
+<meta name="twitter:description" content="Reviewable generated output with provenance and safe promotion" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/ai-draft-artifacts.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a></div></details><form class="org2-site-search" role="search"><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">AI draft artifacts</h1>
+<p class="org2-document-subtitle" role="doc-subtitle">Reviewable generated output with provenance and safe promotion</p>
+</header>
+<p>AI commands write into generated zones first. The goal is to make model output useful without letting it silently become canonical truth.</p>
+<p><code>org2 ai run</code> currently provides a provider-free draft writer for manifest-selected source files. It reads local Org2 source files, records source hashes, stamps artifact metadata, and writes a review-required draft under <code>views/</code> or <code>compiled/</code>.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- ai run --job jobs/team-sync.org2-ai.json --apply
+npm run org2 -- ai run --job jobs/team-sync.org2-ai.json --out views/team-sync-summary.org2 --apply</code></pre>
+<p>Without <code>--apply</code>, the command prints a safe preview and writes nothing.</p>
+<section class="org2-headline level-1">
+<h1 id="meetingtranscript-summarization">Meeting/transcript summarization</h1>
+<p><code>summarize-meeting</code> is the first concrete AI workflow. A manifest such as <code>examples/jobs/meeting-summary.org2-ai.json</code> turns raw meeting or transcript material into a reviewable Org2 artifact:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- ai run \
+  --task summarize-meeting \
+  --file raw/meeting.org2 \
+  --out views/meeting-summary.org2
+
+npm run org2 -- ai run \
+  --job examples/jobs/meeting-summary.org2-ai.json \
+  --out views/meeting-summary.org2</code></pre>
+<p>The generated draft is safe-by-default: preview-only unless <code>--apply</code> is passed, stored as a generated <code>view</code> artifact, and marked <code>ORG2_REVIEW_STATUS: review-required</code>. The body includes:</p>
+<ul>
+<li><p>a concise meeting summary</p></li>
+<li><p>key decisions with <code>file:path::line</code> citations</p></li>
+<li><p>TODO-style action item suggestions</p></li>
+<li><p>people/org/project entity candidates</p></li>
+<li><p>suggested link candidates that must be reviewed before promotion</p></li>
+<li><p>source citation and provenance metadata, including source hashes and adapter/model metadata</p></li>
+</ul>
+<p>The built-in deterministic mock adapter keeps tests and local examples provider-free while exercising the same adapter/request boundary that hosted or local model adapters can implement later.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="draft-format">Draft format</h1>
+<p>A generated draft starts with an Org2 property drawer:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">:PROPERTIES:
+:ID: team-sync-summary-team-sync-summary.org2
+:ORG2_ARTIFACT_SCHEMA: org2-artifact-metadata/v1
+:ORG2_ARTIFACT_ROLE: view
+:ORG2_PROVENANCE: file:raw/team-sync.org2
+:ORG2_GENERATOR: org2 ai run team-sync-summary adapter=local-default model=fixture-model
+:ORG2_GENERATED_AT: 2026-05-20T01:00:00.000Z
+:ORG2_AI_JOB_ID: team-sync-summary
+:ORG2_AI_TASK: summarize-meeting
+:ORG2_PROMPT_TEMPLATE: meeting-summary@v1
+:ORG2_AI_ADAPTER: local-default
+:ORG2_AI_MODEL: fixture-model
+:ORG2_SOURCE_HASHES: file:raw/team-sync.org2=sha256:...
+:ORG2_REVIEW_STATUS: review-required
+:END:</code></pre>
+<p>The body includes a review checklist, job metadata, source list, generated summary or extraction section, and cited source excerpts using <code>file:path::line</code> links.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="review-and-promotion">Review and promotion</h1>
+<p>Promotion is explicit:</p>
+<ol>
+<li><p>Inspect the draft and verify generated claims against cited source lines.</p></li>
+<li><p>Edit the draft until the accepted content is safe for canonical notes.</p></li>
+<li><p>Change <code>ORG2_REVIEW_STATUS</code> from <code>review-required</code> to <code>reviewed</code>.</p></li>
+<li><p>Run <code>org2 ai promote</code> with <code>--apply</code> to append the reviewed body to a canonical note file.</p></li>
+</ol>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- ai promote \
+  --file views/team-sync-summary.org2 \
+  --to-file notes/team-sync.org2 \
+  --apply</code></pre>
+<p>Promotion refuses drafts that are still <code>generated</code> or <code>review-required</code>. On success it appends only the draft body to the target note, omits the generated artifact drawer from canonical notes, and marks the source draft <code>promoted</code>.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="lint-rules">Lint rules</h1>
+<p><code>org2 lint</code> flags generated artifacts that still need review with <code>artifact-generated-unreviewed</code>. Existing artifact checks also catch missing provenance, stale provenance mtimes, invalid or mismatched source hashes, and invalid review statuses.</p>
+<p>This makes AI output behave like a build artifact: useful, traceable, lintable, and overwriteable until a human explicitly reviews and promotes it.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="vs-code-commands">VS Code commands</h1>
+<p>The VS Code extension exposes the same safe path through command-palette actions:</p>
+<ul>
+<li><p><code>Org2: AI — Write Draft Artifact</code> picks a job manifest, previews <code>org2 ai run</code>, confirms, writes the draft, and opens it for review.</p></li>
+<li><p><code>Org2: AI — Promote Reviewed Draft</code> previews <code>org2 ai promote</code> for the active/selected draft, requires confirmation, and opens the canonical target after promotion.</p></li>
+</ul>
+<p>Both commands use the CLI; the editor does not bypass review status checks or write canonical notes without the explicit promote confirmation.</p>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

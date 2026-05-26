@@ -1,6 +1,6 @@
 #+TITLE: Maintenance and health workflows
 
-Org2 treats corpus maintenance as a core compiler capability, not just a cleanup task.
+Org2 treats corpus maintenance as a core compiler capability: cleanup, graph repair, and review become part of the normal workflow.
 
 A knowledge corpus has source files, derived artifacts, links, IDs, provenance, publish outputs, editor indexes, and generated views. The compiler model gives Org2 one place to parse those files, check trust boundaries, and report or repair drift before it reaches publishing or daily planning.
 

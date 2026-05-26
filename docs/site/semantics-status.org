@@ -40,7 +40,7 @@ These are intended to remain stable for users, but details can still change acro
 
 * Identity, provenance, and graph operations
 
-Org2 treats linked knowledge as compiler state, not just editor decoration. A note corpus should be able to answer three practical questions reliably:
+Org2 treats linked knowledge as compiler state rather than editor decoration. A note corpus should be able to answer three practical questions reliably:
 
 - What is this node's stable identity?
 - Where did this fact, link, or derived artifact come from?
@@ -74,7 +74,7 @@ Graph-aware commands should separate three phases:
 
 That separation matters because users need dry-run reports and safe, reviewable edits. A linkify command, for example, can now distinguish exact title/alias replacements from represented-node suggestions, explain the evidence tokens and source range behind a semantic match, and keep review-only suggestions out of automatic writes. The AI-assisted suggestion command follows the same contract: compiler graph/linkify/entity candidates are passed to a deterministic mock adapter for ranking and explanation, and =--apply= can only write a report artifact, not canonical note edits.
 
-** High-leverage next slices
+** Useful next slices
 
 - Make cited query/search output available as a stable CLI surface for knowledge-base workflows.
 - Add an acceptance workflow for individual AI-assisted link/entity suggestions while preserving explicit approval.

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI adapter interface</title>
+<meta name="subtitle" content="Provider boundaries for optional model calls" />
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="AI adapter interface" />
+<meta property="og:description" content="Provider boundaries for optional model calls" />
+<meta property="og:url" content="https://org2.avi.press/ai-adapters.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/ai-adapters.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="AI adapter interface" />
+<meta name="twitter:description" content="Provider boundaries for optional model calls" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/ai-adapters.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a></div></details><form class="org2-site-search" role="search"><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">AI adapter interface</h1>
+<p class="org2-document-subtitle" role="doc-subtitle">Provider boundaries for optional model calls</p>
+</header>
+<p>Org2's AI layer is provider-agnostic. Core parsing, formatting, linting, publishing, corpus compilation, query, and manifest validation do not require an LLM provider. When an AI workflow eventually needs model output, it should call a small adapter boundary instead of importing a vendor SDK throughout Org2.</p>
+<p>The TypeScript contract lives in <code>src/aiAdapter.ts</code>. It defines:</p>
+<ul>
+<li><p><code>AiProviderAdapter</code>: the interface implemented by local or hosted model adapters</p></li>
+<li><p><code>AiAdapterRequest</code>: structured prompt, task, context, output, and provenance requirements</p></li>
+<li><p><code>AiAdapterResponse</code>: text/JSON output, citations, and model metadata</p></li>
+<li><p><code>MockAiAdapter</code>: deterministic test adapter for job orchestration tests</p></li>
+</ul>
+<section class="org2-headline level-1">
+<h1 id="request-contract">Request contract</h1>
+<p>An adapter request packages context already selected and prepared by Org2:</p>
+<pre class="org2-src language-js" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-js">{
+  schema: &quot;org2:ai-adapter-request:v1&quot;,
+  jobId: &quot;weekly-summary&quot;,
+  task: {
+    type: &quot;summarize-meeting&quot;,
+    template: &quot;weekly-summary@v1&quot;,
+    instructions: &quot;Summarize decisions with citations.&quot;
+  },
+  prompt: [
+    { role: &quot;system&quot;, content: &quot;Use only the supplied Org2 context.&quot; },
+    { role: &quot;user&quot;, content: &quot;Create a weekly summary.&quot; }
+  ],
+  context: [
+    {
+      id: &quot;meeting-1&quot;,
+      type: &quot;org-headline&quot;,
+      title: &quot;Team Sync&quot;,
+      text: &quot;Decision: ship the adapter interface first.&quot;,
+      sourceRefs: [{ file: &quot;notes/team.org&quot;, id: &quot;abc&quot;, line: 12, endLine: 16 }]
+    }
+  ],
+  output: { contentType: &quot;text+json&quot;, schemaHint: &quot;weekly-summary@v1&quot; },
+  provenance: { requireSourceRefs: true, promptTemplateVersion: &quot;weekly-summary@v1&quot; }
+}</code></pre>
+<p>The adapter receives already-curated context. It should not crawl notes, mutate canonical files, or decide review policy.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="response-contract">Response contract</h1>
+<p>Adapters return text and/or structured JSON plus metadata:</p>
+<pre class="org2-src language-js" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-js">{
+  schema: &quot;org2:ai-adapter-response:v1&quot;,
+  text: &quot;Decisions: ...&quot;,
+  json: { decisions: [] },
+  citations: [{ source: { file: &quot;notes/team.org&quot;, line: 12, endLine: 16 } }],
+  metadata: {
+    adapterName: &quot;work-summary&quot;,
+    model: &quot;summary-profile&quot;,
+    provider: &quot;local-or-hosted-provider&quot;,
+    invocationId: &quot;optional-provider-run-id&quot;,
+    usage: { inputTokens: 1200, outputTokens: 300 }
+  }
+}</code></pre>
+<p>Job orchestration can write this metadata into generated artifacts without knowing which provider produced it.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="adapter-responsibilities">Adapter responsibilities</h1>
+<p>Adapters should:</p>
+<ul>
+<li><p>accept <code>AiAdapterRequest</code> and return <code>AiAdapterResponse</code></p></li>
+<li><p>keep provider credentials in local config/environment, never in notes, manifests, or generated artifacts</p></li>
+<li><p>report provider/model metadata needed for provenance</p></li>
+<li><p>support deterministic mock behavior in tests</p></li>
+<li><p>avoid changing non-AI Org2 command behavior</p></li>
+</ul>
+<p>Adapters should not:</p>
+<ul>
+<li><p>modify canonical notes directly</p></li>
+<li><p>embed secrets in response metadata</p></li>
+<li><p>require provider configuration for parser/compiler/lint/publish/query commands</p></li>
+<li><p>bypass manifest review/provenance policies</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="mock-adapter">Mock adapter</h1>
+<p><code>MockAiAdapter</code> gives future job orchestration deterministic tests before real providers exist:</p>
+<pre class="org2-src language-js" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-js">import { MockAiAdapter, createAiAdapterRequest } from &quot;./dist/aiAdapter.js&quot;;
+
+const adapter = new MockAiAdapter({ name: &quot;local-test&quot;, model: &quot;deterministic-v1&quot; });
+const response = await adapter.generate(createAiAdapterRequest({
+  task: { type: &quot;summarize-meeting&quot; },
+  prompt: [{ role: &quot;user&quot;, content: &quot;Summarize.&quot; }],
+  context: [{ id: &quot;a&quot;, type: &quot;text&quot;, text: &quot;Decision: ship it.&quot; }],
+  output: { contentType: &quot;text+json&quot; }
+}));</code></pre>
+<p>The default mock response records calls, echoes task/context counts, and emits citations from supplied context source refs. A custom <code>responder</code> can simulate structured model output, failures, or provider metadata without changing orchestration code.</p>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

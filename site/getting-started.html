@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Getting started</title>
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Getting started" />
+<meta property="og:description" content="Getting started" />
+<meta property="og:url" content="https://org2.avi.press/getting-started.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/getting-started.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Getting started" />
+<meta name="twitter:description" content="Getting started" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/getting-started.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a></div></details><form class="org2-site-search" role="search"><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">Getting started</h1>
+</header>
+<p>This guide is about getting to a <strong>useful</strong> Org2 setup quickly: point the compiler at notes you already own, then start deriving agendas, graph views, editor features, and published artifacts from the same corpus.</p>
+<section class="org2-headline level-1">
+<h1 id="1-install-org2">1) Install Org2</h1>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">git clone https://github.com/aviaviavi/org2.git
+cd org2
+npm ci
+npm run build</code></pre>
+<p>Sanity check:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- --help
+npm run org2 -- agenda --help</code></pre>
+</section>
+<section class="org2-headline level-1">
+<h1 id="2-start-with-your-existing-org-files-as-compiler-input">2) Start with your existing Org files as compiler input</h1>
+<p>You do <strong>not</strong> need to convert everything first.</p>
+<p>Org2 is designed to work with existing <code>.org</code> files right away.</p>
+<p>Example:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- agenda --dir /path/to/your/notes --recursive</code></pre>
+<p>For a keyboard-driven planning view, add the agenda TUI:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- agenda --dir /path/to/your/notes --recursive --tui</code></pre>
+<p>That means you can start by pointing Org2 at your current notes directory and treating it as input to the compiler pipeline: raw files → structured notes → compiled semantics → views and published outputs. Adopt <code>.org2</code> for new files when you want to.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="3-use-vs-code-if-you-want-the-best-editor-experience-today">3) Use VS Code if you want the best editor experience today</h1>
+<p>VS Code is currently the strongest Org2 editor target.</p>
+<p>High-value workflows already available there:</p>
+<ul>
+<li><p>agenda UI</p></li>
+<li><p>TODO / planning edits</p></li>
+<li><p>capture / archive / refile</p></li>
+<li><p>formatter preview + apply flows</p></li>
+<li><p>roam backlinks / IDs / dailies</p></li>
+<li><p>HTML export</p></li>
+<li><p>LSP-powered navigation and editing features</p></li>
+</ul>
+<p>See <a href="editors-vscode.html">VS Code</a> for the current command/keybinding surface.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="4-prefer-org2-for-new-files">4) Prefer <code>.org2</code> for new files</h1>
+<p>For new files, using <code>.org2</code> is a good default.</p>
+<p>Why:</p>
+<ul>
+<li><p>clearer intent,</p></li>
+<li><p>easier editor/tool targeting,</p></li>
+<li><p>cleaner long-term migration path.</p></li>
+</ul>
+<p>But <code>.org</code> remains a first-class input format for current workflows.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="5-learn-the-core-cli-workflows">5) Learn the core CLI workflows</h1>
+<p>The most useful commands to know first are:</p>
+<ul>
+<li><p><code>agenda</code> — inspect scheduled/deadline items across files; add <code>--tui</code> for the interactive terminal agenda</p></li>
+<li><p><code>todo</code> / <code>plan</code> — edit task state and planning metadata</p></li>
+<li><p><code>capture</code> — append quick entries</p></li>
+<li><p><code>archive</code> / <code>refile</code> — reorganize trees</p></li>
+<li><p><code>fmt</code> — canonical formatting</p></li>
+<li><p><code>roam ...</code> / <code>id</code> / <code>query</code> / <code>backlinks</code> — linked-note workflows</p></li>
+<li><p><code>export html</code> / <code>publish</code> — produce docs and sites</p></li>
+<li><p><code>lsp</code> — shared editor backend</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="6-generate-the-docs-site-locally">6) Generate the docs site locally</h1>
+<p>The repository includes a docs site authored in Org files under <code>docs/site/</code> and published with Org2 itself.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- publish docs-site --config org2.json</code></pre>
+</section>
+<section class="org2-headline level-1">
+<h1 id="7-what-to-expect-right-now">7) What to expect right now</h1>
+<section class="org2-headline level-2">
+<h2 id="strong-today">Strong today</h2>
+<ul>
+<li><p>core Org language support</p></li>
+<li><p>practical planning workflows</p></li>
+<li><p>strong VS Code support</p></li>
+<li><p>roam-style linked-note workflows</p></li>
+<li><p>HTML export + publish pipeline</p></li>
+<li><p>useful LSP support</p></li>
+</ul>
+</section>
+<section class="org2-headline level-2">
+<h2 id="still-evolving">Still evolving</h2>
+<ul>
+<li><p>final CLI/API stability</p></li>
+<li><p>broader editor parity beyond VS Code</p></li>
+<li><p>full long-tail Org ecosystem depth (habits, clocking, etc.)</p></li>
+</ul>
+</section>
+</section>
+<section class="org2-headline level-1">
+<h1 id="8-next-docs">8) Next docs</h1>
+<ul>
+<li><p><a href="features.html">Features</a></p></li>
+<li><p><a href="tooling-reference.html">Tooling reference</a></p></li>
+<li><p><a href="editors.html">Editor integrations</a></p></li>
+<li><p><a href="language-reference.html">Language reference</a></p></li>
+<li><p><a href="semantics-status.html">Semantics and status</a></p></li>
+<li><p><a href="migration.html">Migration guidance</a></p></li>
+</ul>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

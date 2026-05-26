@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI job manifests</title>
+<meta name="subtitle" content="Repeatable, inspectable task definitions for optional AI processing" />
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="AI job manifests" />
+<meta property="og:description" content="Repeatable, inspectable task definitions for optional AI processing" />
+<meta property="og:url" content="https://org2.avi.press/ai-job-manifests.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/ai-job-manifests.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="AI job manifests" />
+<meta name="twitter:description" content="Repeatable, inspectable task definitions for optional AI processing" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/ai-job-manifests.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a></div></details><form class="org2-site-search" role="search"><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">AI job manifests</h1>
+<p class="org2-document-subtitle" role="doc-subtitle">Repeatable, inspectable task definitions for optional AI processing</p>
+</header>
+<p>AI job manifests describe what an optional AI workflow should do without embedding provider credentials or making Org2's compiler core depend on an LLM. They are JSON files that can be checked into a repo, reviewed in code review, validated locally, and rerun against cited Org2 corpus/query outputs.</p>
+<p>The v1 manifest format is documented by <code>spec/v0/ai-job-manifest.schema.json</code>. The manifest's <code>adapter.name</code> maps to the provider boundary documented in <a href="ai-adapters.html">AI adapter interface</a>. Org2 currently ships provider-free validation:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
+npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json --format json</code></pre>
+<p>Validation checks the manifest shape, corpus selection, task type, symbolic adapter name, output target, provenance requirements, review policy, and common accidental secret leaks. It does not call a model.</p>
+<section class="org2-headline level-1">
+<h1 id="example-manifest">Example manifest</h1>
+<pre class="org2-src language-json" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-json">{
+  &quot;$schema&quot;: &quot;https://avi.press/org2/spec/v0/ai-job-manifest.schema.json&quot;,
+  &quot;schemaVersion&quot;: &quot;org2-ai-job/v1&quot;,
+  &quot;id&quot;: &quot;weekly-summary&quot;,
+  &quot;description&quot;: &quot;Summarize this week's meeting notes into a reviewable generated view.&quot;,
+  &quot;input&quot;: {
+    &quot;files&quot;: [&quot;notes/meetings/*.org&quot;, &quot;raw/transcripts/*.org&quot;],
+    &quot;recursive&quot;: true,
+    &quot;tags&quot;: [&quot;meeting&quot;],
+    &quot;dateRange&quot;: { &quot;from&quot;: &quot;2026-05-12&quot;, &quot;to&quot;: &quot;2026-05-19&quot; },
+    &quot;rawZones&quot;: [&quot;raw/transcripts&quot;]
+  },
+  &quot;task&quot;: {
+    &quot;type&quot;: &quot;summarize-meeting&quot;,
+    &quot;template&quot;: &quot;weekly-summary@v1&quot;,
+    &quot;instructions&quot;: &quot;Return decisions, action-item suggestions, open questions, and cited evidence from the selected Org2 context.&quot;
+  },
+  &quot;adapter&quot;: {
+    &quot;name&quot;: &quot;work-summary&quot;,
+    &quot;model&quot;: &quot;summary-profile&quot;
+  },
+  &quot;output&quot;: {
+    &quot;target&quot;: &quot;views&quot;,
+    &quot;path&quot;: &quot;views/weekly-summary.org2&quot;
+  },
+  &quot;provenance&quot;: {
+    &quot;requireSourceRefs&quot;: true,
+    &quot;promptTemplateVersion&quot;: &quot;weekly-summary@v1&quot;,
+    &quot;recordModelMetadata&quot;: true,
+    &quot;recordGeneratedAt&quot;: true
+  },
+  &quot;review&quot;: {
+    &quot;policy&quot;: &quot;require-approval&quot;,
+    &quot;reviewer&quot;: &quot;human&quot;
+  }
+}</code></pre>
+<p>The same file lives at <code>examples/jobs/weekly-summary.org2-ai.json</code>.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="top-level-fields">Top-level fields</h1>
+<table>
+<thead>
+<tr><th>Field</th><th>Required</th><th>Purpose</th></tr>
+</thead>
+<tbody>
+<tr><td><code>schemaVersion</code></td><td>yes</td><td>Must be <code>org2-ai-job/v1</code> so future changes can be versioned.</td></tr>
+<tr><td><code>id</code></td><td>yes</td><td>Stable job identifier for logs and generated artifact metadata.</td></tr>
+<tr><td><code>description</code></td><td>no</td><td>Human-readable review context.</td></tr>
+<tr><td><code>input</code></td><td>yes</td><td>Corpus selection: files, headings, tags, date ranges, raw zones, or query text.</td></tr>
+<tr><td><code>task</code></td><td>yes</td><td>Task type plus prompt template and/or instructions.</td></tr>
+<tr><td><code>adapter</code></td><td>yes</td><td>Symbolic adapter name resolved from user config outside the manifest.</td></tr>
+<tr><td><code>output</code></td><td>yes</td><td>Output target such as <code>stdout</code>, <code>compiled</code>, <code>views</code>, <code>draft-note</code>, or <code>patch-file</code>.</td></tr>
+<tr><td><code>provenance</code></td><td>yes</td><td>Audit requirements for source refs, template version, model metadata, and generated time.</td></tr>
+<tr><td><code>review</code></td><td>yes</td><td>Review policy before generated output can affect canonical notes.</td></tr>
+</tbody>
+</table>
+</section>
+<section class="org2-headline level-1">
+<h1 id="input-selection">Input selection</h1>
+<p>The <code>input</code> object must include at least one selector:</p>
+<ul>
+<li><p><code>files</code>: glob-like file patterns or explicit paths</p></li>
+<li><p><code>headings</code>: heading IDs or stable selectors</p></li>
+<li><p><code>tags</code>: Org tags to require</p></li>
+<li><p><code>dateRange</code>: <code>from</code> and/or <code>to</code> dates in <code>YYYY-MM-DD</code> format</p></li>
+<li><p><code>rawZones</code>: raw/source directories such as <code>raw/transcripts</code></p></li>
+<li><p><code>query</code>: a cited search/query string</p></li>
+</ul>
+<p>This keeps selection inspectable before a provider adapter receives context.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="task-and-adapter">Task and adapter</h1>
+<p>Supported task labels are deliberately broad: <code>summarize</code>, <code>summarize-meeting</code>, <code>extract-entities</code>, <code>suggest-links</code>, <code>generate-todos</code>, <code>classify</code>, <code>digest</code>, and <code>answer</code>. A job must include either a <code>template</code> or explicit <code>instructions</code>.</p>
+<p>The <code>adapter.name</code> field is a symbolic name, such as <code>local-default</code> or <code>work-summary</code>. It is resolved from local configuration by a future runner. Do not put API keys, tokens, passwords, secret-bearing URLs, or provider SDK configuration in the manifest.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="output-provenance-and-review">Output, provenance, and review</h1>
+<p>AI output should be reviewable before it becomes canonical. Prefer <code>views/</code> or <code>compiled/</code> for generated artifacts, with provenance fields that make reruns and audits possible:</p>
+<ul>
+<li><p>source references required or not</p></li>
+<li><p>prompt/template version</p></li>
+<li><p>model metadata recording requirement</p></li>
+<li><p>generated-at timestamp recording requirement</p></li>
+</ul>
+<p><code>draft-note</code> outputs must use <code>review.policy: &quot;require-approval&quot;</code>. Promotion into <code>notes/</code> should remain an explicit human-reviewed step.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="validation-output">Validation output</h1>
+<p>Text output is short and script-friendly:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">$ npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
+AI job manifest OK: examples/jobs/weekly-summary.org2-ai.json</code></pre>
+<p>JSON output can feed CI or editor integrations:</p>
+<pre class="org2-src language-json" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-json">{
+  &quot;$schema&quot;: &quot;org2:ai-job-validation:v1&quot;,
+  &quot;job&quot;: &quot;examples/jobs/weekly-summary.org2-ai.json&quot;,
+  &quot;valid&quot;: true,
+  &quot;issues&quot;: []
+}</code></pre>
+<p>Invalid manifests return exit code 1 and list concrete paths, for example <code>$.adapter.apiKey</code> when a provider secret is accidentally embedded.</p>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>
