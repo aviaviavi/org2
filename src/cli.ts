@@ -7050,6 +7050,9 @@ async function main(): Promise<void> {
   let queryTerm = "";
   let queryText = "";
   let queryFormat: "text" | "json" = "text";
+  let queryRelations = false;
+  let queryRelationObject = "";
+  let queryRelationPredicate = "";
 
   // Cited search
   let searchTerm = "";
@@ -7222,8 +7225,12 @@ async function main(): Promise<void> {
       command = "query";
       i++;
       if (i < args.length && !args[i]!.startsWith("--")) {
-        queryTerm = args[i]!;
-        searchTerm = queryTerm;
+        if (args[i] === "relations") {
+          queryRelations = true;
+        } else {
+          queryTerm = args[i]!;
+          searchTerm = queryTerm;
+        }
         i++;
       }
     } else if (arg === "lint") {
@@ -7985,6 +7992,18 @@ async function main(): Promise<void> {
         agentMaxCharsRaw = args[i]!;
         i++;
       }
+    } else if (arg === "--object" && command === "query") {
+      i++;
+      if (i < args.length) {
+        queryRelationObject = args[i]!;
+        i++;
+      }
+    } else if (arg === "--predicate" && command === "query") {
+      i++;
+      if (i < args.length) {
+        queryRelationPredicate = args[i]!;
+        i++;
+      }
     } else if (arg === "--text" || arg === "--contains") {
       i++;
       if (i < args.length) {
@@ -8085,7 +8104,10 @@ async function main(): Promise<void> {
       i++;
       if (i < args.length) {
         if (command === "search") searchTerm = args[i]!;
-        else if (command === "query") { queryTerm = args[i]!; searchTerm = args[i]!; }
+        else if (command === "query") {
+          if (args[i] === "relations") queryRelations = true;
+          else { queryTerm = args[i]!; searchTerm = args[i]!; }
+        }
         i++;
       }
     } else if (arg === "--style" || arg === "--link-style") {
@@ -8586,6 +8608,7 @@ Usage:
   org2 query QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
   org2 query --id UUID [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
   org2 query --text TEXT [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+  org2 query relations --object ID|TITLE|LINK [--predicate PREDICATE] [--dir DIR] [--recursive] [--format text|json]
 
 Flags:
   --id UUID         Target ID lookup (legacy)
@@ -10680,6 +10703,70 @@ Flags:
     return;
   }
 
+  if (command === "query" && queryRelations) {
+    if (!queryRelationObject) {
+      console.error("Error: org2 query relations requires --object ID|TITLE|LINK");
+      process.exit(1);
+    }
+
+    if (!dir && files.length === 0) {
+      const configPath = findConfigFile(process.cwd());
+      if (configPath) {
+        try {
+          const config = loadConfig(configPath);
+          files = resolveFilesFromConfig(config, path.dirname(configPath));
+          if (files.length === 0) {
+            console.error(`Error: config found at ${configPath} but no matching files for patterns: ${config.agendaFiles?.join(", ") || "*.org"}`);
+            process.exit(1);
+          }
+        } catch (err) {
+          console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`);
+          process.exit(1);
+        }
+      } else {
+        console.error("Error: provide either --dir, --files, or org2.json config");
+        process.exit(1);
+      }
+    }
+    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive);
+
+    const rootDir = dir ? path.resolve(dir) : path.dirname(path.resolve(files[0]!));
+    const corpus = compileCorpus(files, { rootDir });
+    const objectRaw = queryRelationObject.trim();
+    const objectLinkMatch = /^\[\[([^\]\n]+?)(?:\]\[([^\]\n]*))?\]\]$/.exec(objectRaw);
+    const objectTarget = objectLinkMatch ? String(objectLinkMatch[1] || "").trim() : objectRaw;
+    const objectDescription = objectLinkMatch ? String(objectLinkMatch[2] || "").trim().toLowerCase() : "";
+    const objectIdMatch = /^(?:id:)?([0-9a-fA-F-]{36})$/.exec(objectTarget);
+    const objectId = objectIdMatch ? objectIdMatch[1]!.toLowerCase() : "";
+    const objectLabel = objectId ? "" : objectTarget.toLowerCase();
+    const predicate = queryRelationPredicate.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_");
+    const relations = corpus.relations.filter((relation) => {
+      if (predicate && relation.predicate !== predicate) return false;
+      if (objectId) return relation.objectId === objectId || relation.objectRef.toLowerCase() === `id:${objectId}`;
+      return relation.objectRef.toLowerCase() === objectLabel || (relation.objectTitle || "").toLowerCase() === objectLabel || (!!objectDescription && (relation.objectTitle || "").toLowerCase() === objectDescription);
+    });
+
+    if (queryFormat === "json") {
+      process.stdout.write(JSON.stringify({ $schema: "org2:relation-query:v1", object: queryRelationObject, ...(predicate ? { predicate } : {}), count: relations.length, relations }, null, 2) + "\n");
+      return;
+    }
+
+    if (relations.length === 0) {
+      process.stdout.write("No relations found.\n");
+      return;
+    }
+    const bucketLabel = (confidence: string) => confidence === "explicit" ? "explicit/confirmed" : "inferred/likely";
+    for (const confidence of ["explicit", "inferred-pattern"] as const) {
+      const bucket = relations.filter((relation) => relation.confidence === confidence);
+      if (!bucket.length) continue;
+      process.stdout.write(`${bucketLabel(confidence)}:\n`);
+      for (const relation of bucket) {
+        process.stdout.write(`- ${relation.subjectTitle} --${relation.predicate}--> ${relation.objectTitle || relation.objectRef} (${relation.file}:${relation.line}) ${relation.evidence}\n`);
+      }
+    }
+    return;
+  }
+
   if (command === "search" || (command === "query" && searchTerm)) {
     if (!searchTerm) {
       console.error(`Error: ${command} requires a search term`);
@@ -10932,6 +11019,7 @@ Flags:
   }
 
   if (command === "query") {
+    if (queryRelations) return;
     if (!queryId && !queryText) {
       console.error("Error: query requires --id UUID or --text TEXT");
       process.exit(1);
