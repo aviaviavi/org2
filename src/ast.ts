@@ -72,6 +72,13 @@ export type PlanningNode = {
   timestamp?: TimestampNode | TimestampRangeNode;
 };
 
+export type ClockNode = {
+  type: "Clock";
+  raw: string;
+  start?: TimestampNode;
+  end?: TimestampNode;
+};
+
 export type PropertyNode = {
   key: string;
   value: string;
@@ -165,6 +172,7 @@ export type Node =
   | DirectiveLineNode
   | CommentLineNode
   | PlanningNode
+  | ClockNode
   | PropertyDrawerNode
   | DrawerNode
   | SrcBlockNode
