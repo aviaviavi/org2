@@ -16,6 +16,8 @@ try {
     'CLOSED: [2026-05-26 Tue]',
     'CLOSED: [2026-05-25 Mon]',
     ':END:',
+    '** DONE Nested completion history',
+    'CLOSED: [2026-05-24 Sun]',
     '* TODO Ambiguous habit',
     ':PROPERTIES:',
     ':STYLE: habit',
@@ -32,8 +34,8 @@ try {
   assert.ok(stretch, 'expected habit agenda row');
   assert.deepEqual(stretch.habit, {
     marker: 'true',
-    streak: 2,
-    closedDates: ['2026-05-25', '2026-05-26'],
+    streak: 3,
+    closedDates: ['2026-05-24', '2026-05-25', '2026-05-26'],
   });
 
   const rawLint = execFileSync(process.execPath, [

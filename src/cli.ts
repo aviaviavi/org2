@@ -4294,9 +4294,12 @@ function isAgendaHabitProperties(properties: Record<string, string>): { isHabit:
 
 function collectClosedDatesInSubtree(lines: string[], headlineLineIndex: number): string[] {
   const dates = new Set<string>();
+  const headline = parseHeadlineLine(lines[headlineLineIndex] ?? "");
+  const level = headline?.level ?? 1;
   for (let i = headlineLineIndex + 1; i < lines.length; i += 1) {
     const line = lines[i] ?? "";
-    if (/^(\*+)\s+/.test(line)) break;
+    const nestedHeadline = parseHeadlineLine(line);
+    if (nestedHeadline && nestedHeadline.level <= level) break;
     for (const match of line.matchAll(/\bCLOSED:\s*[<[\[]?(\d{4}-\d{2}-\d{2})\b/g)) {
       if (match[1]) dates.add(match[1]);
     }
@@ -4331,7 +4334,8 @@ function appendHabitLintIssues(raw: string, filePath: string, issues: ArtifactLi
     let hasAnyPlanning = false;
     for (let j = i + 1; j < lines.length; j += 1) {
       const line = lines[j] ?? "";
-      if (/^(\*+)\s+/.test(line)) break;
+      const nestedHeadline = parseHeadlineLine(line);
+      if (nestedHeadline && nestedHeadline.level <= parsed.level) break;
       const planningRe = /\b(SCHEDULED|DEADLINE):\s*([<[].*?[>\]])/g;
       let match: RegExpExecArray | null;
       while ((match = planningRe.exec(line)) !== null) {
