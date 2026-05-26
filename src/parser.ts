@@ -15,6 +15,7 @@ import type {
   ParagraphNode,
   PlanningKind,
   PlanningNode,
+  ClockNode,
   PropertyDrawerNode,
   DrawerNode,
   SrcBlockLine,
@@ -367,6 +368,20 @@ function parseCommentLine(line: string, lineNumber: number): CommentLineNode | n
     indent,
     bodyRaw,
   };
+}
+
+function parseClockLine(line: string, lineNumber: number): ClockNode | null {
+  const match = /^(\s*)CLOCK:\s*(.*)$/.exec(line);
+  if (!match) return null;
+  const indent = match[1] ?? "";
+  if (indent.includes("\t") || line.includes("\t")) {
+    fail(makeError("Unsupported construct: tab character", lineNumber, line.indexOf("\t") + 1));
+  }
+
+  const rangeMatch = /(\[[^\]]+\]|<[^>]+>)--(\[[^\]]+\]|<[^>]+>)/.exec(match[2] ?? "");
+  const start = rangeMatch ? parseTimestampAt(rangeMatch[1] || "", 0)?.node : undefined;
+  const end = rangeMatch ? parseTimestampAt(rangeMatch[2] || "", 0)?.node : undefined;
+  return { type: "Clock", raw: line, ...(start ? { start } : {}), ...(end ? { end } : {}) };
 }
 
 function parsePlanningLine(line: string, lineNumber: number): PlanningNode[] | null {
@@ -974,6 +989,15 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
         flushParagraph();
         endList();
         for (const node of planning) pushCurrent(node);
+        i += 1;
+        continue;
+      }
+
+      const clock = parseClockLine(line, lineNumber);
+      if (clock) {
+        flushParagraph();
+        endList();
+        pushCurrent(clock);
         i += 1;
         continue;
       }

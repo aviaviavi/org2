@@ -24,6 +24,7 @@ import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from 
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
 import { compileCorpus, compileCorpusIncremental, renderCompiledCorpus } from "./corpusCompile.js";
+import { extractClockReport } from "./clock.js";
 import { buildAgentContextPayload, type AgentInclude } from "./agentContext.js";
 import { loadAiJobManifest, validateAiJobManifest } from "./aiJobManifest.js";
 import { createAiAdapterRequest, MockAiAdapter, type AiAdapterContextItem, type AiAdapterResponse } from "./aiAdapter.js";
@@ -6880,6 +6881,14 @@ function markArtifactPromoted(raw: string): string {
   return raw;
 }
 
+function formatClockMinutes(minutes: number): string {
+  const sign = minutes < 0 ? "-" : "";
+  const abs = Math.abs(minutes);
+  const hours = Math.floor(abs / 60);
+  const mins = abs % 60;
+  return `${sign}${hours}:${String(mins).padStart(2, "0")}`;
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -7052,6 +7061,7 @@ async function main(): Promise<void> {
   let queryText = "";
   let queryFormat: "text" | "json" = "text";
   let queryRelations = false;
+  let queryClocks = false;
   let queryRelationObject = "";
   let queryRelationPredicate = "";
 
@@ -7081,6 +7091,9 @@ async function main(): Promise<void> {
   let compileOut = "";
   let compileIncremental = false;
   let compileCache = "";
+
+  // Clock reports
+  let clockFormat: "text" | "json" = "text";
 
   // Agent-ready retrieval/context API
   let agentAction: "context" | "search" | "fetch" | "bundle" | "" = "";
@@ -7228,6 +7241,8 @@ async function main(): Promise<void> {
       if (i < args.length && !args[i]!.startsWith("--")) {
         if (args[i] === "relations") {
           queryRelations = true;
+        } else if (args[i] === "clocks" || args[i] === "clock") {
+          queryClocks = true;
         } else {
           queryTerm = args[i]!;
           searchTerm = queryTerm;
@@ -7247,6 +7262,9 @@ async function main(): Promise<void> {
           i++;
         }
       }
+    } else if (arg === "clock" || arg === "clocks") {
+      command = "clock";
+      i++;
     } else if (arg === "compile") {
       command = "compile";
       i++;
@@ -8076,6 +8094,8 @@ async function main(): Promise<void> {
           graphFormat = v;
         } else if (command === "compile" && (v === "json" || v === "jsonl")) {
           compileFormat = v;
+        } else if (command === "clock" && (v === "text" || v === "json")) {
+          clockFormat = v;
         } else if (command === "ai" && (v === "text" || v === "json")) {
           aiFormat = v;
         } else if (
@@ -8107,6 +8127,7 @@ async function main(): Promise<void> {
         if (command === "search") searchTerm = args[i]!;
         else if (command === "query") {
           if (args[i] === "relations") queryRelations = true;
+          else if (args[i] === "clocks" || args[i] === "clock") queryClocks = true;
           else { queryTerm = args[i]!; searchTerm = args[i]!; }
         }
         i++;
@@ -8372,6 +8393,8 @@ Roam / IDs:
   org2 search QUERY [--dir DIR] [--recursive] [--format text|json]
   org2 query QUERY [--dir DIR] [--recursive] [--format text|json]
   org2 query (--id UUID|--text TEXT) [--dir DIR] [--recursive]
+  org2 query clocks --dir DIR [--recursive] [--format text|json]
+  org2 clock --dir DIR [--recursive] [--format text|json]
   org2 compile corpus --dir DIR [--recursive] [--out FILE] [--format json|jsonl]
   org2 ai validate-job --job FILE [--format text|json]
   org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
@@ -8814,7 +8837,7 @@ Flags:
     printGeneralUsage(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "compile" && command !== "agent" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "clock" && command !== "compile" && command !== "agent" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
     printGeneralUsage(1);
   }
 
@@ -10704,6 +10727,11 @@ Flags:
     return;
   }
 
+  if (command === "query" && queryClocks) {
+    command = "clock";
+    clockFormat = queryFormat;
+  }
+
   if (command === "query" && queryRelations) {
     if (!queryRelationObject) {
       console.error("Error: org2 query relations requires --object ID|TITLE|LINK");
@@ -11252,6 +11280,55 @@ Flags:
       process.stdout.write(`${h.kind} ${h.title} ${h.file}:${h.line + 1}${suffix}\n`);
     }
 
+    return;
+  }
+
+  if (command === "clock") {
+    if (!dir && files.length === 0) {
+      const configPath = findConfigFile(process.cwd());
+      if (configPath) {
+        try {
+          const config = loadConfig(configPath);
+          const configDir = path.dirname(configPath);
+          files = resolveFilesFromConfig(config, configDir);
+          dir = configDir;
+        } catch (err) {
+          console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`);
+          process.exit(1);
+        }
+      } else {
+        console.error("Error: provide either --dir, --files, or org2.json config");
+        process.exit(1);
+      }
+    }
+    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive);
+    if (files.length === 0) {
+      console.error("Error: no Org files found for clock report");
+      process.exit(1);
+    }
+    const rootDir = dir ? path.resolve(dir) : path.dirname(path.resolve(files[0]!));
+    const report = extractClockReport(files, { rootDir });
+    if (clockFormat === "json") {
+      process.stdout.write(JSON.stringify({ schemaVersion: "org2-clock-report/v1", ...report }, null, 2) + "\n");
+    } else {
+      const renderGroup = (title: string, rows: Record<string, number>): string[] => {
+        const out = [title];
+        for (const [key, minutes] of Object.entries(rows).sort()) out.push(`  ${key}: ${formatClockMinutes(minutes)}`);
+        if (out.length === 1) out.push("  (none)");
+        return out;
+      };
+      const lines = [`Total: ${formatClockMinutes(report.summary.totalMinutes)}`];
+      lines.push(...renderGroup("By day:", report.summary.byDay));
+      lines.push(...renderGroup("By heading:", report.summary.byHeading));
+      lines.push(...renderGroup("By tag:", report.summary.byTag));
+      lines.push(...renderGroup("By project:", report.summary.byProject));
+      lines.push(...renderGroup("By file:", report.summary.byFile));
+      if (report.issues.length > 0) {
+        lines.push("Issues:");
+        for (const issue of report.issues) lines.push(`  ${issue.severity}: ${issue.file}:${issue.line}: ${issue.message}`);
+      }
+      process.stdout.write(lines.join("\n") + "\n");
+    }
     return;
   }
 

@@ -14,6 +14,7 @@ import type {
   Node,
   ParagraphNode,
   PlanningNode,
+  ClockNode,
   PropertyDrawerNode,
   SrcBlockNode,
   TableNode,
@@ -223,6 +224,8 @@ function printNode(node: any): string {
       return printDirectiveLine(node);
     case "Planning":
       return printPlanning(node);
+    case "Clock":
+      return printClock(node);
     case "Block":
       return printBlock(node);
     case "CommentLine":
@@ -305,14 +308,14 @@ function printHeadline(node: HeadlineNode): string {
     
     if (childLines.length === 0) {
       // First child: add blank line only if it's not metadata (Headline/Planning/PropertyDrawer/Drawer)
-      const isMetadata = child.type === "Headline" || child.type === "Planning" || 
+      const isMetadata = child.type === "Headline" || child.type === "Planning" || child.type === "Clock" ||
                         child.type === "PropertyDrawer" || child.type === "Drawer";
       addBlankLineBefore = !isMetadata;
     } else {
       // Subsequent child: add blank line if previous was PropertyDrawer and this is not metadata
       const prevChild = node.children[i - 1];
       if (prevChild && prevChild.type === "PropertyDrawer") {
-        const isMetadata = child.type === "Headline" || child.type === "Planning" || 
+        const isMetadata = child.type === "Headline" || child.type === "Planning" || child.type === "Clock" ||
                           child.type === "PropertyDrawer" || child.type === "Drawer";
         addBlankLineBefore = !isMetadata;
       }
@@ -337,6 +340,10 @@ function printDirectiveLine(node: DirectiveLineNode): string {
 }
 
 function printPlanning(node: PlanningNode): string {
+  return node.raw;
+}
+
+function printClock(node: ClockNode): string {
   return node.raw;
 }
 
