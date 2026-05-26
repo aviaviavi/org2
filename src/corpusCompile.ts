@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { buildGeneratedArtifactMetadata, sha256Hex, type Org2GeneratedArtifactMetadata } from "./artifactMetadata.js";
 import { TODO_KEYWORDS } from "./todo.js";
+import { extractClockReport, type OrgClockInterval, type OrgClockIssue } from "./clock.js";
 
 export type CompiledCorpusLink = {
   type: "id" | "wiki" | "file" | "url" | "other";
@@ -57,6 +58,8 @@ export type CompiledCorpusNode = {
   aliases: string[];
   properties: Record<string, string>;
   planning: Array<{ kind: "SCHEDULED" | "DEADLINE" | "CLOSED"; raw: string; line: number }>;
+  clocks: OrgClockInterval[];
+  clockIssues: OrgClockIssue[];
   links: CompiledCorpusLink[];
   backlinks: CompiledCorpusBacklink[];
   entityType?: string;
@@ -109,6 +112,9 @@ export type CompiledCorpus = {
   };
   entities: CompiledCorpusEntity[];
   relations: CompiledCorpusRelation[];
+  clocks: OrgClockInterval[];
+  clockIssues: OrgClockIssue[];
+  clockSummary: ReturnType<typeof extractClockReport>["summary"];
   index?: CompiledCorpusLookupIndex;
   indexState?: CompiledCorpusIndexState;
 };
@@ -365,6 +371,11 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
   const sortedFiles = Array.from(new Set(files.map((file) => path.resolve(file)))).sort();
   const corpusFiles: CompiledCorpusFile[] = [];
   const nodes: CompiledCorpusNode[] = [];
+  const clockReport = extractClockReport(sortedFiles, { rootDir });
+  const clocksByNode = new Map<string, OrgClockInterval[]>();
+  const clockIssuesByNode = new Map<string, OrgClockIssue[]>();
+  for (const clock of clockReport.intervals) clocksByNode.set(clock.nodeKey, [...(clocksByNode.get(clock.nodeKey) || []), clock]);
+  for (const issue of clockReport.issues) if (issue.nodeKey) clockIssuesByNode.set(issue.nodeKey, [...(clockIssuesByNode.get(issue.nodeKey) || []), issue]);
 
   for (const filePath of sortedFiles) {
     const raw = fs.readFileSync(filePath, "utf8");
@@ -384,8 +395,9 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
     const fileSnippet = extractSnippetWithLine(lines, 0, preambleEndExclusive);
 
     corpusFiles.push({ file, absolutePath: filePath, sha256: sha256(content), lineCount: lines.length, title, id });
+    const fileKey = `file:${file}`;
     nodes.push({
-      key: `file:${file}`,
+      key: fileKey,
       kind: "file",
       file,
       sourceRange: { startLine: 1, endLine: Math.max(1, preambleEndExclusive) },
@@ -395,6 +407,8 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       aliases,
       properties,
       planning: extractPlanning(lines, 0, preambleEndExclusive),
+      clocks: clocksByNode.get(fileKey) || [],
+      clockIssues: clockIssuesByNode.get(fileKey) || [],
       links: fileLinks,
       backlinks: [],
       snippet: fileSnippet.snippet,
@@ -410,8 +424,9 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       const headingId = normalizeId(headingProperties.ID);
       const headingAliases = parseAliasTokens(headingProperties.ROAM_ALIASES || "");
       const headingSnippet = extractSnippetWithLine(lines, i + 1, endExclusive);
+      const headingKey = `heading:${file}:${i + 1}`;
       const node: CompiledCorpusNode = {
-        key: `heading:${file}:${i + 1}`,
+        key: headingKey,
         kind: "heading",
         file,
         sourceRange: { startLine: i + 1, endLine: Math.max(i + 1, endExclusive) },
@@ -422,6 +437,8 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
         aliases: headingAliases,
         properties: headingProperties,
         planning: extractPlanning(lines, i + 1, endExclusive),
+        clocks: clocksByNode.get(headingKey) || [],
+        clockIssues: clockIssuesByNode.get(headingKey) || [],
         links: extractLinks(lines, i + 1, endExclusive),
         backlinks: [],
         snippet: headingSnippet.snippet,
@@ -513,6 +530,9 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
     },
     entities,
     relations,
+    clocks: clockReport.intervals,
+    clockIssues: clockReport.issues,
+    clockSummary: clockReport.summary,
     index: buildLookupIndex(sortedNodes),
     indexState: { mode: "full", status: "fresh", reusedFiles: 0, parsedFiles: corpusFiles.length, deletedFiles: 0 },
   };
