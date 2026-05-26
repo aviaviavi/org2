@@ -14,6 +14,7 @@
 
 html, body {
   max-width: 100%;
+  overflow-x: hidden;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -72,7 +73,8 @@ h1 { margin-bottom: 0.5rem; }
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.3rem 0.65rem;
-  display: inline-block;
+  display: block;
+  width: 100%;
   font-weight: 600;
 }
 
@@ -99,7 +101,7 @@ h1 { margin-bottom: 0.5rem; }
 
 .org2-site-search {
   position: relative;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: flex-end;
   min-width: 2.05rem;
@@ -484,5 +486,31 @@ blockquote {
 @media (min-width: 760px) {
   .org2-hero-points {
     grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 759px) {
+  body {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  .org2-nav-menu > summary,
+  .org2-nav-menu nav > a,
+  .org2-nav-dropdown,
+  .org2-nav-dropdown > summary,
+  .org2-site-search,
+  .org2-site-search-toggle {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .org2-site-search input {
+    width: 100%;
+  }
+
+  .org2-site-search-results {
+    min-width: 100%;
   }
 }
