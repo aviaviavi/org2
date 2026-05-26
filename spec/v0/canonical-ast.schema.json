@@ -309,6 +309,28 @@
         "value": { "type": "string" }
       }
     },
+    "TimestampRepeater": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "value", "unit", "raw"],
+      "properties": {
+        "mode": { "type": "string", "enum": ["+", "++", ".+"] },
+        "value": { "type": "integer", "minimum": 1 },
+        "unit": { "type": "string", "enum": ["d", "w", "m", "y"] },
+        "raw": { "type": "string" }
+      }
+    },
+    "TimestampWarning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "value", "unit", "raw"],
+      "properties": {
+        "mode": { "type": "string", "enum": ["-", "--"] },
+        "value": { "type": "integer", "minimum": 1 },
+        "unit": { "type": "string", "enum": ["d", "w", "m", "y"] },
+        "raw": { "type": "string" }
+      }
+    },
     "Timestamp": {
       "type": "object",
       "additionalProperties": false,
@@ -316,7 +338,9 @@
       "properties": {
         "type": { "const": "Timestamp" },
         "active": { "type": "boolean" },
-        "raw": { "type": "string" }
+        "raw": { "type": "string" },
+        "repeater": { "$ref": "#/$defs/TimestampRepeater" },
+        "warning": { "$ref": "#/$defs/TimestampWarning" }
       }
     },
     "TimestampRange": {

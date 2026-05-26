@@ -2,6 +2,10 @@
 
 All notable changes to the Org2 VS Code extension are documented in this file.
 
+## Unreleased
+
+- Added syntax coverage tests for Org timestamp repeaters and warning offsets.
+
 ## 0.1.0 - 2026-05-24
 
 Minor release for the expanded editor workflow surface.
