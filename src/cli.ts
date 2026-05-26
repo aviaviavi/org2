@@ -4848,8 +4848,9 @@ function wrapTerminalLine(input: string, width: number, continuationIndent = 0):
 
 function stripRoamLinksForAgendaTui(input: string): string {
   return String(input || "")
-    .replace(/\[\[id:[^\]\[]+\](?:\[[^\]\[]+\])?\]/gi, "")
-    .replace(/\[\[[^\]\[]+\]\]/g, "")
+    .replace(/\[\[id:[^\]\[]+\]\[([^\]\[]+)\]\]/gi, "$1")
+    .replace(/\[\[id:([^\]\[]+)\]\]/gi, "$1")
+    .replace(/\[\[([^\]\[]+)\]\]/g, "$1")
     .replace(/(?:\s*\/\s*){2,}/g, " / ")
     .replace(/(^|\s)\/(\s|$)/g, " ")
     .replace(/\s+([,.;:!?])/g, "$1")

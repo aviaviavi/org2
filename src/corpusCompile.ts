@@ -61,6 +61,7 @@ export type CompiledCorpusNode = {
   backlinks: CompiledCorpusBacklink[];
   entityType?: string;
   snippet: string;
+  snippetStartLine: number | null;
 };
 
 export type CompiledCorpusFile = {
@@ -299,10 +300,11 @@ function extractLinks(lines: string[], startIndex: number, endExclusive: number)
   return links.sort((a, b) => a.line - b.line || a.target.localeCompare(b.target));
 }
 
-function extractSnippet(lines: string[], startIndex: number, endExclusive: number): string {
+function extractSnippetWithLine(lines: string[], startIndex: number, endExclusive: number): { snippet: string; startLine: number | null } {
   let inDrawer = false;
   let inBlock = false;
   const parts: string[] = [];
+  let snippetStartLine: number | null = null;
   for (let i = startIndex; i < endExclusive; i += 1) {
     const line = lines[i] || "";
     const trimmed = line.trim();
@@ -327,10 +329,11 @@ function extractSnippet(lines: string[], startIndex: number, endExclusive: numbe
     if (inBlock) continue;
     if (/^(SCHEDULED|DEADLINE|CLOSED):/i.test(trimmed)) continue;
     if (/^#\+/.test(trimmed)) continue;
+    if (snippetStartLine === null) snippetStartLine = i + 1;
     parts.push(trimmed.replace(/\s+/g, " "));
     if (parts.join(" ").length >= 240) break;
   }
-  return parts.join(" ").slice(0, 240);
+  return { snippet: parts.join(" ").slice(0, 240), startLine: snippetStartLine };
 }
 
 function normalizeLabel(raw: string): string {
@@ -378,6 +381,7 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
     const firstHeadingIndex = lines.findIndex((line) => /^\*+\s+/.test(line || ""));
     const preambleEndExclusive = firstHeadingIndex === -1 ? lines.length : firstHeadingIndex;
     const fileLinks = extractLinks(lines, 0, preambleEndExclusive);
+    const fileSnippet = extractSnippetWithLine(lines, 0, preambleEndExclusive);
 
     corpusFiles.push({ file, absolutePath: filePath, sha256: sha256(content), lineCount: lines.length, title, id });
     nodes.push({
@@ -393,7 +397,8 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       planning: extractPlanning(lines, 0, preambleEndExclusive),
       links: fileLinks,
       backlinks: [],
-      snippet: extractSnippet(lines, 0, preambleEndExclusive),
+      snippet: fileSnippet.snippet,
+      snippetStartLine: fileSnippet.startLine,
     });
 
     for (let i = 0; i < lines.length; i += 1) {
@@ -404,6 +409,7 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       const headingProperties = drawer?.properties || {};
       const headingId = normalizeId(headingProperties.ID);
       const headingAliases = parseAliasTokens(headingProperties.ROAM_ALIASES || "");
+      const headingSnippet = extractSnippetWithLine(lines, i + 1, endExclusive);
       const node: CompiledCorpusNode = {
         key: `heading:${file}:${i + 1}`,
         kind: "heading",
@@ -418,7 +424,8 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
         planning: extractPlanning(lines, i + 1, endExclusive),
         links: extractLinks(lines, i + 1, endExclusive),
         backlinks: [],
-        snippet: extractSnippet(lines, i + 1, endExclusive),
+        snippet: headingSnippet.snippet,
+        snippetStartLine: headingSnippet.startLine,
       };
       if (heading.todo) node.todo = heading.todo;
       nodes.push(node);
@@ -567,9 +574,88 @@ function addRelationOnce(relations: CompiledCorpusRelation[], relation: Compiled
   relations.push(relation);
 }
 
+function nodeForResolvedObject(object: { objectId: string | null; objectRef: string; objectTitle?: string }, byId: Map<string, CompiledCorpusNode>, labels: Map<string, Set<string>>): CompiledCorpusNode | null {
+  if (object.objectId && byId.has(object.objectId)) return byId.get(object.objectId)!;
+  const titleCandidates = Array.from(labels.get(normalizeLabel(object.objectTitle || object.objectRef)) || []);
+  return titleCandidates.length === 1 ? byId.get(titleCandidates[0]!) || null : null;
+}
+
+function resolveObjectByTitle(title: string, byId: Map<string, CompiledCorpusNode>, labels: Map<string, Set<string>>): { objectId: string | null; objectRef: string; objectTitle?: string } | null {
+  const normalized = normalizeLabel(title);
+  if (!normalized) return null;
+  const candidates = Array.from(labels.get(normalized) || []);
+  if (candidates.length === 1) {
+    const node = byId.get(candidates[0]!);
+    if (!node) return null;
+    return { objectId: node.id || null, objectRef: node.id ? `id:${node.id}` : title, objectTitle: node.title };
+  }
+
+  // Some real corpora contain duplicate canonical notes for the same entity label
+  // (for example, an .org and an .org2 version of the same company).  In that
+  // case keep the textual object title instead of dropping the relation entirely;
+  // title-based relation queries can still answer the question, while ID-based
+  // queries stay conservative because there is no single safe ID to choose.
+  const matchingNodes = candidates
+    .map((id) => byId.get(id))
+    .filter((node): node is CompiledCorpusNode => !!node && normalizeLabel(node.title) === normalized);
+  if (matchingNodes.length > 1) return { objectId: null, objectRef: title, objectTitle: matchingNodes[0]!.title };
+  return null;
+}
+
+function inferAdvisedObjectFromEvidence(evidence: string, subjectTitle: string, byId: Map<string, CompiledCorpusNode>, labels: Map<string, Set<string>>): { objectId: string | null; objectRef: string; objectTitle?: string; method: string } | null {
+  const escapedSubject = subjectTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns: Array<{ re: RegExp; method: string }> = [
+    { re: new RegExp(`${escapedSubject}[^.\\n]{0,160}?\\b(?:has\\s+been\\s+)?advis(?:ing|or|er)\\b[^.\\n]{0,80}?\\b(?:startup|company|org(?:anization)?)\\b\\s*,?\\s+([A-Z][A-Za-z0-9&.-]*(?:\\s+[A-Z][A-Za-z0-9&.-]*){0,4})`, "i"), method: "pattern:linked-subject-advising-named-object" },
+    { re: new RegExp(`${escapedSubject}[^.\\n]{0,160}?\\b(?:has\\s+been\\s+)?advis(?:ing|or|er)\\b[^.\\n]{0,80}?\\bfor\\b[^.\\n]{0,40}?([A-Z][A-Za-z0-9&.-]*(?:\\s+[A-Z][A-Za-z0-9&.-]*){0,4})`, "i"), method: "pattern:linked-subject-advising-for-object" },
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.re.exec(evidence);
+    if (!match) continue;
+    const title = String(match[1] || "").trim().replace(/[.,;:]+$/, "");
+    const object = resolveObjectByTitle(title, byId, labels);
+    if (object) return { ...object, method: pattern.method };
+  }
+  return null;
+}
+
+
+function inferLinkedTextAdvisorRelationsForNode(relations: CompiledCorpusRelation[], node: CompiledCorpusNode, byId: Map<string, CompiledCorpusNode>, labels: Map<string, Set<string>>): void {
+  const evidence = node.snippet || node.title;
+  if (!/\badvis(?:ing|or|er)\b/i.test(evidence)) return;
+  for (const candidate of byId.values()) {
+    if (candidate.key === node.key) continue;
+    if (candidate.entityType && candidate.entityType !== "person") continue;
+    if (!candidate.title || candidate.title.length < 4) continue;
+    const titlePattern = new RegExp(`\\b${candidate.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+    if (!titlePattern.test(evidence)) continue;
+    const advisedObject = inferAdvisedObjectFromEvidence(evidence, candidate.title, byId, labels);
+    if (!advisedObject) continue;
+    addRelationOnce(relations, {
+      subjectKey: candidate.key,
+      subjectId: candidate.id,
+      subjectTitle: candidate.title,
+      predicate: "advisor_to",
+      objectId: advisedObject.objectId,
+      ...(advisedObject.objectTitle ? { objectTitle: advisedObject.objectTitle } : {}),
+      objectRef: advisedObject.objectRef,
+      file: node.file,
+      line: node.snippetStartLine || node.sourceRange.startLine,
+      evidence,
+      confidence: "inferred-pattern",
+      method: `text-subject:${advisedObject.method}`,
+    });
+  }
+}
+
 function buildRelationIndex(nodes: CompiledCorpusNode[], byId: Map<string, CompiledCorpusNode>, labels: Map<string, Set<string>>): CompiledCorpusRelation[] {
   const relations: CompiledCorpusRelation[] = [];
+  const fileNodesByFile = new Map(nodes.filter((node) => node.kind === "file").map((node) => [node.file, node]));
+  const relationSubjectForNode = (node: CompiledCorpusNode): CompiledCorpusNode => {
+    if (node.kind === "heading" && !node.id && /^(details?|notes?)$/i.test(node.title.trim())) return fileNodesByFile.get(node.file) || node;
+    return node;
+  };
   for (const node of nodes) {
+    inferLinkedTextAdvisorRelationsForNode(relations, node, byId, labels);
     const explicitValues = Object.entries(node.properties).filter(([key]) => key === "ORG2_RELATION" || key.startsWith("ORG2_RELATION_"));
     for (const [key, value] of explicitValues) {
       const suffix = key === "ORG2_RELATION" ? "" : key.slice("ORG2_RELATION_".length);
@@ -605,10 +691,11 @@ function buildRelationIndex(nodes: CompiledCorpusNode[], byId: Map<string, Compi
       ];
       for (const pattern of patterns) {
         if (!pattern.re.test(evidence)) continue;
+        const subject = relationSubjectForNode(node);
         addRelationOnce(relations, {
-          subjectKey: node.key,
-          subjectId: node.id,
-          subjectTitle: node.title,
+          subjectKey: subject.key,
+          subjectId: subject.id,
+          subjectTitle: subject.title,
           predicate: pattern.predicate,
           objectId: object.objectId,
           ...(object.objectTitle ? { objectTitle: object.objectTitle } : {}),
@@ -619,6 +706,28 @@ function buildRelationIndex(nodes: CompiledCorpusNode[], byId: Map<string, Compi
           confidence: "inferred-pattern",
           method: pattern.method,
         });
+      }
+
+      const linkedSubjectNode = nodeForResolvedObject(object, byId, labels);
+      const linkedSubjectTitle = linkedSubjectNode?.title || object.objectTitle || "";
+      if (linkedSubjectNode && linkedSubjectTitle) {
+        const advisedObject = inferAdvisedObjectFromEvidence(evidence, linkedSubjectTitle, byId, labels);
+        if (advisedObject) {
+          addRelationOnce(relations, {
+            subjectKey: linkedSubjectNode.key,
+            subjectId: linkedSubjectNode.id,
+            subjectTitle: linkedSubjectNode.title,
+            predicate: "advisor_to",
+            objectId: advisedObject.objectId,
+            ...(advisedObject.objectTitle ? { objectTitle: advisedObject.objectTitle } : {}),
+            objectRef: advisedObject.objectRef,
+            file: node.file,
+            line: link.line,
+            evidence,
+            confidence: "inferred-pattern",
+            method: advisedObject.method,
+          });
+        }
       }
     }
   }
