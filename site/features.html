@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Features</title>
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Features" />
+<meta property="og:description" content="Features" />
+<meta property="og:url" content="https://org2.avi.press/features.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/features.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Features" />
+<meta name="twitter:description" content="Features" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/features.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a></div></details><form class="org2-site-search" role="search"><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">Features</h1>
+</header>
+<p>Org2 is a local-first knowledge compiler rather than a parser demo or editor replacement: it turns raw plain-text notes into structured semantics, then derives views, checks, editor behavior, and publishable artifacts from that shared model.</p>
+<section class="org2-headline level-1">
+<h1 id="compiler-workflow">Compiler workflow</h1>
+<p>The central loop is:</p>
+<ol>
+<li><p>capture raw source material and working notes in plain files,</p></li>
+<li><p>parse headings, tasks, links, drawers, properties, timestamps, blocks, tables, and source ranges,</p></li>
+<li><p>resolve IDs, backlinks, planning state, artifact roles, provenance, and graph relationships,</p></li>
+<li><p>compile that corpus into useful outputs: agendas, diagnostics, graph views, editor intelligence, HTML pages, and published sites.</p></li>
+</ol>
+<p>Because every output comes from the same semantic model, Org2 can support planning, knowledge management, publishing, and automation without locking you into one app.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="core-workflow-surface">Core workflow surface</h1>
+<p>What already works well today:</p>
+<ul>
+<li><p>Headings, drawers, properties, planning lines, TODO keywords, links, blocks, tables, and timestamps</p></li>
+<li><p>Agenda views across many files</p></li>
+<li><p>TODO / planning edits from CLI and VS Code</p></li>
+<li><p>Capture, archive, and refile workflows</p></li>
+<li><p>Canonical formatting</p></li>
+<li><p>HTML export and multi-file publishing</p></li>
+<li><p>Cited workspace search/query for asking factual questions against source notes</p></li>
+<li><p>Roam-style IDs, backlinks, dailies, node creation, linkify previews with semantic/alias-aware suggestions, AI-assisted review reports, and graph reports</p></li>
+<li><p>Org-crypt subtree encryption/decryption workflows</p></li>
+<li><p>LSP-backed editor features</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="planning-agenda">Planning + agenda</h1>
+<p>Org2's planning workflow is already pretty serious.</p>
+<p>Highlights:</p>
+<ul>
+<li><p>Scheduled + deadline items across many files</p></li>
+<li><p>Rich date-window controls</p></li>
+<li><p>Filter dimensions for status, kind, date/time, tags, IDs, properties, priority, effort, file, headline text, and more</p></li>
+<li><p>Sort and group controls for daily planning views</p></li>
+<li><p>Practical handling of real-world TODO vocabularies (for example WAIT/HOLD/PAUSED normalize into in-progress-style buckets)</p></li>
+</ul>
+<p>The agenda work goes beyond “show me tasks due today.” It is becoming a real backend for keyboard-driven planning, including an interactive terminal agenda:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- agenda --dir ~/notes --recursive --tui</code></pre>
+<p>Use the TUI when you want a live, scannable planning surface without leaving the terminal; use <code>--format json</code> when another tool should consume the same agenda model.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="knowledge-management-roam-workflows">Knowledge management / roam workflows</h1>
+<p>Org2 has first-class support for linked-note workflows:</p>
+<ul>
+<li><p>Stable IDs</p></li>
+<li><p>Backlinks</p></li>
+<li><p>Wiki links and <code>id:</code> links</p></li>
+<li><p>Node creation</p></li>
+<li><p>Dailies navigation</p></li>
+<li><p>Link insertion helpers</p></li>
+<li><p>Cited search/query output for answering questions with source file + line references</p></li>
+<li><p>Workspace graph operations via Roam DB sync and graph reports</p></li>
+<li><p>Linkify preview/apply flows for safely strengthening exact weak text references into links</p></li>
+<li><p>Review-only represented-node suggestions that explain semantic/alias matches with confidence, evidence tokens, and source ranges</p></li>
+<li><p>AI-assisted link/entity suggestion reports that rank compiler candidates with the mock adapter while preserving the review-only boundary</p></li>
+</ul>
+<p>This matters because Org-style notes get dramatically better once links, references, dailies, and fact lookup stop feeling bolted on.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="example-usage-patterns">Example usage patterns</h1>
+<p>A few concrete ways Org2 fits into a real workflow:</p>
+<ul>
+<li><p><strong>Daily planning</strong>: keep TODOs, scheduled dates, deadlines, priorities, effort, and tags in plain files; derive agenda views in the CLI, VS Code, or the agenda TUI.</p></li>
+<li><p><strong>Meeting pipeline</strong>: store transcripts as raw evidence, curate summaries/TODOs/Linear candidates into notes, then run backlinking and lint to keep the result connected and auditable.</p></li>
+<li><p><strong>Research corpus</strong>: capture source material, assign IDs, strengthen weak references into links, query with file/line citations, and publish selected pages.</p></li>
+<li><p><strong>Automation boundary</strong>: let scripts and agents read compiled corpus artifacts instead of scraping editor state, while generated outputs remain reviewable under <code>views/</code> or <code>compiled/</code>.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="vs-code-experience">VS Code experience</h1>
+<p>VS Code is currently the most complete Org2 editor story.</p>
+<p>That includes:</p>
+<ul>
+<li><p>Syntax highlighting and folding</p></li>
+<li><p>Agenda UI</p></li>
+<li><p>TODO / planning commands</p></li>
+<li><p>Capture / archive / refile commands</p></li>
+<li><p>Formatter commands with preview/apply flows</p></li>
+<li><p>HTML export commands</p></li>
+<li><p>Workspace search/query commands for cited note lookup</p></li>
+<li><p>Roam commands for IDs/backlinks/dailies/linkify/graph reports, including semantic suggestion previews and AI-assisted link/entity reports</p></li>
+<li><p>Power-keymap shortcuts for fast workflows</p></li>
+</ul>
+<p>If you want to <strong>use</strong> Org2 today instead of just admire the idea, this is the path.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="lsp-capabilities">LSP capabilities</h1>
+<p>Org2's LSP surface is already broader than the docs site previously implied.</p>
+<p>Current highlights include:</p>
+<ul>
+<li><p>Definitions / declarations / references for file and ID links</p></li>
+<li><p>Hover, completion, signature help, and highlights</p></li>
+<li><p>Rename + linked editing for IDs and file-link targets</p></li>
+<li><p>Workspace file-rename support for updating Org file links</p></li>
+<li><p>Formatting, range formatting, and on-type table-aware formatting</p></li>
+<li><p>Semantic tokens, inlay hints, code lens, document colors</p></li>
+<li><p>Call hierarchy for Org ID/file links</p></li>
+</ul>
+<p>That's real editor infrastructure, not a toy server.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="publishing">Publishing</h1>
+<p>Publishing is already a first-class workflow, not an afterthought.</p>
+<ul>
+<li><p>Single-file HTML export</p></li>
+<li><p>Recursive workspace export</p></li>
+<li><p>Project-level publish definitions via <code>org2.json</code></p></li>
+<li><p>TOC / heading-numbering / stylesheet / file-link-rewrite support</p></li>
+<li><p>This docs site is generated by Org2 itself</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="positioning">Positioning</h1>
+<p>Org2 keeps the parts of Org-shaped plain text that matter, while aiming at a different target than “Org Mode somewhere else.” The bet is that a personal knowledge base should behave like a local compiler target:</p>
+<ul>
+<li><p>keep raw notes portable and inspectable,</p></li>
+<li><p>compile them into explicit semantics,</p></li>
+<li><p>generate many views and artifacts from one corpus model,</p></li>
+<li><p>meet users where they already work, including VS Code, CLI automation, and publishing pipelines.</p></li>
+</ul>
+<p>Compatibility matters because existing notes matter. It is secondary to making the corpus computable.</p>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

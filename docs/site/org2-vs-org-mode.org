@@ -1,6 +1,6 @@
 #+TITLE: Org2 vs Org Mode
 
-Short version: Org2 is not just a replacement editor experience for Org Mode. It is a local-first knowledge compiler that keeps Org's durable plain-text strengths while making the semantic/runtime layer portable across editors, automation, and publishing workflows.
+Short version: Org2 is a local-first knowledge compiler that keeps Org's durable plain-text strengths while making the semantic/runtime layer portable across editors, automation, and publishing workflows.
 
 * High-level differences
 

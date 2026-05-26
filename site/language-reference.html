@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Language reference</title>
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Language reference" />
+<meta property="og:description" content="Language reference" />
+<meta property="og:url" content="https://org2.avi.press/language-reference.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/language-reference.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Language reference" />
+<meta name="twitter:description" content="Language reference" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/language-reference.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a></div></details><form class="org2-site-search" role="search"><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">Language reference</h1>
+</header>
+<p>This is the practical language reference for Org2 v0.</p>
+<p>For the normative draft spec, see <a href="../../spec/v0/SPEC.html">spec/v0/SPEC.org</a>.</p>
+<section class="org2-headline level-1">
+<h1 id="spec-map">Spec map</h1>
+<p>Use this mapping when deciding where behavior is defined:</p>
+<ul>
+<li><p>Core syntax and canonical AST: <a href="../../spec/v0/SPEC.html">spec/v0/SPEC.org</a></p></li>
+<li><p>Roam semantics (IDs, links, backlinks model): <a href="../../spec/v0/ROAM.html">spec/v0/ROAM.org</a></p></li>
+<li><p>CLI/editor workflow behavior: <a href="tooling-reference.html">Tooling reference</a></p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="headings">Headings</h1>
+<ul>
+<li><p>Syntax: one or more stars, a space, then title text.</p></li>
+<li><p>Example:</p></li>
+</ul>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* Project
+** Subproject
+*** Task</code></pre>
+<ul>
+<li><p>Heading level is the number of stars.</p></li>
+<li><p>Level skips are accepted in v0.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="keywords"><span class="org2-todo">TODO</span> keywords</h1>
+<p>Headline TODO states parsed by Org2 workflows:</p>
+<ul>
+<li><p><code>TODO</code></p></li>
+<li><p><code>IN_PROGRESS</code></p></li>
+<li><p><code>PROG</code></p></li>
+<li><p><code>DONE</code></p></li>
+<li><p><code>CANCELLED</code> / <code>CANCELED</code></p></li>
+</ul>
+<p>Example:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* TODO Ship docs
+* IN_PROGRESS Implement parser tests
+* DONE Publish changelog</code></pre>
+</section>
+<section class="org2-headline level-1">
+<h1 id="priority-cookies">Priority cookies</h1>
+<ul>
+<li><p>Syntax: <code>[#A]</code> style cookie after TODO keyword (or at headline start when no TODO keyword).</p></li>
+</ul>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* TODO [#A] Critical task</code></pre>
+</section>
+<section class="org2-headline level-1">
+<h1 id="tags">Tags</h1>
+<ul>
+<li><p>Tags are suffixes at headline end: <code>:tag:</code> or <code>:tag1:tag2:</code></p></li>
+</ul>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* TODO Draft docs :docs:website:</code></pre>
+</section>
+<section class="org2-headline level-1">
+<h1 id="drawers">Drawers</h1>
+<section class="org2-headline level-2">
+<h2 id="property-drawers">Property drawers</h2>
+<ul>
+<li><p>Drawer delimiters: <code>:PROPERTIES:</code> ... <code>:END:</code></p></li>
+<li>
+<p>Common keys used by Org2 workflows:</p>
+<ul>
+<li><p><code>:ID:</code></p></li>
+<li><p><code>:CUSTOM_ID:</code></p></li>
+<li><p><code>:EFFORT:</code></p></li>
+<li><p><code>:ROAM_ALIASES:</code></p></li>
+</ul>
+</li>
+</ul>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">:PROPERTIES:
+:ID: 123e4567-e89b-12d3-a456-426614174000
+:EFFORT: 45
+:END:</code></pre>
+</section>
+<section class="org2-headline level-2">
+<h2 id="generic-drawers">Generic drawers</h2>
+<ul>
+<li><p>Generic <code>:NAME:</code> ... <code>:END:</code> drawers are preserved.</p></li>
+</ul>
+</section>
+</section>
+<section class="org2-headline level-1">
+<h1 id="planning-lines">Planning lines</h1>
+<p>Recognized planning keywords:</p>
+<ul>
+<li><p><code>SCHEDULED:</code></p></li>
+<li><p><code>DEADLINE:</code></p></li>
+<li><p><code>CLOSED:</code></p></li>
+</ul>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">SCHEDULED: &lt;2026-02-21 Sat&gt;
+DEADLINE: &lt;2026-02-25 Wed&gt;
+CLOSED: [2026-02-20 Fri]</code></pre>
+</section>
+<section class="org2-headline level-1">
+<h1 id="timestamps">Timestamps</h1>
+<p>Supported timestamp forms:</p>
+<ul>
+<li><p>Active: <code>&lt;2026-02-21 Sat&gt;</code></p></li>
+<li><p>Inactive: <code>[2026-02-21 Sat]</code></p></li>
+<li><p>With time: <code>&lt;2026-02-21 Sat 09:30&gt;</code></p></li>
+<li><p>Ranges: <code>&lt;2026-02-21 Sat&gt;--&lt;2026-02-23 Mon&gt;</code></p></li>
+<li><p>Repeaters (agenda projection): <code>+1w</code>, <code>++1m</code>, <code>.+2d</code></p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="lists">Lists</h1>
+<ul>
+<li><p>Unordered markers: <code>-</code>, <code>+</code>, <code>*</code></p></li>
+<li><p>Ordered markers: <code>1.</code>, <code>1)</code></p></li>
+<li><p>Checkboxes: <code>[ ]</code>, <code>[X]</code>, <code>[-]</code></p></li>
+<li><p>Nested lists via indentation.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="links">Links</h1>
+<p>Supported link forms:</p>
+<ul>
+<li><p>Bracket links: <code>[[https://example.com][label]]</code></p></li>
+<li><p>Plain URLs: <code>https://example.com</code></p></li>
+<li><p>File links: <code>[[file:path/to/file.org]]</code></p></li>
+<li><p>ID links: <code>[[id:UUID][label]]</code> (roam-style link)</p></li>
+<li><p>Wiki links: <code>[[Node Title]]</code> (roam-style link)</p></li>
+</ul>
+<p>Both ID links and Wiki links are first-class in Org2 roam workflows.</p>
+<p>Link abbreviations are supported with built-ins, config, and <code>#+LINK</code> directives.</p>
+<p>Built-in abbreviations:</p>
+<ul>
+<li><p><code>gh:</code> → <code>https://github.com/%s</code></p></li>
+<li><p><code>gl:</code> → <code>https://gitlab.com/%s</code></p></li>
+<li><p><code>yt:</code> → <code>https://www.youtube.com/watch?v</code>%s=</p></li>
+<li><p><code>wiki:</code> → <code>https://en.wikipedia.org/wiki/%s</code></p></li>
+</ul>
+<p>You can add/override abbreviations in <code>org2.json</code>:</p>
+<pre class="org2-src language-json" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-json">{
+  &quot;links&quot;: {
+    &quot;linearTeam&quot;: &quot;scarf&quot;,
+    &quot;abbreviations&quot;: {
+      &quot;linear&quot;: &quot;https://linear.app/scarf/issue/%s&quot;,
+      &quot;gh&quot;: &quot;https://github.example.com/%s&quot;
+    }
+  }
+}</code></pre>
+<p>And define file-local abbreviations with Org-compatible syntax:</p>
+<ul>
+<li><p>Define: <code>#+LINK: linear https://linear.app/scarf/issue/%s</code></p></li>
+<li><p>Use: <code>[[linear:APP-3718][APP-3718]]</code> or <code>[[linear:APP-3718]]</code></p></li>
+</ul>
+<p>Precedence (highest to lowest):</p>
+<ol>
+<li><p>file-local <code>#+LINK</code></p></li>
+<li><p><code>org2.json</code> links.abbreviations</p></li>
+<li><p>built-ins</p></li>
+</ol>
+<p>Org2 expands abbreviation targets when rendering/exporting and for LSP document-link targets.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="inline-emphasis">Inline emphasis</h1>
+<ul>
+<li><p>Bold: <code>*bold*</code></p></li>
+<li><p>Italic: <code>/italic/</code></p></li>
+<li><p>Underline: <code>_underline_</code></p></li>
+<li><p>Strike: <code>+strike+</code></p></li>
+<li><p>Verbatim: <code>=verbatim</code>=</p></li>
+<li><p>Code: <code>~code~</code></p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="blocks">Blocks</h1>
+<p>Recognized block forms include:</p>
+<ul>
+<li><p>Source blocks: <code>#+begin_src ... #+end_src</code></p></li>
+<li><p>Example blocks: <code>#+begin_example ... #+end_example</code></p></li>
+<li><p>Quote blocks: <code>#+begin_quote ... #+end_quote</code></p></li>
+<li><p>Verse blocks: <code>#+begin_verse ... #+end_verse</code></p></li>
+<li><p>Center blocks: <code>#+begin_center ... #+end_center</code></p></li>
+<li><p>Comment blocks: <code>#+begin_comment ... #+end_comment</code></p></li>
+</ul>
+<section class="org2-headline level-2">
+<h2 id="syntactic-sugar-aliases">Syntactic sugar / aliases</h2>
+<p>Org2 supports a friendlier fenced-code alias for source blocks:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```ts
+const x = 1
+```</code></pre>
+<p>This is treated as syntactic sugar for:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+begin_src ts
+const x = 1</code></pre>
+<pre class="org2-directive">#+end_src</pre>
+<p>Use whichever form you prefer; both map to source block semantics.</p>
+</section>
+</section>
+<section class="org2-headline level-1">
+<h1 id="tables">Tables</h1>
+<ul>
+<li><p>Pipe table rows: <code>| a | b |</code></p></li>
+<li><p>Horizontal separator rows: <code>|---+---|</code></p></li>
+<li><p>Table content is parsed and preserved.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="keyworddirective-lines">Keyword/directive lines</h1>
+<p>Org2 parses keyword lines in <code>#+KEY: VALUE</code> form.</p>
+<p>Commonly used in export/publish:</p>
+<ul>
+<li><p><code>#+TITLE:</code></p></li>
+<li><p><code>#+SUBTITLE:</code></p></li>
+<li><p><code>#+AUTHOR:</code></p></li>
+<li><p><code>#+DATE:</code></p></li>
+<li><p><code>#+DESCRIPTION:</code></p></li>
+<li><p><code>#+KEYWORDS:</code></p></li>
+<li><p><code>#+LANGUAGE:</code></p></li>
+<li><p><code>#+HTML_HEAD:</code></p></li>
+<li><p><code>#+ID:</code></p></li>
+</ul>
+<p>Unknown directives are preserved for round-tripping.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="comments">Comments</h1>
+<ul>
+<li><p>Line comments: lines beginning with <code>#</code>.</p></li>
+<li><p>Comment blocks are also supported (see Blocks).</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="losslessness-goal">Losslessness goal</h1>
+<p>Org2 aims for practical round-tripping of supported constructs.
+When behavior is ambiguous, defer to the current implementation and spec fixtures.</p>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

@@ -1,6 +1,6 @@
 #+TITLE: Features
 
-Org2 is not just “an Org parser” or an editor replacement. It is a local-first knowledge compiler: a pipeline that turns raw plain-text notes into structured semantics, then derives views, checks, editor behavior, and publishable artifacts from that shared model.
+Org2 is a local-first knowledge compiler rather than a parser demo or editor replacement: it turns raw plain-text notes into structured semantics, then derives views, checks, editor behavior, and publishable artifacts from that shared model.
 
 * Compiler workflow
 
@@ -40,7 +40,7 @@ Highlights:
 - Sort and group controls for daily planning views
 - Practical handling of real-world TODO vocabularies (for example WAIT/HOLD/PAUSED normalize into in-progress-style buckets)
 
-This is not just “show me tasks due today.” It is shaping into a real backend for agenda tooling, including an interactive terminal agenda for keyboard-driven planning:
+The agenda work goes beyond “show me tasks due today.” It is becoming a real backend for keyboard-driven planning, including an interactive terminal agenda:
 
 #+begin_src sh
 npm run org2 -- agenda --dir ~/notes --recursive --tui
@@ -122,7 +122,7 @@ Publishing is already a first-class workflow, not an afterthought.
 
 * Positioning
 
-Org2 preserves what is powerful about Org-shaped plain text, but the primary pitch is not “Org Mode somewhere else.” The bet is that a personal knowledge base should behave like a local compiler target:
+Org2 keeps the parts of Org-shaped plain text that matter, while aiming at a different target than “Org Mode somewhere else.” The bet is that a personal knowledge base should behave like a local compiler target:
 
 - keep raw notes portable and inspectable,
 - compile them into explicit semantics,

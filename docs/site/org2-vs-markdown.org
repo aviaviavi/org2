@@ -29,7 +29,7 @@ Org2 supports roam-style workflows directly:
 
 In Markdown setups, this tends to be app-specific and less portable.
 
-** 4) Compiler outputs, not just rendered prose
+** 4) Compiler outputs beyond rendered prose
 
 Org2 is designed to compile one corpus into many outputs:
 
@@ -40,7 +40,7 @@ Org2 is designed to compile one corpus into many outputs:
 - formatter output
 - HTML export and publish pipelines
 
-Markdown toolchains are powerful too, but task, agenda, and graph semantics are usually bolted on by app-specific conventions.
+Markdown has strong toolchains, but task, agenda, and graph semantics usually arrive through app-specific conventions.
 
 * Where Markdown still wins
 

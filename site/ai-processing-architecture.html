@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI processing architecture</title>
+<meta name="subtitle" content="Provider-agnostic jobs on top of compiled Org2 corpus data" />
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="AI processing architecture" />
+<meta property="og:description" content="Provider-agnostic jobs on top of compiled Org2 corpus data" />
+<meta property="og:url" content="https://org2.avi.press/ai-processing-architecture.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/ai-processing-architecture.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="AI processing architecture" />
+<meta name="twitter:description" content="Provider-agnostic jobs on top of compiled Org2 corpus data" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/ai-processing-architecture.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a></div></details><form class="org2-site-search" role="search"><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">AI processing architecture</h1>
+<p class="org2-document-subtitle" role="doc-subtitle">Provider-agnostic jobs on top of compiled Org2 corpus data</p>
+</header>
+<p>Org2 can support AI-assisted workflows without turning the compiler core into an LLM client. The architecture is a layered pipeline: deterministic compiler commands produce cited corpus artifacts, an optional AI processing layer consumes those artifacts through provider adapters, and review/promotion workflows decide what becomes canonical.</p>
+<p>This page is the design boundary for future <code>org2 ai ...</code> commands. It is intentionally provider-agnostic and keeps existing parse, lint, query, compile, publish, LSP, and editor workflows usable with no network access.</p>
+<section class="org2-headline level-1">
+<h1 id="layer-model">Layer model</h1>
+<pre class="org2-src language-text" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-text">raw/ + notes/
+  -&gt; compiler core
+  -&gt; compiled corpus + cited query/context packets
+  -&gt; AI job runner (optional)
+  -&gt; provider adapter (optional network/local model boundary)
+  -&gt; generated draft artifacts in compiled/ or views/
+  -&gt; review/promote into notes/</code></pre>
+<section class="org2-headline level-2">
+<h2 id="compiler-core">Compiler core</h2>
+<p>The core stays deterministic and local. It owns:</p>
+<ul>
+<li><p>parsing Org2 files, headings, drawers, planning lines, links, IDs, aliases, tags, and properties</p></li>
+<li><p>resolving graph data, backlinks, source ranges, and corpus zones</p></li>
+<li><p>emitting <code>org2 compile corpus</code> and <code>org2 query --format json</code> artifacts</p></li>
+<li><p>linting artifact metadata, provenance, generated-output boundaries, and graph health</p></li>
+<li><p>powering editor integrations through CLI/LSP commands</p></li>
+</ul>
+<p>The compiler core must not require model credentials, provider SDKs, hosted services, retries, billing concepts, or network access for non-AI commands.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="ai-processing-layer">AI processing layer</h2>
+<p>The AI layer is optional orchestration around compiler outputs. It owns:</p>
+<ul>
+<li><p>loading an AI job manifest or command-line task</p></li>
+<li><p>selecting source files, headings, query results, graph nodes, or compiled corpus slices</p></li>
+<li><p>building structured prompt/context payloads with citations</p></li>
+<li><p>invoking a configured provider adapter by symbolic name</p></li>
+<li><p>validating model output shape when a workflow expects JSON or Org2 sections</p></li>
+<li><p>writing reviewable generated artifacts with provenance metadata</p></li>
+</ul>
+<p>This layer can live behind <code>org2 ai ...</code> commands, but it should consume stable compiler artifacts instead of reaching into editor-specific state.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="provider-adapter-boundary">Provider adapter boundary</h2>
+<p>Adapters are thin model-call boundaries. A provider adapter should receive structured input and return generated text or structured output plus model metadata.</p>
+<p>A minimal interface is:</p>
+<pre class="org2-src language-ts" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-ts">export interface AiProviderAdapter {
+  readonly name: string;
+  generate(request: AiGenerateRequest): Promise&lt;AiGenerateResult&gt;;
+}
+
+export interface AiGenerateRequest {
+  task: string;
+  instructions: string;
+  context: Org2CitedContext[];
+  outputSchema?: unknown;
+  metadata?: Record&lt;string, string&gt;;
+}
+
+export interface AiGenerateResult {
+  text?: string;
+  json?: unknown;
+  model: string;
+  provider: string;
+  usage?: Record&lt;string, number&gt;;
+  rawMetadata?: Record&lt;string, string&gt;;
+}</code></pre>
+<p>Secrets and provider-specific configuration stay outside note files, manifests, compiled corpus artifacts, and generated Org output. Manifests should refer to providers by symbolic names such as <code>local-default</code> or <code>work-summary</code>, not API keys or full secret-bearing URLs.</p>
+</section>
+</section>
+<section class="org2-headline level-1">
+<h1 id="cli-surface">CLI surface</h1>
+<p>The command family is:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 ai run --task summarize-meeting --file raw/team-sync.org2 --out views/team-sync-summary.org2
+org2 ai run --job jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2
+org2 ai suggest-links --dir notes --recursive --out views/link-suggestions.org2
+org2 ai validate-job --job jobs/weekly-summary.org2-ai.json</code></pre>
+<p>Implemented slices so far are provider-free manifest validation, reviewable draft artifact writing/promotion, AI-assisted link/entity suggestion reports using the deterministic mock adapter, and the provider-agnostic adapter boundary; see <a href="ai-job-manifests.html">AI job manifests</a>, <a href="ai-draft-artifacts.html">AI draft artifacts</a>, <a href="ai-adapters.html">AI adapter interface</a>, <code>spec/v0/ai-job-manifest.schema.json</code>, and <code>src/aiAdapter.ts</code>.</p>
+<p>Command responsibilities:</p>
+<table>
+<thead>
+<tr><th>Command</th><th>Responsibility</th><th>Writes canonical notes?</th></tr>
+</thead>
+<tbody>
+<tr><td><code>ai run</code></td><td>Execute a configured task/job and write a draft artifact.</td><td>No</td></tr>
+<tr><td><code>ai promote</code></td><td>Append reviewed draft bodies into canonical notes and mark drafts promoted.</td><td>Only with explicit <code>--apply</code> after review</td></tr>
+<tr><td><code>ai suggest-links</code></td><td>Produce ranked link/entity suggestions with reasons and source refs.</td><td>No</td></tr>
+<tr><td><code>ai validate-job</code></td><td>Validate manifest shape and unsafe settings.</td><td>No</td></tr>
+</tbody>
+</table>
+<p>All write-capable AI commands default to generated zones such as <code>views/</code> or <code>compiled/</code>. They should require an explicit apply/promote step before modifying <code>notes/</code>.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="data-flow-contract">Data flow contract</h1>
+<p>A job runner should record each transformation with enough data to review and reproduce it:</p>
+<ol>
+<li><p>Select source material from <code>raw/</code> and/or <code>notes/</code> using file paths, heading IDs, tags, date ranges, query terms, or graph selections.</p></li>
+<li><p>Compile or query that material into a cited context packet with file paths, line ranges, heading ancestry, snippets, and source hashes when available.</p></li>
+<li><p>Call one provider adapter with a named task, instructions, cited context, optional output schema, and non-secret metadata.</p></li>
+<li><p>Validate the returned output against the workflow contract.</p></li>
+<li><p>Write a generated artifact under <code>views/</code> or <code>compiled/</code> with <code>ORG2_ARTIFACT_ROLE</code>, <code>ORG2_PROVENANCE</code>, <code>ORG2_GENERATOR</code>, <code>ORG2_GENERATED_AT</code>, optional <code>ORG2_SOURCE_HASHES</code>, and <code>ORG2_REVIEW_STATUS</code> (<code>generated</code>, <code>review-required</code>, <code>reviewed</code>, or <code>promoted</code>).</p></li>
+<li><p>Run <code>org2 lint</code> so missing provenance or unsafe generated/canonical boundaries become visible.</p></li>
+<li><p>Promote only the human-approved parts into <code>notes/</code> through an explicit patch, editor command, or future promote workflow.</p></li>
+</ol>
+</section>
+<section class="org2-headline level-1">
+<h1 id="end-to-end-example">End-to-end example</h1>
+<p>Meeting summary flow:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- query &quot;team sync&quot; \
+  --dir raw \
+  --recursive \
+  --subtree \
+  --answer-context \
+  --format json \
+  &gt; compiled/team-sync-context.json
+
+# Proposed future command: consumes the cited context and configured provider alias.
+npm run org2 -- ai run \
+  --task summarize-meeting \
+  --context compiled/team-sync-context.json \
+  --provider work-summary \
+  --out views/team-sync-summary.org2
+
+npm run org2 -- lint --dir . --recursive</code></pre>
+<p>The generated summary should include:</p>
+<ul>
+<li><p>a short summary</p></li>
+<li><p>decisions with citations back to transcript/source lines</p></li>
+<li><p>action-item suggestions as draft TODOs</p></li>
+<li><p>people, org, and project entities found in the context</p></li>
+<li><p>suggested links to existing nodes</p></li>
+<li><p>provenance metadata showing the source context, task name, provider alias, model metadata, and generation time</p></li>
+</ul>
+<p>A user can then review <code>views/team-sync-summary.org2</code> and copy, rewrite, or explicitly promote accepted sections into <code>notes/</code>.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="review-and-safety-rules">Review and safety rules</h1>
+<ul>
+<li><p>No hardcoded provider in compiler core.</p></li>
+<li><p>No provider secrets in notes, manifests, compiled corpus artifacts, or generated Org files.</p></li>
+<li><p>No automatic canonical edits from AI output.</p></li>
+<li><p>Every factual generated claim should trace to cited Org2 source ranges or say that evidence is missing.</p></li>
+<li><p>Generated artifacts should be overwriteable and lintable; canonical notes should require review.</p></li>
+<li><p>Editor integrations should call the same CLI surfaces rather than reimplementing provider behavior.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="relationship-to-follow-up-work">Relationship to follow-up work</h1>
+<p>This design sets the boundary. Follow-up issues can implement it incrementally:</p>
+<ul>
+<li><p>concrete adapter implementations behind the stable interface</p></li>
+<li><p>generated draft artifact helpers and lint rules</p></li>
+<li><p>meeting/transcript summarization</p></li>
+<li><p>link/entity suggestion reports</p></li>
+</ul>
+<p>Each slice should remain useful without forcing every Org2 user to configure an AI provider.</p>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

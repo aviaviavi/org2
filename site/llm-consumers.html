@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>External LLM consumer pattern</title>
+<meta name="subtitle" content="Cited Org2 context without provider calls in core" />
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="External LLM consumer pattern" />
+<meta property="og:description" content="Cited Org2 context without provider calls in core" />
+<meta property="og:url" content="https://org2.avi.press/llm-consumers.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/llm-consumers.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="External LLM consumer pattern" />
+<meta name="twitter:description" content="Cited Org2 context without provider calls in core" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/llm-consumers.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a></div></details><form class="org2-site-search" role="search"><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">External LLM consumer pattern</h1>
+<p class="org2-document-subtitle" role="doc-subtitle">Cited Org2 context without provider calls in core</p>
+</header>
+<p>Org2 is useful to LLM assistants because it compiles local plain-text notes into cited, machine-readable evidence. The core Org2 CLI should stay deterministic: it parses, queries, lints, and compiles a corpus, but it does not need an LLM provider or hosted service to do that work.</p>
+<p>This page describes the recommended boundary for OpenClaw, Claude, Codex, local models, or any other external agent. For the proposed in-repo AI job architecture, see <a href="ai-processing-architecture.html">AI processing architecture</a>.</p>
+<section class="org2-headline level-1">
+<h1 id="boundary">Boundary</h1>
+<p>Org2 guarantees local compiler outputs:</p>
+<ul>
+<li><p>stable command outputs such as <code>org2 query --format json</code> and <code>org2 compile corpus</code></p></li>
+<li><p>source files, line ranges, heading ancestry, matched lines, and snippets for citations</p></li>
+<li><p>artifact roles, provenance metadata, graph links, backlinks, agenda state, and lint diagnostics</p></li>
+<li><p>no network or provider dependency for non-AI commands</p></li>
+</ul>
+<p>External LLM consumers handle model-specific work:</p>
+<ul>
+<li><p>ranking which cited sources matter for a prompt</p></li>
+<li><p>summarizing or answering from the provided context</p></li>
+<li><p>proposing edits, links, TODOs, or generated draft artifacts</p></li>
+<li><p>choosing providers, model names, credentials, and retry policy outside note files</p></li>
+</ul>
+<p>Generated text should remain reviewable. Write it to <code>views/</code>, <code>compiled/</code>, or a patch/draft artifact with provenance; promote it to <code>notes/</code> only after human review.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="query-to-context-workflow">Query-to-context workflow</h1>
+<p>Use <code>org2 query</code> to fetch grounded context before asking an LLM to answer a question.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- query &quot;What did we decide about Project Alpha?&quot; \
+  --dir ~/notes \
+  --recursive \
+  --subtree \
+  --answer-context \
+  --format json \
+  &gt; /tmp/org2-query.json
+
+node examples/external-llm-context.mjs --limit=6 &lt; /tmp/org2-query.json \
+  &gt; /tmp/org2-llm-context.txt</code></pre>
+<p>The formatter is intentionally tiny and provider-free. It turns Org2 query JSON into a context packet with source markers such as <code>[S1]</code> and explicit <code>file:line</code> citations. An external model prompt can then say: “Use only the evidence below. Preserve citations as <code>[S1]</code>, <code>[S2]</code>.”</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="prompt-skeleton">Prompt skeleton</h1>
+<pre class="org2-src language-text" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-text">You answer questions from an Org2 knowledge base.
+
+Rules:
+- Use only the supplied Org2 context packet.
+- Cite every factual claim with [S1], [S2], etc.
+- If the evidence is missing or contradictory, say so.
+- Do not invent file paths, dates, people, or decisions.
+
+&lt;context&gt;
+... contents of /tmp/org2-llm-context.txt ...
+&lt;/context&gt;
+
+Question: What did we decide about Project Alpha?</code></pre>
+</section>
+<section class="org2-headline level-1">
+<h1 id="compiled-corpus-workflow">Compiled-corpus workflow</h1>
+<p>For larger agents, compile a corpus artifact and let the external orchestration layer decide retrieval, ranking, and model calls.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- compile corpus --dir ~/notes --recursive --out compiled/corpus.json
+npm run org2 -- lint --dir ~/notes --recursive --format json &gt; views/corpus-health.json</code></pre>
+<p>The compiled artifact supplies file hashes, heading nodes, IDs, aliases, links, backlinks, planning data, properties, snippets, and source ranges. Keep provider credentials and model configuration outside the corpus artifact. If an agent saves a report or summary, stamp it with generated-artifact metadata described in <a href="corpus-flow.html">Corpus flow</a>.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="what-to-save-back">What to save back</h1>
+<p>Good generated outputs are inspectable artifacts, not silent canonical edits:</p>
+<ul>
+<li><p><code>views/project-alpha-brief.org2</code> for a cited briefing</p></li>
+<li><p><code>views/weekly-digest.org2</code> for a generated report</p></li>
+<li><p><code>compiled/retrieval-index.json</code> for a derived machine artifact</p></li>
+<li><p>patch files or draft notes for proposed canonical changes</p></li>
+</ul>
+<p>Generated Org files should include properties such as <code>ORG2_ARTIFACT_ROLE</code>, <code>ORG2_PROVENANCE</code>, <code>ORG2_GENERATOR</code>, and <code>ORG2_GENERATED_AT</code>. Run <code>org2 lint</code> before trusting or publishing generated outputs.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="minimal-answer-contract">Minimal answer contract</h1>
+<p>When an external agent answers from Org2 data, require:</p>
+<ul>
+<li><p>cited claims using Org2 source markers</p></li>
+<li><p>a short list of source files or IDs used</p></li>
+<li><p>a caveat when the answer came from stale or generated artifacts</p></li>
+<li><p>no automatic write to canonical notes unless the user explicitly applies/promotes it</p></li>
+</ul>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

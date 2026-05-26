@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tooling reference</title>
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Tooling reference" />
+<meta property="og:description" content="Tooling reference" />
+<meta property="og:url" content="https://org2.avi.press/tooling-reference.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/tooling-reference.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Tooling reference" />
+<meta name="twitter:description" content="Tooling reference" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/tooling-reference.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a></div></details><form class="org2-site-search" role="search"><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">Tooling reference</h1>
+</header>
+<p>This page covers the practical Org2 tooling surface today. For the product framing around compiler-style corpus checks, see <a href="maintenance-workflows.html">Maintenance and health workflows</a>.</p>
+<p>The CLI is the shared backend for editor integrations and automation. You can use it directly or through VS Code commands.</p>
+<section class="org2-headline level-1">
+<h1 id="core-command-families">Core command families</h1>
+<p>Run <code>npm run org2 -- --help</code> for current top-level usage. AI architecture, job design, draft artifacts, and provider boundaries are documented separately in <a href="ai-processing-architecture.html">AI processing architecture</a>, <a href="ai-job-manifests.html">AI job manifests</a>, <a href="ai-draft-artifacts.html">AI draft artifacts</a>, and <a href="ai-adapters.html">AI adapter interface</a> so the deterministic CLI surface stays clear.</p>
+<p>Main workflows:</p>
+<ul>
+<li><p><code>agenda</code></p></li>
+<li><p><code>todo</code></p></li>
+<li><p><code>plan</code></p></li>
+<li><p><code>capture</code></p></li>
+<li><p><code>archive</code>, <code>refile</code></p></li>
+<li><p><code>fmt</code></p></li>
+<li><p><code>search</code>, <code>id</code>, <code>query</code>, <code>backlinks</code></p></li>
+<li><p><code>roam ...</code></p></li>
+<li><p><code>crypt ...</code></p></li>
+<li><p><code>export html</code></p></li>
+<li><p><code>publish</code></p></li>
+<li><p><code>lint</code></p></li>
+<li><p><code>ai validate-job</code></p></li>
+<li><p><code>lsp</code></p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="agenda">Agenda</h1>
+<p>Purpose: query scheduled/deadline items across Org files.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- agenda --dir ~/notes --recursive --from 2026-03-01 --to 2026-03-31</code></pre>
+<p>Important behavior:</p>
+<ul>
+<li><p>Includes both <code>SCHEDULED:</code> and <code>DEADLINE:</code> rows in-range.</p></li>
+<li><p>Supports broad filter/sort/group dimensions in CLI + VS Code integration.</p></li>
+<li><p>Normalizes common TODO aliases into stable status buckets (including wait/hold/pause-style states).</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="planning-edits"><span class="org2-todo">TODO</span> + planning edits</h1>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- todo toggle --file notes.org2 --line 42 --apply
+npm run org2 -- todo set --file notes.org2 --line 42 --status in_progress --apply
+npm run org2 -- plan set --file notes.org2 --line 42 --kind scheduled --date 2026-03-25 --apply</code></pre>
+</section>
+<section class="org2-headline level-1">
+<h1 id="capture-archive-refile">Capture / archive / refile</h1>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- capture --file inbox.org2 --title &quot;Quick note&quot; --template note --apply
+npm run org2 -- archive --file notes.org2 --pos 120:0 --apply
+npm run org2 -- refile --file notes.org2 --pos 120:0 --to-file projects.org2 --to-pos 40:0 --apply</code></pre>
+</section>
+<section class="org2-headline level-1">
+<h1 id="formatter">Formatter</h1>
+<p>Canonical formatting for Org2 files.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- fmt --dir ~/notes --recursive --check
+npm run org2 -- fmt --dir ~/notes --recursive --apply</code></pre>
+</section>
+<section class="org2-headline level-1">
+<h1 id="corpus-lint">Corpus lint</h1>
+<p>Lint is the first compiler-style health pass for artifact metadata and corpus structure. It belongs to the broader <a href="maintenance-workflows.html">maintenance and health workflow</a> alongside formatter checks, graph queries, publish previews, and ID/index repair passes.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- lint --dir ~/notes --recursive</code></pre>
+<p>Current checks include:</p>
+<ul>
+<li><p>invalid or missing <code>ORG2_ARTIFACT_ROLE</code> on generated outputs</p></li>
+<li><p>missing/invalid provenance, generator, and generated-at metadata</p></li>
+<li><p>duplicate IDs and unresolved provenance references</p></li>
+<li><p>stale generated artifacts when provenance file mtimes or <code>ORG2_SOURCE_HASHES</code> no longer match</p></li>
+<li><p>unresolved <code>id:</code> links, unresolved wiki links, and ambiguous wiki links/aliases using the same graph index as roam workflows</p></li>
+<li><p>conventional corpus-flow checks when you organize notes as <code>raw/</code> -&gt; <code>notes/</code> -&gt; <code>compiled/</code> -&gt; <code>views/</code> -&gt; <code>publish/</code></p></li>
+</ul>
+<p>See <a href="corpus-flow.html">Corpus flow</a> for the canonical zone model, artifact roles, and generated-output trust boundaries.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="ai-job-manifest-validation">AI job manifest validation</h1>
+<p><code>org2 ai validate-job</code> validates repeatable AI workflow manifests without calling a provider or loading secrets.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
+npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json --format json</code></pre>
+<p>Use this in CI or editor workflows before a future AI runner consumes a job. The validator checks corpus input selection, task type, symbolic adapter names, generated output targets, provenance/review requirements, and common accidental secret leaks. See <a href="ai-job-manifests.html">AI job manifests</a> for the schema and examples.</p>
+<p><code>org2 ai run</code> writes a reviewable generated draft artifact from a validated job. The current implementation is provider-free and uses manifest <code>input.files</code> as deterministic source material, including simple glob patterns. It stamps <code>ORG2_PROVENANCE</code>, <code>ORG2_SOURCE_HASHES</code>, prompt/template, adapter/model, generated-at, and <code>ORG2_REVIEW_STATUS</code> metadata. Without <code>--apply</code> it previews the draft.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2
+npm run org2 -- ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2 --apply</code></pre>
+<p><code>org2 ai suggest-links</code> ranks compiler-provided roam/linkify candidates with the deterministic mock adapter. It scans the graph, aliases, exact linkify matches, represented-node semantic suggestions, and title-case entity mentions, then emits review-only suggestions with confidence, reasons, source context, and citations. It never edits canonical notes directly; <code>--apply</code> only writes the suggestion report when <code>--out</code> is provided.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- ai suggest-links --dir ~/notes --recursive --format json
+npm run org2 -- ai suggest-links --dir ~/notes --recursive --out views/link-suggestions.org2 --apply</code></pre>
+<p><code>org2 ai promote</code> is the safe acceptance path. It refuses drafts until <code>ORG2_REVIEW_STATUS</code> is <code>reviewed</code>, then appends the reviewed body to a canonical note only when <code>--apply</code> is present and marks the draft <code>promoted</code>.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- ai promote --file views/weekly-summary.org2 --to-file notes/weekly-summary.org2 --apply</code></pre>
+<p>See <a href="ai-draft-artifacts.html">AI draft artifacts</a> for the full format, review checklist, and VS Code command-palette entry points.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="compiled-corpus-artifacts">Compiled corpus artifacts</h1>
+<p><code>org2 compile corpus</code> emits a stable, schema-versioned knowledge artifact that LLM tools, search indexes, and other automation can consume. Org2 only compiles local plain-text notes into structured data; it does not call an LLM or require any hosted AI service.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- compile corpus --dir ~/notes --recursive --out compiled/corpus.json
+npm run org2 -- compile corpus --dir ~/notes --recursive --format jsonl --out compiled/corpus.jsonl</code></pre>
+<p>The JSON form includes:</p>
+<ul>
+<li><p>standardized <code>artifact</code> metadata: role, generator, generated-at timestamp, source provenance, source hashes, and review status</p></li>
+<li><p>files with relative paths, absolute paths, SHA-256 hashes, line counts, titles, and IDs</p></li>
+<li><p>file and heading nodes with source ranges for citations</p></li>
+<li><p>heading TODO state, tags, planning timestamps, properties, IDs, and aliases</p></li>
+<li><p>links and resolved backlinks for explicit <code>id:</code> links and unambiguous wiki links</p></li>
+<li><p>text snippets suitable for previews or retrieval pipelines</p></li>
+</ul>
+<p>Use JSONL for larger corpora when downstream tools prefer one record per line; the first JSONL record carries the same artifact metadata header as the JSON form. If you wrap compiled artifacts in Org files, stamp the wrapper with the same <code>ORG2_ARTIFACT_*</code>, <code>ORG2_SOURCE_HASHES</code>, and <code>ORG2_REVIEW_STATUS</code> fields and keep using <code>org2 lint</code> for generated-output health checks.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="search-cited-query">Search + cited query</h1>
+<p>Use <code>search</code> for workspace text lookup and <code>query</code> when you want cited context suitable for answering factual questions from notes. The <a href="llm-consumers.html">External LLM consumer pattern</a> page shows how provider-agnostic agents can turn this JSON into cited model context without adding LLM calls to Org2 core.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- search &quot;Chris Martin&quot; --dir ~/notes --recursive --context 3 --sort date-desc
+npm run org2 -- query &quot;Chris Martin&quot; --dir ~/notes --recursive --subtree --sort date-desc --format json
+npm run org2 -- query &quot;Sentra&quot; --dir ~/notes --recursive --format json</code></pre>
+<p>Useful flags:</p>
+<ul>
+<li><p><code>--context N</code> includes surrounding source lines.</p></li>
+<li><p><code>--limit N</code> caps returned matches.</p></li>
+<li><p><code>--sort date-desc</code> is useful for “when did I last...” style questions over date-named daily files and heading timestamps.</p></li>
+<li><p><code>--subtree</code> deduplicates matches to cited heading/subtree sections with <code>sourceRange</code>, <code>headingAncestry</code>, <code>matchedLines</code>, and full subtree context.</p></li>
+<li><p><code>--answer-context</code> adds a plain subtree text block for downstream local LLM prompts.</p></li>
+<li><p><code>--date-from</code> / <code>--date-to</code> and <code>--file-zone</code> narrow results by local corpus zones and source dates.</p></li>
+<li><p><code>--format json</code> returns machine-readable file, line, heading, snippet, source range, and context fields.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="roam-workflows">Roam workflows</h1>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- roam db-sync --dir ~/notes --recursive --apply
+npm run org2 -- roam node new --dir ~/notes --title &quot;Acme Corp&quot; --apply
+npm run org2 -- roam backlinks --id 123e4567-e89b-12d3-a456-426614174000 --dir ~/notes --recursive --format json
+npm run org2 -- roam linkify --dir ~/notes --recursive
+npm run org2 -- roam graph --dir ~/notes --recursive --format report
+npm run org2 -- roam graph --dir ~/notes --recursive --format json</code></pre>
+<p>Org2 supports both title-based wiki links and explicit <code>id:</code> links, with backlinks across both forms. Linkify and graph reports are intended as compiler-style maintenance passes: preview references, strengthen links deliberately, and inspect corpus connectivity without leaving plain files. <code>org2 roam linkify --format json</code> reports exact title/alias replacements plus review-only represented-node suggestions with confidence, evidence tokens, and source ranges for headings or multi-line paragraphs; <code>--apply</code> only writes exact safe replacements, never semantic suggestions. <code>org2 roam graph --format report</code> emits a human-readable maintenance view with graph summary, orphan/high-degree nodes, alias/title collisions, unresolved or ambiguous links with file/line citations, and linkify suggestions; <code>--format json</code> includes the same <code>maintenance</code> payload for scripts and CI.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="org-crypt">Org-crypt</h1>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- crypt decrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply
+npm run org2 -- crypt encrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply</code></pre>
+</section>
+<section class="org2-headline level-1">
+<h1 id="export-publish">Export + publish</h1>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- export html --file README.org --out README.html --apply
+npm run org2 -- export html --dir docs/site --recursive --out-dir site --apply
+npm run org2 -- publish docs-site --config org2.json</code></pre>
+<p>Useful export options include TOC, heading numbering, stylesheet injection, and Org-file-link rewrite to HTML targets.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="lsp">LSP</h1>
+<p>Start language server:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- lsp</code></pre>
+<p>Current implemented capabilities include:</p>
+<ul>
+<li><p>definitions/references/hover/completion/signature help</p></li>
+<li><p>rename + linked editing for IDs/file links</p></li>
+<li><p>file-rename link updates</p></li>
+<li><p>formatting (document/range/on-type)</p></li>
+<li><p>semantic tokens, inlay hints, code lens, call hierarchy</p></li>
+</ul>
+<p>For full details, see:</p>
+<ul>
+<li><p><code>LSP_README.md</code></p></li>
+<li><p><a href="editors-vscode.html">VS Code integration docs</a></p></li>
+</ul>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

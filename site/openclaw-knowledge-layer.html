@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OpenClaw knowledge layer</title>
+<meta name="subtitle" content="Corpus layout, safe writes, and review-gated memory promotion" />
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="OpenClaw knowledge layer" />
+<meta property="og:description" content="Corpus layout, safe writes, and review-gated memory promotion" />
+<meta property="og:url" content="https://org2.avi.press/openclaw-knowledge-layer.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/openclaw-knowledge-layer.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="OpenClaw knowledge layer" />
+<meta name="twitter:description" content="Corpus layout, safe writes, and review-gated memory promotion" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/openclaw-knowledge-layer.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a></div></details><form class="org2-site-search" role="search"><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">OpenClaw knowledge layer</h1>
+<p class="org2-document-subtitle" role="doc-subtitle">Corpus layout, safe writes, and review-gated memory promotion</p>
+</header>
+<p>OpenClaw can use an Org2 corpus as a local-first knowledge layer: raw observations stay auditable, deterministic Org2 commands derive indexes and views, and AI or external integrations write reviewable artifacts before anything becomes durable memory.</p>
+<p>This page is the integration contract. An OpenClaw integration should be able to implement the layout and safety rules here without reaching into Org2 internals.</p>
+<section class="org2-headline level-1">
+<h1 id="corpus-zones">Corpus zones</h1>
+<p>Use predictable top-level zones so humans, Org2, and automation agree on what each file means:</p>
+<table>
+<thead>
+<tr><th>Zone</th><th>Example paths</th><th>Owner</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>raw/</code></td><td><code>raw/meetings/2026-05-20-team-sync.transcript.org2</code>, <code>raw/imports/slack/2026-05-20.json</code></td><td>capture/import tools</td><td>Source material and append-only observations. Prefer minimal rewriting.</td></tr>
+<tr><td><code>notes/</code></td><td><code>notes/daily/2026-05-20.org2</code>, <code>notes/people/alex.org2</code>, <code>notes/projects/openclaw.org2</code></td><td>humans plus safe agent edits</td><td>Canonical working notes, TODOs, durable memory, and curated entities.</td></tr>
+<tr><td><code>compiled/</code></td><td><code>compiled/corpus.json</code>, <code>compiled/team-sync-context.json</code></td><td>deterministic Org2 commands</td><td>Machine artifacts derived from <code>raw/</code> and <code>notes/</code>. Safe to regenerate.</td></tr>
+<tr><td><code>views/</code></td><td><code>views/meeting-summaries/2026-05-20-team-sync.org2</code>, <code>views/link-suggestions.org2</code></td><td>deterministic reports or generated drafts</td><td>Review surfaces, summaries, diagnostics, backlinks, and suggestions. Usually not canonical.</td></tr>
+<tr><td><code>publish/</code></td><td><code>publish/team-handbook/</code>, <code>publish/openclaw-memory.html</code></td><td>publish/export jobs</td><td>Shareable output created from reviewed source material.</td></tr>
+</tbody>
+</table>
+<p>Recommended placement:</p>
+<ul>
+<li><p>Daily notes: <code>notes/daily/YYYY-MM-DD.org2</code></p></li>
+<li><p>Imported transcripts and logs: <code>raw/&lt;source&gt;/YYYY-MM-DD-&lt;slug&gt;.&lt;kind&gt;.org2</code> or original machine format under <code>raw/imports/</code></p></li>
+<li><p>Generated summaries: <code>views/&lt;workflow&gt;/&lt;slug&gt;.org2</code> with <code>ORG2_REVIEW_STATUS: review-required</code></p></li>
+<li><p>Review artifacts and suggestion reports: <code>views/review/&lt;slug&gt;.org2</code> or <code>views/link-suggestions.org2</code></p></li>
+<li><p>Compiled query/context packets: <code>compiled/&lt;slug&gt;.json</code></p></li>
+<li><p>Published outputs: <code>publish/&lt;audience-or-project&gt;/</code> or the configured publish output directory</p></li>
+</ul>
+<p>Keep canonical memory in <code>notes/</code>. Treat <code>raw/</code> as evidence and <code>views/</code> / <code>compiled/</code> as rebuildable until promoted.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="safe-agent-write-patterns">Safe agent write patterns</h1>
+<p>OpenClaw integrations should make the smallest useful write, preserve provenance, and run lint/check commands around changes.</p>
+<section class="org2-headline level-2">
+<h2 id="append-daily-notes">Append daily notes</h2>
+<p>Daily capture is the safest canonical write because it is chronological and easy to review.</p>
+<p>Before:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* 2026-05-20
+
+** Inbox</code></pre>
+<p>Agent append:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">*** Observation
+:PROPERTIES:
+:ID: obs-2026-05-20-fran-vet-reminder
+:ORG2_SOURCE: openclaw:chat
+:ORG2_CAPTURED_AT: 2026-05-20T16:10:00-07:00
+:ORG2_REVIEW_STATUS: reviewed
+:ORG2_CURATED: true
+:END:
+Fran needs her heartworm medication refill checked this week.</code></pre>
+<p>Rules:</p>
+<ul>
+<li><p>Append under an existing day/inbox heading when possible.</p></li>
+<li><p>Add a stable ID for any entry that may be linked later.</p></li>
+<li><p>Use <code>ORG2_SOURCE</code> and <code>ORG2_CAPTURED_AT</code> for provenance.</p></li>
+<li><p>Avoid rewriting unrelated daily content.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-2">
+<h2 id="create-or-update-todos">Create or update TODOs</h2>
+<p>Agents may add clear task candidates to <code>notes/daily/</code> or a project note. If the source is generated or uncertain, mark it for review.</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">** TODO Send follow-up to Dana about launch checklist
+SCHEDULED: &lt;2026-05-21 Thu&gt;
+:PROPERTIES:
+:ID: todo-2026-05-20-launch-followup-dana
+:ORG2_SOURCE: file:raw/meetings/2026-05-20-launch.transcript.org2::128-135
+:ORG2_REVIEW_STATUS: review-required
+:END:
+Candidate from meeting transcript. Verify owner/date before acting externally.</code></pre>
+<p>Do not mark externally consequential tasks as done, send messages, create tickets, or change third-party state unless the human explicitly approves that side effect.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="promote-generated-summaries">Promote generated summaries</h2>
+<p>Generated drafts belong in <code>views/</code> first:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">:PROPERTIES:
+:ID: view-2026-05-20-team-sync-summary
+:ORG2_ARTIFACT_SCHEMA: org2-artifact-metadata/v1
+:ORG2_ARTIFACT_ROLE: view
+:ORG2_PROVENANCE: file:raw/meetings/2026-05-20-team-sync.transcript.org2
+:ORG2_GENERATOR: openclaw meeting-summary adapter=work-summary model=example-model
+:ORG2_GENERATED_AT: 2026-05-20T23:00:00Z
+:ORG2_SOURCE_HASHES: file:raw/meetings/2026-05-20-team-sync.transcript.org2=sha256:...
+:ORG2_REVIEW_STATUS: review-required
+:END:
+
+* Summary
+- The team agreed to defer billing launch until the migration checklist is complete. [cite: file:raw/meetings/2026-05-20-team-sync.transcript.org2::88-94]
+
+* Candidate TODOs
+** TODO Confirm migration owner
+:PROPERTIES:
+:ORG2_SOURCE: file:raw/meetings/2026-05-20-team-sync.transcript.org2::101-106
+:ORG2_REVIEW_STATUS: review-required
+:END:</code></pre>
+<p>After human review, promote only accepted content into <code>notes/</code> and mark it curated:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* Billing launch migration
+:PROPERTIES:
+:ID: mem-billing-launch-migration
+:ORG2_SOURCE: file:raw/meetings/2026-05-20-team-sync.transcript.org2::88-106
+:ORG2_PROMOTED_FROM: file:views/meeting-summaries/2026-05-20-team-sync.org2
+:ORG2_REVIEW_STATUS: reviewed
+:ORG2_CURATED: true
+:END:
+The team deferred billing launch until the migration checklist is complete.
+
+** TODO Confirm migration owner</code></pre>
+</section>
+<section class="org2-headline level-2">
+<h2 id="add-backlinks-and-linkify-output">Add backlinks and linkify output</h2>
+<p>Prefer deterministic previews before mutating notes:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- roam linkify --dir notes --recursive --dry-run
+npm run org2 -- roam linkify --dir notes --recursive --apply
+npm run org2 -- lint --dir . --recursive</code></pre>
+<p>Generated link suggestions from AI should be written to <code>views/link-suggestions.org2</code> with citations and <code>review-required</code> status. Apply only reviewed links to <code>notes/</code>.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="avoid-duplicate-ids">Avoid duplicate IDs</h2>
+<p>Before assigning an ID, search or lint the corpus. Use IDs that include date, entity, and purpose instead of random duplicates:</p>
+<pre class="org2-src language-text" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-text">obs-2026-05-20-fran-vet-reminder
+mem-billing-launch-migration
+todo-2026-05-20-launch-followup-dana
+view-2026-05-20-team-sync-summary</code></pre>
+<p>Run <code>org2 lint</code> after writes so duplicate IDs, stale provenance, invalid artifact metadata, and unsafe generated artifacts surface immediately.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="lint-before-and-after-writes">Lint before and after writes</h2>
+<p>For automated write flows, use this shape:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- lint --dir . --recursive
+# perform one focused write
+npm run org2 -- lint --dir . --recursive</code></pre>
+<p>If the pre-write corpus is already dirty, record the existing diagnostics and ensure the integration does not introduce new ones.</p>
+</section>
+</section>
+<section class="org2-headline level-1">
+<h1 id="memory-promotion-lifecycle">Memory promotion lifecycle</h1>
+<p>Memory promotion is a state machine, not a blind copy operation.</p>
+<section class="org2-headline level-2">
+<h2 id="1-raw-observation-or-transcript-candidate-note">1. Raw observation or transcript → candidate note</h2>
+<ul>
+<li><p>Capture source material in <code>raw/</code> or append an observation to <code>notes/daily/</code></p></li>
+<li><p>Preserve timestamps, source refs, and source hashes when available</p></li>
+<li><p>Generate summaries or extracted facts into <code>views/</code>, not <code>notes/</code></p></li>
+<li><p>Every generated factual claim cites source material or says evidence is missing</p></li>
+</ul>
+</section>
+<section class="org2-headline level-2">
+<h2 id="2-candidate-note-reviewed-durable-memory">2. Candidate note → reviewed durable memory</h2>
+<p>A human or trusted review workflow verifies the candidate, edits wording, removes unsupported claims, and promotes accepted content into <code>notes/</code>.</p>
+<p>Required promoted-memory properties:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">:PROPERTIES:
+:ID: mem-&lt;stable-slug&gt;
+:ORG2_SOURCE: file:raw/...::line-line
+:ORG2_PROMOTED_FROM: file:views/...
+:ORG2_REVIEW_STATUS: reviewed
+:ORG2_CURATED: true
+:ORG2_CURATED_AT: 2026-05-20T23:30:00Z
+:END:</code></pre>
+</section>
+<section class="org2-headline level-2">
+<h2 id="3-old-memory-updated-merged-or-deprecated">3. Old memory → updated, merged, or deprecated</h2>
+<p>Do not silently overwrite old durable memory. Prefer an explicit update trail:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">:PROPERTIES:
+:ID: mem-old-launch-date
+:ORG2_REVIEW_STATUS: reviewed
+:ORG2_MEMORY_STATUS: deprecated
+:ORG2_DEPRECATED_BY: id:mem-current-launch-plan
+:ORG2_DEPRECATED_AT: 2026-05-20T23:45:00Z
+:END:</code></pre>
+<p>For merges, keep backlinks from deprecated nodes to the surviving memory so old references remain explainable.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="4-generated-claims-cite-source-material">4. Generated claims cite source material</h2>
+<p>Acceptable generated claim:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">The billing launch was deferred until migration checklist completion. [cite: file:raw/meetings/2026-05-20-team-sync.transcript.org2::88-94]</code></pre>
+<p>Unsafe claim:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">The billing launch is delayed because the payments provider failed certification.</code></pre>
+<p>If the source does not support the reason, the generated artifact should say <code>Evidence missing</code> or leave a review question.</p>
+</section>
+</section>
+<section class="org2-headline level-1">
+<h1 id="metadata-and-properties">Metadata and properties</h1>
+<p>Use normal Org property drawers. Recommended properties:</p>
+<table>
+<thead>
+<tr><th>Property</th><th>Applies to</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>ID</code></td><td>durable headings, tasks, artifacts</td><td>Stable link target. Must be unique in the corpus.</td></tr>
+<tr><td><code>ORG2_SOURCE</code></td><td>observations, TODOs, promoted memory</td><td>Source path, URL, message ref, or <code>openclaw:&lt;channel&gt;</code> reference.</td></tr>
+<tr><td><code>ORG2_PROVENANCE</code></td><td>generated artifacts</td><td>Primary source files or query/context packet used to derive an artifact.</td></tr>
+<tr><td><code>ORG2_SOURCE_HASHES</code></td><td>generated artifacts</td><td>Source file hashes used to detect stale summaries.</td></tr>
+<tr><td><code>ORG2_PROMOTED_FROM</code></td><td>promoted notes</td><td>Draft/review artifact that produced the curated note.</td></tr>
+<tr><td><code>ORG2_REVIEW_STATUS</code></td><td>generated and canonical review flows</td><td>One of <code>generated</code>, <code>review-required</code>, <code>reviewed</code>, or <code>promoted</code>. Use <code>ORG2_CURATED: true</code> for curated memory and <code>ORG2_MEMORY_STATUS: deprecated</code> for retired memory.</td></tr>
+<tr><td><code>ORG2_ARTIFACT_ROLE</code></td><td><code>compiled/</code>, <code>views/</code>, <code>publish/</code> artifacts</td><td>Artifact class such as <code>compiled</code>, <code>view</code>, or <code>publish</code>.</td></tr>
+<tr><td><code>ORG2_GENERATOR</code></td><td>generated artifacts</td><td>Tool/workflow/adapter/model name without secrets.</td></tr>
+<tr><td><code>ORG2_GENERATED_AT</code></td><td>generated artifacts</td><td>Generation timestamp.</td></tr>
+<tr><td><code>ORG2_MEETING_REF</code></td><td>meeting-derived notes</td><td>Meeting ID, calendar URL, or transcript path.</td></tr>
+<tr><td><code>ORG2_LINEAR_REF</code></td><td>tasks/project notes</td><td>Linear issue/team ref, e.g. <code>LIN-123</code>.</td></tr>
+<tr><td><code>ORG2_EXTERNAL_REF</code></td><td>external entities</td><td>URL, Slack/Discord message ref, email message ID, CRM ID, etc.</td></tr>
+<tr><td><code>ORG2_GENERATED</code></td><td>generated sections</td><td><code>true</code> when a section remains machine-generated and uncurated.</td></tr>
+<tr><td><code>ORG2_CURATED_AT</code></td><td>promoted notes</td><td>Review/promotion timestamp.</td></tr>
+</tbody>
+</table>
+<p>Never store API keys, OAuth tokens, cookies, or private provider credentials in Org2 properties, job manifests, compiled artifacts, or published output.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="deterministic-transforms-vs-review-gated-side-effects">Deterministic transforms vs review-gated side effects</h1>
+<p>Org2 deterministic transforms are local, reproducible operations over files:</p>
+<ul>
+<li><p>parse, format, lint, agenda, query, compile corpus</p></li>
+<li><p>generate backlinks and linkify previews</p></li>
+<li><p>export/publish from reviewed source</p></li>
+<li><p>produce cited context packets in <code>compiled/</code></p></li>
+<li><p>write deterministic reports whose inputs are local files</p></li>
+</ul>
+<p>These may be automated when they write only generated zones or reviewed deterministic output.</p>
+<p>Review-gated AI or external side effects require a human approval boundary:</p>
+<ul>
+<li><p>LLM-generated summaries, extracted claims, inferred TODOs, entity matching, and link suggestions</p></li>
+<li><p>promotion from <code>views/</code> into canonical <code>notes/</code></p></li>
+<li><p>edits that delete, merge, or deprecate durable memory</p></li>
+<li><p>sending email/chat, opening or updating Linear/GitHub tickets, calendar changes, or other third-party writes</p></li>
+<li><p>publishing externally visible output if it contains private or newly generated claims</p></li>
+</ul>
+<p>Rule of thumb: deterministic Org2 transforms can build and check the map; AI and external tools can propose changes; reviewed promotion decides what becomes territory.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="meetingbot-style-flow">MeetingBot-style flow</h1>
+<p>Example flow from transcript to curated note:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh"># 1. Capture raw transcript.
+mkdir -p raw/meetings views/meeting-summaries notes/meetings compiled
+cp ~/Downloads/team-sync.txt raw/meetings/2026-05-20-team-sync.transcript.org2
+
+# 2. Build cited local context deterministically.
+npm run org2 -- query &quot;team sync&quot; \
+  --dir raw/meetings \
+  --recursive \
+  --subtree \
+  --answer-context \
+  --format json \
+  &gt; compiled/2026-05-20-team-sync-context.json
+
+# 3. Ask AI to write a reviewable draft, not canonical memory.
+npm run org2 -- ai run \
+  --task summarize-meeting \
+  --context compiled/2026-05-20-team-sync-context.json \
+  --out views/meeting-summaries/2026-05-20-team-sync.org2 \
+  --apply
+
+# 4. Check generated artifact metadata and graph health.
+npm run org2 -- lint --dir . --recursive
+
+# 5. After review, promote accepted content.
+npm run org2 -- ai promote \
+  --file views/meeting-summaries/2026-05-20-team-sync.org2 \
+  --to-file notes/meetings/team-sync.org2 \
+  --apply
+
+# 6. Re-check canonical corpus.
+npm run org2 -- lint --dir . --recursive</code></pre>
+<p>Before promotion, the draft is a <code>view</code> artifact with <code>review-required</code> status. After promotion, the accepted note in <code>notes/meetings/team-sync.org2</code> carries source/provenance properties and the draft can be marked <code>promoted</code>.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="integration-checklist">Integration checklist</h1>
+<p>Before writing:</p>
+<ul>
+<li><p>Identify the target zone: <code>raw/</code>, <code>notes/</code>, <code>compiled/</code>, <code>views/</code>, or <code>publish/</code>.</p></li>
+<li><p>Decide whether the operation is deterministic or review-gated.</p></li>
+<li><p>Run or inspect recent <code>org2 lint</code> output when practical.</p></li>
+<li><p>Search for existing IDs/entities to avoid duplicates.</p></li>
+<li><p>Prepare provenance: source path/message ref, line range, hash, generator, and timestamp.</p></li>
+</ul>
+<p>When writing:</p>
+<ul>
+<li><p>Append or patch the smallest relevant section.</p></li>
+<li><p>Write generated or uncertain content to <code>views/</code> with <code>review-required</code>.</p></li>
+<li><p>Keep secrets out of files.</p></li>
+<li><p>Include citations for generated factual claims.</p></li>
+<li><p>Do not perform external side effects from generated TODOs without approval.</p></li>
+</ul>
+<p>After writing:</p>
+<ul>
+<li><p>Run <code>org2 lint --dir . --recursive</code> or the repository's equivalent check.</p></li>
+<li><p>Confirm no duplicate IDs or invalid review/provenance metadata were introduced.</p></li>
+<li><p>If promoting memory, ensure the promoted note says where it came from and the source draft is marked reviewed/promoted.</p></li>
+<li><p>If publishing, verify the output contains only intended reviewed content.</p></li>
+</ul>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

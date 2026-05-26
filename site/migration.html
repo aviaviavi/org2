@@ -3,20 +3,20 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Agent ingestion pipeline</title>
+<title>Practical migration</title>
 <link rel="icon" type="image/png" href="assets/favicon.png" />
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
 <script type="module" src="assets/shiki-vscode.js"></script>
 <script defer src="assets/nav.js"></script>
 <meta property="og:type" content="website" />
-<meta property="og:title" content="Agent ingestion pipeline" />
-<meta property="og:description" content="Agent ingestion pipeline" />
-<meta property="og:url" content="https://org2.avi.press/ingestion-pipeline.html" />
-<meta property="og:image" content="https://org2.avi.press/assets/og/ingestion-pipeline.svg" />
+<meta property="og:title" content="Practical migration" />
+<meta property="og:description" content="Practical migration" />
+<meta property="og:url" content="https://org2.avi.press/migration.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/migration.svg" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Agent ingestion pipeline" />
-<meta name="twitter:description" content="Agent ingestion pipeline" />
-<meta name="twitter:image" content="https://org2.avi.press/assets/og/ingestion-pipeline.svg" />
+<meta name="twitter:title" content="Practical migration" />
+<meta name="twitter:description" content="Practical migration" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/migration.svg" />
 <link rel="stylesheet" href="assets/site.css" />
 <style>
 :root { color-scheme: light dark; }
@@ -51,56 +51,47 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <main class="org2-document">
 <div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a></div></details><form class="org2-site-search" role="search"><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a></nav></details></div>
 <header class="org2-document-header">
-<h1 class="org2-document-title">Agent ingestion pipeline</h1>
+<h1 class="org2-document-title">Practical migration</h1>
 </header>
-<p>Org2 ingestion keeps external context as reviewable source material before anything becomes durable memory or canonical notes.</p>
+<p>This page keeps migration simple: keep existing notes working while you adopt Org2 workflow improvements incrementally.</p>
 <section class="org2-headline level-1">
-<h1 id="data-model">Data model</h1>
-<p>Raw connector output uses <code>org2-ingestion/v1</code> and is stored in a raw/source zone such as <code>raw/slack/</code>, <code>raw/gmail/</code>, or a configured equivalent.</p>
-<p>Required raw capture fields:</p>
+<h1 id="existing-org-notes">Existing Org notes</h1>
 <ul>
-<li><p><code>sourceType</code> :: <code>slack</code>, <code>gmail</code>, <code>meeting</code>, <code>linear</code>, <code>github</code>, <code>note</code>, or <code>demo</code></p></li>
-<li><p><code>externalId</code> :: stable upstream id, e.g. Slack timestamp or GitHub issue id</p></li>
-<li><p><code>authors</code> :: one or more source authors</p></li>
-<li><p><code>capturedAt</code> / <code>occurredAt</code> :: ingestion time and source event time</p></li>
-<li><p><code>visibility</code> and <code>sensitivity</code> :: source access/safety hints</p></li>
-<li><p><code>contentHash</code> :: SHA-256 of normalized raw content</p></li>
-<li><p><code>sourceRef</code> :: source URL/ref when available</p></li>
-<li><p><code>rawRef</code> :: stable provenance ref, <code>sourceType:externalId@sha256:contentHash</code></p></li>
-<li><p><code>content</code> :: normalized raw text/body</p></li>
-</ul>
-<p>Derived review artifacts are generated beside, not over, durable notes. They include:</p>
-<ul>
-<li><p>summary candidates</p></li>
-<li><p>decisions</p></li>
-<li><p>TODO candidates</p></li>
-<li><p>entity candidates</p></li>
-<li><p>claims</p></li>
-<li><p>source citations back to <code>rawRef</code></p></li>
-<li><p><code>ORG2_REVIEW_STATUS</code> / artifact metadata so promotion is explicit</p></li>
+<li><p>Keep your current <code>.org</code> files.</p></li>
+<li><p>Point Org2 CLI/editor tooling at your existing notes directory.</p></li>
+<li><p>No bulk rewrite is required.</p></li>
 </ul>
 </section>
 <section class="org2-headline level-1">
-<h1 id="pipeline">Pipeline</h1>
+<h1 id="new-files">New files</h1>
+<ul>
+<li><p>Prefer <code>.org2</code> for new notes.</p></li>
+<li><p>This keeps Org2-native intent clear and helps tooling/scoping.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="roam-link-migration">Roam link migration</h1>
+<ul>
+<li><p>Existing <code>[[id:...]]</code> links stay supported.</p></li>
+<li><p>New links can use <code>[[Node Title]]</code> when title-based linking is preferred.</p></li>
+<li><p>In mixed bases, both forms can coexist.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="recommended-transition-policy">Recommended transition policy</h1>
 <ol>
-<li><p>A source connector emits a raw capture.</p></li>
-<li><p>Org2 writes the raw capture under the raw/source zone using a deterministic filename derived from <code>sourceType</code>, <code>externalId</code>, and <code>contentHash</code>.</p></li>
-<li><p>Org2 generates a review artifact under a review zone with provenance and review status.</p></li>
-<li><p>A human or agent reviews selected facts and promotes only intentional durable notes/TODOs.</p></li>
+<li><p>Keep historical ID links untouched.</p></li>
+<li><p>Prefer <code>[[Title]]</code> links for new writing when titles are stable.</p></li>
+<li><p>Reserve explicit IDs for collision-prone or machine-generated workflows.</p></li>
 </ol>
 </section>
 <section class="org2-headline level-1">
-<h1 id="idempotency">Idempotency</h1>
-<p>Re-ingesting the same <code>sourceType</code> + <code>externalId</code> + normalized content hash writes the same raw and review paths, so repeated runs update/dedupe instead of duplicating files. If the upstream item changes, the content hash changes and a new capture/review artifact preserves the source version boundary.</p>
-</section>
-<section class="org2-headline level-1">
-<h1 id="demo-fixture">Demo fixture</h1>
-<p>The provider-free demo implementation lives in <code>src/ingestionPipeline.ts</code>. It accepts one raw capture input and produces:</p>
+<h1 id="compatibility-caveats">Compatibility caveats</h1>
 <ul>
-<li><p><code>raw/&lt;source&gt;-&lt;external-id&gt;-&lt;hash&gt;.json</code></p></li>
-<li><p><code>review/&lt;source&gt;-&lt;external-id&gt;-&lt;hash&gt;.org</code></p></li>
+<li><p>Org2 targets practical parity, not bug-for-bug GNU Org behavior.</p></li>
+<li><p>Some extension-specific editor UX differs from Emacs org-mode/org-roam.</p></li>
+<li><p>Re-run CI/automation commands after migration changes (<code>agenda</code>, <code>roam db-sync</code>, <code>publish</code>) to validate behavior in your environment.</p></li>
 </ul>
-<p>The review artifact contains <code>ORG2_ARTIFACT_SCHEMA</code>, <code>ORG2_PROVENANCE</code>, <code>ORG2_SOURCE_HASHES</code>, and <code>ORG2_REVIEW_STATUS: review-required</code>.</p>
 </section>
 </main>
 </div>

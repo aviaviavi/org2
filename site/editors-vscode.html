@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VS Code</title>
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="VS Code" />
+<meta property="og:description" content="VS Code" />
+<meta property="og:url" content="https://org2.avi.press/editors-vscode.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/editors-vscode.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="VS Code" />
+<meta name="twitter:description" content="VS Code" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/editors-vscode.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a></div></details><form class="org2-site-search" role="search"><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">VS Code</h1>
+</header>
+<p>Org2's most complete editor integration today is VS Code.</p>
+<section class="org2-headline level-1">
+<h1 id="install-instructions">Install instructions</h1>
+<p>The extension currently lives in this repository at <code>editors/vscode-org2/</code>.</p>
+<ol>
+<li><p>Build Org2 CLI and repository artifacts:</p></li>
+</ol>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">git clone https://github.com/aviaviavi/org2.git
+cd org2
+npm ci
+npm run build</code></pre>
+<ol>
+<li><p>Install extension dependencies:</p></li>
+</ol>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">cd editors/vscode-org2
+npm ci</code></pre>
+<ol>
+<li><p>Install/run the extension:</p></li>
+</ol>
+<ul>
+<li><p>Use VS Code Extension Development Host from this folder, or</p></li>
+<li><p>Package to VSIX and install via <code>Install from VSIX...</code>.</p></li>
+</ul>
+<ol>
+<li><p>Ensure <code>org2</code> CLI is available:</p></li>
+</ol>
+<ul>
+<li><p>Repo-built fallback is supported, or</p></li>
+<li><p>Provide <code>org2</code> on your <code>PATH</code>.</p></li>
+</ul>
+<p>For settings and command behavior details, see <code>editors/vscode-org2/README.md</code> and <a href="tooling-reference.html">Tooling reference</a>.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="keyboard-shortcuts">Keyboard shortcuts</h1>
+<p>This list is comprehensive for current default bindings declared in <code>editors/vscode-org2/package.json</code>.</p>
+<section class="org2-headline level-2">
+<h2 id="direct-bindings">Direct bindings</h2>
+<table>
+<thead>
+<tr><th>Linux/Windows</th><th>macOS</th><th>Command ID</th><th>Action</th></tr>
+</thead>
+<tbody>
+<tr><td>ctrl+alt+t</td><td>ctrl+alt+t</td><td><code>org2.toggleTodo</code></td><td>Toggle TODO status</td></tr>
+<tr><td>ctrl+alt+o</td><td>ctrl+alt+o</td><td><code>org2.toggleFoldHere</code></td><td>Toggle fold at cursor</td></tr>
+<tr><td>ctrl+alt+d</td><td>ctrl+alt+d</td><td><code>org2.debugFoldingRanges</code></td><td>Debug folding ranges</td></tr>
+<tr><td>j</td><td>j</td><td><code>cursorDown</code></td><td>Visible-line down (with VSCodeVim + <code>org2.vim.visibleLineNavigation=true</code>)</td></tr>
+<tr><td>k</td><td>k</td><td><code>cursorUp</code></td><td>Visible-line up (with VSCodeVim + <code>org2.vim.visibleLineNavigation=true</code>)</td></tr>
+</tbody>
+</table>
+</section>
+<section class="org2-headline level-2">
+<h2 id="power-keymap">Power keymap</h2>
+<p>When <code>org2.keymap.power=true</code> (default), prefix is:</p>
+<ul>
+<li><p>Linux/Windows: <code>ctrl+;</code></p></li>
+<li><p>macOS: <code>cmd+;</code></p></li>
+</ul>
+<p>Then use the second key (or namespace chord).</p>
+<section class="org2-headline level-3">
+<h3 id="agenda">Agenda</h3>
+<table>
+<thead>
+<tr><th>Linux/Windows</th><th>macOS</th><th>Command ID</th><th>Action</th></tr>
+</thead>
+<tbody>
+<tr><td>ctrl+; a o</td><td>cmd+; a o</td><td><code>org2.openAgenda</code></td><td>Open agenda</td></tr>
+<tr><td>ctrl+; a r</td><td>cmd+; a r</td><td><code>org2.refreshAgenda</code></td><td>Refresh agenda</td></tr>
+<tr><td>ctrl+; a f</td><td>cmd+; a f</td><td><code>org2.pickAgendaFilter</code></td><td>Agenda filter picker</td></tr>
+</tbody>
+</table>
+</section>
+<section class="org2-headline level-3">
+<h3 id="roam">Roam</h3>
+<table>
+<thead>
+<tr><th>Linux/Windows</th><th>macOS</th><th>Command ID</th><th>Action</th></tr>
+</thead>
+<tbody>
+<tr><td>ctrl+; r b</td><td>cmd+; r b</td><td><code>org2.openBacklinks</code></td><td>Open backlinks pane</td></tr>
+<tr><td>ctrl+; r h</td><td>cmd+; r h</td><td><code>org2.roamShowBacklinksById</code></td><td>Show backlinks for prompted link/ID</td></tr>
+<tr><td>ctrl+; r l</td><td>cmd+; r l</td><td><code>org2.roamCopyIdLink</code></td><td>Copy ID link for current heading/file</td></tr>
+<tr><td>ctrl+; r c</td><td>cmd+; r c</td><td><code>org2.roamCopyIdLinkById</code></td><td>Copy ID link for prompted target</td></tr>
+<tr><td>ctrl+; r i</td><td>cmd+; r i</td><td><code>org2.roamInsertBacklink</code></td><td>Insert backlink</td></tr>
+<tr><td>ctrl+; r o</td><td>cmd+; r o</td><td><code>org2.roamOpenId</code></td><td>Open ID link target</td></tr>
+<tr><td>ctrl+; r p</td><td>cmd+; r p</td><td><code>org2.roamOpenBacklink</code></td><td>Open backlink source (current heading/file)</td></tr>
+<tr><td>ctrl+; r g</td><td>cmd+; r g</td><td><code>org2.roamOpenBacklinkById</code></td><td>Open backlink source by prompt</td></tr>
+<tr><td>ctrl+; r t</td><td>cmd+; r t</td><td><code>org2.roamDailiesGotoToday</code></td><td>Dailies: today</td></tr>
+<tr><td>ctrl+; r y</td><td>cmd+; r y</td><td><code>org2.roamDailiesGotoYesterday</code></td><td>Dailies: yesterday</td></tr>
+<tr><td>ctrl+; r m</td><td>cmd+; r m</td><td><code>org2.roamDailiesGotoTomorrow</code></td><td>Dailies: tomorrow</td></tr>
+<tr><td>ctrl+; r d</td><td>cmd+; r d</td><td><code>org2.roamDailiesGotoDate</code></td><td>Dailies: pick date</td></tr>
+<tr><td>ctrl+; r n</td><td>cmd+; r n</td><td><code>org2.roamNodeNew</code></td><td>New roam node (selected text becomes the default title)</td></tr>
+<tr><td>ctrl+; r s</td><td>cmd+; r s</td><td><code>org2.roamDbSync</code></td><td>Roam DB sync</td></tr>
+</tbody>
+</table>
+</section>
+<section class="org2-headline level-3">
+<h3 id="ai-lifecycle">AI lifecycle</h3>
+<table>
+<thead>
+<tr><th>Linux/Windows</th><th>macOS</th><th>Command ID</th><th>Action</th></tr>
+</thead>
+<tbody>
+<tr><td>ctrl+; i v</td><td>cmd+; i v</td><td><code>org2.aiReviewWorkspace</code></td><td>Review workspace / active file</td></tr>
+<tr><td>ctrl+; i r</td><td>cmd+; i r</td><td><code>org2.aiMarkReviewed</code></td><td>Mark draft reviewed</td></tr>
+<tr><td>ctrl+; i x</td><td>cmd+; i x</td><td><code>org2.aiMarkRejected</code></td><td>Mark draft rejected</td></tr>
+<tr><td>ctrl+; i d</td><td>cmd+; i d</td><td><code>org2.aiMarkDeferred</code></td><td>Mark draft deferred</td></tr>
+</tbody>
+</table>
+</section>
+<section class="org2-headline level-3">
+<h3 id="status"><span class="org2-todo">TODO</span> status</h3>
+<table>
+<thead>
+<tr><th>Linux/Windows</th><th>macOS</th><th>Command ID</th><th>Action</th></tr>
+</thead>
+<tbody>
+<tr><td>ctrl+; t t</td><td>cmd+; t t</td><td><code>org2.setTodoStatus</code></td><td>Set TODO (args: <code>todo</code>)</td></tr>
+<tr><td>ctrl+; t i</td><td>cmd+; t i</td><td><code>org2.setTodoStatus</code></td><td>Set IN_PROGRESS (args: <code>in_progress</code>)</td></tr>
+<tr><td>ctrl+; t d</td><td>cmd+; t d</td><td><code>org2.setTodoStatus</code></td><td>Set DONE (args: <code>done</code>)</td></tr>
+<tr><td>ctrl+; t c</td><td>cmd+; t c</td><td><code>org2.setTodoStatus</code></td><td>Set CANCELED (args: <code>canceled</code>)</td></tr>
+</tbody>
+</table>
+</section>
+<section class="org2-headline level-3">
+<h3 id="planning-archive-capture-export-folding">Planning, archive, capture, export, folding</h3>
+<table>
+<thead>
+<tr><th>Linux/Windows</th><th>macOS</th><th>Command ID</th><th>Action</th></tr>
+</thead>
+<tbody>
+<tr><td>ctrl+; s</td><td>cmd+; s</td><td><code>org2.setScheduled</code></td><td>Set SCHEDULED (prompt date)</td></tr>
+<tr><td>ctrl+; s t</td><td>cmd+; s t</td><td><code>org2.setScheduledToday</code></td><td>Set SCHEDULED to today</td></tr>
+<tr><td>ctrl+; d</td><td>cmd+; d</td><td><code>org2.setDeadline</code></td><td>Set DEADLINE (prompt date)</td></tr>
+<tr><td>ctrl+; d t</td><td>cmd+; d t</td><td><code>org2.setDeadlineToday</code></td><td>Set DEADLINE to today</td></tr>
+<tr><td>ctrl+; x</td><td>cmd+; x</td><td><code>org2.archiveSubtree</code></td><td>Archive subtree</td></tr>
+<tr><td>ctrl+; x r</td><td>cmd+; x r</td><td><code>org2.refileSubtree</code></td><td>Refile subtree</td></tr>
+<tr><td>ctrl+; h left</td><td>cmd+; h left</td><td><code>org2.promoteSubtree</code></td><td>Promote subtree</td></tr>
+<tr><td>ctrl+; h right</td><td>cmd+; h right</td><td><code>org2.demoteSubtree</code></td><td>Demote subtree</td></tr>
+<tr><td>ctrl+; h up</td><td>cmd+; h up</td><td><code>org2.moveSubtreeUp</code></td><td>Move subtree up</td></tr>
+<tr><td>ctrl+; h down</td><td>cmd+; h down</td><td><code>org2.moveSubtreeDown</code></td><td>Move subtree down</td></tr>
+<tr><td>ctrl+; g a</td><td>cmd+; g a</td><td><code>org2.graphAuditWorkspace</code></td><td>Graph audit workspace</td></tr>
+<tr><td>ctrl+; c q</td><td>cmd+; c q</td><td><code>org2.captureQuickEntry</code></td><td>Quick capture</td></tr>
+<tr><td>ctrl+; p h</td><td>cmd+; p h</td><td><code>org2.exportCurrentFileHtml</code></td><td>Export current file HTML</td></tr>
+<tr><td>ctrl+; p w</td><td>cmd+; p w</td><td><code>org2.exportWorkspaceHtml</code></td><td>Export workspace HTML</td></tr>
+<tr><td>ctrl+; 1</td><td>cmd+; 1</td><td><code>editor.foldLevel1</code></td><td>Fold level 1</td></tr>
+<tr><td>ctrl+; 2</td><td>cmd+; 2</td><td><code>editor.foldLevel2</code></td><td>Fold level 2</td></tr>
+<tr><td>ctrl+; 3</td><td>cmd+; 3</td><td><code>editor.foldLevel3</code></td><td>Fold level 3</td></tr>
+<tr><td>ctrl+; 4</td><td>cmd+; 4</td><td><code>editor.foldLevel4</code></td><td>Fold level 4</td></tr>
+</tbody>
+</table>
+</section>
+</section>
+<section class="org2-headline level-2">
+<h2 id="commands-without-default-keybindings">Commands without default keybindings</h2>
+<p>Available from command palette (<code>Cmd/Ctrl+Shift+P</code>):</p>
+<ul>
+<li><p><code>org2.refreshBacklinks</code></p></li>
+<li><p><code>org2.searchWorkspace</code></p></li>
+<li><p><code>org2.queryWorkspace</code></p></li>
+<li><p><code>org2.compileWorkspaceCorpus</code></p></li>
+<li><p><code>org2.roamLinkifyPreview</code> (shows exact replacements plus review-only semantic/alias represented-node suggestions)</p></li>
+<li><p><code>org2.roamLinkifyApply</code> (applies exact safe replacements only)</p></li>
+<li><p><code>org2.roamGraph</code> (includes linkify maintenance suggestions with source ranges)</p></li>
+<li><p><code>org2.aiSuggestLinks</code> (writes a review-only AI-assisted link/entity suggestion report; canonical notes are not edited)</p></li>
+<li><p><code>org2.formatWorkspaceCheck</code></p></li>
+<li><p><code>org2.formatWorkspaceApply</code></p></li>
+<li><p><code>org2.formatCurrentFileCheck</code></p></li>
+<li><p><code>org2.formatCurrentFilePreviewDiff</code></p></li>
+<li><p><code>org2.formatCurrentFileApply</code></p></li>
+<li><p><code>org2.pickAgendaStatusFilter</code></p></li>
+<li><p><code>org2.openAgendaItem</code></p></li>
+<li><p><code>org2.setTodoTODO</code></p></li>
+<li><p><code>org2.setTodoInProgress</code></p></li>
+<li><p><code>org2.setTodoDone</code></p></li>
+<li><p><code>org2.setTodoCanceled</code></p></li>
+<li><p><code>org2.setScheduledTomorrow</code></p></li>
+<li><p><code>org2.setScheduledNextWeek</code></p></li>
+<li><p><code>org2.setScheduledNextMonth</code></p></li>
+<li><p><code>org2.cryptDecryptSubtree</code></p></li>
+<li><p><code>org2.cryptEncryptSubtree</code></p></li>
+<li><p><code>org2.refileSubtree</code></p></li>
+<li><p><code>org2.roamOpenTitle</code></p></li>
+<li><p><code>org2.roamShowBacklinks</code></p></li>
+<li><p><code>org2.rerunAutoFold</code></p></li>
+<li><p><code>org2.debugListLinks</code></p></li>
+<li><p><code>org2.graphAuditWorkspace</code></p></li>
+<li><p><code>org2.aiReviewWorkspace</code></p></li>
+<li><p><code>org2.aiMarkReviewed</code></p></li>
+<li><p><code>org2.aiMarkRejected</code></p></li>
+<li><p><code>org2.aiMarkDeferred</code></p></li>
+<li><p><code>org2.promoteSubtree</code></p></li>
+<li><p><code>org2.demoteSubtree</code></p></li>
+<li><p><code>org2.moveSubtreeUp</code></p></li>
+<li><p><code>org2.moveSubtreeDown</code></p></li>
+</ul>
+</section>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

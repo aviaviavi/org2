@@ -22,7 +22,7 @@ Org2 combines three useful traditions:
 - the structured programmability of Org-style TODOs, links, dates, tags, and properties,
 - the provenance and workflow boundaries agents need to work safely in a real knowledge base.
 
-The result is not just indexed markdown. It is a shared working graph: notes, tasks, plans, sources, generated drafts, and durable knowledge can stay connected while still living in ordinary files. Raw imports can live in =raw/=, durable notes in the normal corpus, generated drafts in =views/=, and compiled indexes in =compiled/=. Agents can automate the pipeline, while humans still have natural places to inspect or steer when judgment matters.
+The result is a shared working graph: notes, tasks, plans, sources, generated drafts, and durable knowledge stay connected while still living in ordinary files. Raw imports can live in =raw/=, durable notes in the normal corpus, generated drafts in =views/=, and compiled indexes in =compiled/=. Agents can automate the pipeline, while humans still have natural places to inspect or steer when judgment matters.
 
 * What you can do with it
 
