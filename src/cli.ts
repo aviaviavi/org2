@@ -2220,6 +2220,12 @@ function applyRoamLinkifyToFile(
   };
 }
 
+interface HabitAgendaState {
+  marker: string;
+  streak: number;
+  closedDates: string[];
+}
+
 interface ScheduledItem {
   filePath: string;
   // 0-based (VS Code uses 0-based positions)
@@ -2234,6 +2240,7 @@ interface ScheduledItem {
   time: string | undefined;
   kind: string;
   tags: string[];
+  habit?: HabitAgendaState;
 }
 
 type AgendaStatusBucket = "todo" | "in_progress" | "done" | "canceled" | "custom";
@@ -4279,6 +4286,74 @@ function parseHeadlineLine(line: string): { todo?: string; priority?: string; ti
   return { priority, title, tags, level };
 }
 
+function isAgendaHabitProperties(properties: Record<string, string>): { isHabit: boolean; marker: string } {
+  const raw = String(properties.HABIT || properties.STYLE || properties.ORG2_HABIT || "").trim();
+  const normalized = raw.toLowerCase();
+  return { isHabit: normalized === "habit" || normalized === "true" || normalized === "yes", marker: raw || "habit" };
+}
+
+function collectClosedDatesInSubtree(lines: string[], headlineLineIndex: number): string[] {
+  const dates = new Set<string>();
+  for (let i = headlineLineIndex + 1; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (/^(\*+)\s+/.test(line)) break;
+    for (const match of line.matchAll(/\bCLOSED:\s*[<[\[]?(\d{4}-\d{2}-\d{2})\b/g)) {
+      if (match[1]) dates.add(match[1]);
+    }
+  }
+  return [...dates].sort();
+}
+
+function agendaHabitStreak(closedDates: string[], currentDate: string): number {
+  if (closedDates.length === 0) return 0;
+  const closed = new Set(closedDates);
+  let cursor = parseIsoDate(currentDate);
+  let streak = 0;
+  for (let i = 0; i < 366; i += 1) {
+    const iso = cursor.toISOString().slice(0, 10);
+    if (!closed.has(iso)) break;
+    streak += 1;
+    cursor = addTimestampInterval(cursor, 1, "d", -1);
+  }
+  return streak;
+}
+
+function appendHabitLintIssues(raw: string, filePath: string, issues: ArtifactLintIssue[]): void {
+  const lines = raw.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const parsed = parseHeadlineLine(lines[i] ?? "");
+    if (!parsed) continue;
+    const properties = extractAgendaPropertiesNearHeadline(lines, i);
+    const habit = isAgendaHabitProperties(properties);
+    if (!habit.isHabit) continue;
+
+    let hasRepeatingPlanning = false;
+    let hasAnyPlanning = false;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const line = lines[j] ?? "";
+      if (/^(\*+)\s+/.test(line)) break;
+      const planningRe = /\b(SCHEDULED|DEADLINE):\s*([<[].*?[>\]])/g;
+      let match: RegExpExecArray | null;
+      while ((match = planningRe.exec(line)) !== null) {
+        hasAnyPlanning = true;
+        if (parseTimestampRepeater(match[2] ?? "")) hasRepeatingPlanning = true;
+      }
+    }
+
+    if (!hasRepeatingPlanning) {
+      issues.push({
+        severity: "warning",
+        rule: hasAnyPlanning ? "habit-missing-repeater" : "habit-missing-planning",
+        file: filePath,
+        line: i + 1,
+        message: hasAnyPlanning
+          ? "Habit headlines should use a repeater on SCHEDULED or DEADLINE (for example: SCHEDULED: <2026-05-26 Tue +1d>)."
+          : "Habit headlines need SCHEDULED or DEADLINE planning with a repeater.",
+      });
+    }
+  }
+}
+
 function extractAgendaPropertiesNearHeadline(lines: string[], headlineLineIndex: number): Record<string, string> {
   const properties: Record<string, string> = {};
   let inProperties = false;
@@ -4372,6 +4447,8 @@ function findScheduledItemsInText(
     tags: string[];
     level: number;
     lineNumber: number;
+    habit: { isHabit: boolean; marker: string };
+    closedDates: string[];
   } | null = null;
 
   for (let i = 0; i < lines.length; i += 1) {
@@ -4387,6 +4464,8 @@ function findScheduledItemsInText(
           effort: properties.EFFORT,
           properties,
           lineNumber: i,
+          habit: isAgendaHabitProperties(properties),
+          closedDates: collectClosedDatesInSubtree(lines, i),
         };
       } else {
         current = null;
@@ -4474,6 +4553,14 @@ function findScheduledItemsInText(
         if (!matchesAgendaDateFilter(itemDate, dateFilter)) continue;
         if (!matchesAgendaExcludeDateFilter(itemDate, excludeDateFilter)) continue;
 
+        const habit = current.habit.isHabit
+          ? {
+              marker: current.habit.marker,
+              streak: agendaHabitStreak(current.closedDates, dateStr),
+              closedDates: current.closedDates,
+            }
+          : undefined;
+
         items.push({
           filePath,
           lineNumber: current.lineNumber,
@@ -4487,6 +4574,7 @@ function findScheduledItemsInText(
           time: planningTime,
           kind,
           tags: [...current.tags],
+          ...(habit ? { habit } : {}),
         });
       }
     }
@@ -11500,6 +11588,7 @@ Flags:
 
       issues.push(...lintArtifactMetadataInText(raw, filePath));
       appendArtifactFreshnessLintIssues(raw, filePath, issues);
+      appendHabitLintIssues(raw, filePath, issues);
 
       for (const ref of collectArtifactProvenanceRefsInText(raw, filePath)) {
         if (ref.kind === "file") {
@@ -13254,6 +13343,7 @@ Flags:
         ...(it.time ? { time: it.time } : {}),
         ...(it.effort ? { effort: it.effort } : {}),
         ...(it.id ? { id: it.id } : {}),
+        ...(it.habit ? { habit: it.habit } : {}),
       });
 
       return Object.keys(byDate)

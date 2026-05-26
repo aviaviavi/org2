@@ -5,6 +5,7 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 ## Unreleased
 
 - Added syntax coverage tests for Org timestamp repeaters and warning offsets.
+- Agenda rows now surface CLI habit metadata with a compact streak-ish `habit ×N` cue and tooltip details.
 
 ## 0.1.0 - 2026-05-24
 

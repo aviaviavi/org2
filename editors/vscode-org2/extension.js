@@ -183,7 +183,7 @@ class Org2AgendaSeparator {
 }
 
 class Org2AgendaItem {
-  constructor({ todo, headline, kind, file, line, date, time, urgency, priority }) {
+  constructor({ todo, headline, kind, file, line, date, time, urgency, priority, habit }) {
     this.todo = todo || '';
     this.headline = headline || '';
     this.kind = kind || '';
@@ -195,6 +195,7 @@ class Org2AgendaItem {
     this.urgency = urgency || agendaUrgencyFromDate(date);
     this.statusBucket = agendaStatusBucket(todo);
     this.priority = normalizeAgendaPriority(priority) || extractAgendaPriorityFromHeadline(this.headline);
+    this.habit = habit && typeof habit === 'object' ? habit : undefined;
   }
 }
 
@@ -574,6 +575,7 @@ class Org2AgendaProvider {
       const parts = [element.fileLabel];
       if (element.time) parts.push(`@${element.time}`);
       if (element.kind) parts.push(element.kind);
+      if (element.habit) parts.push(`habit ×${Number(element.habit.streak || 0)}`);
       item.description = parts.join(' · ');
 
       item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor(getAgendaUrgencyThemeColor(element.urgency)));
@@ -597,6 +599,7 @@ class Org2AgendaProvider {
           `- File: ${element.file || '(unknown file)'}:${element.line + 1}`,
           `- Schedule urgency: ${urgencyLabel}`,
           ...(element.time ? [`- Scheduled time: ${element.time}`] : []),
+          ...(element.habit ? [`- Habit: streak-ish count ${Number(element.habit.streak || 0)} (${(element.habit.closedDates || []).length} closed day(s) tracked)`] : []),
           `- TODO status: ${statusCue} <span style="color:var(--vscode-${statusColor.replace('.', '-')}, ${statusFallback});">${statusKeyword}</span> · ${statusStage}`,
         ].join('\n')
       );

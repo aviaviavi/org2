@@ -106,6 +106,8 @@ Bounded range + JSON:
 npm run org2 -- agenda --from 2026-01-01 --to 2026-01-31 --format json
 #+end_src
 
+Habit convention: mark a repeating TODO headline with =:HABIT: true= (or =:STYLE: habit=) in its property drawer and use a repeater on =SCHEDULED= or =DEADLINE=. JSON agenda rows then include a =habit= object with the marker, closed-day history, and a streak-ish count; VS Code surfaces that state in the agenda row. =org2 lint= warns when a habit marker is missing repeating planning.
+
 Run corpus lint:
 
 #+begin_src sh
