@@ -329,6 +329,13 @@ A *checkbox* is an optional marker that appears at the start of list item conten
 
 The checkbox MUST be followed by a space and then the item content.
 
+Progress cookies are recognized as structured inline state:
+
+- =[n/m]= → fraction progress cookie
+- =[p%]= → percentage progress cookie
+
+Org2 compile outputs also compute checkbox rollups over file/headline ranges and lint stale progress cookies whose displayed value no longer matches the checked checkbox count.
+
 ** Nested lists
 
 A list item whose indentation is greater than the previous item becomes a child of that item. The parser creates a nested =List= node within the parent =ListItem='s =children= array.
