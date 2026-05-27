@@ -105,6 +105,7 @@ h1 { margin-bottom: 0.5rem; }
   align-items: center;
   justify-content: flex-end;
   min-width: 2.05rem;
+  z-index: 25;
 }
 
 .org2-site-search-toggle {
@@ -130,6 +131,7 @@ h1 { margin-bottom: 0.5rem; }
 .org2-site-search input {
   position: absolute;
   right: 0;
+  top: 0;
   width: min(20rem, calc(100vw - 2rem));
   opacity: 0;
   pointer-events: none;
@@ -166,12 +168,11 @@ h1 { margin-bottom: 0.5rem; }
 .org2-site-search-results {
   position: absolute;
   top: calc(100% + 0.35rem);
-  left: 0;
   right: 0;
+  width: min(22rem, calc(100vw - 2rem));
   z-index: 30;
   display: grid;
   gap: 0.2rem;
-  min-width: min(22rem, calc(100vw - 2rem));
   max-height: 22rem;
   overflow: auto;
   border: 1px solid var(--border);
@@ -266,6 +267,9 @@ h1 { margin-bottom: 0.5rem; }
   }
   .org2-site-search {
     flex: 0 0 auto;
+  }
+  .org2-site-search.is-open {
+    z-index: 35;
   }
   .org2-nav-dropdown-menu {
     display: none;
@@ -511,6 +515,6 @@ blockquote {
   }
 
   .org2-site-search-results {
-    min-width: 100%;
+    width: 100%;
   }
 }
