@@ -7252,6 +7252,14 @@ async function main(): Promise<void> {
 
   // Quick capture
   let captureFile = "";
+  let captureTargetFile = "";
+  let captureSourceFile = "";
+  let captureTextRaw = "";
+  let captureUrl = "";
+  let captureReadStdin = false;
+  let captureSourceTypeRaw = "";
+  let captureOrigin = "";
+  let captureAuthor = "";
   let captureTitle = "";
   let captureTemplateRaw = "note";
   let captureTodoKeywordRaw = "TODO";
@@ -7622,7 +7630,11 @@ async function main(): Promise<void> {
         if (command === "todo") {
           todoFile = args[i]!;
         } else if (command === "capture") {
-          captureFile = args[i]!;
+          if (captureTargetFile) {
+            captureSourceFile = args[i]!;
+          } else {
+            captureFile = args[i]!;
+          }
         } else if (command === "plan") {
           planFile = args[i]!;
         } else if (command === "crypt") {
@@ -7740,7 +7752,7 @@ async function main(): Promise<void> {
         }
         i++;
       }
-    } else if (arg === "--to" || arg === "--date-to") {
+    } else if ((arg === "--to" && command !== "capture") || arg === "--date-to") {
       i++;
       if (i < args.length) {
         if (command === "agenda") {
@@ -8191,6 +8203,54 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--to") {
+      i++;
+      if (i < args.length) {
+        if (command === "capture") {
+          captureTargetFile = args[i]!;
+          if (captureFile && !captureSourceFile) {
+            captureSourceFile = captureFile;
+            captureFile = "";
+          }
+        } else if (command === "ai" && aiAction === "promote") {
+          aiPromoteToFile = args[i]!;
+        }
+        i++;
+      }
+    } else if (arg === "--text") {
+      i++;
+      if (i < args.length) {
+        if (command === "capture") {
+          captureTextRaw = args[i]!;
+        } else if (command === "query") {
+          queryText = args[i]!;
+        }
+        i++;
+      }
+    } else if (arg === "--url") {
+      i++;
+      if (i < args.length) {
+        if (command === "capture") captureUrl = args[i]!;
+        i++;
+      }
+    } else if (arg === "--source-type" && command === "capture") {
+      i++;
+      if (i < args.length) {
+        captureSourceTypeRaw = args[i]!;
+        i++;
+      }
+    } else if (arg === "--origin") {
+      i++;
+      if (i < args.length) {
+        if (command === "capture") captureOrigin = args[i]!;
+        i++;
+      }
+    } else if (arg === "--author") {
+      i++;
+      if (i < args.length) {
+        if (command === "capture") captureAuthor = args[i]!;
+        i++;
+      }
     } else if (arg === "--title") {
       i++;
       if (i < args.length) {
@@ -8576,7 +8636,8 @@ async function main(): Promise<void> {
         i++;
       }
     } else if (arg === "--stdin") {
-      fmtStdin = true;
+      if (command === "fmt") fmtStdin = true;
+      if (command === "capture") captureReadStdin = true;
       i++;
     } else if (arg === "--check") {
       if (command === "fmt") {
@@ -8629,6 +8690,7 @@ Core commands:
   org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 crypt <encrypt|decrypt> --file FILE (--line N | --pos LINE[:COL]) --passphrase PASS [--gpg-program PATH] [--apply]
   org2 capture --file FILE --title TITLE [--template note|task] [--apply]
+  org2 capture (--text TEXT|--stdin|--url URL|--file SOURCE) --to FILE [--title TITLE] [--apply]
   org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--apply]
   org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--apply]
 
@@ -8756,11 +8818,19 @@ Flags:
     text = `org2 capture
 
 Usage:
-  org2 capture --file FILE --title TITLE [--template note|task] [--apply]
+  org2 capture --file FILE --title TITLE [--template note|task] [--body TEXT] [--apply]
+  org2 capture (--text TEXT|--stdin|--url URL|--file SOURCE) --to FILE [--title TITLE] [--author NAME] [--apply]
 
 Flags:
-  --file FILE           Target file
+  --file FILE           Target file, or source file when --to is set
+  --to FILE             Target file for unified capture sources
+  --text TEXT           Capture literal text as source content
+  --stdin               Read capture content from standard input
+  --url URL             Fetch and capture a URL as text
   --title TITLE         Heading title
+  --author NAME         Optional source author metadata
+  --origin VALUE        Optional source origin/provenance override
+  --source-type TYPE    Optional source type override
   --template note|task  Capture template
   --apply               Write changes instead of previewing`;
   } else if (command === "archive") {
@@ -10426,14 +10496,15 @@ Flags:
   }
 
   if (command === "capture") {
-    if (!captureFile) {
-      console.error("Error: capture requires --file FILE");
+    const targetFile = captureTargetFile || captureFile;
+    if (!targetFile) {
+      console.error("Error: capture requires --file FILE (or --to FILE for source captures)");
       process.exit(1);
     }
 
-    const normalizedTitle = captureTitle.trim();
-    if (!normalizedTitle) {
-      console.error("Error: capture requires --title TITLE");
+    const sourceInputs = [captureTextRaw ? "text" : "", captureUrl ? "url" : "", captureSourceFile ? "file" : "", captureReadStdin ? "stdin" : ""].filter(Boolean);
+    if (sourceInputs.length > 1) {
+      console.error("Error: capture accepts only one of --text, --stdin, --url, or --file SOURCE with --to");
       process.exit(1);
     }
 
@@ -10470,20 +10541,73 @@ Flags:
       captureNowDate = parsedNow;
     }
 
-    const normalizedBody = captureBodyRaw.replace(/\r\n/g, "\n").trim();
+    let normalizedBody = captureBodyRaw.replace(/\r\n/g, "\n").trim();
+    let source: { type: string; origin: string; timestamp: string; title: string | null; author: string | null; contentHash: string; provenance: string | null } | null = null;
+    if (sourceInputs.length === 1) {
+      const inputSourceType = sourceInputs[0]!;
+      let sourceType = inputSourceType;
+      let origin = captureOrigin.trim();
+      let provenance: string | null = null;
+      if (inputSourceType === "text") {
+        normalizedBody = captureTextRaw.replace(/\r\n/g, "\n").trim();
+        origin ||= "literal:text";
+      } else if (inputSourceType === "stdin") {
+        normalizedBody = fs.readFileSync(0, "utf8").replace(/\r\n/g, "\n").trim();
+        origin ||= "stdin";
+      } else if (inputSourceType === "file") {
+        const stat = fs.statSync(captureSourceFile);
+        if (stat.isDirectory()) {
+          console.error("Error: capture --file SOURCE currently supports files, not directories");
+          process.exit(1);
+        }
+        normalizedBody = fs.readFileSync(captureSourceFile, "utf8").replace(/\r\n/g, "\n").trim();
+        origin ||= path.resolve(captureSourceFile);
+        provenance = `file:${path.resolve(captureSourceFile)}`;
+      } else if (inputSourceType === "url") {
+        const res = await fetch(captureUrl);
+        if (!res.ok) {
+          console.error(`Error: failed to fetch --url ${captureUrl}: HTTP ${res.status}`);
+          process.exit(1);
+        }
+        normalizedBody = (await res.text()).replace(/\r\n/g, "\n").trim();
+        origin ||= captureUrl;
+        provenance = `url:${captureUrl}`;
+      }
+      if (captureSourceTypeRaw && captureSourceTypeRaw !== "stdin") sourceType = captureSourceTypeRaw.trim().toLowerCase();
+      const inferredTitle = captureTitle.trim() || (inputSourceType === "file" ? path.basename(captureSourceFile) : inputSourceType === "url" ? captureUrl : "Captured text");
+      source = { type: sourceType, origin, timestamp: captureNowDate.toISOString(), title: inferredTitle, author: captureAuthor.trim() || null, contentHash: sha256Hex(normalizedBody), provenance };
+    }
+
+    const normalizedTitle = (captureTitle.trim() || source?.title || "").trim();
+    if (!normalizedTitle) {
+      console.error("Error: capture requires --title TITLE");
+      process.exit(1);
+    }
 
     const headingLine =
       normalizedTemplate === "task"
         ? `* ${normalizedTodoKeyword} ${normalizedTitle}`
         : `* ${normalizedTitle}`;
     const capturedAt = formatOrgTimestamp(captureNowDate);
+    const propertyDrawer = source
+      ? [
+          ":PROPERTIES:",
+          `:SOURCE_TYPE: ${source.type}`,
+          `:SOURCE_ORIGIN: ${source.origin}`,
+          `:SOURCE_TIMESTAMP: ${source.timestamp}`,
+          source.author ? `:SOURCE_AUTHOR: ${source.author}` : "",
+          `:SOURCE_HASH: ${source.contentHash}`,
+          source.provenance ? `:SOURCE_PROVENANCE: ${source.provenance}` : "",
+          ":END:",
+        ].filter(Boolean).join("\n") + "\n"
+      : "";
     const captureEntryText =
       normalizedBody.length > 0
-        ? `${headingLine}\nCAPTURED: ${capturedAt}\n\n${normalizedBody}\n`
-        : `${headingLine}\nCAPTURED: ${capturedAt}\n`;
+        ? `${headingLine}\n${propertyDrawer}CAPTURED: ${capturedAt}\n\n${normalizedBody}\n`
+        : `${headingLine}\n${propertyDrawer}CAPTURED: ${capturedAt}\n`;
 
-    const beforeText = fs.existsSync(captureFile)
-      ? fs.readFileSync(captureFile, "utf8").replace(/\r\n/g, "\n")
+    const beforeText = fs.existsSync(targetFile)
+      ? fs.readFileSync(targetFile, "utf8").replace(/\r\n/g, "\n")
       : "";
     const beforeTrimmed = beforeText.trimEnd();
     const outText =
@@ -10495,8 +10619,8 @@ Flags:
     const headingLine1 = beforeTrimmed.length === 0 ? 1 : beforeTrimmed.split("\n").length + 2;
 
     if (captureApply && changed) {
-      fs.mkdirSync(path.dirname(captureFile), { recursive: true });
-      fs.writeFileSync(captureFile, outText, "utf8");
+      fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+      fs.writeFileSync(targetFile, outText, "utf8");
     }
 
     const unifiedDiff = (before: string, after: string): string => {
@@ -10513,7 +10637,7 @@ Flags:
           throw new Error(res.stderr || `diff exited with status ${res.status}`);
         }
 
-        return (res.stdout || "").split(aPath).join(captureFile).split(bPath).join(captureFile);
+        return (res.stdout || "").split(aPath).join(targetFile).split(bPath).join(targetFile);
       } finally {
         if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
       }
@@ -10529,11 +10653,12 @@ Flags:
         JSON.stringify(
           {
             kind: "capture",
-            file: captureFile,
+            file: targetFile,
             template: normalizedTemplate,
             title: normalizedTitle,
             todoKeyword: normalizedTemplate === "task" ? normalizedTodoKeyword : null,
             body: normalizedBody || null,
+            ...(source ? { source } : {}),
             capturedAt,
             headingLine1,
             apply: captureApply,
