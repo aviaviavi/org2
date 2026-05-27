@@ -7101,20 +7101,17 @@ function artifactProperty(raw: string, key: string): string {
   return keywordMatch ? String(keywordMatch[1] || "").trim() : "";
 }
 function setArtifactReviewStatus(raw: string, status: "reviewed" | "rejected" | "deferred"): string {
-  let updated = raw;
-  let touched = false;
+  let updated = raw.replace(/^#\+ORG2_REVIEW_STATUS:\s*.+\n?/gim, "");
 
   if (/^:ORG2_REVIEW_STATUS:\s*.+$/im.test(updated)) {
-    updated = updated.replace(/^:ORG2_REVIEW_STATUS:\s*.+$/gim, `:ORG2_REVIEW_STATUS: ${status}`);
-    touched = true;
+    return updated.replace(/^:ORG2_REVIEW_STATUS:\s*.+$/gim, `:ORG2_REVIEW_STATUS: ${status}`);
   }
-  if (/^#\+ORG2_REVIEW_STATUS:\s*.+$/im.test(updated)) {
-    updated = updated.replace(/^#\+ORG2_REVIEW_STATUS:\s*.+$/gim, `#+ORG2_REVIEW_STATUS: ${status}`);
-    touched = true;
-  }
-  if (touched) return updated;
 
-  return updated.replace(/:PROPERTIES:\n/i, `:PROPERTIES:\n:ORG2_REVIEW_STATUS: ${status}\n`);
+  if (/:PROPERTIES:\n/i.test(updated)) {
+    return updated.replace(/:PROPERTIES:\n/i, `:PROPERTIES:\n:ORG2_REVIEW_STATUS: ${status}\n`);
+  }
+
+  return `:PROPERTIES:\n:ORG2_REVIEW_STATUS: ${status}\n:END:\n\n${updated}`;
 }
 
 function collectAiReviewQueue(filesToScan: string[]): AiReviewQueueItem[] {
