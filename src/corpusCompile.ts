@@ -66,6 +66,7 @@ export type CompiledCorpusNode = {
   tags: string[];
   aliases: string[];
   properties: Record<string, string>;
+  effort?: { raw: string; minutes: number };
   planning: Array<{ kind: "SCHEDULED" | "DEADLINE" | "CLOSED"; raw: string; line: number }>;
   clocks: OrgClockInterval[];
   clockIssues: OrgClockIssue[];
@@ -127,6 +128,12 @@ export type CompiledCorpus = {
   checkboxProgress: CheckboxProgress;
   checkboxIssues: Array<{ type: "stale-progress-cookie"; file: string; line: number; raw: string; expectedRaw: string; checked: number; total: number }>;
   clockSummary: ReturnType<typeof extractClockReport>["summary"];
+  effortSummary: {
+    totalMinutes: number;
+    byProject: Record<string, number>;
+    byTag: Record<string, number>;
+    byFile: Record<string, number>;
+  };
   index?: CompiledCorpusLookupIndex;
   indexState?: CompiledCorpusIndexState;
 };
@@ -138,6 +145,58 @@ function normalizeText(raw: string): string {
 function normalizeId(raw: string | null | undefined): string | null {
   const value = String(raw || "").trim().toLowerCase();
   return value || null;
+}
+
+
+function parseEffortToMinutes(raw: string): number | null {
+  const token = String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
+  if (!token) return null;
+  const n = (value: string): number | null => (/^\d+$/.test(value) ? Number.parseInt(value, 10) : null);
+
+  const hm = /^(\d+):(\d{1,2})$/.exec(token);
+  if (hm) {
+    const hours = n(hm[1] || "");
+    const minutes = n(hm[2] || "");
+    if (hours === null || minutes === null || minutes >= 60) return null;
+    return hours * 60 + minutes;
+  }
+
+  const compact = /^(?:(\d+)h)?(?:(\d+)m)?$/.exec(token);
+  if (compact && (compact[1] || compact[2])) {
+    const hours = compact[1] ? n(compact[1]) : 0;
+    const minutes = compact[2] ? n(compact[2]) : 0;
+    if (hours === null || minutes === null) return null;
+    return hours * 60 + minutes;
+  }
+
+  return n(token);
+}
+
+function effortFromProperties(properties: Record<string, string>): { raw: string; minutes: number } | undefined {
+  const raw = String(properties.EFFORT || "").trim();
+  if (!raw) return undefined;
+  const minutes = parseEffortToMinutes(raw);
+  return minutes === null ? undefined : { raw, minutes };
+}
+
+function buildEffortSummary(nodes: CompiledCorpusNode[]): CompiledCorpus["effortSummary"] {
+  const byProject: Record<string, number> = {};
+  const byTag: Record<string, number> = {};
+  const byFile: Record<string, number> = {};
+  let totalMinutes = 0;
+  const add = (bucket: Record<string, number>, key: string, minutes: number) => {
+    bucket[key] = (bucket[key] || 0) + minutes;
+  };
+
+  for (const node of nodes) {
+    if (node.kind !== "heading" || !node.effort) continue;
+    totalMinutes += node.effort.minutes;
+    add(byProject, node.title, node.effort.minutes);
+    add(byFile, node.file, node.effort.minutes);
+    for (const tag of node.tags) add(byTag, tag, node.effort.minutes);
+  }
+
+  return { totalMinutes, byProject, byTag, byFile };
 }
 
 function slashPath(raw: string): string {
@@ -523,6 +582,8 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
         snippetStartLine: headingSnippet.startLine,
       };
       if (heading.todo) node.todo = heading.todo;
+      const effort = effortFromProperties(headingProperties);
+      if (effort) node.effort = effort;
       nodes.push(node);
     }
   }
@@ -616,6 +677,7 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
     },
     checkboxIssues: [...checkboxIssuesByKey.values()].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line),
     clockSummary: clockReport.summary,
+    effortSummary: buildEffortSummary(sortedNodes),
     index: buildLookupIndex(sortedNodes),
     indexState: { mode: "full", status: "fresh", reusedFiles: 0, parsedFiles: corpusFiles.length, deletedFiles: 0 },
   };
