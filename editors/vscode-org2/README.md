@@ -161,14 +161,14 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.priorityFilter`: filter by Org priority marker (for example `A,B` or `[#A],[#B]`, case-insensitive)
 - `org2.agenda.timeFilter`: filter by planning clock-time tokens (exact `HH:MM`, inclusive ranges like `09:00-12:30` including overnight windows, plus `timed`/`untimed`; comma-separated terms use OR matching)
 - `org2.agenda.effortFilter`: filter by `:EFFORT:` property value (case-insensitive exact match; comma-separated terms use OR matching, e.g. `0:30,30m,1h`)
-- `org2.agenda.propertyFilter`: filter by exact headline drawer property terms using `KEY=VALUE` (case-insensitive; comma-separated terms use OR matching)
+- `org2.agenda.propertyFilter`: filter by exact property terms using `KEY=VALUE` (case-insensitive; comma-separated terms use OR matching). Matches effective properties, including file-level and ancestor heading properties inherited by the agenda row.
 - `org2.agenda.excludeTagFilter`: exclude rows by headline tags (case-insensitive exact tag match; comma-separated tags use OR matching)
 - `org2.agenda.excludeIdFilter`: exclude rows by headline `:ID:` / `:CUSTOM_ID:` values (case-insensitive exact match; comma-separated IDs use OR matching)
 - `org2.agenda.excludeTodoKeywordFilter`: exclude rows by exact TODO keyword (case-insensitive; comma-separated keywords use OR matching)
 - `org2.agenda.excludePriorityFilter`: exclude rows by Org priority marker (for example `A,B` or `[#A],[#B]`, case-insensitive)
 - `org2.agenda.excludeTimeFilter`: exclude rows by planning clock-time tokens (exact `HH:MM`, inclusive ranges like `09:00-12:30` including overnight windows, plus `timed`/`untimed`; comma-separated terms use OR matching)
 - `org2.agenda.excludeEffortFilter`: exclude rows by `:EFFORT:` property value (case-insensitive exact match; comma-separated terms use OR matching)
-- `org2.agenda.excludePropertyFilter`: exclude rows by exact headline drawer property terms using `KEY=VALUE` (case-insensitive; comma-separated terms use OR matching)
+- `org2.agenda.excludePropertyFilter`: exclude rows by exact property terms using `KEY=VALUE` (case-insensitive; comma-separated terms use OR matching). Matches effective properties, including inherited file/ancestor heading values.
 - `org2.agenda.fileFilter`: keep rows whose source file path contains any comma-separated term (case-insensitive substring match)
 - `org2.agenda.excludeFileFilter`: hide rows whose source file path contains any comma-separated term (case-insensitive substring match)
 - `org2.formatter.fileFilter`: limit workspace formatter check/apply commands to files whose paths contain any comma-separated term (case-insensitive substring match)

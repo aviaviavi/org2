@@ -130,7 +130,7 @@ The JSON form includes:
 - standardized =artifact= metadata: role, generator, generated-at timestamp, source provenance, source hashes, and review status
 - files with relative paths, absolute paths, SHA-256 hashes, line counts, titles, and IDs
 - file and heading nodes with source ranges for citations
-- heading TODO state, priority cookies, tags, planning timestamps, properties, IDs, and aliases
+- heading TODO state, priority cookies, tags, planning timestamps, explicit =properties=, inherited =inheritedProperties=, overlaid =effectiveProperties=, IDs, and aliases
 - links and resolved backlinks for explicit =id:= links and unambiguous wiki links
 - text snippets suitable for previews or retrieval pipelines
 
