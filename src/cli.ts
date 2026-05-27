@@ -7095,14 +7095,26 @@ type AiReviewQueueItem = {
 };
 
 function artifactProperty(raw: string, key: string): string {
-  const match = raw.match(new RegExp(`^:${key}:\\s*(.+?)\\s*$`, "im"));
-  return match ? String(match[1] || "").trim() : "";
+  const drawerMatch = raw.match(new RegExp(`^:${key}:\\s*(.+?)\\s*$`, "im"));
+  if (drawerMatch) return String(drawerMatch[1] || "").trim();
+  const keywordMatch = raw.match(new RegExp(`^#\\+${key}:\\s*(.+?)\\s*$`, "im"));
+  return keywordMatch ? String(keywordMatch[1] || "").trim() : "";
 }
 function setArtifactReviewStatus(raw: string, status: "reviewed" | "rejected" | "deferred"): string {
-  if (/^:ORG2_REVIEW_STATUS:\s*.+$/im.test(raw)) {
-    return raw.replace(/^:ORG2_REVIEW_STATUS:\s*.+$/im, `:ORG2_REVIEW_STATUS: ${status}`);
+  let updated = raw;
+  let touched = false;
+
+  if (/^:ORG2_REVIEW_STATUS:\s*.+$/im.test(updated)) {
+    updated = updated.replace(/^:ORG2_REVIEW_STATUS:\s*.+$/gim, `:ORG2_REVIEW_STATUS: ${status}`);
+    touched = true;
   }
-  return raw.replace(/:PROPERTIES:\n/i, `:PROPERTIES:\n:ORG2_REVIEW_STATUS: ${status}\n`);
+  if (/^#\+ORG2_REVIEW_STATUS:\s*.+$/im.test(updated)) {
+    updated = updated.replace(/^#\+ORG2_REVIEW_STATUS:\s*.+$/gim, `#+ORG2_REVIEW_STATUS: ${status}`);
+    touched = true;
+  }
+  if (touched) return updated;
+
+  return updated.replace(/:PROPERTIES:\n/i, `:PROPERTIES:\n:ORG2_REVIEW_STATUS: ${status}\n`);
 }
 
 function collectAiReviewQueue(filesToScan: string[]): AiReviewQueueItem[] {
