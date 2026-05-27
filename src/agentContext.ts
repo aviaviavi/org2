@@ -96,7 +96,7 @@ function titlePathFor(corpus: CompiledCorpus, node: CompiledCorpusNode): string[
 
 function propertyValue(node: CompiledCorpusNode, names: string[]): string {
   for (const name of names) {
-    const value = node.properties[name.toUpperCase()];
+    const value = (node.effectiveProperties || node.properties)[name.toUpperCase()];
     if (value) return value;
   }
   return "";
@@ -129,7 +129,7 @@ function nodeMatchesFilters(node: CompiledCorpusNode, opts: AgentContextOptions)
     const raw = opts.scope.trim().toLowerCase();
     const [kind, valueRaw] = raw.includes(":") ? raw.split(/:(.*)/s, 2) : ["", raw];
     const value = (valueRaw || "").trim();
-    const haystack = [node.title, node.file, node.snippet, node.id || "", ...node.tags, ...node.aliases, ...Object.values(node.properties)].join("\n").toLowerCase();
+    const haystack = [node.title, node.file, node.snippet, node.id || "", ...node.tags, ...node.aliases, ...Object.values(node.effectiveProperties || node.properties)].join("\n").toLowerCase();
     if (kind === "project" && !node.tags.map((t) => t.toLowerCase()).includes(value) && propertyValue(node, ["PROJECT"]).toLowerCase() !== value && !haystack.includes(value)) return false;
     else if (kind === "person" && propertyValue(node, ["PERSON", "PEOPLE"]).toLowerCase() !== value && !haystack.includes(value)) return false;
     else if (kind === "entity" && !haystack.includes(value)) return false;
@@ -160,7 +160,7 @@ function parseDateMs(raw: string | null | undefined): number | null {
 }
 
 function claimStateFor(node: CompiledCorpusNode, nowMs = Date.now()): AgentClaimState {
-  const props = node.properties || {};
+  const props = node.effectiveProperties || node.properties || {};
   const reviewStatus = String(props.ORG2_REVIEW_STATUS || "unknown").trim().toLowerCase() as AgentReviewState;
   const observedAt = props.ORG2_OBSERVED_AT || null;
   const validAsOf = props.ORG2_VALID_AS_OF || null;
@@ -181,7 +181,7 @@ function claimStateFor(node: CompiledCorpusNode, nowMs = Date.now()): AgentClaim
 }
 
 function scoreNode(node: CompiledCorpusNode, terms: string[]): { score: number; matchedTerms: string[] } {
-  const haystack = [node.title, node.snippet, node.id || "", ...node.tags, ...node.aliases, ...Object.keys(node.properties), ...Object.values(node.properties)].join("\n").toLowerCase();
+  const haystack = [node.title, node.snippet, node.id || "", ...node.tags, ...node.aliases, ...Object.keys(node.effectiveProperties || node.properties), ...Object.values(node.effectiveProperties || node.properties)].join("\n").toLowerCase();
   const matchedTerms = terms.filter((term) => haystack.includes(term));
   let score = matchedTerms.length;
   for (const term of matchedTerms) {
@@ -263,7 +263,7 @@ function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: 
     ...(node.todo ? { todo: node.todo } : {}),
     tags: node.tags,
     aliases: node.aliases,
-    properties: node.properties,
+    properties: node.effectiveProperties || node.properties,
     snippet: node.snippet,
     ...(score ? { score: score.score, matchedTerms: score.matchedTerms } : {}),
     claimState: claimStateFor(node),
