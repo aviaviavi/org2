@@ -92,7 +92,7 @@ The extension can edit planning keywords, run quick capture, archive subtrees, r
 Implementation detail: the extension saves the file (if needed).
 - Planning edits run `org2 plan set ... --apply`.
 - Quick capture runs `org2 capture ... --format diff` first to preview the append, then `org2 capture ... --apply --format json` if confirmed, and can pass active-selection text as `--body` when `org2.capture.useSelectionAsBody` is enabled.
-- Archiving runs `org2 archive ... --format diff` first to generate a preview, then `org2 archive ... --apply` if confirmed.
+- Archiving runs `org2 archive ... --format diff` first to generate a preview with provenance metadata, then `org2 archive ... --apply --format json` if confirmed and reports the archive destination.
 - Refile runs `org2 refile ... --format diff` for preview, then `org2 refile ... --apply --format json` if confirmed.
 - Current-file HTML export runs `org2 export html --file ... --format json` for preview and `org2 export html --file ... --out ... --apply --format json` when writing, plus optional export flags from settings (`--css` / `--no-default-style` / `--toc` / `--toc-depth` / `--number-headings` / `--number-headings-depth` / `--rewrite-file-links`).
 - Workspace HTML export runs `org2 export html --dir <agenda-root> --recursive --out-dir <org2.export.outputDir> --format json` for preview, adds optional `--index/--index-title` and export flags (`--css` / `--no-default-style` / `--toc` / `--toc-depth` / `--number-headings` / `--number-headings-depth` / `--rewrite-file-links`) from settings, and adds `--apply` when writing.

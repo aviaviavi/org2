@@ -55,6 +55,8 @@ npm run org2 -- archive --file notes.org2 --pos 120:0 --apply
 npm run org2 -- refile --file notes.org2 --pos 120:0 --to-file projects.org2 --to-pos 40:0 --apply
 #+end_src
 
+Archiving moves the selected subtree to a companion archive file (by default =FILE_archive= for =.org= and =.org2= files, otherwise =FILE.archive=). Archived subtrees receive a property drawer with =ARCHIVED_AT=, =ARCHIVE_SOURCE=, =ARCHIVE_SOURCE_LINE=, =ARCHIVE_HEADING_PATH=, and =ARCHIVE_ORIGINAL_ID= when the original subtree had an =ID=. Use =--format diff= to preview the exact removal/append operation, or =--format json= for editor/agent integrations.
+
 * Formatter
 
 Canonical formatting for Org2 files.
