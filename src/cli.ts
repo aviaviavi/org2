@@ -6242,16 +6242,27 @@ function applyAgendaDayLimit(items: ScheduledItem[], dayLimit: number | null): S
   return kept;
 }
 
-function isDefaultRoamLinkifyArchivedPath(filePath: string): boolean {
+function isDefaultArchivePath(filePath: string): boolean {
   const normalized = filePath.replace(/\\/g, "/").toLowerCase();
   const base = path.basename(normalized);
   return (
     normalized.includes("/archive/") ||
     normalized.includes("/archives/") ||
+    base.endsWith(".org_archive") ||
+    base.endsWith(".org2_archive") ||
     base.endsWith(".archive") ||
     base.includes(".archive.") ||
     base.endsWith("_archive")
   );
+}
+
+function isDefaultRoamLinkifyArchivedPath(filePath: string): boolean {
+  return isDefaultArchivePath(filePath);
+}
+
+function isOrgLikeFileName(fileName: string, includeArchives = false): boolean {
+  if (fileName.endsWith(".org") || fileName.endsWith(".org2")) return true;
+  return includeArchives && isDefaultArchivePath(fileName);
 }
 
 function resolveRoamLinkifyExclude(rootDir: string, rawExclude: string): string {
@@ -6274,7 +6285,7 @@ function filterRoamLinkifyFiles(files: string[], rootDir: string, excludes: stri
   });
 }
 
-function listOrgLikeFiles(rootDir: string, recursiveScan: boolean): string[] {
+function listOrgLikeFiles(rootDir: string, recursiveScan: boolean, includeArchives = false): string[] {
   const out: string[] = [];
 
   const walk = (d: string): void => {
@@ -6295,7 +6306,9 @@ function listOrgLikeFiles(rootDir: string, recursiveScan: boolean): string[] {
       }
 
       if (!ent.isFile()) continue;
-      if (full.endsWith(".org") || full.endsWith(".org2")) out.push(full);
+      if (!isOrgLikeFileName(ent.name, includeArchives)) continue;
+      if (!includeArchives && isDefaultArchivePath(full)) continue;
+      out.push(full);
     }
   };
 
@@ -6303,7 +6316,7 @@ function listOrgLikeFiles(rootDir: string, recursiveScan: boolean): string[] {
   return out;
 }
 
-function listAgendaFiles(dirPath: string, recursiveScan: boolean): string[] {
+function listAgendaFiles(dirPath: string, recursiveScan: boolean, includeArchives = false): string[] {
   const out: string[] = [];
   const entries = fs.readdirSync(dirPath, { withFileTypes: true });
 
@@ -6312,12 +6325,13 @@ function listAgendaFiles(dirPath: string, recursiveScan: boolean): string[] {
     if (entry.isDirectory()) {
       if (!recursiveScan) continue;
       if (entry.name.startsWith(".")) continue;
-      out.push(...listAgendaFiles(fullPath, recursiveScan));
+      out.push(...listAgendaFiles(fullPath, recursiveScan, includeArchives));
       continue;
     }
 
     if (!entry.isFile()) continue;
-    if (!(entry.name.endsWith(".org") || entry.name.endsWith(".org2"))) continue;
+    if (!isOrgLikeFileName(entry.name, includeArchives)) continue;
+    if (!includeArchives && isDefaultArchivePath(fullPath)) continue;
     if (entry.name.startsWith(".#")) continue; // Emacs lockfile
     out.push(fullPath);
   }
@@ -6733,9 +6747,9 @@ function collectAiEntitySuggestions(targetFiles: string[], labelIndex: Map<strin
     });
 }
 
-async function buildAiLinkSuggestionReport(options: { dir: string; recursive: boolean; targetFiles: string[]; out?: string }): Promise<AiLinkSuggestionReport> {
+async function buildAiLinkSuggestionReport(options: { dir: string; recursive: boolean; targetFiles: string[]; out?: string; includeArchives?: boolean }): Promise<AiLinkSuggestionReport> {
   const explicitTargets = new Set(options.targetFiles.map((file) => path.resolve(file)));
-  const allFiles = explicitTargets.size > 0 ? Array.from(explicitTargets) : listOrgLikeFiles(options.dir, options.recursive);
+  const allFiles = explicitTargets.size > 0 ? Array.from(explicitTargets) : listOrgLikeFiles(options.dir, options.recursive, options.includeArchives);
   const labelIndex = buildRoamLinkifyIndex(allFiles);
   const graph = buildRoamGraph(allFiles);
   const maintenance = buildRoamGraphMaintenanceReport(allFiles, graph);
@@ -7146,6 +7160,7 @@ async function main(): Promise<void> {
   let agendaWorkload = false;
   let agendaTuiRefreshSeconds = 30;
   let recursive = false;
+  let includeArchives = false;
   let includeOverdue = true;
   let agendaStatusFiltersRaw: string[] = [];
   let agendaExcludeStatusFiltersRaw: string[] = [];
@@ -8463,6 +8478,9 @@ async function main(): Promise<void> {
     } else if (arg === "--recursive") {
       recursive = true;
       i++;
+    } else if (arg === "--include-archives") {
+      includeArchives = true;
+      i++;
     } else if (arg === "--incremental") {
       if (command === "compile") compileIncremental = true;
       i++;
@@ -8702,9 +8720,9 @@ Export / publish:
 Roam / IDs:
   org2 id <get|ensure> --file FILE [--line N|--pos LINE[:COL]] [--apply]
   org2 backlinks --id UUID [--dir DIR] [--recursive]
-  org2 search QUERY [--dir DIR] [--recursive] [--format text|json]
-  org2 query QUERY [--dir DIR] [--recursive] [--format text|json]
-  org2 query (--id UUID|--text TEXT) [--dir DIR] [--recursive]
+  org2 search QUERY [--dir DIR] [--recursive] [--include-archives] [--format text|json]
+  org2 query QUERY [--dir DIR] [--recursive] [--include-archives] [--format text|json]
+  org2 query (--id UUID|--text TEXT) [--dir DIR] [--recursive] [--include-archives]
   org2 query clocks --dir DIR [--recursive] [--format text|json]
   org2 clock --dir DIR [--recursive] [--format text|json]
   org2 compile corpus --dir DIR [--recursive] [--out FILE] [--format json|jsonl]
@@ -8732,7 +8750,7 @@ Maintenance / health:
   org2 ai review --file DRAFT --status reviewed|rejected|deferred [--apply] [--format text|json]
   org2 ai promote --file DRAFT --to-file NOTE [--apply] [--format text|json]
   org2 graph audit [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format report|json]
-  org2 lint [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+  org2 lint [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
   org2 fmt [--stdin] [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--check] [--apply]
 
 Other:
@@ -8767,11 +8785,12 @@ function printScopedUsage(
     text = `org2 agenda
 
 Usage:
-  org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
+  org2 agenda --dir DIR [--recursive] [--include-archives] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
 
 Flags:
   --dir DIR           Root directory to scan
   --recursive         Recurse into subdirectories
+  --include-archives  Include archive files/directories in agenda scans
   --from YYYY-MM-DD   Start date filter
   --to YYYY-MM-DD     End date filter
   --tui               Open the interactive terminal agenda
@@ -8929,11 +8948,12 @@ Flags:
     text = `org2 search
 
 Usage:
-  org2 search QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+  org2 search QUERY [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
 
 Flags:
   --dir DIR          Root directory to scan
   --recursive        Recurse into subdirectories
+  --include-archives Include archive files/directories in search scans
   --file FILE        Single target file
   --files FILE       One or more target files
   --todo TODO        Require nearest heading TODO keyword
@@ -8951,16 +8971,17 @@ Flags:
     text = `org2 query
 
 Usage:
-  org2 query QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
-  org2 query --id UUID [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
-  org2 query --text TEXT [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
-  org2 query relations --object ID|TITLE|LINK [--predicate PREDICATE] [--dir DIR] [--recursive] [--format text|json]
+  org2 query QUERY [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
+  org2 query --id UUID [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
+  org2 query --text TEXT [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
+  org2 query relations --object ID|TITLE|LINK [--predicate PREDICATE] [--dir DIR] [--recursive] [--include-archives] [--format text|json]
 
 Flags:
   --id UUID         Target ID lookup (legacy)
   --text TEXT       Text to search for; returns cited file/line snippets
   --dir DIR         Root directory to scan
   --recursive       Recurse into subdirectories
+  --include-archives Include archive files/directories in query scans
   --file FILE       Single target file
   --files FILE      One or more target files
   --todo TODO       Require nearest heading TODO keyword
@@ -8979,11 +9000,12 @@ Flags:
     text = `org2 compile corpus
 
 Usage:
-  org2 compile corpus [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl] [--incremental] [--cache FILE]
+  org2 compile corpus [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl] [--incremental] [--cache FILE]
 
 Flags:
   --dir DIR          Root directory to scan
   --recursive        Recurse into subdirectories
+  --include-archives Include archive files/directories in corpus scans
   --file FILE        Single target file
   --files FILE       One or more target files
   --out FILE         Write the compiled corpus artifact to a file
@@ -9032,11 +9054,12 @@ Checks:
     text = `org2 lint
 
 Usage:
-  org2 lint [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+  org2 lint [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
 
 Flags:
   --dir DIR         Root directory to scan
   --recursive       Recurse into subdirectories
+  --include-archives Include archive files/directories in lint scans
   --file FILE       Single target file
   --files FILE      One or more target files
   --format text|json Output format
@@ -9181,7 +9204,7 @@ Flags:
         catch (err) { console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`); process.exit(1); }
       } else { console.error("Error: provide either --dir, --files, --file, or org2.json config for org2 agent"); process.exit(1); }
     }
-    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive);
+    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive, includeArchives);
     files = Array.from(new Set(files)).sort((a, b) => a.localeCompare(b));
     if (files.length === 0) { console.error("Error: no Org files found for org2 agent retrieval"); process.exit(1); }
     const rootDir = dir ? path.resolve(dir) : path.dirname(path.resolve(files[0]!));
@@ -9200,7 +9223,7 @@ Flags:
 
     if (aiAction === "review") {
       let reviewFiles = files.length > 0 ? files.map((file) => path.resolve(file)) : [];
-      if (dir) reviewFiles = listOrgLikeFiles(dir, recursive);
+      if (dir) reviewFiles = listOrgLikeFiles(dir, recursive, includeArchives);
       if (aiPromoteFile && aiReviewStatus) {
         const reviewPath = path.resolve(aiPromoteFile);
         const raw = fs.readFileSync(reviewPath, "utf8").replace(/\r\n/g, "\n");
@@ -9583,8 +9606,8 @@ Flags:
     if (roamAction === "linkify") {
       const explicitTargetFiles = roamLinkifyFile ? [roamLinkifyFile] : files;
       const allFilesUnfiltered = explicitTargetFiles.length > 0
-        ? Array.from(new Set([...listOrgLikeFiles(dir, recursive), ...explicitTargetFiles.map((file) => path.resolve(file))]))
-        : listOrgLikeFiles(dir, recursive);
+        ? Array.from(new Set([...listOrgLikeFiles(dir, recursive, includeArchives), ...explicitTargetFiles.map((file) => path.resolve(file))]))
+        : listOrgLikeFiles(dir, recursive, includeArchives);
       const allFiles = filterRoamLinkifyFiles(allFilesUnfiltered, dir, roamLinkifyExcludes);
       const labelIndex = buildRoamLinkifyIndex(allFiles);
       const targetFiles = explicitTargetFiles.length > 0
@@ -9671,7 +9694,7 @@ Flags:
     }
 
     if (roamAction === "graph") {
-      const allFiles = files.length > 0 ? files.map((file) => path.resolve(file)) : listOrgLikeFiles(dir, recursive);
+      const allFiles = files.length > 0 ? files.map((file) => path.resolve(file)) : listOrgLikeFiles(dir, recursive, includeArchives);
       const graph = buildRoamGraph(allFiles);
       const outputPath = path.resolve(roamGraphOut || path.join(dir, "org2-roam-graph.html"));
 
@@ -9737,7 +9760,7 @@ Flags:
       return false;
     };
 
-    const allFiles = listOrgLikeFiles(dir, recursive);
+    const allFiles = listOrgLikeFiles(dir, recursive, includeArchives);
     const missing: string[] = [];
 
     for (const filePath of allFiles) {
@@ -10278,7 +10301,7 @@ Flags:
     if (hasDirSource) {
       const sourceDirInput = String(dir || "").trim();
       const sourceDir = path.resolve(sourceDirInput);
-      const sourceFiles = listOrgLikeFiles(sourceDir, recursive).sort((a, b) => a.localeCompare(b));
+      const sourceFiles = listOrgLikeFiles(sourceDir, recursive, includeArchives).sort((a, b) => a.localeCompare(b));
       const outputRootInput = String(exportOutDir || sourceDirInput).trim();
       const outputRoot = path.resolve(outputRootInput);
 
@@ -11134,7 +11157,7 @@ Flags:
         process.exit(1);
       }
     }
-    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive);
+    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive, includeArchives);
 
     const rootDir = dir ? path.resolve(dir) : path.dirname(path.resolve(files[0]!));
     const corpus = compileCorpus(files, { rootDir });
@@ -11201,7 +11224,7 @@ Flags:
       }
     }
 
-    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive);
+    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive, includeArchives);
 
     const context = Math.max(0, Number.parseInt(searchContextRaw, 10) || 0);
     const limit = Math.max(1, Number.parseInt(searchLimitRaw, 10) || 50);
@@ -11678,7 +11701,7 @@ Flags:
         process.exit(1);
       }
     }
-    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive);
+    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive, includeArchives);
     if (files.length === 0) {
       console.error("Error: no Org files found for clock report");
       process.exit(1);
@@ -11741,7 +11764,7 @@ Flags:
     }
 
     if (dir && files.length === 0) {
-      files = listOrgLikeFiles(dir, recursive);
+      files = listOrgLikeFiles(dir, recursive, includeArchives);
     }
 
     if (files.length === 0) {
@@ -11789,7 +11812,7 @@ Flags:
         process.exit(1);
       }
     }
-    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive);
+    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive, includeArchives);
 
     const report = buildGraphAuditReport(files);
     if (graphFormat === "json" || graphAction === "repair-candidates") {
@@ -11830,7 +11853,7 @@ Flags:
     }
 
     if (dir && files.length === 0) {
-      files = listOrgLikeFiles(dir, recursive);
+      files = listOrgLikeFiles(dir, recursive, includeArchives);
     }
 
     const issues: ArtifactLintIssue[] = [];
@@ -12485,7 +12508,7 @@ Flags:
     }
 
     if (dir) {
-      const scanned = listOrgLikeFiles(dir, recursive);
+      const scanned = listOrgLikeFiles(dir, recursive, includeArchives);
       for (const filePath of scanned) {
         addFmtFile(filePath);
       }
@@ -13004,7 +13027,7 @@ Flags:
   }
 
   if (dir && files.length === 0) {
-    files = listAgendaFiles(dir, recursive);
+    files = listAgendaFiles(dir, recursive, includeArchives);
   }
 
   if (dir && files.length > 0) agendaConfigBaseDir = path.resolve(dir);
@@ -13402,7 +13425,7 @@ Flags:
   const agendaUsesExplicitFiles = args.includes("--file") || args.includes("--files");
   const collectAgendaFiles = (): string[] => {
     if (agendaUsesExplicitFiles) return files;
-    if (dir) return listAgendaFiles(dir, recursive);
+    if (dir) return listAgendaFiles(dir, recursive, includeArchives);
     if (agendaConfig) return resolveFilesFromConfig(agendaConfig, agendaConfigBaseDir);
     return files;
   };

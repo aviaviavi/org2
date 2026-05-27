@@ -110,6 +110,8 @@ Effort convention: add =:EFFORT:= in a headline property drawer using minutes, =
 
 Habit convention: mark a repeating TODO headline with =:HABIT: true= (or =:STYLE: habit=) in its property drawer and use a repeater on =SCHEDULED= or =DEADLINE=. JSON agenda rows then include a =habit= object with the marker, closed-day history, and a streak-ish count; VS Code surfaces that state in the agenda row. =org2 lint= warns when a habit marker is missing repeating planning.
 
+Archive convention: =org2 archive= writes provenance into archived subtrees and defaults to =FILE_archive= for Org files. Directory scans for active views exclude common archive destinations by default (=/archive/=, =/archives/=, =*.org_archive=, =*.org2_archive=, =*.archive=, =*.archive.*=, and =*_archive=). Use =--include-archives= with agenda/search/query/compile/lint when you intentionally want archived content included.
+
 Run corpus lint:
 
 #+begin_src sh
