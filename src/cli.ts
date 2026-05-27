@@ -23,7 +23,7 @@ import { formatOrgTimestamp, TODO_KEYWORDS, updateTodoInText, type TodoStatus } 
 import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from "./planning.js";
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
-import { compileCorpus, compileCorpusIncremental, renderCompiledCorpus } from "./corpusCompile.js";
+import { compileCorpus, compileCorpusIncremental, extractCheckboxProgress, renderCompiledCorpus } from "./corpusCompile.js";
 import { extractClockReport } from "./clock.js";
 import { buildAgentContextPayload, type AgentInclude } from "./agentContext.js";
 import { loadAiJobManifest, validateAiJobManifest } from "./aiJobManifest.js";
@@ -4319,6 +4319,22 @@ function agendaHabitStreak(closedDates: string[], currentDate: string): number {
     cursor = addTimestampInterval(cursor, 1, "d", -1);
   }
   return streak;
+}
+
+
+function appendCheckboxProgressLintIssues(raw: string, filePath: string, issues: ArtifactLintIssue[]): void {
+  const lines = String(raw || "").replace(/\r\n/g, "\n").split("\n");
+  const progress = extractCheckboxProgress(lines, 0, lines.length);
+  for (const cookie of progress.cookies) {
+    if (!cookie.stale) continue;
+    issues.push({
+      severity: "warning",
+      rule: "checkbox-progress-cookie-stale",
+      file: filePath,
+      line: cookie.line,
+      message: `Progress cookie ${cookie.raw} is stale; expected ${cookie.expectedRaw} for ${progress.checked}/${progress.total} checked boxes.`,
+    });
+  }
 }
 
 function appendHabitLintIssues(raw: string, filePath: string, issues: ArtifactLintIssue[]): void {
@@ -11593,6 +11609,7 @@ Flags:
       issues.push(...lintArtifactMetadataInText(raw, filePath));
       appendArtifactFreshnessLintIssues(raw, filePath, issues);
       appendHabitLintIssues(raw, filePath, issues);
+      appendCheckboxProgressLintIssues(raw, filePath, issues);
 
       for (const ref of collectArtifactProvenanceRefsInText(raw, filePath)) {
         if (ref.kind === "file") {

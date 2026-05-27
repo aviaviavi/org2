@@ -49,6 +49,15 @@ export type LinkNode = {
   descriptionRaw?: string;
 };
 
+export type ProgressCookieNode = {
+  type: "ProgressCookie";
+  raw: string;
+  format: "fraction" | "percent";
+  done?: number;
+  total?: number;
+  percent?: number;
+};
+
 export type ParagraphNode = {
   type: "Paragraph";
   children: InlineNode[];
@@ -159,6 +168,7 @@ export type TableNode = {
 export type ListItemNode = {
   type: "ListItem";
   checkbox?: "unchecked" | "checked";
+  progressCookie?: ProgressCookieNode;
   children: Node[];
 };
 
@@ -177,7 +187,7 @@ export type HeadlineNode = {
   children: Node[];
 };
 
-export type InlineNode = TextNode | TimestampNode | TimestampRangeNode | EmphasisNode | LinkNode;
+export type InlineNode = TextNode | TimestampNode | TimestampRangeNode | EmphasisNode | LinkNode | ProgressCookieNode;
 
 export type Node =
   | HeadlineNode

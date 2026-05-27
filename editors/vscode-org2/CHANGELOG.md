@@ -4,6 +4,7 @@ All notable changes to the Org2 VS Code extension are documented in this file.
 
 ## Unreleased
 
+- Added syntax highlighting for checkbox progress cookies (`[n/m]`, `[p%]`).
 - Added syntax coverage tests for Org timestamp repeaters and warning offsets.
 - Agenda rows now surface CLI habit metadata with a compact streak-ish `habit ×N` cue and tooltip details.
 

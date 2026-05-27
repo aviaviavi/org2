@@ -1716,7 +1716,11 @@
       "patterns": [
         {
           "name": "constant.other.checkbox.org2",
-          "match": "\\[(?: |X|-)\\]"
+          "match": "\\[(?: |X|x|-)\\]"
+        },
+        {
+          "name": "constant.other.progress-cookie.org2",
+          "match": "\\[(?:\\d+/\\d+|\\d{1,3}%)\\]"
         }
       ]
     },

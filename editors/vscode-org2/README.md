@@ -39,7 +39,7 @@ npm run build
 ## Feature details
 
 - File association for `*.org` and `*.org2`
-- Syntax highlighting (headings, directives, blocks, drawers, properties, planning keywords, lists, checkboxes, timestamps, emphasis, links, tables, plus TODO aliases like `OPEN`, `BACKLOG`, `BLOCKED`, `PAUSED`, and `CANCELED` in headlines)
+- Syntax highlighting (headings, directives, blocks, drawers, properties, planning keywords, lists, checkboxes, checkbox progress cookies, timestamps, emphasis, links, tables, plus TODO aliases like `OPEN`, `BACKLOG`, `BLOCKED`, `PAUSED`, and `CANCELED` in headlines)
 - Folding provider for headings, list items, and `:PROPERTIES:` drawers
 - Auto-fold on open/activation (configurable):
   - `org2.folding.autoFoldMaxHeadingLevel` (number; default 1; 0 = off)

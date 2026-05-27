@@ -9,6 +9,7 @@ import type {
   DirectiveLineNode,
   KeywordLineNode,
   LinkNode,
+  ProgressCookieNode,
   ListItemNode,
   ListNode,
   Node,
@@ -43,6 +44,10 @@ function printLink(node: LinkNode): string {
   return node.raw;
 }
 
+function printProgressCookie(node: ProgressCookieNode): string {
+  return node.raw;
+}
+
 function printInline(node: InlineNode): string {
   switch (node.type) {
     case "Text":
@@ -55,6 +60,8 @@ function printInline(node: InlineNode): string {
       return printEmphasis(node);
     case "Link":
       return printLink(node);
+    case "ProgressCookie":
+      return printProgressCookie(node);
     default: {
       const _exhaustive: never = node;
       return _exhaustive;
