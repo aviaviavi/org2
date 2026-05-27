@@ -64,12 +64,67 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
   </div>
 </section>
 <p>Org2 is an early OSS project for turning a folder of notes, transcripts, tasks, links, and metadata into a corpus you can search, plan from, lint, refactor, hand to agents, and publish.</p>
+<section class="org2-sample" aria-labelledby="org2-sample-title">
+  <div class="org2-sample-intro">
+    <h2 id="org2-sample-title">What an Org2 file looks like</h2>
+    <p>One plain-text document can carry notes, tasks, dates, links, code, source provenance, and AI handoff boundaries while staying readable in any editor.</p>
+  </div>
+  <div class="org2-sample-layout">
+    <aside class="org2-sample-callouts org2-sample-callouts-left" aria-label="Document structure notes">
+      <div style="--callout-top: 1.1rem"><strong>Metadata</strong><span>Title, file tags, and stable IDs make the file queryable.</span></div>
+      <div style="--callout-top: 7.8rem"><strong>Agenda</strong><span>TODO state, schedule, deadline, effort, and tags feed planning views.</span></div>
+      <div style="--callout-top: 40.4rem"><strong>Provenance</strong><span>Generated or imported work keeps a trail back to sources.</span></div>
+    </aside>
+    <figure class="org2-sample-file">
+      <figcaption>notes/product-launch.org2</figcaption>
+      <pre aria-label="Example Org2 document"><code><span class="org2-syntax-keyword">#+title:</span> Product launch workspace
+<span class="org2-syntax-keyword">#+filetags:</span> <span class="org2-syntax-tag">:launch:q3:</span>
+
+<span class="org2-syntax-heading">*</span> <span class="org2-syntax-todo">TODO</span> Ship beta checklist <span class="org2-syntax-tag">:product:</span>
+  <span class="org2-syntax-planning">SCHEDULED:</span> <span class="org2-syntax-date">&lt;2026-06-01 Mon&gt;</span>
+  <span class="org2-syntax-planning">DEADLINE:</span>  <span class="org2-syntax-date">&lt;2026-06-12 Fri&gt;</span>
+  <span class="org2-syntax-drawer">:PROPERTIES:</span>
+  <span class="org2-syntax-prop">:ID:</span> launch-beta-checklist
+  <span class="org2-syntax-prop">:EFFORT:</span> 3h
+  <span class="org2-syntax-drawer">:END:</span>
+
+  - [X] Draft invite copy
+  - [ ] Confirm onboarding path with <span class="org2-syntax-link">[[id:design-review][design review]]</span>
+  - [ ] Publish release notes from <span class="org2-syntax-link">[[file:release-notes.org2][release notes]]</span>
+
+<span class="org2-syntax-heading">**</span> Meeting notes
+  Decisions:
+  - Keep beta small until support docs are complete.
+  - Track follow-ups in the same file as the project plan.
+
+<span class="org2-syntax-heading">**</span> Source query for docs
+  <span class="org2-syntax-block">``` sh</span>
+  npm run org2 -- query --tag launch --format json
+  <span class="org2-syntax-block">```</span>
+
+<span class="org2-syntax-heading">*</span> AI draft summary <span class="org2-syntax-tag">:draft:</span>
+  <span class="org2-syntax-drawer">:PROPERTIES:</span>
+  <span class="org2-syntax-prop">:ORG2_ARTIFACT_ROLE:</span> draft
+  <span class="org2-syntax-prop">:ORG2_PROVENANCE:</span> raw/calls/beta-kickoff.org2
+  <span class="org2-syntax-drawer">:END:</span>
+
+  The beta should emphasize local files, agenda workflows,
+  and source-backed AI summaries.</code></pre>
+    </figure>
+    <aside class="org2-sample-callouts org2-sample-callouts-right" aria-label="Document feature notes">
+      <div style="--callout-top: 11.8rem"><strong>Properties</strong><span>IDs, effort, and roles are first-class data, not comments.</span></div>
+      <div style="--callout-top: 18.6rem"><strong>Links</strong><span>File links and ID links stay plain text but resolve through the corpus graph.</span></div>
+      <div style="--callout-top: 30.9rem"><strong>Code</strong><span>Commands and examples live beside the notes they explain.</span></div>
+    </aside>
+  </div>
+</section>
 <section class="org2-headline level-1">
 <h1 id="the-idea">The idea</h1>
-<p>Org2 combines three useful traditions:</p>
+<p>Org2 combines four useful traditions:</p>
 <ul>
 <li><p>the portability and low friction of plain-text notes,</p></li>
 <li><p>the structured programmability of Org-style TODOs, links, dates, tags, and properties,</p></li>
+<li><p>the Zettelkasten habit of growing knowledge through small linked notes that compound into a graph,</p></li>
 <li><p>the provenance and workflow boundaries agents need to work safely in a real knowledge base.</p></li>
 </ul>
 <p>The result is a shared working graph: notes, tasks, plans, sources, generated drafts, and durable knowledge stay connected while still living in ordinary files. Raw imports can live in <code>raw/</code>, durable notes in the normal corpus, generated drafts in <code>views/</code>, and compiled indexes in <code>compiled/</code>. Agents can automate the pipeline, while humans still have natural places to inspect or steer when judgment matters.</p>
