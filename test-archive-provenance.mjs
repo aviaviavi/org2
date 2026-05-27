@@ -11,6 +11,7 @@ fs.writeFileSync(source, `* Project
 :PROPERTIES:
 :ID: task-123
 :END:
+SCHEDULED: <2026-01-21 Wed>
 Body.
 ** TODO Keep me
 `);
@@ -39,5 +40,17 @@ assert.match(archived, /:ARCHIVED_AT: 2026-01-21T12:00:00.000Z/);
 assert.match(archived, /:ARCHIVE_HEADING_PATH: Project\/TODO Archive me/);
 assert.doesNotMatch(active, /Archive me/);
 assert.match(active, /Keep me/);
+
+const searchDefaultRaw = execFileSync('node', ['dist/cli.js', 'search', 'Archive me', '--dir', tmp, '--recursive', '--format', 'json'], { encoding: 'utf8' });
+assert.equal(JSON.parse(searchDefaultRaw).results.length, 0, 'default search should exclude archive destinations');
+
+const searchArchivedRaw = execFileSync('node', ['dist/cli.js', 'search', 'Archive me', '--dir', tmp, '--recursive', '--include-archives', '--format', 'json'], { encoding: 'utf8' });
+assert.ok(JSON.parse(searchArchivedRaw).results.length >= 1, '--include-archives should make archive destinations searchable');
+
+const agendaDefaultRaw = execFileSync('node', ['dist/cli.js', 'agenda', '--dir', tmp, '--recursive', '--from', '2026-01-21', '--to', '2026-01-21', '--format', 'json'], { encoding: 'utf8' });
+assert.equal(JSON.parse(agendaDefaultRaw).days.flatMap((day) => day.items).length, 0, 'default agenda should exclude archive destinations');
+
+const agendaArchivedRaw = execFileSync('node', ['dist/cli.js', 'agenda', '--dir', tmp, '--recursive', '--include-archives', '--from', '2026-01-21', '--to', '2026-01-21', '--format', 'json'], { encoding: 'utf8' });
+assert.equal(JSON.parse(agendaArchivedRaw).days.flatMap((day) => day.items).length, 1, '--include-archives should make archive destinations available to agenda');
 
 console.log('✓ archive provenance');

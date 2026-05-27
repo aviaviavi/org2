@@ -108,7 +108,7 @@ assert.match(paragraphSuggestion.reason, /across this paragraph/);
 const singleFilePreview = JSON.parse(execFileSync('node', [cli, 'roam', 'linkify', '--dir', tmpDir, '--recursive', '--exclude', 'agents/', '--file', path.join(tmpDir, 'notes.org2'), '--format', 'json'], { encoding: 'utf8' }));
 assert.equal(singleFilePreview.scanned, 1);
 assert.equal(singleFilePreview.indexFileCount, 8);
-assert.equal(singleFilePreview.excludedFileCount, 2);
+assert.equal(singleFilePreview.excludedFileCount, 1);
 assert.equal(singleFilePreview.changedFileCount, 1);
 assert.equal(singleFilePreview.replacementCount, 5);
 assert.ok(singleFilePreview.representedSuggestionCount >= 1);
@@ -144,7 +144,7 @@ const excludedPreview = JSON.parse(execFileSync('node', [
   '--format', 'json',
 ], { encoding: 'utf8' }));
 assert.equal(excludedPreview.indexFileCount, 8);
-assert.equal(excludedPreview.excludedFileCount, 2);
+assert.equal(excludedPreview.excludedFileCount, 1);
 const notesExcludedResult = excludedPreview.files.find((file) => file.file.endsWith('notes.org2'));
 assert.ok(notesExcludedResult);
 assert.equal(notesExcludedResult.debugMatches.some((match) => match.label === 'private agent'), false);
