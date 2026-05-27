@@ -3991,10 +3991,16 @@ function isAgendaTuiActionable(item: ScheduledItem): boolean {
   return bucket !== "done" && bucket !== "canceled";
 }
 
-function buildAgendaTuiSections(items: ScheduledItem[], startIso: string, mode: AgendaTuiMode): AgendaTuiSection[] {
-  const overdue = items.filter((item) => item.date < startIso);
-  const today = items.filter((item) => item.date === startIso);
-  const upcoming = items.filter((item) => item.date > startIso);
+function buildAgendaTuiSections(
+  items: ScheduledItem[],
+  startIso: string,
+  mode: AgendaTuiMode,
+  hideClosedItems = false,
+): AgendaTuiSection[] {
+  const visibleItems = hideClosedItems ? items.filter(isAgendaTuiActionable) : items;
+  const overdue = visibleItems.filter((item) => item.date < startIso);
+  const today = visibleItems.filter((item) => item.date === startIso);
+  const upcoming = visibleItems.filter((item) => item.date > startIso);
   const next7EndIso = formatAgendaTuiIsoDate(addAgendaTuiUtcDays(parseIsoDate(startIso), 7));
   const next7Days = upcoming.filter((item) => item.date <= next7EndIso);
   const laterUpcoming = upcoming.filter((item) => item.date > next7EndIso);
@@ -4011,7 +4017,7 @@ function buildAgendaTuiSections(items: ScheduledItem[], startIso: string, mode: 
     if (overdueActionable.length > 0) {
       pushSection("focus-overdue", `Overdue`, overdueActionable, "overdue");
     }
-    if (today.length > todayActionable.length) {
+    if (!hideClosedItems && today.length > todayActionable.length) {
       pushSection("focus-closed", `Done or canceled`, today.filter((item) => !isAgendaTuiActionable(item)), "today");
     }
   } else if (mode === "today") {
@@ -4222,6 +4228,7 @@ async function runAgendaTui(options: {
   let disposed = false;
   let refreshTimer: NodeJS.Timeout | null = null;
   let pendingPriorityKey: "p" | null = null;
+  let hideClosedItems = false;
   let captureInputActive = false;
   let captureInputValue = "";
   const collapsedSections = new Set<string>();
@@ -4259,7 +4266,7 @@ async function runAgendaTui(options: {
     const result = options.collect({ startIso: currentStartIso });
     items = result.items;
     skippedFiles = result.skippedFiles;
-    sections = buildAgendaTuiSections(items, currentStartIso, mode);
+    sections = buildAgendaTuiSections(items, currentStartIso, mode, hideClosedItems);
     const liveKeys = new Set(sections.map((section) => section.key));
     for (const key of Array.from(collapsedSections)) {
       if (!liveKeys.has(key)) collapsedSections.delete(key);
@@ -4363,14 +4370,15 @@ async function runAgendaTui(options: {
     const actionableToday = items.filter((item) => item.date === currentStartIso && isAgendaTuiActionable(item)).length;
     const actionableOverdue = items.filter((item) => item.date < currentStartIso && isAgendaTuiActionable(item)).length;
     const rangeLabel = options.rangeLabel.replace(options.startIso, currentStartIso);
+    const closedHiddenLabel = hideClosedItems ? "done/canceled hidden" : "done/canceled shown";
     const header = [
       `${ansi.bold}Org2 agenda${ansi.reset}  ${mode === "focus" ? "focus" : mode === "today" ? "today" : "range"}  ${rangeLabel}`,
-      `${actionableToday} actionable today, ${actionableOverdue} overdue, refresh ${Math.max(1, Math.round(options.refreshMs / 1000))}s, updated ${lastRefresh.toLocaleTimeString()}`,
+      `${actionableToday} actionable today, ${actionableOverdue} overdue, ${closedHiddenLabel}, refresh ${Math.max(1, Math.round(options.refreshMs / 1000))}s, updated ${lastRefresh.toLocaleTimeString()}`,
       captureInputActive
         ? `CAPTURE TODO: ${captureInputValue}`
         : pendingPriorityKey
           ? "priority mode: a/b/c set priority, 0 clears, esc cancels"
-          : "j/k or arrows move, gg/G jump, 1/2/3 views, enter collapse, c capture TODO, t/i/d/x status, p then a/b/c set priority, p then 0 clears, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit",
+          : "j/k or arrows move, gg/G jump, 1/2/3 views, f hide/show done+canceled, enter collapse, c capture TODO, t/i/d/x status, p then a/b/c set priority, p then 0 clears, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit",
       captureInputActive
         ? "type title, enter save, esc cancel, backspace delete"
         : "",
@@ -4559,6 +4567,11 @@ async function runAgendaTui(options: {
           captureInputValue = "";
           message = "";
         } else if (key === "r") refresh();
+        else if (key === "f") {
+          hideClosedItems = !hideClosedItems;
+          message = hideClosedItems ? "Hiding done/canceled items" : "Showing done/canceled items";
+          refresh();
+        }
         else if (key === "p") {
           pendingPriorityKey = "p";
           message = "Priority mode: press a, b, c, or 0 to clear";
@@ -5144,6 +5157,57 @@ function listOrgLikeFiles(rootDir: string, recursiveScan: boolean): string[] {
   return out;
 }
 
+
+type ReviewQueueItem = {
+  file: string;
+  line: number;
+  title: string;
+  status: string;
+  provenance?: string;
+};
+
+function reviewTitleFromText(text: string, fallback: string): string {
+  const title = /^#\+TITLE:\s*(.+)$/im.exec(text)?.[1]?.trim();
+  if (title) return title;
+  const firstHeading = /^\*+\s+(?:[A-Z_]+\s+)?(.+)$/m.exec(text)?.[1]?.trim();
+  return firstHeading || fallback;
+}
+
+function findReviewQueueItems(filesToScan: string[], wantedStatus: string): ReviewQueueItem[] {
+  const wanted = wantedStatus.trim().toLowerCase();
+  const out: ReviewQueueItem[] = [];
+  for (const filePath of filesToScan) {
+    let raw = "";
+    try {
+      raw = fs.readFileSync(filePath, "utf8");
+    } catch {
+      continue;
+    }
+    const lines = raw.split(/\r?\n/);
+    const statusLine = lines.findIndex((line) => /^#\+ORG2_REVIEW_STATUS:\s*/i.test(line) || /^\s*:ORG2_REVIEW_STATUS:\s*/i.test(line));
+    if (statusLine === -1) continue;
+    const status = String((/^#\+ORG2_REVIEW_STATUS:\s*(.*)$/i.exec(lines[statusLine] || "") || /^\s*:ORG2_REVIEW_STATUS:\s*(.*)$/i.exec(lines[statusLine] || ""))?.[1] || "").trim();
+    if (wanted && status.toLowerCase() !== wanted) continue;
+    const provenance = /^#\+ORG2_PROVENANCE:\s*(.+)$/im.exec(raw)?.[1]?.trim();
+    out.push({
+      file: filePath,
+      line: statusLine,
+      title: reviewTitleFromText(raw, path.basename(filePath)),
+      status,
+      ...(provenance ? { provenance } : {}),
+    });
+  }
+  return out.sort((a, b) => a.file.localeCompare(b.file));
+}
+
+function updateReviewStatusInFile(filePath: string, toStatus: string): boolean {
+  const raw = fs.readFileSync(filePath, "utf8");
+  const next = raw.replace(/^#\+ORG2_REVIEW_STATUS:\s*.*$/im, `#+ORG2_REVIEW_STATUS: ${toStatus}`).replace(/^(\s*:ORG2_REVIEW_STATUS:)\s*.*$/im, `$1 ${toStatus}`);
+  if (next === raw) return false;
+  fs.writeFileSync(filePath, next, "utf8");
+  return true;
+}
+
 function listAgendaFiles(dirPath: string, recursiveScan: boolean): string[] {
   const out: string[] = [];
   const entries = fs.readdirSync(dirPath, { withFileTypes: true });
@@ -5340,6 +5404,13 @@ async function main(): Promise<void> {
   // Lint / corpus health
   let lintFormat: "text" | "json" = "text";
 
+  // Review queue
+  let reviewAction: "list" | "mark" = "list";
+  let reviewFormat: "text" | "json" = "text";
+  let reviewStatus = "review-required";
+  let reviewToStatus = "reviewed";
+  let reviewApply = false;
+
   // Roam meta
   let roamAction: "db-sync" | "backlinks" | "node" | "link" | "linkify" | "graph" = "db-sync";
   let roamNodeAction: "new" = "new";
@@ -5396,6 +5467,16 @@ async function main(): Promise<void> {
     } else if (arg === "lsp") {
       command = "lsp";
       i++;
+    } else if (arg === "review") {
+      command = "review";
+      i++;
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        const sub = args[i]!;
+        if (sub === "list" || sub === "mark") {
+          reviewAction = sub;
+          i++;
+        }
+      }
     } else if (arg === "fmt" || arg === "format") {
       command = "fmt";
       i++;
@@ -5557,8 +5638,18 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "agenda") {
           agendaStatusFiltersRaw.push(args[i]!);
+        } else if (command === "review") {
+          reviewStatus = args[i]!;
         } else {
           todoStatus = parseTodoStatusArg(args[i] ?? "");
+        }
+        i++;
+      }
+    } else if (arg === "--to-status") {
+      i++;
+      if (i < args.length) {
+        if (command === "review") {
+          reviewToStatus = args[i]!;
         }
         i++;
       }
@@ -6154,6 +6245,8 @@ async function main(): Promise<void> {
           queryFormat = v;
         } else if (command === "lint" && (v === "text" || v === "json")) {
           lintFormat = v;
+        } else if (command === "review" && (v === "text" || v === "json")) {
+          reviewFormat = v;
         } else if (
           command === "roam" &&
           roamAction === "backlinks" &&
@@ -6355,6 +6448,8 @@ async function main(): Promise<void> {
         idApply = true;
       } else if (command === "roam") {
         roamApply = true;
+      } else if (command === "review") {
+        reviewApply = true;
       }
       i++;
     } else if (arg === "--verbose" || arg === "--verbose-errors") {
@@ -6391,6 +6486,8 @@ Roam / IDs:
   org2 backlinks --id UUID [--dir DIR] [--recursive]
   org2 query (--id UUID|--text TEXT) [--dir DIR] [--recursive]
   org2 lint [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format text|json]
+  org2 review list [--dir DIR] [--recursive] [--status review-required] [--format text|json]
+  org2 review mark --file FILE [--to-status reviewed] [--apply]
   org2 roam db-sync --dir DIR [--recursive] [--apply]
   org2 roam node new --dir DIR --title TITLE [--id UUID] [--apply]
   org2 roam link insert-backlink --file FILE --pos LINE[:COL] --title TITLE [--style wiki|id] [--id UUID] [--apply]
@@ -6601,6 +6698,21 @@ Flags:
   --file FILE       Single target file
   --files FILE      One or more target files
   --format text|json Output format`;
+  } else if (command === "review") {
+    text = `org2 review
+
+Usage:
+  org2 review list [--dir DIR] [--recursive] [--status review-required] [--format text|json]
+  org2 review mark --file FILE [--to-status reviewed] [--apply] [--format text|json]
+
+Flags:
+  --dir DIR           Root directory to scan
+  --recursive         Recurse into subdirectories
+  --file FILE         Review file to mark
+  --status STATUS     Status to list (default: review-required)
+  --to-status STATUS  Status to write for mark (default: reviewed)
+  --apply             Write changes for mark
+  --format text|json  Output format`;
   } else if (command === "roam") {
     if (options.roamAction === "db-sync") {
       text = `org2 roam db-sync
@@ -6688,7 +6800,7 @@ Flags:
     printGeneralUsage(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "lint" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "query" && command !== "lint" && command !== "review" && command !== "roam") {
     printGeneralUsage(1);
   }
 
@@ -8523,6 +8635,62 @@ Flags:
       process.stdout.write(`${h.kind} ${h.title} ${h.file}:${h.line + 1}${suffix}\n`);
     }
 
+    return;
+  }
+
+  if (command === "review") {
+    if (reviewAction === "mark") {
+      if (files.length !== 1) {
+        console.error("Error: org2 review mark requires exactly one --file FILE");
+        process.exit(1);
+      }
+      const file = files[0]!;
+      const changed = reviewApply ? updateReviewStatusInFile(file, reviewToStatus) : true;
+      const payload = { file, status: reviewToStatus, changed, applied: reviewApply };
+      if (reviewFormat === "json") {
+        process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+      } else if (reviewApply) {
+        process.stdout.write(`${changed ? "Updated" : "Unchanged"} ${file} -> ${reviewToStatus}\n`);
+      } else {
+        process.stdout.write(`Would update ${file} -> ${reviewToStatus} (use --apply)\n`);
+      }
+      return;
+    }
+
+    if (!dir && files.length === 0) {
+      const configPath = findConfigFile(process.cwd());
+      if (configPath) {
+        try {
+          const config = loadConfig(configPath);
+          const configDir = path.dirname(configPath);
+          files = resolveFilesFromConfig(config, configDir);
+        } catch (err) {
+          console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`);
+          process.exit(1);
+        }
+      } else {
+        console.error("Error: provide either --dir, --files, or org2.json config");
+        process.exit(1);
+      }
+    }
+
+    if (dir && files.length === 0) {
+      files = listOrgLikeFiles(dir, recursive);
+    }
+
+    const items = findReviewQueueItems(files, reviewStatus);
+    if (reviewFormat === "json") {
+      process.stdout.write(JSON.stringify({ $schema: "org2:review:v1", status: reviewStatus, items }, null, 2) + "\n");
+    } else {
+      if (items.length === 0) {
+        process.stdout.write(`No review files with status '${reviewStatus}'.\n`);
+      } else {
+        for (const item of items) {
+          const prov = item.provenance ? ` — ${item.provenance}` : "";
+          process.stdout.write(`${item.status} ${item.title} ${item.file}:${item.line + 1}${prov}\n`);
+        }
+      }
+    }
     return;
   }
 

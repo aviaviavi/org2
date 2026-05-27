@@ -55,7 +55,10 @@
     "onCommand:org2.roamOpenBacklink",
     "onCommand:org2.roamOpenBacklinkById",
     "onCommand:org2.roamDbSync",
-    "onCommand:org2.rerunAutoFold"
+    "onCommand:org2.rerunAutoFold",
+    "onCommand:org2.openReview",
+    "onCommand:org2.refreshReview",
+    "onCommand:org2.openReviewItem"
   ],
   "repository": {
     "type": "git",
@@ -316,6 +319,19 @@
       {
         "command": "org2.debugListLinks",
         "title": "Org2: Debug List Links"
+      },
+      {
+        "command": "org2.openReview",
+        "title": "Org2: Open Review Queue"
+      },
+      {
+        "command": "org2.refreshReview",
+        "title": "Org2: Refresh Review Queue",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "org2.openReviewItem",
+        "title": "Org2: Open Review Item"
       }
     ],
     "views": {
@@ -327,6 +343,10 @@
         {
           "id": "org2Backlinks",
           "name": "Org2 Backlinks"
+        },
+        {
+          "id": "org2Review",
+          "name": "Org2 Review"
         }
       ]
     },
@@ -350,6 +370,11 @@
         {
           "command": "org2.refreshBacklinks",
           "when": "view == org2Backlinks",
+          "group": "navigation"
+        },
+        {
+          "command": "org2.refreshReview",
+          "when": "view == org2Review",
           "group": "navigation"
         }
       ],
