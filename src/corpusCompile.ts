@@ -54,6 +54,7 @@ export type CompiledCorpusNode = {
   title: string;
   level?: number;
   todo?: string;
+  priority?: string;
   tags: string[];
   aliases: string[];
   properties: Record<string, string>;
@@ -206,7 +207,19 @@ function stripTags(raw: string): { title: string; tags: string[] } {
   return { title: raw.slice(0, match.index).trim(), tags };
 }
 
-function parseHeading(line: string): { level: number; title: string; todo?: string; tags: string[] } | null {
+function normalizePriorityToken(raw: string): string | undefined {
+  const match = /^#?([A-Za-z0-9])$/.exec(raw.trim().replace(/^\[#/, "").replace(/\]$/, ""));
+  if (!match) return undefined;
+  return (match[1] || "").toUpperCase();
+}
+
+function stripPriority(raw: string): { title: string; priority?: string } {
+  const match = /^\[#([A-Za-z0-9])\](?:\s+|$)(.*)$/i.exec(raw.trim());
+  if (!match) return { title: raw.trim() };
+  return { priority: normalizePriorityToken(match[1] || ""), title: String(match[2] || "").trim() };
+}
+
+function parseHeading(line: string): { level: number; title: string; todo?: string; priority?: string; tags: string[] } | null {
   const match = /^(\*+)\s+(.*?)\s*$/.exec(line);
   if (!match) return null;
   const level = (match[1] || "").length;
@@ -219,7 +232,8 @@ function parseHeading(line: string): { level: number; title: string; todo?: stri
     todo = first.toUpperCase();
     rest = rest.slice(first.length).trim();
   }
-  return { level, title: rest, todo, tags: tagStripped.tags };
+  const priorityStripped = stripPriority(rest);
+  return { level, title: priorityStripped.title, todo, priority: priorityStripped.priority, tags: tagStripped.tags };
 }
 
 function headingEndExclusive(lines: string[], startIndex: number, level: number): number {
@@ -433,6 +447,7 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
         id: headingId,
         title: heading.title,
         level: heading.level,
+        priority: heading.priority,
         tags: heading.tags,
         aliases: headingAliases,
         properties: headingProperties,
