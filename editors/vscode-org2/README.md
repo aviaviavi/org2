@@ -383,3 +383,15 @@ Optional folded-navigation helper: set `org2.vim.visibleLineNavigation: true` to
 ## Notes
 
 This is intentionally small and TextMate-based. The repo also contains a Tree-sitter grammar in `tree-sitter-org2/` for future richer editor integrations.
+
+### Capture / ingest CLI
+
+The extension shells out to the workspace `org2` CLI for editor workflows. Unified source capture is currently exposed by the CLI rather than a VS Code command:
+
+```sh
+org2 capture --text "note" --to inbox.org2 --title "Quick note" --apply
+org2 capture --stdin --to raw/transcript.org2 --title "Transcript" --apply
+org2 capture --file transcript.txt --to raw/inbox.org2 --apply
+```
+
+Captured source entries include source type, origin, timestamp, author (when provided), content hash, and provenance metadata in an org property drawer.
