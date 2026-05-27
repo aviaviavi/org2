@@ -3,8 +3,20 @@
 @@ archive @@
 --- spec/v0/tests/cli/archive-basic.org (removed lines)
 - ** TODO Child
+- :PROPERTIES:
+- :ARCHIVED_AT: 2026-01-21T12:00:00.000Z
+- :ARCHIVE_SOURCE: spec/v0/tests/cli/archive-basic.org
+- :ARCHIVE_SOURCE_LINE: 4
+- :ARCHIVE_HEADING_PATH: TODO Parent/TODO Child
+- :END:
 - Some body text.
 
 +++ spec/v0/tests/cli/archive-basic.org_archive (appended lines)
 + ** TODO Child
++ :PROPERTIES:
++ :ARCHIVED_AT: 2026-01-21T12:00:00.000Z
++ :ARCHIVE_SOURCE: spec/v0/tests/cli/archive-basic.org
++ :ARCHIVE_SOURCE_LINE: 4
++ :ARCHIVE_HEADING_PATH: TODO Parent/TODO Child
++ :END:
 + Some body text.

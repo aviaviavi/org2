@@ -4852,6 +4852,66 @@ function formatArchiveDiff(
   return diff;
 }
 
+function defaultArchivePathForSource(sourcePath: string): string {
+  if (/\.org2?$/i.test(sourcePath)) return `${sourcePath}_archive`;
+  return `${sourcePath}.archive`;
+}
+
+function extractArchiveHeadlineTitle(line: string): string {
+  return line.replace(/^\*+\s+/, "").replace(/\s+:[\w@#%:]+:\s*$/, "").trim();
+}
+
+function findArchiveOriginalId(subtreeLines: string[]): string | undefined {
+  const scanLimit = Math.min(subtreeLines.length, 20);
+  for (let idx = 1; idx < scanLimit; idx += 1) {
+    const line = subtreeLines[idx] ?? "";
+    if (/^\*+\s+/.test(line)) break;
+    const trimmed = line.trim();
+    const match = /^:ID:\s*(\S+)\s*$/i.exec(trimmed);
+    if (match) return match[1];
+    if (trimmed === ":END:") break;
+  }
+  return undefined;
+}
+
+function buildArchiveHeadingPath(lines: string[], headlineLineIndex: number): string[] {
+  const headingPath: string[] = [];
+  let currentLevel = Infinity;
+  for (let idx = headlineLineIndex; idx >= 0; idx -= 1) {
+    const line = lines[idx] ?? "";
+    const match = /^(\*+)\s+/.exec(line);
+    if (!match) continue;
+    const level = match[1].length;
+    if (level < currentLevel) {
+      headingPath.unshift(extractArchiveHeadlineTitle(line));
+      currentLevel = level;
+    }
+  }
+  return headingPath;
+}
+
+function addArchiveProvenanceDrawer(subtreeLines: string[], provenance: Record<string, string | undefined>): string[] {
+  const out = [...subtreeLines];
+  const drawer = [
+    ":PROPERTIES:",
+    `:ARCHIVED_AT: ${provenance.archivedAt}`,
+    `:ARCHIVE_SOURCE: ${provenance.sourcePath}`,
+    `:ARCHIVE_SOURCE_LINE: ${provenance.sourceLine}`,
+    provenance.originalId ? `:ARCHIVE_ORIGINAL_ID: ${provenance.originalId}` : undefined,
+    provenance.headingPath ? `:ARCHIVE_HEADING_PATH: ${provenance.headingPath}` : undefined,
+    ":END:",
+    "",
+  ].filter((line): line is string => typeof line === "string");
+
+  const hasDrawer = out.length > 1 && (out[1] ?? "").trim().toUpperCase() === ":PROPERTIES:";
+  if (hasDrawer) {
+    out.splice(2, 0, ...drawer.slice(1, -2));
+  } else {
+    out.splice(1, 0, ...drawer);
+  }
+  return out;
+}
+
 function formatOutput(
   items: ScheduledItem[],
   startDate: Date,
@@ -8712,7 +8772,8 @@ Usage:
 Flags:
   --file FILE          Source file
   --pos LINE[:COL]     Heading position
-  --archive-file FILE  Destination archive file
+  --archive-file FILE  Destination archive file (default FILE_archive for .org/.org2)
+  --format text|diff|json  Output format; diff/json include archive provenance preview
   --apply              Write changes instead of previewing`;
   } else if (command === "refile") {
     text = `org2 refile
@@ -12670,7 +12731,7 @@ Flags:
       process.exit(1);
     }
 
-    const defaultArchivePath = sourcePath.endsWith(".org") ? `${sourcePath}_archive` : `${sourcePath}.archive`;
+    const defaultArchivePath = defaultArchivePathForSource(sourcePath);
     const archivePath = archiveFile || defaultArchivePath;
 
     const lines = raw.split("\n");
@@ -12702,8 +12763,16 @@ Flags:
       }
     }
 
-    const subtreeLines = lines.slice(headlineLineIndex, endIndexExclusive);
+    const rawSubtreeLines = lines.slice(headlineLineIndex, endIndexExclusive);
     const remainingLines = [...lines.slice(0, headlineLineIndex), ...lines.slice(endIndexExclusive)];
+    const provenance = {
+      archivedAt: process.env.ORG2_ARCHIVED_AT || new Date().toISOString(),
+      sourcePath,
+      sourceLine: String(headlineLineIndex + 1),
+      originalId: findArchiveOriginalId(rawSubtreeLines),
+      headingPath: buildArchiveHeadingPath(lines, headlineLineIndex).join("/"),
+    };
+    const subtreeLines = addArchiveProvenanceDrawer(rawSubtreeLines, provenance);
 
     const subtreeText = subtreeLines.join("\n").trimEnd() + "\n";
     const newSourceText = remainingLines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
@@ -12725,6 +12794,7 @@ Flags:
           archivePath,
           headlineLine1: headlineLineIndex + 1,
           headline: headlineLine,
+          provenance,
           subtreeText,
           newSourceText,
           diff: formatArchiveDiff(sourcePath, archivePath, subtreeText),
@@ -12749,6 +12819,7 @@ Flags:
         archivePath,
         headlineLine1: headlineLineIndex + 1,
         headline: headlineLine,
+        provenance,
         subtreeText,
         newSourceText,
         diff: formatArchiveDiff(sourcePath, archivePath, subtreeText),

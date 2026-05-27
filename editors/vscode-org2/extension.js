@@ -3200,9 +3200,16 @@ function activate(context) {
       );
       if (applyOk !== 'Apply') return;
 
-      const applyArgs = ['archive', '--file', String(filePath), '--pos', String(line), '--apply'];
+      const applyArgs = ['archive', '--file', String(filePath), '--pos', String(line), '--apply', '--format', 'json'];
       const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, applyArgs);
-      await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
+      const applyResult = await execFileAsync(finalCmd, finalArgs, { cwd: getAgendaRootDir() });
+      let archivePath = '';
+      try {
+        const payload = JSON.parse(String(applyResult && applyResult.stdout ? applyResult.stdout : '{}'));
+        archivePath = payload && payload.archivePath ? String(payload.archivePath) : '';
+      } catch (_) {
+        archivePath = '';
+      }
 
       if (refreshAfterCliApply) {
         await refreshFileFromDisk(filePath, {
@@ -3216,6 +3223,10 @@ function activate(context) {
       // Keep agenda rows in sync after agenda-invoked archive edits.
       if (item instanceof Org2AgendaItem && !skipAgendaReload) {
         await agendaProvider.load();
+      }
+
+      if (archivePath) {
+        vscode.window.showInformationMessage(`Org2: archived subtree to ${archivePath}.`);
       }
     } catch (e) {
       const stderr = e && e.stderr ? String(e.stderr).trim() : '';
