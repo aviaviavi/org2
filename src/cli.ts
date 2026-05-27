@@ -4410,6 +4410,25 @@ function extractAgendaPropertiesNearHeadline(lines: string[], headlineLineIndex:
   return properties;
 }
 
+function extractAgendaFileProperties(lines: string[]): Record<string, string> {
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (/^(\*+)\s+/.test(line)) break;
+    if (line.trim().toUpperCase() !== ":PROPERTIES:") continue;
+    const properties: Record<string, string> = {};
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const trimmed = (lines[j] ?? "").trim();
+      if (trimmed.toUpperCase() === ":END:") return properties;
+      const match = /^:([A-Za-z0-9_@#%+.-]+):\s*(.*)$/.exec(trimmed);
+      if (!match) continue;
+      const key = normalizeAgendaPropertyKey(match[1] ?? "");
+      const value = (match[2] ?? "").trim();
+      if (key && value) properties[key] = value;
+    }
+    break;
+  }
+  return {};
+}
 
 function appendEffortLintIssues(raw: string, filePath: string, issues: ArtifactLintIssue[]): void {
   const lines = raw.split("\n");
@@ -4458,6 +4477,7 @@ function agendaWorkloadSummaryForItems(
   }
 
   return { totalMinutes, byDate, byGroup, byTag };
+
 }
 
 function findScheduledItemsInText(
@@ -4507,6 +4527,8 @@ function findScheduledItemsInText(
 ): ScheduledItem[] {
   const items: ScheduledItem[] = [];
   const lines = content.split("\n");
+  const fileProperties = extractAgendaFileProperties(lines);
+  const propertyStack: Array<{ level: number; effectiveProperties: Record<string, string> }> = [];
 
   let current: {
     todo?: string;
@@ -4528,7 +4550,11 @@ function findScheduledItemsInText(
     if (/^(\*+)\s+/.test(line)) {
       const parsed = parseHeadlineLine(line);
       if (parsed) {
-        const properties = extractAgendaPropertiesNearHeadline(lines, i);
+        while (propertyStack.length && (propertyStack[propertyStack.length - 1]?.level || 0) >= parsed.level) propertyStack.pop();
+        const explicitProperties = extractAgendaPropertiesNearHeadline(lines, i);
+        const inheritedProperties = propertyStack[propertyStack.length - 1]?.effectiveProperties || fileProperties;
+        const properties = { ...inheritedProperties, ...explicitProperties };
+        propertyStack.push({ level: parsed.level, effectiveProperties: properties });
         current = {
           ...parsed,
           effort: properties.EFFORT,

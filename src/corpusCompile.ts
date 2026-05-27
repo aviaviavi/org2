@@ -66,6 +66,10 @@ export type CompiledCorpusNode = {
   tags: string[];
   aliases: string[];
   properties: Record<string, string>;
+  /** Explicit properties overlaid on inherited file/ancestor heading properties. */
+  effectiveProperties: Record<string, string>;
+  /** Properties inherited from file/ancestor heading drawers and not overridden locally. */
+  inheritedProperties: Record<string, string>;
   effort?: { raw: string; minutes: number };
   planning: Array<{ kind: "SCHEDULED" | "DEADLINE" | "CLOSED"; raw: string; line: number }>;
   clocks: OrgClockInterval[];
@@ -480,7 +484,7 @@ function normalizePredicate(raw: string): string {
 }
 
 function nodeEntityType(node: CompiledCorpusNode): string | undefined {
-  const propertyType = normalizeEntityType(node.properties.ORG2_ENTITY_TYPE || node.properties.ENTITY_TYPE);
+  const propertyType = normalizeEntityType((node.effectiveProperties || node.properties).ORG2_ENTITY_TYPE || (node.effectiveProperties || node.properties).ENTITY_TYPE);
   if (propertyType) return propertyType;
   const typedTag = node.tags.find((tag) => /^type[-_:]/i.test(tag));
   return typedTag ? normalizeEntityType(typedTag.replace(/^type[-_:]/i, "")) : undefined;
@@ -515,6 +519,7 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
     const id = keywordId || drawerId;
     const aliases = Array.from(new Set([...parseKeywordAliases(lines, 80), ...parseAliasTokens(fileDrawer?.properties.ROAM_ALIASES || "")]));
     const properties = fileDrawer?.properties || {};
+    const headingPropertyStack: Array<{ level: number; effectiveProperties: Record<string, string> }> = [];
     const firstHeadingIndex = lines.findIndex((line) => /^\*+\s+/.test(line || ""));
     const preambleEndExclusive = firstHeadingIndex === -1 ? lines.length : firstHeadingIndex;
     const fileLinks = extractLinks(lines, 0, preambleEndExclusive);
@@ -538,6 +543,8 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       tags: [],
       aliases,
       properties,
+      effectiveProperties: { ...properties },
+      inheritedProperties: {},
       planning: extractPlanning(lines, 0, preambleEndExclusive),
       clocks: clocksByNode.get(fileKey) || [],
       clockIssues: clockIssuesByNode.get(fileKey) || [],
@@ -552,8 +559,12 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       const heading = parseHeading(lines[i] || "");
       if (!heading) continue;
       const endExclusive = headingEndExclusive(lines, i, heading.level);
+      while (headingPropertyStack.length && (headingPropertyStack[headingPropertyStack.length - 1]?.level || 0) >= heading.level) headingPropertyStack.pop();
+      const inheritedBase = headingPropertyStack[headingPropertyStack.length - 1]?.effectiveProperties || properties;
       const drawer = propertyDrawerAfterHeading(lines, i);
       const headingProperties = drawer?.properties || {};
+      const headingEffectiveProperties = { ...inheritedBase, ...headingProperties };
+      const headingInheritedProperties = Object.fromEntries(Object.entries(inheritedBase).filter(([key]) => !(key in headingProperties)));
       const headingId = normalizeId(headingProperties.ID);
       const headingAliases = parseAliasTokens(headingProperties.ROAM_ALIASES || "");
       const headingSnippet = extractSnippetWithLine(lines, i + 1, endExclusive);
@@ -572,6 +583,8 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
         tags: heading.tags,
         aliases: headingAliases,
         properties: headingProperties,
+        effectiveProperties: headingEffectiveProperties,
+        inheritedProperties: headingInheritedProperties,
         planning: extractPlanning(lines, i + 1, endExclusive),
         clocks: clocksByNode.get(headingKey) || [],
         clockIssues: clockIssuesByNode.get(headingKey) || [],
@@ -585,6 +598,7 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       const effort = effortFromProperties(headingProperties);
       if (effort) node.effort = effort;
       nodes.push(node);
+      headingPropertyStack.push({ level: heading.level, effectiveProperties: headingEffectiveProperties });
     }
   }
 
@@ -701,7 +715,7 @@ function buildEntityIndex(nodes: CompiledCorpusNode[]): CompiledCorpusEntity[] {
       entityType: node.entityType!,
       file: node.file,
       line: node.sourceRange.startLine,
-      source: ((node.properties.ORG2_ENTITY_TYPE || node.properties.ENTITY_TYPE) ? "property" : "tag") as "property" | "tag",
+      source: (((node.effectiveProperties || node.properties).ORG2_ENTITY_TYPE || (node.effectiveProperties || node.properties).ENTITY_TYPE) ? "property" : "tag") as "property" | "tag",
     }))
     .sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.title.localeCompare(b.title));
 }
@@ -821,7 +835,7 @@ function buildRelationIndex(nodes: CompiledCorpusNode[], byId: Map<string, Compi
   };
   for (const node of nodes) {
     inferLinkedTextAdvisorRelationsForNode(relations, node, byId, labels);
-    const explicitValues = Object.entries(node.properties).filter(([key]) => key === "ORG2_RELATION" || key.startsWith("ORG2_RELATION_"));
+    const explicitValues = Object.entries(node.effectiveProperties || node.properties).filter(([key]) => key === "ORG2_RELATION" || key.startsWith("ORG2_RELATION_"));
     for (const [key, value] of explicitValues) {
       const suffix = key === "ORG2_RELATION" ? "" : key.slice("ORG2_RELATION_".length);
       const parts = String(value || "").trim().split(/\s+/);
