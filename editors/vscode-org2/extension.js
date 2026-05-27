@@ -200,6 +200,96 @@ class Org2AgendaItem {
   }
 }
 
+
+class Org2ReviewItem {
+  constructor(entry) {
+    this.file = String((entry && entry.file) || '');
+    this.line = typeof (entry && entry.line) === 'number' ? entry.line : 0;
+    this.title = String((entry && entry.title) || path.basename(this.file) || '(review item)');
+    this.status = String((entry && entry.status) || 'review-required');
+    this.provenance = String((entry && entry.provenance) || '');
+  }
+}
+
+class Org2ReviewProvider {
+  constructor(context) {
+    this.context = context;
+    this._onDidChangeTreeData = new vscode.EventEmitter();
+    this.onDidChangeTreeData = this._onDidChangeTreeData.event;
+    this.items = [];
+    this.lastError = undefined;
+    this.view = null;
+  }
+
+  attachView(view) {
+    this.view = view || null;
+    this.updateViewSummary();
+  }
+
+  updateViewSummary() {
+    if (!this.view) return;
+    this.view.title = `Org2 Review (${this.items.length})`;
+    this.view.description = this.items.length ? 'review-required' : '';
+  }
+
+  refresh() {
+    this.updateViewSummary();
+    this._onDidChangeTreeData.fire();
+  }
+
+  async load() {
+    const root = getAgendaRootDir();
+    try {
+      this.lastError = undefined;
+      const { cmd, args } = resolveOrg2Command(this.context, ['ai', 'review', '--dir', root, '--recursive', '--format', 'json']);
+      const { stdout } = await execFileAsync(cmd, args, { cwd: root });
+      const parsed = JSON.parse(stdout || '{}');
+      this.items = (parsed.items || []).map((entry) => new Org2ReviewItem(entry));
+    } catch (e) {
+      this.lastError = e;
+      this.items = [];
+    }
+    this.refresh();
+  }
+
+  getTreeItem(element) {
+    if (element instanceof Org2ReviewItem) {
+      const item = new vscode.TreeItem(element.title, vscode.TreeItemCollapsibleState.None);
+      item.description = relativeWorkspacePath(getAgendaRootDir(), element.file) || element.file;
+      item.tooltip = new vscode.MarkdownString([
+        `**${element.title}**`,
+        '',
+        `- Status: ${element.status}`,
+        `- File: ${element.file}:${element.line + 1}`,
+        ...(element.provenance ? [`- Provenance: ${element.provenance}`] : []),
+      ].join('\n'));
+      item.iconPath = new vscode.ThemeIcon('eye');
+      item.contextValue = 'org2ReviewItem';
+      item.command = { command: 'org2.openReviewItem', title: 'Open Review Item', arguments: [element] };
+      return item;
+    }
+    const errItem = new vscode.TreeItem('Org2 review: failed to load', vscode.TreeItemCollapsibleState.None);
+    errItem.description = this.lastError ? String(this.lastError.message || this.lastError) : '';
+    return errItem;
+  }
+
+  async getChildren(element) {
+    if (element) return [];
+    if (this.lastError) return [this.lastError];
+    return this.items;
+  }
+}
+
+async function openReviewItem(item) {
+  if (!item || !item.file) return;
+  const abs = path.isAbsolute(item.file) ? item.file : path.resolve(getAgendaRootDir(), item.file);
+  const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(abs));
+  const editor = await vscode.window.showTextDocument(doc, { preview: true });
+  const pos = new vscode.Position(Math.max(0, item.line || 0), 0);
+  editor.selection = new vscode.Selection(pos, pos);
+  revealNavigationPosition(editor, pos, 'review');
+}
+
 class Org2BacklinksFileGroup {
   constructor(file, rootDir, items) {
     this.file = file;
@@ -2448,11 +2538,19 @@ function activate(context) {
   context.subscriptions.push(agendaView);
 
   const backlinksProvider = new Org2BacklinksProvider(context);
+  const reviewProvider = new Org2ReviewProvider(context);
   const backlinksView = vscode.window.createTreeView('org2Backlinks', {
     treeDataProvider: backlinksProvider,
     showCollapseAll: true,
   });
   context.subscriptions.push(backlinksView);
+
+  const reviewView = vscode.window.createTreeView('org2Review', {
+    treeDataProvider: reviewProvider,
+    showCollapseAll: true,
+  });
+  reviewProvider.attachView(reviewView);
+  context.subscriptions.push(reviewView);
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.openAgenda', async () => {
@@ -2487,6 +2585,28 @@ function activate(context) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('org2.openReview', async () => {
+      await vscode.commands.executeCommand('workbench.view.explorer');
+      await reviewProvider.load();
+      if (reviewProvider.items[0]) {
+        reviewView.reveal(reviewProvider.items[0], { focus: true }).catch(() => {});
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.refreshReview', async () => {
+      await reviewProvider.load();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.openReviewItem', async (item) => {
+      await openReviewItem(item);
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('org2.formatWorkspaceCheck', async () => {
       await checkWorkspaceFormattingDrift();
     })
@@ -2513,6 +2633,7 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.aiReviewWorkspace', async () => {
       await runAiReviewReport();
+      await reviewProvider.load();
     })
   );
 
