@@ -5,7 +5,13 @@
   "archivePath": "spec/v0/tests/cli/archive-basic.org_archive",
   "headlineLine1": 4,
   "headline": "** TODO Child",
-  "subtreeText": "** TODO Child\nSome body text.\n",
+  "provenance": {
+    "archivedAt": "2026-01-21T12:00:00.000Z",
+    "sourcePath": "spec/v0/tests/cli/archive-basic.org",
+    "sourceLine": "4",
+    "headingPath": "TODO Parent/TODO Child"
+  },
+  "subtreeText": "** TODO Child\n:PROPERTIES:\n:ARCHIVED_AT: 2026-01-21T12:00:00.000Z\n:ARCHIVE_SOURCE: spec/v0/tests/cli/archive-basic.org\n:ARCHIVE_SOURCE_LINE: 4\n:ARCHIVE_HEADING_PATH: TODO Parent/TODO Child\n:END:\n\nSome body text.\n",
   "newSourceText": "#+title: archive basic\n\n* TODO Parent\n* TODO Next\n",
-  "diff": "--- spec/v0/tests/cli/archive-basic.org\n+++ spec/v0/tests/cli/archive-basic.org_archive\n@@ archive @@\n--- spec/v0/tests/cli/archive-basic.org (removed lines)\n- ** TODO Child\n- Some body text.\n\n+++ spec/v0/tests/cli/archive-basic.org_archive (appended lines)\n+ ** TODO Child\n+ Some body text.\n"
+  "diff": "--- spec/v0/tests/cli/archive-basic.org\n+++ spec/v0/tests/cli/archive-basic.org_archive\n@@ archive @@\n--- spec/v0/tests/cli/archive-basic.org (removed lines)\n- ** TODO Child\n- :PROPERTIES:\n- :ARCHIVED_AT: 2026-01-21T12:00:00.000Z\n- :ARCHIVE_SOURCE: spec/v0/tests/cli/archive-basic.org\n- :ARCHIVE_SOURCE_LINE: 4\n- :ARCHIVE_HEADING_PATH: TODO Parent/TODO Child\n- :END:\n- Some body text.\n\n+++ spec/v0/tests/cli/archive-basic.org_archive (appended lines)\n+ ** TODO Child\n+ :PROPERTIES:\n+ :ARCHIVED_AT: 2026-01-21T12:00:00.000Z\n+ :ARCHIVE_SOURCE: spec/v0/tests/cli/archive-basic.org\n+ :ARCHIVE_SOURCE_LINE: 4\n+ :ARCHIVE_HEADING_PATH: TODO Parent/TODO Child\n+ :END:\n+ Some body text.\n"
 }

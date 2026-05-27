@@ -110,7 +110,8 @@ Supported timestamp forms:
 
 - Unordered markers: =-=, =+=, =*=
 - Ordered markers: =1.=, =1)=
-- Checkboxes: =[ ]=, =[X]=, =[-]=
+- Checkboxes: =[ ]=, =[X]=, =[x]=, =[-]=
+- Checkbox progress cookies: =[n/m]= and =[p%]= may appear in headings or list items; compile output exposes computed checkbox totals and lint reports stale cookies.
 - Nested lists via indentation.
 
 * Links

@@ -23,7 +23,7 @@ import { formatOrgTimestamp, TODO_KEYWORDS, updateTodoInText, type TodoStatus } 
 import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from "./planning.js";
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
-import { compileCorpus, compileCorpusIncremental, renderCompiledCorpus } from "./corpusCompile.js";
+import { compileCorpus, compileCorpusIncremental, extractCheckboxProgress, renderCompiledCorpus } from "./corpusCompile.js";
 import { extractClockReport } from "./clock.js";
 import { buildAgentContextPayload, type AgentInclude } from "./agentContext.js";
 import { loadAiJobManifest, validateAiJobManifest } from "./aiJobManifest.js";
@@ -4321,6 +4321,22 @@ function agendaHabitStreak(closedDates: string[], currentDate: string): number {
   return streak;
 }
 
+
+function appendCheckboxProgressLintIssues(raw: string, filePath: string, issues: ArtifactLintIssue[]): void {
+  const lines = String(raw || "").replace(/\r\n/g, "\n").split("\n");
+  const progress = extractCheckboxProgress(lines, 0, lines.length);
+  for (const cookie of progress.cookies) {
+    if (!cookie.stale) continue;
+    issues.push({
+      severity: "warning",
+      rule: "checkbox-progress-cookie-stale",
+      file: filePath,
+      line: cookie.line,
+      message: `Progress cookie ${cookie.raw} is stale; expected ${cookie.expectedRaw} for ${progress.checked}/${progress.total} checked boxes.`,
+    });
+  }
+}
+
 function appendHabitLintIssues(raw: string, filePath: string, issues: ArtifactLintIssue[]): void {
   const lines = raw.split("\n");
   for (let i = 0; i < lines.length; i += 1) {
@@ -4394,6 +4410,76 @@ function extractAgendaPropertiesNearHeadline(lines: string[], headlineLineIndex:
   return properties;
 }
 
+function extractAgendaFileProperties(lines: string[]): Record<string, string> {
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (/^(\*+)\s+/.test(line)) break;
+    if (line.trim().toUpperCase() !== ":PROPERTIES:") continue;
+    const properties: Record<string, string> = {};
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const trimmed = (lines[j] ?? "").trim();
+      if (trimmed.toUpperCase() === ":END:") return properties;
+      const match = /^:([A-Za-z0-9_@#%+.-]+):\s*(.*)$/.exec(trimmed);
+      if (!match) continue;
+      const key = normalizeAgendaPropertyKey(match[1] ?? "");
+      const value = (match[2] ?? "").trim();
+      if (key && value) properties[key] = value;
+    }
+    break;
+  }
+  return {};
+}
+
+function appendEffortLintIssues(raw: string, filePath: string, issues: ArtifactLintIssue[]): void {
+  const lines = raw.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const match = /^\s*:EFFORT:\s*(.*?)\s*$/.exec(lines[i] || "");
+    if (!match) continue;
+    const value = String(match[1] || "").trim();
+    if (!value) continue;
+    if (parseAgendaEffortToMinutes(value) !== null) continue;
+    issues.push({
+      severity: "warning",
+      rule: "effort-malformed",
+      file: filePath,
+      line: i + 1,
+      message: `EFFORT '${value}' is not a supported duration. Use minutes, H:MM, 2h, 30m, or 2h30m.`,
+    });
+  }
+}
+
+function agendaWorkloadSummaryForItems(
+  items: ScheduledItem[],
+  groupOrder: AgendaGroupOrder,
+  tagOrder: AgendaTagOrder,
+): {
+  totalMinutes: number;
+  byDate: Record<string, number>;
+  byGroup: Record<string, number>;
+  byTag: Record<string, number>;
+} {
+  const byDate: Record<string, number> = {};
+  const byGroup: Record<string, number> = {};
+  const byTag: Record<string, number> = {};
+  let totalMinutes = 0;
+  const add = (bucket: Record<string, number>, key: string, minutes: number) => {
+    bucket[key] = (bucket[key] || 0) + minutes;
+  };
+
+  for (const item of items) {
+    const minutes = parseAgendaEffortToMinutes(String(item.effort || ""));
+    if (minutes === null) continue;
+    totalMinutes += minutes;
+    add(byDate, item.date, minutes);
+    const groupLabel = groupOrder && groupOrder.length > 0 ? agendaGroupLabelForItem(item, groupOrder, tagOrder) : "All items";
+    add(byGroup, groupLabel || "(none)", minutes);
+    for (const tag of item.tags || []) add(byTag, tag, minutes);
+  }
+
+  return { totalMinutes, byDate, byGroup, byTag };
+
+}
+
 function findScheduledItemsInText(
   content: string,
   filePath: string,
@@ -4441,6 +4527,8 @@ function findScheduledItemsInText(
 ): ScheduledItem[] {
   const items: ScheduledItem[] = [];
   const lines = content.split("\n");
+  const fileProperties = extractAgendaFileProperties(lines);
+  const propertyStack: Array<{ level: number; effectiveProperties: Record<string, string> }> = [];
 
   let current: {
     todo?: string;
@@ -4462,7 +4550,11 @@ function findScheduledItemsInText(
     if (/^(\*+)\s+/.test(line)) {
       const parsed = parseHeadlineLine(line);
       if (parsed) {
-        const properties = extractAgendaPropertiesNearHeadline(lines, i);
+        while (propertyStack.length && (propertyStack[propertyStack.length - 1]?.level || 0) >= parsed.level) propertyStack.pop();
+        const explicitProperties = extractAgendaPropertiesNearHeadline(lines, i);
+        const inheritedProperties = propertyStack[propertyStack.length - 1]?.effectiveProperties || fileProperties;
+        const properties = { ...inheritedProperties, ...explicitProperties };
+        propertyStack.push({ level: parsed.level, effectiveProperties: properties });
         current = {
           ...parsed,
           effort: properties.EFFORT,
@@ -4758,6 +4850,66 @@ function formatArchiveDiff(
   }
 
   return diff;
+}
+
+function defaultArchivePathForSource(sourcePath: string): string {
+  if (/\.org2?$/i.test(sourcePath)) return `${sourcePath}_archive`;
+  return `${sourcePath}.archive`;
+}
+
+function extractArchiveHeadlineTitle(line: string): string {
+  return line.replace(/^\*+\s+/, "").replace(/\s+:[\w@#%:]+:\s*$/, "").trim();
+}
+
+function findArchiveOriginalId(subtreeLines: string[]): string | undefined {
+  const scanLimit = Math.min(subtreeLines.length, 20);
+  for (let idx = 1; idx < scanLimit; idx += 1) {
+    const line = subtreeLines[idx] ?? "";
+    if (/^\*+\s+/.test(line)) break;
+    const trimmed = line.trim();
+    const match = /^:ID:\s*(\S+)\s*$/i.exec(trimmed);
+    if (match) return match[1];
+    if (trimmed === ":END:") break;
+  }
+  return undefined;
+}
+
+function buildArchiveHeadingPath(lines: string[], headlineLineIndex: number): string[] {
+  const headingPath: string[] = [];
+  let currentLevel = Infinity;
+  for (let idx = headlineLineIndex; idx >= 0; idx -= 1) {
+    const line = lines[idx] ?? "";
+    const match = /^(\*+)\s+/.exec(line);
+    if (!match) continue;
+    const level = match[1].length;
+    if (level < currentLevel) {
+      headingPath.unshift(extractArchiveHeadlineTitle(line));
+      currentLevel = level;
+    }
+  }
+  return headingPath;
+}
+
+function addArchiveProvenanceDrawer(subtreeLines: string[], provenance: Record<string, string | undefined>): string[] {
+  const out = [...subtreeLines];
+  const drawer = [
+    ":PROPERTIES:",
+    `:ARCHIVED_AT: ${provenance.archivedAt}`,
+    `:ARCHIVE_SOURCE: ${provenance.sourcePath}`,
+    `:ARCHIVE_SOURCE_LINE: ${provenance.sourceLine}`,
+    provenance.originalId ? `:ARCHIVE_ORIGINAL_ID: ${provenance.originalId}` : undefined,
+    provenance.headingPath ? `:ARCHIVE_HEADING_PATH: ${provenance.headingPath}` : undefined,
+    ":END:",
+    "",
+  ].filter((line): line is string => typeof line === "string");
+
+  const hasDrawer = out.length > 1 && (out[1] ?? "").trim().toUpperCase() === ":PROPERTIES:";
+  if (hasDrawer) {
+    out.splice(2, 0, ...drawer.slice(1, -2));
+  } else {
+    out.splice(1, 0, ...drawer);
+  }
+  return out;
 }
 
 function formatOutput(
@@ -6991,6 +7143,7 @@ async function main(): Promise<void> {
   let today = getTodayString();
   let format: "text" | "json" = "text";
   let agendaTui = false;
+  let agendaWorkload = false;
   let agendaTuiRefreshSeconds = 30;
   let recursive = false;
   let includeOverdue = true;
@@ -7099,6 +7252,14 @@ async function main(): Promise<void> {
 
   // Quick capture
   let captureFile = "";
+  let captureTargetFile = "";
+  let captureSourceFile = "";
+  let captureTextRaw = "";
+  let captureUrl = "";
+  let captureReadStdin = false;
+  let captureSourceTypeRaw = "";
+  let captureOrigin = "";
+  let captureAuthor = "";
   let captureTitle = "";
   let captureTemplateRaw = "note";
   let captureTodoKeywordRaw = "TODO";
@@ -7469,7 +7630,11 @@ async function main(): Promise<void> {
         if (command === "todo") {
           todoFile = args[i]!;
         } else if (command === "capture") {
-          captureFile = args[i]!;
+          if (captureTargetFile) {
+            captureSourceFile = args[i]!;
+          } else {
+            captureFile = args[i]!;
+          }
         } else if (command === "plan") {
           planFile = args[i]!;
         } else if (command === "crypt") {
@@ -7563,6 +7728,11 @@ async function main(): Promise<void> {
         agendaTui = true;
       }
       i++;
+    } else if (arg === "--workload") {
+      if (command === "agenda") {
+        agendaWorkload = true;
+      }
+      i++;
     } else if (arg === "--refresh-seconds") {
       i++;
       if (i < args.length) {
@@ -7582,7 +7752,7 @@ async function main(): Promise<void> {
         }
         i++;
       }
-    } else if (arg === "--to" || arg === "--date-to") {
+    } else if ((arg === "--to" && command !== "capture") || arg === "--date-to") {
       i++;
       if (i < args.length) {
         if (command === "agenda") {
@@ -8033,6 +8203,54 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--to") {
+      i++;
+      if (i < args.length) {
+        if (command === "capture") {
+          captureTargetFile = args[i]!;
+          if (captureFile && !captureSourceFile) {
+            captureSourceFile = captureFile;
+            captureFile = "";
+          }
+        } else if (command === "ai" && aiAction === "promote") {
+          aiPromoteToFile = args[i]!;
+        }
+        i++;
+      }
+    } else if (arg === "--text") {
+      i++;
+      if (i < args.length) {
+        if (command === "capture") {
+          captureTextRaw = args[i]!;
+        } else if (command === "query") {
+          queryText = args[i]!;
+        }
+        i++;
+      }
+    } else if (arg === "--url") {
+      i++;
+      if (i < args.length) {
+        if (command === "capture") captureUrl = args[i]!;
+        i++;
+      }
+    } else if (arg === "--source-type" && command === "capture") {
+      i++;
+      if (i < args.length) {
+        captureSourceTypeRaw = args[i]!;
+        i++;
+      }
+    } else if (arg === "--origin") {
+      i++;
+      if (i < args.length) {
+        if (command === "capture") captureOrigin = args[i]!;
+        i++;
+      }
+    } else if (arg === "--author") {
+      i++;
+      if (i < args.length) {
+        if (command === "capture") captureAuthor = args[i]!;
+        i++;
+      }
     } else if (arg === "--title") {
       i++;
       if (i < args.length) {
@@ -8418,7 +8636,8 @@ async function main(): Promise<void> {
         i++;
       }
     } else if (arg === "--stdin") {
-      fmtStdin = true;
+      if (command === "fmt") fmtStdin = true;
+      if (command === "capture") captureReadStdin = true;
       i++;
     } else if (arg === "--check") {
       if (command === "fmt") {
@@ -8471,6 +8690,7 @@ Core commands:
   org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 crypt <encrypt|decrypt> --file FILE (--line N | --pos LINE[:COL]) --passphrase PASS [--gpg-program PATH] [--apply]
   org2 capture --file FILE --title TITLE [--template note|task] [--apply]
+  org2 capture (--text TEXT|--stdin|--url URL|--file SOURCE) --to FILE [--title TITLE] [--apply]
   org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--apply]
   org2 refile --file FILE --pos LINE[:COL] --to-file FILE [--to-pos LINE[:COL]] [--apply]
 
@@ -8555,6 +8775,7 @@ Flags:
   --from YYYY-MM-DD   Start date filter
   --to YYYY-MM-DD     End date filter
   --tui               Open the interactive terminal agenda
+  --workload          Include JSON effort workload rollups by date/group/tag
   --format text|json  Output format`;
   } else if (command === "todo") {
     text = `org2 todo ${options.todoAction}
@@ -8597,11 +8818,19 @@ Flags:
     text = `org2 capture
 
 Usage:
-  org2 capture --file FILE --title TITLE [--template note|task] [--apply]
+  org2 capture --file FILE --title TITLE [--template note|task] [--body TEXT] [--apply]
+  org2 capture (--text TEXT|--stdin|--url URL|--file SOURCE) --to FILE [--title TITLE] [--author NAME] [--apply]
 
 Flags:
-  --file FILE           Target file
+  --file FILE           Target file, or source file when --to is set
+  --to FILE             Target file for unified capture sources
+  --text TEXT           Capture literal text as source content
+  --stdin               Read capture content from standard input
+  --url URL             Fetch and capture a URL as text
   --title TITLE         Heading title
+  --author NAME         Optional source author metadata
+  --origin VALUE        Optional source origin/provenance override
+  --source-type TYPE    Optional source type override
   --template note|task  Capture template
   --apply               Write changes instead of previewing`;
   } else if (command === "archive") {
@@ -8613,7 +8842,8 @@ Usage:
 Flags:
   --file FILE          Source file
   --pos LINE[:COL]     Heading position
-  --archive-file FILE  Destination archive file
+  --archive-file FILE  Destination archive file (default FILE_archive for .org/.org2)
+  --format text|diff|json  Output format; diff/json include archive provenance preview
   --apply              Write changes instead of previewing`;
   } else if (command === "refile") {
     text = `org2 refile
@@ -10266,14 +10496,15 @@ Flags:
   }
 
   if (command === "capture") {
-    if (!captureFile) {
-      console.error("Error: capture requires --file FILE");
+    const targetFile = captureTargetFile || captureFile;
+    if (!targetFile) {
+      console.error("Error: capture requires --file FILE (or --to FILE for source captures)");
       process.exit(1);
     }
 
-    const normalizedTitle = captureTitle.trim();
-    if (!normalizedTitle) {
-      console.error("Error: capture requires --title TITLE");
+    const sourceInputs = [captureTextRaw ? "text" : "", captureUrl ? "url" : "", captureSourceFile ? "file" : "", captureReadStdin ? "stdin" : ""].filter(Boolean);
+    if (sourceInputs.length > 1) {
+      console.error("Error: capture accepts only one of --text, --stdin, --url, or --file SOURCE with --to");
       process.exit(1);
     }
 
@@ -10310,20 +10541,73 @@ Flags:
       captureNowDate = parsedNow;
     }
 
-    const normalizedBody = captureBodyRaw.replace(/\r\n/g, "\n").trim();
+    let normalizedBody = captureBodyRaw.replace(/\r\n/g, "\n").trim();
+    let source: { type: string; origin: string; timestamp: string; title: string | null; author: string | null; contentHash: string; provenance: string | null } | null = null;
+    if (sourceInputs.length === 1) {
+      const inputSourceType = sourceInputs[0]!;
+      let sourceType = inputSourceType;
+      let origin = captureOrigin.trim();
+      let provenance: string | null = null;
+      if (inputSourceType === "text") {
+        normalizedBody = captureTextRaw.replace(/\r\n/g, "\n").trim();
+        origin ||= "literal:text";
+      } else if (inputSourceType === "stdin") {
+        normalizedBody = fs.readFileSync(0, "utf8").replace(/\r\n/g, "\n").trim();
+        origin ||= "stdin";
+      } else if (inputSourceType === "file") {
+        const stat = fs.statSync(captureSourceFile);
+        if (stat.isDirectory()) {
+          console.error("Error: capture --file SOURCE currently supports files, not directories");
+          process.exit(1);
+        }
+        normalizedBody = fs.readFileSync(captureSourceFile, "utf8").replace(/\r\n/g, "\n").trim();
+        origin ||= path.resolve(captureSourceFile);
+        provenance = `file:${path.resolve(captureSourceFile)}`;
+      } else if (inputSourceType === "url") {
+        const res = await fetch(captureUrl);
+        if (!res.ok) {
+          console.error(`Error: failed to fetch --url ${captureUrl}: HTTP ${res.status}`);
+          process.exit(1);
+        }
+        normalizedBody = (await res.text()).replace(/\r\n/g, "\n").trim();
+        origin ||= captureUrl;
+        provenance = `url:${captureUrl}`;
+      }
+      if (captureSourceTypeRaw && captureSourceTypeRaw !== "stdin") sourceType = captureSourceTypeRaw.trim().toLowerCase();
+      const inferredTitle = captureTitle.trim() || (inputSourceType === "file" ? path.basename(captureSourceFile) : inputSourceType === "url" ? captureUrl : "Captured text");
+      source = { type: sourceType, origin, timestamp: captureNowDate.toISOString(), title: inferredTitle, author: captureAuthor.trim() || null, contentHash: sha256Hex(normalizedBody), provenance };
+    }
+
+    const normalizedTitle = (captureTitle.trim() || source?.title || "").trim();
+    if (!normalizedTitle) {
+      console.error("Error: capture requires --title TITLE");
+      process.exit(1);
+    }
 
     const headingLine =
       normalizedTemplate === "task"
         ? `* ${normalizedTodoKeyword} ${normalizedTitle}`
         : `* ${normalizedTitle}`;
     const capturedAt = formatOrgTimestamp(captureNowDate);
+    const propertyDrawer = source
+      ? [
+          ":PROPERTIES:",
+          `:SOURCE_TYPE: ${source.type}`,
+          `:SOURCE_ORIGIN: ${source.origin}`,
+          `:SOURCE_TIMESTAMP: ${source.timestamp}`,
+          source.author ? `:SOURCE_AUTHOR: ${source.author}` : "",
+          `:SOURCE_HASH: ${source.contentHash}`,
+          source.provenance ? `:SOURCE_PROVENANCE: ${source.provenance}` : "",
+          ":END:",
+        ].filter(Boolean).join("\n") + "\n"
+      : "";
     const captureEntryText =
       normalizedBody.length > 0
-        ? `${headingLine}\nCAPTURED: ${capturedAt}\n\n${normalizedBody}\n`
-        : `${headingLine}\nCAPTURED: ${capturedAt}\n`;
+        ? `${headingLine}\n${propertyDrawer}CAPTURED: ${capturedAt}\n\n${normalizedBody}\n`
+        : `${headingLine}\n${propertyDrawer}CAPTURED: ${capturedAt}\n`;
 
-    const beforeText = fs.existsSync(captureFile)
-      ? fs.readFileSync(captureFile, "utf8").replace(/\r\n/g, "\n")
+    const beforeText = fs.existsSync(targetFile)
+      ? fs.readFileSync(targetFile, "utf8").replace(/\r\n/g, "\n")
       : "";
     const beforeTrimmed = beforeText.trimEnd();
     const outText =
@@ -10335,8 +10619,8 @@ Flags:
     const headingLine1 = beforeTrimmed.length === 0 ? 1 : beforeTrimmed.split("\n").length + 2;
 
     if (captureApply && changed) {
-      fs.mkdirSync(path.dirname(captureFile), { recursive: true });
-      fs.writeFileSync(captureFile, outText, "utf8");
+      fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+      fs.writeFileSync(targetFile, outText, "utf8");
     }
 
     const unifiedDiff = (before: string, after: string): string => {
@@ -10353,7 +10637,7 @@ Flags:
           throw new Error(res.stderr || `diff exited with status ${res.status}`);
         }
 
-        return (res.stdout || "").split(aPath).join(captureFile).split(bPath).join(captureFile);
+        return (res.stdout || "").split(aPath).join(targetFile).split(bPath).join(targetFile);
       } finally {
         if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
       }
@@ -10369,11 +10653,12 @@ Flags:
         JSON.stringify(
           {
             kind: "capture",
-            file: captureFile,
+            file: targetFile,
             template: normalizedTemplate,
             title: normalizedTitle,
             todoKeyword: normalizedTemplate === "task" ? normalizedTodoKeyword : null,
             body: normalizedBody || null,
+            ...(source ? { source } : {}),
             capturedAt,
             headingLine1,
             apply: captureApply,
@@ -11593,6 +11878,8 @@ Flags:
       issues.push(...lintArtifactMetadataInText(raw, filePath));
       appendArtifactFreshnessLintIssues(raw, filePath, issues);
       appendHabitLintIssues(raw, filePath, issues);
+      appendCheckboxProgressLintIssues(raw, filePath, issues);
+      appendEffortLintIssues(raw, filePath, issues);
 
       for (const ref of collectArtifactProvenanceRefsInText(raw, filePath)) {
         if (ref.kind === "file") {
@@ -12569,7 +12856,7 @@ Flags:
       process.exit(1);
     }
 
-    const defaultArchivePath = sourcePath.endsWith(".org") ? `${sourcePath}_archive` : `${sourcePath}.archive`;
+    const defaultArchivePath = defaultArchivePathForSource(sourcePath);
     const archivePath = archiveFile || defaultArchivePath;
 
     const lines = raw.split("\n");
@@ -12601,8 +12888,16 @@ Flags:
       }
     }
 
-    const subtreeLines = lines.slice(headlineLineIndex, endIndexExclusive);
+    const rawSubtreeLines = lines.slice(headlineLineIndex, endIndexExclusive);
     const remainingLines = [...lines.slice(0, headlineLineIndex), ...lines.slice(endIndexExclusive)];
+    const provenance = {
+      archivedAt: process.env.ORG2_ARCHIVED_AT || new Date().toISOString(),
+      sourcePath,
+      sourceLine: String(headlineLineIndex + 1),
+      originalId: findArchiveOriginalId(rawSubtreeLines),
+      headingPath: buildArchiveHeadingPath(lines, headlineLineIndex).join("/"),
+    };
+    const subtreeLines = addArchiveProvenanceDrawer(rawSubtreeLines, provenance);
 
     const subtreeText = subtreeLines.join("\n").trimEnd() + "\n";
     const newSourceText = remainingLines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
@@ -12624,6 +12919,7 @@ Flags:
           archivePath,
           headlineLine1: headlineLineIndex + 1,
           headline: headlineLine,
+          provenance,
           subtreeText,
           newSourceText,
           diff: formatArchiveDiff(sourcePath, archivePath, subtreeText),
@@ -12648,6 +12944,7 @@ Flags:
         archivePath,
         headlineLine1: headlineLineIndex + 1,
         headline: headlineLine,
+        provenance,
         subtreeText,
         newSourceText,
         diff: formatArchiveDiff(sourcePath, archivePath, subtreeText),
@@ -13393,12 +13690,14 @@ Flags:
         });
     };
 
+    const workload = agendaWorkloadSummaryForItems(outputItems, parsedAgendaGroup.groupOrder, parsedAgendaTagOrder);
     const payload = {
       $schema: "org2:agenda:v1",
       range: { start: startIso, end: endIso, days: rangeDays },
       overdue: group(overdue),
       days: group(upcoming),
       skippedFiles: skippedFileCount,
+      ...(agendaWorkload ? { workload } : {}),
     };
 
     process.stdout.write(JSON.stringify(payload, null, 2) + "\n");

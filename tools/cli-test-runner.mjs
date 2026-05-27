@@ -81,7 +81,7 @@ for (const orgFile of orgFiles) {
     const hasExpectedJson = fs.existsSync(expectedArchiveJsonPath);
 
     try {
-      const output = execSync(`node dist/cli.js archive --file "${filePath}" --pos 4`, { encoding: "utf8" });
+      const output = execSync(`node dist/cli.js archive --file "${filePath}" --pos 4`, { encoding: "utf8", env: { ...process.env, ORG2_ARCHIVED_AT: "2026-01-21T12:00:00.000Z" } });
       if (output !== expectedArchive) {
         console.log(`✗ ${basename} (text)`);
         console.log("Expected:");
@@ -96,6 +96,7 @@ for (const orgFile of orgFiles) {
         const expectedDiff = fs.readFileSync(expectedArchiveDiffPath, "utf8");
         const diffOut = execSync(`node dist/cli.js archive --file "${filePath}" --pos 4 --format diff`, {
           encoding: "utf8",
+          env: { ...process.env, ORG2_ARCHIVED_AT: "2026-01-21T12:00:00.000Z" },
         });
 
         if (diffOut !== expectedDiff) {
@@ -113,6 +114,7 @@ for (const orgFile of orgFiles) {
         const expectedJson = fs.readFileSync(expectedArchiveJsonPath, "utf8");
         const jsonOut = execSync(`node dist/cli.js archive --file "${filePath}" --pos 4 --format json`, {
           encoding: "utf8",
+          env: { ...process.env, ORG2_ARCHIVED_AT: "2026-01-21T12:00:00.000Z" },
         });
 
         const normalizedOut = JSON.stringify(JSON.parse(jsonOut), null, 2) + "\n";

@@ -45,6 +45,14 @@ export type CompiledCorpusRelation = {
   method: string;
 };
 
+export type CheckboxProgress = {
+  total: number;
+  checked: number;
+  unchecked: number;
+  percent: number;
+  cookies: Array<{ raw: string; line: number; format: "fraction" | "percent"; done?: number; total?: number; percent?: number; stale: boolean; expectedRaw: string }>;
+};
+
 export type CompiledCorpusNode = {
   key: string;
   kind: "file" | "heading";
@@ -54,12 +62,19 @@ export type CompiledCorpusNode = {
   title: string;
   level?: number;
   todo?: string;
+  priority?: string;
   tags: string[];
   aliases: string[];
   properties: Record<string, string>;
+  /** Explicit properties overlaid on inherited file/ancestor heading properties. */
+  effectiveProperties: Record<string, string>;
+  /** Properties inherited from file/ancestor heading drawers and not overridden locally. */
+  inheritedProperties: Record<string, string>;
+  effort?: { raw: string; minutes: number };
   planning: Array<{ kind: "SCHEDULED" | "DEADLINE" | "CLOSED"; raw: string; line: number }>;
   clocks: OrgClockInterval[];
   clockIssues: OrgClockIssue[];
+  checkboxProgress: CheckboxProgress;
   links: CompiledCorpusLink[];
   backlinks: CompiledCorpusBacklink[];
   entityType?: string;
@@ -114,7 +129,15 @@ export type CompiledCorpus = {
   relations: CompiledCorpusRelation[];
   clocks: OrgClockInterval[];
   clockIssues: OrgClockIssue[];
+  checkboxProgress: CheckboxProgress;
+  checkboxIssues: Array<{ type: "stale-progress-cookie"; file: string; line: number; raw: string; expectedRaw: string; checked: number; total: number }>;
   clockSummary: ReturnType<typeof extractClockReport>["summary"];
+  effortSummary: {
+    totalMinutes: number;
+    byProject: Record<string, number>;
+    byTag: Record<string, number>;
+    byFile: Record<string, number>;
+  };
   index?: CompiledCorpusLookupIndex;
   indexState?: CompiledCorpusIndexState;
 };
@@ -126,6 +149,58 @@ function normalizeText(raw: string): string {
 function normalizeId(raw: string | null | undefined): string | null {
   const value = String(raw || "").trim().toLowerCase();
   return value || null;
+}
+
+
+function parseEffortToMinutes(raw: string): number | null {
+  const token = String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
+  if (!token) return null;
+  const n = (value: string): number | null => (/^\d+$/.test(value) ? Number.parseInt(value, 10) : null);
+
+  const hm = /^(\d+):(\d{1,2})$/.exec(token);
+  if (hm) {
+    const hours = n(hm[1] || "");
+    const minutes = n(hm[2] || "");
+    if (hours === null || minutes === null || minutes >= 60) return null;
+    return hours * 60 + minutes;
+  }
+
+  const compact = /^(?:(\d+)h)?(?:(\d+)m)?$/.exec(token);
+  if (compact && (compact[1] || compact[2])) {
+    const hours = compact[1] ? n(compact[1]) : 0;
+    const minutes = compact[2] ? n(compact[2]) : 0;
+    if (hours === null || minutes === null) return null;
+    return hours * 60 + minutes;
+  }
+
+  return n(token);
+}
+
+function effortFromProperties(properties: Record<string, string>): { raw: string; minutes: number } | undefined {
+  const raw = String(properties.EFFORT || "").trim();
+  if (!raw) return undefined;
+  const minutes = parseEffortToMinutes(raw);
+  return minutes === null ? undefined : { raw, minutes };
+}
+
+function buildEffortSummary(nodes: CompiledCorpusNode[]): CompiledCorpus["effortSummary"] {
+  const byProject: Record<string, number> = {};
+  const byTag: Record<string, number> = {};
+  const byFile: Record<string, number> = {};
+  let totalMinutes = 0;
+  const add = (bucket: Record<string, number>, key: string, minutes: number) => {
+    bucket[key] = (bucket[key] || 0) + minutes;
+  };
+
+  for (const node of nodes) {
+    if (node.kind !== "heading" || !node.effort) continue;
+    totalMinutes += node.effort.minutes;
+    add(byProject, node.title, node.effort.minutes);
+    add(byFile, node.file, node.effort.minutes);
+    for (const tag of node.tags) add(byTag, tag, node.effort.minutes);
+  }
+
+  return { totalMinutes, byProject, byTag, byFile };
 }
 
 function slashPath(raw: string): string {
@@ -206,7 +281,19 @@ function stripTags(raw: string): { title: string; tags: string[] } {
   return { title: raw.slice(0, match.index).trim(), tags };
 }
 
-function parseHeading(line: string): { level: number; title: string; todo?: string; tags: string[] } | null {
+function normalizePriorityToken(raw: string): string | undefined {
+  const match = /^#?([A-Za-z0-9])$/.exec(raw.trim().replace(/^\[#/, "").replace(/\]$/, ""));
+  if (!match) return undefined;
+  return (match[1] || "").toUpperCase();
+}
+
+function stripPriority(raw: string): { title: string; priority?: string } {
+  const match = /^\[#([A-Za-z0-9])\](?:\s+|$)(.*)$/i.exec(raw.trim());
+  if (!match) return { title: raw.trim() };
+  return { priority: normalizePriorityToken(match[1] || ""), title: String(match[2] || "").trim() };
+}
+
+function parseHeading(line: string): { level: number; title: string; todo?: string; priority?: string; tags: string[] } | null {
   const match = /^(\*+)\s+(.*?)\s*$/.exec(line);
   if (!match) return null;
   const level = (match[1] || "").length;
@@ -219,7 +306,8 @@ function parseHeading(line: string): { level: number; title: string; todo?: stri
     todo = first.toUpperCase();
     rest = rest.slice(first.length).trim();
   }
-  return { level, title: rest, todo, tags: tagStripped.tags };
+  const priorityStripped = stripPriority(rest);
+  return { level, title: priorityStripped.title, todo, priority: priorityStripped.priority, tags: tagStripped.tags };
 }
 
 function headingEndExclusive(lines: string[], startIndex: number, level: number): number {
@@ -266,6 +354,46 @@ function linkType(target: string): CompiledCorpusLink["type"] {
   if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value) && value && !value.startsWith("/") && !value.startsWith("./") && !value.startsWith("../") && !value.startsWith("#")) return "wiki";
   return "other";
 }
+
+
+export function extractCheckboxProgress(lines: string[], startIndex: number, endExclusive: number): CheckboxProgress {
+  let checked = 0;
+  let unchecked = 0;
+  const found: Array<Omit<CheckboxProgress["cookies"][number], "stale" | "expectedRaw">> = [];
+  for (let i = startIndex; i < endExclusive; i += 1) {
+    const line = lines[i] || "";
+    const item = /^\s*(?:[-+*]|\d+[.)])\s+\[([ Xx])\]/.exec(line);
+    if (item) {
+      if ((item[1] || "") === " ") unchecked += 1;
+      else checked += 1;
+    }
+    const re = /\[(\d+)\/(\d+)\]|\[(\d{1,3})%\]/g;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(line)) !== null) {
+      const format = match[1] !== undefined ? "fraction" : "percent";
+      const raw = match[0] || "";
+      const doneValue = match[1] !== undefined ? Number.parseInt(match[1] || "0", 10) : undefined;
+      const totalValue = match[2] !== undefined ? Number.parseInt(match[2] || "0", 10) : undefined;
+      const percentValue = match[3] !== undefined ? Number.parseInt(match[3] || "0", 10) : (totalValue && totalValue > 0 && doneValue !== undefined ? Math.round((doneValue / totalValue) * 100) : 0);
+      found.push({
+        raw,
+        line: i + 1,
+        format,
+        ...(doneValue !== undefined ? { done: doneValue } : {}),
+        ...(totalValue !== undefined ? { total: totalValue } : {}),
+        percent: percentValue,
+      });
+    }
+  }
+  const total = checked + unchecked;
+  const percent = total > 0 ? Math.round((checked / total) * 100) : 0;
+  const cookies = found.map((cookie) => {
+    const expectedRaw = cookie.format === "fraction" ? `[${checked}/${total}]` : `[${percent}%]`;
+    return { ...cookie, stale: cookie.raw !== expectedRaw, expectedRaw };
+  });
+  return { total, checked, unchecked, percent, cookies };
+}
+
 
 function extractLinks(lines: string[], startIndex: number, endExclusive: number): CompiledCorpusLink[] {
   const links: CompiledCorpusLink[] = [];
@@ -356,7 +484,7 @@ function normalizePredicate(raw: string): string {
 }
 
 function nodeEntityType(node: CompiledCorpusNode): string | undefined {
-  const propertyType = normalizeEntityType(node.properties.ORG2_ENTITY_TYPE || node.properties.ENTITY_TYPE);
+  const propertyType = normalizeEntityType((node.effectiveProperties || node.properties).ORG2_ENTITY_TYPE || (node.effectiveProperties || node.properties).ENTITY_TYPE);
   if (propertyType) return propertyType;
   const typedTag = node.tags.find((tag) => /^type[-_:]/i.test(tag));
   return typedTag ? normalizeEntityType(typedTag.replace(/^type[-_:]/i, "")) : undefined;
@@ -372,6 +500,8 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
   const corpusFiles: CompiledCorpusFile[] = [];
   const nodes: CompiledCorpusNode[] = [];
   const clockReport = extractClockReport(sortedFiles, { rootDir });
+  const checkboxIssuesByKey = new Map<string, CompiledCorpus["checkboxIssues"][number]>();
+  const corpusCheckboxProgress: CheckboxProgress = { total: 0, checked: 0, unchecked: 0, percent: 0, cookies: [] };
   const clocksByNode = new Map<string, OrgClockInterval[]>();
   const clockIssuesByNode = new Map<string, OrgClockIssue[]>();
   for (const clock of clockReport.intervals) clocksByNode.set(clock.nodeKey, [...(clocksByNode.get(clock.nodeKey) || []), clock]);
@@ -389,10 +519,17 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
     const id = keywordId || drawerId;
     const aliases = Array.from(new Set([...parseKeywordAliases(lines, 80), ...parseAliasTokens(fileDrawer?.properties.ROAM_ALIASES || "")]));
     const properties = fileDrawer?.properties || {};
+    const headingPropertyStack: Array<{ level: number; effectiveProperties: Record<string, string> }> = [];
     const firstHeadingIndex = lines.findIndex((line) => /^\*+\s+/.test(line || ""));
     const preambleEndExclusive = firstHeadingIndex === -1 ? lines.length : firstHeadingIndex;
     const fileLinks = extractLinks(lines, 0, preambleEndExclusive);
     const fileSnippet = extractSnippetWithLine(lines, 0, preambleEndExclusive);
+    const fullFileCheckboxProgress = extractCheckboxProgress(lines, 0, lines.length);
+    corpusCheckboxProgress.total += fullFileCheckboxProgress.total;
+    corpusCheckboxProgress.checked += fullFileCheckboxProgress.checked;
+    corpusCheckboxProgress.unchecked += fullFileCheckboxProgress.unchecked;
+    const fileCheckboxProgress = extractCheckboxProgress(lines, 0, preambleEndExclusive);
+    for (const cookie of fileCheckboxProgress.cookies.filter((cookie) => cookie.stale)) checkboxIssuesByKey.set(`${file}:${cookie.line}:${cookie.raw}`, { type: "stale-progress-cookie", file, line: cookie.line, raw: cookie.raw, expectedRaw: cookie.expectedRaw, checked: fileCheckboxProgress.checked, total: fileCheckboxProgress.total });
 
     corpusFiles.push({ file, absolutePath: filePath, sha256: sha256(content), lineCount: lines.length, title, id });
     const fileKey = `file:${file}`;
@@ -406,9 +543,12 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       tags: [],
       aliases,
       properties,
+      effectiveProperties: { ...properties },
+      inheritedProperties: {},
       planning: extractPlanning(lines, 0, preambleEndExclusive),
       clocks: clocksByNode.get(fileKey) || [],
       clockIssues: clockIssuesByNode.get(fileKey) || [],
+      checkboxProgress: fileCheckboxProgress,
       links: fileLinks,
       backlinks: [],
       snippet: fileSnippet.snippet,
@@ -419,11 +559,17 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       const heading = parseHeading(lines[i] || "");
       if (!heading) continue;
       const endExclusive = headingEndExclusive(lines, i, heading.level);
+      while (headingPropertyStack.length && (headingPropertyStack[headingPropertyStack.length - 1]?.level || 0) >= heading.level) headingPropertyStack.pop();
+      const inheritedBase = headingPropertyStack[headingPropertyStack.length - 1]?.effectiveProperties || properties;
       const drawer = propertyDrawerAfterHeading(lines, i);
       const headingProperties = drawer?.properties || {};
+      const headingEffectiveProperties = { ...inheritedBase, ...headingProperties };
+      const headingInheritedProperties = Object.fromEntries(Object.entries(inheritedBase).filter(([key]) => !(key in headingProperties)));
       const headingId = normalizeId(headingProperties.ID);
       const headingAliases = parseAliasTokens(headingProperties.ROAM_ALIASES || "");
       const headingSnippet = extractSnippetWithLine(lines, i + 1, endExclusive);
+      const headingCheckboxProgress = extractCheckboxProgress(lines, i, endExclusive);
+      for (const cookie of headingCheckboxProgress.cookies.filter((cookie) => cookie.stale)) checkboxIssuesByKey.set(`${file}:${cookie.line}:${cookie.raw}`, { type: "stale-progress-cookie", file, line: cookie.line, raw: cookie.raw, expectedRaw: cookie.expectedRaw, checked: headingCheckboxProgress.checked, total: headingCheckboxProgress.total });
       const headingKey = `heading:${file}:${i + 1}`;
       const node: CompiledCorpusNode = {
         key: headingKey,
@@ -433,19 +579,26 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
         id: headingId,
         title: heading.title,
         level: heading.level,
+        priority: heading.priority,
         tags: heading.tags,
         aliases: headingAliases,
         properties: headingProperties,
+        effectiveProperties: headingEffectiveProperties,
+        inheritedProperties: headingInheritedProperties,
         planning: extractPlanning(lines, i + 1, endExclusive),
         clocks: clocksByNode.get(headingKey) || [],
         clockIssues: clockIssuesByNode.get(headingKey) || [],
+        checkboxProgress: headingCheckboxProgress,
         links: extractLinks(lines, i + 1, endExclusive),
         backlinks: [],
         snippet: headingSnippet.snippet,
         snippetStartLine: headingSnippet.startLine,
       };
       if (heading.todo) node.todo = heading.todo;
+      const effort = effortFromProperties(headingProperties);
+      if (effort) node.effort = effort;
       nodes.push(node);
+      headingPropertyStack.push({ level: heading.level, effectiveProperties: headingEffectiveProperties });
     }
   }
 
@@ -532,7 +685,13 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
     relations,
     clocks: clockReport.intervals,
     clockIssues: clockReport.issues,
+    checkboxProgress: {
+      ...corpusCheckboxProgress,
+      percent: corpusCheckboxProgress.total > 0 ? Math.round((corpusCheckboxProgress.checked / corpusCheckboxProgress.total) * 100) : 0,
+    },
+    checkboxIssues: [...checkboxIssuesByKey.values()].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line),
     clockSummary: clockReport.summary,
+    effortSummary: buildEffortSummary(sortedNodes),
     index: buildLookupIndex(sortedNodes),
     indexState: { mode: "full", status: "fresh", reusedFiles: 0, parsedFiles: corpusFiles.length, deletedFiles: 0 },
   };
@@ -556,7 +715,7 @@ function buildEntityIndex(nodes: CompiledCorpusNode[]): CompiledCorpusEntity[] {
       entityType: node.entityType!,
       file: node.file,
       line: node.sourceRange.startLine,
-      source: ((node.properties.ORG2_ENTITY_TYPE || node.properties.ENTITY_TYPE) ? "property" : "tag") as "property" | "tag",
+      source: (((node.effectiveProperties || node.properties).ORG2_ENTITY_TYPE || (node.effectiveProperties || node.properties).ENTITY_TYPE) ? "property" : "tag") as "property" | "tag",
     }))
     .sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.title.localeCompare(b.title));
 }
@@ -676,7 +835,7 @@ function buildRelationIndex(nodes: CompiledCorpusNode[], byId: Map<string, Compi
   };
   for (const node of nodes) {
     inferLinkedTextAdvisorRelationsForNode(relations, node, byId, labels);
-    const explicitValues = Object.entries(node.properties).filter(([key]) => key === "ORG2_RELATION" || key.startsWith("ORG2_RELATION_"));
+    const explicitValues = Object.entries(node.effectiveProperties || node.properties).filter(([key]) => key === "ORG2_RELATION" || key.startsWith("ORG2_RELATION_"));
     for (const [key, value] of explicitValues) {
       const suffix = key === "ORG2_RELATION" ? "" : key.slice("ORG2_RELATION_".length);
       const parts = String(value || "").trim().split(/\s+/);

@@ -39,7 +39,7 @@ npm run build
 ## Feature details
 
 - File association for `*.org` and `*.org2`
-- Syntax highlighting (headings, directives, blocks, drawers, properties, planning keywords, lists, checkboxes, timestamps, emphasis, links, tables, plus TODO aliases like `OPEN`, `BACKLOG`, `BLOCKED`, `PAUSED`, and `CANCELED` in headlines)
+- Syntax highlighting (headings, directives, blocks, drawers, properties, planning keywords, lists, checkboxes, checkbox progress cookies, timestamps, emphasis, links, tables, plus TODO aliases like `OPEN`, `BACKLOG`, `BLOCKED`, `PAUSED`, and `CANCELED` in headlines)
 - Folding provider for headings, list items, and `:PROPERTIES:` drawers
 - Auto-fold on open/activation (configurable):
   - `org2.folding.autoFoldMaxHeadingLevel` (number; default 1; 0 = off)
@@ -92,7 +92,7 @@ The extension can edit planning keywords, run quick capture, archive subtrees, r
 Implementation detail: the extension saves the file (if needed).
 - Planning edits run `org2 plan set ... --apply`.
 - Quick capture runs `org2 capture ... --format diff` first to preview the append, then `org2 capture ... --apply --format json` if confirmed, and can pass active-selection text as `--body` when `org2.capture.useSelectionAsBody` is enabled.
-- Archiving runs `org2 archive ... --format diff` first to generate a preview, then `org2 archive ... --apply` if confirmed.
+- Archiving runs `org2 archive ... --format diff` first to generate a preview with provenance metadata, then `org2 archive ... --apply --format json` if confirmed and reports the archive destination.
 - Refile runs `org2 refile ... --format diff` for preview, then `org2 refile ... --apply --format json` if confirmed.
 - Current-file HTML export runs `org2 export html --file ... --format json` for preview and `org2 export html --file ... --out ... --apply --format json` when writing, plus optional export flags from settings (`--css` / `--no-default-style` / `--toc` / `--toc-depth` / `--number-headings` / `--number-headings-depth` / `--rewrite-file-links`).
 - Workspace HTML export runs `org2 export html --dir <agenda-root> --recursive --out-dir <org2.export.outputDir> --format json` for preview, adds optional `--index/--index-title` and export flags (`--css` / `--no-default-style` / `--toc` / `--toc-depth` / `--number-headings` / `--number-headings-depth` / `--rewrite-file-links`) from settings, and adds `--apply` when writing.
@@ -161,14 +161,14 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 - `org2.agenda.priorityFilter`: filter by Org priority marker (for example `A,B` or `[#A],[#B]`, case-insensitive)
 - `org2.agenda.timeFilter`: filter by planning clock-time tokens (exact `HH:MM`, inclusive ranges like `09:00-12:30` including overnight windows, plus `timed`/`untimed`; comma-separated terms use OR matching)
 - `org2.agenda.effortFilter`: filter by `:EFFORT:` property value (case-insensitive exact match; comma-separated terms use OR matching, e.g. `0:30,30m,1h`)
-- `org2.agenda.propertyFilter`: filter by exact headline drawer property terms using `KEY=VALUE` (case-insensitive; comma-separated terms use OR matching)
+- `org2.agenda.propertyFilter`: filter by exact property terms using `KEY=VALUE` (case-insensitive; comma-separated terms use OR matching). Matches effective properties, including file-level and ancestor heading properties inherited by the agenda row.
 - `org2.agenda.excludeTagFilter`: exclude rows by headline tags (case-insensitive exact tag match; comma-separated tags use OR matching)
 - `org2.agenda.excludeIdFilter`: exclude rows by headline `:ID:` / `:CUSTOM_ID:` values (case-insensitive exact match; comma-separated IDs use OR matching)
 - `org2.agenda.excludeTodoKeywordFilter`: exclude rows by exact TODO keyword (case-insensitive; comma-separated keywords use OR matching)
 - `org2.agenda.excludePriorityFilter`: exclude rows by Org priority marker (for example `A,B` or `[#A],[#B]`, case-insensitive)
 - `org2.agenda.excludeTimeFilter`: exclude rows by planning clock-time tokens (exact `HH:MM`, inclusive ranges like `09:00-12:30` including overnight windows, plus `timed`/`untimed`; comma-separated terms use OR matching)
 - `org2.agenda.excludeEffortFilter`: exclude rows by `:EFFORT:` property value (case-insensitive exact match; comma-separated terms use OR matching)
-- `org2.agenda.excludePropertyFilter`: exclude rows by exact headline drawer property terms using `KEY=VALUE` (case-insensitive; comma-separated terms use OR matching)
+- `org2.agenda.excludePropertyFilter`: exclude rows by exact property terms using `KEY=VALUE` (case-insensitive; comma-separated terms use OR matching). Matches effective properties, including inherited file/ancestor heading values.
 - `org2.agenda.fileFilter`: keep rows whose source file path contains any comma-separated term (case-insensitive substring match)
 - `org2.agenda.excludeFileFilter`: hide rows whose source file path contains any comma-separated term (case-insensitive substring match)
 - `org2.formatter.fileFilter`: limit workspace formatter check/apply commands to files whose paths contain any comma-separated term (case-insensitive substring match)
@@ -210,6 +210,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 ### Agenda visuals
 
 - Each agenda item now shows its source filename in the item description.
+- Agenda rows with `:EFFORT:` show the estimate in the item description and tooltip.
 - Habit agenda rows from the CLI (`:HABIT: true` / `:STYLE: habit` with repeating planning) show a `habit ×N` streak-ish count and tooltip details.
 - Agenda items use a minimal urgency color dot:
   - overdue → error color
@@ -382,3 +383,15 @@ Optional folded-navigation helper: set `org2.vim.visibleLineNavigation: true` to
 ## Notes
 
 This is intentionally small and TextMate-based. The repo also contains a Tree-sitter grammar in `tree-sitter-org2/` for future richer editor integrations.
+
+### Capture / ingest CLI
+
+The extension shells out to the workspace `org2` CLI for editor workflows. Unified source capture is currently exposed by the CLI rather than a VS Code command:
+
+```sh
+org2 capture --text "note" --to inbox.org2 --title "Quick note" --apply
+org2 capture --stdin --to raw/transcript.org2 --title "Transcript" --apply
+org2 capture --file transcript.txt --to raw/inbox.org2 --apply
+```
+
+Captured source entries include source type, origin, timestamp, author (when provided), content hash, and provenance metadata in an org property drawer.

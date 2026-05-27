@@ -22,9 +22,10 @@ fs.writeFileSync(path.join(tmpDir, 'project.org2'), `#+TITLE: Project Hub
 :ID: ${projectId}
 :ORG2_ROLE: source
 :ORG2_ENTITY_TYPE: company
+:TEAM: Platform
 :END:
 
-* TODO Alpha Work :work:alpha:
+* TODO [#A] Alpha Work :work:alpha:
 SCHEDULED: <2026-05-19 Tue> DEADLINE: <2026-05-20 Wed>
 :PROPERTIES:
 :ID: ${alphaId}
@@ -33,6 +34,12 @@ SCHEDULED: <2026-05-19 Tue> DEADLINE: <2026-05-20 Wed>
 :END:
 
 Use [[Meeting Notes]] and [[id:${meetingId}][meeting]] for context.
+
+** TODO Child Task
+SCHEDULED: <2026-05-19 Tue>
+:PROPERTIES:
+:OWNER: Bea
+:END:
 `);
 fs.writeFileSync(path.join(tmpDir, 'advisor.org2'), `#+TITLE: Ada Advisor
 
@@ -85,10 +92,21 @@ assert.ok(alpha, 'expected heading node with explicit ID');
 assert.equal(alpha.kind, 'heading');
 assert.equal(alpha.title, 'Alpha Work');
 assert.equal(alpha.todo, 'TODO');
+assert.equal(alpha.priority, 'A');
 assert.deepEqual(alpha.tags, ['work', 'alpha']);
 assert.deepEqual(alpha.aliases, ['Alpha Initiative']);
 assert.equal(alpha.properties.OWNER, 'Avi');
-assert.equal(alpha.sourceRange.startLine, 10);
+assert.equal(alpha.effectiveProperties.OWNER, 'Avi');
+assert.equal(alpha.effectiveProperties.TEAM, 'Platform');
+assert.equal(alpha.inheritedProperties.TEAM, 'Platform');
+assert.equal(alpha.properties.TEAM, undefined);
+const childTask = json.nodes.find((node) => node.title === 'Child Task');
+assert.ok(childTask, 'expected nested child task');
+assert.deepEqual(childTask.properties, { OWNER: 'Bea' });
+assert.equal(childTask.effectiveProperties.OWNER, 'Bea');
+assert.equal(childTask.effectiveProperties.TEAM, 'Platform');
+assert.equal(childTask.inheritedProperties.TEAM, 'Platform');
+assert.equal(alpha.sourceRange.startLine, 11);
 assert.ok(alpha.sourceRange.endLine >= alpha.sourceRange.startLine);
 assert.ok(alpha.planning.some((entry) => entry.kind === 'SCHEDULED' && entry.raw.includes('2026-05-19')));
 assert.ok(alpha.planning.some((entry) => entry.kind === 'DEADLINE' && entry.raw.includes('2026-05-20')));
@@ -114,6 +132,11 @@ assert.ok(relationJson.relations.some((relation) => relation.subjectTitle === 'L
 const relationLinkQuery = execFileSync('node', [cli, 'query', 'relations', '--object', `[[id:${projectId}][Project Hub]]`, '--predicate', 'advisor_to', '--dir', tmpDir, '--recursive', '--format', 'json'], { encoding: 'utf8' });
 const relationLinkJson = JSON.parse(relationLinkQuery);
 assert.ok(relationLinkJson.relations.some((relation) => relation.subjectTitle === 'Ada Advisor' && relation.objectId === projectId));
+const agendaByInheritedProperty = execFileSync('node', [cli, 'agenda', '--dir', tmpDir, '--from', '2026-05-19', '--to', '2026-05-19', '--property', 'TEAM=Platform', '--format', 'json'], { encoding: 'utf8' });
+const agendaJson = JSON.parse(agendaByInheritedProperty);
+const agendaHeadlines = agendaJson.days.flatMap((day) => day.items.map((item) => item.headline));
+assert.ok(agendaHeadlines.includes('Alpha Work'), 'expected agenda --property to match inherited file property');
+assert.ok(agendaHeadlines.includes('Child Task'), 'expected agenda --property to match inherited ancestor/file properties');
 
 const out = path.join(tmpDir, 'compiled', 'corpus.jsonl');
 const stdout = execFileSync('node', [cli, 'compile', 'corpus', '--dir', tmpDir, '--recursive', '--format', 'jsonl', '--out', out], { encoding: 'utf8' });
