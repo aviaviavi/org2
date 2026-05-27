@@ -45,6 +45,14 @@ export type CompiledCorpusRelation = {
   method: string;
 };
 
+export type CheckboxProgress = {
+  total: number;
+  checked: number;
+  unchecked: number;
+  percent: number;
+  cookies: Array<{ raw: string; line: number; format: "fraction" | "percent"; done?: number; total?: number; percent?: number; stale: boolean; expectedRaw: string }>;
+};
+
 export type CompiledCorpusNode = {
   key: string;
   kind: "file" | "heading";
@@ -61,6 +69,7 @@ export type CompiledCorpusNode = {
   planning: Array<{ kind: "SCHEDULED" | "DEADLINE" | "CLOSED"; raw: string; line: number }>;
   clocks: OrgClockInterval[];
   clockIssues: OrgClockIssue[];
+  checkboxProgress: CheckboxProgress;
   links: CompiledCorpusLink[];
   backlinks: CompiledCorpusBacklink[];
   entityType?: string;
@@ -115,6 +124,8 @@ export type CompiledCorpus = {
   relations: CompiledCorpusRelation[];
   clocks: OrgClockInterval[];
   clockIssues: OrgClockIssue[];
+  checkboxProgress: CheckboxProgress;
+  checkboxIssues: Array<{ type: "stale-progress-cookie"; file: string; line: number; raw: string; expectedRaw: string; checked: number; total: number }>;
   clockSummary: ReturnType<typeof extractClockReport>["summary"];
   index?: CompiledCorpusLookupIndex;
   indexState?: CompiledCorpusIndexState;
@@ -281,6 +292,46 @@ function linkType(target: string): CompiledCorpusLink["type"] {
   return "other";
 }
 
+
+export function extractCheckboxProgress(lines: string[], startIndex: number, endExclusive: number): CheckboxProgress {
+  let checked = 0;
+  let unchecked = 0;
+  const found: Array<Omit<CheckboxProgress["cookies"][number], "stale" | "expectedRaw">> = [];
+  for (let i = startIndex; i < endExclusive; i += 1) {
+    const line = lines[i] || "";
+    const item = /^\s*(?:[-+*]|\d+[.)])\s+\[([ Xx])\]/.exec(line);
+    if (item) {
+      if ((item[1] || "") === " ") unchecked += 1;
+      else checked += 1;
+    }
+    const re = /\[(\d+)\/(\d+)\]|\[(\d{1,3})%\]/g;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(line)) !== null) {
+      const format = match[1] !== undefined ? "fraction" : "percent";
+      const raw = match[0] || "";
+      const doneValue = match[1] !== undefined ? Number.parseInt(match[1] || "0", 10) : undefined;
+      const totalValue = match[2] !== undefined ? Number.parseInt(match[2] || "0", 10) : undefined;
+      const percentValue = match[3] !== undefined ? Number.parseInt(match[3] || "0", 10) : (totalValue && totalValue > 0 && doneValue !== undefined ? Math.round((doneValue / totalValue) * 100) : 0);
+      found.push({
+        raw,
+        line: i + 1,
+        format,
+        ...(doneValue !== undefined ? { done: doneValue } : {}),
+        ...(totalValue !== undefined ? { total: totalValue } : {}),
+        percent: percentValue,
+      });
+    }
+  }
+  const total = checked + unchecked;
+  const percent = total > 0 ? Math.round((checked / total) * 100) : 0;
+  const cookies = found.map((cookie) => {
+    const expectedRaw = cookie.format === "fraction" ? `[${checked}/${total}]` : `[${percent}%]`;
+    return { ...cookie, stale: cookie.raw !== expectedRaw, expectedRaw };
+  });
+  return { total, checked, unchecked, percent, cookies };
+}
+
+
 function extractLinks(lines: string[], startIndex: number, endExclusive: number): CompiledCorpusLink[] {
   const links: CompiledCorpusLink[] = [];
   let inBlock = false;
@@ -386,6 +437,8 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
   const corpusFiles: CompiledCorpusFile[] = [];
   const nodes: CompiledCorpusNode[] = [];
   const clockReport = extractClockReport(sortedFiles, { rootDir });
+  const checkboxIssuesByKey = new Map<string, CompiledCorpus["checkboxIssues"][number]>();
+  const corpusCheckboxProgress: CheckboxProgress = { total: 0, checked: 0, unchecked: 0, percent: 0, cookies: [] };
   const clocksByNode = new Map<string, OrgClockInterval[]>();
   const clockIssuesByNode = new Map<string, OrgClockIssue[]>();
   for (const clock of clockReport.intervals) clocksByNode.set(clock.nodeKey, [...(clocksByNode.get(clock.nodeKey) || []), clock]);
@@ -407,6 +460,12 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
     const preambleEndExclusive = firstHeadingIndex === -1 ? lines.length : firstHeadingIndex;
     const fileLinks = extractLinks(lines, 0, preambleEndExclusive);
     const fileSnippet = extractSnippetWithLine(lines, 0, preambleEndExclusive);
+    const fullFileCheckboxProgress = extractCheckboxProgress(lines, 0, lines.length);
+    corpusCheckboxProgress.total += fullFileCheckboxProgress.total;
+    corpusCheckboxProgress.checked += fullFileCheckboxProgress.checked;
+    corpusCheckboxProgress.unchecked += fullFileCheckboxProgress.unchecked;
+    const fileCheckboxProgress = extractCheckboxProgress(lines, 0, preambleEndExclusive);
+    for (const cookie of fileCheckboxProgress.cookies.filter((cookie) => cookie.stale)) checkboxIssuesByKey.set(`${file}:${cookie.line}:${cookie.raw}`, { type: "stale-progress-cookie", file, line: cookie.line, raw: cookie.raw, expectedRaw: cookie.expectedRaw, checked: fileCheckboxProgress.checked, total: fileCheckboxProgress.total });
 
     corpusFiles.push({ file, absolutePath: filePath, sha256: sha256(content), lineCount: lines.length, title, id });
     const fileKey = `file:${file}`;
@@ -423,6 +482,7 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       planning: extractPlanning(lines, 0, preambleEndExclusive),
       clocks: clocksByNode.get(fileKey) || [],
       clockIssues: clockIssuesByNode.get(fileKey) || [],
+      checkboxProgress: fileCheckboxProgress,
       links: fileLinks,
       backlinks: [],
       snippet: fileSnippet.snippet,
@@ -438,6 +498,8 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       const headingId = normalizeId(headingProperties.ID);
       const headingAliases = parseAliasTokens(headingProperties.ROAM_ALIASES || "");
       const headingSnippet = extractSnippetWithLine(lines, i + 1, endExclusive);
+      const headingCheckboxProgress = extractCheckboxProgress(lines, i, endExclusive);
+      for (const cookie of headingCheckboxProgress.cookies.filter((cookie) => cookie.stale)) checkboxIssuesByKey.set(`${file}:${cookie.line}:${cookie.raw}`, { type: "stale-progress-cookie", file, line: cookie.line, raw: cookie.raw, expectedRaw: cookie.expectedRaw, checked: headingCheckboxProgress.checked, total: headingCheckboxProgress.total });
       const headingKey = `heading:${file}:${i + 1}`;
       const node: CompiledCorpusNode = {
         key: headingKey,
@@ -454,6 +516,7 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
         planning: extractPlanning(lines, i + 1, endExclusive),
         clocks: clocksByNode.get(headingKey) || [],
         clockIssues: clockIssuesByNode.get(headingKey) || [],
+        checkboxProgress: headingCheckboxProgress,
         links: extractLinks(lines, i + 1, endExclusive),
         backlinks: [],
         snippet: headingSnippet.snippet,
@@ -547,6 +610,11 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
     relations,
     clocks: clockReport.intervals,
     clockIssues: clockReport.issues,
+    checkboxProgress: {
+      ...corpusCheckboxProgress,
+      percent: corpusCheckboxProgress.total > 0 ? Math.round((corpusCheckboxProgress.checked / corpusCheckboxProgress.total) * 100) : 0,
+    },
+    checkboxIssues: [...checkboxIssuesByKey.values()].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line),
     clockSummary: clockReport.summary,
     index: buildLookupIndex(sortedNodes),
     indexState: { mode: "full", status: "fresh", reusedFiles: 0, parsedFiles: corpusFiles.length, deletedFiles: 0 },

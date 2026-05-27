@@ -9,6 +9,7 @@ import type {
   InlineNode,
   KeywordLineNode,
   LinkNode,
+  ProgressCookieNode,
   ListItemNode,
   ListNode,
   Node,
@@ -99,6 +100,10 @@ function emphasis(kind: EmphasisKind, marker: string, content: string): Emphasis
 
 function link(node: Omit<LinkNode, "type">): LinkNode {
   return { type: "Link", ...node };
+}
+
+function progressCookie(node: Omit<ProgressCookieNode, "type">): ProgressCookieNode {
+  return { type: "ProgressCookie", ...node };
 }
 
 function isTimestampDatePrefix(value: string): boolean {
@@ -293,6 +298,24 @@ function parseLinkAt(value: string, startIndex: number): ParsedLinkAt | null {
   return parseBracketLinkAt(value, startIndex) ?? parsePlainUrlAt(value, startIndex);
 }
 
+type ParsedProgressCookieAt = { node: ProgressCookieNode; endIndex: number };
+
+function parseProgressCookieAt(value: string, startIndex: number): ParsedProgressCookieAt | null {
+  const rest = value.slice(startIndex);
+  const fraction = /^\[(\d+)\/(\d+)\]/.exec(rest);
+  if (fraction) {
+    const done = Number.parseInt(fraction[1] || "0", 10);
+    const total = Number.parseInt(fraction[2] || "0", 10);
+    return { node: progressCookie({ raw: fraction[0], format: "fraction", done, total, percent: total > 0 ? Math.round((done / total) * 100) : 0 }), endIndex: startIndex + fraction[0].length };
+  }
+  const percent = /^\[(\d{1,3})%\]/.exec(rest);
+  if (percent) {
+    const valueNum = Number.parseInt(percent[1] || "0", 10);
+    return { node: progressCookie({ raw: percent[0], format: "percent", percent: Math.max(0, Math.min(100, valueNum)) }), endIndex: startIndex + percent[0].length };
+  }
+  return null;
+}
+
 export function parseInlinesFromText(value: string): InlineNode[] {
   const out: InlineNode[] = [];
 
@@ -300,6 +323,18 @@ export function parseInlinesFromText(value: string): InlineNode[] {
   let lastTextStart = 0;
 
   while (i < value.length) {
+    const parsedProgressCookie = parseProgressCookieAt(value, i);
+    if (parsedProgressCookie) {
+      if (lastTextStart < i) {
+        out.push(text(value.slice(lastTextStart, i)));
+      }
+
+      out.push(parsedProgressCookie.node);
+      i = parsedProgressCookie.endIndex;
+      lastTextStart = i;
+      continue;
+    }
+
     const parsedTimestamp = parseTimestampOrRangeAt(value, i);
     if (parsedTimestamp) {
       if (lastTextStart < i) {
@@ -537,6 +572,7 @@ type ParsedListItem = {
   content: string;
   indentColumn: number;
   checkbox?: "unchecked" | "checked";
+  progressCookie?: ProgressCookieNode;
 };
 
 type ParsePropertyDrawerResult = {
@@ -660,8 +696,9 @@ function parseListItemLine(line: string): ParsedListItem | null {
       checkbox = checkboxMatch[1] === " " ? "unchecked" : "checked";
       content = checkboxMatch[2];
     }
+    const progressCookie = parseProgressCookieAt(content, 0)?.node;
 
-    return { ordered: false, content, indentColumn: unordered[1].length + ws.length, checkbox };
+    return { ordered: false, content, indentColumn: unordered[1].length + ws.length, checkbox, ...(progressCookie ? { progressCookie } : {}) };
   }
 
   const ordered = /^(\d+)([.)])(\s+)(.*)$/.exec(line);
@@ -678,12 +715,14 @@ function parseListItemLine(line: string): ParsedListItem | null {
       checkbox = checkboxMatch[1] === " " ? "unchecked" : "checked";
       content = checkboxMatch[2];
     }
+    const progressCookie = parseProgressCookieAt(content, 0)?.node;
 
     return {
       ordered: true,
       content,
       indentColumn: ordered[1].length + ordered[2].length + ws.length,
       checkbox,
+      ...(progressCookie ? { progressCookie } : {}),
     };
   }
 
@@ -987,11 +1026,12 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
     return list;
   }
 
-  function addListItem(ordered: boolean, content: string, checkbox?: "unchecked" | "checked"): ListItemNode {
+  function addListItem(ordered: boolean, content: string, checkbox?: "unchecked" | "checked", itemProgressCookie?: ProgressCookieNode): ListItemNode {
     const list = ensureList(ordered);
     const item: ListItemNode = {
       type: "ListItem",
       ...(checkbox && { checkbox }),
+      ...(itemProgressCookie ? { progressCookie: itemProgressCookie } : {}),
       children: [paragraphFromText(content)],
     };
     list.items.push(item);
@@ -1161,7 +1201,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
 
     if (listItem) {
       flushParagraph();
-      const item = addListItem(listItem.ordered, listItem.content, listItem.checkbox);
+      const item = addListItem(listItem.ordered, listItem.content, listItem.checkbox, listItem.progressCookie);
       i += 1;
 
       let itemParagraphLines: string[] = [];

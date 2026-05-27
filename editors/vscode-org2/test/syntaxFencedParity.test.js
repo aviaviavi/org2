@@ -120,6 +120,19 @@ test('timestamp repeaters and warnings stay within timestamp syntax highlighting
   }
 });
 
+test('checkbox progress cookies receive progress-cookie syntax highlighting', async () => {
+  const registry = await createRegistry();
+  const grammar = await registry.loadGrammar('source.org2');
+  const line = '- [ ] Project [1/3] [33%]';
+  const result = grammar.tokenizeLine(line, null);
+
+  for (const fragment of ['[1/3]', '[33%]']) {
+    const token = result.tokens.find((candidate) => line.slice(candidate.startIndex, candidate.endIndex) === fragment);
+    assert(token, `expected token for ${fragment}`);
+    assert(token.scopes.includes('constant.other.progress-cookie.org2'), `expected progress-cookie scope for ${fragment}`);
+  }
+});
+
 test('headline TODO aliases still receive TODO keyword syntax highlighting', async () => {
   const registry = await createRegistry();
   const grammar = await registry.loadGrammar('source.org2');
