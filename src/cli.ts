@@ -4410,6 +4410,56 @@ function extractAgendaPropertiesNearHeadline(lines: string[], headlineLineIndex:
   return properties;
 }
 
+
+function appendEffortLintIssues(raw: string, filePath: string, issues: ArtifactLintIssue[]): void {
+  const lines = raw.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const match = /^\s*:EFFORT:\s*(.*?)\s*$/.exec(lines[i] || "");
+    if (!match) continue;
+    const value = String(match[1] || "").trim();
+    if (!value) continue;
+    if (parseAgendaEffortToMinutes(value) !== null) continue;
+    issues.push({
+      severity: "warning",
+      rule: "effort-malformed",
+      file: filePath,
+      line: i + 1,
+      message: `EFFORT '${value}' is not a supported duration. Use minutes, H:MM, 2h, 30m, or 2h30m.`,
+    });
+  }
+}
+
+function agendaWorkloadSummaryForItems(
+  items: ScheduledItem[],
+  groupOrder: AgendaGroupOrder,
+  tagOrder: AgendaTagOrder,
+): {
+  totalMinutes: number;
+  byDate: Record<string, number>;
+  byGroup: Record<string, number>;
+  byTag: Record<string, number>;
+} {
+  const byDate: Record<string, number> = {};
+  const byGroup: Record<string, number> = {};
+  const byTag: Record<string, number> = {};
+  let totalMinutes = 0;
+  const add = (bucket: Record<string, number>, key: string, minutes: number) => {
+    bucket[key] = (bucket[key] || 0) + minutes;
+  };
+
+  for (const item of items) {
+    const minutes = parseAgendaEffortToMinutes(String(item.effort || ""));
+    if (minutes === null) continue;
+    totalMinutes += minutes;
+    add(byDate, item.date, minutes);
+    const groupLabel = groupOrder && groupOrder.length > 0 ? agendaGroupLabelForItem(item, groupOrder, tagOrder) : "All items";
+    add(byGroup, groupLabel || "(none)", minutes);
+    for (const tag of item.tags || []) add(byTag, tag, minutes);
+  }
+
+  return { totalMinutes, byDate, byGroup, byTag };
+}
+
 function findScheduledItemsInText(
   content: string,
   filePath: string,
@@ -7007,6 +7057,7 @@ async function main(): Promise<void> {
   let today = getTodayString();
   let format: "text" | "json" = "text";
   let agendaTui = false;
+  let agendaWorkload = false;
   let agendaTuiRefreshSeconds = 30;
   let recursive = false;
   let includeOverdue = true;
@@ -7577,6 +7628,11 @@ async function main(): Promise<void> {
     } else if (arg === "--tui") {
       if (command === "agenda") {
         agendaTui = true;
+      }
+      i++;
+    } else if (arg === "--workload") {
+      if (command === "agenda") {
+        agendaWorkload = true;
       }
       i++;
     } else if (arg === "--refresh-seconds") {
@@ -8571,6 +8627,7 @@ Flags:
   --from YYYY-MM-DD   Start date filter
   --to YYYY-MM-DD     End date filter
   --tui               Open the interactive terminal agenda
+  --workload          Include JSON effort workload rollups by date/group/tag
   --format text|json  Output format`;
   } else if (command === "todo") {
     text = `org2 todo ${options.todoAction}
@@ -11610,6 +11667,7 @@ Flags:
       appendArtifactFreshnessLintIssues(raw, filePath, issues);
       appendHabitLintIssues(raw, filePath, issues);
       appendCheckboxProgressLintIssues(raw, filePath, issues);
+      appendEffortLintIssues(raw, filePath, issues);
 
       for (const ref of collectArtifactProvenanceRefsInText(raw, filePath)) {
         if (ref.kind === "file") {
@@ -13410,12 +13468,14 @@ Flags:
         });
     };
 
+    const workload = agendaWorkloadSummaryForItems(outputItems, parsedAgendaGroup.groupOrder, parsedAgendaTagOrder);
     const payload = {
       $schema: "org2:agenda:v1",
       range: { start: startIso, end: endIso, days: rangeDays },
       overdue: group(overdue),
       days: group(upcoming),
       skippedFiles: skippedFileCount,
+      ...(agendaWorkload ? { workload } : {}),
     };
 
     process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
