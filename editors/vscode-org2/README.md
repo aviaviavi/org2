@@ -210,6 +210,7 @@ The extension can show an *agenda* view powered by the `org2` CLI.
 ### Agenda visuals
 
 - Each agenda item now shows its source filename in the item description.
+- Agenda rows with `:EFFORT:` show the estimate in the item description and tooltip.
 - Habit agenda rows from the CLI (`:HABIT: true` / `:STYLE: habit` with repeating planning) show a `habit ×N` streak-ish count and tooltip details.
 - Agenda items use a minimal urgency color dot:
   - overdue → error color
