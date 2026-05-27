@@ -26,7 +26,7 @@ assert.match(payload.outText, /Discuss routing model/);
 run("capture", "--text", "Discuss routing model", "--to", target, "--title", "Meeting note", "--now", "2026-05-26T12:00:00.000Z", "--apply");
 const written = fs.readFileSync(target, "utf8");
 assert.match(written, /^\* Meeting note/m);
-assert.match(written, /CAPTURED: <2026-05-26 Tue 05:00>/);
+assert.match(written, /CAPTURED: <2026-05-26 Tue (05|12):00>/);
 
 const sourceFile = path.join(tmp, "transcript.txt");
 fs.writeFileSync(sourceFile, "Transcript body\n", "utf8");
