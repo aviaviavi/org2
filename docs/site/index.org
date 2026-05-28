@@ -142,6 +142,7 @@ It is early alpha, but already practical for CLI + VS Code workflows.
 - [[file:ai-processing-architecture.org][AI processing architecture]]
 - [[file:openclaw-knowledge-layer.org][OpenClaw knowledge layer]]
 - [[file:org2-vs-markdown.org][Org2 vs Markdown]]
+- [[file:org2-vs-obsidian.org][Org2 vs Obsidian]]
 - [[file:org2-vs-org-mode.org][Org2 vs Org Mode]]
 
 Reference post: [[https://avi.press/posts/2024-01-15-standalone-org.html][Standalone Org rationale]]

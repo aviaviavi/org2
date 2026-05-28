@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Org2 vs Obsidian</title>
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Org2 vs Obsidian" />
+<meta property="og:description" content="Org2 vs Obsidian" />
+<meta property="og:url" content="https://org2.avi.press/org2-vs-obsidian.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/org2-vs-obsidian.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Org2 vs Obsidian" />
+<meta name="twitter:description" content="Org2 vs Obsidian" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/org2-vs-obsidian.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a><a href="org2-vs-obsidian.html">Org2 vs Obsidian</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open docs search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">Org2 vs Obsidian</h1>
+</header>
+<p>Obsidian is one of the best products in the plain-text knowledge space. It stores notes in a local Markdown vault, has polished backlinks and graph views, ships useful core plugins, supports Bases for database-like note views, and has a large plugin ecosystem.</p>
+<p>Org2 is aimed at a different center of gravity. Obsidian is primarily an excellent app for working with Markdown notes. Org2 is a portable compiler/runtime for a knowledge corpus that should work across editors, CLIs, scripts, publishing jobs, and agents.</p>
+<section class="org2-headline level-1">
+<h1 id="the-short-decision">The short decision</h1>
+<p>Use Obsidian when you want a polished, batteries-included knowledge app with a mature UI, mobile story, themes, sync/publish options, and a huge plugin ecosystem.</p>
+<p>Use Org2 when you want your notes to behave more like source code for a local knowledge system: parseable, lintable, queryable, refactorable, schedulable, publishable, fully open source, and available to automation without depending on one app's runtime.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="where-obsidian-is-stronger">Where Obsidian is stronger</h1>
+<section class="org2-headline level-2">
+<h2 id="product-maturity">Product maturity</h2>
+<p>Obsidian is a mature daily-use application. It has a refined editor, graph surfaces, backlinks, search, Canvas, Publish, Sync, mobile apps, themes, and community plugins. For many people, that is the whole point: install one app and get a strong personal knowledge environment immediately.</p>
+<p>Org2 is earlier and more infrastructure-shaped. The best current path is CLI plus VS Code, with the compiler/LSP model underneath.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="plugin-ecosystem">Plugin ecosystem</h2>
+<p>Obsidian's plugin ecosystem is enormous. If your workflow depends on a very specific UI behavior, visualization, import path, dashboard, spaced-repetition setup, or custom Markdown extension, there is a real chance the Obsidian ecosystem already has something close.</p>
+<p>Org2's ecosystem bet is different: build a stable semantic core first so future integrations can share the same parser, compiler, LSP, and corpus model instead of re-implementing meaning per app.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="visual-thinking">Visual thinking</h2>
+<p>Obsidian is strong for interactive knowledge browsing. Graph view, local graph, Canvas, page preview, backlinks, and plugin-driven visualizations are useful when you want to explore a vault directly.</p>
+<p>Org2 can produce graph reports and editor views, but it is not trying to beat Obsidian as a visual desktop thinking environment today.</p>
+</section>
+</section>
+<section class="org2-headline level-1">
+<h1 id="where-org2-is-the-obvious-choice">Where Org2 is the obvious choice</h1>
+<section class="org2-headline level-2">
+<h2 id="you-want-a-standard-not-an-app-runtime">You want a standard, not an app runtime</h2>
+<p>Obsidian stores Markdown files locally, which is excellent. But much of the richer behavior lives in Obsidian's interpretation of those files, its app configuration, and its plugin conventions.</p>
+<p>Org2 puts more of the meaning into a standalone language and compiler model. Headings, TODO states, planning lines, timestamps, IDs, drawers, properties, links, source ranges, artifact roles, and provenance are meant to be understood outside any one editor.</p>
+<p>The practical difference: a CLI command, VS Code extension, future Vim or Emacs integration, publishing job, or agent can all consume the same corpus semantics.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="you-want-open-source-infrastructure">You want open-source infrastructure</h2>
+<p>Obsidian is local-first, but the app itself is not open-source software. Its official license page reserves rights to the app's code, and its terms restrict modifying, building on, or deriving competing software from Obsidian itself.</p>
+<p>Org2 is Apache-2.0 open source. That matters if the tool becomes part of your long-term knowledge infrastructure. You can inspect the parser, fork the compiler, embed the runtime, build competing clients, audit behavior, and keep the project alive even if maintainership or product priorities change.</p>
+<p>Open source is not a magic guarantee of quality. But for a standard-shaped project whose goal is editor-independent knowledge tooling, it is a structural advantage.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="planning-is-first-class-corpus-data">Planning is first-class corpus data</h2>
+<p>Obsidian can support tasks and project workflows through Markdown conventions, properties, Bases, and plugins. That can work well inside the app.</p>
+<p>Org2 makes planning part of the core data model: TODO state, scheduled dates, deadlines, repeaters, priority, effort, tags, and planning edits feed agenda queries and editor commands directly. The goal is not just &quot;show me notes with a property.&quot; It is &quot;compile this workspace into an actionable planning surface.&quot;</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="automation-should-not-scrape-a-ui">Automation should not scrape a UI</h2>
+<p>If your notes are going to drive scripts, agents, CI checks, publish previews, corpus-health reports, or external tools, you want a stable interface below the editor.</p>
+<p>Org2's CLI and compiler outputs are designed for that boundary. The same corpus can produce agenda JSON, graph/backlink reports, lint diagnostics, formatted source, published HTML, and source-cited query results.</p>
+<p>That makes Org2 a better fit when the knowledge base is not only something you read, but something other tools safely operate on.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="ai-makes-explicit-structure-cheaper">AI makes explicit structure cheaper</h2>
+<p>The strongest objection to Org-shaped text is verbosity. Obsidian keeps Markdown capture lightweight, and that is a real advantage.</p>
+<p>Org2's answer is that humans should not have to type every structured field by hand. A human can capture a brief note; editors, scripts, and agents can later add IDs, normalized dates, backlinks, source citations, artifact roles, and provenance when those details become useful.</p>
+<p>In that world, Org2's explicit structure becomes less like manual overhead and more like a durable target format for human-plus-agent workflows.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="generated-work-needs-provenance">Generated work needs provenance</h2>
+<p>Obsidian is excellent for personal knowledge capture and browsing. Org2 is being shaped around a slightly harder problem: keeping raw sources, reviewed notes, compiled semantics, generated drafts, and published output connected without blurring their trust levels.</p>
+<p>That matters for AI workflows. Meeting transcripts, extracted actions, draft summaries, cited answers, and promoted notes need a trail. Org2's artifact metadata and corpus-flow conventions give generated work a place to live before it becomes durable knowledge.</p>
+</section>
+</section>
+<section class="org2-headline level-1">
+<h1 id="a-useful-mental-model">A useful mental model</h1>
+<p>Obsidian is a great place to live in your notes.</p>
+<p>Org2 is a way to compile your notes.</p>
+<p>Those are not mutually exclusive ideas. A future Org2 ecosystem could learn from Obsidian's UI strengths, and Obsidian users already prove the demand for local-first linked knowledge. The difference is where each project puts the hard boundary:</p>
+<ul>
+<li><p>Obsidian centers the proprietary app experience over local Markdown files.</p></li>
+<li><p>Org2 centers an open-source semantic corpus, with editors and apps as clients.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="bottom-line">Bottom line</h1>
+<p>Choose Obsidian if you want the best polished local-first note app today.</p>
+<p>Choose Org2 if you want the knowledge base itself to become portable open-source infrastructure: a corpus that can support planning, graph maintenance, publishing, linting, source-cited AI workflows, and editor-independent automation.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="related">Related</h1>
+<ul>
+<li><p><a href="https://help.obsidian.md/obsidian">Obsidian overview</a></p></li>
+<li><p><a href="https://help.obsidian.md/data-storage">How Obsidian stores data</a></p></li>
+<li><p><a href="https://help.obsidian.md/bases">Obsidian Bases</a></p></li>
+<li><p><a href="https://obsidian.md/license">Obsidian license overview</a></p></li>
+<li><p><a href="https://obsidian.md/terms">Obsidian terms of service</a></p></li>
+<li><p><a href="org2-vs-markdown.html">Org2 vs Markdown</a></p></li>
+<li><p><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a></p></li>
+</ul>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>
