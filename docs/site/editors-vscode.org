@@ -155,7 +155,19 @@ Available from command palette (=Cmd/Ctrl+Shift+P=):
 - =org2.cryptEncryptSubtree=
 - =org2.cryptReencryptSubtree=
 
-Set =org2.crypt.recipients= to the default GPG recipients that should be able to open newly encrypted subtrees, such as your personal/device key plus an agent key. VS Code passes those recipients through to the CLI for encrypt/re-encrypt, while decrypt can still use the unlocked matching private key.
+Set =org2.crypt.recipients= to the default GPG recipients that should be able to open newly encrypted subtrees, such as your personal/device key plus an agent key. =org2.crypt.recipientFiles= can point at armored public-key files. VS Code passes those recipients through to the CLI for encrypt/re-encrypt, while decrypt can still use the unlocked matching private key.
+
+For selective sharing, put recipients on the subtree itself instead of in global VS Code settings:
+
+#+begin_src org
+* Private note shared with an agent :crypt:
+:PROPERTIES:
+:CRYPT_RECIPIENT_FILE: keys/agent-public.asc
+:END:
+This body is encrypted to the listed recipient file when you run Org2: Encrypt Subtree.
+#+end_src
+
+=:CRYPT_RECIPIENT:= / =:CRYPT_RECIPIENTS:= accept GPG recipient identifiers. =:CRYPT_RECIPIENT_FILE:= / =:CRYPT_RECIPIENT_FILES:= accept armored public-key files. Relative file paths are resolved from the Org2 file containing the subtree, which keeps shared corpora portable across devices.
 - =org2.refileSubtree=
 - =org2.roamOpenTitle=
 - =org2.roamShowBacklinks=

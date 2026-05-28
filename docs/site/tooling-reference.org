@@ -186,6 +186,19 @@ npm run org2 -- crypt encrypt --file secrets.org2 --line 42 \
   --recipient agent@example.com \
   --apply
 
+# Public-key recipient files are useful for keys that are not in your keyring
+npm run org2 -- crypt encrypt --file secrets.org2 --line 42 \
+  --recipient-file keys/agent-public.asc \
+  --apply
+
+# Or make sharing per-entry with an Org property drawer
+# Relative recipient-file paths resolve from the current note's directory.
+* Private note shared with an agent :crypt:
+:PROPERTIES:
+:CRYPT_RECIPIENT_FILE: keys/agent-public.asc
+:END:
+Only the entries with this property are encrypted to that agent.
+
 # Migration: decrypt an existing block, then re-encrypt it for the new recipients
 npm run org2 -- crypt reencrypt --file secrets.org2 --line 42 \
   --passphrase 'old-passphrase-if-needed' \
@@ -193,6 +206,8 @@ npm run org2 -- crypt reencrypt --file secrets.org2 --line 42 \
   --recipient agent@example.com \
   --apply
 #+end_src
+
+Per-entry recipient properties let one corpus mix private-only and shared-with-agent notes without a global editor setting. =:CRYPT_RECIPIENT:= / =:CRYPT_RECIPIENTS:= add GPG recipient identifiers, while =:CRYPT_RECIPIENT_FILE:= / =:CRYPT_RECIPIENT_FILES:= add armored public key files. Multiple values can be separated with commas. Relative recipient-file paths are resolved relative to the Org2 file that contains the subtree, so they work across machines when the key file lives in the synced project.
 
 * Export + publish
 

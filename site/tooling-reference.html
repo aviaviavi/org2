@@ -98,6 +98,7 @@ npm run org2 -- plan set --file notes.org2 --line 42 --kind scheduled --date 202
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- capture --file inbox.org2 --title &quot;Quick note&quot; --template note --apply
 npm run org2 -- archive --file notes.org2 --pos 120:0 --apply
 npm run org2 -- refile --file notes.org2 --pos 120:0 --to-file projects.org2 --to-pos 40:0 --apply</code></pre>
+<p>Archiving moves the selected subtree to a companion archive file (by default <code>FILE_archive</code> for <code>.org</code> and <code>.org2</code> files, otherwise <code>FILE.archive</code>). Archived subtrees receive a property drawer with <code>ARCHIVED_AT</code>, <code>ARCHIVE_SOURCE</code>, <code>ARCHIVE_SOURCE_LINE</code>, <code>ARCHIVE_HEADING_PATH</code>, and <code>ARCHIVE_ORIGINAL_ID</code> when the original subtree had an <code>ID</code>. Use <code>--format diff</code> to preview the exact removal/append operation, or <code>--format json</code> for editor/agent integrations.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="formatter">Formatter</h1>
@@ -146,7 +147,7 @@ npm run org2 -- compile corpus --dir ~/notes --recursive --format jsonl --out co
 <li><p>standardized <code>artifact</code> metadata: role, generator, generated-at timestamp, source provenance, source hashes, and review status</p></li>
 <li><p>files with relative paths, absolute paths, SHA-256 hashes, line counts, titles, and IDs</p></li>
 <li><p>file and heading nodes with source ranges for citations</p></li>
-<li><p>heading TODO state, tags, planning timestamps, properties, IDs, and aliases</p></li>
+<li><p>heading TODO state, priority cookies, tags, planning timestamps, explicit <code>properties</code>, inherited <code>inheritedProperties</code>, overlaid <code>effectiveProperties</code>, IDs, and aliases</p></li>
 <li><p>links and resolved backlinks for explicit <code>id:</code> links and unambiguous wiki links</p></li>
 <li><p>text snippets suitable for previews or retrieval pipelines</p></li>
 </ul>
@@ -181,8 +182,37 @@ npm run org2 -- roam graph --dir ~/notes --recursive --format json</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="org-crypt">Org-crypt</h1>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- crypt decrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply
-npm run org2 -- crypt encrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply</code></pre>
+<p>Org2 keeps the existing Org-style <code>:crypt:</code> convention and encrypts at the subtree boundary. A subtree can be encrypted symmetrically with a passphrase, or to multiple public-key recipients so the same private note can be opened by your user key, another device key, and an agent key without sharing one password around.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh"># Passphrase/symmetric mode
+npm run org2 -- crypt decrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply
+npm run org2 -- crypt encrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply
+
+# Multi-recipient public-key mode
+npm run org2 -- crypt encrypt --file secrets.org2 --line 42 \
+  --recipient user@example.com \
+  --recipient agent@example.com \
+  --apply
+
+# Public-key recipient files are useful for keys that are not in your keyring
+npm run org2 -- crypt encrypt --file secrets.org2 --line 42 \
+  --recipient-file keys/agent-public.asc \
+  --apply
+
+# Or make sharing per-entry with an Org property drawer
+# Relative recipient-file paths resolve from the current note's directory.
+* Private note shared with an agent :crypt:
+:PROPERTIES:
+:CRYPT_RECIPIENT_FILE: keys/agent-public.asc
+:END:
+Only the entries with this property are encrypted to that agent.
+
+# Migration: decrypt an existing block, then re-encrypt it for the new recipients
+npm run org2 -- crypt reencrypt --file secrets.org2 --line 42 \
+  --passphrase 'old-passphrase-if-needed' \
+  --recipient user@example.com \
+  --recipient agent@example.com \
+  --apply</code></pre>
+<p>Per-entry recipient properties let one corpus mix private-only and shared-with-agent notes without a global editor setting. <code>:CRYPT_RECIPIENT:</code> / <code>:CRYPT_RECIPIENTS:</code> add GPG recipient identifiers, while <code>:CRYPT_RECIPIENT_FILE:</code> / <code>:CRYPT_RECIPIENT_FILES:</code> add armored public key files. Multiple values can be separated with commas. Relative recipient-file paths are resolved relative to the Org2 file that contains the subtree, so they work across machines when the key file lives in the synced project.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="export-publish">Export + publish</h1>

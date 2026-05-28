@@ -233,6 +233,17 @@ npm ci</code></pre>
 <li><p><code>org2.setScheduledNextMonth</code></p></li>
 <li><p><code>org2.cryptDecryptSubtree</code></p></li>
 <li><p><code>org2.cryptEncryptSubtree</code></p></li>
+<li><p><code>org2.cryptReencryptSubtree</code></p></li>
+</ul>
+<p>Set <code>org2.crypt.recipients</code> to the default GPG recipients that should be able to open newly encrypted subtrees, such as your personal/device key plus an agent key. <code>org2.crypt.recipientFiles</code> can point at armored public-key files. VS Code passes those recipients through to the CLI for encrypt/re-encrypt, while decrypt can still use the unlocked matching private key.</p>
+<p>For selective sharing, put recipients on the subtree itself instead of in global VS Code settings:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* Private note shared with an agent :crypt:
+:PROPERTIES:
+:CRYPT_RECIPIENT_FILE: keys/agent-public.asc
+:END:
+This body is encrypted to the listed recipient file when you run Org2: Encrypt Subtree.</code></pre>
+<p><code>:CRYPT_RECIPIENT:</code> / <code>:CRYPT_RECIPIENTS:</code> accept GPG recipient identifiers. <code>:CRYPT_RECIPIENT_FILE:</code> / <code>:CRYPT_RECIPIENT_FILES:</code> accept armored public-key files. Relative file paths are resolved from the Org2 file containing the subtree, which keeps shared corpora portable across devices.</p>
+<ul>
 <li><p><code>org2.refileSubtree</code></p></li>
 <li><p><code>org2.roamOpenTitle</code></p></li>
 <li><p><code>org2.roamShowBacklinks</code></p></li>
