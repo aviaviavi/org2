@@ -25,8 +25,22 @@ What already works well today:
 - HTML export and multi-file publishing
 - Cited workspace search/query for asking factual questions against source notes
 - Roam-style IDs, backlinks, dailies, node creation, linkify previews with semantic/alias-aware suggestions, AI-assisted review reports, and graph reports
-- Org-crypt subtree encryption/decryption workflows, including multi-recipient encryption for shared user/device/agent access without putting the plaintext in a vendor database
+- Org-crypt subtree encryption/decryption workflows, including per-subtree multi-recipient encryption for user/device/agent access without putting plaintext in a vendor database
 - LSP-backed editor features
+
+
+* Scoped encryption for agents
+
+Org2 can use GPG-backed =:crypt:= subtrees as a local access-control layer for agent workflows. Instead of giving an assistant an entire vault or copying secrets into a hosted chat, you can encrypt only selected entries to that agent's public key. Other encrypted entries remain unreadable unless their recipient list includes the same key.
+
+This is especially useful for mixed personal/team/agent corpora:
+
+- keep most private notes encrypted only to your own device keys,
+- share a specific task, meeting note, or research subtree with one agent by adding its recipient file,
+- sync the same encrypted files through ordinary file infrastructure,
+- revoke future access by removing the agent recipient and re-encrypting the subtree.
+
+The important bit is that the boundary is explicit in the note itself, not hidden in a SaaS permission screen.
 
 * Planning + agenda
 

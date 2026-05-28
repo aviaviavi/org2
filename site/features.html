@@ -77,9 +77,21 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p>HTML export and multi-file publishing</p></li>
 <li><p>Cited workspace search/query for asking factual questions against source notes</p></li>
 <li><p>Roam-style IDs, backlinks, dailies, node creation, linkify previews with semantic/alias-aware suggestions, AI-assisted review reports, and graph reports</p></li>
-<li><p>Org-crypt subtree encryption/decryption workflows, including multi-recipient encryption for shared user/device/agent access without putting the plaintext in a vendor database</p></li>
+<li><p>Org-crypt subtree encryption/decryption workflows, including per-subtree multi-recipient encryption for user/device/agent access without putting plaintext in a vendor database</p></li>
 <li><p>LSP-backed editor features</p></li>
 </ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="scoped-encryption-for-agents">Scoped encryption for agents</h1>
+<p>Org2 can use GPG-backed <code>:crypt:</code> subtrees as a local access-control layer for agent workflows. Instead of giving an assistant an entire vault or copying secrets into a hosted chat, you can encrypt only selected entries to that agent's public key. Other encrypted entries remain unreadable unless their recipient list includes the same key.</p>
+<p>This is especially useful for mixed personal/team/agent corpora:</p>
+<ul>
+<li><p>keep most private notes encrypted only to your own device keys,</p></li>
+<li><p>share a specific task, meeting note, or research subtree with one agent by adding its recipient file,</p></li>
+<li><p>sync the same encrypted files through ordinary file infrastructure,</p></li>
+<li><p>revoke future access by removing the agent recipient and re-encrypting the subtree.</p></li>
+</ul>
+<p>The important bit is that the boundary is explicit in the note itself, not hidden in a SaaS permission screen.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="planning-agenda">Planning + agenda</h1>
