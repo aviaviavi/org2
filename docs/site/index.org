@@ -7,12 +7,12 @@
   <div class="org2-hero-points" aria-label="Org2 value summary">
     <div><strong>Local files.</strong><span>Readable text on disk, not a hosted workspace.</span></div>
     <div><strong>Real planning.</strong><span>TODOs, dates, tags, agendas, and work views come from the same corpus.</span></div>
-    <div><strong>Grounded agents.</strong><span>Generated work can cite sources and move from draft to knowledge.</span></div>
+    <div><strong>Scoped agent access.</strong><span>Encrypt individual subtrees to the specific people, devices, or agents allowed to read them.</span></div>
   </div>
 </section>
 #+END_EXPORT
 
-Org2 is an early OSS project for turning a folder of notes, transcripts, tasks, links, and metadata into a corpus you can search, plan from, lint, refactor, hand to agents, and publish.
+Org2 is an early OSS project for turning a folder of notes, transcripts, tasks, links, and metadata into a corpus you can search, plan from, lint, refactor, hand to agents, and publish. Because the corpus is just local files, sensitive notes can stay end-to-end encrypted with keys you control, while selected subtrees can be encrypted to a particular agent when you want it to help.
 
 #+BEGIN_EXPORT html
 <section class="org2-sample" aria-labelledby="org2-sample-title">
@@ -90,6 +90,20 @@ The result is a shared working graph: notes, tasks, plans, sources, generated dr
 - *Use AI without losing the trail*: keep transcripts and imports as sources, generate drafts with citations, and promote outputs into lasting notes when they are ready.
 - *Keep links from rotting*: generate IDs, inspect backlinks, linkify likely references, and lint graph health.
 - *Publish when useful*: turn the same source tree into HTML docs, a digital garden, or project documentation.
+
+
+* Private-by-default agent collaboration
+
+A useful agent workspace should not require dumping every private note into a hosted database. Org2's crypt workflow keeps encryption at the subtree boundary: one entry can be readable only by you, another can be encrypted to your phone and laptop, and a third can add an agent public key for a specific task.
+
+That gives you a practical local-first access model:
+
+- plaintext lives in your editor only when you decrypt it,
+- encrypted notes remain ordinary files that can sync through Git, iCloud, Syncthing, or any other file transport,
+- each subtree declares the recipients that should be able to open it,
+- agents only get access to the encrypted entries whose recipient list includes their key.
+
+It is not a replacement for good operational security, but it is a strong default for AI-assisted personal knowledge work: self-hosted, inspectable, GPG-based, and scoped per note instead of all-or-nothing.
 
 * Screenshots
 
