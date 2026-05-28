@@ -272,6 +272,9 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
   - `Org2: Set DEADLINE to Today` (`org2.setDeadlineToday`)
   - `Org2: Crypt Decrypt Subtree` (`org2.cryptDecryptSubtree`)
   - `Org2: Crypt Encrypt Subtree` (`org2.cryptEncryptSubtree`)
+  - `Org2: Crypt Re-encrypt Subtree` (`org2.cryptReencryptSubtree`)
+
+Configure `org2.crypt.recipients` with your default GPG recipients (for example your user/device key plus an agent key) to make encrypt/re-encrypt use multi-recipient public-key encryption from VS Code. `org2.crypt.recipientFiles` is also supported for recipient files.
   - `Org2: Capture Quick Entry` (`org2.captureQuickEntry`)
   - `Org2: Archive Subtree` (`org2.archiveSubtree`)
   - `Org2: Refile Subtree` (`org2.refileSubtree`)

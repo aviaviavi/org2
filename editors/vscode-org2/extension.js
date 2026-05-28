@@ -3145,8 +3145,8 @@ function activate(context) {
 
   async function runCryptCli(action, item) {
     const normalizedAction = String(action || '').trim().toLowerCase();
-    if (!(normalizedAction === 'encrypt' || normalizedAction === 'decrypt')) {
-      vscode.window.showWarningMessage('Org2: invalid crypt action (expected encrypt or decrypt).');
+    if (!(normalizedAction === 'encrypt' || normalizedAction === 'decrypt' || normalizedAction === 'reencrypt')) {
+      vscode.window.showWarningMessage('Org2: invalid crypt action (expected encrypt, decrypt, or reencrypt).');
       return;
     }
 
@@ -3184,16 +3184,31 @@ function activate(context) {
       line = editor.selection && editor.selection.active ? editor.selection.active.line + 1 : 1;
     }
 
-    const passphraseInput = await vscode.window.showInputBox({
-      prompt: `Org2: crypt ${normalizedAction} subtree (passphrase)`,
-      password: true,
-      ignoreFocusOut: true,
-      validateInput: (v) => (String(v || '').trim().length > 0 ? undefined : 'Passphrase is required'),
-    });
-    if (!passphraseInput) return;
-    const passphrase = String(passphraseInput);
-
     const cfg = vscode.workspace.getConfiguration('org2');
+    const configuredRecipients = Array.isArray(cfg.get('crypt.recipients'))
+      ? cfg.get('crypt.recipients').map((v) => String(v || '').trim()).filter(Boolean)
+      : [];
+    const configuredRecipientFiles = Array.isArray(cfg.get('crypt.recipientFiles'))
+      ? cfg.get('crypt.recipientFiles').map((v) => String(v || '').trim()).filter(Boolean)
+      : [];
+
+    let passphrase = '';
+    if (normalizedAction === 'decrypt' || normalizedAction === 'reencrypt' || (normalizedAction === 'encrypt' && configuredRecipients.length === 0 && configuredRecipientFiles.length === 0)) {
+      const passphraseInput = await vscode.window.showInputBox({
+        prompt: `Org2: crypt ${normalizedAction} subtree (passphrase${normalizedAction === 'encrypt' ? '' : ', optional for public-key decrypt if your agent can prompt/unlock'})`,
+        password: true,
+        ignoreFocusOut: true,
+        validateInput: (v) => {
+          if (normalizedAction === 'encrypt' && configuredRecipients.length === 0 && configuredRecipientFiles.length === 0 && String(v || '').trim().length === 0) {
+            return 'Passphrase is required when no recipients are configured';
+          }
+          return undefined;
+        },
+      });
+      if (passphraseInput === undefined) return;
+      passphrase = String(passphraseInput || '');
+    }
+
     const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
     const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
     const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
@@ -3206,8 +3221,9 @@ function activate(context) {
       String(filePath),
       '--line',
       String(line),
-      '--passphrase',
-      passphrase,
+      ...(passphrase ? ['--passphrase', passphrase] : []),
+      ...configuredRecipients.flatMap((recipient) => ['--recipient', recipient]),
+      ...configuredRecipientFiles.flatMap((recipientFile) => ['--recipient-file', recipientFile]),
       '--format',
       'json',
       '--apply',
