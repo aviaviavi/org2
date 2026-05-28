@@ -46,6 +46,7 @@
     "onCommand:org2.setDeadlineToday",
     "onCommand:org2.cryptDecryptSubtree",
     "onCommand:org2.cryptEncryptSubtree",
+    "onCommand:org2.cryptReencryptSubtree",
     "onCommand:org2.pickAgendaStatusFilter",
     "onCommand:org2.archiveSubtree",
     "onCommand:org2.refileSubtree",
@@ -147,15 +148,15 @@
       },
       {
         "command": "org2.formatWorkspaceCheck",
-        "title": "Org2: Formatter — Check Workspace Drift"
+        "title": "Org2: Formatter \u2014 Check Workspace Drift"
       },
       {
         "command": "org2.formatWorkspaceApply",
-        "title": "Org2: Formatter — Apply Workspace Formatting"
+        "title": "Org2: Formatter \u2014 Apply Workspace Formatting"
       },
       {
         "command": "org2.lintWorkspaceCorpus",
-        "title": "Org2: Corpus Lint — Graph & Artifact Health"
+        "title": "Org2: Corpus Lint \u2014 Graph & Artifact Health"
       },
       {
         "command": "org2.compileWorkspaceCorpus",
@@ -179,19 +180,19 @@
       },
       {
         "command": "org2.aiMarkDeferred",
-        "title": "Org2: AI — Mark Draft Deferred"
+        "title": "Org2: AI \u2014 Mark Draft Deferred"
       },
       {
         "command": "org2.aiMarkRejected",
-        "title": "Org2: AI — Mark Draft Rejected"
+        "title": "Org2: AI \u2014 Mark Draft Rejected"
       },
       {
         "command": "org2.aiMarkReviewed",
-        "title": "Org2: AI — Mark Draft Reviewed"
+        "title": "Org2: AI \u2014 Mark Draft Reviewed"
       },
       {
         "command": "org2.aiReviewWorkspace",
-        "title": "Org2: AI — Review Workspace / Active File"
+        "title": "Org2: AI \u2014 Review Workspace / Active File"
       },
       {
         "command": "org2.graphAuditWorkspace",
@@ -199,15 +200,15 @@
       },
       {
         "command": "org2.aiRunDraft",
-        "title": "Org2: AI — Write Draft Artifact"
+        "title": "Org2: AI \u2014 Write Draft Artifact"
       },
       {
         "command": "org2.aiSuggestLinks",
-        "title": "Org2: AI — Suggest Links & Entities"
+        "title": "Org2: AI \u2014 Suggest Links & Entities"
       },
       {
         "command": "org2.aiPromoteDraft",
-        "title": "Org2: AI — Promote Reviewed Draft"
+        "title": "Org2: AI \u2014 Promote Reviewed Draft"
       },
       {
         "command": "org2.searchWorkspace",
@@ -219,27 +220,27 @@
       },
       {
         "command": "org2.roamLinkifyPreview",
-        "title": "Org2: Roam — Linkify Preview"
+        "title": "Org2: Roam \u2014 Linkify Preview"
       },
       {
         "command": "org2.roamLinkifyApply",
-        "title": "Org2: Roam — Linkify Apply"
+        "title": "Org2: Roam \u2014 Linkify Apply"
       },
       {
         "command": "org2.roamGraph",
-        "title": "Org2: Roam — Graph Report"
+        "title": "Org2: Roam \u2014 Graph Report"
       },
       {
         "command": "org2.formatCurrentFileCheck",
-        "title": "Org2: Formatter — Check Current File Drift"
+        "title": "Org2: Formatter \u2014 Check Current File Drift"
       },
       {
         "command": "org2.formatCurrentFilePreviewDiff",
-        "title": "Org2: Formatter — Preview Current File Diff"
+        "title": "Org2: Formatter \u2014 Preview Current File Diff"
       },
       {
         "command": "org2.formatCurrentFileApply",
-        "title": "Org2: Formatter — Apply Current File Formatting"
+        "title": "Org2: Formatter \u2014 Apply Current File Formatting"
       },
       {
         "command": "org2.exportCurrentFileHtml",
@@ -285,19 +286,19 @@
       },
       {
         "command": "org2.setTodoTODO",
-        "title": "Org2: Set Todo → TODO"
+        "title": "Org2: Set Todo \u2192 TODO"
       },
       {
         "command": "org2.setTodoInProgress",
-        "title": "Org2: Set Todo → IN_PROGRESS"
+        "title": "Org2: Set Todo \u2192 IN_PROGRESS"
       },
       {
         "command": "org2.setTodoDone",
-        "title": "Org2: Set Todo → DONE"
+        "title": "Org2: Set Todo \u2192 DONE"
       },
       {
         "command": "org2.setTodoCanceled",
-        "title": "Org2: Set Todo → CANCELED"
+        "title": "Org2: Set Todo \u2192 CANCELED"
       },
       {
         "command": "org2.setScheduled",
@@ -336,6 +337,10 @@
         "title": "Org2: Crypt Encrypt Subtree"
       },
       {
+        "command": "org2.cryptReencryptSubtree",
+        "title": "Org2: Crypt Re-encrypt Subtree"
+      },
+      {
         "command": "org2.archiveSubtree",
         "title": "Org2: Archive Subtree"
       },
@@ -345,63 +350,63 @@
       },
       {
         "command": "org2.roamDailiesGotoToday",
-        "title": "Org2: Roam Dailies — Go to Today"
+        "title": "Org2: Roam Dailies \u2014 Go to Today"
       },
       {
         "command": "org2.roamDailiesGotoYesterday",
-        "title": "Org2: Roam Dailies — Go to Yesterday"
+        "title": "Org2: Roam Dailies \u2014 Go to Yesterday"
       },
       {
         "command": "org2.roamDailiesGotoTomorrow",
-        "title": "Org2: Roam Dailies — Go to Tomorrow"
+        "title": "Org2: Roam Dailies \u2014 Go to Tomorrow"
       },
       {
         "command": "org2.roamDailiesGotoDate",
-        "title": "Org2: Roam Dailies — Go to Date"
+        "title": "Org2: Roam Dailies \u2014 Go to Date"
       },
       {
         "command": "org2.roamNodeNew",
-        "title": "Org2: Roam — New Node"
+        "title": "Org2: Roam \u2014 New Node"
       },
       {
         "command": "org2.roamCopyIdLink",
-        "title": "Org2: Roam — Copy ID Link (Current Heading/File)"
+        "title": "Org2: Roam \u2014 Copy ID Link (Current Heading/File)"
       },
       {
         "command": "org2.roamCopyIdLinkById",
-        "title": "Org2: Roam — Copy ID Link (Prompt/Link)"
+        "title": "Org2: Roam \u2014 Copy ID Link (Prompt/Link)"
       },
       {
         "command": "org2.roamInsertBacklink",
-        "title": "Org2: Roam — Insert Backlink (Prompt/Link)"
+        "title": "Org2: Roam \u2014 Insert Backlink (Prompt/Link)"
       },
       {
         "command": "org2.roamOpenId",
-        "title": "Org2: Roam — Open ID (Prompt/Link)"
+        "title": "Org2: Roam \u2014 Open ID (Prompt/Link)"
       },
       {
         "command": "org2.roamOpenTitle",
-        "title": "Org2: Roam — Open Title Link (Prompt/Link)"
+        "title": "Org2: Roam \u2014 Open Title Link (Prompt/Link)"
       },
       {
         "command": "org2.roamShowBacklinks",
-        "title": "Org2: Roam — Show Backlinks (Current Heading/File)"
+        "title": "Org2: Roam \u2014 Show Backlinks (Current Heading/File)"
       },
       {
         "command": "org2.roamShowBacklinksById",
-        "title": "Org2: Roam — Show Backlinks (Prompt/Link)"
+        "title": "Org2: Roam \u2014 Show Backlinks (Prompt/Link)"
       },
       {
         "command": "org2.roamOpenBacklink",
-        "title": "Org2: Roam — Open Backlink Source (Current Heading/File)"
+        "title": "Org2: Roam \u2014 Open Backlink Source (Current Heading/File)"
       },
       {
         "command": "org2.roamOpenBacklinkById",
-        "title": "Org2: Roam — Open Backlink Source (Prompt/Link)"
+        "title": "Org2: Roam \u2014 Open Backlink Source (Prompt/Link)"
       },
       {
         "command": "org2.roamDbSync",
-        "title": "Org2: Roam — DB Sync (Ensure File IDs)"
+        "title": "Org2: Roam \u2014 DB Sync (Ensure File IDs)"
       },
       {
         "command": "org2.rerunAutoFold",
@@ -594,6 +599,11 @@
           "command": "org2.cryptEncryptSubtree",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@13.2"
+        },
+        {
+          "command": "org2.cryptReencryptSubtree",
+          "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
+          "group": "navigation@13.3"
         },
         {
           "command": "org2.archiveSubtree",
@@ -945,7 +955,7 @@
         "org2.agenda.priorityOrder": {
           "type": "string",
           "default": "",
-          "description": "Optional custom ordering for priority markers used by `agenda --sort priority` / `--group priority` (comma-separated values from `A..Z` or `0..9`, accepts bracketed forms like `[#A]`; blank keeps default A→Z then 0→9 ordering)."
+          "description": "Optional custom ordering for priority markers used by `agenda --sort priority` / `--group priority` (comma-separated values from `A..Z` or `0..9`, accepts bracketed forms like `[#A]`; blank keeps default A\u2192Z then 0\u21929 ordering)."
         },
         "org2.agenda.tagOrder": {
           "type": "string",
@@ -1224,6 +1234,22 @@
           "type": "boolean",
           "default": false,
           "description": "When VSCodeVim is active in Normal mode, remap j/k in Org/Org2 editors to VS Code cursorDown/cursorUp so folded sections navigate by visible lines."
+        },
+        "org2.crypt.recipients": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Default GPG recipients for Org2 crypt encrypt/reencrypt commands. Use this for your own device/user key plus agent keys."
+        },
+        "org2.crypt.recipientFiles": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Default GPG recipient files passed to org2 crypt encrypt/reencrypt."
         }
       }
     },

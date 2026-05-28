@@ -153,6 +153,9 @@ Available from command palette (=Cmd/Ctrl+Shift+P=):
 - =org2.setScheduledNextMonth=
 - =org2.cryptDecryptSubtree=
 - =org2.cryptEncryptSubtree=
+- =org2.cryptReencryptSubtree=
+
+Set =org2.crypt.recipients= to the default GPG recipients that should be able to open newly encrypted subtrees, such as your personal/device key plus an agent key. VS Code passes those recipients through to the CLI for encrypt/re-encrypt, while decrypt can still use the unlocked matching private key.
 - =org2.refileSubtree=
 - =org2.roamOpenTitle=
 - =org2.roamShowBacklinks=
