@@ -36,9 +36,19 @@ body {
 }
 
 #content {
+  width: 100%;
   max-width: 52rem;
   margin: 2rem auto 3rem;
   padding: 0 1rem;
+  min-width: 0;
+}
+
+#content main,
+#content section,
+#content article,
+#content .org2-headline {
+  min-width: 0;
+  max-width: 100%;
 }
 
 a { color: var(--link); }
@@ -707,8 +717,19 @@ blockquote {
 
 @media (max-width: 759px) {
   body {
+    width: 100% !important;
+    max-width: none !important;
     margin-left: 0 !important;
     margin-right: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    overflow-x: hidden;
+  }
+
+  #content {
+    margin-top: 0.75rem;
+    padding-left: 0.85rem;
+    padding-right: 0.85rem;
   }
 
   .org2-nav-menu > summary,
