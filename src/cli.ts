@@ -7303,10 +7303,12 @@ async function main(): Promise<void> {
   let planFormat: "text" | "json" | "diff" = "json";
 
   // Org-crypt (basic)
-  let cryptAction: "encrypt" | "decrypt" = "decrypt";
+  let cryptAction: "encrypt" | "decrypt" | "reencrypt" = "decrypt";
   let cryptFile = "";
   let cryptLine = 0;
   let cryptPassphrase = "";
+  let cryptRecipients: string[] = [];
+  let cryptRecipientFiles: string[] = [];
   let cryptApply = false;
   let cryptFormat: "text" | "json" | "diff" = "json";
   let cryptGpgProgram = "gpg";
@@ -7486,8 +7488,8 @@ async function main(): Promise<void> {
       // Optional subcommand: encrypt|decrypt (default decrypt)
       if (i < args.length && !args[i]!.startsWith("--")) {
         const sub = String(args[i] || "").trim().toLowerCase();
-        if (sub === "encrypt" || sub === "decrypt") {
-          cryptAction = sub as "encrypt" | "decrypt";
+        if (sub === "encrypt" || sub === "decrypt" || sub === "reencrypt") {
+          cryptAction = sub as "encrypt" | "decrypt" | "reencrypt";
           i++;
         }
       }
@@ -8307,6 +8309,22 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--recipient" || arg === "-r") {
+      i++;
+      if (i < args.length) {
+        if (command === "crypt") {
+          cryptRecipients.push(args[i]!);
+        }
+        i++;
+      }
+    } else if (arg === "--recipient-file") {
+      i++;
+      if (i < args.length) {
+        if (command === "crypt") {
+          cryptRecipientFiles.push(args[i]!);
+        }
+        i++;
+      }
     } else if (arg === "--gpg-program") {
       i++;
       if (i < args.length) {
@@ -8715,7 +8733,7 @@ Core commands:
   org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
   org2 todo <set|toggle> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
-  org2 crypt <encrypt|decrypt> --file FILE (--line N | --pos LINE[:COL]) --passphrase PASS [--gpg-program PATH] [--apply]
+  org2 crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--gpg-program PATH] [--apply]
   org2 capture --file FILE --title TITLE [--template note|task] [--apply]
   org2 capture (--text TEXT|--stdin|--url URL|--file SOURCE) --to FILE [--title TITLE] [--apply]
   org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--apply]
@@ -8777,7 +8795,7 @@ function printScopedUsage(
     exportAction: "html";
     todoAction: "set" | "toggle";
     planAction: "set" | "today";
-    cryptAction: "encrypt" | "decrypt";
+    cryptAction: "encrypt" | "decrypt" | "reencrypt";
     idAction: "get" | "ensure";
     roamAction: "db-sync" | "backlinks" | "node" | "link" | "linkify" | "graph";
     graphAction: "audit" | "repair-candidates";
@@ -8833,13 +8851,15 @@ Flags:
     text = `org2 crypt ${options.cryptAction}
 
 Usage:
-  org2 crypt <encrypt|decrypt> --file FILE (--line N | --pos LINE[:COL]) --passphrase PASS [--gpg-program PATH] [--apply]
+  org2 crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--gpg-program PATH] [--apply]
 
 Flags:
   --file FILE         Target file
   --line N            Heading line number
   --pos LINE[:COL]    Heading position
-  --passphrase PASS   Passphrase to use
+  --passphrase PASS   Symmetric encryption passphrase, or private-key passphrase for decrypt/reencrypt
+  --recipient USER     Public-key recipient (repeatable)
+  --recipient-file FILE Public-key recipient file (repeatable)
   --gpg-program PATH  Optional gpg binary path
   --apply             Write changes instead of previewing`;
   } else if (command === "capture") {
@@ -12190,8 +12210,8 @@ Flags:
       console.error("Error: crypt requires --line N (1-based) or --pos LINE[:COL]");
       process.exit(1);
     }
-    if (!cryptPassphrase) {
-      console.error("Error: crypt requires --passphrase PASS");
+    if (cryptAction !== "decrypt" && !cryptPassphrase && cryptRecipients.length === 0 && cryptRecipientFiles.length === 0) {
+      console.error("Error: crypt encrypt/reencrypt requires --passphrase PASS or at least one --recipient/--recipient-file");
       process.exit(1);
     }
     if (!cryptGpgProgram.trim()) {
@@ -12245,18 +12265,16 @@ Flags:
       action: "encrypt" | "decrypt",
       inputText: string,
     ): { ok: boolean; stdout: string; stderr: string; error?: string } => {
-      const commonArgs = [
-        "--batch",
-        "--yes",
-        "--pinentry-mode",
-        "loopback",
-        "--passphrase",
-        cryptPassphrase,
-      ];
+      const commonArgs = ["--batch", "--yes", "--pinentry-mode", "loopback", "--trust-model", "always"];
+      if (cryptPassphrase) commonArgs.push("--passphrase", cryptPassphrase);
+      const recipientArgs = cryptRecipients.flatMap((recipient) => ["--recipient", recipient]);
+      const recipientFileArgs = cryptRecipientFiles.flatMap((recipientFile) => ["--recipient-file", recipientFile]);
       const commandArgs =
         action === "decrypt"
           ? [...commonArgs, "--decrypt"]
-          : [...commonArgs, "--armor", "--symmetric", "--cipher-algo", "AES256"];
+          : recipientArgs.length > 0 || recipientFileArgs.length > 0
+            ? [...commonArgs, "--armor", "--encrypt", ...recipientArgs, ...recipientFileArgs]
+            : [...commonArgs, "--armor", "--symmetric", "--cipher-algo", "AES256"];
 
       const res = spawnSync(cryptGpgProgram, commandArgs, {
         input: inputText,
@@ -12308,7 +12326,7 @@ Flags:
     let outText = beforeRaw;
     let changed = false;
 
-    if (cryptAction === "decrypt") {
+    const decryptSubtree = (): string[] => {
       if (blockStart < 0 || blockEnd < blockStart) {
         console.error("Error: crypt decrypt found no armored PGP block in target subtree");
         process.exit(1);
@@ -12324,16 +12342,11 @@ Flags:
       }
 
       const plainLines = splitPreservingTrailing(gpg.stdout);
-      const outLines = [...lines.slice(0, blockStart), ...plainLines, ...lines.slice(blockEnd + 1)];
-      outText = outLines.join("\n");
-      changed = outText !== beforeRaw;
-    } else {
-      if (blockStart >= 0 && blockEnd >= blockStart) {
-        console.error("Error: crypt encrypt target subtree already contains an armored PGP block");
-        process.exit(1);
-      }
+      return [...lines.slice(0, blockStart), ...plainLines, ...lines.slice(blockEnd + 1)];
+    };
 
-      const plainBodyLines = lines.slice(headingIdx + 1, subtreeEnd);
+    const encryptSubtree = (sourceLines: string[], sourceHeadingIdx: number, sourceSubtreeEnd: number): string[] => {
+      const plainBodyLines = sourceLines.slice(sourceHeadingIdx + 1, sourceSubtreeEnd);
       const plainBody = plainBodyLines.join("\n").trim();
       if (!plainBody) {
         console.error("Error: crypt encrypt found no plaintext body in target subtree");
@@ -12349,8 +12362,30 @@ Flags:
       }
 
       const encryptedLines = splitPreservingTrailing(gpg.stdout);
-      const outLines = [...lines.slice(0, headingIdx + 1), ...encryptedLines, ...lines.slice(subtreeEnd)];
-      outText = outLines.join("\n");
+      return [...sourceLines.slice(0, sourceHeadingIdx + 1), ...encryptedLines, ...sourceLines.slice(sourceSubtreeEnd)];
+    };
+
+    if (cryptAction === "decrypt") {
+      outText = decryptSubtree().join("\n");
+      changed = outText !== beforeRaw;
+    } else if (cryptAction === "encrypt") {
+      if (blockStart >= 0 && blockEnd >= blockStart) {
+        console.error("Error: crypt encrypt target subtree already contains an armored PGP block");
+        process.exit(1);
+      }
+      outText = encryptSubtree(lines, headingIdx, subtreeEnd).join("\n");
+      changed = outText !== beforeRaw;
+    } else {
+      const decryptedLines = decryptSubtree();
+      let newSubtreeEnd = decryptedLines.length;
+      for (let idx = headingIdx + 1; idx < decryptedLines.length; idx += 1) {
+        const m = /^(\*+)\s+/.exec(decryptedLines[idx] ?? "");
+        if (m && m[1]!.length <= headingLevel) {
+          newSubtreeEnd = idx;
+          break;
+        }
+      }
+      outText = encryptSubtree(decryptedLines, headingIdx, newSubtreeEnd).join("\n");
       changed = outText !== beforeRaw;
     }
 
@@ -12374,6 +12409,8 @@ Flags:
             applied: cryptApply,
             changed,
             gpgProgram: cryptGpgProgram,
+            recipients: cryptRecipients,
+            recipientFiles: cryptRecipientFiles,
           },
           null,
           2,

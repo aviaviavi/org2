@@ -1,1 +1,1 @@
-Error: crypt requires --passphrase PASS
+Error: crypt encrypt/reencrypt requires --passphrase PASS or at least one --recipient/--recipient-file

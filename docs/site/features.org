@@ -25,7 +25,7 @@ What already works well today:
 - HTML export and multi-file publishing
 - Cited workspace search/query for asking factual questions against source notes
 - Roam-style IDs, backlinks, dailies, node creation, linkify previews with semantic/alias-aware suggestions, AI-assisted review reports, and graph reports
-- Org-crypt subtree encryption/decryption workflows
+- Org-crypt subtree encryption/decryption workflows, including multi-recipient encryption for shared user/device/agent access without putting the plaintext in a vendor database
 - LSP-backed editor features
 
 * Planning + agenda

@@ -173,9 +173,25 @@ Org2 supports both title-based wiki links and explicit =id:= links, with backlin
 
 * Org-crypt
 
+Org2 keeps the existing Org-style =:crypt:= convention and encrypts at the subtree boundary. A subtree can be encrypted symmetrically with a passphrase, or to multiple public-key recipients so the same private note can be opened by your user key, another device key, and an agent key without sharing one password around.
+
 #+begin_src sh
+# Passphrase/symmetric mode
 npm run org2 -- crypt decrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply
 npm run org2 -- crypt encrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply
+
+# Multi-recipient public-key mode
+npm run org2 -- crypt encrypt --file secrets.org2 --line 42 \
+  --recipient user@example.com \
+  --recipient agent@example.com \
+  --apply
+
+# Migration: decrypt an existing block, then re-encrypt it for the new recipients
+npm run org2 -- crypt reencrypt --file secrets.org2 --line 42 \
+  --passphrase 'old-passphrase-if-needed' \
+  --recipient user@example.com \
+  --recipient agent@example.com \
+  --apply
 #+end_src
 
 * Export + publish
