@@ -10,6 +10,22 @@ Use Markdown when you mostly need readable pages that render everywhere.
 
 Use Org2 when you want a local plain-text corpus that you can write in, plan from, query, lint, refactor, hand to tools or agents, and publish from without moving the work into a hosted app.
 
+* Feature scan
+
+| Capability | Markdown | Org2 |
+|---|---|---|
+| Best default use | Prose documents and rendered pages | Local knowledge corpus and workflow runtime |
+| Plain-text storage | Yes | Yes |
+| Core task semantics | Checklists or conventions | TODO states, planning lines, priorities, effort, repeaters |
+| Agenda/work views | App or plugin conventions | First-class compiler output |
+| Stable note identity | File paths and headings by convention | IDs, =id:= links, wiki links, backlinks, node creation |
+| Structured metadata | Front matter or app-specific extensions | Drawers, properties, tags, artifact roles, provenance |
+| Graph/link health | App-specific | Backlink, graph, lint, and ambiguity checks |
+| Editor independence | High for prose, weaker for app semantics | CLI/LSP/compiler model designed for many editors |
+| Automation boundary | Usually parse Markdown or app conventions | Query, agenda, graph, lint, compile, and export outputs |
+| AI/provenance workflows | Possible, usually custom | Designed around raw sources, drafts, citations, and promotion |
+| Publishing | Excellent ecosystem | Built-in HTML export and multi-file publishing |
+
 * Where Org2 is the obvious choice
 
 ** Your tasks need to be data, not decoration

@@ -10,6 +10,22 @@ Use Obsidian when you want a polished, batteries-included knowledge app with a m
 
 Use Org2 when you want your notes to behave more like source code for a local knowledge system: parseable, lintable, queryable, refactorable, schedulable, publishable, fully open source, and available to automation without depending on one app's runtime.
 
+* Feature scan
+
+| Capability | Obsidian | Org2 |
+|---|---|---|
+| Best default use | Polished personal knowledge app | Portable knowledge compiler/runtime |
+| Storage model | Local Markdown vault | Local Org/Org2 corpus |
+| License/runtime | Proprietary app with plugin APIs | Apache-2.0 open source parser, CLI, LSP, compiler |
+| Product maturity | Strong desktop/mobile app, themes, sync, publish | Early but usable CLI + VS Code workflow |
+| Plugin ecosystem | Huge community plugin ecosystem | Early ecosystem, focused on shared semantic core |
+| Visual knowledge browsing | Strong graph, local graph, Canvas, previews | Graph reports and editor views, less visual-app focused today |
+| Planning semantics | Markdown tasks/properties/plugins/Bases | Core TODO, schedule, deadline, priority, effort, agenda model |
+| Database-like views | Bases and plugins | Compiler/query outputs and structured corpus artifacts |
+| Automation boundary | Mostly app/plugin runtime or Markdown conventions | CLI/LSP/JSON outputs below any editor |
+| AI/provenance workflows | Possible through plugins and conventions | Corpus-flow model for raw sources, drafts, citations, provenance |
+| Long-term forkability | Notes are portable; app is not OSS | Notes and runtime are forkable and auditable |
+
 * Where Obsidian is stronger
 
 ** Product maturity
