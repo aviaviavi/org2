@@ -2,6 +2,22 @@
 
 Short version: Org2 is a local-first knowledge compiler that keeps Org's durable plain-text strengths while making the semantic/runtime layer portable across editors, automation, and publishing workflows.
 
+* Feature scan
+
+| Capability | Org Mode | Org2 |
+|---|---|---|
+| Best default use | Deep Org workflows inside Emacs | Portable Org-shaped corpus across editors/tools |
+| Runtime center | Emacs Lisp and Emacs buffers | Standalone parser, CLI, LSP, compiler |
+| Editor experience | Best-in-class inside Emacs | Strongest today in VS Code; designed for more editors |
+| Existing ecosystem | Mature, broad, battle-tested | Early, focused on portable shared infrastructure |
+| File compatibility | Native =.org= | Reads =.org=; recommends =.org2= for new files |
+| Compatibility goal | Defines the historical behavior | Practical compatibility, not bug-for-bug cloning |
+| Planning/agenda | Deep, mature, highly configurable | Core TODO/planning/agenda model with rich filters |
+| Publishing | Mature Org export ecosystem | Built-in HTML export and project publishing |
+| Automation boundary | Usually Emacs runtime or exported data | CLI/JSON/LSP/compiler outputs usable outside an editor |
+| AI/provenance workflows | Possible through user configuration | Explicit corpus-flow, artifact metadata, and source-citation direction |
+| Portability | Files are portable; runtime strongest in Emacs | Runtime designed to be portable from day one |
+
 * High-level differences
 
 - *Runtime model*

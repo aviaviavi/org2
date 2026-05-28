@@ -55,6 +55,26 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 </header>
 <p>Short version: Org2 is a local-first knowledge compiler that keeps Org's durable plain-text strengths while making the semantic/runtime layer portable across editors, automation, and publishing workflows.</p>
 <section class="org2-headline level-1">
+<h1 id="feature-scan">Feature scan</h1>
+<table>
+<tbody>
+<tr><td>Capability</td><td>Org Mode</td><td>Org2</td></tr>
+<tr><td>---</td><td>---</td><td>---</td></tr>
+<tr><td>Best default use</td><td>Deep Org workflows inside Emacs</td><td>Portable Org-shaped corpus across editors/tools</td></tr>
+<tr><td>Runtime center</td><td>Emacs Lisp and Emacs buffers</td><td>Standalone parser, CLI, LSP, compiler</td></tr>
+<tr><td>Editor experience</td><td>Best-in-class inside Emacs</td><td>Strongest today in VS Code; designed for more editors</td></tr>
+<tr><td>Existing ecosystem</td><td>Mature, broad, battle-tested</td><td>Early, focused on portable shared infrastructure</td></tr>
+<tr><td>File compatibility</td><td>Native <code>.org</code></td><td>Reads <code>.org</code>; recommends <code>.org2</code> for new files</td></tr>
+<tr><td>Compatibility goal</td><td>Defines the historical behavior</td><td>Practical compatibility, not bug-for-bug cloning</td></tr>
+<tr><td>Planning/agenda</td><td>Deep, mature, highly configurable</td><td>Core TODO/planning/agenda model with rich filters</td></tr>
+<tr><td>Publishing</td><td>Mature Org export ecosystem</td><td>Built-in HTML export and project publishing</td></tr>
+<tr><td>Automation boundary</td><td>Usually Emacs runtime or exported data</td><td>CLI/JSON/LSP/compiler outputs usable outside an editor</td></tr>
+<tr><td>AI/provenance workflows</td><td>Possible through user configuration</td><td>Explicit corpus-flow, artifact metadata, and source-citation direction</td></tr>
+<tr><td>Portability</td><td>Files are portable; runtime strongest in Emacs</td><td>Runtime designed to be portable from day one</td></tr>
+</tbody>
+</table>
+</section>
+<section class="org2-headline level-1">
 <h1 id="high-level-differences">High-level differences</h1>
 <ul>
 <li>
