@@ -49,60 +49,108 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <body>
 <div id="content" class="content">
 <main class="org2-document">
-<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open docs search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a><a href="org2-vs-obsidian.html">Org2 vs Obsidian</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open docs search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
 <header class="org2-document-header">
 <h1 class="org2-document-title">Org2 vs Markdown</h1>
 </header>
-<p>Markdown is great for lightweight prose. Org2 is better when your notes are inputs to a local knowledge compiler: a corpus that can produce agendas, graph views, diagnostics, editor intelligence, and published docs.</p>
+<p>Markdown won lightweight prose. It is excellent when the unit of work is a document: a README, a blog post, a design note, a help page.</p>
+<p>Org2 is for the moment your notes stop being just documents. When the same folder needs to hold tasks, deadlines, source material, durable IDs, backlinks, generated drafts, diagnostics, editor intelligence, and published output, Org2 becomes the more obvious choice.</p>
 <section class="org2-headline level-1">
-<h1 id="where-org2-beats-markdown">Where Org2 beats Markdown</h1>
+<h1 id="the-short-decision">The short decision</h1>
+<p>Use Markdown when you mostly need readable pages that render everywhere.</p>
+<p>Use Org2 when you want a local plain-text corpus that you can write in, plan from, query, lint, refactor, hand to tools or agents, and publish from without moving the work into a hosted app.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="where-org2-is-the-obvious-choice">Where Org2 is the obvious choice</h1>
 <section class="org2-headline level-2">
-<h2 id="1-planning-is-native">1) Planning is native</h2>
-<p>Org2 has first-class TODO states, scheduling, deadlines, and agenda workflows.
-In Markdown, this is usually plugin conventions or checklists with weak semantics.</p>
+<h2 id="your-tasks-need-to-be-data-not-decoration">Your tasks need to be data, not decoration</h2>
+<p>A Markdown checkbox is easy to read, but it is usually just a line of text. Org2 has first-class TODO states, scheduled dates, deadlines, repeaters, priorities, effort, tags, and planning edits. That means the same plain files can drive agenda views, status filters, date windows, grouping, sorting, and editor commands.</p>
+<p>That difference matters when you stop asking &quot;what did I write?&quot; and start asking &quot;what is due, blocked, stale, delegated, high effort, or connected to this project?&quot;</p>
 </section>
 <section class="org2-headline level-2">
-<h2 id="2-rich-structure-without-hacks">2) Rich structure without hacks</h2>
+<h2 id="your-notes-need-stable-identity">Your notes need stable identity</h2>
+<p>Markdown links are great for pages. Knowledge work also needs durable nodes. Org2 supports stable IDs, <code>id:</code> links, wiki links, backlinks, node creation, graph reports, and health checks around broken or ambiguous references.</p>
+<p>That makes Org2 a better fit for long-lived research notes, project memory, meeting trails, and roam-style workflows where a heading can be a real addressable object, not just text inside a file.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="you-want-structure-without-leaving-plain-text">You want structure without leaving plain text</h2>
+<p>Markdown can grow extensions forever: front matter, task-list syntax, wiki links, callouts, custom attributes, app metadata, and fenced conventions. The problem is not that these are bad. The problem is that every app chooses a different subset.</p>
+<p>Org2 makes the important structure explicit in one syntax family:</p>
 <ul>
-<li><p>Property drawers</p></li>
-<li><p>Planning lines</p></li>
-<li><p>ID links and wiki links</p></li>
-<li><p>Repeaters/timestamps</p></li>
-<li><p>Structured lists/tables/blocks</p></li>
+<li><p>headlines and nested outlines</p></li>
+<li><p>TODO states and planning lines</p></li>
+<li><p>drawers and properties</p></li>
+<li><p>timestamps and repeaters</p></li>
+<li><p>tags, priorities, effort, and IDs</p></li>
+<li><p>blocks, tables, lists, links, and source ranges</p></li>
 </ul>
-<p>Markdown can emulate some of this, but usually through extensions that do not round-trip cleanly.</p>
+<p>The payoff is that tools do not have to guess what the text means.</p>
 </section>
 <section class="org2-headline level-2">
-<h2 id="3-better-long-term-knowledge-workflows">3) Better long-term knowledge workflows</h2>
-<p>Org2 supports roam-style workflows directly:</p>
-<ul>
-<li><p>stable IDs</p></li>
-<li><p>backlinks</p></li>
-<li><p>node creation/linking</p></li>
-</ul>
-<p>In Markdown setups, this tends to be app-specific and less portable.</p>
+<h2 id="ai-changes-the-verbosity-tradeoff">AI changes the verbosity tradeoff</h2>
+<p>Org2 structure can look heavy if you imagine typing every property, date, source pointer, and provenance trail by hand. That is no longer the right default assumption.</p>
+<p>Humans should still be able to write terse notes:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* TODO Follow up with design by Friday</code></pre>
+<p>Then tools and agents can enrich the note when the extra structure is useful: assign an ID, normalize the date, connect it to a project, cite the source transcript, add provenance, or prepare a reviewable draft. The human keeps the capture surface small; the corpus gains the audit trail and machine-readable context when it matters.</p>
+<p>That makes Org2's explicitness less like clerical overhead and more like a target format for collaboration between humans, editors, scripts, and agents.</p>
 </section>
 <section class="org2-headline level-2">
-<h2 id="4-compiler-outputs-beyond-rendered-prose">4) Compiler outputs beyond rendered prose</h2>
-<p>Org2 is designed to compile one corpus into many outputs:</p>
+<h2 id="you-want-one-corpus-to-produce-many-views">You want one corpus to produce many views</h2>
+<p>Markdown's strongest default output is rendered prose. Org2 treats prose as one output among several. The same source tree can compile into:</p>
 <ul>
-<li><p>agenda queries</p></li>
-<li><p>TODO/planning edits</p></li>
+<li><p>agenda and work views</p></li>
+<li><p>TODO and planning edits</p></li>
 <li><p>backlink and graph views</p></li>
-<li><p>lint/health diagnostics</p></li>
+<li><p>lint and corpus-health diagnostics</p></li>
 <li><p>formatter output</p></li>
-<li><p>HTML export and publish pipelines</p></li>
+<li><p>cited search/query results</p></li>
+<li><p>HTML export and published sites</p></li>
+<li><p>editor features through the shared LSP backend</p></li>
 </ul>
-<p>Markdown has strong toolchains, but task, agenda, and graph semantics usually arrive through app-specific conventions.</p>
+<p>That is the core pitch: Org2 is not only a markup language. It is a compiler/runtime for personal and team knowledge.</p>
 </section>
+<section class="org2-headline level-2">
+<h2 id="you-expect-editors-clis-and-agents-to-share-the-same-model">You expect editors, CLIs, and agents to share the same model</h2>
+<p>Markdown workflows often depend on one app's interpretation of your files. Org2 puts the semantic model underneath the editor. VS Code, the CLI, publishing, graph tools, JSON output, linting, and future integrations can all read the same corpus model.</p>
+<p>That matters for automation. A script or agent should not have to scrape a rendered page or reverse-engineer an editor extension. It should be able to ask the corpus for tasks, links, sources, provenance, generated artifacts, and publishable output.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="you-need-ai-workflows-with-a-trail">You need AI workflows with a trail</h2>
+<p>AI makes the Markdown-vs-Org2 distinction sharper. If generated summaries, extracted tasks, source transcripts, and reviewed notes all live as loose prose, the trail gets fuzzy fast.</p>
+<p>Org2 gives those workflows natural boundaries: raw source material, reviewed notes, compiled semantics, derived views, generated drafts, and published output. Properties such as artifact role and provenance let generated work stay inspectable instead of quietly blending into durable knowledge.</p>
+</section>
+</section>
+<section class="org2-headline level-1">
+<h1 id="a-concrete-difference">A concrete difference</h1>
+<p>In Markdown, a task might look like this:</p>
+<pre class="org2-src language-markdown" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-markdown">- [ ] Follow up with design by Friday #product</code></pre>
+<p>Readable, portable, and perfectly fine for a lightweight note.</p>
+<p>In Org2, the same work can become a real corpus object:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* TODO Follow up with design :product:
+  SCHEDULED: &lt;2026-06-01 Mon&gt;
+  DEADLINE:  &lt;2026-06-05 Fri&gt;
+  :PROPERTIES:
+  :ID: design-followup
+  :EFFORT: 30m
+  :END:
+
+  See [[id:design-review][design review]].</code></pre>
+<p>That entry is still plain text. But now it is also schedulable, queryable, linkable, refactorable, publishable, and available to editor and automation workflows.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="where-markdown-still-wins">Where Markdown still wins</h1>
 <ul>
-<li><p>Ubiquity for simple README/docs prose</p></li>
-<li><p>Lower syntax surface for basic writing</p></li>
-<li><p>Huge ecosystem for static docs/blog engines</p></li>
+<li><p>Simple README files and docs pages</p></li>
+<li><p>Blog posts and content that only needs to render</p></li>
+<li><p>Teams already standardized on a Markdown-based static site stack</p></li>
+<li><p>Low-syntax writing where tasks, graph structure, provenance, and automation do not matter</p></li>
 </ul>
+<p>Markdown is the right default for prose. Org2 is the better bet when your plain-text notes are becoming operating infrastructure.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="bottom-line">Bottom line</h1>
+<p>Choose Markdown for documents.</p>
+<p>Choose Org2 when your notes are a working system: a local corpus that carries plans, sources, relationships, generated artifacts, health checks, editor behavior, and publishable knowledge without giving up plain text.</p>
 </section>
 </main>
 </div>
