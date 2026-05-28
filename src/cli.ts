@@ -12210,10 +12210,6 @@ Flags:
       console.error("Error: crypt requires --line N (1-based) or --pos LINE[:COL]");
       process.exit(1);
     }
-    if (cryptAction !== "decrypt" && !cryptPassphrase && cryptRecipients.length === 0 && cryptRecipientFiles.length === 0) {
-      console.error("Error: crypt encrypt/reencrypt requires --passphrase PASS or at least one --recipient/--recipient-file");
-      process.exit(1);
-    }
     if (!cryptGpgProgram.trim()) {
       console.error("Error: crypt requires --gpg-program PATH");
       process.exit(1);
@@ -12244,6 +12240,61 @@ Flags:
         subtreeEnd = idx;
         break;
       }
+    }
+
+    const splitCryptPropertyValues = (raw: string): string[] =>
+      String(raw || "")
+        .split(/[,\n]/)
+        .map((v) => v.trim())
+        .filter(Boolean);
+
+    const parseCryptProperties = (sourceLines: string[], sourceHeadingIdx: number, sourceSubtreeEnd: number) => {
+      const recipients: string[] = [];
+      const recipientFiles: string[] = [];
+      let inDrawer = false;
+      for (let idx = sourceHeadingIdx + 1; idx < sourceSubtreeEnd; idx += 1) {
+        const line = sourceLines[idx] ?? "";
+        if (!inDrawer) {
+          if (/^\s*:PROPERTIES:\s*$/i.test(line)) {
+            inDrawer = true;
+          } else if (line.trim()) {
+            break;
+          }
+          continue;
+        }
+        if (/^\s*:END:\s*$/i.test(line)) break;
+        const m = /^\s*:([^:]+):\s*(.*?)\s*$/.exec(line);
+        if (!m) continue;
+        const key = m[1]!.trim().toUpperCase().replace(/-/g, "_");
+        const values = splitCryptPropertyValues(m[2] ?? "");
+        if (key === "CRYPT_RECIPIENT" || key === "CRYPT_RECIPIENTS") {
+          recipients.push(...values);
+        } else if (key === "CRYPT_RECIPIENT_FILE" || key === "CRYPT_RECIPIENT_FILES") {
+          recipientFiles.push(
+            ...values.map((value) => (path.isAbsolute(value) ? value : path.resolve(path.dirname(cryptFile), value))),
+          );
+        }
+      }
+      return { recipients, recipientFiles };
+    };
+
+    const applyCryptProperties = (sourceLines: string[], sourceHeadingIdx: number, sourceSubtreeEnd: number) => {
+      const props = parseCryptProperties(sourceLines, sourceHeadingIdx, sourceSubtreeEnd);
+      for (const recipient of props.recipients) {
+        if (!cryptRecipients.includes(recipient)) cryptRecipients.push(recipient);
+      }
+      for (const recipientFile of props.recipientFiles) {
+        if (!cryptRecipientFiles.includes(recipientFile)) cryptRecipientFiles.push(recipientFile);
+      }
+    };
+
+    applyCryptProperties(lines, headingIdx, subtreeEnd);
+
+    if (cryptAction !== "decrypt" && !cryptPassphrase && cryptRecipients.length === 0 && cryptRecipientFiles.length === 0) {
+      console.error(
+        "Error: crypt encrypt/reencrypt requires --passphrase PASS, at least one --recipient/--recipient-file, or CRYPT_RECIPIENT(S)/CRYPT_RECIPIENT_FILE(S) properties",
+      );
+      process.exit(1);
     }
 
     const beginRe = /^\s*-----BEGIN PGP MESSAGE-----\s*$/;
@@ -12346,7 +12397,17 @@ Flags:
     };
 
     const encryptSubtree = (sourceLines: string[], sourceHeadingIdx: number, sourceSubtreeEnd: number): string[] => {
-      const plainBodyLines = sourceLines.slice(sourceHeadingIdx + 1, sourceSubtreeEnd);
+      applyCryptProperties(sourceLines, sourceHeadingIdx, sourceSubtreeEnd);
+      let encryptedBodyStart = sourceHeadingIdx + 1;
+      if (/^\s*:PROPERTIES:\s*$/i.test(sourceLines[encryptedBodyStart] ?? "")) {
+        for (let idx = encryptedBodyStart + 1; idx < sourceSubtreeEnd; idx += 1) {
+          if (/^\s*:END:\s*$/i.test(sourceLines[idx] ?? "")) {
+            encryptedBodyStart = idx + 1;
+            break;
+          }
+        }
+      }
+      const plainBodyLines = sourceLines.slice(encryptedBodyStart, sourceSubtreeEnd);
       const plainBody = plainBodyLines.join("\n").trim();
       if (!plainBody) {
         console.error("Error: crypt encrypt found no plaintext body in target subtree");
@@ -12362,7 +12423,7 @@ Flags:
       }
 
       const encryptedLines = splitPreservingTrailing(gpg.stdout);
-      return [...sourceLines.slice(0, sourceHeadingIdx + 1), ...encryptedLines, ...sourceLines.slice(sourceSubtreeEnd)];
+      return [...sourceLines.slice(0, encryptedBodyStart), ...encryptedLines, ...sourceLines.slice(sourceSubtreeEnd)];
     };
 
     if (cryptAction === "decrypt") {

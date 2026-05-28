@@ -5165,6 +5165,12 @@ function activate(context) {
     })
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand('org2.cryptReencryptSubtree', async (item) => {
+      await runCryptCli('reencrypt', item);
+    })
+  );
+
   // Style [[url][desc]] links for readability without changing underlying text layout.
   const org2LinkDescDecoration = vscode.window.createTextEditorDecorationType({
     color: new vscode.ThemeColor('textLink.foreground'),

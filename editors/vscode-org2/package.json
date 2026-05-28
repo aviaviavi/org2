@@ -1484,6 +1484,24 @@
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {
+        "key": "ctrl+; c e",
+        "mac": "cmd+; c e",
+        "command": "org2.cryptEncryptSubtree",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; c d",
+        "mac": "cmd+; c d",
+        "command": "org2.cryptDecryptSubtree",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
+        "key": "ctrl+; c r",
+        "mac": "cmd+; c r",
+        "command": "org2.cryptReencryptSubtree",
+        "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
+      },
+      {
         "key": "ctrl+; x",
         "mac": "cmd+; x",
         "command": "org2.archiveSubtree",
