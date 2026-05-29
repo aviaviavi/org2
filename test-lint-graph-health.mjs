@@ -84,10 +84,30 @@ fs.writeFileSync(path.join(tmpDir, 'compiled', 'report-copy.org2'), `#+TITLE: Co
 
 Duplicate generated artifact ID.
 `);
+const doubleFileId = path.join(tmpDir, 'double-file-id.org2');
+fs.writeFileSync(doubleFileId, `:PROPERTIES:
+:ID: 66666666-6666-4666-8666-666666666666
+:END:
+
+#+TITLE: Double File ID
+
+:PROPERTIES:
+:ID: 77777777-7777-4777-8777-777777777777
+:END:
+`);
+
+const titleBeforeDrawer = path.join(tmpDir, 'title-before-drawer.org2');
+fs.writeFileSync(titleBeforeDrawer, `#+TITLE: Title Before Drawer
+
+:PROPERTIES:
+:ID: 88888888-8888-4888-8888-888888888888
+:END:
+`);
+
 
 const json = JSON.parse(execFileSync('node', [cli, 'lint', '--dir', tmpDir, '--recursive', '--format', 'json'], { encoding: 'utf8' }));
 assert.equal(json.$schema, 'org2:lint:v1');
-assert.equal(json.checkedFiles, 7);
+assert.equal(json.checkedFiles, 9);
 
 const rules = new Set(json.issues.map((issue) => issue.rule));
 assert.ok(rules.has('unresolved-wiki-link'));
@@ -104,6 +124,9 @@ assert.ok(json.issues.some((issue) => issue.rule === 'ambiguous-wiki-label' && /
 assert.ok(json.issues.some((issue) => issue.rule === 'artifact-stale-source-mtime' && issue.file.endsWith(path.join('compiled', 'report.org2')) && issue.line === 3));
 assert.ok(json.issues.some((issue) => issue.rule === 'artifact-source-hash-mismatch' && issue.file.endsWith(path.join('compiled', 'report.org2')) && issue.line === 3));
 
+assert.ok(json.issues.some((issue) => issue.rule === 'file-multiple-id-drawers' && issue.file.endsWith('double-file-id.org2')));
+assert.equal(execFileSync('node', [cli, 'id', 'get', '--file', titleBeforeDrawer], { encoding: 'utf8' }).trim(), '88888888-8888-4888-8888-888888888888');
+
 const text = execFileSync('node', [cli, 'lint', '--dir', tmpDir, '--recursive'], { encoding: 'utf8' });
 assert.match(text, /WARNING unresolved-wiki-link/);
 assert.match(text, /WARNING ambiguous-wiki-label/);
@@ -113,7 +136,7 @@ console.log('✓ lint-graph-health');
 
 const audit = JSON.parse(execFileSync('node', [cli, 'graph', 'audit', '--dir', tmpDir, '--recursive', '--format', 'json'], { encoding: 'utf8' }));
 assert.equal(audit.$schema, 'org2:graph-audit:v1');
-assert.equal(audit.summary.scannedFiles, 7);
+assert.equal(audit.summary.scannedFiles, 9);
 const auditTypes = new Set(audit.findings.map((finding) => finding.type));
 assert.ok(auditTypes.has('broken-link'));
 assert.ok(auditTypes.has('orphan-note'));

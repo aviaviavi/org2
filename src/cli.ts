@@ -10923,25 +10923,19 @@ Flags:
         if (m) return { id: m[1]!, line: j + 1 };
       }
 
-      // Look for a top-of-file :PROPERTIES: drawer.
-      // Allow leading blank lines and comments.
-      let idx = 0;
-      while (idx < lines.length) {
+      // Look for any file-level :PROPERTIES: drawer before the first headline.
+      // This supports both common layouts: drawer-before-title and title-before-drawer.
+      for (let idx = 0; idx < lines.length; idx += 1) {
+        if (/^(\*+)\s+/.test(lines[idx] ?? "")) break;
         const l = (lines[idx] ?? "").trim();
-        if (l === "" || l.startsWith("#")) {
-          idx += 1;
-          continue;
+        if (l !== ":PROPERTIES:") continue;
+
+        for (let j = idx + 1; j < lines.length; j += 1) {
+          const inner = (lines[j] ?? "").trim();
+          if (inner === ":END:") break;
+          const m = /^:ID:\s*(\S+)\s*$/.exec(inner);
+          if (m) return { id: m[1]!, line: j + 1 };
         }
-        break;
-      }
-
-      if ((lines[idx] ?? "").trim() !== ":PROPERTIES:") return null;
-
-      for (let j = idx + 1; j < lines.length; j += 1) {
-        const l = (lines[j] ?? "").trim();
-        if (l === ":END:") return null;
-        const m = /^:ID:\s*(\S+)\s*$/.exec(l);
-        if (m) return { id: m[1]!, line: j + 1 };
       }
 
       return null;
@@ -10999,8 +10993,22 @@ Flags:
     }
 
     const newId = idForced || crypto.randomUUID();
-    const header = `:PROPERTIES:\n:ID: ${newId}\n:END:\n\n`;
-    const out = header + raw.replace(/^\n+/, "");
+    const drawer = `:PROPERTIES:
+:ID: ${newId}
+:END:
+`;
+    let insertAt = 0;
+    while (insertAt < lines.length) {
+      const l = (lines[insertAt] ?? "").trim();
+      if (l === "" || l.startsWith("#")) {
+        insertAt += 1;
+        continue;
+      }
+      break;
+    }
+    const outLines = [...lines];
+    outLines.splice(insertAt, 0, ...drawer.split("\n"), "");
+    const out = outLines.join("\n");
 
     if (idApply) {
       fs.writeFileSync(idFile, out, "utf8");
