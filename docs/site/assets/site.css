@@ -346,19 +346,58 @@ pre, code {
   background: var(--code-bg);
   border-radius: 8px;
 }
-pre { padding: 0.8rem 0.9rem; overflow-x: auto; }
+
+pre,
+.org2-src,
+.org2-example,
+.org2-verse,
+.org2-comment,
+.org2-directive {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+pre {
+  padding: 0.8rem 0.9rem;
+  font-size: clamp(0.78rem, 2.8vw, 0.92rem);
+  line-height: 1.35;
+}
 
 pre code {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
   background: transparent;
   border: 0;
   padding: 0;
+  font-size: inherit;
+  white-space: pre;
 }
 
 pre.org2-shiki-block {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 0.9rem 1rem;
-  overflow-x: auto;
+}
+
+@media (max-width: 520px) {
+  #content {
+    padding: 0 0.75rem;
+  }
+
+  pre,
+  pre.org2-shiki-block,
+  .org2-src,
+  .org2-example,
+  .org2-verse,
+  .org2-comment,
+  .org2-directive {
+    margin-left: 0;
+    margin-right: 0;
+    padding: 0.65rem 0.7rem !important;
+    border-radius: 8px !important;
+  }
 }
 
 blockquote {

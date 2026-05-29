@@ -56,34 +56,47 @@ function parsePropertyLine(rawLine: string): { key: string; value: string } | nu
   };
 }
 
-function parseTopFilePropertyDrawer(lines: string[]): { startLine: number; properties: Map<string, string> } | null {
+function collectFilePropertyDrawers(lines: string[]): Array<{ startLine: number; properties: Map<string, string> }> {
+  const drawers: Array<{ startLine: number; properties: Map<string, string> }> = [];
+
   let idx = 0;
-  while (idx < lines.length) {
+  while (idx < lines.length && !/^(\*+)\s+/.test(lines[idx] || "")) {
     const trimmed = (lines[idx] || "").trim();
     if (!trimmed || trimmed.startsWith("#")) {
       idx += 1;
       continue;
     }
-    break;
-  }
 
-  if ((lines[idx] || "").trim() !== ":PROPERTIES:") return null;
-
-  const props = new Map<string, string>();
-  for (let i = idx + 1; i < lines.length; i += 1) {
-    const trimmed = (lines[i] || "").trim();
-    if (trimmed === ":END:") {
-      return {
-        startLine: idx + 1,
-        properties: props,
-      };
+    if (trimmed !== ":PROPERTIES:") {
+      idx += 1;
+      continue;
     }
 
-    const parsed = parsePropertyLine(trimmed);
-    if (parsed) props.set(parsed.key, normalizePropertyValue(parsed.value));
+    const props = new Map<string, string>();
+    let endIndex = idx;
+    for (let i = idx + 1; i < lines.length; i += 1) {
+      endIndex = i;
+      const innerTrimmed = (lines[i] || "").trim();
+      if (innerTrimmed === ":END:") {
+        drawers.push({
+          startLine: idx + 1,
+          properties: props,
+        });
+        break;
+      }
+
+      const parsed = parsePropertyLine(innerTrimmed);
+      if (parsed) props.set(parsed.key, normalizePropertyValue(parsed.value));
+    }
+
+    idx = Math.max(endIndex + 1, idx + 1);
   }
 
-  return null;
+  return drawers;
+}
+
+function parseTopFilePropertyDrawer(lines: string[]): { startLine: number; properties: Map<string, string> } | null {
+  return collectFilePropertyDrawers(lines)[0] || null;
 }
 
 function collectHeadlinePropertyDrawers(lines: string[]): Array<{ startLine: number; properties: Map<string, string> }> {
@@ -490,9 +503,8 @@ export function collectArtifactProvenanceRefsInText(content: string, filePath: s
   const lines = content.replace(/\r\n/g, "\n").split("\n");
   const refs: ArtifactProvenanceRef[] = [];
 
-  const topFileDrawer = parseTopFilePropertyDrawer(lines);
-  if (topFileDrawer) {
-    collectArtifactProvenanceRefsFromProperties(topFileDrawer.properties, filePath, topFileDrawer.startLine, refs);
+  for (const fileDrawer of collectFilePropertyDrawers(lines)) {
+    collectArtifactProvenanceRefsFromProperties(fileDrawer.properties, filePath, fileDrawer.startLine, refs);
   }
 
   const headlineDrawers = collectHeadlinePropertyDrawers(lines);
@@ -507,9 +519,8 @@ export function collectArtifactIdsInText(content: string, filePath: string): Art
   const lines = content.replace(/\r\n/g, "\n").split("\n");
   const refs: ArtifactIdRef[] = [];
 
-  const topFileDrawer = parseTopFilePropertyDrawer(lines);
-  if (topFileDrawer) {
-    collectArtifactIdsFromProperties(topFileDrawer.properties, filePath, topFileDrawer.startLine, refs);
+  for (const fileDrawer of collectFilePropertyDrawers(lines)) {
+    collectArtifactIdsFromProperties(fileDrawer.properties, filePath, fileDrawer.startLine, refs);
   }
 
   const headlineDrawers = collectHeadlinePropertyDrawers(lines);
@@ -524,9 +535,19 @@ export function lintArtifactMetadataInText(content: string, filePath: string): A
   const lines = content.replace(/\r\n/g, "\n").split("\n");
   const issues: ArtifactLintIssue[] = [];
 
-  const topFileDrawer = parseTopFilePropertyDrawer(lines);
-  if (topFileDrawer) {
-    evaluateArtifactProperties(topFileDrawer.properties, filePath, topFileDrawer.startLine, issues);
+  const fileDrawers = collectFilePropertyDrawers(lines);
+  const fileIdDrawers = fileDrawers.filter((drawer) => normalizePropertyValue(drawer.properties.get("ID") || ""));
+  if (fileIdDrawers.length > 1) {
+    issues.push({
+      severity: "error",
+      rule: "file-multiple-id-drawers",
+      file: filePath,
+      line: fileIdDrawers[1]!.startLine,
+      message: `File has ${fileIdDrawers.length} file-level property drawers with ID values before the first headline; keep exactly one canonical file ID.`,
+    });
+  }
+  for (const fileDrawer of fileDrawers) {
+    evaluateArtifactProperties(fileDrawer.properties, filePath, fileDrawer.startLine, issues);
   }
 
   const headlineDrawers = collectHeadlinePropertyDrawers(lines);
