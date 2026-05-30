@@ -353,25 +353,27 @@ pre,
 .org2-verse,
 .org2-comment,
 .org2-directive {
-  max-width: 100%;
-  overflow-x: auto;
+  box-sizing: border-box !important;
+  display: block !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
   -webkit-overflow-scrolling: touch;
 }
 
 pre {
   padding: 0.8rem 0.9rem;
-  font-size: clamp(0.78rem, 2.8vw, 0.92rem);
-  line-height: 1.35;
+  font-size: clamp(0.78rem, 2.8vw, 0.92rem) !important;
+  line-height: 1.35 !important;
 }
 
 pre code {
-  display: block;
-  min-width: 0;
-  max-width: 100%;
+  display: block !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
   background: transparent;
   border: 0;
   padding: 0;
-  font-size: inherit;
+  font-size: inherit !important;
   white-space: pre;
 }
 
@@ -395,8 +397,35 @@ pre.org2-shiki-block {
   .org2-directive {
     margin-left: 0;
     margin-right: 0;
-    padding: 0.65rem 0.7rem !important;
+    padding: 0.6rem 0.65rem !important;
     border-radius: 8px !important;
+    font-size: 0.72rem !important;
+    line-height: 1.32 !important;
+  }
+
+  .org2-sample {
+    margin: 1.5rem 0 2rem;
+  }
+
+  .org2-sample-file {
+    border-radius: 7px;
+  }
+
+  .org2-sample-file figcaption {
+    min-height: 1.9rem;
+    padding: 0.38rem 0.6rem;
+    font-size: 0.68rem;
+  }
+
+  .org2-sample-file pre {
+    padding: 0.45rem 0.5rem !important;
+    font-size: 0.56rem !important;
+    line-height: 1.23 !important;
+  }
+
+  .org2-sample-file code {
+    min-width: 0 !important;
+    max-width: none !important;
   }
 }
 
