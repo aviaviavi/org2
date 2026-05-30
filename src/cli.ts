@@ -11007,7 +11007,7 @@ Flags:
       break;
     }
     const outLines = [...lines];
-    outLines.splice(insertAt, 0, ...drawer.split("\n"), "");
+    outLines.splice(insertAt, 0, ...drawer.split("\n"));
     const out = outLines.join("\n");
 
     if (idApply) {
