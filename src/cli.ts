@@ -714,8 +714,10 @@ function appendArtifactFreshnessLintIssues(content: string, filePath: string, is
 
     const generatedAtRaw = String(drawer.properties.get("ORG2_GENERATED_AT") || "").trim();
     const generatedAt = generatedAtRaw ? new Date(generatedAtRaw) : null;
+    const reviewStatus = String(drawer.properties.get("ORG2_REVIEW_STATUS") || "").trim().toLowerCase();
+    const sourceMtimeRequiresReview = !["reviewed", "promoted"].includes(reviewStatus);
 
-    if (generatedAt && !Number.isNaN(generatedAt.getTime())) {
+    if (sourceMtimeRequiresReview && generatedAt && !Number.isNaN(generatedAt.getTime())) {
       for (const entry of splitLintList(drawer.properties.get("ORG2_PROVENANCE") || "")) {
         const match = /^file:(\S.*)$/.exec(entry);
         if (!match) continue;
@@ -1011,19 +1013,25 @@ function findRoamIdLinksInLine(line: string): string[] {
 
 function findRoamWikiLinksInLine(line: string): string[] {
   const labels: string[] = [];
+  const scanLine = line.replace(/`[^`]*`/g, "");
   const bracketRe = /\[\[([^\]\n]+?)(?:\]\[[^\]\n]*)?\]\]/g;
   let match: RegExpExecArray | null;
 
-  while ((match = bracketRe.exec(line)) !== null) {
+  while ((match = bracketRe.exec(scanLine)) !== null) {
     const targetRaw = String(match[1] || "").trim();
     const lower = targetRaw.toLowerCase();
     if (!targetRaw) continue;
     if (lower.startsWith("id:")) continue;
-    if (lower.startsWith("file:")) continue;
-    if (lower.startsWith("http://") || lower.startsWith("https://")) continue;
-    if (lower.startsWith("mailto:")) continue;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(targetRaw)) continue;
     if (targetRaw.startsWith("#") || targetRaw.startsWith("*")) continue;
-    if (targetRaw.startsWith("/") || targetRaw.startsWith("./") || targetRaw.startsWith("../")) continue;
+    if (
+      targetRaw.startsWith("~") ||
+      targetRaw.startsWith("/") ||
+      targetRaw.startsWith("./") ||
+      targetRaw.startsWith("../")
+    ) {
+      continue;
+    }
     labels.push(targetRaw);
   }
 
