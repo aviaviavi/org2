@@ -26,6 +26,7 @@ fs.writeFileSync(path.join(tmpDir, 'alpha.org2'), `#+TITLE: Alpha
 
 Good link: [[Beta]].
 Broken links: [[Missing Topic]], [[Shared]], and [[id:99999999-9999-9999-9999-999999999999][Missing ID]].
+External links are not wiki nodes: [[linear:APP-3718]], [[~/Downloads/example.pdf]], [[https://example.com]].
 `);
 
 fs.writeFileSync(path.join(tmpDir, 'beta.org2'), `#+TITLE: Beta
