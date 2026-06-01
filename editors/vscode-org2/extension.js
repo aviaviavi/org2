@@ -57,6 +57,7 @@ const {
   findPropertyDrawerStartLines: findPropertyDrawerStartLinesForFolding,
   provideFoldingRanges: provideFoldingRangesForDocument,
 } = require('./foldingRanges');
+const { findCryptSubtreesNeedingEncryption, hasUnclosedPgpBlock, replaceLineRanges } = require('./cryptOnSave');
 
 const headingRe = /^(\*+)\s+/;
 const listItemRe = /^(\s*)(?:[-+*]|\d+[.)])\s+/;
@@ -2503,23 +2504,42 @@ function activate(context) {
       if (doc.languageId !== 'org2' && doc.languageId !== 'org') return;
 
       const cfg = vscode.workspace.getConfiguration('org2');
-      const enabled = cfg.get('formatOnSave', true);
-      if (!enabled) return;
+      const formatEnabled = cfg.get('formatOnSave', true);
+      const autoEncryptCrypt = cfg.get('crypt.encryptOnSave', true);
+
+      if (!formatEnabled && !autoEncryptCrypt) return;
 
       e.waitUntil(
         (async () => {
-          try {
-            const formatted = await formatOrg2Text(doc.getText());
-            const fullRange = new vscode.Range(
-              0,
-              0,
-              doc.lineCount ? doc.lineCount - 1 : 0,
-              doc.lineCount ? doc.lineAt(doc.lineCount - 1).text.length : 0
-            );
-            return [vscode.TextEdit.replace(fullRange, formatted)];
-          } catch (_) {
-            return [];
+          let text = doc.getText();
+
+          if (formatEnabled) {
+            try {
+              text = await formatOrg2Text(text);
+            } catch (_) {
+              // Keep saving even if formatting fails.
+            }
           }
+
+          if (autoEncryptCrypt && doc.uri && doc.uri.scheme === 'file' && !hasUnclosedPgpBlock(text)) {
+            try {
+              const encrypted = await encryptCryptSubtreesForSave(context, doc.uri.fsPath, text);
+              if (encrypted) text = encrypted;
+            } catch (err) {
+              const msg = err && err.stderr ? String(err.stderr).trim() : (err instanceof Error ? err.message : String(err));
+              vscode.window.showErrorMessage(`Org2: crypt save encryption failed; save canceled: ${msg}`);
+              throw err;
+            }
+          }
+
+          if (text === doc.getText()) return [];
+          const fullRange = new vscode.Range(
+            0,
+            0,
+            doc.lineCount ? doc.lineCount - 1 : 0,
+            doc.lineCount ? doc.lineAt(doc.lineCount - 1).text.length : 0
+          );
+          return [vscode.TextEdit.replace(fullRange, text)];
         })()
       );
     })
@@ -3141,6 +3161,70 @@ function activate(context) {
     } catch (e) {
       vscode.window.showErrorMessage(`Org2: planning update failed: ${String(e && e.message ? e.message : e)}`);
     }
+  }
+
+  function execFileWithInputAsync(cmd, args, input, opts) {
+    return new Promise((resolve, reject) => {
+      const child = cp.spawn(cmd, args, { ...opts, stdio: ['pipe', 'pipe', 'pipe'] });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+      child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+      child.on('error', (err) => {
+        err.stdout = stdout;
+        err.stderr = stderr;
+        reject(err);
+      });
+      child.on('close', (code) => {
+        if (code) {
+          const err = new Error(`command failed with exit code ${code}: ${cmd}`);
+          err.code = code;
+          err.stdout = stdout;
+          err.stderr = stderr;
+          reject(err);
+          return;
+        }
+        resolve({ stdout, stderr });
+      });
+      child.stdin.end(input);
+    });
+  }
+
+  async function encryptCryptSubtreesForSave(context, filePath, text) {
+    const targets = findCryptSubtreesNeedingEncryption(text);
+    if (!targets.length) return undefined;
+
+    const cfg = vscode.workspace.getConfiguration('org2');
+    const configuredRecipients = Array.isArray(cfg.get('crypt.recipients'))
+      ? cfg.get('crypt.recipients').map((v) => String(v || '').trim()).filter(Boolean)
+      : [];
+    const configuredRecipientFiles = Array.isArray(cfg.get('crypt.recipientFiles'))
+      ? cfg.get('crypt.recipientFiles').map((v) => String(v || '').trim()).filter(Boolean)
+      : [];
+    const passphrase = String(cfg.get('crypt.passphrase', '') || '');
+    const gpgProgram = String(cfg.get('crypt.gpgProgram', 'gpg') || 'gpg');
+
+    if (!passphrase && configuredRecipients.length === 0 && configuredRecipientFiles.length === 0) {
+      throw new Error('no org2.crypt.recipients, org2.crypt.recipientFiles, or org2.crypt.passphrase configured');
+    }
+
+    const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+    const replacements = [];
+
+    for (const target of targets) {
+      const plainBody = lines.slice(target.bodyStartLine, target.endLine).join('\n') + '\n';
+      const args = passphrase
+        ? ['--batch', '--yes', '--pinentry-mode', 'loopback', '--passphrase', passphrase, '--armor', '--symmetric']
+        : ['--batch', '--yes', '--armor', '--encrypt'];
+      if (!passphrase) {
+        for (const recipient of configuredRecipients) args.push('--recipient', recipient);
+        for (const recipientFile of configuredRecipientFiles) args.push('--recipient-file', recipientFile);
+      }
+      const { stdout } = await execFileWithInputAsync(gpgProgram, args, plainBody, { cwd: path.dirname(filePath || getAgendaRootDir()) });
+      replacements.push({ startLine: target.bodyStartLine, endLine: target.endLine, text: stdout });
+    }
+
+    return replaceLineRanges(text, replacements);
   }
 
   async function runCryptCli(action, item) {
