@@ -1250,6 +1250,21 @@
             "type": "string"
           },
           "description": "Default GPG recipient files passed to org2 crypt encrypt/reencrypt."
+        },
+        "org2.crypt.encryptOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically encrypt plaintext :crypt: subtrees before saving Org/Org2 files. Save is canceled if encryption fails."
+        },
+        "org2.crypt.passphrase": {
+          "type": "string",
+          "default": "",
+          "description": "Optional symmetric passphrase for automatic :crypt: encryption on save. Prefer org2.crypt.recipients or org2.crypt.recipientFiles for public-key encryption."
+        },
+        "org2.crypt.gpgProgram": {
+          "type": "string",
+          "default": "gpg",
+          "description": "GPG executable used for automatic :crypt: encryption on save."
         }
       }
     },
@@ -1649,6 +1664,7 @@
     "roamArgs.js",
     "roamId.js",
     "priorityToken.js",
+    "cryptOnSave.js",
     "language-configuration.json",
     "syntaxes/**",
     "README.md",
