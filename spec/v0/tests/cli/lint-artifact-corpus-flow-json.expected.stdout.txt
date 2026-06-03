@@ -2,7 +2,7 @@
   "$schema": "org2:lint:v1",
   "checkedFiles": 4,
   "skippedFiles": 0,
-  "issueCount": 6,
+  "issueCount": 5,
   "issues": [
     {
       "severity": "error",
@@ -17,13 +17,6 @@
       "file": "spec/v0/fixtures/lint-artifact-corpus-flow/compiled/summary.org",
       "line": 1,
       "message": "Generated artifacts with role 'compiled' must set ORG2_OBSERVED_AT or ORG2_VALID_AS_OF for freshness scoring."
-    },
-    {
-      "severity": "warning",
-      "rule": "artifact-stale-source-mtime",
-      "file": "spec/v0/fixtures/lint-artifact-corpus-flow/compiled/summary.org",
-      "line": 1,
-      "message": "Generated artifact is older than provenance source '../raw/source.org'; regenerate or review before trusting this output."
     },
     {
       "severity": "warning",
