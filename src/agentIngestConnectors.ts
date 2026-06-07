@@ -1,7 +1,7 @@
 import { buildGeneratedArtifactMetadata, formatOrg2ArtifactPropertyDrawer, sha256Hex } from "./artifactMetadata.js";
 import type { Org2RawCaptureInput } from "./ingestionPipeline.js";
 
-export type AgentIngestSourceKind = "slack" | "gmail" | "email" | "message" | "calendar" | "meeting" | "browser" | (string & {});
+export type AgentIngestSourceKind = "slack" | "gmail" | "email" | "message" | "call" | "calendar" | "meeting" | "browser" | (string & {});
 
 export type AgentIngestAuthMode = "external" | "none";
 export type AgentIngestPrivacyPolicy = "review-required" | "skip-private" | "redact-private";
@@ -40,6 +40,15 @@ export interface AgentIngestConnectorMetadata {
   conversationTitle?: string;
   group?: boolean;
   participants?: string[];
+  callId?: string;
+  phoneNumbers?: string[];
+  startedAt?: string;
+  endedAt?: string;
+  durationSeconds?: number;
+  transcriptSource?: string;
+  transcriptQuality?: string;
+  transcriptConfidence?: number;
+  hasTranscript?: boolean;
   messageId?: string;
   threadId?: string;
   subject?: string;
@@ -208,6 +217,7 @@ function applyBoundedFilters(records: AgentIngestRecord[], options: AgentIngestF
     if (record.source.kind === "slack") return allowed([record.source.channel || "", record.source.thread || ""], options);
     if (record.source.kind === "gmail" || record.source.kind === "email") return allowed([record.source.mailbox || "", record.source.label || "", ...(record.source.labels || []), record.source.author || "", ...(record.source.recipients || [])], options) && emailAllowed(record, options);
     if (record.source.kind === "message") return allowed([record.source.service || "", record.source.conversationId || "", record.source.conversationTitle || "", ...(record.source.participants || [])], options);
+    if (record.source.kind === "call") return allowed([record.source.service || "", record.source.callId || "", record.source.conversationTitle || "", ...(record.source.participants || []), ...(record.source.phoneNumbers || [])], options);
     return allowed([record.source.mailbox || "", record.source.label || "", ...(record.source.recipients || []), ...(record.source.participants || [])], options);
   });
   const limit = Math.max(0, Math.trunc(Number(options.limit || filtered.length)));
@@ -412,6 +422,71 @@ export class MessageThreadFixtureConnector implements AgentIngestConnector {
   }
 }
 
+export class CallTranscriptFixtureConnector implements AgentIngestConnector {
+  readonly kind = "call" as const;
+  readonly manifest: AgentIngestConnectorManifest = {
+    schemaVersion: "org2-connector/v1",
+    id: "fixture.call-transcript",
+    sourceType: this.kind,
+    displayName: "Phone call/transcript fixture connector",
+    auth: { mode: "external", note: "Fixture input is exported outside org2 core; phone, voice-call, recording, and transcription access belong in optional connector plugins." },
+    capabilities: { incrementalSync: true, dryRun: true, stableSourceIds: true, contentHashDedupe: true },
+    privacy: { defaultPolicy: "review-required", sensitivityField: "sensitivity" },
+  };
+
+  ingest(input: unknown, options: AgentIngestFilterOptions = {}): AgentIngestRecord[] {
+    const records = normalizeInput(input).map((call, index) => {
+      const startedAt = stringField(call, "startedAt", "startTime", "timestamp", "date");
+      const endedAt = stringField(call, "endedAt", "endTime");
+      const service = stringField(call, "service", "source", "platform") || "phone";
+      const callId = stringField(call, "id", "callId", "recordingId") || `${service}-call-${startedAt || index}`;
+      const participants = stringArrayField(call, "participants");
+      const phoneNumbers = [...stringArrayField(call, "phoneNumbers"), ...stringArrayField(call, "numbers")];
+      const durationValue = call.durationSeconds ?? call.duration ?? call.durationMs;
+      const durationSeconds = typeof durationValue === "number" ? (String(durationValue).length > 6 ? Math.round(durationValue / 1000) : durationValue) : Number(stringField(call, "durationSeconds", "duration")) || undefined;
+      const transcript = stringField(call, "transcript", "text", "body");
+      const metadataOnly = !transcript.trim();
+      const title = stringField(call, "title", "subject") || `${service} call ${startedAt || callId}`;
+      const metadataLines = [
+        `Call metadata: ${title}`,
+        participants.length ? `Participants: ${participants.join(", ")}` : "",
+        phoneNumbers.length ? `Phone numbers: ${phoneNumbers.join(", ")}` : "",
+        durationSeconds ? `Duration seconds: ${durationSeconds}` : "",
+        stringField(call, "transcriptSource") ? `Transcript source: ${stringField(call, "transcriptSource")}` : "",
+        stringField(call, "transcriptQuality", "quality") ? `Transcript quality: ${stringField(call, "transcriptQuality", "quality")}` : "",
+        metadataOnly ? "Transcript missing: metadata-only import; review before promotion." : "",
+      ].filter(Boolean).join("\n");
+      return {
+        id: callId,
+        title,
+        text: transcript || metadataLines,
+        cursor: `${startedAt}#${callId}`,
+        rawPayload: call,
+        source: {
+          kind: this.kind,
+          service,
+          callId,
+          conversationTitle: title,
+          participants,
+          phoneNumbers,
+          startedAt,
+          endedAt,
+          durationSeconds,
+          transcriptSource: stringField(call, "transcriptSource", "transcriber", "transcriptProvider") || undefined,
+          transcriptQuality: stringField(call, "transcriptQuality", "quality") || undefined,
+          transcriptConfidence: typeof call.transcriptConfidence === "number" ? call.transcriptConfidence : typeof call.confidence === "number" ? call.confidence : undefined,
+          hasTranscript: !metadataOnly,
+          url: stringField(call, "url", "sourceRef", "recordingUrl"),
+          author: participants[0] || phoneNumbers[0] || service,
+          timestamp: startedAt,
+          sensitivity: (stringField(call, "sensitivity") as AgentIngestConnectorMetadata["sensitivity"]) || undefined,
+        },
+      } satisfies AgentIngestRecord;
+    }).filter((record) => record.text && record.source.timestamp);
+    return applyBoundedFilters(records, options);
+  }
+}
+
 export class GmailFixtureConnector implements AgentIngestConnector {
   readonly kind = "gmail" as const;
   readonly manifest: AgentIngestConnectorManifest = {
@@ -498,6 +573,15 @@ export function renderIngestReviewArtifact(records: AgentIngestRecord[], opts: {
     if (source.thread) lines.push(`:ORG2_SLACK_THREAD: ${source.thread}`);
     if (source.mailbox) lines.push(`:ORG2_GMAIL_MAILBOX: ${source.mailbox}`);
     if (source.service) lines.push(`:ORG2_MESSAGE_SERVICE: ${source.service}`);
+    if (source.callId) lines.push(`:ORG2_CALL_ID: ${source.callId}`);
+    if (source.startedAt) lines.push(`:ORG2_CALL_STARTED_AT: ${source.startedAt}`);
+    if (source.endedAt) lines.push(`:ORG2_CALL_ENDED_AT: ${source.endedAt}`);
+    if (typeof source.durationSeconds === "number") lines.push(`:ORG2_CALL_DURATION_SECONDS: ${source.durationSeconds}`);
+    if (source.phoneNumbers?.length) lines.push(`:ORG2_CALL_PHONE_NUMBERS: ${source.phoneNumbers.join(",")}`);
+    if (source.transcriptSource) lines.push(`:ORG2_CALL_TRANSCRIPT_SOURCE: ${source.transcriptSource}`);
+    if (source.transcriptQuality) lines.push(`:ORG2_CALL_TRANSCRIPT_QUALITY: ${source.transcriptQuality}`);
+    if (typeof source.transcriptConfidence === "number") lines.push(`:ORG2_CALL_TRANSCRIPT_CONFIDENCE: ${source.transcriptConfidence}`);
+    if (typeof source.hasTranscript === "boolean") lines.push(`:ORG2_CALL_HAS_TRANSCRIPT: ${source.hasTranscript}`);
     if (source.conversationId) lines.push(`:ORG2_MESSAGE_CONVERSATION_ID: ${source.conversationId}`);
     if (source.conversationTitle) lines.push(`:ORG2_MESSAGE_CONVERSATION_TITLE: ${source.conversationTitle}`);
     if (source.participants?.length) lines.push(`:ORG2_MESSAGE_PARTICIPANTS: ${source.participants.join(",")}`);
