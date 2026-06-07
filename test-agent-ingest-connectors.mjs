@@ -33,15 +33,33 @@ assert.equal(slackPreview.skipped[0].reason, 'duplicate-source-id');
 
 
 const gmail = new GmailFixtureConnector();
-const gmailRecords = gmail.ingest([
-  { id: 'g1', subject: 'Important project thread', date: '2024-04-03T12:00:00Z', from: 'avi@example.com', to: ['team@example.com'], labels: ['important'], text: 'Follow up: review packet needs redaction.', sensitivity: 'sensitive' },
-  { id: 'g2', subject: 'Old mail', date: '2023-01-01T12:00:00Z', from: 'old@example.com', to: ['team@example.com'], labels: ['important'], text: 'Too old.' },
-], { since: '2024-04-01T00:00:00Z', allowlist: ['important'] });
-assert.equal(gmailRecords.length, 1);
+const gmailRecords = gmail.ingest({ threads: [
+  { threadId: 'thr-1', subject: 'Important project thread', messages: [
+    { id: 'g1', date: '2024-04-03T12:00:00Z', from: 'avi@example.com', to: ['team@example.com'], labels: ['important', 'project'], unread: true, starred: true, text: 'Follow up: review packet needs redaction.', sensitivity: 'sensitive' },
+    { id: 'g1b', date: '2024-04-03T12:30:00Z', from: 'teammate@example.com', to: ['avi@example.com'], labels: ['important'], unread: true, text: 'TODO: confirm retention policy before importing more mail.' },
+  ] },
+  { threadId: 'thr-2', subject: 'Old mail', messages: [
+    { id: 'g2', date: '2023-01-01T12:00:00Z', from: 'old@example.com', to: ['team@example.com'], labels: ['important'], text: 'Too old.' },
+  ] },
+] }, { since: '2024-04-01T00:00:00Z', labels: ['important'], domains: ['example.com'], unread: true, limit: 10 });
+assert.equal(gmailRecords.length, 2);
 assert.equal(gmailRecords[0].source.kind, 'gmail');
 assert.equal(gmailRecords[0].source.label, 'important');
+assert.deepEqual(gmailRecords[0].source.labels, ['important', 'project']);
+assert.equal(gmailRecords[0].source.threadId, 'thr-1');
+assert.equal(gmailRecords[0].source.subject, 'Important project thread');
+assert.equal(gmailRecords[0].source.unread, true);
+assert.equal(gmailRecords[0].source.starred, true);
 assert.equal(gmailRecords[0].source.sensitivity, 'sensitive');
+assert.match(gmailRecords[0].cursor, /^2024-04-03T12:00:00Z#g1$/);
 validateConnectorManifest(gmail.manifest);
+
+const starredFromAvi = gmail.ingest([
+  { id: 'g4', subject: 'From Avi', date: '2024-04-06T12:00:00Z', from: 'avi@example.com', to: ['team@example.com'], labels: ['inbox'], starred: true, text: 'Please review the draft.' },
+  { id: 'g5', subject: 'From someone else', date: '2024-04-06T12:05:00Z', from: 'other@example.net', to: ['team@example.com'], labels: ['inbox'], starred: true, text: 'Ignore.' },
+], { senders: ['avi@example.com'], starred: true });
+assert.equal(starredFromAvi.length, 1);
+assert.equal(starredFromAvi[0].id, 'g4');
 
 const privacyPreview = previewConnectorIngest(gmail, [
   { id: 'g3', subject: 'Private mail', date: '2024-04-05T12:00:00Z', from: 'avi@example.com', to: ['team@example.com'], labels: ['important'], text: 'Private import candidate.', sensitivity: 'private' },
@@ -60,6 +78,9 @@ assert.match(artifact, /#\+TITLE: Scoped import review/);
 assert.match(artifact, /:ORG2_REVIEW_STATUS: review-required/);
 assert.match(artifact, /:ORG2_SOURCE_KIND: slack/);
 assert.match(artifact, /:ORG2_SOURCE_KIND: gmail/);
+assert.match(artifact, /Generated candidates \(review required\)/);
+assert.match(artifact, /TODO candidate: gmail:g1b/);
+assert.match(artifact, /:ORG2_EMAIL_THREAD_ID: thr-1/);
 assert.match(artifact, /:ORG2_SENSITIVITY: sensitive/);
 assert.match(artifact, /Redact private\/sensitive details before promotion/);
 
