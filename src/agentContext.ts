@@ -273,6 +273,85 @@ function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: 
   };
 }
 
+function escapeMarkdown(raw: string): string {
+  return String(raw || "").replace(/[\`]/g, "\\$&");
+}
+
+function uniqueSorted(values: Array<string | null | undefined>): string[] {
+  return Array.from(new Set(values.map((value) => String(value || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+}
+
+export function renderAgentContextPack(payload: AgentPayload, format: "markdown" | "org" = "markdown"): string {
+  const isOrg = format === "org";
+  const h1 = isOrg ? "*" : "#";
+  const h2 = isOrg ? "**" : "##";
+  const h3 = isOrg ? "***" : "###";
+  const lines: string[] = [];
+  const query = payload.query || payload.id || "";
+  const results = payload.results || [];
+  const timeline = results
+    .map((node) => ({ node, date: String(node.properties.UPDATED || node.properties.DATE || node.properties.CREATED || node.properties.CLOSED || node.claimState.validAsOf || node.claimState.observedAt || "") }))
+    .filter((item) => /\d{4}-\d{2}-\d{2}/.test(item.date))
+    .sort((a, b) => b.date.localeCompare(a.date) || a.node.citation.localeCompare(b.node.citation))
+    .slice(0, 8);
+  const todos = results.filter((node) => Boolean(node.todo));
+  const entityValues = uniqueSorted(results.flatMap((node) => [node.properties.PROJECT, node.properties.PERSON, node.properties.PEOPLE, ...node.tags, ...node.aliases]));
+  const backlinkValues = uniqueSorted(results.flatMap((node) => (node.backlinks || []).map((link) => `${link.sourceTitle} (${link.citation})`)));
+  const caveats = uniqueSorted([
+    ...(payload.errors || []),
+    ...(payload.context?.truncated ? [`Context text truncated at ${payload.maxChars} characters/budget.`] : []),
+    ...results.filter((node) => node.claimState.freshness === "stale" || node.claimState.freshness === "expired").map((node) => `${node.title} is ${node.claimState.freshness} (${node.citation})`),
+    ...(results.length === 0 ? ["No matching notes found for this query."] : []),
+  ]);
+
+  lines.push(`${h1} Org2 Context Pack`);
+  lines.push("");
+  lines.push(`${h2} Objective / query`);
+  lines.push(query ? `- ${escapeMarkdown(query)}` : "- (not provided)");
+  lines.push(`- Budget: ${payload.maxChars} chars`);
+  lines.push(`- Corpus: ${payload.corpus.rootDir}`);
+  lines.push("");
+  lines.push(`${h2} Top cited notes`);
+  if (results.length === 0) lines.push("- None");
+  for (const node of results) {
+    lines.push(`${h3} ${escapeMarkdown(node.title)}`);
+    lines.push(`- Citation: ${node.citation}`);
+    if (node.id) lines.push(`- ID: ${node.id}`);
+    if (node.todo) lines.push(`- TODO: ${node.todo}`);
+    if (node.tags.length) lines.push(`- Tags: ${node.tags.join(", ")}`);
+    lines.push(`- Review/freshness: ${node.claimState.reviewStatus} / ${node.claimState.freshness}`);
+    lines.push("");
+    lines.push(node.snippet || "(no snippet)");
+    lines.push("");
+  }
+  lines.push(`${h2} Recent timeline entries`);
+  if (timeline.length === 0) lines.push("- None found");
+  for (const item of timeline) lines.push(`- ${item.date.match(/\d{4}-\d{2}-\d{2}/)?.[0] || item.date}: ${item.node.title} (${item.node.citation})`);
+  lines.push("");
+  lines.push(`${h2} Active TODOs / scheduled items`);
+  if (todos.length === 0) lines.push("- None found");
+  for (const node of todos) lines.push(`- ${node.todo} ${node.title} (${node.citation})`);
+  lines.push("");
+  lines.push(`${h2} Related entities and backlinks`);
+  if (entityValues.length === 0 && backlinkValues.length === 0) lines.push("- None found");
+  for (const value of entityValues) lines.push(`- Entity: ${value}`);
+  for (const value of backlinkValues.slice(0, 12)) lines.push(`- Backlink: ${value}`);
+  lines.push("");
+  lines.push(`${h2} Open questions / known uncertainty`);
+  if (caveats.length === 0) lines.push("- None surfaced by org2; verify any task-specific assumptions before acting.");
+  for (const caveat of caveats) lines.push(`- ${caveat}`);
+  lines.push("");
+  lines.push(`${h2} Suggested next actions`);
+  if (results.length === 0) lines.push("- Broaden the query or scope and regenerate the context pack.");
+  else {
+    lines.push("- Start with the top cited notes above; cite file:line provenance when using facts.");
+    lines.push("- Follow backlinks/neighbors for any decision that depends on missing context.");
+    lines.push("- Refresh stale/expired claims before relying on them.");
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
 export function buildAgentContextPayload(corpus: CompiledCorpus, opts: AgentContextOptions): AgentPayload {
   const include = new Set(opts.include || []);
   const limit = Math.max(1, Math.min(100, opts.limit || 10));
