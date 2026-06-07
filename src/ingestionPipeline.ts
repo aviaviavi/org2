@@ -4,7 +4,7 @@ import { buildGeneratedArtifactMetadata, formatOrg2ArtifactPropertyDrawer, sha25
 
 export const ORG2_INGESTION_SCHEMA_VERSION = "org2-ingestion/v1" as const;
 
-export type Org2IngestionSourceType = "slack" | "gmail" | "meeting" | "linear" | "github" | "note" | "demo";
+export type Org2IngestionSourceType = "slack" | "gmail" | "meeting" | "linear" | "github" | "note" | "demo" | "file" | "stdin" | "json" | (string & {});
 export type Org2IngestionSensitivity = "public" | "internal" | "private" | "restricted";
 export type Org2IngestionReviewStatus = "pending" | "in-review" | "accepted" | "rejected" | "promoted";
 
@@ -47,6 +47,7 @@ export interface IngestDemoOptions {
   rawDir: string;
   reviewDir: string;
   now?: string;
+  dryRun?: boolean;
 }
 
 export interface IngestDemoResult {
@@ -56,6 +57,7 @@ export interface IngestDemoResult {
   reviewPath: string;
   rawCreated: boolean;
   reviewCreated: boolean;
+  dryRun: boolean;
 }
 
 function safeSlug(raw: string): string {
@@ -163,10 +165,12 @@ export function ingestDemoSource(options: IngestDemoOptions): IngestDemoResult {
   const rawCreated = !fs.existsSync(rawPath);
   const reviewCreated = !fs.existsSync(reviewPath);
 
-  fs.mkdirSync(options.rawDir, { recursive: true });
-  fs.mkdirSync(options.reviewDir, { recursive: true });
-  fs.writeFileSync(rawPath, stableJson(rawCapture), "utf8");
-  fs.writeFileSync(reviewPath, renderReviewArtifactOrg(rawCapture, reviewArtifact, options.now), "utf8");
+  if (!options.dryRun) {
+    fs.mkdirSync(options.rawDir, { recursive: true });
+    fs.mkdirSync(options.reviewDir, { recursive: true });
+    fs.writeFileSync(rawPath, stableJson(rawCapture), "utf8");
+    fs.writeFileSync(reviewPath, renderReviewArtifactOrg(rawCapture, reviewArtifact, options.now), "utf8");
+  }
 
-  return { rawCapture, reviewArtifact, rawPath, reviewPath, rawCreated, reviewCreated };
+  return { rawCapture, reviewArtifact, rawPath, reviewPath, rawCreated, reviewCreated, dryRun: Boolean(options.dryRun) };
 }

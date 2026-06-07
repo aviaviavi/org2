@@ -29,6 +29,7 @@ import { buildAgentContextPayload, renderAgentContextPack, type AgentInclude } f
 import { loadAiJobManifest, validateAiJobManifest } from "./aiJobManifest.js";
 import { createAiAdapterRequest, MockAiAdapter, type AiAdapterContextItem, type AiAdapterResponse } from "./aiAdapter.js";
 import { buildGeneratedArtifactMetadata, formatOrg2ArtifactPropertyDrawer, sha256Hex } from "./artifactMetadata.js";
+import { ingestDemoSource, type Org2RawCaptureInput } from "./ingestionPipeline.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import {
   collectArtifactIdsInText,
@@ -7214,8 +7215,122 @@ function formatClockMinutes(minutes: number): string {
   return `${sign}${hours}:${String(mins).padStart(2, "0")}`;
 }
 
+async function runIngestCommand(args: string[]): Promise<void> {
+  const take = (flag: string): string => {
+    const i = args.indexOf(flag);
+    if (i < 0) return "";
+    const value = args[i + 1];
+    if (!value || value.startsWith("--")) throw new Error(`ingest ${flag} requires a value`);
+    args.splice(i, 2);
+    return value;
+  };
+  const has = (flag: string): boolean => {
+    const i = args.indexOf(flag);
+    if (i < 0) return false;
+    args.splice(i, 1);
+    return true;
+  };
+
+  if (has("--help") || has("-h")) {
+    console.log(`org2 ingest
+
+Usage:
+  org2 ingest (--file FILE|--stdin|--json FILE) --corpus DIR [--apply]
+
+Options:
+  --corpus DIR       Corpus root; writes raw/ingest and views/ingest
+  --file FILE        Ingest a local text file
+  --stdin            Read local text from stdin
+  --json FILE        Read structured JSON capture input
+  --source-type T    Override source type (default: file/stdin/json)
+  --external-id ID   Stable source id (default: path/stdin/json id)
+  --author NAME      Author; repeatable by comma-separating names
+  --source-ref REF   Provenance ref (default: file:path, stdin, json:path)
+  --occurred-at ISO  Source occurrence timestamp
+  --captured-at ISO  Capture timestamp
+  --sensitivity S    public|internal|private|restricted (default: private)
+  --apply            Write artifacts. Omit for dry-run.
+  --format json|text Output format (default: text)
+
+Structured JSON may be either {sourceType, externalId, authors, content, ...}
+or {metadata:{...}, content:"..."}. Generated view artifacts are review-required.`);
+    return;
+  }
+
+  const corpus = take("--corpus") || take("--dir") || ".";
+  const file = take("--file");
+  const jsonFile = take("--json");
+  const readStdin = has("--stdin");
+  const apply = has("--apply");
+  const formatRaw = take("--format") || "text";
+  const sourceTypeOverride = take("--source-type");
+  const externalIdOverride = take("--external-id");
+  const authorRaw = take("--author");
+  const sourceRefOverride = take("--source-ref");
+  const occurredAt = take("--occurred-at");
+  const capturedAt = take("--captured-at");
+  const sensitivityRaw = take("--sensitivity");
+  if (args.length) throw new Error(`unknown ingest arguments: ${args.join(" ")}`);
+  const inputs = [file ? "file" : "", jsonFile ? "json" : "", readStdin ? "stdin" : ""].filter(Boolean);
+  if (inputs.length !== 1) throw new Error("ingest requires exactly one of --file, --stdin, or --json");
+  if (formatRaw !== "text" && formatRaw !== "json") throw new Error("ingest --format must be text or json");
+
+  let input: Org2RawCaptureInput;
+  if (jsonFile) {
+    const raw = JSON.parse(fs.readFileSync(jsonFile, "utf8"));
+    const metadata = raw.metadata && typeof raw.metadata === "object" ? raw.metadata : raw;
+    input = {
+      sourceType: sourceTypeOverride || metadata.sourceType || "json",
+      externalId: externalIdOverride || metadata.externalId || path.basename(jsonFile),
+      authors: authorRaw ? authorRaw.split(",").map((s) => s.trim()).filter(Boolean) : (Array.isArray(metadata.authors) ? metadata.authors : metadata.author ? [metadata.author] : []),
+      capturedAt: capturedAt || metadata.capturedAt,
+      occurredAt: occurredAt || metadata.occurredAt || metadata.timestamp,
+      visibility: metadata.visibility || "unspecified",
+      sensitivity: (sensitivityRaw || metadata.sensitivity || "private") as Org2RawCaptureInput["sensitivity"],
+      sourceRef: sourceRefOverride || metadata.sourceRef || `json:${path.resolve(jsonFile)}`,
+      content: String(raw.content || metadata.content || ""),
+    };
+  } else {
+    const content = readStdin ? fs.readFileSync(0, "utf8") : fs.readFileSync(file, "utf8");
+    const sourceKind = readStdin ? "stdin" : "file";
+    input = {
+      sourceType: sourceTypeOverride || sourceKind,
+      externalId: externalIdOverride || (readStdin ? `stdin-${sha256Hex(content).slice(0, 12)}` : path.basename(file)),
+      authors: authorRaw ? authorRaw.split(",").map((s) => s.trim()).filter(Boolean) : [],
+      capturedAt: capturedAt || undefined,
+      occurredAt: occurredAt || undefined,
+      visibility: "unspecified",
+      sensitivity: (sensitivityRaw || "private") as Org2RawCaptureInput["sensitivity"],
+      sourceRef: sourceRefOverride || (readStdin ? "stdin" : `file:${path.resolve(file)}`),
+      content,
+    };
+  }
+
+  const result = ingestDemoSource({
+    input,
+    rawDir: path.join(corpus, "raw", "ingest"),
+    reviewDir: path.join(corpus, "views", "ingest"),
+    now: capturedAt || undefined,
+    dryRun: !apply,
+  });
+
+  if (formatRaw === "json") {
+    console.log(JSON.stringify({ kind: "ingest", apply, rawPath: result.rawPath, reviewPath: result.reviewPath, rawRef: result.rawCapture.rawRef, contentHash: result.rawCapture.contentHash, reviewStatus: result.reviewArtifact.reviewStatus }, null, 2));
+  } else {
+    console.log(`${apply ? "ingested" : "dry-run"}: ${result.rawCapture.rawRef}`);
+    console.log(`raw: ${result.rawPath}`);
+    console.log(`view: ${result.reviewPath}`);
+    console.log(`review: ${result.reviewArtifact.reviewStatus} (generated artifact remains review-required before promotion to notes/)`);
+  }
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
+
+  if (args[0] === "ingest") {
+    await runIngestCommand(args.slice(1));
+    return;
+  }
 
   let command = "";
   let dir = "";
