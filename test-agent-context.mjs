@@ -146,3 +146,37 @@ const freshnessSearch = runJson("agent", "search", "--query", "pricing policy co
 assert.equal(freshnessSearch.results[0].id, "fresh-memory");
 assert.equal(freshnessSearch.results[0].claimState.freshness, "fresh");
 assert.equal(freshnessSearch.results[1].claimState.freshness, "stale");
+
+const rankingDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-agent-ranking-test-"));
+fs.writeFileSync(path.join(rankingDir, "ranking.org2"), `#+title: Ranking
+
+* Recent trivial note
+:PROPERTIES:
+:ID: recent-trivial
+:UPDATED: 2026-06-01
+:END:
+Copper launch retrieval note.
+
+* Old important policy
+:PROPERTIES:
+:ID: old-important
+:UPDATED: 2020-01-01
+:ORG2_SALIENCE: 5
+:PINNED: true
+:END:
+Copper launch retrieval note.
+`, "utf8");
+const salienceFirst = runJson("agent", "search", "--query", "Copper launch retrieval", "--dir", rankingDir, "--limit", "2", "--recency-weight", "0", "--salience-weight", "1");
+assert.equal(salienceFirst.ranking.salienceWeight, 1);
+assert.equal(salienceFirst.results[0].id, "old-important");
+assert.ok(salienceFirst.results[0].selectionReason.some((reason) => reason.includes("explicit salience")));
+assert.ok(salienceFirst.results[0].selectionReason.some((reason) => reason.includes("pinned")));
+
+const recencyFirst = runJson("agent", "search", "--query", "Copper launch retrieval", "--dir", rankingDir, "--limit", "2", "--recency-weight", "8", "--salience-weight", "0");
+assert.equal(recencyFirst.ranking.recencyWeight, 8);
+assert.equal(recencyFirst.results[0].id, "recent-trivial");
+assert.ok(recencyFirst.results[0].selectionReason.some((reason) => reason.includes("recency weight 8")));
+
+const explainedContext = execFileSync("node", ["dist/cli.js", "context", "Copper launch retrieval", "--dir", rankingDir, "--limit", "1", "--recency-weight", "0", "--salience-weight", "1"], { encoding: "utf8" });
+assert.match(explainedContext, /Selected because:/);
+assert.match(explainedContext, /explicit salience/);

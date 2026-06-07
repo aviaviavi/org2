@@ -48,6 +48,19 @@ JSON output uses the `org2:search:v1` schema:
 - `--limit N` caps matches (default: 50).
 - `--context N` includes surrounding source lines in JSON and supports agent citation checks.
 
+## Recency and salience tuning
+
+`org2 agent search`, `org2 agent context`, and `org2 context` rank matched notes with configurable recency and salience signals in addition to keyword/title/tag matches. Defaults are `--recency-weight 1` and `--salience-weight 1`; set either weight to `0` to disable that signal.
+
+Recency uses `UPDATED`, `DATE`, `CREATED`, `CLOSED`, or planning timestamps when present. Salience uses explicit `ORG2_SALIENCE`/`SALIENCE`/`IMPORTANCE`, pinned or important metadata, active TODO/SCHEDULED/DEADLINE state, backlinks/mentions, and project/entity scope proximity. JSON results include `ranking` and per-result `selectionReason`; rendered context packs include a “Selected because” line so agents can explain why each item was selected.
+
+Examples:
+
+```bash
+org2 context "scarf support triage" --dir notes --recursive --recency-weight 2 --salience-weight 1
+org2 agent search --query "pricing policy" --dir notes --salience-weight 3 --recency-weight 0 --format json
+```
+
 ## Agent consumption guidance
 
 Agents should treat search results as evidence, not answers. Quote or summarize only from returned `snippet`/`context`, preserve `file:line` citations, and run narrower follow-up searches when results are ambiguous or insufficient. Do not infer facts that are not grounded in cited lines.
