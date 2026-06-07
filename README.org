@@ -112,6 +112,16 @@ Habit convention: mark a repeating TODO headline with =:HABIT: true= (or =:STYLE
 
 Archive convention: =org2 archive= writes provenance into archived subtrees and defaults to =FILE_archive= for Org files. Directory scans for active views exclude common archive destinations by default (=/archive/=, =/archives/=, =*.org_archive=, =*.org2_archive=, =*.archive=, =*.archive.*=, and =*_archive=). Use =--include-archives= with agenda/search/query/compile/lint when you intentionally want archived content included.
 
+
+Context pack for agents or humans:
+
+#+begin_src sh
+npm run org2 -- context "scarf support triage" --dir /path/to/org --recursive --budget 8k
+npm run org2 -- context "scarf support triage" --dir /path/to/org --format json
+#+end_src
+
+=context= emits a deterministic, bounded bundle with the objective/query, top cited notes with =file:line= provenance, recent timeline entries, active TODOs, related entities/backlinks, uncertainty, and suggested next actions. Use =--format markdown= (default), =--format org=, or =--format json=. OpenClaw or another agent should call this before starting corpus-dependent work, keep cited provenance in its answer/work product, and refresh the pack if the query scope changes.
+
 Run corpus lint:
 
 #+begin_src sh
