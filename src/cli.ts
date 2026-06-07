@@ -25,7 +25,7 @@ import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
 import { compileCorpus, compileCorpusIncremental, extractCheckboxProgress, renderCompiledCorpus } from "./corpusCompile.js";
 import { extractClockReport } from "./clock.js";
-import { buildAgentContextPayload, type AgentInclude } from "./agentContext.js";
+import { buildAgentContextPayload, renderAgentContextPack, type AgentInclude } from "./agentContext.js";
 import { loadAiJobManifest, validateAiJobManifest } from "./aiJobManifest.js";
 import { createAiAdapterRequest, MockAiAdapter, type AiAdapterContextItem, type AiAdapterResponse } from "./aiAdapter.js";
 import { buildGeneratedArtifactMetadata, formatOrg2ArtifactPropertyDrawer, sha256Hex } from "./artifactMetadata.js";
@@ -7393,6 +7393,7 @@ async function main(): Promise<void> {
   let agentSince = "";
   let agentSourceType = "";
   let agentReviewStatus = "";
+  let contextFormat: "markdown" | "org" | "json" = "markdown";
 
   // AI job manifests and provider-free draft artifact workflows
   let aiAction: "validate-job" | "run" | "promote" | "suggest-links" | "review" | "" = "";
@@ -7561,6 +7562,14 @@ async function main(): Promise<void> {
           compileAction = "corpus";
           i++;
         }
+      }
+    } else if (arg === "context") {
+      command = "context";
+      agentAction = "bundle";
+      i++;
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        agentQuery = args[i]!;
+        i++;
       }
     } else if (arg === "agent") {
       command = "agent";
@@ -8182,7 +8191,7 @@ async function main(): Promise<void> {
           agendaLimitRaw = args[i]!;
         } else if (command === "search" || command === "query") {
           searchLimitRaw = args[i]!;
-        } else if (command === "agent") {
+        } else if (command === "agent" || command === "context") {
           agentLimitRaw = args[i]!;
         }
         i++;
@@ -8341,31 +8350,31 @@ async function main(): Promise<void> {
         }
         i++;
       }
-    } else if (arg === "--query" && command === "agent") {
+    } else if (arg === "--query" && (command === "agent" || command === "context")) {
       i++;
       if (i < args.length) {
         agentQuery = args[i]!;
         i++;
       }
-    } else if (arg === "--include" && command === "agent") {
+    } else if (arg === "--include" && (command === "agent" || command === "context")) {
       i++;
       if (i < args.length) {
         agentIncludeRaw = args[i]!;
         i++;
       }
-    } else if (arg === "--scope" && command === "agent") {
+    } else if (arg === "--scope" && (command === "agent" || command === "context")) {
       i++;
       if (i < args.length) { agentScope = args[i]!; i++; }
-    } else if (arg === "--since" && command === "agent") {
+    } else if (arg === "--since" && (command === "agent" || command === "context")) {
       i++;
       if (i < args.length) { agentSince = args[i]!; i++; }
-    } else if ((arg === "--source-type" || arg === "--type") && command === "agent") {
+    } else if ((arg === "--source-type" || arg === "--type") && (command === "agent" || command === "context")) {
       i++;
       if (i < args.length) { agentSourceType = args[i]!; i++; }
-    } else if ((arg === "--review-status" || arg === "--review") && command === "agent") {
+    } else if ((arg === "--review-status" || arg === "--review") && (command === "agent" || command === "context")) {
       i++;
       if (i < args.length) { agentReviewStatus = args[i]!; i++; }
-    } else if ((arg === "--max-tokens" || arg === "--max-chars" || arg === "--max-bytes") && command === "agent") {
+    } else if ((arg === "--budget" || arg === "--max-tokens" || arg === "--max-chars" || arg === "--max-bytes") && (command === "agent" || command === "context")) {
       i++;
       if (i < args.length) {
         agentMaxCharsRaw = args[i]!;
@@ -8456,6 +8465,8 @@ async function main(): Promise<void> {
           compileFormat = v;
         } else if (command === "clock" && (v === "text" || v === "json")) {
           clockFormat = v;
+        } else if (command === "context" && (v === "markdown" || v === "md" || v === "org" || v === "org2" || v === "json")) {
+          contextFormat = v === "md" ? "markdown" : v === "org2" ? "org" : v as "markdown" | "org" | "json";
         } else if (command === "ai" && (v === "text" || v === "json")) {
           aiFormat = v;
         } else if (
@@ -8731,6 +8742,15 @@ async function main(): Promise<void> {
   }
 
 
+function parseBudgetToChars(raw: string): number {
+  const value = String(raw || "").trim().toLowerCase();
+  const match = /^(\d+(?:\.\d+)?)(k|m)?$/.exec(value);
+  if (!match) return Number.parseInt(value, 10) || 12000;
+  const n = Number.parseFloat(match[1] || "0");
+  const multiplier = match[2] === "m" ? 1000000 : match[2] === "k" ? 1000 : 1;
+  return Math.max(200, Math.floor(n * multiplier));
+}
+
 function printGeneralUsage(exitCode: number): never {
   console.error(`org2 CLI
 
@@ -8761,6 +8781,7 @@ Roam / IDs:
   org2 query clocks --dir DIR [--recursive] [--format text|json]
   org2 clock --dir DIR [--recursive] [--format text|json]
   org2 compile corpus --dir DIR [--recursive] [--out FILE] [--format json|jsonl]
+  org2 context QUERY [--dir DIR] [--recursive] [--budget 8k] [--format markdown|org|json]
   org2 ai validate-job --job FILE [--format text|json]
   org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
   org2 ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
@@ -9053,6 +9074,21 @@ Output:
   standardized generated-artifact metadata, source hashes, headings, IDs,
   aliases, links, backlinks, TODO/planning state, properties, source ranges,
   and snippets. Org2 emits data only; it does not call an LLM.`;
+  } else if (command === "context") {
+    text = `org2 context
+
+Usage:
+  org2 context QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--budget 8k] [--limit N] [--include sources,backlinks,neighbors] [--format markdown|org|json]
+
+Flags:
+  --query QUERY      Retrieval query (or pass QUERY as first positional argument)
+  --budget N         Approximate max context characters; supports k/m suffixes (default 12000)
+  --format FORMAT    markdown (default), org, or json
+  --scope NAME       Optional project/person/task scope filter
+  --since RANGE      Optional recency filter such as 90d
+
+Output:
+  Deterministic context pack for agents and humans: objective/query, cited notes with file:line provenance, recent timeline entries, active TODOs, related entities/backlinks, uncertainty, and next actions.`;
   } else if (command === "agent") {
     text = `org2 agent ${options.agentAction || "context"}
 
@@ -9219,7 +9255,7 @@ Flags:
     printGeneralUsage(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "clock" && command !== "compile" && command !== "agent" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "clock" && command !== "compile" && command !== "agent" && command !== "context" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
     printGeneralUsage(1);
   }
 
@@ -9230,25 +9266,27 @@ Flags:
     return;
   }
 
-  if (command === "agent") {
+  if (command === "agent" || command === "context") {
+    if (command === "context") agentAction = "bundle";
     if (!agentAction) { console.error("Error: org2 agent requires a subcommand (bundle, context, search, or fetch)"); process.exit(1); }
-    if ((agentAction === "bundle" || agentAction === "context" || agentAction === "search") && !agentQuery.trim()) { console.error("Error: org2 agent context/search requires --query QUERY"); process.exit(1); }
+    if ((agentAction === "bundle" || agentAction === "context" || agentAction === "search") && !agentQuery.trim()) { console.error("Error: org2 agent/context requires --query QUERY"); process.exit(1); }
     if (agentAction === "fetch" && !agentId.trim()) { console.error("Error: org2 agent fetch requires --id ID"); process.exit(1); }
     if (!dir && files.length === 0) {
       const configPath = findConfigFile(process.cwd());
       if (configPath) {
         try { const config = loadConfig(configPath); const configDir = path.dirname(configPath); files = resolveFilesFromConfig(config, configDir); if (files.length === 0) { console.error(`Error: config found at ${configPath} but no matching files for patterns: ${config.agendaFiles?.join(", ") || "*.org"}`); process.exit(1); } dir = configDir; }
         catch (err) { console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`); process.exit(1); }
-      } else { console.error("Error: provide either --dir, --files, --file, or org2.json config for org2 agent"); process.exit(1); }
+      } else { console.error("Error: provide either --dir, --files, --file, or org2.json config for org2 agent/context"); process.exit(1); }
     }
     if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive, includeArchives);
     files = Array.from(new Set(files)).sort((a, b) => a.localeCompare(b));
-    if (files.length === 0) { console.error("Error: no Org files found for org2 agent retrieval"); process.exit(1); }
+    if (files.length === 0) { console.error("Error: no Org files found for org2 agent/context retrieval"); process.exit(1); }
     const rootDir = dir ? path.resolve(dir) : path.dirname(path.resolve(files[0]!));
     const include = Array.from(new Set(agentIncludeRaw.split(",").map((value) => value.trim().toLowerCase()).filter((value): value is AgentInclude => value === "sources" || value === "backlinks" || value === "neighbors")));
     const corpus = compileCorpus(files, { rootDir });
-    const payload = buildAgentContextPayload(corpus, { action: agentAction, query: agentQuery, id: agentId, limit: Number.parseInt(agentLimitRaw, 10) || 10, maxChars: Number.parseInt(agentMaxCharsRaw, 10) || 12000, include, scope: agentScope, since: agentSince, sourceType: agentSourceType, reviewStatus: agentReviewStatus });
-    process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+    const payload = buildAgentContextPayload(corpus, { action: agentAction, query: agentQuery, id: agentId, limit: Number.parseInt(agentLimitRaw, 10) || 10, maxChars: parseBudgetToChars(agentMaxCharsRaw), include, scope: agentScope, since: agentSince, sourceType: agentSourceType, reviewStatus: agentReviewStatus });
+    if (command === "context" && contextFormat !== "json") process.stdout.write(renderAgentContextPack(payload, contextFormat) + "\n");
+    else process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
     return;
   }
 
