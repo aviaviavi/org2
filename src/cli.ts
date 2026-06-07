@@ -7393,6 +7393,8 @@ async function main(): Promise<void> {
   let agentSince = "";
   let agentSourceType = "";
   let agentReviewStatus = "";
+  let agentRecencyWeightRaw = "1";
+  let agentSalienceWeightRaw = "1";
   let contextFormat: "markdown" | "org" | "json" = "markdown";
 
   // Entity profiles
@@ -8387,6 +8389,12 @@ async function main(): Promise<void> {
     } else if ((arg === "--review-status" || arg === "--review") && (command === "agent" || command === "context")) {
       i++;
       if (i < args.length) { agentReviewStatus = args[i]!; i++; }
+    } else if (arg === "--recency-weight" && (command === "agent" || command === "context")) {
+      i++;
+      if (i < args.length) { agentRecencyWeightRaw = args[i]!; i++; }
+    } else if (arg === "--salience-weight" && (command === "agent" || command === "context")) {
+      i++;
+      if (i < args.length) { agentSalienceWeightRaw = args[i]!; i++; }
     } else if ((arg === "--budget" || arg === "--max-tokens" || arg === "--max-chars" || arg === "--max-bytes") && (command === "agent" || command === "context")) {
       i++;
       if (i < args.length) {
@@ -9101,6 +9109,8 @@ Flags:
   --format FORMAT    markdown (default), org, or json
   --scope NAME       Optional project/person/task scope filter
   --since RANGE      Optional recency filter such as 90d
+  --recency-weight N Ranking weight for recent dates/planning (default 1; 0 disables)
+  --salience-weight N Ranking weight for salience metadata, TODOs, backlinks, and scope proximity (default 1)
 
 Output:
   Deterministic context pack for agents and humans: objective/query, cited notes with file:line provenance, recent timeline entries, active TODOs, related entities/backlinks, uncertainty, and next actions.`;
@@ -9124,6 +9134,8 @@ Flags:
   --max-chars N      Maximum context text characters (default 12000)
   --include LIST     Comma-separated sources,backlinks,neighbors
   --format json      Stable JSON output (default)
+  --recency-weight N Ranking weight for recent dates/planning (default 1; 0 disables)
+  --salience-weight N Ranking weight for salience metadata, TODOs, backlinks, and scope proximity (default 1)
 
 Output:
   Schema org2:agent-context:v1 with source ranges, citations, IDs, titles,
@@ -9299,7 +9311,7 @@ Flags:
     const rootDir = dir ? path.resolve(dir) : path.dirname(path.resolve(files[0]!));
     const include = Array.from(new Set(agentIncludeRaw.split(",").map((value) => value.trim().toLowerCase()).filter((value): value is AgentInclude => value === "sources" || value === "backlinks" || value === "neighbors")));
     const corpus = compileCorpus(files, { rootDir });
-    const payload = buildAgentContextPayload(corpus, { action: agentAction, query: agentQuery, id: agentId, limit: Number.parseInt(agentLimitRaw, 10) || 10, maxChars: parseBudgetToChars(agentMaxCharsRaw), include, scope: agentScope, since: agentSince, sourceType: agentSourceType, reviewStatus: agentReviewStatus });
+    const payload = buildAgentContextPayload(corpus, { action: agentAction, query: agentQuery, id: agentId, limit: Number.parseInt(agentLimitRaw, 10) || 10, maxChars: parseBudgetToChars(agentMaxCharsRaw), include, scope: agentScope, since: agentSince, sourceType: agentSourceType, reviewStatus: agentReviewStatus, recencyWeight: Number.parseFloat(agentRecencyWeightRaw), salienceWeight: Number.parseFloat(agentSalienceWeightRaw) });
     if (command === "context" && contextFormat !== "json") process.stdout.write(renderAgentContextPack(payload, contextFormat) + "\n");
     else process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
     return;
