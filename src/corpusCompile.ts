@@ -30,6 +30,19 @@ export type CompiledCorpusEntity = {
   source: "property" | "tag";
 };
 
+export type CompiledCorpusEntityProfile = {
+  entityId: string;
+  canonicalName: string;
+  type: string;
+  aliases: string[];
+  nodeKeys: string[];
+  backlinks: CompiledCorpusBacklink[];
+  mentions: Array<{ sourceKey: string; sourceTitle: string; file: string; line: number; label: string }>;
+  relations: CompiledCorpusRelation[];
+  facts: Array<{ key: string; value: string; provenance: Array<{ sourceKey: string; file: string; line: number }> }>;
+  reviewNeeded: Array<{ type: "conflicting-fact" | "ambiguous-alias"; message: string; key?: string; values?: string[]; labels?: string[] }>;
+};
+
 export type CompiledCorpusRelation = {
   subjectKey: string;
   subjectId: string | null;
@@ -124,8 +137,10 @@ export type CompiledCorpus = {
     backlinks: number;
     entities: number;
     relations: number;
+    entityProfiles: number;
   };
   entities: CompiledCorpusEntity[];
+  entityProfiles: CompiledCorpusEntityProfile[];
   relations: CompiledCorpusRelation[];
   clocks: OrgClockInterval[];
   clockIssues: OrgClockIssue[];
@@ -484,7 +499,7 @@ function normalizePredicate(raw: string): string {
 }
 
 function nodeEntityType(node: CompiledCorpusNode): string | undefined {
-  const propertyType = normalizeEntityType((node.effectiveProperties || node.properties).ORG2_ENTITY_TYPE || (node.effectiveProperties || node.properties).ENTITY_TYPE);
+  const propertyType = normalizeEntityType(node.properties.ORG2_ENTITY_TYPE || node.properties.ENTITY_TYPE);
   if (propertyType) return propertyType;
   const typedTag = node.tags.find((tag) => /^type[-_:]/i.test(tag));
   return typedTag ? normalizeEntityType(typedTag.replace(/^type[-_:]/i, "")) : undefined;
@@ -651,6 +666,7 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
 
   const entities = buildEntityIndex(nodes);
   const relations = buildRelationIndex(nodes, byId, labels);
+  const entityProfiles = buildEntityProfiles(nodes, entities, relations, labels);
 
   const totalLinks = nodes.reduce((sum, node) => sum + node.links.length, 0);
   const totalBacklinks = nodes.reduce((sum, node) => sum + node.backlinks.length, 0);
@@ -680,8 +696,10 @@ export function compileCorpus(files: string[], opts?: { rootDir?: string; genera
       backlinks: totalBacklinks,
       entities: entities.length,
       relations: relations.length,
+      entityProfiles: entityProfiles.length,
     },
     entities,
+    entityProfiles,
     relations,
     clocks: clockReport.intervals,
     clockIssues: clockReport.issues,
@@ -715,7 +733,7 @@ function buildEntityIndex(nodes: CompiledCorpusNode[]): CompiledCorpusEntity[] {
       entityType: node.entityType!,
       file: node.file,
       line: node.sourceRange.startLine,
-      source: (((node.effectiveProperties || node.properties).ORG2_ENTITY_TYPE || (node.effectiveProperties || node.properties).ENTITY_TYPE) ? "property" : "tag") as "property" | "tag",
+      source: ((node.properties.ORG2_ENTITY_TYPE || node.properties.ENTITY_TYPE) ? "property" : "tag") as "property" | "tag",
     }))
     .sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.title.localeCompare(b.title));
 }
@@ -913,6 +931,81 @@ function buildRelationIndex(nodes: CompiledCorpusNode[], byId: Map<string, Compi
   return relations.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.subjectTitle.localeCompare(b.subjectTitle));
 }
 
+
+function buildEntityProfiles(nodes: CompiledCorpusNode[], entities: CompiledCorpusEntity[], relations: CompiledCorpusRelation[], labels: Map<string, Set<string>>): CompiledCorpusEntityProfile[] {
+  const byKey = new Map(nodes.map((node) => [node.key, node]));
+  const entitiesByNodeKey = new Map(entities.map((entity) => [entity.nodeKey, entity]));
+  const groups = new Map<string, CompiledCorpusNode[]>();
+  for (const entity of entities) {
+    const node = byKey.get(entity.nodeKey);
+    if (!node) continue;
+    const entityId = node.id || `label:${normalizeLabel(node.title)}`;
+    groups.set(entityId, [...(groups.get(entityId) || []), node]);
+  }
+
+  const profiles: CompiledCorpusEntityProfile[] = [];
+  for (const [entityId, groupNodes] of groups) {
+    const primary = [...groupNodes].sort((a, b) => a.title.length - b.title.length || a.title.localeCompare(b.title) || a.file.localeCompare(b.file))[0]!;
+    const labelSet = new Set<string>();
+    for (const node of groupNodes) for (const label of nodeLabels(node)) labelSet.add(label);
+    const normalizedLabels = Array.from(labelSet).map((label) => normalizeLabel(label)).filter(Boolean);
+    const nodeKeySet = new Set(groupNodes.map((node) => node.key));
+    const mentions = new Map<string, CompiledCorpusEntityProfile["mentions"][number]>();
+    const backlinks = new Map<string, CompiledCorpusBacklink>();
+
+    for (const node of groupNodes) {
+      for (const backlink of node.backlinks) backlinks.set(`${backlink.sourceKey}:${backlink.line}:${backlink.linkType}`, backlink);
+    }
+    for (const source of nodes) {
+      if (nodeKeySet.has(source.key)) continue;
+      for (const link of source.links) {
+        if (link.type !== "wiki") continue;
+        const label = normalizeLabel(link.target);
+        if (!normalizedLabels.includes(label)) continue;
+        mentions.set(`${source.key}:${link.line}:${label}`, { sourceKey: source.key, sourceTitle: source.title, file: source.file, line: link.line, label: link.target });
+      }
+    }
+
+    const factBuckets = new Map<string, Map<string, Array<{ sourceKey: string; file: string; line: number }>>>();
+    for (const node of groupNodes) {
+      for (const [key, rawValue] of Object.entries(node.effectiveProperties || node.properties)) {
+        if (["ID", "ROAM_ALIASES", "ORG2_ENTITY_TYPE", "ENTITY_TYPE"].includes(key)) continue;
+        const value = String(rawValue || "").trim();
+        if (!value) continue;
+        const values = factBuckets.get(key) || new Map();
+        values.set(value, [...(values.get(value) || []), { sourceKey: node.key, file: node.file, line: node.sourceRange.startLine }]);
+        factBuckets.set(key, values);
+      }
+    }
+
+    const facts: CompiledCorpusEntityProfile["facts"] = [];
+    const reviewNeeded: CompiledCorpusEntityProfile["reviewNeeded"] = [];
+    for (const [key, values] of Array.from(factBuckets.entries()).sort((a, b) => a[0].localeCompare(b[0]))) {
+      const sortedValues = Array.from(values.keys()).sort((a, b) => a.localeCompare(b));
+      if (sortedValues.length > 1) reviewNeeded.push({ type: "conflicting-fact", key, values: sortedValues, message: `Conflicting values for ${key}: ${sortedValues.join(" vs ")}` });
+      for (const value of sortedValues) facts.push({ key, value, provenance: (values.get(value) || []).sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line) });
+    }
+    for (const label of normalizedLabels) {
+      const candidates = Array.from(labels.get(label) || []);
+      if (candidates.length > 1) reviewNeeded.push({ type: "ambiguous-alias", labels: [label], message: `Alias/title '${label}' resolves to multiple entity ids: ${candidates.sort().join(", ")}` });
+    }
+
+    profiles.push({
+      entityId,
+      canonicalName: primary.title,
+      type: entitiesByNodeKey.get(primary.key)?.entityType || primary.entityType || "unknown",
+      aliases: Array.from(labelSet).filter((label) => normalizeLabel(label) !== normalizeLabel(primary.title)).sort((a, b) => a.localeCompare(b)),
+      nodeKeys: Array.from(nodeKeySet).sort(),
+      backlinks: Array.from(backlinks.values()).sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line),
+      mentions: Array.from(mentions.values()).sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line),
+      relations: relations.filter((relation) => nodeKeySet.has(relation.subjectKey) || (relation.objectId && relation.objectId === primary.id)).sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line),
+      facts,
+      reviewNeeded,
+    });
+  }
+  return profiles.sort((a, b) => a.canonicalName.localeCompare(b.canonicalName) || a.entityId.localeCompare(b.entityId));
+}
+
 function buildLookupIndex(nodes: CompiledCorpusNode[]): CompiledCorpusLookupIndex {
   const index: CompiledCorpusLookupIndex = { ids: {}, titles: {}, tags: {}, dates: {}, files: {} };
   const add = (bucket: Record<string, string[]>, key: string, value: string) => { const normalized = normalizeLabel(key); if (!normalized) return; (bucket[normalized] ||= []).push(value); };
@@ -962,7 +1055,7 @@ export function compileCorpusIncremental(files: string[], opts: { rootDir?: stri
 
 export function renderCompiledCorpus(corpus: CompiledCorpus, format: "json" | "jsonl" = "json"): string {
   if (format === "jsonl") {
-    const header = { schemaVersion: corpus.schemaVersion, generatedBy: corpus.generatedBy, artifact: corpus.artifact, rootDir: corpus.rootDir, stats: corpus.stats, entities: corpus.entities, relations: corpus.relations, index: corpus.index, indexState: corpus.indexState };
+    const header = { schemaVersion: corpus.schemaVersion, generatedBy: corpus.generatedBy, artifact: corpus.artifact, rootDir: corpus.rootDir, stats: corpus.stats, entities: corpus.entities, entityProfiles: corpus.entityProfiles, relations: corpus.relations, index: corpus.index, indexState: corpus.indexState };
     return [header, ...corpus.nodes].map((entry) => JSON.stringify(entry)).join("\n") + "\n";
   }
   return JSON.stringify(corpus, null, 2) + "\n";
