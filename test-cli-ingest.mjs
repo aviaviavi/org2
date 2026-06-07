@@ -43,4 +43,17 @@ const stdin = spawnSync(process.execPath, ["dist/cli.js", "ingest", "--stdin", "
 assert.equal(stdin.status, 0, stdin.stderr);
 assert.match(JSON.parse(stdin.stdout).rawRef, /^note:stdin-[a-f0-9]{12}@sha256:/);
 
+const invalidJsonPath = path.join(root, "invalid.json");
+fs.writeFileSync(invalidJsonPath, "{not json", "utf8");
+const invalidJson = spawnSync(process.execPath, ["dist/cli.js", "ingest", "--json", invalidJsonPath, "--corpus", root], { encoding: "utf8" });
+assert.notEqual(invalidJson.status, 0);
+assert.match(invalidJson.stderr, /ingest --json could not read structured capture input/);
+assert.match(invalidJson.stderr, new RegExp(invalidJsonPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+
+const arrayJsonPath = path.join(root, "array.json");
+fs.writeFileSync(arrayJsonPath, "[]", "utf8");
+const arrayJson = spawnSync(process.execPath, ["dist/cli.js", "ingest", "--json", arrayJsonPath, "--corpus", root], { encoding: "utf8" });
+assert.notEqual(arrayJson.status, 0);
+assert.match(arrayJson.stderr, /ingest --json requires a JSON object/);
+
 console.log("cli ingest OK");
