@@ -7277,18 +7277,29 @@ or {metadata:{...}, content:"..."}. Generated view artifacts are review-required
 
   let input: Org2RawCaptureInput;
   if (jsonFile) {
-    const raw = JSON.parse(fs.readFileSync(jsonFile, "utf8"));
-    const metadata = raw.metadata && typeof raw.metadata === "object" ? raw.metadata : raw;
+    let raw: Record<string, unknown>;
+    try {
+      raw = JSON.parse(fs.readFileSync(jsonFile, "utf8"));
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(`ingest --json could not read structured capture input at ${jsonFile}: ${detail}`);
+    }
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      throw new Error(`ingest --json requires a JSON object at ${jsonFile}`);
+    }
+    const metadata = raw.metadata && typeof raw.metadata === "object" && !Array.isArray(raw.metadata) ? raw.metadata as Record<string, unknown> : raw;
+    const metadataString = (key: string): string | undefined => typeof metadata[key] === "string" ? metadata[key] : undefined;
+    const rawContent = typeof raw.content === "string" ? raw.content : undefined;
     input = {
-      sourceType: sourceTypeOverride || metadata.sourceType || "json",
-      externalId: externalIdOverride || metadata.externalId || path.basename(jsonFile),
-      authors: authorRaw ? authorRaw.split(",").map((s) => s.trim()).filter(Boolean) : (Array.isArray(metadata.authors) ? metadata.authors : metadata.author ? [metadata.author] : []),
-      capturedAt: capturedAt || metadata.capturedAt,
-      occurredAt: occurredAt || metadata.occurredAt || metadata.timestamp,
-      visibility: metadata.visibility || "unspecified",
-      sensitivity: (sensitivityRaw || metadata.sensitivity || "private") as Org2RawCaptureInput["sensitivity"],
-      sourceRef: sourceRefOverride || metadata.sourceRef || `json:${path.resolve(jsonFile)}`,
-      content: String(raw.content || metadata.content || ""),
+      sourceType: sourceTypeOverride || metadataString("sourceType") || "json",
+      externalId: externalIdOverride || metadataString("externalId") || path.basename(jsonFile),
+      authors: authorRaw ? authorRaw.split(",").map((s) => s.trim()).filter(Boolean) : (Array.isArray(metadata.authors) ? metadata.authors.map(String) : metadataString("author") ? [metadataString("author") as string] : []),
+      capturedAt: capturedAt || metadataString("capturedAt"),
+      occurredAt: occurredAt || metadataString("occurredAt") || metadataString("timestamp"),
+      visibility: metadataString("visibility") || "unspecified",
+      sensitivity: (sensitivityRaw || metadataString("sensitivity") || "private") as Org2RawCaptureInput["sensitivity"],
+      sourceRef: sourceRefOverride || metadataString("sourceRef") || `json:${path.resolve(jsonFile)}`,
+      content: rawContent || metadataString("content") || "",
     };
   } else {
     const content = readStdin ? fs.readFileSync(0, "utf8") : fs.readFileSync(file, "utf8");
