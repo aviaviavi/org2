@@ -35,6 +35,11 @@ export interface AgentIngestConnectorMetadata {
   mailbox?: string;
   label?: string;
   labels?: string[];
+  service?: string;
+  conversationId?: string;
+  conversationTitle?: string;
+  group?: boolean;
+  participants?: string[];
   messageId?: string;
   threadId?: string;
   subject?: string;
@@ -202,7 +207,8 @@ function applyBoundedFilters(records: AgentIngestRecord[], options: AgentIngestF
   const filtered = records.filter((record) => inWindow(record.source.timestamp, options)).filter((record) => {
     if (record.source.kind === "slack") return allowed([record.source.channel || "", record.source.thread || ""], options);
     if (record.source.kind === "gmail" || record.source.kind === "email") return allowed([record.source.mailbox || "", record.source.label || "", ...(record.source.labels || []), record.source.author || "", ...(record.source.recipients || [])], options) && emailAllowed(record, options);
-    return allowed([record.source.mailbox || "", record.source.label || "", ...(record.source.recipients || [])], options);
+    if (record.source.kind === "message") return allowed([record.source.service || "", record.source.conversationId || "", record.source.conversationTitle || "", ...(record.source.participants || [])], options);
+    return allowed([record.source.mailbox || "", record.source.label || "", ...(record.source.recipients || []), ...(record.source.participants || [])], options);
   });
   const limit = Math.max(0, Math.trunc(Number(options.limit || filtered.length)));
   return filtered.slice(0, limit);
@@ -210,7 +216,7 @@ function applyBoundedFilters(records: AgentIngestRecord[], options: AgentIngestF
 
 
 function participantValues(record: AgentIngestRecord): string[] {
-  return [record.source.author || "", ...(record.source.recipients || [])].filter(Boolean);
+  return [record.source.author || "", ...(record.source.recipients || []), ...(record.source.participants || [])].filter(Boolean);
 }
 
 function sourceAllowedByPolicy(record: AgentIngestRecord, policy: AgentIngestCapturePolicy): boolean {
@@ -345,6 +351,67 @@ export class SlackFixtureConnector implements AgentIngestConnector {
   }
 }
 
+export class MessageThreadFixtureConnector implements AgentIngestConnector {
+  readonly kind = "message" as const;
+  readonly manifest: AgentIngestConnectorManifest = {
+    schemaVersion: "org2-connector/v1",
+    id: "fixture.message-thread",
+    sourceType: this.kind,
+    displayName: "Message/thread fixture connector",
+    auth: { mode: "external", note: "Fixture input is exported outside org2 core; iMessage/SMS/WhatsApp auth and device/API access belong in optional connector plugins." },
+    capabilities: { incrementalSync: true, dryRun: true, stableSourceIds: true, contentHashDedupe: true },
+    privacy: { defaultPolicy: "review-required", sensitivityField: "sensitivity" },
+  };
+
+  ingest(input: unknown, options: AgentIngestFilterOptions = {}): AgentIngestRecord[] {
+    const rows = normalizeInput(input).flatMap((thread) => {
+      const messages = Array.isArray(thread.messages) ? thread.messages.map(asRecord) : [];
+      if (!messages.length) return [thread];
+      const inherited = {
+        service: stringField(thread, "service", "source", "platform"),
+        conversationId: stringField(thread, "conversationId", "threadId", "chatId", "id"),
+        conversationTitle: stringField(thread, "conversationTitle", "title", "name"),
+        participants: stringArrayField(thread, "participants"),
+        group: Boolean(thread.group),
+      };
+      return messages.map((message) => ({ ...inherited, ...message }));
+    });
+    const records = rows.map((message, index) => {
+      const timestamp = stringField(message, "timestamp", "date", "createdAt", "sentAt");
+      const service = stringField(message, "service", "source", "platform") || "message";
+      const conversationId = stringField(message, "conversationId", "threadId", "chatId", "conversation_id");
+      const conversationTitle = stringField(message, "conversationTitle", "title", "chatName", "name") || conversationId || service;
+      const participants = stringArrayField(message, "participants");
+      const author = stringField(message, "author", "sender", "from", "handle");
+      const recipients = [...stringArrayField(message, "recipients"), ...stringArrayField(message, "to")];
+      const id = stringField(message, "id", "messageId", "guid") || `${service}-${conversationId || "conversation"}-${timestamp || index}`;
+      return {
+        id,
+        title: `${service} ${conversationTitle}`,
+        text: stringField(message, "text", "body", "content"),
+        cursor: `${timestamp}#${id}`,
+        rawPayload: message,
+        source: {
+          kind: this.kind,
+          service,
+          conversationId,
+          conversationTitle,
+          group: typeof message.group === "boolean" ? message.group : participants.length > 2,
+          participants,
+          messageId: id,
+          threadId: conversationId,
+          url: stringField(message, "url", "permalink"),
+          author,
+          recipients,
+          timestamp,
+          sensitivity: (stringField(message, "sensitivity") as AgentIngestConnectorMetadata["sensitivity"]) || undefined,
+        },
+      } satisfies AgentIngestRecord;
+    }).filter((record) => record.text && record.source.timestamp);
+    return applyBoundedFilters(records, options);
+  }
+}
+
 export class GmailFixtureConnector implements AgentIngestConnector {
   readonly kind = "gmail" as const;
   readonly manifest: AgentIngestConnectorManifest = {
@@ -430,6 +497,11 @@ export function renderIngestReviewArtifact(records: AgentIngestRecord[], opts: {
     if (source.channel) lines.push(`:ORG2_SLACK_CHANNEL: ${source.channel}`);
     if (source.thread) lines.push(`:ORG2_SLACK_THREAD: ${source.thread}`);
     if (source.mailbox) lines.push(`:ORG2_GMAIL_MAILBOX: ${source.mailbox}`);
+    if (source.service) lines.push(`:ORG2_MESSAGE_SERVICE: ${source.service}`);
+    if (source.conversationId) lines.push(`:ORG2_MESSAGE_CONVERSATION_ID: ${source.conversationId}`);
+    if (source.conversationTitle) lines.push(`:ORG2_MESSAGE_CONVERSATION_TITLE: ${source.conversationTitle}`);
+    if (source.participants?.length) lines.push(`:ORG2_MESSAGE_PARTICIPANTS: ${source.participants.join(",")}`);
+    if (typeof source.group === "boolean") lines.push(`:ORG2_MESSAGE_GROUP: ${source.group}`);
     if (source.label) lines.push(`:ORG2_GMAIL_LABEL: ${source.label}`);
     if (source.labels?.length) lines.push(`:ORG2_EMAIL_LABELS: ${source.labels.join(",")}`);
     if (source.threadId) lines.push(`:ORG2_EMAIL_THREAD_ID: ${source.threadId}`);

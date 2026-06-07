@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import {
   GmailFixtureConnector,
+  MessageThreadFixtureConnector,
   applyCapturePolicy,
   SlackFixtureConnector,
   connectorRecordsToRawCaptureInputs,
@@ -32,6 +33,39 @@ assert.equal(slackPreview.records.length, 1);
 assert.equal(slackPreview.records[0].id, 's3');
 assert.equal(slackPreview.skipped[0].reason, 'duplicate-source-id');
 
+
+const messages = new MessageThreadFixtureConnector();
+const messageRecords = messages.ingest({ threads: [
+  { service: 'whatsapp', conversationId: 'chat-1', conversationTitle: 'Scarf plans', participants: ['avi', '+15551234567'], group: false, messages: [
+    { id: 'm1', timestamp: '2024-04-03T13:00:00Z', sender: '+15551234567', text: 'Can you follow up on the Scarf pilot tomorrow?', sensitivity: 'private' },
+    { id: 'm2', timestamp: '2024-04-03T13:05:00Z', sender: 'avi', text: 'Yes, TODO: send the pilot recap.' },
+  ] },
+  { service: 'imessage', conversationId: 'chat-2', conversationTitle: 'Old thread', participants: ['avi', 'friend'], messages: [
+    { id: 'm3', timestamp: '2023-01-01T13:00:00Z', sender: 'friend', text: 'Too old.' },
+  ] },
+] }, { since: '2024-04-01T00:00:00Z', allowlist: ['Scarf plans'], limit: 10 });
+assert.equal(messageRecords.length, 2);
+assert.equal(messageRecords[0].source.kind, 'message');
+assert.equal(messageRecords[0].source.service, 'whatsapp');
+assert.equal(messageRecords[0].source.conversationId, 'chat-1');
+assert.equal(messageRecords[0].source.conversationTitle, 'Scarf plans');
+assert.deepEqual(messageRecords[0].source.participants, ['avi', '+15551234567']);
+assert.equal(messageRecords[0].source.group, false);
+assert.equal(messageRecords[0].source.author, '+15551234567');
+assert.equal(messageRecords[0].source.sensitivity, 'private');
+assert.match(messageRecords[0].cursor, /^2024-04-03T13:00:00Z#m1$/);
+validateConnectorManifest(messages.manifest);
+assert.equal(messages.manifest.auth.mode, 'external');
+assert.match(messages.manifest.auth.note, /plugins/);
+
+const messagePolicyPreview = previewConnectorIngest(messages, [
+  { service: 'imessage', conversationId: 'chat-3', conversationTitle: 'Allowed', participants: ['avi', 'friend'], id: 'm4', timestamp: '2024-04-07T12:00:00Z', author: 'friend', text: 'Please call me at 555-1212.' },
+  { service: 'whatsapp', conversationId: 'chat-4', conversationTitle: 'Denied', participants: ['avi', 'unknown'], id: 'm5', timestamp: '2024-04-07T13:00:00Z', author: 'unknown', text: 'Ignore.' },
+], { policy: { sourceAllowlist: ['message'], participants: ['friend'], maxCount: 1, sensitiveRedactions: [{ pattern: '\\b\\d{3}-\\d{4}\\b' }] } });
+assert.equal(messagePolicyPreview.records.length, 1);
+assert.equal(messagePolicyPreview.records[0].id, 'm4');
+assert.match(messagePolicyPreview.records[0].text, /\[redacted\]/);
+assert.equal(messagePolicyPreview.policyReport.redactedCount, 1);
 
 const gmail = new GmailFixtureConnector();
 const gmailRecords = gmail.ingest({ threads: [
@@ -85,17 +119,23 @@ const directPolicy = applyCapturePolicy(slackRecords, { sourceDenylist: ['gmail'
 assert.equal(directPolicy.records.length, 1);
 assert.equal(directPolicy.report.dryRun, true);
 
-const rawInputs = connectorRecordsToRawCaptureInputs([...slackRecords, ...gmailRecords], '2024-04-04T00:00:00Z');
+const rawInputs = connectorRecordsToRawCaptureInputs([...slackRecords, ...messageRecords, ...gmailRecords], '2024-04-04T00:00:00Z');
 assert.equal(rawInputs[0].sourceType, 'slack');
 assert.equal(rawInputs[0].externalId, 's1');
 assert.equal(rawInputs[0].sourceRef, 'https://slack.example/1');
-assert.equal(rawInputs[1].sensitivity, 'restricted');
+assert.equal(rawInputs[1].sourceType, 'message');
+assert.equal(rawInputs[1].sensitivity, 'private');
+assert.equal(rawInputs[3].sensitivity, 'restricted');
 
-const artifact = renderIngestReviewArtifact([...slackRecords, ...gmailRecords], { title: 'Scoped import review', generatedAt: '2024-04-04T00:00:00Z' });
+const artifact = renderIngestReviewArtifact([...slackRecords, ...messageRecords, ...gmailRecords], { title: 'Scoped import review', generatedAt: '2024-04-04T00:00:00Z' });
 assert.match(artifact, /#\+TITLE: Scoped import review/);
 assert.match(artifact, /:ORG2_REVIEW_STATUS: review-required/);
 assert.match(artifact, /:ORG2_SOURCE_KIND: slack/);
 assert.match(artifact, /:ORG2_SOURCE_KIND: gmail/);
+assert.match(artifact, /:ORG2_SOURCE_KIND: message/);
+assert.match(artifact, /:ORG2_MESSAGE_SERVICE: whatsapp/);
+assert.match(artifact, /:ORG2_MESSAGE_CONVERSATION_ID: chat-1/);
+assert.match(artifact, /:ORG2_MESSAGE_PARTICIPANTS: avi,\+15551234567/);
 assert.match(artifact, /Generated candidates \(review required\)/);
 assert.match(artifact, /TODO candidate: gmail:g1b/);
 assert.match(artifact, /:ORG2_EMAIL_THREAD_ID: thr-1/);
