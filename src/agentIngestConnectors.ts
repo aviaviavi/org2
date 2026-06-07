@@ -34,7 +34,12 @@ export interface AgentIngestConnectorMetadata {
   thread?: string;
   mailbox?: string;
   label?: string;
+  labels?: string[];
   messageId?: string;
+  threadId?: string;
+  subject?: string;
+  unread?: boolean;
+  starred?: boolean;
   url?: string;
   author?: string;
   recipients?: string[];
@@ -55,6 +60,11 @@ export interface AgentIngestFilterOptions {
   since?: string;
   until?: string;
   allowlist?: string[];
+  labels?: string[];
+  senders?: string[];
+  domains?: string[];
+  unread?: boolean;
+  starred?: boolean;
   limit?: number;
   cursor?: string;
   dryRun?: boolean;
@@ -139,9 +149,31 @@ function allowed(values: string[], options: AgentIngestFilterOptions): boolean {
   return values.some((value) => allowlist.includes(value.toLowerCase()));
 }
 
+function emailAddressDomain(value: string): string {
+  const match = String(value || "").toLowerCase().match(/@([^>\s]+)>?$/);
+  return match?.[1] || "";
+}
+
+function matchesAny(values: string[], allowlist?: string[]): boolean {
+  const allowedValues = (allowlist || []).map((entry) => entry.toLowerCase()).filter(Boolean);
+  if (allowedValues.length === 0) return true;
+  const normalized = values.map((value) => value.toLowerCase());
+  return normalized.some((value) => allowedValues.includes(value));
+}
+
+function emailAllowed(record: AgentIngestRecord, options: AgentIngestFilterOptions): boolean {
+  if (!matchesAny(record.source.labels || [record.source.label || ""], options.labels)) return false;
+  if (!matchesAny([record.source.author || ""], options.senders)) return false;
+  if (!matchesAny([emailAddressDomain(record.source.author || ""), ...(record.source.recipients || []).map(emailAddressDomain)], options.domains)) return false;
+  if (typeof options.unread === "boolean" && record.source.unread !== options.unread) return false;
+  if (typeof options.starred === "boolean" && record.source.starred !== options.starred) return false;
+  return true;
+}
+
 function applyBoundedFilters(records: AgentIngestRecord[], options: AgentIngestFilterOptions = {}): AgentIngestRecord[] {
   const filtered = records.filter((record) => inWindow(record.source.timestamp, options)).filter((record) => {
     if (record.source.kind === "slack") return allowed([record.source.channel || "", record.source.thread || ""], options);
+    if (record.source.kind === "gmail" || record.source.kind === "email") return allowed([record.source.mailbox || "", record.source.label || "", ...(record.source.labels || []), record.source.author || "", ...(record.source.recipients || [])], options) && emailAllowed(record, options);
     return allowed([record.source.mailbox || "", record.source.label || "", ...(record.source.recipients || [])], options);
   });
   const limit = Math.max(0, Math.trunc(Number(options.limit || filtered.length)));
@@ -245,31 +277,53 @@ export class GmailFixtureConnector implements AgentIngestConnector {
   };
 
   ingest(input: unknown, options: AgentIngestFilterOptions = {}): AgentIngestRecord[] {
-    const records = normalizeInput(input).map((message, index) => {
+    const rows = normalizeInput(input).flatMap((item) => Array.isArray(item.messages) ? (item.messages as unknown[]).map(asRecord).map((message) => ({ ...message, threadId: stringField(item, "threadId", "id"), subject: stringField(message, "subject") || stringField(item, "subject") })) : [item]);
+    const records = rows.map((message, index) => {
       const timestamp = stringField(message, "date", "timestamp", "internalDate");
       const subject = stringField(message, "subject") || "Gmail message";
       const from = stringField(message, "from", "author");
       const recipients = [...stringArrayField(message, "to"), ...stringArrayField(message, "cc")];
       const labels = stringArrayField(message, "labels");
+      const threadId = stringField(message, "threadId", "thread_id");
+      const id = stringField(message, "id", "messageId") || `gmail-${threadId || timestamp || index}`;
       return {
-        id: stringField(message, "id", "messageId") || `gmail-${timestamp || index}`,
-        title: subject,
+        id,
+        title: threadId ? `${subject} (${threadId})` : subject,
         text: stringField(message, "text", "body", "snippet"),
+        cursor: `${timestamp}#${id}`,
         source: {
           kind: this.kind,
           mailbox: stringField(message, "mailbox") || "gmail",
           label: labels[0],
-          messageId: stringField(message, "id", "messageId", "threadId"),
+          labels,
+          messageId: id,
+          threadId,
+          subject,
           url: stringField(message, "url", "permalink"),
           author: from,
           recipients,
           timestamp,
+          unread: Boolean(message.unread),
+          starred: Boolean(message.starred),
           sensitivity: (stringField(message, "sensitivity") as AgentIngestConnectorMetadata["sensitivity"]) || undefined,
         },
       } satisfies AgentIngestRecord;
     }).filter((record) => record.text && record.source.timestamp);
     return applyBoundedFilters(records, options);
   }
+}
+
+function extractCandidates(records: AgentIngestRecord[]): { summaries: string[]; todos: string[] } {
+  const summaries: string[] = [];
+  const todos: string[] = [];
+  for (const record of records) {
+    const firstSentence = record.text.split(/(?<=[.!?])\s+/).find(Boolean);
+    if (firstSentence) summaries.push(`${record.title}: ${firstSentence.slice(0, 180)}`);
+    for (const line of record.text.split(/\r?\n/)) {
+      if (/\b(todo|follow up|follow-up|action|please|can you|need to)\b/i.test(line)) todos.push(`${record.source.kind}:${record.id} — ${line.trim()}`);
+    }
+  }
+  return { summaries, todos };
 }
 
 export function renderIngestReviewArtifact(records: AgentIngestRecord[], opts: { title?: string; generatedAt?: string } = {}): string {
@@ -283,7 +337,12 @@ export function renderIngestReviewArtifact(records: AgentIngestRecord[], opts: {
     reviewStatus: "review-required",
     aiTask: "ingest-review-packet",
   });
-  const lines = [`#+TITLE: ${opts.title || "Scoped ingestion review packet"}`, formatOrg2ArtifactPropertyDrawer(metadata), "* Review checklist", "- [ ] Confirm this scoped import is allowed and bounded.", "- [ ] Redact private/sensitive details before promotion.", "- [ ] Promote only verified decisions, people, projects, follow-ups, and claims.", "", "* Source records"];
+  const lines = [`#+TITLE: ${opts.title || "Scoped ingestion review packet"}`, formatOrg2ArtifactPropertyDrawer(metadata), "* Review checklist", "- [ ] Confirm this scoped import is allowed and bounded.", "- [ ] Redact private/sensitive details before promotion.", "- [ ] Promote only verified decisions, people, projects, follow-ups, and claims."];
+  const candidates = extractCandidates(records);
+  if (candidates.summaries.length || candidates.todos.length) {
+    lines.push("", "* Generated candidates (review required)", ...candidates.summaries.map((summary) => `- Summary candidate: ${summary}`), ...candidates.todos.map((todo) => `- TODO candidate: ${todo}`));
+  }
+  lines.push("", "* Source records");
   for (const record of records) {
     const source = record.source;
     lines.push(`** ${record.title}`, `:PROPERTIES:`, `:ORG2_SOURCE_KIND: ${source.kind}`, `:ORG2_SOURCE_ID: ${record.id}`, `:ORG2_SOURCE_TIMESTAMP: ${source.timestamp}`);
@@ -291,6 +350,11 @@ export function renderIngestReviewArtifact(records: AgentIngestRecord[], opts: {
     if (source.thread) lines.push(`:ORG2_SLACK_THREAD: ${source.thread}`);
     if (source.mailbox) lines.push(`:ORG2_GMAIL_MAILBOX: ${source.mailbox}`);
     if (source.label) lines.push(`:ORG2_GMAIL_LABEL: ${source.label}`);
+    if (source.labels?.length) lines.push(`:ORG2_EMAIL_LABELS: ${source.labels.join(",")}`);
+    if (source.threadId) lines.push(`:ORG2_EMAIL_THREAD_ID: ${source.threadId}`);
+    if (source.subject) lines.push(`:ORG2_EMAIL_SUBJECT: ${source.subject}`);
+    if (typeof source.unread === "boolean") lines.push(`:ORG2_EMAIL_UNREAD: ${source.unread}`);
+    if (typeof source.starred === "boolean") lines.push(`:ORG2_EMAIL_STARRED: ${source.starred}`);
     if (source.url) lines.push(`:ORG2_SOURCE_URL: ${source.url}`);
     if (source.sensitivity) lines.push(`:ORG2_SENSITIVITY: ${source.sensitivity}`);
     lines.push(`:END:`, record.text, "");

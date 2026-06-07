@@ -30,7 +30,7 @@ Connector output is normalized to `AgentIngestRecord` values with:
 
 - stable source ID (`kind:id`) for idempotency;
 - cursor/timestamp for incremental sync;
-- source metadata such as authors, channel/mailbox/label/thread, URL, timestamp, and sensitivity;
+- source metadata such as authors, recipients, channel/mailbox/labels/thread, subject, unread/starred state, URL, timestamp, and sensitivity;
 - raw payload kept as connector provenance, not promoted into durable notes;
 - text content that can be converted into `Org2RawCaptureInput` and fed to the unified `org2 ingest` pipeline.
 
@@ -49,7 +49,10 @@ Connector output is normalized to `AgentIngestRecord` values with:
 The fixture connectors support bounded export ingestion for Slack-like and Gmail-like JSON. They prove the contract without live external auth:
 
 - `SlackFixtureConnector.manifest` and `GmailFixtureConnector.manifest` declare external auth expectations.
+- `GmailFixtureConnector` accepts either flat message exports or multi-message thread exports and emits stable message IDs plus timestamp/message cursors for incremental sync.
+- Email filtering can be scoped by labels, exact senders, sender/recipient domains, unread/starred state, date windows, and `limit`.
 - `previewConnectorIngest()` validates manifests, applies privacy policy, and reports skipped duplicates.
 - `connectorRecordsToRawCaptureInputs()` adapts connector records into the same raw capture shape used by `org2 ingest`.
+- `renderIngestReviewArtifact()` marks generated summaries and TODO candidates as review-required before promotion.
 
 These connectors intentionally do not call external APIs. Live API sync should build on the same interface and keep the same defaults: bounded, allowlisted, review-gated, idempotent, and privacy-aware.
