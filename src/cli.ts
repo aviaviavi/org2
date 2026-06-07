@@ -8632,6 +8632,31 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--json") {
+      if (command === "archive") archiveFormat = "json";
+      else if (command === "refile") refileFormat = "json";
+      else if (command === "export") exportFormat = "json";
+      else if (command === "publish") publishFormat = "json";
+      else if (command === "agenda") format = "json";
+      else if (command === "todo") todoFormat = "json";
+      else if (command === "capture") captureFormat = "json";
+      else if (command === "plan") planFormat = "json";
+      else if (command === "crypt") cryptFormat = "json";
+      else if (command === "fmt") fmtFormat = "json";
+      else if (command === "id") idFormat = "json";
+      else if (command === "backlinks") backlinksFormat = "json";
+      else if (command === "query") { queryFormat = "json"; searchFormat = "json"; }
+      else if (command === "search") searchFormat = "json";
+      else if (command === "entity") entityFormat = "json";
+      else if (command === "lint") lintFormat = "json";
+      else if (command === "graph") graphFormat = "json";
+      else if (command === "compile") compileFormat = "json";
+      else if (command === "clock") clockFormat = "json";
+      else if (command === "context" || command === "brief") contextFormat = "json";
+      else if (command === "ai") aiFormat = "json";
+      else if (command === "roam" && roamAction === "backlinks") backlinksFormat = "json";
+      else if (command === "roam") roamFormat = "json";
+      i++;
     } else if (arg === "--format") {
       i++;
       if (i < args.length) {
@@ -9028,7 +9053,8 @@ Other:
 
 Tips:
   - Use --help with subcommands for detailed flags (e.g., org2 agenda --help).
-  - Use --format json for scriptable output where supported.`);
+  - Use --format json for scriptable output where supported; --json is a shorthand alias.
+  - Commands that mutate files preview by default and require --apply to write.`);
   process.exit(exitCode);
 }
 
