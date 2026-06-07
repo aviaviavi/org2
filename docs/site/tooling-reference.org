@@ -25,6 +25,25 @@ Main workflows:
 - =ai validate-job=
 - =lsp=
 
+** Command conventions and stability
+
+Audit summary for CLI consistency: most commands already use =--dir= for corpus roots, =--recursive= for traversal, =--format= for alternate output, and =--apply= for mutating writes. The lowest-risk cleanup is to make JSON output easier and consistent across commands.
+
+Conventions:
+
+- Prefer =--format json= for stable machine-readable output; =--json= is a shorthand alias where JSON output is supported.
+- Preview is the default for mutating commands. Pass =--apply= to write files.
+- Use =--dir DIR= with =--recursive= for corpus-wide scans, or =--file FILE= / =--files FILE ...= for bounded scans.
+- Text/report output is human-facing and may evolve; JSON output is the integration surface.
+
+Examples:
+
+#+begin_src sh
+npm run org2 -- agenda --dir ~/notes --recursive --json
+npm run org2 -- lint --dir ~/notes --recursive --format json
+npm run org2 -- roam node new --dir ~/notes --title "Acme Corp" --apply --json
+#+end_src
+
 * Agenda
 
 Purpose: query scheduled/deadline items across Org files.
