@@ -1,6 +1,31 @@
 import { buildGeneratedArtifactMetadata, formatOrg2ArtifactPropertyDrawer, sha256Hex } from "./artifactMetadata.js";
+import type { Org2RawCaptureInput } from "./ingestionPipeline.js";
 
-export type AgentIngestSourceKind = "slack" | "gmail";
+export type AgentIngestSourceKind = "slack" | "gmail" | "email" | "message" | "calendar" | "meeting" | "browser" | (string & {});
+
+export type AgentIngestAuthMode = "external" | "none";
+export type AgentIngestPrivacyPolicy = "review-required" | "skip-private" | "redact-private";
+
+export interface AgentIngestConnectorManifest {
+  schemaVersion: "org2-connector/v1";
+  id: string;
+  sourceType: AgentIngestSourceKind;
+  displayName: string;
+  auth: {
+    mode: AgentIngestAuthMode;
+    note: string;
+  };
+  capabilities: {
+    incrementalSync: boolean;
+    dryRun: boolean;
+    stableSourceIds: boolean;
+    contentHashDedupe: boolean;
+  };
+  privacy: {
+    defaultPolicy: AgentIngestPrivacyPolicy;
+    sensitivityField?: string;
+  };
+}
 
 export interface AgentIngestConnectorMetadata {
   kind: AgentIngestSourceKind;
@@ -22,6 +47,8 @@ export interface AgentIngestRecord {
   title: string;
   text: string;
   source: AgentIngestConnectorMetadata;
+  rawPayload?: unknown;
+  cursor?: string;
 }
 
 export interface AgentIngestFilterOptions {
@@ -29,11 +56,32 @@ export interface AgentIngestFilterOptions {
   until?: string;
   allowlist?: string[];
   limit?: number;
+  cursor?: string;
+  dryRun?: boolean;
+  privacyPolicy?: AgentIngestPrivacyPolicy;
+  seenSourceIds?: string[];
+  seenContentHashes?: string[];
+}
+
+export interface AgentIngestPreview {
+  dryRun: boolean;
+  cursor?: string;
+  records: AgentIngestRecord[];
+  skipped: Array<{ id: string; reason: "duplicate-source-id" | "duplicate-content-hash" | "privacy-policy" }>;
 }
 
 export interface AgentIngestConnector<TInput = unknown> {
   readonly kind: AgentIngestSourceKind;
+  readonly manifest?: AgentIngestConnectorManifest;
   ingest(input: TInput, options?: AgentIngestFilterOptions): AgentIngestRecord[];
+}
+
+export function validateConnectorManifest(manifest: AgentIngestConnectorManifest): void {
+  if (manifest.schemaVersion !== "org2-connector/v1") throw new Error("connector manifest schemaVersion must be org2-connector/v1");
+  for (const [field, value] of Object.entries({ id: manifest.id, sourceType: manifest.sourceType, displayName: manifest.displayName })) {
+    if (!String(value || "").trim()) throw new Error(`connector manifest ${field} is required`);
+  }
+  if (manifest.auth.mode !== "external" && manifest.auth.mode !== "none") throw new Error("connector manifest auth.mode must be external or none");
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -100,8 +148,59 @@ function applyBoundedFilters(records: AgentIngestRecord[], options: AgentIngestF
   return filtered.slice(0, limit);
 }
 
+
+export function previewConnectorIngest(connector: AgentIngestConnector, input: unknown, options: AgentIngestFilterOptions = {}): AgentIngestPreview {
+  if (connector.manifest) validateConnectorManifest(connector.manifest);
+  const seenIds = new Set(options.seenSourceIds || []);
+  const seenHashes = new Set(options.seenContentHashes || []);
+  const skipped: AgentIngestPreview["skipped"] = [];
+  const records: AgentIngestRecord[] = [];
+  for (const record of connector.ingest(input, options)) {
+    const hash = sha256Hex(record.text);
+    if ((options.privacyPolicy || connector.manifest?.privacy.defaultPolicy) === "skip-private" && (record.source.sensitivity === "private" || record.source.sensitivity === "sensitive")) {
+      skipped.push({ id: record.id, reason: "privacy-policy" });
+      continue;
+    }
+    if (seenIds.has(`${record.source.kind}:${record.id}`)) {
+      skipped.push({ id: record.id, reason: "duplicate-source-id" });
+      continue;
+    }
+    if (seenHashes.has(hash)) {
+      skipped.push({ id: record.id, reason: "duplicate-content-hash" });
+      continue;
+    }
+    seenIds.add(`${record.source.kind}:${record.id}`);
+    seenHashes.add(hash);
+    records.push(record);
+  }
+  return { dryRun: options.dryRun !== false, cursor: records.at(-1)?.cursor || records.at(-1)?.source.timestamp || options.cursor, records, skipped };
+}
+
+export function connectorRecordsToRawCaptureInputs(records: AgentIngestRecord[], capturedAt?: string): Org2RawCaptureInput[] {
+  return records.map((record) => ({
+    sourceType: record.source.kind,
+    externalId: record.id,
+    authors: [record.source.author || "unknown"].filter(Boolean),
+    capturedAt,
+    occurredAt: record.source.timestamp,
+    visibility: record.source.workspace || record.source.mailbox || "connector",
+    sensitivity: record.source.sensitivity === "sensitive" ? "restricted" : record.source.sensitivity === "private" ? "private" : "internal",
+    sourceRef: record.source.url || `${record.source.kind}:${record.id}`,
+    content: record.text,
+  }));
+}
+
 export class SlackFixtureConnector implements AgentIngestConnector {
   readonly kind = "slack" as const;
+  readonly manifest: AgentIngestConnectorManifest = {
+    schemaVersion: "org2-connector/v1",
+    id: "fixture.slack",
+    sourceType: this.kind,
+    displayName: "Slack fixture connector",
+    auth: { mode: "external", note: "Fixture input is exported outside org2 core; real Slack auth belongs in a connector/plugin." },
+    capabilities: { incrementalSync: true, dryRun: true, stableSourceIds: true, contentHashDedupe: true },
+    privacy: { defaultPolicy: "review-required", sensitivityField: "sensitivity" },
+  };
 
   ingest(input: unknown, options: AgentIngestFilterOptions = {}): AgentIngestRecord[] {
     const records = normalizeInput(input).map((message, index) => {
@@ -114,6 +213,8 @@ export class SlackFixtureConnector implements AgentIngestConnector {
         id: stringField(message, "id", "client_msg_id") || `slack-${channel || "unknown"}-${timestamp || index}`,
         title: `Slack ${channel || "message"}${thread ? ` thread ${thread}` : ""}`,
         text,
+        cursor: timestamp,
+        rawPayload: message,
         source: {
           kind: this.kind,
           workspace: stringField(message, "workspace", "team"),
@@ -133,6 +234,15 @@ export class SlackFixtureConnector implements AgentIngestConnector {
 
 export class GmailFixtureConnector implements AgentIngestConnector {
   readonly kind = "gmail" as const;
+  readonly manifest: AgentIngestConnectorManifest = {
+    schemaVersion: "org2-connector/v1",
+    id: "fixture.gmail",
+    sourceType: this.kind,
+    displayName: "Gmail fixture connector",
+    auth: { mode: "external", note: "Fixture input is exported outside org2 core; OAuth/API access belongs in an optional connector/plugin." },
+    capabilities: { incrementalSync: true, dryRun: true, stableSourceIds: true, contentHashDedupe: true },
+    privacy: { defaultPolicy: "review-required", sensitivityField: "sensitivity" },
+  };
 
   ingest(input: unknown, options: AgentIngestFilterOptions = {}): AgentIngestRecord[] {
     const records = normalizeInput(input).map((message, index) => {
