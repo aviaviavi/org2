@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import {
   GmailFixtureConnector,
+  applyCapturePolicy,
   SlackFixtureConnector,
   connectorRecordsToRawCaptureInputs,
   previewConnectorIngest,
@@ -66,6 +67,23 @@ const privacyPreview = previewConnectorIngest(gmail, [
 ], { privacyPolicy: 'skip-private' });
 assert.equal(privacyPreview.records.length, 0);
 assert.equal(privacyPreview.skipped[0].reason, 'privacy-policy');
+
+
+const policyPreview = previewConnectorIngest(gmail, [
+  { id: 'g6', subject: 'Allowed', date: '2024-04-07T12:00:00Z', from: 'avi@example.com', to: ['team@example.com'], labels: ['inbox'], text: 'Please call me at 555-1212 about Scarf.' },
+  { id: 'g7', subject: 'Denied domain', date: '2024-04-07T13:00:00Z', from: 'spam@example.net', to: ['team@example.com'], labels: ['inbox'], text: 'Ignore.' },
+], { policy: { sourceAllowlist: ['gmail'], domains: ['example.com'], maxCount: 1, sensitiveRedactions: [{ pattern: '\\b\\d{3}-\\d{4}\\b' }] } });
+assert.equal(policyPreview.records.length, 1);
+assert.equal(policyPreview.records[0].id, 'g6');
+assert.match(policyPreview.records[0].text, /\[redacted\]/);
+assert.equal(policyPreview.policyReport.acceptedCount, 1);
+assert.equal(policyPreview.policyReport.redactedCount, 1);
+assert.equal(policyPreview.policyReport.defaultReviewStatus, 'review-required');
+assert.equal(policyPreview.skipped.some((item) => item.id === 'g7' && item.reason === 'capture-policy'), true);
+
+const directPolicy = applyCapturePolicy(slackRecords, { sourceDenylist: ['gmail'], maxCount: 1 }, { dryRun: true });
+assert.equal(directPolicy.records.length, 1);
+assert.equal(directPolicy.report.dryRun, true);
 
 const rawInputs = connectorRecordsToRawCaptureInputs([...slackRecords, ...gmailRecords], '2024-04-04T00:00:00Z');
 assert.equal(rawInputs[0].sourceType, 'slack');

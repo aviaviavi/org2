@@ -56,3 +56,19 @@ The fixture connectors support bounded export ingestion for Slack-like and Gmail
 - `renderIngestReviewArtifact()` marks generated summaries and TODO candidates as review-required before promotion.
 
 These connectors intentionally do not call external APIs. Live API sync should build on the same interface and keep the same defaults: bounded, allowlisted, review-gated, idempotent, and privacy-aware.
+
+## Capture policy layer
+
+Connector previews can accept a `policy` object before any raw capture inputs or review artifacts are written. The policy layer is source-agnostic and is intended for connector/plugin code to apply after external auth/export and before org2 core ingestion.
+
+Supported controls:
+
+- `sourceAllowlist` / `sourceDenylist`
+- participant and email `domains` filters
+- `since` / `until` date windows
+- `maxCount` dry-run/import caps
+- `sensitiveRedactions` regex rules applied to preview text
+- `retentionDays` reporting
+- `defaultReviewStatus`, defaulting to `review-required`
+
+`previewConnectorIngest()` returns a `policyReport` with accepted/skipped counts, sample accepted IDs, redaction counts, and skip reasons so dry-runs can explain what would be captured.
