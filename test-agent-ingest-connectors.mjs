@@ -2,6 +2,7 @@
 
 import assert from 'node:assert/strict';
 import {
+  CallTranscriptFixtureConnector,
   GmailFixtureConnector,
   MessageThreadFixtureConnector,
   applyCapturePolicy,
@@ -67,6 +68,31 @@ assert.equal(messagePolicyPreview.records[0].id, 'm4');
 assert.match(messagePolicyPreview.records[0].text, /\[redacted\]/);
 assert.equal(messagePolicyPreview.policyReport.redactedCount, 1);
 
+const calls = new CallTranscriptFixtureConnector();
+const callRecords = calls.ingest({ records: [
+  { id: 'call-1', service: 'phone', title: 'Scarf pilot sync', participants: ['avi', 'Dana'], phoneNumbers: ['+15551234567'], startedAt: '2024-04-04T16:00:00Z', endedAt: '2024-04-04T16:12:00Z', durationSeconds: 720, transcriptSource: 'fixture-transcriber', transcriptQuality: 'medium', transcriptConfidence: 0.82, transcript: 'Dana: Decision: continue the Scarf pilot.\nAvi: TODO: send recap after the call.', url: 'call://call-1', sensitivity: 'sensitive' },
+  { id: 'call-2', service: 'phone', title: 'Missed call metadata', participants: ['avi', 'Unknown'], phoneNumbers: ['+15557654321'], startedAt: '2024-04-04T18:00:00Z', durationSeconds: 45, sensitivity: 'private' },
+] }, { since: '2024-04-01T00:00:00Z', allowlist: ['Dana', '+15557654321'] });
+assert.equal(callRecords.length, 2);
+assert.equal(callRecords[0].source.kind, 'call');
+assert.equal(callRecords[0].source.callId, 'call-1');
+assert.equal(callRecords[0].source.durationSeconds, 720);
+assert.equal(callRecords[0].source.transcriptSource, 'fixture-transcriber');
+assert.equal(callRecords[0].source.transcriptConfidence, 0.82);
+assert.equal(callRecords[0].source.hasTranscript, true);
+assert.equal(callRecords[1].source.hasTranscript, false);
+assert.match(callRecords[1].text, /Transcript missing: metadata-only import/);
+validateConnectorManifest(calls.manifest);
+assert.equal(calls.manifest.auth.mode, 'external');
+assert.match(calls.manifest.auth.note, /optional connector plugins/);
+
+const callPolicyPreview = previewConnectorIngest(calls, [
+  { id: 'call-3', service: 'phone', title: 'Private number', participants: ['avi', 'Dana'], phoneNumbers: ['555-1212'], startedAt: '2024-04-05T16:00:00Z', transcript: 'Please call 555-1212 before sharing.', sensitivity: 'private' },
+], { policy: { sourceAllowlist: ['call'], participants: ['Dana'], sensitiveRedactions: [{ pattern: '\\b\\d{3}-\\d{4}\\b' }] } });
+assert.equal(callPolicyPreview.records.length, 1);
+assert.match(callPolicyPreview.records[0].text, /\[redacted\]/);
+assert.equal(callPolicyPreview.policyReport.defaultReviewStatus, 'review-required');
+
 const gmail = new GmailFixtureConnector();
 const gmailRecords = gmail.ingest({ threads: [
   { threadId: 'thr-1', subject: 'Important project thread', messages: [
@@ -119,25 +145,34 @@ const directPolicy = applyCapturePolicy(slackRecords, { sourceDenylist: ['gmail'
 assert.equal(directPolicy.records.length, 1);
 assert.equal(directPolicy.report.dryRun, true);
 
-const rawInputs = connectorRecordsToRawCaptureInputs([...slackRecords, ...messageRecords, ...gmailRecords], '2024-04-04T00:00:00Z');
+const rawInputs = connectorRecordsToRawCaptureInputs([...slackRecords, ...messageRecords, ...callRecords, ...gmailRecords], '2024-04-04T00:00:00Z');
 assert.equal(rawInputs[0].sourceType, 'slack');
 assert.equal(rawInputs[0].externalId, 's1');
 assert.equal(rawInputs[0].sourceRef, 'https://slack.example/1');
 assert.equal(rawInputs[1].sourceType, 'message');
 assert.equal(rawInputs[1].sensitivity, 'private');
+assert.equal(rawInputs[3].sourceType, 'call');
 assert.equal(rawInputs[3].sensitivity, 'restricted');
+assert.equal(rawInputs[4].sensitivity, 'private');
+assert.equal(rawInputs[5].sensitivity, 'restricted');
 
-const artifact = renderIngestReviewArtifact([...slackRecords, ...messageRecords, ...gmailRecords], { title: 'Scoped import review', generatedAt: '2024-04-04T00:00:00Z' });
+const artifact = renderIngestReviewArtifact([...slackRecords, ...messageRecords, ...callRecords, ...gmailRecords], { title: 'Scoped import review', generatedAt: '2024-04-04T00:00:00Z' });
 assert.match(artifact, /#\+TITLE: Scoped import review/);
 assert.match(artifact, /:ORG2_REVIEW_STATUS: review-required/);
 assert.match(artifact, /:ORG2_SOURCE_KIND: slack/);
 assert.match(artifact, /:ORG2_SOURCE_KIND: gmail/);
 assert.match(artifact, /:ORG2_SOURCE_KIND: message/);
+assert.match(artifact, /:ORG2_SOURCE_KIND: call/);
 assert.match(artifact, /:ORG2_MESSAGE_SERVICE: whatsapp/);
 assert.match(artifact, /:ORG2_MESSAGE_CONVERSATION_ID: chat-1/);
 assert.match(artifact, /:ORG2_MESSAGE_PARTICIPANTS: avi,\+15551234567/);
 assert.match(artifact, /Generated candidates \(review required\)/);
 assert.match(artifact, /TODO candidate: gmail:g1b/);
+assert.match(artifact, /:ORG2_CALL_ID: call-1/);
+assert.match(artifact, /:ORG2_CALL_DURATION_SECONDS: 720/);
+assert.match(artifact, /:ORG2_CALL_TRANSCRIPT_SOURCE: fixture-transcriber/);
+assert.match(artifact, /:ORG2_CALL_HAS_TRANSCRIPT: false/);
+assert.match(artifact, /TODO candidate: call:call-1/);
 assert.match(artifact, /:ORG2_EMAIL_THREAD_ID: thr-1/);
 assert.match(artifact, /:ORG2_SENSITIVITY: sensitive/);
 assert.match(artifact, /Redact private\/sensitive details before promotion/);
