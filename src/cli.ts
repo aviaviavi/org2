@@ -7395,6 +7395,11 @@ async function main(): Promise<void> {
   let agentReviewStatus = "";
   let contextFormat: "markdown" | "org" | "json" = "markdown";
 
+  // Entity profiles
+  let entityAction: "show" = "show";
+  let entityName = "";
+  let entityFormat: "text" | "json" = "text";
+
   // AI job manifests and provider-free draft artifact workflows
   let aiAction: "validate-job" | "run" | "promote" | "suggest-links" | "review" | "" = "";
   let aiJobFile = "";
@@ -7571,6 +7576,14 @@ async function main(): Promise<void> {
         agentQuery = args[i]!;
         i++;
       }
+    } else if (arg === "entity") {
+      command = "entity";
+      i++;
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        const sub = args[i]!;
+        if (sub === "show") { entityAction = "show"; i++; }
+      }
+      if (i < args.length && !args[i]!.startsWith("--")) { entityName = args[i]!; i++; }
     } else if (arg === "agent") {
       command = "agent";
       i++;
@@ -8457,6 +8470,8 @@ async function main(): Promise<void> {
           searchFormat = v;
         } else if (command === "search" && (v === "text" || v === "json")) {
           searchFormat = v;
+        } else if (command === "entity" && (v === "text" || v === "json")) {
+          entityFormat = v;
         } else if (command === "lint" && (v === "text" || v === "json")) {
           lintFormat = v;
         } else if (command === "graph" && (v === "report" || v === "json")) {
@@ -9255,7 +9270,7 @@ Flags:
     printGeneralUsage(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "clock" && command !== "compile" && command !== "agent" && command !== "context" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "clock" && command !== "compile" && command !== "entity" && command !== "agent" && command !== "context" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
     printGeneralUsage(1);
   }
 
@@ -11871,6 +11886,40 @@ Flags:
       process.stdout.write(outText);
     }
 
+    return;
+  }
+
+
+  if (command === "entity") {
+    if (entityAction !== "show") { console.error("Error: org2 entity requires subcommand show"); process.exit(1); }
+    if (!entityName.trim()) { console.error("Error: org2 entity show requires an entity name/id/alias"); process.exit(1); }
+    if (!dir && files.length === 0) {
+      const configPath = findConfigFile(process.cwd());
+      if (configPath) {
+        try {
+          const config = loadConfig(configPath);
+          const configDir = path.dirname(configPath);
+          files = resolveFilesFromConfig(config, configDir);
+          dir = configDir;
+        } catch (err) { console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`); process.exit(1); }
+      } else { console.error("Error: provide either --dir, --files, or org2.json config"); process.exit(1); }
+    }
+    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive, includeArchives);
+    if (files.length === 0) { console.error("Error: no Org files found to compile"); process.exit(1); }
+    const rootDir = dir ? path.resolve(dir) : path.dirname(path.resolve(files[0]!));
+    const corpus = compileCorpus(files, { rootDir });
+    const needle = entityName.trim().toLowerCase().replace(/\s+/g, " ");
+    const profile = (corpus.entityProfiles || []).find((p) => p.entityId.toLowerCase() === needle || p.canonicalName.toLowerCase() === needle || p.aliases.some((alias) => alias.toLowerCase() === needle));
+    if (!profile) { console.error(`Error: no entity profile found for '${entityName}'`); process.exit(1); }
+    if (entityFormat === "json") process.stdout.write(JSON.stringify(profile, null, 2) + "\n");
+    else {
+      const lines = [`${profile.canonicalName} (${profile.type})`, `ID: ${profile.entityId}`];
+      if (profile.aliases.length) lines.push(`Aliases: ${profile.aliases.join(", ")}`);
+      lines.push(`Nodes: ${profile.nodeKeys.length}`, `Backlinks: ${profile.backlinks.length}`, `Mentions: ${profile.mentions.length}`, `Relations: ${profile.relations.length}`);
+      if (profile.facts.length) { lines.push("Facts:"); for (const fact of profile.facts) lines.push(`  - ${fact.key}: ${fact.value} (${fact.provenance.map((p) => `${p.file}:${p.line}`).join(", ")})`); }
+      if (profile.reviewNeeded.length) { lines.push("Review needed:"); for (const item of profile.reviewNeeded) lines.push(`  - ${item.message}`); }
+      process.stdout.write(lines.join("\n") + "\n");
+    }
     return;
   }
 

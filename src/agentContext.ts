@@ -1,4 +1,4 @@
-import type { CompiledCorpus, CompiledCorpusNode } from "./corpusCompile.js";
+import type { CompiledCorpus, CompiledCorpusEntityProfile, CompiledCorpusNode } from "./corpusCompile.js";
 
 export type AgentInclude = "backlinks" | "neighbors" | "sources";
 export type AgentAction = "context" | "search" | "fetch" | "bundle";
@@ -68,6 +68,7 @@ export type AgentPayload = {
   filters?: { scope?: string; since?: string; sourceType?: string; reviewStatus?: string };
   corpus: { schemaVersion: string; rootDir: string; generatedAt: string; stats: CompiledCorpus["stats"] };
   results: AgentNode[];
+  entityProfiles?: CompiledCorpusEntityProfile[];
   context?: { text: string; truncated: boolean; charCount: number; citations: AgentSource[] };
   errors: string[];
 };
@@ -273,6 +274,22 @@ function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: 
   };
 }
 
+
+function normalizeLabel(raw: string): string {
+  return String(raw || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function profilesForSelection(corpus: CompiledCorpus, selectedNodes: CompiledCorpusNode[], query = ""): CompiledCorpusEntityProfile[] {
+  const keys = new Set(selectedNodes.map((node) => node.key));
+  const queryLabel = normalizeLabel(query);
+  const out = new Map<string, CompiledCorpusEntityProfile>();
+  for (const profile of corpus.entityProfiles || []) {
+    const labels = [profile.canonicalName, ...profile.aliases].map(normalizeLabel);
+    if (profile.nodeKeys.some((key) => keys.has(key)) || (queryLabel && labels.includes(queryLabel))) out.set(profile.entityId, profile);
+  }
+  return Array.from(out.values()).sort((a, b) => a.canonicalName.localeCompare(b.canonicalName) || a.entityId.localeCompare(b.entityId));
+}
+
 function escapeMarkdown(raw: string): string {
   return String(raw || "").replace(/[\`]/g, "\\$&");
 }
@@ -297,6 +314,7 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
   const todos = results.filter((node) => Boolean(node.todo));
   const entityValues = uniqueSorted(results.flatMap((node) => [node.properties.PROJECT, node.properties.PERSON, node.properties.PEOPLE, ...node.tags, ...node.aliases]));
   const backlinkValues = uniqueSorted(results.flatMap((node) => (node.backlinks || []).map((link) => `${link.sourceTitle} (${link.citation})`)));
+  const profiles = payload.entityProfiles || [];
   const caveats = uniqueSorted([
     ...(payload.errors || []),
     ...(payload.context?.truncated ? [`Context text truncated at ${payload.maxChars} characters/budget.`] : []),
@@ -335,6 +353,10 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
   lines.push(`${h2} Related entities and backlinks`);
   if (entityValues.length === 0 && backlinkValues.length === 0) lines.push("- None found");
   for (const value of entityValues) lines.push(`- Entity: ${value}`);
+  for (const profile of profiles) {
+    lines.push(`- Profile: ${profile.canonicalName} (${profile.type})${profile.aliases.length ? `; aliases: ${profile.aliases.join(", ")}` : ""}`);
+    if (profile.reviewNeeded.length) lines.push(`  - Review needed: ${profile.reviewNeeded.map((item) => item.message).join("; ")}`);
+  }
   for (const value of backlinkValues.slice(0, 12)) lines.push(`- Backlink: ${value}`);
   lines.push("");
   lines.push(`${h2} Open questions / known uncertainty`);
@@ -385,6 +407,7 @@ export function buildAgentContextPayload(corpus: CompiledCorpus, opts: AgentCont
     ...((opts.scope || opts.since || opts.sourceType || opts.reviewStatus) ? { filters: { ...(opts.scope ? { scope: opts.scope } : {}), ...(opts.since ? { since: opts.since } : {}), ...(opts.sourceType ? { sourceType: opts.sourceType } : {}), ...(opts.reviewStatus ? { reviewStatus: opts.reviewStatus } : {}) } } : {}),
     corpus: { schemaVersion: corpus.schemaVersion, rootDir: corpus.rootDir, generatedAt: corpus.artifact.generatedAt, stats: corpus.stats },
     results,
+    entityProfiles: profilesForSelection(corpus, selected.map((item) => item.node), opts.query || opts.id || ""),
     errors,
   };
 
