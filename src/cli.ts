@@ -113,6 +113,56 @@ type ExportMetadataPayload = {
   htmlHead?: string[];
 };
 
+
+function renderBriefing(payload: ReturnType<typeof buildAgentContextPayload>, title: string, format: "markdown" | "org" = "markdown"): string {
+  const isOrg = format === "org";
+  const h1 = isOrg ? "*" : "#";
+  const h2 = isOrg ? "**" : "##";
+  const generatedAt = new Date().toISOString();
+  const lines: string[] = [];
+  const reviewRequired = payload.results.some((node) => node.claimState.reviewStatus !== "reviewed" && node.claimState.reviewStatus !== "promoted");
+  const cited = payload.results.slice(0, 8);
+
+  lines.push(`${h1} ${title}`);
+  lines.push("");
+  lines.push(`- Generated: ${generatedAt}`);
+  lines.push(`- Corpus: ${payload.corpus.rootDir}`);
+  lines.push(`- Review: ${reviewRequired ? "REVIEW REQUIRED for generated synthesis and any unreviewed/stale cited claims." : "Source-backed; verify before external use."}`);
+  lines.push("");
+  lines.push(`${h2} At a glance`);
+  if (cited.length === 0) lines.push("- No matching notes found.");
+  for (const node of cited.slice(0, 5)) {
+    const status = `${node.claimState.reviewStatus}/${node.claimState.freshness}`;
+    lines.push(`- ${node.todo ? `${node.todo} ` : ""}${node.title} — ${status} [${node.citation}]`);
+  }
+  lines.push("");
+  lines.push(`${h2} Source-backed notes`);
+  if (cited.length === 0) lines.push("- None");
+  for (const node of cited) {
+    lines.push(`- ${node.title} [${node.citation}]`);
+    if (node.selectionReason?.length) lines.push(`  - Why included: ${node.selectionReason.join("; ")}`);
+    const snippet = String(node.snippet || "").replace(/\s+/g, " ").trim();
+    if (snippet) lines.push(`  - Evidence: ${snippet.slice(0, 240)}${snippet.length > 240 ? "…" : ""}`);
+    lines.push(`  - Review/freshness: ${node.claimState.reviewStatus}/${node.claimState.freshness}`);
+  }
+  lines.push("");
+  lines.push(`${h2} Review-required synthesis`);
+  if (cited.length === 0) lines.push("- [review-required] Broaden the query/scope or add source notes before drawing conclusions.");
+  else {
+    lines.push("- [review-required] Treat this briefing as a navigational summary, not canonical truth.");
+    const active = cited.filter((node) => node.todo).slice(0, 5);
+    if (active.length) lines.push(`- [review-required] Active work surfaced: ${active.map((node) => `${node.todo} ${node.title} [${node.citation}]`).join("; ")}.`);
+    const stale = cited.filter((node) => node.claimState.freshness === "stale" || node.claimState.freshness === "expired");
+    if (stale.length) lines.push(`- [review-required] Refresh stale/expired sources before relying on: ${stale.map((node) => `${node.title} [${node.citation}]`).join("; ")}.`);
+  }
+  lines.push("");
+  lines.push(`${h2} Citations`);
+  if (cited.length === 0) lines.push("- None");
+  for (const node of cited) lines.push(`- ${node.citation} — ${node.title}`);
+  lines.push("");
+  return lines.join("\n");
+}
+
 function hasExportMetadata(metadata: ExportMetadataPayload | null | undefined): boolean {
   if (!metadata) return false;
   return Boolean(
@@ -7396,6 +7446,9 @@ async function main(): Promise<void> {
   let agentRecencyWeightRaw = "1";
   let agentSalienceWeightRaw = "1";
   let contextFormat: "markdown" | "org" | "json" = "markdown";
+  let briefAction: "today" | "project" | "" = "";
+  let briefName = "";
+  let briefOut = "";
 
   // Entity profiles
   let entityAction: "show" = "show";
@@ -7578,6 +7631,14 @@ async function main(): Promise<void> {
         agentQuery = args[i]!;
         i++;
       }
+    } else if (arg === "brief") {
+      command = "brief";
+      i++;
+      if (i < args.length && !args[i]!.startsWith("--")) {
+        const sub = args[i]!;
+        if (sub === "today" || sub === "project") { briefAction = sub; i++; }
+      }
+      if (i < args.length && !args[i]!.startsWith("--")) { briefName = args[i]!; i++; }
     } else if (arg === "entity") {
       command = "entity";
       i++;
@@ -8206,7 +8267,7 @@ async function main(): Promise<void> {
           agendaLimitRaw = args[i]!;
         } else if (command === "search" || command === "query") {
           searchLimitRaw = args[i]!;
-        } else if (command === "agent" || command === "context") {
+        } else if (command === "agent" || command === "context" || command === "brief") {
           agentLimitRaw = args[i]!;
         }
         i++;
@@ -8365,37 +8426,37 @@ async function main(): Promise<void> {
         }
         i++;
       }
-    } else if (arg === "--query" && (command === "agent" || command === "context")) {
+    } else if (arg === "--query" && (command === "agent" || command === "context" || command === "brief")) {
       i++;
       if (i < args.length) {
         agentQuery = args[i]!;
         i++;
       }
-    } else if (arg === "--include" && (command === "agent" || command === "context")) {
+    } else if (arg === "--include" && (command === "agent" || command === "context" || command === "brief")) {
       i++;
       if (i < args.length) {
         agentIncludeRaw = args[i]!;
         i++;
       }
-    } else if (arg === "--scope" && (command === "agent" || command === "context")) {
+    } else if (arg === "--scope" && (command === "agent" || command === "context" || command === "brief")) {
       i++;
       if (i < args.length) { agentScope = args[i]!; i++; }
-    } else if (arg === "--since" && (command === "agent" || command === "context")) {
+    } else if (arg === "--since" && (command === "agent" || command === "context" || command === "brief")) {
       i++;
       if (i < args.length) { agentSince = args[i]!; i++; }
-    } else if ((arg === "--source-type" || arg === "--type") && (command === "agent" || command === "context")) {
+    } else if ((arg === "--source-type" || arg === "--type") && (command === "agent" || command === "context" || command === "brief")) {
       i++;
       if (i < args.length) { agentSourceType = args[i]!; i++; }
-    } else if ((arg === "--review-status" || arg === "--review") && (command === "agent" || command === "context")) {
+    } else if ((arg === "--review-status" || arg === "--review") && (command === "agent" || command === "context" || command === "brief")) {
       i++;
       if (i < args.length) { agentReviewStatus = args[i]!; i++; }
-    } else if (arg === "--recency-weight" && (command === "agent" || command === "context")) {
+    } else if (arg === "--recency-weight" && (command === "agent" || command === "context" || command === "brief")) {
       i++;
       if (i < args.length) { agentRecencyWeightRaw = args[i]!; i++; }
-    } else if (arg === "--salience-weight" && (command === "agent" || command === "context")) {
+    } else if (arg === "--salience-weight" && (command === "agent" || command === "context" || command === "brief")) {
       i++;
       if (i < args.length) { agentSalienceWeightRaw = args[i]!; i++; }
-    } else if ((arg === "--budget" || arg === "--max-tokens" || arg === "--max-chars" || arg === "--max-bytes") && (command === "agent" || command === "context")) {
+    } else if ((arg === "--budget" || arg === "--max-tokens" || arg === "--max-chars" || arg === "--max-bytes") && (command === "agent" || command === "context" || command === "brief")) {
       i++;
       if (i < args.length) {
         agentMaxCharsRaw = args[i]!;
@@ -8488,7 +8549,7 @@ async function main(): Promise<void> {
           compileFormat = v;
         } else if (command === "clock" && (v === "text" || v === "json")) {
           clockFormat = v;
-        } else if (command === "context" && (v === "markdown" || v === "md" || v === "org" || v === "org2" || v === "json")) {
+        } else if ((command === "context" || command === "brief") && (v === "markdown" || v === "md" || v === "org" || v === "org2" || v === "json")) {
           contextFormat = v === "md" ? "markdown" : v === "org2" ? "org" : v as "markdown" | "org" | "json";
         } else if (command === "ai" && (v === "text" || v === "json")) {
           aiFormat = v;
@@ -8597,6 +8658,8 @@ async function main(): Promise<void> {
           compileOut = args[i]!;
         } else if (command === "ai") {
           aiOut = args[i]!;
+        } else if (command === "brief") {
+          briefOut = args[i]!;
         }
         i++;
       }
@@ -8805,6 +8868,8 @@ Roam / IDs:
   org2 clock --dir DIR [--recursive] [--format text|json]
   org2 compile corpus --dir DIR [--recursive] [--out FILE] [--format json|jsonl]
   org2 context QUERY [--dir DIR] [--recursive] [--budget 8k] [--format markdown|org|json]
+  org2 brief today [--dir DIR] [--recursive] [--out views/today.org]
+  org2 brief project NAME [--dir DIR] [--recursive] [--out views/NAME.org]
   org2 ai validate-job --job FILE [--format text|json]
   org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
   org2 ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
@@ -9114,6 +9179,14 @@ Flags:
 
 Output:
   Deterministic context pack for agents and humans: objective/query, cited notes with file:line provenance, recent timeline entries, active TODOs, related entities/backlinks, uncertainty, and next actions.`;
+  } else if (command === "brief") {
+    text = `org2 brief
+
+Usage:
+  org2 brief today [--dir DIR] [--recursive] [--limit N] [--out views/today.org] [--format markdown|org|json]
+  org2 brief project NAME [--dir DIR] [--recursive] [--limit N] [--out views/NAME.org] [--format markdown|org|json]
+
+Human-facing briefings from the agent context substrate. Output cites notes/raw sources and marks generated synthesis review-required.`;
   } else if (command === "agent") {
     text = `org2 agent ${options.agentAction || "context"}
 
@@ -9282,7 +9355,7 @@ Flags:
     printGeneralUsage(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "clock" && command !== "compile" && command !== "entity" && command !== "agent" && command !== "context" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "clock" && command !== "compile" && command !== "entity" && command !== "agent" && command !== "context" && command !== "brief" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
     printGeneralUsage(1);
   }
 
@@ -9290,6 +9363,33 @@ Flags:
     // The LSP server runs over stdio and expects to own stdin/stdout.
     // Importing this module starts the server.
     await import("./lsp.js");
+    return;
+  }
+
+  if (command === "brief") {
+    if (!briefAction) { console.error("Error: org2 brief requires a subcommand (today or project)"); process.exit(1); }
+    if (briefAction === "project" && !briefName.trim()) { console.error("Error: org2 brief project requires a project name"); process.exit(1); }
+    if (!dir && files.length === 0) {
+      const configPath = findConfigFile(process.cwd());
+      if (configPath) {
+        try { const config = loadConfig(configPath); const configDir = path.dirname(configPath); files = resolveFilesFromConfig(config, configDir); if (files.length === 0) { console.error(`Error: config found at ${configPath} but no matching files for patterns: ${config.agendaFiles?.join(", ") || "*.org"}`); process.exit(1); } dir = configDir; }
+        catch (err) { console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`); process.exit(1); }
+      } else { console.error("Error: provide either --dir, --files, --file, or org2.json config for org2 brief"); process.exit(1); }
+    }
+    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive, includeArchives);
+    files = Array.from(new Set(files)).sort((a, b) => a.localeCompare(b));
+    if (files.length === 0) { console.error("Error: no Org files found for org2 brief"); process.exit(1); }
+    const rootDir = dir ? path.resolve(dir) : path.dirname(path.resolve(files[0]!));
+    const include = Array.from(new Set((agentIncludeRaw || "sources,backlinks").split(",").map((value) => value.trim().toLowerCase()).filter((value): value is AgentInclude => value === "sources" || value === "backlinks" || value === "neighbors")));
+    const today = process.env.ORG2_TODAY || new Date().toISOString().slice(0, 10);
+    const query = agentQuery || (briefAction === "today" ? today : briefName);
+    const scope = agentScope || (briefAction === "project" ? `project:${briefName}` : "");
+    const corpus = compileCorpus(files, { rootDir });
+    const payload = buildAgentContextPayload(corpus, { action: "bundle", query, limit: Number.parseInt(agentLimitRaw, 10) || 10, maxChars: parseBudgetToChars(agentMaxCharsRaw), include, scope, since: agentSince, sourceType: agentSourceType, reviewStatus: agentReviewStatus, recencyWeight: Number.parseFloat(agentRecencyWeightRaw), salienceWeight: Number.parseFloat(agentSalienceWeightRaw) });
+    const title = briefAction === "today" ? `Org2 Briefing: Today (${today})` : `Org2 Briefing: Project ${briefName}`;
+    const rendered = contextFormat === "json" ? JSON.stringify(payload, null, 2) + "\n" : renderBriefing(payload, title, contextFormat) + "\n";
+    if (briefOut) { fs.mkdirSync(path.dirname(path.resolve(briefOut)), { recursive: true }); fs.writeFileSync(briefOut, rendered, "utf8"); process.stdout.write(`Wrote briefing to ${briefOut}\n`); }
+    else process.stdout.write(rendered);
     return;
   }
 
