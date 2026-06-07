@@ -14,6 +14,8 @@ export type AgentContextOptions = {
   since?: string;
   sourceType?: string;
   reviewStatus?: string;
+  recencyWeight?: number;
+  salienceWeight?: number;
 };
 
 type AgentSource = {
@@ -52,6 +54,7 @@ type AgentNode = {
   snippet: string;
   score?: number;
   matchedTerms?: string[];
+  selectionReason?: string[];
   claimState: AgentClaimState;
   sources?: AgentSource[];
   backlinks?: Array<{ sourceKey: string; sourceId: string | null; sourceTitle: string; file: string; line: number; citation: string; linkType: "id" | "wiki" }>;
@@ -66,6 +69,7 @@ export type AgentPayload = {
   limit: number;
   maxChars: number;
   filters?: { scope?: string; since?: string; sourceType?: string; reviewStatus?: string };
+  ranking?: { recencyWeight: number; salienceWeight: number };
   corpus: { schemaVersion: string; rootDir: string; generatedAt: string; stats: CompiledCorpus["stats"] };
   results: AgentNode[];
   entityProfiles?: CompiledCorpusEntityProfile[];
@@ -181,21 +185,65 @@ function claimStateFor(node: CompiledCorpusNode, nowMs = Date.now()): AgentClaim
   };
 }
 
-function scoreNode(node: CompiledCorpusNode, terms: string[]): { score: number; matchedTerms: string[] } {
+function numericProperty(node: CompiledCorpusNode, names: string[]): number | null {
+  const raw = propertyValue(node, names);
+  if (!raw) return null;
+  if (/^(true|yes|pinned|important)$/i.test(raw)) return 1;
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function recencyScoreFor(node: CompiledCorpusNode, nowMs = Date.now()): { score: number; reason: string | null } {
+  const date = dateForNode(node);
+  if (!date) return { score: 0, reason: null };
+  const ageDays = Math.max(0, (nowMs - date.getTime()) / (24 * 60 * 60 * 1000));
+  const score = Math.max(0, 3 - Math.log2(1 + ageDays / 14));
+  return { score, reason: `dated ${date.toISOString().slice(0, 10)} (${score.toFixed(2)} recency)` };
+}
+
+function salienceScoreFor(corpus: CompiledCorpus, node: CompiledCorpusNode, opts: AgentContextOptions): { score: number; reasons: string[] } {
+  let score = 0;
+  const reasons: string[] = [];
+  const explicit = numericProperty(node, ["ORG2_SALIENCE", "SALIENCE", "IMPORTANCE", "PRIORITY"]);
+  if (explicit !== null) { score += explicit * 3; reasons.push(`explicit salience ${explicit}`); }
+  const pinned = numericProperty(node, ["ORG2_PINNED", "PINNED", "IMPORTANT"]);
+  if (pinned !== null && pinned > 0) { score += 4; reasons.push("pinned/important metadata"); }
+  if (node.todo && !/^(DONE|CANCELLED|CANCELED)$/i.test(node.todo)) { score += 2; reasons.push(`active TODO ${node.todo}`); }
+  const activePlanning = node.planning.filter((p) => p.kind === "SCHEDULED" || p.kind === "DEADLINE");
+  if (activePlanning.length) { score += Math.min(3, activePlanning.length * 1.5); reasons.push("scheduled/deadline planning"); }
+  const backlinkCount = inferredBacklinksFor(corpus, node).length;
+  if (backlinkCount) { const backlinkScore = Math.min(3, Math.log2(backlinkCount + 1)); score += backlinkScore; reasons.push(`${backlinkCount} backlink/mention${backlinkCount === 1 ? "" : "s"}`); }
+  if (opts.scope) {
+    const scope = opts.scope.toLowerCase().replace(/^[^:]+:/, "").trim();
+    const values = [propertyValue(node, ["PROJECT", "PERSON", "PEOPLE", "ENTITY"]), ...node.tags, ...node.aliases].join(" ").toLowerCase();
+    if (scope && values.includes(scope)) { score += 2; reasons.push(`near scoped entity/project '${scope}'`); }
+  }
+  return { score, reasons };
+}
+
+function scoreNode(corpus: CompiledCorpus, node: CompiledCorpusNode, terms: string[], opts: AgentContextOptions): { score: number; matchedTerms: string[]; selectionReason: string[] } {
   const haystack = [node.title, node.snippet, node.id || "", ...node.tags, ...node.aliases, ...Object.keys(node.effectiveProperties || node.properties), ...Object.values(node.effectiveProperties || node.properties)].join("\n").toLowerCase();
   const matchedTerms = terms.filter((term) => haystack.includes(term));
+  const selectionReason: string[] = matchedTerms.length ? [`matched ${matchedTerms.length} query term${matchedTerms.length === 1 ? "" : "s"}: ${matchedTerms.join(", ")}`] : [];
   let score = matchedTerms.length;
   for (const term of matchedTerms) {
-    if (node.title.toLowerCase().includes(term)) score += 4;
-    if ((node.id || "").toLowerCase() === term) score += 10;
-    if (node.tags.some((tag) => tag.toLowerCase() === term)) score += 3;
+    if (node.title.toLowerCase().includes(term)) { score += 4; selectionReason.push(`title contains '${term}'`); }
+    if ((node.id || "").toLowerCase() === term) { score += 10; selectionReason.push(`id exactly matches '${term}'`); }
+    if (node.tags.some((tag) => tag.toLowerCase() === term)) { score += 3; selectionReason.push(`tag matches '${term}'`); }
   }
   const claim = claimStateFor(node);
-  if (claim.reviewStatus === "reviewed" || claim.reviewStatus === "promoted") score += 2;
-  if (claim.freshness === "fresh") score += 1;
-  if (claim.freshness === "stale") score -= 2;
-  if (claim.freshness === "expired") score -= 4;
-  return { score, matchedTerms };
+  if (claim.reviewStatus === "reviewed" || claim.reviewStatus === "promoted") { score += 2; selectionReason.push(`${claim.reviewStatus} claim`); }
+  if (claim.freshness === "fresh") { score += 1; selectionReason.push("fresh claim"); }
+  if (claim.freshness === "stale") { score -= 2; selectionReason.push("penalized stale claim"); }
+  if (claim.freshness === "expired") { score -= 4; selectionReason.push("penalized expired claim"); }
+  const recencyWeight = Number.isFinite(opts.recencyWeight) ? opts.recencyWeight! : 1;
+  const salienceWeight = Number.isFinite(opts.salienceWeight) ? opts.salienceWeight! : 1;
+  const recency = recencyScoreFor(node);
+  if (recency.score && recencyWeight) { score += recency.score * recencyWeight; if (recency.reason) selectionReason.push(`${recency.reason} × recency weight ${recencyWeight}`); }
+  const salience = salienceScoreFor(corpus, node, opts);
+  if (salience.score && salienceWeight) selectionReason.push(...salience.reasons.map((reason) => `${reason} × salience weight ${salienceWeight}`));
+  score += salience.score * salienceWeight;
+  return { score, matchedTerms, selectionReason };
 }
 
 function findNodeById(corpus: CompiledCorpus, id: string): CompiledCorpusNode | null {
@@ -249,7 +297,7 @@ function neighborsFor(corpus: CompiledCorpus, node: CompiledCorpusNode): AgentNo
   return Array.from(out.values()).sort((a, b) => `${a.direction}:${a.file}:${a.citation}`.localeCompare(`${b.direction}:${b.file}:${b.citation}`));
 }
 
-function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: Set<AgentInclude>, score?: { score: number; matchedTerms: string[] }): AgentNode {
+function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: Set<AgentInclude>, score?: { score: number; matchedTerms: string[]; selectionReason?: string[] }): AgentNode {
   const source = { file: node.file, sourceRange: node.sourceRange, citation: citationFor(node) };
   return {
     key: node.key,
@@ -266,7 +314,7 @@ function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: 
     aliases: node.aliases,
     properties: node.effectiveProperties || node.properties,
     snippet: node.snippet,
-    ...(score ? { score: score.score, matchedTerms: score.matchedTerms } : {}),
+    ...(score ? { score: score.score, matchedTerms: score.matchedTerms, selectionReason: score.selectionReason || [] } : {}),
     claimState: claimStateFor(node),
     ...(include.has("sources") ? { sources: [source] } : {}),
     ...(include.has("backlinks") ? { backlinks: inferredBacklinksFor(corpus, node) } : {}),
@@ -338,6 +386,7 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
     if (node.todo) lines.push(`- TODO: ${node.todo}`);
     if (node.tags.length) lines.push(`- Tags: ${node.tags.join(", ")}`);
     lines.push(`- Review/freshness: ${node.claimState.reviewStatus} / ${node.claimState.freshness}`);
+    if (node.selectionReason?.length) lines.push(`- Selected because: ${node.selectionReason.join("; ")}`);
     lines.push("");
     lines.push(node.snippet || "(no snippet)");
     lines.push("");
@@ -379,7 +428,7 @@ export function buildAgentContextPayload(corpus: CompiledCorpus, opts: AgentCont
   const limit = Math.max(1, Math.min(100, opts.limit || 10));
   const maxChars = Math.max(200, opts.maxChars || 12000);
   const errors: string[] = [];
-  let selected: Array<{ node: CompiledCorpusNode; score?: { score: number; matchedTerms: string[] } }> = [];
+  let selected: Array<{ node: CompiledCorpusNode; score?: { score: number; matchedTerms: string[]; selectionReason?: string[] } }> = [];
 
   if (opts.action === "fetch") {
     const node = findNodeById(corpus, opts.id || "");
@@ -390,7 +439,7 @@ export function buildAgentContextPayload(corpus: CompiledCorpus, opts: AgentCont
     if (terms.length === 0) errors.push("Query must include at least one searchable term.");
     selected = corpus.nodes
       .filter((node) => nodeMatchesFilters(node, opts))
-      .map((node) => ({ node, score: scoreNode(node, terms) }))
+      .map((node) => ({ node, score: scoreNode(corpus, node, terms, opts) }))
       .filter((item) => (item.score?.score || 0) > 0)
       .sort((a, b) => (b.score!.score - a.score!.score) || a.node.file.localeCompare(b.node.file) || a.node.sourceRange.startLine - b.node.sourceRange.startLine)
       .slice(0, limit);
@@ -405,6 +454,7 @@ export function buildAgentContextPayload(corpus: CompiledCorpus, opts: AgentCont
     limit,
     maxChars,
     ...((opts.scope || opts.since || opts.sourceType || opts.reviewStatus) ? { filters: { ...(opts.scope ? { scope: opts.scope } : {}), ...(opts.since ? { since: opts.since } : {}), ...(opts.sourceType ? { sourceType: opts.sourceType } : {}), ...(opts.reviewStatus ? { reviewStatus: opts.reviewStatus } : {}) } } : {}),
+    ranking: { recencyWeight: Number.isFinite(opts.recencyWeight) ? opts.recencyWeight! : 1, salienceWeight: Number.isFinite(opts.salienceWeight) ? opts.salienceWeight! : 1 },
     corpus: { schemaVersion: corpus.schemaVersion, rootDir: corpus.rootDir, generatedAt: corpus.artifact.generatedAt, stats: corpus.stats },
     results,
     entityProfiles: profilesForSelection(corpus, selected.map((item) => item.node), opts.query || opts.id || ""),
@@ -416,7 +466,8 @@ export function buildAgentContextPayload(corpus: CompiledCorpus, opts: AgentCont
     let text = "";
     let truncated = false;
     for (const result of results) {
-      const chunk = [`## ${result.title}`, `Source: ${result.citation}`, `Review: ${result.claimState.reviewStatus}; freshness: ${result.claimState.freshness}`, result.snippet].filter(Boolean).join("\n") + "\n\n";
+      const reasons = result.selectionReason?.length ? `Selected because: ${result.selectionReason.join("; ")}` : "";
+      const chunk = [`## ${result.title}`, `Source: ${result.citation}`, `Review: ${result.claimState.reviewStatus}; freshness: ${result.claimState.freshness}`, reasons, result.snippet].filter(Boolean).join("\n") + "\n\n";
       if (text.length + chunk.length > maxChars) {
         truncated = true;
         break;
