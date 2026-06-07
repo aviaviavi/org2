@@ -1,17 +1,55 @@
 # Scoped agent ingestion connectors
 
-Org2's agent-memory pipeline treats Slack and Gmail as scoped inputs, not as unbounded history dumps. Connectors should start from explicit exports or fixtures, apply a time window and allowlist, and write review artifacts before anything is promoted into canonical notes.
+Org2's agent-memory pipeline treats Slack, Gmail, messages, meetings, and other external sources as scoped inputs, not as unbounded history dumps. Core stays source-agnostic: API credentials, OAuth, device export tools, crawlers, and service-specific rate limits belong in optional connectors/plugins outside org2 core.
+
+## Connector contract
+
+A connector is TypeScript/JSON-first and advertises a manifest:
+
+```ts
+interface AgentIngestConnectorManifest {
+  schemaVersion: "org2-connector/v1";
+  id: string;
+  sourceType: string;
+  displayName: string;
+  auth: { mode: "external" | "none"; note: string };
+  capabilities: {
+    incrementalSync: boolean;
+    dryRun: boolean;
+    stableSourceIds: boolean;
+    contentHashDedupe: boolean;
+  };
+  privacy: {
+    defaultPolicy: "review-required" | "skip-private" | "redact-private";
+    sensitivityField?: string;
+  };
+}
+```
+
+Connector output is normalized to `AgentIngestRecord` values with:
+
+- stable source ID (`kind:id`) for idempotency;
+- cursor/timestamp for incremental sync;
+- source metadata such as authors, channel/mailbox/label/thread, URL, timestamp, and sensitivity;
+- raw payload kept as connector provenance, not promoted into durable notes;
+- text content that can be converted into `Org2RawCaptureInput` and fed to the unified `org2 ingest` pipeline.
 
 ## Principles
 
 - Prefer recent bounded windows, such as the last 30–90 days.
-- Require explicit Slack channels/threads or Gmail labels/mailboxes rather than ingesting every message.
+- Require explicit Slack channels/threads, Gmail labels/mailboxes, message threads, or meeting IDs rather than ingesting every record.
 - Preserve source metadata (`slack:`/`gmail:` IDs, timestamps, authors, URLs, labels/channels) for review and citation.
+- Support dry-run/preview before writing corpus artifacts.
+- Deduplicate by stable source ID and content hash.
 - Mark generated review packets `ORG2_REVIEW_STATUS: review-required`.
-- Use sensitivity flags and redact private details before promotion.
+- Use sensitivity flags and privacy policy hooks before promotion.
 
 ## Fixture connectors
 
-The first connector layer supports bounded fixture/export ingestion for Slack-like and Gmail-like JSON. It produces review packets containing decisions, people, projects, follow-ups, claims, and source links for human review.
+The fixture connectors support bounded export ingestion for Slack-like and Gmail-like JSON. They prove the contract without live external auth:
 
-These connectors intentionally do not call external APIs yet. Live API sync should build on the same interface and keep the same defaults: bounded, allowlisted, review-gated, and privacy-aware.
+- `SlackFixtureConnector.manifest` and `GmailFixtureConnector.manifest` declare external auth expectations.
+- `previewConnectorIngest()` validates manifests, applies privacy policy, and reports skipped duplicates.
+- `connectorRecordsToRawCaptureInputs()` adapts connector records into the same raw capture shape used by `org2 ingest`.
+
+These connectors intentionally do not call external APIs. Live API sync should build on the same interface and keep the same defaults: bounded, allowlisted, review-gated, idempotent, and privacy-aware.
