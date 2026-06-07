@@ -46,10 +46,12 @@ Connector output is normalized to `AgentIngestRecord` values with:
 
 ## Fixture connectors
 
-The fixture connectors support bounded export ingestion for Slack-like and Gmail-like JSON. They prove the contract without live external auth:
+The fixture connectors support bounded export ingestion for Slack-like, Gmail-like, and SMS/iMessage/WhatsApp-like JSON. They prove the contract without live external auth:
 
-- `SlackFixtureConnector.manifest` and `GmailFixtureConnector.manifest` declare external auth expectations.
+- `SlackFixtureConnector.manifest`, `GmailFixtureConnector.manifest`, and `MessageThreadFixtureConnector.manifest` declare external auth expectations.
 - `GmailFixtureConnector` accepts either flat message exports or multi-message thread exports and emits stable message IDs plus timestamp/message cursors for incremental sync.
+- `MessageThreadFixtureConnector` accepts selected direct/group thread exports with service, conversation ID/title, participants, sender, timestamp, URL, sensitivity, and stable message IDs.
+- Message filtering can be scoped by service, conversation ID/title, participant, date windows, capture policy, and `limit`.
 - Email filtering can be scoped by labels, exact senders, sender/recipient domains, unread/starred state, date windows, and `limit`.
 - `previewConnectorIngest()` validates manifests, applies privacy policy, and reports skipped duplicates.
 - `connectorRecordsToRawCaptureInputs()` adapts connector records into the same raw capture shape used by `org2 ingest`.
