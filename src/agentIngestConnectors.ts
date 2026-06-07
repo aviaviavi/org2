@@ -71,13 +71,41 @@ export interface AgentIngestFilterOptions {
   privacyPolicy?: AgentIngestPrivacyPolicy;
   seenSourceIds?: string[];
   seenContentHashes?: string[];
+  policy?: AgentIngestCapturePolicy;
+}
+
+export interface AgentIngestCapturePolicy {
+  sourceAllowlist?: AgentIngestSourceKind[];
+  sourceDenylist?: AgentIngestSourceKind[];
+  participants?: string[];
+  domains?: string[];
+  since?: string;
+  until?: string;
+  maxCount?: number;
+  retentionDays?: number;
+  defaultReviewStatus?: "review-required" | "reviewed";
+  sensitiveRedactions?: Array<{ pattern: string; replacement?: string }>;
 }
 
 export interface AgentIngestPreview {
   dryRun: boolean;
   cursor?: string;
   records: AgentIngestRecord[];
-  skipped: Array<{ id: string; reason: "duplicate-source-id" | "duplicate-content-hash" | "privacy-policy" }>;
+  skipped: Array<{ id: string; reason: "duplicate-source-id" | "duplicate-content-hash" | "privacy-policy" | "capture-policy" }>;
+  policyReport?: AgentIngestCapturePolicyReport;
+}
+
+export interface AgentIngestCapturePolicyReport {
+  dryRun: boolean;
+  inputCount: number;
+  acceptedCount: number;
+  skippedCount: number;
+  maxCount?: number;
+  retentionUntil?: string;
+  defaultReviewStatus: "review-required" | "reviewed";
+  sampleAcceptedIds: string[];
+  skippedByReason: Record<string, number>;
+  redactedCount: number;
 }
 
 export interface AgentIngestConnector<TInput = unknown> {
@@ -181,13 +209,64 @@ function applyBoundedFilters(records: AgentIngestRecord[], options: AgentIngestF
 }
 
 
+function participantValues(record: AgentIngestRecord): string[] {
+  return [record.source.author || "", ...(record.source.recipients || [])].filter(Boolean);
+}
+
+function sourceAllowedByPolicy(record: AgentIngestRecord, policy: AgentIngestCapturePolicy): boolean {
+  const kind = record.source.kind.toLowerCase();
+  if ((policy.sourceDenylist || []).map(String).map((value) => value.toLowerCase()).includes(kind)) return false;
+  const allow = (policy.sourceAllowlist || []).map(String).map((value) => value.toLowerCase());
+  if (allow.length && !allow.includes(kind)) return false;
+  if (policy.participants?.length && !matchesAny(participantValues(record), policy.participants)) return false;
+  if (policy.domains?.length && !matchesAny(participantValues(record).map(emailAddressDomain), policy.domains)) return false;
+  if ((policy.since || policy.until) && !inWindow(record.source.timestamp, { since: policy.since, until: policy.until })) return false;
+  if (policy.retentionDays) {
+    const cutoff = Date.now() - policy.retentionDays * 24 * 60 * 60 * 1000;
+    if (timestampMs(record.source.timestamp) < cutoff) return false;
+  }
+  return true;
+}
+
+function redactRecord(record: AgentIngestRecord, policy: AgentIngestCapturePolicy): { record: AgentIngestRecord; redacted: boolean } {
+  let text = record.text;
+  for (const rule of policy.sensitiveRedactions || []) text = text.replace(new RegExp(rule.pattern, "gi"), rule.replacement || "[redacted]");
+  return { record: text === record.text ? record : { ...record, text }, redacted: text !== record.text };
+}
+
+export function applyCapturePolicy(records: AgentIngestRecord[], policy: AgentIngestCapturePolicy = {}, opts: { dryRun?: boolean } = {}): { records: AgentIngestRecord[]; skipped: AgentIngestPreview["skipped"]; report: AgentIngestCapturePolicyReport } {
+  const skipped: AgentIngestPreview["skipped"] = [];
+  const accepted: AgentIngestRecord[] = [];
+  let redactedCount = 0;
+  for (const inputRecord of records) {
+    if (!sourceAllowedByPolicy(inputRecord, policy)) {
+      skipped.push({ id: inputRecord.id, reason: "capture-policy" });
+      continue;
+    }
+    const { record, redacted } = redactRecord(inputRecord, policy);
+    if (redacted) redactedCount += 1;
+    accepted.push(record);
+  }
+  const limited = typeof policy.maxCount === "number" ? accepted.slice(0, Math.max(0, Math.trunc(policy.maxCount))) : accepted;
+  for (const record of accepted.slice(limited.length)) skipped.push({ id: record.id, reason: "capture-policy" });
+  const skippedByReason = skipped.reduce<Record<string, number>>((memo, item) => ({ ...memo, [item.reason]: (memo[item.reason] || 0) + 1 }), {});
+  const retentionUntil = policy.retentionDays ? new Date(Date.now() + policy.retentionDays * 24 * 60 * 60 * 1000).toISOString() : undefined;
+  return {
+    records: limited,
+    skipped,
+    report: { dryRun: opts.dryRun !== false, inputCount: records.length, acceptedCount: limited.length, skippedCount: skipped.length, maxCount: policy.maxCount, retentionUntil, defaultReviewStatus: policy.defaultReviewStatus || "review-required", sampleAcceptedIds: limited.slice(0, 5).map((record) => record.id), skippedByReason, redactedCount },
+  };
+}
+
+
 export function previewConnectorIngest(connector: AgentIngestConnector, input: unknown, options: AgentIngestFilterOptions = {}): AgentIngestPreview {
   if (connector.manifest) validateConnectorManifest(connector.manifest);
   const seenIds = new Set(options.seenSourceIds || []);
   const seenHashes = new Set(options.seenContentHashes || []);
   const skipped: AgentIngestPreview["skipped"] = [];
   const records: AgentIngestRecord[] = [];
-  for (const record of connector.ingest(input, options)) {
+  const policyResult = options.policy ? applyCapturePolicy(connector.ingest(input, options), options.policy, { dryRun: options.dryRun }) : undefined;
+  for (const record of policyResult?.records || connector.ingest(input, options)) {
     const hash = sha256Hex(record.text);
     if ((options.privacyPolicy || connector.manifest?.privacy.defaultPolicy) === "skip-private" && (record.source.sensitivity === "private" || record.source.sensitivity === "sensitive")) {
       skipped.push({ id: record.id, reason: "privacy-policy" });
@@ -205,7 +284,9 @@ export function previewConnectorIngest(connector: AgentIngestConnector, input: u
     seenHashes.add(hash);
     records.push(record);
   }
-  return { dryRun: options.dryRun !== false, cursor: records.at(-1)?.cursor || records.at(-1)?.source.timestamp || options.cursor, records, skipped };
+  skipped.push(...(policyResult?.skipped || []));
+  const policyReport = policyResult?.report ? { ...policyResult.report, acceptedCount: records.length, skippedCount: skipped.length, skippedByReason: skipped.reduce<Record<string, number>>((memo, item) => ({ ...memo, [item.reason]: (memo[item.reason] || 0) + 1 }), {}) } : undefined;
+  return { dryRun: options.dryRun !== false, cursor: records.at(-1)?.cursor || records.at(-1)?.source.timestamp || options.cursor, records, skipped, policyReport };
 }
 
 export function connectorRecordsToRawCaptureInputs(records: AgentIngestRecord[], capturedAt?: string): Org2RawCaptureInput[] {
