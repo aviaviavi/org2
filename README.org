@@ -160,6 +160,11 @@ Before opening a PR:
 - validate end-to-end behavior for the touched workflow
 - keep docs concise and user-centered
 
+Test layout:
+- Use =test/<feature>/= for feature-focused Node test scripts and nearby fixtures.
+- Existing top-level =test-*.mjs= files are migrated incrementally when their feature area changes.
+- Agent/context-pack coverage lives in =test/agent/=; after =npm run build=, run a targeted agent test with =node test/agent/test-agent-context.mjs=.
+
 ** Release packaging
 
 Tag-based releases publish both packages:
