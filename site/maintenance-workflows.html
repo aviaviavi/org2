@@ -78,6 +78,22 @@ npm run org2 -- publish docs-site --config org2.json --preview</code></pre>
 <p>Use <code>org2 roam graph --format report</code> for an inspectable local maintenance view, including orphan/high-degree nodes, alias collisions, unresolved/ambiguous links, and linkify suggestions with source locations. Use <code>--format json</code> on lint, backlink, query, graph, and roam workflows when wiring these checks into scripts or CI; graph JSON carries the same maintenance payload under <code>maintenance</code>.</p>
 </section>
 <section class="org2-headline level-1">
+<h1 id="repository-generated-artifact-hygiene">Repository generated artifact hygiene</h1>
+<p>The Org2 repository intentionally keeps a small set of generated outputs under version control so releases, docs hosting, and spec conformance are inspectable from a checkout:</p>
+<table>
+<tbody>
+<tr><td>Path</td><td>Source-controlled?</td><td>Why</td></tr>
+<tr><td><code>dist/</code></td><td>yes</td><td>TypeScript build output used by the package <code>bin</code> entrypoints and npm distribution.</td></tr>
+<tr><td><code>site/</code></td><td>yes</td><td>Published HTML docs generated from <code>docs/site/*.org</code> for static hosting.</td></tr>
+<tr><td><code>spec/v0/tests/*.json</code></td><td>yes</td><td>Expected canonical AST fixtures paired with sibling <code>*.org</code> inputs.</td></tr>
+<tr><td>ad hoc <code>compiled/</code>, <code>views/</code>, local reports, temp exports</td><td>no</td><td>Disposable corpus outputs unless a maintainer explicitly promotes them into docs, fixtures, or another reviewed artifact.</td></tr>
+</tbody>
+</table>
+<p>Before committing changes that affect parser output, docs publishing, or TypeScript build output, run:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run check:generated</code></pre>
+<p>This rebuilds <code>dist/</code>, validates fixture pairs with <code>tools/fixture-runner.mjs --e2e</code>, republishes the docs site, and then runs <code>git diff --exit-code -- dist site spec/v0/tests</code>. If it fails, review and commit intentional generated diffs alongside the source change; otherwise fix the source of nondeterminism before committing.</p>
+</section>
+<section class="org2-headline level-1">
 <h1 id="trust-boundaries">Trust boundaries</h1>
 <p>Org2 should preserve a clear distinction between source files and generated artifacts.</p>
 <ul>

@@ -75,6 +75,21 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><code>ai validate-job</code></p></li>
 <li><p><code>lsp</code></p></li>
 </ul>
+<section class="org2-headline level-2">
+<h2 id="command-conventions-and-stability">Command conventions and stability</h2>
+<p>Audit summary for CLI consistency: most commands already use <code>--dir</code> for corpus roots, <code>--recursive</code> for traversal, <code>--format</code> for alternate output, and <code>--apply</code> for mutating writes. The lowest-risk cleanup is to make JSON output easier and consistent across commands.</p>
+<p>Conventions:</p>
+<ul>
+<li><p>Prefer <code>--format json</code> for stable machine-readable output; <code>--json</code> is a shorthand alias where JSON output is supported.</p></li>
+<li><p>Preview is the default for mutating commands. Pass <code>--apply</code> to write files.</p></li>
+<li><p>Use <code>--dir DIR</code> with <code>--recursive</code> for corpus-wide scans, or <code>--file FILE</code> / <code>--files FILE ...</code> for bounded scans.</p></li>
+<li><p>Text/report output is human-facing and may evolve; JSON output is the integration surface.</p></li>
+</ul>
+<p>Examples:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- agenda --dir ~/notes --recursive --json
+npm run org2 -- lint --dir ~/notes --recursive --format json
+npm run org2 -- roam node new --dir ~/notes --title &quot;Acme Corp&quot; --apply --json</code></pre>
+</section>
 </section>
 <section class="org2-headline level-1">
 <h1 id="agenda">Agenda</h1>
