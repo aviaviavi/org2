@@ -33,6 +33,24 @@ npm run org2 -- publish docs-site --config org2.json --preview
 
 Use =org2 roam graph --format report= for an inspectable local maintenance view, including orphan/high-degree nodes, alias collisions, unresolved/ambiguous links, and linkify suggestions with source locations. Use =--format json= on lint, backlink, query, graph, and roam workflows when wiring these checks into scripts or CI; graph JSON carries the same maintenance payload under =maintenance=.
 
+* Repository generated artifact hygiene
+
+The Org2 repository intentionally keeps a small set of generated outputs under version control so releases, docs hosting, and spec conformance are inspectable from a checkout:
+
+| Path | Source-controlled? | Why |
+| =dist/= | yes | TypeScript build output used by the package =bin= entrypoints and npm distribution. |
+| =site/= | yes | Published HTML docs generated from =docs/site/*.org= for static hosting. |
+| =spec/v0/tests/*.json= | yes | Expected canonical AST fixtures paired with sibling =*.org= inputs. |
+| ad hoc =compiled/=, =views/=, local reports, temp exports | no | Disposable corpus outputs unless a maintainer explicitly promotes them into docs, fixtures, or another reviewed artifact. |
+
+Before committing changes that affect parser output, docs publishing, or TypeScript build output, run:
+
+#+begin_src sh
+npm run check:generated
+#+end_src
+
+This rebuilds =dist/=, validates fixture pairs with =tools/fixture-runner.mjs --e2e=, republishes the docs site, and then runs =git diff --exit-code -- dist site spec/v0/tests=. If it fails, review and commit intentional generated diffs alongside the source change; otherwise fix the source of nondeterminism before committing.
+
 * Trust boundaries
 
 Org2 should preserve a clear distinction between source files and generated artifacts.
