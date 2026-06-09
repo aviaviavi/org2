@@ -4950,6 +4950,11 @@ function defaultArchivePathForSource(sourcePath: string): string {
   return `${sourcePath}.archive`;
 }
 
+function appendSubtreeToArchiveText(existingArchive: string, subtreeText: string): string {
+  const existing = String(existingArchive || "").replace(/\r\n/g, "\n").trimEnd();
+  return existing ? `${existing}\n\n${subtreeText}` : subtreeText;
+}
+
 function extractArchiveHeadlineTitle(line: string): string {
   return line.replace(/^\*+\s+/, "").replace(/\s+:[\w@#%:]+:\s*$/, "").trim();
 }
@@ -13597,7 +13602,7 @@ Flags:
       const existingArchive = fs.existsSync(archivePath)
         ? fs.readFileSync(archivePath, "utf8").replace(/\r\n/g, "\n")
         : "";
-      const archiveOut = existingArchive.trimEnd() + "\n\n" + subtreeText;
+      const archiveOut = appendSubtreeToArchiveText(existingArchive, subtreeText);
 
       fs.writeFileSync(sourcePath, newSourceText, "utf8");
       fs.writeFileSync(archivePath, archiveOut, "utf8");
@@ -13629,7 +13634,7 @@ Flags:
     }
 
     const existingArchive = fs.existsSync(archivePath) ? fs.readFileSync(archivePath, "utf8").replace(/\r\n/g, "\n") : "";
-    const archiveOut = existingArchive.trimEnd() + "\n\n" + subtreeText;
+    const archiveOut = appendSubtreeToArchiveText(existingArchive, subtreeText);
 
     fs.writeFileSync(sourcePath, newSourceText, "utf8");
     fs.writeFileSync(archivePath, archiveOut, "utf8");

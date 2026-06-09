@@ -36,6 +36,7 @@ assert.match(preview.diff, /:ARCHIVE_SOURCE_LINE: 2/);
 execFileSync('node', ['dist/cli.js', 'archive', '--file', source, '--pos', '2', '--apply'], { encoding: 'utf8', env });
 const archived = fs.readFileSync(`${source}_archive`, 'utf8');
 const active = fs.readFileSync(source, 'utf8');
+assert.match(archived, /^\*\* TODO Archive me/, 'new archive file should start with archived subtree, not blank lines');
 assert.match(archived, /:ARCHIVED_AT: 2026-01-21T12:00:00.000Z/);
 assert.match(archived, /:ARCHIVE_HEADING_PATH: Project\/TODO Archive me/);
 assert.doesNotMatch(active, /Archive me/);
