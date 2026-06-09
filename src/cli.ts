@@ -2290,6 +2290,7 @@ interface ScheduledItem {
   // 0-based (VS Code uses 0-based positions)
   lineNumber: number;
   headline: string;
+  body: string;
   todo: string | undefined;
   priority: string | undefined;
   effort: string | undefined;
@@ -4490,6 +4491,34 @@ function extractAgendaFileProperties(lines: string[]): Record<string, string> {
   return {};
 }
 
+function extractAgendaEntryBody(lines: string[], headlineLineIndex: number): string {
+  const bodyLines: string[] = [];
+  let inProperties = false;
+  let sawProperties = false;
+
+  for (let i = headlineLineIndex + 1; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (/^(\*+)\s+/.test(line)) break;
+
+    const trimmed = line.trim();
+    if (inProperties) {
+      if (trimmed.toUpperCase() === ":END:") inProperties = false;
+      continue;
+    }
+
+    if (trimmed.toUpperCase() === ":PROPERTIES:" && !sawProperties) {
+      inProperties = true;
+      sawProperties = true;
+      continue;
+    }
+
+    if (/^(SCHEDULED|DEADLINE|CLOSED):/i.test(trimmed)) continue;
+    bodyLines.push(line);
+  }
+
+  return bodyLines.join("\n").trim();
+}
+
 function appendEffortLintIssues(raw: string, filePath: string, issues: ArtifactLintIssue[]): void {
   const lines = raw.split("\n");
   for (let i = 0; i < lines.length; i += 1) {
@@ -4723,6 +4752,7 @@ function findScheduledItemsInText(
           headline: current.title,
           todo,
           priority: current.priority,
+          body: extractAgendaEntryBody(lines, current.lineNumber),
           effort: current.effort,
           id: agendaPrimaryIdFromProperties(current.properties),
           level: current.level,
@@ -4835,6 +4865,7 @@ function findScheduledItems(
                   filePath,
                   lineNumber: 0, // Line numbers not tracked in AST, using 0
                   headline: agendaTitle,
+                  body: "",
                   todo,
                   priority,
                   effort: undefined,
@@ -5575,6 +5606,16 @@ async function runAgendaTui(options: {
       } else {
         for (const [key, value] of properties) {
           pushWrapped(`${key}: ${value}`, 2);
+        }
+      }
+      lines.push(padPlain("", width));
+      pushWrapped("body:");
+      const body = String(item.body || "").trim();
+      if (!body) {
+        pushWrapped("(empty)", 2);
+      } else {
+        for (const bodyLine of body.split("\n")) {
+          pushWrapped(bodyLine, 2);
         }
       }
       lines.push(padPlain("", width));
