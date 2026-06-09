@@ -1324,6 +1324,31 @@ async function pickAgendaStatusFilter(provider) {
 
 function activate(context) {
   const selector = [{ language: 'org2' }, { language: 'org' }];
+  const previewDocumentContent = new Map();
+
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider('org2-preview', {
+      provideTextDocumentContent(uri) {
+        return previewDocumentContent.get(uri.toString()) || '';
+      },
+    })
+  );
+
+  async function showNamedPreviewDocument(name, language, content) {
+    const safeName = String(name || 'preview')
+      .replace(/[^A-Za-z0-9_.-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80) || 'preview';
+    const uri = vscode.Uri.from({
+      scheme: 'org2-preview',
+      path: `/${safeName}`,
+      query: String(Date.now()),
+    });
+    previewDocumentContent.set(uri.toString(), String(content || ''));
+    const doc = await vscode.workspace.openTextDocument(uri);
+    const typedDoc = doc.languageId === language ? doc : await vscode.languages.setTextDocumentLanguage(doc, language);
+    return vscode.window.showTextDocument(typedDoc, { preview: true, preserveFocus: false });
+  }
 
   const foldingProvider = {
     provideFoldingRanges(document) {
@@ -3411,8 +3436,7 @@ function activate(context) {
         return;
       }
 
-      const doc = await vscode.workspace.openTextDocument({ language: 'diff', content: diffText + '\n' });
-      await vscode.window.showTextDocument(doc, { preview: true, preserveFocus: false });
+      await showNamedPreviewDocument(`${path.basename(filePath)}-archive-preview.diff`, 'diff', diffText + '\n');
 
       const applyOk = await vscode.window.showWarningMessage(
         `Org2: apply archive edit at line ${line}?`,
