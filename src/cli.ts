@@ -13500,12 +13500,6 @@ Flags:
     }
   }
 
-  if (dir && files.length === 0) {
-    files = listAgendaFiles(dir, recursive, includeArchives);
-  }
-
-  if (dir && files.length > 0) agendaConfigBaseDir = path.resolve(dir);
-
   if (!agendaConfig) {
     const configLookupStart = dir ? path.resolve(dir) : process.cwd();
     const configPath = findConfigFile(configLookupStart);
@@ -13516,6 +13510,14 @@ Flags:
       } catch {}
     }
   }
+
+  if (dir && files.length === 0) {
+    files = agendaConfig
+      ? resolveFilesFromConfig(agendaConfig, agendaConfigBaseDir)
+      : listAgendaFiles(dir, recursive, includeArchives);
+  }
+
+  if (dir && files.length > 0 && !agendaConfig) agendaConfigBaseDir = path.resolve(dir);
 
   const parsedAgendaStatus = parseAgendaStatusFilterArgs(agendaStatusFiltersRaw);
   if (parsedAgendaStatus.invalid.length > 0) {
@@ -13899,8 +13901,8 @@ Flags:
   const agendaUsesExplicitFiles = args.includes("--file") || args.includes("--files");
   const collectAgendaFiles = (): string[] => {
     if (agendaUsesExplicitFiles) return files;
-    if (dir) return listAgendaFiles(dir, recursive, includeArchives);
     if (agendaConfig) return resolveFilesFromConfig(agendaConfig, agendaConfigBaseDir);
+    if (dir) return listAgendaFiles(dir, recursive, includeArchives);
     return files;
   };
 
