@@ -2299,6 +2299,7 @@ interface ScheduledItem {
   time: string | undefined;
   kind: string;
   tags: string[];
+  properties: Record<string, string>;
   habit?: HabitAgendaState;
 }
 
@@ -4729,6 +4730,7 @@ function findScheduledItemsInText(
           time: planningTime,
           kind,
           tags: [...current.tags],
+          properties: { ...current.properties },
           ...(habit ? { habit } : {}),
         });
       }
@@ -4842,6 +4844,7 @@ function findScheduledItems(
                   time: planningTime,
                   kind: planning.kind,
                   tags: [...(headline.tags ?? [])],
+                  properties: {},
                 });
               }
             }
@@ -5319,6 +5322,62 @@ function applyAgendaTuiPriority(item: ScheduledItem, priority: string | null): S
   return { ...item, priority: nextPriority ?? undefined };
 }
 
+function parseAgendaTuiPropertyAssignment(raw: string): { key: string; value: string } | null {
+  const trimmed = String(raw || "").trim();
+  const equalsIndex = trimmed.indexOf("=");
+  if (equalsIndex <= 0) return null;
+
+  const key = normalizeAgendaPropertyKey(trimmed.slice(0, equalsIndex));
+  const value = trimmed.slice(equalsIndex + 1).trim();
+  if (!key || !/^[A-Z0-9_@#%+.-]+$/.test(key)) return null;
+  return { key, value };
+}
+
+function applyAgendaTuiProperty(item: ScheduledItem, key: string, value: string): ScheduledItem {
+  const lines = fs.readFileSync(item.filePath, "utf8").replace(/\r\n/g, "\n").split("\n");
+  const headingIndex = item.lineNumber;
+  if (!/^(\*+)\s+/.test(lines[headingIndex] ?? "")) {
+    throw new Error(`Could not locate headline at ${item.filePath}:${headingIndex + 1}`);
+  }
+
+  let insertAt = headingIndex + 1;
+  while (insertAt < lines.length && /^(SCHEDULED|DEADLINE|CLOSED):/i.test((lines[insertAt] ?? "").trim())) {
+    insertAt += 1;
+  }
+
+  let drawerStart = -1;
+  let drawerEnd = -1;
+  if ((lines[insertAt] ?? "").trim().toUpperCase() === ":PROPERTIES:") {
+    drawerStart = insertAt;
+    for (let i = insertAt + 1; i < lines.length; i += 1) {
+      const trimmed = (lines[i] ?? "").trim().toUpperCase();
+      if (/^(\*+)\s+/.test(lines[i] ?? "")) break;
+      if (trimmed === ":END:") {
+        drawerEnd = i;
+        break;
+      }
+    }
+  }
+
+  if (drawerStart < 0 || drawerEnd < 0) {
+    lines.splice(insertAt, 0, ":PROPERTIES:", `:${key}: ${value}`, ":END:");
+  } else {
+    const keyPrefix = `:${key}:`;
+    let replaced = false;
+    for (let i = drawerStart + 1; i < drawerEnd; i += 1) {
+      if ((lines[i] ?? "").toUpperCase().startsWith(keyPrefix.toUpperCase())) {
+        lines[i] = `${keyPrefix} ${value}`;
+        replaced = true;
+        break;
+      }
+    }
+    if (!replaced) lines.splice(drawerEnd, 0, `${keyPrefix} ${value}`);
+  }
+
+  fs.writeFileSync(item.filePath, lines.join("\n"), "utf8");
+  return { ...item, properties: { ...item.properties, [key]: value } };
+}
+
 function openAgendaTuiItem(item: ScheduledItem): void {
   const line = item.lineNumber + 1;
   const target = `${item.filePath}:${line}`;
@@ -5408,6 +5467,8 @@ async function runAgendaTui(options: {
   let pendingPriorityKey: "p" | null = null;
   let captureInputActive = false;
   let captureInputValue = "";
+  let propertyInputActive = false;
+  let propertyInputValue = "";
   const collapsedSections = new Set<string>();
 
   const stripAnsi = (input: string): string => input.replace(/\u001b\[[0-9;]*m/g, "");
@@ -5507,8 +5568,18 @@ async function runAgendaTui(options: {
       if (item.tags && item.tags.length > 0) pushWrapped(`tags: ${item.tags.join(", ")}`, "tags: ".length);
       if (item.id) pushWrapped(`id: ${item.id}`);
       lines.push(padPlain("", width));
-      pushWrapped("c capture TODO    t/i/d/x status   s/n/w/m schedule");
-      pushWrapped("S/N/W/M deadline  o open  enter collapse");
+      const properties = Object.entries(item.properties || {}).sort((a, b) => a[0].localeCompare(b[0]));
+      pushWrapped("properties:");
+      if (properties.length === 0) {
+        pushWrapped("(none)", 2);
+      } else {
+        for (const [key, value] of properties) {
+          pushWrapped(`${key}: ${value}`, 2);
+        }
+      }
+      lines.push(padPlain("", width));
+      pushWrapped("P set property   c capture TODO   t/i/d/x status");
+      pushWrapped("s/n/w/m schedule  S/N/W/M deadline  o open");
     }
 
     while (lines.length < bodyHeight) lines.push(" ".repeat(width));
@@ -5546,7 +5617,7 @@ async function runAgendaTui(options: {
     const rangeLabel = options.rangeLabel.replace(options.startIso, currentStartIso);
     const keyHelp = pendingPriorityKey
       ? "priority mode: a/b/c set priority, 0 clears, esc cancels"
-      : "j/k arrows move, gg/G jump, 1/2/3 views, enter collapse, c capture, t/i/d/x status, p+a/b/c priority, p+0 clear, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit";
+      : "j/k arrows move, gg/G jump, 1/2/3 views, enter collapse, c capture, P set property, t/i/d/x status, p+a/b/c priority, p+0 clear, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit";
     const header = [
       `${ansi.bold}Org2 agenda${ansi.reset}  ${mode === "focus" ? "focus" : mode === "today" ? "today" : "range"}  ${rangeLabel}`,
       `${actionableToday} actionable today, ${actionableOverdue} overdue, refresh ${Math.max(1, Math.round(options.refreshMs / 1000))}s, updated ${lastRefresh.toLocaleTimeString()}`,
@@ -5555,6 +5626,11 @@ async function runAgendaTui(options: {
             `CAPTURE TODO: ${captureInputValue}`,
             "type title, enter save, esc cancel, backspace delete",
           ]
+        : propertyInputActive
+          ? [
+              `SET PROPERTY: ${propertyInputValue}`,
+              "type KEY=VALUE, enter save, esc cancel, backspace delete",
+            ]
         : wrapTerminalLine(keyHelp, width).slice(0, 2)),
       "",
     ];
@@ -5706,6 +5782,49 @@ async function runAgendaTui(options: {
           return;
         }
 
+        if (propertyInputActive) {
+          if (key === "\u0003") {
+            cleanup();
+            process.stdin.off("data", onData);
+            resolve();
+            return;
+          }
+          if (key === "\u001b") {
+            propertyInputActive = false;
+            propertyInputValue = "";
+            message = "property edit canceled";
+            render();
+            return;
+          }
+          if (key === "\r" || key === "\n") {
+            const assignment = parseAgendaTuiPropertyAssignment(propertyInputValue);
+            propertyInputActive = false;
+            propertyInputValue = "";
+            const row = selectedRow();
+            if (row?.type === "item" && assignment) {
+              applyAgendaTuiProperty(row.item, assignment.key, assignment.value);
+              message = `${assignment.key}=${assignment.value} → ${stripRoamLinksForAgendaTui(row.item.headline)}`;
+              refresh();
+            } else {
+              message = "property edit canceled; use KEY=VALUE";
+            }
+            render();
+            return;
+          }
+          if (key === "\u007f" || key === "\b" || key === "\x08") {
+            propertyInputValue = propertyInputValue.slice(0, -1);
+            render();
+            return;
+          }
+          if (key >= " " && key !== "\u007f" && !key.startsWith("\u001b")) {
+            propertyInputValue += key.replace(/[\r\n]+/g, " ");
+            render();
+            return;
+          }
+          render();
+          return;
+        }
+
         if (key === "q" || key === "\u0003") {
           cleanup();
           process.stdin.off("data", onData);
@@ -5744,6 +5863,15 @@ async function runAgendaTui(options: {
           captureInputActive = true;
           captureInputValue = "";
           message = "";
+        } else if (key === "P") {
+          const row = selectedRow();
+          if (row?.type === "item") {
+            propertyInputActive = true;
+            propertyInputValue = "";
+            message = "";
+          } else {
+            message = "Select an agenda item before setting a property";
+          }
         } else if (key === "r") refresh();
         else if (key === "p") {
           pendingPriorityKey = "p";
