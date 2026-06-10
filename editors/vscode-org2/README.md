@@ -63,6 +63,7 @@ The extension can toggle/set TODO keywords on the current headline via the `org2
 - Command: **Org2: Set Todo Status** (`org2.setTodoStatus`) — command args accept the same aliases as CLI `todo set --status` (e.g. `open`, `backlog`, `in-progress`, `completed`, `cancelled`).
 - Command: **Org2: Set Priority** (`org2.setPriority`) → sets/clears headline priority token (`[#A]`/`[#B]`/`[#C]`)
 - Direct commands: `org2.setTodoTODO`, `org2.setTodoInProgress`, `org2.setTodoDone`, `org2.setTodoCanceled`
+- Handoff command: `org2.markDoneAndHandoff` marks the heading `DONE`, sets `STATUS=ready-for-agent`, and writes `ORG2_AGENT_HANDOFF_AT`.
 - Default keybinding: `ctrl+alt+t`
 - Also available in the editor right-click context menu.
 
@@ -266,6 +267,7 @@ Quick command palette index (`Cmd/Ctrl+Shift+P`):
   - `Org2: Set Todo → IN_PROGRESS` (`org2.setTodoInProgress`)
   - `Org2: Set Todo → DONE` (`org2.setTodoDone`)
   - `Org2: Set Todo → CANCELED` (`org2.setTodoCanceled`)
+  - `Org2: Mark Done and Handoff to Agent` (`org2.markDoneAndHandoff`)
   - `Org2: Set SCHEDULED` (`org2.setScheduled`)
   - `Org2: Set SCHEDULED to Today` (`org2.setScheduledToday`)
   - `Org2: Set DEADLINE` (`org2.setDeadline`)

@@ -820,6 +820,84 @@ function formatDateYYYYMMDD(d) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function formatOrgTimestamp(d = new Date()) {
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `<${yyyy}-${mm}-${dd} ${days[d.getDay()]} ${hh}:${min}>`;
+}
+
+function upsertHeadlinePropertiesInText(text, line0, assignments) {
+  const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+  if (!lines.length) return { changed: false, text };
+
+  const cursorLine = Math.max(0, Math.min(Number(line0) || 0, lines.length - 1));
+  let headingIndex = -1;
+  for (let i = cursorLine; i >= 0; i -= 1) {
+    if (headingRe.test(lines[i] || '')) {
+      headingIndex = i;
+      break;
+    }
+  }
+  if (headingIndex < 0) return { changed: false, text };
+
+  let insertAt = headingIndex + 1;
+  while (insertAt < lines.length && /^(SCHEDULED|DEADLINE|CLOSED):/i.test(String(lines[insertAt] || '').trim())) {
+    insertAt += 1;
+  }
+
+  let drawerStart = -1;
+  let drawerEnd = -1;
+  if (propertiesBeginRe.test(lines[insertAt] || '')) {
+    drawerStart = insertAt;
+    for (let i = insertAt + 1; i < lines.length; i += 1) {
+      if (headingRe.test(lines[i] || '')) break;
+      if (drawerEndRe.test(lines[i] || '')) {
+        drawerEnd = i;
+        break;
+      }
+    }
+  }
+
+  let changed = false;
+  const entries = Object.entries(assignments || {})
+    .map(([key, value]) => [String(key || '').trim().toUpperCase(), String(value || '').trim()])
+    .filter(([key]) => /^[A-Z0-9_@#%+.-]+$/.test(key));
+
+  if (!entries.length) return { changed: false, text };
+
+  if (drawerStart < 0 || drawerEnd < 0) {
+    lines.splice(insertAt, 0, ':PROPERTIES:', ...entries.map(([key, value]) => `:${key}: ${value}`), ':END:');
+    return { changed: true, text: lines.join('\n') };
+  }
+
+  for (const [key, value] of entries) {
+    const keyPrefix = `:${key}:`;
+    let replaced = false;
+    for (let i = drawerStart + 1; i < drawerEnd; i += 1) {
+      if (String(lines[i] || '').toUpperCase().startsWith(keyPrefix)) {
+        const nextLine = `${keyPrefix} ${value}`;
+        if (lines[i] !== nextLine) {
+          lines[i] = nextLine;
+          changed = true;
+        }
+        replaced = true;
+        break;
+      }
+    }
+    if (!replaced) {
+      lines.splice(drawerEnd, 0, `${keyPrefix} ${value}`);
+      drawerEnd += 1;
+      changed = true;
+    }
+  }
+
+  return { changed, text: lines.join('\n') };
+}
+
 function randomUuid() {
   try {
     const crypto = require('crypto');
@@ -3085,6 +3163,91 @@ function activate(context) {
     }
   }
 
+  async function applyAgentHandoffProperties(item, options = {}) {
+    let filePath;
+    let line0;
+    let activeEditorBefore;
+    let activeUriBefore = '';
+    let selectionBefore;
+
+    if (item && item.file) {
+      filePath = resolveAgendaItemPath(item);
+      line0 = typeof item.line === 'number' ? item.line : 0;
+
+      const openDoc = findOpenDocumentForPath(filePath);
+      if (openDoc && openDoc.isDirty) {
+        vscode.window.showWarningMessage('Org2: please save the file before marking agent handoff from the agenda.');
+        return false;
+      }
+    } else {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return false;
+
+      const doc = editor.document;
+      if (!doc || doc.uri.scheme !== 'file') {
+        vscode.window.showWarningMessage('Org2: agent handoff requires a file-backed document.');
+        return false;
+      }
+
+      if (doc.isDirty) {
+        const ok = await doc.save();
+        if (!ok) {
+          vscode.window.showWarningMessage('Org2: could not save file before marking agent handoff.');
+          return false;
+        }
+      }
+
+      filePath = doc.uri.fsPath;
+      line0 = editor.selection && editor.selection.active ? editor.selection.active.line : 0;
+      activeEditorBefore = editor;
+      activeUriBefore = doc.uri.toString();
+      selectionBefore = editor.selection ? new vscode.Selection(editor.selection.start, editor.selection.end) : undefined;
+    }
+
+    const before = fs.readFileSync(filePath, 'utf8');
+    const updated = upsertHeadlinePropertiesInText(before, line0, {
+      STATUS: 'ready-for-agent',
+      ORG2_AGENT_HANDOFF_AT: formatOrgTimestamp(new Date()),
+    });
+    if (!updated.changed) return true;
+
+    fs.writeFileSync(filePath, updated.text, 'utf8');
+
+    const cfg = vscode.workspace.getConfiguration('org2');
+    const restoreSelectionAfterCliApply = cfg.get('editor.restoreSelectionAfterCliApply', true) ? true : false;
+    const refreshAfterCliApply = cfg.get('editor.refreshAfterCliApply', true) ? true : false;
+    const skipRefreshWhenInSync = cfg.get('editor.skipRefreshWhenInSync', true) ? true : false;
+    const allowGlobalRefreshFallback = cfg.get('editor.allowGlobalRefreshFallback', false) ? true : false;
+
+    if (refreshAfterCliApply) {
+      await refreshFileFromDisk(filePath, {
+        selection: restoreSelectionAfterCliApply ? selectionBefore : undefined,
+        activeUri: activeUriBefore || (activeEditorBefore && activeEditorBefore.document ? activeEditorBefore.document.uri.toString() : ''),
+        skipIfInSync: skipRefreshWhenInSync,
+        allowGlobalFallback: allowGlobalRefreshFallback,
+      });
+    }
+
+    if (item instanceof Org2AgendaItem && !options.skipAgendaReload) {
+      await agendaProvider.load();
+    }
+    return true;
+  }
+
+  async function applyAgentHandoffCommand(item) {
+    const targets = resolveAgendaMutationTargets(item);
+    const resolvedTargets = targets.length ? targets : [item];
+
+    for (const target of resolvedTargets) {
+      await runTodoCli('set', 'done', target, { skipAgendaReload: true });
+      await applyAgentHandoffProperties(target, { skipAgendaReload: true });
+    }
+
+    if (resolvedTargets.some((target) => target instanceof Org2AgendaItem)) {
+      await agendaProvider.load();
+    }
+  }
+
   async function runPlanCli(kind, item, options = {}) {
     let filePath;
     let line;
@@ -5209,6 +5372,7 @@ function activate(context) {
   context.subscriptions.push(vscode.commands.registerCommand('org2.setTodoInProgress', async (item) => applySetTodoStatus('in_progress', item)));
   context.subscriptions.push(vscode.commands.registerCommand('org2.setTodoDone', async (item) => applySetTodoStatus('done', item)));
   context.subscriptions.push(vscode.commands.registerCommand('org2.setTodoCanceled', async (item) => applySetTodoStatus('canceled', item)));
+  context.subscriptions.push(vscode.commands.registerCommand('org2.markDoneAndHandoff', async (item) => applyAgentHandoffCommand(item)));
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.setScheduled', async (item) => {
