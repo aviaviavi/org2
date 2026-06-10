@@ -5335,6 +5335,12 @@ function applyAgendaTuiTodo(item: ScheduledItem, status: TodoStatus): ScheduledI
   return { ...item, todo: status === "in_progress" ? "IN_PROGRESS" : status.toUpperCase() };
 }
 
+function applyAgendaTuiDoneAndAgentHandoff(item: ScheduledItem): ScheduledItem {
+  const doneItem = applyAgendaTuiTodo(item, "done");
+  const handedOffItem = applyAgendaTuiProperty(doneItem, "ORG2_AGENT_HANDOFF", "openclaw");
+  return applyAgendaTuiProperty(handedOffItem, "ORG2_AGENT_HANDOFF_AT", formatOrgTimestamp(new Date()));
+}
+
 function applyAgendaTuiPriority(item: ScheduledItem, priority: string | null): ScheduledItem {
   const lines = fs.readFileSync(item.filePath, "utf8").split(/\r?\n/);
   const lineIndex = item.lineNumber;
@@ -5491,6 +5497,8 @@ async function runAgendaTui(options: {
   let mode: AgendaTuiMode = "range";
   let selected = 0;
   let scrollOffset = 0;
+  let detailScrollOffset = 0;
+  let lastBodyHeight = 8;
   let message = "";
   let items: ScheduledItem[] = [];
   let skippedFiles = 0;
@@ -5552,7 +5560,13 @@ async function runAgendaTui(options: {
 
   const moveSelection = (delta: number): void => {
     if (rows.length === 0) return;
+    const before = selected;
     selected = Math.max(0, Math.min(rows.length - 1, selected + delta));
+    if (selected !== before) detailScrollOffset = 0;
+  };
+
+  const scrollDetail = (delta: number): void => {
+    detailScrollOffset = Math.max(0, detailScrollOffset + delta);
   };
 
   const toggleCollapse = (): void => {
@@ -5569,7 +5583,7 @@ async function runAgendaTui(options: {
     ensureSelection();
   };
 
-  const buildDetailLines = (row: AgendaTuiRow | undefined, width: number, bodyHeight: number): string[] => {
+  const buildDetailLines = (row: AgendaTuiRow | undefined, width: number): string[] => {
     const lines: string[] = [];
     const pushWrapped = (text = "", continuationIndent = 0): void => {
       for (const line of wrapTerminalLine(text, width, continuationIndent)) {
@@ -5586,7 +5600,7 @@ async function runAgendaTui(options: {
       if (section && section.items.length > 0) {
         lines.push(padPlain("", width));
         pushWrapped("first items:");
-        for (const item of section.items.slice(0, Math.max(0, bodyHeight - lines.length - 1))) {
+        for (const item of section.items) {
           pushWrapped(`• ${stripRoamLinksForAgendaTui(item.headline)}`, 2);
         }
       }
@@ -5624,12 +5638,11 @@ async function runAgendaTui(options: {
         }
       }
       lines.push(padPlain("", width));
-      pushWrapped("P set property   c capture TODO   t/i/d/x status");
+      pushWrapped("P set property   c capture TODO   t/i/d/x/A status");
       pushWrapped("s/n/w/m schedule  S/N/W/M deadline  o open");
     }
 
-    while (lines.length < bodyHeight) lines.push(" ".repeat(width));
-    return lines.slice(0, bodyHeight);
+    return lines;
   };
 
   const buildRowLines = (row: AgendaTuiRow, width: number): { lines: string[]; color: string } => {
@@ -5663,7 +5676,7 @@ async function runAgendaTui(options: {
     const rangeLabel = options.rangeLabel.replace(options.startIso, currentStartIso);
     const keyHelp = pendingPriorityKey
       ? "priority mode: a/b/c set priority, 0 clears, esc cancels"
-      : "j/k arrows move, gg/G jump, 1/2/3 views, enter collapse, c capture, P set property, t/i/d/x status, p+a/b/c priority, p+0 clear, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit";
+      : "j/k arrows move, J/K detail scroll, Ctrl-d/u half-page detail, gg/G jump, 1/2/3 views, enter collapse, c capture, P set property, t/i/d/x status, A done+handoff, p+a/b/c priority, p+0 clear, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit";
     const header = [
       `${ansi.bold}Org2 agenda${ansi.reset}  ${mode === "focus" ? "focus" : mode === "today" ? "today" : "range"}  ${rangeLabel}`,
       `${actionableToday} actionable today, ${actionableOverdue} overdue, refresh ${Math.max(1, Math.round(options.refreshMs / 1000))}s, updated ${lastRefresh.toLocaleTimeString()}`,
@@ -5682,6 +5695,7 @@ async function runAgendaTui(options: {
     ];
     const headerHeight = header.length;
     const bodyHeight = Math.max(8, height - headerHeight - 1);
+    lastBodyHeight = bodyHeight;
     const leftWidth = Math.max(30, Math.min(width - 22, Math.floor(width * 0.58)));
     const rightWidth = Math.max(20, width - leftWidth - 3);
 
@@ -5718,7 +5732,17 @@ async function runAgendaTui(options: {
     }
 
     while (leftLines.length < bodyHeight) leftLines.push(" ".repeat(leftWidth));
-    const rightLines = buildDetailLines(selectedRow(), rightWidth, bodyHeight);
+    const detailLines = buildDetailLines(selectedRow(), rightWidth);
+    const maxDetailScroll = Math.max(0, detailLines.length - bodyHeight);
+    detailScrollOffset = Math.max(0, Math.min(detailScrollOffset, maxDetailScroll));
+    const rightLines = detailLines
+      .slice(detailScrollOffset, detailScrollOffset + bodyHeight)
+      .map((line) => padPlain(line, rightWidth));
+    while (rightLines.length < bodyHeight) rightLines.push(" ".repeat(rightWidth));
+    if (maxDetailScroll > 0 && rightLines.length > 0) {
+      const indicator = `detail ${Math.min(detailScrollOffset + 1, detailLines.length)}/${detailLines.length}`;
+      rightLines[0] = padPlain(`${truncateForTerminal(stripAnsi(rightLines[0] || ""), Math.max(0, rightWidth - indicator.length - 1))} ${indicator}`, rightWidth);
+    }
 
     const screen = ["\u001b[?25l\u001b[2J\u001b[H", ...header.map((line) => padPlain(line, width))];
     for (let index = 0; index < bodyHeight; index += 1) {
@@ -5879,7 +5903,10 @@ async function runAgendaTui(options: {
         }
 
         if (pendingG) {
-          if (key === "g") selected = 0;
+          if (key === "g") {
+            selected = 0;
+            detailScrollOffset = 0;
+          }
           pendingG = false;
           render();
           return;
@@ -5902,9 +5929,16 @@ async function runAgendaTui(options: {
             pendingPriorityKey = null;
           }
         } else if (key === "g") pendingG = true;
-        else if (key === "G") selected = Math.max(0, rows.length - 1);
+        else if (key === "G") {
+          selected = Math.max(0, rows.length - 1);
+          detailScrollOffset = 0;
+        }
         else if (key === "j" || key === "\u001b[B") moveSelection(1);
         else if (key === "k" || key === "\u001b[A") moveSelection(-1);
+        else if (key === "J") scrollDetail(1);
+        else if (key === "K") scrollDetail(-1);
+        else if (key === "\u0004") scrollDetail(Math.max(1, Math.floor(lastBodyHeight / 2)));
+        else if (key === "\u0015") scrollDetail(-Math.max(1, Math.floor(lastBodyHeight / 2)));
         else if (key === "c") {
           captureInputActive = true;
           captureInputValue = "";
@@ -5924,14 +5958,20 @@ async function runAgendaTui(options: {
           message = "Priority mode: press a, b, c, or 0 to clear";
         } else if (key === "1" || key === "2" || key === "3") {
           mode = nextAgendaTuiMode(mode, key);
+          detailScrollOffset = 0;
           refresh();
         } else if (key === "\r" || key === "\n" || key === "h" || key === "l") {
           toggleCollapse();
-        } else if ([" ", "t", "i", "d", "x", "o", "s", "n", "w", "m", "S", "N", "W", "M"].includes(key)) {
+          detailScrollOffset = 0;
+        } else if ([" ", "t", "i", "d", "x", "A", "o", "s", "n", "w", "m", "S", "N", "W", "M"].includes(key)) {
           const row = selectedRow();
           if (row?.type === "item") {
             if (key === "o") {
               withSuspendedTty(() => openAgendaTuiItem(row.item));
+            } else if (key === "A") {
+              applyAgendaTuiDoneAndAgentHandoff(row.item);
+              message = `done + OpenClaw handoff → ${stripRoamLinksForAgendaTui(row.item.headline)}`;
+              refresh();
             } else if (["s", "n", "w", "m", "S", "N", "W", "M"].includes(key)) {
               const now = new Date();
               const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
