@@ -5337,8 +5337,8 @@ function applyAgendaTuiTodo(item: ScheduledItem, status: TodoStatus): ScheduledI
 
 function applyAgendaTuiDoneAndAgentHandoff(item: ScheduledItem): ScheduledItem {
   const doneItem = applyAgendaTuiTodo(item, "done");
-  const handedOffItem = applyAgendaTuiProperty(doneItem, "ORG2_AGENT_HANDOFF", "openclaw");
-  return applyAgendaTuiProperty(handedOffItem, "ORG2_AGENT_HANDOFF_AT", formatOrgTimestamp(new Date()));
+  const readyItem = applyAgendaTuiProperty(doneItem, "STATUS", "ready-for-agent");
+  return applyAgendaTuiProperty(readyItem, "ORG2_AGENT_HANDOFF_AT", formatOrgTimestamp(new Date()));
 }
 
 function applyAgendaTuiPriority(item: ScheduledItem, priority: string | null): ScheduledItem {
