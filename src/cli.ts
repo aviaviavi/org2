@@ -5270,6 +5270,40 @@ function buildAgendaTuiRows(sections: AgendaTuiSection[], collapsedSections: Set
   return rows;
 }
 
+function agendaTuiSearchText(item: ScheduledItem): string {
+  const properties = Object.entries(item.properties || {})
+    .map(([key, value]) => `${key} ${value}`)
+    .join("\n");
+  return [
+    item.headline,
+    item.body,
+    item.todo,
+    item.priority,
+    item.effort,
+    item.id,
+    item.time,
+    item.kind,
+    item.tags.join(" "),
+    properties,
+  ]
+    .filter((part) => String(part || "").trim().length > 0)
+    .join("\n")
+    .toLowerCase();
+}
+
+function filterAgendaTuiItems(items: ScheduledItem[], query: string): ScheduledItem[] {
+  const terms = String(query || "")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (terms.length === 0) return items;
+  return items.filter((item) => {
+    const haystack = agendaTuiSearchText(item);
+    return terms.every((term) => haystack.includes(term));
+  });
+}
+
 function nextAgendaTuiMode(mode: AgendaTuiMode, key: string): AgendaTuiMode {
   if (key === "1") return "focus";
   if (key === "2") return "today";
@@ -5513,6 +5547,8 @@ async function runAgendaTui(options: {
   let captureInputValue = "";
   let propertyInputActive = false;
   let propertyInputValue = "";
+  let searchInputActive = false;
+  let searchQuery = "";
   const collapsedSections = new Set<string>();
 
   const stripAnsi = (input: string): string => input.replace(/\u001b\[[0-9;]*m/g, "");
@@ -5546,7 +5582,7 @@ async function runAgendaTui(options: {
   const refresh = (): void => {
     currentStartIso = getTodayString();
     const result = options.collect({ startIso: currentStartIso });
-    items = result.items;
+    items = filterAgendaTuiItems(result.items, searchQuery);
     skippedFiles = result.skippedFiles;
     sections = buildAgendaTuiSections(items, currentStartIso, mode);
     const liveKeys = new Set(sections.map((section) => section.key));
@@ -5674,12 +5710,13 @@ async function runAgendaTui(options: {
     const actionableToday = items.filter((item) => item.date === currentStartIso && isAgendaTuiActionable(item)).length;
     const actionableOverdue = items.filter((item) => item.date < currentStartIso && isAgendaTuiActionable(item)).length;
     const rangeLabel = options.rangeLabel.replace(options.startIso, currentStartIso);
+    const searchLabel = searchQuery.trim() ? `, filter /${searchQuery.trim()} (${items.length})` : "";
     const keyHelp = pendingPriorityKey
       ? "priority mode: a/b/c set priority, 0 clears, esc cancels"
-      : "j/k arrows move, J/K detail scroll, Ctrl-d/u half-page detail, gg/G jump, 1/2/3 views, enter collapse, c capture, P set property, t/i/d/x status, A done+handoff, p+a/b/c priority, p+0 clear, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit";
+      : "j/k arrows move, J/K detail scroll, Ctrl-d/u half-page detail, / search, gg/G jump, 1/2/3 views, enter collapse, c capture, P set property, t/i/d/x status, A done+handoff, p+a/b/c priority, p+0 clear, s/n/w/m schedule, S/N/W/M deadline, o open, r refresh, q quit";
     const header = [
       `${ansi.bold}Org2 agenda${ansi.reset}  ${mode === "focus" ? "focus" : mode === "today" ? "today" : "range"}  ${rangeLabel}`,
-      `${actionableToday} actionable today, ${actionableOverdue} overdue, refresh ${Math.max(1, Math.round(options.refreshMs / 1000))}s, updated ${lastRefresh.toLocaleTimeString()}`,
+      `${actionableToday} actionable today, ${actionableOverdue} overdue${searchLabel}, refresh ${Math.max(1, Math.round(options.refreshMs / 1000))}s, updated ${lastRefresh.toLocaleTimeString()}`,
       ...(captureInputActive
         ? [
             `CAPTURE TODO: ${captureInputValue}`,
@@ -5689,6 +5726,11 @@ async function runAgendaTui(options: {
           ? [
               `SET PROPERTY: ${propertyInputValue}`,
               "type KEY=VALUE, enter save, esc cancel, backspace delete",
+            ]
+        : searchInputActive
+          ? [
+              `SEARCH: /${searchQuery}`,
+              "type filter, enter keep, esc clear, backspace delete",
             ]
         : wrapTerminalLine(keyHelp, width).slice(0, 2)),
       "",
@@ -5895,6 +5937,44 @@ async function runAgendaTui(options: {
           return;
         }
 
+        if (searchInputActive) {
+          if (key === "\u0003") {
+            cleanup();
+            process.stdin.off("data", onData);
+            resolve();
+            return;
+          }
+          if (key === "\u001b") {
+            searchInputActive = false;
+            searchQuery = "";
+            message = "search cleared";
+            refresh();
+            render();
+            return;
+          }
+          if (key === "\r" || key === "\n") {
+            searchInputActive = false;
+            message = searchQuery.trim() ? `filter /${searchQuery.trim()}` : "search cleared";
+            refresh();
+            render();
+            return;
+          }
+          if (key === "\u007f" || key === "\b" || key === "\x08") {
+            searchQuery = searchQuery.slice(0, -1);
+            refresh();
+            render();
+            return;
+          }
+          if (key >= " " && key !== "\u007f" && !key.startsWith("\u001b")) {
+            searchQuery += key.replace(/[\r\n]+/g, " ");
+            refresh();
+            render();
+            return;
+          }
+          render();
+          return;
+        }
+
         if (key === "q" || key === "\u0003") {
           cleanup();
           process.stdin.off("data", onData);
@@ -5939,6 +6019,12 @@ async function runAgendaTui(options: {
         else if (key === "K") scrollDetail(-1);
         else if (key === "\u0004") scrollDetail(Math.max(1, Math.floor(lastBodyHeight / 2)));
         else if (key === "\u0015") scrollDetail(-Math.max(1, Math.floor(lastBodyHeight / 2)));
+        else if (key === "/") {
+          searchInputActive = true;
+          searchQuery = "";
+          message = "";
+          refresh();
+        }
         else if (key === "c") {
           captureInputActive = true;
           captureInputValue = "";
