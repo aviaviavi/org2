@@ -26,6 +26,20 @@ fs.writeFileSync(note, `* Revenue report
 |-------+---------|
 | CA    | 42      |
 | NY    | 24      |
+
+#+name: fetch_buckets
+| bucket | fetches |
+|--------+---------|
+| 0-10   | 14      |
+| 11-50  | 32      |
+| 51-100 | 9       |
+
+\`\`\`chart histogram
+x: bucket
+y: fetches
+title: Fetch buckets
+source: previous-table
+\`\`\`
 `, "utf8");
 
 function cli(args, input) {
@@ -50,6 +64,15 @@ assert.ok(fs.existsSync(out));
 const stdinJson = JSON.parse(cli(["render-chart", "--stdin", "--format", "json"], fs.readFileSync(note, "utf8")));
 assert.equal(stdinJson.ok, true);
 assert.equal(stdinJson.source.blockId, "quarterly_revenue");
+
+const fencedJson = JSON.parse(cli(["render-chart", "--file", note, "--line", "25", "--format", "json"]));
+assert.equal(fencedJson.ok, true);
+assert.equal(fencedJson.source.blockId, "fetch_buckets");
+assert.equal(fencedJson.source.line, 19);
+assert.equal(fencedJson.source.endLine, 30);
+assert.match(fencedJson.svg, /Fetch buckets/);
+assert.match(fencedJson.svg, /Org2 histogram chart/);
+assert.match(fencedJson.svg, /<rect /);
 
 const bad = spawnSync("node", ["dist/cli.js", "render-chart", "--file", note, "--block-id", "missing", "--format", "json"], { cwd: repo, encoding: "utf8" });
 assert.notEqual(bad.status, 0);

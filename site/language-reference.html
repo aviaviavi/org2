@@ -242,7 +242,7 @@ const x = 1
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+begin_src ts
 const x = 1</code></pre>
 <pre class="org2-directive">#+end_src</pre>
-<p>Use whichever form you prefer; both map to source block semantics.</p>
+<p>Prefer the fenced form for new hand-written examples and docs. The verbose <code>#+begin_src</code> form remains fully supported for compatibility and explicit Org-style interchange.</p>
 </section>
 </section>
 <section class="org2-headline level-1">
@@ -260,6 +260,19 @@ const x = 1</code></pre>
 |---------+---------|
 | 2026-Q1 | 1200    |</code></pre>
 <p>Recognized affiliated keys include <code>NAME</code>, <code>CAPTION</code>, <code>PLOT</code>, <code>CHART</code>, <code>DATASET</code>, <code>VIEW</code>, <code>RESULTS</code>, <code>HEADER</code>/<code>HEADERS</code>, and <code>ATTR_*</code> keys. The parser preserves them on the following table or block as <code>affiliatedKeywords</code> for chart renderers, dataset indexes, SQL views, and exporters.</p>
+<p>For new chart examples, prefer an adjacent fenced chart block when it is easier to read:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+name: fetch_buckets
+| bucket | fetches |
+|--------+---------|
+| 0-10   | 14      |
+| 11-50  | 32      |
+
+```chart histogram
+x: bucket
+y: fetches
+source: previous-table
+```</code></pre>
+<p>This is ergonomic syntax sugar for chart metadata over the preceding table. The current renderer supports <code>bar</code>, <code>line</code>, and bucketed <code>histogram</code> charts over the previous table.</p>
 <p>The CLI can render chart-affiliated tables directly:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- render-chart --file report.org2 --block-id quarterly_revenue --format svg</code></pre>
 </section>
