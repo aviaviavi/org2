@@ -154,6 +154,25 @@ source: package_fetches_result
 <p>JSON output includes <code>ok</code>, <code>format</code>, <code>artifact</code>, <code>source</code>, <code>diagnostics</code>, and <code>svg</code> so VS Code, Vim, or agent tooling can show useful errors for missing columns, unsupported chart types, missing named source tables, or missing chart blocks.</p>
 </section>
 <section class="org2-headline level-1">
+<h1 id="local-data-queries">Local data queries</h1>
+<p><code>org2 query-data</code> is the first DuckDB-backed bridge for local/ad hoc datasets described in org2 notes. It scans fenced <code>```dataset</code> blocks, creates DuckDB views for explicit <code>csv</code>, <code>parquet</code>, or <code>json</code> paths, then runs a fenced <code>```sql results=NAME</code> block and materializes the returned rows.</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```dataset fetches
+type: csv
+path: ./data/package-fetches.csv
+engine: duckdb
+```
+
+```sql results=fetches_by_state
+SELECT state, count(*) AS fetches
+FROM fetches
+GROUP BY state
+ORDER BY fetches DESC
+```</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- query-data --file report.org2 --results fetches_by_state
+npm run org2 -- query-data --file report.org2 --results fetches_by_state --format json</code></pre>
+<p>The default output is a named org table with <code>#+name: fetches_by_state</code> so it can be pasted or written into the note and consumed by <code>render-chart</code> via <code>source: fetches_by_state</code>. JSON output includes diagnostics, dataset metadata, rows, and the generated org table; <code>--include-script</code> also includes the DuckDB setup SQL for debugging. The command expects a local DuckDB CLI on <code>PATH</code>, or a custom path via <code>--duckdb</code>.</p>
+</section>
+<section class="org2-headline level-1">
 <h1 id="corpus-lint">Corpus lint</h1>
 <p>Lint is the first compiler-style health pass for artifact metadata and corpus structure. It belongs to the broader <a href="maintenance-workflows.html">maintenance and health workflow</a> alongside formatter checks, graph queries, publish previews, and ID/index repair passes.</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- lint --dir ~/notes --recursive</code></pre>

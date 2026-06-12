@@ -129,6 +129,32 @@ source: package_fetches_result
 
 JSON output includes =ok=, =format=, =artifact=, =source=, =diagnostics=, and =svg= so VS Code, Vim, or agent tooling can show useful errors for missing columns, unsupported chart types, missing named source tables, or missing chart blocks.
 
+* Local data queries
+
+=org2 query-data= is the first DuckDB-backed bridge for local/ad hoc datasets described in org2 notes. It scans fenced =```dataset= blocks, creates DuckDB views for explicit =csv=, =parquet=, or =json= paths, then runs a fenced =```sql results=NAME= block and materializes the returned rows.
+
+#+begin_src org
+```dataset fetches
+type: csv
+path: ./data/package-fetches.csv
+engine: duckdb
+```
+
+```sql results=fetches_by_state
+SELECT state, count(*) AS fetches
+FROM fetches
+GROUP BY state
+ORDER BY fetches DESC
+```
+#+end_src
+
+#+begin_src sh
+npm run org2 -- query-data --file report.org2 --results fetches_by_state
+npm run org2 -- query-data --file report.org2 --results fetches_by_state --format json
+#+end_src
+
+The default output is a named org table with =#+name: fetches_by_state= so it can be pasted or written into the note and consumed by =render-chart= via =source: fetches_by_state=. JSON output includes diagnostics, dataset metadata, rows, and the generated org table; =--include-script= also includes the DuckDB setup SQL for debugging. The command expects a local DuckDB CLI on =PATH=, or a custom path via =--duckdb=.
+
 * Corpus lint
 
 Lint is the first compiler-style health pass for artifact metadata and corpus structure. It belongs to the broader [[file:maintenance-workflows.org][maintenance and health workflow]] alongside formatter checks, graph queries, publish previews, and ID/index repair passes.
