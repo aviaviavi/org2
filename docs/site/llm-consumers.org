@@ -71,6 +71,35 @@ npm run org2 -- lint --dir ~/notes --recursive --format json > views/corpus-heal
 
 The compiled artifact supplies file hashes, heading nodes, IDs, aliases, links, backlinks, planning data, properties, snippets, and source ranges. Keep provider credentials and model configuration outside the corpus artifact. If an agent saves a report or summary, stamp it with generated-artifact metadata described in [[file:corpus-flow.org][Corpus flow]].
 
+* Agent thread records
+
+Agent conversations that matter should be represented as durable Org2 headings instead of only living in an external chat transcript. Use =KIND: agent-thread= for a thread record and keep the remote session reference separate from selected context.
+
+#+begin_src org
+* Thread: Firebolt report help
+:PROPERTIES:
+:ID: thread-1
+:KIND: agent-thread
+:AGENT: openclaw
+:SESSION: openclaw:session:abc123
+:STATUS: active
+:CONTEXT: id:report-1, file:reports/firebolt.csv, ticket:REP-52
+:TRANSCRIPT: file:threads/thread-1.transcript.org2
+:STORAGE: summary
+:END:
+
+** Context attachments
+- [[id:report-1][Firebolt report]]
+- [[file:reports/firebolt.csv][latest CSV artifact]]
+
+** Durable outputs
+- [ ] Follow up on validation notes.
+#+end_src
+
+The =agent= and =session= fields identify the external worker/session. =context= is a comma- or semicolon-separated list of typed references such as =id:=, =file:=, =ticket:=, =report:=, =entity:=, =artifact:=, or =url:=. The body can also include normal Org2 links under a =Context attachments= section for readable labels and editor navigation.
+
+=org2 agent fetch --id thread-1 --format json= exposes this as =thread.contextAttachments= along with =thread.agent=, =thread.session=, =thread.status=, =thread.transcript=, and =thread.storage=. This gives Workspace clients a stable way to reopen a chat from a selected TODO/report/entity while preserving citations and avoiding raw transcript storage unless the user chooses it.
+
 * What to save back
 
 Good generated outputs are inspectable artifacts, not silent canonical edits:
