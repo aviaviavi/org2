@@ -17,6 +17,7 @@ Main workflows:
 - =archive=, =refile=
 - =fmt=
 - =search=, =id=, =query=, =backlinks=
+- =render-chart=
 - =roam ...=
 - =crypt ...=
 - =export html=
@@ -84,6 +85,17 @@ Canonical formatting for Org2 files.
 npm run org2 -- fmt --dir ~/notes --recursive --check
 npm run org2 -- fmt --dir ~/notes --recursive --apply
 #+end_src
+
+* Chart rendering
+
+=org2 render-chart= renders an SVG artifact from =#+chart:= or =#+plot:= metadata attached to an org2 table. This gives editor clients a shared backend instead of making each extension reimplement table parsing and chart semantics.
+
+#+begin_src sh
+npm run org2 -- render-chart --file report.org2 --block-id quarterly_revenue --out /tmp/quarterly-revenue.svg
+npm run org2 -- render-chart --file report.org2 --line 42 --format json
+#+end_src
+
+The first renderer supports deterministic =bar= and =line= charts with =x= and =y= column mappings, for example =#+chart: line x=quarter y=revenue=. JSON output includes =ok=, =format=, =artifact=, =source=, =diagnostics=, and =svg= so VS Code, Vim, or agent tooling can show useful errors for missing columns, unsupported chart types, or missing chart blocks.
 
 * Corpus lint
 
