@@ -34,7 +34,7 @@ type Keyword = {
   line: number;
 };
 
-type ChartType = "bar" | "line";
+type ChartType = "bar" | "line" | "histogram";
 
 type ChartSpec = {
   type: ChartType;
@@ -117,8 +117,8 @@ function parseChartSpec(raw: string, title?: string): { spec?: ChartSpec; diagno
   const tokens = raw.split(/\s+/).filter(Boolean);
   const diagnostics: ChartRenderDiagnostic[] = [];
   const rawType = String(tokens.shift() || "bar").toLowerCase();
-  const type = rawType === "line" ? "line" : rawType === "bar" ? "bar" : undefined;
-  if (!type) diagnostics.push(diagnostic(`Unsupported chart type "${rawType}". Supported types: bar, line`));
+  const type = rawType === "line" ? "line" : rawType === "bar" ? "bar" : rawType === "histogram" ? "histogram" : undefined;
+  if (!type) diagnostics.push(diagnostic(`Unsupported chart type "${rawType}". Supported types: bar, line, histogram`));
 
   const params = new Map<string, string>();
   for (const token of tokens) {
@@ -136,6 +136,100 @@ function parseChartSpec(raw: string, title?: string): { spec?: ChartSpec; diagno
 
 function keywordValue(keywords: Keyword[], key: string): string | undefined {
   return keywords.find((keyword) => keyword.key === key)?.value;
+}
+
+function isChartFenceOpener(line: string): boolean {
+  const match = /^\s*```(.*)$/.exec(line);
+  if (!match) return false;
+  const afterFence = String(match[1] || "").trim();
+  return /^(chart|plot)(?:\s|$)/i.test(afterFence);
+}
+
+type FencedChartBlock = {
+  raw: string;
+  title?: string;
+  startLine: number;
+  endLine: number;
+};
+
+type ParsedFencedChartSpec = {
+  raw: string;
+  title?: string;
+};
+
+function parseFencedChartBlock(lines: string[], startIndex: number): FencedChartBlock | null {
+  const opener = lines[startIndex] || "";
+  if (!isChartFenceOpener(opener)) return null;
+
+  const openerMatch = /^\s*```(.*)$/.exec(opener);
+  const openerRest = String(openerMatch?.[1] || "").trim();
+  const bodyLines: string[] = [];
+  let i = startIndex + 1;
+  while (i < lines.length) {
+    const line = lines[i] || "";
+    if (/^\s*```\s*$/.test(line)) {
+      const parsed = parseFencedChartSpec(openerRest, bodyLines);
+      return { raw: parsed.raw.trim(), ...(parsed.title ? { title: parsed.title } : {}), startLine: startIndex + 1, endLine: i + 1 };
+    }
+    bodyLines.push(line);
+    i++;
+  }
+
+  const parsed = parseFencedChartSpec(openerRest, bodyLines);
+  return { raw: parsed.raw.trim(), ...(parsed.title ? { title: parsed.title } : {}), startLine: startIndex + 1, endLine: lines.length };
+}
+
+function parseFencedChartSpec(openerRest: string, bodyLines: string[]): ParsedFencedChartSpec {
+  const openerTokens = openerRest.split(/\s+/).filter(Boolean);
+  const kind = openerTokens.shift()?.toLowerCase();
+  const openerArgs = kind === "chart" || kind === "plot" ? openerTokens : [];
+  const firstArg = String(openerArgs[0] || "").trim();
+  const bodyParams = new Map<string, string>();
+
+  for (const line of bodyLines) {
+    const match = /^\s*([A-Za-z0-9_-]+)\s*[:=]\s*(.*?)\s*$/.exec(line);
+    if (!match) continue;
+    bodyParams.set(String(match[1] || "").toLowerCase(), String(match[2] || ""));
+  }
+
+  const type = firstArg && !firstArg.includes("=") ? firstArg : bodyParams.get("type") || bodyParams.get("chart") || "bar";
+  const tokens = [type];
+  const x = bodyParams.get("x");
+  const y = bodyParams.get("y");
+  const title = bodyParams.get("title");
+  const source = bodyParams.get("source");
+
+  if (x) tokens.push(`x=${x}`);
+  if (y) tokens.push(`y=${y}`);
+  if (source) tokens.push(`source=${source}`);
+
+  for (const arg of openerArgs.slice(firstArg && !firstArg.includes("=") ? 1 : 0)) {
+    tokens.push(arg);
+  }
+
+  return { raw: tokens.join(" "), ...(title ? { title } : {}) };
+}
+
+function parseChartSpecWithFencedSource(raw: string, title?: string): { spec?: ChartSpec; diagnostics: ChartRenderDiagnostic[] } {
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  const filteredTokens: string[] = [];
+  const diagnostics: ChartRenderDiagnostic[] = [];
+
+  for (const token of tokens) {
+    const match = /^source=(.+)$/i.exec(token);
+    if (!match) {
+      filteredTokens.push(token);
+      continue;
+    }
+
+    const source = String(match[1] || "").toLowerCase();
+    if (source !== "previous-table" && source !== "prev-table" && source !== "table" && source !== "this-table" && source !== "above") {
+      diagnostics.push(diagnostic(`Unsupported chart source "${source}". Supported source: previous-table`));
+    }
+  }
+
+  const parsed = parseChartSpec(filteredTokens.join(" "), title);
+  return { spec: parsed.spec, diagnostics: [...diagnostics, ...parsed.diagnostics] };
 }
 
 function collectChartCandidates(raw: string, file?: string): ChartCandidate[] {
@@ -166,6 +260,18 @@ function collectChartCandidates(raw: string, file?: string): ChartCandidate[] {
       const tableEndLine = i;
 
       const chartRaw = keywordValue(pending, "CHART") || keywordValue(pending, "PLOT");
+      let chartEndLine = tableEndLine;
+      let fencedChart: FencedChartBlock | null = null;
+      if (!chartRaw) {
+        let nextIndex = i;
+        while (nextIndex < lines.length && String(lines[nextIndex] || "").trim() === "") nextIndex++;
+        fencedChart = parseFencedChartBlock(lines, nextIndex);
+        if (fencedChart) {
+          chartEndLine = fencedChart.endLine;
+          i = nextIndex + (fencedChart.endLine - fencedChart.startLine + 1);
+        }
+      }
+      const effectiveChartRaw = chartRaw || fencedChart?.raw;
       if (chartRaw) {
         const name = keywordValue(pending, "NAME");
         const caption = keywordValue(pending, "CAPTION");
@@ -183,6 +289,29 @@ function collectChartCandidates(raw: string, file?: string): ChartCandidate[] {
         } else {
           candidates.push({
             source: { ...(file ? { file } : {}), line: tableStartLine, endLine: tableEndLine, ...(name ? { blockId: name } : {}), kind: "table" },
+            spec: { type: "bar", x: "", y: "" },
+            headers: table.headers,
+            rows: table.rows,
+            diagnostics,
+          });
+        }
+      } else if (effectiveChartRaw) {
+        const name = keywordValue(pending, "NAME");
+        const caption = keywordValue(pending, "CAPTION") || fencedChart?.title;
+        const parsedSpec = parseChartSpecWithFencedSource(effectiveChartRaw, caption);
+        const table = parseTable(tableLines);
+        const diagnostics = [...parsedSpec.diagnostics, ...table.diagnostics];
+        if (parsedSpec.spec) {
+          candidates.push({
+            source: { ...(file ? { file } : {}), line: tableStartLine, endLine: chartEndLine, ...(name ? { blockId: name } : {}), kind: "table" },
+            spec: parsedSpec.spec,
+            headers: table.headers,
+            rows: table.rows,
+            diagnostics,
+          });
+        } else {
+          candidates.push({
+            source: { ...(file ? { file } : {}), line: tableStartLine, endLine: chartEndLine, ...(name ? { blockId: name } : {}), kind: "table" },
             spec: { type: "bar", x: "", y: "" },
             headers: table.headers,
             rows: table.rows,
@@ -266,7 +395,7 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
     return `<line x1="${margin.left}" y1="${y.toFixed(1)}" x2="${width - margin.right}" y2="${y.toFixed(1)}" stroke="${gridColor}" stroke-width="1"/><text x="${margin.left - 10}" y="${(y + 4).toFixed(1)}" font-size="12" fill="#475569" text-anchor="end">${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)}</text>`;
   });
 
-  const marks = candidate.spec.type === "bar"
+  const marks = candidate.spec.type === "bar" || candidate.spec.type === "histogram"
     ? points.map((point, index) => {
         const band = plotWidth / Math.max(1, points.length);
         const barWidth = Math.max(8, band * 0.62);

@@ -197,7 +197,7 @@ const x = 1
 #+end_src
 #+end_src
 
-Use whichever form you prefer; both map to source block semantics.
+Prefer the fenced form for new hand-written examples and docs. The verbose =#+begin_src= form remains fully supported for compatibility and explicit Org-style interchange.
 
 * Tables
 
@@ -217,6 +217,24 @@ Tables, source blocks, and common blocks can carry adjacent affiliated keyword m
 #+end_src
 
 Recognized affiliated keys include =NAME=, =CAPTION=, =PLOT=, =CHART=, =DATASET=, =VIEW=, =RESULTS=, =HEADER=/=HEADERS=, and =ATTR_*= keys. The parser preserves them on the following table or block as =affiliatedKeywords= for chart renderers, dataset indexes, SQL views, and exporters.
+
+For new chart examples, prefer an adjacent fenced chart block when it is easier to read:
+
+#+begin_src org
+#+name: fetch_buckets
+| bucket | fetches |
+|--------+---------|
+| 0-10   | 14      |
+| 11-50  | 32      |
+
+```chart histogram
+x: bucket
+y: fetches
+source: previous-table
+```
+#+end_src
+
+This is ergonomic syntax sugar for chart metadata over the preceding table. The current renderer supports =bar=, =line=, and bucketed =histogram= charts over the previous table.
 
 The CLI can render chart-affiliated tables directly:
 
