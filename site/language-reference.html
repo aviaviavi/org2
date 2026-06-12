@@ -252,6 +252,14 @@ const x = 1</code></pre>
 <li><p>Horizontal separator rows: <code>|---+---|</code></p></li>
 <li><p>Table content is parsed and preserved.</p></li>
 </ul>
+<p>Tables, source blocks, and common blocks can carry adjacent affiliated keyword metadata:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+name: quarterly_revenue
+#+chart: line x=quarter y=revenue
+#+dataset: finance.revenue
+| quarter | revenue |
+|---------+---------|
+| 2026-Q1 | 1200    |</code></pre>
+<p>Recognized affiliated keys include <code>NAME</code>, <code>CAPTION</code>, <code>PLOT</code>, <code>CHART</code>, <code>DATASET</code>, <code>VIEW</code>, <code>RESULTS</code>, <code>HEADER</code>/<code>HEADERS</code>, and <code>ATTR_*</code> keys. The parser preserves them on the following table or block as <code>affiliatedKeywords</code> for chart renderers, dataset indexes, SQL views, and exporters.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="keyworddirective-lines">Keyword/directive lines</h1>
