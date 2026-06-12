@@ -37,6 +37,23 @@ type AgentClaimState = {
   freshness: AgentFreshnessState;
 };
 
+type AgentContextAttachment = {
+  type: "id" | "file" | "url" | "session" | "artifact" | "entity" | "report" | "ticket" | "note" | "other";
+  ref: string;
+  label?: string;
+  line?: number;
+  source: "property" | "link";
+};
+
+type AgentThreadMetadata = {
+  agent?: string;
+  session?: string;
+  status?: string;
+  transcript?: string;
+  storage?: "summary" | "transcript" | "external" | "mixed" | "unknown";
+  contextAttachments: AgentContextAttachment[];
+};
+
 type AgentNode = {
   key: string;
   kind: "file" | "heading";
@@ -56,6 +73,7 @@ type AgentNode = {
   matchedTerms?: string[];
   selectionReason?: string[];
   claimState: AgentClaimState;
+  thread?: AgentThreadMetadata;
   sources?: AgentSource[];
   backlinks?: Array<{ sourceKey: string; sourceId: string | null; sourceTitle: string; file: string; line: number; citation: string; linkType: "id" | "wiki" }>;
   neighbors?: Array<{ key: string; id: string | null; title: string; file: string; citation: string; direction: "out" | "in"; linkType: "id" | "wiki" }>;
@@ -297,8 +315,101 @@ function neighborsFor(corpus: CompiledCorpus, node: CompiledCorpusNode): AgentNo
   return Array.from(out.values()).sort((a, b) => `${a.direction}:${a.file}:${a.citation}`.localeCompare(`${b.direction}:${b.file}:${b.citation}`));
 }
 
+function normalizeAgentThreadKind(raw: string | null | undefined): string {
+  return String(raw || "").trim().toLowerCase().replace(/_/g, "-");
+}
+
+function isAgentThreadNode(node: CompiledCorpusNode): boolean {
+  const props = node.effectiveProperties || node.properties || {};
+  return normalizeAgentThreadKind(props.KIND || props.ORG2_KIND || props.TYPE || props.ORG2_TYPE) === "agent-thread";
+}
+
+function attachmentTypeFor(raw: string): AgentContextAttachment["type"] {
+  const type = raw.trim().toLowerCase().replace(/_/g, "-");
+  if (type === "id" || type === "file" || type === "url" || type === "session" || type === "artifact" || type === "entity" || type === "report" || type === "ticket" || type === "note") return type;
+  return "other";
+}
+
+function parseContextAttachmentToken(raw: string, source: AgentContextAttachment["source"]): AgentContextAttachment | null {
+  const value = String(raw || "").trim();
+  if (!value) return null;
+  const match = /^([A-Za-z][A-Za-z0-9_-]*):(.*)$/.exec(value);
+  if (!match) return { type: "other", ref: value, source };
+  const prefix = String(match[1] || "").trim();
+  const refTail = String(match[2] || "").trim();
+  if (!refTail) return null;
+  const type = attachmentTypeFor(prefix);
+  return { type, ref: `${prefix}:${refTail}`, source };
+}
+
+function parseContextAttachmentList(raw: string | undefined): AgentContextAttachment[] {
+  if (!raw) return [];
+  return String(raw)
+    .split(/[;,]/)
+    .map((token) => parseContextAttachmentToken(token, "property"))
+    .filter((item): item is AgentContextAttachment => !!item);
+}
+
+function attachmentFromLink(link: CompiledCorpusNode["links"][number]): AgentContextAttachment | null {
+  if (link.type === "id" || /^id:/i.test(link.target)) {
+    const target = link.target.replace(/^id:/i, "").trim();
+    if (!target) return null;
+    return { type: "id", ref: `id:${target}`, ...(link.description ? { label: link.description } : {}), line: link.line, source: "link" };
+  }
+  if (link.type === "file") return { type: "file", ref: link.target, ...(link.description ? { label: link.description } : {}), line: link.line, source: "link" };
+  if (link.type === "url") return { type: "url", ref: link.target, ...(link.description ? { label: link.description } : {}), line: link.line, source: "link" };
+  if (link.type === "wiki") return { type: "note", ref: link.target, ...(link.description ? { label: link.description } : {}), line: link.line, source: "link" };
+  return null;
+}
+
+function mergeAttachments(attachments: AgentContextAttachment[]): AgentContextAttachment[] {
+  const byRef = new Map<string, AgentContextAttachment>();
+  for (const attachment of attachments) {
+    const key = `${attachment.type}\0${attachment.ref.toLowerCase()}`;
+    const existing = byRef.get(key);
+    if (!existing) {
+      byRef.set(key, attachment);
+      continue;
+    }
+    byRef.set(key, {
+      ...existing,
+      ...(existing.label ? {} : attachment.label ? { label: attachment.label } : {}),
+      ...(existing.line !== undefined ? {} : attachment.line !== undefined ? { line: attachment.line } : {}),
+    });
+  }
+  return Array.from(byRef.values()).sort((a, b) => a.type.localeCompare(b.type) || a.ref.localeCompare(b.ref) || (a.line || 0) - (b.line || 0));
+}
+
+function normalizeThreadStorage(raw: string | undefined): AgentThreadMetadata["storage"] | undefined {
+  const value = String(raw || "").trim().toLowerCase();
+  if (!value) return undefined;
+  if (value === "summary" || value === "transcript" || value === "external" || value === "mixed") return value;
+  return "unknown";
+}
+
+function agentThreadMetadataFor(node: CompiledCorpusNode): AgentThreadMetadata | undefined {
+  if (!isAgentThreadNode(node)) return undefined;
+  const props = node.effectiveProperties || node.properties || {};
+  const propertyAttachments = [
+    ...parseContextAttachmentList(props.CONTEXT),
+    ...parseContextAttachmentList(props.ORG2_CONTEXT),
+    ...parseContextAttachmentList(props.CONTEXT_ATTACHMENTS),
+    ...parseContextAttachmentList(props.ORG2_CONTEXT_ATTACHMENTS),
+  ];
+  const linkAttachments = node.links.map(attachmentFromLink).filter((item): item is AgentContextAttachment => !!item);
+  return {
+    ...(props.AGENT || props.ORG2_AGENT ? { agent: props.AGENT || props.ORG2_AGENT } : {}),
+    ...(props.SESSION || props.ORG2_SESSION ? { session: props.SESSION || props.ORG2_SESSION } : {}),
+    ...(props.STATUS || props.ORG2_STATUS ? { status: props.STATUS || props.ORG2_STATUS } : {}),
+    ...(props.TRANSCRIPT || props.TRANSCRIPT_ARTIFACT || props.ORG2_TRANSCRIPT ? { transcript: props.TRANSCRIPT || props.TRANSCRIPT_ARTIFACT || props.ORG2_TRANSCRIPT } : {}),
+    ...(normalizeThreadStorage(props.STORAGE || props.TRANSCRIPT_STORAGE || props.ORG2_STORAGE) ? { storage: normalizeThreadStorage(props.STORAGE || props.TRANSCRIPT_STORAGE || props.ORG2_STORAGE) } : {}),
+    contextAttachments: mergeAttachments([...propertyAttachments, ...linkAttachments]),
+  };
+}
+
 function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: Set<AgentInclude>, score?: { score: number; matchedTerms: string[]; selectionReason?: string[] }): AgentNode {
   const source = { file: node.file, sourceRange: node.sourceRange, citation: citationFor(node) };
+  const thread = agentThreadMetadataFor(node);
   return {
     key: node.key,
     kind: node.kind,
@@ -316,6 +427,7 @@ function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: 
     snippet: node.snippet,
     ...(score ? { score: score.score, matchedTerms: score.matchedTerms, selectionReason: score.selectionReason || [] } : {}),
     claimState: claimStateFor(node),
+    ...(thread ? { thread } : {}),
     ...(include.has("sources") ? { sources: [source] } : {}),
     ...(include.has("backlinks") ? { backlinks: inferredBacklinksFor(corpus, node) } : {}),
     ...(include.has("neighbors") ? { neighbors: neighborsFor(corpus, node) } : {}),
