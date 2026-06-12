@@ -218,6 +218,12 @@ Tables, source blocks, and common blocks can carry adjacent affiliated keyword m
 
 Recognized affiliated keys include =NAME=, =CAPTION=, =PLOT=, =CHART=, =DATASET=, =VIEW=, =RESULTS=, =HEADER=/=HEADERS=, and =ATTR_*= keys. The parser preserves them on the following table or block as =affiliatedKeywords= for chart renderers, dataset indexes, SQL views, and exporters.
 
+The CLI can render chart-affiliated tables directly:
+
+#+begin_src sh
+npm run org2 -- render-chart --file report.org2 --block-id quarterly_revenue --format svg
+#+end_src
+
 * Keyword/directive lines
 
 Org2 parses keyword lines in =#+KEY: VALUE= form.
