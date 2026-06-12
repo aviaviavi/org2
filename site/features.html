@@ -53,7 +53,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <header class="org2-document-header">
 <h1 class="org2-document-title">Features</h1>
 </header>
-<p>Org2 is a local-first knowledge compiler rather than a parser demo or editor replacement: it turns raw plain-text notes into structured semantics, then derives views, checks, editor behavior, and publishable artifacts from that shared model.</p>
+<p>Org2 is a local-first context compiler rather than a parser demo or editor replacement: it turns raw plain-text notes, events, files, conversations, data records, and agent work into structured semantics, then derives views, checks, editor behavior, Workspace surfaces, and publishable artifacts from that shared model.</p>
 <section class="org2-headline level-1">
 <h1 id="compiler-workflow">Compiler workflow</h1>
 <p>The central loop is:</p>
@@ -61,9 +61,9 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p>capture raw source material and working notes in plain files,</p></li>
 <li><p>parse headings, tasks, links, drawers, properties, timestamps, blocks, tables, and source ranges,</p></li>
 <li><p>resolve IDs, backlinks, planning state, artifact roles, provenance, and graph relationships,</p></li>
-<li><p>compile that corpus into useful outputs: agendas, diagnostics, graph views, editor intelligence, HTML pages, and published sites.</p></li>
+<li><p>compile that corpus into useful outputs: agendas, diagnostics, graph views, entity pages, agent context, editor intelligence, HTML pages, and published sites.</p></li>
 </ol>
-<p>Because every output comes from the same semantic model, Org2 can support planning, knowledge management, publishing, and automation without locking you into one app.</p>
+<p>Because every output comes from the same semantic model, Org2 can support planning, knowledge management, data-backed reports, publishing, and automation without locking you into one app.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="core-workflow-surface">Core workflow surface</h1>
@@ -77,9 +77,23 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p>HTML export and multi-file publishing</p></li>
 <li><p>Cited workspace search/query for asking factual questions against source notes</p></li>
 <li><p>Roam-style IDs, backlinks, dailies, node creation, linkify previews with semantic/alias-aware suggestions, AI-assisted review reports, and graph reports</p></li>
+<li><p>Durable agent-thread and data-link metadata for Workspace clients and external agents</p></li>
 <li><p>Org-crypt subtree encryption/decryption workflows, including per-subtree multi-recipient encryption for user/device/agent access without putting plaintext in a vendor database</p></li>
 <li><p>LSP-backed editor features</p></li>
 </ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="workspace-and-context-records">Workspace and context records</h1>
+<p>Org2 Workspace is the product direction for focused clients over the same local corpus. Agenda review, entity pages, meeting memory, search, OpenClaw threads, and data-backed reports should all use parser/compiler output instead of private app state.</p>
+<p>The format already has the building blocks for that direction:</p>
+<ul>
+<li><p>TODOs, scheduled/deadline timestamps, priorities, effort, and tags for agenda surfaces,</p></li>
+<li><p>IDs, aliases, backlinks, and file links for entity and graph navigation,</p></li>
+<li><p><code>KIND: agent-thread</code> records with selected context, session/transcript references, status, and durable outputs,</p></li>
+<li><p><code>KIND: warehouse-query</code>, <code>dataset</code>, <code>data-link</code>, <code>sql-view</code>, <code>event-stream</code>, and <code>timeline-link</code> records for report evidence,</p></li>
+<li><p>artifact role/provenance metadata for generated drafts, compiled views, and published outputs.</p></li>
+</ul>
+<p>This keeps Org2 useful both as a personal knowledge base and as an organizational context layer over notes, meetings, tickets, repos, files, metrics, and agent work.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="scoped-encryption-for-agents">Scoped encryption for agents</h1>
