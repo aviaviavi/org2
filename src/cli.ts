@@ -27,6 +27,7 @@ import { compileCorpus, compileCorpusIncremental, extractCheckboxProgress, rende
 import { extractClockReport } from "./clock.js";
 import { buildAgentContextPayload, renderAgentContextPack, type AgentInclude } from "./agentContext.js";
 import { renderOrgChart } from "./chartRender.js";
+import { runOrg2DataQuery } from "./dataQuery.js";
 import { loadAiJobManifest, validateAiJobManifest } from "./aiJobManifest.js";
 import { createAiAdapterRequest, MockAiAdapter, type AiAdapterContextItem, type AiAdapterResponse } from "./aiAdapter.js";
 import { buildGeneratedArtifactMetadata, formatOrg2ArtifactPropertyDrawer, sha256Hex } from "./artifactMetadata.js";
@@ -7864,6 +7865,14 @@ async function main(): Promise<void> {
   let renderChartStdin = false;
   let renderChartFormat: "svg" | "json" = "svg";
 
+  // DuckDB-backed local/ad hoc data queries
+  let dataQueryFile = "";
+  let dataQueryResultId = "";
+  let dataQueryOut = "";
+  let dataQueryDuckdb = "duckdb";
+  let dataQueryFormat: "org" | "json" = "org";
+  let dataQueryIncludeScript = false;
+
   // Clock reports
   let clockFormat: "text" | "json" = "text";
 
@@ -8061,6 +8070,9 @@ async function main(): Promise<void> {
     } else if (arg === "render-chart") {
       command = "render-chart";
       i++;
+    } else if (arg === "query-data" || arg === "data-query") {
+      command = "query-data";
+      i++;
     } else if (arg === "context") {
       command = "context";
       agentAction = "bundle";
@@ -8204,6 +8216,8 @@ async function main(): Promise<void> {
           exportFile = args[i]!;
         } else if (command === "render-chart") {
           renderChartFile = args[i]!;
+        } else if (command === "query-data") {
+          dataQueryFile = args[i]!;
         } else if (command === "roam" && roamAction === "link") {
           roamLinkFile = args[i]!;
         } else if (command === "ai" && (aiAction === "promote" || aiAction === "review")) {
@@ -8950,6 +8964,18 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if ((arg === "--results" || arg === "--result") && command === "query-data") {
+      i++;
+      if (i < args.length) {
+        dataQueryResultId = args[i]!;
+        i++;
+      }
+    } else if (arg === "--duckdb" && command === "query-data") {
+      i++;
+      if (i < args.length) {
+        dataQueryDuckdb = args[i]!;
+        i++;
+      }
     } else if (arg === "--block-id" && command === "render-chart") {
       i++;
       if (i < args.length) {
@@ -8976,6 +9002,7 @@ async function main(): Promise<void> {
       else if (command === "graph") graphFormat = "json";
       else if (command === "compile") compileFormat = "json";
       else if (command === "render-chart") renderChartFormat = "json";
+      else if (command === "query-data") dataQueryFormat = "json";
       else if (command === "clock") clockFormat = "json";
       else if (command === "context" || command === "brief") contextFormat = "json";
       else if (command === "ai") aiFormat = "json";
@@ -9025,6 +9052,8 @@ async function main(): Promise<void> {
           compileFormat = v;
         } else if (command === "render-chart" && (v === "svg" || v === "json")) {
           renderChartFormat = v;
+        } else if (command === "query-data" && (v === "org" || v === "org-table" || v === "json")) {
+          dataQueryFormat = v === "org-table" ? "org" : v;
         } else if (command === "clock" && (v === "text" || v === "json")) {
           clockFormat = v;
         } else if ((command === "context" || command === "brief") && (v === "markdown" || v === "md" || v === "org" || v === "org2" || v === "json")) {
@@ -9136,6 +9165,8 @@ async function main(): Promise<void> {
           compileOut = args[i]!;
         } else if (command === "render-chart") {
           renderChartOut = args[i]!;
+        } else if (command === "query-data") {
+          dataQueryOut = args[i]!;
         } else if (command === "ai") {
           aiOut = args[i]!;
         } else if (command === "brief") {
@@ -9272,6 +9303,9 @@ async function main(): Promise<void> {
       if (command === "capture") captureReadStdin = true;
       if (command === "render-chart") renderChartStdin = true;
       i++;
+    } else if (arg === "--include-script") {
+      if (command === "query-data") dataQueryIncludeScript = true;
+      i++;
     } else if (arg === "--check") {
       if (command === "fmt") {
         fmtCheck = true;
@@ -9351,6 +9385,7 @@ Roam / IDs:
   org2 clock --dir DIR [--recursive] [--format text|json]
   org2 compile corpus --dir DIR [--recursive] [--out FILE] [--format json|jsonl]
   org2 render-chart --file FILE [--block-id ID|--line N] [--out FILE] [--format svg|json]
+  org2 query-data --file FILE [--results NAME] [--out FILE] [--format org|json]
   org2 context QUERY [--dir DIR] [--recursive] [--budget 8k] [--format markdown|org|json]
   org2 brief today [--dir DIR] [--recursive] [--out views/today.org]
   org2 brief project NAME [--dir DIR] [--recursive] [--out views/NAME.org]
@@ -9666,6 +9701,25 @@ Flags:
 Output:
   Deterministic SVG for #+chart or #+plot metadata attached to an org2 table.
   JSON output includes ok, format, artifact, source, diagnostics, and svg.`;
+  } else if (command === "query-data") {
+    text = `org2 query-data
+
+Usage:
+  org2 query-data --file FILE [--results NAME] [--out FILE] [--format org|json]
+
+Flags:
+  --file FILE         Source Org/Org2 file containing dataset and SQL blocks
+  --results NAME      SQL result block to run; optional when the file has one SQL block
+  --duckdb PATH       DuckDB CLI path (default: duckdb)
+  --out FILE          Write materialized org table or JSON envelope to FILE
+  --format FORMAT     org (default) or json diagnostics envelope
+  --include-script    Include generated DuckDB SQL setup in JSON output
+
+Input:
+  Reads fenced \`\`\`dataset NAME blocks with engine: duckdb, type: csv|parquet|json,
+  and path: ./local-file, then runs fenced \`\`\`sql results=NAME blocks through
+  the DuckDB CLI. This is an explicit local/ad hoc data bridge; Org2 does not
+  store credentials or call remote warehouses.`;
   } else if (command === "context") {
     text = `org2 context
 
@@ -9859,7 +9913,7 @@ Flags:
     printGeneralUsage(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "clock" && command !== "compile" && command !== "render-chart" && command !== "entity" && command !== "agent" && command !== "context" && command !== "brief" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "clock" && command !== "compile" && command !== "render-chart" && command !== "query-data" && command !== "entity" && command !== "agent" && command !== "context" && command !== "brief" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
     printGeneralUsage(1);
   }
 
@@ -9902,6 +9956,41 @@ Flags:
     } else if (result.ok && result.svg) {
       if (renderChartOut) process.stdout.write(`Wrote chart SVG to ${renderChartOut}\n`);
       else process.stdout.write(result.svg);
+    } else {
+      for (const item of result.diagnostics) {
+        const where = item.source?.line ? `:${item.source.line}` : "";
+        console.error(`${item.severity}: ${item.message}${where}`);
+      }
+    }
+
+    if (!result.ok) process.exit(1);
+    return;
+  }
+
+  if (command === "query-data") {
+    if (!dataQueryFile) {
+      console.error("Error: query-data requires --file FILE");
+      process.exit(1);
+    }
+
+    const input = fs.readFileSync(path.resolve(dataQueryFile), "utf8").replace(/\r\n/g, "\n");
+    const result = runOrg2DataQuery(input, {
+      file: dataQueryFile,
+      ...(dataQueryResultId ? { resultId: dataQueryResultId } : {}),
+      duckdbPath: dataQueryDuckdb,
+      includeScript: dataQueryIncludeScript,
+    });
+
+    const output = dataQueryFormat === "json" ? JSON.stringify(result, null, 2) + "\n" : result.orgTable || "";
+    if (result.ok && dataQueryOut) {
+      const outputPath = path.resolve(dataQueryOut);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fs.writeFileSync(outputPath, output, "utf8");
+      if (dataQueryFormat === "org") process.stdout.write(`Wrote org table to ${dataQueryOut}\n`);
+    } else if (dataQueryFormat === "json") {
+      process.stdout.write(output);
+    } else if (result.ok) {
+      process.stdout.write(output);
     } else {
       for (const item of result.diagnostics) {
         const where = item.source?.line ? `:${item.source.line}` : "";
