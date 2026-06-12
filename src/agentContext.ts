@@ -54,6 +54,27 @@ type AgentThreadMetadata = {
   contextAttachments: AgentContextAttachment[];
 };
 
+type AgentDataLinkKind = "data-link" | "warehouse-query" | "dataset" | "sql-view" | "event-stream" | "timeline-link";
+
+type AgentDataLinkMetadata = {
+  kind: AgentDataLinkKind;
+  system?: string;
+  engine?: string;
+  source?: string;
+  path?: string;
+  queryId?: string;
+  query?: string;
+  queryHash?: string;
+  params?: unknown;
+  paramsRaw?: string;
+  artifact?: string;
+  result?: string;
+  rowCount?: number;
+  lastRun?: string;
+  freshness?: string;
+  materialized?: string;
+};
+
 type AgentNode = {
   key: string;
   kind: "file" | "heading";
@@ -74,6 +95,7 @@ type AgentNode = {
   selectionReason?: string[];
   claimState: AgentClaimState;
   thread?: AgentThreadMetadata;
+  dataLink?: AgentDataLinkMetadata;
   sources?: AgentSource[];
   backlinks?: Array<{ sourceKey: string; sourceId: string | null; sourceTitle: string; file: string; line: number; citation: string; linkType: "id" | "wiki" }>;
   neighbors?: Array<{ key: string; id: string | null; title: string; file: string; citation: string; direction: "out" | "in"; linkType: "id" | "wiki" }>;
@@ -315,13 +337,17 @@ function neighborsFor(corpus: CompiledCorpus, node: CompiledCorpusNode): AgentNo
   return Array.from(out.values()).sort((a, b) => `${a.direction}:${a.file}:${a.citation}`.localeCompare(`${b.direction}:${b.file}:${b.citation}`));
 }
 
-function normalizeAgentThreadKind(raw: string | null | undefined): string {
+function normalizeTypedKind(raw: string | null | undefined): string {
   return String(raw || "").trim().toLowerCase().replace(/_/g, "-");
 }
 
-function isAgentThreadNode(node: CompiledCorpusNode): boolean {
+function kindPropertyFor(node: CompiledCorpusNode): string {
   const props = node.effectiveProperties || node.properties || {};
-  return normalizeAgentThreadKind(props.KIND || props.ORG2_KIND || props.TYPE || props.ORG2_TYPE) === "agent-thread";
+  return normalizeTypedKind(props.KIND || props.ORG2_KIND || props.TYPE || props.ORG2_TYPE);
+}
+
+function isAgentThreadNode(node: CompiledCorpusNode): boolean {
+  return kindPropertyFor(node) === "agent-thread";
 }
 
 function attachmentTypeFor(raw: string): AgentContextAttachment["type"] {
@@ -407,9 +433,80 @@ function agentThreadMetadataFor(node: CompiledCorpusNode): AgentThreadMetadata |
   };
 }
 
+function dataLinkKindFor(node: CompiledCorpusNode): AgentDataLinkKind | null {
+  const kind = kindPropertyFor(node);
+  if (kind === "data-link" || kind === "warehouse-query" || kind === "dataset" || kind === "sql-view" || kind === "event-stream" || kind === "timeline-link") return kind;
+  return null;
+}
+
+function parseDataParams(raw: string | undefined): Pick<AgentDataLinkMetadata, "params" | "paramsRaw"> {
+  const value = String(raw || "").trim();
+  if (!value) return {};
+  try {
+    return { params: JSON.parse(value) };
+  } catch {
+    return { paramsRaw: value };
+  }
+}
+
+function numericDataProperty(props: Record<string, string>, names: string[]): number | undefined {
+  for (const name of names) {
+    const raw = props[name];
+    if (!raw) continue;
+    const parsed = Number.parseInt(String(raw).replace(/,/g, "").trim(), 10);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function stringDataProperty(props: Record<string, string>, names: string[]): string | undefined {
+  for (const name of names) {
+    const value = String(props[name] || "").trim();
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function dataLinkMetadataFor(node: CompiledCorpusNode): AgentDataLinkMetadata | undefined {
+  const kind = dataLinkKindFor(node);
+  if (!kind) return undefined;
+  const props = node.effectiveProperties || node.properties || {};
+  const rowCount = numericDataProperty(props, ["ROW_COUNT", "ROWS", "ORG2_ROW_COUNT"]);
+  const system = stringDataProperty(props, ["SYSTEM", "SOURCE_SYSTEM", "ORG2_SYSTEM"]);
+  const engine = stringDataProperty(props, ["ENGINE", "ORG2_ENGINE"]);
+  const source = stringDataProperty(props, ["SOURCE", "DATA_SOURCE", "URI", "URL"]);
+  const sourcePath = stringDataProperty(props, ["PATH", "FILE"]);
+  const queryId = stringDataProperty(props, ["QUERY_ID", "SQL_ID", "VIEW_ID"]);
+  const query = stringDataProperty(props, ["QUERY", "SQL"]);
+  const queryHash = stringDataProperty(props, ["QUERY_HASH", "HASH", "SOURCE_HASH"]);
+  const artifact = stringDataProperty(props, ["ARTIFACT", "RESULT_ARTIFACT", "OUTPUT"]);
+  const result = stringDataProperty(props, ["RESULT", "RESULTS", "MATERIALIZED_RESULT"]);
+  const lastRun = stringDataProperty(props, ["LAST_RUN", "RAN_AT", "UPDATED_AT", "ORG2_LAST_RUN"]);
+  const freshness = stringDataProperty(props, ["FRESHNESS", "STATUS"]);
+  const materialized = stringDataProperty(props, ["MATERIALIZED", "MATERIALIZATION"]);
+  return {
+    kind,
+    ...(system ? { system } : {}),
+    ...(engine ? { engine } : {}),
+    ...(source ? { source } : {}),
+    ...(sourcePath ? { path: sourcePath } : {}),
+    ...(queryId ? { queryId } : {}),
+    ...(query ? { query } : {}),
+    ...(queryHash ? { queryHash } : {}),
+    ...parseDataParams(stringDataProperty(props, ["PARAMS", "PARAMETERS", "ARGS"])),
+    ...(artifact ? { artifact } : {}),
+    ...(result ? { result } : {}),
+    ...(rowCount !== undefined ? { rowCount } : {}),
+    ...(lastRun ? { lastRun } : {}),
+    ...(freshness ? { freshness } : {}),
+    ...(materialized ? { materialized } : {}),
+  };
+}
+
 function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: Set<AgentInclude>, score?: { score: number; matchedTerms: string[]; selectionReason?: string[] }): AgentNode {
   const source = { file: node.file, sourceRange: node.sourceRange, citation: citationFor(node) };
   const thread = agentThreadMetadataFor(node);
+  const dataLink = dataLinkMetadataFor(node);
   return {
     key: node.key,
     kind: node.kind,
@@ -428,6 +525,7 @@ function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: 
     ...(score ? { score: score.score, matchedTerms: score.matchedTerms, selectionReason: score.selectionReason || [] } : {}),
     claimState: claimStateFor(node),
     ...(thread ? { thread } : {}),
+    ...(dataLink ? { dataLink } : {}),
     ...(include.has("sources") ? { sources: [source] } : {}),
     ...(include.has("backlinks") ? { backlinks: inferredBacklinksFor(corpus, node) } : {}),
     ...(include.has("neighbors") ? { neighbors: neighborsFor(corpus, node) } : {}),
