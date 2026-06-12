@@ -205,6 +205,19 @@ Use whichever form you prefer; both map to source block semantics.
 - Horizontal separator rows: =|---+---|=
 - Table content is parsed and preserved.
 
+Tables, source blocks, and common blocks can carry adjacent affiliated keyword metadata:
+
+#+begin_src org
+#+name: quarterly_revenue
+#+chart: line x=quarter y=revenue
+#+dataset: finance.revenue
+| quarter | revenue |
+|---------+---------|
+| 2026-Q1 | 1200    |
+#+end_src
+
+Recognized affiliated keys include =NAME=, =CAPTION=, =PLOT=, =CHART=, =DATASET=, =VIEW=, =RESULTS=, =HEADER=/=HEADERS=, and =ATTR_*= keys. The parser preserves them on the following table or block as =affiliatedKeywords= for chart renderers, dataset indexes, SQL views, and exporters.
+
 * Keyword/directive lines
 
 Org2 parses keyword lines in =#+KEY: VALUE= form.
