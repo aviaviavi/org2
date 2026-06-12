@@ -180,3 +180,45 @@ assert.ok(recencyFirst.results[0].selectionReason.some((reason) => reason.includ
 const explainedContext = execFileSync("node", ["dist/cli.js", "context", "Copper launch retrieval", "--dir", rankingDir, "--limit", "1", "--recency-weight", "0", "--salience-weight", "1"], { encoding: "utf8" });
 assert.match(explainedContext, /Selected because:/);
 assert.match(explainedContext, /explicit salience/);
+
+const threadDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-agent-thread-test-"));
+fs.writeFileSync(path.join(threadDir, "threads.org2"), `#+title: Agent Threads
+
+* Report: Firebolt package usage
+:PROPERTIES:
+:ID: report-1
+:KIND: report
+:END:
+Report context for Firebolt package usage.
+
+* Thread: Firebolt report help
+:PROPERTIES:
+:ID: thread-1
+:KIND: agent-thread
+:AGENT: openclaw
+:SESSION: openclaw:session:abc123
+:STATUS: active
+:CONTEXT: id:report-1, file:reports/firebolt.csv, ticket:REP-52
+:TRANSCRIPT: file:threads/thread-1.transcript.org2
+:STORAGE: summary
+:END:
+Current working summary of the thread.
+
+** Context attachments
+- [[id:report-1][Firebolt report]]
+- [[file:reports/firebolt.csv][latest CSV artifact]]
+
+** Durable outputs
+- [ ] Follow up on validation notes.
+`, "utf8");
+
+const thread = runJson("agent", "fetch", "--id", "thread-1", "--dir", threadDir, "--include", "neighbors", "--format", "json");
+assert.equal(thread.results.length, 1);
+assert.equal(thread.results[0].thread.agent, "openclaw");
+assert.equal(thread.results[0].thread.session, "openclaw:session:abc123");
+assert.equal(thread.results[0].thread.status, "active");
+assert.equal(thread.results[0].thread.transcript, "file:threads/thread-1.transcript.org2");
+assert.equal(thread.results[0].thread.storage, "summary");
+assert.ok(thread.results[0].thread.contextAttachments.some((attachment) => attachment.type === "id" && attachment.ref === "id:report-1" && attachment.label === "Firebolt report"));
+assert.ok(thread.results[0].thread.contextAttachments.some((attachment) => attachment.type === "file" && attachment.ref === "file:reports/firebolt.csv"));
+assert.ok(thread.results[0].thread.contextAttachments.some((attachment) => attachment.type === "ticket" && attachment.ref === "ticket:REP-52"));
