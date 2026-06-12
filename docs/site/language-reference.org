@@ -259,6 +259,39 @@ The CLI can render chart-affiliated tables directly:
 npm run org2 -- render-chart --file report.org2 --block-id quarterly_revenue --format svg
 #+end_src
 
+* Local datasets and SQL views
+
+Org2 can describe local/ad hoc data workflows with fenced =dataset= and =sql= blocks. This is intended for notebook-like reports over explicit local files, with DuckDB as the first execution bridge:
+
+#+begin_src org
+```dataset fetches
+type: csv
+path: ./data/package-fetches.csv
+engine: duckdb
+```
+
+```sql results=fetches_by_state
+SELECT state, count(*) AS fetches
+FROM fetches
+GROUP BY state
+ORDER BY fetches DESC
+```
+
+```chart bar
+source: fetches_by_state
+x: state
+y: fetches
+```
+#+end_src
+
+=org2 query-data= reads these blocks, creates DuckDB views for =csv=, =parquet=, or =json= datasets, runs a selected SQL result block through the local DuckDB CLI, and materializes the returned rows as a named org table or JSON envelope:
+
+#+begin_src sh
+npm run org2 -- query-data --file report.org2 --results fetches_by_state --out report.fetches.org
+#+end_src
+
+This is deliberately scoped to explicit local/ad hoc data sources. Org2 stores the source path, query, and materialized result/provenance; secrets and remote warehouse credentials belong in external tooling, not in notes.
+
 * Keyword/directive lines
 
 Org2 parses keyword lines in =#+KEY: VALUE= form.
