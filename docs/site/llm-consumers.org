@@ -100,6 +100,35 @@ The =agent= and =session= fields identify the external worker/session. =context=
 
 =org2 agent fetch --id thread-1 --format json= exposes this as =thread.contextAttachments= along with =thread.agent=, =thread.session=, =thread.status=, =thread.transcript=, and =thread.storage=. This gives Workspace clients a stable way to reopen a chat from a selected TODO/report/entity while preserving citations and avoiding raw transcript storage unless the user chooses it.
 
+* Data and query records
+
+Data-backed reports should keep executable details and materialized artifacts as typed headings. Use =KIND: warehouse-query= for external systems, =KIND: dataset= for local/ad hoc sources, and =KIND: data-link=, =sql-view=, =event-stream=, or =timeline-link= for adjacent projections.
+
+#+begin_src org
+* Report: package fetches
+:PROPERTIES:
+:ID: report-fetches
+:KIND: report
+:END:
+
+** Data link: package fetches by company
+:PROPERTIES:
+:ID: query-fetches-by-company
+:KIND: warehouse-query
+:SYSTEM: clickhouse
+:QUERY_ID: scarf.package_fetches_by_company.v1
+:PARAMS: {"packages":["firebolt/foo"],"from":"2026-01-01"}
+:LAST_RUN: 2026-06-12T12:30:00-07:00
+:ARTIFACT: customer-reports/firebolt/package_fetches_by_company.csv
+:ROW_COUNT: 1234
+:FRESHNESS: live
+:END:
+#+end_src
+
+Keep credentials and secrets outside org2 files. Store only stable query IDs, non-secret params, source paths/URIs, row counts, freshness, and artifact references. This lets agents trace claims back to data without embedding warehouse-scale rows in notes.
+
+=org2 agent fetch --id query-fetches-by-company --format json= exposes this as =dataLink= metadata, including =kind=, =system=, =queryId=, parsed JSON =params= when possible, =artifact=, =rowCount=, =lastRun=, and =freshness=. A local DuckDB-style dataset can use =KIND: dataset= with =ENGINE=, =PATH=, =PARAMS=, and =RESULTS=, and the same =dataLink= field is returned for Workspace/search clients.
+
 * What to save back
 
 Good generated outputs are inspectable artifacts, not silent canonical edits:

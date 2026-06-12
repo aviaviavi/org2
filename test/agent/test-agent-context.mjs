@@ -222,3 +222,57 @@ assert.equal(thread.results[0].thread.storage, "summary");
 assert.ok(thread.results[0].thread.contextAttachments.some((attachment) => attachment.type === "id" && attachment.ref === "id:report-1" && attachment.label === "Firebolt report"));
 assert.ok(thread.results[0].thread.contextAttachments.some((attachment) => attachment.type === "file" && attachment.ref === "file:reports/firebolt.csv"));
 assert.ok(thread.results[0].thread.contextAttachments.some((attachment) => attachment.type === "ticket" && attachment.ref === "ticket:REP-52"));
+
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-agent-data-link-test-"));
+fs.writeFileSync(path.join(dataDir, "reports.org2"), `#+title: Data Links
+
+* Report: package fetches
+:PROPERTIES:
+:ID: report-fetches
+:KIND: report
+:END:
+Business question for package fetch activity.
+
+** Data link: package fetches by company
+:PROPERTIES:
+:ID: query-fetches-by-company
+:KIND: warehouse-query
+:SYSTEM: clickhouse
+:QUERY_ID: scarf.package_fetches_by_company.v1
+:PARAMS: {"packages":["firebolt/foo"],"from":"2026-01-01"}
+:LAST_RUN: 2026-06-12T12:30:00-07:00
+:ARTIFACT: customer-reports/firebolt/package_fetches_by_company.csv
+:ROW_COUNT: 1,234
+:FRESHNESS: live
+:END:
+Materialized query metadata for [[id:report-fetches][package fetch report]].
+
+** Dataset: local package CSV
+:PROPERTIES:
+:ID: dataset-package-fetches
+:KIND: dataset
+:ENGINE: duckdb
+:PATH: data/package-fetches.csv
+:PARAMS: packages=firebolt/foo
+:RESULTS: table:package_fetches
+:END:
+Local ad hoc dataset definition.
+`, "utf8");
+
+const dataLink = runJson("agent", "fetch", "--id", "query-fetches-by-company", "--dir", dataDir, "--format", "json");
+assert.equal(dataLink.results.length, 1);
+assert.equal(dataLink.results[0].dataLink.kind, "warehouse-query");
+assert.equal(dataLink.results[0].dataLink.system, "clickhouse");
+assert.equal(dataLink.results[0].dataLink.queryId, "scarf.package_fetches_by_company.v1");
+assert.deepEqual(dataLink.results[0].dataLink.params, { packages: ["firebolt/foo"], from: "2026-01-01" });
+assert.equal(dataLink.results[0].dataLink.lastRun, "2026-06-12T12:30:00-07:00");
+assert.equal(dataLink.results[0].dataLink.artifact, "customer-reports/firebolt/package_fetches_by_company.csv");
+assert.equal(dataLink.results[0].dataLink.rowCount, 1234);
+assert.equal(dataLink.results[0].dataLink.freshness, "live");
+
+const dataset = runJson("agent", "fetch", "--id", "dataset-package-fetches", "--dir", dataDir, "--format", "json");
+assert.equal(dataset.results[0].dataLink.kind, "dataset");
+assert.equal(dataset.results[0].dataLink.engine, "duckdb");
+assert.equal(dataset.results[0].dataLink.path, "data/package-fetches.csv");
+assert.equal(dataset.results[0].dataLink.paramsRaw, "packages=firebolt/foo");
+assert.equal(dataset.results[0].dataLink.result, "table:package_fetches");
