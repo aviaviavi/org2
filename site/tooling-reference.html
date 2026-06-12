@@ -124,10 +124,21 @@ npm run org2 -- fmt --dir ~/notes --recursive --apply</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="chart-rendering">Chart rendering</h1>
-<p><code>org2 render-chart</code> renders an SVG artifact from <code>#+chart:</code> or <code>#+plot:</code> metadata attached to an org2 table. This gives editor clients a shared backend instead of making each extension reimplement table parsing and chart semantics.</p>
+<p><code>org2 render-chart</code> renders an SVG artifact from <code>#+chart:</code> / <code>#+plot:</code> metadata or an adjacent fenced <code>```chart</code> block attached to an org2 table. This gives editor clients a shared backend instead of making each extension reimplement table parsing and chart semantics.</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- render-chart --file report.org2 --block-id quarterly_revenue --out /tmp/quarterly-revenue.svg
 npm run org2 -- render-chart --file report.org2 --line 42 --format json</code></pre>
-<p>The first renderer supports deterministic <code>bar</code> and <code>line</code> charts with <code>x</code> and <code>y</code> column mappings, for example <code>#+chart: line x=quarter y=revenue</code>. JSON output includes <code>ok</code>, <code>format</code>, <code>artifact</code>, <code>source</code>, <code>diagnostics</code>, and <code>svg</code> so VS Code, Vim, or agent tooling can show useful errors for missing columns, unsupported chart types, or missing chart blocks.</p>
+<p>The first renderer supports deterministic <code>bar</code>, <code>line</code>, and bucketed <code>histogram</code> charts with <code>x</code> and <code>y</code> column mappings. New hand-written examples should prefer fenced chart blocks when they are easier to scan:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">| bucket | fetches |
+|--------+---------|
+| 0-10   | 14      |
+| 11-50  | 32      |
+
+```chart histogram
+x: bucket
+y: fetches
+source: previous-table
+```</code></pre>
+<p>JSON output includes <code>ok</code>, <code>format</code>, <code>artifact</code>, <code>source</code>, <code>diagnostics</code>, and <code>svg</code> so VS Code, Vim, or agent tooling can show useful errors for missing columns, unsupported chart types, or missing chart blocks.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="corpus-lint">Corpus lint</h1>
