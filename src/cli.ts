@@ -26,6 +26,7 @@ import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js
 import { compileCorpus, compileCorpusIncremental, extractCheckboxProgress, renderCompiledCorpus } from "./corpusCompile.js";
 import { extractClockReport } from "./clock.js";
 import { buildAgentContextPayload, renderAgentContextPack, type AgentInclude } from "./agentContext.js";
+import { renderOrgChart } from "./chartRender.js";
 import { loadAiJobManifest, validateAiJobManifest } from "./aiJobManifest.js";
 import { createAiAdapterRequest, MockAiAdapter, type AiAdapterContextItem, type AiAdapterResponse } from "./aiAdapter.js";
 import { buildGeneratedArtifactMetadata, formatOrg2ArtifactPropertyDrawer, sha256Hex } from "./artifactMetadata.js";
@@ -7855,6 +7856,14 @@ async function main(): Promise<void> {
   let compileIncremental = false;
   let compileCache = "";
 
+  // Chart rendering for editor/client integrations
+  let renderChartFile = "";
+  let renderChartLine = 0;
+  let renderChartBlockId = "";
+  let renderChartOut = "";
+  let renderChartStdin = false;
+  let renderChartFormat: "svg" | "json" = "svg";
+
   // Clock reports
   let clockFormat: "text" | "json" = "text";
 
@@ -8049,6 +8058,9 @@ async function main(): Promise<void> {
           i++;
         }
       }
+    } else if (arg === "render-chart") {
+      command = "render-chart";
+      i++;
     } else if (arg === "context") {
       command = "context";
       agentAction = "bundle";
@@ -8190,6 +8202,8 @@ async function main(): Promise<void> {
           refileFile = args[i]!;
         } else if (command === "export") {
           exportFile = args[i]!;
+        } else if (command === "render-chart") {
+          renderChartFile = args[i]!;
         } else if (command === "roam" && roamAction === "link") {
           roamLinkFile = args[i]!;
         } else if (command === "ai" && (aiAction === "promote" || aiAction === "review")) {
@@ -8213,6 +8227,8 @@ async function main(): Promise<void> {
           cryptLine = n;
         } else if (command === "id") {
           idLine = n;
+        } else if (command === "render-chart") {
+          renderChartLine = n;
         }
         i++;
       }
@@ -8921,6 +8937,8 @@ async function main(): Promise<void> {
           queryId = args[i]!;
         } else if (command === "agent") {
           agentId = args[i]!;
+        } else if (command === "render-chart") {
+          renderChartBlockId = args[i]!;
         } else if (command === "roam") {
           if (roamAction === "link") {
             roamLinkId = args[i]!;
@@ -8930,6 +8948,12 @@ async function main(): Promise<void> {
             roamIdForced = args[i]!;
           }
         }
+        i++;
+      }
+    } else if (arg === "--block-id" && command === "render-chart") {
+      i++;
+      if (i < args.length) {
+        renderChartBlockId = args[i]!;
         i++;
       }
     } else if (arg === "--json") {
@@ -8951,6 +8975,7 @@ async function main(): Promise<void> {
       else if (command === "lint") lintFormat = "json";
       else if (command === "graph") graphFormat = "json";
       else if (command === "compile") compileFormat = "json";
+      else if (command === "render-chart") renderChartFormat = "json";
       else if (command === "clock") clockFormat = "json";
       else if (command === "context" || command === "brief") contextFormat = "json";
       else if (command === "ai") aiFormat = "json";
@@ -8998,6 +9023,8 @@ async function main(): Promise<void> {
           graphFormat = v;
         } else if (command === "compile" && (v === "json" || v === "jsonl")) {
           compileFormat = v;
+        } else if (command === "render-chart" && (v === "svg" || v === "json")) {
+          renderChartFormat = v;
         } else if (command === "clock" && (v === "text" || v === "json")) {
           clockFormat = v;
         } else if ((command === "context" || command === "brief") && (v === "markdown" || v === "md" || v === "org" || v === "org2" || v === "json")) {
@@ -9107,6 +9134,8 @@ async function main(): Promise<void> {
           roamGraphOut = args[i]!;
         } else if (command === "compile") {
           compileOut = args[i]!;
+        } else if (command === "render-chart") {
+          renderChartOut = args[i]!;
         } else if (command === "ai") {
           aiOut = args[i]!;
         } else if (command === "brief") {
@@ -9231,6 +9260,8 @@ async function main(): Promise<void> {
           cryptLine = parseInt(rawPos.split(":")[0]!, 10);
         } else if (command === "id") {
           idLine = parseInt(rawPos.split(":")[0]!, 10);
+        } else if (command === "render-chart") {
+          renderChartLine = parseInt(rawPos.split(":")[0]!, 10);
         } else if (command === "roam" && roamAction === "link") {
           roamLinkPos = rawPos;
         }
@@ -9239,6 +9270,7 @@ async function main(): Promise<void> {
     } else if (arg === "--stdin") {
       if (command === "fmt") fmtStdin = true;
       if (command === "capture") captureReadStdin = true;
+      if (command === "render-chart") renderChartStdin = true;
       i++;
     } else if (arg === "--check") {
       if (command === "fmt") {
@@ -9318,6 +9350,7 @@ Roam / IDs:
   org2 query clocks --dir DIR [--recursive] [--format text|json]
   org2 clock --dir DIR [--recursive] [--format text|json]
   org2 compile corpus --dir DIR [--recursive] [--out FILE] [--format json|jsonl]
+  org2 render-chart --file FILE [--block-id ID|--line N] [--out FILE] [--format svg|json]
   org2 context QUERY [--dir DIR] [--recursive] [--budget 8k] [--format markdown|org|json]
   org2 brief today [--dir DIR] [--recursive] [--out views/today.org]
   org2 brief project NAME [--dir DIR] [--recursive] [--out views/NAME.org]
@@ -9614,6 +9647,25 @@ Output:
   standardized generated-artifact metadata, source hashes, headings, IDs,
   aliases, links, backlinks, TODO/planning state, properties, source ranges,
   and snippets. Org2 emits data only; it does not call an LLM.`;
+  } else if (command === "render-chart") {
+    text = `org2 render-chart
+
+Usage:
+  org2 render-chart --file FILE [--block-id ID|--line N] [--out FILE] [--format svg|json]
+  org2 render-chart --stdin [--out FILE] [--format svg|json]
+
+Flags:
+  --file FILE       Source Org/Org2 file
+  --stdin           Read Org/Org2 input from standard input
+  --block-id ID     Select a chart by adjacent #+name
+  --id ID           Alias for --block-id
+  --line N          Select the first chart table at or after line N
+  --out FILE        Write the SVG artifact to FILE
+  --format FORMAT   svg (default) or json diagnostics envelope
+
+Output:
+  Deterministic SVG for #+chart or #+plot metadata attached to an org2 table.
+  JSON output includes ok, format, artifact, source, diagnostics, and svg.`;
   } else if (command === "context") {
     text = `org2 context
 
@@ -9807,7 +9859,7 @@ Flags:
     printGeneralUsage(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "clock" && command !== "compile" && command !== "entity" && command !== "agent" && command !== "context" && command !== "brief" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "clock" && command !== "compile" && command !== "render-chart" && command !== "entity" && command !== "agent" && command !== "context" && command !== "brief" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
     printGeneralUsage(1);
   }
 
@@ -9815,6 +9867,49 @@ Flags:
     // The LSP server runs over stdio and expects to own stdin/stdout.
     // Importing this module starts the server.
     await import("./lsp.js");
+    return;
+  }
+
+  if (command === "render-chart") {
+    if (renderChartFile && renderChartStdin) {
+      console.error("Error: render-chart accepts only one of --file or --stdin");
+      process.exit(1);
+    }
+    if (!renderChartFile && !renderChartStdin) {
+      console.error("Error: render-chart requires --file FILE or --stdin");
+      process.exit(1);
+    }
+
+    const input = renderChartStdin
+      ? fs.readFileSync(0, "utf8").replace(/\r\n/g, "\n")
+      : fs.readFileSync(path.resolve(renderChartFile), "utf8").replace(/\r\n/g, "\n");
+    const sourceFile = renderChartStdin ? undefined : renderChartFile;
+    const result = renderOrgChart(input, {
+      ...(sourceFile ? { file: sourceFile } : {}),
+      ...(renderChartLine > 0 ? { line: renderChartLine } : {}),
+      ...(renderChartBlockId ? { blockId: renderChartBlockId } : {}),
+      ...(renderChartOut ? { outputPath: renderChartOut } : {}),
+    });
+
+    if (result.ok && result.svg && renderChartOut) {
+      const outputPath = path.resolve(renderChartOut);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fs.writeFileSync(outputPath, result.svg, "utf8");
+    }
+
+    if (renderChartFormat === "json") {
+      process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    } else if (result.ok && result.svg) {
+      if (renderChartOut) process.stdout.write(`Wrote chart SVG to ${renderChartOut}\n`);
+      else process.stdout.write(result.svg);
+    } else {
+      for (const item of result.diagnostics) {
+        const where = item.source?.line ? `:${item.source.line}` : "";
+        console.error(`${item.severity}: ${item.message}${where}`);
+      }
+    }
+
+    if (!result.ok) process.exit(1);
     return;
   }
 

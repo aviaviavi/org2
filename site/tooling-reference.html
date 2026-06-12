@@ -67,6 +67,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><code>archive</code>, <code>refile</code></p></li>
 <li><p><code>fmt</code></p></li>
 <li><p><code>search</code>, <code>id</code>, <code>query</code>, <code>backlinks</code></p></li>
+<li><p><code>render-chart</code></p></li>
 <li><p><code>roam ...</code></p></li>
 <li><p><code>crypt ...</code></p></li>
 <li><p><code>export html</code></p></li>
@@ -120,6 +121,13 @@ npm run org2 -- refile --file notes.org2 --pos 120:0 --to-file projects.org2 --t
 <p>Canonical formatting for Org2 files.</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- fmt --dir ~/notes --recursive --check
 npm run org2 -- fmt --dir ~/notes --recursive --apply</code></pre>
+</section>
+<section class="org2-headline level-1">
+<h1 id="chart-rendering">Chart rendering</h1>
+<p><code>org2 render-chart</code> renders an SVG artifact from <code>#+chart:</code> or <code>#+plot:</code> metadata attached to an org2 table. This gives editor clients a shared backend instead of making each extension reimplement table parsing and chart semantics.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- render-chart --file report.org2 --block-id quarterly_revenue --out /tmp/quarterly-revenue.svg
+npm run org2 -- render-chart --file report.org2 --line 42 --format json</code></pre>
+<p>The first renderer supports deterministic <code>bar</code> and <code>line</code> charts with <code>x</code> and <code>y</code> column mappings, for example <code>#+chart: line x=quarter y=revenue</code>. JSON output includes <code>ok</code>, <code>format</code>, <code>artifact</code>, <code>source</code>, <code>diagnostics</code>, and <code>svg</code> so VS Code, Vim, or agent tooling can show useful errors for missing columns, unsupported chart types, or missing chart blocks.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="corpus-lint">Corpus lint</h1>
