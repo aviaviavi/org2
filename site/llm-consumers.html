@@ -114,6 +114,54 @@ npm run org2 -- lint --dir ~/notes --recursive --format json &gt; views/corpus-h
 <p>The compiled artifact supplies file hashes, heading nodes, IDs, aliases, links, backlinks, planning data, properties, snippets, and source ranges. Keep provider credentials and model configuration outside the corpus artifact. If an agent saves a report or summary, stamp it with generated-artifact metadata described in <a href="corpus-flow.html">Corpus flow</a>.</p>
 </section>
 <section class="org2-headline level-1">
+<h1 id="agent-thread-records">Agent thread records</h1>
+<p>Agent conversations that matter should be represented as durable Org2 headings instead of only living in an external chat transcript. Use <code>KIND: agent-thread</code> for a thread record and keep the remote session reference separate from selected context.</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* Thread: Firebolt report help
+:PROPERTIES:
+:ID: thread-1
+:KIND: agent-thread
+:AGENT: openclaw
+:SESSION: openclaw:session:abc123
+:STATUS: active
+:CONTEXT: id:report-1, file:reports/firebolt.csv, ticket:REP-52
+:TRANSCRIPT: file:threads/thread-1.transcript.org2
+:STORAGE: summary
+:END:
+
+** Context attachments
+- [[id:report-1][Firebolt report]]
+- [[file:reports/firebolt.csv][latest CSV artifact]]
+
+** Durable outputs
+- [ ] Follow up on validation notes.</code></pre>
+<p>The <code>agent</code> and <code>session</code> fields identify the external worker/session. <code>context</code> is a comma- or semicolon-separated list of typed references such as <code>id:</code>, <code>file:</code>, <code>ticket:</code>, <code>report:</code>, <code>entity:</code>, <code>artifact:</code>, or <code>url:</code>. The body can also include normal Org2 links under a <code>Context attachments</code> section for readable labels and editor navigation.</p>
+<p><code>org2 agent fetch --id thread-1 --format json</code> exposes this as <code>thread.contextAttachments</code> along with <code>thread.agent</code>, <code>thread.session</code>, <code>thread.status</code>, <code>thread.transcript</code>, and <code>thread.storage</code>. This gives Workspace clients a stable way to reopen a chat from a selected TODO/report/entity while preserving citations and avoiding raw transcript storage unless the user chooses it.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="data-and-query-records">Data and query records</h1>
+<p>Data-backed reports should keep executable details and materialized artifacts as typed headings. Use <code>KIND: warehouse-query</code> for external systems, <code>KIND: dataset</code> for local/ad hoc sources, and <code>KIND: data-link</code>, <code>sql-view</code>, <code>event-stream</code>, or <code>timeline-link</code> for adjacent projections.</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* Report: package fetches
+:PROPERTIES:
+:ID: report-fetches
+:KIND: report
+:END:
+
+** Data link: package fetches by company
+:PROPERTIES:
+:ID: query-fetches-by-company
+:KIND: warehouse-query
+:SYSTEM: clickhouse
+:QUERY_ID: scarf.package_fetches_by_company.v1
+:PARAMS: {&quot;packages&quot;:[&quot;firebolt/foo&quot;],&quot;from&quot;:&quot;2026-01-01&quot;}
+:LAST_RUN: 2026-06-12T12:30:00-07:00
+:ARTIFACT: customer-reports/firebolt/package_fetches_by_company.csv
+:ROW_COUNT: 1234
+:FRESHNESS: live
+:END:</code></pre>
+<p>Keep credentials and secrets outside org2 files. Store only stable query IDs, non-secret params, source paths/URIs, row counts, freshness, and artifact references. This lets agents trace claims back to data without embedding warehouse-scale rows in notes.</p>
+<p><code>org2 agent fetch --id query-fetches-by-company --format json</code> exposes this as <code>dataLink</code> metadata, including <code>kind</code>, <code>system</code>, <code>queryId</code>, parsed JSON <code>params</code> when possible, <code>artifact</code>, <code>rowCount</code>, <code>lastRun</code>, and <code>freshness</code>. A local DuckDB-style dataset can use <code>KIND: dataset</code> with <code>ENGINE</code>, <code>PATH</code>, <code>PARAMS</code>, and <code>RESULTS</code>, and the same <code>dataLink</code> field is returned for Workspace/search clients.</p>
+</section>
+<section class="org2-headline level-1">
 <h1 id="what-to-save-back">What to save back</h1>
 <p>Good generated outputs are inspectable artifacts, not silent canonical edits:</p>
 <ul>

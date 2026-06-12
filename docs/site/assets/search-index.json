@@ -1,6 +1,6 @@
 [
-  {"title":"Home","url":"index.html","description":"Org2 overview, core ideas, screenshots, and starting points."},
-  {"title":"Features","url":"features.html","description":"Plain-text notes, planning, graph maintenance, AI workflows, publishing, and editor support."},
+  {"title":"Home","url":"index.html","description":"Org2 as a local-first, plain-text context layer for people, organizations, and agents."},
+  {"title":"Features","url":"features.html","description":"Context records, planning, graph maintenance, agent workflows, data-backed reports, publishing, and editor support."},
   {"title":"Getting started","url":"getting-started.html","description":"Install Org2, run CLI commands, use VS Code, and publish the docs site."},
   {"title":"Reference overview","url":"reference.html","description":"Entry point for the Org2 reference pages."},
   {"title":"Corpus flow","url":"corpus-flow.html","description":"Raw, notes, compiled, views, and publish zones for an Org2 workspace."},
