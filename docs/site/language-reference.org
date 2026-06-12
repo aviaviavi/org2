@@ -234,7 +234,24 @@ source: previous-table
 ```
 #+end_src
 
-This is ergonomic syntax sugar for chart metadata over the preceding table. The current renderer supports =bar=, =line=, and bucketed =histogram= charts over the previous table.
+This is ergonomic syntax sugar for chart metadata over the preceding table. Fenced chart blocks may also point at a named table or materialized result elsewhere in the same note:
+
+#+begin_src org
+#+name: package_fetches_result
+#+results: query-fetches-by-company
+| day        | fetches |
+|------------+---------|
+| 2026-06-10 | 84      |
+
+#+name: package_fetches_chart
+```chart line
+x: day
+y: fetches
+source: package_fetches_result
+```
+#+end_src
+
+The current renderer supports =bar=, =line=, and bucketed =histogram= charts over the previous table or a named table source.
 
 The CLI can render chart-affiliated tables directly:
 

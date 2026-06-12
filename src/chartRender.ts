@@ -7,6 +7,9 @@ export type ChartRenderSource = {
   line: number;
   endLine?: number;
   blockId?: string;
+  dataBlockId?: string;
+  chartLine?: number;
+  chartEndLine?: number;
   kind: "table";
 };
 
@@ -42,6 +45,10 @@ type ChartSpec = {
   y: string;
   title?: string;
 };
+
+type ChartDataSource =
+  | { kind: "previous-table" }
+  | { kind: "named-table"; blockId: string };
 
 type ChartCandidate = {
   source: ChartRenderSource;
@@ -148,6 +155,7 @@ function isChartFenceOpener(line: string): boolean {
 type FencedChartBlock = {
   raw: string;
   title?: string;
+  source?: string;
   startLine: number;
   endLine: number;
 };
@@ -155,6 +163,7 @@ type FencedChartBlock = {
 type ParsedFencedChartSpec = {
   raw: string;
   title?: string;
+  source?: string;
 };
 
 function parseFencedChartBlock(lines: string[], startIndex: number): FencedChartBlock | null {
@@ -169,14 +178,14 @@ function parseFencedChartBlock(lines: string[], startIndex: number): FencedChart
     const line = lines[i] || "";
     if (/^\s*```\s*$/.test(line)) {
       const parsed = parseFencedChartSpec(openerRest, bodyLines);
-      return { raw: parsed.raw.trim(), ...(parsed.title ? { title: parsed.title } : {}), startLine: startIndex + 1, endLine: i + 1 };
+      return { raw: parsed.raw.trim(), ...(parsed.title ? { title: parsed.title } : {}), ...(parsed.source ? { source: parsed.source } : {}), startLine: startIndex + 1, endLine: i + 1 };
     }
     bodyLines.push(line);
     i++;
   }
 
   const parsed = parseFencedChartSpec(openerRest, bodyLines);
-  return { raw: parsed.raw.trim(), ...(parsed.title ? { title: parsed.title } : {}), startLine: startIndex + 1, endLine: lines.length };
+  return { raw: parsed.raw.trim(), ...(parsed.title ? { title: parsed.title } : {}), ...(parsed.source ? { source: parsed.source } : {}), startLine: startIndex + 1, endLine: lines.length };
 }
 
 function parseFencedChartSpec(openerRest: string, bodyLines: string[]): ParsedFencedChartSpec {
@@ -201,19 +210,37 @@ function parseFencedChartSpec(openerRest: string, bodyLines: string[]): ParsedFe
 
   if (x) tokens.push(`x=${x}`);
   if (y) tokens.push(`y=${y}`);
-  if (source) tokens.push(`source=${source}`);
 
   for (const arg of openerArgs.slice(firstArg && !firstArg.includes("=") ? 1 : 0)) {
-    tokens.push(arg);
+    if (!/^source=/i.test(arg)) tokens.push(arg);
   }
 
-  return { raw: tokens.join(" "), ...(title ? { title } : {}) };
+  const argSource = openerArgs.map((arg) => /^source=(.+)$/i.exec(arg)?.[1]).find((value): value is string => Boolean(value));
+  return { raw: tokens.join(" "), ...(title ? { title } : {}), ...(source || argSource ? { source: source || argSource } : {}) };
 }
 
-function parseChartSpecWithFencedSource(raw: string, title?: string): { spec?: ChartSpec; diagnostics: ChartRenderDiagnostic[] } {
+function parseChartSource(rawSource: string | undefined): { source: ChartDataSource; diagnostics: ChartRenderDiagnostic[] } {
+  if (!rawSource) return { source: { kind: "previous-table" }, diagnostics: [] };
+
+  const source = rawSource.trim();
+  const normalized = source.toLowerCase();
+  if (normalized === "previous-table" || normalized === "prev-table" || normalized === "table" || normalized === "this-table" || normalized === "above") {
+    return { source: { kind: "previous-table" }, diagnostics: [] };
+  }
+
+  const named = /^(?:table|block|result|results):(.+)$/i.exec(source)?.[1] || /^#(.+)$/.exec(source)?.[1] || source;
+  const blockId = named.trim();
+  if (!blockId) {
+    return { source: { kind: "previous-table" }, diagnostics: [diagnostic("Chart source cannot be empty")] };
+  }
+  return { source: { kind: "named-table", blockId }, diagnostics: [] };
+}
+
+function parseChartSpecWithFencedSource(raw: string, rawSource?: string, title?: string): { spec?: ChartSpec; source: ChartDataSource; diagnostics: ChartRenderDiagnostic[] } {
   const tokens = raw.split(/\s+/).filter(Boolean);
   const filteredTokens: string[] = [];
   const diagnostics: ChartRenderDiagnostic[] = [];
+  let sourceValue = rawSource;
 
   for (const token of tokens) {
     const match = /^source=(.+)$/i.exec(token);
@@ -222,14 +249,72 @@ function parseChartSpecWithFencedSource(raw: string, title?: string): { spec?: C
       continue;
     }
 
-    const source = String(match[1] || "").toLowerCase();
-    if (source !== "previous-table" && source !== "prev-table" && source !== "table" && source !== "this-table" && source !== "above") {
-      diagnostics.push(diagnostic(`Unsupported chart source "${source}". Supported source: previous-table`));
-    }
+    sourceValue = String(match[1] || "");
   }
 
+  const parsedSource = parseChartSource(sourceValue);
   const parsed = parseChartSpec(filteredTokens.join(" "), title);
-  return { spec: parsed.spec, diagnostics: [...diagnostics, ...parsed.diagnostics] };
+  return { spec: parsed.spec, source: parsedSource.source, diagnostics: [...diagnostics, ...parsedSource.diagnostics, ...parsed.diagnostics] };
+}
+
+type ParsedTableBlock = {
+  source: ChartRenderSource;
+  headers: string[];
+  rows: string[][];
+  diagnostics: ChartRenderDiagnostic[];
+};
+
+function candidateFromTable(table: ParsedTableBlock, spec: ChartSpec | undefined, diagnostics: ChartRenderDiagnostic[], source?: Partial<ChartRenderSource>): ChartCandidate {
+  return {
+    source: { ...table.source, ...source },
+    spec: spec || { type: "bar", x: "", y: "" },
+    headers: table.headers,
+    rows: table.rows,
+    diagnostics: [...diagnostics, ...table.diagnostics],
+  };
+}
+
+function collectNamedTables(lines: string[], file?: string): Map<string, ParsedTableBlock> {
+  const tables = new Map<string, ParsedTableBlock>();
+  let pending: Keyword[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i] || "";
+    const keyword = parseKeyword(line, i + 1);
+    if (keyword) {
+      pending.push(keyword);
+      i++;
+      continue;
+    }
+
+    if (isTableLine(line)) {
+      const tableStartLine = i + 1;
+      const tableLines: string[] = [];
+      while (i < lines.length && isTableLine(lines[i] || "")) {
+        tableLines.push(lines[i] || "");
+        i++;
+      }
+
+      const name = keywordValue(pending, "NAME");
+      if (name) {
+        const parsedTable = parseTable(tableLines);
+        tables.set(name, {
+          source: { ...(file ? { file } : {}), line: tableStartLine, endLine: i, blockId: name, kind: "table" },
+          headers: parsedTable.headers,
+          rows: parsedTable.rows,
+          diagnostics: parsedTable.diagnostics,
+        });
+      }
+      pending = [];
+      continue;
+    }
+
+    if (line.trim() !== "") pending = [];
+    i++;
+  }
+
+  return tables;
 }
 
 function collectChartCandidates(raw: string, file?: string): ChartCandidate[] {
@@ -238,6 +323,8 @@ function collectChartCandidates(raw: string, file?: string): ChartCandidate[] {
 
   const lines = raw.replace(/\r\n/g, "\n").split("\n");
   const candidates: ChartCandidate[] = [];
+  const namedTables = collectNamedTables(lines, file);
+  let previousTable: ParsedTableBlock | undefined;
   let pending: Keyword[] = [];
   let i = 0;
 
@@ -260,6 +347,17 @@ function collectChartCandidates(raw: string, file?: string): ChartCandidate[] {
       const tableEndLine = i;
 
       const chartRaw = keywordValue(pending, "CHART") || keywordValue(pending, "PLOT");
+      const name = keywordValue(pending, "NAME");
+      const caption = keywordValue(pending, "CAPTION");
+      const parsedTable = parseTable(tableLines);
+      const table: ParsedTableBlock = {
+        source: { ...(file ? { file } : {}), line: tableStartLine, endLine: tableEndLine, ...(name ? { blockId: name } : {}), kind: "table" },
+        headers: parsedTable.headers,
+        rows: parsedTable.rows,
+        diagnostics: parsedTable.diagnostics,
+      };
+      previousTable = table;
+      if (name) namedTables.set(name, table);
       let chartEndLine = tableEndLine;
       let fencedChart: FencedChartBlock | null = null;
       if (!chartRaw) {
@@ -273,54 +371,69 @@ function collectChartCandidates(raw: string, file?: string): ChartCandidate[] {
       }
       const effectiveChartRaw = chartRaw || fencedChart?.raw;
       if (chartRaw) {
-        const name = keywordValue(pending, "NAME");
-        const caption = keywordValue(pending, "CAPTION");
         const parsedSpec = parseChartSpec(chartRaw, caption);
-        const table = parseTable(tableLines);
-        const diagnostics = [...parsedSpec.diagnostics, ...table.diagnostics];
-        if (parsedSpec.spec) {
-          candidates.push({
-            source: { ...(file ? { file } : {}), line: tableStartLine, endLine: tableEndLine, ...(name ? { blockId: name } : {}), kind: "table" },
-            spec: parsedSpec.spec,
-            headers: table.headers,
-            rows: table.rows,
-            diagnostics,
-          });
-        } else {
-          candidates.push({
-            source: { ...(file ? { file } : {}), line: tableStartLine, endLine: tableEndLine, ...(name ? { blockId: name } : {}), kind: "table" },
-            spec: { type: "bar", x: "", y: "" },
-            headers: table.headers,
-            rows: table.rows,
-            diagnostics,
-          });
-        }
+        candidates.push(candidateFromTable(table, parsedSpec.spec, parsedSpec.diagnostics));
       } else if (effectiveChartRaw) {
-        const name = keywordValue(pending, "NAME");
-        const caption = keywordValue(pending, "CAPTION") || fencedChart?.title;
-        const parsedSpec = parseChartSpecWithFencedSource(effectiveChartRaw, caption);
-        const table = parseTable(tableLines);
-        const diagnostics = [...parsedSpec.diagnostics, ...table.diagnostics];
-        if (parsedSpec.spec) {
-          candidates.push({
-            source: { ...(file ? { file } : {}), line: tableStartLine, endLine: chartEndLine, ...(name ? { blockId: name } : {}), kind: "table" },
-            spec: parsedSpec.spec,
-            headers: table.headers,
-            rows: table.rows,
-            diagnostics,
-          });
+        const parsedSpec = parseChartSpecWithFencedSource(effectiveChartRaw, fencedChart?.source, caption || fencedChart?.title);
+        if (parsedSpec.source.kind === "named-table") {
+          const sourcedTable = namedTables.get(parsedSpec.source.blockId);
+          if (sourcedTable) {
+            candidates.push(candidateFromTable(sourcedTable, parsedSpec.spec, parsedSpec.diagnostics, {
+              ...(name ? { blockId: name, dataBlockId: sourcedTable.source.blockId } : {}),
+              chartLine: fencedChart?.startLine,
+              chartEndLine: fencedChart?.endLine,
+            }));
+          } else {
+            candidates.push({
+              source: { ...(file ? { file } : {}), line: fencedChart?.startLine || tableStartLine, endLine: fencedChart?.endLine || chartEndLine, ...(name ? { blockId: name } : {}), kind: "table" },
+              spec: parsedSpec.spec || { type: "bar", x: "", y: "" },
+              headers: [],
+              rows: [],
+              diagnostics: [
+                ...parsedSpec.diagnostics,
+                diagnostic(`No table found for chart source "${parsedSpec.source.blockId}"`, { line: fencedChart?.startLine, ...(name ? { blockId: name } : {}) }),
+              ],
+            });
+          }
         } else {
-          candidates.push({
-            source: { ...(file ? { file } : {}), line: tableStartLine, endLine: chartEndLine, ...(name ? { blockId: name } : {}), kind: "table" },
-            spec: { type: "bar", x: "", y: "" },
-            headers: table.headers,
-            rows: table.rows,
-            diagnostics,
-          });
+          candidates.push(candidateFromTable(table, parsedSpec.spec, parsedSpec.diagnostics, { endLine: chartEndLine, ...(fencedChart ? { chartLine: fencedChart.startLine, chartEndLine: fencedChart.endLine } : {}) }));
         }
       }
 
       pending = [];
+      continue;
+    }
+
+    const fencedChart = parseFencedChartBlock(lines, i);
+    if (fencedChart) {
+      const name = keywordValue(pending, "NAME");
+      const caption = keywordValue(pending, "CAPTION") || fencedChart.title;
+      const parsedSpec = parseChartSpecWithFencedSource(fencedChart.raw, fencedChart.source, caption);
+      const table = parsedSpec.source.kind === "named-table" ? namedTables.get(parsedSpec.source.blockId) : previousTable;
+      const diagnostics = [...parsedSpec.diagnostics];
+      if (!table) {
+        diagnostics.push(diagnostic(
+          parsedSpec.source.kind === "named-table"
+            ? `No table found for chart source "${parsedSpec.source.blockId}"`
+            : "No previous table found for chart source",
+          { line: fencedChart.startLine, ...(name ? { blockId: name } : {}) },
+        ));
+        candidates.push({
+          source: { ...(file ? { file } : {}), line: fencedChart.startLine, endLine: fencedChart.endLine, ...(name ? { blockId: name } : {}), kind: "table" },
+          spec: parsedSpec.spec || { type: "bar", x: "", y: "" },
+          headers: [],
+          rows: [],
+          diagnostics,
+        });
+      } else {
+        candidates.push(candidateFromTable(table, parsedSpec.spec, diagnostics, {
+          ...(name ? { blockId: name, dataBlockId: table.source.blockId } : {}),
+          chartLine: fencedChart.startLine,
+          chartEndLine: fencedChart.endLine,
+        }));
+      }
+      pending = [];
+      i = fencedChart.endLine;
       continue;
     }
 
@@ -338,7 +451,8 @@ function selectCandidate(candidates: ChartCandidate[], opts: RenderChartOptions)
   if (opts.line && opts.line > 0) {
     const line = opts.line;
     return candidates.find((candidate) => line >= candidate.source.line && line <= (candidate.source.endLine || candidate.source.line))
-      || candidates.find((candidate) => candidate.source.line >= line);
+      || candidates.find((candidate) => candidate.source.chartLine && line >= candidate.source.chartLine && line <= (candidate.source.chartEndLine || candidate.source.chartLine))
+      || candidates.find((candidate) => (candidate.source.chartLine || candidate.source.line) >= line);
   }
   return candidates[0];
 }
