@@ -217,6 +217,10 @@
       "required": ["type", "terminated", "begin", "bodyRaw", "end"],
       "properties": {
         "type": { "const": "SrcBlock" },
+        "affiliatedKeywords": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/KeywordLine" }
+        },
         "terminated": { "const": true },
         "begin": { "$ref": "#/$defs/SrcBlockLine" },
         "bodyRaw": { "type": "string" },
@@ -229,6 +233,10 @@
       "required": ["type", "terminated", "begin", "bodyRaw"],
       "properties": {
         "type": { "const": "SrcBlock" },
+        "affiliatedKeywords": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/KeywordLine" }
+        },
         "terminated": { "const": false },
         "begin": { "$ref": "#/$defs/SrcBlockLine" },
         "bodyRaw": { "type": "string" }
@@ -243,7 +251,11 @@
       "required": ["type", "kind", "terminated", "begin", "bodyRaw", "end"],
       "properties": {
         "type": { "const": "Block" },
-        "kind": { "type": "string", "enum": ["example", "quote", "verse", "center", "comment"] },
+        "affiliatedKeywords": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/KeywordLine" }
+        },
+        "kind": { "type": "string", "enum": ["example", "quote", "verse", "center", "comment", "export"] },
         "terminated": { "const": true },
         "begin": { "$ref": "#/$defs/SrcBlockLine" },
         "bodyRaw": { "type": "string" },
@@ -256,7 +268,11 @@
       "required": ["type", "kind", "terminated", "begin", "bodyRaw"],
       "properties": {
         "type": { "const": "Block" },
-        "kind": { "type": "string", "enum": ["example", "quote", "verse", "center", "comment"] },
+        "affiliatedKeywords": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/KeywordLine" }
+        },
+        "kind": { "type": "string", "enum": ["example", "quote", "verse", "center", "comment", "export"] },
         "terminated": { "const": false },
         "begin": { "$ref": "#/$defs/SrcBlockLine" },
         "bodyRaw": { "type": "string" }
@@ -268,6 +284,10 @@
       "required": ["type", "rows"],
       "properties": {
         "type": { "const": "Table" },
+        "affiliatedKeywords": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/KeywordLine" }
+        },
         "rows": {
           "type": "array",
           "items": { "$ref": "#/$defs/TableRow" }

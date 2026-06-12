@@ -1,0 +1,92 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Table",
+      "affiliatedKeywords": [
+        {
+          "type": "KeywordLine",
+          "raw": "#+name: quarterly_revenue",
+          "indent": "",
+          "keyRaw": "name",
+          "valueRaw": " quarterly_revenue"
+        },
+        {
+          "type": "KeywordLine",
+          "raw": "#+caption: Quarterly revenue curated dataset",
+          "indent": "",
+          "keyRaw": "caption",
+          "valueRaw": " Quarterly revenue curated dataset"
+        },
+        {
+          "type": "KeywordLine",
+          "raw": "#+chart: line x=quarter y=revenue",
+          "indent": "",
+          "keyRaw": "chart",
+          "valueRaw": " line x=quarter y=revenue"
+        },
+        {
+          "type": "KeywordLine",
+          "raw": "#+dataset: finance.revenue",
+          "indent": "",
+          "keyRaw": "dataset",
+          "valueRaw": " finance.revenue"
+        }
+      ],
+      "rows": [
+        {
+          "type": "TableRow",
+          "indent": "",
+          "cells": ["quarter", "revenue"]
+        },
+        {
+          "type": "TableHline",
+          "indent": "",
+          "raw": "|---------+---------|"
+        },
+        {
+          "type": "TableRow",
+          "indent": "",
+          "cells": ["2026-Q1", "1200"]
+        },
+        {
+          "type": "TableRow",
+          "indent": "",
+          "cells": ["2026-Q2", "1500"]
+        }
+      ]
+    },
+    {
+      "type": "SrcBlock",
+      "affiliatedKeywords": [
+        {
+          "type": "KeywordLine",
+          "raw": "#+name: revenue_view",
+          "indent": "",
+          "keyRaw": "name",
+          "valueRaw": " revenue_view"
+        },
+        {
+          "type": "KeywordLine",
+          "raw": "#+view: finance.revenue_by_quarter",
+          "indent": "",
+          "keyRaw": "view",
+          "valueRaw": " finance.revenue_by_quarter"
+        }
+      ],
+      "terminated": true,
+      "begin": {
+        "indent": "",
+        "keywordRaw": "begin_src",
+        "afterKeywordRaw": " sql"
+      },
+      "bodyRaw": "select * from quarterly_revenue;",
+      "end": {
+        "indent": "",
+        "keywordRaw": "end_src",
+        "afterKeywordRaw": ""
+      }
+    }
+  ]
+}
