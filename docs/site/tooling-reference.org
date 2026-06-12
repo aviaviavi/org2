@@ -110,7 +110,24 @@ source: previous-table
 ```
 #+end_src
 
-JSON output includes =ok=, =format=, =artifact=, =source=, =diagnostics=, and =svg= so VS Code, Vim, or agent tooling can show useful errors for missing columns, unsupported chart types, or missing chart blocks.
+For data-backed reports, a chart block can also point at a named materialized result table in the same note:
+
+#+begin_src org
+#+name: package_fetches_result
+#+results: query-fetches-by-company
+| day        | fetches |
+|------------+---------|
+| 2026-06-10 | 84      |
+
+#+name: package_fetches_chart
+```chart line
+x: day
+y: fetches
+source: package_fetches_result
+```
+#+end_src
+
+JSON output includes =ok=, =format=, =artifact=, =source=, =diagnostics=, and =svg= so VS Code, Vim, or agent tooling can show useful errors for missing columns, unsupported chart types, missing named source tables, or missing chart blocks.
 
 * Corpus lint
 

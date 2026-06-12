@@ -272,7 +272,20 @@ x: bucket
 y: fetches
 source: previous-table
 ```</code></pre>
-<p>This is ergonomic syntax sugar for chart metadata over the preceding table. The current renderer supports <code>bar</code>, <code>line</code>, and bucketed <code>histogram</code> charts over the previous table.</p>
+<p>This is ergonomic syntax sugar for chart metadata over the preceding table. Fenced chart blocks may also point at a named table or materialized result elsewhere in the same note:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+name: package_fetches_result
+#+results: query-fetches-by-company
+| day        | fetches |
+|------------+---------|
+| 2026-06-10 | 84      |
+
+#+name: package_fetches_chart
+```chart line
+x: day
+y: fetches
+source: package_fetches_result
+```</code></pre>
+<p>The current renderer supports <code>bar</code>, <code>line</code>, and bucketed <code>histogram</code> charts over the previous table or a named table source.</p>
 <p>The CLI can render chart-affiliated tables directly:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- render-chart --file report.org2 --block-id quarterly_revenue --format svg</code></pre>
 </section>

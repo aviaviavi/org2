@@ -40,6 +40,27 @@ y: fetches
 title: Fetch buckets
 source: previous-table
 \`\`\`
+
+#+name: named_revenue_chart
+\`\`\`chart line
+x: quarter
+y: revenue
+title: Revenue from named source
+source: quarterly_revenue
+\`\`\`
+
+#+name: future_source_chart
+\`\`\`chart bar
+x: day
+y: fetches
+source: future_fetches_result
+\`\`\`
+
+#+name: future_fetches_result
+| day        | fetches |
+|------------+---------|
+| 2026-06-11 | 88      |
+| 2026-06-12 | 91      |
 `, "utf8");
 
 function cli(args, input) {
@@ -73,6 +94,21 @@ assert.equal(fencedJson.source.endLine, 30);
 assert.match(fencedJson.svg, /Fetch buckets/);
 assert.match(fencedJson.svg, /Org2 histogram chart/);
 assert.match(fencedJson.svg, /<rect /);
+
+const namedSourceJson = JSON.parse(cli(["render-chart", "--file", note, "--line", "34", "--format", "json"]));
+assert.equal(namedSourceJson.ok, true);
+assert.equal(namedSourceJson.source.blockId, "named_revenue_chart");
+assert.equal(namedSourceJson.source.dataBlockId, "quarterly_revenue");
+assert.equal(namedSourceJson.source.line, 6);
+assert.equal(namedSourceJson.source.chartLine, 33);
+assert.match(namedSourceJson.svg, /Revenue from named source/);
+assert.match(namedSourceJson.svg, /<polyline /);
+
+const futureSourceJson = JSON.parse(cli(["render-chart", "--file", note, "--block-id", "future_source_chart", "--format", "json"]));
+assert.equal(futureSourceJson.ok, true);
+assert.equal(futureSourceJson.source.blockId, "future_source_chart");
+assert.equal(futureSourceJson.source.dataBlockId, "future_fetches_result");
+assert.match(futureSourceJson.svg, /<rect /);
 
 const bad = spawnSync("node", ["dist/cli.js", "render-chart", "--file", note, "--block-id", "missing", "--format", "json"], { cwd: repo, encoding: "utf8" });
 assert.notEqual(bad.status, 0);
