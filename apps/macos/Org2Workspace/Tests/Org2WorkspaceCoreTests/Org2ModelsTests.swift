@@ -768,6 +768,37 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSyntaxEditorSkipsSelectionTextReadWhenUnboundOrUnchanged() {
+    var boundText = "Plain paragraph text"
+    var selectionRange = NSRange(location: 4, length: 0)
+    let unboundEditor = OrgSyntaxTextEditor(text: .constant(boundText))
+    let unboundCoordinator = OrgSyntaxTextEditor.Coordinator(parent: unboundEditor)
+
+    XCTAssertFalse(unboundCoordinator.shouldReadTextForSelectionPublishing(
+      NSRange(location: 5, length: 0)
+    ))
+
+    let boundEditor = OrgSyntaxTextEditor(
+      text: Binding(
+        get: { boundText },
+        set: { boundText = $0 }
+      ),
+      selection: Binding(
+        get: { selectionRange },
+        set: { selectionRange = $0 }
+      )
+    )
+    let boundCoordinator = OrgSyntaxTextEditor.Coordinator(parent: boundEditor)
+
+    XCTAssertFalse(boundCoordinator.shouldReadTextForSelectionPublishing(
+      NSRange(location: 4, length: 0)
+    ))
+    XCTAssertTrue(boundCoordinator.shouldReadTextForSelectionPublishing(
+      NSRange(location: 5, length: 0)
+    ))
+  }
+
+  @MainActor
   func testSyntaxEditorDoesNotApplyStalePlainCaretSelectionWhileFocused() {
     XCTAssertEqual(
       OrgSyntaxTextEditor.clampedRange(NSRange(location: 10, length: 5), utf16Length: 12),

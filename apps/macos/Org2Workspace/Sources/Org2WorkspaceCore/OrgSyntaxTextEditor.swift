@@ -219,7 +219,9 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     func textViewDidChangeSelection(_ notification: Notification) {
       guard let textView = notification.object as? NSTextView else { return }
-      publishSelectionIfNeeded(textView.selectedRange(), in: textView.string)
+      let selectedRange = textView.selectedRange()
+      guard shouldReadTextForSelectionPublishing(selectedRange) else { return }
+      publishSelectionIfNeeded(selectedRange, in: textView.string)
     }
 
     func textDidBeginEditing(_ notification: Notification) {
@@ -437,6 +439,11 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         return
       }
       selection.wrappedValue = selectedRange
+    }
+
+    func shouldReadTextForSelectionPublishing(_ selectedRange: NSRange) -> Bool {
+      guard let selection = parent.selection else { return false }
+      return selection.wrappedValue != selectedRange
     }
 
     static func shouldPublishSelection(
