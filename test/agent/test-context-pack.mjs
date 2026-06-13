@@ -17,6 +17,23 @@ fs.writeFileSync(path.join(tmp, "support.org2"), `#+title: Scarf Support
 :ORG2_REVIEW_STATUS: reviewed
 :ORG2_VALID_AS_OF: 2026-05-15
 :ORG2_STALE_AFTER: 2099-01-01
+:OWNER: Casey
+:ASSIGNEE: openclaw
+:AGENT: codex
+:NEXT_ACTION: Draft the support response for review
+:WAITING_ON: Casey approval
+:LIFECYCLE: review
+:REQUIRES_HUMAN_APPROVAL: true
+:ALLOW_AGENT_EDIT: true
+:ALLOW_EXTERNAL_SEND: false
+:SESSION: openclaw:session:triage-1
+:RUN_ID: run-42
+:RUN_STARTED_AT: 2026-05-15T10:00:00-07:00
+:RUN_FINISHED_AT: 2026-05-15T10:20:00-07:00
+:RUN_LOG: file:runs/scarf-support-1.log
+:SOURCE_ARTIFACTS: file:tickets/scarf-support.json, artifact:reports/support-ticket-volume.csv
+:HANDOFF_SUMMARY: Response draft is ready but must be approved before sending.
+:HANDOFF_LINKS: id:decision-1
 :END:
 Support needs a deterministic context pack with citations for Scarf triage.
 See [[id:decision-1][decision note]].
@@ -79,10 +96,15 @@ const run = (...args) => execFileSync("node", ["dist/cli.js", ...args], { encodi
 const md = run("context", "scarf support triage", "--dir", tmp, "--recursive", "--budget", "8k", "--include", "sources,neighbors,backlinks");
 assert.match(md, /^# Org2 Context Pack/m);
 assert.match(md, /## Objective \/ query/);
-assert.match(md, /support\.org2:3-27/);
+assert.match(md, /support\.org2:3-/);
 assert.match(md, /## Recent timeline entries/);
 assert.match(md, /## Active TODOs \/ scheduled items/);
 assert.match(md, /TODO Scarf support triage/);
+assert.match(md, /## Collaboration state/);
+assert.match(md, /owner: Casey/);
+assert.match(md, /assignee: openclaw/);
+assert.match(md, /next: Draft the support response for review/);
+assert.match(md, /Policy: human approval: required; agent edit: allowed; external send: not allowed/);
 assert.match(md, /## Related entities and backlinks/);
 assert.match(md, /Entity: scarf/);
 assert.match(md, /## Related agent threads/);
@@ -125,6 +147,21 @@ assert.equal(json.maxChars, 8000);
 const selectedJson = JSON.parse(run("context", "--id", "scarf-support-1", "--dir", tmp, "--format", "json"));
 assert.equal(selectedJson.action, "fetch");
 assert.equal(selectedJson.id, "scarf-support-1");
+assert.equal(selectedJson.results[0].collaboration.owner, "Casey");
+assert.equal(selectedJson.results[0].collaboration.assignee, "openclaw");
+assert.equal(selectedJson.results[0].collaboration.agent, "codex");
+assert.equal(selectedJson.results[0].collaboration.nextAction, "Draft the support response for review");
+assert.equal(selectedJson.results[0].collaboration.waitingOn, "Casey approval");
+assert.equal(selectedJson.results[0].collaboration.lifecycle, "review");
+assert.equal(selectedJson.results[0].collaboration.policy.requiresHumanApproval, true);
+assert.equal(selectedJson.results[0].collaboration.policy.allowAgentEdit, true);
+assert.equal(selectedJson.results[0].collaboration.policy.allowExternalSend, false);
+assert.equal(selectedJson.results[0].collaboration.run.session, "openclaw:session:triage-1");
+assert.equal(selectedJson.results[0].collaboration.run.runId, "run-42");
+assert.equal(selectedJson.results[0].collaboration.run.sourceArtifacts.length, 2);
+assert.ok(selectedJson.results[0].collaboration.run.sourceArtifacts.some((attachment) => attachment.ref === "file:tickets/scarf-support.json"));
+assert.equal(selectedJson.results[0].collaboration.handoff.summary, "Response draft is ready but must be approved before sending.");
+assert.ok(selectedJson.results[0].collaboration.handoff.links.some((attachment) => attachment.ref === "id:decision-1" && attachment.target.id === "decision-1"));
 assert.equal(selectedJson.results[0].relatedThreads[0].id, "thread-scarf-triage");
 assert.equal(selectedJson.results[0].relatedDataLinks[0].id, "support-ticket-volume");
 assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.rowCount, 42);

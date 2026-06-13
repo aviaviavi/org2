@@ -140,6 +140,40 @@ npm run org2 -- lint --dir ~/notes --recursive --format json &gt; views/corpus-h
 <p>For prompt-ready context, <code>org2 context --id report-1 --format markdown</code> renders the selected node directly as a cited context pack. When attached agent-thread records exist, the rendered pack includes a <code>Related agent threads</code> section with the session/status and matching attachments so a client can decide whether to open an existing OpenClaw session or start a new one.</p>
 </section>
 <section class="org2-headline level-1">
+<h1 id="collaboration-and-workflow-state">Collaboration and workflow state</h1>
+<p>Shared human/agent work should keep enough routing and policy state in the Org2 document for every client to agree on what can happen next. Use normal properties on the task, report, draft, or thread heading rather than hiding that state inside one chat UI.</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* TODO Send support follow-up
+:PROPERTIES:
+:ID: support-followup-1
+:OWNER: Casey
+:ASSIGNEE: openclaw
+:AGENT: codex
+:NEXT_ACTION: Draft the reply for Casey's approval
+:WAITING_ON: Casey approval
+:LIFECYCLE: review
+:REQUIRES_HUMAN_APPROVAL: true
+:ALLOW_AGENT_EDIT: true
+:ALLOW_EXTERNAL_SEND: false
+:SESSION: openclaw:session:triage-1
+:RUN_ID: run-42
+:RUN_STARTED_AT: 2026-05-15T10:00:00-07:00
+:RUN_LOG: file:runs/support-followup-1.log
+:SOURCE_ARTIFACTS: file:tickets/support.json, artifact:reports/ticket-volume.csv
+:HANDOFF_SUMMARY: Draft is ready; do not send externally until approved.
+:HANDOFF_LINKS: id:support-decision-1
+:END:</code></pre>
+<p>The first stable convention is property-backed and intentionally small:</p>
+<ul>
+<li><p>ownership/routing: <code>OWNER</code>, <code>ASSIGNEE</code>, <code>AGENT</code>, <code>NEXT_ACTION</code>, <code>WAITING_ON</code></p></li>
+<li><p>lifecycle: <code>LIFECYCLE</code>, <code>WORKFLOW_STATE</code>, or <code>WORKFLOW_STATUS</code></p></li>
+<li><p>policy gates: <code>REQUIRES_HUMAN_APPROVAL</code>, <code>ALLOW_AGENT_EDIT</code>, <code>ALLOW_EXTERNAL_SEND</code></p></li>
+<li><p>run/session metadata: <code>SESSION</code>, <code>RUN_ID</code>, <code>RUN_STARTED_AT</code>, <code>RUN_FINISHED_AT</code>, <code>RUN_LOG</code>, <code>SOURCE_ARTIFACTS</code></p></li>
+<li><p>handoff metadata: <code>HANDOFF_SUMMARY</code>, <code>HANDOFF_NEXT_ACTION</code>, <code>HANDOFF_LINKS</code></p></li>
+</ul>
+<p><code>org2 agent fetch --id support-followup-1 --format json</code> exposes these fields under <code>collaboration</code>. Policy gates are booleans, and source/handoff references use the same typed attachment shape as agent threads, resolving known <code>id:</code>, <code>file:</code>, <code>report:</code>, <code>entity:</code>, and related refs when possible. <code>org2 context --id support-followup-1</code> renders a <code>Collaboration state</code> section with owner, assignee, lifecycle, next action, waiting state, policy gates, run metadata, and handoff summary.</p>
+<p>These conventions are not a workflow engine. They are the minimum shared state needed for CLI, Workspace, OpenClaw, Codex, and future clients to render the same next action and avoid unsafe external sends or silent canonical edits.</p>
+</section>
+<section class="org2-headline level-1">
 <h1 id="data-and-query-records">Data and query records</h1>
 <p>Data-backed reports should keep executable details and materialized artifacts as typed headings. Use <code>KIND: warehouse-query</code> for external systems, <code>KIND: dataset</code> for local/ad hoc sources, and <code>KIND: data-link</code>, <code>sql-view</code>, <code>event-stream</code>, or <code>timeline-link</code> for adjacent projections.</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* Report: package fetches
