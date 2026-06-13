@@ -21,6 +21,18 @@ fs.writeFileSync(path.join(tmp, "support.org2"), `#+title: Scarf Support
 Support needs a deterministic context pack with citations for Scarf triage.
 See [[id:decision-1][decision note]].
 
+** Data link: ticket volume
+:PROPERTIES:
+:ID: support-ticket-volume
+:KIND: warehouse-query
+:SYSTEM: clickhouse
+:QUERY_ID: support.ticket_volume.v1
+:ARTIFACT: reports/support-ticket-volume.csv
+:ROW_COUNT: 42
+:FRESHNESS: daily
+:END:
+Daily materialized support ticket counts.
+
 * DONE Old Scarf support note :scarf:
 :PROPERTIES:
 :ID: old-scarf
@@ -56,13 +68,14 @@ const run = (...args) => execFileSync("node", ["dist/cli.js", ...args], { encodi
 const md = run("context", "scarf support triage", "--dir", tmp, "--recursive", "--budget", "8k", "--include", "sources,neighbors,backlinks");
 assert.match(md, /^# Org2 Context Pack/m);
 assert.match(md, /## Objective \/ query/);
-assert.match(md, /support\.org2:3-15/);
+assert.match(md, /support\.org2:3-27/);
 assert.match(md, /## Recent timeline entries/);
 assert.match(md, /## Active TODOs \/ scheduled items/);
 assert.match(md, /TODO Scarf support triage/);
 assert.match(md, /## Related entities and backlinks/);
 assert.match(md, /Entity: scarf/);
 assert.match(md, /## Related agent threads/);
+assert.match(md, /## Related data links/);
 assert.match(md, /## Open questions \/ known uncertainty/);
 assert.match(md, /## Suggested next actions/);
 
@@ -73,6 +86,10 @@ assert.match(selected, /## Related agent threads/);
 assert.match(selected, /Thread: Scarf triage help/);
 assert.match(selected, /session: openclaw:session:triage-1/);
 assert.match(selected, /Matching attachments: id:scarf-support-1/);
+assert.match(selected, /## Related data links/);
+assert.match(selected, /Data link: ticket volume/);
+assert.match(selected, /query: support\.ticket_volume\.v1/);
+assert.match(selected, /artifact: reports\/support-ticket-volume\.csv/);
 
 const org = run("context", "scarf support triage", "--dir", tmp, "--format", "org");
 assert.match(org, /^\* Org2 Context Pack/m);
@@ -89,3 +106,5 @@ const selectedJson = JSON.parse(run("context", "--id", "scarf-support-1", "--dir
 assert.equal(selectedJson.action, "fetch");
 assert.equal(selectedJson.id, "scarf-support-1");
 assert.equal(selectedJson.results[0].relatedThreads[0].id, "thread-scarf-triage");
+assert.equal(selectedJson.results[0].relatedDataLinks[0].id, "support-ticket-volume");
+assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.rowCount, 42);

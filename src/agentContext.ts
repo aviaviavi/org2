@@ -97,6 +97,17 @@ type AgentDataLinkMetadata = {
   materialized?: string;
 };
 
+type AgentRelatedDataLink = {
+  key: string;
+  id: string | null;
+  title: string;
+  kind: AgentDataLinkKind;
+  file: string;
+  sourceRange: { startLine: number; endLine: number };
+  citation: string;
+  dataLink: AgentDataLinkMetadata;
+};
+
 type AgentNode = {
   key: string;
   kind: "file" | "heading";
@@ -119,6 +130,7 @@ type AgentNode = {
   thread?: AgentThreadMetadata;
   relatedThreads?: AgentRelatedThread[];
   dataLink?: AgentDataLinkMetadata;
+  relatedDataLinks?: AgentRelatedDataLink[];
   sources?: AgentSource[];
   backlinks?: Array<{ sourceKey: string; sourceId: string | null; sourceTitle: string; file: string; line: number; citation: string; linkType: "id" | "wiki" }>;
   neighbors?: Array<{ key: string; id: string | null; title: string; file: string; citation: string; direction: "out" | "in"; linkType: "id" | "wiki" }>;
@@ -621,11 +633,50 @@ function dataLinkMetadataFor(node: CompiledCorpusNode): AgentDataLinkMetadata | 
   };
 }
 
+function headingSubtreeEndLine(corpus: CompiledCorpus, node: CompiledCorpusNode): number {
+  if (node.kind !== "heading") return Number.POSITIVE_INFINITY;
+  const nextPeerOrAncestor = corpus.nodes
+    .filter((candidate) => candidate.file === node.file && candidate.kind === "heading" && candidate.sourceRange.startLine > node.sourceRange.startLine && (candidate.level || 0) <= (node.level || 0))
+    .sort((a, b) => a.sourceRange.startLine - b.sourceRange.startLine)[0];
+  return nextPeerOrAncestor ? nextPeerOrAncestor.sourceRange.startLine - 1 : Number.POSITIVE_INFINITY;
+}
+
+function isDescendantDataLink(corpus: CompiledCorpus, node: CompiledCorpusNode, candidate: CompiledCorpusNode): boolean {
+  if (candidate.key === node.key || candidate.file !== node.file || !dataLinkKindFor(candidate)) return false;
+  if (node.kind === "file") return true;
+  if (candidate.kind !== "heading") return false;
+  const nodeLevel = node.level || 0;
+  const candidateLevel = candidate.level || 0;
+  return candidate.sourceRange.startLine > node.sourceRange.startLine && candidate.sourceRange.startLine <= headingSubtreeEndLine(corpus, node) && candidateLevel > nodeLevel;
+}
+
+function relatedDataLinksFor(corpus: CompiledCorpus, node: CompiledCorpusNode): AgentRelatedDataLink[] {
+  if (dataLinkKindFor(node)) return [];
+  const out: AgentRelatedDataLink[] = [];
+  for (const candidate of corpus.nodes) {
+    if (!isDescendantDataLink(corpus, node, candidate)) continue;
+    const dataLink = dataLinkMetadataFor(candidate);
+    if (!dataLink) continue;
+    out.push({
+      key: candidate.key,
+      id: candidate.id,
+      title: candidate.title,
+      kind: dataLink.kind,
+      file: candidate.file,
+      sourceRange: candidate.sourceRange,
+      citation: citationFor(candidate),
+      dataLink,
+    });
+  }
+  return out.sort((a, b) => a.citation.localeCompare(b.citation) || a.title.localeCompare(b.title));
+}
+
 function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: Set<AgentInclude>, score?: { score: number; matchedTerms: string[]; selectionReason?: string[] }): AgentNode {
   const source = { file: node.file, sourceRange: node.sourceRange, citation: citationFor(node) };
   const thread = agentThreadMetadataFor(corpus, node);
   const relatedThreads = relatedThreadsFor(corpus, node);
   const dataLink = dataLinkMetadataFor(node);
+  const relatedDataLinks = relatedDataLinksFor(corpus, node);
   return {
     key: node.key,
     kind: node.kind,
@@ -646,6 +697,7 @@ function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: 
     ...(thread ? { thread } : {}),
     ...(relatedThreads.length ? { relatedThreads } : {}),
     ...(dataLink ? { dataLink } : {}),
+    ...(relatedDataLinks.length ? { relatedDataLinks } : {}),
     ...(include.has("sources") ? { sources: [source] } : {}),
     ...(include.has("backlinks") ? { backlinks: inferredBacklinksFor(corpus, node) } : {}),
     ...(include.has("neighbors") ? { neighbors: neighborsFor(corpus, node) } : {}),
@@ -698,6 +750,12 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       .reduce((byKey, thread) => byKey.set(thread.key, thread), new Map<string, AgentRelatedThread>())
       .values(),
   ).sort((a, b) => a.title.localeCompare(b.title) || a.citation.localeCompare(b.citation));
+  const relatedDataLinks = Array.from(
+    results
+      .flatMap((node) => node.relatedDataLinks || [])
+      .reduce((byKey, dataLink) => byKey.set(dataLink.key, dataLink), new Map<string, AgentRelatedDataLink>())
+      .values(),
+  ).sort((a, b) => a.citation.localeCompare(b.citation) || a.title.localeCompare(b.title));
   const profiles = payload.entityProfiles || [];
   const caveats = uniqueSorted([
     ...(payload.errors || []),
@@ -756,6 +814,24 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
     const attachments = uniqueSorted(thread.matchingAttachments.map((attachment) => attachment.ref));
     lines.push(`- ${thread.title} (${thread.citation})${details.length ? `; ${details.join("; ")}` : ""}`);
     if (attachments.length) lines.push(`  - Matching attachments: ${attachments.join(", ")}`);
+  }
+  lines.push("");
+  lines.push(`${h2} Related data links`);
+  if (relatedDataLinks.length === 0) lines.push("- None found");
+  for (const item of relatedDataLinks) {
+    const details = [
+      `kind: ${item.kind}`,
+      item.id ? `id: ${item.id}` : "",
+      item.dataLink.system ? `system: ${item.dataLink.system}` : "",
+      item.dataLink.engine ? `engine: ${item.dataLink.engine}` : "",
+      item.dataLink.queryId ? `query: ${item.dataLink.queryId}` : "",
+      item.dataLink.artifact ? `artifact: ${item.dataLink.artifact}` : "",
+      item.dataLink.result ? `result: ${item.dataLink.result}` : "",
+      item.dataLink.rowCount !== undefined ? `rows: ${item.dataLink.rowCount}` : "",
+      item.dataLink.lastRun ? `last run: ${item.dataLink.lastRun}` : "",
+      item.dataLink.freshness ? `freshness: ${item.dataLink.freshness}` : "",
+    ].filter(Boolean);
+    lines.push(`- ${item.title} (${item.citation})${details.length ? `; ${details.join("; ")}` : ""}`);
   }
   lines.push("");
   lines.push(`${h2} Open questions / known uncertainty`);
