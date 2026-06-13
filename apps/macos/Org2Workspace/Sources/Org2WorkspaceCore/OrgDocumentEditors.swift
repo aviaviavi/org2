@@ -847,6 +847,7 @@ private struct ParagraphBlockEditor: View {
   @EnvironmentObject private var store: WorkspaceStore
   let block: OrgEditableBlock
   let text: String
+  @State private var selectedRange = NSRange(location: 0, length: 0)
 
   var body: some View {
     if let media = OrgEditableMediaLink(rawText: block.rawText) {
@@ -858,11 +859,14 @@ private struct ParagraphBlockEditor: View {
 
   private var paragraphEditorContent: some View {
     VStack(alignment: .leading, spacing: 6) {
+      ParagraphInlineFormatBar(text: $store.editableBlockText, selectedRange: $selectedRange)
+
       OrgSyntaxTextEditor(
         text: $store.editableBlockText,
         showsScrollers: false,
         textInset: NSSize(width: 2, height: 4),
         focusOnAppear: true,
+        selection: $selectedRange,
         onSubmitContext: submitParagraph
       )
       .frame(minHeight: editorHeight, maxHeight: editorHeight)

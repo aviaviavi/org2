@@ -821,6 +821,26 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(set.markups.isEmpty)
   }
 
+  func testEditableInlineMarkupSetWrapsSelection() {
+    let edit = OrgEditableInlineMarkupSet.wrappingSelection(
+      in: "hello world",
+      range: NSRange(location: 6, length: 5),
+      kind: .bold
+    )
+
+    XCTAssertEqual(edit.text, "hello *world*")
+    XCTAssertEqual(edit.selectedRange, NSRange(location: 7, length: 5))
+
+    let inserted = OrgEditableInlineMarkupSet.wrappingSelection(
+      in: "hello world",
+      range: NSRange(location: 6, length: 0),
+      kind: .code
+    )
+
+    XCTAssertEqual(inserted.text, "hello `code`world")
+    XCTAssertEqual(inserted.selectedRange, NSRange(location: 7, length: 4))
+  }
+
   func testEditableSourceBlockFormatsAndSwitchesKind() {
     var source = OrgEditableSourceBlock(rawText: """
     #+BEGIN_SRC swift :results output

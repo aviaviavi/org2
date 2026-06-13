@@ -12,6 +12,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   let showsScrollers: Bool
   let textInset: NSSize
   let focusOnAppear: Bool
+  let selection: Binding<NSRange>?
   let onSubmit: (() -> Bool)?
   let onSubmitContext: ((OrgSyntaxTextEditorSubmitContext) -> Bool)?
 
@@ -21,6 +22,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     showsScrollers: Bool = true,
     textInset: NSSize = NSSize(width: 8, height: 8),
     focusOnAppear: Bool = false,
+    selection: Binding<NSRange>? = nil,
     onSubmit: (() -> Bool)? = nil,
     onSubmitContext: ((OrgSyntaxTextEditorSubmitContext) -> Bool)? = nil
   ) {
@@ -29,6 +31,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     self.showsScrollers = showsScrollers
     self.textInset = textInset
     self.focusOnAppear = focusOnAppear
+    self.selection = selection
     self.onSubmit = onSubmit
     self.onSubmitContext = onSubmitContext
   }
@@ -86,7 +89,23 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       context.coordinator.isApplyingProgrammaticChange = false
     }
 
+    if let selection {
+      let requestedSelection = Self.clampedRange(selection.wrappedValue, in: textView.string)
+      if textView.selectedRange() != requestedSelection {
+        textView.setSelectedRange(requestedSelection)
+      }
+    }
+
     context.coordinator.applyHighlighting(to: textView)
+  }
+
+  private static func clampedRange(_ range: NSRange, in text: String) -> NSRange {
+    let length = (text as NSString).length
+    let location = min(max(0, range.location), length)
+    return NSRange(
+      location: location,
+      length: min(max(0, range.length), length - location)
+    )
   }
 
   @MainActor
@@ -103,7 +122,13 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       if !isApplyingProgrammaticChange {
         parent.text = textView.string
       }
+      parent.selection?.wrappedValue = textView.selectedRange()
       applyHighlighting(to: textView)
+    }
+
+    func textViewDidChangeSelection(_ notification: Notification) {
+      guard let textView = notification.object as? NSTextView else { return }
+      parent.selection?.wrappedValue = textView.selectedRange()
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
