@@ -1076,18 +1076,30 @@ final class Org2ModelsTests: XCTestCase {
   func testParagraphFocusedInlineEditorSkipsPlainText() {
     XCTAssertFalse(ParagraphFocusedInlineEditor.shouldRender(
       text: "Plain paragraph without editable inline syntax",
+      selectedRange: NSRange(location: 6, length: 0),
       showsInlineDetails: false
     ))
     XCTAssertFalse(ParagraphFocusedInlineEditor.shouldRender(
       text: "Review [[id:abc][Alice]]",
+      selectedRange: NSRange(location: 15, length: 0),
       showsInlineDetails: true
     ))
     XCTAssertTrue(ParagraphFocusedInlineEditor.shouldRender(
       text: "Review [[id:abc][Alice]]",
+      selectedRange: NSRange(location: 15, length: 0),
       showsInlineDetails: false
     ))
     XCTAssertTrue(ParagraphFocusedInlineEditor.shouldRender(
       text: "Meet on <2026-06-13 Sat>",
+      selectedRange: NSRange(location: 12, length: 0),
+      showsInlineDetails: false
+    ))
+
+    let linkedPrefix = "See [[id:abc][Alice]]. " + String(repeating: "plain text ", count: 160)
+    let farPlainRange = NSRange(location: (linkedPrefix as NSString).length, length: 0)
+    XCTAssertFalse(ParagraphFocusedInlineEditor.shouldRender(
+      text: linkedPrefix,
+      selectedRange: farPlainRange,
       showsInlineDetails: false
     ))
 
@@ -1098,6 +1110,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertGreaterThan((longRichParagraph as NSString).length, OrgEditableInlineToken.focusedScanUTF16Limit)
     XCTAssertFalse(ParagraphFocusedInlineEditor.shouldRender(
       text: longRichParagraph,
+      selectedRange: NSRange(location: 6, length: 0),
       showsInlineDetails: false
     ))
     XCTAssertNil(ParagraphFocusedInlineEditor.focusedToken(
@@ -1680,6 +1693,24 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(OrgInlineParser.hasInlineSyntaxCandidate(raw))
     XCTAssertEqual(OrgEditableInlineToken.boundedUTF16Length(in: raw), nsRaw.length)
     XCTAssertNil(OrgEditableInlineToken.focused(in: raw, selection: NSRange(location: nsRaw.length / 2, length: 0)))
+  }
+
+  func testEditableInlineTokenChecksFocusedSyntaxNearSelection() {
+    let raw = "See [[id:abc][Alice]]. " + String(repeating: "plain text ", count: 160)
+    let nsRaw = raw as NSString
+    let aliceRange = nsRaw.range(of: "Alice")
+    let farPlainRange = NSRange(location: nsRaw.length, length: 0)
+
+    XCTAssertTrue(OrgInlineParser.hasInlineSyntaxCandidate(raw))
+    XCTAssertTrue(OrgEditableInlineToken.hasFocusedInlineSyntaxCandidate(
+      in: raw,
+      selection: NSRange(location: aliceRange.location, length: 0)
+    ))
+    XCTAssertFalse(OrgEditableInlineToken.hasFocusedInlineSyntaxCandidate(
+      in: raw,
+      selection: farPlainRange
+    ))
+    XCTAssertNil(OrgEditableInlineToken.focused(in: raw, selection: farPlainRange))
   }
 
   func testEditableInlineTokenSkipsFocusedScanForLargeParagraphs() {

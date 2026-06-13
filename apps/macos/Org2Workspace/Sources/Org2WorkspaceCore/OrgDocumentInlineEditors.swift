@@ -58,10 +58,14 @@ struct ParagraphFocusedInlineEditor: View {
   @Binding var selectedRange: NSRange
   let token: OrgEditableInlineToken
 
-  nonisolated static func shouldRender(text: String, showsInlineDetails: Bool) -> Bool {
+  nonisolated static func shouldRender(
+    text: String,
+    selectedRange: NSRange,
+    showsInlineDetails: Bool
+  ) -> Bool {
     !showsInlineDetails
       && OrgEditableInlineToken.boundedUTF16Length(in: text) != nil
-      && OrgInlineParser.hasInlineSyntaxCandidate(text)
+      && OrgEditableInlineToken.hasFocusedInlineSyntaxCandidate(in: text, selection: selectedRange)
   }
 
   nonisolated static func focusedToken(
@@ -69,7 +73,7 @@ struct ParagraphFocusedInlineEditor: View {
     selectedRange: NSRange,
     showsInlineDetails: Bool
   ) -> OrgEditableInlineToken? {
-    guard shouldRender(text: text, showsInlineDetails: showsInlineDetails) else { return nil }
+    guard shouldRender(text: text, selectedRange: selectedRange, showsInlineDetails: showsInlineDetails) else { return nil }
     return OrgEditableInlineToken.focused(in: text, selection: selectedRange)
   }
 

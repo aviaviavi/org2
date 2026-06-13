@@ -849,15 +849,15 @@ public enum OrgEditableInlineToken: Equatable, Sendable {
     guard let textLength = boundedUTF16Length(in: rawText, maxUTF16Length: maxUTF16Length) else {
       return nil
     }
-    guard OrgInlineParser.hasInlineSyntaxCandidate(rawText) else {
-      return nil
-    }
 
     let safeLocation = min(max(0, selection.location), textLength)
     let safeSelection = NSRange(
       location: safeLocation,
       length: min(max(0, selection.length), max(0, textLength - safeLocation))
     )
+    guard hasFocusedInlineSyntaxCandidate(in: rawText, selection: safeSelection) else {
+      return nil
+    }
 
     if textLength > focusedFullParseUTF16Limit {
       return focusedInLocalWindow(rawText, selection: safeSelection, textLength: textLength)
@@ -881,6 +881,14 @@ public enum OrgEditableInlineToken: Equatable, Sendable {
     maxUTF16Length: Int = focusedScanUTF16Limit
   ) -> Bool {
     maxUTF16Length >= 0 && utf16Length <= maxUTF16Length
+  }
+
+  public static func hasFocusedInlineSyntaxCandidate(in rawText: String, selection: NSRange) -> Bool {
+    OrgInlineParser.hasInlineSyntaxCandidate(
+      rawText,
+      near: selection,
+      radius: focusedLocalScanUTF16Radius
+    )
   }
 
   public static func boundedUTF16Length(
