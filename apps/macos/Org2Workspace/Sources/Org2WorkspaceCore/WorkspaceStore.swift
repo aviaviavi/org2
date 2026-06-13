@@ -448,6 +448,14 @@ public final class WorkspaceStore: ObservableObject {
     isEditingEntry = true
   }
 
+  public func beginEditingCurrentScope() {
+    if selectedEntrySourceMode == .page {
+      beginEditingSelectedEntry()
+    } else {
+      beginEditingVisibleBlock()
+    }
+  }
+
   public func beginEditingVisibleBlock() {
     guard selectedEntrySource?.isEditable == true else {
       statusText = "No editable source loaded"
