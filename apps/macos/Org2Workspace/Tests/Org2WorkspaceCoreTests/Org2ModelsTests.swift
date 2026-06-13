@@ -1444,6 +1444,13 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(anchoredWindow.hasNext)
   }
 
+  func testRenderedRowChromeUsesStableHiddenState() {
+    XCTAssertEqual(RenderedRowChrome.controlsOpacity(isVisible: true), 1)
+    XCTAssertEqual(RenderedRowChrome.controlsOpacity(isVisible: false), 0)
+    XCTAssertTrue(RenderedRowChrome.allowsHitTesting(isVisible: true))
+    XCTAssertFalse(RenderedRowChrome.allowsHitTesting(isVisible: false))
+  }
+
   func testRenderedEntryWindowExpandsAndKeepsSelectionVisible() {
     let blocks = (1...500).map { line in
       OrgEditableBlock(
