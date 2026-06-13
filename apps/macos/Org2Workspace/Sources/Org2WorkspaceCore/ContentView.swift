@@ -1055,7 +1055,18 @@ private struct EntryBodyView: View {
             .foregroundStyle(.secondary)
           }
         } else {
-          OrgRenderedEntryView(blocks: store.selectedRenderedBlocks)
+          OrgRenderedEntryView(
+            blocks: store.selectedRenderedBlocks,
+            blocksRenderSignature: store.selectedRenderedBlocksRenderSignature,
+            source: store.selectedEntrySource,
+            corpusRoot: store.corpusRoot,
+            selectedBlockID: store.selectedBlockID,
+            selectedBlockIndex: store.selectedBlockID.flatMap { store.selectedRenderedBlockIndexes[$0] },
+            editingBlockID: store.editingBlockID,
+            isSavingBlock: store.isSavingBlock,
+            sourceBlockRuns: store.sourceBlockRuns
+          )
+          .equatable()
         }
       } else {
         fallbackBody(location)
