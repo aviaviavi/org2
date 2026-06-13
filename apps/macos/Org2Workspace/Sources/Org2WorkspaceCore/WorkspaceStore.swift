@@ -414,6 +414,24 @@ public final class WorkspaceStore: ObservableObject {
     isEditingEntry = true
   }
 
+  public func beginEditingVisibleBlock() {
+    guard selectedEntrySource?.isEditable == true else {
+      statusText = "No editable source loaded"
+      return
+    }
+
+    if let selectedBlock {
+      beginEditingBlock(selectedBlock)
+      return
+    }
+
+    guard let firstEditableBlock = selectableBlocks.first else {
+      statusText = "No editable block loaded"
+      return
+    }
+    beginEditingBlock(firstEditableBlock)
+  }
+
   public func cancelEditingSelectedEntry() {
     editableEntryText = selectedEntrySource?.text ?? ""
     isEditingEntry = false
@@ -2188,7 +2206,7 @@ public final class WorkspaceStore: ObservableObject {
     case "o":
       openSelectedLocation()
     case "e":
-      beginEditingSelectedEntry()
+      beginEditingVisibleBlock()
     case "p":
       priorityModeActive = true
       statusText = "Priority mode: press a, b, c, or 0 to clear"

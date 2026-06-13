@@ -1029,7 +1029,7 @@ private struct DetailHeader: View {
           }
         } else {
           Button {
-            store.beginEditingSelectedEntry()
+            store.beginEditingVisibleBlock()
           } label: {
             Label("Edit", systemImage: "square.and.pencil")
           }
