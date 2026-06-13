@@ -69,6 +69,7 @@ export type DataQueryResult = {
 export type RunDataQueryOptions = {
   file?: string;
   resultId?: string;
+  resultLine?: number;
   duckdbPath?: string;
   includeScript?: boolean;
 };
@@ -482,6 +483,10 @@ function materializedResultTable(resultId: string, rows: Record<string, unknown>
   return `#+query-data: result=${resultId} rows=${rows.length} query_sha256=${provenance.querySha256} script_sha256=${provenance.scriptSha256}\n#+name: ${resultId}\n#+results: query-data-${resultId}\n${rowsToOrgTable(rows)}`;
 }
 
+function selectSqlBlockByLine(blocks: DataQuerySqlBlock[], line: number): DataQuerySqlBlock | undefined {
+  return blocks.find((block) => line >= block.line && line <= block.endLine) || blocks.find((block) => block.line >= line);
+}
+
 export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}): DataQueryResult {
   const file = opts.file;
   const baseDir = file ? path.dirname(path.resolve(file)) : process.cwd();
@@ -527,11 +532,13 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
     seenViewIds.add(view.id);
   }
 
-  const resultId = opts.resultId?.trim() || (sqlBlocks.length === 1 ? sqlBlocks[0]?.resultId : "");
-  const selected = resultId ? sqlBlocks.find((block) => block.resultId === resultId) : undefined;
+  const selectedByLine = opts.resultLine && opts.resultLine > 0 ? selectSqlBlockByLine(sqlBlocks, opts.resultLine) : undefined;
+  const resultId = opts.resultId?.trim() || selectedByLine?.resultId || (sqlBlocks.length === 1 ? sqlBlocks[0]?.resultId : "");
+  const selected = selectedByLine || (resultId ? sqlBlocks.find((block) => block.resultId === resultId) : undefined);
   if (datasets.length === 0) diagnostics.push(diagnostic("No dataset blocks found"));
   if (sqlBlocks.length === 0) diagnostics.push(diagnostic("No SQL result blocks found"));
-  if (!resultId && sqlBlocks.length > 1) diagnostics.push(diagnostic("Multiple SQL result blocks found; pass --results NAME"));
+  if (!resultId && sqlBlocks.length > 1) diagnostics.push(diagnostic("Multiple SQL result blocks found; pass --results NAME or --line N"));
+  if (opts.resultLine && opts.resultLine > 0 && !selectedByLine) diagnostics.push(diagnostic(`No SQL result block found at or after line ${opts.resultLine}`, { line: opts.resultLine }));
   if (resultId && !selected) diagnostics.push(diagnostic(`No SQL result block found for "${resultId}"`, { blockId: resultId }));
 
   if (diagnostics.some((item) => item.severity === "error") || !selected) {

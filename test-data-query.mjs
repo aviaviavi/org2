@@ -219,6 +219,13 @@ function cli(args, opts = {}) {
   return execFileSync("node", ["dist/cli.js", ...args], { cwd: repo, encoding: "utf8", ...opts });
 }
 
+function lineOf(file, needle) {
+  const lines = fs.readFileSync(file, "utf8").split("\n");
+  const index = lines.findIndex((line) => line.includes(needle));
+  assert.notEqual(index, -1, `missing ${needle}`);
+  return String(index + 1);
+}
+
 const json = JSON.parse(cli(["query-data", "--file", note, "--results", "fetches_by_state", "--duckdb", fakeDuckdb, "--format", "json", "--include-script"]));
 assert.equal(json.ok, true);
 assert.equal(json.engine, "duckdb");
@@ -241,6 +248,12 @@ assert.match(org, /^#\+query-data: result=fetches_by_state rows=2 query_sha256=[
 assert.match(org, /#\+name: fetches_by_state/);
 assert.match(org, /\| state \| fetches \|/);
 assert.match(org, /\| CA    \| 42      \|/);
+
+const lineJson = JSON.parse(cli(["query-data", "--file", note, "--line", lineOf(note, "SELECT state"), "--duckdb", fakeDuckdb, "--format", "json"]));
+assert.equal(lineJson.ok, true);
+assert.equal(lineJson.resultId, "fetches_by_state");
+assert.equal(lineJson.source.line, Number(lineOf(note, "```sql results=fetches_by_state")));
+assert.equal(lineJson.rows[0].state, "CA");
 
 const orgStyleByName = JSON.parse(cli(["query-data", "--file", orgStyleNote, "--results", "fetches_by_state_src", "--duckdb", fakeDuckdb, "--format", "json"]));
 assert.equal(orgStyleByName.ok, true);
@@ -294,6 +307,14 @@ assert.equal(stdinJson.resultId, "fetches_total");
 assert.equal(stdinJson.source.file, undefined);
 assert.equal(stdinJson.datasets[0].sourceTable, "raw_fetches");
 assert.equal(stdinJson.rows[0].fetches, 66);
+
+const stdinLineJson = JSON.parse(cli(["query-data", "--stdin", "--line", lineOf(tableNote, "SELECT sum(fetches)"), "--duckdb", fakeDuckdb, "--format", "json"], {
+  input: fs.readFileSync(tableNote, "utf8"),
+}));
+assert.equal(stdinLineJson.ok, true);
+assert.equal(stdinLineJson.resultId, "fetches_total");
+assert.equal(stdinLineJson.source.file, undefined);
+assert.equal(stdinLineJson.rows[0].fetches, 66);
 
 const bad = spawnSync("node", ["dist/cli.js", "query-data", "--file", note, "--results", "missing", "--duckdb", fakeDuckdb, "--format", "json"], { cwd: repo, encoding: "utf8" });
 assert.notEqual(bad.status, 0);
