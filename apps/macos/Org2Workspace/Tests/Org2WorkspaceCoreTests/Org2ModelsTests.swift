@@ -2303,6 +2303,58 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testLegacyEntryEditStateKeepsRenderedSourceLoaded() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-rendered-entry-edit-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("rendered-entry-edit.org2")
+    try """
+    #+TITLE: Rendered Entry Edit Test
+
+    * TODO Parent
+    Body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 3,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    store.beginEditingSelectedEntry()
+    store.selectedRenderedBlocks = []
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    XCTAssertTrue(store.isEditingEntry)
+    XCTAssertTrue(store.canSaveActiveEdit)
+    XCTAssertFalse(store.selectedRenderedBlocks.isEmpty)
+    XCTAssertTrue(store.selectedRenderedBlocks.contains {
+      if case .heading(let heading) = $0.rendered {
+        return heading.title == "Parent"
+      }
+      return false
+    })
+  }
+
+  @MainActor
   func testSavesRenderedBlockInPlace() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-block-edit-\(UUID().uuidString)", isDirectory: true)

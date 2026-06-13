@@ -399,10 +399,8 @@ public final class WorkspaceStore: ObservableObject {
       selectedEntrySource = source
       if isEditingEntry {
         editableEntryText = source.text
-        isRenderingEntrySource = false
-      } else {
-        renderEntrySource(source, generation: generation)
       }
+      renderEntrySource(source, generation: generation)
     } catch {
       guard generation == entrySourceLoadGeneration,
             selectedLocationMatches(location)
