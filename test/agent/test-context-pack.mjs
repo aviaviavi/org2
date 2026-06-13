@@ -21,6 +21,18 @@ fs.writeFileSync(path.join(tmp, "support.org2"), `#+title: Scarf Support
 Support needs a deterministic context pack with citations for Scarf triage.
 See [[id:decision-1][decision note]].
 
+** Data link: ticket volume
+:PROPERTIES:
+:ID: support-ticket-volume
+:KIND: warehouse-query
+:SYSTEM: clickhouse
+:QUERY_ID: support.ticket_volume.v1
+:ARTIFACT: reports/support-ticket-volume.csv
+:ROW_COUNT: 42
+:FRESHNESS: daily
+:END:
+Daily materialized support ticket counts.
+
 * DONE Old Scarf support note :scarf:
 :PROPERTIES:
 :ID: old-scarf
@@ -28,6 +40,29 @@ See [[id:decision-1][decision note]].
 :UPDATED: 2020-01-01
 :END:
 Old support context.
+
+* Thread: Scarf triage help
+:PROPERTIES:
+:ID: thread-scarf-triage
+:KIND: agent-thread
+:AGENT: openclaw
+:SESSION: openclaw:session:triage-1
+:STATUS: active
+:CONTEXT: id:scarf-support-1
+:STORAGE: summary
+:END:
+Working notes for support triage.
+
+* Data catalog: support satisfaction score
+:PROPERTIES:
+:ID: support-satisfaction-score
+:KIND: dataset
+:PATH: reports/support-satisfaction.csv
+:ROW_COUNT: 5
+:FRESHNESS: weekly
+:CONTEXT: id:scarf-support-1
+:END:
+External catalog entry for [[id:scarf-support-1][Scarf support triage]].
 `, "utf8");
 fs.writeFileSync(path.join(tmp, "decisions.org2"), `#+title: Decisions
 
@@ -44,14 +79,37 @@ const run = (...args) => execFileSync("node", ["dist/cli.js", ...args], { encodi
 const md = run("context", "scarf support triage", "--dir", tmp, "--recursive", "--budget", "8k", "--include", "sources,neighbors,backlinks");
 assert.match(md, /^# Org2 Context Pack/m);
 assert.match(md, /## Objective \/ query/);
-assert.match(md, /support\.org2:3-15/);
+assert.match(md, /support\.org2:3-27/);
 assert.match(md, /## Recent timeline entries/);
 assert.match(md, /## Active TODOs \/ scheduled items/);
 assert.match(md, /TODO Scarf support triage/);
 assert.match(md, /## Related entities and backlinks/);
 assert.match(md, /Entity: scarf/);
+assert.match(md, /## Related agent threads/);
+assert.match(md, /## Related data links/);
 assert.match(md, /## Open questions \/ known uncertainty/);
 assert.match(md, /## Suggested next actions/);
+
+const selected = run("context", "--id", "scarf-support-1", "--dir", tmp, "--format", "markdown");
+assert.match(selected, /# Org2 Context Pack/);
+assert.match(selected, /- scarf-support-1/);
+assert.match(selected, /## Related agent threads/);
+assert.match(selected, /Thread: Scarf triage help/);
+assert.match(selected, /session: openclaw:session:triage-1/);
+assert.match(selected, /Matching attachments: id:scarf-support-1/);
+assert.match(selected, /## Related data links/);
+assert.match(selected, /Data link: ticket volume/);
+assert.match(selected, /query: support\.ticket_volume\.v1/);
+assert.match(selected, /artifact: reports\/support-ticket-volume\.csv/);
+assert.match(selected, /Data catalog: support satisfaction score/);
+assert.match(selected, /Matching attachments: id:scarf-support-1/);
+
+const selectedDataLink = run("context", "--id", "support-ticket-volume", "--dir", tmp, "--format", "markdown");
+assert.match(selectedDataLink, /## Related data links/);
+assert.match(selectedDataLink, /Data link: ticket volume/);
+assert.match(selectedDataLink, /kind: warehouse-query/);
+assert.match(selectedDataLink, /query: support\.ticket_volume\.v1/);
+assert.match(selectedDataLink, /rows: 42/);
 
 const org = run("context", "scarf support triage", "--dir", tmp, "--format", "org");
 assert.match(org, /^\* Org2 Context Pack/m);
@@ -63,3 +121,11 @@ assert.equal(json.action, "bundle");
 assert.equal(json.query, "scarf support triage");
 assert.ok(json.context.citations[0].citation.includes("support.org2"));
 assert.equal(json.maxChars, 8000);
+
+const selectedJson = JSON.parse(run("context", "--id", "scarf-support-1", "--dir", tmp, "--format", "json"));
+assert.equal(selectedJson.action, "fetch");
+assert.equal(selectedJson.id, "scarf-support-1");
+assert.equal(selectedJson.results[0].relatedThreads[0].id, "thread-scarf-triage");
+assert.equal(selectedJson.results[0].relatedDataLinks[0].id, "support-ticket-volume");
+assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.rowCount, 42);
+assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-satisfaction-score" && item.matchingAttachments.some((attachment) => attachment.ref === "id:scarf-support-1")));

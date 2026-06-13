@@ -1,6 +1,6 @@
 #+TITLE: Features
 
-Org2 is a local-first knowledge compiler rather than a parser demo or editor replacement: it turns raw plain-text notes into structured semantics, then derives views, checks, editor behavior, and publishable artifacts from that shared model.
+Org2 is a local-first context compiler rather than a parser demo or editor replacement: it turns raw plain-text notes, events, files, conversations, data records, and agent work into structured semantics, then derives views, checks, editor behavior, Workspace surfaces, and publishable artifacts from that shared model.
 
 * Compiler workflow
 
@@ -9,9 +9,9 @@ The central loop is:
 1. capture raw source material and working notes in plain files,
 2. parse headings, tasks, links, drawers, properties, timestamps, blocks, tables, and source ranges,
 3. resolve IDs, backlinks, planning state, artifact roles, provenance, and graph relationships,
-4. compile that corpus into useful outputs: agendas, diagnostics, graph views, editor intelligence, HTML pages, and published sites.
+4. compile that corpus into useful outputs: agendas, diagnostics, graph views, entity pages, agent context, editor intelligence, HTML pages, and published sites.
 
-Because every output comes from the same semantic model, Org2 can support planning, knowledge management, publishing, and automation without locking you into one app.
+Because every output comes from the same semantic model, Org2 can support planning, knowledge management, data-backed reports, publishing, and automation without locking you into one app.
 
 * Core workflow surface
 
@@ -25,8 +25,23 @@ What already works well today:
 - HTML export and multi-file publishing
 - Cited workspace search/query for asking factual questions against source notes
 - Roam-style IDs, backlinks, dailies, node creation, linkify previews with semantic/alias-aware suggestions, AI-assisted review reports, and graph reports
+- Durable agent-thread and data-link metadata for Workspace clients and external agents
 - Org-crypt subtree encryption/decryption workflows, including per-subtree multi-recipient encryption for user/device/agent access without putting plaintext in a vendor database
 - LSP-backed editor features
+
+* Workspace and context records
+
+Org2 Workspace is the product direction for focused clients over the same local corpus. Agenda review, entity pages, meeting memory, search, OpenClaw threads, and data-backed reports should all use parser/compiler output instead of private app state.
+
+The format already has the building blocks for that direction:
+
+- TODOs, scheduled/deadline timestamps, priorities, effort, and tags for agenda surfaces,
+- IDs, aliases, backlinks, and file links for entity and graph navigation,
+- =KIND: agent-thread= records with selected context, session/transcript references, status, and durable outputs,
+- =KIND: warehouse-query=, =dataset=, =data-link=, =sql-view=, =event-stream=, and =timeline-link= records for report evidence,
+- artifact role/provenance metadata for generated drafts, compiled views, and published outputs.
+
+This keeps Org2 useful both as a personal knowledge base and as an organizational context layer over notes, meetings, tickets, repos, files, metrics, and agent work.
 
 
 * Scoped encryption for agents
