@@ -586,6 +586,21 @@ private struct RenderedEncryptedBlockView: View {
   let decrypt: (@MainActor @Sendable () -> Void)?
 
   var body: some View {
+    if let decrypt {
+      Button {
+        decrypt()
+      } label: {
+        cardContent
+      }
+      .buttonStyle(.plain)
+      .help("Decrypt this subtree to edit the plaintext.")
+    } else {
+      cardContent
+        .help("Decrypt this subtree to edit the plaintext.")
+    }
+  }
+
+  private var cardContent: some View {
     HStack(spacing: 10) {
       WorkspaceIconBadge(systemImage: "lock.fill", tint: .accentColor, fill: Color.accentColor.opacity(0.10))
 
@@ -599,15 +614,16 @@ private struct RenderedEncryptedBlockView: View {
 
       Spacer(minLength: 0)
 
-      if let decrypt {
-        Button {
-          decrypt()
-        } label: {
-          Label("Decrypt", systemImage: "lock.open")
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-      }
+      Label("Decrypt", systemImage: "lock.open")
+        .font(.caption.weight(.medium))
+        .padding(.vertical, 3)
+        .padding(.horizontal, 8)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(
+          RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .stroke(WorkspaceDesign.hairline)
+        )
+        .opacity(decrypt == nil ? 0 : 1)
     }
     .padding(.vertical, 7)
     .padding(.horizontal, 10)
@@ -617,7 +633,7 @@ private struct RenderedEncryptedBlockView: View {
         .stroke(WorkspaceDesign.hairline)
     )
     .frame(maxWidth: 760, alignment: .leading)
-    .help("Decrypt this subtree to edit the plaintext.")
+    .contentShape(Rectangle())
   }
 
   private func formattedBytes(_ count: Int) -> String {
