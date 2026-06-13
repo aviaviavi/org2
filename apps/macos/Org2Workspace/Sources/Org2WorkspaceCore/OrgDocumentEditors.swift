@@ -687,39 +687,82 @@ private struct PropertyDrawerBlockEditor: View {
   }
 
   var body: some View {
-    BlockEditorContainer(
-      block: block,
-      title: "Properties",
-      previewText: drawer.formattedRawText,
-      onSave: { store.editableBlockText = drawer.formattedRawText }
-    ) {
-      VStack(alignment: .leading, spacing: 8) {
-        if drawer.rows.isEmpty {
-          HStack(spacing: 8) {
-            Image(systemName: "tag")
-              .foregroundStyle(.secondary)
-            Text("No properties")
-              .font(.callout)
-              .foregroundStyle(.secondary)
-          }
-          .padding(.vertical, 4)
-        } else {
-          VStack(alignment: .leading, spacing: 6) {
-            ForEach(Array(drawer.rows.enumerated()), id: \.offset) { index, row in
-              propertyRow(index: index, row: row)
-            }
-          }
-        }
+    VStack(alignment: .leading, spacing: 0) {
+      HStack(spacing: 8) {
+        Label("Properties", systemImage: "tag")
+          .font(.caption.weight(.medium))
+          .foregroundStyle(.secondary)
 
         Button {
           drawer.addProperty()
           focusedProperty = .key(max(0, drawer.rows.count - 1))
         } label: {
-          Label("Add Property", systemImage: "plus")
+          Image(systemName: "plus")
         }
-        .controlSize(.small)
+        .buttonStyle(.borderless)
+        .help("Add property")
+
+        Text("line \(block.displayRange)")
+          .font(.caption.monospacedDigit())
+          .foregroundStyle(.tertiary)
+
+        Spacer(minLength: 0)
+
+        if store.isSavingBlock {
+          ProgressView()
+            .controlSize(.small)
+        }
+
+        Button {
+          saveProperties()
+        } label: {
+          Image(systemName: "checkmark")
+        }
+        .buttonStyle(.borderless)
+        .keyboardShortcut("s", modifiers: [.command])
+        .disabled(store.isSavingBlock)
+        .help("Save")
+
+        Button {
+          store.cancelEditingBlock()
+        } label: {
+          Image(systemName: "xmark")
+        }
+        .buttonStyle(.borderless)
+        .keyboardShortcut(.cancelAction)
+        .disabled(store.isSavingBlock)
+        .help("Cancel")
+      }
+      .padding(.horizontal, 10)
+      .padding(.vertical, 8)
+      .background(Color.secondary.opacity(0.07))
+
+      if drawer.rows.isEmpty {
+        HStack(spacing: 8) {
+          Image(systemName: "tag")
+            .foregroundStyle(.secondary)
+          Text("No properties")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+        .padding(10)
+      } else {
+        VStack(alignment: .leading, spacing: 0) {
+          ForEach(Array(drawer.rows.enumerated()), id: \.offset) { index, row in
+            propertyRow(index: index, row: row)
+            if index < drawer.rows.count - 1 {
+              Divider()
+            }
+          }
+        }
+        .background(Color(nsColor: .textBackgroundColor))
       }
     }
+    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 7, style: .continuous)
+        .stroke(Color.accentColor.opacity(0.24))
+    )
     .onAppear {
       if focusedProperty == nil, !drawer.rows.isEmpty {
         focusedProperty = .value(0)
@@ -729,9 +772,14 @@ private struct PropertyDrawerBlockEditor: View {
 
   private func propertyRow(index: Int, row: OrgEditablePropertyRow) -> some View {
     HStack(alignment: .firstTextBaseline, spacing: 8) {
+      Text(":")
+        .font(.caption.monospaced().weight(.medium))
+        .foregroundStyle(.tertiary)
+
       TextField("Key", text: propertyKeyBinding(index))
-        .textFieldStyle(.roundedBorder)
-        .font(.callout.monospaced())
+        .textFieldStyle(.plain)
+        .font(.callout.monospaced().weight(.medium))
+        .foregroundStyle(.secondary)
         .frame(width: 150)
         .focused($focusedProperty, equals: .key(index))
         .onSubmit {
@@ -739,12 +787,16 @@ private struct PropertyDrawerBlockEditor: View {
         }
 
       TextField("Value", text: propertyValueBinding(index))
-        .textFieldStyle(.roundedBorder)
+        .textFieldStyle(.plain)
         .font(.callout)
         .focused($focusedProperty, equals: .value(index))
         .onSubmit {
           saveProperties()
         }
+
+      Text(":")
+        .font(.caption.monospaced().weight(.medium))
+        .foregroundStyle(.tertiary)
 
       Button {
         drawer.removeProperty(at: index)
@@ -755,6 +807,13 @@ private struct PropertyDrawerBlockEditor: View {
       .foregroundStyle(.secondary)
       .help("Delete \(row.normalizedKey.isEmpty ? "property" : row.normalizedKey)")
     }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 7)
+    .background(rowBackground(index))
+  }
+
+  private func rowBackground(_ index: Int) -> Color {
+    index.isMultiple(of: 2) ? Color.clear : Color.secondary.opacity(0.035)
   }
 
   private func propertyKeyBinding(_ index: Int) -> Binding<String> {
