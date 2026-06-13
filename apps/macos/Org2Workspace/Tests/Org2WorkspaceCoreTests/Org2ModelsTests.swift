@@ -1328,9 +1328,12 @@ final class Org2ModelsTests: XCTestCase {
       selectedBlockIndex: nil
     )
     XCTAssertEqual(topWindow.range.lowerBound, 0)
+    XCTAssertEqual(topWindow.range.upperBound, 80)
     XCTAssertLessThan(topWindow.range.upperBound, blocks.count)
     XCTAssertFalse(topWindow.hasPrevious)
     XCTAssertTrue(topWindow.hasNext)
+    XCTAssertFalse(OrgRenderedEntryView.allowsHoverChrome(blockCount: blocks.count))
+    XCTAssertTrue(OrgRenderedEntryView.allowsHoverChrome(blockCount: 80))
 
     let selectedIndex = 360
     let anchoredWindow = OrgRenderedEntryView.visibleWindow(

@@ -27,6 +27,7 @@ struct OrgRenderedEntryView: View {
       selectedBlockIndex: selectedBlockIndex
     )
     let visibleBlocks = blocks[visibleWindow.range]
+    let allowsHoverChrome = Self.allowsHoverChrome(blockCount: blocks.count)
 
     LazyVStack(alignment: .leading, spacing: 8) {
       if visibleWindow.hasPrevious {
@@ -48,6 +49,7 @@ struct OrgRenderedEntryView: View {
           canMoveDown: moveAvailabilityValues[block.id]?.down == true,
           sourceFile: sourceFile,
           corpusRoot: corpusRoot,
+          allowsHoverChrome: allowsHoverChrome,
           actions: actions(for: block),
           inlineActions: inlineActions(for: block, isSourceEditable: isSourceEditable)
         )
@@ -211,8 +213,13 @@ struct OrgRenderedEntryView: View {
     return "\(source.file):\(source.startLine):\(source.isSubtree):\(source.isEditable)"
   }
 
-  nonisolated private static let initialRenderedBlockLimit = 120
-  private static let renderedBlockPageSize = 120
+  nonisolated static func allowsHoverChrome(blockCount: Int) -> Bool {
+    blockCount <= hoverChromeBlockLimit
+  }
+
+  nonisolated private static let initialRenderedBlockLimit = 80
+  private static let renderedBlockPageSize = 80
+  nonisolated private static let hoverChromeBlockLimit = 180
   nonisolated private static let selectedBlockAnchorThreshold = 120
   nonisolated private static let selectedBlockLookbehind = 24
   nonisolated private static let selectedBlockLookahead = 48
@@ -304,6 +311,7 @@ private struct OrgRenderedEntryRow: View, Equatable {
   let canMoveDown: Bool
   let sourceFile: String?
   let corpusRoot: URL?
+  let allowsHoverChrome: Bool
   let actions: RenderedBlockActions
   let inlineActions: RenderedBlockInlineActions
 
@@ -317,6 +325,7 @@ private struct OrgRenderedEntryRow: View, Equatable {
         && lhs.isSelected == rhs.isSelected
         && lhs.sourceFile == rhs.sourceFile
         && lhs.corpusRoot == rhs.corpusRoot
+        && lhs.allowsHoverChrome == rhs.allowsHoverChrome
         && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
         && lhs.inlineActions.sourceBlockRunState == rhs.inlineActions.sourceBlockRunState
     }
@@ -328,6 +337,7 @@ private struct OrgRenderedEntryRow: View, Equatable {
       && lhs.canMoveDown == rhs.canMoveDown
       && lhs.sourceFile == rhs.sourceFile
       && lhs.corpusRoot == rhs.corpusRoot
+      && lhs.allowsHoverChrome == rhs.allowsHoverChrome
       && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
       && lhs.inlineActions.sourceBlockRunState == rhs.inlineActions.sourceBlockRunState
   }
@@ -342,6 +352,7 @@ private struct OrgRenderedEntryRow: View, Equatable {
         isSelected: isSelected,
         canMoveUp: canMoveUp,
         canMoveDown: canMoveDown,
+        allowsHoverChrome: allowsHoverChrome,
         actions: actions
       ) {
         RenderedBlockView(
@@ -467,6 +478,7 @@ private struct EditableRenderedBlockView<Content: View>: View {
   let isSelected: Bool
   let canMoveUp: Bool
   let canMoveDown: Bool
+  let allowsHoverChrome: Bool
   let actions: RenderedBlockActions
   @ViewBuilder let content: Content
   @State private var isHovered = false
@@ -489,7 +501,10 @@ private struct EditableRenderedBlockView<Content: View>: View {
         .stroke(isSelected ? Color.accentColor.opacity(0.32) : Color.clear)
     )
     .contentShape(Rectangle())
-    .onHover { isHovered = $0 }
+    .onHover { hovering in
+      guard allowsHoverChrome else { return }
+      isHovered = hovering
+    }
     .onTapGesture(count: 1) {
       actions.select()
       if startsEditingOnSingleClick {
@@ -508,14 +523,14 @@ private struct EditableRenderedBlockView<Content: View>: View {
     if isSelected {
       return Color.accentColor.opacity(0.075)
     }
-    if isHovered {
+    if allowsHoverChrome && isHovered {
       return Color.secondary.opacity(0.08)
     }
     return .clear
   }
 
   private var showsControls: Bool {
-    isSourceEditable && (isHovered || isSelected)
+    isSourceEditable && (isSelected || (allowsHoverChrome && isHovered))
   }
 
   private var rowControls: some View {
