@@ -1166,6 +1166,12 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNil(noMatch.query)
     XCTAssertEqual(noMatch.kinds, [])
     XCTAssertNil(noMatch.primaryKind)
+
+    XCTAssertTrue(ParagraphSlashCommandPanelLayout.isVisible(match: todoMatch))
+    XCTAssertTrue(ParagraphSlashCommandPanelLayout.isVisible(match: emptyMatch))
+    XCTAssertFalse(ParagraphSlashCommandPanelLayout.isVisible(match: noMatch))
+    XCTAssertEqual(ParagraphSlashCommandPanelLayout.verticalOffset(editorHeight: 1), 38)
+    XCTAssertEqual(ParagraphSlashCommandPanelLayout.verticalOffset(editorHeight: 80), 110)
   }
 
   func testParagraphEditorTextPublishingPolicyKeepsRichStatesResponsive() {
