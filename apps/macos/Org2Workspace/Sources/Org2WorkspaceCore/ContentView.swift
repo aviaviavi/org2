@@ -1900,24 +1900,20 @@ private struct DetailMetadataGrid: View {
 
   var body: some View {
     if !rows.isEmpty {
-      Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 5) {
+      Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 4) {
         ForEach(rows, id: \.0) { row in
           GridRow {
             Text(row.0)
-              .font(.caption.weight(.medium))
-              .foregroundStyle(.secondary)
+              .font(.caption2.weight(.medium))
+              .foregroundStyle(.tertiary)
             Text(row.1)
-              .font(.callout)
+              .font(.caption)
+              .foregroundStyle(.secondary)
               .textSelection(.enabled)
           }
         }
       }
-      .padding(10)
-      .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous))
-      .overlay(
-        RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
-          .stroke(WorkspaceDesign.hairline)
-      )
+      .padding(.vertical, 2)
     }
   }
 }
@@ -2036,14 +2032,15 @@ struct StatusPill: View {
 
   var body: some View {
     Text(text)
-      .font(.caption2.weight(.bold))
+      .font(.system(size: 10, weight: .bold, design: .rounded))
       .foregroundStyle(statusForeground)
-      .padding(.horizontal, 7)
-      .padding(.vertical, 3)
-      .background(statusColor, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+      .padding(.horizontal, 6)
+      .padding(.vertical, 2)
+      .frame(minWidth: 38)
+      .background(statusColor, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
       .overlay(
-        RoundedRectangle(cornerRadius: 5, style: .continuous)
-          .stroke(statusForeground.opacity(0.10))
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+          .stroke(statusForeground.opacity(0.08))
       )
   }
 
