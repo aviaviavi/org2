@@ -449,6 +449,30 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(restored.orgCryptUseDefaultGpgKey)
   }
 
+  @MainActor
+  func testOrgCryptConfigurationDefaultsToIncludingDefaultGPGKey() throws {
+    let suiteName = "org2-workspace-crypt-config-default-key-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+
+    XCTAssertTrue(store.orgCryptUseDefaultGpgKey)
+  }
+
+  @MainActor
+  func testOrgCryptConfigurationMigratesOldDefaultGPGKeySettingOn() throws {
+    let suiteName = "org2-workspace-crypt-config-migrate-key-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    defaults.set(false, forKey: "Org2Workspace.orgCrypt.useDefaultGpgKey")
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+
+    XCTAssertTrue(store.orgCryptUseDefaultGpgKey)
+    XCTAssertTrue(defaults.bool(forKey: "Org2Workspace.orgCrypt.useDefaultGpgKey"))
+  }
+
   func testOpenClawChatClientNormalizesModelAndAgentNames() {
     XCTAssertEqual(OpenClawChatClient.openClawModelName(for: ""), "openclaw")
     XCTAssertEqual(OpenClawChatClient.openClawModelName(for: "openclaw"), "openclaw")
@@ -4384,6 +4408,95 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(encrypted.count, 1)
     XCTAssertEqual(encrypted.first?.startLine, 2)
     XCTAssertEqual(encrypted.first?.endLineExclusive, 5)
+  }
+
+  @MainActor
+  func testRunOrgCryptDecryptRewritesSelectedFile() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-crypt-decrypt-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("secrets.org2")
+    let fakeGPG = root.appendingPathComponent("fake-gpg.sh")
+    try """
+    #!/bin/sh
+    if printf '%s\\n' "$@" | grep -q -- '--decrypt'; then
+      cat >/dev/null
+      printf '%s\\n' 'plaintext'
+      exit 0
+    fi
+    printf '%s\\n' 'unexpected gpg action' >&2
+    exit 2
+    """.write(to: fakeGPG, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeGPG.path)
+    try """
+    * Secret :crypt:
+    -----BEGIN PGP MESSAGE-----
+    fake encrypted payload
+    -----END PGP MESSAGE-----
+    * Public
+    body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.orgCryptGpgProgram = fakeGPG.path
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+
+    let result = await store.runOrgCrypt(.decrypt, line: 1)
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(result.succeeded)
+    XCTAssertTrue(result.changed)
+    XCTAssertEqual(result.headingLine, 1)
+    XCTAssertTrue(updated.contains("* Secret :crypt:\nplaintext"))
+    XCTAssertFalse(updated.contains("-----BEGIN PGP MESSAGE-----"))
+    XCTAssertTrue(updated.contains("* Public\nbody"))
+  }
+
+  @MainActor
+  func testRunOrgCryptDecryptReturnsGPGFailureMessage() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-crypt-decrypt-failure-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("secrets.org2")
+    let fakeGPG = root.appendingPathComponent("fake-gpg.sh")
+    try """
+    #!/bin/sh
+    cat >/dev/null
+    printf '%s\\n' 'gpg: decryption failed: No secret key' >&2
+    exit 2
+    """.write(to: fakeGPG, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeGPG.path)
+    let original = """
+    * Secret :crypt:
+    -----BEGIN PGP MESSAGE-----
+    fake encrypted payload
+    -----END PGP MESSAGE-----
+    """
+    try original.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.orgCryptGpgProgram = fakeGPG.path
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+
+    let result = await store.runOrgCrypt(.decrypt, line: 1)
+
+    XCTAssertFalse(result.succeeded)
+    XCTAssertFalse(result.changed)
+    XCTAssertTrue(result.message.contains("No secret key"))
+    XCTAssertEqual(store.statusText, result.message)
+    XCTAssertEqual(try String(contentsOf: note, encoding: .utf8), original)
   }
 
   @MainActor

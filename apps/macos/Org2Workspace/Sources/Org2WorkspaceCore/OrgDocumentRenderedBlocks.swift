@@ -496,7 +496,7 @@ enum OrgRenderedLineDisplayCache {
 
 struct RenderedBlockInlineActions: Sendable {
   let isSourceEditable: Bool
-  let decryptSubtree: (@MainActor @Sendable () async -> Bool)?
+  let decryptSubtree: (@MainActor @Sendable () async -> OrgCryptRunResult)?
   let toggleHeadingTodo: (@MainActor @Sendable () -> Void)?
   let setHeadingPriority: (@MainActor @Sendable (String?) -> Void)?
   let setHeadingTags: (@MainActor @Sendable ([String]) -> Void)?
@@ -583,18 +583,21 @@ private struct OrgMediaAttachmentView: View {
 
 private struct RenderedEncryptedBlockView: View {
   let summary: OrgCrypt.PGPArmorSummary
-  let decrypt: (@MainActor @Sendable () async -> Bool)?
+  let decrypt: (@MainActor @Sendable () async -> OrgCryptRunResult)?
   @State private var isDecrypting = false
+  @State private var failureText: String?
 
   var body: some View {
     if let decrypt {
       Button {
         guard !isDecrypting else { return }
         isDecrypting = true
+        failureText = nil
         Task {
-          _ = await decrypt()
+          let result = await decrypt()
           await MainActor.run {
             isDecrypting = false
+            failureText = result.succeeded ? nil : result.message
           }
         }
       } label: {
@@ -610,29 +613,40 @@ private struct RenderedEncryptedBlockView: View {
   }
 
   private var cardContent: some View {
-    HStack(spacing: 10) {
-      WorkspaceIconBadge(systemImage: "lock.fill", tint: .accentColor, fill: Color.accentColor.opacity(0.10))
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(spacing: 10) {
+        WorkspaceIconBadge(systemImage: "lock.fill", tint: .accentColor, fill: Color.accentColor.opacity(0.10))
 
-      VStack(alignment: .leading, spacing: 3) {
-        Text("Encrypted subtree")
-          .font(.callout.weight(.semibold))
-        Text("\(summary.payloadLineCount) armored line\(summary.payloadLineCount == 1 ? "" : "s") • \(formattedBytes(summary.byteCount))")
-          .font(.caption)
-          .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 3) {
+          Text("Encrypted subtree")
+            .font(.callout.weight(.semibold))
+          Text("\(summary.payloadLineCount) armored line\(summary.payloadLineCount == 1 ? "" : "s") • \(formattedBytes(summary.byteCount))")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+
+        Spacer(minLength: 0)
+
+        Label(isDecrypting ? "Decrypting..." : "Decrypt", systemImage: isDecrypting ? "hourglass" : "lock.open")
+          .font(.caption.weight(.medium))
+          .padding(.vertical, 3)
+          .padding(.horizontal, 8)
+          .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+          .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+              .stroke(WorkspaceDesign.hairline)
+          )
+          .opacity(decrypt == nil ? 0 : 1)
       }
 
-      Spacer(minLength: 0)
-
-      Label(isDecrypting ? "Decrypting..." : "Decrypt", systemImage: isDecrypting ? "hourglass" : "lock.open")
-        .font(.caption.weight(.medium))
-        .padding(.vertical, 3)
-        .padding(.horizontal, 8)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .overlay(
-          RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .stroke(WorkspaceDesign.hairline)
-        )
-        .opacity(decrypt == nil ? 0 : 1)
+      if let failureText, !failureText.isEmpty {
+        Text(failureText)
+          .font(.caption)
+          .foregroundStyle(.red)
+          .lineLimit(3)
+          .fixedSize(horizontal: false, vertical: true)
+          .padding(.leading, 32)
+      }
     }
     .padding(.vertical, 7)
     .padding(.horizontal, 10)
