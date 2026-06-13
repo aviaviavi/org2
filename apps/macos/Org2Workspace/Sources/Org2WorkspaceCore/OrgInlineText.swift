@@ -67,18 +67,25 @@ enum OrgInlineAttributedString {
   final class CacheKey: NSObject {
     let raw: String
     let fontDescription: String
+    private let cachedHash: Int
 
     init(raw: String, baseFont: Font) {
       self.raw = raw
       self.fontDescription = String(describing: baseFont)
+      self.cachedHash = Self.makeHash(raw: raw, fontDescription: self.fontDescription)
     }
 
     init(raw: String, fontDescription: String) {
       self.raw = raw
       self.fontDescription = fontDescription
+      self.cachedHash = Self.makeHash(raw: raw, fontDescription: fontDescription)
     }
 
     override var hash: Int {
+      cachedHash
+    }
+
+    private static func makeHash(raw: String, fontDescription: String) -> Int {
       var hasher = Hasher()
       hasher.combine(raw)
       hasher.combine(fontDescription)

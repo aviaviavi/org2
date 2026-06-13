@@ -480,6 +480,12 @@ final class Org2ModelsTests: XCTestCase {
       OrgInlineAttributedString.cached(raw: raw, baseFont: .body),
       OrgInlineAttributedString.cached(raw: raw, baseFont: .body)
     )
+
+    let longRaw = "See [[id:abc][Alice]]. " + String(repeating: "Long rich line ", count: 300)
+    let longKey = OrgInlineAttributedString.CacheKey(raw: longRaw, baseFont: .body)
+    let matchingLongKey = OrgInlineAttributedString.CacheKey(raw: longRaw, baseFont: .body)
+    XCTAssertEqual(longKey, matchingLongKey)
+    XCTAssertEqual(longKey.hash, matchingLongKey.hash)
   }
 
   func testOrgSyntaxHighlighterFindsEditableDocumentTokens() {
