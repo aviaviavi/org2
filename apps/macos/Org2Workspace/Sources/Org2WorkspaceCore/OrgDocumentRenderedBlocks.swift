@@ -69,14 +69,16 @@ struct RenderedBlockView: View, Equatable {
         inlineActions: inlineActions
       )
     case .paragraph(let text):
-      if let attachment = OrgMediaAttachment.standalone(
-        raw: rawText ?? text,
-        sourceFile: sourceFile,
-        corpusRoot: corpusRoot
-      ) {
+      let paragraphText = rawText ?? text
+      if OrgMediaAttachment.mayContainStandaloneMedia(paragraphText),
+         let attachment = OrgMediaAttachment.standalone(
+          raw: paragraphText,
+          sourceFile: sourceFile,
+          corpusRoot: corpusRoot
+         ) {
         OrgMediaAttachmentView(attachment: attachment)
       } else {
-        OrgInlineText(rawText ?? text)
+        OrgInlineText(paragraphText)
           .frame(maxWidth: .infinity, alignment: .leading)
       }
     case .keyword(let key, let value):
