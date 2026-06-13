@@ -2562,7 +2562,7 @@ final class Org2ModelsTests: XCTestCase {
       selectedBlockIndex: nil
     )
     XCTAssertEqual(topWindow.range, 0..<48)
-    XCTAssertFalse(OrgRenderedEntryView.shouldAutoExpandNextFooter(visibleWindow: topWindow))
+    XCTAssertTrue(OrgRenderedEntryView.shouldAutoExpandNextFooter(visibleWindow: topWindow))
 
     let expandedNext = topWindow.expanding(
       .next,
@@ -2570,9 +2570,17 @@ final class Org2ModelsTests: XCTestCase {
       totalCount: blocks.count
     )
     XCTAssertEqual(expandedNext, 0..<96)
-    XCTAssertFalse(OrgRenderedEntryView.shouldAutoExpandNextFooter(
+    XCTAssertTrue(OrgRenderedEntryView.shouldAutoExpandNextFooter(
       visibleWindow: OrgRenderedBlockWindow(range: expandedNext, totalCount: blocks.count)
     ))
+
+    let anchoredWindow = OrgRenderedEntryView.visibleWindow(
+      requestedWindow: nil,
+      blocks: blocks,
+      selectedBlockIndex: 1_200
+    )
+    XCTAssertGreaterThan(anchoredWindow.range.lowerBound, 0)
+    XCTAssertFalse(OrgRenderedEntryView.shouldAutoExpandNextFooter(visibleWindow: anchoredWindow))
   }
 
   @MainActor
