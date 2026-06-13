@@ -25,7 +25,7 @@ struct OrgInlineText: View {
   }
 
   var body: some View {
-    Text(OrgInlineAttributedString.cached(raw: raw, baseFont: font))
+    renderedText
       .font(font)
       .lineSpacing(lineSpacing)
       .textSelection(.enabled)
@@ -47,6 +47,19 @@ struct OrgInlineText: View {
 
         return .systemAction
       })
+  }
+
+  @ViewBuilder
+  private var renderedText: some View {
+    if Self.usesAttributedRendering(raw) {
+      Text(OrgInlineAttributedString.cached(raw: raw, baseFont: font))
+    } else {
+      Text(raw)
+    }
+  }
+
+  nonisolated static func usesAttributedRendering(_ raw: String) -> Bool {
+    OrgInlineParser.hasInlineSyntaxCandidate(raw)
   }
 }
 
