@@ -910,6 +910,39 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(inserted.selectedRange, NSRange(location: 7, length: 4))
   }
 
+  func testEditableInlineTokenFindsFocusedTokenAtCaretOrSelection() {
+    let raw = "See [[id:abc][Alice]] on <2026-06-12 Fri> with `code`."
+
+    let linkToken = OrgEditableInlineToken.focused(in: raw, selection: NSRange(location: 8, length: 0))
+    if case .link(let link) = linkToken {
+      XCTAssertEqual(link.label, "Alice")
+      XCTAssertEqual(link.target, "id:abc")
+    } else {
+      XCTFail("Expected focused link token")
+    }
+
+    let timestampToken = OrgEditableInlineToken.focused(in: raw, selection: NSRange(location: 27, length: 0))
+    if case .timestamp(let timestamp) = timestampToken {
+      XCTAssertEqual(timestamp.date, "2026-06-12")
+    } else {
+      XCTFail("Expected focused timestamp token")
+    }
+
+    let markupToken = OrgEditableInlineToken.focused(in: raw, selection: NSRange(location: 52, length: 0))
+    if case .markup(let markup) = markupToken {
+      XCTAssertEqual(markup.kind, .code)
+      XCTAssertEqual(markup.text, "code")
+    } else {
+      XCTFail("Expected focused markup token")
+    }
+
+    let selectedToken = OrgEditableInlineToken.focused(in: raw, selection: NSRange(location: 5, length: 12))
+    if case .link = selectedToken {
+    } else {
+      XCTFail("Expected selected range to focus overlapping link")
+    }
+  }
+
   func testEditableSourceBlockFormatsAndSwitchesKind() {
     var source = OrgEditableSourceBlock(rawText: """
     #+BEGIN_SRC swift :results output
