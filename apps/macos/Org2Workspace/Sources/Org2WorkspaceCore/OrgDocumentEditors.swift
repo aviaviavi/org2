@@ -456,6 +456,7 @@ private struct ListItemBlockEditor: View {
   @State private var marker: String
   @State private var checkbox: OrgListCheckbox?
   @State private var text: String
+  @State private var isHovered = false
   @FocusState private var textFocused: Bool
 
   init(block: OrgEditableBlock, indent: Int, marker: String, checkbox: OrgListCheckbox?, text: String) {
@@ -474,82 +475,95 @@ private struct ListItemBlockEditor: View {
   }
 
   var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
-      Menu {
-        ForEach(Self.markerChoices, id: \.self) { value in
-          Button(value) {
-            marker = value
+    ZStack(alignment: .topTrailing) {
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Menu {
+          ForEach(Self.markerChoices, id: \.self) { value in
+            Button(value) {
+              marker = value
+            }
           }
-        }
-        Divider()
-        Button(checkbox == nil ? "Add Checkbox" : "Remove Checkbox") {
-          checkbox = checkbox == nil ? .unchecked : nil
-        }
-      } label: {
-        Text(markerLabel)
-          .font(.body.monospaced().weight(.semibold))
-          .foregroundStyle(.secondary)
-          .frame(width: 22, alignment: .center)
-      }
-      .menuStyle(.borderlessButton)
-      .menuIndicator(.hidden)
-      .fixedSize()
-      .help("List marker")
-
-      if let checkbox {
-        Button {
-          self.checkbox = checkbox == .checked ? .unchecked : .checked
+          Divider()
+          Button(checkbox == nil ? "Add Checkbox" : "Remove Checkbox") {
+            checkbox = checkbox == nil ? .unchecked : nil
+          }
         } label: {
-          Image(systemName: checkboxSystemImage(checkbox))
-            .font(.body.weight(.semibold))
-            .foregroundStyle(checkbox == .checked ? Color.accentColor : Color.secondary)
+          Text(markerLabel)
+            .font(.callout.monospaced().weight(.semibold))
+            .foregroundStyle(.secondary)
+            .frame(width: 28, alignment: .trailing)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("List marker")
+
+        if let checkbox {
+          Button {
+            self.checkbox = checkbox == .checked ? .unchecked : .checked
+          } label: {
+            Image(systemName: checkboxSystemImage(checkbox))
+              .font(.callout.weight(.medium))
+              .foregroundStyle(checkbox == .checked ? Color.accentColor : Color.secondary)
+          }
+          .buttonStyle(.plain)
+          .help(checkbox == .checked ? "Mark incomplete" : "Mark complete")
+        }
+
+        TextField("List item", text: $text)
+          .textFieldStyle(.plain)
+          .focused($textFocused)
+          .strikethrough(checkbox == .checked)
+          .foregroundStyle(checkbox == .checked ? .secondary : .primary)
+          .onSubmit {
+            continueListItem()
+          }
+
+        Spacer(minLength: 0)
+      }
+      .padding(.leading, editorIndent)
+      .padding(.trailing, 74)
+
+      HStack(spacing: 4) {
+        if store.isSavingBlock {
+          ProgressView()
+            .controlSize(.small)
+        }
+
+        Button {
+          saveListItem()
+        } label: {
+          Image(systemName: "checkmark")
         }
         .buttonStyle(.borderless)
-        .help(checkbox == .checked ? "Mark incomplete" : "Mark complete")
-      }
+        .keyboardShortcut("s", modifiers: [.command])
+        .disabled(store.isSavingBlock)
+        .help("Save")
 
-      TextField("List item", text: $text)
-        .textFieldStyle(.plain)
-        .focused($textFocused)
-        .onSubmit {
-          continueListItem()
+        Button {
+          store.cancelEditingBlock()
+        } label: {
+          Image(systemName: "xmark")
         }
-
-      Spacer(minLength: 0)
-
-      if store.isSavingBlock {
-        ProgressView()
-          .controlSize(.small)
+        .buttonStyle(.borderless)
+        .keyboardShortcut(.cancelAction)
+        .disabled(store.isSavingBlock)
+        .help("Cancel")
       }
-
-      Button {
-        saveListItem()
-      } label: {
-        Image(systemName: "checkmark")
-      }
-      .buttonStyle(.borderless)
-      .keyboardShortcut("s", modifiers: [.command])
-      .disabled(store.isSavingBlock)
-      .help("Save")
-
-      Button {
-        store.cancelEditingBlock()
-      } label: {
-        Image(systemName: "xmark")
-      }
-      .buttonStyle(.borderless)
-      .keyboardShortcut(.cancelAction)
-      .disabled(store.isSavingBlock)
-      .help("Cancel")
+      .controlSize(.small)
+      .padding(.horizontal, 4)
+      .padding(.vertical, 2)
+      .background(.regularMaterial, in: Capsule())
+      .opacity(isHovered || store.isSavingBlock ? 1 : 0.66)
     }
-    .padding(.leading, editorIndent)
-    .padding(.horizontal, 8)
-    .padding(.vertical, 7)
-    .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .padding(.horizontal, 6)
+    .padding(.vertical, 4)
+    .background(Color.accentColor.opacity(isHovered ? 0.035 : 0.018), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     .overlay(
-      RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .stroke(Color.accentColor.opacity(0.22))
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
     )
+    .onHover { isHovered = $0 }
     .onAppear {
       textFocused = true
     }
