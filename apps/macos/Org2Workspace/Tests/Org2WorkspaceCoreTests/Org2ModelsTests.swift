@@ -4100,6 +4100,23 @@ final class Org2ModelsTests: XCTestCase {
       corpusRoot: root
     ))
 
+    let embedded = try XCTUnwrap(OrgMediaAttachment.embedded(
+      in: "inline images [[file:../assets/diagram.png][Image]]",
+      sourceFile: note.path,
+      corpusRoot: root
+    ))
+    XCTAssertEqual(embedded.displayText, "inline images")
+    XCTAssertEqual(embedded.attachments.count, 1)
+    XCTAssertEqual(embedded.attachments[0].kind, .image)
+    XCTAssertEqual(embedded.attachments[0].displayName, "Image")
+    XCTAssertEqual(embedded.attachments[0].resolvedPath, image.standardizedFileURL.path)
+
+    XCTAssertNil(OrgMediaAttachment.embedded(
+      in: "Not media [[id:11111111-1111-4111-8111-111111111111][Node]]",
+      sourceFile: note.path,
+      corpusRoot: root
+    ))
+
     let remoteImage = try XCTUnwrap(OrgMediaAttachment.standalone(raw: "https://example.com/image.png"))
     XCTAssertEqual(remoteImage.kind, .image)
     XCTAssertEqual(remoteImage.target, "https://example.com/image.png")
