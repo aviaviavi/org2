@@ -72,6 +72,7 @@ export type DataQueryResult = {
     resultId: string;
     artifact?: string;
     freshness?: string;
+    ranAt?: string;
     querySha256: string;
     scriptSha256: string;
     datasetIds: string[];
@@ -90,6 +91,7 @@ export type RunDataQueryOptions = {
   duckdbPath?: string;
   includeScript?: boolean;
   inspectOnly?: boolean;
+  ranAt?: string;
 };
 
 type FencedBlock = {
@@ -530,7 +532,8 @@ export function rowsToOrgTable(rows: Record<string, unknown>[]): string {
 function materializedResultTable(resultId: string, rows: Record<string, unknown>[], provenance: NonNullable<DataQueryResult["provenance"]>): string {
   const artifact = provenance.artifact ? ` artifact=${provenance.artifact}` : "";
   const freshness = provenance.freshness ? ` freshness=${provenance.freshness}` : "";
-  return `#+query-data: result=${resultId} rows=${rows.length}${artifact}${freshness} query_sha256=${provenance.querySha256} script_sha256=${provenance.scriptSha256}\n#+name: ${resultId}\n#+results: query-data-${resultId}\n${rowsToOrgTable(rows)}`;
+  const ranAt = provenance.ranAt ? ` ran_at=${provenance.ranAt}` : "";
+  return `#+query-data: result=${resultId} rows=${rows.length}${artifact}${freshness} query_sha256=${provenance.querySha256} script_sha256=${provenance.scriptSha256}${ranAt}\n#+name: ${resultId}\n#+results: query-data-${resultId}\n${rowsToOrgTable(rows)}`;
 }
 
 function selectSqlBlockByLine(blocks: DataQuerySqlBlock[], line: number): DataQuerySqlBlock | undefined {
@@ -553,11 +556,13 @@ function resultProvenance(
   views: DataQuerySqlView[],
   script: string,
   outputArtifact?: string,
+  ranAt?: string,
 ): NonNullable<DataQueryResult["provenance"]> {
   return {
     resultId: selected.resultId,
     ...(outputArtifact || selected.artifact ? { artifact: outputArtifact || selected.artifact } : {}),
     ...(selected.freshness ? { freshness: selected.freshness } : {}),
+    ...(ranAt ? { ranAt } : {}),
     querySha256: sha256(selected.sql),
     scriptSha256: sha256(script),
     datasetIds: datasets.map((dataset) => dataset.id),
@@ -660,7 +665,7 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
   }
 
   const script = buildDuckDbScript(datasets, views, selected.sql, namedTables);
-  const provenance = resultProvenance(selected, datasets, views, script, opts.outputArtifact);
+  const provenance = resultProvenance(selected, datasets, views, script, opts.outputArtifact, opts.ranAt || new Date().toISOString());
   const child = spawnSync(duckdbPath, ["-json", ":memory:"], {
     encoding: "utf8",
     input: script,
