@@ -9,6 +9,7 @@ const repo = process.cwd();
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "org2-render-chart-"));
 const note = path.join(tmp, "report.org2");
 const badSortNote = path.join(tmp, "bad-sort.org2");
+const fourTickChartNote = path.join(tmp, "four-tick-chart.org2");
 const out = path.join(tmp, "chart.svg");
 
 fs.writeFileSync(note, `* Revenue report
@@ -66,6 +67,19 @@ source: future_fetches_result
 `, "utf8");
 
 fs.writeFileSync(badSortNote, fs.readFileSync(note, "utf8").replace("sort=y-asc", "sort=random"), "utf8");
+
+fs.writeFileSync(fourTickChartNote, `* Chart fence examples
+
+| bucket | fetches |
+|--------+---------|
+| 0-10   | 14      |
+| 11-50  | 32      |
+
+\`\`\`\`chart histogram
+x: bucket
+y: fetches
+\`\`\`\`
+`, "utf8");
 
 function cli(args, input) {
   return execFileSync("node", ["dist/cli.js", ...args], { cwd: repo, encoding: "utf8", input });
@@ -130,5 +144,14 @@ assert.notEqual(badSort.status, 0);
 const badSortJson = JSON.parse(badSort.stdout);
 assert.equal(badSortJson.ok, false);
 assert.match(badSortJson.diagnostics[0].message, /Unsupported chart sort/);
+
+const fourTickChart = spawnSync("node", ["dist/cli.js", "render-chart", "--file", fourTickChartNote, "--line", "8", "--format", "json"], {
+  cwd: repo,
+  encoding: "utf8",
+});
+assert.notEqual(fourTickChart.status, 0);
+const fourTickChartJson = JSON.parse(fourTickChart.stdout);
+assert.equal(fourTickChartJson.ok, false);
+assert.match(fourTickChartJson.diagnostics[0].message, /No chart-affiliated table found/);
 
 console.log("✓ render-chart CLI");

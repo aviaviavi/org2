@@ -161,7 +161,7 @@ function keywordValue(keywords: Keyword[], key: string): string | undefined {
 }
 
 function isChartFenceOpener(line: string): boolean {
-  const match = /^\s*```(.*)$/.exec(line);
+  const match = /^\s*```($|[^`].*)$/.exec(line);
   if (!match) return false;
   const afterFence = String(match[1] || "").trim();
   return /^(chart|plot)(?:\s|$)/i.test(afterFence);
@@ -185,7 +185,7 @@ function parseFencedChartBlock(lines: string[], startIndex: number): FencedChart
   const opener = lines[startIndex] || "";
   if (!isChartFenceOpener(opener)) return null;
 
-  const openerMatch = /^\s*```(.*)$/.exec(opener);
+  const openerMatch = /^\s*```($|[^`].*)$/.exec(opener);
   const openerRest = String(openerMatch?.[1] || "").trim();
   const bodyLines: string[] = [];
   let i = startIndex + 1;
