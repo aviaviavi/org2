@@ -133,17 +133,18 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     func textDidChange(_ notification: Notification) {
       guard let textView = notification.object as? NSTextView else { return }
-      if !isApplyingProgrammaticChange {
-        parent.text = textView.string
+      let currentText = textView.string
+      if !isApplyingProgrammaticChange, parent.text != currentText {
+        parent.text = currentText
       }
-      parent.selection?.wrappedValue = textView.selectedRange()
+      publishSelectionIfNeeded(textView.selectedRange())
       invalidateHighlighting()
       scheduleDeferredHighlighting(to: textView)
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
       guard let textView = notification.object as? NSTextView else { return }
-      parent.selection?.wrappedValue = textView.selectedRange()
+      publishSelectionIfNeeded(textView.selectedRange())
     }
 
     func textDidBeginEditing(_ notification: Notification) {
@@ -252,6 +253,15 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       }
       deferredHighlightWorkItem = workItem
       DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(90), execute: workItem)
+    }
+
+    private func publishSelectionIfNeeded(_ selectedRange: NSRange) {
+      guard let selection = parent.selection,
+            selection.wrappedValue != selectedRange
+      else {
+        return
+      }
+      selection.wrappedValue = selectedRange
     }
 
     func applyHighlighting(to textView: NSTextView) {
