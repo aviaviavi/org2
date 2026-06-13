@@ -498,6 +498,26 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(OrgSyntaxHighlighter.shouldTokenizeLiveText(
       utf16Length: OrgSyntaxHighlighter.liveTokenizationUTF16Limit + 1
     ))
+    XCTAssertFalse(OrgSyntaxHighlighter.shouldPreserveExistingAttributesAfterEdit(
+      utf16Length: OrgSyntaxHighlighter.liveTokenizationUTF16Limit,
+      hasHighlightedBefore: true,
+      monospacedUnchanged: true
+    ))
+    XCTAssertFalse(OrgSyntaxHighlighter.shouldPreserveExistingAttributesAfterEdit(
+      utf16Length: OrgSyntaxHighlighter.liveTokenizationUTF16Limit + 1,
+      hasHighlightedBefore: false,
+      monospacedUnchanged: true
+    ))
+    XCTAssertFalse(OrgSyntaxHighlighter.shouldPreserveExistingAttributesAfterEdit(
+      utf16Length: OrgSyntaxHighlighter.liveTokenizationUTF16Limit + 1,
+      hasHighlightedBefore: true,
+      monospacedUnchanged: false
+    ))
+    XCTAssertTrue(OrgSyntaxHighlighter.shouldPreserveExistingAttributesAfterEdit(
+      utf16Length: OrgSyntaxHighlighter.liveTokenizationUTF16Limit + 1,
+      hasHighlightedBefore: true,
+      monospacedUnchanged: true
+    ))
 
     let smallStorage = NSTextStorage(string: "* TODO Small")
     OrgSyntaxHighlighter.apply(to: smallStorage, monospaced: false)

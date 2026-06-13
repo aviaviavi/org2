@@ -205,7 +205,26 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       else {
         return
       }
+      if canPreserveLargeBufferAttributes(for: textView) {
+        textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
+        lastHighlightedText = textView.string
+        lastHighlightedMonospaced = parent.monospaced
+        return
+      }
       applyHighlighting(to: textView)
+    }
+
+    private func canPreserveLargeBufferAttributes(for textView: NSTextView) -> Bool {
+      guard lastHighlightedText != nil,
+            lastHighlightedMonospaced == parent.monospaced
+      else {
+        return false
+      }
+      return OrgSyntaxHighlighter.shouldPreserveExistingAttributesAfterEdit(
+        utf16Length: (textView.string as NSString).length,
+        hasHighlightedBefore: lastHighlightedText != nil,
+        monospacedUnchanged: lastHighlightedMonospaced == parent.monospaced
+      )
     }
 
     private func scheduleDeferredHighlighting(to textView: NSTextView) {
@@ -278,6 +297,13 @@ enum OrgSyntaxHighlightKind: String {
 enum OrgSyntaxHighlighter {
   static let liveTokenizationUTF16Limit = 25_000
 
+  static func baseTypingAttributes(monospaced: Bool) -> [NSAttributedString.Key: Any] {
+    let baseFont = monospaced
+      ? NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+      : NSFont.systemFont(ofSize: NSFont.systemFontSize)
+    return baseAttributes(font: baseFont)
+  }
+
   static func tokens(in text: String) -> [OrgSyntaxHighlightToken] {
     var tokens: [OrgSyntaxHighlightToken] = []
     collectLineTokens(in: text, into: &tokens)
@@ -292,9 +318,7 @@ enum OrgSyntaxHighlighter {
 
   @discardableResult
   static func apply(to storage: NSTextStorage, monospaced: Bool) -> [NSAttributedString.Key: Any] {
-    let baseFont = monospaced
-      ? NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-      : NSFont.systemFont(ofSize: NSFont.systemFontSize)
+    let baseFont = baseFont(monospaced: monospaced)
     let baseAttributes = baseAttributes(font: baseFont)
     let fullRange = NSRange(location: 0, length: storage.length)
 
@@ -312,6 +336,22 @@ enum OrgSyntaxHighlighter {
 
   static func shouldTokenizeLiveText(utf16Length: Int) -> Bool {
     utf16Length <= liveTokenizationUTF16Limit
+  }
+
+  static func shouldPreserveExistingAttributesAfterEdit(
+    utf16Length: Int,
+    hasHighlightedBefore: Bool,
+    monospacedUnchanged: Bool
+  ) -> Bool {
+    hasHighlightedBefore
+      && monospacedUnchanged
+      && !shouldTokenizeLiveText(utf16Length: utf16Length)
+  }
+
+  private static func baseFont(monospaced: Bool) -> NSFont {
+    monospaced
+      ? NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+      : NSFont.systemFont(ofSize: NSFont.systemFontSize)
   }
 
   private static func collectLineTokens(in text: String, into tokens: inout [OrgSyntaxHighlightToken]) {
