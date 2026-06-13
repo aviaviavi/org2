@@ -2375,23 +2375,17 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     let url = dailyNotePath(corpusRoot: corpusRoot, date: Self.date(for: target))
-    if FileManager.default.fileExists(atPath: url.path) {
-      let thread = OpenClawThread(title: url.deletingPathExtension().lastPathComponent, file: url.path, zone: "daily", modifiedAt: nil)
-      selectedSurface = .agentSpace
-      selectedLocation = .openClaw(thread)
-      selectedOpenClawThreadID = thread.id
-      selectedEntrySourceMode = .page
-      selectedEntrySource = nil
-      selectedRenderedBlocks = []
-      editableEntryText = ""
-      resetBlockState()
-      isEditingEntry = false
-      isRenderingEntrySource = false
-      Task { await loadBacklinks(for: .openClaw(thread)) }
-      scheduleEntrySourceLoad(for: .openClaw(thread))
-    } else {
-      statusText = "Daily note not found: \(url.lastPathComponent)"
-      NSWorkspace.shared.activateFileViewerSelecting([url.deletingLastPathComponent()])
+    do {
+      if !FileManager.default.fileExists(atPath: url.path) {
+        try createDailyNote(at: url)
+      }
+      let file = corpusFile(for: url, corpusRoot: corpusRoot)
+      upsertCorpusFile(file)
+      selectCorpusFile(file)
+      statusText = "Opened \(file.relativePath)"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Could not open \(url.lastPathComponent)"
     }
   }
 
@@ -4979,6 +4973,35 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     return URL(fileURLWithPath: basePath).appendingPathComponent("\(Self.formatDate(date)).org2")
+  }
+
+  private func createDailyNote(at url: URL) throws {
+    try FileManager.default.createDirectory(
+      at: url.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    let title = url.deletingPathExtension().lastPathComponent
+    try "#+TITLE: \(title)\n\n".write(to: url, atomically: true, encoding: .utf8)
+  }
+
+  private func corpusFile(for url: URL, corpusRoot: URL) -> CorpusFile {
+    let standardizedURL = url.standardizedFileURL
+    let relativePath = self.relativePath(standardizedURL.path)
+    let values = try? standardizedURL.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+    return CorpusFile(
+      path: standardizedURL.path,
+      relativePath: relativePath,
+      modifiedAt: values?.contentModificationDate,
+      byteCount: values?.fileSize.map(Int64.init)
+    )
+  }
+
+  private func upsertCorpusFile(_ file: CorpusFile) {
+    corpusFiles.removeAll { $0.id == file.id }
+    corpusFiles.append(file)
+    corpusFiles.sort {
+      $0.relativePath.localizedStandardCompare($1.relativePath) == .orderedAscending
+    }
   }
 
   private func appendScheduledTodo(title: String, to target: URL) throws {
