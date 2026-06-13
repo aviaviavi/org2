@@ -1359,6 +1359,7 @@ private struct MediaBlockEditor: View {
   let block: OrgEditableBlock
   @State private var media: OrgEditableMediaLink
   @State private var isHovered = false
+  @State private var autosaveTask: Task<Void, Never>?
   @FocusState private var targetFocused: Bool
 
   init(block: OrgEditableBlock, media: OrgEditableMediaLink) {
@@ -1469,6 +1470,13 @@ private struct MediaBlockEditor: View {
     .onAppear {
       targetFocused = true
     }
+    .onChange(of: media) {
+      scheduleMediaAutosave()
+    }
+    .onDisappear {
+      autosaveTask?.cancel()
+      autosaveTask = nil
+    }
   }
 
   private var title: String {
@@ -1509,6 +1517,7 @@ private struct MediaBlockEditor: View {
     if media.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       media.label = url.deletingPathExtension().lastPathComponent
     }
+    scheduleMediaAutosave()
   }
 
   private var allowedContentTypes: [UTType] {
@@ -1551,8 +1560,30 @@ private struct MediaBlockEditor: View {
   }
 
   private func saveMedia() {
+    autosaveTask?.cancel()
+    autosaveTask = nil
     store.editableBlockText = media.formattedRawText
     Task { await store.saveEditedBlock(block) }
+  }
+
+  private func scheduleMediaAutosave() {
+    let draft = media.formattedRawText
+    store.updateEditingBlockDraft(block, draft: draft)
+    autosaveTask?.cancel()
+
+    guard draft != block.rawText else {
+      return
+    }
+
+    autosaveTask = Task { [block] in
+      do {
+        try await Task.sleep(nanoseconds: 700_000_000)
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      await store.autosaveEditedBlock(block, replacement: draft)
+    }
   }
 }
 

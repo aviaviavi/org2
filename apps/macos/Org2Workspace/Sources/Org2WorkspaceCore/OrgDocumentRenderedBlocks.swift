@@ -136,6 +136,9 @@ private struct OrgImageAttachmentView: View {
   let attachment: OrgMediaAttachment
   @State private var image: NSImage?
   @State private var attemptedLoad = false
+  @State private var activeLoadPath: String?
+
+  @MainActor private static let thumbnailCache = NSCache<NSString, NSImage>()
 
   var body: some View {
     Group {
@@ -158,16 +161,31 @@ private struct OrgImageAttachmentView: View {
       guard let url = attachment.resolvedURL else {
         attemptedLoad = true
         image = nil
+        activeLoadPath = nil
         return
       }
+
+      let cacheKey = url.standardizedFileURL.path as NSString
+      if let cached = Self.thumbnailCache.object(forKey: cacheKey) {
+        image = cached
+        attemptedLoad = true
+        activeLoadPath = nil
+        return
+      }
+
+      activeLoadPath = url.standardizedFileURL.path
       attemptedLoad = false
-      image = nil
       let loaded = await Task.detached(priority: .utility) {
         LoadedAttachmentImage(image: Self.previewImage(for: url))
       }.value
       guard !Task.isCancelled else { return }
+      guard activeLoadPath == url.standardizedFileURL.path else { return }
+      if let loadedImage = loaded.image {
+        Self.thumbnailCache.setObject(loadedImage, forKey: cacheKey)
+      }
       image = loaded.image
       attemptedLoad = true
+      activeLoadPath = nil
     }
   }
 
