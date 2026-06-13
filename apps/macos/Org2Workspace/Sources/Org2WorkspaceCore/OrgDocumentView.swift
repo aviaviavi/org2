@@ -11,7 +11,13 @@ struct OrgRenderedEntryView: View {
           InlineBlockEditorView(block: block)
         } else {
           EditableRenderedBlockView(block: block) {
-            RenderedBlockView(block: block.rendered, rawText: block.rawText, editableBlock: block)
+            RenderedBlockView(
+              block: block.rendered,
+              rawText: block.rawText,
+              editableBlock: block,
+              sourceFile: store.selectedEntrySource?.file,
+              corpusRoot: store.corpusRoot
+            )
           }
         }
       }

@@ -1129,7 +1129,9 @@ private struct MediaBlockEditor: View {
       RenderedBlockView(
         block: .paragraph(media.formattedRawText),
         rawText: media.formattedRawText,
-        editableBlock: block
+        editableBlock: block,
+        sourceFile: store.selectedEntrySource?.file,
+        corpusRoot: store.corpusRoot
       )
       .padding(.vertical, 2)
 

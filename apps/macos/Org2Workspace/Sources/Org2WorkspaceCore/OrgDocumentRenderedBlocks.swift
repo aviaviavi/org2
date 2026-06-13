@@ -4,15 +4,24 @@ import ImageIO
 import SwiftUI
 
 struct RenderedBlockView: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let block: OrgRenderedBlock
   let rawText: String?
   let editableBlock: OrgEditableBlock?
+  let sourceFile: String?
+  let corpusRoot: URL?
 
-  init(block: OrgRenderedBlock, rawText: String? = nil, editableBlock: OrgEditableBlock? = nil) {
+  init(
+    block: OrgRenderedBlock,
+    rawText: String? = nil,
+    editableBlock: OrgEditableBlock? = nil,
+    sourceFile: String? = nil,
+    corpusRoot: URL? = nil
+  ) {
     self.block = block
     self.rawText = rawText
     self.editableBlock = editableBlock
+    self.sourceFile = sourceFile
+    self.corpusRoot = corpusRoot
   }
 
   var body: some View {
@@ -43,8 +52,8 @@ struct RenderedBlockView: View {
     case .paragraph(let text):
       if let attachment = OrgMediaAttachment.standalone(
         raw: rawText ?? text,
-        sourceFile: store.selectedEntrySource?.file,
-        corpusRoot: store.corpusRoot
+        sourceFile: sourceFile,
+        corpusRoot: corpusRoot
       ) {
         OrgMediaAttachmentView(attachment: attachment)
       } else {
