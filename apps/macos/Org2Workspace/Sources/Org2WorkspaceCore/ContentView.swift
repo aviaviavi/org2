@@ -1378,50 +1378,119 @@ private struct HeadingBlockEditor: View {
   }
 
   var body: some View {
-    BlockEditorContainer(
-      block: block,
-      title: "Heading",
-      previewText: rawHeading,
-      onSave: { store.editableBlockText = rawHeading }
-    ) {
-      VStack(alignment: .leading, spacing: 8) {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-          Picker("Status", selection: $todo) {
-            Text("None").tag("")
-            ForEach(Self.todoKeywords, id: \.self) { keyword in
-              Text(keyword).tag(keyword)
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Menu {
+          Button("None") {
+            todo = ""
+          }
+          Divider()
+          ForEach(Self.todoKeywords, id: \.self) { keyword in
+            Button(keyword) {
+              todo = keyword
             }
           }
-          .frame(width: 150)
+        } label: {
+          if todo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Image(systemName: "circle")
+              .font(.caption.weight(.semibold))
+              .foregroundStyle(.secondary)
+          } else {
+            StatusPill(text: todo)
+          }
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Status")
 
-          Picker("Priority", selection: $priority) {
-            Text("None").tag("")
-            ForEach(["A", "B", "C"], id: \.self) { value in
-              Text(value).tag(value)
+        Menu {
+          Button("None") {
+            priority = ""
+          }
+          Divider()
+          ForEach(["A", "B", "C"], id: \.self) { value in
+            Button("[#\(value)]") {
+              priority = value
             }
           }
-          .frame(width: 120)
+        } label: {
+          if priority.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Image(systemName: "flag")
+              .font(.caption.weight(.semibold))
+              .foregroundStyle(.secondary)
+          } else {
+            Label("[#\(priority.trimmingCharacters(in: .whitespacesAndNewlines).uppercased())]", systemImage: "flag.fill")
+              .font(.caption.weight(.semibold))
+              .foregroundStyle(.orange)
+              .labelStyle(.titleAndIcon)
+          }
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Priority")
 
-          TextField("Title", text: $title)
-            .textFieldStyle(.roundedBorder)
-            .focused($titleFocused)
-            .onSubmit {
-              saveHeading()
-            }
+        TextField("Untitled", text: $title)
+          .textFieldStyle(.plain)
+          .font(headingFont)
+          .focused($titleFocused)
+          .onSubmit {
+            saveHeading()
+          }
+
+        Spacer(minLength: 0)
+
+        if store.isSavingBlock {
+          ProgressView()
+            .controlSize(.small)
         }
 
-        HStack(spacing: 8) {
-          Text("Level \(level)")
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(.secondary)
-          TextField("Tags", text: $tags)
-            .textFieldStyle(.roundedBorder)
-            .onSubmit {
-              saveHeading()
-            }
+        Button {
+          saveHeading()
+        } label: {
+          Image(systemName: "checkmark")
         }
+        .buttonStyle(.borderless)
+        .keyboardShortcut("s", modifiers: [.command])
+        .disabled(store.isSavingBlock)
+        .help("Save")
+
+        Button {
+          store.cancelEditingBlock()
+        } label: {
+          Image(systemName: "xmark")
+        }
+        .buttonStyle(.borderless)
+        .keyboardShortcut(.cancelAction)
+        .disabled(store.isSavingBlock)
+        .help("Cancel")
       }
+
+      HStack(spacing: 8) {
+        Text("H\(level)")
+          .font(.caption.monospacedDigit().weight(.medium))
+          .foregroundStyle(.secondary)
+        Image(systemName: "tag")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.secondary)
+        TextField("tags", text: $tags)
+          .textFieldStyle(.plain)
+          .font(.caption)
+          .onSubmit {
+            saveHeading()
+          }
+      }
+      .padding(.leading, metadataIndent)
     }
+    .padding(.leading, editorIndent)
+    .padding(.horizontal, 8)
+    .padding(.vertical, 7)
+    .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 7, style: .continuous)
+        .stroke(Color.accentColor.opacity(0.22))
+    )
     .onAppear {
       titleFocused = true
     }
@@ -1437,7 +1506,10 @@ private struct HeadingBlockEditor: View {
     if !normalizedPriority.isEmpty {
       parts.append("[#\(normalizedPriority)]")
     }
-    parts.append(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled" : title.trimmingCharacters(in: .whitespacesAndNewlines))
+    let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !normalizedTitle.isEmpty {
+      parts.append(normalizedTitle)
+    }
     var line = parts.joined(separator: " ")
     let normalizedTags = tags
       .split { $0.isWhitespace || $0 == "," }
@@ -1452,6 +1524,27 @@ private struct HeadingBlockEditor: View {
   private func saveHeading() {
     store.editableBlockText = rawHeading
     Task { await store.saveEditedBlock(block) }
+  }
+
+  private var headingFont: Font {
+    switch level {
+    case 1:
+      return .title3.weight(.semibold)
+    case 2:
+      return .headline.weight(.semibold)
+    case 3:
+      return .callout.weight(.semibold)
+    default:
+      return .body.weight(.semibold)
+    }
+  }
+
+  private var editorIndent: CGFloat {
+    CGFloat(max(0, level - 1)) * 14
+  }
+
+  private var metadataIndent: CGFloat {
+    todo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0 : 3
   }
 
   private static let todoKeywords = ["TODO", "IN_PROGRESS", "PROG", "WAIT", "HOLD", "PAUSED", "DONE", "CANCELED"]
