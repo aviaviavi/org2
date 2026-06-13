@@ -888,6 +888,65 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func toggleHeadingTodo(_ block: OrgEditableBlock) async {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "No editable source loaded"
+      return
+    }
+    guard block.startLine >= source.startLine,
+          block.endLineExclusive <= source.endLineExclusive
+    else {
+      statusText = "Block is outside the selected source"
+      return
+    }
+    guard case .heading(let heading) = block.rendered,
+          let currentStatus = heading.todo,
+          let nextStatus = Self.nextHeadingTodoStatus(after: currentStatus),
+          let replacement = Self.toggledHeadingTodoRawText(
+            block.rawText,
+            current: currentStatus,
+            next: nextStatus
+          )
+    else {
+      statusText = "Heading has no TODO keyword"
+      return
+    }
+
+    isSavingBlock = true
+    defer { isSavingBlock = false }
+
+    do {
+      try await Task.detached(priority: .userInitiated) {
+        try Self.replaceSourceRange(
+          file: source.file,
+          startLine: block.startLine,
+          endLineExclusive: block.endLineExclusive,
+          replacement: replacement
+        )
+      }.value
+      await finishBlockMutation(
+        file: source.file,
+        status: "\(nextStatus) -> heading",
+        selectLine: block.startLine
+      )
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "TODO update failed"
+    }
+  }
+
+  public nonisolated static func nextHeadingTodoStatus(after current: String) -> String? {
+    let normalized = current.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    guard !normalized.isEmpty else { return nil }
+    if doneHeadingTodoKeywords.contains(normalized) {
+      return "TODO"
+    }
+    if activeHeadingTodoKeywords.contains(normalized) {
+      return "DONE"
+    }
+    return nil
+  }
+
   public func duplicateBlock(_ block: OrgEditableBlock) async {
     guard let source = selectedEntrySource, source.isEditable else {
       statusText = "No editable source loaded"
@@ -3302,6 +3361,53 @@ public final class WorkspaceStore: ObservableObject {
     lines[0] = "\(prefix)\(current.toggled.rawMarker)\(suffix)\(rest)"
     return lines.joined(separator: "\n")
   }
+
+  nonisolated private static func toggledHeadingTodoRawText(
+    _ rawText: String,
+    current: String,
+    next: String
+  ) -> String? {
+    var lines = normalizeLineEndings(rawText)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    guard let first = lines.first else { return nil }
+    guard let regex = try? NSRegularExpression(pattern: #"^(\*+\s+)(\S+)(.*)$"#) else {
+      return nil
+    }
+
+    let nsFirst = first as NSString
+    let range = NSRange(location: 0, length: nsFirst.length)
+    guard let match = regex.firstMatch(in: first, range: range),
+          match.range.location == 0
+    else {
+      return nil
+    }
+
+    let keyword = nsFirst.substring(with: match.range(at: 2)).uppercased()
+    guard keyword == current.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() else {
+      return nil
+    }
+
+    let prefix = nsFirst.substring(with: match.range(at: 1))
+    let suffix = nsFirst.substring(with: match.range(at: 3))
+    lines[0] = "\(prefix)\(next)\(suffix)"
+    return lines.joined(separator: "\n")
+  }
+
+  nonisolated private static let activeHeadingTodoKeywords = Set([
+    "TODO",
+    "IN_PROGRESS",
+    "PROG",
+    "WAIT",
+    "HOLD",
+    "PAUSED"
+  ])
+
+  nonisolated private static let doneHeadingTodoKeywords = Set([
+    "DONE",
+    "CANCELED",
+    "CANCELLED"
+  ])
 
   nonisolated private static func deleteSourceRangeCleaningAdjacentBlank(
     file: String,
