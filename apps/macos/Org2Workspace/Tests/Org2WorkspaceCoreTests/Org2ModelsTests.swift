@@ -849,6 +849,14 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately("See [[id:abc][Alice]]"))
     XCTAssertTrue(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately("Meet <2026-06-12 Fri>"))
     XCTAssertTrue(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately("Use `code`"))
+
+    let longRichParagraph = "See [[id:abc][Alice]]. " + String(
+      repeating: "Long paragraph body ",
+      count: 180
+    )
+    XCTAssertGreaterThan((longRichParagraph as NSString).length, ParagraphEditorTextPublishingPolicy.richImmediateUTF16Limit)
+    XCTAssertFalse(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately(longRichParagraph))
+    XCTAssertTrue(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately("/todo " + longRichParagraph))
   }
 
   func testOpenClawFileReferenceDeepLinkRoundTrips() throws {

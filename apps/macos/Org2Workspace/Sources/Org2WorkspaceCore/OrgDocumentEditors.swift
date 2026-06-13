@@ -77,9 +77,27 @@ enum ParagraphSlashCommand {
 }
 
 enum ParagraphEditorTextPublishingPolicy {
+  static let richImmediateUTF16Limit = 2_000
+
   static func shouldPublishImmediately(_ text: String) -> Bool {
-    ParagraphSlashCommand.query(in: text) != nil
-      || OrgInlineParser.hasInlineSyntaxCandidate(text)
+    if ParagraphSlashCommand.query(in: text) != nil {
+      return true
+    }
+    guard isWithinRichImmediateLimit(text) else {
+      return false
+    }
+    return OrgInlineParser.hasInlineSyntaxCandidate(text)
+  }
+
+  static func isWithinRichImmediateLimit(_ text: String) -> Bool {
+    var count = 0
+    for _ in text.utf16 {
+      count += 1
+      if count > richImmediateUTF16Limit {
+        return false
+      }
+    }
+    return true
   }
 }
 
