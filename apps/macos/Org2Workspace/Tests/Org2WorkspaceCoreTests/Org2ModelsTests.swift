@@ -965,6 +965,42 @@ final class Org2ModelsTests: XCTestCase {
       text: "Meet on <2026-06-13 Sat>",
       showsInlineDetails: false
     ))
+
+    let longRichParagraph = "See [[id:abc][Alice]]. " + String(
+      repeating: "Long paragraph body ",
+      count: 900
+    )
+    XCTAssertGreaterThan((longRichParagraph as NSString).length, OrgEditableInlineToken.focusedScanUTF16Limit)
+    XCTAssertFalse(ParagraphFocusedInlineEditor.shouldRender(
+      text: longRichParagraph,
+      showsInlineDetails: false
+    ))
+  }
+
+  func testParagraphFocusedInlineEditorFindsFocusedTokenOnce() {
+    let raw = "See [[id:abc][Alice]] and `code`."
+    let nsRaw = raw as NSString
+    let aliceRange = nsRaw.range(of: "Alice")
+    let codeRange = nsRaw.range(of: "code")
+
+    let linkToken = ParagraphFocusedInlineEditor.focusedToken(
+      text: raw,
+      selectedRange: NSRange(location: aliceRange.location, length: 0),
+      showsInlineDetails: false
+    )
+    if case .link(let link) = linkToken {
+      XCTAssertEqual(link.label, "Alice")
+      XCTAssertEqual(link.target, "id:abc")
+    } else {
+      XCTFail("Expected focused link token")
+    }
+
+    let hiddenToken = ParagraphFocusedInlineEditor.focusedToken(
+      text: raw,
+      selectedRange: NSRange(location: codeRange.location, length: 0),
+      showsInlineDetails: true
+    )
+    XCTAssertNil(hiddenToken)
   }
 
   func testParagraphSlashCommandUsesBoundedPrefixScan() {

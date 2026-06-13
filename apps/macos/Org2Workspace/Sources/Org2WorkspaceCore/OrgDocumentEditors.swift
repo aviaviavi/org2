@@ -1325,6 +1325,11 @@ private struct ParagraphBlockEditor: View {
 
   private var paragraphEditorContent: some View {
     let slashKinds = slashCommandKinds
+    let focusedInlineToken = ParagraphFocusedInlineEditor.focusedToken(
+      text: draftText,
+      selectedRange: selectedRange,
+      showsInlineDetails: showsInlineDetails
+    )
     return ZStack(alignment: .topTrailing) {
       VStack(alignment: .leading, spacing: 5) {
         OrgSyntaxTextEditor(
@@ -1346,8 +1351,12 @@ private struct ParagraphBlockEditor: View {
           ParagraphInlineFormatBar(text: $draftText, selectedRange: $selectedRange)
         }
 
-        if ParagraphFocusedInlineEditor.shouldRender(text: draftText, showsInlineDetails: showsInlineDetails) {
-          ParagraphFocusedInlineEditor(text: $draftText, selectedRange: $selectedRange)
+        if let focusedInlineToken {
+          ParagraphFocusedInlineEditor(
+            text: $draftText,
+            selectedRange: $selectedRange,
+            token: focusedInlineToken
+          )
         }
 
         if !slashKinds.isEmpty {
