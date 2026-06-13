@@ -1,5 +1,6 @@
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 export type DataQueryDiagnostic = {
   severity: "error" | "warning";
@@ -53,6 +54,13 @@ export type DataQueryResult = {
   views: DataQuerySqlView[];
   rowCount: number;
   rows: Record<string, unknown>[];
+  provenance?: {
+    resultId: string;
+    querySha256: string;
+    scriptSha256: string;
+    datasetIds: string[];
+    viewIds: string[];
+  };
   orgTable?: string;
   duckdbScript?: string;
   diagnostics: DataQueryDiagnostic[];
@@ -417,6 +425,10 @@ function viewSql(view: DataQuerySqlView): string {
   return `CREATE OR REPLACE VIEW ${quoteIdentifier(view.id)} AS SELECT * FROM (${view.sql.replace(/;\s*$/, "")}) AS org2_view;`;
 }
 
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
 function buildDuckDbScript(datasets: DataQueryDataset[], views: DataQuerySqlView[], sql: string, namedTables: Map<string, NamedOrgTable>): string {
   const setup = datasets.map((dataset) => {
     if (dataset.type === "table" && dataset.sourceTable) {
@@ -466,8 +478,8 @@ export function rowsToOrgTable(rows: Record<string, unknown>[]): string {
   return [rowLine(headers), separator, ...renderedRows.map(rowLine)].join("\n") + "\n";
 }
 
-function materializedResultTable(resultId: string, rows: Record<string, unknown>[]): string {
-  return `#+name: ${resultId}\n#+results: query-data-${resultId}\n${rowsToOrgTable(rows)}`;
+function materializedResultTable(resultId: string, rows: Record<string, unknown>[], provenance: NonNullable<DataQueryResult["provenance"]>): string {
+  return `#+query-data: result=${resultId} rows=${rows.length} query_sha256=${provenance.querySha256} script_sha256=${provenance.scriptSha256}\n#+name: ${resultId}\n#+results: query-data-${resultId}\n${rowsToOrgTable(rows)}`;
 }
 
 export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}): DataQueryResult {
@@ -499,6 +511,14 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
     }
   }
 
+  const seenDatasetIds = new Set<string>();
+  for (const dataset of datasets) {
+    if (seenDatasetIds.has(dataset.id)) {
+      diagnostics.push(diagnostic(`Duplicate dataset block "${dataset.id}"`, { line: dataset.line, blockId: dataset.id }));
+    }
+    seenDatasetIds.add(dataset.id);
+  }
+
   const seenViewIds = new Set<string>();
   for (const view of views) {
     if (seenViewIds.has(view.id)) {
@@ -519,6 +539,13 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
   }
 
   const script = buildDuckDbScript(datasets, views, selected.sql, namedTables);
+  const provenance = {
+    resultId: selected.resultId,
+    querySha256: sha256(selected.sql),
+    scriptSha256: sha256(script),
+    datasetIds: datasets.map((dataset) => dataset.id),
+    viewIds: views.map((view) => view.id),
+  };
   const child = spawnSync(duckdbPath, ["-json", ":memory:"], {
     encoding: "utf8",
     input: script,
@@ -551,7 +578,8 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
     views,
     rowCount: rows.length,
     rows,
-    ...(ok ? { orgTable: materializedResultTable(selected.resultId, rows) } : {}),
+    provenance,
+    ...(ok ? { orgTable: materializedResultTable(selected.resultId, rows, provenance) } : {}),
     ...(opts.includeScript ? { duckdbScript: script } : {}),
     diagnostics,
   };
