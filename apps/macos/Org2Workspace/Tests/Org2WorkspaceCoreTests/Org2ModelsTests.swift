@@ -1772,6 +1772,71 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testAutosavesPropertyDrawerWithoutLeavingInlineEditMode() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-property-autosave-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("property-autosave.org2")
+    try """
+    * TODO Parent
+    :PROPERTIES:
+    :OWNER: avi
+    :STATUS: draft
+    :END:
+    Body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 1,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": { "OWNER": "avi", "STATUS": "draft" }
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let properties = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .properties = $0.rendered { return true }
+      return false
+    })
+    store.beginEditingBlock(properties)
+    let replacement = """
+    :PROPERTIES:
+    :OWNER: openclaw
+    :STATUS: active
+    :END:
+    """
+    store.updateEditingBlockDraft(properties, draft: replacement)
+    await store.autosaveEditedBlock(properties, replacement: replacement)
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains(":OWNER: openclaw\n:STATUS: active\n:END:\nBody"))
+    XCTAssertFalse(store.isEditingEntry)
+    XCTAssertEqual(store.selectedBlock?.rawText, replacement)
+    XCTAssertEqual(store.editableBlockText, replacement)
+    XCTAssertNotNil(store.editingBlockID)
+    guard case .properties(let rows) = store.selectedBlock?.rendered else {
+      return XCTFail("Expected property drawer")
+    }
+    XCTAssertEqual(rows, [
+      OrgPropertyRow(key: "OWNER", value: "openclaw"),
+      OrgPropertyRow(key: "STATUS", value: "active")
+    ])
+  }
+
+  @MainActor
   func testSplitsEditingParagraphAtCaretIntoNewEditableBlock() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-block-split-\(UUID().uuidString)", isDirectory: true)
