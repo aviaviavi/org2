@@ -1717,6 +1717,61 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testAutosavesKeywordBlockWithoutLeavingInlineEditMode() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-keyword-autosave-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("keyword-autosave.org2")
+    try """
+    * TODO Parent
+    #+CAPTION: Old Caption
+    Body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let keyword = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .keyword(let key, _) = $0.rendered { return key == "CAPTION" }
+      return false
+    })
+    store.beginEditingBlock(keyword)
+    let replacement = "#+CAPTION: New Caption"
+    store.updateEditingBlockDraft(keyword, draft: replacement)
+    await store.autosaveEditedBlock(keyword, replacement: replacement)
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* TODO Parent\n#+CAPTION: New Caption\nBody"))
+    XCTAssertFalse(store.isEditingEntry)
+    XCTAssertEqual(store.selectedBlock?.rawText, replacement)
+    XCTAssertEqual(store.editableBlockText, replacement)
+    XCTAssertNotNil(store.editingBlockID)
+    guard case .keyword(let key, let value) = store.selectedBlock?.rendered else {
+      return XCTFail("Expected keyword block")
+    }
+    XCTAssertEqual(key, "CAPTION")
+    XCTAssertEqual(value, "New Caption")
+  }
+
+  @MainActor
   func testSplitsEditingParagraphAtCaretIntoNewEditableBlock() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-block-split-\(UUID().uuidString)", isDirectory: true)
