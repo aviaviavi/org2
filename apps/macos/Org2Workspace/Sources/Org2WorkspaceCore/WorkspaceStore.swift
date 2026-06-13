@@ -1685,26 +1685,6 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func finishBlockMutation(
-    file: String,
-    status: String,
-    selectLine: Int? = nil,
-    selectionMode: PendingBlockSelectionMode = .containingOrNearest
-  ) async {
-    invalidateCanonicalDocumentCache(for: file)
-    transientDraftBlock = nil
-    resetBlockEditing()
-    isEditingEntry = false
-    if let selectLine {
-      pendingBlockSelection = PendingBlockSelection(file: file, line: max(1, selectLine), mode: selectionMode)
-    }
-    statusText = status
-    if let selectedLocation {
-      await loadEntrySource(for: selectedLocation)
-    }
-    scheduleAgendaRefresh(preserveSelection: true)
-  }
-
   private func replaceBlockSourceAndFinish(
     source: EntrySource,
     block: OrgEditableBlock,
