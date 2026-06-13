@@ -80,6 +80,16 @@ enum InlineEditorSizing {
     }
     return min(safeMaximum, max(safeMinimum, count))
   }
+
+  static func stickyCappedLineCount(
+    in text: String,
+    reservedLineCount: Int,
+    minimum: Int,
+    maximum: Int
+  ) -> Int {
+    let currentCount = cappedLineCount(in: text, minimum: minimum, maximum: maximum)
+    return min(max(currentCount, reservedLineCount), max(max(1, minimum), maximum))
+  }
 }
 
 enum ParagraphSlashCommand {
@@ -1377,12 +1387,18 @@ private struct ParagraphBlockEditor: View {
   @State private var isTextFocused = false
   @State private var autosaveTask: Task<Void, Never>?
   @State private var liveText = OrgSyntaxTextEditorDraftBuffer()
+  @State private var reservedLineCount: Int
 
   init(block: OrgEditableBlock, text: String) {
     self.block = block
     self.text = text
     _draftText = State(initialValue: block.rawText)
     _selectedRange = State(initialValue: InlineEditorSizing.endSelection(in: block.rawText))
+    _reservedLineCount = State(initialValue: InlineEditorSizing.cappedLineCount(
+      in: block.rawText,
+      minimum: 1,
+      maximum: 15
+    ))
   }
 
   var body: some View {
@@ -1472,6 +1488,7 @@ private struct ParagraphBlockEditor: View {
     )
     .onHover { isHovered = $0 }
     .onChange(of: draftText) {
+      reserveEditorLines(for: draftText)
       scheduleParagraphAutosave()
     }
     .onDisappear {
@@ -1480,12 +1497,27 @@ private struct ParagraphBlockEditor: View {
     }
     .onAppear {
       liveText.update(draftText)
+      reserveEditorLines(for: draftText)
     }
   }
 
   private var editorHeight: CGFloat {
-    let lineCount = InlineEditorSizing.cappedLineCount(in: draftText, minimum: 1, maximum: 15)
+    let lineCount = InlineEditorSizing.stickyCappedLineCount(
+      in: draftText,
+      reservedLineCount: reservedLineCount,
+      minimum: 1,
+      maximum: 15
+    )
     return min(320, max(30, CGFloat(lineCount) * 21 + 8))
+  }
+
+  private func reserveEditorLines(for text: String) {
+    reservedLineCount = InlineEditorSizing.stickyCappedLineCount(
+      in: text,
+      reservedLineCount: reservedLineCount,
+      minimum: 1,
+      maximum: 15
+    )
   }
 
   private var paragraphControls: some View {
@@ -1887,6 +1919,7 @@ private struct QuoteBlockEditor: View {
   @State private var isTextFocused = false
   @State private var autosaveTask: Task<Void, Never>?
   @State private var liveText = OrgSyntaxTextEditorDraftBuffer()
+  @State private var reservedLineCount: Int
 
   init(block: OrgEditableBlock) {
     self.block = block
@@ -1896,6 +1929,11 @@ private struct QuoteBlockEditor: View {
     let body = lines.count >= 2 ? Array(lines.dropFirst().dropLast()).joined(separator: "\n") : ""
     _quoteText = State(initialValue: body)
     _selectedRange = State(initialValue: InlineEditorSizing.endSelection(in: body))
+    _reservedLineCount = State(initialValue: InlineEditorSizing.cappedLineCount(
+      in: body,
+      minimum: 2,
+      maximum: 11
+    ))
   }
 
   var body: some View {
@@ -1938,6 +1976,7 @@ private struct QuoteBlockEditor: View {
     )
     .onHover { isHovered = $0 }
     .onChange(of: quoteText) {
+      reserveEditorLines(for: quoteText)
       scheduleQuoteAutosave()
     }
     .onDisappear {
@@ -1946,6 +1985,7 @@ private struct QuoteBlockEditor: View {
     }
     .onAppear {
       liveText.update(quoteText)
+      reserveEditorLines(for: quoteText)
     }
   }
 
@@ -1958,8 +1998,22 @@ private struct QuoteBlockEditor: View {
   }
 
   private var editorHeight: CGFloat {
-    let lineCount = InlineEditorSizing.cappedLineCount(in: quoteText, minimum: 2, maximum: 11)
+    let lineCount = InlineEditorSizing.stickyCappedLineCount(
+      in: quoteText,
+      reservedLineCount: reservedLineCount,
+      minimum: 2,
+      maximum: 11
+    )
     return min(260, max(58, CGFloat(lineCount) * 23 + 12))
+  }
+
+  private func reserveEditorLines(for text: String) {
+    reservedLineCount = InlineEditorSizing.stickyCappedLineCount(
+      in: text,
+      reservedLineCount: reservedLineCount,
+      minimum: 2,
+      maximum: 11
+    )
   }
 
   private var quoteControls: some View {
@@ -2029,6 +2083,7 @@ private struct SourceBlockEditor: View {
   @State private var isBodyFocused = false
   @State private var autosaveTask: Task<Void, Never>?
   @State private var liveBody = OrgSyntaxTextEditorDraftBuffer()
+  @State private var reservedLineCount: Int
 
   init(block: OrgEditableBlock, language: String?, lines: [String]) {
     self.block = block
@@ -2039,6 +2094,11 @@ private struct SourceBlockEditor: View {
     )
     _source = State(initialValue: source)
     _selectedRange = State(initialValue: InlineEditorSizing.endSelection(in: source.body))
+    _reservedLineCount = State(initialValue: InlineEditorSizing.cappedLineCount(
+      in: source.body,
+      minimum: 3,
+      maximum: 15
+    ))
   }
 
   var body: some View {
@@ -2166,6 +2226,7 @@ private struct SourceBlockEditor: View {
     )
     .onHover { isHovered = $0 }
     .onChange(of: source) {
+      reserveEditorLines(for: source.body)
       scheduleSourceAutosave()
     }
     .onDisappear {
@@ -2174,6 +2235,7 @@ private struct SourceBlockEditor: View {
     }
     .onAppear {
       liveBody.update(source.body)
+      reserveEditorLines(for: source.body)
     }
   }
 
@@ -2199,8 +2261,22 @@ private struct SourceBlockEditor: View {
   }
 
   private var editorHeight: CGFloat {
-    let lineCount = InlineEditorSizing.cappedLineCount(in: source.body, minimum: 3, maximum: 15)
+    let lineCount = InlineEditorSizing.stickyCappedLineCount(
+      in: source.body,
+      reservedLineCount: reservedLineCount,
+      minimum: 3,
+      maximum: 15
+    )
     return min(360, max(96, CGFloat(lineCount) * 22 + 34))
+  }
+
+  private func reserveEditorLines(for text: String) {
+    reservedLineCount = InlineEditorSizing.stickyCappedLineCount(
+      in: text,
+      reservedLineCount: reservedLineCount,
+      minimum: 3,
+      maximum: 15
+    )
   }
 
   private var sourceKindTitle: String {
