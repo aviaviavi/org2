@@ -36,10 +36,12 @@ private enum PendingBlockSelectionMode {
 private struct TransientDraftBlock {
   let file: String
   let insertionLine: Int
+  let replacementEndLineExclusive: Int
   let replacementPrefix: String
   let replacementSuffix: String
   let selectionLineOffset: Int
   let block: OrgEditableBlock
+  let coveredBlocks: [OrgEditableBlock]
 }
 
 private struct SplitDraftSpec {
@@ -690,42 +692,12 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
-    isSavingBlock = true
-    defer { isSavingBlock = false }
-
-    do {
-      let replacement = conversionSnippet(
-        for: kind,
-        replacing: block,
-        in: source,
-        draft: editableBlockText
-      )
-      try await Task.detached(priority: .userInitiated) {
-        try Self.replaceSourceRange(
-          file: source.file,
-          startLine: block.startLine,
-          endLineExclusive: block.endLineExclusive,
-          replacement: replacement
-        )
-      }.value
-      invalidateCanonicalDocumentCache(for: source.file)
-      resetBlockEditing()
-      isEditingEntry = false
-      pendingBlockSelection = PendingBlockSelection(
-        file: source.file,
-        line: block.startLine,
-        mode: .containingOrNearest,
-        beginEditing: true
-      )
-      statusText = "Converted block to \(kind.title.lowercased())"
-      if let selectedLocation {
-        await loadEntrySource(for: selectedLocation)
-      }
-      await refreshAgenda(preserveSelection: true)
-    } catch {
-      errorText = error.localizedDescription
-      statusText = "Convert failed"
-    }
+    let draft = conversionDraftBlock(for: kind, replacing: block, in: source, draft: editableBlockText)
+    transientDraftBlock = draft
+    pendingBlockSelection = nil
+    isEditingEntry = false
+    activateTransientDraft(draft)
+    statusText = "Converted block to \(kind.title.lowercased()) draft"
   }
 
   public func insertBlock(after block: OrgEditableBlock, kind: OrgInsertBlockKind) async {
@@ -1181,6 +1153,9 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
     selectedRenderedBlocks.removeAll { $0.id == draft.block.id }
+    let existingIDs = Set(selectedRenderedBlocks.map(\.id))
+    selectedRenderedBlocks.append(contentsOf: draft.coveredBlocks.filter { !existingIDs.contains($0.id) })
+    selectedRenderedBlocks = Self.sortEditableBlocksForDisplay(selectedRenderedBlocks)
     if selectedBlockID == draft.block.id {
       selectedBlockID = nil
     }
@@ -1192,7 +1167,9 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func activateTransientDraft(_ draft: TransientDraftBlock) {
+    let coveredIDs = Set(draft.coveredBlocks.map(\.id))
     selectedRenderedBlocks.removeAll { $0.id == draft.block.id }
+    selectedRenderedBlocks.removeAll { coveredIDs.contains($0.id) }
     selectedRenderedBlocks.append(draft.block)
     selectedRenderedBlocks = Self.sortEditableBlocksForDisplay(selectedRenderedBlocks)
     selectedBlockID = draft.block.id
@@ -1220,7 +1197,7 @@ public final class WorkspaceStore: ObservableObject {
         try Self.replaceSourceRange(
           file: draft.file,
           startLine: draft.insertionLine,
-          endLineExclusive: draft.insertionLine,
+          endLineExclusive: draft.replacementEndLineExclusive,
           replacement: replacement
         )
       }.value
@@ -1324,47 +1301,6 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func insertionSnippet(
-    for kind: OrgInsertBlockKind,
-    after block: OrgEditableBlock,
-    in source: EntrySource
-  ) -> String {
-    let headingLevel = insertionHeadingLevel(after: block, in: source)
-    let stars = String(repeating: "*", count: max(1, headingLevel))
-    switch kind {
-    case .paragraph:
-      return "New text"
-    case .heading:
-      return "\(stars) New heading"
-    case .todo:
-      return "\(stars) TODO New task"
-    case .table:
-      return """
-      | Name | Value |
-      |------+-------|
-      |      |       |
-      """
-    case .properties:
-      return """
-      :PROPERTIES:
-      :KEY: value
-      :END:
-      """
-    case .quote:
-      return """
-      #+begin_quote
-      Quote
-      #+end_quote
-      """
-    case .source:
-      return """
-      #+begin_src sh
-      printf 'hello\\n'
-      #+end_src
-      """
-    }
-  }
-
   private func insertionDraftBlock(
     for kind: OrgInsertBlockKind,
     after previousBlock: OrgEditableBlock,
@@ -1375,6 +1311,7 @@ public final class WorkspaceStore: ObservableObject {
     return TransientDraftBlock(
       file: source.file,
       insertionLine: insertionLine,
+      replacementEndLineExclusive: insertionLine,
       replacementPrefix: "\n",
       replacementSuffix: "",
       selectionLineOffset: 1,
@@ -1383,7 +1320,8 @@ public final class WorkspaceStore: ObservableObject {
         endLineExclusive: insertionLine,
         rawText: rawText,
         rendered: insertionDraftRenderedBlock(for: kind, rawText: rawText, after: previousBlock, in: source)
-      )
+      ),
+      coveredBlocks: []
     )
   }
 
@@ -1454,43 +1392,83 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func conversionSnippet(
+  private func conversionDraftBlock(
+    for kind: OrgInsertBlockKind,
+    replacing block: OrgEditableBlock,
+    in source: EntrySource,
+    draft: String
+  ) -> TransientDraftBlock {
+    let rawText = conversionDraftRawText(for: kind, replacing: block, in: source, draft: draft)
+    return TransientDraftBlock(
+      file: source.file,
+      insertionLine: block.startLine,
+      replacementEndLineExclusive: block.endLineExclusive,
+      replacementPrefix: "",
+      replacementSuffix: "",
+      selectionLineOffset: 0,
+      block: OrgEditableBlock(
+        startLine: block.startLine,
+        endLineExclusive: block.endLineExclusive,
+        rawText: rawText,
+        rendered: draftRenderedBlock(for: kind, rawText: rawText, fallbackLine: block.startLine, fallbackBlock: block, in: source)
+      ),
+      coveredBlocks: [block]
+    )
+  }
+
+  private func conversionDraftRawText(
     for kind: OrgInsertBlockKind,
     replacing block: OrgEditableBlock,
     in source: EntrySource,
     draft: String
   ) -> String {
     let content = slashCommandContent(from: draft)
+    guard !content.isEmpty else {
+      return insertionDraftRawText(for: kind, after: block, in: source)
+    }
+
     let headingLevel = insertionHeadingLevel(after: block, in: source)
     let stars = String(repeating: "*", count: max(1, headingLevel))
-
     switch kind {
     case .paragraph:
-      return content.isEmpty ? "New text" : content
+      return content
     case .heading:
-      return "\(stars) \(singleLineTitle(content, fallback: "New heading"))"
+      return "\(stars) \(singleLineTitle(content, fallback: ""))"
     case .todo:
-      return "\(stars) TODO \(singleLineTitle(content, fallback: "New task"))"
+      return "\(stars) TODO \(singleLineTitle(content, fallback: ""))"
     case .table:
       if content.contains("|") {
         return content
       }
-      return insertionSnippet(for: .table, after: block, in: source)
+      return insertionDraftRawText(for: .table, after: block, in: source)
     case .properties:
-      return insertionSnippet(for: .properties, after: block, in: source)
+      return insertionDraftRawText(for: .properties, after: block, in: source)
     case .quote:
       return """
       #+begin_quote
-      \(content.isEmpty ? "Quote" : content)
+      \(content)
       #+end_quote
       """
     case .source:
       return """
       #+begin_src sh
-      \(content.isEmpty ? "printf 'hello\\n'" : content)
+      \(content)
       #+end_src
       """
     }
+  }
+
+  private func draftRenderedBlock(
+    for kind: OrgInsertBlockKind,
+    rawText: String,
+    fallbackLine: Int,
+    fallbackBlock: OrgEditableBlock,
+    in source: EntrySource
+  ) -> OrgRenderedBlock {
+    if let rendered = OrgEntryRenderer.parseEditable(rawText, baseLine: fallbackLine).first?.rendered {
+      return rendered
+    }
+    return insertionDraftRenderedBlock(for: kind, rawText: rawText, after: fallbackBlock, in: source)
   }
 
   private func slashCommandContent(from draft: String) -> String {
@@ -2333,7 +2311,8 @@ public final class WorkspaceStore: ObservableObject {
     guard let draft = transientDraftBlock, draft.file == source.file else {
       return blocks
     }
-    var visibleBlocks = blocks.filter { $0.id != draft.block.id }
+    let coveredIDs = Set(draft.coveredBlocks.map(\.id))
+    var visibleBlocks = blocks.filter { $0.id != draft.block.id && !coveredIDs.contains($0.id) }
     visibleBlocks.append(draft.block)
     return Self.sortEditableBlocksForDisplay(visibleBlocks)
   }
@@ -2909,6 +2888,7 @@ public final class WorkspaceStore: ObservableObject {
     return TransientDraftBlock(
       file: sourceFile,
       insertionLine: insertionLine,
+      replacementEndLineExclusive: insertionLine,
       replacementPrefix: spec.replacementPrefix,
       replacementSuffix: spec.replacementSuffix,
       selectionLineOffset: spec.selectionLineOffset,
@@ -2917,7 +2897,8 @@ public final class WorkspaceStore: ObservableObject {
         endLineExclusive: displayLine,
         rawText: spec.rawText,
         rendered: spec.rendered
-      )
+      ),
+      coveredBlocks: []
     )
   }
 
