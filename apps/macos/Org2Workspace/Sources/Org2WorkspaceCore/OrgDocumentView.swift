@@ -5,10 +5,12 @@ struct OrgRenderedEntryView: View {
   let blocks: [OrgEditableBlock]
 
   var body: some View {
-    let sourceFile = store.selectedEntrySource?.file
+    let source = store.selectedEntrySource
+    let sourceFile = source?.file
     let corpusRoot = store.corpusRoot
-    let isSourceEditable = store.selectedEntrySource?.isEditable == true
+    let isSourceEditable = source?.isEditable == true
     let selectedBlockID = store.selectedBlockID
+    let moveAvailability = Self.moveAvailability(for: blocks, source: source)
 
     LazyVStack(alignment: .leading, spacing: 8) {
       ForEach(blocks) { block in
@@ -19,8 +21,8 @@ struct OrgRenderedEntryView: View {
             block: block,
             isSourceEditable: isSourceEditable,
             isSelected: selectedBlockID == block.id,
-            canMoveUp: store.canMoveBlock(block, direction: .up),
-            canMoveDown: store.canMoveBlock(block, direction: .down),
+            canMoveUp: moveAvailability[block.id]?.up == true,
+            canMoveDown: moveAvailability[block.id]?.down == true,
             actions: actions(for: block)
           ) {
             RenderedBlockView(
@@ -59,6 +61,33 @@ struct OrgRenderedEntryView: View {
         Task { await store.deleteBlock(block) }
       }
     )
+  }
+
+  private static func moveAvailability(
+    for blocks: [OrgEditableBlock],
+    source: EntrySource?
+  ) -> [OrgEditableBlock.ID: (up: Bool, down: Bool)] {
+    guard let source, source.isEditable else { return [:] }
+
+    let movableBlocks = blocks.filter { block in
+      guard block.isEditable,
+            block.startLine >= source.startLine,
+            block.endLineExclusive <= source.endLineExclusive
+      else {
+        return false
+      }
+      return !(source.isSubtree && block.startLine == source.startLine)
+    }
+
+    var availability: [OrgEditableBlock.ID: (up: Bool, down: Bool)] = [:]
+    availability.reserveCapacity(movableBlocks.count)
+    for (index, block) in movableBlocks.enumerated() {
+      availability[block.id] = (
+        up: index > 0,
+        down: index < movableBlocks.count - 1
+      )
+    }
+    return availability
   }
 }
 
