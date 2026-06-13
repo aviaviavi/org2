@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct InlineBlockEditorView: View {
   let block: OrgEditableBlock
@@ -848,6 +849,14 @@ private struct ParagraphBlockEditor: View {
   let text: String
 
   var body: some View {
+    if let media = OrgEditableMediaLink(rawText: block.rawText) {
+      MediaBlockEditor(block: block, media: media)
+    } else {
+      paragraphEditorContent
+    }
+  }
+
+  private var paragraphEditorContent: some View {
     VStack(alignment: .leading, spacing: 6) {
       OrgSyntaxTextEditor(
         text: $store.editableBlockText,
@@ -962,6 +971,178 @@ private struct ParagraphBlockEditor: View {
 
     Task { await store.splitEditingBlock(block, atUTF16Offset: context.selectedRange.location) }
     return true
+  }
+}
+
+private struct MediaBlockEditor: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let block: OrgEditableBlock
+  @State private var media: OrgEditableMediaLink
+  @FocusState private var targetFocused: Bool
+
+  init(block: OrgEditableBlock, media: OrgEditableMediaLink) {
+    self.block = block
+    _media = State(initialValue: media)
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 8) {
+        Label(title, systemImage: systemImage)
+          .font(.caption.weight(.medium))
+          .foregroundStyle(.secondary)
+
+        Text("line \(block.displayRange)")
+          .font(.caption.monospacedDigit())
+          .foregroundStyle(.tertiary)
+
+        Spacer(minLength: 0)
+
+        if store.isSavingBlock {
+          ProgressView()
+            .controlSize(.small)
+        }
+
+        Button {
+          chooseFile()
+        } label: {
+          Image(systemName: "folder")
+        }
+        .buttonStyle(.borderless)
+        .disabled(store.isSavingBlock)
+        .help("Choose file")
+
+        Button {
+          saveMedia()
+        } label: {
+          Image(systemName: "checkmark")
+        }
+        .buttonStyle(.borderless)
+        .keyboardShortcut("s", modifiers: [.command])
+        .disabled(store.isSavingBlock)
+        .help("Save")
+
+        Button {
+          store.cancelEditingBlock()
+        } label: {
+          Image(systemName: "xmark")
+        }
+        .buttonStyle(.borderless)
+        .keyboardShortcut(.cancelAction)
+        .disabled(store.isSavingBlock)
+        .help("Cancel")
+      }
+
+      RenderedBlockView(
+        block: .paragraph(media.formattedRawText),
+        rawText: media.formattedRawText,
+        editableBlock: block
+      )
+      .padding(.vertical, 2)
+
+      Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 8) {
+        GridRow {
+          Text("File")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+          TextField("path/to/file", text: $media.target)
+            .textFieldStyle(.roundedBorder)
+            .focused($targetFocused)
+            .onSubmit {
+              saveMedia()
+            }
+        }
+
+        GridRow {
+          Text("Caption")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+          TextField("caption", text: $media.label)
+            .textFieldStyle(.roundedBorder)
+            .onSubmit {
+              saveMedia()
+            }
+        }
+      }
+      .frame(maxWidth: 620, alignment: .leading)
+    }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 7)
+    .background(Color.accentColor.opacity(0.055), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 7, style: .continuous)
+        .stroke(Color.accentColor.opacity(0.2))
+    )
+    .onAppear {
+      targetFocused = true
+    }
+  }
+
+  private var title: String {
+    media.kind == .image ? "Image" : "Video"
+  }
+
+  private var systemImage: String {
+    media.kind == .image ? "photo" : "film"
+  }
+
+  private func chooseFile() {
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = false
+    panel.canChooseFiles = true
+    panel.allowsMultipleSelection = false
+    panel.allowedContentTypes = allowedContentTypes
+
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    media.target = relativeTarget(for: url)
+    if media.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      media.label = url.deletingPathExtension().lastPathComponent
+    }
+  }
+
+  private var allowedContentTypes: [UTType] {
+    switch media.kind {
+    case .image:
+      var types: [UTType] = [.image]
+      if let webp = UTType(filenameExtension: "webp") {
+        types.append(webp)
+      }
+      return types
+    case .video:
+      var types: [UTType] = [.movie, .mpeg4Movie, .quickTimeMovie, .avi]
+      if let webm = UTType(filenameExtension: "webm") {
+        types.append(webm)
+      }
+      return types
+    }
+  }
+
+  private func relativeTarget(for url: URL) -> String {
+    let path = url.standardizedFileURL.path
+    if let sourceFile = store.selectedEntrySource?.file {
+      let sourceDirectory = URL(fileURLWithPath: sourceFile)
+        .deletingLastPathComponent()
+        .standardizedFileURL
+        .path
+      if let relative = relativePath(path, from: sourceDirectory) {
+        return relative
+      }
+    }
+    if let root = store.corpusRoot?.standardizedFileURL.path,
+       let relative = relativePath(path, from: root) {
+      return relative
+    }
+    return path
+  }
+
+  private func relativePath(_ path: String, from base: String) -> String? {
+    guard path.hasPrefix(base + "/") else { return nil }
+    return String(path.dropFirst(base.count + 1))
+  }
+
+  private func saveMedia() {
+    store.editableBlockText = media.formattedRawText
+    Task { await store.saveEditedBlock(block) }
   }
 }
 
