@@ -51,6 +51,20 @@ public struct MeetingArtifactBundle: Sendable {
   public let transcriptURL: URL
 }
 
+public struct MeetingInputMeterSnapshot: Equatable, Sendable {
+  public let averageLevel: Double
+  public let peakLevel: Double
+  public let averagePowerDecibels: Float
+  public let peakPowerDecibels: Float
+
+  public static let silent = MeetingInputMeterSnapshot(
+    averageLevel: 0,
+    peakLevel: 0,
+    averagePowerDecibels: -160,
+    peakPowerDecibels: -160
+  )
+}
+
 public enum MeetingArtifactWriter {
   public static func preparePaths(
     corpusRoot: URL,
@@ -555,6 +569,27 @@ public final class MeetingAudioRecorder {
     }
     self.recorder = recorder
     self.startedAt = Date()
+  }
+
+  public var inputMeterSnapshot: MeetingInputMeterSnapshot {
+    guard let recorder else { return .silent }
+    recorder.updateMeters()
+    let averagePower = recorder.averagePower(forChannel: 0)
+    let peakPower = recorder.peakPower(forChannel: 0)
+    return MeetingInputMeterSnapshot(
+      averageLevel: Self.normalizedMeterLevel(fromDecibels: averagePower),
+      peakLevel: Self.normalizedMeterLevel(fromDecibels: peakPower),
+      averagePowerDecibels: averagePower,
+      peakPowerDecibels: peakPower
+    )
+  }
+
+  nonisolated public static func normalizedMeterLevel(fromDecibels decibels: Float) -> Double {
+    guard decibels.isFinite else { return 0 }
+    let floor: Double = -60
+    let ceiling: Double = 0
+    let clamped = min(ceiling, max(floor, Double(decibels)))
+    return (clamped - floor) / (ceiling - floor)
   }
 
   public func stopRecording() throws -> TimeInterval {
