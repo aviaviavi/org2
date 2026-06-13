@@ -1820,6 +1820,36 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNil(availability.values["last"])
   }
 
+  func testRenderedEntryMoveAvailabilityWindowsLargePages() {
+    let blocks = (1...1_500).map { index in
+      OrgEditableBlock(
+        id: "block-\(index)",
+        startLine: index,
+        endLineExclusive: index + 1,
+        rawText: "Block \(index)",
+        rendered: .paragraph("Block \(index)")
+      )
+    }
+    let source = EntrySource(
+      file: "/tmp/large.org2",
+      startLine: 1,
+      endLineExclusive: 1_501,
+      text: "",
+      isSubtree: false
+    )
+
+    let availability = OrgRenderedEntryMoveAvailability.make(
+      for: blocks,
+      source: source,
+      visibleRange: 700..<704
+    )
+
+    XCTAssertEqual(Set(availability.values.keys), Set(["block-701", "block-702", "block-703", "block-704"]))
+    XCTAssertEqual(availability.values["block-701"], OrgRenderedEntryBlockMoveAvailability(up: true, down: true))
+    XCTAssertNil(availability.values["block-1"])
+    XCTAssertNil(availability.values["block-1500"])
+  }
+
   func testRenderedEntryMoveAvailabilitySignatureChangesWhenEditabilityChanges() {
     let editableBlock = OrgEditableBlock(
       id: "middle",

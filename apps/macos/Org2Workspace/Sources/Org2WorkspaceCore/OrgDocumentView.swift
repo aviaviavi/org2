@@ -413,31 +413,17 @@ struct OrgRenderedEntryMoveAvailability: Sendable {
     }
 
     let targetRange = clampedVisibleRange(visibleRange, totalCount: blocks.count)
-    var firstMovableIndex: Int?
-    var lastMovableIndex: Int?
-    var visibleMovableBlocks: [(index: Int, id: OrgEditableBlock.ID)] = []
-    visibleMovableBlocks.reserveCapacity(targetRange.count)
-
-    for (index, block) in blocks.enumerated() {
-      guard isMovable(block, in: source) else { continue }
-      if firstMovableIndex == nil {
-        firstMovableIndex = index
-      }
-      lastMovableIndex = index
-      if targetRange.contains(index) {
-        visibleMovableBlocks.append((index: index, id: block.id))
-      }
-    }
-
-    guard let firstMovableIndex, let lastMovableIndex else {
+    guard let movableBounds = movableBounds(in: blocks, source: source) else {
       return OrgRenderedEntryMoveAvailability(signature: signature, values: [:])
     }
     var values: [OrgEditableBlock.ID: OrgRenderedEntryBlockMoveAvailability] = [:]
-    values.reserveCapacity(visibleMovableBlocks.count)
-    for visibleBlock in visibleMovableBlocks {
-      values[visibleBlock.id] = OrgRenderedEntryBlockMoveAvailability(
-        up: visibleBlock.index > firstMovableIndex,
-        down: visibleBlock.index < lastMovableIndex
+    values.reserveCapacity(targetRange.count)
+    for index in targetRange {
+      let block = blocks[index]
+      guard isMovable(block, in: source) else { continue }
+      values[block.id] = OrgRenderedEntryBlockMoveAvailability(
+        up: index > movableBounds.first,
+        down: index < movableBounds.last
       )
     }
 
@@ -498,6 +484,17 @@ struct OrgRenderedEntryMoveAvailability: Sendable {
       return false
     }
     return !(source.isSubtree && block.startLine == source.startLine)
+  }
+
+  private static func movableBounds(
+    in blocks: [OrgEditableBlock],
+    source: EntrySource
+  ) -> (first: Int, last: Int)? {
+    guard let first = blocks.indices.first(where: { isMovable(blocks[$0], in: source) }) else {
+      return nil
+    }
+    let last = blocks.indices.reversed().first(where: { isMovable(blocks[$0], in: source) }) ?? first
+    return (first, last)
   }
 }
 
