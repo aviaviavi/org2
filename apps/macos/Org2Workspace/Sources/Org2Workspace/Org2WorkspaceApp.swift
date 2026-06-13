@@ -44,6 +44,21 @@ struct Org2WorkspaceApp: App {
         }
         .keyboardShortcut("r", modifiers: [.command])
 
+        Button(store.isRecordingMeeting ? "Stop Meeting Recording" : "Record Meeting") {
+          if store.isRecordingMeeting {
+            Task { await store.stopMeetingRecording() }
+          } else {
+            store.promptAndStartMeetingRecording()
+          }
+        }
+        .keyboardShortcut("m", modifiers: [.command, .shift])
+        .disabled(store.corpusRoot == nil || store.isProcessingMeeting)
+
+        Button("Import Meeting Audio...") {
+          store.promptAndImportMeetingAudio()
+        }
+        .disabled(store.corpusRoot == nil || store.isRecordingMeeting || store.isProcessingMeeting)
+
         Button("Save Entry") {
           Task { await store.saveEditedEntry() }
         }
