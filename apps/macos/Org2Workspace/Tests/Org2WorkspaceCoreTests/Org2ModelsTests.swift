@@ -421,7 +421,7 @@ final class Org2ModelsTests: XCTestCase {
     * TODO [#A] Review [[id:11111111-1111-4111-8111-111111111111][Alice]] :work:
     SCHEDULED: <2026-06-12 Fri 09:30>
     :OWNER: agent
-    Body with `code` and /emphasis/.
+    Body with `code`, *emphasis*, and [Docs](https://example.com/docs).
     #+begin_src swift
     let value = 1
     #+end_src
@@ -433,14 +433,16 @@ final class Org2ModelsTests: XCTestCase {
     assertToken(.todo, "TODO", in: raw, tokens: tokens)
     assertToken(.priority, "[#A]", in: raw, tokens: tokens)
     assertToken(.link, "[[id:11111111-1111-4111-8111-111111111111][Alice]]", in: raw, tokens: tokens)
+    assertToken(.linkTarget, "id:11111111-1111-4111-8111-111111111111", in: raw, tokens: tokens)
+    assertToken(.link, "[Docs](https://example.com/docs)", in: raw, tokens: tokens)
+    assertToken(.linkTarget, "https://example.com/docs", in: raw, tokens: tokens)
     assertToken(.tag, ":work:", in: raw, tokens: tokens)
     assertToken(.planningKeyword, "SCHEDULED", in: raw, tokens: tokens)
     assertToken(.timestamp, "<2026-06-12 Fri 09:30>", in: raw, tokens: tokens)
     assertToken(.propertyKey, "OWNER", in: raw, tokens: tokens)
     assertToken(.code, "`code`", in: raw, tokens: tokens)
-    assertToken(.emphasis, "/emphasis/", in: raw, tokens: tokens)
+    assertToken(.emphasis, "*emphasis*", in: raw, tokens: tokens)
     assertToken(.syntaxDelimiter, "`", in: raw, tokens: tokens)
-    assertToken(.syntaxDelimiter, "/", in: raw, tokens: tokens)
     assertToken(.syntaxDelimiter, "[[", in: raw, tokens: tokens)
     assertToken(.syntaxDelimiter, "][", in: raw, tokens: tokens)
     assertToken(.syntaxDelimiter, "]]", in: raw, tokens: tokens)
@@ -451,13 +453,15 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   func testOrgSyntaxHighlighterVisuallyRecedesEditableDelimiters() throws {
-    let raw = "See [[id:abc][Alice]] and `code`."
+    let raw = "See [[id:abc][Alice]] and [Docs](https://example.com/docs) and `code`."
     let storage = NSTextStorage(string: raw)
     OrgSyntaxHighlighter.apply(to: storage, monospaced: false)
     let ns = raw as NSString
 
     let bracketIndex = try XCTUnwrap(optionalLocation(ns.range(of: "[[")))
+    let orgTargetIndex = try XCTUnwrap(optionalLocation(ns.range(of: "id:abc")))
     let linkLabelIndex = try XCTUnwrap(optionalLocation(ns.range(of: "Alice")))
+    let markdownTargetIndex = try XCTUnwrap(optionalLocation(ns.range(of: "https://example.com/docs")))
     let tickIndex = try XCTUnwrap(optionalLocation(ns.range(of: "`")))
     let codeIndex = try XCTUnwrap(optionalLocation(ns.range(of: "code")))
 
@@ -470,6 +474,14 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(labelColor, NSColor.controlAccentColor)
     let labelUnderline = storage.attribute(.underlineStyle, at: linkLabelIndex, effectiveRange: nil) as? Int
     XCTAssertEqual(labelUnderline, NSUnderlineStyle.single.rawValue)
+
+    let orgTargetColor = try XCTUnwrap(storage.attribute(.foregroundColor, at: orgTargetIndex, effectiveRange: nil) as? NSColor)
+    let markdownTargetColor = try XCTUnwrap(storage.attribute(.foregroundColor, at: markdownTargetIndex, effectiveRange: nil) as? NSColor)
+    XCTAssertLessThan(orgTargetColor.alphaComponent, 0.45)
+    XCTAssertLessThan(markdownTargetColor.alphaComponent, 0.45)
+    let targetUnderline = storage.attribute(.underlineStyle, at: orgTargetIndex, effectiveRange: nil) as? Int
+    XCTAssertEqual(targetUnderline, 0)
+
     let bracketUnderline = storage.attribute(.underlineStyle, at: bracketIndex, effectiveRange: nil) as? Int
     XCTAssertEqual(bracketUnderline, 0)
 
