@@ -316,13 +316,16 @@ assert.deepEqual(json.provenance.datasetIds, ["fetches"]);
 assert.deepEqual(json.provenance.viewIds, []);
 assert.match(json.provenance.querySha256, /^[a-f0-9]{64}$/);
 assert.match(json.provenance.scriptSha256, /^[a-f0-9]{64}$/);
+assert.match(json.provenance.ranAt, /^\d{4}-\d{2}-\d{2}T/);
 assert.match(json.duckdbScript, /read_csv_auto/);
 assert.match(json.orgTable, /^#\+query-data: result=fetches_by_state rows=2 artifact=views\/fetches_by_state\.org freshness=24h query_sha256=[a-f0-9]{64} script_sha256=[a-f0-9]{64}/);
+assert.match(json.orgTable, / ran_at=\d{4}-\d{2}-\d{2}T/);
 assert.match(json.orgTable, /#\+name: fetches_by_state/);
 assert.match(json.orgTable, /\| state \| fetches \|/);
 
 const org = cli(["query-data", "--file", note, "--results", "fetches_by_state", "--duckdb", fakeDuckdb]);
 assert.match(org, /^#\+query-data: result=fetches_by_state rows=2 artifact=views\/fetches_by_state\.org freshness=24h query_sha256=[a-f0-9]{64} script_sha256=[a-f0-9]{64}/);
+assert.match(org, / ran_at=\d{4}-\d{2}-\d{2}T/);
 assert.match(org, /#\+name: fetches_by_state/);
 assert.match(org, /\| state \| fetches \|/);
 assert.match(org, /\| CA    \| 42      \|/);
