@@ -104,6 +104,45 @@ Fetching the selected context object goes the other direction: =org2 agent fetch
 
 For prompt-ready context, =org2 context --id report-1 --format markdown= renders the selected node directly as a cited context pack. When attached agent-thread records exist, the rendered pack includes a =Related agent threads= section with the session/status and matching attachments so a client can decide whether to open an existing OpenClaw session or start a new one.
 
+* Collaboration and workflow state
+
+Shared human/agent work should keep enough routing and policy state in the Org2 document for every client to agree on what can happen next. Use normal properties on the task, report, draft, or thread heading rather than hiding that state inside one chat UI.
+
+#+begin_src org
+* TODO Send support follow-up
+:PROPERTIES:
+:ID: support-followup-1
+:OWNER: Casey
+:ASSIGNEE: openclaw
+:AGENT: codex
+:NEXT_ACTION: Draft the reply for Casey's approval
+:WAITING_ON: Casey approval
+:LIFECYCLE: review
+:REQUIRES_HUMAN_APPROVAL: true
+:ALLOW_AGENT_EDIT: true
+:ALLOW_EXTERNAL_SEND: false
+:SESSION: openclaw:session:triage-1
+:RUN_ID: run-42
+:RUN_STARTED_AT: 2026-05-15T10:00:00-07:00
+:RUN_LOG: file:runs/support-followup-1.log
+:SOURCE_ARTIFACTS: file:tickets/support.json, artifact:reports/ticket-volume.csv
+:HANDOFF_SUMMARY: Draft is ready; do not send externally until approved.
+:HANDOFF_LINKS: id:support-decision-1
+:END:
+#+end_src
+
+The first stable convention is property-backed and intentionally small:
+
+- ownership/routing: =OWNER=, =ASSIGNEE=, =AGENT=, =NEXT_ACTION=, =WAITING_ON=
+- lifecycle: =LIFECYCLE=, =WORKFLOW_STATE=, or =WORKFLOW_STATUS=
+- policy gates: =REQUIRES_HUMAN_APPROVAL=, =ALLOW_AGENT_EDIT=, =ALLOW_EXTERNAL_SEND=
+- run/session metadata: =SESSION=, =RUN_ID=, =RUN_STARTED_AT=, =RUN_FINISHED_AT=, =RUN_LOG=, =SOURCE_ARTIFACTS=
+- handoff metadata: =HANDOFF_SUMMARY=, =HANDOFF_NEXT_ACTION=, =HANDOFF_LINKS=
+
+=org2 agent fetch --id support-followup-1 --format json= exposes these fields under =collaboration=. Policy gates are booleans, and source/handoff references use the same typed attachment shape as agent threads, resolving known =id:=, =file:=, =report:=, =entity:=, and related refs when possible. =org2 context --id support-followup-1= renders a =Collaboration state= section with owner, assignee, lifecycle, next action, waiting state, policy gates, run metadata, and handoff summary.
+
+These conventions are not a workflow engine. They are the minimum shared state needed for CLI, Workspace, OpenClaw, Codex, and future clients to render the same next action and avoid unsafe external sends or silent canonical edits.
+
 * Data and query records
 
 Data-backed reports should keep executable details and materialized artifacts as typed headings. Use =KIND: warehouse-query= for external systems, =KIND: dataset= for local/ad hoc sources, and =KIND: data-link=, =sql-view=, =event-stream=, or =timeline-link= for adjacent projections.

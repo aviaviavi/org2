@@ -109,6 +109,40 @@ type AgentRelatedDataLink = {
   matchingAttachments?: AgentContextAttachment[];
 };
 
+type AgentPolicyGates = {
+  requiresHumanApproval?: boolean;
+  allowAgentEdit?: boolean;
+  allowExternalSend?: boolean;
+};
+
+type AgentWorkflowRun = {
+  agent?: string;
+  session?: string;
+  runId?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  log?: string;
+  sourceArtifacts?: AgentContextAttachment[];
+};
+
+type AgentHandoffState = {
+  summary?: string;
+  nextAction?: string;
+  links?: AgentContextAttachment[];
+};
+
+type AgentCollaborationState = {
+  owner?: string;
+  assignee?: string;
+  agent?: string;
+  nextAction?: string;
+  waitingOn?: string;
+  lifecycle?: string;
+  policy?: AgentPolicyGates;
+  run?: AgentWorkflowRun;
+  handoff?: AgentHandoffState;
+};
+
 type AgentNode = {
   key: string;
   kind: "file" | "heading";
@@ -128,6 +162,7 @@ type AgentNode = {
   matchedTerms?: string[];
   selectionReason?: string[];
   claimState: AgentClaimState;
+  collaboration?: AgentCollaborationState;
   thread?: AgentThreadMetadata;
   relatedThreads?: AgentRelatedThread[];
   dataLink?: AgentDataLinkMetadata;
@@ -634,6 +669,90 @@ function dataLinkMetadataFor(node: CompiledCorpusNode): AgentDataLinkMetadata | 
   };
 }
 
+function booleanProperty(props: Record<string, string>, names: string[]): boolean | undefined {
+  for (const name of names) {
+    if (!(name in props)) continue;
+    const value = String(props[name] || "").trim().toLowerCase();
+    if (/^(1|true|yes|y|on|allow|allowed|required)$/i.test(value)) return true;
+    if (/^(0|false|no|n|off|deny|denied|blocked|forbid|forbidden)$/i.test(value)) return false;
+  }
+  return undefined;
+}
+
+function policyHasValues(policy: AgentPolicyGates): boolean {
+  return Object.values(policy).some((value) => value !== undefined);
+}
+
+function runHasValues(run: AgentWorkflowRun): boolean {
+  return Object.values(run).some((value) => Array.isArray(value) ? value.length > 0 : value !== undefined);
+}
+
+function handoffHasValues(handoff: AgentHandoffState): boolean {
+  return Object.values(handoff).some((value) => Array.isArray(value) ? value.length > 0 : Boolean(value));
+}
+
+function collaborationStateFor(corpus: CompiledCorpus, node: CompiledCorpusNode): AgentCollaborationState | undefined {
+  const props = node.properties || {};
+  const owner = stringDataProperty(props, ["OWNER", "ORG2_OWNER"]);
+  const assignee = stringDataProperty(props, ["ASSIGNEE", "ASSIGNED_TO", "ORG2_ASSIGNEE"]);
+  const agent = stringDataProperty(props, ["AGENT", "ORG2_AGENT"]);
+  const nextAction = stringDataProperty(props, ["NEXT_ACTION", "NEXT", "ORG2_NEXT_ACTION"]);
+  const waitingOn = stringDataProperty(props, ["WAITING_ON", "BLOCKED_BY", "ORG2_WAITING_ON"]);
+  const lifecycle = stringDataProperty(props, ["LIFECYCLE", "WORKFLOW_STATE", "WORKFLOW_STATUS", "STATE", "ORG2_LIFECYCLE"]);
+  const policy: AgentPolicyGates = {
+    ...(booleanProperty(props, ["REQUIRES_HUMAN_APPROVAL", "HUMAN_APPROVAL_REQUIRED", "ORG2_REQUIRES_HUMAN_APPROVAL"]) !== undefined
+      ? { requiresHumanApproval: booleanProperty(props, ["REQUIRES_HUMAN_APPROVAL", "HUMAN_APPROVAL_REQUIRED", "ORG2_REQUIRES_HUMAN_APPROVAL"]) }
+      : {}),
+    ...(booleanProperty(props, ["ALLOW_AGENT_EDIT", "AGENT_EDIT_ALLOWED", "ORG2_ALLOW_AGENT_EDIT"]) !== undefined
+      ? { allowAgentEdit: booleanProperty(props, ["ALLOW_AGENT_EDIT", "AGENT_EDIT_ALLOWED", "ORG2_ALLOW_AGENT_EDIT"]) }
+      : {}),
+    ...(booleanProperty(props, ["ALLOW_EXTERNAL_SEND", "EXTERNAL_SEND_ALLOWED", "ORG2_ALLOW_EXTERNAL_SEND"]) !== undefined
+      ? { allowExternalSend: booleanProperty(props, ["ALLOW_EXTERNAL_SEND", "EXTERNAL_SEND_ALLOWED", "ORG2_ALLOW_EXTERNAL_SEND"]) }
+      : {}),
+  };
+  const sourceArtifacts = resolveAttachmentTargets(
+    corpus,
+    mergeAttachments([
+      ...parseUntypedAttachmentList(props.SOURCE_ARTIFACT, "artifact"),
+      ...parseUntypedAttachmentList(props.SOURCE_ARTIFACTS, "artifact"),
+      ...parseUntypedAttachmentList(props.SOURCES, "artifact"),
+    ]),
+  );
+  const run: AgentWorkflowRun = {
+    ...(agent ? { agent } : {}),
+    ...(stringDataProperty(props, ["SESSION", "ORG2_SESSION"]) ? { session: stringDataProperty(props, ["SESSION", "ORG2_SESSION"]) } : {}),
+    ...(stringDataProperty(props, ["RUN_ID", "ORG2_RUN_ID"]) ? { runId: stringDataProperty(props, ["RUN_ID", "ORG2_RUN_ID"]) } : {}),
+    ...(stringDataProperty(props, ["STARTED_AT", "RUN_STARTED_AT", "ORG2_STARTED_AT"]) ? { startedAt: stringDataProperty(props, ["STARTED_AT", "RUN_STARTED_AT", "ORG2_STARTED_AT"]) } : {}),
+    ...(stringDataProperty(props, ["FINISHED_AT", "RUN_FINISHED_AT", "ORG2_FINISHED_AT"]) ? { finishedAt: stringDataProperty(props, ["FINISHED_AT", "RUN_FINISHED_AT", "ORG2_FINISHED_AT"]) } : {}),
+    ...(stringDataProperty(props, ["RUN_LOG", "TOOL_LOG", "LOG", "ORG2_RUN_LOG"]) ? { log: stringDataProperty(props, ["RUN_LOG", "TOOL_LOG", "LOG", "ORG2_RUN_LOG"]) } : {}),
+    ...(sourceArtifacts.length ? { sourceArtifacts } : {}),
+  };
+  const handoffLinks = resolveAttachmentTargets(
+    corpus,
+    mergeAttachments([
+      ...parseUntypedAttachmentList(props.HANDOFF_LINK, "other"),
+      ...parseUntypedAttachmentList(props.HANDOFF_LINKS, "other"),
+    ]),
+  );
+  const handoff: AgentHandoffState = {
+    ...(stringDataProperty(props, ["HANDOFF", "HANDOFF_SUMMARY", "CURRENT_STATE"]) ? { summary: stringDataProperty(props, ["HANDOFF", "HANDOFF_SUMMARY", "CURRENT_STATE"]) } : {}),
+    ...(stringDataProperty(props, ["HANDOFF_NEXT_ACTION"]) || nextAction ? { nextAction: stringDataProperty(props, ["HANDOFF_NEXT_ACTION"]) || nextAction } : {}),
+    ...(handoffLinks.length ? { links: handoffLinks } : {}),
+  };
+  const state: AgentCollaborationState = {
+    ...(owner ? { owner } : {}),
+    ...(assignee ? { assignee } : {}),
+    ...(agent ? { agent } : {}),
+    ...(nextAction ? { nextAction } : {}),
+    ...(waitingOn ? { waitingOn } : {}),
+    ...(lifecycle ? { lifecycle } : {}),
+    ...(policyHasValues(policy) ? { policy } : {}),
+    ...(runHasValues(run) ? { run } : {}),
+    ...(handoffHasValues(handoff) ? { handoff } : {}),
+  };
+  return Object.keys(state).length ? state : undefined;
+}
+
 function parseUntypedAttachmentList(raw: string | undefined, defaultType: AgentContextAttachment["type"] = "other"): AgentContextAttachment[] {
   if (!raw) return [];
   return String(raw)
@@ -721,6 +840,7 @@ function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: 
   const relatedThreads = relatedThreadsFor(corpus, node);
   const dataLink = dataLinkMetadataFor(node);
   const relatedDataLinks = relatedDataLinksFor(corpus, node);
+  const collaboration = collaborationStateFor(corpus, node);
   return {
     key: node.key,
     kind: node.kind,
@@ -738,6 +858,7 @@ function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: 
     snippet: node.snippet,
     ...(score ? { score: score.score, matchedTerms: score.matchedTerms, selectionReason: score.selectionReason || [] } : {}),
     claimState: claimStateFor(node),
+    ...(collaboration ? { collaboration } : {}),
     ...(thread ? { thread } : {}),
     ...(relatedThreads.length ? { relatedThreads } : {}),
     ...(dataLink ? { dataLink } : {}),
@@ -786,6 +907,9 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
     .sort((a, b) => b.date.localeCompare(a.date) || a.node.citation.localeCompare(b.node.citation))
     .slice(0, 8);
   const todos = results.filter((node) => Boolean(node.todo));
+  const collaborationStates = results
+    .filter((node): node is AgentNode & { collaboration: AgentCollaborationState } => Boolean(node.collaboration))
+    .sort((a, b) => a.citation.localeCompare(b.citation) || a.title.localeCompare(b.title));
   const entityValues = uniqueSorted(results.flatMap((node) => [node.properties.PROJECT, node.properties.PERSON, node.properties.PEOPLE, ...node.tags, ...node.aliases]));
   const backlinkValues = uniqueSorted(results.flatMap((node) => (node.backlinks || []).map((link) => `${link.sourceTitle} (${link.citation})`)));
   const relatedThreads = Array.from(
@@ -847,6 +971,50 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
   lines.push(`${h2} Active TODOs / scheduled items`);
   if (todos.length === 0) lines.push("- None found");
   for (const node of todos) lines.push(`- ${node.todo} ${node.title} (${node.citation})`);
+  lines.push("");
+  lines.push(`${h2} Collaboration state`);
+  if (collaborationStates.length === 0) lines.push("- None found");
+  for (const node of collaborationStates) {
+    const state = node.collaboration;
+    const details = [
+      state.owner ? `owner: ${state.owner}` : "",
+      state.assignee ? `assignee: ${state.assignee}` : "",
+      state.agent ? `agent: ${state.agent}` : "",
+      state.lifecycle ? `lifecycle: ${state.lifecycle}` : "",
+      state.nextAction ? `next: ${state.nextAction}` : "",
+      state.waitingOn ? `waiting on: ${state.waitingOn}` : "",
+    ].filter(Boolean);
+    lines.push(`- ${node.title} (${node.citation})${details.length ? `; ${details.join("; ")}` : ""}`);
+    if (state.policy) {
+      const gates = [
+        state.policy.requiresHumanApproval !== undefined ? `human approval: ${state.policy.requiresHumanApproval ? "required" : "not required"}` : "",
+        state.policy.allowAgentEdit !== undefined ? `agent edit: ${state.policy.allowAgentEdit ? "allowed" : "not allowed"}` : "",
+        state.policy.allowExternalSend !== undefined ? `external send: ${state.policy.allowExternalSend ? "allowed" : "not allowed"}` : "",
+      ].filter(Boolean);
+      if (gates.length) lines.push(`  - Policy: ${gates.join("; ")}`);
+    }
+    if (state.run) {
+      const sourceArtifacts = uniqueSorted((state.run.sourceArtifacts || []).map((attachment) => attachment.ref));
+      const runDetails = [
+        state.run.session ? `session: ${state.run.session}` : "",
+        state.run.runId ? `run: ${state.run.runId}` : "",
+        state.run.startedAt ? `started: ${state.run.startedAt}` : "",
+        state.run.finishedAt ? `finished: ${state.run.finishedAt}` : "",
+        state.run.log ? `log: ${state.run.log}` : "",
+        sourceArtifacts.length ? `sources: ${sourceArtifacts.join(", ")}` : "",
+      ].filter(Boolean);
+      if (runDetails.length) lines.push(`  - Run: ${runDetails.join("; ")}`);
+    }
+    if (state.handoff) {
+      const handoffLinks = uniqueSorted((state.handoff.links || []).map((attachment) => attachment.ref));
+      const handoffDetails = [
+        state.handoff.summary ? `summary: ${state.handoff.summary}` : "",
+        state.handoff.nextAction ? `next: ${state.handoff.nextAction}` : "",
+        handoffLinks.length ? `links: ${handoffLinks.join(", ")}` : "",
+      ].filter(Boolean);
+      if (handoffDetails.length) lines.push(`  - Handoff: ${handoffDetails.join("; ")}`);
+    }
+  }
   lines.push("");
   lines.push(`${h2} Related entities and backlinks`);
   if (entityValues.length === 0 && backlinkValues.length === 0) lines.push("- None found");
