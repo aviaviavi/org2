@@ -19,10 +19,11 @@ struct OrgRenderedEntryView: View {
       source: source
     )
     let moveAvailabilityValues = moveAvailability.signature == moveAvailabilitySignature ? moveAvailability.values : [:]
+    let selectedBlockIndex = selectedBlockID.flatMap { store.selectedRenderedBlockIndexes[$0] }
     let visibleLimit = Self.visibleLimit(
       requestedLimit: renderedBlockLimit,
       blocks: blocks,
-      selectedBlockID: selectedBlockID
+      selectedBlockIndex: selectedBlockIndex
     )
     let visibleBlocks = Array(blocks.prefix(visibleLimit))
 
@@ -119,12 +120,12 @@ struct OrgRenderedEntryView: View {
   private static func visibleLimit(
     requestedLimit: Int,
     blocks: [OrgEditableBlock],
-    selectedBlockID: OrgEditableBlock.ID?
+    selectedBlockIndex: Int?
   ) -> Int {
     guard !blocks.isEmpty else { return 0 }
     var limit = min(max(requestedLimit, initialRenderedBlockLimit), blocks.count)
-    if let selectedBlockID,
-       let selectedIndex = blocks.firstIndex(where: { $0.id == selectedBlockID }) {
+    if let selectedIndex = selectedBlockIndex,
+       blocks.indices.contains(selectedIndex) {
       limit = min(blocks.count, max(limit, selectedIndex + selectedBlockLookahead))
     }
     return limit

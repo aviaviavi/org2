@@ -106,9 +106,11 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedRenderedBlocks: [OrgEditableBlock] = [] {
     didSet {
       selectedRenderedBlocksSignature = Self.renderedBlocksSignature(for: selectedRenderedBlocks)
+      selectedRenderedBlockIndexes = Self.renderedBlockIndexes(for: selectedRenderedBlocks)
     }
   }
   public private(set) var selectedRenderedBlocksSignature = WorkspaceStore.renderedBlocksSignature(for: [])
+  public private(set) var selectedRenderedBlockIndexes: [OrgEditableBlock.ID: Int] = [:]
   @Published public var selectedEntrySourceMode: EntrySourceMode = .entry
   @Published public var editableEntryText = ""
   @Published public var selectedBlockID: OrgEditableBlock.ID?
@@ -471,7 +473,13 @@ public final class WorkspaceStore: ObservableObject {
 
   public var selectedBlock: OrgEditableBlock? {
     guard let selectedBlockID else { return nil }
-    return selectedRenderedBlocks.first { $0.id == selectedBlockID }
+    guard let index = selectedRenderedBlockIndexes[selectedBlockID],
+          selectedRenderedBlocks.indices.contains(index),
+          selectedRenderedBlocks[index].id == selectedBlockID
+    else {
+      return nil
+    }
+    return selectedRenderedBlocks[index]
   }
 
   public var hasSelectedBlock: Bool {
@@ -2596,6 +2604,17 @@ public final class WorkspaceStore: ObservableObject {
       hasher.combine(block.isEditable)
     }
     return "\(blocks.count):\(hasher.finalize())"
+  }
+
+  private static func renderedBlockIndexes(for blocks: [OrgEditableBlock]) -> [OrgEditableBlock.ID: Int] {
+    guard !blocks.isEmpty else { return [:] }
+
+    var indexes: [OrgEditableBlock.ID: Int] = [:]
+    indexes.reserveCapacity(blocks.count)
+    for (index, block) in blocks.enumerated() {
+      indexes[block.id] = index
+    }
+    return indexes
   }
 
   private func invalidateRenderedBlocksCache(for file: String) {
