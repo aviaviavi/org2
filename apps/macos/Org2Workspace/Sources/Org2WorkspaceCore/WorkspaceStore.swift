@@ -740,37 +740,12 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
-    isSavingBlock = true
-    defer { isSavingBlock = false }
-
-    do {
-      let replacement = "\n" + insertionSnippet(for: kind, after: block, in: source)
-      try await Task.detached(priority: .userInitiated) {
-        try Self.replaceSourceRange(
-          file: source.file,
-          startLine: block.endLineExclusive,
-          endLineExclusive: block.endLineExclusive,
-          replacement: replacement
-        )
-      }.value
-      invalidateCanonicalDocumentCache(for: source.file)
-      resetBlockEditing()
-      isEditingEntry = false
-      pendingBlockSelection = PendingBlockSelection(
-        file: source.file,
-        line: block.endLineExclusive + 1,
-        mode: .nextOrNearest,
-        beginEditing: true
-      )
-      statusText = "Inserted \(kind.title.lowercased()) in \(relativePath(source.file))"
-      if let selectedLocation {
-        await loadEntrySource(for: selectedLocation)
-      }
-      await refreshAgenda(preserveSelection: true)
-    } catch {
-      errorText = error.localizedDescription
-      statusText = "Insert failed"
-    }
+    let draft = insertionDraftBlock(for: kind, after: block, in: source)
+    transientDraftBlock = draft
+    pendingBlockSelection = nil
+    isEditingEntry = false
+    activateTransientDraft(draft)
+    statusText = "Started \(kind.title.lowercased()) draft in \(relativePath(source.file))"
   }
 
   public func toggleListItemCheckbox(_ block: OrgEditableBlock) async {
@@ -1387,6 +1362,95 @@ public final class WorkspaceStore: ObservableObject {
       printf 'hello\\n'
       #+end_src
       """
+    }
+  }
+
+  private func insertionDraftBlock(
+    for kind: OrgInsertBlockKind,
+    after previousBlock: OrgEditableBlock,
+    in source: EntrySource
+  ) -> TransientDraftBlock {
+    let rawText = insertionDraftRawText(for: kind, after: previousBlock, in: source)
+    let insertionLine = previousBlock.endLineExclusive
+    return TransientDraftBlock(
+      file: source.file,
+      insertionLine: insertionLine,
+      replacementPrefix: "\n",
+      replacementSuffix: "",
+      selectionLineOffset: 1,
+      block: OrgEditableBlock(
+        startLine: insertionLine,
+        endLineExclusive: insertionLine,
+        rawText: rawText,
+        rendered: insertionDraftRenderedBlock(for: kind, rawText: rawText, after: previousBlock, in: source)
+      )
+    )
+  }
+
+  private func insertionDraftRawText(
+    for kind: OrgInsertBlockKind,
+    after block: OrgEditableBlock,
+    in source: EntrySource
+  ) -> String {
+    let headingLevel = insertionHeadingLevel(after: block, in: source)
+    let stars = String(repeating: "*", count: max(1, headingLevel))
+    switch kind {
+    case .paragraph:
+      return ""
+    case .heading:
+      return "\(stars) "
+    case .todo:
+      return "\(stars) TODO "
+    case .table:
+      return """
+      | Name | Value |
+      |------+-------|
+      |      |       |
+      """
+    case .properties:
+      return """
+      :PROPERTIES:
+      :KEY:
+      :END:
+      """
+    case .quote:
+      return """
+      #+begin_quote
+
+      #+end_quote
+      """
+    case .source:
+      return """
+      #+begin_src sh
+
+      #+end_src
+      """
+    }
+  }
+
+  private func insertionDraftRenderedBlock(
+    for kind: OrgInsertBlockKind,
+    rawText: String,
+    after block: OrgEditableBlock,
+    in source: EntrySource
+  ) -> OrgRenderedBlock {
+    let headingLevel = insertionHeadingLevel(after: block, in: source)
+    switch kind {
+    case .paragraph:
+      return .paragraph("")
+    case .heading:
+      return .heading(OrgHeadingBlock(level: headingLevel, todo: nil, priority: nil, title: "", tags: []))
+    case .todo:
+      return .heading(OrgHeadingBlock(level: headingLevel, todo: "TODO", priority: nil, title: "", tags: []))
+    case .table:
+      return .table(OrgEditableTable(rawText: rawText).renderedBlock)
+    case .properties:
+      return .properties(OrgEditablePropertyDrawer(rawText: rawText).renderedRows)
+    case .quote:
+      return .quote([])
+    case .source:
+      let source = OrgEditableSourceBlock(rawText: rawText)
+      return .source(language: source.renderedLanguage, lines: source.renderedLines)
     }
   }
 
@@ -2866,6 +2930,10 @@ public final class WorkspaceStore: ObservableObject {
     case .paragraph:
       let text = normalized.trimmingCharacters(in: .whitespacesAndNewlines)
       return text.isEmpty ? nil : text
+    case .heading:
+      let text = normalized.trimmingCharacters(in: .newlines)
+      guard headingDraftHasTitle(text) else { return nil }
+      return text
     case .listItem:
       let text = normalized.trimmingCharacters(in: .newlines)
       guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -2888,6 +2956,31 @@ public final class WorkspaceStore: ObservableObject {
       let text = normalized.trimmingCharacters(in: .whitespacesAndNewlines)
       return text.isEmpty ? nil : text
     }
+  }
+
+  nonisolated private static func headingDraftHasTitle(_ raw: String) -> Bool {
+    let line = raw.split(separator: "\n", omittingEmptySubsequences: false).first.map(String.init) ?? ""
+    let stars = line.prefix { $0 == "*" }
+    guard !stars.isEmpty else {
+      return !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var rest = String(line.dropFirst(stars.count)).trimmingCharacters(in: .whitespaces)
+    if let tagRange = rest.range(of: #"\s+(:[A-Za-z0-9_@#%:.-]+:)\s*$"#, options: .regularExpression) {
+      rest.removeSubrange(tagRange)
+      rest = rest.trimmingCharacters(in: .whitespaces)
+    }
+
+    let todoKeywords = Set(["TODO", "IN_PROGRESS", "PROG", "WAIT", "HOLD", "PAUSED", "DONE", "CANCELED", "CANCELLED"])
+    var tokens = rest.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+    if let first = tokens.first, todoKeywords.contains(first.uppercased()) {
+      tokens.removeFirst()
+    }
+    if let first = tokens.first,
+       first.range(of: #"^\[#([A-Za-z0-9])\]$"#, options: .regularExpression) != nil {
+      tokens.removeFirst()
+    }
+    return !tokens.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
   nonisolated private static func sortEditableBlocksForDisplay(_ blocks: [OrgEditableBlock]) -> [OrgEditableBlock] {

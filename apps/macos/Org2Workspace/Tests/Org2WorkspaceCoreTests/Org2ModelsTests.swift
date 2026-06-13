@@ -1381,22 +1381,29 @@ final class Org2ModelsTests: XCTestCase {
       return false
     })
     await store.insertBlock(after: paragraph, kind: .todo)
-    try await waitForEntryRender(store)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "** TODO " && store.editingBlockID == store.selectedBlock?.id
+    }
 
-    let updated = try String(contentsOf: note, encoding: .utf8)
-    XCTAssertTrue(updated.contains("Body\n\n** TODO New task\n* Sibling"))
+    var updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertFalse(updated.contains("New task"))
+    XCTAssertTrue(updated.contains("Body\n* Sibling"))
     guard case .heading(let selectedHeading) = store.selectedBlock?.rendered else {
       return XCTFail("Expected inserted heading to be selected")
     }
-    XCTAssertEqual(selectedHeading.title, "New task")
-    XCTAssertEqual(store.editingBlockID, store.selectedBlock?.id)
-    XCTAssertEqual(store.editableBlockText, "** TODO New task")
-    XCTAssertTrue(store.selectedRenderedBlocks.contains {
-      if case .heading(let heading) = $0.rendered {
-        return heading.level == 2 && heading.todo == "TODO" && heading.title == "New task"
-      }
-      return false
-    })
+    XCTAssertEqual(selectedHeading.title, "")
+    XCTAssertEqual(selectedHeading.todo, "TODO")
+    XCTAssertEqual(store.editableBlockText, "** TODO ")
+
+    let draft = try XCTUnwrap(store.selectedBlock)
+    store.editableBlockText = "** TODO Call Bob"
+    await store.saveEditedBlock(draft)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "** TODO Call Bob"
+    }
+
+    updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Body\n\n** TODO Call Bob\n* Sibling"))
   }
 
   @MainActor
@@ -1694,12 +1701,34 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertTrue(store.handleDocumentKeyDown(keyDown(characters: "\r", keyCode: 36, modifiers: [.command])))
     try await waitForCondition {
-      store.selectedBlock?.rawText == "New text" && store.editingBlockID == store.selectedBlockID
+      store.selectedBlock?.rawText == "" && store.editingBlockID == store.selectedBlockID
     }
-    XCTAssertEqual(store.editableBlockText, "New text")
+    XCTAssertEqual(store.editableBlockText, "")
 
-    let updated = try String(contentsOf: note, encoding: .utf8)
-    XCTAssertTrue(updated.contains("Body\n\nNew text\n* Sibling"))
+    var updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertFalse(updated.contains("New text"))
+    XCTAssertTrue(updated.contains("Body\n* Sibling"))
+
+    store.cancelEditingBlock()
+    XCTAssertNil(store.selectedBlock)
+    updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Body\n* Sibling"))
+
+    store.selectBlock(paragraph)
+    XCTAssertTrue(store.handleDocumentKeyDown(keyDown(characters: "\r", keyCode: 36, modifiers: [.command])))
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "" && store.editingBlockID == store.selectedBlockID
+    }
+
+    let draft = try XCTUnwrap(store.selectedBlock)
+    store.editableBlockText = "Inserted paragraph"
+    await store.saveEditedBlock(draft)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "Inserted paragraph"
+    }
+
+    updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Body\n\nInserted paragraph\n* Sibling"))
   }
 
   @MainActor
