@@ -273,6 +273,21 @@ Materialized query metadata for [[id:report-fetches][package fetch report]].
 :END:
 Local ad hoc dataset definition.
 `, "utf8");
+fs.writeFileSync(path.join(dataDir, "catalog.org2"), `#+title: Data Catalog
+
+* Catalog query: package fetch error rate
+:PROPERTIES:
+:ID: query-fetch-error-rate
+:KIND: warehouse-query
+:SYSTEM: firebolt
+:QUERY_ID: scarf.package_fetch_error_rate.v1
+:REPORT_ID: report-fetches
+:ARTIFACT: customer-reports/firebolt/package_fetch_error_rate.csv
+:ROW_COUNT: 7
+:FRESHNESS: hourly
+:END:
+External data catalog entry for [[id:report-fetches][package fetch report]].
+`, "utf8");
 
 const dataLink = runJson("agent", "fetch", "--id", "query-fetches-by-company", "--dir", dataDir, "--format", "json");
 assert.equal(dataLink.results.length, 1);
@@ -294,9 +309,15 @@ assert.equal(dataset.results[0].dataLink.result, "table:package_fetches");
 
 const reportWithDataLinks = runJson("agent", "fetch", "--id", "report-fetches", "--dir", dataDir, "--format", "json");
 assert.equal(reportWithDataLinks.results.length, 1);
-assert.equal(reportWithDataLinks.results[0].relatedDataLinks.length, 2);
-assert.equal(reportWithDataLinks.results[0].relatedDataLinks[0].id, "query-fetches-by-company");
-assert.equal(reportWithDataLinks.results[0].relatedDataLinks[0].kind, "warehouse-query");
-assert.equal(reportWithDataLinks.results[0].relatedDataLinks[0].dataLink.artifact, "customer-reports/firebolt/package_fetches_by_company.csv");
-assert.equal(reportWithDataLinks.results[0].relatedDataLinks[1].id, "dataset-package-fetches");
-assert.equal(reportWithDataLinks.results[0].relatedDataLinks[1].kind, "dataset");
+assert.equal(reportWithDataLinks.results[0].relatedDataLinks.length, 3);
+const descendantQuery = reportWithDataLinks.results[0].relatedDataLinks.find((item) => item.id === "query-fetches-by-company");
+assert.equal(descendantQuery.kind, "warehouse-query");
+assert.equal(descendantQuery.dataLink.artifact, "customer-reports/firebolt/package_fetches_by_company.csv");
+const descendantDataset = reportWithDataLinks.results[0].relatedDataLinks.find((item) => item.id === "dataset-package-fetches");
+assert.equal(descendantDataset.kind, "dataset");
+const externalQuery = reportWithDataLinks.results[0].relatedDataLinks.find((item) => item.id === "query-fetch-error-rate");
+assert.equal(externalQuery.kind, "warehouse-query");
+assert.equal(externalQuery.dataLink.system, "firebolt");
+assert.equal(externalQuery.dataLink.artifact, "customer-reports/firebolt/package_fetch_error_rate.csv");
+assert.ok(externalQuery.matchingAttachments.some((attachment) => attachment.ref === "id:report-fetches" && attachment.target.id === "report-fetches"));
+assert.ok(externalQuery.matchingAttachments.some((attachment) => attachment.ref === "report:report-fetches" && attachment.target.id === "report-fetches"));

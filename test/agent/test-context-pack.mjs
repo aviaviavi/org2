@@ -52,6 +52,17 @@ Old support context.
 :STORAGE: summary
 :END:
 Working notes for support triage.
+
+* Data catalog: support satisfaction score
+:PROPERTIES:
+:ID: support-satisfaction-score
+:KIND: dataset
+:PATH: reports/support-satisfaction.csv
+:ROW_COUNT: 5
+:FRESHNESS: weekly
+:CONTEXT: id:scarf-support-1
+:END:
+External catalog entry for [[id:scarf-support-1][Scarf support triage]].
 `, "utf8");
 fs.writeFileSync(path.join(tmp, "decisions.org2"), `#+title: Decisions
 
@@ -90,6 +101,8 @@ assert.match(selected, /## Related data links/);
 assert.match(selected, /Data link: ticket volume/);
 assert.match(selected, /query: support\.ticket_volume\.v1/);
 assert.match(selected, /artifact: reports\/support-ticket-volume\.csv/);
+assert.match(selected, /Data catalog: support satisfaction score/);
+assert.match(selected, /Matching attachments: id:scarf-support-1/);
 
 const selectedDataLink = run("context", "--id", "support-ticket-volume", "--dir", tmp, "--format", "markdown");
 assert.match(selectedDataLink, /## Related data links/);
@@ -115,3 +128,4 @@ assert.equal(selectedJson.id, "scarf-support-1");
 assert.equal(selectedJson.results[0].relatedThreads[0].id, "thread-scarf-triage");
 assert.equal(selectedJson.results[0].relatedDataLinks[0].id, "support-ticket-volume");
 assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.rowCount, 42);
+assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-satisfaction-score" && item.matchingAttachments.some((attachment) => attachment.ref === "id:scarf-support-1")));
