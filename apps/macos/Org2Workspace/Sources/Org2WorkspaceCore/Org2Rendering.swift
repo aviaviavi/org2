@@ -778,6 +778,13 @@ public enum OrgEntryRenderer {
         continue
       }
 
+      if isBeginExample(trimmed) {
+        let parsed = collectBlock(lines: lines, startingAt: index + 1, endToken: "#+end_example")
+        blocks.append(.quote(parsed.lines.map(Org2Display.cleanInline)))
+        index = parsed.nextIndex
+        continue
+      }
+
       if let sourceBlock = sourceBlock(from: trimmed) {
         let parsed = collectBlock(lines: lines, startingAt: index + 1, endToken: sourceBlock.endToken)
         blocks.append(.source(language: sourceBlock.language, lines: parsed.lines))
@@ -880,6 +887,13 @@ public enum OrgEntryRenderer {
 
       if isBeginQuote(trimmed) {
         let parsed = collectBlock(lines: lines, startingAt: index + 1, endToken: "#+end_quote")
+        append(start: index, end: parsed.nextIndex, rendered: .quote(parsed.lines.map(Org2Display.cleanInline)))
+        index = parsed.nextIndex
+        continue
+      }
+
+      if isBeginExample(trimmed) {
+        let parsed = collectBlock(lines: lines, startingAt: index + 1, endToken: "#+end_example")
         append(start: index, end: parsed.nextIndex, rendered: .quote(parsed.lines.map(Org2Display.cleanInline)))
         index = parsed.nextIndex
         continue
@@ -1043,6 +1057,21 @@ public enum OrgEntryRenderer {
         )
       case .srcBlock(let block):
         guard let sourceRange = block.sourceRange else { return }
+        let raw = rawText(startLine: sourceRange.startLine, endLineExclusive: sourceRange.endLine + 1)
+        let trimmedFirstLine = raw
+          .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+          .first
+          .map(String.init)?
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+          .lowercased() ?? ""
+        if isBeginQuote(trimmedFirstLine) || isBeginExample(trimmedFirstLine) {
+          appendBlock(
+            startLine: sourceRange.startLine,
+            endLineExclusive: sourceRange.endLine + 1,
+            rendered: .quote(blockLines(block.bodyRaw).map(Org2Display.cleanInline))
+          )
+          return
+        }
         appendBlock(
           startLine: sourceRange.startLine,
           endLineExclusive: sourceRange.endLine + 1,
@@ -1050,7 +1079,7 @@ public enum OrgEntryRenderer {
         )
       case .block(let block):
         guard let sourceRange = block.sourceRange else { return }
-        if block.kind.lowercased() == "quote" {
+        if ["quote", "example"].contains(block.kind.lowercased()) {
           appendBlock(
             startLine: sourceRange.startLine,
             endLineExclusive: sourceRange.endLine + 1,
@@ -1268,11 +1297,12 @@ public enum OrgEntryRenderer {
     trimmed.lowercased() == "#+begin_quote"
   }
 
+  private static func isBeginExample(_ trimmed: String) -> Bool {
+    trimmed.lowercased().hasPrefix("#+begin_example")
+  }
+
   private static func sourceBlock(from trimmed: String) -> (language: String?, endToken: String)? {
     let lowercased = trimmed.lowercased()
-    if lowercased.hasPrefix("#+begin_example") {
-      return (nil, "#+end_example")
-    }
     guard lowercased.hasPrefix("#+begin_src") else { return nil }
     let parts = trimmed.split(whereSeparator: { $0.isWhitespace }).map(String.init)
     return (parts.count > 1 ? parts[1] : nil, "#+end_src")
