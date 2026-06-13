@@ -1684,6 +1684,21 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(collapsed.hiddenRowCount, 2)
   }
 
+  func testTableColumnWindowLimitsWideTables() {
+    let collapsed = TableColumnWindow.make(columnCount: 40, visibleLimit: 12)
+    XCTAssertEqual(collapsed.visibleColumns, Array(0..<12))
+    XCTAssertEqual(collapsed.hiddenColumnCount, 28)
+
+    let partial = TableColumnWindow.make(columnCount: 40, visibleLimit: 24)
+    XCTAssertEqual(partial.visibleColumns.count, 24)
+    XCTAssertEqual(partial.visibleColumns.last, 23)
+    XCTAssertEqual(partial.hiddenColumnCount, 16)
+
+    let complete = TableColumnWindow.make(columnCount: 5, visibleLimit: 12)
+    XCTAssertEqual(complete.visibleColumns, Array(0..<5))
+    XCTAssertEqual(complete.hiddenColumnCount, 0)
+  }
+
   func testSourceBlockRunPlanSupportsCommonLanguages() {
     XCTAssertEqual(SourceBlockRunPlan.plan(for: "sh")?.executable, "/bin/sh")
     XCTAssertEqual(SourceBlockRunPlan.plan(for: "python")?.arguments, ["python3"])
