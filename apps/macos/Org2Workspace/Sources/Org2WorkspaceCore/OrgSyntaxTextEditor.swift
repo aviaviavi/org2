@@ -6,14 +6,33 @@ struct OrgSyntaxTextEditorSubmitContext {
   let selectedRange: NSRange
 }
 
+enum OrgSyntaxTextEditorTextPublishing: Equatable {
+  case immediate
+  case deferred(milliseconds: Int)
+}
+
+final class OrgSyntaxTextEditorDraftBuffer {
+  var text: String?
+
+  func update(_ text: String) {
+    self.text = text
+  }
+
+  func current(fallback: String) -> String {
+    text ?? fallback
+  }
+}
+
 struct OrgSyntaxTextEditor: NSViewRepresentable {
   @Binding var text: String
   let monospaced: Bool
   let showsScrollers: Bool
   let textInset: NSSize
   let focusOnAppear: Bool
+  let textPublishing: OrgSyntaxTextEditorTextPublishing
   let selection: Binding<NSRange>?
   let isFocused: Binding<Bool>?
+  let onLocalTextChange: ((String) -> Void)?
   let onSubmit: (() -> Bool)?
   let onSubmitContext: ((OrgSyntaxTextEditorSubmitContext) -> Bool)?
 
@@ -23,8 +42,10 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     showsScrollers: Bool = true,
     textInset: NSSize = NSSize(width: 8, height: 8),
     focusOnAppear: Bool = false,
+    textPublishing: OrgSyntaxTextEditorTextPublishing = .immediate,
     selection: Binding<NSRange>? = nil,
     isFocused: Binding<Bool>? = nil,
+    onLocalTextChange: ((String) -> Void)? = nil,
     onSubmit: (() -> Bool)? = nil,
     onSubmitContext: ((OrgSyntaxTextEditorSubmitContext) -> Bool)? = nil
   ) {
@@ -33,8 +54,10 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     self.showsScrollers = showsScrollers
     self.textInset = textInset
     self.focusOnAppear = focusOnAppear
+    self.textPublishing = textPublishing
     self.selection = selection
     self.isFocused = isFocused
+    self.onLocalTextChange = onLocalTextChange
     self.onSubmit = onSubmit
     self.onSubmitContext = onSubmitContext
   }
@@ -87,8 +110,13 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     guard let textView = scrollView.documentView as? NSTextView else { return }
 
     var appliedProgrammaticText = false
-    if textView.string != text {
+    if Self.shouldApplyProgrammaticText(
+      editorText: textView.string,
+      boundText: text,
+      hasPendingLocalText: context.coordinator.hasPendingTextPublishing(for: textView.string)
+    ) {
       context.coordinator.cancelDeferredHighlighting()
+      context.coordinator.cancelDeferredTextPublishing()
       context.coordinator.isApplyingProgrammaticChange = true
       textView.string = text
       context.coordinator.isApplyingProgrammaticChange = false
@@ -124,6 +152,14 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     )
   }
 
+  static func shouldApplyProgrammaticText(
+    editorText: String,
+    boundText: String,
+    hasPendingLocalText: Bool
+  ) -> Bool {
+    editorText != boundText && !hasPendingLocalText
+  }
+
   @MainActor
   final class Coordinator: NSObject, NSTextViewDelegate {
     var parent: OrgSyntaxTextEditor
@@ -134,6 +170,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     private var deferredHighlightText: String?
     private var deferredHighlightMonospaced: Bool?
     private var deferredHighlightWorkItem: DispatchWorkItem?
+    private var deferredTextPublishText: String?
+    private var deferredTextPublishWorkItem: DispatchWorkItem?
 
     init(parent: OrgSyntaxTextEditor) {
       self.parent = parent
@@ -142,8 +180,9 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     func textDidChange(_ notification: Notification) {
       guard let textView = notification.object as? NSTextView else { return }
       let currentText = textView.string
-      if !isApplyingProgrammaticChange, parent.text != currentText {
-        parent.text = currentText
+      parent.onLocalTextChange?(currentText)
+      if !isApplyingProgrammaticChange {
+        publishTextChange(currentText)
       }
       publishSelectionIfNeeded(textView.selectedRange())
       let shouldScheduleHighlighting = Self.shouldScheduleDeferredHighlighting(
@@ -169,6 +208,9 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     }
 
     func textDidEndEditing(_ notification: Notification) {
+      if let textView = notification.object as? NSTextView {
+        flushTextPublishing(from: textView)
+      }
       parent.isFocused?.wrappedValue = false
     }
 
@@ -184,7 +226,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         }
       }
 
-      parent.text = textView.string
+      flushTextPublishing(from: textView)
       let context = OrgSyntaxTextEditorSubmitContext(
         text: textView.string,
         selectedRange: textView.selectedRange()
@@ -229,6 +271,16 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       deferredHighlightMonospaced = nil
     }
 
+    func cancelDeferredTextPublishing() {
+      deferredTextPublishWorkItem?.cancel()
+      deferredTextPublishWorkItem = nil
+      deferredTextPublishText = nil
+    }
+
+    func hasPendingTextPublishing(for text: String) -> Bool {
+      deferredTextPublishWorkItem != nil && deferredTextPublishText == text
+    }
+
     func hasDeferredHighlighting(for textView: NSTextView) -> Bool {
       deferredHighlightWorkItem != nil
         && deferredHighlightText == textView.string
@@ -260,6 +312,54 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         utf16Length: (textView.string as NSString).length,
         hasHighlightedBefore: hasHighlightedText,
         monospacedUnchanged: lastHighlightedMonospaced == parent.monospaced
+      )
+    }
+
+    private func publishTextChange(_ currentText: String) {
+      guard parent.text != currentText else {
+        cancelDeferredTextPublishing()
+        return
+      }
+
+      switch parent.textPublishing {
+      case .immediate:
+        cancelDeferredTextPublishing()
+        parent.text = currentText
+      case .deferred(let milliseconds):
+        scheduleDeferredTextPublishing(currentText, milliseconds: milliseconds)
+      }
+    }
+
+    private func flushTextPublishing(from textView: NSTextView) {
+      cancelDeferredTextPublishing()
+      if parent.text != textView.string {
+        parent.text = textView.string
+      }
+    }
+
+    private func scheduleDeferredTextPublishing(_ text: String, milliseconds: Int) {
+      cancelDeferredTextPublishing()
+      let expectedText = text
+      deferredTextPublishText = expectedText
+
+      let workItem = DispatchWorkItem { [weak self] in
+        Task { @MainActor in
+          guard let self,
+                self.deferredTextPublishText == expectedText
+          else {
+            return
+          }
+          self.deferredTextPublishWorkItem = nil
+          self.deferredTextPublishText = nil
+          if self.parent.text != expectedText {
+            self.parent.text = expectedText
+          }
+        }
+      }
+      deferredTextPublishWorkItem = workItem
+      DispatchQueue.main.asyncAfter(
+        deadline: .now() + .milliseconds(max(0, milliseconds)),
+        execute: workItem
       )
     }
 
