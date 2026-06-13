@@ -1367,6 +1367,8 @@ public final class WorkspaceStore: ObservableObject {
       |------+-------|
       |      |       |
       """
+    case .divider:
+      return "-----"
     case .image:
       return mediaDraftRawText(kind: .image, content: "")
     case .video:
@@ -1408,6 +1410,8 @@ public final class WorkspaceStore: ObservableObject {
       return .heading(OrgHeadingBlock(level: headingLevel, todo: "TODO", priority: nil, title: "", tags: []))
     case .table:
       return .table(OrgEditableTable(rawText: rawText).renderedBlock)
+    case .divider:
+      return .horizontalRule
     case .image, .video:
       return .paragraph(rawText)
     case .properties:
@@ -1469,6 +1473,8 @@ public final class WorkspaceStore: ObservableObject {
         return content
       }
       return insertionDraftRawText(for: .table, after: block, in: source)
+    case .divider:
+      return "-----"
     case .image:
       return mediaDraftRawText(kind: .image, content: content)
     case .video:

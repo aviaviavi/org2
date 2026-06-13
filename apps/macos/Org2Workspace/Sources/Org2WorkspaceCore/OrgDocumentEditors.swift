@@ -25,9 +25,66 @@ struct InlineBlockEditorView: View {
       SourceBlockEditor(block: block, language: language, lines: lines)
     case .table(let table):
       TableBlockEditor(block: block, table: table)
+    case .horizontalRule:
+      HorizontalRuleBlockEditor(block: block)
     case .blank:
       EmptyView()
     }
+  }
+}
+
+private struct HorizontalRuleBlockEditor: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let block: OrgEditableBlock
+
+  var body: some View {
+    HStack(spacing: 10) {
+      Label("Divider", systemImage: "minus")
+        .font(.caption.weight(.medium))
+        .foregroundStyle(.secondary)
+
+      Rectangle()
+        .fill(Color.secondary.opacity(0.26))
+        .frame(height: 1)
+        .frame(maxWidth: .infinity)
+
+      if store.isSavingBlock {
+        ProgressView()
+          .controlSize(.small)
+      }
+
+      Button {
+        saveDivider()
+      } label: {
+        Image(systemName: "checkmark")
+      }
+      .buttonStyle(.borderless)
+      .keyboardShortcut("s", modifiers: [.command])
+      .disabled(store.isSavingBlock)
+      .help("Save")
+
+      Button {
+        store.cancelEditingBlock()
+      } label: {
+        Image(systemName: "xmark")
+      }
+      .buttonStyle(.borderless)
+      .keyboardShortcut(.cancelAction)
+      .disabled(store.isSavingBlock)
+      .help("Cancel")
+    }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 7)
+    .background(Color.accentColor.opacity(0.055), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 7, style: .continuous)
+        .stroke(Color.accentColor.opacity(0.2))
+    )
+  }
+
+  private func saveDivider() {
+    store.editableBlockText = "-----"
+    Task { await store.saveEditedBlock(block) }
   }
 }
 

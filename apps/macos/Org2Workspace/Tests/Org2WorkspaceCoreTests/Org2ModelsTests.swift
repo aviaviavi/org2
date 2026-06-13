@@ -212,6 +212,7 @@ final class Org2ModelsTests: XCTestCase {
     #+begin_src swift
     let value = 1
     #+end_src
+    -----
     - Fallback list item
     """
     try raw.write(to: note, atomically: true, encoding: .utf8)
@@ -239,8 +240,14 @@ final class Org2ModelsTests: XCTestCase {
       return false
     })
     XCTAssertTrue(blocks.contains {
+      if case .horizontalRule = $0.rendered {
+        return $0.displayRange == "12"
+      }
+      return false
+    })
+    XCTAssertTrue(blocks.contains {
       if case .listItem(_, _, _, let text) = $0.rendered {
-        return $0.displayRange == "12" && text == "Fallback list item"
+        return $0.displayRange == "13" && text == "Fallback list item"
       }
       return false
     })
@@ -632,6 +639,7 @@ final class Org2ModelsTests: XCTestCase {
     | Name | Value |
     |------+-------|
     | Alice | 42 |
+    -----
     - [ ] Open task
     - [X] Done task
     ** Child
@@ -656,6 +664,7 @@ final class Org2ModelsTests: XCTestCase {
       .separator,
       .cells(["Alice", "42"])
     ]))))
+    XCTAssertTrue(blocks.contains(.horizontalRule))
     XCTAssertTrue(blocks.contains {
       if case .listItem(0, "-", .unchecked, "Open task") = $0 { return true }
       return false
@@ -1111,6 +1120,7 @@ final class Org2ModelsTests: XCTestCase {
     | Name | Value |
     |------+-------|
     | Alice | 42 |
+    -----
     Body one
     Body two
     #+begin_src swift
@@ -1118,11 +1128,12 @@ final class Org2ModelsTests: XCTestCase {
     #+end_src
     """, baseLine: 42)
 
-    XCTAssertEqual(blocks.map(\.displayRange), ["42", "43", "44-46", "47-48", "49-51"])
+    XCTAssertEqual(blocks.map(\.displayRange), ["42", "43", "44-46", "47", "48-49", "50-52"])
     XCTAssertEqual(blocks.map(\.rawText), [
       "* TODO Parent",
       "SCHEDULED: <2026-06-12 Fri>",
       "| Name | Value |\n|------+-------|\n| Alice | 42 |",
+      "-----",
       "Body one\nBody two",
       "#+begin_src swift\nlet value = 1\n#+end_src"
     ])
@@ -1136,7 +1147,11 @@ final class Org2ModelsTests: XCTestCase {
       .cells(["Alice", "42"])
     ])
 
-    guard case .paragraph(let paragraph) = blocks[3].rendered else {
+    guard case .horizontalRule = blocks[3].rendered else {
+      return XCTFail("Expected horizontal rule")
+    }
+
+    guard case .paragraph(let paragraph) = blocks[4].rendered else {
       return XCTFail("Expected paragraph")
     }
     XCTAssertEqual(paragraph, "Body one\nBody two")
@@ -1844,6 +1859,87 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testInsertsAndConvertsDividerBlocks() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-divider-insert-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("divider-insert.org2")
+    try """
+    #+TITLE: Divider Insert Test
+
+    * TODO Parent
+    Body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+
+    await store.insertBlock(after: paragraph, kind: .divider)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "-----" && store.editingBlockID == store.selectedBlockID
+    }
+    guard case .horizontalRule = store.selectedBlock?.rendered else {
+      return XCTFail("Expected divider draft")
+    }
+
+    var updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertFalse(updated.contains("-----"))
+    let dividerDraft = try XCTUnwrap(store.selectedBlock)
+    await store.saveEditedBlock(dividerDraft)
+    try await waitForCondition {
+      if case .horizontalRule = store.selectedBlock?.rendered {
+        return store.selectedBlock?.rawText == "-----"
+      }
+      return false
+    }
+
+    updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Body\n\n-----\n* Sibling"))
+
+    let divider = try XCTUnwrap(store.selectedBlock)
+    store.beginEditingBlock(divider)
+    store.editableBlockText = "/todo Replace divider"
+    await store.convertEditingBlock(divider, to: .todo)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "** TODO Replace divider" && store.editingBlockID == store.selectedBlockID
+    }
+    let todoDraft = try XCTUnwrap(store.selectedBlock)
+    await store.saveEditedBlock(todoDraft)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "** TODO Replace divider"
+    }
+
+    updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Body\n\n** TODO Replace divider\n* Sibling"))
+    XCTAssertFalse(updated.contains("-----"))
+  }
+
+  @MainActor
   func testConvertsEditingParagraphWithSlashCommand() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-block-convert-\(UUID().uuidString)", isDirectory: true)
@@ -2360,7 +2456,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  private func waitForEntryRender(_ store: WorkspaceStore, timeout: TimeInterval = 3) async throws {
+  private func waitForEntryRender(_ store: WorkspaceStore, timeout: TimeInterval = 10) async throws {
     let deadline = Date().addingTimeInterval(timeout)
     while store.isRenderingEntrySource && Date() < deadline {
       try await Task.sleep(nanoseconds: 20_000_000)

@@ -29,6 +29,8 @@ struct RenderedBlockView: View {
       RenderedSourceView(language: language, lines: lines, editableBlock: editableBlock)
     case .table(let table):
       RenderedTableView(table: table)
+    case .horizontalRule:
+      RenderedHorizontalRuleView()
     case .listItem(let indent, let marker, let checkbox, let text):
       RenderedListItemView(
         indent: indent,
@@ -55,6 +57,17 @@ struct RenderedBlockView: View {
       Spacer()
         .frame(height: 4)
     }
+  }
+}
+
+private struct RenderedHorizontalRuleView: View {
+  var body: some View {
+    Rectangle()
+      .fill(Color.secondary.opacity(0.24))
+      .frame(height: 1)
+      .padding(.vertical, 10)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .accessibilityLabel("Divider")
   }
 }
 
