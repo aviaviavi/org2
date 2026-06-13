@@ -35,7 +35,7 @@ struct RenderedBlockView: View, Equatable {
   var body: some View {
     switch block {
     case .heading(let heading):
-      RenderedHeadingView(heading: heading, rawText: rawText)
+      RenderedHeadingView(heading: heading, rawText: rawText, editableBlock: editableBlock)
     case .planning(let planning):
       RenderedPlanningView(planning: planning)
     case .properties(let rows):
@@ -276,11 +276,12 @@ private struct MissingMediaView: View {
 private struct RenderedHeadingView: View {
   let heading: OrgHeadingBlock
   let rawText: String?
+  let editableBlock: OrgEditableBlock?
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: 8) {
       if let todo = heading.todo {
-        StatusPill(text: todo)
+        RenderedHeadingTodoButton(todo: todo, editableBlock: editableBlock)
       }
       if let priority = heading.priority {
         Label(priority, systemImage: "flag.fill")
@@ -344,6 +345,29 @@ private struct RenderedHeadingView: View {
   }
 
   private static let todoKeywords = Set(["TODO", "IN_PROGRESS", "PROG", "WAIT", "HOLD", "PAUSED", "DONE", "CANCELED", "CANCELLED"])
+}
+
+private struct RenderedHeadingTodoButton: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let todo: String
+  let editableBlock: OrgEditableBlock?
+
+  var body: some View {
+    Button {
+      if let editableBlock {
+        Task { await store.toggleHeadingTodo(editableBlock) }
+      }
+    } label: {
+      StatusPill(text: todo)
+    }
+    .buttonStyle(.plain)
+    .disabled(editableBlock == nil || store.selectedEntrySource?.isEditable != true)
+    .help(nextStatus.map { "Mark \($0)" } ?? "Status")
+  }
+
+  private var nextStatus: String? {
+    WorkspaceStore.nextHeadingTodoStatus(after: todo)
+  }
 }
 
 private struct RenderedPlanningView: View {
