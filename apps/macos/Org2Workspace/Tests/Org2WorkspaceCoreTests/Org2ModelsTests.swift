@@ -714,6 +714,16 @@ final class Org2ModelsTests: XCTestCase {
       previousRange: NSRange(location: farCaret.location - 1, length: 0),
       text: longLinkedText
     ))
+    XCTAssertTrue(OrgSyntaxTextEditor.Coordinator.hasInlineSyntaxNearSelectionWindow(
+      longLinkedText,
+      selectedRange: NSRange(location: 8, length: 0),
+      previousRange: NSRange(location: 9, length: 0)
+    ))
+    XCTAssertFalse(OrgSyntaxTextEditor.Coordinator.hasInlineSyntaxNearSelectionWindow(
+      longLinkedText,
+      selectedRange: farCaret,
+      previousRange: NSRange(location: farCaret.location - 1, length: 0)
+    ))
     XCTAssertTrue(OrgSyntaxTextEditor.Coordinator.shouldPublishSelection(
       farCaret,
       previousRange: NSRange(location: 8, length: 0),

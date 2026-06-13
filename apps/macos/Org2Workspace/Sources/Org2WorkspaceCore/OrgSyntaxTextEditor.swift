@@ -443,6 +443,13 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       if selectedRange.length > 0 || previousRange.length > 0 {
         return true
       }
+      if abs(selectedRange.location - previousRange.location) <= selectionInlineSyntaxRadius {
+        return hasInlineSyntaxNearSelectionWindow(
+          text,
+          selectedRange: selectedRange,
+          previousRange: previousRange
+        )
+      }
       return OrgInlineParser.hasInlineSyntaxCandidate(
         text,
         near: selectedRange,
@@ -451,6 +458,20 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         text,
         near: previousRange,
         radius: selectionInlineSyntaxRadius
+      )
+    }
+
+    static func hasInlineSyntaxNearSelectionWindow(
+      _ text: String,
+      selectedRange: NSRange,
+      previousRange: NSRange
+    ) -> Bool {
+      let midpoint = (selectedRange.location + previousRange.location) / 2
+      let distance = abs(selectedRange.location - previousRange.location)
+      return OrgInlineParser.hasInlineSyntaxCandidate(
+        text,
+        near: NSRange(location: midpoint, length: 0),
+        radius: selectionInlineSyntaxRadius + (distance / 2) + 1
       )
     }
 
