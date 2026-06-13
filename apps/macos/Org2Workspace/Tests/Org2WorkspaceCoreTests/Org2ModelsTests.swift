@@ -1553,6 +1553,60 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(OrgRenderedEntryMoveAvailability.make(for: blocks, source: readOnlySource).values.isEmpty)
   }
 
+  func testRenderedEntryMoveAvailabilityOnlyStoresVisibleRows() {
+    let blocks = [
+      OrgEditableBlock(
+        id: "heading",
+        startLine: 1,
+        endLineExclusive: 2,
+        rawText: "* Parent",
+        rendered: .heading(OrgHeadingBlock(level: 1, todo: nil, priority: nil, title: "Parent", tags: []))
+      ),
+      OrgEditableBlock(
+        id: "first",
+        startLine: 2,
+        endLineExclusive: 3,
+        rawText: "First",
+        rendered: .paragraph("First")
+      ),
+      OrgEditableBlock(
+        id: "middle",
+        startLine: 3,
+        endLineExclusive: 4,
+        rawText: "Middle",
+        rendered: .paragraph("Middle")
+      ),
+      OrgEditableBlock(
+        id: "last",
+        startLine: 4,
+        endLineExclusive: 5,
+        rawText: "Last",
+        rendered: .paragraph("Last")
+      )
+    ]
+    let source = EntrySource(
+      file: "/tmp/test.org2",
+      startLine: 1,
+      endLineExclusive: 5,
+      text: "",
+      isSubtree: true
+    )
+
+    let availability = OrgRenderedEntryMoveAvailability.make(
+      for: blocks,
+      source: source,
+      visibleRange: 2..<3
+    )
+
+    XCTAssertEqual(
+      availability.signature,
+      OrgRenderedEntryMoveAvailability.signature(for: blocks, source: source, visibleRange: 2..<3)
+    )
+    XCTAssertNil(availability.values["first"])
+    XCTAssertEqual(availability.values["middle"], OrgRenderedEntryBlockMoveAvailability(up: true, down: true))
+    XCTAssertNil(availability.values["last"])
+  }
+
   func testRenderedEntryMoveAvailabilitySignatureChangesWhenEditabilityChanges() {
     let editableBlock = OrgEditableBlock(
       id: "middle",
