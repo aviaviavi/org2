@@ -4072,6 +4072,21 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(store.handleDocumentKeyDown(keyDown(characters: "\u{7F}", keyCode: 51)))
 
     store.cancelEditingBlock()
+    store.selectBlock(paragraph)
+    XCTAssertTrue(store.handleDocumentKeyDown(keyDown(characters: "!", keyCode: 18)))
+    XCTAssertEqual(store.editingBlockID, paragraph.id)
+    XCTAssertEqual(store.editableBlockText, "Body!")
+    XCTAssertEqual(store.selectedBlock?.rawText, "Body!")
+
+    store.cancelEditingBlock()
+    XCTAssertNil(store.editingBlockID)
+    XCTAssertEqual(store.selectedBlock?.rawText, "Body")
+
+    store.selectBlock(heading)
+    XCTAssertFalse(store.handleDocumentKeyDown(keyDown(characters: "!", keyCode: 18)))
+    XCTAssertNil(store.editingBlockID)
+
+    store.selectBlock(paragraph)
     XCTAssertFalse(store.isEditingEntry)
     XCTAssertTrue(store.handleAgendaKeyDown(keyDown(characters: "e", keyCode: 14)))
     XCTAssertEqual(store.editingBlockID, paragraph.id)

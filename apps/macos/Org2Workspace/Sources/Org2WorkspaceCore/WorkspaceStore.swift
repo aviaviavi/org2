@@ -160,6 +160,7 @@ public final class WorkspaceStore: ObservableObject {
   private var pendingBlockSelection: PendingBlockSelection?
   private var transientDraftBlock: TransientDraftBlock?
   private var activeBlockDrafts: [OrgEditableBlock.ID: String] = [:]
+  private var activeBlockOriginals: [OrgEditableBlock.ID: OrgEditableBlock] = [:]
   private var deferredStableAutosaves: [OrgEditableBlock.ID: DeferredStableAutosave] = [:]
   private var preservesSelectedRenderedBlocksMetadataForNextAssignment = false
   private var scheduledAgendaRefreshTask: Task<Void, Never>?
@@ -457,17 +458,28 @@ public final class WorkspaceStore: ObservableObject {
     isEditingEntry = false
   }
 
-  public func beginEditingBlock(_ block: OrgEditableBlock) {
+  public func beginEditingBlock(_ block: OrgEditableBlock, initialDraft: String? = nil) {
     guard block.isEditable, selectedEntrySource?.isEditable == true else {
       statusText = "Block is read-only"
       return
     }
+    let draft = initialDraft ?? block.rawText
     isEditingEntry = false
     selectedBlockID = block.id
     editingBlockID = block.id
-    editableBlockText = block.rawText
-    activeBlockDrafts[block.id] = block.rawText
+    editableBlockText = draft
+    activeBlockDrafts[block.id] = draft
+    activeBlockOriginals[block.id] = block
     deferredStableAutosaves.removeValue(forKey: block.id)
+    if draft != block.rawText {
+      let updatedBlocks = Self.locallyUpdatingRenderedBlocks(
+        selectedRenderedBlocks,
+        replacing: block,
+        with: draft
+      )
+      setSelectedRenderedBlocks(updatedBlocks, preservingMetadata: true)
+      selectedBlockID = block.id
+    }
   }
 
   public func updateEditingBlockDraft(_ block: OrgEditableBlock, draft: String) {
@@ -480,7 +492,9 @@ public final class WorkspaceStore: ObservableObject {
       discardTransientDraft(status: "Draft discarded")
       return
     }
-    applyDeferredStableAutosaveForActiveBlock()
+    if !applyDeferredStableAutosaveForActiveBlock() {
+      restoreActiveBlockOriginal()
+    }
     resetBlockEditing()
   }
 
@@ -557,6 +571,18 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
     beginEditingBlock(selectedBlock)
+  }
+
+  public func beginEditingSelectedBlock(appending text: String) -> Bool {
+    guard let selectedBlock else {
+      statusText = "Select a block first"
+      return false
+    }
+    guard let draft = Self.editingDraft(selectedBlock, appending: text) else {
+      return false
+    }
+    beginEditingBlock(selectedBlock, initialDraft: draft)
+    return true
   }
 
   public func duplicateSelectedBlock() async {
@@ -1687,11 +1713,11 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func applyDeferredStableAutosaveForActiveBlock() {
+  private func applyDeferredStableAutosaveForActiveBlock() -> Bool {
     guard let editingBlockID,
           let deferred = deferredStableAutosaves.removeValue(forKey: editingBlockID)
     else {
-      return
+      return false
     }
 
     if selectedEntrySource?.id == deferred.source.id {
@@ -1705,6 +1731,22 @@ public final class WorkspaceStore: ObservableObject {
     )
     setSelectedRenderedBlocks(updatedBlocks, preservingMetadata: true)
     selectedBlockID = deferred.block.id
+    return true
+  }
+
+  private func restoreActiveBlockOriginal() {
+    guard let editingBlockID,
+          let original = activeBlockOriginals[editingBlockID]
+    else {
+      return
+    }
+    let updatedBlocks = Self.replacingBlock(
+      selectedBlock,
+      with: original,
+      in: selectedRenderedBlocks
+    )
+    setSelectedRenderedBlocks(updatedBlocks, preservingMetadata: true)
+    selectedBlockID = original.id
   }
 
   private func resetBlockEditing() {
@@ -1712,6 +1754,7 @@ public final class WorkspaceStore: ObservableObject {
     editingBlockID = nil
     editableBlockText = ""
     activeBlockDrafts.removeAll()
+    activeBlockOriginals.removeAll()
     deferredStableAutosaves.removeAll()
     if wasEditingBlock, pendingAgendaRefreshAfterBlockEditing {
       pendingAgendaRefreshAfterBlockEditing = false
@@ -1729,6 +1772,29 @@ public final class WorkspaceStore: ObservableObject {
   private var activeEditingBlock: OrgEditableBlock? {
     guard let editingBlockID else { return nil }
     return selectedRenderedBlocks.first { $0.id == editingBlockID }
+  }
+
+  nonisolated static func directTypingInsertionText(from event: NSEvent) -> String? {
+    guard let characters = event.characters,
+          !characters.isEmpty,
+          characters.unicodeScalars.allSatisfy({ $0.properties.generalCategory != .control })
+    else {
+      return nil
+    }
+    return characters
+  }
+
+  nonisolated static func editingDraft(
+    _ block: OrgEditableBlock,
+    appending text: String
+  ) -> String? {
+    guard !text.isEmpty else { return nil }
+    switch block.rendered {
+    case .paragraph, .listItem:
+      return block.rawText + text
+    default:
+      return nil
+    }
   }
 
   private func discardTransientDraft(status: String? = nil) {
@@ -2698,6 +2764,12 @@ public final class WorkspaceStore: ObservableObject {
         Task { await moveSelectedBlock(.down) }
         return true
       }
+    }
+
+    if modifiers.isEmpty,
+       let insertionText = Self.directTypingInsertionText(from: event),
+       beginEditingSelectedBlock(appending: insertionText) {
+      return true
     }
 
     return false
