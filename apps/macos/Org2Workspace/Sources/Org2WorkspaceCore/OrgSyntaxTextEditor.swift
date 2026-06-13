@@ -13,6 +13,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   let textInset: NSSize
   let focusOnAppear: Bool
   let selection: Binding<NSRange>?
+  let isFocused: Binding<Bool>?
   let onSubmit: (() -> Bool)?
   let onSubmitContext: ((OrgSyntaxTextEditorSubmitContext) -> Bool)?
 
@@ -23,6 +24,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     textInset: NSSize = NSSize(width: 8, height: 8),
     focusOnAppear: Bool = false,
     selection: Binding<NSRange>? = nil,
+    isFocused: Binding<Bool>? = nil,
     onSubmit: (() -> Bool)? = nil,
     onSubmitContext: ((OrgSyntaxTextEditorSubmitContext) -> Bool)? = nil
   ) {
@@ -32,6 +34,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     self.textInset = textInset
     self.focusOnAppear = focusOnAppear
     self.selection = selection
+    self.isFocused = isFocused
     self.onSubmit = onSubmit
     self.onSubmitContext = onSubmitContext
   }
@@ -141,6 +144,14 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     func textViewDidChangeSelection(_ notification: Notification) {
       guard let textView = notification.object as? NSTextView else { return }
       parent.selection?.wrappedValue = textView.selectedRange()
+    }
+
+    func textDidBeginEditing(_ notification: Notification) {
+      parent.isFocused?.wrappedValue = true
+    }
+
+    func textDidEndEditing(_ notification: Notification) {
+      parent.isFocused?.wrappedValue = false
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
