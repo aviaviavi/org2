@@ -1354,6 +1354,35 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedEntrySource?.startLine, 1)
   }
 
+  @MainActor
+  func testOpenDailyNoteCreatesAndSelectsConfiguredDailyFile() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-daily-open-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try #"{"roam":{"dailiesDir":"dailies"}}"#
+      .write(to: root.appendingPathComponent("org2.json"), atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.openDailyNote(.today)
+
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    let fileName = "\(formatter.string(from: Date())).org2"
+    let daily = root
+      .appendingPathComponent("dailies", isDirectory: true)
+      .appendingPathComponent(fileName)
+      .standardizedFileURL
+
+    XCTAssertTrue(FileManager.default.fileExists(atPath: daily.path))
+    XCTAssertEqual(store.selectedSurface, .files)
+    XCTAssertEqual(store.selectedCorpusFileID, daily.path)
+    XCTAssertEqual(store.selectedEntrySourceMode, .page)
+    XCTAssertEqual(store.selectedLocation?.file, daily.path)
+    XCTAssertEqual(store.corpusFiles.map(\.relativePath), ["dailies/\(fileName)"])
+  }
+
   func testOpenClawWorkspaceContextMapsRemotePathsAndIncludesGraphSlice() throws {
     let localRoot = "/local/org2"
     let remoteRoot = "/srv/org2"
