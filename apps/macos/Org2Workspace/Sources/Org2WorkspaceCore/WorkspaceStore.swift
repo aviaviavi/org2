@@ -103,7 +103,12 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedOpenClawThreadID: String?
   @Published public var selectedLocation: WorkspaceLocation?
   @Published public var selectedEntrySource: EntrySource?
-  @Published public var selectedRenderedBlocks: [OrgEditableBlock] = []
+  @Published public var selectedRenderedBlocks: [OrgEditableBlock] = [] {
+    didSet {
+      selectedRenderedBlocksSignature = Self.renderedBlocksSignature(for: selectedRenderedBlocks)
+    }
+  }
+  public private(set) var selectedRenderedBlocksSignature = WorkspaceStore.renderedBlocksSignature(for: [])
   @Published public var selectedEntrySourceMode: EntrySourceMode = .entry
   @Published public var editableEntryText = ""
   @Published public var selectedBlockID: OrgEditableBlock.ID?
@@ -2577,6 +2582,20 @@ public final class WorkspaceStore: ObservableObject {
     renderedBlocksCacheOrder.removeAll { $0 == key }
     renderedBlocksCacheOrder.append(key)
     return cached.blocks
+  }
+
+  private static func renderedBlocksSignature(for blocks: [OrgEditableBlock]) -> String {
+    guard !blocks.isEmpty else { return "empty" }
+
+    var hasher = Hasher()
+    hasher.combine(blocks.count)
+    for block in blocks {
+      hasher.combine(block.id)
+      hasher.combine(block.startLine)
+      hasher.combine(block.endLineExclusive)
+      hasher.combine(block.isEditable)
+    }
+    return "\(blocks.count):\(hasher.finalize())"
   }
 
   private func invalidateRenderedBlocksCache(for file: String) {
