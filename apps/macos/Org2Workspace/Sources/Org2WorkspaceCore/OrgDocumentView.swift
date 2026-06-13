@@ -472,6 +472,16 @@ private struct ProgressiveRenderFooter: View {
   }
 }
 
+enum RenderedRowChrome {
+  static func controlsOpacity(isVisible: Bool) -> Double {
+    isVisible ? 1 : 0
+  }
+
+  static func allowsHitTesting(isVisible: Bool) -> Bool {
+    isVisible
+  }
+}
+
 private struct EditableRenderedBlockView<Content: View>: View {
   let block: OrgEditableBlock
   let isSourceEditable: Bool
@@ -489,8 +499,10 @@ private struct EditableRenderedBlockView<Content: View>: View {
         .padding(.trailing, isSourceEditable ? 92 : 0)
         .frame(maxWidth: .infinity, alignment: .leading)
 
-      if showsControls {
+      if isSourceEditable {
         rowControls
+          .opacity(RenderedRowChrome.controlsOpacity(isVisible: showsControls))
+          .allowsHitTesting(RenderedRowChrome.allowsHitTesting(isVisible: showsControls))
       }
     }
     .padding(.horizontal, 6)
