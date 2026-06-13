@@ -521,12 +521,12 @@ public final class WorkspaceStore: ObservableObject {
     await moveBlock(selectedBlock, direction: direction)
   }
 
-  public func insertBlockAfterSelected(_ kind: OrgInsertBlockKind) async {
+  public func insertBlockAfterSelected(_ kind: OrgInsertBlockKind, initialText: String? = nil) async {
     guard let selectedBlock else {
       statusText = "Select a block first"
       return
     }
-    await insertBlock(after: selectedBlock, kind: kind)
+    await insertBlock(after: selectedBlock, kind: kind, initialText: initialText)
   }
 
   public func canMoveSelectedBlock(_ direction: OrgBlockMoveDirection) -> Bool {
@@ -709,7 +709,7 @@ public final class WorkspaceStore: ObservableObject {
     statusText = "Converted block to \(kind.title.lowercased()) draft"
   }
 
-  public func insertBlock(after block: OrgEditableBlock, kind: OrgInsertBlockKind) async {
+  public func insertBlock(after block: OrgEditableBlock, kind: OrgInsertBlockKind, initialText: String? = nil) async {
     guard let source = selectedEntrySource, source.isEditable else {
       statusText = "No editable source loaded"
       return
@@ -721,7 +721,7 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
-    let draft = insertionDraftBlock(for: kind, after: block, in: source)
+    let draft = insertionDraftBlock(for: kind, after: block, in: source, initialText: initialText)
     transientDraftBlock = draft
     pendingBlockSelection = nil
     isEditingEntry = false
@@ -1326,9 +1326,10 @@ public final class WorkspaceStore: ObservableObject {
   private func insertionDraftBlock(
     for kind: OrgInsertBlockKind,
     after previousBlock: OrgEditableBlock,
-    in source: EntrySource
+    in source: EntrySource,
+    initialText: String? = nil
   ) -> TransientDraftBlock {
-    let rawText = insertionDraftRawText(for: kind, after: previousBlock, in: source)
+    let rawText = initialText ?? insertionDraftRawText(for: kind, after: previousBlock, in: source)
     let insertionLine = previousBlock.endLineExclusive
     return TransientDraftBlock(
       file: source.file,
@@ -2058,6 +2059,11 @@ public final class WorkspaceStore: ObservableObject {
 
     if event.keyCode == 36, modifiers == [.command] {
       Task { await insertBlockAfterSelected(.paragraph) }
+      return true
+    }
+
+    if modifiers.isEmpty, key == "/" {
+      Task { await insertBlockAfterSelected(.paragraph, initialText: "/") }
       return true
     }
 
