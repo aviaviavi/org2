@@ -17,6 +17,10 @@
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-time-filter-range-overnight.input.txt",
           "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
           "time": "23:30"
         },
         {
@@ -25,6 +29,10 @@
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-time-filter-range-overnight.input.txt",
           "line": 2,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
           "time": "01:15"
         }
       ]

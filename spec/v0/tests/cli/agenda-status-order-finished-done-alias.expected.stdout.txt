@@ -16,42 +16,66 @@
           "headline": "Echo complete",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-status-order-finished-done-alias.input.txt",
-          "line": 8
+          "line": 8,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         },
         {
           "todo": "FINISHED",
           "headline": "Bravo finished",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-status-order-finished-done-alias.input.txt",
-          "line": 2
+          "line": 2,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         },
         {
           "todo": "RESOLVED",
           "headline": "Delta resolved",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-status-order-finished-done-alias.input.txt",
-          "line": 6
+          "line": 6,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         },
         {
           "todo": "TODO",
           "headline": "Alpha todo",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-status-order-finished-done-alias.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         },
         {
           "todo": "WAITING",
           "headline": "Charlie waiting",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-status-order-finished-done-alias.input.txt",
-          "line": 4
+          "line": 4,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         },
         {
           "todo": "REVIEW",
           "headline": "Foxtrot custom",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-status-order-finished-done-alias.input.txt",
-          "line": 10
+          "line": 10,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

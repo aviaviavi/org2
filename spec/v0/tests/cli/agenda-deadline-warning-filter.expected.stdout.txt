@@ -16,7 +16,11 @@
           "headline": "Pay quarterly tax",
           "kind": "DEADLINE",
           "file": "spec/v0/tests/cli/agenda-deadline-warning-filter.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     },
@@ -29,7 +33,11 @@
           "headline": "Submit travel receipt",
           "kind": "DEADLINE",
           "file": "spec/v0/tests/cli/agenda-deadline-warning-filter.input.txt",
-          "line": 3
+          "line": 3,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     },
@@ -42,7 +50,11 @@
           "headline": "Pay quarterly tax",
           "kind": "DEADLINE",
           "file": "spec/v0/tests/cli/agenda-deadline-warning-filter.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

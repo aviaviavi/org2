@@ -17,6 +17,13 @@
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-effort-filter.input.txt",
           "line": 6,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {
+            "EFFORT": "0:30"
+          },
+          "priority": "B",
           "effort": "0:30"
         }
       ]
@@ -31,6 +38,12 @@
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-effort-filter.input.txt",
           "line": 12,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {
+            "EFFORT": "30m"
+          },
           "effort": "30m"
         }
       ]

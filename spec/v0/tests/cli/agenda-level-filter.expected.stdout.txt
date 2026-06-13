@@ -16,7 +16,11 @@
           "headline": "Child task",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-level-filter.input.txt",
-          "line": 4
+          "line": 4,
+          "body": "",
+          "level": 2,
+          "tags": [],
+          "properties": {}
         }
       ]
     },
@@ -29,7 +33,11 @@
           "headline": "Deep task",
           "kind": "DEADLINE",
           "file": "spec/v0/tests/cli/agenda-level-filter.input.txt",
-          "line": 6
+          "line": 6,
+          "body": "",
+          "level": 3,
+          "tags": [],
+          "properties": {}
         }
       ]
     }
