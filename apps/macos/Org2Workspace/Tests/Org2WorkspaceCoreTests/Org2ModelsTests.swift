@@ -1837,6 +1837,67 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testAutosavesQuoteBlockWithoutLeavingInlineEditMode() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-quote-autosave-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("quote-autosave.org2")
+    try """
+    * TODO Parent
+    #+begin_quote
+    Old quote
+    #+end_quote
+    Body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 1,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let quote = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .quote = $0.rendered { return true }
+      return false
+    })
+    store.beginEditingBlock(quote)
+    let replacement = """
+    #+begin_quote
+    New quote
+    With second line
+    #+end_quote
+    """
+    store.updateEditingBlockDraft(quote, draft: replacement)
+    await store.autosaveEditedBlock(quote, replacement: replacement)
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("New quote\nWith second line\n#+end_quote\nBody"))
+    XCTAssertFalse(store.isEditingEntry)
+    XCTAssertEqual(store.selectedBlock?.rawText, replacement)
+    XCTAssertEqual(store.editableBlockText, replacement)
+    XCTAssertNotNil(store.editingBlockID)
+    guard case .quote(let lines) = store.selectedBlock?.rendered else {
+      return XCTFail("Expected quote block")
+    }
+    XCTAssertEqual(lines, ["New quote", "With second line"])
+  }
+
+  @MainActor
   func testSplitsEditingParagraphAtCaretIntoNewEditableBlock() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-block-split-\(UUID().uuidString)", isDirectory: true)
