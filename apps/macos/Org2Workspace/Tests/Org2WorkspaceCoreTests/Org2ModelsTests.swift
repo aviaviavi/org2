@@ -928,6 +928,18 @@ final class Org2ModelsTests: XCTestCase {
       previousHighlightedText: nil,
       monospacedUnchanged: true
     ))
+    XCTAssertFalse(OrgSyntaxTextEditor.Coordinator.shouldScheduleDeferredHighlighting(
+      text: largeText,
+      utf16Length: OrgSyntaxHighlighter.liveTokenizationUTF16Limit + 1,
+      previousHighlightedText: nil,
+      monospacedUnchanged: true
+    ))
+    XCTAssertTrue(OrgSyntaxTextEditor.Coordinator.shouldScheduleDeferredHighlighting(
+      text: "See [[id:abc][Alice]]",
+      utf16Length: 22,
+      previousHighlightedText: nil,
+      monospacedUnchanged: true
+    ))
   }
 
   @MainActor
