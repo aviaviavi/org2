@@ -29,11 +29,36 @@ struct OrgRenderedEntryView: View, Equatable {
   let selectedBlockID: OrgEditableBlock.ID?
   let selectedBlockIndex: Int?
   let editingBlockID: OrgEditableBlock.ID?
+  let foldedBlockIDs: Set<OrgEditableBlock.ID>
   let sourceBlockRunsRenderSignature: String
   let sourceBlockRuns: [String: SourceBlockRunState]
   @State private var renderedBlockWindow: Range<Int>?
   @State private var renderWindowResetKey = ""
   @State private var moveAvailability = OrgRenderedEntryMoveAvailability.empty
+
+  init(
+    blocks: [OrgEditableBlock],
+    blocksRenderSignature: String,
+    source: OrgRenderedEntrySourceContext?,
+    corpusRoot: URL?,
+    selectedBlockID: OrgEditableBlock.ID?,
+    selectedBlockIndex: Int?,
+    editingBlockID: OrgEditableBlock.ID?,
+    foldedBlockIDs: Set<OrgEditableBlock.ID> = [],
+    sourceBlockRunsRenderSignature: String,
+    sourceBlockRuns: [String: SourceBlockRunState]
+  ) {
+    self.blocks = blocks
+    self.blocksRenderSignature = blocksRenderSignature
+    self.source = source
+    self.corpusRoot = corpusRoot
+    self.selectedBlockID = selectedBlockID
+    self.selectedBlockIndex = selectedBlockIndex
+    self.editingBlockID = editingBlockID
+    self.foldedBlockIDs = foldedBlockIDs
+    self.sourceBlockRunsRenderSignature = sourceBlockRunsRenderSignature
+    self.sourceBlockRuns = sourceBlockRuns
+  }
 
   nonisolated static func == (lhs: OrgRenderedEntryView, rhs: OrgRenderedEntryView) -> Bool {
     lhs.blocksRenderSignature == rhs.blocksRenderSignature
@@ -42,23 +67,28 @@ struct OrgRenderedEntryView: View, Equatable {
       && lhs.selectedBlockID == rhs.selectedBlockID
       && lhs.selectedBlockIndex == rhs.selectedBlockIndex
       && lhs.editingBlockID == rhs.editingBlockID
+      && lhs.foldedBlockIDs == rhs.foldedBlockIDs
       && lhs.sourceBlockRunsRenderSignature == rhs.sourceBlockRunsRenderSignature
   }
 
   var body: some View {
     let sourceFile = source?.file
     let isSourceEditable = source?.isEditable == true
+    let displayBlocks = OrgRenderedFoldTree.visibleBlocks(blocks, foldedBlockIDs: foldedBlockIDs)
+    let selectedDisplayBlockIndex = selectedBlockID.flatMap { id in
+      displayBlocks.firstIndex { $0.id == id }
+    }
     let resetKey = Self.renderWindowResetKey(for: source)
     let visibleWindow = Self.visibleWindow(
       requestedWindow: renderedBlockWindow,
-      blocks: blocks,
-      selectedBlockIndex: selectedBlockIndex
+      blocks: displayBlocks,
+      selectedBlockIndex: selectedDisplayBlockIndex
     )
     let visibleRange = visibleWindow.range
-    let visibleBlocks = blocks[visibleWindow.range]
-    let allowsHoverChrome = Self.allowsHoverChrome(blockCount: blocks.count)
+    let visibleBlocks = displayBlocks[visibleWindow.range]
+    let allowsHoverChrome = Self.allowsHoverChrome(blockCount: displayBlocks.count)
     let moveAvailabilitySignature = OrgRenderedEntryMoveAvailability.signature(
-      blocksSignature: blocksRenderSignature,
+      blocksSignature: "\(blocksRenderSignature):folds:\(foldedBlockIDs.sorted().joined(separator: ","))",
       source: source,
       visibleRange: visibleRange
     )
@@ -68,7 +98,7 @@ struct OrgRenderedEntryView: View, Equatable {
       if visibleWindow.hasPrevious {
         ProgressiveRenderFooter(
           visibleRange: visibleWindow.displayRange,
-          totalCount: blocks.count,
+          totalCount: visibleWindow.totalCount,
           direction: .previous,
           autoLoadsOnAppear: false,
           loadMore: expandRenderedBlocks
@@ -81,6 +111,8 @@ struct OrgRenderedEntryView: View, Equatable {
           isSourceEditable: isSourceEditable,
           isSelected: selectedBlockID == block.id,
           isEditing: editingBlockID == block.id,
+          isFoldable: OrgRenderedFoldTree.isFoldable(block, in: blocks),
+          isFolded: foldedBlockIDs.contains(block.id),
           canMoveUp: moveAvailabilityValues[block.id]?.up == true,
           canMoveDown: moveAvailabilityValues[block.id]?.down == true,
           sourceFile: sourceFile,
@@ -95,7 +127,7 @@ struct OrgRenderedEntryView: View, Equatable {
       if visibleWindow.hasNext {
         ProgressiveRenderFooter(
           visibleRange: visibleWindow.displayRange,
-          totalCount: blocks.count,
+          totalCount: visibleWindow.totalCount,
           direction: .next,
           autoLoadsOnAppear: Self.shouldAutoExpandNextFooter(visibleWindow: visibleWindow),
           loadMore: expandRenderedBlocks
@@ -135,7 +167,7 @@ struct OrgRenderedEntryView: View, Equatable {
   ) {
     guard moveAvailability.signature != signature else { return }
     moveAvailability = OrgRenderedEntryMoveAvailability.make(
-      for: blocks,
+      for: OrgRenderedFoldTree.visibleBlocks(blocks, foldedBlockIDs: foldedBlockIDs),
       source: source,
       visibleRange: visibleRange,
       precomputedSignature: signature
@@ -145,13 +177,15 @@ struct OrgRenderedEntryView: View, Equatable {
   private func expandRenderedBlocks(_ direction: OrgRenderedBlockWindowExpansionDirection) {
     let visibleWindow = Self.visibleWindow(
       requestedWindow: renderedBlockWindow,
-      blocks: blocks,
-      selectedBlockIndex: selectedBlockIndex
+      blocks: OrgRenderedFoldTree.visibleBlocks(blocks, foldedBlockIDs: foldedBlockIDs),
+      selectedBlockIndex: selectedBlockID.flatMap { id in
+        OrgRenderedFoldTree.visibleBlocks(blocks, foldedBlockIDs: foldedBlockIDs).firstIndex { $0.id == id }
+      }
     )
     renderedBlockWindow = visibleWindow.expanding(
       direction,
-      by: Self.renderedBlockPageSize(for: blocks.count),
-      totalCount: blocks.count
+      by: Self.renderedBlockPageSize(for: visibleWindow.totalCount),
+      totalCount: visibleWindow.totalCount
     )
   }
 
@@ -174,6 +208,9 @@ struct OrgRenderedEntryView: View, Equatable {
       },
       delete: {
         Task { await store.deleteBlock(block) }
+      },
+      toggleFold: {
+        store.toggleRenderedBlockFold(block)
       }
     )
   }
@@ -326,6 +363,104 @@ struct OrgRenderedEntryView: View, Equatable {
   }
 }
 
+enum OrgRenderedFoldTree {
+  static func isFoldable(_ block: OrgEditableBlock, in blocks: [OrgEditableBlock]) -> Bool {
+    childrenRange(for: block, in: blocks) != nil
+  }
+
+  static func visibleBlocks(
+    _ blocks: [OrgEditableBlock],
+    foldedBlockIDs: Set<OrgEditableBlock.ID>
+  ) -> [OrgEditableBlock] {
+    guard !foldedBlockIDs.isEmpty else { return blocks }
+    var visible: [OrgEditableBlock] = []
+    visible.reserveCapacity(blocks.count)
+    var index = blocks.startIndex
+
+    while index < blocks.endIndex {
+      let block = blocks[index]
+      visible.append(block)
+      if foldedBlockIDs.contains(block.id),
+         let range = childrenRange(startingAt: index, in: blocks) {
+        index = range.upperBound
+      } else {
+        index += 1
+      }
+    }
+
+    return visible
+  }
+
+  static func prunedFoldedIDs(
+    _ foldedBlockIDs: Set<OrgEditableBlock.ID>,
+    blocks: [OrgEditableBlock]
+  ) -> Set<OrgEditableBlock.ID> {
+    guard !foldedBlockIDs.isEmpty else { return [] }
+    return Set(blocks.filter { foldedBlockIDs.contains($0.id) && isFoldable($0, in: blocks) }.map(\.id))
+  }
+
+  static func foldedAncestorID(
+    hiding blockID: OrgEditableBlock.ID,
+    foldedBlockIDs: Set<OrgEditableBlock.ID>,
+    blocks: [OrgEditableBlock]
+  ) -> OrgEditableBlock.ID? {
+    guard let blockIndex = blocks.firstIndex(where: { $0.id == blockID }) else { return nil }
+    for index in blocks.indices where foldedBlockIDs.contains(blocks[index].id) {
+      guard let range = childrenRange(startingAt: index, in: blocks),
+            range.contains(blockIndex)
+      else {
+        continue
+      }
+      return blocks[index].id
+    }
+    return nil
+  }
+
+  static func childrenRange(for block: OrgEditableBlock, in blocks: [OrgEditableBlock]) -> Range<Int>? {
+    guard let index = blocks.firstIndex(where: { $0.id == block.id }) else { return nil }
+    return childrenRange(startingAt: index, in: blocks)
+  }
+
+  private static func childrenRange(startingAt index: Int, in blocks: [OrgEditableBlock]) -> Range<Int>? {
+    guard blocks.indices.contains(index), index + 1 < blocks.endIndex else { return nil }
+    let endIndex: Int?
+    switch blocks[index].rendered {
+    case .heading(let heading):
+      endIndex = headingChildrenEndIndex(after: index, level: heading.level, in: blocks)
+    case .listItem(let indent, _, _, _):
+      endIndex = listChildrenEndIndex(after: index, indent: indent, in: blocks)
+    default:
+      endIndex = nil
+    }
+    guard let endIndex, endIndex > index + 1 else { return nil }
+    return (index + 1)..<endIndex
+  }
+
+  private static func headingChildrenEndIndex(after index: Int, level: Int, in blocks: [OrgEditableBlock]) -> Int {
+    for candidate in (index + 1)..<blocks.endIndex {
+      if case .heading(let nextHeading) = blocks[candidate].rendered,
+         nextHeading.level <= level {
+        return candidate
+      }
+    }
+    return blocks.endIndex
+  }
+
+  private static func listChildrenEndIndex(after index: Int, indent: Int, in blocks: [OrgEditableBlock]) -> Int? {
+    var hasChild = false
+    for candidate in (index + 1)..<blocks.endIndex {
+      guard case .listItem(let nextIndent, _, _, _) = blocks[candidate].rendered else {
+        return hasChild ? candidate : nil
+      }
+      if nextIndent <= indent {
+        return hasChild ? candidate : nil
+      }
+      hasChild = true
+    }
+    return hasChild ? blocks.endIndex : nil
+  }
+}
+
 enum OrgRenderedBlockWindowExpansionDirection: Equatable, Sendable {
   case previous
   case next
@@ -383,6 +518,8 @@ private struct OrgRenderedEntryRow: View, Equatable {
   let isSourceEditable: Bool
   let isSelected: Bool
   let isEditing: Bool
+  let isFoldable: Bool
+  let isFolded: Bool
   let canMoveUp: Bool
   let canMoveDown: Bool
   let sourceFile: String?
@@ -397,6 +534,8 @@ private struct OrgRenderedEntryRow: View, Equatable {
         && lhs.block.renderIdentity == rhs.block.renderIdentity
         && lhs.isSourceEditable == rhs.isSourceEditable
         && lhs.isSelected == rhs.isSelected
+        && lhs.isFoldable == rhs.isFoldable
+        && lhs.isFolded == rhs.isFolded
         && lhs.sourceFile == rhs.sourceFile
         && lhs.corpusRoot == rhs.corpusRoot
         && lhs.allowsHoverChrome == rhs.allowsHoverChrome
@@ -407,6 +546,8 @@ private struct OrgRenderedEntryRow: View, Equatable {
       && lhs.isSourceEditable == rhs.isSourceEditable
       && lhs.isSelected == rhs.isSelected
       && lhs.isEditing == rhs.isEditing
+      && lhs.isFoldable == rhs.isFoldable
+      && lhs.isFolded == rhs.isFolded
       && lhs.canMoveUp == rhs.canMoveUp
       && lhs.canMoveDown == rhs.canMoveDown
       && lhs.sourceFile == rhs.sourceFile
@@ -424,6 +565,8 @@ private struct OrgRenderedEntryRow: View, Equatable {
         block: block,
         isSourceEditable: isSourceEditable,
         isSelected: isSelected,
+        isFoldable: isFoldable,
+        isFolded: isFolded,
         canMoveUp: canMoveUp,
         canMoveDown: canMoveDown,
         allowsHoverChrome: allowsHoverChrome,
@@ -707,6 +850,8 @@ private struct EditableRenderedBlockView<Content: View>: View {
   let block: OrgEditableBlock
   let isSourceEditable: Bool
   let isSelected: Bool
+  let isFoldable: Bool
+  let isFolded: Bool
   let canMoveUp: Bool
   let canMoveDown: Bool
   let allowsHoverChrome: Bool
@@ -768,9 +913,24 @@ private struct EditableRenderedBlockView<Content: View>: View {
   }
 
   private var renderedContent: some View {
-    content
-      .padding(.trailing, contentTrailingPadding)
-      .frame(maxWidth: .infinity, alignment: .leading)
+    HStack(alignment: .firstTextBaseline, spacing: 4) {
+      if isFoldable {
+        Button {
+          actions.toggleFold()
+        } label: {
+          Image(systemName: isFolded ? "chevron.right" : "chevron.down")
+            .font(.caption.weight(.semibold))
+            .frame(width: 16, height: 16)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help(isFolded ? "Expand" : "Collapse")
+      }
+
+      content
+        .padding(.trailing, contentTrailingPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
   }
 
   private var backgroundColor: Color {
@@ -896,4 +1056,5 @@ private struct RenderedBlockActions {
   let move: (OrgBlockMoveDirection) -> Void
   let duplicate: () -> Void
   let delete: () -> Void
+  let toggleFold: () -> Void
 }

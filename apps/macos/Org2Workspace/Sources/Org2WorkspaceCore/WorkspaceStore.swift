@@ -153,6 +153,12 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedEntrySource: EntrySource?
   @Published public var selectedRenderedBlocks: [OrgEditableBlock] = [] {
     didSet {
+      defer {
+        foldedRenderedBlockIDs = OrgRenderedFoldTree.prunedFoldedIDs(
+          foldedRenderedBlockIDs,
+          blocks: selectedRenderedBlocks
+        )
+      }
       if preservesSelectedRenderedBlocksMetadataForNextAssignment {
         selectedRenderedBlocksRenderSignature = Self.renderedBlocksRenderSignature(for: selectedRenderedBlocks)
         preservesSelectedRenderedBlocksMetadataForNextAssignment = false
@@ -170,6 +176,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedEntrySourceMode: EntrySourceMode = .entry
   @Published public var editableEntryText = ""
   @Published public var selectedBlockID: OrgEditableBlock.ID?
+  @Published public private(set) var foldedRenderedBlockIDs: Set<OrgEditableBlock.ID> = []
   @Published public var editingBlockID: OrgEditableBlock.ID?
   @Published public var editableBlockText = ""
   @Published public var sourceBlockRuns: [String: SourceBlockRunState] = [:] {
@@ -303,6 +310,7 @@ public final class WorkspaceStore: ObservableObject {
     detailNavigationBackStack = []
     selectedEntrySource = nil
     selectedRenderedBlocks = []
+    foldedRenderedBlockIDs = []
     sourceBlockRuns = [:]
     editableEntryText = ""
     canonicalDocumentCache = [:]
@@ -980,6 +988,74 @@ public final class WorkspaceStore: ObservableObject {
     selectedBlockID = blocks[nextIndex].id
   }
 
+  public func toggleRenderedBlockFold(_ block: OrgEditableBlock) {
+    setRenderedBlock(block, folded: !foldedRenderedBlockIDs.contains(block.id))
+  }
+
+  @discardableResult
+  public func collapseSelectedRenderedBlock() -> Bool {
+    guard let selectedBlock else {
+      statusText = "Select a block first"
+      return false
+    }
+    return setRenderedBlock(selectedBlock, folded: true)
+  }
+
+  @discardableResult
+  public func expandSelectedRenderedBlock() -> Bool {
+    guard let selectedBlock else {
+      statusText = "Select a block first"
+      return false
+    }
+    return setRenderedBlock(selectedBlock, folded: false)
+  }
+
+  public func collapseAllRenderedBlocks() {
+    let foldableIDs = Set(selectedRenderedBlocks.filter {
+      OrgRenderedFoldTree.isFoldable($0, in: selectedRenderedBlocks)
+    }.map(\.id))
+    foldedRenderedBlockIDs = foldableIDs
+    if let selectedBlockID,
+       let ancestorID = OrgRenderedFoldTree.foldedAncestorID(
+        hiding: selectedBlockID,
+        foldedBlockIDs: foldableIDs,
+        blocks: selectedRenderedBlocks
+       ) {
+      self.selectedBlockID = ancestorID
+    }
+    statusText = foldableIDs.isEmpty ? "Nothing to collapse" : "Collapsed rendered blocks"
+  }
+
+  public func expandAllRenderedBlocks() {
+    foldedRenderedBlockIDs = []
+    statusText = "Expanded rendered blocks"
+  }
+
+  @discardableResult
+  private func setRenderedBlock(_ block: OrgEditableBlock, folded: Bool) -> Bool {
+    guard OrgRenderedFoldTree.isFoldable(block, in: selectedRenderedBlocks) else {
+      statusText = "Selected block has nothing to \(folded ? "collapse" : "expand")"
+      return false
+    }
+
+    var nextFoldedIDs = foldedRenderedBlockIDs
+    if folded {
+      nextFoldedIDs.insert(block.id)
+      if let selectedBlockID,
+         let range = OrgRenderedFoldTree.childrenRange(for: block, in: selectedRenderedBlocks),
+         let selectedIndex = selectedRenderedBlocks.firstIndex(where: { $0.id == selectedBlockID }),
+         range.contains(selectedIndex) {
+        self.selectedBlockID = block.id
+      }
+      statusText = "Collapsed block"
+    } else {
+      nextFoldedIDs.remove(block.id)
+      statusText = "Expanded block"
+    }
+    foldedRenderedBlockIDs = nextFoldedIDs
+    return true
+  }
+
   public func beginEditingSelectedBlock() {
     guard let selectedBlock else {
       statusText = "Select a block first"
@@ -1261,6 +1337,7 @@ public final class WorkspaceStore: ObservableObject {
       preservesSelectedRenderedBlocksMetadataForNextAssignment = true
     }
     selectedRenderedBlocks = blocks
+    foldedRenderedBlockIDs = OrgRenderedFoldTree.prunedFoldedIDs(foldedRenderedBlockIDs, blocks: blocks)
   }
 
   private func shouldPreserveRenderedBlockMetadata(
@@ -2382,7 +2459,10 @@ public final class WorkspaceStore: ObservableObject {
 
   private var selectableBlocks: [OrgEditableBlock] {
     guard let source = selectedEntrySource else { return [] }
-    return selectedRenderedBlocks.filter { block in
+    return OrgRenderedFoldTree.visibleBlocks(
+      selectedRenderedBlocks,
+      foldedBlockIDs: foldedRenderedBlockIDs
+    ).filter { block in
       block.isEditable
         && block.startLine >= source.startLine
         && block.endLineExclusive <= source.endLineExclusive
@@ -3245,6 +3325,25 @@ public final class WorkspaceStore: ObservableObject {
       }
       if event.keyCode == 125 || key == "j" {
         selectAdjacentBlock(.down)
+        return true
+      }
+      if event.keyCode == 123 {
+        _ = collapseSelectedRenderedBlock()
+        return true
+      }
+      if event.keyCode == 124 {
+        _ = expandSelectedRenderedBlock()
+        return true
+      }
+    }
+
+    if modifiers == [.command] {
+      if event.keyCode == 123 {
+        collapseAllRenderedBlocks()
+        return true
+      }
+      if event.keyCode == 124 {
+        expandAllRenderedBlocks()
         return true
       }
     }

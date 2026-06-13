@@ -2891,6 +2891,55 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(OrgRenderedBlockDisplayPolicy.isVisible(heading))
   }
 
+  func testRenderedFoldTreeHidesHeadingAndListDescendants() {
+    let blocks = [
+      OrgEditableBlock(
+        id: "h1",
+        startLine: 1,
+        endLineExclusive: 2,
+        rawText: "* Parent",
+        rendered: .heading(OrgHeadingBlock(level: 1, todo: nil, priority: nil, title: "Parent", tags: []))
+      ),
+      OrgEditableBlock(id: "p1", startLine: 2, endLineExclusive: 3, rawText: "Body", rendered: .paragraph("Body")),
+      OrgEditableBlock(
+        id: "h2",
+        startLine: 3,
+        endLineExclusive: 4,
+        rawText: "** Child",
+        rendered: .heading(OrgHeadingBlock(level: 2, todo: nil, priority: nil, title: "Child", tags: []))
+      ),
+      OrgEditableBlock(id: "p2", startLine: 4, endLineExclusive: 5, rawText: "Child body", rendered: .paragraph("Child body")),
+      OrgEditableBlock(
+        id: "next",
+        startLine: 5,
+        endLineExclusive: 6,
+        rawText: "* Next",
+        rendered: .heading(OrgHeadingBlock(level: 1, todo: nil, priority: nil, title: "Next", tags: []))
+      ),
+      OrgEditableBlock(id: "list", startLine: 6, endLineExclusive: 7, rawText: "- Parent", rendered: .listItem(indent: 0, marker: "-", checkbox: nil, text: "Parent")),
+      OrgEditableBlock(id: "child", startLine: 7, endLineExclusive: 8, rawText: "  - Child", rendered: .listItem(indent: 2, marker: "-", checkbox: nil, text: "Child")),
+      OrgEditableBlock(id: "grand", startLine: 8, endLineExclusive: 9, rawText: "    - Grand", rendered: .listItem(indent: 4, marker: "-", checkbox: nil, text: "Grand")),
+      OrgEditableBlock(id: "sibling", startLine: 9, endLineExclusive: 10, rawText: "- Sibling", rendered: .listItem(indent: 0, marker: "-", checkbox: nil, text: "Sibling"))
+    ]
+
+    XCTAssertTrue(OrgRenderedFoldTree.isFoldable(blocks[0], in: blocks))
+    XCTAssertTrue(OrgRenderedFoldTree.isFoldable(blocks[5], in: blocks))
+    XCTAssertFalse(OrgRenderedFoldTree.isFoldable(blocks[8], in: blocks))
+
+    XCTAssertEqual(
+      OrgRenderedFoldTree.visibleBlocks(blocks, foldedBlockIDs: ["h1"]).map(\.id),
+      ["h1", "next", "list", "child", "grand", "sibling"]
+    )
+    XCTAssertEqual(
+      OrgRenderedFoldTree.visibleBlocks(blocks, foldedBlockIDs: ["list"]).map(\.id),
+      ["h1", "p1", "h2", "p2", "next", "list", "sibling"]
+    )
+    XCTAssertEqual(
+      OrgRenderedFoldTree.foldedAncestorID(hiding: "grand", foldedBlockIDs: ["list", "child"], blocks: blocks),
+      "list"
+    )
+  }
+
   @MainActor
   func testRenderedBlockViewEqualityUsesCachedRenderIdentity() {
     let longBody = String(repeating: "Long plain paragraph body.\n", count: 1_500)
@@ -6489,6 +6538,21 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedBlock?.id, heading.id)
     XCTAssertTrue(store.handleDocumentKeyDown(keyDown(keyCode: 125)))
     XCTAssertEqual(store.selectedBlock?.id, paragraph.id)
+
+    store.selectBlock(heading)
+    XCTAssertTrue(store.handleDocumentKeyDown(keyDown(keyCode: 123)))
+    XCTAssertTrue(store.foldedRenderedBlockIDs.contains(heading.id))
+    XCTAssertFalse(store.canSelectAdjacentBlock(.down))
+    XCTAssertTrue(store.handleDocumentKeyDown(keyDown(keyCode: 124)))
+    XCTAssertFalse(store.foldedRenderedBlockIDs.contains(heading.id))
+    XCTAssertTrue(store.canSelectAdjacentBlock(.down))
+
+    store.selectBlock(paragraph)
+    XCTAssertTrue(store.handleDocumentKeyDown(keyDown(keyCode: 123, modifiers: [.command])))
+    XCTAssertEqual(store.selectedBlock?.id, heading.id)
+    XCTAssertTrue(store.foldedRenderedBlockIDs.contains(heading.id))
+    XCTAssertTrue(store.handleDocumentKeyDown(keyDown(keyCode: 124, modifiers: [.command])))
+    XCTAssertTrue(store.foldedRenderedBlockIDs.isEmpty)
 
     XCTAssertTrue(store.handleDocumentKeyDown(keyDown(keyCode: 53)))
     XCTAssertNil(store.selectedBlockID)

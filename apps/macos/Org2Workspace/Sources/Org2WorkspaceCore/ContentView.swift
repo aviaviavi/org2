@@ -380,6 +380,8 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "Return", action: "Edit selected block"),
             ShortcutHelpItem(keys: "⌘Return", action: "Insert paragraph after block"),
             ShortcutHelpItem(keys: "/", action: "Insert slash-command paragraph"),
+            ShortcutHelpItem(keys: "← / →", action: "Collapse / expand block"),
+            ShortcutHelpItem(keys: "⌘← / ⌘→", action: "Collapse / expand all"),
             ShortcutHelpItem(keys: "Delete", action: "Delete selected block"),
             ShortcutHelpItem(keys: "⌘D", action: "Duplicate selected block"),
             ShortcutHelpItem(keys: "⌘⇧↑ / ⌘⇧↓", action: "Move block"),
@@ -1795,6 +1797,7 @@ private struct EntryBodyView: View {
             selectedBlockID: store.selectedBlockID,
             selectedBlockIndex: store.selectedBlockID.flatMap { store.selectedRenderedBlockIndexes[$0] },
             editingBlockID: store.editingBlockID,
+            foldedBlockIDs: store.foldedRenderedBlockIDs,
             sourceBlockRunsRenderSignature: store.sourceBlockRunsRenderSignature,
             sourceBlockRuns: store.sourceBlockRuns
           )
