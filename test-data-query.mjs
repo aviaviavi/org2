@@ -17,6 +17,11 @@ const duplicateDatasetNote = path.join(tmp, "duplicate-dataset-report.org2");
 const data = path.join(tmp, "package-fetches.csv");
 const fakeDuckdb = path.join(tmp, "duckdb");
 const out = path.join(tmp, "fetches_by_state.org");
+const jsonOut = path.join(tmp, "fetches_by_state.json");
+
+function regexEscape(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 fs.writeFileSync(data, "state,fetches\nCA,42\nNY,24\n", "utf8");
 fs.writeFileSync(note, `* Package fetch report
@@ -27,7 +32,7 @@ path: ./package-fetches.csv
 engine: duckdb
 \`\`\`
 
-\`\`\`sql results=fetches_by_state
+\`\`\`sql results=fetches_by_state artifact=views/fetches_by_state.org
 SELECT state, sum(fetches) AS fetches
 FROM fetches
 GROUP BY state
@@ -234,17 +239,18 @@ assert.equal(json.rowCount, 2);
 assert.equal(json.datasets[0].id, "fetches");
 assert.equal(json.rows[0].state, "CA");
 assert.equal(json.provenance.resultId, "fetches_by_state");
+assert.equal(json.provenance.artifact, "views/fetches_by_state.org");
 assert.deepEqual(json.provenance.datasetIds, ["fetches"]);
 assert.deepEqual(json.provenance.viewIds, []);
 assert.match(json.provenance.querySha256, /^[a-f0-9]{64}$/);
 assert.match(json.provenance.scriptSha256, /^[a-f0-9]{64}$/);
 assert.match(json.duckdbScript, /read_csv_auto/);
-assert.match(json.orgTable, /^#\+query-data: result=fetches_by_state rows=2 query_sha256=[a-f0-9]{64} script_sha256=[a-f0-9]{64}/);
+assert.match(json.orgTable, /^#\+query-data: result=fetches_by_state rows=2 artifact=views\/fetches_by_state\.org query_sha256=[a-f0-9]{64} script_sha256=[a-f0-9]{64}/);
 assert.match(json.orgTable, /#\+name: fetches_by_state/);
 assert.match(json.orgTable, /\| state \| fetches \|/);
 
 const org = cli(["query-data", "--file", note, "--results", "fetches_by_state", "--duckdb", fakeDuckdb]);
-assert.match(org, /^#\+query-data: result=fetches_by_state rows=2 query_sha256=[a-f0-9]{64} script_sha256=[a-f0-9]{64}/);
+assert.match(org, /^#\+query-data: result=fetches_by_state rows=2 artifact=views\/fetches_by_state\.org query_sha256=[a-f0-9]{64} script_sha256=[a-f0-9]{64}/);
 assert.match(org, /#\+name: fetches_by_state/);
 assert.match(org, /\| state \| fetches \|/);
 assert.match(org, /\| CA    \| 42      \|/);
@@ -266,7 +272,13 @@ assert.equal(orgStyleByHeaderArg.resultId, "fetches_by_state_header");
 assert.equal(orgStyleByHeaderArg.rows[0].state, "CA");
 
 cli(["query-data", "--file", note, "--results", "fetches_by_state", "--duckdb", fakeDuckdb, "--out", out]);
+assert.match(fs.readFileSync(out, "utf8"), new RegExp(`^#\\+query-data: result=fetches_by_state rows=2 artifact=${regexEscape(out)} query_sha256=[a-f0-9]{64} script_sha256=[a-f0-9]{64}`));
 assert.match(fs.readFileSync(out, "utf8"), /\| NY    \| 24      \|/);
+
+cli(["query-data", "--file", note, "--results", "fetches_by_state", "--duckdb", fakeDuckdb, "--format", "json", "--out", jsonOut]);
+const writtenJson = JSON.parse(fs.readFileSync(jsonOut, "utf8"));
+assert.equal(writtenJson.provenance.artifact, jsonOut);
+assert.match(writtenJson.orgTable, new RegExp(`artifact=${regexEscape(jsonOut)}`));
 
 const tableJson = JSON.parse(cli(["query-data", "--file", tableNote, "--results", "fetches_total", "--duckdb", fakeDuckdb, "--format", "json", "--include-script"]));
 assert.equal(tableJson.ok, true);
