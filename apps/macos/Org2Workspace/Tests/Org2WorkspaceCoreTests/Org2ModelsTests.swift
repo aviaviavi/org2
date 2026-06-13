@@ -1030,6 +1030,30 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNil(OrgMediaAttachment.standalone(raw: "https://example.com/image.png"))
   }
 
+  func testEditableMediaLinkFormatsOrgBracketLinks() throws {
+    XCTAssertEqual(
+      OrgEditableMediaLink(kind: .image, target: "images/diagram.png", label: "System Diagram").formattedRawText,
+      "[[file:images/diagram.png][System Diagram]]"
+    )
+
+    XCTAssertEqual(
+      OrgEditableMediaLink(kind: .video, target: "file:clips/demo.mp4").formattedRawText,
+      "[[file:clips/demo.mp4][demo.mp4]]"
+    )
+
+    let markdown = try XCTUnwrap(OrgEditableMediaLink(rawText: "[Clip](clip.mov)"))
+    XCTAssertEqual(markdown.kind, .video)
+    XCTAssertEqual(markdown.target, "clip.mov")
+    XCTAssertEqual(markdown.label, "Clip")
+    XCTAssertEqual(markdown.formattedRawText, "[[file:clip.mov][Clip]]")
+
+    let bracket = try XCTUnwrap(OrgEditableMediaLink(rawText: "[[file:../assets/diagram.png][Diagram]]"))
+    XCTAssertEqual(bracket.kind, .image)
+    XCTAssertEqual(bracket.target, "file:../assets/diagram.png")
+    XCTAssertEqual(bracket.label, "Diagram")
+    XCTAssertEqual(bracket.formattedRawText, "[[file:../assets/diagram.png][Diagram]]")
+  }
+
   @MainActor
   func testAgentHandoffShortcutUpdatesTempNote() async throws {
     let root = FileManager.default.temporaryDirectory

@@ -1509,35 +1509,18 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     guard !trimmed.isEmpty else {
-      return "[[file:\(placeholderTarget)][\(placeholderLabel)]]"
+      return OrgEditableMediaLink(kind: kind, target: placeholderTarget, label: placeholderLabel).formattedRawText
     }
 
     if let attachment = OrgMediaAttachment.standalone(raw: trimmed) {
-      return orgMediaLink(
-        target: attachment.target,
-        label: attachment.displayName,
-        fallbackLabel: placeholderLabel
-      )
+      return OrgEditableMediaLink(kind: kind, target: attachment.target, label: attachment.displayName).formattedRawText
     }
 
     if trimmed.range(of: #"\.(?:png|jpe?g|gif|tiff?|bmp|heic|heif|webp|mov|mp4|m4v|avi|webm)(?:[#?].*)?$"#, options: [.regularExpression, .caseInsensitive]) != nil {
-      return orgMediaLink(
-        target: trimmed,
-        label: URL(fileURLWithPath: trimmed).lastPathComponent,
-        fallbackLabel: placeholderLabel
-      )
+      return OrgEditableMediaLink(kind: kind, target: trimmed).formattedRawText
     }
 
-    return "[[file:\(placeholderTarget)][\(trimmed)]]"
-  }
-
-  private func orgMediaLink(target: String, label: String, fallbackLabel: String) -> String {
-    let normalizedTarget = target.trimmingCharacters(in: .whitespacesAndNewlines)
-    let fileTarget = normalizedTarget.lowercased().hasPrefix("file:")
-      ? normalizedTarget
-      : "file:\(normalizedTarget)"
-    let normalizedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
-    return "[[\(fileTarget)][\(normalizedLabel.isEmpty ? fallbackLabel : normalizedLabel)]]"
+    return OrgEditableMediaLink(kind: kind, target: placeholderTarget, label: trimmed).formattedRawText
   }
 
   private func draftRenderedBlock(

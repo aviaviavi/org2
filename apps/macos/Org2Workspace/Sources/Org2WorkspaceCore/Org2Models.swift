@@ -1072,6 +1072,70 @@ public struct OrgMediaAttachment: Equatable, Sendable {
   private static let videoExtensions = Set(["mov", "mp4", "m4v", "avi", "webm"])
 }
 
+public struct OrgEditableMediaLink: Equatable, Sendable {
+  public var kind: OrgMediaAttachment.Kind
+  public var target: String
+  public var label: String
+
+  public init(kind: OrgMediaAttachment.Kind, target: String, label: String = "") {
+    self.kind = kind
+    self.target = target
+    self.label = label
+  }
+
+  public init?(rawText: String) {
+    guard let attachment = OrgMediaAttachment.standalone(raw: rawText) else {
+      return nil
+    }
+    self.kind = attachment.kind
+    self.target = attachment.target
+    self.label = attachment.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      ? attachment.displayName
+      : attachment.label
+  }
+
+  public var formattedRawText: String {
+    let target = normalizedTarget
+    let label = normalizedLabel
+    return "[[\(target)][\(label)]]"
+  }
+
+  public var normalizedTarget: String {
+    let trimmed = target.trimmingCharacters(in: .whitespacesAndNewlines)
+    let fallback = kind == .image ? "images/image.png" : "videos/video.mp4"
+    let rawTarget = trimmed.isEmpty ? fallback : trimmed
+    return rawTarget.lowercased().hasPrefix("file:")
+      ? rawTarget
+      : "file:\(rawTarget)"
+  }
+
+  private var normalizedLabel: String {
+    let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !trimmed.isEmpty {
+      return trimmed
+    }
+    return fallbackLabel(for: normalizedTarget)
+  }
+
+  private func fallbackLabel(for target: String) -> String {
+    var cleaned = target.trimmingCharacters(in: .whitespacesAndNewlines)
+    if cleaned.hasPrefix("file://") {
+      cleaned = String(cleaned.dropFirst("file://".count))
+    } else if cleaned.hasPrefix("file:") {
+      cleaned = String(cleaned.dropFirst("file:".count))
+    }
+    if let fragment = cleaned.firstIndex(of: "#") {
+      cleaned = String(cleaned[..<fragment])
+    }
+    cleaned = cleaned.removingPercentEncoding ?? cleaned
+    let filename = URL(fileURLWithPath: cleaned).lastPathComponent
+    if !filename.isEmpty {
+      return filename
+    }
+    return kind == .image ? "Image" : "Video"
+  }
+}
+
 public struct SourceBlockRunPlan: Equatable, Sendable {
   public let executable: String
   public let arguments: [String]
