@@ -1056,44 +1056,66 @@ private struct SourceRunLineChartView: View {
 
 private struct RenderedTableView: View {
   let table: OrgTableBlock
+  @State private var isExpanded = false
 
   var body: some View {
-    ScrollView(.horizontal) {
-      Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 0, verticalSpacing: 0) {
-        ForEach(Array(table.rows.enumerated()), id: \.offset) { rowIndex, row in
-          switch row {
-          case .cells(let cells):
-            GridRow {
-              ForEach(0..<columnCount, id: \.self) { columnIndex in
-                OrgInlineText(cellText(cells, at: columnIndex), font: cellFont(rowIndex: rowIndex))
-                  .lineLimit(table.headerRowIndex == rowIndex ? 2 : 4)
-                  .padding(.horizontal, 10)
-                  .padding(.vertical, table.headerRowIndex == rowIndex ? 7 : 6)
-                  .frame(minWidth: 96, alignment: .leading)
-                  .background(cellBackground(rowIndex: rowIndex))
-                  .overlay(alignment: .trailing) {
-                    Divider()
+    let rowWindow = TableRowWindow.make(
+      rows: table.rows,
+      headerRowIndex: table.headerRowIndex,
+      isExpanded: isExpanded
+    )
+    VStack(alignment: .leading, spacing: 6) {
+      ScrollView(.horizontal) {
+        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 0, verticalSpacing: 0) {
+          ForEach(rowWindow.visibleRows) { visibleRow in
+            switch visibleRow.row {
+            case .cells(let cells):
+              GridRow {
+                ForEach(0..<columnCount, id: \.self) { columnIndex in
+                  OrgInlineText(cellText(cells, at: columnIndex), font: cellFont(rowIndex: visibleRow.index))
+                    .lineLimit(table.headerRowIndex == visibleRow.index ? 2 : 4)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, table.headerRowIndex == visibleRow.index ? 7 : 6)
+                    .frame(minWidth: 96, alignment: .leading)
+                    .background(cellBackground(rowIndex: visibleRow.index))
+                    .overlay(alignment: .trailing) {
+                      Divider()
+                    }
+                    .overlay(alignment: .bottom) {
+                      Divider()
+                        .opacity(table.headerRowIndex == visibleRow.index ? 0 : 0.65)
                   }
-                  .overlay(alignment: .bottom) {
-                    Divider()
-                      .opacity(table.headerRowIndex == rowIndex ? 0 : 0.65)
-                  }
+                }
               }
+            case .separator:
+              Rectangle()
+                .fill(separatorColor(rowIndex: visibleRow.index))
+                .frame(height: isHeaderSeparator(rowIndex: visibleRow.index) ? 1.5 : 1)
+                .gridCellColumns(columnCount)
             }
-          case .separator:
-            Rectangle()
-              .fill(separatorColor(rowIndex: rowIndex))
-              .frame(height: isHeaderSeparator(rowIndex: rowIndex) ? 1.5 : 1)
-              .gridCellColumns(columnCount)
           }
         }
       }
+      .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+          .stroke(Color.secondary.opacity(0.18))
+      )
+
+      if rowWindow.isTruncated {
+        Button {
+          isExpanded.toggle()
+        } label: {
+          Label(
+            isExpanded ? "Show first \(TableRowWindow.defaultLimit) rows" : "Show \(rowWindow.hiddenRowCount) more rows",
+            systemImage: isExpanded ? "chevron.up" : "chevron.down"
+          )
+        }
+        .buttonStyle(.borderless)
+        .controlSize(.small)
+        .foregroundStyle(.secondary)
+      }
     }
-    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-    .overlay(
-      RoundedRectangle(cornerRadius: 6, style: .continuous)
-        .stroke(Color.secondary.opacity(0.18))
-    )
     .padding(.vertical, 4)
   }
 
@@ -1131,6 +1153,61 @@ private struct RenderedTableView: View {
 
   private func isHeaderSeparator(rowIndex: Int) -> Bool {
     table.headerRowIndex.map { $0 + 1 } == Optional(rowIndex)
+  }
+}
+
+struct TableRowWindow: Equatable {
+  struct VisibleRow: Identifiable, Equatable {
+    let index: Int
+    let row: OrgTableRow
+
+    var id: Int { index }
+  }
+
+  static let defaultLimit = 40
+
+  let visibleRows: [VisibleRow]
+  let totalRowCount: Int
+  let limit: Int
+  let isExpanded: Bool
+
+  var isTruncated: Bool {
+    totalRowCount > limit
+  }
+
+  var hiddenRowCount: Int {
+    max(0, totalRowCount - visibleRows.count)
+  }
+
+  static func make(
+    rows: [OrgTableRow],
+    headerRowIndex: Int?,
+    isExpanded: Bool,
+    limit: Int = defaultLimit
+  ) -> TableRowWindow {
+    let safeLimit = max(1, limit)
+    let visibleRows: [VisibleRow]
+    if isExpanded || rows.count <= safeLimit {
+      visibleRows = rows.enumerated().map { VisibleRow(index: $0.offset, row: $0.element) }
+    } else {
+      var includedIndexes = Set(0..<min(safeLimit, rows.count))
+      if let headerRowIndex, rows.indices.contains(headerRowIndex) {
+        includedIndexes.insert(headerRowIndex)
+        let separatorIndex = headerRowIndex + 1
+        if rows.indices.contains(separatorIndex),
+           case .separator = rows[separatorIndex] {
+          includedIndexes.insert(separatorIndex)
+        }
+      }
+      visibleRows = includedIndexes.sorted().map { VisibleRow(index: $0, row: rows[$0]) }
+    }
+
+    return TableRowWindow(
+      visibleRows: visibleRows,
+      totalRowCount: rows.count,
+      limit: safeLimit,
+      isExpanded: isExpanded
+    )
   }
 }
 

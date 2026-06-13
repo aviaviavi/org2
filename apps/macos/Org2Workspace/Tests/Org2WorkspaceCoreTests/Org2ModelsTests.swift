@@ -934,6 +934,38 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(collapsed.hiddenLineCount, 0)
   }
 
+  func testTableRowWindowLimitsCollapsedLargeTables() {
+    let rows = (1...60).map { OrgTableRow.cells(["row \($0)"]) }
+
+    let collapsed = TableRowWindow.make(rows: rows, headerRowIndex: nil, isExpanded: false, limit: 40)
+    XCTAssertEqual(collapsed.visibleRows.count, 40)
+    XCTAssertEqual(collapsed.visibleRows.first?.index, 0)
+    XCTAssertEqual(collapsed.visibleRows.last?.index, 39)
+    XCTAssertTrue(collapsed.isTruncated)
+    XCTAssertEqual(collapsed.hiddenRowCount, 20)
+
+    let expanded = TableRowWindow.make(rows: rows, headerRowIndex: nil, isExpanded: true, limit: 40)
+    XCTAssertEqual(expanded.visibleRows.count, 60)
+    XCTAssertTrue(expanded.isTruncated)
+    XCTAssertEqual(expanded.hiddenRowCount, 0)
+  }
+
+  func testTableRowWindowKeepsHeaderAndSeparatorVisible() {
+    let rows: [OrgTableRow] = [
+      .cells(["intro"]),
+      .cells(["row 2"]),
+      .cells(["row 3"]),
+      .cells(["Header"]),
+      .separator,
+      .cells(["row 6"])
+    ]
+
+    let collapsed = TableRowWindow.make(rows: rows, headerRowIndex: 3, isExpanded: false, limit: 2)
+    XCTAssertEqual(collapsed.visibleRows.map(\.index), [0, 1, 3, 4])
+    XCTAssertTrue(collapsed.isTruncated)
+    XCTAssertEqual(collapsed.hiddenRowCount, 2)
+  }
+
   func testSourceBlockRunPlanSupportsCommonLanguages() {
     XCTAssertEqual(SourceBlockRunPlan.plan(for: "sh")?.executable, "/bin/sh")
     XCTAssertEqual(SourceBlockRunPlan.plan(for: "python")?.arguments, ["python3"])
