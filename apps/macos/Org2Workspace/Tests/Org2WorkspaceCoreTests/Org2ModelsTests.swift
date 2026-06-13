@@ -1202,6 +1202,70 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(saved.contains("printf draft"))
   }
 
+  @MainActor
+  func testAutosavesSourceBlockWithoutLeavingInlineEditMode() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-source-autosave-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("source-autosave.org2")
+    try """
+    #+TITLE: Source Autosave
+
+    * Code
+    #+begin_src sh
+    printf old
+    #+end_src
+    Body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": null,
+      "headline": "Code",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 3,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let sourceBlock = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .source = $0.rendered { return true }
+      return false
+    })
+    store.beginEditingBlock(sourceBlock)
+    let replacement = """
+    #+begin_src python :results output
+    print("new")
+    print("line two")
+    #+end_src
+    """
+    store.updateEditingBlockDraft(sourceBlock, draft: replacement)
+    await store.autosaveEditedBlock(sourceBlock, replacement: replacement)
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("print(\"new\")\nprint(\"line two\")\n#+end_src\nBody"))
+    XCTAssertFalse(store.isEditingEntry)
+    XCTAssertEqual(store.selectedBlock?.rawText, replacement)
+    XCTAssertEqual(store.editableBlockText, replacement)
+    XCTAssertNotNil(store.editingBlockID)
+    guard case .source(let language, let lines) = store.selectedBlock?.rendered else {
+      return XCTFail("Expected source block")
+    }
+    XCTAssertEqual(language, "python")
+    XCTAssertEqual(lines, ["print(\"new\")", "print(\"line two\")"])
+  }
+
   func testParsesEditableOrgBlocksWithSourceRanges() {
     let blocks = OrgEntryRenderer.parseEditable("""
     * TODO Parent

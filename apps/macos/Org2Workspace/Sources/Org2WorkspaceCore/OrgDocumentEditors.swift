@@ -1734,6 +1734,7 @@ private struct SourceBlockEditor: View {
   let block: OrgEditableBlock
   @State private var source: OrgEditableSourceBlock
   @State private var isHovered = false
+  @State private var autosaveTask: Task<Void, Never>?
 
   init(block: OrgEditableBlock, language: String?, lines: [String]) {
     self.block = block
@@ -1863,6 +1864,13 @@ private struct SourceBlockEditor: View {
         .stroke(Color.accentColor.opacity(isHovered ? 0.16 : 0.09))
     )
     .onHover { isHovered = $0 }
+    .onChange(of: source) {
+      scheduleSourceAutosave()
+    }
+    .onDisappear {
+      autosaveTask?.cancel()
+      autosaveTask = nil
+    }
   }
 
   private var languageBinding: Binding<String> {
@@ -1914,8 +1922,30 @@ private struct SourceBlockEditor: View {
   }
 
   private func saveSource() {
+    autosaveTask?.cancel()
+    autosaveTask = nil
     store.editableBlockText = source.formattedRawText
     Task { await store.saveEditedBlock(block) }
+  }
+
+  private func scheduleSourceAutosave() {
+    let draft = source.formattedRawText
+    store.updateEditingBlockDraft(block, draft: draft)
+    autosaveTask?.cancel()
+
+    guard draft != block.rawText else {
+      return
+    }
+
+    autosaveTask = Task { [block] in
+      do {
+        try await Task.sleep(nanoseconds: 700_000_000)
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      await store.autosaveEditedBlock(block, replacement: draft)
+    }
   }
 }
 
