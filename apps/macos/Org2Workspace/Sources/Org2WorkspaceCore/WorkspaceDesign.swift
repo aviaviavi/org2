@@ -47,13 +47,13 @@ struct KeyboardShortcutBadge: View {
   var body: some View {
     Text(text)
       .font(.caption2.monospaced().weight(.medium))
-      .foregroundStyle(.secondary)
-      .padding(.horizontal, 5)
-      .padding(.vertical, 2)
-      .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+      .foregroundStyle(.tertiary)
+      .padding(.horizontal, 4)
+      .padding(.vertical, 1)
+      .background(Color.secondary.opacity(0.045), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
       .overlay(
-        RoundedRectangle(cornerRadius: 4, style: .continuous)
-          .stroke(WorkspaceDesign.hairline)
+        RoundedRectangle(cornerRadius: 3, style: .continuous)
+          .stroke(Color.secondary.opacity(0.10))
       )
   }
 }

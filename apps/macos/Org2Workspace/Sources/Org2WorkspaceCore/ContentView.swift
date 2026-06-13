@@ -142,7 +142,9 @@ private struct SidebarView: View {
               Spacer(minLength: 0)
               KeyboardShortcutBadge(text: target.commandShortcutTitle)
             }
+            .contentShape(Rectangle())
           }
+          .buttonStyle(.plain)
           .help("\(target.title) daily note (\(target.commandShortcutTitle))")
         }
       }
