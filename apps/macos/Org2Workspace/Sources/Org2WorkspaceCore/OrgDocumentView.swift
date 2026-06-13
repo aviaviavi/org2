@@ -18,6 +18,7 @@ struct OrgRenderedEntryView: View {
               sourceFile: store.selectedEntrySource?.file,
               corpusRoot: store.corpusRoot
             )
+            .equatable()
           }
         }
       }
