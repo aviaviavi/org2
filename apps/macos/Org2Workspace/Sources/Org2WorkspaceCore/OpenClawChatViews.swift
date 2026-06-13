@@ -1,12 +1,19 @@
+import AppKit
 import SwiftUI
 
 struct ChatBubbleView: View {
   let message: OpenClawChatMessage
+  let compact: Bool
+
+  init(message: OpenClawChatMessage, compact: Bool = false) {
+    self.message = message
+    self.compact = compact
+  }
 
   var body: some View {
     HStack {
       if message.role == .user {
-        Spacer(minLength: 48)
+        Spacer(minLength: compact ? 24 : 48)
       }
 
       VStack(alignment: .leading, spacing: 4) {
@@ -14,7 +21,7 @@ struct ChatBubbleView: View {
           .font(.caption.weight(.medium))
           .foregroundStyle(.secondary)
         OrgInlineText(message.content)
-          .frame(maxWidth: 640, alignment: .leading)
+          .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
       }
       .padding(10)
       .background(background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -24,7 +31,7 @@ struct ChatBubbleView: View {
       )
 
       if message.role != .user {
-        Spacer(minLength: 48)
+        Spacer(minLength: compact ? 24 : 48)
       }
     }
     .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
@@ -38,6 +45,184 @@ struct ChatBubbleView: View {
       return Color.secondary.opacity(0.08)
     case .system:
       return Color.orange.opacity(0.10)
+    }
+  }
+}
+
+struct OpenClawComposerView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let focusOnAppear: Bool
+  let compact: Bool
+
+  var body: some View {
+    VStack(alignment: .trailing, spacing: 8) {
+      let composerHeight = OpenClawComposerSizing.height(for: store.openClawDraft, compact: compact)
+      ZStack(alignment: .topLeading) {
+        RoundedRectangle(cornerRadius: 7, style: .continuous)
+          .fill(Color(nsColor: .textBackgroundColor))
+          .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+              .stroke(Color.secondary.opacity(0.22))
+          )
+
+        if store.openClawDraft.isEmpty {
+          Text("Message OpenClaw")
+            .font(.body)
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+        }
+
+        OpenClawComposerTextView(
+          text: $store.openClawDraft,
+          focusOnAppear: focusOnAppear,
+          onCommandReturn: sendIfPossible
+        )
+        .padding(4)
+      }
+      .frame(minHeight: composerHeight, idealHeight: composerHeight, maxHeight: composerHeight)
+      .animation(.easeOut(duration: 0.12), value: composerHeight)
+
+      HStack(spacing: 8) {
+        Text("Return for newline. Cmd-Return to send.")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+        Spacer(minLength: 0)
+        Button {
+          _ = sendIfPossible()
+        } label: {
+          Label("Send", systemImage: "paperplane.fill")
+        }
+        .disabled(!canSend)
+      }
+    }
+  }
+
+  private var canSend: Bool {
+    !store.openClawDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      && !store.isSendingOpenClawMessage
+  }
+
+  private func sendIfPossible() -> Bool {
+    guard canSend else { return false }
+    Task { await store.sendOpenClawMessage() }
+    return true
+  }
+}
+
+enum OpenClawComposerSizing {
+  static func height(for text: String, compact: Bool) -> CGFloat {
+    let visualLineCount = estimatedVisualLineCount(for: text, compact: compact)
+    let baseHeight: CGFloat = 34
+    let lineHeight: CGFloat = 20
+    let minHeight: CGFloat = compact ? 54 : 58
+    let maxHeight: CGFloat = compact ? 150 : 190
+    return min(max(baseHeight + CGFloat(max(1, visualLineCount)) * lineHeight, minHeight), maxHeight)
+  }
+
+  static func estimatedVisualLineCount(for text: String, compact: Bool) -> Int {
+    guard !text.isEmpty else { return 1 }
+    let wrapColumn = compact ? 42 : 72
+    return text
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map { line in
+        max(1, Int(ceil(Double(line.count + 1) / Double(wrapColumn))))
+      }
+      .reduce(0, +)
+  }
+}
+
+enum OpenClawComposerKeyCommand {
+  static func isSendCommand(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
+    let relevantModifiers = modifiers.intersection([.command, .option, .control, .shift])
+    return (keyCode == 36 || keyCode == 76) && relevantModifiers == [.command]
+  }
+}
+
+private struct OpenClawComposerTextView: NSViewRepresentable {
+  @Binding var text: String
+  let focusOnAppear: Bool
+  let onCommandReturn: () -> Bool
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator(parent: self)
+  }
+
+  func makeNSView(context: Context) -> NSScrollView {
+    let scrollView = NSScrollView()
+    scrollView.hasVerticalScroller = true
+    scrollView.hasHorizontalScroller = false
+    scrollView.autohidesScrollers = true
+    scrollView.drawsBackground = false
+    scrollView.borderType = .noBorder
+
+    let textView = CommandSubmitTextView()
+    textView.delegate = context.coordinator
+    textView.onCommandReturn = {
+      context.coordinator.parent.onCommandReturn()
+    }
+    textView.string = text
+    textView.font = .systemFont(ofSize: NSFont.systemFontSize)
+    textView.textColor = .labelColor
+    textView.backgroundColor = .clear
+    textView.drawsBackground = false
+    textView.isRichText = false
+    textView.allowsUndo = true
+    textView.isVerticallyResizable = true
+    textView.isHorizontallyResizable = false
+    textView.textContainerInset = NSSize(width: 4, height: 5)
+    textView.textContainer?.widthTracksTextView = true
+    textView.textContainer?.containerSize = NSSize(width: scrollView.contentSize.width, height: .greatestFiniteMagnitude)
+    textView.autoresizingMask = [.width]
+    scrollView.documentView = textView
+
+    if focusOnAppear {
+      DispatchQueue.main.async {
+        textView.window?.makeFirstResponder(textView)
+      }
+    }
+
+    return scrollView
+  }
+
+  func updateNSView(_ scrollView: NSScrollView, context: Context) {
+    guard let textView = scrollView.documentView as? CommandSubmitTextView else { return }
+    context.coordinator.parent = self
+    textView.onCommandReturn = {
+      context.coordinator.parent.onCommandReturn()
+    }
+    if textView.string != text {
+      let selectedRange = textView.selectedRange()
+      textView.string = text
+      textView.setSelectedRange(NSRange(
+        location: min(selectedRange.location, (text as NSString).length),
+        length: 0
+      ))
+    }
+  }
+
+  final class Coordinator: NSObject, NSTextViewDelegate {
+    var parent: OpenClawComposerTextView
+
+    init(parent: OpenClawComposerTextView) {
+      self.parent = parent
+    }
+
+    func textDidChange(_ notification: Notification) {
+      guard let textView = notification.object as? NSTextView else { return }
+      parent.text = textView.string
+    }
+  }
+
+  final class CommandSubmitTextView: NSTextView {
+    var onCommandReturn: (() -> Bool)?
+
+    override func keyDown(with event: NSEvent) {
+      if OpenClawComposerKeyCommand.isSendCommand(keyCode: event.keyCode, modifiers: event.modifierFlags),
+         onCommandReturn?() == true {
+        return
+      }
+      super.keyDown(with: event)
     }
   }
 }

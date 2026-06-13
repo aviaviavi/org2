@@ -24,10 +24,19 @@ public struct ContentView: View {
         OpenClawThreadsView()
       }
     } detail: {
-      DetailView()
+      WorkspaceDetailArea()
     }
     .toolbar {
       ToolbarItemGroup {
+        Button {
+          store.isOpenClawAssistantPresented.toggle()
+        } label: {
+          Label(
+            store.isOpenClawAssistantPresented ? "Hide OpenClaw" : "Show OpenClaw",
+            systemImage: store.isOpenClawAssistantPresented ? "sidebar.right" : "sidebar.trailing"
+          )
+        }
+
         Button {
           store.chooseCorpus()
         } label: {
@@ -51,6 +60,24 @@ public struct ContentView: View {
     .sheet(isPresented: $store.isQuickOpenPresented) {
       QuickOpenView()
         .environmentObject(store)
+    }
+  }
+}
+
+private struct WorkspaceDetailArea: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    if store.isOpenClawAssistantPresented && store.selectedSurface != .openClaw {
+      HSplitView {
+        DetailView()
+          .frame(minWidth: 420)
+
+        OpenClawChatView(presentation: .assistantPanel)
+          .frame(minWidth: 320, idealWidth: 380, maxWidth: 520)
+      }
+    } else {
+      DetailView()
     }
   }
 }
@@ -538,32 +565,112 @@ private struct SearchRow: View {
   }
 }
 
+private enum OpenClawChatPresentation {
+  case fullPage
+  case assistantPanel
+}
+
 private struct OpenClawChatView: View {
   @EnvironmentObject private var store: WorkspaceStore
-  @FocusState private var inputFocused: Bool
   @State private var isShowingConfiguration = false
+  let presentation: OpenClawChatPresentation
+
+  init(presentation: OpenClawChatPresentation = .fullPage) {
+    self.presentation = presentation
+  }
 
   var body: some View {
     VStack(spacing: 0) {
+      header
+
+      configurationStrip
+
+      Divider()
+
+      chatTranscript
+
+      Divider()
+
+      OpenClawComposerView(
+        focusOnAppear: presentation == .fullPage,
+        compact: presentation == .assistantPanel
+      )
+      .padding(presentation == .assistantPanel ? 10 : 16)
+    }
+    .sheet(isPresented: $isShowingConfiguration) {
+      OpenClawConfigurationSheet()
+        .environmentObject(store)
+    }
+  }
+
+  @ViewBuilder
+  private var header: some View {
+    switch presentation {
+    case .fullPage:
       HeaderBar(title: "OpenClaw Chat", subtitle: store.openClawStatusText) {
+        headerActions
+      }
+    case .assistantPanel:
+      HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text("OpenClaw")
+            .font(.headline)
+          Text(store.openClawStatusText)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+        }
+        Spacer(minLength: 0)
         if store.isSendingOpenClawMessage {
           ProgressView()
             .controlSize(.small)
         }
+        Button {
+          store.selectedSurface = .openClaw
+          store.isOpenClawAssistantPresented = false
+        } label: {
+          Label("Focus Chat", systemImage: "arrow.up.left.and.arrow.down.right")
+        }
+        .labelStyle(.iconOnly)
+        .help("Focus OpenClaw Chat")
 
         Button {
-          store.resetOpenClawChat()
+          store.isOpenClawAssistantPresented = false
         } label: {
-          Label("New", systemImage: "plus")
+          Label("Close", systemImage: "xmark")
         }
-
-        Button {
-          isShowingConfiguration = true
-        } label: {
-          Label("Configure", systemImage: "slider.horizontal.3")
-        }
+        .labelStyle(.iconOnly)
+        .help("Close OpenClaw panel")
       }
+      .padding(.horizontal, 12)
+      .padding(.vertical, 10)
+    }
+  }
 
+  @ViewBuilder
+  private var headerActions: some View {
+    if store.isSendingOpenClawMessage {
+      ProgressView()
+        .controlSize(.small)
+    }
+
+    Button {
+      store.resetOpenClawChat()
+    } label: {
+      Label("New", systemImage: "plus")
+    }
+
+    Button {
+      isShowingConfiguration = true
+    } label: {
+      Label("Configure", systemImage: "slider.horizontal.3")
+    }
+  }
+
+  @ViewBuilder
+  private var configurationStrip: some View {
+    if presentation == .fullPage {
       HStack(spacing: 8) {
         Text("Agent")
           .font(.caption.weight(.medium))
@@ -588,87 +695,57 @@ private struct OpenClawChatView: View {
       }
       .padding(.horizontal, 16)
       .padding(.bottom, 10)
-
-      Divider()
-
-      ScrollViewReader { proxy in
-        ScrollView {
-          LazyVStack(alignment: .leading, spacing: 10) {
-            if store.openClawMessages.isEmpty {
-              EmptyChatView(statusText: store.openClawStatusText)
-                .frame(maxWidth: .infinity, minHeight: 220)
-            } else {
-              ForEach(store.openClawMessages) { message in
-                ChatBubbleView(message: message)
-                  .id(message.id)
-              }
-              if store.isSendingOpenClawMessage {
-                OpenClawTypingIndicatorView(startedAt: store.openClawRequestStartedAt)
-                  .id("openclaw-typing")
-              }
-            }
-          }
-          .padding(16)
-        }
-        .onChange(of: store.openClawMessages.count) {
-          if let last = store.openClawMessages.last {
-            withAnimation(.easeOut(duration: 0.18)) {
-              proxy.scrollTo(last.id, anchor: .bottom)
-            }
-          }
-        }
-        .onChange(of: store.isSendingOpenClawMessage) {
-          if store.isSendingOpenClawMessage {
-            withAnimation(.easeOut(duration: 0.18)) {
-              proxy.scrollTo("openclaw-typing", anchor: .bottom)
-            }
-          }
-        }
-      }
-
-      Divider()
-
-      VStack(alignment: .trailing, spacing: 8) {
-        ZStack(alignment: .topLeading) {
-          RoundedRectangle(cornerRadius: 7, style: .continuous)
-            .fill(Color(nsColor: .textBackgroundColor))
-            .overlay(
-              RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(Color.secondary.opacity(0.22))
-            )
-
-          if store.openClawDraft.isEmpty {
-            Text("Message OpenClaw")
-              .font(.body)
-              .foregroundStyle(.tertiary)
-              .padding(.horizontal, 8)
-              .padding(.vertical, 9)
-          }
-
-          TextEditor(text: $store.openClawDraft)
-            .font(.body)
-            .scrollContentBackground(.hidden)
-            .focused($inputFocused)
-            .padding(4)
-            .frame(minHeight: 112, maxHeight: 180)
-        }
-
+    } else {
+      HStack(spacing: 8) {
+        TextField("Agent", text: $store.openClawAgentID)
+          .textFieldStyle(.roundedBorder)
         Button {
-          Task { await store.sendOpenClawMessage() }
+          isShowingConfiguration = true
         } label: {
-          Label("Send", systemImage: "paperplane.fill")
+          Label("Configure", systemImage: "slider.horizontal.3")
         }
-        .keyboardShortcut(.return, modifiers: [.command])
-        .disabled(store.openClawDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isSendingOpenClawMessage)
+        .labelStyle(.iconOnly)
+        .help("Configure OpenClaw")
       }
-      .padding(16)
+      .padding(.horizontal, 10)
+      .padding(.bottom, 10)
     }
-    .onAppear {
-      inputFocused = true
-    }
-    .sheet(isPresented: $isShowingConfiguration) {
-      OpenClawConfigurationSheet()
-        .environmentObject(store)
+  }
+
+  private var chatTranscript: some View {
+    ScrollViewReader { proxy in
+      ScrollView {
+        LazyVStack(alignment: .leading, spacing: presentation == .assistantPanel ? 8 : 10) {
+          if store.openClawMessages.isEmpty {
+            EmptyChatView(statusText: store.openClawStatusText)
+              .frame(maxWidth: .infinity, minHeight: presentation == .assistantPanel ? 140 : 220)
+          } else {
+            ForEach(store.openClawMessages) { message in
+              ChatBubbleView(message: message, compact: presentation == .assistantPanel)
+                .id(message.id)
+            }
+            if store.isSendingOpenClawMessage {
+              OpenClawTypingIndicatorView(startedAt: store.openClawRequestStartedAt)
+                .id("openclaw-typing")
+            }
+          }
+        }
+        .padding(presentation == .assistantPanel ? 10 : 16)
+      }
+      .onChange(of: store.openClawMessages.count) {
+        if let last = store.openClawMessages.last {
+          withAnimation(.easeOut(duration: 0.18)) {
+            proxy.scrollTo(last.id, anchor: .bottom)
+          }
+        }
+      }
+      .onChange(of: store.isSendingOpenClawMessage) {
+        if store.isSendingOpenClawMessage {
+          withAnimation(.easeOut(duration: 0.18)) {
+            proxy.scrollTo("openclaw-typing", anchor: .bottom)
+          }
+        }
+      }
     }
   }
 }

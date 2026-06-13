@@ -381,6 +381,33 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(OpenClawChatClient.openClawAgentHeaderValue(for: "openclaw/org2-workspace"), "org2-workspace")
   }
 
+  func testOpenClawComposerSizingGrowsAndCaps() {
+    let emptyHeight = OpenClawComposerSizing.height(for: "", compact: false)
+    let shortHeight = OpenClawComposerSizing.height(for: "hello", compact: false)
+    let multilineHeight = OpenClawComposerSizing.height(for: "one\ntwo\nthree\nfour", compact: false)
+    let longHeight = OpenClawComposerSizing.height(
+      for: String(repeating: "long message line\n", count: 80),
+      compact: false
+    )
+    let compactLongHeight = OpenClawComposerSizing.height(
+      for: String(repeating: "long message line\n", count: 80),
+      compact: true
+    )
+
+    XCTAssertEqual(emptyHeight, shortHeight)
+    XCTAssertGreaterThan(multilineHeight, shortHeight)
+    XCTAssertEqual(longHeight, 190)
+    XCTAssertEqual(compactLongHeight, 150)
+  }
+
+  func testOpenClawComposerCommandReturnOnlySendsWithCommandModifier() {
+    XCTAssertTrue(OpenClawComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: [.command]))
+    XCTAssertTrue(OpenClawComposerKeyCommand.isSendCommand(keyCode: 76, modifiers: [.command]))
+    XCTAssertFalse(OpenClawComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: []))
+    XCTAssertFalse(OpenClawComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: [.command, .shift]))
+    XCTAssertFalse(OpenClawComposerKeyCommand.isSendCommand(keyCode: 49, modifiers: [.command]))
+  }
+
   func testOpenClawFileReferenceExtractsOrgPaths() {
     let refs = OpenClawFileReference.extract(from: """
     Check /srv/org2/notes/alice.org2:42 and notes/daily/2026-06-12.org.
