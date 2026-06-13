@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 const repo = process.cwd();
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "org2-data-query-"));
 const note = path.join(tmp, "report.org2");
+const tableNote = path.join(tmp, "table-report.org2");
 const data = path.join(tmp, "package-fetches.csv");
 const fakeDuckdb = path.join(tmp, "duckdb");
 const out = path.join(tmp, "fetches_by_state.org");
@@ -35,9 +36,41 @@ y: fetches
 \`\`\`
 `, "utf8");
 
+fs.writeFileSync(tableNote, `* Package fetch report
+
+#+name: raw_fetches
+| state | fetches |
+|-------+---------|
+| CA    | 42      |
+| NY    | 24      |
+
+\`\`\`dataset fetches
+type: table
+source: raw_fetches
+engine: duckdb
+\`\`\`
+
+\`\`\`sql results=fetches_total
+SELECT sum(fetches) AS fetches
+FROM fetches
+\`\`\`
+`, "utf8");
+
 fs.writeFileSync(fakeDuckdb, `#!/usr/bin/env node
 import fs from "node:fs";
 const input = fs.readFileSync(0, "utf8");
+if (input.includes('CREATE OR REPLACE VIEW "fetches" AS SELECT * FROM (VALUES')) {
+  if (!input.includes('(VALUES (\\'CA\\', 42), (\\'NY\\', 24)) AS t("state", "fetches")')) {
+    console.error("missing org table dataset view");
+    process.exit(4);
+  }
+  if (!input.includes("SELECT sum(fetches) AS fetches")) {
+    console.error("missing table SQL query");
+    process.exit(5);
+  }
+  process.stdout.write(JSON.stringify([{ fetches: 66 }]));
+  process.exit(0);
+}
 if (!input.includes('CREATE OR REPLACE VIEW "fetches" AS SELECT * FROM read_csv_auto(')) {
   console.error("missing csv dataset view");
   process.exit(2);
@@ -72,6 +105,15 @@ assert.match(org, /\| CA    \| 42      \|/);
 
 cli(["query-data", "--file", note, "--results", "fetches_by_state", "--duckdb", fakeDuckdb, "--out", out]);
 assert.match(fs.readFileSync(out, "utf8"), /\| NY    \| 24      \|/);
+
+const tableJson = JSON.parse(cli(["query-data", "--file", tableNote, "--results", "fetches_total", "--duckdb", fakeDuckdb, "--format", "json", "--include-script"]));
+assert.equal(tableJson.ok, true);
+assert.equal(tableJson.datasets[0].type, "table");
+assert.equal(tableJson.datasets[0].sourceTable, "raw_fetches");
+assert.equal(tableJson.datasets[0].rowCount, 2);
+assert.match(tableJson.duckdbScript, /VALUES \('CA', 42\), \('NY', 24\)/);
+assert.equal(tableJson.rows[0].fetches, 66);
+assert.match(tableJson.orgTable, /\| fetches \|/);
 
 const bad = spawnSync("node", ["dist/cli.js", "query-data", "--file", note, "--results", "missing", "--duckdb", fakeDuckdb, "--format", "json"], { cwd: repo, encoding: "utf8" });
 assert.notEqual(bad.status, 0);
