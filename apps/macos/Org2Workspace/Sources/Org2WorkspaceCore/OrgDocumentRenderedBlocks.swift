@@ -1041,7 +1041,6 @@ private struct RenderedTableView: View {
 }
 
 private struct RenderedListItemView: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let indent: Int
   let marker: String
   let checkbox: OrgListCheckbox?
@@ -1057,18 +1056,7 @@ private struct RenderedListItemView: View {
         .frame(width: 28, alignment: .trailing)
 
       if let checkbox {
-        Button {
-          if let editableBlock {
-            Task { await store.toggleListItemCheckbox(editableBlock) }
-          }
-        } label: {
-          Image(systemName: checkboxImageName(checkbox))
-            .font(.callout.weight(.medium))
-            .foregroundStyle(checkbox == .checked ? Color.accentColor : Color.secondary)
-        }
-        .buttonStyle(.plain)
-        .disabled(editableBlock == nil || store.selectedEntrySource?.isEditable != true)
-        .help(checkbox == .checked ? "Mark incomplete" : "Mark complete")
+        RenderedListCheckboxButton(checkbox: checkbox, editableBlock: editableBlock)
       }
 
       OrgInlineText(rawListText)
@@ -1092,7 +1080,35 @@ private struct RenderedListItemView: View {
     return Self.stripCheckbox(String(rest[textStart...]))
   }
 
-  private func checkboxImageName(_ checkbox: OrgListCheckbox) -> String {
+  private static func stripCheckbox(_ text: String) -> String {
+    if text.hasPrefix("[ ] ") || text.hasPrefix("[X] ") || text.hasPrefix("[x] ") || text.hasPrefix("[-] ") {
+      return String(text.dropFirst(4))
+    }
+    return text
+  }
+}
+
+private struct RenderedListCheckboxButton: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let checkbox: OrgListCheckbox
+  let editableBlock: OrgEditableBlock?
+
+  var body: some View {
+    Button {
+      if let editableBlock {
+        Task { await store.toggleListItemCheckbox(editableBlock) }
+      }
+    } label: {
+      Image(systemName: checkboxImageName)
+        .font(.callout.weight(.medium))
+        .foregroundStyle(checkbox == .checked ? Color.accentColor : Color.secondary)
+    }
+    .buttonStyle(.plain)
+    .disabled(editableBlock == nil || store.selectedEntrySource?.isEditable != true)
+    .help(checkbox == .checked ? "Mark incomplete" : "Mark complete")
+  }
+
+  private var checkboxImageName: String {
     switch checkbox {
     case .unchecked:
       return "square"
@@ -1101,13 +1117,6 @@ private struct RenderedListItemView: View {
     case .mixed:
       return "minus.square"
     }
-  }
-
-  private static func stripCheckbox(_ text: String) -> String {
-    if text.hasPrefix("[ ] ") || text.hasPrefix("[X] ") || text.hasPrefix("[x] ") || text.hasPrefix("[-] ") {
-      return String(text.dropFirst(4))
-    }
-    return text
   }
 }
 
