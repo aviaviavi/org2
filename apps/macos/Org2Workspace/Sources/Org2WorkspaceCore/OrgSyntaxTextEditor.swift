@@ -175,6 +175,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     private var deferredHighlightWorkItem: DispatchWorkItem?
     private var deferredTextPublishText: String?
     private var deferredTextPublishWorkItem: DispatchWorkItem?
+    private var deferredTextPublishGeneration = 0
 
     init(parent: OrgSyntaxTextEditor) {
       self.parent = parent
@@ -278,6 +279,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       deferredTextPublishWorkItem?.cancel()
       deferredTextPublishWorkItem = nil
       deferredTextPublishText = nil
+      deferredTextPublishGeneration += 1
     }
 
     func hasPendingTextPublishing(for text: String) -> Bool {
@@ -348,13 +350,15 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     private func scheduleDeferredTextPublishing(_ text: String, milliseconds: Int) {
       cancelDeferredTextPublishing()
-      let expectedText = text
-      deferredTextPublishText = expectedText
+      deferredTextPublishGeneration += 1
+      let generation = deferredTextPublishGeneration
+      deferredTextPublishText = text
 
       let workItem = DispatchWorkItem { [weak self] in
         Task { @MainActor in
           guard let self,
-                self.deferredTextPublishText == expectedText
+                self.deferredTextPublishGeneration == generation,
+                let expectedText = self.deferredTextPublishText
           else {
             return
           }
