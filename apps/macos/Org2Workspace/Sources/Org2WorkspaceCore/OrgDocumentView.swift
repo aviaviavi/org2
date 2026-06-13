@@ -109,7 +109,11 @@ struct OrgRenderedEntryView: View {
       blocks: blocks,
       selectedBlockIndex: selectedBlockIndex
     )
-    renderedBlockWindow = visibleWindow.expanding(direction, by: Self.renderedBlockPageSize, totalCount: blocks.count)
+    renderedBlockWindow = visibleWindow.expanding(
+      direction,
+      by: Self.renderedBlockPageSize(for: blocks.count),
+      totalCount: blocks.count
+    )
   }
 
   private func actions(for block: OrgEditableBlock) -> RenderedBlockActions {
@@ -205,7 +209,7 @@ struct OrgRenderedEntryView: View {
     }
 
     return OrgRenderedBlockWindow(
-      range: 0..<min(blocks.count, initialRenderedBlockLimit),
+      range: 0..<min(blocks.count, initialRenderedBlockLimit(for: blocks.count)),
       totalCount: blocks.count
     )
   }
@@ -220,11 +224,21 @@ struct OrgRenderedEntryView: View {
   }
 
   nonisolated static func shouldAutoExpandNextFooter(visibleWindow: OrgRenderedBlockWindow) -> Bool {
-    visibleWindow.hasNext && visibleWindow.range.upperBound <= initialRenderedBlockLimit
+    visibleWindow.hasNext
+      && visibleWindow.range.upperBound <= initialRenderedBlockLimit(for: visibleWindow.totalCount)
   }
 
-  nonisolated private static let initialRenderedBlockLimit = 80
-  private static let renderedBlockPageSize = 80
+  nonisolated static func initialRenderedBlockLimit(for blockCount: Int) -> Int {
+    blockCount >= largePageBlockThreshold ? largePageRenderedBlockLimit : defaultRenderedBlockLimit
+  }
+
+  nonisolated static func renderedBlockPageSize(for blockCount: Int) -> Int {
+    blockCount >= largePageBlockThreshold ? largePageRenderedBlockLimit : defaultRenderedBlockLimit
+  }
+
+  nonisolated private static let defaultRenderedBlockLimit = 80
+  nonisolated private static let largePageRenderedBlockLimit = 48
+  nonisolated private static let largePageBlockThreshold = 1_000
   nonisolated private static let hoverChromeBlockLimit = 180
   nonisolated private static let selectedBlockAnchorThreshold = 120
   nonisolated private static let selectedBlockLookbehind = 24
@@ -505,6 +519,19 @@ private struct EditableRenderedBlockView<Content: View>: View {
   @State private var isHovered = false
 
   var body: some View {
+    Group {
+      if allowsHoverChrome {
+        rowContent
+          .onHover { hovering in
+            isHovered = hovering
+          }
+      } else {
+        rowContent
+      }
+    }
+  }
+
+  private var rowContent: some View {
     ZStack(alignment: .topTrailing) {
       content
         .padding(.trailing, isSourceEditable ? 92 : 0)
@@ -526,10 +553,6 @@ private struct EditableRenderedBlockView<Content: View>: View {
         .stroke(isSelected ? Color.accentColor.opacity(0.32) : Color.clear)
     )
     .contentShape(Rectangle())
-    .onHover { hovering in
-      guard allowsHoverChrome else { return }
-      isHovered = hovering
-    }
     .onTapGesture(count: 1) {
       actions.select()
       if startsEditingOnSingleClick {
