@@ -971,6 +971,9 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(InlineEditorChrome.controlsOpacity(false), 0)
     XCTAssertTrue(InlineEditorChrome.allowsHitTesting(true))
     XCTAssertFalse(InlineEditorChrome.allowsHitTesting(false))
+    XCTAssertEqual(InlineEditorChrome.savingIndicatorSize, 14)
+    XCTAssertEqual(InlineEditorChrome.savingIndicatorOpacity(true), 1)
+    XCTAssertEqual(InlineEditorChrome.savingIndicatorOpacity(false), 0)
   }
 
   func testParagraphFocusedInlineEditorSkipsPlainText() {
@@ -2191,6 +2194,10 @@ final class Org2ModelsTests: XCTestCase {
       QuoteLineWindow.displayLines(rawText: plainRaw, fallback: ["Plain quote body", "Second line"]),
       ["Plain quote body", "Second line"]
     )
+    XCTAssertEqual(
+      QuoteLineWindow.displayLines(rawText: plainRaw, fallback: ["Current fallback"]),
+      ["Current fallback"]
+    )
 
     let richRaw = """
     #+begin_quote
@@ -2201,6 +2208,10 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(QuoteLineWindow.rawBodyMayContainInlineSyntax(richRaw))
     XCTAssertEqual(
       QuoteLineWindow.displayLines(rawText: richRaw, fallback: ["See Alice", "Use `code`"]),
+      ["See [[id:abc][Alice]]", "Use `code`"]
+    )
+    XCTAssertEqual(
+      QuoteLineWindow.displayLines(rawText: richRaw, fallback: ["Cached fallback should not win"]),
       ["See [[id:abc][Alice]]", "Use `code`"]
     )
   }
