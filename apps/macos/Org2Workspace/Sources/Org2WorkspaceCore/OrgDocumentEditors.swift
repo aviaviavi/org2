@@ -1455,6 +1455,7 @@ private struct SourceBlockEditor: View {
   @EnvironmentObject private var store: WorkspaceStore
   let block: OrgEditableBlock
   @State private var source: OrgEditableSourceBlock
+  @State private var isHovered = false
 
   init(block: OrgEditableBlock, language: String?, lines: [String]) {
     self.block = block
@@ -1466,45 +1467,69 @@ private struct SourceBlockEditor: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      HStack(alignment: .firstTextBaseline, spacing: 8) {
-        Menu {
-          Button("Source") {
-            source.setBeginKeyword("#+begin_src")
+    ZStack(alignment: .topTrailing) {
+      VStack(alignment: .leading, spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+          Menu {
+            Button("Source") {
+              source.setBeginKeyword("#+begin_src")
+            }
+            Button("Example") {
+              source.setBeginKeyword("#+begin_example")
+            }
+            Button("Org2") {
+              source.setBeginKeyword("#+begin_org2")
+            }
+          } label: {
+            Text(sourceKindTitle)
+              .font(.caption.monospaced().weight(.medium))
+              .foregroundStyle(.secondary)
           }
-          Button("Example") {
-            source.setBeginKeyword("#+begin_example")
-          }
-          Button("Org2") {
-            source.setBeginKeyword("#+begin_org2")
-          }
-        } label: {
-          Text(sourceKindTitle)
-            .font(.caption.monospaced().weight(.medium))
-            .foregroundStyle(.secondary)
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Source block kind")
+          .menuStyle(.borderlessButton)
+          .menuIndicator(.hidden)
+          .fixedSize()
+          .help("Source block kind")
 
-        if !source.beginKeyword.lowercased().hasSuffix("begin_example") {
-          TextField("language", text: languageBinding)
+          if !source.beginKeyword.lowercased().hasSuffix("begin_example") {
+            TextField("language", text: languageBinding)
+              .textFieldStyle(.plain)
+              .font(.caption.monospaced())
+              .foregroundStyle(.secondary)
+              .frame(width: 110)
+              .help("Language")
+          }
+
+          TextField("parameters", text: parametersBinding)
             .textFieldStyle(.plain)
             .font(.caption.monospaced())
             .foregroundStyle(.secondary)
-            .frame(width: 110)
-            .help("Language")
+            .help("Source parameters")
+
+          Spacer(minLength: 0)
         }
+        .padding(.trailing, 96)
+        .padding(.horizontal, 4)
 
-        TextField("parameters", text: parametersBinding)
-          .textFieldStyle(.plain)
-          .font(.caption.monospaced())
-          .foregroundStyle(.secondary)
-          .help("Source parameters")
+        OrgSyntaxTextEditor(
+          text: bodyBinding,
+          monospaced: true,
+          showsScrollers: false,
+          textInset: NSSize(width: 10, height: 10),
+          focusOnAppear: true
+        )
+        .frame(minHeight: editorHeight, maxHeight: editorHeight)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(
+          RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .stroke(Color.secondary.opacity(0.16))
+        )
 
-        Spacer(minLength: 0)
+        if let state = runState, state.status != .running || state.message != nil {
+          SourceRunOutputView(state: state)
+        }
+      }
 
+      HStack(spacing: 4) {
         if let runState {
           SourceRunStatusLabel(state: runState)
         }
@@ -1546,30 +1571,20 @@ private struct SourceBlockEditor: View {
         .disabled(store.isSavingBlock)
         .help("Cancel")
       }
-      .padding(.horizontal, 10)
-      .padding(.vertical, 8)
-      .background(Color.secondary.opacity(0.07))
-
-      OrgSyntaxTextEditor(
-        text: bodyBinding,
-        monospaced: true,
-        showsScrollers: false,
-        textInset: NSSize(width: 10, height: 10),
-        focusOnAppear: true
-      )
-      .frame(minHeight: editorHeight, maxHeight: editorHeight)
-
-      if let state = runState, state.status != .running || state.message != nil {
-        SourceRunOutputView(state: state)
-          .padding(10)
-          .background(Color(nsColor: .textBackgroundColor))
-      }
+      .controlSize(.small)
+      .padding(.horizontal, 4)
+      .padding(.vertical, 2)
+      .background(.regularMaterial, in: Capsule())
+      .opacity(isHovered || store.isSavingBlock || runState != nil ? 1 : 0.66)
     }
-    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .padding(.horizontal, 6)
+    .padding(.vertical, 4)
+    .background(Color.accentColor.opacity(isHovered ? 0.025 : 0.012), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     .overlay(
-      RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .stroke(Color.accentColor.opacity(0.24))
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .stroke(Color.accentColor.opacity(isHovered ? 0.16 : 0.09))
     )
+    .onHover { isHovered = $0 }
   }
 
   private var languageBinding: Binding<String> {
