@@ -2386,8 +2386,12 @@ final class Org2ModelsTests: XCTestCase {
     updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("Updated again\nSecond line\n* Sibling"))
     XCTAssertFalse(updated.contains("Updated again\nSecond line\nSecond line"))
-    XCTAssertEqual(store.selectedBlock?.rawText, "Updated again\nSecond line")
+    XCTAssertEqual(store.selectedBlock?.rawText, "Updated body\nSecond line")
     XCTAssertEqual(store.editingBlockID, editingBlockID)
+
+    store.cancelEditingBlock()
+    XCTAssertEqual(store.selectedBlock?.rawText, "Updated again\nSecond line")
+    XCTAssertNil(store.editingBlockID)
     XCTAssertEqual(store.selectedBlock?.id, editingBlockID)
   }
 
@@ -2443,9 +2447,15 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedRenderedBlocksSignature, originalSignature)
     XCTAssertEqual(store.selectedRenderedBlockIndexes, originalIndexes)
     XCTAssertEqual(store.selectedBlock?.id, paragraph.id)
-    XCTAssertEqual(store.selectedBlock?.rawText, "Updated body")
+    XCTAssertEqual(store.selectedBlock?.rawText, "Body")
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("* TODO Parent\nUpdated body\n* Sibling"))
+
+    store.cancelEditingBlock()
+    XCTAssertEqual(store.selectedRenderedBlocksSignature, originalSignature)
+    XCTAssertEqual(store.selectedRenderedBlockIndexes, originalIndexes)
+    XCTAssertEqual(store.selectedBlock?.id, paragraph.id)
+    XCTAssertEqual(store.selectedBlock?.rawText, "Updated body")
   }
 
   @MainActor
@@ -2551,9 +2561,12 @@ final class Org2ModelsTests: XCTestCase {
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("* DONE [#B] Renamed parent :work:focus:\nBody"))
     XCTAssertFalse(store.isEditingEntry)
-    XCTAssertEqual(store.selectedBlock?.rawText, replacement)
-    XCTAssertEqual(store.editableBlockText, replacement)
+    XCTAssertEqual(store.selectedBlock?.rawText, "* TODO [#A] Parent :work:")
     XCTAssertNotNil(store.editingBlockID)
+
+    store.cancelEditingBlock()
+    XCTAssertEqual(store.selectedBlock?.rawText, replacement)
+    XCTAssertNil(store.editingBlockID)
     guard case .heading(let renderedHeading) = store.selectedBlock?.rendered else {
       return XCTFail("Expected heading block")
     }
@@ -2612,9 +2625,12 @@ final class Org2ModelsTests: XCTestCase {
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("DEADLINE: <2026-06-15 Mon>\nBody"))
     XCTAssertFalse(store.isEditingEntry)
-    XCTAssertEqual(store.selectedBlock?.rawText, replacement)
-    XCTAssertEqual(store.editableBlockText, replacement)
+    XCTAssertEqual(store.selectedBlock?.rawText, "SCHEDULED: <2026-06-12 Fri>")
     XCTAssertNotNil(store.editingBlockID)
+
+    store.cancelEditingBlock()
+    XCTAssertEqual(store.selectedBlock?.rawText, replacement)
+    XCTAssertNil(store.editingBlockID)
     guard case .planning(let renderedPlanning) = store.selectedBlock?.rendered else {
       return XCTFail("Expected planning block")
     }
@@ -2667,9 +2683,12 @@ final class Org2ModelsTests: XCTestCase {
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("* TODO Parent\n#+CAPTION: New Caption\nBody"))
     XCTAssertFalse(store.isEditingEntry)
-    XCTAssertEqual(store.selectedBlock?.rawText, replacement)
-    XCTAssertEqual(store.editableBlockText, replacement)
+    XCTAssertEqual(store.selectedBlock?.rawText, "#+CAPTION: Old Caption")
     XCTAssertNotNil(store.editingBlockID)
+
+    store.cancelEditingBlock()
+    XCTAssertEqual(store.selectedBlock?.rawText, replacement)
+    XCTAssertNil(store.editingBlockID)
     guard case .keyword(let key, let value) = store.selectedBlock?.rendered else {
       return XCTFail("Expected keyword block")
     }
@@ -2730,9 +2749,12 @@ final class Org2ModelsTests: XCTestCase {
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains(":OWNER: openclaw\n:STATUS: active\n:END:\nBody"))
     XCTAssertFalse(store.isEditingEntry)
-    XCTAssertEqual(store.selectedBlock?.rawText, replacement)
-    XCTAssertEqual(store.editableBlockText, replacement)
+    XCTAssertEqual(store.selectedBlock?.rawText, properties.rawText)
     XCTAssertNotNil(store.editingBlockID)
+
+    store.cancelEditingBlock()
+    XCTAssertEqual(store.selectedBlock?.rawText, replacement)
+    XCTAssertNil(store.editingBlockID)
     guard case .properties(let rows) = store.selectedBlock?.rendered else {
       return XCTFail("Expected property drawer")
     }
@@ -2916,9 +2938,12 @@ final class Org2ModelsTests: XCTestCase {
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("* TODO Parent\n[[file:images/new.png][New image]]\n\nBody"))
     XCTAssertFalse(store.isEditingEntry)
-    XCTAssertEqual(store.selectedBlock?.rawText, replacement)
-    XCTAssertEqual(store.editableBlockText, replacement)
+    XCTAssertEqual(store.selectedBlock?.rawText, media.rawText)
     XCTAssertNotNil(store.editingBlockID)
+
+    store.cancelEditingBlock()
+    XCTAssertEqual(store.selectedBlock?.rawText, replacement)
+    XCTAssertNil(store.editingBlockID)
     let editedMedia = try XCTUnwrap(OrgEditableMediaLink(rawText: store.selectedBlock?.rawText ?? ""))
     XCTAssertEqual(editedMedia.target, "file:images/new.png")
     XCTAssertEqual(editedMedia.label, "New image")
@@ -3218,9 +3243,12 @@ final class Org2ModelsTests: XCTestCase {
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("- [X] Closed task\n* Sibling"))
     XCTAssertFalse(store.isEditingEntry)
-    XCTAssertEqual(store.selectedBlock?.rawText, replacement)
-    XCTAssertEqual(store.editableBlockText, replacement)
+    XCTAssertEqual(store.selectedBlock?.rawText, task.rawText)
     XCTAssertNotNil(store.editingBlockID)
+
+    store.cancelEditingBlock()
+    XCTAssertEqual(store.selectedBlock?.rawText, replacement)
+    XCTAssertNil(store.editingBlockID)
   }
 
   @MainActor

@@ -44,6 +44,11 @@ private struct TransientDraftBlock {
   let coveredBlocks: [OrgEditableBlock]
 }
 
+private struct DeferredStableAutosave {
+  let source: EntrySource
+  let block: OrgEditableBlock
+}
+
 private struct SplitDraftSpec {
   let insertionLineOffset: Int
   let displayLineOffset: Int
@@ -155,6 +160,7 @@ public final class WorkspaceStore: ObservableObject {
   private var pendingBlockSelection: PendingBlockSelection?
   private var transientDraftBlock: TransientDraftBlock?
   private var activeBlockDrafts: [OrgEditableBlock.ID: String] = [:]
+  private var deferredStableAutosaves: [OrgEditableBlock.ID: DeferredStableAutosave] = [:]
   private var preservesSelectedRenderedBlocksMetadataForNextAssignment = false
   private var scheduledAgendaRefreshTask: Task<Void, Never>?
   private var pendingAgendaRefreshAfterBlockEditing = false
@@ -461,6 +467,7 @@ public final class WorkspaceStore: ObservableObject {
     editingBlockID = block.id
     editableBlockText = block.rawText
     activeBlockDrafts[block.id] = block.rawText
+    deferredStableAutosaves.removeValue(forKey: block.id)
   }
 
   public func updateEditingBlockDraft(_ block: OrgEditableBlock, draft: String) {
@@ -473,6 +480,7 @@ public final class WorkspaceStore: ObservableObject {
       discardTransientDraft(status: "Draft discarded")
       return
     }
+    applyDeferredStableAutosaveForActiveBlock()
     resetBlockEditing()
   }
 
@@ -656,6 +664,7 @@ public final class WorkspaceStore: ObservableObject {
         return
       }
 
+      deferredStableAutosaves.removeValue(forKey: block.id)
       invalidateCanonicalDocumentCache(for: source.file)
       selectedEntrySource = updatedSource
       let updatedVisibleBlocks = blocksWithTransientDraft(updatedBlocks, for: updatedSource)
@@ -739,6 +748,21 @@ public final class WorkspaceStore: ObservableObject {
         with: updatedBlock,
         in: updatedVisibleBlocks
       )
+      if shouldPreserveRenderedBlockMetadata(
+        original: block,
+        updated: updatedBlock,
+        renderedBlocks: renderedBlocks
+      ), let updatedBlock {
+        invalidateCanonicalDocumentCache(for: source.file)
+        deferredStableAutosaves[block.id] = DeferredStableAutosave(
+          source: updatedSource,
+          block: updatedBlock
+        )
+        activeBlockDrafts[updatedBlock.id] = normalizedReplacement
+        pendingAgendaRefreshAfterBlockEditing = true
+        return
+      }
+
       setSelectedRenderedBlocks(
         renderedBlocks,
         preservingMetadata: shouldPreserveRenderedBlockMetadata(
@@ -1640,11 +1664,32 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  private func applyDeferredStableAutosaveForActiveBlock() {
+    guard let editingBlockID,
+          let deferred = deferredStableAutosaves.removeValue(forKey: editingBlockID)
+    else {
+      return
+    }
+
+    if selectedEntrySource?.id == deferred.source.id {
+      selectedEntrySource = deferred.source
+    }
+
+    let updatedBlocks = Self.replacingBlock(
+      selectedBlock,
+      with: deferred.block,
+      in: selectedRenderedBlocks
+    )
+    setSelectedRenderedBlocks(updatedBlocks, preservingMetadata: true)
+    selectedBlockID = deferred.block.id
+  }
+
   private func resetBlockEditing() {
     let wasEditingBlock = editingBlockID != nil
     editingBlockID = nil
     editableBlockText = ""
     activeBlockDrafts.removeAll()
+    deferredStableAutosaves.removeAll()
     if wasEditingBlock, pendingAgendaRefreshAfterBlockEditing {
       pendingAgendaRefreshAfterBlockEditing = false
       scheduleAgendaRefresh(preserveSelection: true)
