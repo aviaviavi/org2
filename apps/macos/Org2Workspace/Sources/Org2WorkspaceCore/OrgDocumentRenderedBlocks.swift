@@ -34,7 +34,7 @@ struct RenderedBlockView: View, Equatable {
         && lhs.sourceFile == rhs.sourceFile
         && lhs.corpusRoot == rhs.corpusRoot
         && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
-        && lhs.inlineActions.sourceBlockRunState == rhs.inlineActions.sourceBlockRunState
+        && lhs.inlineActions.sourceBlockRunRenderSignature == rhs.inlineActions.sourceBlockRunRenderSignature
     }
 
     return lhs.block == rhs.block
@@ -43,7 +43,7 @@ struct RenderedBlockView: View, Equatable {
       && lhs.sourceFile == rhs.sourceFile
       && lhs.corpusRoot == rhs.corpusRoot
       && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
-      && lhs.inlineActions.sourceBlockRunState == rhs.inlineActions.sourceBlockRunState
+      && lhs.inlineActions.sourceBlockRunRenderSignature == rhs.inlineActions.sourceBlockRunRenderSignature
   }
 
   var body: some View {
@@ -369,6 +369,7 @@ struct RenderedBlockInlineActions: Sendable {
   let setPlanningBlock: (@MainActor @Sendable (_ kind: String, _ value: String) -> Void)?
   let setPropertyValue: (@MainActor @Sendable (_ key: String, _ value: String) -> Void)?
   let toggleListItemCheckbox: (@MainActor @Sendable () -> Void)?
+  let sourceBlockRunRenderSignature: String?
   let sourceBlockRunState: SourceBlockRunState?
   let runSourceBlock: (@MainActor @Sendable () -> Void)?
 
@@ -380,6 +381,7 @@ struct RenderedBlockInlineActions: Sendable {
     setPlanningBlock: nil,
     setPropertyValue: nil,
     toggleListItemCheckbox: nil,
+    sourceBlockRunRenderSignature: nil,
     sourceBlockRunState: nil,
     runSourceBlock: nil
   )

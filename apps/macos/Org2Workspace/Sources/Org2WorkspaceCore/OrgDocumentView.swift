@@ -217,6 +217,7 @@ struct OrgRenderedEntryView: View, Equatable {
       toggleListItemCheckbox: {
         Task { await store.toggleListItemCheckbox(block) }
       },
+      sourceBlockRunRenderSignature: WorkspaceStore.sourceBlockRunRenderSignature(for: sourceBlockRunState),
       sourceBlockRunState: sourceBlockRunState,
       runSourceBlock: runSourceBlock
     )
@@ -390,7 +391,7 @@ private struct OrgRenderedEntryRow: View, Equatable {
         && lhs.corpusRoot == rhs.corpusRoot
         && lhs.allowsHoverChrome == rhs.allowsHoverChrome
         && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
-        && lhs.inlineActions.sourceBlockRunState == rhs.inlineActions.sourceBlockRunState
+        && lhs.inlineActions.sourceBlockRunRenderSignature == rhs.inlineActions.sourceBlockRunRenderSignature
     }
     return lhs.block.renderIdentity == rhs.block.renderIdentity
       && lhs.isSourceEditable == rhs.isSourceEditable
@@ -402,7 +403,7 @@ private struct OrgRenderedEntryRow: View, Equatable {
       && lhs.corpusRoot == rhs.corpusRoot
       && lhs.allowsHoverChrome == rhs.allowsHoverChrome
       && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
-      && lhs.inlineActions.sourceBlockRunState == rhs.inlineActions.sourceBlockRunState
+      && lhs.inlineActions.sourceBlockRunRenderSignature == rhs.inlineActions.sourceBlockRunRenderSignature
   }
 
   var body: some View {
