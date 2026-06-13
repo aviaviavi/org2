@@ -264,6 +264,8 @@ enum OrgSyntaxHighlightKind: String {
 /// Presentation-only tokenization for the native editor. Semantic org2 structure
 /// should come from the canonical org2 parser/CLI, not this highlighter.
 enum OrgSyntaxHighlighter {
+  static let liveTokenizationUTF16Limit = 25_000
+
   static func tokens(in text: String) -> [OrgSyntaxHighlightToken] {
     var tokens: [OrgSyntaxHighlightToken] = []
     collectLineTokens(in: text, into: &tokens)
@@ -286,12 +288,18 @@ enum OrgSyntaxHighlighter {
 
     storage.beginEditing()
     storage.setAttributes(baseAttributes, range: fullRange)
-    let text = storage.string
-    for token in tokens(in: text) where NSMaxRange(token.range) <= storage.length {
-      storage.addAttributes(attributes(for: token.kind, baseFont: baseFont), range: token.range)
+    if shouldTokenizeLiveText(utf16Length: storage.length) {
+      let text = storage.string
+      for token in tokens(in: text) where NSMaxRange(token.range) <= storage.length {
+        storage.addAttributes(attributes(for: token.kind, baseFont: baseFont), range: token.range)
+      }
     }
     storage.endEditing()
     return baseAttributes
+  }
+
+  static func shouldTokenizeLiveText(utf16Length: Int) -> Bool {
+    utf16Length <= liveTokenizationUTF16Limit
   }
 
   private static func collectLineTokens(in text: String, into tokens: inout [OrgSyntaxHighlightToken]) {
