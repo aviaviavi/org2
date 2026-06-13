@@ -671,6 +671,7 @@ public final class WorkspaceStore: ObservableObject {
       let file = source.file
       let startLine = block.startLine
       let endLineExclusive = block.endLineExclusive
+      let currentRenderedBlocks = selectedRenderedBlocks
       try await Task.detached(priority: .utility) {
         try Self.replaceSourceRange(
           file: file,
@@ -680,8 +681,12 @@ public final class WorkspaceStore: ObservableObject {
         )
       }.value
 
-      let blocks = await Task.detached(priority: .utility) {
-        OrgEntryRenderer.parseEditable(updatedSource.text, baseLine: updatedSource.startLine)
+      let updatedBlocks = await Task.detached(priority: .utility) {
+        Self.locallyUpdatingRenderedBlocks(
+          currentRenderedBlocks,
+          replacing: block,
+          with: normalizedReplacement
+        )
       }.value
 
       guard selectedEntrySource?.id == source.id,
@@ -694,17 +699,17 @@ public final class WorkspaceStore: ObservableObject {
       invalidateCanonicalDocumentCache(for: source.file)
       selectedEntrySource = updatedSource
 
-      let parsedVisibleBlocks = blocksWithTransientDraft(blocks, for: updatedSource)
+      let updatedVisibleBlocks = blocksWithTransientDraft(updatedBlocks, for: updatedSource)
       let parsedUpdatedBlock = blockForSelectionLine(
         block.startLine,
         mode: .containingOrNearest,
-        in: parsedVisibleBlocks
+        in: updatedVisibleBlocks
       )
       let updatedBlock = parsedUpdatedBlock?.preservingID(block.id)
       selectedRenderedBlocks = Self.replacingBlock(
         parsedUpdatedBlock,
         with: updatedBlock,
-        in: parsedVisibleBlocks
+        in: updatedVisibleBlocks
       )
       selectedBlockID = updatedBlock?.id
       editingBlockID = updatedBlock?.id
@@ -712,11 +717,6 @@ public final class WorkspaceStore: ObservableObject {
       if let updatedBlock {
         activeBlockDrafts[updatedBlock.id] = normalizedReplacement
       }
-      cacheRenderedBlocks(
-        blocks,
-        for: updatedSource,
-        modifiedAt: Self.modificationDate(for: URL(fileURLWithPath: updatedSource.file).standardizedFileURL)
-      )
       pendingAgendaRefreshAfterBlockEditing = true
     } catch {
       errorText = error.localizedDescription
@@ -3480,6 +3480,74 @@ public final class WorkspaceStore: ObservableObject {
     guard let original, let replacement else { return blocks }
     return blocks.map { block in
       block.id == original.id ? replacement : block
+    }
+  }
+
+  nonisolated private static func locallyUpdatingRenderedBlocks(
+    _ blocks: [OrgEditableBlock],
+    replacing original: OrgEditableBlock,
+    with replacement: String
+  ) -> [OrgEditableBlock] {
+    let normalizedReplacement = normalizeLineEndings(replacement)
+    let replacementBlocks = OrgEntryRenderer.parseEditable(
+      normalizedReplacement,
+      baseLine: original.startLine
+    )
+    let oldLineCount = original.endLineExclusive - original.startLine
+    let newLineCount = normalizedReplacement.isEmpty ? 0 : lineCount(in: normalizedReplacement)
+    let lineDelta = newLineCount - oldLineCount
+
+    var updated: [OrgEditableBlock] = []
+    updated.reserveCapacity(blocks.count + max(0, replacementBlocks.count - 1))
+    var insertedReplacement = false
+
+    for block in blocks {
+      if block.id == original.id {
+        updated.append(contentsOf: replacementBlocks)
+        insertedReplacement = true
+        continue
+      }
+
+      if block.startLine >= original.endLineExclusive {
+        updated.append(shiftedBlock(block, by: lineDelta))
+      } else if block.endLineExclusive <= original.startLine {
+        updated.append(block)
+      } else {
+        continue
+      }
+    }
+
+    if !insertedReplacement {
+      updated.append(contentsOf: replacementBlocks)
+    }
+
+    return sortEditableBlocksForDisplay(updated)
+  }
+
+  nonisolated private static func shiftedBlock(_ block: OrgEditableBlock, by lineDelta: Int) -> OrgEditableBlock {
+    guard lineDelta != 0 else { return block }
+    return OrgEditableBlock(
+      id: "\(block.startLine + lineDelta):\(block.endLineExclusive + lineDelta):\(renderedBlockKindName(block.rendered))",
+      startLine: block.startLine + lineDelta,
+      endLineExclusive: block.endLineExclusive + lineDelta,
+      rawText: block.rawText,
+      rendered: block.rendered
+    )
+  }
+
+  nonisolated private static func renderedBlockKindName(_ block: OrgRenderedBlock) -> String {
+    switch block {
+    case .heading: "heading"
+    case .planning: "planning"
+    case .properties: "properties"
+    case .quote: "quote"
+    case .source: "source"
+    case .table: "table"
+    case .horizontalRule: "horizontal-rule"
+    case .listItem: "list"
+    case .paragraph: "paragraph"
+    case .keyword: "keyword"
+    case .blank: "blank"
     }
   }
 
