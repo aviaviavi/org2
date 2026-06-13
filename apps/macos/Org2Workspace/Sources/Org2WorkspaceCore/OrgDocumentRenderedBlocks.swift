@@ -3,7 +3,7 @@ import AVKit
 import ImageIO
 import SwiftUI
 
-struct RenderedBlockView: View {
+struct RenderedBlockView: View, Equatable {
   let block: OrgRenderedBlock
   let rawText: String?
   let editableBlock: OrgEditableBlock?
@@ -22,6 +22,14 @@ struct RenderedBlockView: View {
     self.editableBlock = editableBlock
     self.sourceFile = sourceFile
     self.corpusRoot = corpusRoot
+  }
+
+  nonisolated static func == (lhs: RenderedBlockView, rhs: RenderedBlockView) -> Bool {
+    lhs.block == rhs.block
+      && lhs.rawText == rhs.rawText
+      && lhs.editableBlock == rhs.editableBlock
+      && lhs.sourceFile == rhs.sourceFile
+      && lhs.corpusRoot == rhs.corpusRoot
   }
 
   var body: some View {
