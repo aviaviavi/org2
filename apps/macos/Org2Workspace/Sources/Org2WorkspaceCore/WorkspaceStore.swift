@@ -1194,6 +1194,12 @@ public final class WorkspaceStore: ObservableObject {
     defer { isSavingBlock = false }
 
     do {
+      let deletion = try Self.deletingSourceRangeCleaningAdjacentBlank(
+        in: source,
+        startLine: block.startLine,
+        endLineExclusive: block.endLineExclusive
+      )
+      let currentRenderedBlocks = selectedRenderedBlocks
       try await Task.detached(priority: .userInitiated) {
         try Self.deleteSourceRangeCleaningAdjacentBlank(
           file: source.file,
@@ -1201,12 +1207,33 @@ public final class WorkspaceStore: ObservableObject {
           endLineExclusive: block.endLineExclusive
         )
       }.value
-      await finishBlockMutation(
-        file: source.file,
-        status: "Deleted block in \(relativePath(source.file))",
-        selectLine: block.startLine,
-        selectionMode: .nextOrNearest
-      )
+
+      let updatedBlocks = await Task.detached(priority: .userInitiated) {
+        Self.locallyDeletingRenderedBlocks(
+          currentRenderedBlocks,
+          startLine: deletion.startLine,
+          endLineExclusive: deletion.endLineExclusive
+        )
+      }.value
+
+      guard selectedEntrySource?.id == source.id else {
+        return
+      }
+
+      invalidateCanonicalDocumentCache(for: source.file)
+      transientDraftBlock = nil
+      resetBlockEditing()
+      isEditingEntry = false
+      selectedEntrySource = deletion.source
+      let updatedVisibleBlocks = blocksWithTransientDraft(updatedBlocks, for: deletion.source)
+      selectedRenderedBlocks = updatedVisibleBlocks
+      selectedBlockID = blockForSelectionLine(
+        block.startLine,
+        mode: .nextOrNearest,
+        in: updatedVisibleBlocks
+      )?.id
+      statusText = "Deleted block in \(relativePath(source.file))"
+      scheduleAgendaRefresh(preserveSelection: true)
     } catch {
       errorText = error.localizedDescription
       statusText = "Delete failed"
@@ -3318,6 +3345,38 @@ public final class WorkspaceStore: ObservableObject {
     )
   }
 
+  nonisolated private static func deletingSourceRangeCleaningAdjacentBlank(
+    in source: EntrySource,
+    startLine: Int,
+    endLineExclusive: Int
+  ) throws -> (source: EntrySource, startLine: Int, endLineExclusive: Int) {
+    var lines = normalizeLineEndings(source.text)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+
+    let range = try adjustedDeletionRangeCleaningAdjacentBlank(
+      in: lines,
+      baseLine: source.startLine,
+      file: source.file,
+      startLine: startLine,
+      endLineExclusive: endLineExclusive
+    )
+    lines.replaceSubrange(range.startIndex..<range.endIndex, with: [])
+
+    return (
+      source: EntrySource(
+        file: source.file,
+        startLine: source.startLine,
+        endLineExclusive: source.startLine + lines.count,
+        text: lines.joined(separator: "\n"),
+        isSubtree: source.isSubtree,
+        isEditable: source.isEditable
+      ),
+      startLine: range.startLine,
+      endLineExclusive: range.endLineExclusive
+    )
+  }
+
   nonisolated private static func replaceSourceRange(file: String, startLine: Int, endLineExclusive: Int, replacement: String) throws {
     let url = URL(fileURLWithPath: file)
     let raw = try String(contentsOf: url, encoding: .utf8)
@@ -3633,6 +3692,26 @@ public final class WorkspaceStore: ObservableObject {
     return sortEditableBlocksForDisplay(updated)
   }
 
+  nonisolated private static func locallyDeletingRenderedBlocks(
+    _ blocks: [OrgEditableBlock],
+    startLine: Int,
+    endLineExclusive: Int
+  ) -> [OrgEditableBlock] {
+    let lineDelta = startLine - endLineExclusive
+    var updated: [OrgEditableBlock] = []
+    updated.reserveCapacity(blocks.count)
+
+    for block in blocks {
+      if block.endLineExclusive <= startLine {
+        updated.append(block)
+      } else if block.startLine >= endLineExclusive {
+        updated.append(shiftedBlock(block, by: lineDelta))
+      }
+    }
+
+    return sortEditableBlocksForDisplay(updated)
+  }
+
   nonisolated private static func shiftedBlock(_ block: OrgEditableBlock, by lineDelta: Int) -> OrgEditableBlock {
     guard lineDelta != 0 else { return block }
     return OrgEditableBlock(
@@ -3918,8 +3997,31 @@ public final class WorkspaceStore: ObservableObject {
       .split(separator: "\n", omittingEmptySubsequences: false)
       .map(String.init)
 
-    var startIndex = startLine - 1
-    var endIndex = endLineExclusive - 1
+    let range = try adjustedDeletionRangeCleaningAdjacentBlank(
+      in: lines,
+      baseLine: 1,
+      file: file,
+      startLine: startLine,
+      endLineExclusive: endLineExclusive
+    )
+
+    lines.replaceSubrange(range.startIndex..<range.endIndex, with: [])
+    var output = lines.joined(separator: "\n")
+    if raw.hasSuffix("\n"), !output.hasSuffix("\n") {
+      output += "\n"
+    }
+    try output.write(to: url, atomically: true, encoding: .utf8)
+  }
+
+  nonisolated private static func adjustedDeletionRangeCleaningAdjacentBlank(
+    in lines: [String],
+    baseLine: Int,
+    file: String,
+    startLine: Int,
+    endLineExclusive: Int
+  ) throws -> (startIndex: Int, endIndex: Int, startLine: Int, endLineExclusive: Int) {
+    var startIndex = startLine - baseLine
+    var endIndex = endLineExclusive - baseLine
     guard startIndex >= 0,
           startIndex <= lines.count,
           endIndex >= startIndex,
@@ -3936,12 +4038,12 @@ public final class WorkspaceStore: ObservableObject {
       endIndex += 1
     }
 
-    lines.replaceSubrange(startIndex..<endIndex, with: [])
-    var output = lines.joined(separator: "\n")
-    if raw.hasSuffix("\n"), !output.hasSuffix("\n") {
-      output += "\n"
-    }
-    try output.write(to: url, atomically: true, encoding: .utf8)
+    return (
+      startIndex: startIndex,
+      endIndex: endIndex,
+      startLine: baseLine + startIndex,
+      endLineExclusive: baseLine + endIndex
+    )
   }
 
   nonisolated private static func swapSourceRanges(
