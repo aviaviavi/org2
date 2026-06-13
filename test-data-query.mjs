@@ -108,8 +108,8 @@ process.stdout.write(JSON.stringify([{ state: "CA", fetches: 42 }, { state: "NY"
 `, "utf8");
 fs.chmodSync(fakeDuckdb, 0o755);
 
-function cli(args) {
-  return execFileSync("node", ["dist/cli.js", ...args], { cwd: repo, encoding: "utf8" });
+function cli(args, opts = {}) {
+  return execFileSync("node", ["dist/cli.js", ...args], { cwd: repo, encoding: "utf8", ...opts });
 }
 
 const json = JSON.parse(cli(["query-data", "--file", note, "--results", "fetches_by_state", "--duckdb", fakeDuckdb, "--format", "json", "--include-script"]));
@@ -149,6 +149,15 @@ assert.equal(tableJson.datasets[0].rowCount, 2);
 assert.match(tableJson.duckdbScript, /VALUES \('CA', 42\), \('NY', 24\)/);
 assert.equal(tableJson.rows[0].fetches, 66);
 assert.match(tableJson.orgTable, /\| fetches \|/);
+
+const stdinJson = JSON.parse(cli(["query-data", "--stdin", "--results", "fetches_total", "--duckdb", fakeDuckdb, "--format", "json"], {
+  input: fs.readFileSync(tableNote, "utf8"),
+}));
+assert.equal(stdinJson.ok, true);
+assert.equal(stdinJson.resultId, "fetches_total");
+assert.equal(stdinJson.source.file, undefined);
+assert.equal(stdinJson.datasets[0].sourceTable, "raw_fetches");
+assert.equal(stdinJson.rows[0].fetches, 66);
 
 const bad = spawnSync("node", ["dist/cli.js", "query-data", "--file", note, "--results", "missing", "--duckdb", fakeDuckdb, "--format", "json"], { cwd: repo, encoding: "utf8" });
 assert.notEqual(bad.status, 0);
