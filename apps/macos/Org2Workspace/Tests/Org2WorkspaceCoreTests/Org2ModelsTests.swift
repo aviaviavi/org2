@@ -1822,11 +1822,12 @@ final class Org2ModelsTests: XCTestCase {
       text: "",
       isSubtree: true
     )
+    let sourceContext = OrgRenderedEntrySourceContext(source)
 
-    let availability = OrgRenderedEntryMoveAvailability.make(for: blocks, source: source)
+    let availability = OrgRenderedEntryMoveAvailability.make(for: blocks, source: sourceContext)
     XCTAssertEqual(
       availability.signature,
-      OrgRenderedEntryMoveAvailability.signature(for: blocks, source: source)
+      OrgRenderedEntryMoveAvailability.signature(for: blocks, source: sourceContext)
     )
     XCTAssertNil(availability.values["heading"])
     XCTAssertEqual(availability.values["first"], OrgRenderedEntryBlockMoveAvailability(up: false, down: true))
@@ -1841,7 +1842,12 @@ final class Org2ModelsTests: XCTestCase {
       isSubtree: true,
       isEditable: false
     )
-    XCTAssertTrue(OrgRenderedEntryMoveAvailability.make(for: blocks, source: readOnlySource).values.isEmpty)
+    XCTAssertTrue(
+      OrgRenderedEntryMoveAvailability.make(
+        for: blocks,
+        source: OrgRenderedEntrySourceContext(readOnlySource)
+      ).values.isEmpty
+    )
   }
 
   func testRenderedEntryMoveAvailabilityOnlyStoresVisibleRows() {
@@ -1882,16 +1888,17 @@ final class Org2ModelsTests: XCTestCase {
       text: "",
       isSubtree: true
     )
+    let sourceContext = OrgRenderedEntrySourceContext(source)
 
     let availability = OrgRenderedEntryMoveAvailability.make(
       for: blocks,
-      source: source,
+      source: sourceContext,
       visibleRange: 2..<3
     )
 
     XCTAssertEqual(
       availability.signature,
-      OrgRenderedEntryMoveAvailability.signature(for: blocks, source: source, visibleRange: 2..<3)
+      OrgRenderedEntryMoveAvailability.signature(for: blocks, source: sourceContext, visibleRange: 2..<3)
     )
     XCTAssertNil(availability.values["first"])
     XCTAssertEqual(availability.values["middle"], OrgRenderedEntryBlockMoveAvailability(up: true, down: true))
@@ -1918,7 +1925,7 @@ final class Org2ModelsTests: XCTestCase {
 
     let availability = OrgRenderedEntryMoveAvailability.make(
       for: blocks,
-      source: source,
+      source: OrgRenderedEntrySourceContext(source),
       visibleRange: 700..<704
     )
 
@@ -1950,10 +1957,11 @@ final class Org2ModelsTests: XCTestCase {
       text: "",
       isSubtree: false
     )
+    let sourceContext = OrgRenderedEntrySourceContext(source)
 
     XCTAssertNotEqual(
-      OrgRenderedEntryMoveAvailability.signature(for: [editableBlock], source: source),
-      OrgRenderedEntryMoveAvailability.signature(for: [blankBlock], source: source)
+      OrgRenderedEntryMoveAvailability.signature(for: [editableBlock], source: sourceContext),
+      OrgRenderedEntryMoveAvailability.signature(for: [blankBlock], source: sourceContext)
     )
   }
 
@@ -2000,7 +2008,7 @@ final class Org2ModelsTests: XCTestCase {
       OrgRenderedEntryView.renderWindowResetKey(for: source),
       OrgRenderedEntryView.renderWindowResetKey(for: readOnlySource)
     )
-    XCTAssertEqual(OrgRenderedEntryView.renderWindowResetKey(for: nil), "none")
+    XCTAssertEqual(OrgRenderedEntryView.renderWindowResetKey(for: nil as EntrySource?), "none")
   }
 
   func testRenderedEntryWindowAnchorsDeepSelections() {
@@ -2151,6 +2159,14 @@ final class Org2ModelsTests: XCTestCase {
       text: "Alpha\nBeta",
       isSubtree: false
     )
+    let sourceContext = OrgRenderedEntrySourceContext(source)
+    let editedTextSourceContext = OrgRenderedEntrySourceContext(EntrySource(
+      file: "/tmp/render-context.org2",
+      startLine: 1,
+      endLineExclusive: 3,
+      text: "Alpha\nBeta\nEdited",
+      isSubtree: false
+    ))
     let blocks = [
       OrgEditableBlock(
         id: "alpha",
@@ -2171,7 +2187,7 @@ final class Org2ModelsTests: XCTestCase {
     let base = OrgRenderedEntryView(
       blocks: blocks,
       blocksRenderSignature: signature,
-      source: source,
+      source: sourceContext,
       corpusRoot: nil,
       selectedBlockID: nil,
       selectedBlockIndex: nil,
@@ -2185,7 +2201,7 @@ final class Org2ModelsTests: XCTestCase {
       OrgRenderedEntryView(
         blocks: blocks,
         blocksRenderSignature: signature,
-        source: source,
+        source: editedTextSourceContext,
         corpusRoot: nil,
         selectedBlockID: nil,
         selectedBlockIndex: nil,
@@ -2208,7 +2224,7 @@ final class Org2ModelsTests: XCTestCase {
       OrgRenderedEntryView(
         blocks: updatedBlocks,
         blocksRenderSignature: WorkspaceStore.renderedBlocksRenderSignature(for: updatedBlocks),
-        source: source,
+        source: sourceContext,
         corpusRoot: nil,
         selectedBlockID: nil,
         selectedBlockIndex: nil,
@@ -2223,7 +2239,7 @@ final class Org2ModelsTests: XCTestCase {
       OrgRenderedEntryView(
         blocks: blocks,
         blocksRenderSignature: signature,
-        source: source,
+        source: sourceContext,
         corpusRoot: nil,
         selectedBlockID: "alpha",
         selectedBlockIndex: 0,
@@ -2238,7 +2254,7 @@ final class Org2ModelsTests: XCTestCase {
       OrgRenderedEntryView(
         blocks: blocks,
         blocksRenderSignature: signature,
-        source: source,
+        source: sourceContext,
         corpusRoot: nil,
         selectedBlockID: nil,
         selectedBlockIndex: nil,
@@ -2253,7 +2269,7 @@ final class Org2ModelsTests: XCTestCase {
       OrgRenderedEntryView(
         blocks: blocks,
         blocksRenderSignature: signature,
-        source: source,
+        source: sourceContext,
         corpusRoot: nil,
         selectedBlockID: nil,
         selectedBlockIndex: nil,

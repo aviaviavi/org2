@@ -1,10 +1,30 @@
 import SwiftUI
 
+struct OrgRenderedEntrySourceContext: Equatable, Sendable {
+  let file: String
+  let startLine: Int
+  let endLineExclusive: Int
+  let isSubtree: Bool
+  let isEditable: Bool
+
+  init(_ source: EntrySource) {
+    self.file = source.file
+    self.startLine = source.startLine
+    self.endLineExclusive = source.endLineExclusive
+    self.isSubtree = source.isSubtree
+    self.isEditable = source.isEditable
+  }
+
+  var id: String {
+    "\(file):\(startLine):\(endLineExclusive)"
+  }
+}
+
 struct OrgRenderedEntryView: View, Equatable {
   @EnvironmentObject private var store: WorkspaceStore
   let blocks: [OrgEditableBlock]
   let blocksRenderSignature: String
-  let source: EntrySource?
+  let source: OrgRenderedEntrySourceContext?
   let corpusRoot: URL?
   let selectedBlockID: OrgEditableBlock.ID?
   let selectedBlockIndex: Int?
@@ -109,7 +129,11 @@ struct OrgRenderedEntryView: View, Equatable {
     renderedBlockWindow = nil
   }
 
-  private func refreshMoveAvailabilityIfNeeded(signature: String, source: EntrySource?, visibleRange: Range<Int>) {
+  private func refreshMoveAvailabilityIfNeeded(
+    signature: String,
+    source: OrgRenderedEntrySourceContext?,
+    visibleRange: Range<Int>
+  ) {
     guard moveAvailability.signature != signature else { return }
     moveAvailability = OrgRenderedEntryMoveAvailability.make(
       for: blocks,
@@ -231,6 +255,11 @@ struct OrgRenderedEntryView: View, Equatable {
   }
 
   nonisolated static func renderWindowResetKey(for source: EntrySource?) -> String {
+    guard let source else { return "none" }
+    return "\(source.file):\(source.startLine):\(source.isSubtree):\(source.isEditable)"
+  }
+
+  nonisolated static func renderWindowResetKey(for source: OrgRenderedEntrySourceContext?) -> String {
     guard let source else { return "none" }
     return "\(source.file):\(source.startLine):\(source.isSubtree):\(source.isEditable)"
   }
@@ -417,7 +446,7 @@ struct OrgRenderedEntryMoveAvailability: Sendable {
 
   static func make(
     for blocks: [OrgEditableBlock],
-    source: EntrySource?,
+    source: OrgRenderedEntrySourceContext?,
     visibleRange: Range<Int>? = nil,
     precomputedSignature: String? = nil
   ) -> OrgRenderedEntryMoveAvailability {
@@ -446,7 +475,7 @@ struct OrgRenderedEntryMoveAvailability: Sendable {
 
   static func signature(
     for blocks: [OrgEditableBlock],
-    source: EntrySource?,
+    source: OrgRenderedEntrySourceContext?,
     visibleRange: Range<Int>? = nil
   ) -> String {
     signature(blocksSignature: Self.blocksSignature(for: blocks), source: source, visibleRange: visibleRange)
@@ -454,7 +483,7 @@ struct OrgRenderedEntryMoveAvailability: Sendable {
 
   static func signature(
     blocksSignature: String,
-    source: EntrySource?,
+    source: OrgRenderedEntrySourceContext?,
     visibleRange: Range<Int>? = nil
   ) -> String {
     let rangeSignature: String = {
@@ -490,7 +519,7 @@ struct OrgRenderedEntryMoveAvailability: Sendable {
     return start..<end
   }
 
-  private static func isMovable(_ block: OrgEditableBlock, in source: EntrySource) -> Bool {
+  private static func isMovable(_ block: OrgEditableBlock, in source: OrgRenderedEntrySourceContext) -> Bool {
     guard block.isEditable,
           block.startLine >= source.startLine,
           block.endLineExclusive <= source.endLineExclusive
@@ -502,7 +531,7 @@ struct OrgRenderedEntryMoveAvailability: Sendable {
 
   private static func movableBounds(
     in blocks: [OrgEditableBlock],
-    source: EntrySource
+    source: OrgRenderedEntrySourceContext
   ) -> (first: Int, last: Int)? {
     guard let first = blocks.indices.first(where: { isMovable(blocks[$0], in: source) }) else {
       return nil
