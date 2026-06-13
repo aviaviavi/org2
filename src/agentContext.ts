@@ -43,6 +43,15 @@ type AgentContextAttachment = {
   label?: string;
   line?: number;
   source: "property" | "link";
+  target?: {
+    key: string;
+    kind: "file" | "heading";
+    id: string | null;
+    title: string;
+    file: string;
+    sourceRange: { startLine: number; endLine: number };
+    citation: string;
+  };
 };
 
 type AgentThreadMetadata = {
@@ -406,6 +415,44 @@ function mergeAttachments(attachments: AgentContextAttachment[]): AgentContextAt
   return Array.from(byRef.values()).sort((a, b) => a.type.localeCompare(b.type) || a.ref.localeCompare(b.ref) || (a.line || 0) - (b.line || 0));
 }
 
+function normalizeFileRef(raw: string): string {
+  return String(raw || "")
+    .trim()
+    .replace(/^file:/i, "")
+    .replace(/^\.\//, "");
+}
+
+function attachmentTargetFor(corpus: CompiledCorpus, attachment: AgentContextAttachment): AgentContextAttachment["target"] | undefined {
+  let target: CompiledCorpusNode | undefined;
+  if (attachment.type === "id") {
+    const id = attachment.ref.replace(/^id:/i, "");
+    target = corpus.nodes.find((node) => node.id && normalizeId(node.id) === normalizeId(id));
+  } else if (attachment.type === "note") {
+    const noteTitle = attachment.ref.trim().toLowerCase();
+    target = corpus.nodes.find((node) => node.title.trim().toLowerCase() === noteTitle);
+  } else if (attachment.type === "file") {
+    const wanted = normalizeFileRef(attachment.ref);
+    target = corpus.nodes.find((node) => normalizeFileRef(node.file) === wanted) || corpus.nodes.find((node) => normalizeFileRef(node.file).endsWith(`/${wanted}`));
+  }
+  if (!target) return undefined;
+  return {
+    key: target.key,
+    kind: target.kind,
+    id: target.id,
+    title: target.title,
+    file: target.file,
+    sourceRange: target.sourceRange,
+    citation: citationFor(target),
+  };
+}
+
+function resolveAttachmentTargets(corpus: CompiledCorpus, attachments: AgentContextAttachment[]): AgentContextAttachment[] {
+  return attachments.map((attachment) => {
+    const target = attachmentTargetFor(corpus, attachment);
+    return target ? { ...attachment, target } : attachment;
+  });
+}
+
 function normalizeThreadStorage(raw: string | undefined): AgentThreadMetadata["storage"] | undefined {
   const value = String(raw || "").trim().toLowerCase();
   if (!value) return undefined;
@@ -413,7 +460,7 @@ function normalizeThreadStorage(raw: string | undefined): AgentThreadMetadata["s
   return "unknown";
 }
 
-function agentThreadMetadataFor(node: CompiledCorpusNode): AgentThreadMetadata | undefined {
+function agentThreadMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): AgentThreadMetadata | undefined {
   if (!isAgentThreadNode(node)) return undefined;
   const props = node.effectiveProperties || node.properties || {};
   const propertyAttachments = [
@@ -423,13 +470,14 @@ function agentThreadMetadataFor(node: CompiledCorpusNode): AgentThreadMetadata |
     ...parseContextAttachmentList(props.ORG2_CONTEXT_ATTACHMENTS),
   ];
   const linkAttachments = node.links.map(attachmentFromLink).filter((item): item is AgentContextAttachment => !!item);
+  const contextAttachments = resolveAttachmentTargets(corpus, mergeAttachments([...propertyAttachments, ...linkAttachments]));
   return {
     ...(props.AGENT || props.ORG2_AGENT ? { agent: props.AGENT || props.ORG2_AGENT } : {}),
     ...(props.SESSION || props.ORG2_SESSION ? { session: props.SESSION || props.ORG2_SESSION } : {}),
     ...(props.STATUS || props.ORG2_STATUS ? { status: props.STATUS || props.ORG2_STATUS } : {}),
     ...(props.TRANSCRIPT || props.TRANSCRIPT_ARTIFACT || props.ORG2_TRANSCRIPT ? { transcript: props.TRANSCRIPT || props.TRANSCRIPT_ARTIFACT || props.ORG2_TRANSCRIPT } : {}),
     ...(normalizeThreadStorage(props.STORAGE || props.TRANSCRIPT_STORAGE || props.ORG2_STORAGE) ? { storage: normalizeThreadStorage(props.STORAGE || props.TRANSCRIPT_STORAGE || props.ORG2_STORAGE) } : {}),
-    contextAttachments: mergeAttachments([...propertyAttachments, ...linkAttachments]),
+    contextAttachments,
   };
 }
 
@@ -505,7 +553,7 @@ function dataLinkMetadataFor(node: CompiledCorpusNode): AgentDataLinkMetadata | 
 
 function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: Set<AgentInclude>, score?: { score: number; matchedTerms: string[]; selectionReason?: string[] }): AgentNode {
   const source = { file: node.file, sourceRange: node.sourceRange, citation: citationFor(node) };
-  const thread = agentThreadMetadataFor(node);
+  const thread = agentThreadMetadataFor(corpus, node);
   const dataLink = dataLinkMetadataFor(node);
   return {
     key: node.key,
