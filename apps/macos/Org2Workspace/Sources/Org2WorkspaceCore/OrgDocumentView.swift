@@ -716,24 +716,65 @@ private struct KeywordBlockEditor: View {
   }
 
   var body: some View {
-    BlockEditorContainer(
-      block: block,
-      title: "Keyword",
-      previewText: rawKeyword,
-      onSave: { store.editableBlockText = rawKeyword }
-    ) {
-      HStack(alignment: .firstTextBaseline, spacing: 8) {
-        TextField("Key", text: $key)
-          .textFieldStyle(.roundedBorder)
-          .frame(width: 140)
-        TextField("Value", text: $value)
-          .textFieldStyle(.roundedBorder)
-          .focused($valueFocused)
-          .onSubmit {
-            saveKeyword()
-          }
+    HStack(alignment: .firstTextBaseline, spacing: 8) {
+      Text("#+")
+        .font(.caption.monospaced().weight(.medium))
+        .foregroundStyle(.secondary)
+
+      TextField("KEYWORD", text: $key)
+        .textFieldStyle(.plain)
+        .font(.caption.monospaced().weight(.medium))
+        .foregroundStyle(.secondary)
+        .frame(width: 110)
+        .onSubmit {
+          valueFocused = true
+        }
+
+      Text(":")
+        .font(.caption.monospaced().weight(.medium))
+        .foregroundStyle(.secondary)
+
+      TextField("Value", text: $value)
+        .textFieldStyle(.plain)
+        .focused($valueFocused)
+        .onSubmit {
+          saveKeyword()
+        }
+
+      Spacer(minLength: 0)
+
+      if store.isSavingBlock {
+        ProgressView()
+          .controlSize(.small)
       }
+
+      Button {
+        saveKeyword()
+      } label: {
+        Image(systemName: "checkmark")
+      }
+      .buttonStyle(.borderless)
+      .keyboardShortcut("s", modifiers: [.command])
+      .disabled(store.isSavingBlock)
+      .help("Save")
+
+      Button {
+        store.cancelEditingBlock()
+      } label: {
+        Image(systemName: "xmark")
+      }
+      .buttonStyle(.borderless)
+      .keyboardShortcut(.cancelAction)
+      .disabled(store.isSavingBlock)
+      .help("Cancel")
     }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 7)
+    .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 7, style: .continuous)
+        .stroke(Color.accentColor.opacity(0.22))
+    )
     .onAppear {
       valueFocused = true
     }
@@ -1021,20 +1062,67 @@ private struct QuoteBlockEditor: View {
   }
 
   var body: some View {
-    BlockEditorContainer(
-      block: block,
-      title: "Quote",
-      previewText: rawQuote,
-      onSave: { store.editableBlockText = rawQuote }
-    ) {
-      OrgSyntaxTextEditor(text: $quoteText, showsScrollers: false, focusOnAppear: true)
-        .frame(minHeight: editorHeight, maxHeight: editorHeight)
-        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .overlay(
-          RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .stroke(Color.secondary.opacity(0.22))
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(spacing: 8) {
+        Text("Quote")
+          .font(.caption.weight(.medium))
+          .foregroundStyle(.secondary)
+
+        Text("line \(block.displayRange)")
+          .font(.caption.monospacedDigit())
+          .foregroundStyle(.tertiary)
+
+        Spacer(minLength: 0)
+
+        if store.isSavingBlock {
+          ProgressView()
+            .controlSize(.small)
+        }
+
+        Button {
+          saveQuote()
+        } label: {
+          Image(systemName: "checkmark")
+        }
+        .buttonStyle(.borderless)
+        .keyboardShortcut("s", modifiers: [.command])
+        .disabled(store.isSavingBlock)
+        .help("Save")
+
+        Button {
+          store.cancelEditingBlock()
+        } label: {
+          Image(systemName: "xmark")
+        }
+        .buttonStyle(.borderless)
+        .keyboardShortcut(.cancelAction)
+        .disabled(store.isSavingBlock)
+        .help("Cancel")
+      }
+
+      HStack(alignment: .top, spacing: 9) {
+        Rectangle()
+          .fill(Color.secondary.opacity(0.35))
+          .frame(width: 3)
+          .clipShape(Capsule())
+
+        OrgSyntaxTextEditor(
+          text: $quoteText,
+          showsScrollers: false,
+          textInset: NSSize(width: 2, height: 4),
+          focusOnAppear: true
         )
+        .frame(minHeight: editorHeight, maxHeight: editorHeight)
+        .background(Color.clear)
+      }
     }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 7)
+    .background(Color.accentColor.opacity(0.055), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 7, style: .continuous)
+        .stroke(Color.accentColor.opacity(0.2))
+    )
   }
 
   private var rawQuote: String {
@@ -1043,7 +1131,12 @@ private struct QuoteBlockEditor: View {
 
   private var editorHeight: CGFloat {
     let lineCount = max(2, quoteText.split(separator: "\n", omittingEmptySubsequences: false).count)
-    return min(260, max(76, CGFloat(lineCount) * 22 + 32))
+    return min(260, max(58, CGFloat(lineCount) * 23 + 12))
+  }
+
+  private func saveQuote() {
+    store.editableBlockText = rawQuote
+    Task { await store.saveEditedBlock(block) }
   }
 }
 
