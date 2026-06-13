@@ -48,7 +48,8 @@ struct OrgRenderedEntryView: View {
           canMoveDown: moveAvailabilityValues[block.id]?.down == true,
           sourceFile: sourceFile,
           corpusRoot: corpusRoot,
-          actions: actions(for: block)
+          actions: actions(for: block),
+          inlineActions: inlineActions(for: block, isSourceEditable: isSourceEditable)
         )
         .equatable()
       }
@@ -126,6 +127,27 @@ struct OrgRenderedEntryView: View {
       },
       delete: {
         Task { await store.deleteBlock(block) }
+      }
+    )
+  }
+
+  private func inlineActions(for block: OrgEditableBlock, isSourceEditable: Bool) -> RenderedBlockInlineActions {
+    guard block.isEditable else {
+      return .readOnly
+    }
+    return RenderedBlockInlineActions(
+      isSourceEditable: isSourceEditable,
+      toggleHeadingTodo: {
+        Task { await store.toggleHeadingTodo(block) }
+      },
+      setHeadingPriority: { priority in
+        Task { await store.setHeadingPriority(block, priority: priority) }
+      },
+      setHeadingTags: { tags in
+        Task { await store.setHeadingTags(block, tags: tags) }
+      },
+      toggleListItemCheckbox: {
+        Task { await store.toggleListItemCheckbox(block) }
       }
     )
   }
@@ -260,6 +282,7 @@ private struct OrgRenderedEntryRow: View, Equatable {
   let sourceFile: String?
   let corpusRoot: URL?
   let actions: RenderedBlockActions
+  let inlineActions: RenderedBlockInlineActions
 
   nonisolated static func == (lhs: OrgRenderedEntryRow, rhs: OrgRenderedEntryRow) -> Bool {
     if lhs.isEditing || rhs.isEditing {
@@ -271,6 +294,7 @@ private struct OrgRenderedEntryRow: View, Equatable {
         && lhs.isSelected == rhs.isSelected
         && lhs.sourceFile == rhs.sourceFile
         && lhs.corpusRoot == rhs.corpusRoot
+        && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
     }
     return lhs.block == rhs.block
       && lhs.isSourceEditable == rhs.isSourceEditable
@@ -280,6 +304,7 @@ private struct OrgRenderedEntryRow: View, Equatable {
       && lhs.canMoveDown == rhs.canMoveDown
       && lhs.sourceFile == rhs.sourceFile
       && lhs.corpusRoot == rhs.corpusRoot
+      && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
   }
 
   var body: some View {
@@ -299,7 +324,8 @@ private struct OrgRenderedEntryRow: View, Equatable {
           rawText: block.rawText,
           editableBlock: block,
           sourceFile: sourceFile,
-          corpusRoot: corpusRoot
+          corpusRoot: corpusRoot,
+          inlineActions: inlineActions
         )
         .equatable()
       }

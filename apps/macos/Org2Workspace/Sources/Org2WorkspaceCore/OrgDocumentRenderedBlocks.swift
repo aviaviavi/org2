@@ -9,19 +9,22 @@ struct RenderedBlockView: View, Equatable {
   let editableBlock: OrgEditableBlock?
   let sourceFile: String?
   let corpusRoot: URL?
+  let inlineActions: RenderedBlockInlineActions
 
   init(
     block: OrgRenderedBlock,
     rawText: String? = nil,
     editableBlock: OrgEditableBlock? = nil,
     sourceFile: String? = nil,
-    corpusRoot: URL? = nil
+    corpusRoot: URL? = nil,
+    inlineActions: RenderedBlockInlineActions = .readOnly
   ) {
     self.block = block
     self.rawText = rawText
     self.editableBlock = editableBlock
     self.sourceFile = sourceFile
     self.corpusRoot = corpusRoot
+    self.inlineActions = inlineActions
   }
 
   nonisolated static func == (lhs: RenderedBlockView, rhs: RenderedBlockView) -> Bool {
@@ -30,12 +33,18 @@ struct RenderedBlockView: View, Equatable {
       && lhs.editableBlock == rhs.editableBlock
       && lhs.sourceFile == rhs.sourceFile
       && lhs.corpusRoot == rhs.corpusRoot
+      && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
   }
 
   var body: some View {
     switch block {
     case .heading(let heading):
-      RenderedHeadingView(heading: heading, rawText: rawText, editableBlock: editableBlock)
+      RenderedHeadingView(
+        heading: heading,
+        rawText: rawText,
+        editableBlock: editableBlock,
+        inlineActions: inlineActions
+      )
     case .planning(let planning):
       RenderedPlanningView(planning: planning, editableBlock: editableBlock)
     case .properties(let rows):
@@ -55,7 +64,8 @@ struct RenderedBlockView: View, Equatable {
         checkbox: checkbox,
         text: text,
         rawText: rawText,
-        editableBlock: editableBlock
+        editableBlock: editableBlock,
+        inlineActions: inlineActions
       )
     case .paragraph(let text):
       if let attachment = OrgMediaAttachment.standalone(
@@ -75,6 +85,22 @@ struct RenderedBlockView: View, Equatable {
         .frame(height: 4)
     }
   }
+}
+
+struct RenderedBlockInlineActions: Sendable {
+  let isSourceEditable: Bool
+  let toggleHeadingTodo: (@MainActor @Sendable () -> Void)?
+  let setHeadingPriority: (@MainActor @Sendable (String?) -> Void)?
+  let setHeadingTags: (@MainActor @Sendable ([String]) -> Void)?
+  let toggleListItemCheckbox: (@MainActor @Sendable () -> Void)?
+
+  static let readOnly = RenderedBlockInlineActions(
+    isSourceEditable: false,
+    toggleHeadingTodo: nil,
+    setHeadingPriority: nil,
+    setHeadingTags: nil,
+    toggleListItemCheckbox: nil
+  )
 }
 
 private struct RenderedHorizontalRuleView: View {
@@ -277,18 +303,19 @@ private struct RenderedHeadingView: View {
   let heading: OrgHeadingBlock
   let rawText: String?
   let editableBlock: OrgEditableBlock?
+  let inlineActions: RenderedBlockInlineActions
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: 8) {
       if let todo = heading.todo {
-        RenderedHeadingTodoButton(todo: todo, editableBlock: editableBlock)
+        RenderedHeadingTodoButton(todo: todo, inlineActions: inlineActions)
       }
       if let priority = heading.priority {
-        RenderedHeadingPriorityMenu(priority: priority, editableBlock: editableBlock)
+        RenderedHeadingPriorityMenu(priority: priority, inlineActions: inlineActions)
       }
       OrgInlineText(rawTitle, font: font)
       if !heading.tags.isEmpty {
-        RenderedHeadingTagsButton(tags: heading.tags, editableBlock: editableBlock)
+        RenderedHeadingTagsButton(tags: heading.tags, inlineActions: inlineActions)
       }
       Spacer(minLength: 0)
     }
@@ -343,20 +370,17 @@ private struct RenderedHeadingView: View {
 }
 
 private struct RenderedHeadingTodoButton: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let todo: String
-  let editableBlock: OrgEditableBlock?
+  let inlineActions: RenderedBlockInlineActions
 
   var body: some View {
     Button {
-      if let editableBlock {
-        Task { await store.toggleHeadingTodo(editableBlock) }
-      }
+      inlineActions.toggleHeadingTodo?()
     } label: {
       StatusPill(text: todo)
     }
     .buttonStyle(.plain)
-    .disabled(editableBlock == nil || store.selectedEntrySource?.isEditable != true)
+    .disabled(inlineActions.toggleHeadingTodo == nil || !inlineActions.isSourceEditable)
     .help(nextStatus.map { "Mark \($0)" } ?? "Status")
   }
 
@@ -366,9 +390,8 @@ private struct RenderedHeadingTodoButton: View {
 }
 
 private struct RenderedHeadingPriorityMenu: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let priority: String
-  let editableBlock: OrgEditableBlock?
+  let inlineActions: RenderedBlockInlineActions
 
   var body: some View {
     Menu {
@@ -390,21 +413,18 @@ private struct RenderedHeadingPriorityMenu: View {
     .menuStyle(.borderlessButton)
     .menuIndicator(.hidden)
     .fixedSize()
-    .disabled(editableBlock == nil || store.selectedEntrySource?.isEditable != true)
+    .disabled(inlineActions.setHeadingPriority == nil || !inlineActions.isSourceEditable)
     .help("Priority")
   }
 
   private func setPriority(_ value: String?) {
-    if let editableBlock {
-      Task { await store.setHeadingPriority(editableBlock, priority: value) }
-    }
+    inlineActions.setHeadingPriority?(value)
   }
 }
 
 private struct RenderedHeadingTagsButton: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let tags: [String]
-  let editableBlock: OrgEditableBlock?
+  let inlineActions: RenderedBlockInlineActions
   @State private var isPresented = false
   @State private var draftTags = ""
 
@@ -418,7 +438,7 @@ private struct RenderedHeadingTagsButton: View {
         .foregroundStyle(.secondary)
     }
     .buttonStyle(.plain)
-    .disabled(editableBlock == nil || store.selectedEntrySource?.isEditable != true)
+    .disabled(inlineActions.setHeadingTags == nil || !inlineActions.isSourceEditable)
     .help("Tags")
     .popover(isPresented: $isPresented, arrowEdge: .bottom) {
       VStack(alignment: .leading, spacing: 8) {
@@ -456,9 +476,7 @@ private struct RenderedHeadingTagsButton: View {
   }
 
   private func saveTags(_ tags: [String]) {
-    if let editableBlock {
-      Task { await store.setHeadingTags(editableBlock, tags: tags) }
-    }
+    inlineActions.setHeadingTags?(tags)
     isPresented = false
   }
 }
@@ -1564,6 +1582,7 @@ private struct RenderedListItemView: View {
   let text: String
   let rawText: String?
   let editableBlock: OrgEditableBlock?
+  let inlineActions: RenderedBlockInlineActions
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -1573,7 +1592,7 @@ private struct RenderedListItemView: View {
         .frame(width: 28, alignment: .trailing)
 
       if let checkbox {
-        RenderedListCheckboxButton(checkbox: checkbox, editableBlock: editableBlock)
+        RenderedListCheckboxButton(checkbox: checkbox, inlineActions: inlineActions)
       }
 
       OrgInlineText(rawListText)
@@ -1606,22 +1625,19 @@ private struct RenderedListItemView: View {
 }
 
 private struct RenderedListCheckboxButton: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let checkbox: OrgListCheckbox
-  let editableBlock: OrgEditableBlock?
+  let inlineActions: RenderedBlockInlineActions
 
   var body: some View {
     Button {
-      if let editableBlock {
-        Task { await store.toggleListItemCheckbox(editableBlock) }
-      }
+      inlineActions.toggleListItemCheckbox?()
     } label: {
       Image(systemName: checkboxImageName)
         .font(.callout.weight(.medium))
         .foregroundStyle(checkbox == .checked ? Color.accentColor : Color.secondary)
     }
     .buttonStyle(.plain)
-    .disabled(editableBlock == nil || store.selectedEntrySource?.isEditable != true)
+    .disabled(inlineActions.toggleListItemCheckbox == nil || !inlineActions.isSourceEditable)
     .help(checkbox == .checked ? "Mark incomplete" : "Mark complete")
   }
 
