@@ -3306,6 +3306,64 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSetsRenderedHeadingPriorityInSource() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-heading-priority-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("heading-priority.org2")
+    try """
+    #+TITLE: Heading Priority Test
+
+    * TODO [#A] Parent :work:
+    Body
+    * Sibling
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": ["work"],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let heading = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .heading(let heading) = $0.rendered { return heading.priority == "A" }
+      return false
+    })
+
+    await store.setHeadingPriority(heading, priority: "C")
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "* TODO [#C] Parent :work:"
+    }
+
+    var updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* TODO [#C] Parent :work:\nBody\n* Sibling"))
+
+    let updatedHeading = try XCTUnwrap(store.selectedBlock)
+    await store.setHeadingPriority(updatedHeading, priority: nil)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "* TODO Parent :work:"
+    }
+
+    updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* TODO Parent :work:\nBody\n* Sibling"))
+  }
+
+  @MainActor
   func testSelectsRenderedBlockAndHandlesDocumentKeyboard() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-block-selection-\(UUID().uuidString)", isDirectory: true)

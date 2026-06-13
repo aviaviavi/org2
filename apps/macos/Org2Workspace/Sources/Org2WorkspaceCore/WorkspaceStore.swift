@@ -947,6 +947,47 @@ public final class WorkspaceStore: ObservableObject {
     return nil
   }
 
+  public func setHeadingPriority(_ block: OrgEditableBlock, priority: String?) async {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "No editable source loaded"
+      return
+    }
+    guard block.startLine >= source.startLine,
+          block.endLineExclusive <= source.endLineExclusive
+    else {
+      statusText = "Block is outside the selected source"
+      return
+    }
+    guard case .heading = block.rendered,
+          let replacement = Self.headingRawTextSettingPriority(block.rawText, priority: priority)
+    else {
+      statusText = "Heading priority update failed"
+      return
+    }
+
+    isSavingBlock = true
+    defer { isSavingBlock = false }
+
+    do {
+      try await Task.detached(priority: .userInitiated) {
+        try Self.replaceSourceRange(
+          file: source.file,
+          startLine: block.startLine,
+          endLineExclusive: block.endLineExclusive,
+          replacement: replacement
+        )
+      }.value
+      await finishBlockMutation(
+        file: source.file,
+        status: priority.map { "[#\($0)] -> heading" } ?? "Priority cleared",
+        selectLine: block.startLine
+      )
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Priority update failed"
+    }
+  }
+
   public func duplicateBlock(_ block: OrgEditableBlock) async {
     guard let source = selectedEntrySource, source.isEditable else {
       statusText = "No editable source loaded"
@@ -3394,6 +3435,67 @@ public final class WorkspaceStore: ObservableObject {
     return lines.joined(separator: "\n")
   }
 
+  nonisolated private static func headingRawTextSettingPriority(
+    _ rawText: String,
+    priority: String?
+  ) -> String? {
+    var lines = normalizeLineEndings(rawText)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    guard let first = lines.first else { return nil }
+    guard let regex = try? NSRegularExpression(pattern: #"^(\*+\s+)(.*)$"#) else {
+      return nil
+    }
+
+    let nsFirst = first as NSString
+    let range = NSRange(location: 0, length: nsFirst.length)
+    guard let match = regex.firstMatch(in: first, range: range),
+          match.range.location == 0
+    else {
+      return nil
+    }
+
+    let prefix = nsFirst.substring(with: match.range(at: 1))
+    let rest = nsFirst.substring(with: match.range(at: 2))
+    var tokens = rest.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+    var outputTokens: [String] = []
+
+    if let firstToken = tokens.first,
+       allHeadingTodoKeywords.contains(firstToken.uppercased()) {
+      outputTokens.append(firstToken.uppercased())
+      tokens.removeFirst()
+    }
+
+    if let firstToken = tokens.first,
+       firstToken.range(of: #"^\[#([A-Za-z0-9])\]$"#, options: .regularExpression) != nil {
+      tokens.removeFirst()
+    }
+
+    if let priority = normalizedHeadingPriority(priority) {
+      outputTokens.append("[#\(priority)]")
+    }
+    outputTokens.append(contentsOf: tokens)
+
+    lines[0] = "\(prefix)\(outputTokens.joined(separator: " "))"
+    return lines.joined(separator: "\n")
+  }
+
+  nonisolated private static func normalizedHeadingPriority(_ priority: String?) -> String? {
+    guard var priority = priority?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !priority.isEmpty
+    else {
+      return nil
+    }
+    priority = priority
+      .replacingOccurrences(of: "[#", with: "")
+      .replacingOccurrences(of: "]", with: "")
+      .uppercased()
+    guard priority.range(of: #"^[A-Z0-9]$"#, options: .regularExpression) != nil else {
+      return nil
+    }
+    return priority
+  }
+
   nonisolated private static let activeHeadingTodoKeywords = Set([
     "TODO",
     "IN_PROGRESS",
@@ -3408,6 +3510,8 @@ public final class WorkspaceStore: ObservableObject {
     "CANCELED",
     "CANCELLED"
   ])
+
+  nonisolated private static let allHeadingTodoKeywords = activeHeadingTodoKeywords.union(doneHeadingTodoKeywords)
 
   nonisolated private static func deleteSourceRangeCleaningAdjacentBlank(
     file: String,

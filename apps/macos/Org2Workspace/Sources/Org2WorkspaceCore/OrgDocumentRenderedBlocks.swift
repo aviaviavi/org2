@@ -284,10 +284,7 @@ private struct RenderedHeadingView: View {
         RenderedHeadingTodoButton(todo: todo, editableBlock: editableBlock)
       }
       if let priority = heading.priority {
-        Label(priority, systemImage: "flag.fill")
-          .font(.caption.weight(.semibold))
-          .foregroundStyle(.orange)
-          .labelStyle(.titleAndIcon)
+        RenderedHeadingPriorityMenu(priority: priority, editableBlock: editableBlock)
       }
       OrgInlineText(rawTitle, font: font)
       if !heading.tags.isEmpty {
@@ -367,6 +364,42 @@ private struct RenderedHeadingTodoButton: View {
 
   private var nextStatus: String? {
     WorkspaceStore.nextHeadingTodoStatus(after: todo)
+  }
+}
+
+private struct RenderedHeadingPriorityMenu: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let priority: String
+  let editableBlock: OrgEditableBlock?
+
+  var body: some View {
+    Menu {
+      Button("None") {
+        setPriority(nil)
+      }
+      Divider()
+      ForEach(["A", "B", "C"], id: \.self) { value in
+        Button("[#\(value)]") {
+          setPriority(value)
+        }
+      }
+    } label: {
+      Label(priority, systemImage: "flag.fill")
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.orange)
+        .labelStyle(.titleAndIcon)
+    }
+    .menuStyle(.borderlessButton)
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .disabled(editableBlock == nil || store.selectedEntrySource?.isEditable != true)
+    .help("Priority")
+  }
+
+  private func setPriority(_ value: String?) {
+    if let editableBlock {
+      Task { await store.setHeadingPriority(editableBlock, priority: value) }
+    }
   }
 }
 
