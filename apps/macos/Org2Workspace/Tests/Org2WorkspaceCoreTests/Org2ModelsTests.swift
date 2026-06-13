@@ -450,6 +450,38 @@ final class Org2ModelsTests: XCTestCase {
     assertToken(.keyword, "end_src", in: raw, tokens: tokens)
   }
 
+  func testOrgSyntaxHighlighterSkipsLiveTokenizationForLargeBuffers() {
+    XCTAssertTrue(OrgSyntaxHighlighter.shouldTokenizeLiveText(
+      utf16Length: OrgSyntaxHighlighter.liveTokenizationUTF16Limit
+    ))
+    XCTAssertFalse(OrgSyntaxHighlighter.shouldTokenizeLiveText(
+      utf16Length: OrgSyntaxHighlighter.liveTokenizationUTF16Limit + 1
+    ))
+
+    let smallStorage = NSTextStorage(string: "* TODO Small")
+    OrgSyntaxHighlighter.apply(to: smallStorage, monospaced: false)
+    let smallColor = smallStorage.attribute(
+      .foregroundColor,
+      at: 2,
+      effectiveRange: nil
+    ) as? NSColor
+    XCTAssertEqual(smallColor, NSColor.controlAccentColor)
+
+    let largeText = "* TODO Large\n" + String(
+      repeating: "Body line with [[id:abc][Alice]] and <2026-06-12 Fri>.\n",
+      count: 600
+    )
+    XCTAssertGreaterThan((largeText as NSString).length, OrgSyntaxHighlighter.liveTokenizationUTF16Limit)
+    let largeStorage = NSTextStorage(string: largeText)
+    OrgSyntaxHighlighter.apply(to: largeStorage, monospaced: false)
+    let largeColor = largeStorage.attribute(
+      .foregroundColor,
+      at: 2,
+      effectiveRange: nil
+    ) as? NSColor
+    XCTAssertEqual(largeColor, NSColor.textColor)
+  }
+
   func testOpenClawFileReferenceDeepLinkRoundTrips() throws {
     let reference = OpenClawFileReference(path: "file:notes/daily.org2#12", line: nil)
     let url = try XCTUnwrap(reference.deepLinkURL)
