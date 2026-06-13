@@ -1421,6 +1421,7 @@ private struct OrgCryptConfigurationSheet: View {
   @State private var encryptOnSave = true
   @State private var recipientsText = ""
   @State private var recipientFilesText = ""
+  @State private var useDefaultGpgKey = false
   @State private var gpgProgram = "gpg"
   @State private var passphrase = ""
   @State private var clearPassphrase = false
@@ -1436,6 +1437,7 @@ private struct OrgCryptConfigurationSheet: View {
       }
 
       Toggle("Encrypt plaintext :crypt: subtrees on explicit save", isOn: $encryptOnSave)
+      Toggle("Use default GPG key as recipient", isOn: $useDefaultGpgKey)
 
       Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 10) {
         GridRow {
@@ -1503,6 +1505,7 @@ private struct OrgCryptConfigurationSheet: View {
             encryptOnSave: encryptOnSave,
             recipientsText: recipientsText,
             recipientFilesText: recipientFilesText,
+            useDefaultGpgKey: useDefaultGpgKey,
             gpgProgram: gpgProgram,
             passphrase: passphrase,
             clearPassphrase: clearPassphrase
@@ -1520,6 +1523,7 @@ private struct OrgCryptConfigurationSheet: View {
       encryptOnSave = store.orgCryptEncryptOnSave
       recipientsText = store.orgCryptRecipientsText
       recipientFilesText = store.orgCryptRecipientFilesText
+      useDefaultGpgKey = store.orgCryptUseDefaultGpgKey
       gpgProgram = store.orgCryptGpgProgram
       passphrase = ""
       clearPassphrase = false

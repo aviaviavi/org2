@@ -23,6 +23,7 @@ public struct OrgCryptSettings: Equatable, Sendable {
   public var gpgProgram: String
   public var passphrase: String?
   public var gpgTimeout: TimeInterval
+  public var useDefaultGpgKey: Bool
 
   public init(
     encryptOnSave: Bool = true,
@@ -30,7 +31,8 @@ public struct OrgCryptSettings: Equatable, Sendable {
     recipientFiles: [String] = [],
     gpgProgram: String = "gpg",
     passphrase: String? = nil,
-    gpgTimeout: TimeInterval = 30
+    gpgTimeout: TimeInterval = 30,
+    useDefaultGpgKey: Bool = false
   ) {
     self.encryptOnSave = encryptOnSave
     self.recipients = recipients
@@ -38,10 +40,11 @@ public struct OrgCryptSettings: Equatable, Sendable {
     self.gpgProgram = gpgProgram.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "gpg" : gpgProgram
     self.passphrase = passphrase?.isEmpty == false ? passphrase : nil
     self.gpgTimeout = max(0.1, gpgTimeout)
+    self.useDefaultGpgKey = useDefaultGpgKey
   }
 
   public var canEncryptWithoutSubtreeProperties: Bool {
-    passphrase != nil || !recipients.isEmpty || !recipientFiles.isEmpty
+    passphrase != nil || useDefaultGpgKey || !recipients.isEmpty || !recipientFiles.isEmpty
   }
 
   public static func splitListText(_ raw: String) -> [String] {
@@ -171,7 +174,8 @@ public enum OrgCrypt {
         recipientFiles: recipientFiles,
         gpgProgram: settings.gpgProgram,
         passphrase: settings.passphrase,
-        gpgTimeout: settings.gpgTimeout
+        gpgTimeout: settings.gpgTimeout,
+        useDefaultGpgKey: settings.useDefaultGpgKey
       )
       guard targetSettings.canEncryptWithoutSubtreeProperties else {
         throw OrgCryptError.missingEncryptionConfiguration
@@ -223,8 +227,11 @@ public enum OrgCrypt {
       arguments += ["--passphrase", passphrase]
     }
 
-    if !settings.recipients.isEmpty || !settings.recipientFiles.isEmpty {
+    if settings.useDefaultGpgKey || !settings.recipients.isEmpty || !settings.recipientFiles.isEmpty {
       arguments += ["--armor", "--encrypt"]
+      if settings.useDefaultGpgKey {
+        arguments += ["--default-recipient-self"]
+      }
       for recipient in settings.recipients {
         arguments += ["--recipient", recipient]
       }
@@ -406,7 +413,7 @@ public enum OrgCryptError: LocalizedError, Equatable {
   public var errorDescription: String? {
     switch self {
     case .missingEncryptionConfiguration:
-      "Org crypt needs a passphrase, configured recipients, recipient files, or CRYPT_RECIPIENT properties."
+      "Org crypt needs a passphrase, the default GPG key option, configured recipients, recipient files, or CRYPT_RECIPIENT properties."
     case .gpgFailed(let message):
       "Org crypt encryption failed: \(message)"
     case .gpgTimedOut(let timeout, let message):

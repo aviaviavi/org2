@@ -7795,6 +7795,7 @@ async function main(): Promise<void> {
   let cryptPassphrase = "";
   let cryptRecipients: string[] = [];
   let cryptRecipientFiles: string[] = [];
+  let cryptUseDefaultRecipientSelf = false;
   let cryptApply = false;
   let cryptFormat: "text" | "json" | "diff" = "json";
   let cryptGpgProgram = "gpg";
@@ -8879,6 +8880,11 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--default-recipient-self") {
+      if (command === "crypt") {
+        cryptUseDefaultRecipientSelf = true;
+      }
+      i++;
     } else if (arg === "--gpg-program") {
       i++;
       if (i < args.length) {
@@ -9373,7 +9379,7 @@ Core commands:
   org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
   org2 todo <set|toggle> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
-  org2 crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--gpg-program PATH] [--apply]
+  org2 crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--default-recipient-self] [--gpg-program PATH] [--apply]
   org2 capture --file FILE --title TITLE [--template note|task] [--apply]
   org2 capture (--text TEXT|--stdin|--url URL|--file SOURCE) --to FILE [--title TITLE] [--apply]
   org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--apply]
@@ -9497,7 +9503,7 @@ Flags:
     text = `org2 crypt ${options.cryptAction}
 
 Usage:
-  org2 crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--gpg-program PATH] [--apply]
+  org2 crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--default-recipient-self] [--gpg-program PATH] [--apply]
 
 Flags:
   --file FILE         Target file
@@ -9506,6 +9512,7 @@ Flags:
   --passphrase PASS   Symmetric encryption passphrase, or private-key passphrase for decrypt/reencrypt
   --recipient USER     Public-key recipient (repeatable)
   --recipient-file FILE Public-key recipient file (repeatable)
+  --default-recipient-self Use GPG's default key as the public-key recipient
   --gpg-program PATH  Optional gpg binary path
   --apply             Write changes instead of previewing`;
   } else if (command === "capture") {
@@ -13186,9 +13193,9 @@ Flags:
 
     applyCryptProperties(lines, headingIdx, subtreeEnd);
 
-    if (cryptAction !== "decrypt" && !cryptPassphrase && cryptRecipients.length === 0 && cryptRecipientFiles.length === 0) {
+    if (cryptAction !== "decrypt" && !cryptPassphrase && !cryptUseDefaultRecipientSelf && cryptRecipients.length === 0 && cryptRecipientFiles.length === 0) {
       console.error(
-        "Error: crypt encrypt/reencrypt requires --passphrase PASS, at least one --recipient/--recipient-file, or CRYPT_RECIPIENT(S)/CRYPT_RECIPIENT_FILE(S) properties",
+        "Error: crypt encrypt/reencrypt requires --passphrase PASS, --default-recipient-self, at least one --recipient/--recipient-file, or CRYPT_RECIPIENT(S)/CRYPT_RECIPIENT_FILE(S) properties",
       );
       process.exit(1);
     }
@@ -13214,13 +13221,14 @@ Flags:
     ): { ok: boolean; stdout: string; stderr: string; error?: string } => {
       const commonArgs = ["--batch", "--yes", "--pinentry-mode", "loopback", "--trust-model", "always"];
       if (cryptPassphrase) commonArgs.push("--passphrase", cryptPassphrase);
+      const defaultRecipientArgs = cryptUseDefaultRecipientSelf ? ["--default-recipient-self"] : [];
       const recipientArgs = cryptRecipients.flatMap((recipient) => ["--recipient", recipient]);
       const recipientFileArgs = cryptRecipientFiles.flatMap((recipientFile) => ["--recipient-file", recipientFile]);
       const commandArgs =
         action === "decrypt"
           ? [...commonArgs, "--decrypt"]
-          : recipientArgs.length > 0 || recipientFileArgs.length > 0
-            ? [...commonArgs, "--armor", "--encrypt", ...recipientArgs, ...recipientFileArgs]
+          : defaultRecipientArgs.length > 0 || recipientArgs.length > 0 || recipientFileArgs.length > 0
+            ? [...commonArgs, "--armor", "--encrypt", ...defaultRecipientArgs, ...recipientArgs, ...recipientFileArgs]
             : [...commonArgs, "--armor", "--symmetric", "--cipher-algo", "AES256"];
 
       const res = spawnSync(cryptGpgProgram, commandArgs, {
@@ -13366,6 +13374,7 @@ Flags:
             applied: cryptApply,
             changed,
             gpgProgram: cryptGpgProgram,
+            defaultRecipientSelf: cryptUseDefaultRecipientSelf,
             recipients: cryptRecipients,
             recipientFiles: cryptRecipientFiles,
           },

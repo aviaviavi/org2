@@ -162,6 +162,7 @@ public final class WorkspaceStore: ObservableObject {
   }
   @Published public var orgCryptRecipientsText = ""
   @Published public var orgCryptRecipientFilesText = ""
+  @Published public var orgCryptUseDefaultGpgKey = false
   @Published public var orgCryptGpgProgram = "gpg"
   @Published public var orgCryptHasStoredPassphrase = false
   @Published public var orgCryptStatusText = "Org crypt encrypts :crypt: subtree bodies with GPG."
@@ -241,6 +242,7 @@ public final class WorkspaceStore: ObservableObject {
   private let orgCryptEncryptOnSaveKey = "Org2Workspace.orgCrypt.encryptOnSave"
   private let orgCryptRecipientsKey = "Org2Workspace.orgCrypt.recipients"
   private let orgCryptRecipientFilesKey = "Org2Workspace.orgCrypt.recipientFiles"
+  private let orgCryptUseDefaultGpgKeyKey = "Org2Workspace.orgCrypt.useDefaultGpgKey"
   private let orgCryptGpgProgramKey = "Org2Workspace.orgCrypt.gpgProgram"
   private static let canonicalParserLineLimit = 2_000
   private static let renderedBlocksCacheLimit = 12
@@ -284,6 +286,7 @@ public final class WorkspaceStore: ObservableObject {
     orgCryptEncryptOnSave = defaults.object(forKey: orgCryptEncryptOnSaveKey) as? Bool ?? true
     orgCryptRecipientsText = OrgCryptSettings.listText(defaults.stringArray(forKey: orgCryptRecipientsKey) ?? [])
     orgCryptRecipientFilesText = OrgCryptSettings.listText(defaults.stringArray(forKey: orgCryptRecipientFilesKey) ?? [])
+    orgCryptUseDefaultGpgKey = defaults.object(forKey: orgCryptUseDefaultGpgKeyKey) as? Bool ?? false
     orgCryptGpgProgram = defaults.string(forKey: orgCryptGpgProgramKey) ?? "gpg"
     openClawMessages = Self.loadOpenClawMessages(from: self.openClawTranscriptURL)
     shouldPersistOpenClawMessages = true
@@ -3052,6 +3055,7 @@ public final class WorkspaceStore: ObservableObject {
     encryptOnSave: Bool,
     recipientsText: String,
     recipientFilesText: String,
+    useDefaultGpgKey: Bool,
     gpgProgram: String,
     passphrase: String,
     clearPassphrase: Bool
@@ -3066,11 +3070,13 @@ public final class WorkspaceStore: ObservableObject {
       defaults.set(encryptOnSave, forKey: orgCryptEncryptOnSaveKey)
       defaults.set(recipients, forKey: orgCryptRecipientsKey)
       defaults.set(recipientFiles, forKey: orgCryptRecipientFilesKey)
+      defaults.set(useDefaultGpgKey, forKey: orgCryptUseDefaultGpgKeyKey)
       defaults.set(normalizedGpgProgram, forKey: orgCryptGpgProgramKey)
 
       orgCryptEncryptOnSave = encryptOnSave
       orgCryptRecipientsText = OrgCryptSettings.listText(recipients)
       orgCryptRecipientFilesText = OrgCryptSettings.listText(recipientFiles)
+      orgCryptUseDefaultGpgKey = useDefaultGpgKey
       orgCryptGpgProgram = normalizedGpgProgram
 
       if clearPassphrase {
@@ -3120,6 +3126,9 @@ public final class WorkspaceStore: ObservableObject {
     ]
     if let passphrase = settings.passphrase {
       arguments += ["--passphrase", passphrase]
+    }
+    if settings.useDefaultGpgKey {
+      arguments += ["--default-recipient-self"]
     }
     for recipient in settings.recipients {
       arguments += ["--recipient", recipient]
@@ -3892,7 +3901,8 @@ public final class WorkspaceStore: ObservableObject {
       recipients: OrgCryptSettings.splitListText(orgCryptRecipientsText),
       recipientFiles: OrgCryptSettings.splitListText(orgCryptRecipientFilesText),
       gpgProgram: orgCryptGpgProgram,
-      passphrase: passphrase
+      passphrase: passphrase,
+      useDefaultGpgKey: orgCryptUseDefaultGpgKey
     )
   }
 
@@ -4432,6 +4442,9 @@ public final class WorkspaceStore: ObservableObject {
     var parts = [settings.encryptOnSave ? "Encrypt on save" : "Manual encryption"]
     if settings.passphrase != nil || orgCryptHasStoredPassphrase {
       parts.append("passphrase configured")
+    }
+    if settings.useDefaultGpgKey {
+      parts.append("default GPG key")
     }
     if !settings.recipients.isEmpty {
       parts.append("\(settings.recipients.count) recipient\(settings.recipients.count == 1 ? "" : "s")")
