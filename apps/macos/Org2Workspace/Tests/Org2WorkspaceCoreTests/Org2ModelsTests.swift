@@ -3253,10 +3253,11 @@ final class Org2ModelsTests: XCTestCase {
       return false
     })
     await store.duplicateBlock(movedOne)
-    try await waitForEntryRender(store)
     updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("- Two\n- One\n\n- One\n* Sibling"))
     XCTAssertEqual(store.selectedBlock?.rawText, "- One")
+    XCTAssertEqual(store.selectedBlock?.startLine, movedOne.endLineExclusive + 1)
+    XCTAssertEqual(store.selectedEntrySource?.displayRange, "3-8")
 
     let duplicatedOne = try XCTUnwrap(store.selectedRenderedBlocks
       .filter {
