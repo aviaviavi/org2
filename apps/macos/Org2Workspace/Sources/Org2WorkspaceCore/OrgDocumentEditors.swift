@@ -363,6 +363,7 @@ private struct PlanningBlockEditor: View {
   let block: OrgEditableBlock
   @State private var kind: String
   @State private var value: String
+  @State private var isHovered = false
   @FocusState private var valueFocused: Bool
 
   init(block: OrgEditableBlock, planning: OrgPlanningBlock) {
@@ -372,66 +373,77 @@ private struct PlanningBlockEditor: View {
   }
 
   var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
-      Menu {
-        ForEach(Self.planningKinds, id: \.self) { value in
-          Button(value.capitalized) {
-            kind = value
+    ZStack(alignment: .topTrailing) {
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Menu {
+          ForEach(Self.planningKinds, id: \.self) { value in
+            Button(value.capitalized) {
+              kind = value
+            }
           }
+        } label: {
+          Text(kind.capitalized)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .frame(width: 78, alignment: .leading)
         }
-      } label: {
-        Text(kind.capitalized)
-          .font(.caption.weight(.medium))
-          .foregroundStyle(.secondary)
-          .frame(width: 78, alignment: .leading)
-      }
-      .menuStyle(.borderlessButton)
-      .menuIndicator(.hidden)
-      .fixedSize()
-      .help("Planning kind")
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Planning kind")
 
-      TextField("<yyyy-mm-dd>", text: $value)
-        .textFieldStyle(.plain)
-        .font(.callout.monospacedDigit())
-        .focused($valueFocused)
-        .onSubmit {
+        TextField("<yyyy-mm-dd>", text: $value)
+          .textFieldStyle(.plain)
+          .font(.callout.monospacedDigit())
+          .focused($valueFocused)
+          .onSubmit {
+            savePlanning()
+          }
+
+        Spacer(minLength: 0)
+      }
+      .padding(.trailing, 74)
+
+      HStack(spacing: 4) {
+        if store.isSavingBlock {
+          ProgressView()
+            .controlSize(.small)
+        }
+
+        Button {
           savePlanning()
+        } label: {
+          Image(systemName: "checkmark")
         }
+        .buttonStyle(.borderless)
+        .keyboardShortcut("s", modifiers: [.command])
+        .disabled(store.isSavingBlock)
+        .help("Save")
 
-      Spacer(minLength: 0)
-
-      if store.isSavingBlock {
-        ProgressView()
-          .controlSize(.small)
+        Button {
+          store.cancelEditingBlock()
+        } label: {
+          Image(systemName: "xmark")
+        }
+        .buttonStyle(.borderless)
+        .keyboardShortcut(.cancelAction)
+        .disabled(store.isSavingBlock)
+        .help("Cancel")
       }
-
-      Button {
-        savePlanning()
-      } label: {
-        Image(systemName: "checkmark")
-      }
-      .buttonStyle(.borderless)
-      .keyboardShortcut("s", modifiers: [.command])
-      .disabled(store.isSavingBlock)
-      .help("Save")
-
-      Button {
-        store.cancelEditingBlock()
-      } label: {
-        Image(systemName: "xmark")
-      }
-      .buttonStyle(.borderless)
-      .keyboardShortcut(.cancelAction)
-      .disabled(store.isSavingBlock)
-      .help("Cancel")
+      .controlSize(.small)
+      .padding(.horizontal, 4)
+      .padding(.vertical, 2)
+      .background(.regularMaterial, in: Capsule())
+      .opacity(isHovered || store.isSavingBlock ? 1 : 0.66)
     }
-    .padding(.horizontal, 8)
-    .padding(.vertical, 7)
-    .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .padding(.horizontal, 6)
+    .padding(.vertical, 3)
+    .background(Color.accentColor.opacity(isHovered ? 0.035 : 0.018), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     .overlay(
-      RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .stroke(Color.accentColor.opacity(0.22))
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
     )
+    .onHover { isHovered = $0 }
     .onAppear {
       valueFocused = true
     }
