@@ -563,6 +563,19 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(OrgSyntaxHighlighter.lineMayContainBlockSyntax("CLOSED: [2026-06-13]"[...]))
   }
 
+  func testOrgSyntaxHighlighterSkipsPlainInlineRegexPasses() {
+    XCTAssertFalse(OrgSyntaxHighlighter.textMayContainInlineSyntax(""))
+    XCTAssertFalse(OrgSyntaxHighlighter.textMayContainInlineSyntax("plain paragraph text"))
+    XCTAssertTrue(OrgSyntaxHighlighter.textMayContainInlineSyntax("See [[id:abc][Alice]]"))
+    XCTAssertTrue(OrgSyntaxHighlighter.textMayContainInlineSyntax("Read [Docs](https://example.com)"))
+    XCTAssertTrue(OrgSyntaxHighlighter.textMayContainInlineSyntax("Visit https://example.com"))
+    XCTAssertTrue(OrgSyntaxHighlighter.textMayContainInlineSyntax("Open notes/person.org"))
+    XCTAssertTrue(OrgSyntaxHighlighter.textMayContainInlineSyntax("Use `code`"))
+    XCTAssertTrue(OrgSyntaxHighlighter.textMayContainInlineSyntax("Use =code="))
+    XCTAssertTrue(OrgSyntaxHighlighter.textMayContainInlineSyntax("*bold* and _underlined_"))
+    XCTAssertTrue(OrgSyntaxHighlighter.textMayContainInlineSyntax("<2026-06-13>"))
+  }
+
   func testOrgSyntaxHighlighterKeepsLineOffsetsAcrossBlankLines() {
     let raw = "Intro\n\n#+begin_quote\nSee [[id:abc][Alice]].\n#+end_quote\n"
     let tokens = OrgSyntaxHighlighter.tokens(in: raw)
