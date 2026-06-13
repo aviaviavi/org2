@@ -624,6 +624,14 @@ final class Org2ModelsTests: XCTestCase {
 
   func testInlineEditorSizingStopsAtVisibleLineCap() {
     XCTAssertEqual(
+      InlineEditorSizing.endSelection(in: "abc"),
+      NSRange(location: 3, length: 0)
+    )
+    XCTAssertEqual(
+      InlineEditorSizing.endSelection(in: "a😀"),
+      NSRange(location: 3, length: 0)
+    )
+    XCTAssertEqual(
       InlineEditorSizing.cappedLineCount(in: "", minimum: 1, maximum: 15),
       1
     )
