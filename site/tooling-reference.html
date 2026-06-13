@@ -155,7 +155,7 @@ source: package_fetches_result
 </section>
 <section class="org2-headline level-1">
 <h1 id="local-data-queries">Local data queries</h1>
-<p><code>org2 query-data</code> is the first DuckDB-backed bridge for local/ad hoc datasets described in org2 notes. It scans fenced <code>```dataset</code> blocks, creates DuckDB views for explicit <code>csv</code>, <code>parquet</code>, or <code>json</code> paths, then runs a fenced <code>```sql results=NAME</code> block and materializes the returned rows.</p>
+<p><code>org2 query-data</code> is the first DuckDB-backed bridge for local/ad hoc datasets described in org2 notes. It scans fenced <code>```dataset</code> blocks, creates DuckDB views for explicit <code>csv</code>, <code>parquet</code>, or <code>json</code> paths or named org2 tables, then runs a fenced <code>```sql results=NAME</code> block and materializes the returned rows.</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```dataset fetches
 type: csv
 path: ./data/package-fetches.csv
@@ -167,6 +167,23 @@ SELECT state, count(*) AS fetches
 FROM fetches
 GROUP BY state
 ORDER BY fetches DESC
+```</code></pre>
+<p>Named org2 tables can also become local DuckDB views without an intermediate CSV export:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+name: raw_fetches
+| state | fetches |
+|-------+---------|
+| CA    | 42      |
+| NY    | 24      |
+
+```dataset fetches
+type: table
+source: raw_fetches
+engine: duckdb
+```
+
+```sql results=fetches_total
+SELECT sum(fetches) AS fetches
+FROM fetches
 ```</code></pre>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- query-data --file report.org2 --results fetches_by_state
 npm run org2 -- query-data --file report.org2 --results fetches_by_state --format json</code></pre>

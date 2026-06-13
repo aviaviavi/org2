@@ -291,7 +291,7 @@ source: package_fetches_result
 </section>
 <section class="org2-headline level-1">
 <h1 id="local-datasets-and-sql-views">Local datasets and SQL views</h1>
-<p>Org2 can describe local/ad hoc data workflows with fenced <code>dataset</code> and <code>sql</code> blocks. This is intended for notebook-like reports over explicit local files, with DuckDB as the first execution bridge:</p>
+<p>Org2 can describe local/ad hoc data workflows with fenced <code>dataset</code> and <code>sql</code> blocks. This is intended for notebook-like reports over explicit local files and named org2 tables, with DuckDB as the first execution bridge:</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```dataset fetches
 type: csv
 path: ./data/package-fetches.csv
@@ -310,9 +310,26 @@ source: fetches_by_state
 x: state
 y: fetches
 ```</code></pre>
-<p><code>org2 query-data</code> reads these blocks, creates DuckDB views for <code>csv</code>, <code>parquet</code>, or <code>json</code> datasets, runs a selected SQL result block through the local DuckDB CLI, and materializes the returned rows as a named org table or JSON envelope:</p>
+<p><code>org2 query-data</code> reads these blocks, creates DuckDB views for <code>csv</code>, <code>parquet</code>, <code>json</code>, or named org2 table datasets, runs a selected SQL result block through the local DuckDB CLI, and materializes the returned rows as a named org table or JSON envelope:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- query-data --file report.org2 --results fetches_by_state --out report.fetches.org</code></pre>
-<p>This is deliberately scoped to explicit local/ad hoc data sources. Org2 stores the source path, query, and materialized result/provenance; secrets and remote warehouse credentials belong in external tooling, not in notes.</p>
+<p>Use <code>type: table</code> with <code>source: NAME</code> when the source data already lives in a named org2 table:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+name: raw_fetches
+| state | fetches |
+|-------+---------|
+| CA    | 42      |
+| NY    | 24      |
+
+```dataset fetches
+type: table
+source: raw_fetches
+engine: duckdb
+```
+
+```sql results=fetches_total
+SELECT sum(fetches) AS fetches
+FROM fetches
+```</code></pre>
+<p>This is deliberately scoped to explicit local/ad hoc data sources. Org2 stores the source path or table name, query, and materialized result/provenance; secrets and remote warehouse credentials belong in external tooling, not in notes.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="keyworddirective-lines">Keyword/directive lines</h1>

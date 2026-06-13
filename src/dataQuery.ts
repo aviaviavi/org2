@@ -13,10 +13,16 @@ export type DataQueryDiagnostic = {
 export type DataQueryDataset = {
   id: string;
   line: number;
-  type: "csv" | "parquet" | "json";
+  type: "csv" | "parquet" | "json" | "table";
   engine: "duckdb";
-  path: string;
-  resolvedPath: string;
+  path?: string;
+  resolvedPath?: string;
+  sourceTable?: string;
+  source?: {
+    line: number;
+    endLine: number;
+  };
+  rowCount?: number;
 };
 
 export type DataQuerySqlBlock = {
@@ -58,7 +64,15 @@ type FencedBlock = {
   body: string;
 };
 
-const SUPPORTED_DATASET_TYPES = new Set(["csv", "parquet", "json"]);
+type NamedOrgTable = {
+  name: string;
+  line: number;
+  endLine: number;
+  headers: string[];
+  rows: string[][];
+};
+
+const SUPPORTED_DATASET_TYPES = new Set(["csv", "parquet", "json", "table", "org-table"]);
 
 function diagnostic(message: string, source?: { line?: number; blockId?: string }, severity: "error" | "warning" = "error"): DataQueryDiagnostic {
   return { severity, message, ...(source ? { source } : {}) };
@@ -133,33 +147,128 @@ function argValue(args: string[], keys: string[]): string | undefined {
   return undefined;
 }
 
-function parseDataset(block: FencedBlock, baseDir: string): { dataset?: DataQueryDataset; diagnostics: DataQueryDiagnostic[] } {
+function parseKeywordLine(line: string): { key: string; value: string } | null {
+  const match = /^\s*#\+([A-Za-z0-9_]+):[ \t]*(.*)$/.exec(line);
+  if (!match) return null;
+  return { key: String(match[1] || "").toUpperCase(), value: String(match[2] || "").trim() };
+}
+
+function isTableLine(line: string): boolean {
+  return /^\s*\|/.test(line);
+}
+
+function parseTableLine(line: string): string[] | null {
+  if (!isTableLine(line)) return null;
+  const trimmed = line.trim();
+  const inner = trimmed.startsWith("|") ? trimmed.slice(1, trimmed.endsWith("|") ? -1 : undefined) : trimmed;
+  return inner.split("|").map((cell) => cell.trim());
+}
+
+function isHline(cells: string[]): boolean {
+  return cells.length > 0 && cells.every((cell) => /^[+\-= ]*$/.test(cell) && /[-=]/.test(cell));
+}
+
+function parseNamedOrgTable(name: string, line: number, endLine: number, tableLines: string[]): NamedOrgTable | null {
+  const rows = tableLines.map(parseTableLine).filter((row): row is string[] => Array.isArray(row));
+  const firstDataRow = rows.find((row) => !isHline(row));
+  if (!firstDataRow) return null;
+  const headerIndex = rows.indexOf(firstDataRow);
+  return {
+    name,
+    line,
+    endLine,
+    headers: firstDataRow,
+    rows: rows.slice(headerIndex + 1).filter((row) => !isHline(row)),
+  };
+}
+
+function collectNamedOrgTables(input: string): Map<string, NamedOrgTable> {
+  const lines = input.replace(/\r\n/g, "\n").split("\n");
+  const tables = new Map<string, NamedOrgTable>();
+  let pendingName = "";
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i] || "";
+    const keyword = parseKeywordLine(line);
+    if (keyword) {
+      pendingName = keyword.key === "NAME" ? keyword.value : pendingName;
+      i++;
+      continue;
+    }
+
+    if (isTableLine(line)) {
+      const tableStartLine = i + 1;
+      const tableLines: string[] = [];
+      while (i < lines.length && isTableLine(lines[i] || "")) {
+        tableLines.push(lines[i] || "");
+        i++;
+      }
+      if (pendingName) {
+        const table = parseNamedOrgTable(pendingName, tableStartLine, i, tableLines);
+        if (table) tables.set(pendingName, table);
+      }
+      pendingName = "";
+      continue;
+    }
+
+    if (line.trim() !== "") pendingName = "";
+    i++;
+  }
+
+  return tables;
+}
+
+function parseDataset(block: FencedBlock, baseDir: string, namedTables: Map<string, NamedOrgTable>): { dataset?: DataQueryDataset; diagnostics: DataQueryDiagnostic[] } {
   const diagnostics: DataQueryDiagnostic[] = [];
   const id = argValue(block.args, ["id", "name"]) || block.args.find((arg) => !arg.includes("=")) || "";
   if (!id) diagnostics.push(diagnostic("Dataset block requires a name, e.g. ```dataset fetches", { line: block.line }));
 
   const values = parseKeyValueBody(block.body);
   const typeRaw = (values.get("type") || "").toLowerCase();
+  const type = typeRaw === "org-table" ? "table" : typeRaw;
   const engineRaw = (values.get("engine") || "duckdb").toLowerCase();
   const sourcePath = values.get("path") || values.get("file") || "";
+  const sourceTable = values.get("source") || values.get("table") || "";
 
   if (!SUPPORTED_DATASET_TYPES.has(typeRaw)) {
-    diagnostics.push(diagnostic("Dataset type must be csv, parquet, or json", { line: block.line, ...(id ? { blockId: id } : {}) }));
+    diagnostics.push(diagnostic("Dataset type must be csv, parquet, json, or table", { line: block.line, ...(id ? { blockId: id } : {}) }));
   }
   if (engineRaw && engineRaw !== "duckdb") {
     diagnostics.push(diagnostic(`Unsupported dataset engine "${engineRaw}"; only duckdb is supported`, { line: block.line, ...(id ? { blockId: id } : {}) }));
   }
-  if (!sourcePath) {
+  if (type === "table" && !sourceTable) {
+    diagnostics.push(diagnostic("Table dataset block requires source: named_table", { line: block.line, ...(id ? { blockId: id } : {}) }));
+  } else if (type !== "table" && !sourcePath) {
     diagnostics.push(diagnostic("Dataset block requires path: ./file.csv", { line: block.line, ...(id ? { blockId: id } : {}) }));
   }
+  const table = type === "table" && sourceTable ? namedTables.get(sourceTable) : undefined;
+  if (type === "table" && sourceTable && !table) {
+    diagnostics.push(diagnostic(`No named org table found for dataset source "${sourceTable}"`, { line: block.line, ...(id ? { blockId: id } : {}) }));
+  }
   if (diagnostics.some((item) => item.severity === "error")) return { diagnostics };
+
+  if (type === "table" && table) {
+    return {
+      dataset: {
+        id,
+        line: block.line,
+        type: "table",
+        engine: "duckdb",
+        sourceTable,
+        source: { line: table.line, endLine: table.endLine },
+        rowCount: table.rows.length,
+      },
+      diagnostics,
+    };
+  }
 
   const resolvedPath = path.isAbsolute(sourcePath) ? sourcePath : path.resolve(baseDir, sourcePath);
   return {
     dataset: {
       id,
       line: block.line,
-      type: typeRaw as DataQueryDataset["type"],
+      type: type as DataQueryDataset["type"],
       engine: "duckdb",
       path: sourcePath,
       resolvedPath,
@@ -191,10 +300,35 @@ function readFunctionForType(type: DataQueryDataset["type"]): string {
   return "read_csv_auto";
 }
 
-function buildDuckDbScript(datasets: DataQueryDataset[], sql: string): string {
+function sqlLiteral(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed === "") return "NULL";
+  if (/^-?(?:\d+|\d*\.\d+)$/.test(trimmed)) return trimmed;
+  if (/^(?:true|false)$/i.test(trimmed)) return trimmed.toLowerCase();
+  return quoteString(value);
+}
+
+function inlineOrgTableView(dataset: DataQueryDataset, table: NamedOrgTable): string {
+  if (table.rows.length === 0) {
+    const columns = table.headers.map((header) => `NULL AS ${quoteIdentifier(header)}`).join(", ");
+    return `CREATE OR REPLACE VIEW ${quoteIdentifier(dataset.id)} AS SELECT ${columns} WHERE false;`;
+  }
+
+  const values = table.rows
+    .map((row) => `(${table.headers.map((_, index) => sqlLiteral(row[index] || "")).join(", ")})`)
+    .join(", ");
+  const columns = table.headers.map(quoteIdentifier).join(", ");
+  return `CREATE OR REPLACE VIEW ${quoteIdentifier(dataset.id)} AS SELECT * FROM (VALUES ${values}) AS t(${columns});`;
+}
+
+function buildDuckDbScript(datasets: DataQueryDataset[], sql: string, namedTables: Map<string, NamedOrgTable>): string {
   const setup = datasets.map((dataset) => {
+    if (dataset.type === "table" && dataset.sourceTable) {
+      const table = namedTables.get(dataset.sourceTable);
+      if (table) return inlineOrgTableView(dataset, table);
+    }
     const readFn = readFunctionForType(dataset.type);
-    return `CREATE OR REPLACE VIEW ${quoteIdentifier(dataset.id)} AS SELECT * FROM ${readFn}(${quoteString(dataset.resolvedPath)});`;
+    return `CREATE OR REPLACE VIEW ${quoteIdentifier(dataset.id)} AS SELECT * FROM ${readFn}(${quoteString(dataset.resolvedPath || "")});`;
   });
   return [...setup, sql.replace(/;\s*$/, "") + ";"].join("\n");
 }
@@ -246,12 +380,13 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
   const duckdbPath = opts.duckdbPath || "duckdb";
   const diagnostics: DataQueryDiagnostic[] = [];
   const blocks = collectFencedBlocks(input);
+  const namedTables = collectNamedOrgTables(input);
   const datasets: DataQueryDataset[] = [];
   const sqlBlocks: DataQuerySqlBlock[] = [];
 
   for (const block of blocks) {
     if (block.kind === "dataset" || block.kind === "data") {
-      const parsed = parseDataset(block, baseDir);
+      const parsed = parseDataset(block, baseDir, namedTables);
       diagnostics.push(...parsed.diagnostics);
       if (parsed.dataset) datasets.push(parsed.dataset);
     } else if (block.kind === "sql") {
@@ -272,7 +407,7 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
     return { ok: false, engine: "duckdb", ...(resultId ? { resultId } : {}), datasets, rowCount: 0, rows: [], diagnostics };
   }
 
-  const script = buildDuckDbScript(datasets, selected.sql);
+  const script = buildDuckDbScript(datasets, selected.sql, namedTables);
   const child = spawnSync(duckdbPath, ["-json", ":memory:"], {
     encoding: "utf8",
     input: script,
