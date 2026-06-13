@@ -555,7 +555,9 @@ enum OrgSyntaxHighlighter {
       ]
     case .syntaxDelimiter:
       return [
-        .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.58),
+        .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.26),
+        .backgroundColor: NSColor.clear,
+        .underlineStyle: 0,
         .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular)
       ]
     case .comment:

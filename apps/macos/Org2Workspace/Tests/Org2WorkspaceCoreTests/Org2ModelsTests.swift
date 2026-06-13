@@ -450,6 +450,35 @@ final class Org2ModelsTests: XCTestCase {
     assertToken(.keyword, "end_src", in: raw, tokens: tokens)
   }
 
+  func testOrgSyntaxHighlighterVisuallyRecedesEditableDelimiters() throws {
+    let raw = "See [[id:abc][Alice]] and `code`."
+    let storage = NSTextStorage(string: raw)
+    OrgSyntaxHighlighter.apply(to: storage, monospaced: false)
+    let ns = raw as NSString
+
+    let bracketIndex = try XCTUnwrap(optionalLocation(ns.range(of: "[[")))
+    let linkLabelIndex = try XCTUnwrap(optionalLocation(ns.range(of: "Alice")))
+    let tickIndex = try XCTUnwrap(optionalLocation(ns.range(of: "`")))
+    let codeIndex = try XCTUnwrap(optionalLocation(ns.range(of: "code")))
+
+    let bracketColor = try XCTUnwrap(storage.attribute(.foregroundColor, at: bracketIndex, effectiveRange: nil) as? NSColor)
+    let tickColor = try XCTUnwrap(storage.attribute(.foregroundColor, at: tickIndex, effectiveRange: nil) as? NSColor)
+    XCTAssertLessThan(bracketColor.alphaComponent, 0.35)
+    XCTAssertLessThan(tickColor.alphaComponent, 0.35)
+
+    let labelColor = try XCTUnwrap(storage.attribute(.foregroundColor, at: linkLabelIndex, effectiveRange: nil) as? NSColor)
+    XCTAssertEqual(labelColor, NSColor.controlAccentColor)
+    let labelUnderline = storage.attribute(.underlineStyle, at: linkLabelIndex, effectiveRange: nil) as? Int
+    XCTAssertEqual(labelUnderline, NSUnderlineStyle.single.rawValue)
+    let bracketUnderline = storage.attribute(.underlineStyle, at: bracketIndex, effectiveRange: nil) as? Int
+    XCTAssertEqual(bracketUnderline, 0)
+
+    let codeBackground = storage.attribute(.backgroundColor, at: codeIndex, effectiveRange: nil) as? NSColor
+    XCTAssertNotNil(codeBackground)
+    let tickBackground = storage.attribute(.backgroundColor, at: tickIndex, effectiveRange: nil) as? NSColor
+    XCTAssertEqual(tickBackground, NSColor.clear)
+  }
+
   func testOrgSyntaxHighlighterSkipsLiveTokenizationForLargeBuffers() {
     XCTAssertTrue(OrgSyntaxHighlighter.shouldTokenizeLiveText(
       utf16Length: OrgSyntaxHighlighter.liveTokenizationUTF16Limit
@@ -3340,5 +3369,9 @@ final class Org2ModelsTests: XCTestCase {
       file: file,
       line: line
     )
+  }
+
+  private func optionalLocation(_ range: NSRange) -> Int? {
+    range.location == NSNotFound ? nil : range.location
   }
 }
