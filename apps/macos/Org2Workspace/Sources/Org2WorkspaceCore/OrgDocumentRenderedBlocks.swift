@@ -518,8 +518,10 @@ private struct RenderedSourceView: View {
   let language: String?
   let lines: [String]
   let editableBlock: OrgEditableBlock?
+  @State private var isExpanded = false
 
   var body: some View {
+    let lineWindow = SourceBlockLineWindow.make(lines: lines, isExpanded: isExpanded)
     VStack(alignment: .leading, spacing: 6) {
       HStack(spacing: 8) {
         if let language, !language.isEmpty {
@@ -537,8 +539,8 @@ private struct RenderedSourceView: View {
 
       ScrollView(.horizontal) {
         LazyVStack(alignment: .leading, spacing: 2) {
-          ForEach(lines.indices, id: \.self) { index in
-            let line = lines[index]
+          ForEach(lineWindow.visibleLines.indices, id: \.self) { index in
+            let line = lineWindow.visibleLines[index]
             Text(line.isEmpty ? " " : line)
               .font(.system(.body, design: .monospaced))
               .foregroundStyle(color(for: line))
@@ -552,6 +554,20 @@ private struct RenderedSourceView: View {
         RoundedRectangle(cornerRadius: 6, style: .continuous)
           .stroke(Color.secondary.opacity(0.16))
       )
+
+      if lineWindow.isTruncated {
+        Button {
+          isExpanded.toggle()
+        } label: {
+          Label(
+            isExpanded ? "Show first \(SourceBlockLineWindow.defaultLimit) lines" : "Show \(lineWindow.hiddenLineCount) more lines",
+            systemImage: isExpanded ? "chevron.up" : "chevron.down"
+          )
+        }
+        .buttonStyle(.borderless)
+        .controlSize(.small)
+        .foregroundStyle(.secondary)
+      }
 
       SourceRunOutputAccessory(editableBlock: editableBlock)
     }
@@ -567,6 +583,40 @@ private struct RenderedSourceView: View {
       return .purple
     }
     return .primary
+  }
+}
+
+struct SourceBlockLineWindow: Equatable {
+  static let defaultLimit = 80
+
+  let visibleLines: [String]
+  let totalLineCount: Int
+  let limit: Int
+  let isExpanded: Bool
+
+  var isTruncated: Bool {
+    totalLineCount > limit
+  }
+
+  var hiddenLineCount: Int {
+    max(0, totalLineCount - visibleLines.count)
+  }
+
+  static func make(
+    lines: [String],
+    isExpanded: Bool,
+    limit: Int = defaultLimit
+  ) -> SourceBlockLineWindow {
+    let safeLimit = max(1, limit)
+    let visibleLines = isExpanded || lines.count <= safeLimit
+      ? lines
+      : Array(lines.prefix(safeLimit))
+    return SourceBlockLineWindow(
+      visibleLines: visibleLines,
+      totalLineCount: lines.count,
+      limit: safeLimit,
+      isExpanded: isExpanded
+    )
   }
 }
 
