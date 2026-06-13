@@ -123,6 +123,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     var isApplyingProgrammaticChange = false
     private var lastHighlightedText: String?
     private var lastHighlightedMonospaced: Bool?
+    private var hasHighlightedText = false
     private var deferredHighlightText: String?
     private var deferredHighlightMonospaced: Bool?
     private var deferredHighlightWorkItem: DispatchWorkItem?
@@ -189,13 +190,13 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     func invalidateHighlighting() {
       lastHighlightedText = nil
       lastHighlightedMonospaced = nil
+      hasHighlightedText = false
     }
 
     func markUserTextChangedForHighlighting(in textView: NSTextView) {
       if canPreserveLargeBufferAttributes(for: textView) {
         textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
-        lastHighlightedText = textView.string
-        lastHighlightedMonospaced = parent.monospaced
+        recordHighlightedState(for: textView)
         return
       }
       invalidateHighlighting()
@@ -215,29 +216,29 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     }
 
     func applyHighlightingIfNeeded(to textView: NSTextView) {
+      if canPreserveLargeBufferAttributes(for: textView) {
+        textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
+        recordHighlightedState(for: textView)
+        return
+      }
+
       guard lastHighlightedText != textView.string
               || lastHighlightedMonospaced != parent.monospaced
       else {
-        return
-      }
-      if canPreserveLargeBufferAttributes(for: textView) {
-        textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
-        lastHighlightedText = textView.string
-        lastHighlightedMonospaced = parent.monospaced
         return
       }
       applyHighlighting(to: textView)
     }
 
     private func canPreserveLargeBufferAttributes(for textView: NSTextView) -> Bool {
-      guard lastHighlightedText != nil,
+      guard hasHighlightedText,
             lastHighlightedMonospaced == parent.monospaced
       else {
         return false
       }
       return OrgSyntaxHighlighter.shouldPreserveExistingAttributesAfterEdit(
         utf16Length: (textView.string as NSString).length,
-        hasHighlightedBefore: lastHighlightedText != nil,
+        hasHighlightedBefore: hasHighlightedText,
         monospacedUnchanged: lastHighlightedMonospaced == parent.monospaced
       )
     }
@@ -310,8 +311,17 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       )
       textView.typingAttributes = typingAttributes
       textView.selectedRanges = selectedRanges
-      lastHighlightedText = textView.string
+      recordHighlightedState(for: textView)
+    }
+
+    private func recordHighlightedState(for textView: NSTextView) {
+      hasHighlightedText = true
       lastHighlightedMonospaced = parent.monospaced
+      if OrgSyntaxHighlighter.shouldTokenizeLiveText(utf16Length: (textView.string as NSString).length) {
+        lastHighlightedText = textView.string
+      } else {
+        lastHighlightedText = nil
+      }
     }
   }
 }
