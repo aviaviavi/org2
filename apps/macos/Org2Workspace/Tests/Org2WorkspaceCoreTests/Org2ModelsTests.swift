@@ -2449,6 +2449,60 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSaveActiveEditUsesLatestInlineDraft() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-save-inline-draft-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("save-inline-draft.org2")
+    try """
+    #+TITLE: Save Inline Draft Test
+
+    * TODO Parent
+    Body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 3,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+    store.beginEditingBlock(paragraph)
+    XCTAssertEqual(store.editableBlockText, "Body")
+
+    store.updateEditingBlockDraft(paragraph, draft: "Draft from inline editor")
+    XCTAssertEqual(store.editableBlockText, "Body")
+    await store.saveActiveEdit()
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* TODO Parent\nDraft from inline editor\n* Sibling"))
+    XCTAssertFalse(updated.contains("* TODO Parent\nBody\n* Sibling"))
+    XCTAssertEqual(store.selectedBlock?.rawText, "Draft from inline editor")
+    XCTAssertNil(store.editingBlockID)
+  }
+
+  @MainActor
   func testSavingRenderedBlockSchedulesAgendaRefreshWithoutBlocking() async throws {
     let workspace = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-nonblocking-save-\(UUID().uuidString)", isDirectory: true)
