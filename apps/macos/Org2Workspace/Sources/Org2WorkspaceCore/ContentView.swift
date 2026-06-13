@@ -358,6 +358,7 @@ private struct KeyboardShortcutsView: View {
           ShortcutSection(title: "Agenda", shortcuts: [
             ShortcutHelpItem(keys: "j / ↓", action: "Next item"),
             ShortcutHelpItem(keys: "k / ↑", action: "Previous item"),
+            ShortcutHelpItem(keys: "J / K", action: "Scroll detail pane"),
             ShortcutHelpItem(keys: "gg / G", action: "First / last item"),
             ShortcutHelpItem(keys: "1 2 3", action: "Agenda mode"),
             ShortcutHelpItem(keys: "/", action: "Filter agenda"),
@@ -1140,6 +1141,7 @@ private struct DetailView: View {
             Divider()
             BacklinksView()
           }
+          .background(DetailScrollCommandBridge(request: store.detailScrollRequest))
         }
       } else {
         EmptyStateView(title: "No Selection", detail: store.statusText, action: "Open Corpus") {
@@ -1147,6 +1149,46 @@ private struct DetailView: View {
         }
       }
     }
+  }
+}
+
+private struct DetailScrollCommandBridge: NSViewRepresentable {
+  let request: DetailScrollRequest?
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator()
+  }
+
+  func makeNSView(context: Context) -> NSView {
+    NSView(frame: .zero)
+  }
+
+  func updateNSView(_ view: NSView, context: Context) {
+    guard let request, context.coordinator.lastRequestID != request.id else { return }
+    context.coordinator.lastRequestID = request.id
+
+    DispatchQueue.main.async {
+      guard let scrollView = view.enclosingScrollView,
+            let documentView = scrollView.documentView
+      else { return }
+
+      let clipView = scrollView.contentView
+      let visibleHeight = clipView.bounds.height
+      guard visibleHeight > 0 else { return }
+
+      let distance = max(120, visibleHeight * 0.8)
+      let direction: CGFloat = request.direction == .down ? 1 : -1
+      let flippedMultiplier: CGFloat = documentView.isFlipped ? 1 : -1
+      let maxY = max(0, documentView.bounds.height - visibleHeight)
+      var origin = clipView.bounds.origin
+      origin.y = min(max(0, origin.y + distance * direction * flippedMultiplier), maxY)
+      clipView.scroll(to: origin)
+      scrollView.reflectScrolledClipView(clipView)
+    }
+  }
+
+  final class Coordinator {
+    var lastRequestID: Int?
   }
 }
 

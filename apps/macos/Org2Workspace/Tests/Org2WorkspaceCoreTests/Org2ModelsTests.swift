@@ -1503,6 +1503,20 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testAgendaUppercaseJKScrollDetailPaneWithoutMovingSelection() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.selectedAgendaItemID = "selected-agenda-item"
+
+    XCTAssertTrue(store.handleAgendaKeyDown(keyDown(characters: "J", keyCode: 38, modifiers: [.shift])))
+    XCTAssertEqual(store.detailScrollRequest, DetailScrollRequest(id: 1, direction: .down))
+    XCTAssertEqual(store.selectedAgendaItemID, "selected-agenda-item")
+
+    XCTAssertTrue(store.handleAgendaKeyDown(keyDown(characters: "K", keyCode: 40, modifiers: [.shift])))
+    XCTAssertEqual(store.detailScrollRequest, DetailScrollRequest(id: 2, direction: .up))
+    XCTAssertEqual(store.selectedAgendaItemID, "selected-agenda-item")
+  }
+
+  @MainActor
   func testCompletingAgendaItemSelectsNextActionableItemByVisibleOrder() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-agenda-done-selection-\(UUID().uuidString)", isDirectory: true)

@@ -2620,6 +2620,21 @@ public enum PlanningDateTarget: Sendable {
   case nextMonth
 }
 
+public enum DetailScrollDirection: Equatable, Sendable {
+  case up
+  case down
+}
+
+public struct DetailScrollRequest: Equatable, Sendable {
+  public let id: Int
+  public let direction: DetailScrollDirection
+
+  public init(id: Int, direction: DetailScrollDirection) {
+    self.id = id
+    self.direction = direction
+  }
+}
+
 public enum DailyNoteTarget: String, CaseIterable, Identifiable, Sendable {
   case today
   case yesterday
