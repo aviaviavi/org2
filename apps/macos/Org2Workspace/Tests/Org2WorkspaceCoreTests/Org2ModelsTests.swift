@@ -1027,6 +1027,32 @@ final class Org2ModelsTests: XCTestCase {
     }
   }
 
+  func testEditableInlineTokenSkipsFocusedScanForLargeParagraphs() {
+    let prefix = String(repeating: "x", count: OrgEditableInlineToken.focusedScanUTF16Limit + 1)
+    let raw = "\(prefix) [[id:abc][Alice]]"
+    let nsRaw = raw as NSString
+    let aliceRange = nsRaw.range(of: "Alice")
+
+    XCTAssertFalse(OrgEditableInlineToken.shouldScanFocusedToken(utf16Length: nsRaw.length))
+    XCTAssertNil(OrgEditableInlineToken.focused(in: raw, selection: NSRange(location: aliceRange.location, length: 0)))
+
+    let smallRaw = "See [[id:abc][Alice]]"
+    let smallNSRaw = smallRaw as NSString
+    let smallAliceRange = smallNSRaw.range(of: "Alice")
+    let focused = OrgEditableInlineToken.focused(
+      in: smallRaw,
+      selection: NSRange(location: smallAliceRange.location, length: 0),
+      maxUTF16Length: smallNSRaw.length
+    )
+
+    if case .link(let link) = focused {
+      XCTAssertEqual(link.label, "Alice")
+      XCTAssertEqual(link.target, "id:abc")
+    } else {
+      XCTFail("Expected focused link token when scan limit permits it")
+    }
+  }
+
   func testEditableSourceBlockFormatsAndSwitchesKind() {
     var source = OrgEditableSourceBlock(rawText: """
     #+BEGIN_SRC swift :results output
