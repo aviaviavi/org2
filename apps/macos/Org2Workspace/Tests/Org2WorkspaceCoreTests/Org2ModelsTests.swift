@@ -1191,6 +1191,8 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(ParagraphSlashCommandPanelLayout.isVisible(match: noMatch))
     XCTAssertEqual(ParagraphSlashCommandPanelLayout.verticalOffset(editorHeight: 1), 38)
     XCTAssertEqual(ParagraphSlashCommandPanelLayout.verticalOffset(editorHeight: 80), 110)
+    XCTAssertEqual(ParagraphFocusedInlinePanelLayout.verticalOffset(editorHeight: 1), 36)
+    XCTAssertEqual(ParagraphFocusedInlinePanelLayout.verticalOffset(editorHeight: 80), 106)
   }
 
   func testParagraphEditorTextPublishingPolicyKeepsRichStatesResponsive() {
