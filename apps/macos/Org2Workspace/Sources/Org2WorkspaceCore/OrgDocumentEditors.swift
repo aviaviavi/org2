@@ -166,27 +166,8 @@ enum ParagraphSlashCommand {
 }
 
 enum ParagraphEditorTextPublishingPolicy {
-  static let richImmediateUTF16Limit = 2_000
-
   static func shouldPublishImmediately(_ text: String) -> Bool {
-    if ParagraphSlashCommand.query(in: text) != nil {
-      return true
-    }
-    guard isWithinRichImmediateLimit(text) else {
-      return false
-    }
-    return OrgInlineParser.hasInlineSyntaxCandidate(text)
-  }
-
-  static func isWithinRichImmediateLimit(_ text: String) -> Bool {
-    var count = 0
-    for _ in text.utf16 {
-      count += 1
-      if count > richImmediateUTF16Limit {
-        return false
-      }
-    }
-    return true
+    ParagraphSlashCommand.query(in: text) != nil
   }
 }
 
@@ -1395,6 +1376,7 @@ private struct ParagraphBlockEditor: View {
   let block: OrgEditableBlock
   let text: String
   @State private var draftText: String
+  @State private var presentationText: String
   @State private var selectedRange = NSRange(location: 0, length: 0)
   @State private var showsInlineDetails = false
   @State private var isHovered = false
@@ -1407,6 +1389,7 @@ private struct ParagraphBlockEditor: View {
     self.block = block
     self.text = text
     _draftText = State(initialValue: block.rawText)
+    _presentationText = State(initialValue: block.rawText)
     _selectedRange = State(initialValue: InlineEditorSizing.endSelection(in: block.rawText))
     _reservedLineCount = State(initialValue: InlineEditorSizing.cappedLineCount(
       in: block.rawText,
@@ -1424,9 +1407,9 @@ private struct ParagraphBlockEditor: View {
   }
 
   private var paragraphEditorContent: some View {
-    let slashCommandMatch = ParagraphSlashCommand.match(in: draftText)
+    let slashCommandMatch = ParagraphSlashCommand.match(in: presentationText)
     let focusedInlineToken = ParagraphFocusedInlineEditor.focusedToken(
-      text: draftText,
+      text: presentationText,
       selectedRange: selectedRange,
       showsInlineDetails: showsInlineDetails
     )
@@ -1502,7 +1485,10 @@ private struct ParagraphBlockEditor: View {
     )
     .onHover { isHovered = $0 }
     .onChange(of: draftText) {
-      reserveEditorLines(for: draftText)
+      if presentationText != draftText {
+        presentationText = draftText
+      }
+      reserveEditorLines(for: presentationText)
       scheduleParagraphAutosave()
     }
     .onDisappear {
@@ -1511,13 +1497,14 @@ private struct ParagraphBlockEditor: View {
     }
     .onAppear {
       liveText.update(draftText)
-      reserveEditorLines(for: draftText)
+      presentationText = draftText
+      reserveEditorLines(for: presentationText)
     }
   }
 
   private var editorHeight: CGFloat {
     let lineCount = InlineEditorSizing.stickyCappedLineCount(
-      in: draftText,
+      in: presentationText,
       reservedLineCount: reservedLineCount,
       minimum: 1,
       maximum: 15
@@ -1538,6 +1525,9 @@ private struct ParagraphBlockEditor: View {
 
   private func handleLocalTextChange(_ text: String) {
     liveText.update(text)
+    if presentationText != text {
+      presentationText = text
+    }
     reserveEditorLines(for: text)
   }
 
