@@ -84,23 +84,25 @@ struct RenderedBlockView: View, Equatable {
         text: text,
         rawText: rawText,
         editableBlock: editableBlock,
+        sourceFile: sourceFile,
+        corpusRoot: corpusRoot,
         inlineActions: inlineActions
       )
     case .paragraph(let text):
       let paragraphText = rawText ?? text
       if let summary = OrgCrypt.armorSummary(paragraphText) {
         RenderedEncryptedBlockView(summary: summary)
-      } else if let attachment = OrgMediaAttachmentRenderCache.standalone(
-          raw: paragraphText,
-          sourceFile: sourceFile,
-          corpusRoot: corpusRoot
-         ) {
+      } else if let attachment = RenderedInlineMediaPresentation.standalone(
+        raw: paragraphText,
+        sourceFile: sourceFile,
+        corpusRoot: corpusRoot
+      ) {
         OrgMediaAttachmentView(attachment: attachment)
-      } else if let embedded = OrgMediaAttachment.embedded(
-          in: paragraphText,
-          sourceFile: sourceFile,
-          corpusRoot: corpusRoot
-        ) {
+      } else if let embedded = RenderedInlineMediaPresentation.embedded(
+        raw: paragraphText,
+        sourceFile: sourceFile,
+        corpusRoot: corpusRoot
+      ) {
         RenderedParagraphMediaView(embedded: embedded)
       } else {
         OrgInlineText(paragraphText)
@@ -281,6 +283,20 @@ enum OrgMediaAttachmentRenderCache {
 
   nonisolated static func shouldAttemptStandaloneLookup(raw: String) -> Bool {
     OrgMediaAttachment.mayContainStandaloneMedia(raw)
+  }
+}
+
+enum RenderedInlineMediaPresentation {
+  nonisolated static func standalone(raw: String, sourceFile: String?, corpusRoot: URL?) -> OrgMediaAttachment? {
+    OrgMediaAttachmentRenderCache.standalone(raw: raw, sourceFile: sourceFile, corpusRoot: corpusRoot)
+  }
+
+  nonisolated static func embedded(
+    raw: String,
+    sourceFile: String?,
+    corpusRoot: URL?
+  ) -> OrgMediaAttachment.EmbeddedGroup? {
+    OrgMediaAttachment.embedded(in: raw, sourceFile: sourceFile, corpusRoot: corpusRoot)
   }
 }
 
@@ -2369,10 +2385,12 @@ private struct RenderedListItemView: View {
   let text: String
   let rawText: String?
   let editableBlock: OrgEditableBlock?
+  let sourceFile: String?
+  let corpusRoot: URL?
   let inlineActions: RenderedBlockInlineActions
 
   var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
+    HStack(alignment: listAlignment, spacing: 8) {
       Text(marker)
         .font(.callout.monospaced())
         .foregroundStyle(.secondary)
@@ -2382,12 +2400,30 @@ private struct RenderedListItemView: View {
         RenderedListCheckboxButton(checkbox: checkbox, inlineActions: inlineActions)
       }
 
-      OrgInlineText(rawListText)
-        .strikethrough(checkbox == .checked)
-        .foregroundStyle(checkbox == .checked ? .secondary : .primary)
+      if let embedded = RenderedInlineMediaPresentation.embedded(
+        raw: rawListText,
+        sourceFile: sourceFile,
+        corpusRoot: corpusRoot
+      ) {
+        RenderedParagraphMediaView(embedded: embedded)
+          .strikethrough(checkbox == .checked)
+          .foregroundStyle(checkbox == .checked ? .secondary : .primary)
+      } else {
+        OrgInlineText(rawListText)
+          .strikethrough(checkbox == .checked)
+          .foregroundStyle(checkbox == .checked ? .secondary : .primary)
+      }
       Spacer(minLength: 0)
     }
     .padding(.leading, CGFloat(indent) * 16)
+  }
+
+  private var listAlignment: VerticalAlignment {
+    RenderedInlineMediaPresentation.embedded(
+      raw: rawListText,
+      sourceFile: sourceFile,
+      corpusRoot: corpusRoot
+    ) == nil ? .firstTextBaseline : .top
   }
 
   private var rawListText: String {
