@@ -198,7 +198,7 @@ Report context for Firebolt package usage.
 :AGENT: openclaw
 :SESSION: openclaw:session:abc123
 :STATUS: active
-:CONTEXT: id:report-1, file:reports/firebolt.csv, ticket:REP-52
+:CONTEXT: id:report-1, report:report-1, file:reports/firebolt.csv, ticket:REP-52
 :TRANSCRIPT: file:threads/thread-1.transcript.org2
 :STORAGE: summary
 :END:
@@ -226,6 +226,17 @@ const reportAttachment = thread.results[0].thread.contextAttachments.find((attac
 assert.equal(reportAttachment.target.id, "report-1");
 assert.equal(reportAttachment.target.title, "Report: Firebolt package usage");
 assert.ok(reportAttachment.target.citation.endsWith("threads.org2:3-9"));
+const typedReportAttachment = thread.results[0].thread.contextAttachments.find((attachment) => attachment.ref === "report:report-1");
+assert.equal(typedReportAttachment.target.id, "report-1");
+
+const reportWithThread = runJson("agent", "fetch", "--id", "report-1", "--dir", threadDir, "--format", "json");
+assert.equal(reportWithThread.results.length, 1);
+assert.equal(reportWithThread.results[0].relatedThreads.length, 1);
+assert.equal(reportWithThread.results[0].relatedThreads[0].id, "thread-1");
+assert.equal(reportWithThread.results[0].relatedThreads[0].agent, "openclaw");
+assert.equal(reportWithThread.results[0].relatedThreads[0].session, "openclaw:session:abc123");
+assert.ok(reportWithThread.results[0].relatedThreads[0].matchingAttachments.some((attachment) => attachment.ref === "id:report-1"));
+assert.ok(reportWithThread.results[0].relatedThreads[0].matchingAttachments.some((attachment) => attachment.ref === "report:report-1"));
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-agent-data-link-test-"));
 fs.writeFileSync(path.join(dataDir, "reports.org2"), `#+title: Data Links
