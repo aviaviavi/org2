@@ -523,6 +523,18 @@ public final class WorkspaceStore: ObservableObject {
     return false
   }
 
+  public var hasActiveEdit: Bool {
+    isEditingEntry || editingBlockID != nil
+  }
+
+  public func cancelActiveEdit() {
+    if editingBlockID != nil {
+      cancelEditingBlock()
+    } else {
+      cancelEditingSelectedEntry()
+    }
+  }
+
   public func selectBlock(_ block: OrgEditableBlock) {
     guard selectedEntrySource?.isEditable == true else { return }
     selectedBlockID = block.id

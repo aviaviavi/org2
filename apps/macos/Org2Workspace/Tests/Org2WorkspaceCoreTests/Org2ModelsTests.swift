@@ -1475,6 +1475,8 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   func testRenderedRowChromeUsesStableHiddenState() {
+    XCTAssertTrue(RenderedRowChrome.rendersControls(isVisible: true))
+    XCTAssertFalse(RenderedRowChrome.rendersControls(isVisible: false))
     XCTAssertEqual(RenderedRowChrome.controlsOpacity(isVisible: true), 1)
     XCTAssertEqual(RenderedRowChrome.controlsOpacity(isVisible: false), 0)
     XCTAssertTrue(RenderedRowChrome.allowsHitTesting(isVisible: true))
@@ -4195,9 +4197,12 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.handleDocumentKeyDown(keyDown(characters: "\r", keyCode: 36)))
     XCTAssertEqual(store.editingBlockID, paragraph.id)
     XCTAssertEqual(store.editableBlockText, "Body")
+    XCTAssertTrue(store.hasActiveEdit)
+    XCTAssertTrue(store.canSaveActiveEdit)
     XCTAssertFalse(store.handleDocumentKeyDown(keyDown(characters: "\u{7F}", keyCode: 51)))
 
-    store.cancelEditingBlock()
+    store.cancelActiveEdit()
+    XCTAssertFalse(store.hasActiveEdit)
     store.selectBlock(paragraph)
     XCTAssertTrue(store.handleDocumentKeyDown(keyDown(characters: "!", keyCode: 18)))
     XCTAssertEqual(store.editingBlockID, paragraph.id)

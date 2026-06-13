@@ -480,6 +480,10 @@ private struct ProgressiveRenderFooter: View {
 }
 
 enum RenderedRowChrome {
+  static func rendersControls(isVisible: Bool) -> Bool {
+    isVisible
+  }
+
   static func controlsOpacity(isVisible: Bool) -> Double {
     isVisible ? 1 : 0
   }
@@ -507,9 +511,11 @@ private struct EditableRenderedBlockView<Content: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
 
       if isSourceEditable {
-        rowControls
-          .opacity(RenderedRowChrome.controlsOpacity(isVisible: showsControls))
-          .allowsHitTesting(RenderedRowChrome.allowsHitTesting(isVisible: showsControls))
+        if RenderedRowChrome.rendersControls(isVisible: showsControls) {
+          rowControls
+            .opacity(RenderedRowChrome.controlsOpacity(isVisible: showsControls))
+            .allowsHitTesting(RenderedRowChrome.allowsHitTesting(isVisible: showsControls))
+        }
       }
     }
     .padding(.horizontal, 6)
