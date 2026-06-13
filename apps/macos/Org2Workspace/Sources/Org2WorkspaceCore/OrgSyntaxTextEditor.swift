@@ -208,7 +208,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         willScheduleDeferredHighlighting: shouldScheduleHighlighting
       )
       if shouldScheduleHighlighting {
-        scheduleDeferredHighlighting(to: textView)
+        scheduleDeferredHighlighting(to: textView, expectedText: currentText)
       } else {
         cancelDeferredHighlighting()
       }
@@ -393,9 +393,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       )
     }
 
-    private func scheduleDeferredHighlighting(to textView: NSTextView) {
+    private func scheduleDeferredHighlighting(to textView: NSTextView, expectedText: String) {
       cancelDeferredHighlighting()
-      let expectedText = textView.string
       let expectedMonospaced = parent.monospaced
       deferredHighlightText = expectedText
       deferredHighlightMonospaced = expectedMonospaced
