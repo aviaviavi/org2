@@ -964,6 +964,10 @@ public final class WorkspaceStore: ObservableObject {
     return false
   }
 
+  public var canSaveCurrentFile: Bool {
+    canSaveActiveEdit || (orgCryptEncryptOnSave && selectedFileForOrgCryptSave != nil)
+  }
+
   public var hasActiveEdit: Bool {
     isEditingEntry || editingBlockID != nil
   }
@@ -1151,10 +1155,42 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     guard let block = activeEditingBlock else {
-      statusText = "No active edit to save"
+      await encryptSelectedFileAfterSave()
       return
     }
     await saveEditedBlock(block)
+  }
+
+  private var selectedFileForOrgCryptSave: String? {
+    selectedEntrySource?.file ?? selectedLocation?.file
+  }
+
+  private func encryptSelectedFileAfterSave() async {
+    guard orgCryptEncryptOnSave else {
+      statusText = "No active edit to save"
+      return
+    }
+    guard let file = selectedFileForOrgCryptSave else {
+      statusText = "No file selected"
+      return
+    }
+
+    do {
+      let encryptedCount = try await encryptOrgCryptSubtreesAfterExplicitSave(file: file)
+      invalidateCanonicalDocumentCache(for: file)
+      if encryptedCount > 0 {
+        statusText = "Encrypted \(encryptedCount) subtree\(encryptedCount == 1 ? "" : "s")"
+        if let selectedLocation {
+          await loadEntrySource(for: selectedLocation)
+        }
+        scheduleAgendaRefresh(preserveSelection: true)
+      } else {
+        statusText = "No plaintext :crypt: subtrees to encrypt"
+      }
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Org crypt save encryption failed"
+    }
   }
 
   public func saveEditedEntry() async {

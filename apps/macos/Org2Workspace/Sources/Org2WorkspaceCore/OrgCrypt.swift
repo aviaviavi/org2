@@ -22,19 +22,22 @@ public struct OrgCryptSettings: Equatable, Sendable {
   public var recipientFiles: [String]
   public var gpgProgram: String
   public var passphrase: String?
+  public var gpgTimeout: TimeInterval
 
   public init(
     encryptOnSave: Bool = true,
     recipients: [String] = [],
     recipientFiles: [String] = [],
     gpgProgram: String = "gpg",
-    passphrase: String? = nil
+    passphrase: String? = nil,
+    gpgTimeout: TimeInterval = 30
   ) {
     self.encryptOnSave = encryptOnSave
     self.recipients = recipients
     self.recipientFiles = recipientFiles
     self.gpgProgram = gpgProgram.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "gpg" : gpgProgram
     self.passphrase = passphrase?.isEmpty == false ? passphrase : nil
+    self.gpgTimeout = max(0.1, gpgTimeout)
   }
 
   public var canEncryptWithoutSubtreeProperties: Bool {
@@ -167,7 +170,8 @@ public enum OrgCrypt {
         recipients: recipients,
         recipientFiles: recipientFiles,
         gpgProgram: settings.gpgProgram,
-        passphrase: settings.passphrase
+        passphrase: settings.passphrase,
+        gpgTimeout: settings.gpgTimeout
       )
       guard targetSettings.canEncryptWithoutSubtreeProperties else {
         throw OrgCryptError.missingEncryptionConfiguration
@@ -188,6 +192,28 @@ public enum OrgCrypt {
   }
 
   private static func runGPGEncrypt(_ input: String, cwd: URL, settings: OrgCryptSettings) throws -> String {
+    let fileManager = FileManager.default
+    let tempDirectory = fileManager.temporaryDirectory
+      .appendingPathComponent("org2-crypt-\(UUID().uuidString)", isDirectory: true)
+    try fileManager.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+    defer { try? fileManager.removeItem(at: tempDirectory) }
+
+    let inputURL = tempDirectory.appendingPathComponent("input.txt")
+    let outputURL = tempDirectory.appendingPathComponent("output.asc")
+    let errorURL = tempDirectory.appendingPathComponent("stderr.txt")
+    try Data(input.utf8).write(to: inputURL)
+    try Data().write(to: outputURL)
+    try Data().write(to: errorURL)
+
+    let stdin = try FileHandle(forReadingFrom: inputURL)
+    let stdout = try FileHandle(forWritingTo: outputURL)
+    let stderr = try FileHandle(forWritingTo: errorURL)
+    defer {
+      stdin.closeFile()
+      stdout.closeFile()
+      stderr.closeFile()
+    }
+
     let process = Process()
     process.currentDirectoryURL = cwd
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -210,26 +236,36 @@ public enum OrgCrypt {
     }
     process.arguments = arguments
 
-    let stdin = Pipe()
-    let stdout = Pipe()
-    let stderr = Pipe()
     process.standardInput = stdin
     process.standardOutput = stdout
     process.standardError = stderr
 
     try process.run()
-    stdin.fileHandleForWriting.write(Data(input.utf8))
-    stdin.fileHandleForWriting.closeFile()
-    let out = stdout.fileHandleForReading.readDataToEndOfFile()
-    let err = stderr.fileHandleForReading.readDataToEndOfFile()
-    process.waitUntilExit()
+    let semaphore = DispatchSemaphore(value: 0)
+    DispatchQueue.global(qos: .userInitiated).async {
+      process.waitUntilExit()
+      semaphore.signal()
+    }
+
+    if semaphore.wait(timeout: .now() + .milliseconds(Int(settings.gpgTimeout * 1000))) == .timedOut {
+      if process.isRunning {
+        process.terminate()
+      }
+      _ = semaphore.wait(timeout: .now() + .seconds(2))
+      throw OrgCryptError.gpgTimedOut(settings.gpgTimeout, readTrimmedFile(errorURL))
+    }
 
     guard process.terminationStatus == 0 else {
-      let message = String(data: err, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+      let message = readTrimmedFile(errorURL)
       throw OrgCryptError.gpgFailed(message?.isEmpty == false ? message! : "gpg exited with status \(process.terminationStatus)")
     }
 
-    return String(data: out, encoding: .utf8) ?? ""
+    return (try? String(contentsOf: outputURL, encoding: .utf8)) ?? ""
+  }
+
+  private static func readTrimmedFile(_ url: URL) -> String? {
+    guard let raw = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+    return raw.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   private static func replaceLineRanges(in text: String, replacements: [LineReplacement]) -> String {
@@ -365,6 +401,7 @@ public enum OrgCrypt {
 public enum OrgCryptError: LocalizedError, Equatable {
   case missingEncryptionConfiguration
   case gpgFailed(String)
+  case gpgTimedOut(TimeInterval, String?)
 
   public var errorDescription: String? {
     switch self {
@@ -372,6 +409,12 @@ public enum OrgCryptError: LocalizedError, Equatable {
       "Org crypt needs a passphrase, configured recipients, recipient files, or CRYPT_RECIPIENT properties."
     case .gpgFailed(let message):
       "Org crypt encryption failed: \(message)"
+    case .gpgTimedOut(let timeout, let message):
+      if let message, !message.isEmpty {
+        "Org crypt encryption timed out after \(Int(timeout)) seconds: \(message)"
+      } else {
+        "Org crypt encryption timed out after \(Int(timeout)) seconds."
+      }
     }
   }
 }
