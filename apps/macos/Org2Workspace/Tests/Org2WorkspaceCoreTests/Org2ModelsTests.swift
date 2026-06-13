@@ -467,8 +467,8 @@ final class Org2ModelsTests: XCTestCase {
 
     let bracketColor = try XCTUnwrap(storage.attribute(.foregroundColor, at: bracketIndex, effectiveRange: nil) as? NSColor)
     let tickColor = try XCTUnwrap(storage.attribute(.foregroundColor, at: tickIndex, effectiveRange: nil) as? NSColor)
-    XCTAssertLessThan(bracketColor.alphaComponent, 0.35)
-    XCTAssertLessThan(tickColor.alphaComponent, 0.35)
+    XCTAssertLessThan(bracketColor.alphaComponent, 0.18)
+    XCTAssertLessThan(tickColor.alphaComponent, 0.18)
 
     let labelColor = try XCTUnwrap(storage.attribute(.foregroundColor, at: linkLabelIndex, effectiveRange: nil) as? NSColor)
     XCTAssertEqual(labelColor, NSColor.controlAccentColor)
@@ -477,8 +477,8 @@ final class Org2ModelsTests: XCTestCase {
 
     let orgTargetColor = try XCTUnwrap(storage.attribute(.foregroundColor, at: orgTargetIndex, effectiveRange: nil) as? NSColor)
     let markdownTargetColor = try XCTUnwrap(storage.attribute(.foregroundColor, at: markdownTargetIndex, effectiveRange: nil) as? NSColor)
-    XCTAssertLessThan(orgTargetColor.alphaComponent, 0.45)
-    XCTAssertLessThan(markdownTargetColor.alphaComponent, 0.45)
+    XCTAssertLessThan(orgTargetColor.alphaComponent, 0.24)
+    XCTAssertLessThan(markdownTargetColor.alphaComponent, 0.24)
     let targetUnderline = storage.attribute(.underlineStyle, at: orgTargetIndex, effectiveRange: nil) as? Int
     XCTAssertEqual(targetUnderline, 0)
 
