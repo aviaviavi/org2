@@ -977,7 +977,7 @@ private struct DetailHeader: View {
           }
         } else {
           Button {
-            store.beginEditingVisibleBlock()
+            store.beginEditingCurrentScope()
           } label: {
             Label("Edit", systemImage: "square.and.pencil")
           }
@@ -1046,7 +1046,21 @@ private struct EntryBodyView: View {
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
         }
-        if store.isRenderingEntrySource && store.selectedRenderedBlocks.isEmpty {
+        if store.isEditingEntry {
+          OrgSyntaxTextEditor(
+            text: $store.editableEntryText,
+            monospaced: true,
+            showsScrollers: true,
+            textInset: NSSize(width: 12, height: 12),
+            focusOnAppear: true
+          )
+          .frame(minHeight: 520)
+          .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+          .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+              .stroke(Color.secondary.opacity(0.16))
+          )
+        } else if store.isRenderingEntrySource && store.selectedRenderedBlocks.isEmpty {
           HStack(spacing: 8) {
             ProgressView()
               .controlSize(.small)
