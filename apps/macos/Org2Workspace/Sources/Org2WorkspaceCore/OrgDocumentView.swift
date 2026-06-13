@@ -549,8 +549,14 @@ private struct ProgressiveRenderFooter: View {
   let direction: OrgRenderedBlockWindowExpansionDirection
   let autoLoadsOnAppear: Bool
   let loadMore: (OrgRenderedBlockWindowExpansionDirection) -> Void
+  @State private var lastAutoLoadToken: String?
 
   var body: some View {
+    let autoLoadToken = ProgressiveRenderFooterAutoLoad.token(
+      visibleRange: visibleRange,
+      totalCount: totalCount,
+      direction: direction
+    )
     Button {
       loadMore(direction)
     } label: {
@@ -571,10 +577,41 @@ private struct ProgressiveRenderFooter: View {
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
     .onAppear {
-      if autoLoadsOnAppear {
-        loadMore(direction)
-      }
+      triggerAutoLoadIfNeeded(token: autoLoadToken)
     }
+    .onChange(of: autoLoadToken) { _, newToken in
+      triggerAutoLoadIfNeeded(token: newToken)
+    }
+  }
+
+  private func triggerAutoLoadIfNeeded(token: String) {
+    guard ProgressiveRenderFooterAutoLoad.shouldTrigger(
+      autoLoadsOnAppear: autoLoadsOnAppear,
+      lastTriggeredToken: lastAutoLoadToken,
+      currentToken: token
+    ) else {
+      return
+    }
+    lastAutoLoadToken = token
+    loadMore(direction)
+  }
+}
+
+enum ProgressiveRenderFooterAutoLoad {
+  static func token(
+    visibleRange: String,
+    totalCount: Int,
+    direction: OrgRenderedBlockWindowExpansionDirection
+  ) -> String {
+    "\(direction):\(visibleRange):\(totalCount)"
+  }
+
+  static func shouldTrigger(
+    autoLoadsOnAppear: Bool,
+    lastTriggeredToken: String?,
+    currentToken: String
+  ) -> Bool {
+    autoLoadsOnAppear && lastTriggeredToken != currentToken
   }
 }
 

@@ -2610,6 +2610,46 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(OrgRenderedEntryView.shouldAutoExpandNextFooter(visibleWindow: anchoredWindow))
   }
 
+  func testProgressiveRenderFooterAutoLoadTokensGateRepeatedLoads() {
+    let firstToken = ProgressiveRenderFooterAutoLoad.token(
+      visibleRange: "1-48",
+      totalCount: 1_500,
+      direction: .next
+    )
+    let expandedToken = ProgressiveRenderFooterAutoLoad.token(
+      visibleRange: "1-96",
+      totalCount: 1_500,
+      direction: .next
+    )
+    let previousToken = ProgressiveRenderFooterAutoLoad.token(
+      visibleRange: "48-96",
+      totalCount: 1_500,
+      direction: .previous
+    )
+
+    XCTAssertTrue(ProgressiveRenderFooterAutoLoad.shouldTrigger(
+      autoLoadsOnAppear: true,
+      lastTriggeredToken: nil,
+      currentToken: firstToken
+    ))
+    XCTAssertFalse(ProgressiveRenderFooterAutoLoad.shouldTrigger(
+      autoLoadsOnAppear: false,
+      lastTriggeredToken: nil,
+      currentToken: firstToken
+    ))
+    XCTAssertFalse(ProgressiveRenderFooterAutoLoad.shouldTrigger(
+      autoLoadsOnAppear: true,
+      lastTriggeredToken: firstToken,
+      currentToken: firstToken
+    ))
+    XCTAssertTrue(ProgressiveRenderFooterAutoLoad.shouldTrigger(
+      autoLoadsOnAppear: true,
+      lastTriggeredToken: firstToken,
+      currentToken: expandedToken
+    ))
+    XCTAssertNotEqual(firstToken, previousToken)
+  }
+
   @MainActor
   func testSelectedRenderedBlocksMetadataTracksAssignmentsAndMutations() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
