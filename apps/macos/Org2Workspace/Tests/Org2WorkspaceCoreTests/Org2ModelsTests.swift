@@ -2277,13 +2277,6 @@ final class Org2ModelsTests: XCTestCase {
         rendered: .heading(OrgHeadingBlock(level: 1, todo: "TODO", priority: nil, title: "Heading", tags: []))
       ),
       OrgEditableBlock(
-        id: "properties",
-        startLine: 2,
-        endLineExclusive: 5,
-        rawText: ":PROPERTIES:\n:Owner: Avi\n:END:",
-        rendered: .properties([OrgPropertyRow(key: "Owner", value: "Avi")])
-      ),
-      OrgEditableBlock(
         id: "quote",
         startLine: 5,
         endLineExclusive: 8,
@@ -2338,6 +2331,42 @@ final class Org2ModelsTests: XCTestCase {
     )
     XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: divider, isSourceEditable: true))
     XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: blank, isSourceEditable: true))
+    let properties = OrgEditableBlock(
+      id: "properties",
+      startLine: 3,
+      endLineExclusive: 6,
+      rawText: ":PROPERTIES:\n:Owner: Avi\n:END:",
+      rendered: .properties([OrgPropertyRow(key: "Owner", value: "Avi")])
+    )
+    XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: properties, isSourceEditable: true))
+  }
+
+  func testRenderedBlockDisplayPolicyCollapsesBlankButKeepsProperties() {
+    let blank = OrgEditableBlock(
+      id: "blank",
+      startLine: 1,
+      endLineExclusive: 2,
+      rawText: "",
+      rendered: .blank
+    )
+    let properties = OrgEditableBlock(
+      id: "properties",
+      startLine: 2,
+      endLineExclusive: 5,
+      rawText: ":PROPERTIES:\n:ID: 316c31f8\n:END:",
+      rendered: .properties([OrgPropertyRow(key: "ID", value: "316c31f8")])
+    )
+    let heading = OrgEditableBlock(
+      id: "heading",
+      startLine: 5,
+      endLineExclusive: 6,
+      rawText: "* Heading",
+      rendered: .heading(OrgHeadingBlock(level: 1, todo: nil, priority: nil, title: "Heading", tags: []))
+    )
+
+    XCTAssertFalse(OrgRenderedBlockDisplayPolicy.isVisible(blank))
+    XCTAssertTrue(OrgRenderedBlockDisplayPolicy.isVisible(properties))
+    XCTAssertTrue(OrgRenderedBlockDisplayPolicy.isVisible(heading))
   }
 
   @MainActor

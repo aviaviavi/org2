@@ -737,7 +737,7 @@ private struct RenderedHeadingView: View {
   let inlineActions: RenderedBlockInlineActions
 
   var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
+    HStack(alignment: .firstTextBaseline, spacing: 6) {
       if let todo = heading.todo {
         RenderedHeadingTodoButton(todo: todo, inlineActions: inlineActions)
       }
@@ -751,7 +751,7 @@ private struct RenderedHeadingView: View {
       Spacer(minLength: 0)
     }
     .padding(.top, topPadding)
-    .padding(.leading, CGFloat(max(0, heading.level - 1)) * 14)
+    .padding(.leading, CGFloat(max(0, heading.level - 1)) * 10)
   }
 
   private var font: Font {
@@ -768,7 +768,14 @@ private struct RenderedHeadingView: View {
   }
 
   private var topPadding: CGFloat {
-    heading.level == 1 ? 2 : 8
+    switch heading.level {
+    case 1:
+      return 1
+    case 2:
+      return 4
+    default:
+      return 3
+    }
   }
 
   private var rawTitle: String {
