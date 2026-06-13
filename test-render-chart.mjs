@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 const repo = process.cwd();
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "org2-render-chart-"));
 const note = path.join(tmp, "report.org2");
+const badSortNote = path.join(tmp, "bad-sort.org2");
 const out = path.join(tmp, "chart.svg");
 
 fs.writeFileSync(note, `* Revenue report
@@ -21,7 +22,7 @@ fs.writeFileSync(note, `* Revenue report
 | 2026-Q2 | 1500    |
 
 #+name: fetches_by_state
-#+chart: bar x=state y=fetches
+#+chart: bar x=state y=fetches sort=y-asc
 | state | fetches |
 |-------+---------|
 | CA    | 42      |
@@ -37,6 +38,7 @@ fs.writeFileSync(note, `* Revenue report
 \`\`\`chart histogram
 x: bucket
 y: fetches
+sort: y-desc
 title: Fetch buckets
 source: previous-table
 \`\`\`
@@ -63,6 +65,8 @@ source: future_fetches_result
 | 2026-06-12 | 91      |
 `, "utf8");
 
+fs.writeFileSync(badSortNote, fs.readFileSync(note, "utf8").replace("sort=y-asc", "sort=random"), "utf8");
+
 function cli(args, input) {
   return execFileSync("node", ["dist/cli.js", ...args], { cwd: repo, encoding: "utf8", input });
 }
@@ -80,6 +84,7 @@ assert.equal(json.source.blockId, "fetches_by_state");
 assert.equal(json.source.line, 13);
 assert.equal(json.source.endLine, 16);
 assert.match(json.svg, /<rect /);
+assert.ok(json.svg.indexOf("<title>NY: 24</title>") < json.svg.indexOf("<title>CA: 42</title>"));
 assert.ok(fs.existsSync(out));
 
 const stdinJson = JSON.parse(cli(["render-chart", "--stdin", "--format", "json"], fs.readFileSync(note, "utf8")));
@@ -90,17 +95,18 @@ const fencedJson = JSON.parse(cli(["render-chart", "--file", note, "--line", "25
 assert.equal(fencedJson.ok, true);
 assert.equal(fencedJson.source.blockId, "fetch_buckets");
 assert.equal(fencedJson.source.line, 19);
-assert.equal(fencedJson.source.endLine, 30);
+assert.equal(fencedJson.source.endLine, 31);
 assert.match(fencedJson.svg, /Fetch buckets/);
 assert.match(fencedJson.svg, /Org2 histogram chart/);
 assert.match(fencedJson.svg, /<rect /);
+assert.ok(fencedJson.svg.indexOf("<title>11-50: 32</title>") < fencedJson.svg.indexOf("<title>0-10: 14</title>"));
 
 const namedSourceJson = JSON.parse(cli(["render-chart", "--file", note, "--line", "34", "--format", "json"]));
 assert.equal(namedSourceJson.ok, true);
 assert.equal(namedSourceJson.source.blockId, "named_revenue_chart");
 assert.equal(namedSourceJson.source.dataBlockId, "quarterly_revenue");
 assert.equal(namedSourceJson.source.line, 6);
-assert.equal(namedSourceJson.source.chartLine, 33);
+assert.equal(namedSourceJson.source.chartLine, 34);
 assert.match(namedSourceJson.svg, /Revenue from named source/);
 assert.match(namedSourceJson.svg, /<polyline /);
 
@@ -115,5 +121,14 @@ assert.notEqual(bad.status, 0);
 const badJson = JSON.parse(bad.stdout);
 assert.equal(badJson.ok, false);
 assert.match(badJson.diagnostics[0].message, /No chart found/);
+
+const badSort = spawnSync("node", ["dist/cli.js", "render-chart", "--file", badSortNote, "--block-id", "fetches_by_state", "--format", "json"], {
+  cwd: repo,
+  encoding: "utf8",
+});
+assert.notEqual(badSort.status, 0);
+const badSortJson = JSON.parse(badSort.stdout);
+assert.equal(badSortJson.ok, false);
+assert.match(badSortJson.diagnostics[0].message, /Unsupported chart sort/);
 
 console.log("✓ render-chart CLI");
