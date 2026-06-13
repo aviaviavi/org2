@@ -127,7 +127,12 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedBlockID: OrgEditableBlock.ID?
   @Published public var editingBlockID: OrgEditableBlock.ID?
   @Published public var editableBlockText = ""
-  @Published public var sourceBlockRuns: [String: SourceBlockRunState] = [:]
+  @Published public var sourceBlockRuns: [String: SourceBlockRunState] = [:] {
+    didSet {
+      sourceBlockRunsRenderSignature = Self.sourceBlockRunsRenderSignature(for: sourceBlockRuns)
+    }
+  }
+  public private(set) var sourceBlockRunsRenderSignature = WorkspaceStore.sourceBlockRunsRenderSignature(for: [:])
   @Published public var backlinks: BacklinksPayload?
   @Published public var isLoadingAgenda = false
   @Published public var isSearching = false
@@ -3257,6 +3262,40 @@ public final class WorkspaceStore: ObservableObject {
       hasher.combine(block.isEditable)
     }
     return "\(blocks.count):\(hasher.finalize())"
+  }
+
+  nonisolated static func sourceBlockRunsRenderSignature(for runs: [String: SourceBlockRunState]) -> String {
+    guard !runs.isEmpty else { return "empty" }
+
+    var hasher = Hasher()
+    hasher.combine(runs.count)
+    for key in runs.keys.sorted() {
+      guard let state = runs[key] else { continue }
+      hasher.combine(key)
+      hasher.combine(sourceBlockRunStatusSignature(state.status))
+      hasher.combine(state.language)
+      hasher.combine(state.commandLabel)
+      hasher.combine(state.startedAt)
+      hasher.combine(state.finishedAt)
+      hasher.combine(state.duration)
+      hasher.combine(state.exitCode)
+      hasher.combine(state.stdout.utf8.count)
+      hasher.combine(state.stdout.hashValue)
+      hasher.combine(state.stderr.utf8.count)
+      hasher.combine(state.stderr.hashValue)
+      hasher.combine(state.message)
+    }
+    return "\(runs.count):\(hasher.finalize())"
+  }
+
+  nonisolated private static func sourceBlockRunStatusSignature(_ status: SourceBlockRunStatus) -> String {
+    switch status {
+    case .running: "running"
+    case .succeeded: "succeeded"
+    case .failed: "failed"
+    case .timedOut: "timed-out"
+    case .unsupported: "unsupported"
+    }
   }
 
   private static func renderedBlockIndexes(for blocks: [OrgEditableBlock]) -> [OrgEditableBlock.ID: Int] {

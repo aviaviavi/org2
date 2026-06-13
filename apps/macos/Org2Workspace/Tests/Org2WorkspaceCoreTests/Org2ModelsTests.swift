@@ -2184,6 +2184,28 @@ final class Org2ModelsTests: XCTestCase {
       )
     ]
     let signature = WorkspaceStore.renderedBlocksRenderSignature(for: blocks)
+    let emptyRunSignature = WorkspaceStore.sourceBlockRunsRenderSignature(for: [:])
+    let runStates = [
+      "/tmp/render-context.org2:source": SourceBlockRunState(
+        status: .succeeded,
+        language: "sh",
+        commandLabel: "sh",
+        stdout: "hi\n"
+      )
+    ]
+    let runSignature = WorkspaceStore.sourceBlockRunsRenderSignature(for: runStates)
+    XCTAssertNotEqual(emptyRunSignature, runSignature)
+    XCTAssertNotEqual(
+      runSignature,
+      WorkspaceStore.sourceBlockRunsRenderSignature(for: [
+        "/tmp/render-context.org2:source": SourceBlockRunState(
+          status: .succeeded,
+          language: "sh",
+          commandLabel: "sh",
+          stdout: "hi again\n"
+        )
+      ])
+    )
     let base = OrgRenderedEntryView(
       blocks: blocks,
       blocksRenderSignature: signature,
@@ -2192,6 +2214,7 @@ final class Org2ModelsTests: XCTestCase {
       selectedBlockID: nil,
       selectedBlockIndex: nil,
       editingBlockID: nil,
+      sourceBlockRunsRenderSignature: emptyRunSignature,
       sourceBlockRuns: [:]
     )
 
@@ -2205,6 +2228,7 @@ final class Org2ModelsTests: XCTestCase {
         selectedBlockID: nil,
         selectedBlockIndex: nil,
         editingBlockID: nil,
+        sourceBlockRunsRenderSignature: emptyRunSignature,
         sourceBlockRuns: [:]
       )
     )
@@ -2227,6 +2251,7 @@ final class Org2ModelsTests: XCTestCase {
         selectedBlockID: nil,
         selectedBlockIndex: nil,
         editingBlockID: nil,
+        sourceBlockRunsRenderSignature: emptyRunSignature,
         sourceBlockRuns: [:]
       )
     )
@@ -2241,6 +2266,7 @@ final class Org2ModelsTests: XCTestCase {
         selectedBlockID: "alpha",
         selectedBlockIndex: 0,
         editingBlockID: nil,
+        sourceBlockRunsRenderSignature: emptyRunSignature,
         sourceBlockRuns: [:]
       )
     )
@@ -2255,6 +2281,7 @@ final class Org2ModelsTests: XCTestCase {
         selectedBlockID: nil,
         selectedBlockIndex: nil,
         editingBlockID: nil,
+        sourceBlockRunsRenderSignature: emptyRunSignature,
         sourceBlockRuns: [:]
       )
     )
@@ -2269,14 +2296,8 @@ final class Org2ModelsTests: XCTestCase {
         selectedBlockID: nil,
         selectedBlockIndex: nil,
         editingBlockID: nil,
-        sourceBlockRuns: [
-          "/tmp/render-context.org2:source": SourceBlockRunState(
-            status: .succeeded,
-            language: "sh",
-            commandLabel: "sh",
-            stdout: "hi\n"
-          )
-        ]
+        sourceBlockRunsRenderSignature: runSignature,
+        sourceBlockRuns: runStates
       )
     )
   }
