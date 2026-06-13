@@ -14,6 +14,12 @@ private struct RenderedBlocksCacheEntry {
   let blocks: [OrgEditableBlock]
 }
 
+private struct RenderedBlocksMetadata {
+  let renderSignature: String
+  let structureSignature: String
+  let indexes: [OrgEditableBlock.ID: Int]
+}
+
 private struct PendingBlockSelection {
   let file: String
   let line: Int
@@ -110,13 +116,15 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedEntrySource: EntrySource?
   @Published public var selectedRenderedBlocks: [OrgEditableBlock] = [] {
     didSet {
-      selectedRenderedBlocksRenderSignature = Self.renderedBlocksRenderSignature(for: selectedRenderedBlocks)
       if preservesSelectedRenderedBlocksMetadataForNextAssignment {
+        selectedRenderedBlocksRenderSignature = Self.renderedBlocksRenderSignature(for: selectedRenderedBlocks)
         preservesSelectedRenderedBlocksMetadataForNextAssignment = false
         return
       }
-      selectedRenderedBlocksSignature = Self.renderedBlocksSignature(for: selectedRenderedBlocks)
-      selectedRenderedBlockIndexes = Self.renderedBlockIndexes(for: selectedRenderedBlocks)
+      let metadata = Self.renderedBlocksMetadata(for: selectedRenderedBlocks)
+      selectedRenderedBlocksRenderSignature = metadata.renderSignature
+      selectedRenderedBlocksSignature = metadata.structureSignature
+      selectedRenderedBlockIndexes = metadata.indexes
     }
   }
   public private(set) var selectedRenderedBlocksRenderSignature = WorkspaceStore.renderedBlocksRenderSignature(for: [])
@@ -3245,6 +3253,43 @@ public final class WorkspaceStore: ObservableObject {
       hasher.combine(block.isEditable)
     }
     return "\(blocks.count):\(hasher.finalize())"
+  }
+
+  private static func renderedBlocksMetadata(for blocks: [OrgEditableBlock]) -> RenderedBlocksMetadata {
+    guard !blocks.isEmpty else {
+      return RenderedBlocksMetadata(renderSignature: "empty", structureSignature: "empty", indexes: [:])
+    }
+
+    var renderHasher = Hasher()
+    var structureHasher = Hasher()
+    renderHasher.combine(blocks.count)
+    structureHasher.combine(blocks.count)
+
+    var indexes: [OrgEditableBlock.ID: Int] = [:]
+    indexes.reserveCapacity(blocks.count)
+
+    for (index, block) in blocks.enumerated() {
+      renderHasher.combine(block.renderIdentity.id)
+      renderHasher.combine(block.renderIdentity.startLine)
+      renderHasher.combine(block.renderIdentity.endLineExclusive)
+      renderHasher.combine(block.renderIdentity.rawUTF8Count)
+      renderHasher.combine(block.renderIdentity.rawHash)
+      renderHasher.combine(block.renderIdentity.renderedKind)
+      renderHasher.combine(block.isEditable)
+
+      structureHasher.combine(block.id)
+      structureHasher.combine(block.startLine)
+      structureHasher.combine(block.endLineExclusive)
+      structureHasher.combine(block.isEditable)
+
+      indexes[block.id] = index
+    }
+
+    return RenderedBlocksMetadata(
+      renderSignature: "\(blocks.count):\(renderHasher.finalize())",
+      structureSignature: "\(blocks.count):\(structureHasher.finalize())",
+      indexes: indexes
+    )
   }
 
   nonisolated static func renderedBlocksRenderSignature(for blocks: [OrgEditableBlock]) -> String {
