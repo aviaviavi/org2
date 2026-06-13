@@ -288,7 +288,10 @@ y: fetches
 
 #+begin_src sh
 npm run org2 -- query-data --file report.org2 --results fetches_by_state --out report.fetches.org
+cat report.org2 | npm run org2 -- query-data --stdin --results fetches_by_state --format json
 #+end_src
+
+Use =--stdin= when an editor, agent, or notebook-style client wants to run the current buffer without saving it first. Relative file dataset paths are resolved from the current working directory for stdin input.
 
 Use =type: table= with =source: NAME= when the source data already lives in a named org2 table:
 

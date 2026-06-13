@@ -7872,6 +7872,7 @@ async function main(): Promise<void> {
   let dataQueryDuckdb = "duckdb";
   let dataQueryFormat: "org" | "json" = "org";
   let dataQueryIncludeScript = false;
+  let dataQueryStdin = false;
 
   // Clock reports
   let clockFormat: "text" | "json" = "text";
@@ -9302,6 +9303,7 @@ async function main(): Promise<void> {
       if (command === "fmt") fmtStdin = true;
       if (command === "capture") captureReadStdin = true;
       if (command === "render-chart") renderChartStdin = true;
+      if (command === "query-data") dataQueryStdin = true;
       i++;
     } else if (arg === "--include-script") {
       if (command === "query-data") dataQueryIncludeScript = true;
@@ -9385,7 +9387,7 @@ Roam / IDs:
   org2 clock --dir DIR [--recursive] [--format text|json]
   org2 compile corpus --dir DIR [--recursive] [--out FILE] [--format json|jsonl]
   org2 render-chart --file FILE [--block-id ID|--line N] [--out FILE] [--format svg|json]
-  org2 query-data --file FILE [--results NAME] [--out FILE] [--format org|json]
+  org2 query-data (--file FILE|--stdin) [--results NAME] [--out FILE] [--format org|json]
   org2 context QUERY [--dir DIR] [--recursive] [--budget 8k] [--format markdown|org|json]
   org2 brief today [--dir DIR] [--recursive] [--out views/today.org]
   org2 brief project NAME [--dir DIR] [--recursive] [--out views/NAME.org]
@@ -9706,9 +9708,11 @@ Output:
 
 Usage:
   org2 query-data --file FILE [--results NAME] [--out FILE] [--format org|json]
+  org2 query-data --stdin [--results NAME] [--out FILE] [--format org|json]
 
 Flags:
   --file FILE         Source Org/Org2 file containing dataset and SQL blocks
+  --stdin             Read Org/Org2 input from standard input
   --results NAME      SQL result block to run; optional when the file has one SQL block
   --duckdb PATH       DuckDB CLI path (default: duckdb)
   --out FILE          Write materialized org table or JSON envelope to FILE
@@ -9969,14 +9973,20 @@ Flags:
   }
 
   if (command === "query-data") {
-    if (!dataQueryFile) {
-      console.error("Error: query-data requires --file FILE");
+    if (dataQueryFile && dataQueryStdin) {
+      console.error("Error: query-data accepts only one of --file or --stdin");
+      process.exit(1);
+    }
+    if (!dataQueryFile && !dataQueryStdin) {
+      console.error("Error: query-data requires --file FILE or --stdin");
       process.exit(1);
     }
 
-    const input = fs.readFileSync(path.resolve(dataQueryFile), "utf8").replace(/\r\n/g, "\n");
+    const input = dataQueryStdin
+      ? fs.readFileSync(0, "utf8").replace(/\r\n/g, "\n")
+      : fs.readFileSync(path.resolve(dataQueryFile), "utf8").replace(/\r\n/g, "\n");
     const result = runOrg2DataQuery(input, {
-      file: dataQueryFile,
+      ...(dataQueryFile ? { file: dataQueryFile } : {}),
       ...(dataQueryResultId ? { resultId: dataQueryResultId } : {}),
       duckdbPath: dataQueryDuckdb,
       includeScript: dataQueryIncludeScript,
