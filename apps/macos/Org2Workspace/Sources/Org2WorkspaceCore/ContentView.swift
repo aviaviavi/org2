@@ -766,16 +766,27 @@ private struct MeetingsView: View {
         .disabled(store.corpusRoot == nil || store.isLoadingMeetings)
       }
 
-      HStack(spacing: 8) {
+      VStack(alignment: .leading, spacing: 8) {
         TextField("Meeting title", text: $store.meetingTitleDraft)
           .textFieldStyle(.roundedBorder)
           .disabled(store.isRecordingMeeting || store.isProcessingMeeting)
 
-        Text(store.meetingStatusText)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.middle)
+        HStack(spacing: 10) {
+          Text(store.meetingStatusText)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+
+          Spacer(minLength: 0)
+
+          MeetingInputStatusView(
+            isRecording: store.isRecordingMeeting,
+            averageLevel: store.meetingInputAverageLevel,
+            peakLevel: store.meetingInputPeakLevel,
+            sourceText: store.meetingCaptureSourceText
+          )
+        }
       }
       .padding(.horizontal, 16)
       .padding(.bottom, 12)
@@ -821,6 +832,66 @@ private struct MeetingsView: View {
         Task { await store.refreshMeetings() }
       }
     }
+  }
+}
+
+private struct MeetingInputStatusView: View {
+  let isRecording: Bool
+  let averageLevel: Double
+  let peakLevel: Double
+  let sourceText: String
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Image(systemName: isRecording ? "waveform" : "mic")
+        .foregroundStyle(isRecording ? .red : .secondary)
+
+      if isRecording {
+        MeetingInputMeterView(averageLevel: averageLevel, peakLevel: peakLevel)
+          .frame(width: 120, height: 8)
+
+        Text("Mic only")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      } else {
+        Text(sourceText)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+      }
+    }
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(isRecording ? "Microphone input level" : sourceText)
+    .help(sourceText)
+  }
+}
+
+private struct MeetingInputMeterView: View {
+  let averageLevel: Double
+  let peakLevel: Double
+
+  var body: some View {
+    GeometryReader { proxy in
+      let width = max(proxy.size.width, 1)
+      ZStack(alignment: .leading) {
+        Capsule()
+          .fill(Color.secondary.opacity(0.16))
+
+        Capsule()
+          .fill(Color.red.opacity(0.28))
+          .frame(width: max(2, width * clamped(peakLevel)))
+
+        Capsule()
+          .fill(Color.red)
+          .frame(width: max(2, width * clamped(averageLevel)))
+      }
+    }
+    .frame(height: 8)
+  }
+
+  private func clamped(_ value: Double) -> Double {
+    min(1, max(0, value))
   }
 }
 

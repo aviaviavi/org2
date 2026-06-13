@@ -82,6 +82,8 @@ struct SourceBlockExecutionResult: Equatable, Sendable {
 
 @MainActor
 public final class WorkspaceStore: ObservableObject {
+  nonisolated public static let meetingCaptureSourceSummary = "Microphone input only. System/call audio is not recorded."
+
   @Published public var selectedSurface: WorkspaceSurface = .agenda
   @Published public var agendaMode: AgendaMode = .focus {
     didSet {
@@ -108,6 +110,8 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedMeetingID: String?
   @Published public var meetingTitleDraft = ""
   @Published public var meetingStatusText = WorkspaceStore.defaultMeetingStatusText()
+  @Published public var meetingInputAverageLevel = 0.0
+  @Published public var meetingInputPeakLevel = 0.0
   @Published public var openClawMessages: [OpenClawChatMessage] = [] {
     didSet {
       guard shouldPersistOpenClawMessages else { return }
@@ -171,6 +175,10 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var statusText = ""
   @Published public var errorText: String?
 
+  public var meetingCaptureSourceText: String {
+    Self.meetingCaptureSourceSummary
+  }
+
   public let cli: Org2CLI
   private let defaults: UserDefaults
   private let meetingRecorder = MeetingAudioRecorder()
@@ -186,6 +194,7 @@ public final class WorkspaceStore: ObservableObject {
   private var shouldPersistOpenClawMessages = false
   private var openClawBearerToken: String?
   private var activeMeetingRecording: PendingMeetingRecording?
+  private var meetingMeterTask: Task<Void, Never>?
   private var pendingG = false
   private var entrySourceLoadGeneration = 0
   private var canonicalDocumentCache: [String: CanonicalDocumentCacheEntry] = [:]
@@ -451,10 +460,12 @@ public final class WorkspaceStore: ObservableObject {
       try await meetingRecorder.startRecording(to: paths.audioURL)
       activeMeetingRecording = PendingMeetingRecording(paths: paths)
       isRecordingMeeting = true
+      startMeetingInputMetering()
       selectedSurface = .meetings
       meetingStatusText = "Recording \(paths.title)"
       statusText = meetingStatusText
     } catch {
+      stopMeetingInputMetering()
       errorText = error.localizedDescription
       meetingStatusText = "Recording failed: \(error.localizedDescription)"
       statusText = "Recording failed"
@@ -475,6 +486,7 @@ public final class WorkspaceStore: ObservableObject {
       let duration = try meetingRecorder.stopRecording()
       self.activeMeetingRecording = nil
       isRecordingMeeting = false
+      stopMeetingInputMetering()
       isProcessingMeeting = true
       meetingStatusText = "Transcribing \(activeMeetingRecording.paths.title) locally..."
       defer { isProcessingMeeting = false }
@@ -494,6 +506,7 @@ public final class WorkspaceStore: ObservableObject {
       await refreshAfterMeetingWrite(selecting: bundle.item)
     } catch {
       isRecordingMeeting = false
+      stopMeetingInputMetering()
       isProcessingMeeting = false
       errorText = error.localizedDescription
       meetingStatusText = "Stop failed: \(error.localizedDescription)"
@@ -4791,6 +4804,35 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
     selectMeeting(meetings[0])
+  }
+
+  private func startMeetingInputMetering() {
+    meetingMeterTask?.cancel()
+    updateMeetingInputMeter()
+    meetingMeterTask = Task { [weak self] in
+      while !Task.isCancelled {
+        let shouldContinue = await MainActor.run { () -> Bool in
+          guard let self, self.isRecordingMeeting else { return false }
+          self.updateMeetingInputMeter()
+          return true
+        }
+        guard shouldContinue else { return }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+      }
+    }
+  }
+
+  private func stopMeetingInputMetering() {
+    meetingMeterTask?.cancel()
+    meetingMeterTask = nil
+    meetingInputAverageLevel = 0
+    meetingInputPeakLevel = 0
+  }
+
+  private func updateMeetingInputMeter() {
+    let snapshot = meetingRecorder.inputMeterSnapshot
+    meetingInputAverageLevel = snapshot.averageLevel
+    meetingInputPeakLevel = snapshot.peakLevel
   }
 
   private func transcribeAudioForMeeting(_ audioURL: URL) async -> MeetingTranscriptResult {

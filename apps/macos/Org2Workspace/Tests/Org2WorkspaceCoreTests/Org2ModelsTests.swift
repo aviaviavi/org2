@@ -443,6 +443,24 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(transcript.contains("We decided to publish the reporting update."))
   }
 
+  func testMeetingRecorderMeterNormalizesAudioPower() {
+    XCTAssertEqual(MeetingAudioRecorder.normalizedMeterLevel(fromDecibels: -80), 0)
+    XCTAssertEqual(MeetingAudioRecorder.normalizedMeterLevel(fromDecibels: 0), 1)
+    XCTAssertEqual(MeetingAudioRecorder.normalizedMeterLevel(fromDecibels: 20), 1)
+    XCTAssertEqual(
+      MeetingAudioRecorder.normalizedMeterLevel(fromDecibels: -30),
+      0.5,
+      accuracy: 0.001
+    )
+  }
+
+  func testMeetingCaptureSourceDisclosesMicrophoneOnlyRecording() {
+    let source = WorkspaceStore.meetingCaptureSourceSummary.lowercased()
+    XCTAssertTrue(source.contains("microphone"))
+    XCTAssertTrue(source.contains("system"))
+    XCTAssertTrue(source.contains("not recorded"))
+  }
+
   @MainActor
   func testWorkspaceScansMeetingArtifacts() async throws {
     let root = FileManager.default.temporaryDirectory
