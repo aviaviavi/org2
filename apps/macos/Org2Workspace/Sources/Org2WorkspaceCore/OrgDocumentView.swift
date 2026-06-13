@@ -135,6 +135,21 @@ struct OrgRenderedEntryView: View {
     guard block.isEditable else {
       return .readOnly
     }
+    let isSourceBlock: Bool = {
+      if case .source = block.rendered {
+        return true
+      }
+      return false
+    }()
+    let sourceBlockRunState = isSourceBlock ? store.sourceBlockRunState(for: block) : nil
+    let runSourceBlock: (@MainActor @Sendable () -> Void)?
+    if isSourceBlock {
+      runSourceBlock = { @MainActor @Sendable in
+        let _: Task<Void, Never> = Task { await store.runSourceBlock(block) }
+      }
+    } else {
+      runSourceBlock = nil
+    }
     return RenderedBlockInlineActions(
       isSourceEditable: isSourceEditable,
       toggleHeadingTodo: {
@@ -154,7 +169,9 @@ struct OrgRenderedEntryView: View {
       },
       toggleListItemCheckbox: {
         Task { await store.toggleListItemCheckbox(block) }
-      }
+      },
+      sourceBlockRunState: sourceBlockRunState,
+      runSourceBlock: runSourceBlock
     )
   }
 
@@ -301,6 +318,7 @@ private struct OrgRenderedEntryRow: View, Equatable {
         && lhs.sourceFile == rhs.sourceFile
         && lhs.corpusRoot == rhs.corpusRoot
         && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
+        && lhs.inlineActions.sourceBlockRunState == rhs.inlineActions.sourceBlockRunState
     }
     return lhs.block == rhs.block
       && lhs.isSourceEditable == rhs.isSourceEditable
@@ -311,6 +329,7 @@ private struct OrgRenderedEntryRow: View, Equatable {
       && lhs.sourceFile == rhs.sourceFile
       && lhs.corpusRoot == rhs.corpusRoot
       && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
+      && lhs.inlineActions.sourceBlockRunState == rhs.inlineActions.sourceBlockRunState
   }
 
   var body: some View {
