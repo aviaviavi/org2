@@ -479,13 +479,31 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       cancelDeferredHighlighting()
       guard let storage = textView.textStorage else { return }
       let selectedRanges = textView.selectedRanges
+      let visibleOrigin = Self.visibleOrigin(of: textView)
       let typingAttributes = OrgSyntaxHighlighter.apply(
         to: storage,
         monospaced: parent.monospaced
       )
       textView.typingAttributes = typingAttributes
       textView.selectedRanges = selectedRanges
+      Self.restoreVisibleOrigin(visibleOrigin, of: textView)
       recordHighlightedState(for: textView)
+    }
+
+    static func visibleOrigin(of textView: NSTextView) -> NSPoint? {
+      textView.enclosingScrollView?.contentView.bounds.origin
+    }
+
+    static func restoreVisibleOrigin(_ origin: NSPoint?, of textView: NSTextView) {
+      guard let origin,
+            let scrollView = textView.enclosingScrollView
+      else {
+        return
+      }
+      let clipView = scrollView.contentView
+      guard !NSEqualPoints(clipView.bounds.origin, origin) else { return }
+      clipView.scroll(to: origin)
+      scrollView.reflectScrolledClipView(clipView)
     }
 
     private func recordHighlightedState(for textView: NSTextView) {

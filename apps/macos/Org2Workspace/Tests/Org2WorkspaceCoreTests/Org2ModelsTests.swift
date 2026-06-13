@@ -712,6 +712,32 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSyntaxEditorRestoresVisibleOriginAfterHighlighting() {
+    let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 220, height: 80))
+    scrollView.hasVerticalScroller = true
+    let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 220, height: 1_200))
+    textView.minSize = NSSize(width: 0, height: 0)
+    textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+    textView.isVerticallyResizable = true
+    textView.textContainer?.containerSize = NSSize(width: 220, height: CGFloat.greatestFiniteMagnitude)
+    textView.string = String(repeating: "* TODO Heading\nBody with [[id:abc][Alice]].\n", count: 80)
+    scrollView.documentView = textView
+
+    let targetOrigin = NSPoint(x: 0, y: 160)
+    scrollView.contentView.scroll(to: targetOrigin)
+    scrollView.reflectScrolledClipView(scrollView.contentView)
+
+    let capturedOrigin = OrgSyntaxTextEditor.Coordinator.visibleOrigin(of: textView)
+    scrollView.contentView.scroll(to: .zero)
+    scrollView.reflectScrolledClipView(scrollView.contentView)
+
+    OrgSyntaxTextEditor.Coordinator.restoreVisibleOrigin(capturedOrigin, of: textView)
+
+    XCTAssertEqual(scrollView.contentView.bounds.origin.x, targetOrigin.x, accuracy: 0.5)
+    XCTAssertEqual(scrollView.contentView.bounds.origin.y, targetOrigin.y, accuracy: 0.5)
+  }
+
+  @MainActor
   func testSyntaxEditorDefersTextPublishingWithoutApplyingStaleBoundText() async throws {
     var boundText = "old"
     let liveText = OrgSyntaxTextEditorDraftBuffer()
