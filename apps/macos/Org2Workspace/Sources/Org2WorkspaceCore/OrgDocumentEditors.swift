@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 enum InlineEditorChrome {
   static func rendersControls(_ isActive: Bool) -> Bool {
-    isActive
+    true
   }
 
   static func controlsOpacity(_ isActive: Bool) -> Double {
