@@ -33,6 +33,13 @@ export type DataQuerySqlBlock = {
   sql: string;
 };
 
+export type DataQuerySqlView = {
+  id: string;
+  line: number;
+  endLine: number;
+  sql: string;
+};
+
 export type DataQueryResult = {
   ok: boolean;
   engine: "duckdb";
@@ -43,6 +50,7 @@ export type DataQueryResult = {
     endLine: number;
   };
   datasets: DataQueryDataset[];
+  views: DataQuerySqlView[];
   rowCount: number;
   rows: Record<string, unknown>[];
   orgTable?: string;
@@ -355,6 +363,21 @@ function parseSqlBlock(block: FencedBlock): { sql?: DataQuerySqlBlock; diagnosti
   return { sql: { resultId, line: block.line, endLine: block.endLine, sql: block.body.trim() }, diagnostics };
 }
 
+function hasSqlViewArg(block: FencedBlock): boolean {
+  return block.args.some((arg) => /^:?view(?:=|:|$)/i.test(arg));
+}
+
+function parseSqlViewBlock(block: FencedBlock): { view?: DataQuerySqlView; diagnostics: DataQueryDiagnostic[] } {
+  const viewId = argValue(block.args, ["view"]) || argValue(block.args, ["id", "name"]) || positionalArg(block.args) || "";
+  const resultId = argValue(block.args, ["results", "result"], { separated: false });
+  const diagnostics: DataQueryDiagnostic[] = [];
+  if (resultId) diagnostics.push(diagnostic("SQL block cannot declare both view=NAME and results=NAME", { line: block.line, blockId: resultId }));
+  if (!viewId) diagnostics.push(diagnostic("SQL view block requires view=NAME", { line: block.line }));
+  if (!block.body.trim()) diagnostics.push(diagnostic("SQL view block is empty", { line: block.line, ...(viewId ? { blockId: viewId } : {}) }));
+  if (diagnostics.some((item) => item.severity === "error")) return { diagnostics };
+  return { view: { id: viewId, line: block.line, endLine: block.endLine, sql: block.body.trim() }, diagnostics };
+}
+
 function quoteIdentifier(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;
 }
@@ -390,7 +413,11 @@ function inlineOrgTableView(dataset: DataQueryDataset, table: NamedOrgTable): st
   return `CREATE OR REPLACE VIEW ${quoteIdentifier(dataset.id)} AS SELECT * FROM (VALUES ${values}) AS t(${columns});`;
 }
 
-function buildDuckDbScript(datasets: DataQueryDataset[], sql: string, namedTables: Map<string, NamedOrgTable>): string {
+function viewSql(view: DataQuerySqlView): string {
+  return `CREATE OR REPLACE VIEW ${quoteIdentifier(view.id)} AS SELECT * FROM (${view.sql.replace(/;\s*$/, "")}) AS org2_view;`;
+}
+
+function buildDuckDbScript(datasets: DataQueryDataset[], views: DataQuerySqlView[], sql: string, namedTables: Map<string, NamedOrgTable>): string {
   const setup = datasets.map((dataset) => {
     if (dataset.type === "table" && dataset.sourceTable) {
       const table = namedTables.get(dataset.sourceTable);
@@ -399,7 +426,7 @@ function buildDuckDbScript(datasets: DataQueryDataset[], sql: string, namedTable
     const readFn = readFunctionForType(dataset.type);
     return `CREATE OR REPLACE VIEW ${quoteIdentifier(dataset.id)} AS SELECT * FROM ${readFn}(${quoteString(dataset.url || dataset.resolvedPath || "")});`;
   });
-  return [...setup, sql.replace(/;\s*$/, "") + ";"].join("\n");
+  return [...setup, ...views.map(viewSql), sql.replace(/;\s*$/, "") + ";"].join("\n");
 }
 
 function parseDuckDbJson(stdout: string): Record<string, unknown>[] {
@@ -451,6 +478,7 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
   const blocks = collectFencedBlocks(input);
   const namedTables = collectNamedOrgTables(input);
   const datasets: DataQueryDataset[] = [];
+  const views: DataQuerySqlView[] = [];
   const sqlBlocks: DataQuerySqlBlock[] = [];
 
   for (const block of blocks) {
@@ -459,10 +487,24 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
       diagnostics.push(...parsed.diagnostics);
       if (parsed.dataset) datasets.push(parsed.dataset);
     } else if (block.kind === "sql") {
-      const parsed = parseSqlBlock(block);
-      diagnostics.push(...parsed.diagnostics);
-      if (parsed.sql) sqlBlocks.push(parsed.sql);
+      if (hasSqlViewArg(block)) {
+        const parsed = parseSqlViewBlock(block);
+        diagnostics.push(...parsed.diagnostics);
+        if (parsed.view) views.push(parsed.view);
+      } else {
+        const parsed = parseSqlBlock(block);
+        diagnostics.push(...parsed.diagnostics);
+        if (parsed.sql) sqlBlocks.push(parsed.sql);
+      }
     }
+  }
+
+  const seenViewIds = new Set<string>();
+  for (const view of views) {
+    if (seenViewIds.has(view.id)) {
+      diagnostics.push(diagnostic(`Duplicate SQL view block "${view.id}"`, { line: view.line, blockId: view.id }));
+    }
+    seenViewIds.add(view.id);
   }
 
   const resultId = opts.resultId?.trim() || (sqlBlocks.length === 1 ? sqlBlocks[0]?.resultId : "");
@@ -473,10 +515,10 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
   if (resultId && !selected) diagnostics.push(diagnostic(`No SQL result block found for "${resultId}"`, { blockId: resultId }));
 
   if (diagnostics.some((item) => item.severity === "error") || !selected) {
-    return { ok: false, engine: "duckdb", ...(resultId ? { resultId } : {}), datasets, rowCount: 0, rows: [], diagnostics };
+    return { ok: false, engine: "duckdb", ...(resultId ? { resultId } : {}), datasets, views, rowCount: 0, rows: [], diagnostics };
   }
 
-  const script = buildDuckDbScript(datasets, selected.sql, namedTables);
+  const script = buildDuckDbScript(datasets, views, selected.sql, namedTables);
   const child = spawnSync(duckdbPath, ["-json", ":memory:"], {
     encoding: "utf8",
     input: script,
@@ -506,6 +548,7 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
     resultId: selected.resultId,
     source: { ...(file ? { file } : {}), line: selected.line, endLine: selected.endLine },
     datasets,
+    views,
     rowCount: rows.length,
     rows,
     ...(ok ? { orgTable: materializedResultTable(selected.resultId, rows) } : {}),
