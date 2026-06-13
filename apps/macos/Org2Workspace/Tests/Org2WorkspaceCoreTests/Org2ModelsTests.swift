@@ -4176,6 +4176,60 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSplitsEditingParagraphUsingNonPublishedInlineDraft() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-paragraph-nonpublished-split-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("paragraph-nonpublished-split.org2")
+    try """
+    #+TITLE: Paragraph Nonpublished Split Test
+
+    * TODO Parent
+    Alpha beta gamma
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Alpha beta gamma",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph(let text) = $0.rendered { return text == "Alpha beta gamma" }
+      return false
+    })
+    store.beginEditingBlock(paragraph)
+    XCTAssertEqual(store.editableBlockText, "Alpha beta gamma")
+
+    store.updateEditingBlockDraft(paragraph, draft: "Alpha edited beta")
+    XCTAssertEqual(store.editableBlockText, "Alpha beta gamma")
+    await store.splitEditingBlock(paragraph, atUTF16Offset: 6)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "edited beta" && store.editingBlockID == store.selectedBlock?.id
+    }
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Alpha\n\nedited beta\n* Sibling"))
+  }
+
+  @MainActor
   func testContinuesParagraphWithUnsavedDraftBlock() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-paragraph-draft-\(UUID().uuidString)", isDirectory: true)
@@ -4657,6 +4711,56 @@ final class Org2ModelsTests: XCTestCase {
     updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("* TODO Parent\n** TODO Call Bob\n* Sibling"))
     XCTAssertNil(store.editingBlockID)
+  }
+
+  @MainActor
+  func testConvertsEditingParagraphUsingNonPublishedInlineDraft() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-convert-nonpublished-draft-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("convert-nonpublished-draft.org2")
+    try """
+    #+TITLE: Convert Nonpublished Draft Test
+
+    * TODO Parent
+    Body
+    * Sibling
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+    store.beginEditingBlock(paragraph)
+    XCTAssertEqual(store.editableBlockText, "Body")
+
+    store.updateEditingBlockDraft(paragraph, draft: "/todo Call Bob")
+    XCTAssertEqual(store.editableBlockText, "Body")
+    await store.convertEditingBlock(paragraph, to: .todo)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "** TODO Call Bob" && store.editingBlockID == store.selectedBlockID
+    }
   }
 
   @MainActor
