@@ -16,7 +16,11 @@
           "headline": "First-day planning",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-day-of-month-filter.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     },
@@ -29,7 +33,11 @@
           "headline": "Month-end close",
           "kind": "DEADLINE",
           "file": "spec/v0/tests/cli/agenda-day-of-month-filter.input.txt",
-          "line": 4
+          "line": 4,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     },
@@ -42,7 +50,11 @@
           "headline": "Next-month carry",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-day-of-month-filter.input.txt",
-          "line": 6
+          "line": 6,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

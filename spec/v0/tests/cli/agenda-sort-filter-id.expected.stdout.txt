@@ -17,6 +17,12 @@
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-id.input.txt",
           "line": 7,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {
+            "ID": "0f1e2d3c"
+          },
           "id": "0f1e2d3c"
         },
         {
@@ -25,6 +31,12 @@
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-id.input.txt",
           "line": 12,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {
+            "CUSTOM_ID": "alpha-node"
+          },
           "id": "alpha-node"
         },
         {
@@ -33,6 +45,12 @@
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-id.input.txt",
           "line": 2,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {
+            "CUSTOM_ID": "zeta-node"
+          },
           "id": "zeta-node"
         },
         {
@@ -40,7 +58,11 @@
           "headline": "No id task",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-id.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

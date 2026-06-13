@@ -99,6 +99,10 @@ function printDrawer(node: DrawerNode): string {
   return `${begin}\n${node.bodyRaw}\n${end}`;
 }
 
+function printAffiliatedKeywords(node: SrcBlockNode | BlockNode | TableNode): string[] {
+  return (node.affiliatedKeywords ?? []).map(printKeywordLine);
+}
+
 function printSrcBlock(node: SrcBlockNode): string {
   const directiveLineToRaw = (indent: string, keywordRaw: string, afterKeywordRaw: string): string => {
     if (keywordRaw === "```") return `${indent}\`\`\`${afterKeywordRaw}`;
@@ -107,17 +111,19 @@ function printSrcBlock(node: SrcBlockNode): string {
 
   const begin = directiveLineToRaw(node.begin.indent, node.begin.keywordRaw, node.begin.afterKeywordRaw);
 
+  const affiliated = printAffiliatedKeywords(node);
+
   if (!node.terminated || !node.end) {
-    return [begin, node.bodyRaw].filter((l) => l.length > 0).join("\n");
+    return [...affiliated, begin, node.bodyRaw].filter((l) => l.length > 0).join("\n");
   }
 
   const end = directiveLineToRaw(node.end.indent, node.end.keywordRaw, node.end.afterKeywordRaw);
 
   if (node.bodyRaw.length === 0) {
-    return `${begin}\n${end}`;
+    return [...affiliated, begin, end].join("\n");
   }
 
-  return `${begin}\n${node.bodyRaw}\n${end}`;
+  return [...affiliated, begin, node.bodyRaw, end].join("\n");
 }
 
 
@@ -149,7 +155,7 @@ function printTable(node: TableNode): string {
     return `${indent}|${segments.join("+")}|`;
   };
 
-  return node.rows
+  const table = node.rows
     .map((row) => {
       if (row.type === "TableHline") {
         // Re-generate hlines deterministically based on observed column widths.
@@ -158,6 +164,8 @@ function printTable(node: TableNode): string {
       return printRow(row.indent, row.cells);
     })
     .join("\n");
+
+  return [...printAffiliatedKeywords(node), table].filter((l) => l.length > 0).join("\n");
 }
 
 function printListItem(node: ListItemNode, continuationIndent: string, nestedListIndent: string): string {
@@ -360,18 +368,19 @@ function directiveLineToRaw(indent: string, keywordRaw: string, afterKeywordRaw:
 
 function printBlock(node: BlockNode): string {
   const begin = directiveLineToRaw(node.begin.indent, node.begin.keywordRaw, node.begin.afterKeywordRaw);
+  const affiliated = printAffiliatedKeywords(node);
 
   if (!node.terminated || !node.end) {
-    return [begin, node.bodyRaw].filter((l) => l.length > 0).join("\n");
+    return [...affiliated, begin, node.bodyRaw].filter((l) => l.length > 0).join("\n");
   }
 
   const end = directiveLineToRaw(node.end.indent, node.end.keywordRaw, node.end.afterKeywordRaw);
 
   if (node.bodyRaw.length === 0) {
-    return `${begin}\n${end}`;
+    return [...affiliated, begin, end].join("\n");
   }
 
-  return `${begin}\n${node.bodyRaw}\n${end}`;
+  return [...affiliated, begin, node.bodyRaw, end].join("\n");
 }
 
 export function printCanonicalAstToOrg(doc: DocumentNode): string {

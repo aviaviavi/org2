@@ -16,7 +16,11 @@
           "headline": "No estimate item",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-effort-order.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         },
         {
           "todo": "TODO",
@@ -24,6 +28,12 @@
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-effort-order.input.txt",
           "line": 3,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {
+            "EFFORT": "2:00"
+          },
           "effort": "2:00"
         },
         {
@@ -32,6 +42,12 @@
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-effort-order.input.txt",
           "line": 15,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {
+            "EFFORT": "someday"
+          },
           "effort": "someday"
         },
         {
@@ -40,6 +56,12 @@
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-effort-order.input.txt",
           "line": 9,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {
+            "EFFORT": "0:30"
+          },
           "effort": "0:30"
         },
         {
@@ -48,6 +70,12 @@
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-effort-order.input.txt",
           "line": 21,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {
+            "EFFORT": "1:15"
+          },
           "effort": "1:15"
         }
       ]

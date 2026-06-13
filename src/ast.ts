@@ -131,6 +131,7 @@ export type SrcBlockLine = {
 
 export type SrcBlockNode = {
   type: "SrcBlock";
+  affiliatedKeywords?: KeywordLineNode[];
   terminated: boolean;
   begin: SrcBlockLine;
   bodyRaw: string;
@@ -141,6 +142,7 @@ export type BlockKind = "example" | "quote" | "verse" | "center" | "comment" | "
 
 export type BlockNode = {
   type: "Block";
+  affiliatedKeywords?: KeywordLineNode[];
   kind: BlockKind;
   terminated: boolean;
   begin: SrcBlockLine;
@@ -162,6 +164,7 @@ export type TableHlineNode = {
 
 export type TableNode = {
   type: "Table";
+  affiliatedKeywords?: KeywordLineNode[];
   rows: (TableRowNode | TableHlineNode)[];
 };
 

@@ -17,6 +17,12 @@
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-id-filter.input.txt",
           "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {
+            "ID": "abc123"
+          },
           "id": "abc123"
         }
       ]
@@ -30,7 +36,11 @@
           "headline": "General task",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-id-filter.input.txt",
-          "line": 12
+          "line": 12,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

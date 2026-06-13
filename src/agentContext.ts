@@ -37,6 +37,78 @@ type AgentClaimState = {
   freshness: AgentFreshnessState;
 };
 
+type AgentContextAttachment = {
+  type: "id" | "file" | "url" | "session" | "artifact" | "entity" | "report" | "ticket" | "note" | "other";
+  ref: string;
+  label?: string;
+  line?: number;
+  source: "property" | "link";
+  target?: {
+    key: string;
+    kind: "file" | "heading";
+    id: string | null;
+    title: string;
+    file: string;
+    sourceRange: { startLine: number; endLine: number };
+    citation: string;
+  };
+};
+
+type AgentThreadMetadata = {
+  agent?: string;
+  session?: string;
+  status?: string;
+  transcript?: string;
+  storage?: "summary" | "transcript" | "external" | "mixed" | "unknown";
+  contextAttachments: AgentContextAttachment[];
+};
+
+type AgentRelatedThread = {
+  key: string;
+  id: string | null;
+  title: string;
+  agent?: string;
+  session?: string;
+  status?: string;
+  file: string;
+  sourceRange: { startLine: number; endLine: number };
+  citation: string;
+  matchingAttachments: AgentContextAttachment[];
+};
+
+type AgentDataLinkKind = "data-link" | "warehouse-query" | "dataset" | "sql-view" | "event-stream" | "timeline-link";
+
+type AgentDataLinkMetadata = {
+  kind: AgentDataLinkKind;
+  system?: string;
+  engine?: string;
+  source?: string;
+  path?: string;
+  queryId?: string;
+  query?: string;
+  queryHash?: string;
+  params?: unknown;
+  paramsRaw?: string;
+  artifact?: string;
+  result?: string;
+  rowCount?: number;
+  lastRun?: string;
+  freshness?: string;
+  materialized?: string;
+};
+
+type AgentRelatedDataLink = {
+  key: string;
+  id: string | null;
+  title: string;
+  kind: AgentDataLinkKind;
+  file: string;
+  sourceRange: { startLine: number; endLine: number };
+  citation: string;
+  dataLink: AgentDataLinkMetadata;
+  matchingAttachments?: AgentContextAttachment[];
+};
+
 type AgentNode = {
   key: string;
   kind: "file" | "heading";
@@ -56,6 +128,10 @@ type AgentNode = {
   matchedTerms?: string[];
   selectionReason?: string[];
   claimState: AgentClaimState;
+  thread?: AgentThreadMetadata;
+  relatedThreads?: AgentRelatedThread[];
+  dataLink?: AgentDataLinkMetadata;
+  relatedDataLinks?: AgentRelatedDataLink[];
   sources?: AgentSource[];
   backlinks?: Array<{ sourceKey: string; sourceId: string | null; sourceTitle: string; file: string; line: number; citation: string; linkType: "id" | "wiki" }>;
   neighbors?: Array<{ key: string; id: string | null; title: string; file: string; citation: string; direction: "out" | "in"; linkType: "id" | "wiki" }>;
@@ -297,8 +373,354 @@ function neighborsFor(corpus: CompiledCorpus, node: CompiledCorpusNode): AgentNo
   return Array.from(out.values()).sort((a, b) => `${a.direction}:${a.file}:${a.citation}`.localeCompare(`${b.direction}:${b.file}:${b.citation}`));
 }
 
+function normalizeTypedKind(raw: string | null | undefined): string {
+  return String(raw || "").trim().toLowerCase().replace(/_/g, "-");
+}
+
+function kindPropertyFor(node: CompiledCorpusNode): string {
+  const props = node.properties || {};
+  return normalizeTypedKind(props.KIND || props.ORG2_KIND || props.TYPE || props.ORG2_TYPE);
+}
+
+function isAgentThreadNode(node: CompiledCorpusNode): boolean {
+  return kindPropertyFor(node) === "agent-thread";
+}
+
+function attachmentTypeFor(raw: string): AgentContextAttachment["type"] {
+  const type = raw.trim().toLowerCase().replace(/_/g, "-");
+  if (type === "id" || type === "file" || type === "url" || type === "session" || type === "artifact" || type === "entity" || type === "report" || type === "ticket" || type === "note") return type;
+  return "other";
+}
+
+function parseContextAttachmentToken(raw: string, source: AgentContextAttachment["source"]): AgentContextAttachment | null {
+  const value = String(raw || "").trim();
+  if (!value) return null;
+  const match = /^([A-Za-z][A-Za-z0-9_-]*):(.*)$/.exec(value);
+  if (!match) return { type: "other", ref: value, source };
+  const prefix = String(match[1] || "").trim();
+  const refTail = String(match[2] || "").trim();
+  if (!refTail) return null;
+  const type = attachmentTypeFor(prefix);
+  return { type, ref: `${prefix}:${refTail}`, source };
+}
+
+function parseContextAttachmentList(raw: string | undefined): AgentContextAttachment[] {
+  if (!raw) return [];
+  return String(raw)
+    .split(/[;,]/)
+    .map((token) => parseContextAttachmentToken(token, "property"))
+    .filter((item): item is AgentContextAttachment => !!item);
+}
+
+function attachmentFromLink(link: CompiledCorpusNode["links"][number]): AgentContextAttachment | null {
+  if (link.type === "id" || /^id:/i.test(link.target)) {
+    const target = link.target.replace(/^id:/i, "").trim();
+    if (!target) return null;
+    return { type: "id", ref: `id:${target}`, ...(link.description ? { label: link.description } : {}), line: link.line, source: "link" };
+  }
+  if (link.type === "file") return { type: "file", ref: link.target, ...(link.description ? { label: link.description } : {}), line: link.line, source: "link" };
+  if (link.type === "url") return { type: "url", ref: link.target, ...(link.description ? { label: link.description } : {}), line: link.line, source: "link" };
+  if (link.type === "wiki") return { type: "note", ref: link.target, ...(link.description ? { label: link.description } : {}), line: link.line, source: "link" };
+  return null;
+}
+
+function mergeAttachments(attachments: AgentContextAttachment[]): AgentContextAttachment[] {
+  const byRef = new Map<string, AgentContextAttachment>();
+  for (const attachment of attachments) {
+    const key = `${attachment.type}\0${attachment.ref.toLowerCase()}`;
+    const existing = byRef.get(key);
+    if (!existing) {
+      byRef.set(key, attachment);
+      continue;
+    }
+    byRef.set(key, {
+      ...existing,
+      ...(existing.label ? {} : attachment.label ? { label: attachment.label } : {}),
+      ...(existing.line !== undefined ? {} : attachment.line !== undefined ? { line: attachment.line } : {}),
+    });
+  }
+  return Array.from(byRef.values()).sort((a, b) => a.type.localeCompare(b.type) || a.ref.localeCompare(b.ref) || (a.line || 0) - (b.line || 0));
+}
+
+function normalizeFileRef(raw: string): string {
+  return String(raw || "")
+    .trim()
+    .replace(/^file:/i, "")
+    .replace(/^\.\//, "");
+}
+
+function refTail(raw: string): string {
+  const value = String(raw || "").trim();
+  const match = /^[A-Za-z][A-Za-z0-9_-]*:(.*)$/.exec(value);
+  return String(match ? match[1] : value).trim();
+}
+
+function nodeHasExactLabel(node: CompiledCorpusNode, raw: string): boolean {
+  const needle = normalizeLabel(raw);
+  if (!needle) return false;
+  return normalizeLabel(node.title) === needle || node.aliases.some((alias) => normalizeLabel(alias) === needle);
+}
+
+function attachmentTargetFor(corpus: CompiledCorpus, attachment: AgentContextAttachment): AgentContextAttachment["target"] | undefined {
+  let target: CompiledCorpusNode | undefined;
+  if (attachment.type === "id") {
+    const id = attachment.ref.replace(/^id:/i, "");
+    target = corpus.nodes.find((node) => node.id && normalizeId(node.id) === normalizeId(id));
+  } else if (attachment.type === "note") {
+    const noteTitle = attachment.ref.trim().toLowerCase();
+    target = corpus.nodes.find((node) => node.title.trim().toLowerCase() === noteTitle);
+  } else if (attachment.type === "file") {
+    const wanted = normalizeFileRef(attachment.ref);
+    target = corpus.nodes.find((node) => normalizeFileRef(node.file) === wanted) || corpus.nodes.find((node) => normalizeFileRef(node.file).endsWith(`/${wanted}`));
+  } else if (attachment.type !== "url" && attachment.type !== "session") {
+    const tail = refTail(attachment.ref);
+    target = corpus.nodes.find((node) => (node.id && normalizeId(node.id) === normalizeId(tail)) || nodeHasExactLabel(node, tail));
+  }
+  if (!target) return undefined;
+  return {
+    key: target.key,
+    kind: target.kind,
+    id: target.id,
+    title: target.title,
+    file: target.file,
+    sourceRange: target.sourceRange,
+    citation: citationFor(target),
+  };
+}
+
+function resolveAttachmentTargets(corpus: CompiledCorpus, attachments: AgentContextAttachment[]): AgentContextAttachment[] {
+  return attachments.map((attachment) => {
+    const target = attachmentTargetFor(corpus, attachment);
+    return target ? { ...attachment, target } : attachment;
+  });
+}
+
+function normalizeThreadStorage(raw: string | undefined): AgentThreadMetadata["storage"] | undefined {
+  const value = String(raw || "").trim().toLowerCase();
+  if (!value) return undefined;
+  if (value === "summary" || value === "transcript" || value === "external" || value === "mixed") return value;
+  return "unknown";
+}
+
+function agentThreadMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): AgentThreadMetadata | undefined {
+  if (!isAgentThreadNode(node)) return undefined;
+  const props = node.effectiveProperties || node.properties || {};
+  const propertyAttachments = [
+    ...parseContextAttachmentList(props.CONTEXT),
+    ...parseContextAttachmentList(props.ORG2_CONTEXT),
+    ...parseContextAttachmentList(props.CONTEXT_ATTACHMENTS),
+    ...parseContextAttachmentList(props.ORG2_CONTEXT_ATTACHMENTS),
+  ];
+  const linkAttachments = node.links.map(attachmentFromLink).filter((item): item is AgentContextAttachment => !!item);
+  const contextAttachments = resolveAttachmentTargets(corpus, mergeAttachments([...propertyAttachments, ...linkAttachments]));
+  return {
+    ...(props.AGENT || props.ORG2_AGENT ? { agent: props.AGENT || props.ORG2_AGENT } : {}),
+    ...(props.SESSION || props.ORG2_SESSION ? { session: props.SESSION || props.ORG2_SESSION } : {}),
+    ...(props.STATUS || props.ORG2_STATUS ? { status: props.STATUS || props.ORG2_STATUS } : {}),
+    ...(props.TRANSCRIPT || props.TRANSCRIPT_ARTIFACT || props.ORG2_TRANSCRIPT ? { transcript: props.TRANSCRIPT || props.TRANSCRIPT_ARTIFACT || props.ORG2_TRANSCRIPT } : {}),
+    ...(normalizeThreadStorage(props.STORAGE || props.TRANSCRIPT_STORAGE || props.ORG2_STORAGE) ? { storage: normalizeThreadStorage(props.STORAGE || props.TRANSCRIPT_STORAGE || props.ORG2_STORAGE) } : {}),
+    contextAttachments,
+  };
+}
+
+function attachmentMatchesNode(node: CompiledCorpusNode, attachment: AgentContextAttachment): boolean {
+  if (attachment.target?.key === node.key) return true;
+  if (attachment.type === "id" && node.id && normalizeId(refTail(attachment.ref)) === normalizeId(node.id)) return true;
+  if (attachment.type === "file" && node.kind === "file") {
+    const wanted = normalizeFileRef(attachment.ref);
+    const actual = normalizeFileRef(node.file);
+    return actual === wanted || actual.endsWith(`/${wanted}`);
+  }
+  if (attachment.type === "note" && nodeHasExactLabel(node, attachment.ref)) return true;
+  if (attachment.type !== "url" && attachment.type !== "session") {
+    const tail = refTail(attachment.ref);
+    return Boolean((node.id && normalizeId(tail) === normalizeId(node.id)) || nodeHasExactLabel(node, tail));
+  }
+  return false;
+}
+
+function relatedThreadsFor(corpus: CompiledCorpus, node: CompiledCorpusNode): AgentRelatedThread[] {
+  if (isAgentThreadNode(node)) return [];
+  const out: AgentRelatedThread[] = [];
+  for (const candidate of corpus.nodes) {
+    if (candidate.key === node.key || !isAgentThreadNode(candidate)) continue;
+    const thread = agentThreadMetadataFor(corpus, candidate);
+    if (!thread) continue;
+    const matchingAttachments = thread.contextAttachments.filter((attachment) => attachmentMatchesNode(node, attachment));
+    if (matchingAttachments.length === 0) continue;
+    out.push({
+      key: candidate.key,
+      id: candidate.id,
+      title: candidate.title,
+      ...(thread.agent ? { agent: thread.agent } : {}),
+      ...(thread.session ? { session: thread.session } : {}),
+      ...(thread.status ? { status: thread.status } : {}),
+      file: candidate.file,
+      sourceRange: candidate.sourceRange,
+      citation: citationFor(candidate),
+      matchingAttachments,
+    });
+  }
+  return out.sort((a, b) => a.title.localeCompare(b.title) || a.citation.localeCompare(b.citation));
+}
+
+function dataLinkKindFor(node: CompiledCorpusNode): AgentDataLinkKind | null {
+  const kind = kindPropertyFor(node);
+  if (kind === "data-link" || kind === "warehouse-query" || kind === "dataset" || kind === "sql-view" || kind === "event-stream" || kind === "timeline-link") return kind;
+  return null;
+}
+
+function parseDataParams(raw: string | undefined): Pick<AgentDataLinkMetadata, "params" | "paramsRaw"> {
+  const value = String(raw || "").trim();
+  if (!value) return {};
+  try {
+    return { params: JSON.parse(value) };
+  } catch {
+    return { paramsRaw: value };
+  }
+}
+
+function numericDataProperty(props: Record<string, string>, names: string[]): number | undefined {
+  for (const name of names) {
+    const raw = props[name];
+    if (!raw) continue;
+    const parsed = Number.parseInt(String(raw).replace(/,/g, "").trim(), 10);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function stringDataProperty(props: Record<string, string>, names: string[]): string | undefined {
+  for (const name of names) {
+    const value = String(props[name] || "").trim();
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function dataLinkMetadataFor(node: CompiledCorpusNode): AgentDataLinkMetadata | undefined {
+  const kind = dataLinkKindFor(node);
+  if (!kind) return undefined;
+  const props = node.effectiveProperties || node.properties || {};
+  const rowCount = numericDataProperty(props, ["ROW_COUNT", "ROWS", "ORG2_ROW_COUNT"]);
+  const system = stringDataProperty(props, ["SYSTEM", "SOURCE_SYSTEM", "ORG2_SYSTEM"]);
+  const engine = stringDataProperty(props, ["ENGINE", "ORG2_ENGINE"]);
+  const source = stringDataProperty(props, ["SOURCE", "DATA_SOURCE", "URI", "URL"]);
+  const sourcePath = stringDataProperty(props, ["PATH", "FILE"]);
+  const queryId = stringDataProperty(props, ["QUERY_ID", "SQL_ID", "VIEW_ID"]);
+  const query = stringDataProperty(props, ["QUERY", "SQL"]);
+  const queryHash = stringDataProperty(props, ["QUERY_HASH", "HASH", "SOURCE_HASH"]);
+  const artifact = stringDataProperty(props, ["ARTIFACT", "RESULT_ARTIFACT", "OUTPUT"]);
+  const result = stringDataProperty(props, ["RESULT", "RESULTS", "MATERIALIZED_RESULT"]);
+  const lastRun = stringDataProperty(props, ["LAST_RUN", "RAN_AT", "UPDATED_AT", "ORG2_LAST_RUN"]);
+  const freshness = stringDataProperty(props, ["FRESHNESS", "STATUS"]);
+  const materialized = stringDataProperty(props, ["MATERIALIZED", "MATERIALIZATION"]);
+  return {
+    kind,
+    ...(system ? { system } : {}),
+    ...(engine ? { engine } : {}),
+    ...(source ? { source } : {}),
+    ...(sourcePath ? { path: sourcePath } : {}),
+    ...(queryId ? { queryId } : {}),
+    ...(query ? { query } : {}),
+    ...(queryHash ? { queryHash } : {}),
+    ...parseDataParams(stringDataProperty(props, ["PARAMS", "PARAMETERS", "ARGS"])),
+    ...(artifact ? { artifact } : {}),
+    ...(result ? { result } : {}),
+    ...(rowCount !== undefined ? { rowCount } : {}),
+    ...(lastRun ? { lastRun } : {}),
+    ...(freshness ? { freshness } : {}),
+    ...(materialized ? { materialized } : {}),
+  };
+}
+
+function parseUntypedAttachmentList(raw: string | undefined, defaultType: AgentContextAttachment["type"] = "other"): AgentContextAttachment[] {
+  if (!raw) return [];
+  return String(raw)
+    .split(/[;,]/)
+    .map((token) => {
+      const value = token.trim();
+      if (!value) return null;
+      if (/^[A-Za-z][A-Za-z0-9_-]*:/.test(value)) return parseContextAttachmentToken(value, "property");
+      return { type: defaultType, ref: defaultType === "other" ? value : `${defaultType}:${value}`, source: "property" };
+    })
+    .filter((item): item is AgentContextAttachment => !!item);
+}
+
+function dataLinkAttachmentsFor(corpus: CompiledCorpus, node: CompiledCorpusNode): AgentContextAttachment[] {
+  if (!dataLinkKindFor(node)) return [];
+  const props = node.properties || {};
+  const propertyAttachments = [
+    ...parseContextAttachmentList(props.CONTEXT),
+    ...parseContextAttachmentList(props.ORG2_CONTEXT),
+    ...parseContextAttachmentList(props.CONTEXT_ATTACHMENTS),
+    ...parseContextAttachmentList(props.ORG2_CONTEXT_ATTACHMENTS),
+    ...parseUntypedAttachmentList(props.TARGET),
+    ...parseUntypedAttachmentList(props.TARGETS),
+    ...parseUntypedAttachmentList(props.TARGET_ID, "id"),
+    ...parseUntypedAttachmentList(props.TARGET_IDS, "id"),
+    ...parseUntypedAttachmentList(props.RELATED),
+    ...parseUntypedAttachmentList(props.RELATED_TO),
+    ...parseUntypedAttachmentList(props.ATTACHED_TO),
+    ...parseUntypedAttachmentList(props.REPORT, "report"),
+    ...parseUntypedAttachmentList(props.REPORT_ID, "report"),
+    ...parseUntypedAttachmentList(props.NOTE, "note"),
+    ...parseUntypedAttachmentList(props.NOTE_ID, "note"),
+    ...parseUntypedAttachmentList(props.ENTITY, "entity"),
+    ...parseUntypedAttachmentList(props.ENTITY_ID, "entity"),
+  ];
+  const linkAttachments = node.links.map(attachmentFromLink).filter((item): item is AgentContextAttachment => !!item);
+  return resolveAttachmentTargets(corpus, mergeAttachments([...propertyAttachments, ...linkAttachments]));
+}
+
+function headingSubtreeEndLine(corpus: CompiledCorpus, node: CompiledCorpusNode): number {
+  if (node.kind !== "heading") return Number.POSITIVE_INFINITY;
+  const nextPeerOrAncestor = corpus.nodes
+    .filter((candidate) => candidate.file === node.file && candidate.kind === "heading" && candidate.sourceRange.startLine > node.sourceRange.startLine && (candidate.level || 0) <= (node.level || 0))
+    .sort((a, b) => a.sourceRange.startLine - b.sourceRange.startLine)[0];
+  return nextPeerOrAncestor ? nextPeerOrAncestor.sourceRange.startLine - 1 : Number.POSITIVE_INFINITY;
+}
+
+function isDescendantDataLink(corpus: CompiledCorpus, node: CompiledCorpusNode, candidate: CompiledCorpusNode): boolean {
+  if (candidate.key === node.key || candidate.file !== node.file || !dataLinkKindFor(candidate)) return false;
+  if (node.kind === "file") return true;
+  if (candidate.kind !== "heading") return false;
+  const nodeLevel = node.level || 0;
+  const candidateLevel = candidate.level || 0;
+  return candidate.sourceRange.startLine > node.sourceRange.startLine && candidate.sourceRange.startLine <= headingSubtreeEndLine(corpus, node) && candidateLevel > nodeLevel;
+}
+
+function relatedDataLinksFor(corpus: CompiledCorpus, node: CompiledCorpusNode): AgentRelatedDataLink[] {
+  if (dataLinkKindFor(node)) return [];
+  const out = new Map<string, AgentRelatedDataLink>();
+  for (const candidate of corpus.nodes) {
+    if (candidate.key === node.key || !dataLinkKindFor(candidate)) continue;
+    const descendant = isDescendantDataLink(corpus, node, candidate);
+    const matchingAttachments = descendant ? [] : dataLinkAttachmentsFor(corpus, candidate).filter((attachment) => attachmentMatchesNode(node, attachment));
+    if (!descendant && matchingAttachments.length === 0) continue;
+    const dataLink = dataLinkMetadataFor(candidate);
+    if (!dataLink) continue;
+    out.set(candidate.key, {
+      key: candidate.key,
+      id: candidate.id,
+      title: candidate.title,
+      kind: dataLink.kind,
+      file: candidate.file,
+      sourceRange: candidate.sourceRange,
+      citation: citationFor(candidate),
+      dataLink,
+      ...(matchingAttachments.length ? { matchingAttachments } : {}),
+    });
+  }
+  return Array.from(out.values()).sort((a, b) => a.citation.localeCompare(b.citation) || a.title.localeCompare(b.title));
+}
+
 function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: Set<AgentInclude>, score?: { score: number; matchedTerms: string[]; selectionReason?: string[] }): AgentNode {
   const source = { file: node.file, sourceRange: node.sourceRange, citation: citationFor(node) };
+  const thread = agentThreadMetadataFor(corpus, node);
+  const relatedThreads = relatedThreadsFor(corpus, node);
+  const dataLink = dataLinkMetadataFor(node);
+  const relatedDataLinks = relatedDataLinksFor(corpus, node);
   return {
     key: node.key,
     kind: node.kind,
@@ -316,6 +738,10 @@ function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: 
     snippet: node.snippet,
     ...(score ? { score: score.score, matchedTerms: score.matchedTerms, selectionReason: score.selectionReason || [] } : {}),
     claimState: claimStateFor(node),
+    ...(thread ? { thread } : {}),
+    ...(relatedThreads.length ? { relatedThreads } : {}),
+    ...(dataLink ? { dataLink } : {}),
+    ...(relatedDataLinks.length ? { relatedDataLinks } : {}),
     ...(include.has("sources") ? { sources: [source] } : {}),
     ...(include.has("backlinks") ? { backlinks: inferredBacklinksFor(corpus, node) } : {}),
     ...(include.has("neighbors") ? { neighbors: neighborsFor(corpus, node) } : {}),
@@ -362,6 +788,29 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
   const todos = results.filter((node) => Boolean(node.todo));
   const entityValues = uniqueSorted(results.flatMap((node) => [node.properties.PROJECT, node.properties.PERSON, node.properties.PEOPLE, ...node.tags, ...node.aliases]));
   const backlinkValues = uniqueSorted(results.flatMap((node) => (node.backlinks || []).map((link) => `${link.sourceTitle} (${link.citation})`)));
+  const relatedThreads = Array.from(
+    results
+      .flatMap((node) => node.relatedThreads || [])
+      .reduce((byKey, thread) => byKey.set(thread.key, thread), new Map<string, AgentRelatedThread>())
+      .values(),
+  ).sort((a, b) => a.title.localeCompare(b.title) || a.citation.localeCompare(b.citation));
+  const directDataLinks: AgentRelatedDataLink[] = results
+    .filter((node): node is AgentNode & { dataLink: AgentDataLinkMetadata } => Boolean(node.dataLink))
+    .map((node) => ({
+      key: node.key,
+      id: node.id,
+      title: node.title,
+      kind: node.dataLink.kind,
+      file: node.file,
+      sourceRange: node.sourceRange,
+      citation: node.citation,
+      dataLink: node.dataLink,
+    }));
+  const relatedDataLinks = Array.from(
+    [...directDataLinks, ...results.flatMap((node) => node.relatedDataLinks || [])]
+      .reduce((byKey, dataLink) => byKey.set(dataLink.key, dataLink), new Map<string, AgentRelatedDataLink>())
+      .values(),
+  ).sort((a, b) => a.citation.localeCompare(b.citation) || a.title.localeCompare(b.title));
   const profiles = payload.entityProfiles || [];
   const caveats = uniqueSorted([
     ...(payload.errors || []),
@@ -407,6 +856,40 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
     if (profile.reviewNeeded.length) lines.push(`  - Review needed: ${profile.reviewNeeded.map((item) => item.message).join("; ")}`);
   }
   for (const value of backlinkValues.slice(0, 12)) lines.push(`- Backlink: ${value}`);
+  lines.push("");
+  lines.push(`${h2} Related agent threads`);
+  if (relatedThreads.length === 0) lines.push("- None found");
+  for (const thread of relatedThreads) {
+    const details = [
+      thread.id ? `id: ${thread.id}` : "",
+      thread.agent ? `agent: ${thread.agent}` : "",
+      thread.session ? `session: ${thread.session}` : "",
+      thread.status ? `status: ${thread.status}` : "",
+    ].filter(Boolean);
+    const attachments = uniqueSorted(thread.matchingAttachments.map((attachment) => attachment.ref));
+    lines.push(`- ${thread.title} (${thread.citation})${details.length ? `; ${details.join("; ")}` : ""}`);
+    if (attachments.length) lines.push(`  - Matching attachments: ${attachments.join(", ")}`);
+  }
+  lines.push("");
+  lines.push(`${h2} Related data links`);
+  if (relatedDataLinks.length === 0) lines.push("- None found");
+  for (const item of relatedDataLinks) {
+    const details = [
+      `kind: ${item.kind}`,
+      item.id ? `id: ${item.id}` : "",
+      item.dataLink.system ? `system: ${item.dataLink.system}` : "",
+      item.dataLink.engine ? `engine: ${item.dataLink.engine}` : "",
+      item.dataLink.queryId ? `query: ${item.dataLink.queryId}` : "",
+      item.dataLink.artifact ? `artifact: ${item.dataLink.artifact}` : "",
+      item.dataLink.result ? `result: ${item.dataLink.result}` : "",
+      item.dataLink.rowCount !== undefined ? `rows: ${item.dataLink.rowCount}` : "",
+      item.dataLink.lastRun ? `last run: ${item.dataLink.lastRun}` : "",
+      item.dataLink.freshness ? `freshness: ${item.dataLink.freshness}` : "",
+    ].filter(Boolean);
+    const attachments = uniqueSorted((item.matchingAttachments || []).map((attachment) => attachment.ref));
+    lines.push(`- ${item.title} (${item.citation})${details.length ? `; ${details.join("; ")}` : ""}`);
+    if (attachments.length) lines.push(`  - Matching attachments: ${attachments.join(", ")}`);
+  }
   lines.push("");
   lines.push(`${h2} Open questions / known uncertainty`);
   if (caveats.length === 0) lines.push("- None surfaced by org2; verify any task-specific assumptions before acting.");

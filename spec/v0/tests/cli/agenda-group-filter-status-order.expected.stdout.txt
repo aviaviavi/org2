@@ -16,35 +16,55 @@
           "headline": "Charlie done",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-status.input.txt",
-          "line": 4
+          "line": 4,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         },
         {
           "todo": "TODO",
           "headline": "Alpha todo",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-status.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         },
         {
           "todo": "REVIEW",
           "headline": "Echo custom",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-status.input.txt",
-          "line": 8
+          "line": 8,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         },
         {
           "todo": "WAITING",
           "headline": "Beta in progress",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-status.input.txt",
-          "line": 2
+          "line": 2,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         },
         {
           "todo": "CANCELED",
           "headline": "Delta canceled",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-status.input.txt",
-          "line": 6
+          "line": 6,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ],
       "groups": [
@@ -56,7 +76,11 @@
               "headline": "Charlie done",
               "kind": "SCHEDULED",
               "file": "spec/v0/tests/cli/agenda-sort-filter-status.input.txt",
-              "line": 4
+              "line": 4,
+              "body": "",
+              "level": 1,
+              "tags": [],
+              "properties": {}
             }
           ]
         },
@@ -68,7 +92,11 @@
               "headline": "Alpha todo",
               "kind": "SCHEDULED",
               "file": "spec/v0/tests/cli/agenda-sort-filter-status.input.txt",
-              "line": 0
+              "line": 0,
+              "body": "",
+              "level": 1,
+              "tags": [],
+              "properties": {}
             }
           ]
         },
@@ -80,7 +108,11 @@
               "headline": "Echo custom",
               "kind": "SCHEDULED",
               "file": "spec/v0/tests/cli/agenda-sort-filter-status.input.txt",
-              "line": 8
+              "line": 8,
+              "body": "",
+              "level": 1,
+              "tags": [],
+              "properties": {}
             }
           ]
         },
@@ -92,7 +124,11 @@
               "headline": "Beta in progress",
               "kind": "SCHEDULED",
               "file": "spec/v0/tests/cli/agenda-sort-filter-status.input.txt",
-              "line": 2
+              "line": 2,
+              "body": "",
+              "level": 1,
+              "tags": [],
+              "properties": {}
             }
           ]
         },
@@ -104,7 +140,11 @@
               "headline": "Delta canceled",
               "kind": "SCHEDULED",
               "file": "spec/v0/tests/cli/agenda-sort-filter-status.input.txt",
-              "line": 6
+              "line": 6,
+              "body": "",
+              "level": 1,
+              "tags": [],
+              "properties": {}
             }
           ]
         }

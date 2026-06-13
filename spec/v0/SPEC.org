@@ -504,6 +504,28 @@ A *keyword line* matches:
 
 Keyword lines produce a =KeywordLine= node with a lossless =raw= field.
 
+** Affiliated keywords
+
+Some keyword lines are *affiliated metadata* when they appear immediately before a table, source block, or common block with no blank line or other element between them.
+
+Recognized affiliated keys are matched case-insensitively:
+
+- =NAME=
+- =CAPTION=
+- =HEADER= / =HEADERS=
+- =RESULTS=
+- =PLOT=
+- =CHART=
+- =DATASET=
+- =VIEW=
+- Any key beginning with =ATTR_=
+
+When one or more affiliated keyword lines precede an eligible element, the parser MUST attach them to that element as =affiliatedKeywords= in source order instead of emitting them as sibling =KeywordLine= nodes.
+
+This is the v0 metadata hook for named tables, inline chart declarations, and SQL/dataset views. The keyword payload remains opaque in the canonical AST; higher-level APIs may interpret values such as =#+chart: line x=quarter y=revenue= or =#+view: finance.revenue_by_quarter=.
+
+If an affiliated key is followed by a blank line, headline, paragraph, drawer, planning line, comment, or any other non-eligible element, it MUST remain a standalone =KeywordLine= node.
+
 * Planning lines (SCHEDULED:/DEADLINE:/CLOSED:)
 
 Org2 v0 recognizes planning lines as explicit nodes:

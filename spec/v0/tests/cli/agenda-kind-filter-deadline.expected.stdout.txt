@@ -16,7 +16,11 @@
           "headline": "Build extension wiring",
           "kind": "DEADLINE",
           "file": "spec/v0/tests/cli/agenda-status-filter.input.txt",
-          "line": 3
+          "line": 3,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

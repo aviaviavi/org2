@@ -16,7 +16,11 @@
           "headline": "Ship MVP filter",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-status-filter.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     },
@@ -29,14 +33,22 @@
           "headline": "Build extension wiring",
           "kind": "DEADLINE",
           "file": "spec/v0/tests/cli/agenda-status-filter.input.txt",
-          "line": 3
+          "line": 3,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         },
         {
           "todo": "WAITING",
           "headline": "Review feedback",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-status-filter.input.txt",
-          "line": 6
+          "line": 6,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

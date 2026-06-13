@@ -71,6 +71,74 @@ npm run org2 -- lint --dir ~/notes --recursive --format json > views/corpus-heal
 
 The compiled artifact supplies file hashes, heading nodes, IDs, aliases, links, backlinks, planning data, properties, snippets, and source ranges. Keep provider credentials and model configuration outside the corpus artifact. If an agent saves a report or summary, stamp it with generated-artifact metadata described in [[file:corpus-flow.org][Corpus flow]].
 
+* Agent thread records
+
+Agent conversations that matter should be represented as durable Org2 headings instead of only living in an external chat transcript. Use =KIND: agent-thread= for a thread record and keep the remote session reference separate from selected context.
+
+#+begin_src org
+* Thread: Firebolt report help
+:PROPERTIES:
+:ID: thread-1
+:KIND: agent-thread
+:AGENT: openclaw
+:SESSION: openclaw:session:abc123
+:STATUS: active
+:CONTEXT: id:report-1, file:reports/firebolt.csv, ticket:REP-52
+:TRANSCRIPT: file:threads/thread-1.transcript.org2
+:STORAGE: summary
+:END:
+
+** Context attachments
+- [[id:report-1][Firebolt report]]
+- [[file:reports/firebolt.csv][latest CSV artifact]]
+
+** Durable outputs
+- [ ] Follow up on validation notes.
+#+end_src
+
+The =agent= and =session= fields identify the external worker/session. =context= is a comma- or semicolon-separated list of typed references such as =id:=, =file:=, =ticket:=, =report:=, =entity:=, =artifact:=, or =url:=. The body can also include normal Org2 links under a =Context attachments= section for readable labels and editor navigation.
+
+=org2 agent fetch --id thread-1 --format json= exposes this as =thread.contextAttachments= along with =thread.agent=, =thread.session=, =thread.status=, =thread.transcript=, and =thread.storage=. Attachments that point at known =id:=, =file:=, wiki/note targets, or exact typed refs such as =report:report-1= include a =target= object with the resolved title, file, line range, and citation.
+
+Fetching the selected context object goes the other direction: =org2 agent fetch --id report-1 --format json= includes =relatedThreads= when agent-thread records attach to that node. Each related thread carries its id/title/session/status/citation plus =matchingAttachments=, so a Workspace or Agenda client can show “open existing thread” from a TODO/report/entity without scanning every thread itself. This preserves citations and avoids raw transcript storage unless the user chooses it.
+
+For prompt-ready context, =org2 context --id report-1 --format markdown= renders the selected node directly as a cited context pack. When attached agent-thread records exist, the rendered pack includes a =Related agent threads= section with the session/status and matching attachments so a client can decide whether to open an existing OpenClaw session or start a new one.
+
+* Data and query records
+
+Data-backed reports should keep executable details and materialized artifacts as typed headings. Use =KIND: warehouse-query= for external systems, =KIND: dataset= for local/ad hoc sources, and =KIND: data-link=, =sql-view=, =event-stream=, or =timeline-link= for adjacent projections.
+
+#+begin_src org
+* Report: package fetches
+:PROPERTIES:
+:ID: report-fetches
+:KIND: report
+:END:
+
+** Data link: package fetches by company
+:PROPERTIES:
+:ID: query-fetches-by-company
+:KIND: warehouse-query
+:SYSTEM: clickhouse
+:QUERY_ID: scarf.package_fetches_by_company.v1
+:PARAMS: {"packages":["firebolt/foo"],"from":"2026-01-01"}
+:LAST_RUN: 2026-06-12T12:30:00-07:00
+:ARTIFACT: customer-reports/firebolt/package_fetches_by_company.csv
+:ROW_COUNT: 1234
+:FRESHNESS: live
+:END:
+#+end_src
+
+Keep credentials and secrets outside org2 files. Store only stable query IDs, non-secret params, source paths/URIs, row counts, freshness, and artifact references. This lets agents trace claims back to data without embedding warehouse-scale rows in notes.
+
+=org2 agent fetch --id query-fetches-by-company --format json= exposes this as =dataLink= metadata, including =kind=, =system=, =queryId=, parsed JSON =params= when possible, =artifact=, =rowCount=, =lastRun=, and =freshness=. A local DuckDB-style dataset can use =KIND: dataset= with =ENGINE=, =PATH=, =PARAMS=, and =RESULTS=, and the same =dataLink= field is returned for Workspace/search clients.
+
+Fetching a parent report or file also exposes descendant data/query records as =relatedDataLinks=. For example, =org2 agent fetch --id report-fetches --format json= includes child =warehouse-query= and =dataset= headings with their citations and compact =dataLink= metadata. The prompt-ready renderer mirrors this with a =Related data links= section, so a Workspace client can show the report's evidence, artifacts, row counts, and freshness next to the selected note without reparsing the org2 file.
+
+Data/query records can also live outside the selected report subtree, such as in a central data catalog. Point them at the selected note with =CONTEXT: id:report-fetches=, =TARGET_ID: report-fetches=, =REPORT_ID: report-fetches=, or a normal =[[id:report-fetches]]= link. =relatedDataLinks= includes those referenced records with =matchingAttachments= so clients can explain why the query belongs with the selected report/entity.
+
+When the selected node is itself a =warehouse-query=, =dataset=, or other data-link record, =org2 context --id query-fetches-by-company= also includes that selected record in =Related data links=. This gives an OpenClaw or Workspace handoff the same structured query/artifact/freshness metadata whether the user starts from a parent report or directly from the data node.
+
 * What to save back
 
 Good generated outputs are inspectable artifacts, not silent canonical edits:
