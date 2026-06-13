@@ -1014,16 +1014,16 @@ private struct DetailHeader: View {
           Task { await store.reloadSelectedEntrySource() }
         }
 
-        if store.isEditingEntry {
+        if store.hasActiveEdit {
           Button {
             Task { await store.saveActiveEdit() }
           } label: {
             Label("Save", systemImage: "checkmark")
           }
-          .disabled(store.isSavingEntry)
+          .disabled(!store.canSaveActiveEdit)
 
           Button {
-            store.cancelEditingSelectedEntry()
+            store.cancelActiveEdit()
           } label: {
             Label("Cancel", systemImage: "xmark")
           }
