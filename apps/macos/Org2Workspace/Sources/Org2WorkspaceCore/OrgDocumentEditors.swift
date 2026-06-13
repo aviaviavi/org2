@@ -1924,6 +1924,7 @@ private struct TableBlockEditor: View {
   let block: OrgEditableBlock
   @State private var table: OrgEditableTable
   @State private var isHovered = false
+  @State private var autosaveTask: Task<Void, Never>?
   @FocusState private var focusedCell: TableCellFocus?
 
   init(block: OrgEditableBlock, table: OrgTableBlock) {
@@ -2012,6 +2013,13 @@ private struct TableBlockEditor: View {
     .onHover { isHovered = $0 }
     .onAppear {
       focusedCell = firstEditableCellFocus
+    }
+    .onChange(of: table) {
+      scheduleTableAutosave()
+    }
+    .onDisappear {
+      autosaveTask?.cancel()
+      autosaveTask = nil
     }
   }
 
@@ -2160,8 +2168,30 @@ private struct TableBlockEditor: View {
   }
 
   private func saveTable() {
+    autosaveTask?.cancel()
+    autosaveTask = nil
     store.editableBlockText = table.formattedRawText
     Task { await store.saveEditedBlock(block) }
+  }
+
+  private func scheduleTableAutosave() {
+    let draft = table.formattedRawText
+    store.updateEditingBlockDraft(block, draft: draft)
+    autosaveTask?.cancel()
+
+    guard draft != block.rawText else {
+      return
+    }
+
+    autosaveTask = Task { [block] in
+      do {
+        try await Task.sleep(nanoseconds: 700_000_000)
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      await store.autosaveEditedBlock(block, replacement: draft)
+    }
   }
 }
 
