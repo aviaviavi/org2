@@ -844,16 +844,16 @@ public enum OrgEditableInlineToken: Equatable, Sendable {
     selection: NSRange,
     maxUTF16Length: Int = focusedScanUTF16Limit
   ) -> OrgEditableInlineToken? {
-    let textLength = (rawText as NSString).length
-    guard shouldScanFocusedToken(utf16Length: textLength, maxUTF16Length: maxUTF16Length) else {
+    guard let textLength = boundedUTF16Length(in: rawText, maxUTF16Length: maxUTF16Length) else {
       return nil
     }
 
     let tokens = all(in: rawText)
     guard !tokens.isEmpty else { return nil }
+    let safeLocation = min(max(0, selection.location), textLength)
     let safeSelection = NSRange(
-      location: min(max(0, selection.location), textLength),
-      length: min(max(0, selection.length), max(0, textLength - selection.location))
+      location: safeLocation,
+      length: min(max(0, selection.length), max(0, textLength - safeLocation))
     )
 
     if safeSelection.length > 0 {
@@ -871,6 +871,21 @@ public enum OrgEditableInlineToken: Equatable, Sendable {
     maxUTF16Length: Int = focusedScanUTF16Limit
   ) -> Bool {
     maxUTF16Length >= 0 && utf16Length <= maxUTF16Length
+  }
+
+  public static func boundedUTF16Length(
+    in text: String,
+    maxUTF16Length: Int = focusedScanUTF16Limit
+  ) -> Int? {
+    guard maxUTF16Length >= 0 else { return nil }
+    var count = 0
+    for _ in text.utf16 {
+      count += 1
+      if count > maxUTF16Length {
+        return nil
+      }
+    }
+    return count
   }
 
   private static func all(in rawText: String) -> [OrgEditableInlineToken] {

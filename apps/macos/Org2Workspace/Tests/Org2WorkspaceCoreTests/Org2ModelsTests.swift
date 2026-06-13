@@ -1103,6 +1103,7 @@ final class Org2ModelsTests: XCTestCase {
     let aliceRange = nsRaw.range(of: "Alice")
 
     XCTAssertFalse(OrgEditableInlineToken.shouldScanFocusedToken(utf16Length: nsRaw.length))
+    XCTAssertNil(OrgEditableInlineToken.boundedUTF16Length(in: raw))
     XCTAssertNil(OrgEditableInlineToken.focused(in: raw, selection: NSRange(location: aliceRange.location, length: 0)))
 
     let smallRaw = "See [[id:abc][Alice]]"
@@ -1120,6 +1121,20 @@ final class Org2ModelsTests: XCTestCase {
     } else {
       XCTFail("Expected focused link token when scan limit permits it")
     }
+  }
+
+  func testEditableInlineTokenUsesBoundedUTF16Length() {
+    XCTAssertEqual(
+      OrgEditableInlineToken.boundedUTF16Length(in: "abcd", maxUTF16Length: 4),
+      4
+    )
+    XCTAssertNil(OrgEditableInlineToken.boundedUTF16Length(in: "abcde", maxUTF16Length: 4))
+    XCTAssertEqual(
+      OrgEditableInlineToken.boundedUTF16Length(in: "a😀", maxUTF16Length: 3),
+      3
+    )
+    XCTAssertNil(OrgEditableInlineToken.boundedUTF16Length(in: "a😀", maxUTF16Length: 2))
+    XCTAssertNil(OrgEditableInlineToken.boundedUTF16Length(in: "", maxUTF16Length: -1))
   }
 
   func testRenderedEntryMoveAvailabilityUsesStableSignatures() {
