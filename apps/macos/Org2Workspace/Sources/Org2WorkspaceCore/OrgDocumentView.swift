@@ -494,8 +494,19 @@ private struct ProgressiveRenderFooter: View {
 }
 
 enum RenderedRowChrome {
+  static let controlsReserveWidth: CGFloat = 92
+
   static func rendersControls(isVisible: Bool) -> Bool {
     isVisible
+  }
+
+  static func contentTrailingPadding(
+    isSourceEditable: Bool,
+    allowsHoverChrome: Bool,
+    isSelected: Bool
+  ) -> CGFloat {
+    guard isSourceEditable else { return 0 }
+    return allowsHoverChrome || isSelected ? controlsReserveWidth : 0
   }
 
   static func controlsOpacity(isVisible: Bool) -> Double {
@@ -534,7 +545,7 @@ private struct EditableRenderedBlockView<Content: View>: View {
   private var rowContent: some View {
     ZStack(alignment: .topTrailing) {
       content
-        .padding(.trailing, isSourceEditable ? 92 : 0)
+        .padding(.trailing, contentTrailingPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
 
       if isSourceEditable {
@@ -579,6 +590,14 @@ private struct EditableRenderedBlockView<Content: View>: View {
 
   private var showsControls: Bool {
     isSourceEditable && (isSelected || (allowsHoverChrome && isHovered))
+  }
+
+  private var contentTrailingPadding: CGFloat {
+    RenderedRowChrome.contentTrailingPadding(
+      isSourceEditable: isSourceEditable,
+      allowsHoverChrome: allowsHoverChrome,
+      isSelected: isSelected
+    )
   }
 
   private var rowControls: some View {

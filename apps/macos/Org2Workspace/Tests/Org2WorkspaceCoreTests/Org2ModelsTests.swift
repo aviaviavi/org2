@@ -1579,6 +1579,38 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(RenderedRowChrome.controlsOpacity(isVisible: false), 0)
     XCTAssertTrue(RenderedRowChrome.allowsHitTesting(isVisible: true))
     XCTAssertFalse(RenderedRowChrome.allowsHitTesting(isVisible: false))
+    XCTAssertEqual(
+      RenderedRowChrome.contentTrailingPadding(
+        isSourceEditable: true,
+        allowsHoverChrome: true,
+        isSelected: false
+      ),
+      RenderedRowChrome.controlsReserveWidth
+    )
+    XCTAssertEqual(
+      RenderedRowChrome.contentTrailingPadding(
+        isSourceEditable: true,
+        allowsHoverChrome: false,
+        isSelected: false
+      ),
+      0
+    )
+    XCTAssertEqual(
+      RenderedRowChrome.contentTrailingPadding(
+        isSourceEditable: true,
+        allowsHoverChrome: false,
+        isSelected: true
+      ),
+      RenderedRowChrome.controlsReserveWidth
+    )
+    XCTAssertEqual(
+      RenderedRowChrome.contentTrailingPadding(
+        isSourceEditable: false,
+        allowsHoverChrome: true,
+        isSelected: true
+      ),
+      0
+    )
   }
 
   func testRenderedEntryWindowExpandsAndKeepsSelectionVisible() {
