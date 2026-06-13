@@ -914,7 +914,7 @@ private struct EditableRenderedBlockView<Content: View>: View {
 
   private var renderedContent: some View {
     HStack(alignment: .firstTextBaseline, spacing: 4) {
-      if isFoldable {
+      if showsDisclosureSlot {
         Button {
           actions.toggleFold()
         } label: {
@@ -924,7 +924,9 @@ private struct EditableRenderedBlockView<Content: View>: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
+        .opacity(isFoldable ? 1 : 0)
         .help(isFolded ? "Expand" : "Collapse")
+        .disabled(!isFoldable)
       }
 
       content
@@ -968,6 +970,15 @@ private struct EditableRenderedBlockView<Content: View>: View {
 
   private var showsChrome: Bool {
     OrgRenderedBlockDisplayPolicy.showsRowChrome(for: block)
+  }
+
+  private var showsDisclosureSlot: Bool {
+    switch block.rendered {
+    case .heading, .listItem:
+      return true
+    case .blank, .horizontalRule, .keyword, .paragraph, .planning, .properties, .quote, .source, .table:
+      return false
+    }
   }
 
   private var rowControls: some View {

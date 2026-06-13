@@ -817,7 +817,7 @@ private struct RenderedHeadingView: View {
   let inlineActions: RenderedBlockInlineActions
 
   var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 6) {
+    HStack(alignment: .firstTextBaseline, spacing: 7) {
       if let todo = heading.todo {
         RenderedHeadingTodoButton(todo: todo, inlineActions: inlineActions)
       }
@@ -928,8 +928,9 @@ private struct RenderedHeadingTagsButton: View {
       isPresented = true
     } label: {
       Text(tags.map { "#\($0)" }.joined(separator: " "))
-        .font(.caption)
-        .foregroundStyle(.secondary)
+        .font(.caption2.weight(.medium))
+        .foregroundStyle(.tertiary)
+        .lineLimit(1)
     }
     .buttonStyle(.plain)
     .disabled(inlineActions.setHeadingTags == nil || !inlineActions.isSourceEditable)
@@ -982,7 +983,7 @@ private struct RenderedPlanningView: View {
   @State private var draftValue = ""
 
   var body: some View {
-    HStack(spacing: 8) {
+    HStack(alignment: .firstTextBaseline, spacing: 6) {
       Menu {
         ForEach(["SCHEDULED", "DEADLINE", "CLOSED"], id: \.self) { kind in
           Button(kind.capitalized) {
@@ -991,9 +992,9 @@ private struct RenderedPlanningView: View {
         }
       } label: {
         Text(planning.kind.capitalized)
-          .font(.caption.weight(.medium))
-          .foregroundStyle(.secondary)
-          .frame(width: 78, alignment: .leading)
+          .font(.caption2.weight(.medium))
+          .foregroundStyle(.tertiary)
+          .frame(width: 58, alignment: .trailing)
       }
       .menuStyle(.borderlessButton)
       .menuIndicator(.hidden)
@@ -1005,7 +1006,7 @@ private struct RenderedPlanningView: View {
         Button {
           beginEditingValue()
         } label: {
-          HStack(spacing: 6) {
+          HStack(spacing: 4) {
             TimestampPill(systemImage: "calendar", text: timestamp.dateLabel)
             if let time = timestamp.timeLabel {
               TimestampPill(systemImage: "clock", text: time)
@@ -1092,12 +1093,12 @@ private struct TimestampPill: View {
 
   var body: some View {
     Label(text, systemImage: systemImage)
-      .font(.caption.monospacedDigit().weight(.medium))
+      .font(.caption2.monospacedDigit().weight(.medium))
       .labelStyle(.titleAndIcon)
-      .padding(.horizontal, 7)
-      .padding(.vertical, 3)
-      .background(Color.accentColor.opacity(0.12), in: Capsule())
-      .foregroundStyle(.primary)
+      .padding(.horizontal, 5)
+      .padding(.vertical, 1)
+      .background(Color.secondary.opacity(0.09), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+      .foregroundStyle(.secondary)
   }
 }
 
