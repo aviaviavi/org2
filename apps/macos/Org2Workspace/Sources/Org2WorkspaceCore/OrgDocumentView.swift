@@ -64,7 +64,7 @@ struct OrgRenderedEntryView: View, Equatable {
     )
     let moveAvailabilityValues = moveAvailability.signature == moveAvailabilitySignature ? moveAvailability.values : [:]
 
-    LazyVStack(alignment: .leading, spacing: 8) {
+    LazyVStack(alignment: .leading, spacing: 3) {
       if visibleWindow.hasPrevious {
         ProgressiveRenderFooter(
           visibleRange: visibleWindow.displayRange,
@@ -75,7 +75,7 @@ struct OrgRenderedEntryView: View, Equatable {
         )
       }
 
-      ForEach(visibleBlocks) { block in
+      ForEach(visibleBlocks.filter(OrgRenderedBlockDisplayPolicy.isVisible)) { block in
         OrgRenderedEntryRow(
           block: block,
           isSourceEditable: isSourceEditable,
@@ -660,10 +660,45 @@ enum RenderedBlockEditingPolicy {
   static func startsEditingOnSingleClick(block: OrgEditableBlock, isSourceEditable: Bool) -> Bool {
     guard isSourceEditable, block.isEditable else { return false }
     switch block.rendered {
-    case .blank, .horizontalRule:
+    case .blank, .horizontalRule, .properties:
       return false
-    case .heading, .planning, .properties, .quote, .source, .table, .listItem, .paragraph, .keyword:
+    case .heading, .planning, .quote, .source, .table, .listItem, .paragraph, .keyword:
       return true
+    }
+  }
+}
+
+enum OrgRenderedBlockDisplayPolicy {
+  static func isVisible(_ block: OrgEditableBlock) -> Bool {
+    switch block.rendered {
+    case .blank:
+      return false
+    case .properties:
+      return true
+    case .heading, .planning, .quote, .source, .table, .horizontalRule, .listItem, .paragraph, .keyword:
+      return true
+    }
+  }
+
+  static func showsRowChrome(for block: OrgEditableBlock) -> Bool {
+    switch block.rendered {
+    case .blank, .properties:
+      return false
+    case .heading, .planning, .quote, .source, .table, .horizontalRule, .listItem, .paragraph, .keyword:
+      return true
+    }
+  }
+
+  static func verticalPadding(for block: OrgEditableBlock) -> CGFloat {
+    switch block.rendered {
+    case .heading:
+      return 1
+    case .properties, .planning, .keyword:
+      return 1
+    case .blank:
+      return 0
+    case .paragraph, .quote, .source, .table, .horizontalRule, .listItem:
+      return 3
     }
   }
 }
@@ -695,7 +730,7 @@ private struct EditableRenderedBlockView<Content: View>: View {
   private var rowContent: some View {
     rowInnerContent
     .padding(.horizontal, 6)
-    .padding(.vertical, 3)
+    .padding(.vertical, OrgRenderedBlockDisplayPolicy.verticalPadding(for: block))
     .background(backgroundColor, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     .overlay(
       RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -743,7 +778,7 @@ private struct EditableRenderedBlockView<Content: View>: View {
     if isSelected {
       return Color.accentColor.opacity(0.075)
     }
-    if allowsHoverChrome && isHovered {
+    if showsChrome, allowsHoverChrome && isHovered {
       return Color.secondary.opacity(0.08)
     }
     return .clear
@@ -754,7 +789,8 @@ private struct EditableRenderedBlockView<Content: View>: View {
   }
 
   private var rendersControlLayer: Bool {
-    RenderedRowChrome.rendersControlLayer(
+    guard showsChrome else { return false }
+    return RenderedRowChrome.rendersControlLayer(
       isSourceEditable: isSourceEditable,
       allowsHoverChrome: allowsHoverChrome,
       isSelected: isSelected
@@ -762,11 +798,16 @@ private struct EditableRenderedBlockView<Content: View>: View {
   }
 
   private var contentTrailingPadding: CGFloat {
-    RenderedRowChrome.contentTrailingPadding(
+    guard showsChrome else { return 0 }
+    return RenderedRowChrome.contentTrailingPadding(
       isSourceEditable: isSourceEditable,
       allowsHoverChrome: allowsHoverChrome,
       isSelected: isSelected
     )
+  }
+
+  private var showsChrome: Bool {
+    OrgRenderedBlockDisplayPolicy.showsRowChrome(for: block)
   }
 
   private var rowControls: some View {
@@ -837,6 +878,8 @@ private struct EditableRenderedBlockView<Content: View>: View {
         .help("Block actions")
       }
     }
+    .fixedSize()
+    .frame(width: RenderedRowChrome.controlsReserveWidth, alignment: .trailing)
   }
 
   private var startsEditingOnSingleClick: Bool {
