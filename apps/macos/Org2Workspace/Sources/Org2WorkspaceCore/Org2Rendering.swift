@@ -20,6 +20,7 @@ public struct OrgEditableBlock: Identifiable, Equatable, Sendable {
   public let endLineExclusive: Int
   public let rawText: String
   public let rendered: OrgRenderedBlock
+  public let renderIdentity: OrgEditableBlockRenderIdentity
 
   public init(startLine: Int, endLineExclusive: Int, rawText: String, rendered: OrgRenderedBlock) {
     self.init(
@@ -43,6 +44,13 @@ public struct OrgEditableBlock: Identifiable, Equatable, Sendable {
     self.endLineExclusive = endLineExclusive
     self.rawText = rawText
     self.rendered = rendered
+    self.renderIdentity = OrgEditableBlockRenderIdentity(
+      id: id,
+      startLine: startLine,
+      endLineExclusive: endLineExclusive,
+      rawText: rawText,
+      renderedKind: Self.kindName(rendered)
+    )
   }
 
   public func preservingID(_ id: String) -> OrgEditableBlock {
@@ -79,6 +87,30 @@ public struct OrgEditableBlock: Identifiable, Equatable, Sendable {
     case .keyword: "keyword"
     case .blank: "blank"
     }
+  }
+}
+
+public struct OrgEditableBlockRenderIdentity: Equatable, Sendable {
+  public let id: String
+  public let startLine: Int
+  public let endLineExclusive: Int
+  public let rawUTF8Count: Int
+  public let rawHash: Int
+  public let renderedKind: String
+
+  public init(
+    id: String,
+    startLine: Int,
+    endLineExclusive: Int,
+    rawText: String,
+    renderedKind: String
+  ) {
+    self.id = id
+    self.startLine = startLine
+    self.endLineExclusive = endLineExclusive
+    self.rawUTF8Count = rawText.utf8.count
+    self.rawHash = rawText.hashValue
+    self.renderedKind = renderedKind
   }
 }
 

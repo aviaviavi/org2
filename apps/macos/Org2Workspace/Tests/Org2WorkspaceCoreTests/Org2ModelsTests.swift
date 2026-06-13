@@ -1659,6 +1659,44 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  @MainActor
+  func testRenderedBlockViewEqualityUsesCachedRenderIdentity() {
+    let longBody = String(repeating: "Long plain paragraph body.\n", count: 1_500)
+    let updatedBody = longBody + "Updated"
+    let initialBlock = OrgEditableBlock(
+      id: "paragraph",
+      startLine: 12,
+      endLineExclusive: 1_512,
+      rawText: longBody,
+      rendered: .paragraph(longBody)
+    )
+    let sameBlock = OrgEditableBlock(
+      id: "paragraph",
+      startLine: 12,
+      endLineExclusive: 1_512,
+      rawText: longBody,
+      rendered: .paragraph(longBody)
+    )
+    let updatedBlock = OrgEditableBlock(
+      id: "paragraph",
+      startLine: 12,
+      endLineExclusive: 1_512,
+      rawText: updatedBody,
+      rendered: .paragraph(updatedBody)
+    )
+
+    XCTAssertEqual(initialBlock.renderIdentity, sameBlock.renderIdentity)
+    XCTAssertNotEqual(initialBlock.renderIdentity, updatedBlock.renderIdentity)
+    XCTAssertEqual(
+      RenderedBlockView(block: initialBlock.rendered, rawText: initialBlock.rawText, editableBlock: initialBlock),
+      RenderedBlockView(block: sameBlock.rendered, rawText: sameBlock.rawText, editableBlock: sameBlock)
+    )
+    XCTAssertNotEqual(
+      RenderedBlockView(block: initialBlock.rendered, rawText: initialBlock.rawText, editableBlock: initialBlock),
+      RenderedBlockView(block: updatedBlock.rendered, rawText: updatedBlock.rawText, editableBlock: updatedBlock)
+    )
+  }
+
   func testRenderedEntryWindowExpandsAndKeepsSelectionVisible() {
     let blocks = (1...500).map { line in
       OrgEditableBlock(

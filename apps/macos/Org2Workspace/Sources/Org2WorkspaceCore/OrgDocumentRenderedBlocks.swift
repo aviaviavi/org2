@@ -28,7 +28,16 @@ struct RenderedBlockView: View, Equatable {
   }
 
   nonisolated static func == (lhs: RenderedBlockView, rhs: RenderedBlockView) -> Bool {
-    lhs.block == rhs.block
+    if let lhsEditableBlock = lhs.editableBlock,
+       let rhsEditableBlock = rhs.editableBlock {
+      return lhsEditableBlock.renderIdentity == rhsEditableBlock.renderIdentity
+        && lhs.sourceFile == rhs.sourceFile
+        && lhs.corpusRoot == rhs.corpusRoot
+        && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
+        && lhs.inlineActions.sourceBlockRunState == rhs.inlineActions.sourceBlockRunState
+    }
+
+    return lhs.block == rhs.block
       && lhs.rawText == rhs.rawText
       && lhs.editableBlock == rhs.editableBlock
       && lhs.sourceFile == rhs.sourceFile

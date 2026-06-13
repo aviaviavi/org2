@@ -338,9 +338,7 @@ private struct OrgRenderedEntryRow: View, Equatable {
   nonisolated static func == (lhs: OrgRenderedEntryRow, rhs: OrgRenderedEntryRow) -> Bool {
     if lhs.isEditing || rhs.isEditing {
       return lhs.isEditing == rhs.isEditing
-        && lhs.block.id == rhs.block.id
-        && lhs.block.startLine == rhs.block.startLine
-        && lhs.block.endLineExclusive == rhs.block.endLineExclusive
+        && lhs.block.renderIdentity == rhs.block.renderIdentity
         && lhs.isSourceEditable == rhs.isSourceEditable
         && lhs.isSelected == rhs.isSelected
         && lhs.sourceFile == rhs.sourceFile
@@ -349,7 +347,7 @@ private struct OrgRenderedEntryRow: View, Equatable {
         && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
         && lhs.inlineActions.sourceBlockRunState == rhs.inlineActions.sourceBlockRunState
     }
-    return lhs.block == rhs.block
+    return lhs.block.renderIdentity == rhs.block.renderIdentity
       && lhs.isSourceEditable == rhs.isSourceEditable
       && lhs.isSelected == rhs.isSelected
       && lhs.isEditing == rhs.isEditing
