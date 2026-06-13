@@ -140,7 +140,7 @@ path: ./data/package-fetches.csv
 engine: duckdb
 ```
 
-```sql results=fetches_by_state
+```sql results=fetches_by_state artifact=views/fetches_by_state.org
 SELECT state, count(*) AS fetches
 FROM fetches
 GROUP BY state
@@ -204,11 +204,11 @@ FROM fetches
 #+begin_src sh
 npm run org2 -- query-data --file report.org2 --results fetches_by_state
 npm run org2 -- query-data --file report.org2 --line 42 --format json
-npm run org2 -- query-data --file report.org2 --results fetches_by_state --format json
+npm run org2 -- query-data --file report.org2 --results fetches_by_state --out views/fetches_by_state.org
 cat report.org2 | npm run org2 -- query-data --stdin --results fetches_by_state
 #+end_src
 
-The default output is a named org table with =#+name: fetches_by_state= so it can be pasted or written into the note and consumed by =render-chart= via =source: fetches_by_state=. Materialized tables also include a compact =#+query-data:= provenance line with the result id, row count, selected SQL hash, and full DuckDB script hash so refreshed results can be compared without embedding the full script in the note. JSON output includes diagnostics, dataset metadata, SQL view metadata, provenance hashes, rows, and the generated org table; =--include-script= also includes the DuckDB setup SQL for debugging. Editor and agent clients can pass an unsaved buffer with =--stdin= and select the SQL result block containing or after the cursor with =--line N=; file-backed dataset paths are then resolved relative to the current working directory, while URL datasets are passed through as declared. The command expects a local DuckDB CLI on =PATH=, or a custom path via =--duckdb=.
+The default output is a named org table with =#+name: fetches_by_state= so it can be pasted or written into the note and consumed by =render-chart= via =source: fetches_by_state=. Materialized tables also include a compact =#+query-data:= provenance line with the result id, row count, optional artifact reference, selected SQL hash, and full DuckDB script hash so refreshed results can be compared without embedding the full script in the note. Add =artifact=PATH= to a SQL result block to record the intended materialized output; when =--out FILE= is used, the actual written artifact path is stamped instead. JSON output includes diagnostics, dataset metadata, SQL view metadata, provenance hashes/artifact, rows, and the generated org table; =--include-script= also includes the DuckDB setup SQL for debugging. Editor and agent clients can pass an unsaved buffer with =--stdin= and select the SQL result block containing or after the cursor with =--line N=; file-backed dataset paths are then resolved relative to the current working directory, while URL datasets are passed through as declared. The command expects a local DuckDB CLI on =PATH=, or a custom path via =--duckdb=.
 
 * Corpus lint
 
