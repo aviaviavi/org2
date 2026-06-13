@@ -3266,11 +3266,11 @@ final class Org2ModelsTests: XCTestCase {
       }
       .max { $0.startLine < $1.startLine })
     await store.deleteBlock(duplicatedOne)
-    try await waitForEntryRender(store)
     updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("- Two\n- One\n* Sibling"))
     XCTAssertFalse(updated.contains("- One\n\n- One"))
     XCTAssertEqual(store.selectedBlock?.rawText, "- One")
+    XCTAssertEqual(store.selectedEntrySource?.displayRange, "3-6")
   }
 
   @MainActor
