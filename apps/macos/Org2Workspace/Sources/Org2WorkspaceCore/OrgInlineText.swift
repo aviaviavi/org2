@@ -1,8 +1,19 @@
 import AppKit
 import SwiftUI
 
+struct OpenOrgFileReferenceActionKey: EnvironmentKey {
+  static let defaultValue: @MainActor @Sendable (OpenClawFileReference) -> Void = { _ in }
+}
+
+extension EnvironmentValues {
+  var openOrgFileReference: @MainActor @Sendable (OpenClawFileReference) -> Void {
+    get { self[OpenOrgFileReferenceActionKey.self] }
+    set { self[OpenOrgFileReferenceActionKey.self] = newValue }
+  }
+}
+
 struct OrgInlineText: View {
-  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(\.openOrgFileReference) private var openOrgFileReference
   let raw: String
   let font: Font
   let lineSpacing: CGFloat
@@ -14,18 +25,18 @@ struct OrgInlineText: View {
   }
 
   var body: some View {
-    Text(OrgInlineAttributedString.make(OrgInlineParser.parse(raw), baseFont: font))
+    Text(OrgInlineAttributedString.cached(raw: raw, baseFont: font))
       .font(font)
       .lineSpacing(lineSpacing)
       .textSelection(.enabled)
       .environment(\.openURL, OpenURLAction { url in
         if let reference = OpenClawFileReference.fromDeepLinkURL(url) {
-          store.openChatFileReference(reference)
+          openOrgFileReference(reference)
           return .handled
         }
 
         if url.isFileURL {
-          store.openChatFileReference(OpenClawFileReference(path: url.path, line: nil))
+          openOrgFileReference(OpenClawFileReference(path: url.path, line: nil))
           return .handled
         }
 
@@ -40,12 +51,38 @@ struct OrgInlineText: View {
 }
 
 enum OrgInlineAttributedString {
+  private final class CachedValue {
+    let attributedString: AttributedString
+
+    init(_ attributedString: AttributedString) {
+      self.attributedString = attributedString
+    }
+  }
+
+  @MainActor private static let cache = NSCache<NSString, CachedValue>()
+
+  @MainActor
+  static func cached(raw: String, baseFont: Font = .body) -> AttributedString {
+    let key = cacheKey(raw: raw, baseFont: baseFont)
+    if let cached = cache.object(forKey: key) {
+      return cached.attributedString
+    }
+
+    let attributedString = make(OrgInlineParser.parse(raw), baseFont: baseFont)
+    cache.setObject(CachedValue(attributedString), forKey: key)
+    return attributedString
+  }
+
   static func make(_ spans: [OrgInlineSpan], baseFont: Font = .body) -> AttributedString {
     var output = AttributedString()
     for span in spans {
       output.append(chunk(for: span, baseFont: baseFont))
     }
     return output
+  }
+
+  private static func cacheKey(raw: String, baseFont: Font) -> NSString {
+    "\(String(describing: baseFont))\u{1F}\(raw)" as NSString
   }
 
   private static func chunk(for span: OrgInlineSpan, baseFont: Font) -> AttributedString {
