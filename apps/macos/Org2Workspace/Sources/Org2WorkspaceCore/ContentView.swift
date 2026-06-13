@@ -1618,28 +1618,66 @@ private struct PlanningBlockEditor: View {
   }
 
   var body: some View {
-    BlockEditorContainer(
-      block: block,
-      title: "Planning",
-      previewText: rawPlanning,
-      onSave: { store.editableBlockText = rawPlanning }
-    ) {
-      HStack(alignment: .firstTextBaseline, spacing: 8) {
-        Picker("Kind", selection: $kind) {
-          ForEach(["SCHEDULED", "DEADLINE", "CLOSED"], id: \.self) { value in
-            Text(value.capitalized).tag(value)
+    HStack(alignment: .firstTextBaseline, spacing: 8) {
+      Menu {
+        ForEach(Self.planningKinds, id: \.self) { value in
+          Button(value.capitalized) {
+            kind = value
           }
         }
-        .frame(width: 160)
-
-        TextField("Timestamp", text: $value)
-          .textFieldStyle(.roundedBorder)
-          .focused($valueFocused)
-          .onSubmit {
-            savePlanning()
-          }
+      } label: {
+        Text(kind.capitalized)
+          .font(.caption.weight(.medium))
+          .foregroundStyle(.secondary)
+          .frame(width: 78, alignment: .leading)
       }
+      .menuStyle(.borderlessButton)
+      .menuIndicator(.hidden)
+      .fixedSize()
+      .help("Planning kind")
+
+      TextField("<yyyy-mm-dd>", text: $value)
+        .textFieldStyle(.plain)
+        .font(.callout.monospacedDigit())
+        .focused($valueFocused)
+        .onSubmit {
+          savePlanning()
+        }
+
+      Spacer(minLength: 0)
+
+      if store.isSavingBlock {
+        ProgressView()
+          .controlSize(.small)
+      }
+
+      Button {
+        savePlanning()
+      } label: {
+        Image(systemName: "checkmark")
+      }
+      .buttonStyle(.borderless)
+      .keyboardShortcut("s", modifiers: [.command])
+      .disabled(store.isSavingBlock)
+      .help("Save")
+
+      Button {
+        store.cancelEditingBlock()
+      } label: {
+        Image(systemName: "xmark")
+      }
+      .buttonStyle(.borderless)
+      .keyboardShortcut(.cancelAction)
+      .disabled(store.isSavingBlock)
+      .help("Cancel")
     }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 7)
+    .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 7, style: .continuous)
+        .stroke(Color.accentColor.opacity(0.22))
+    )
     .onAppear {
       valueFocused = true
     }
@@ -1653,6 +1691,8 @@ private struct PlanningBlockEditor: View {
     store.editableBlockText = rawPlanning
     Task { await store.saveEditedBlock(block) }
   }
+
+  private static let planningKinds = ["SCHEDULED", "DEADLINE", "CLOSED"]
 }
 
 private struct ListItemBlockEditor: View {
@@ -1680,35 +1720,82 @@ private struct ListItemBlockEditor: View {
   }
 
   var body: some View {
-    BlockEditorContainer(
-      block: block,
-      title: "List Item",
-      previewText: rawListItem,
-      onSave: { store.editableBlockText = rawListItem }
-    ) {
-      HStack(alignment: .firstTextBaseline, spacing: 8) {
-        TextField("Marker", text: $marker)
-          .textFieldStyle(.roundedBorder)
-          .frame(width: 76)
+    HStack(alignment: .firstTextBaseline, spacing: 8) {
+      Menu {
+        ForEach(Self.markerChoices, id: \.self) { value in
+          Button(value) {
+            marker = value
+          }
+        }
+        Divider()
+        Button(checkbox == nil ? "Add Checkbox" : "Remove Checkbox") {
+          checkbox = checkbox == nil ? .unchecked : nil
+        }
+      } label: {
+        Text(markerLabel)
+          .font(.body.monospaced().weight(.semibold))
+          .foregroundStyle(.secondary)
+          .frame(width: 22, alignment: .center)
+      }
+      .menuStyle(.borderlessButton)
+      .menuIndicator(.hidden)
+      .fixedSize()
+      .help("List marker")
 
-        Toggle("Task", isOn: checkboxEnabledBinding)
-          .toggleStyle(.checkbox)
-          .frame(width: 72, alignment: .leading)
+      if let checkbox {
+        Button {
+          self.checkbox = checkbox == .checked ? .unchecked : .checked
+        } label: {
+          Image(systemName: checkboxSystemImage(checkbox))
+            .font(.body.weight(.semibold))
+            .foregroundStyle(checkbox == .checked ? Color.accentColor : Color.secondary)
+        }
+        .buttonStyle(.borderless)
+        .help(checkbox == .checked ? "Mark incomplete" : "Mark complete")
+      }
 
-        if checkbox != nil {
-          Toggle("Done", isOn: checkboxCheckedBinding)
-            .toggleStyle(.checkbox)
-            .frame(width: 76, alignment: .leading)
+      TextField("List item", text: $text)
+        .textFieldStyle(.plain)
+        .focused($textFocused)
+        .onSubmit {
+          continueListItem()
         }
 
-        TextField("Text", text: $text)
-          .textFieldStyle(.roundedBorder)
-          .focused($textFocused)
-          .onSubmit {
-            continueListItem()
-          }
+      Spacer(minLength: 0)
+
+      if store.isSavingBlock {
+        ProgressView()
+          .controlSize(.small)
       }
+
+      Button {
+        saveListItem()
+      } label: {
+        Image(systemName: "checkmark")
+      }
+      .buttonStyle(.borderless)
+      .keyboardShortcut("s", modifiers: [.command])
+      .disabled(store.isSavingBlock)
+      .help("Save")
+
+      Button {
+        store.cancelEditingBlock()
+      } label: {
+        Image(systemName: "xmark")
+      }
+      .buttonStyle(.borderless)
+      .keyboardShortcut(.cancelAction)
+      .disabled(store.isSavingBlock)
+      .help("Cancel")
     }
+    .padding(.leading, editorIndent)
+    .padding(.horizontal, 8)
+    .padding(.vertical, 7)
+    .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 7, style: .continuous)
+        .stroke(Color.accentColor.opacity(0.22))
+    )
     .onAppear {
       textFocused = true
     }
@@ -1736,6 +1823,16 @@ private struct ListItemBlockEditor: View {
     )
   }
 
+  private var markerLabel: String {
+    let normalized = marker.trimmingCharacters(in: .whitespacesAndNewlines)
+    if normalized == "-" { return "•" }
+    return normalized.isEmpty ? "•" : normalized
+  }
+
+  private var editorIndent: CGFloat {
+    CGFloat(leadingWhitespace.count) * 4
+  }
+
   private func saveListItem() {
     store.editableBlockText = rawListItem
     Task { await store.saveEditedBlock(block) }
@@ -1745,6 +1842,19 @@ private struct ListItemBlockEditor: View {
     store.editableBlockText = rawListItem
     Task { await store.splitEditingBlock(block, atUTF16Offset: (rawListItem as NSString).length) }
   }
+
+  private func checkboxSystemImage(_ checkbox: OrgListCheckbox) -> String {
+    switch checkbox {
+    case .checked:
+      return "checkmark.square.fill"
+    case .mixed:
+      return "minus.square.fill"
+    case .unchecked:
+      return "square"
+    }
+  }
+
+  private static let markerChoices = ["-", "+", "1.", "1)"]
 
   private static func rawListItemParts(
     from rawText: String,
