@@ -283,45 +283,11 @@ private struct HeadingBlockEditor: View {
       }
       .padding(.leading, editorIndent)
 
-      HStack(spacing: 4) {
-        if store.isSavingBlock {
-          ProgressView()
-            .controlSize(.small)
-        }
-        Button {
-          showsDetails.toggle()
-        } label: {
-          Image(systemName: showsDetails ? "slider.horizontal.3" : "slider.horizontal.2.square")
-        }
-        .buttonStyle(.borderless)
-        .help(showsDetails ? "Hide heading details" : "Show heading details")
-
-        Button {
-          saveHeading()
-        } label: {
-          Image(systemName: "checkmark")
-        }
-        .buttonStyle(.borderless)
-        .keyboardShortcut("s", modifiers: [.command])
-        .disabled(store.isSavingBlock)
-        .help("Save")
-
-        Button {
-          store.cancelEditingBlock()
-        } label: {
-          Image(systemName: "xmark")
-        }
-        .buttonStyle(.borderless)
-        .keyboardShortcut(.cancelAction)
-        .disabled(store.isSavingBlock)
-        .help("Cancel")
+      if InlineEditorChrome.rendersControls(showsControls) {
+        headingControls
+          .opacity(InlineEditorChrome.controlsOpacity(showsControls))
+          .allowsHitTesting(InlineEditorChrome.allowsHitTesting(showsControls))
       }
-      .controlSize(.small)
-      .padding(.horizontal, 4)
-      .padding(.vertical, 2)
-      .background(.regularMaterial, in: Capsule())
-      .opacity(InlineEditorChrome.controlsOpacity(showsControls))
-      .allowsHitTesting(InlineEditorChrome.allowsHitTesting(showsControls))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
@@ -382,6 +348,46 @@ private struct HeadingBlockEditor: View {
 
   private var showsControls: Bool {
     isHovered || showsDetails || store.isSavingBlock
+  }
+
+  private var headingControls: some View {
+    HStack(spacing: 4) {
+      if store.isSavingBlock {
+        ProgressView()
+          .controlSize(.small)
+      }
+      Button {
+        showsDetails.toggle()
+      } label: {
+        Image(systemName: showsDetails ? "slider.horizontal.3" : "slider.horizontal.2.square")
+      }
+      .buttonStyle(.borderless)
+      .help(showsDetails ? "Hide heading details" : "Show heading details")
+
+      Button {
+        saveHeading()
+      } label: {
+        Image(systemName: "checkmark")
+      }
+      .buttonStyle(.borderless)
+      .keyboardShortcut("s", modifiers: [.command])
+      .disabled(store.isSavingBlock)
+      .help("Save")
+
+      Button {
+        store.cancelEditingBlock()
+      } label: {
+        Image(systemName: "xmark")
+      }
+      .buttonStyle(.borderless)
+      .keyboardShortcut(.cancelAction)
+      .disabled(store.isSavingBlock)
+      .help("Cancel")
+    }
+    .controlSize(.small)
+    .padding(.horizontal, 4)
+    .padding(.vertical, 2)
+    .background(.regularMaterial, in: Capsule())
   }
 
   private func saveHeading() {
@@ -709,38 +715,11 @@ private struct ListItemBlockEditor: View {
       .padding(.leading, editorIndent)
       .padding(.trailing, 74)
 
-      HStack(spacing: 4) {
-        if store.isSavingBlock {
-          ProgressView()
-            .controlSize(.small)
-        }
-
-        Button {
-          saveListItem()
-        } label: {
-          Image(systemName: "checkmark")
-        }
-        .buttonStyle(.borderless)
-        .keyboardShortcut("s", modifiers: [.command])
-        .disabled(store.isSavingBlock)
-        .help("Save")
-
-        Button {
-          store.cancelEditingBlock()
-        } label: {
-          Image(systemName: "xmark")
-        }
-        .buttonStyle(.borderless)
-        .keyboardShortcut(.cancelAction)
-        .disabled(store.isSavingBlock)
-        .help("Cancel")
+      if InlineEditorChrome.rendersControls(showsControls) {
+        listItemControls
+          .opacity(InlineEditorChrome.controlsOpacity(showsControls))
+          .allowsHitTesting(InlineEditorChrome.allowsHitTesting(showsControls))
       }
-      .controlSize(.small)
-      .padding(.horizontal, 4)
-      .padding(.vertical, 2)
-      .background(.regularMaterial, in: Capsule())
-      .opacity(InlineEditorChrome.controlsOpacity(showsControls))
-      .allowsHitTesting(InlineEditorChrome.allowsHitTesting(showsControls))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
@@ -801,6 +780,39 @@ private struct ListItemBlockEditor: View {
 
   private var showsControls: Bool {
     isHovered || store.isSavingBlock
+  }
+
+  private var listItemControls: some View {
+    HStack(spacing: 4) {
+      if store.isSavingBlock {
+        ProgressView()
+          .controlSize(.small)
+      }
+
+      Button {
+        saveListItem()
+      } label: {
+        Image(systemName: "checkmark")
+      }
+      .buttonStyle(.borderless)
+      .keyboardShortcut("s", modifiers: [.command])
+      .disabled(store.isSavingBlock)
+      .help("Save")
+
+      Button {
+        store.cancelEditingBlock()
+      } label: {
+        Image(systemName: "xmark")
+      }
+      .buttonStyle(.borderless)
+      .keyboardShortcut(.cancelAction)
+      .disabled(store.isSavingBlock)
+      .help("Cancel")
+    }
+    .controlSize(.small)
+    .padding(.horizontal, 4)
+    .padding(.vertical, 2)
+    .background(.regularMaterial, in: Capsule())
   }
 
   private var editorIndent: CGFloat {
@@ -1786,38 +1798,11 @@ private struct QuoteBlockEditor: View {
         .background(Color.clear)
       }
 
-      HStack(spacing: 4) {
-        if store.isSavingBlock {
-          ProgressView()
-            .controlSize(.small)
-        }
-
-        Button {
-          saveQuote()
-        } label: {
-          Image(systemName: "checkmark")
-        }
-        .buttonStyle(.borderless)
-        .keyboardShortcut("s", modifiers: [.command])
-        .disabled(store.isSavingBlock)
-        .help("Save")
-
-        Button {
-          store.cancelEditingBlock()
-        } label: {
-          Image(systemName: "xmark")
-        }
-        .buttonStyle(.borderless)
-        .keyboardShortcut(.cancelAction)
-        .disabled(store.isSavingBlock)
-        .help("Cancel")
+      if InlineEditorChrome.rendersControls(isHovered || store.isSavingBlock) {
+        quoteControls
+          .opacity(InlineEditorChrome.controlsOpacity(isHovered || store.isSavingBlock))
+          .allowsHitTesting(InlineEditorChrome.allowsHitTesting(isHovered || store.isSavingBlock))
       }
-      .controlSize(.small)
-      .padding(.horizontal, 4)
-      .padding(.vertical, 2)
-      .background(.regularMaterial, in: Capsule())
-      .opacity(InlineEditorChrome.controlsOpacity(isHovered || store.isSavingBlock))
-      .allowsHitTesting(InlineEditorChrome.allowsHitTesting(isHovered || store.isSavingBlock))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
@@ -1846,6 +1831,39 @@ private struct QuoteBlockEditor: View {
   private var editorHeight: CGFloat {
     let lineCount = InlineEditorSizing.cappedLineCount(in: quoteText, minimum: 2, maximum: 11)
     return min(260, max(58, CGFloat(lineCount) * 23 + 12))
+  }
+
+  private var quoteControls: some View {
+    HStack(spacing: 4) {
+      if store.isSavingBlock {
+        ProgressView()
+          .controlSize(.small)
+      }
+
+      Button {
+        saveQuote()
+      } label: {
+        Image(systemName: "checkmark")
+      }
+      .buttonStyle(.borderless)
+      .keyboardShortcut("s", modifiers: [.command])
+      .disabled(store.isSavingBlock)
+      .help("Save")
+
+      Button {
+        store.cancelEditingBlock()
+      } label: {
+        Image(systemName: "xmark")
+      }
+      .buttonStyle(.borderless)
+      .keyboardShortcut(.cancelAction)
+      .disabled(store.isSavingBlock)
+      .help("Cancel")
+    }
+    .controlSize(.small)
+    .padding(.horizontal, 4)
+    .padding(.vertical, 2)
+    .background(.regularMaterial, in: Capsule())
   }
 
   private func saveQuote() {
