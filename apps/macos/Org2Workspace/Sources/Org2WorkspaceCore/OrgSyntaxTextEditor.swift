@@ -626,16 +626,18 @@ enum OrgSyntaxHighlighter {
 
   private static func collectLineTokens(in text: String, into tokens: inout [OrgSyntaxHighlightToken]) {
     guard !text.isEmpty else { return }
-    let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
     var lineOffset = 0
-    for (index, line) in lines.enumerated() {
+    let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+    for (index, lineSlice) in lines.enumerated() {
+      let lineLength = lineSlice.utf16.count
+      let line = String(lineSlice)
       collectHeadingTokens(line: line, lineOffset: lineOffset, into: &tokens)
       collectLineRegex(regex: keywordLineRegex, kind: .keyword, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
       collectLineRegex(regex: blockKeywordLineRegex, kind: .keyword, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
       collectLineRegex(regex: planningLineRegex, kind: .planningKeyword, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
       collectLineRegex(regex: propertyLineRegex, kind: .propertyKey, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
       collectLineRegex(regex: commentLineRegex, kind: .comment, line: line, lineOffset: lineOffset, into: &tokens)
-      lineOffset += (line as NSString).length
+      lineOffset += lineLength
       if index < lines.count - 1 {
         lineOffset += 1
       }
@@ -678,8 +680,11 @@ enum OrgSyntaxHighlighter {
   }
 
   private static func collectInlineDelimiterTokens(in text: String, into tokens: inout [OrgSyntaxHighlightToken]) {
-    let inlineTokens = tokens.filter { [.link, .code, .emphasis, .timestamp].contains($0.kind) }
-    for token in inlineTokens {
+    let tokenCount = tokens.count
+    guard tokenCount > 0 else { return }
+    for index in 0..<tokenCount {
+      let token = tokens[index]
+      guard isInlineDelimitedKind(token.kind) else { continue }
       guard let raw = substring(in: text, range: token.range) else { continue }
       switch token.kind {
       case .link:
@@ -689,6 +694,15 @@ enum OrgSyntaxHighlighter {
       default:
         break
       }
+    }
+  }
+
+  private static func isInlineDelimitedKind(_ kind: OrgSyntaxHighlightKind) -> Bool {
+    switch kind {
+    case .link, .code, .emphasis, .timestamp:
+      return true
+    case .headingStars, .keyword, .planningKeyword, .propertyKey, .todo, .priority, .tag, .linkTarget, .syntaxDelimiter, .comment:
+      return false
     }
   }
 
