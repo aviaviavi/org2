@@ -96,6 +96,8 @@ private struct HeadingBlockEditor: View {
   @State private var priority: String
   @State private var title: String
   @State private var tags: String
+  @State private var showsDetails = false
+  @State private var isHovered = false
   @FocusState private var titleFocused: Bool
 
   init(block: OrgEditableBlock, heading: OrgHeadingBlock) {
@@ -109,73 +111,105 @@ private struct HeadingBlockEditor: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      HStack(alignment: .firstTextBaseline, spacing: 8) {
-        Menu {
-          Button("None") {
-            todo = ""
-          }
-          Divider()
-          ForEach(Self.todoKeywords, id: \.self) { keyword in
-            Button(keyword) {
-              todo = keyword
+    ZStack(alignment: .topTrailing) {
+      VStack(alignment: .leading, spacing: 5) {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+          Menu {
+            Button("None") {
+              todo = ""
+            }
+            Divider()
+            ForEach(Self.todoKeywords, id: \.self) { keyword in
+              Button(keyword) {
+                todo = keyword
+              }
+            }
+          } label: {
+            if todo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+              Image(systemName: "circle")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            } else {
+              StatusPill(text: todo)
             }
           }
-        } label: {
-          if todo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            Image(systemName: "circle")
-              .font(.caption.weight(.semibold))
-              .foregroundStyle(.secondary)
-          } else {
-            StatusPill(text: todo)
-          }
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Status")
+          .menuStyle(.borderlessButton)
+          .menuIndicator(.hidden)
+          .fixedSize()
+          .help("Status")
 
-        Menu {
-          Button("None") {
-            priority = ""
-          }
-          Divider()
-          ForEach(["A", "B", "C"], id: \.self) { value in
-            Button("[#\(value)]") {
-              priority = value
+          Menu {
+            Button("None") {
+              priority = ""
+            }
+            Divider()
+            ForEach(["A", "B", "C"], id: \.self) { value in
+              Button("[#\(value)]") {
+                priority = value
+              }
+            }
+          } label: {
+            if priority.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+              Image(systemName: "flag")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            } else {
+              Label("[#\(priority.trimmingCharacters(in: .whitespacesAndNewlines).uppercased())]", systemImage: "flag.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.orange)
+                .labelStyle(.titleAndIcon)
             }
           }
-        } label: {
-          if priority.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            Image(systemName: "flag")
+          .menuStyle(.borderlessButton)
+          .menuIndicator(.hidden)
+          .fixedSize()
+          .help("Priority")
+
+          TextField("Untitled", text: $title)
+            .textFieldStyle(.plain)
+            .font(headingFont)
+            .focused($titleFocused)
+            .onSubmit {
+              saveHeading()
+            }
+
+          Spacer(minLength: 0)
+        }
+        .padding(.trailing, 78)
+
+        if showsDetails || !tags.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          HStack(spacing: 8) {
+            Text("H\(level)")
+              .font(.caption.monospacedDigit().weight(.medium))
+              .foregroundStyle(.secondary)
+            Image(systemName: "tag")
               .font(.caption.weight(.semibold))
               .foregroundStyle(.secondary)
-          } else {
-            Label("[#\(priority.trimmingCharacters(in: .whitespacesAndNewlines).uppercased())]", systemImage: "flag.fill")
-              .font(.caption.weight(.semibold))
-              .foregroundStyle(.orange)
-              .labelStyle(.titleAndIcon)
+            TextField("tags", text: $tags)
+              .textFieldStyle(.plain)
+              .font(.caption)
+              .onSubmit {
+                saveHeading()
+              }
           }
+          .padding(.leading, metadataIndent)
+          .padding(.trailing, 78)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Priority")
+      }
+      .padding(.leading, editorIndent)
 
-        TextField("Untitled", text: $title)
-          .textFieldStyle(.plain)
-          .font(headingFont)
-          .focused($titleFocused)
-          .onSubmit {
-            saveHeading()
-          }
-
-        Spacer(minLength: 0)
-
+      HStack(spacing: 4) {
         if store.isSavingBlock {
           ProgressView()
             .controlSize(.small)
         }
+        Button {
+          showsDetails.toggle()
+        } label: {
+          Image(systemName: showsDetails ? "slider.horizontal.3" : "slider.horizontal.2.square")
+        }
+        .buttonStyle(.borderless)
+        .help(showsDetails ? "Hide heading details" : "Show heading details")
 
         Button {
           saveHeading()
@@ -197,31 +231,20 @@ private struct HeadingBlockEditor: View {
         .disabled(store.isSavingBlock)
         .help("Cancel")
       }
-
-      HStack(spacing: 8) {
-        Text("H\(level)")
-          .font(.caption.monospacedDigit().weight(.medium))
-          .foregroundStyle(.secondary)
-        Image(systemName: "tag")
-          .font(.caption.weight(.semibold))
-          .foregroundStyle(.secondary)
-        TextField("tags", text: $tags)
-          .textFieldStyle(.plain)
-          .font(.caption)
-          .onSubmit {
-            saveHeading()
-          }
-      }
-      .padding(.leading, metadataIndent)
+      .controlSize(.small)
+      .padding(.horizontal, 4)
+      .padding(.vertical, 2)
+      .background(.regularMaterial, in: Capsule())
+      .opacity(isHovered || showsDetails || store.isSavingBlock ? 1 : 0.66)
     }
-    .padding(.leading, editorIndent)
-    .padding(.horizontal, 8)
-    .padding(.vertical, 7)
-    .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .padding(.horizontal, 6)
+    .padding(.vertical, 4)
+    .background(Color.accentColor.opacity(isHovered ? 0.04 : 0.02), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     .overlay(
-      RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .stroke(Color.accentColor.opacity(0.22))
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
     )
+    .onHover { isHovered = $0 }
     .onAppear {
       titleFocused = true
     }
