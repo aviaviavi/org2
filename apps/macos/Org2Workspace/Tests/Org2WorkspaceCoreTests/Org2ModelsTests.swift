@@ -1543,6 +1543,85 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testInsertsAndConvertsMediaBlocksAsOrgLinks() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-media-insert-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("media-insert.org2")
+    try """
+    #+TITLE: Media Insert Test
+
+    * TODO Parent
+    Body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+
+    await store.insertBlock(after: paragraph, kind: .image)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "[[file:images/image.png][Image]]"
+        && store.editingBlockID == store.selectedBlockID
+    }
+    XCTAssertEqual(store.editableBlockText, "[[file:images/image.png][Image]]")
+
+    var updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertFalse(updated.contains("images/image.png"))
+    let imageDraft = try XCTUnwrap(store.selectedBlock)
+    await store.saveEditedBlock(imageDraft)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "[[file:images/image.png][Image]]"
+    }
+
+    updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Body\n\n[[file:images/image.png][Image]]\n* Sibling"))
+
+    let insertedImage = try XCTUnwrap(store.selectedBlock)
+    store.beginEditingBlock(insertedImage)
+    store.editableBlockText = "/video media/demo.mp4"
+
+    await store.convertEditingBlock(insertedImage, to: .video)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "[[file:media/demo.mp4][demo.mp4]]"
+        && store.editingBlockID == store.selectedBlockID
+    }
+    let videoDraft = try XCTUnwrap(store.selectedBlock)
+    await store.saveEditedBlock(videoDraft)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "[[file:media/demo.mp4][demo.mp4]]"
+    }
+
+    updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Body\n\n[[file:media/demo.mp4][demo.mp4]]\n* Sibling"))
+    XCTAssertFalse(updated.contains("images/image.png"))
+  }
+
+  @MainActor
   func testConvertsEditingParagraphWithSlashCommand() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-block-convert-\(UUID().uuidString)", isDirectory: true)

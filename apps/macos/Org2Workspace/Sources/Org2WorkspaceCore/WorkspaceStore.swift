@@ -1220,6 +1220,10 @@ public final class WorkspaceStore: ObservableObject {
         )
       }.value
       transientDraftBlock = nil
+      selectedRenderedBlocks.removeAll { $0.id == draft.block.id }
+      if selectedBlockID == draft.block.id {
+        selectedBlockID = nil
+      }
       invalidateCanonicalDocumentCache(for: draft.file)
       resetBlockEditing()
       isEditingEntry = false
@@ -1363,6 +1367,10 @@ public final class WorkspaceStore: ObservableObject {
       |------+-------|
       |      |       |
       """
+    case .image:
+      return mediaDraftRawText(kind: .image, content: "")
+    case .video:
+      return mediaDraftRawText(kind: .video, content: "")
     case .properties:
       return """
       :PROPERTIES:
@@ -1400,6 +1408,8 @@ public final class WorkspaceStore: ObservableObject {
       return .heading(OrgHeadingBlock(level: headingLevel, todo: "TODO", priority: nil, title: "", tags: []))
     case .table:
       return .table(OrgEditableTable(rawText: rawText).renderedBlock)
+    case .image, .video:
+      return .paragraph(rawText)
     case .properties:
       return .properties(OrgEditablePropertyDrawer(rawText: rawText).renderedRows)
     case .quote:
@@ -1459,6 +1469,10 @@ public final class WorkspaceStore: ObservableObject {
         return content
       }
       return insertionDraftRawText(for: .table, after: block, in: source)
+    case .image:
+      return mediaDraftRawText(kind: .image, content: content)
+    case .video:
+      return mediaDraftRawText(kind: .video, content: content)
     case .properties:
       return insertionDraftRawText(for: .properties, after: block, in: source)
     case .quote:
@@ -1474,6 +1488,56 @@ public final class WorkspaceStore: ObservableObject {
       #+end_src
       """
     }
+  }
+
+  private func mediaDraftRawText(kind: OrgMediaAttachment.Kind, content: String) -> String {
+    let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.hasPrefix("[["),
+       OrgMediaAttachment.standalone(raw: trimmed) != nil {
+      return trimmed
+    }
+
+    let placeholderTarget: String
+    let placeholderLabel: String
+    switch kind {
+    case .image:
+      placeholderTarget = "images/image.png"
+      placeholderLabel = "Image"
+    case .video:
+      placeholderTarget = "videos/video.mp4"
+      placeholderLabel = "Video"
+    }
+
+    guard !trimmed.isEmpty else {
+      return "[[file:\(placeholderTarget)][\(placeholderLabel)]]"
+    }
+
+    if let attachment = OrgMediaAttachment.standalone(raw: trimmed) {
+      return orgMediaLink(
+        target: attachment.target,
+        label: attachment.displayName,
+        fallbackLabel: placeholderLabel
+      )
+    }
+
+    if trimmed.range(of: #"\.(?:png|jpe?g|gif|tiff?|bmp|heic|heif|webp|mov|mp4|m4v|avi|webm)(?:[#?].*)?$"#, options: [.regularExpression, .caseInsensitive]) != nil {
+      return orgMediaLink(
+        target: trimmed,
+        label: URL(fileURLWithPath: trimmed).lastPathComponent,
+        fallbackLabel: placeholderLabel
+      )
+    }
+
+    return "[[file:\(placeholderTarget)][\(trimmed)]]"
+  }
+
+  private func orgMediaLink(target: String, label: String, fallbackLabel: String) -> String {
+    let normalizedTarget = target.trimmingCharacters(in: .whitespacesAndNewlines)
+    let fileTarget = normalizedTarget.lowercased().hasPrefix("file:")
+      ? normalizedTarget
+      : "file:\(normalizedTarget)"
+    let normalizedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
+    return "[[\(fileTarget)][\(normalizedLabel.isEmpty ? fallbackLabel : normalizedLabel)]]"
   }
 
   private func draftRenderedBlock(
