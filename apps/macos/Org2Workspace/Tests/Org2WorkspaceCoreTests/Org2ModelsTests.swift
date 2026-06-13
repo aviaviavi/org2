@@ -1534,6 +1534,70 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testAutosavesParagraphBlockWithoutLeavingInlineEditMode() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-paragraph-autosave-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("paragraph-autosave.org2")
+    try """
+    #+TITLE: Paragraph Autosave Test
+
+    * TODO Parent
+    Body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+    store.beginEditingBlock(paragraph)
+    store.editableBlockText = "Updated body\nSecond line"
+    store.updateEditingBlockDraft(paragraph, draft: "Updated body\nSecond line")
+    await store.autosaveEditedBlock(paragraph, replacement: "Updated body\nSecond line")
+
+    var updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Updated body\nSecond line\n* Sibling"))
+    XCTAssertFalse(store.isEditingEntry)
+    XCTAssertNotNil(store.editingBlockID)
+    XCTAssertEqual(store.selectedBlock?.rawText, "Updated body\nSecond line")
+    XCTAssertEqual(store.editableBlockText, "Updated body\nSecond line")
+
+    let expandedParagraph = try XCTUnwrap(store.selectedBlock)
+    store.editableBlockText = "Updated again\nSecond line"
+    store.updateEditingBlockDraft(expandedParagraph, draft: "Updated again\nSecond line")
+    await store.autosaveEditedBlock(expandedParagraph, replacement: "Updated again\nSecond line")
+
+    updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Updated again\nSecond line\n* Sibling"))
+    XCTAssertFalse(updated.contains("Updated again\nSecond line\nSecond line"))
+    XCTAssertEqual(store.selectedBlock?.rawText, "Updated again\nSecond line")
+    XCTAssertNotNil(store.editingBlockID)
+  }
+
+  @MainActor
   func testSplitsEditingParagraphAtCaretIntoNewEditableBlock() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-block-split-\(UUID().uuidString)", isDirectory: true)

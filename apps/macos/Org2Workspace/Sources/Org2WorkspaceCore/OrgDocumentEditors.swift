@@ -971,6 +971,7 @@ private struct ParagraphBlockEditor: View {
   @State private var selectedRange = NSRange(location: 0, length: 0)
   @State private var showsInlineDetails = false
   @State private var isHovered = false
+  @State private var autosaveTask: Task<Void, Never>?
 
   init(block: OrgEditableBlock, text: String) {
     self.block = block
@@ -1082,6 +1083,13 @@ private struct ParagraphBlockEditor: View {
         .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
     )
     .onHover { isHovered = $0 }
+    .onChange(of: draftText) {
+      scheduleParagraphAutosave()
+    }
+    .onDisappear {
+      autosaveTask?.cancel()
+      autosaveTask = nil
+    }
   }
 
   private var editorHeight: CGFloat {
@@ -1118,6 +1126,8 @@ private struct ParagraphBlockEditor: View {
   }
 
   private func submitParagraph(_ context: OrgSyntaxTextEditorSubmitContext) -> Bool {
+    autosaveTask?.cancel()
+    autosaveTask = nil
     draftText = context.text
     if let kind = primarySlashCommandKind {
       convertParagraph(to: kind)
@@ -1130,13 +1140,39 @@ private struct ParagraphBlockEditor: View {
   }
 
   private func saveParagraph() {
+    autosaveTask?.cancel()
+    autosaveTask = nil
     store.editableBlockText = draftText
     Task { await store.saveEditedBlock(block) }
   }
 
   private func convertParagraph(to kind: OrgInsertBlockKind) {
+    autosaveTask?.cancel()
+    autosaveTask = nil
     store.editableBlockText = draftText
     Task { await store.convertEditingBlock(block, to: kind) }
+  }
+
+  private func scheduleParagraphAutosave() {
+    store.updateEditingBlockDraft(block, draft: draftText)
+    autosaveTask?.cancel()
+
+    guard slashCommandQuery == nil,
+          draftText != block.rawText
+    else {
+      return
+    }
+
+    let replacement = draftText
+    autosaveTask = Task { [block] in
+      do {
+        try await Task.sleep(nanoseconds: 700_000_000)
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      await store.autosaveEditedBlock(block, replacement: replacement)
+    }
   }
 }
 
