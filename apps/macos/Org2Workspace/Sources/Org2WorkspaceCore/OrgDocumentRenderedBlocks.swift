@@ -496,7 +496,7 @@ enum OrgRenderedLineDisplayCache {
 
 struct RenderedBlockInlineActions: Sendable {
   let isSourceEditable: Bool
-  let decryptSubtree: (@MainActor @Sendable () -> Void)?
+  let decryptSubtree: (@MainActor @Sendable () async -> Bool)?
   let toggleHeadingTodo: (@MainActor @Sendable () -> Void)?
   let setHeadingPriority: (@MainActor @Sendable (String?) -> Void)?
   let setHeadingTags: (@MainActor @Sendable ([String]) -> Void)?
@@ -583,16 +583,25 @@ private struct OrgMediaAttachmentView: View {
 
 private struct RenderedEncryptedBlockView: View {
   let summary: OrgCrypt.PGPArmorSummary
-  let decrypt: (@MainActor @Sendable () -> Void)?
+  let decrypt: (@MainActor @Sendable () async -> Bool)?
+  @State private var isDecrypting = false
 
   var body: some View {
     if let decrypt {
       Button {
-        decrypt()
+        guard !isDecrypting else { return }
+        isDecrypting = true
+        Task {
+          _ = await decrypt()
+          await MainActor.run {
+            isDecrypting = false
+          }
+        }
       } label: {
         cardContent
       }
       .buttonStyle(.plain)
+      .disabled(isDecrypting)
       .help("Decrypt this subtree to edit the plaintext.")
     } else {
       cardContent
@@ -614,7 +623,7 @@ private struct RenderedEncryptedBlockView: View {
 
       Spacer(minLength: 0)
 
-      Label("Decrypt", systemImage: "lock.open")
+      Label(isDecrypting ? "Decrypting..." : "Decrypt", systemImage: isDecrypting ? "hourglass" : "lock.open")
         .font(.caption.weight(.medium))
         .padding(.vertical, 3)
         .padding(.horizontal, 8)
