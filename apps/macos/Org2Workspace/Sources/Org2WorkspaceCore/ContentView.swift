@@ -45,6 +45,9 @@ public struct ContentView: View {
     .keyboardEventMonitor { event in
       store.handleWorkspaceKeyDown(event)
     }
+    .environment(\.openOrgFileReference) { reference in
+      store.openChatFileReference(reference)
+    }
     .sheet(isPresented: $store.isQuickOpenPresented) {
       QuickOpenView()
         .environmentObject(store)
