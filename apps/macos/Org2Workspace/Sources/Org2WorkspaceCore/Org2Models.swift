@@ -1162,6 +1162,10 @@ public struct OrgEditableInlineTimestamp: Identifiable, Equatable, Sendable {
 
 public enum OrgInlineParser {
   public static func parse(_ raw: String) -> [OrgInlineSpan] {
+    guard hasInlineSyntaxCandidate(raw) else {
+      return raw.isEmpty ? [] : [.text(raw)]
+    }
+
     var spans: [OrgInlineSpan] = []
     var buffer = ""
     var cursor = raw.startIndex
@@ -1271,6 +1275,14 @@ public enum OrgInlineParser {
     return coalesceText(spans)
   }
 
+  public static func hasInlineSyntaxCandidate(_ raw: String) -> Bool {
+    raw.rangeOfCharacter(from: inlineSyntaxCandidateCharacters) != nil
+      || raw.range(of: "http://") != nil
+      || raw.range(of: "https://") != nil
+      || raw.range(of: ".org") != nil
+      || raw.range(of: ".md") != nil
+  }
+
   private enum DelimitedKind {
     case code
     case bold
@@ -1349,11 +1361,9 @@ public enum OrgInlineParser {
 
   private static func parseTimestampBody(_ body: String) -> (dateLabel: String, timeLabel: String?, detail: String?)? {
     let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
-    let pattern = #"^(\d{4}-\d{2}-\d{2})(?:\s+[A-Za-z]{3})?(?:\s+(\d{1,2}:\d{2}(?:-\d{1,2}:\d{2})?))?(.*)$"#
-    guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
     let ns = trimmed as NSString
     let fullRange = NSRange(location: 0, length: ns.length)
-    guard let match = regex.firstMatch(in: trimmed, range: fullRange),
+    guard let match = timestampBodyRegex.firstMatch(in: trimmed, range: fullRange),
           match.range.location == 0,
           match.range(at: 1).location != NSNotFound
     else {
@@ -1390,12 +1400,11 @@ public enum OrgInlineParser {
   }
 
   private static func parseFileReference(_ raw: String, at cursor: String.Index) -> (span: OrgInlineSpan, end: String.Index)? {
+    guard mayStartFileReference(raw, at: cursor) else { return nil }
     let remaining = String(raw[cursor...])
-    let pattern = #"^((?:file:(?://)?)?(?:~|/|[A-Za-z0-9_.-]+/)[^\s\]\)"'`<>]*\.(?:org2?|md))(?:[:#](\d+))?"#
-    guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
     let nsRemaining = remaining as NSString
     let fullRange = NSRange(location: 0, length: nsRemaining.length)
-    guard let match = regex.firstMatch(in: remaining, range: fullRange),
+    guard let match = fileReferenceRegex.firstMatch(in: remaining, range: fullRange),
           match.range.location == 0
     else {
       return nil
@@ -1412,6 +1421,37 @@ public enum OrgInlineParser {
     let display = reference.displayTitle
     let end = raw.index(cursor, offsetBy: match.range.length)
     return (.link(label: display, target: reference.path, fileReference: reference), end)
+  }
+
+  private static func mayStartFileReference(_ raw: String, at cursor: String.Index) -> Bool {
+    let character = raw[cursor]
+    if character == "/" || character == "~" {
+      return true
+    }
+    if raw[cursor...].hasPrefix("file:") {
+      return true
+    }
+    guard character.isASCIIWord || character == "." || character == "-" || character == "_" else {
+      return false
+    }
+
+    var hasSlash = false
+    var search = cursor
+    while search < raw.endIndex {
+      let current = raw[search]
+      if current.isWhitespace || ["]", ")", "\"", "'", "`", "<", ">"].contains(current) {
+        break
+      }
+      if current == "/" {
+        hasSlash = true
+      }
+      if hasSlash,
+         raw[search...].hasPrefix(".org") || raw[search...].hasPrefix(".md") {
+        return true
+      }
+      search = raw.index(after: search)
+    }
+    return false
   }
 
   private static func parseDelimited(
@@ -1486,6 +1526,13 @@ public enum OrgInlineParser {
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
   ]
+  private static let inlineSyntaxCandidateCharacters = CharacterSet(charactersIn: "[]<>`~=*/_+")
+  private static let timestampBodyRegex = try! NSRegularExpression(
+    pattern: #"^(\d{4}-\d{2}-\d{2})(?:\s+[A-Za-z]{3})?(?:\s+(\d{1,2}:\d{2}(?:-\d{1,2}:\d{2})?))?(.*)$"#
+  )
+  private static let fileReferenceRegex = try! NSRegularExpression(
+    pattern: #"^((?:file:(?://)?)?(?:~|/|[A-Za-z0-9_.-]+/)[^\s\]\)"'`<>]*\.(?:org2?|md))(?:[:#](\d+))?"#
+  )
 }
 
 public struct OrgMediaAttachment: Equatable, Sendable {

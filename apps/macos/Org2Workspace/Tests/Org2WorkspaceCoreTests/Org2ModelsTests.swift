@@ -396,6 +396,25 @@ final class Org2ModelsTests: XCTestCase {
     ])
   }
 
+  func testOrgInlineParserFastPathsPlainTextButKeepsRelativeFileReferences() {
+    XCTAssertFalse(OrgInlineParser.hasInlineSyntaxCandidate("Plain sentence with no org syntax here."))
+    XCTAssertEqual(
+      OrgInlineParser.parse("Plain sentence with no org syntax here."),
+      [.text("Plain sentence with no org syntax here.")]
+    )
+
+    let spans = OrgInlineParser.parse("See notes/daily/2026-06-12.org:7 for context.")
+    XCTAssertEqual(spans, [
+      .text("See "),
+      .link(
+        label: "2026-06-12.org:7",
+        target: "notes/daily/2026-06-12.org",
+        fileReference: OpenClawFileReference(path: "notes/daily/2026-06-12.org", line: 7)
+      ),
+      .text(" for context.")
+    ])
+  }
+
   func testOrgInlineParserRendersMarkupAndTimestamps() {
     let spans = OrgInlineParser.parse("Review *bold* /soon/ on <2026-06-12 Fri 09:30-10:00> with ~code~.")
 
