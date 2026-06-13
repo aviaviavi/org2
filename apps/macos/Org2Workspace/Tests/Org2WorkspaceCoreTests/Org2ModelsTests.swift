@@ -1429,6 +1429,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(topWindow.hasNext)
     XCTAssertFalse(OrgRenderedEntryView.allowsHoverChrome(blockCount: blocks.count))
     XCTAssertTrue(OrgRenderedEntryView.allowsHoverChrome(blockCount: 80))
+    XCTAssertTrue(OrgRenderedEntryView.shouldAutoExpandNextFooter(visibleWindow: topWindow))
 
     let selectedIndex = 360
     let anchoredWindow = OrgRenderedEntryView.visibleWindow(
@@ -1442,6 +1443,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertLessThan(anchoredWindow.range.count, topWindow.range.upperBound)
     XCTAssertTrue(anchoredWindow.hasPrevious)
     XCTAssertTrue(anchoredWindow.hasNext)
+    XCTAssertFalse(OrgRenderedEntryView.shouldAutoExpandNextFooter(visibleWindow: anchoredWindow))
   }
 
   func testRenderedRowChromeUsesStableHiddenState() {
@@ -1475,6 +1477,9 @@ final class Org2ModelsTests: XCTestCase {
     let expandedNext = anchoredWindow.expanding(.next, by: 50, totalCount: blocks.count)
     XCTAssertEqual(expandedNext.lowerBound, anchoredWindow.range.lowerBound)
     XCTAssertGreaterThan(expandedNext.upperBound, anchoredWindow.range.upperBound)
+    XCTAssertFalse(OrgRenderedEntryView.shouldAutoExpandNextFooter(
+      visibleWindow: OrgRenderedBlockWindow(range: expandedNext, totalCount: blocks.count)
+    ))
 
     let requestedWindow = 0..<40
     let correctedWindow = OrgRenderedEntryView.visibleWindow(
