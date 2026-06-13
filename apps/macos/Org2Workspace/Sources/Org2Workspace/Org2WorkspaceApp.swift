@@ -52,11 +52,11 @@ struct Org2WorkspaceApp: App {
         }
         .keyboardShortcut("p", modifiers: [.command])
 
-        Button("Save Entry") {
-          Task { await store.saveEditedEntry() }
+        Button("Save") {
+          Task { await store.saveActiveEdit() }
         }
         .keyboardShortcut("s", modifiers: [.command])
-        .disabled(!store.isEditingEntry || store.isSavingEntry)
+        .disabled(!store.canSaveActiveEdit)
       }
 
       CommandMenu("Block") {

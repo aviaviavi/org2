@@ -2128,13 +2128,16 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedEntrySource?.displayRange, "3-7")
     XCTAssertTrue(store.selectedEntrySource?.text.contains("** Child") == true)
 
+    XCTAssertFalse(store.canSaveActiveEdit)
     store.beginEditingSelectedEntry()
+    XCTAssertTrue(store.canSaveActiveEdit)
     store.editableEntryText = store.editableEntryText.replacingOccurrences(of: "Body", with: "Updated body")
-    await store.saveEditedEntry()
+    await store.saveActiveEdit()
 
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("Updated body"))
     XCTAssertTrue(updated.contains("* Sibling\nSibling body"))
+    XCTAssertFalse(store.canSaveActiveEdit)
   }
 
   @MainActor
@@ -2183,14 +2186,16 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(paragraph.displayRange, "5-6")
 
     store.beginEditingBlock(paragraph)
+    XCTAssertTrue(store.canSaveActiveEdit)
     store.editableBlockText = "Updated body\nSecond line\nThird line"
-    await store.saveEditedBlock(paragraph)
+    await store.saveActiveEdit()
     try await waitForEntryRender(store)
 
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("Updated body\nSecond line\nThird line"))
     XCTAssertTrue(updated.contains("* Sibling\nSibling body"))
     XCTAssertNil(store.editingBlockID)
+    XCTAssertFalse(store.canSaveActiveEdit)
     XCTAssertEqual(store.selectedBlock?.rawText, "Updated body\nSecond line\nThird line")
     let shiftedSibling = try XCTUnwrap(store.selectedRenderedBlocks.first {
       if case .heading(let heading) = $0.rendered {
