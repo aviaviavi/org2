@@ -1382,11 +1382,30 @@ public enum OrgInlineParser {
   }
 
   public static func hasInlineSyntaxCandidate(_ raw: String) -> Bool {
-    raw.rangeOfCharacter(from: inlineSyntaxCandidateCharacters) != nil
-      || raw.range(of: "http://") != nil
-      || raw.range(of: "https://") != nil
-      || raw.range(of: ".org") != nil
-      || raw.range(of: ".md") != nil
+    let bytes = raw.utf8
+    var index = bytes.startIndex
+    while index < bytes.endIndex {
+      switch bytes[index] {
+      case 0x5B, 0x5D, 0x3C, 0x3E, 0x60, 0x7E, 0x3D, 0x2A, 0x2F, 0x5F, 0x2B:
+        return true
+      case 0x2E:
+        if utf8(bytes, at: index, matches: orgExtensionBytes)
+          || utf8(bytes, at: index, matches: mdExtensionBytes) {
+          return true
+        }
+      case 0x68, 0x48:
+        if utf8(bytes, at: index, matches: httpBytes)
+          || utf8(bytes, at: index, matches: httpsBytes)
+          || utf8(bytes, at: index, matches: uppercaseHTTPBytes)
+          || utf8(bytes, at: index, matches: uppercaseHTTPSBytes) {
+          return true
+        }
+      default:
+        break
+      }
+      index = bytes.index(after: index)
+    }
+    return false
   }
 
   private enum DelimitedKind {
@@ -1632,7 +1651,24 @@ public enum OrgInlineParser {
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
   ]
-  private static let inlineSyntaxCandidateCharacters = CharacterSet(charactersIn: "[]<>`~=*/_+")
+  private static let orgExtensionBytes: [UInt8] = [0x2E, 0x6F, 0x72, 0x67]
+  private static let mdExtensionBytes: [UInt8] = [0x2E, 0x6D, 0x64]
+  private static let httpBytes: [UInt8] = [0x68, 0x74, 0x74, 0x70, 0x3A, 0x2F, 0x2F]
+  private static let httpsBytes: [UInt8] = [0x68, 0x74, 0x74, 0x70, 0x73, 0x3A, 0x2F, 0x2F]
+  private static let uppercaseHTTPBytes: [UInt8] = [0x48, 0x54, 0x54, 0x50, 0x3A, 0x2F, 0x2F]
+  private static let uppercaseHTTPSBytes: [UInt8] = [0x48, 0x54, 0x54, 0x50, 0x53, 0x3A, 0x2F, 0x2F]
+
+  private static func utf8(_ bytes: String.UTF8View, at start: String.UTF8View.Index, matches pattern: [UInt8]) -> Bool {
+    var index = start
+    for expected in pattern {
+      guard index < bytes.endIndex, bytes[index] == expected else {
+        return false
+      }
+      index = bytes.index(after: index)
+    }
+    return true
+  }
+
   private static let timestampBodyRegex = try! NSRegularExpression(
     pattern: #"^(\d{4}-\d{2}-\d{2})(?:\s+[A-Za-z]{3})?(?:\s+(\d{1,2}:\d{2}(?:-\d{1,2}:\d{2})?))?(.*)$"#
   )
