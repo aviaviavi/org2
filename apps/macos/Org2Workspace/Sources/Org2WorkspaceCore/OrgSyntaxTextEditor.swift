@@ -689,17 +689,45 @@ enum OrgSyntaxHighlighter {
     let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
     for (index, lineSlice) in lines.enumerated() {
       let lineLength = lineSlice.utf16.count
-      let line = String(lineSlice)
-      collectHeadingTokens(line: line, lineOffset: lineOffset, into: &tokens)
-      collectLineRegex(regex: keywordLineRegex, kind: .keyword, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
-      collectLineRegex(regex: blockKeywordLineRegex, kind: .keyword, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
-      collectLineRegex(regex: planningLineRegex, kind: .planningKeyword, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
-      collectLineRegex(regex: propertyLineRegex, kind: .propertyKey, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
-      collectLineRegex(regex: commentLineRegex, kind: .comment, line: line, lineOffset: lineOffset, into: &tokens)
+      if lineMayContainBlockSyntax(lineSlice) {
+        let line = String(lineSlice)
+        collectHeadingTokens(line: line, lineOffset: lineOffset, into: &tokens)
+        collectLineRegex(regex: keywordLineRegex, kind: .keyword, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
+        collectLineRegex(regex: blockKeywordLineRegex, kind: .keyword, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
+        collectLineRegex(regex: planningLineRegex, kind: .planningKeyword, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
+        collectLineRegex(regex: propertyLineRegex, kind: .propertyKey, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
+        collectLineRegex(regex: commentLineRegex, kind: .comment, line: line, lineOffset: lineOffset, into: &tokens)
+      }
       lineOffset += lineLength
       if index < lines.count - 1 {
         lineOffset += 1
       }
+    }
+  }
+
+  static func lineMayContainBlockSyntax(_ line: Substring) -> Bool {
+    guard !line.isEmpty else { return false }
+    if line.first == "*" {
+      return true
+    }
+
+    var cursor = line.startIndex
+    while cursor < line.endIndex, line[cursor].isWhitespace {
+      cursor = line.index(after: cursor)
+    }
+    guard cursor < line.endIndex else { return false }
+
+    switch line[cursor] {
+    case "#", ":":
+      return true
+    case "C":
+      return line[cursor...].hasPrefix("CLOSED")
+    case "D":
+      return line[cursor...].hasPrefix("DEADLINE")
+    case "S":
+      return line[cursor...].hasPrefix("SCHEDULED")
+    default:
+      return false
     }
   }
 
