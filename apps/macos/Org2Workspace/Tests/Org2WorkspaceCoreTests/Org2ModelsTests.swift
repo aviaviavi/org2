@@ -2067,6 +2067,7 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
     store.select(.agenda(item))
+    store.selectedEntrySourceMode = .page
     await store.loadEntrySource(for: .agenda(item))
     try await waitForEntryRender(store)
 
@@ -2088,6 +2089,13 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedBlock?.endLineExclusive, paragraph.endLineExclusive + 1)
     XCTAssertEqual(store.selectedBlock?.rawText, "Updated body\nSecond line")
     XCTAssertEqual(store.editableBlockText, "Updated body\nSecond line")
+    let shiftedSibling = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .heading(let heading) = $0.rendered {
+        return heading.title == "Sibling"
+      }
+      return false
+    })
+    XCTAssertEqual(shiftedSibling.startLine, 6)
 
     let expandedParagraph = try XCTUnwrap(store.selectedBlock)
     store.editableBlockText = "Updated again\nSecond line"
