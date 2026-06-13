@@ -37,7 +37,7 @@ struct RenderedBlockView: View, Equatable {
     case .heading(let heading):
       RenderedHeadingView(heading: heading, rawText: rawText, editableBlock: editableBlock)
     case .planning(let planning):
-      RenderedPlanningView(planning: planning)
+      RenderedPlanningView(planning: planning, editableBlock: editableBlock)
     case .properties(let rows):
       RenderedPropertiesView(rows: rows, rawText: rawText)
     case .quote(let lines):
@@ -464,34 +464,116 @@ private struct RenderedHeadingTagsButton: View {
 }
 
 private struct RenderedPlanningView: View {
+  @EnvironmentObject private var store: WorkspaceStore
   let planning: OrgPlanningBlock
+  let editableBlock: OrgEditableBlock?
+  @State private var isEditingValue = false
+  @State private var draftValue = ""
 
   var body: some View {
     HStack(spacing: 8) {
-      Text(planning.kind.capitalized)
-        .font(.caption.weight(.medium))
-        .foregroundStyle(.secondary)
-        .frame(width: 78, alignment: .leading)
-      if let timestamp = OrgTimestampDisplay.parse(planning.value) {
-        HStack(spacing: 6) {
-          TimestampPill(systemImage: "calendar", text: timestamp.dateLabel)
-          if let time = timestamp.timeLabel {
-            TimestampPill(systemImage: "clock", text: time)
-          }
-          if let detail = timestamp.detail {
-            Text(detail)
-              .font(.caption)
-              .foregroundStyle(.secondary)
+      Menu {
+        ForEach(["SCHEDULED", "DEADLINE", "CLOSED"], id: \.self) { kind in
+          Button(kind.capitalized) {
+            setPlanning(kind: kind, value: planning.value)
           }
         }
-        .textSelection(.enabled)
+      } label: {
+        Text(planning.kind.capitalized)
+          .font(.caption.weight(.medium))
+          .foregroundStyle(.secondary)
+          .frame(width: 78, alignment: .leading)
+      }
+      .menuStyle(.borderlessButton)
+      .menuIndicator(.hidden)
+      .fixedSize()
+      .disabled(!isEditable)
+      .help("Planning kind")
+
+      if let timestamp = OrgTimestampDisplay.parse(planning.value) {
+        Button {
+          beginEditingValue()
+        } label: {
+          HStack(spacing: 6) {
+            TimestampPill(systemImage: "calendar", text: timestamp.dateLabel)
+            if let time = timestamp.timeLabel {
+              TimestampPill(systemImage: "clock", text: time)
+            }
+            if let detail = timestamp.detail {
+              Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEditable)
+        .help("Planning value")
+        .popover(isPresented: $isEditingValue, arrowEdge: .bottom) {
+          planningValuePopover
+        }
       } else {
-        Text(planning.value)
-          .font(.callout.monospacedDigit())
-          .textSelection(.enabled)
+        Button {
+          beginEditingValue()
+        } label: {
+          Text(planning.value)
+            .font(.callout.monospacedDigit())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEditable)
+        .help("Planning value")
+        .popover(isPresented: $isEditingValue, arrowEdge: .bottom) {
+          planningValuePopover
+        }
       }
     }
     .padding(.leading, 2)
+  }
+
+  private var planningValuePopover: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Label(planning.kind.capitalized, systemImage: "calendar")
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+
+      TextField("<yyyy-mm-dd>", text: $draftValue)
+        .textFieldStyle(.roundedBorder)
+        .font(.callout.monospacedDigit())
+        .frame(width: 240)
+        .onSubmit {
+          saveValue()
+        }
+
+      HStack(spacing: 8) {
+        Spacer(minLength: 0)
+        Button("Save") {
+          saveValue()
+        }
+        .keyboardShortcut(.defaultAction)
+      }
+      .controlSize(.small)
+    }
+    .padding(12)
+  }
+
+  private var isEditable: Bool {
+    editableBlock != nil && store.selectedEntrySource?.isEditable == true
+  }
+
+  private func beginEditingValue() {
+    draftValue = planning.value
+    isEditingValue = true
+  }
+
+  private func saveValue() {
+    setPlanning(kind: planning.kind, value: draftValue)
+    isEditingValue = false
+  }
+
+  private func setPlanning(kind: String, value: String) {
+    if let editableBlock {
+      Task { await store.setPlanningBlock(editableBlock, kind: kind, value: value) }
+    }
   }
 }
 

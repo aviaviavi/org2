@@ -1029,6 +1029,47 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func setPlanningBlock(_ block: OrgEditableBlock, kind: String, value: String) async {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "No editable source loaded"
+      return
+    }
+    guard block.startLine >= source.startLine,
+          block.endLineExclusive <= source.endLineExclusive
+    else {
+      statusText = "Block is outside the selected source"
+      return
+    }
+    guard case .planning = block.rendered,
+          let replacement = Self.planningRawText(kind: kind, value: value)
+    else {
+      statusText = "Planning update failed"
+      return
+    }
+
+    isSavingBlock = true
+    defer { isSavingBlock = false }
+
+    do {
+      try await Task.detached(priority: .userInitiated) {
+        try Self.replaceSourceRange(
+          file: source.file,
+          startLine: block.startLine,
+          endLineExclusive: block.endLineExclusive,
+          replacement: replacement
+        )
+      }.value
+      await finishBlockMutation(
+        file: source.file,
+        status: "\(replacement) -> planning",
+        selectLine: block.startLine
+      )
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Planning update failed"
+    }
+  }
+
   public func duplicateBlock(_ block: OrgEditableBlock) async {
     guard let source = selectedEntrySource, source.isEditable else {
       statusText = "No editable source loaded"
@@ -3589,6 +3630,14 @@ public final class WorkspaceStore: ObservableObject {
     return output
   }
 
+  nonisolated private static func planningRawText(kind: String, value: String) -> String? {
+    let normalizedKind = kind.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    guard planningKinds.contains(normalizedKind) else { return nil }
+    let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedValue.isEmpty else { return nil }
+    return "\(normalizedKind): \(normalizedValue)"
+  }
+
   nonisolated private static let activeHeadingTodoKeywords = Set([
     "TODO",
     "IN_PROGRESS",
@@ -3605,6 +3654,7 @@ public final class WorkspaceStore: ObservableObject {
   ])
 
   nonisolated private static let allHeadingTodoKeywords = activeHeadingTodoKeywords.union(doneHeadingTodoKeywords)
+  nonisolated private static let planningKinds = Set(["SCHEDULED", "DEADLINE", "CLOSED"])
 
   nonisolated private static func deleteSourceRangeCleaningAdjacentBlank(
     file: String,
