@@ -771,10 +771,10 @@ private struct RenderedSourceView: View {
   let language: String?
   let lines: [String]
   let editableBlock: OrgEditableBlock?
-  @State private var isExpanded = false
+  @State private var visibleLineLimit = SourceBlockLineWindow.defaultLimit
 
   var body: some View {
-    let lineWindow = SourceBlockLineWindow.make(lines: lines, isExpanded: isExpanded)
+    let lineWindow = SourceBlockLineWindow.make(lines: lines, visibleLimit: visibleLineLimit)
     VStack(alignment: .leading, spacing: 6) {
       HStack(spacing: 8) {
         if let language, !language.isEmpty {
@@ -808,13 +808,19 @@ private struct RenderedSourceView: View {
           .stroke(Color.secondary.opacity(0.16))
       )
 
-      if lineWindow.isTruncated {
+      if lines.count > SourceBlockLineWindow.defaultLimit {
         Button {
-          isExpanded.toggle()
+          if lineWindow.hiddenLineCount == 0 {
+            visibleLineLimit = SourceBlockLineWindow.defaultLimit
+          } else {
+            visibleLineLimit = min(lines.count, visibleLineLimit + SourceBlockLineWindow.pageSize)
+          }
         } label: {
           Label(
-            isExpanded ? "Show first \(SourceBlockLineWindow.defaultLimit) lines" : "Show \(lineWindow.hiddenLineCount) more lines",
-            systemImage: isExpanded ? "chevron.up" : "chevron.down"
+            lineWindow.hiddenLineCount == 0
+              ? "Show first \(SourceBlockLineWindow.defaultLimit) lines"
+              : "Show \(min(SourceBlockLineWindow.pageSize, lineWindow.hiddenLineCount)) more lines",
+            systemImage: lineWindow.hiddenLineCount == 0 ? "chevron.up" : "chevron.down"
           )
         }
         .buttonStyle(.borderless)
@@ -841,6 +847,7 @@ private struct RenderedSourceView: View {
 
 struct SourceBlockLineWindow: Equatable {
   static let defaultLimit = 80
+  static let pageSize = 160
 
   let visibleLines: [String]
   let totalLineCount: Int
@@ -869,6 +876,20 @@ struct SourceBlockLineWindow: Equatable {
       totalLineCount: lines.count,
       limit: safeLimit,
       isExpanded: isExpanded
+    )
+  }
+
+  static func make(
+    lines: [String],
+    visibleLimit: Int
+  ) -> SourceBlockLineWindow {
+    let safeLimit = max(1, visibleLimit)
+    let clampedLimit = min(lines.count, safeLimit)
+    return SourceBlockLineWindow(
+      visibleLines: lines.count <= clampedLimit ? lines : Array(lines.prefix(clampedLimit)),
+      totalLineCount: lines.count,
+      limit: safeLimit,
+      isExpanded: clampedLimit >= lines.count
     )
   }
 }
@@ -1309,13 +1330,13 @@ private struct SourceRunLineChartView: View {
 
 private struct RenderedTableView: View {
   let table: OrgTableBlock
-  @State private var isExpanded = false
+  @State private var visibleRowLimit = TableRowWindow.defaultLimit
 
   var body: some View {
     let rowWindow = TableRowWindow.make(
       rows: table.rows,
       headerRowIndex: table.headerRowIndex,
-      isExpanded: isExpanded
+      visibleLimit: visibleRowLimit
     )
     VStack(alignment: .leading, spacing: 6) {
       ScrollView(.horizontal) {
@@ -1355,13 +1376,19 @@ private struct RenderedTableView: View {
           .stroke(Color.secondary.opacity(0.18))
       )
 
-      if rowWindow.isTruncated {
+      if table.rows.count > TableRowWindow.defaultLimit {
         Button {
-          isExpanded.toggle()
+          if rowWindow.hiddenRowCount == 0 {
+            visibleRowLimit = TableRowWindow.defaultLimit
+          } else {
+            visibleRowLimit = min(table.rows.count, visibleRowLimit + TableRowWindow.pageSize)
+          }
         } label: {
           Label(
-            isExpanded ? "Show first \(TableRowWindow.defaultLimit) rows" : "Show \(rowWindow.hiddenRowCount) more rows",
-            systemImage: isExpanded ? "chevron.up" : "chevron.down"
+            rowWindow.hiddenRowCount == 0
+              ? "Show first \(TableRowWindow.defaultLimit) rows"
+              : "Show \(min(TableRowWindow.pageSize, rowWindow.hiddenRowCount)) more rows",
+            systemImage: rowWindow.hiddenRowCount == 0 ? "chevron.up" : "chevron.down"
           )
         }
         .buttonStyle(.borderless)
@@ -1418,6 +1445,7 @@ struct TableRowWindow: Equatable {
   }
 
   static let defaultLimit = 40
+  static let pageSize = 120
 
   let visibleRows: [VisibleRow]
   let totalRowCount: Int
@@ -1460,6 +1488,20 @@ struct TableRowWindow: Equatable {
       totalRowCount: rows.count,
       limit: safeLimit,
       isExpanded: isExpanded
+    )
+  }
+
+  static func make(
+    rows: [OrgTableRow],
+    headerRowIndex: Int?,
+    visibleLimit: Int
+  ) -> TableRowWindow {
+    let safeLimit = max(1, visibleLimit)
+    return make(
+      rows: rows,
+      headerRowIndex: headerRowIndex,
+      isExpanded: safeLimit >= rows.count,
+      limit: safeLimit
     )
   }
 }
