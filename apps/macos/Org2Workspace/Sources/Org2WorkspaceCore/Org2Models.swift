@@ -593,6 +593,182 @@ public struct OrgInlineTimestamp: Equatable, Sendable {
   }
 }
 
+public struct OrgEditableInlineMarkupSet: Equatable, Sendable {
+  public let rawText: String
+  public let markups: [OrgEditableInlineMarkup]
+
+  public init(rawText: String) {
+    self.rawText = rawText
+    self.markups = Self.parseMarkups(rawText)
+  }
+
+  public func replacing(
+    markup: OrgEditableInlineMarkup,
+    text: String? = nil,
+    kind: OrgEditableInlineMarkup.Kind? = nil
+  ) -> String {
+    let nextKind = kind ?? markup.kind
+    let normalizedText = text ?? markup.text
+    guard !normalizedText.isEmpty else { return rawText }
+
+    let marker = nextKind == markup.kind ? markup.marker : nextKind.defaultMarker
+    return (rawText as NSString).replacingCharacters(
+      in: NSRange(location: markup.startUTF16, length: markup.endUTF16 - markup.startUTF16),
+      with: "\(marker)\(normalizedText)\(marker)"
+    )
+  }
+
+  private static func parseMarkups(_ raw: String) -> [OrgEditableInlineMarkup] {
+    let ignoredRanges = ignoredInlineRanges(raw)
+    var markups: [OrgEditableInlineMarkup] = []
+    var cursor = raw.startIndex
+
+    while cursor < raw.endIndex {
+      var didParse = false
+      for spec in delimiterSpecs where raw[cursor] == spec.marker {
+        guard let parsed = parseDelimited(raw, at: cursor, marker: spec.marker),
+              !spec.requiresOrgBoundary || markerLooksLikeOrgBoundary(raw, open: cursor, close: parsed.close)
+        else {
+          continue
+        }
+
+        let rawRange = NSRange(
+          location: cursor.utf16Offset(in: raw),
+          length: parsed.end.utf16Offset(in: raw) - cursor.utf16Offset(in: raw)
+        )
+        guard !ignoredRanges.contains(where: { rangesOverlap(rawRange, $0) }) else {
+          continue
+        }
+
+        markups.append(OrgEditableInlineMarkup(
+          id: "markup:\(rawRange.location)",
+          kind: spec.kind,
+          marker: String(spec.marker),
+          text: parsed.text,
+          startUTF16: rawRange.location,
+          endUTF16: rawRange.location + rawRange.length
+        ))
+        cursor = parsed.end
+        didParse = true
+        break
+      }
+
+      if !didParse {
+        cursor = raw.index(after: cursor)
+      }
+    }
+
+    return markups
+  }
+
+  private static func ignoredInlineRanges(_ raw: String) -> [NSRange] {
+    let linkRanges = OrgEditableInlineLinkSet(rawText: raw).links.map(\.rawRange)
+    let timestampRanges = OrgEditableInlineTimestampSet(rawText: raw).timestamps.map {
+      NSRange(location: $0.startUTF16, length: $0.endUTF16 - $0.startUTF16)
+    }
+    return linkRanges + timestampRanges
+  }
+
+  private static func parseDelimited(
+    _ raw: String,
+    at cursor: String.Index,
+    marker: Character
+  ) -> (text: String, close: String.Index, end: String.Index)? {
+    guard raw[cursor] == marker else { return nil }
+    let contentStart = raw.index(after: cursor)
+    guard contentStart < raw.endIndex, !raw[contentStart].isWhitespace else { return nil }
+
+    var search = contentStart
+    while search < raw.endIndex {
+      guard let close = raw[search...].firstIndex(of: marker) else { return nil }
+      let beforeClose = raw.index(before: close)
+      let afterClose = raw.index(after: close)
+      if !raw[beforeClose].isWhitespace {
+        let text = String(raw[contentStart..<close])
+        guard !text.isEmpty else { return nil }
+        return (text, close, afterClose)
+      }
+      search = raw.index(after: close)
+    }
+
+    return nil
+  }
+
+  private static func markerLooksLikeOrgBoundary(_ raw: String, open: String.Index, close: String.Index) -> Bool {
+    let beforeOpen = open > raw.startIndex ? raw.index(before: open) : nil
+    let afterClose = raw.index(after: close)
+    let opensAtBoundary = beforeOpen.map { isBoundary(raw[$0]) } ?? true
+    let closesAtBoundary = afterClose < raw.endIndex ? isBoundary(raw[afterClose]) : true
+    return opensAtBoundary && closesAtBoundary
+  }
+
+  private static func isBoundary(_ character: Character) -> Bool {
+    if character.isWhitespace { return true }
+    return !character.isASCIIWord
+  }
+
+  private static func rangesOverlap(_ lhs: NSRange, _ rhs: NSRange) -> Bool {
+    lhs.location < rhs.location + rhs.length && rhs.location < lhs.location + lhs.length
+  }
+
+  private static let delimiterSpecs: [(marker: Character, kind: OrgEditableInlineMarkup.Kind, requiresOrgBoundary: Bool)] = [
+    ("`", .code, false),
+    ("~", .code, true),
+    ("=", .code, true),
+    ("*", .bold, true),
+    ("/", .italic, true),
+    ("_", .underline, true),
+    ("+", .strike, true)
+  ]
+}
+
+public struct OrgEditableInlineMarkup: Identifiable, Equatable, Sendable {
+  public enum Kind: String, CaseIterable, Sendable {
+    case code
+    case bold
+    case italic
+    case underline
+    case strike
+
+    var defaultMarker: String {
+      switch self {
+      case .code:
+        return "`"
+      case .bold:
+        return "*"
+      case .italic:
+        return "/"
+      case .underline:
+        return "_"
+      case .strike:
+        return "+"
+      }
+    }
+
+    var displayTitle: String {
+      switch self {
+      case .code:
+        return "Code"
+      case .bold:
+        return "Bold"
+      case .italic:
+        return "Italic"
+      case .underline:
+        return "Underline"
+      case .strike:
+        return "Strike"
+      }
+    }
+  }
+
+  public let id: String
+  public let kind: Kind
+  public let marker: String
+  public let text: String
+  public let startUTF16: Int
+  public let endUTF16: Int
+}
+
 public struct OrgEditableInlineLinkSet: Equatable, Sendable {
   public let rawText: String
   public let links: [OrgEditableInlineLink]

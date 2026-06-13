@@ -879,6 +879,7 @@ private struct ParagraphBlockEditor: View {
           )
       }
 
+      ParagraphInlineMarkupEditor(text: $store.editableBlockText)
       ParagraphInlineLinkEditor(text: $store.editableBlockText)
       ParagraphInlineTimestampEditor(text: $store.editableBlockText)
 
