@@ -178,6 +178,28 @@ Data/query records can also live outside the selected report subtree, such as in
 
 When the selected node is itself a =warehouse-query=, =dataset=, or other data-link record, =org2 context --id query-fetches-by-company= also includes that selected record in =Related data links=. This gives an OpenClaw or Workspace handoff the same structured query/artifact/freshness metadata whether the user starts from a parent report or directly from the data node.
 
+Event-backed records use the same =dataLink= envelope, but emphasize timeline provenance instead of result rows. Use =KIND: event-stream= for an append-only external stream and =KIND: timeline-link= for a curated projection over one or more streams.
+
+#+begin_src org
+* Event stream: support state changes
+:PROPERTIES:
+:ID: support-state-changes
+:KIND: timeline-link
+:SYSTEM: linear
+:TIMELINE: support.ticket.lifecycle
+:EVENT_TYPE: status_changed
+:ENTITY: ticket:SUP-42
+:ACTOR: Casey
+:OCCURRED_AT: 2026-05-15T09:30:00-07:00
+:CAPTURED_AT: 2026-05-15T09:31:00-07:00
+:SOURCE_CURSOR: linear:SUP-42:9
+:CHANGE_ID: change-42
+:CONTEXT: id:support-followup-1
+:END:
+#+end_src
+
+=org2 agent fetch= exposes event/timeline metadata as =eventStream=, =timeline=, =eventType=, =entity=, =actor=, =occurredAt=, =capturedAt=, =sourceCursor=, =changeId=, and =changeHash= when present. This lets Workspace and OpenClaw clients answer "what changed and why?" with cited pointers into a durable event ledger while keeping high-volume event bodies in the source system.
+
 * What to save back
 
 Good generated outputs are inspectable artifacts, not silent canonical edits:

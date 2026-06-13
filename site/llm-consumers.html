@@ -199,6 +199,23 @@ npm run org2 -- lint --dir ~/notes --recursive --format json &gt; views/corpus-h
 <p>Fetching a parent report or file also exposes descendant data/query records as <code>relatedDataLinks</code>. For example, <code>org2 agent fetch --id report-fetches --format json</code> includes child <code>warehouse-query</code> and <code>dataset</code> headings with their citations and compact <code>dataLink</code> metadata. The prompt-ready renderer mirrors this with a <code>Related data links</code> section, so a Workspace client can show the report's evidence, artifacts, row counts, and freshness next to the selected note without reparsing the org2 file.</p>
 <p>Data/query records can also live outside the selected report subtree, such as in a central data catalog. Point them at the selected note with <code>CONTEXT: id:report-fetches</code>, <code>TARGET_ID: report-fetches</code>, <code>REPORT_ID: report-fetches</code>, or a normal <code>[[id:report-fetches]]</code> link. <code>relatedDataLinks</code> includes those referenced records with <code>matchingAttachments</code> so clients can explain why the query belongs with the selected report/entity.</p>
 <p>When the selected node is itself a <code>warehouse-query</code>, <code>dataset</code>, or other data-link record, <code>org2 context --id query-fetches-by-company</code> also includes that selected record in <code>Related data links</code>. This gives an OpenClaw or Workspace handoff the same structured query/artifact/freshness metadata whether the user starts from a parent report or directly from the data node.</p>
+<p>Event-backed records use the same <code>dataLink</code> envelope, but emphasize timeline provenance instead of result rows. Use <code>KIND: event-stream</code> for an append-only external stream and <code>KIND: timeline-link</code> for a curated projection over one or more streams.</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* Event stream: support state changes
+:PROPERTIES:
+:ID: support-state-changes
+:KIND: timeline-link
+:SYSTEM: linear
+:TIMELINE: support.ticket.lifecycle
+:EVENT_TYPE: status_changed
+:ENTITY: ticket:SUP-42
+:ACTOR: Casey
+:OCCURRED_AT: 2026-05-15T09:30:00-07:00
+:CAPTURED_AT: 2026-05-15T09:31:00-07:00
+:SOURCE_CURSOR: linear:SUP-42:9
+:CHANGE_ID: change-42
+:CONTEXT: id:support-followup-1
+:END:</code></pre>
+<p><code>org2 agent fetch</code> exposes event/timeline metadata as <code>eventStream</code>, <code>timeline</code>, <code>eventType</code>, <code>entity</code>, <code>actor</code>, <code>occurredAt</code>, <code>capturedAt</code>, <code>sourceCursor</code>, <code>changeId</code>, and <code>changeHash</code> when present. This lets Workspace and OpenClaw clients answer &quot;what changed and why?&quot; with cited pointers into a durable event ledger while keeping high-volume event bodies in the source system.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="what-to-save-back">What to save back</h1>

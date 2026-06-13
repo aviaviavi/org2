@@ -84,6 +84,16 @@ type AgentDataLinkMetadata = {
   engine?: string;
   source?: string;
   path?: string;
+  eventStream?: string;
+  timeline?: string;
+  eventType?: string;
+  entity?: string;
+  actor?: string;
+  occurredAt?: string;
+  capturedAt?: string;
+  sourceCursor?: string;
+  changeId?: string;
+  changeHash?: string;
   queryId?: string;
   query?: string;
   queryHash?: string;
@@ -642,6 +652,16 @@ function dataLinkMetadataFor(node: CompiledCorpusNode): AgentDataLinkMetadata | 
   const engine = stringDataProperty(props, ["ENGINE", "ORG2_ENGINE"]);
   const source = stringDataProperty(props, ["SOURCE", "DATA_SOURCE", "URI", "URL"]);
   const sourcePath = stringDataProperty(props, ["PATH", "FILE"]);
+  const eventStream = stringDataProperty(props, ["EVENT_STREAM", "STREAM", "STREAM_ID"]);
+  const timeline = stringDataProperty(props, ["TIMELINE", "TIMELINE_ID"]);
+  const eventType = stringDataProperty(props, ["EVENT_TYPE", "EVENT_KIND"]);
+  const entity = stringDataProperty(props, ["SUBJECT", "ENTITY", "ENTITY_ID"]);
+  const actor = stringDataProperty(props, ["ACTOR", "AUTHOR", "USER"]);
+  const occurredAt = stringDataProperty(props, ["OCCURRED_AT", "EVENT_AT", "OBSERVED_AT"]);
+  const capturedAt = stringDataProperty(props, ["CAPTURED_AT", "INGESTED_AT", "CREATED_AT"]);
+  const sourceCursor = stringDataProperty(props, ["SOURCE_CURSOR", "CURSOR", "OFFSET"]);
+  const changeId = stringDataProperty(props, ["CHANGE_ID", "EVENT_ID", "SOURCE_EVENT_ID"]);
+  const changeHash = stringDataProperty(props, ["CHANGE_HASH", "EVENT_HASH"]);
   const queryId = stringDataProperty(props, ["QUERY_ID", "SQL_ID", "VIEW_ID"]);
   const query = stringDataProperty(props, ["QUERY", "SQL"]);
   const queryHash = stringDataProperty(props, ["QUERY_HASH", "HASH", "SOURCE_HASH"]);
@@ -656,6 +676,16 @@ function dataLinkMetadataFor(node: CompiledCorpusNode): AgentDataLinkMetadata | 
     ...(engine ? { engine } : {}),
     ...(source ? { source } : {}),
     ...(sourcePath ? { path: sourcePath } : {}),
+    ...(eventStream ? { eventStream } : {}),
+    ...(timeline ? { timeline } : {}),
+    ...(eventType ? { eventType } : {}),
+    ...(entity ? { entity } : {}),
+    ...(actor ? { actor } : {}),
+    ...(occurredAt ? { occurredAt } : {}),
+    ...(capturedAt ? { capturedAt } : {}),
+    ...(sourceCursor ? { sourceCursor } : {}),
+    ...(changeId ? { changeId } : {}),
+    ...(changeHash ? { changeHash } : {}),
     ...(queryId ? { queryId } : {}),
     ...(query ? { query } : {}),
     ...(queryHash ? { queryHash } : {}),
@@ -1047,6 +1077,16 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       item.id ? `id: ${item.id}` : "",
       item.dataLink.system ? `system: ${item.dataLink.system}` : "",
       item.dataLink.engine ? `engine: ${item.dataLink.engine}` : "",
+      item.dataLink.eventStream ? `stream: ${item.dataLink.eventStream}` : "",
+      item.dataLink.timeline ? `timeline: ${item.dataLink.timeline}` : "",
+      item.dataLink.eventType ? `event: ${item.dataLink.eventType}` : "",
+      item.dataLink.entity ? `entity: ${item.dataLink.entity}` : "",
+      item.dataLink.actor ? `actor: ${item.dataLink.actor}` : "",
+      item.dataLink.occurredAt ? `occurred: ${item.dataLink.occurredAt}` : "",
+      item.dataLink.capturedAt ? `captured: ${item.dataLink.capturedAt}` : "",
+      item.dataLink.changeId ? `change: ${item.dataLink.changeId}` : "",
+      item.dataLink.sourceCursor ? `cursor: ${item.dataLink.sourceCursor}` : "",
+      item.dataLink.changeHash ? `hash: ${item.dataLink.changeHash}` : "",
       item.dataLink.queryId ? `query: ${item.dataLink.queryId}` : "",
       item.dataLink.artifact ? `artifact: ${item.dataLink.artifact}` : "",
       item.dataLink.result ? `result: ${item.dataLink.result}` : "",
