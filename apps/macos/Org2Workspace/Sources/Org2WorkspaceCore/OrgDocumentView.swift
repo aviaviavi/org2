@@ -14,11 +14,6 @@ struct OrgRenderedEntryView: View {
     let isSourceEditable = source?.isEditable == true
     let selectedBlockID = store.selectedBlockID
     let blocksSignature = store.selectedRenderedBlocksSignature
-    let moveAvailabilitySignature = OrgRenderedEntryMoveAvailability.signature(
-      blocksSignature: blocksSignature,
-      source: source
-    )
-    let moveAvailabilityValues = moveAvailability.signature == moveAvailabilitySignature ? moveAvailability.values : [:]
     let selectedBlockIndex = selectedBlockID.flatMap { store.selectedRenderedBlockIndexes[$0] }
     let resetKey = Self.renderWindowResetKey(for: source)
     let visibleWindow = Self.visibleWindow(
@@ -26,8 +21,15 @@ struct OrgRenderedEntryView: View {
       blocks: blocks,
       selectedBlockIndex: selectedBlockIndex
     )
+    let visibleRange = visibleWindow.range
     let visibleBlocks = blocks[visibleWindow.range]
     let allowsHoverChrome = Self.allowsHoverChrome(blockCount: blocks.count)
+    let moveAvailabilitySignature = OrgRenderedEntryMoveAvailability.signature(
+      blocksSignature: blocksSignature,
+      source: source,
+      visibleRange: visibleRange
+    )
+    let moveAvailabilityValues = moveAvailability.signature == moveAvailabilitySignature ? moveAvailability.values : [:]
 
     LazyVStack(alignment: .leading, spacing: 8) {
       if visibleWindow.hasPrevious {
@@ -70,7 +72,7 @@ struct OrgRenderedEntryView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .onAppear {
       resetRenderedBlockLimitIfNeeded(resetKey: resetKey)
-      refreshMoveAvailabilityIfNeeded(signature: moveAvailabilitySignature, source: source)
+      refreshMoveAvailabilityIfNeeded(signature: moveAvailabilitySignature, source: source, visibleRange: visibleRange)
     }
     .onChange(of: resetKey) { _, newResetKey in
       resetRenderedBlockLimitIfNeeded(resetKey: newResetKey)
@@ -83,7 +85,7 @@ struct OrgRenderedEntryView: View {
       }
     }
     .onChange(of: moveAvailabilitySignature) { _, newSignature in
-      refreshMoveAvailabilityIfNeeded(signature: newSignature, source: source)
+      refreshMoveAvailabilityIfNeeded(signature: newSignature, source: source, visibleRange: visibleRange)
     }
   }
 
@@ -93,11 +95,12 @@ struct OrgRenderedEntryView: View {
     renderedBlockWindow = nil
   }
 
-  private func refreshMoveAvailabilityIfNeeded(signature: String, source: EntrySource?) {
+  private func refreshMoveAvailabilityIfNeeded(signature: String, source: EntrySource?, visibleRange: Range<Int>) {
     guard moveAvailability.signature != signature else { return }
     moveAvailability = OrgRenderedEntryMoveAvailability.make(
       for: blocks,
       source: source,
+      visibleRange: visibleRange,
       precomputedSignature: signature
     )
   }
@@ -401,44 +404,67 @@ struct OrgRenderedEntryMoveAvailability: Sendable {
   static func make(
     for blocks: [OrgEditableBlock],
     source: EntrySource?,
+    visibleRange: Range<Int>? = nil,
     precomputedSignature: String? = nil
   ) -> OrgRenderedEntryMoveAvailability {
-    let signature = precomputedSignature ?? signature(for: blocks, source: source)
+    let signature = precomputedSignature ?? signature(for: blocks, source: source, visibleRange: visibleRange)
     guard let source, source.isEditable else {
       return OrgRenderedEntryMoveAvailability(signature: signature, values: [:])
     }
 
-    let movableBlocks = blocks.filter { block in
-      guard block.isEditable,
-            block.startLine >= source.startLine,
-            block.endLineExclusive <= source.endLineExclusive
-      else {
-        return false
+    let targetRange = clampedVisibleRange(visibleRange, totalCount: blocks.count)
+    var firstMovableIndex: Int?
+    var lastMovableIndex: Int?
+    var visibleMovableBlocks: [(index: Int, id: OrgEditableBlock.ID)] = []
+    visibleMovableBlocks.reserveCapacity(targetRange.count)
+
+    for (index, block) in blocks.enumerated() {
+      guard isMovable(block, in: source) else { continue }
+      if firstMovableIndex == nil {
+        firstMovableIndex = index
       }
-      return !(source.isSubtree && block.startLine == source.startLine)
+      lastMovableIndex = index
+      if targetRange.contains(index) {
+        visibleMovableBlocks.append((index: index, id: block.id))
+      }
     }
 
+    guard let firstMovableIndex, let lastMovableIndex else {
+      return OrgRenderedEntryMoveAvailability(signature: signature, values: [:])
+    }
     var values: [OrgEditableBlock.ID: OrgRenderedEntryBlockMoveAvailability] = [:]
-    values.reserveCapacity(movableBlocks.count)
-    for (index, block) in movableBlocks.enumerated() {
-      values[block.id] = OrgRenderedEntryBlockMoveAvailability(
-        up: index > 0,
-        down: index < movableBlocks.count - 1
+    values.reserveCapacity(visibleMovableBlocks.count)
+    for visibleBlock in visibleMovableBlocks {
+      values[visibleBlock.id] = OrgRenderedEntryBlockMoveAvailability(
+        up: visibleBlock.index > firstMovableIndex,
+        down: visibleBlock.index < lastMovableIndex
       )
     }
 
     return OrgRenderedEntryMoveAvailability(signature: signature, values: values)
   }
 
-  static func signature(for blocks: [OrgEditableBlock], source: EntrySource?) -> String {
-    signature(blocksSignature: Self.blocksSignature(for: blocks), source: source)
+  static func signature(
+    for blocks: [OrgEditableBlock],
+    source: EntrySource?,
+    visibleRange: Range<Int>? = nil
+  ) -> String {
+    signature(blocksSignature: Self.blocksSignature(for: blocks), source: source, visibleRange: visibleRange)
   }
 
-  static func signature(blocksSignature: String, source: EntrySource?) -> String {
+  static func signature(
+    blocksSignature: String,
+    source: EntrySource?,
+    visibleRange: Range<Int>? = nil
+  ) -> String {
+    let rangeSignature: String = {
+      guard let visibleRange else { return "all" }
+      return "\(visibleRange.lowerBound)..<\(visibleRange.upperBound)"
+    }()
     guard let source, source.isEditable else {
-      return "read-only:\(source?.id ?? "none")"
+      return "read-only:\(source?.id ?? "none"):\(rangeSignature)"
     }
-    return "editable:\(source.id):\(source.isSubtree):\(source.isEditable):\(blocksSignature)"
+    return "editable:\(source.id):\(source.isSubtree):\(source.isEditable):\(rangeSignature):\(blocksSignature)"
   }
 
   private static func blocksSignature(for blocks: [OrgEditableBlock]) -> String {
@@ -453,6 +479,25 @@ struct OrgRenderedEntryMoveAvailability: Sendable {
       hasher.combine(block.isEditable)
     }
     return "\(blocks.count):\(hasher.finalize())"
+  }
+
+  private static func clampedVisibleRange(_ visibleRange: Range<Int>?, totalCount: Int) -> Range<Int> {
+    guard let visibleRange else {
+      return 0..<totalCount
+    }
+    let start = min(max(0, visibleRange.lowerBound), totalCount)
+    let end = min(max(start, visibleRange.upperBound), totalCount)
+    return start..<end
+  }
+
+  private static func isMovable(_ block: OrgEditableBlock, in source: EntrySource) -> Bool {
+    guard block.isEditable,
+          block.startLine >= source.startLine,
+          block.endLineExclusive <= source.endLineExclusive
+    else {
+      return false
+    }
+    return !(source.isSubtree && block.startLine == source.startLine)
   }
 }
 
