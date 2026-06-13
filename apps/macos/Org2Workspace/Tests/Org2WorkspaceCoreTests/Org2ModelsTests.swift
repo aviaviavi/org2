@@ -1454,9 +1454,89 @@ final class Org2ModelsTests: XCTestCase {
       store.selectedBlock?.rawText == "** TODO Call Bob" && store.editingBlockID == store.selectedBlockID
     }
 
-    let updated = try String(contentsOf: note, encoding: .utf8)
-    XCTAssertTrue(updated.contains("* TODO Parent\n** TODO Call Bob\n* Sibling"))
+    var updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* TODO Parent\nBody\n* Sibling"))
+    XCTAssertFalse(updated.contains("** TODO Call Bob"))
     XCTAssertEqual(store.editableBlockText, "** TODO Call Bob")
+
+    store.cancelEditingBlock()
+    XCTAssertEqual(store.selectedRenderedBlocks.first(where: { $0.id == paragraph.id })?.rawText, "Body")
+    updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* TODO Parent\nBody\n* Sibling"))
+
+    store.beginEditingBlock(paragraph)
+    store.editableBlockText = "/todo Call Bob"
+    await store.convertEditingBlock(paragraph, to: .todo)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "** TODO Call Bob" && store.editingBlockID == store.selectedBlockID
+    }
+    let draft = try XCTUnwrap(store.selectedBlock)
+    await store.saveEditedBlock(draft)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "** TODO Call Bob"
+    }
+
+    updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* TODO Parent\n** TODO Call Bob\n* Sibling"))
+    XCTAssertNil(store.editingBlockID)
+  }
+
+  @MainActor
+  func testEmptySlashTodoDraftDoesNotSavePlaceholderHeading() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-empty-slash-todo-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("empty-slash-todo.org2")
+    try """
+    #+TITLE: Empty Slash TODO Test
+
+    * TODO Parent
+    Body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+    store.beginEditingBlock(paragraph)
+    store.editableBlockText = "/todo"
+
+    await store.convertEditingBlock(paragraph, to: .todo)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "** TODO " && store.editingBlockID == store.selectedBlockID
+    }
+
+    let draft = try XCTUnwrap(store.selectedBlock)
+    await store.saveEditedBlock(draft)
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* TODO Parent\nBody\n* Sibling"))
+    XCTAssertFalse(updated.contains("New task"))
+    XCTAssertFalse(updated.contains("** TODO \n"))
+    XCTAssertEqual(store.selectedRenderedBlocks.first(where: { $0.id == paragraph.id })?.rawText, "Body")
   }
 
   @MainActor
