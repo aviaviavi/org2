@@ -5,6 +5,7 @@ struct OrgRenderedEntryView: View {
   let blocks: [OrgEditableBlock]
   @State private var renderedBlockLimit = Self.initialRenderedBlockLimit
   @State private var blockSignature = ""
+  @State private var moveAvailability = OrgRenderedEntryMoveAvailability.empty
 
   var body: some View {
     let source = store.selectedEntrySource
@@ -12,7 +13,8 @@ struct OrgRenderedEntryView: View {
     let corpusRoot = store.corpusRoot
     let isSourceEditable = source?.isEditable == true
     let selectedBlockID = store.selectedBlockID
-    let moveAvailability = Self.moveAvailability(for: blocks, source: source)
+    let moveAvailabilitySignature = OrgRenderedEntryMoveAvailability.signature(for: blocks, source: source)
+    let moveAvailabilityValues = moveAvailability.signature == moveAvailabilitySignature ? moveAvailability.values : [:]
     let visibleLimit = Self.visibleLimit(
       requestedLimit: renderedBlockLimit,
       blocks: blocks,
@@ -29,8 +31,8 @@ struct OrgRenderedEntryView: View {
             block: block,
             isSourceEditable: isSourceEditable,
             isSelected: selectedBlockID == block.id,
-            canMoveUp: moveAvailability[block.id]?.up == true,
-            canMoveDown: moveAvailability[block.id]?.down == true,
+            canMoveUp: moveAvailabilityValues[block.id]?.up == true,
+            canMoveDown: moveAvailabilityValues[block.id]?.down == true,
             actions: actions(for: block)
           ) {
             RenderedBlockView(
@@ -56,9 +58,13 @@ struct OrgRenderedEntryView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .onAppear {
       resetRenderedBlockLimitIfNeeded()
+      refreshMoveAvailabilityIfNeeded(signature: moveAvailabilitySignature, source: source)
     }
     .onChange(of: Self.blockSignature(for: blocks)) {
       resetRenderedBlockLimitIfNeeded()
+    }
+    .onChange(of: moveAvailabilitySignature) { _, newSignature in
+      refreshMoveAvailabilityIfNeeded(signature: newSignature, source: source)
     }
   }
 
@@ -85,38 +91,16 @@ struct OrgRenderedEntryView: View {
     )
   }
 
-  private static func moveAvailability(
-    for blocks: [OrgEditableBlock],
-    source: EntrySource?
-  ) -> [OrgEditableBlock.ID: (up: Bool, down: Bool)] {
-    guard let source, source.isEditable else { return [:] }
-
-    let movableBlocks = blocks.filter { block in
-      guard block.isEditable,
-            block.startLine >= source.startLine,
-            block.endLineExclusive <= source.endLineExclusive
-      else {
-        return false
-      }
-      return !(source.isSubtree && block.startLine == source.startLine)
-    }
-
-    var availability: [OrgEditableBlock.ID: (up: Bool, down: Bool)] = [:]
-    availability.reserveCapacity(movableBlocks.count)
-    for (index, block) in movableBlocks.enumerated() {
-      availability[block.id] = (
-        up: index > 0,
-        down: index < movableBlocks.count - 1
-      )
-    }
-    return availability
-  }
-
   private func resetRenderedBlockLimitIfNeeded() {
     let signature = Self.blockSignature(for: blocks)
     guard signature != blockSignature else { return }
     blockSignature = signature
     renderedBlockLimit = Self.initialRenderedBlockLimit
+  }
+
+  private func refreshMoveAvailabilityIfNeeded(signature: String, source: EntrySource?) {
+    guard moveAvailability.signature != signature else { return }
+    moveAvailability = OrgRenderedEntryMoveAvailability.make(for: blocks, source: source)
   }
 
   private func expandRenderedBlocks() {
@@ -148,6 +132,65 @@ struct OrgRenderedEntryView: View {
   private static let initialRenderedBlockLimit = 220
   private static let renderedBlockPageSize = 180
   private static let selectedBlockLookahead = 48
+}
+
+struct OrgRenderedEntryBlockMoveAvailability: Equatable, Sendable {
+  let up: Bool
+  let down: Bool
+}
+
+struct OrgRenderedEntryMoveAvailability: Sendable {
+  let signature: String
+  let values: [OrgEditableBlock.ID: OrgRenderedEntryBlockMoveAvailability]
+
+  static let empty = OrgRenderedEntryMoveAvailability(signature: "empty", values: [:])
+
+  static func make(for blocks: [OrgEditableBlock], source: EntrySource?) -> OrgRenderedEntryMoveAvailability {
+    let signature = signature(for: blocks, source: source)
+    guard let source, source.isEditable else {
+      return OrgRenderedEntryMoveAvailability(signature: signature, values: [:])
+    }
+
+    let movableBlocks = blocks.filter { block in
+      guard block.isEditable,
+            block.startLine >= source.startLine,
+            block.endLineExclusive <= source.endLineExclusive
+      else {
+        return false
+      }
+      return !(source.isSubtree && block.startLine == source.startLine)
+    }
+
+    var values: [OrgEditableBlock.ID: OrgRenderedEntryBlockMoveAvailability] = [:]
+    values.reserveCapacity(movableBlocks.count)
+    for (index, block) in movableBlocks.enumerated() {
+      values[block.id] = OrgRenderedEntryBlockMoveAvailability(
+        up: index > 0,
+        down: index < movableBlocks.count - 1
+      )
+    }
+
+    return OrgRenderedEntryMoveAvailability(signature: signature, values: values)
+  }
+
+  static func signature(for blocks: [OrgEditableBlock], source: EntrySource?) -> String {
+    guard let source, source.isEditable else {
+      return "read-only:\(source?.id ?? "none")"
+    }
+
+    var hasher = Hasher()
+    hasher.combine(source.id)
+    hasher.combine(source.isSubtree)
+    hasher.combine(source.isEditable)
+    hasher.combine(blocks.count)
+    for block in blocks {
+      hasher.combine(block.id)
+      hasher.combine(block.startLine)
+      hasher.combine(block.endLineExclusive)
+      hasher.combine(block.isEditable)
+    }
+    return "editable:\(hasher.finalize())"
+  }
 }
 
 private struct ProgressiveRenderFooter: View {

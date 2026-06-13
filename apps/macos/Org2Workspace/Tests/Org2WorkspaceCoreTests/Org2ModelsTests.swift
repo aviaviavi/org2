@@ -1053,6 +1053,95 @@ final class Org2ModelsTests: XCTestCase {
     }
   }
 
+  func testRenderedEntryMoveAvailabilityUsesStableSignatures() {
+    let blocks = [
+      OrgEditableBlock(
+        id: "heading",
+        startLine: 1,
+        endLineExclusive: 2,
+        rawText: "* Parent",
+        rendered: .heading(OrgHeadingBlock(level: 1, todo: nil, priority: nil, title: "Parent", tags: []))
+      ),
+      OrgEditableBlock(
+        id: "first",
+        startLine: 2,
+        endLineExclusive: 3,
+        rawText: "First",
+        rendered: .paragraph("First")
+      ),
+      OrgEditableBlock(
+        id: "blank",
+        startLine: 3,
+        endLineExclusive: 4,
+        rawText: "",
+        rendered: .blank
+      ),
+      OrgEditableBlock(
+        id: "last",
+        startLine: 4,
+        endLineExclusive: 5,
+        rawText: "Last",
+        rendered: .paragraph("Last")
+      )
+    ]
+    let source = EntrySource(
+      file: "/tmp/test.org2",
+      startLine: 1,
+      endLineExclusive: 5,
+      text: "",
+      isSubtree: true
+    )
+
+    let availability = OrgRenderedEntryMoveAvailability.make(for: blocks, source: source)
+    XCTAssertEqual(
+      availability.signature,
+      OrgRenderedEntryMoveAvailability.signature(for: blocks, source: source)
+    )
+    XCTAssertNil(availability.values["heading"])
+    XCTAssertEqual(availability.values["first"], OrgRenderedEntryBlockMoveAvailability(up: false, down: true))
+    XCTAssertNil(availability.values["blank"])
+    XCTAssertEqual(availability.values["last"], OrgRenderedEntryBlockMoveAvailability(up: true, down: false))
+
+    let readOnlySource = EntrySource(
+      file: "/tmp/test.org2",
+      startLine: 1,
+      endLineExclusive: 5,
+      text: "",
+      isSubtree: true,
+      isEditable: false
+    )
+    XCTAssertTrue(OrgRenderedEntryMoveAvailability.make(for: blocks, source: readOnlySource).values.isEmpty)
+  }
+
+  func testRenderedEntryMoveAvailabilitySignatureChangesWhenEditabilityChanges() {
+    let editableBlock = OrgEditableBlock(
+      id: "middle",
+      startLine: 2,
+      endLineExclusive: 3,
+      rawText: "Middle",
+      rendered: .paragraph("Middle")
+    )
+    let blankBlock = OrgEditableBlock(
+      id: "middle",
+      startLine: 2,
+      endLineExclusive: 3,
+      rawText: "",
+      rendered: .blank
+    )
+    let source = EntrySource(
+      file: "/tmp/test.org2",
+      startLine: 1,
+      endLineExclusive: 4,
+      text: "",
+      isSubtree: false
+    )
+
+    XCTAssertNotEqual(
+      OrgRenderedEntryMoveAvailability.signature(for: [editableBlock], source: source),
+      OrgRenderedEntryMoveAvailability.signature(for: [blankBlock], source: source)
+    )
+  }
+
   func testEditableSourceBlockFormatsAndSwitchesKind() {
     var source = OrgEditableSourceBlock(rawText: """
     #+BEGIN_SRC swift :results output
