@@ -22,6 +22,21 @@ private enum InlineEditorChrome {
   }
 }
 
+enum InlineEditorSizing {
+  static func cappedLineCount(in text: String, minimum: Int, maximum: Int) -> Int {
+    let safeMinimum = max(1, minimum)
+    let safeMaximum = max(safeMinimum, maximum)
+    var count = 1
+    for character in text where character == "\n" {
+      count += 1
+      if count >= safeMaximum {
+        return safeMaximum
+      }
+    }
+    return min(safeMaximum, max(safeMinimum, count))
+  }
+}
+
 struct InlineBlockEditorView: View {
   let block: OrgEditableBlock
 
@@ -1322,7 +1337,7 @@ private struct ParagraphBlockEditor: View {
   }
 
   private var editorHeight: CGFloat {
-    let lineCount = max(1, draftText.split(separator: "\n", omittingEmptySubsequences: false).count)
+    let lineCount = InlineEditorSizing.cappedLineCount(in: draftText, minimum: 1, maximum: 15)
     return min(320, max(30, CGFloat(lineCount) * 21 + 8))
   }
 
@@ -1756,7 +1771,7 @@ private struct QuoteBlockEditor: View {
   }
 
   private var editorHeight: CGFloat {
-    let lineCount = max(2, quoteText.split(separator: "\n", omittingEmptySubsequences: false).count)
+    let lineCount = InlineEditorSizing.cappedLineCount(in: quoteText, minimum: 2, maximum: 11)
     return min(260, max(58, CGFloat(lineCount) * 23 + 12))
   }
 
@@ -1959,7 +1974,7 @@ private struct SourceBlockEditor: View {
   }
 
   private var editorHeight: CGFloat {
-    let lineCount = max(3, source.body.split(separator: "\n", omittingEmptySubsequences: false).count)
+    let lineCount = InlineEditorSizing.cappedLineCount(in: source.body, minimum: 3, maximum: 15)
     return min(360, max(96, CGFloat(lineCount) * 22 + 34))
   }
 
