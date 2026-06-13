@@ -269,9 +269,11 @@ struct OrgRenderedEntryView: View, Equatable {
   }
 
   nonisolated static func shouldAutoExpandNextFooter(visibleWindow: OrgRenderedBlockWindow) -> Bool {
-    visibleWindow.hasNext
-      && visibleWindow.totalCount < largePageBlockThreshold
-      && visibleWindow.range.upperBound <= initialRenderedBlockLimit(for: visibleWindow.totalCount)
+    guard visibleWindow.hasNext else { return false }
+    if visibleWindow.totalCount >= largePageBlockThreshold {
+      return visibleWindow.range.lowerBound == 0
+    }
+    return visibleWindow.range.upperBound <= initialRenderedBlockLimit(for: visibleWindow.totalCount)
   }
 
   nonisolated static func initialRenderedBlockLimit(for blockCount: Int) -> Int {
