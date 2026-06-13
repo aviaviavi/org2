@@ -94,6 +94,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var isScanningCorpusFiles = false
   @Published public var isQuickOpenPresented = false
   @Published public var isKeyboardShortcutsPresented = false
+  @Published public var detailScrollRequest: DetailScrollRequest?
   @Published public var quickOpenQuery = ""
   @Published public var searchQuery = ""
   @Published public var searchFocusToken = 0
@@ -2574,6 +2575,13 @@ public final class WorkspaceStore: ObservableObject {
     selectAgendaItem(items[nextIndex])
   }
 
+  public func requestDetailScroll(_ direction: DetailScrollDirection) {
+    detailScrollRequest = DetailScrollRequest(
+      id: (detailScrollRequest?.id ?? 0) + 1,
+      direction: direction
+    )
+  }
+
   public func selectFirstAgendaItem() {
     if let first = visibleAgendaItems.first {
       selectAgendaItem(first)
@@ -3011,6 +3019,10 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     switch key {
+    case "J":
+      requestDetailScroll(.down)
+    case "K":
+      requestDetailScroll(.up)
     case "j":
       moveAgendaSelection(by: 1)
     case "k":
