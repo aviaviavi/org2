@@ -110,6 +110,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var openClawStatusText = WorkspaceStore.defaultOpenClawStatusText()
   @Published public var isSendingOpenClawMessage = false
   @Published public var openClawRequestStartedAt: Date?
+  @Published public var isOpenClawAssistantPresented = false
   @Published public var openClawThreads: [OpenClawThread] = []
   @Published public var selectedOpenClawThreadID: String?
   @Published public var selectedLocation: WorkspaceLocation?
