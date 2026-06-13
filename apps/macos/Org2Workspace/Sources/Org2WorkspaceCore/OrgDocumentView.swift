@@ -609,6 +609,18 @@ enum RenderedRowChrome {
   }
 }
 
+enum RenderedBlockEditingPolicy {
+  static func startsEditingOnSingleClick(block: OrgEditableBlock, isSourceEditable: Bool) -> Bool {
+    guard isSourceEditable, block.isEditable else { return false }
+    switch block.rendered {
+    case .blank, .horizontalRule:
+      return false
+    case .heading, .planning, .properties, .quote, .source, .table, .listItem, .paragraph, .keyword:
+      return true
+    }
+  }
+}
+
 private struct EditableRenderedBlockView<Content: View>: View {
   let block: OrgEditableBlock
   let isSourceEditable: Bool
@@ -781,13 +793,7 @@ private struct EditableRenderedBlockView<Content: View>: View {
   }
 
   private var startsEditingOnSingleClick: Bool {
-    guard isSourceEditable, block.isEditable else { return false }
-    switch block.rendered {
-    case .heading, .planning, .paragraph, .listItem, .keyword:
-      return true
-    case .blank, .horizontalRule, .properties, .quote, .source, .table:
-      return false
-    }
+    RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: block, isSourceEditable: isSourceEditable)
   }
 }
 
