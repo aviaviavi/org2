@@ -593,6 +593,163 @@ public struct OrgInlineTimestamp: Equatable, Sendable {
   }
 }
 
+public struct OrgEditableInlineLinkSet: Equatable, Sendable {
+  public let rawText: String
+  public let links: [OrgEditableInlineLink]
+
+  public init(rawText: String) {
+    self.rawText = rawText
+    self.links = Self.parseLinks(rawText)
+  }
+
+  public func replacing(
+    link: OrgEditableInlineLink,
+    label: String? = nil,
+    target: String? = nil
+  ) -> String {
+    let normalizedLabel = (label ?? link.label).trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedTarget = (target ?? link.target).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedTarget.isEmpty else { return rawText }
+
+    let replacement = Self.formattedBracketLink(target: normalizedTarget, label: normalizedLabel)
+    return (rawText as NSString).replacingCharacters(
+      in: NSRange(location: link.startUTF16, length: link.endUTF16 - link.startUTF16),
+      with: replacement
+    )
+  }
+
+  private static func formattedBracketLink(target: String, label: String) -> String {
+    guard !label.isEmpty, label != target else {
+      return "[[\(target)]]"
+    }
+    return "[[\(target)][\(label)]]"
+  }
+
+  private static func parseLinks(_ raw: String) -> [OrgEditableInlineLink] {
+    var links: [OrgEditableInlineLink] = []
+    appendRegexLinks(
+      pattern: #"\[\[([^\]\n]+)(?:\]\[([^\]\n]*))?\]\]"#,
+      raw: raw,
+      targetCapture: 1,
+      labelCapture: 2,
+      kind: .orgBracket,
+      into: &links
+    )
+    appendRegexLinks(
+      pattern: #"(?<!\[)\[([^\]\n]+)\]\(([^\)\n]+)\)"#,
+      raw: raw,
+      targetCapture: 2,
+      labelCapture: 1,
+      kind: .markdown,
+      into: &links
+    )
+    appendRegexLinks(
+      pattern: #"https?://[^\s\]\)"'`<>]+"#,
+      raw: raw,
+      targetCapture: 0,
+      labelCapture: nil,
+      kind: .plainURL,
+      into: &links
+    )
+    appendRegexLinks(
+      pattern: #"(?:(?:file:(?://)?)?(?:~|/|[A-Za-z0-9_.-]+/)[^\s\]\)"'`<>]*\.(?:org2?|md))(?:[:#]\d+)?"#,
+      raw: raw,
+      targetCapture: 0,
+      labelCapture: nil,
+      kind: .fileReference,
+      into: &links
+    )
+
+    return links.sorted {
+      if $0.startUTF16 != $1.startUTF16 {
+        return $0.startUTF16 < $1.startUTF16
+      }
+      return $0.endUTF16 < $1.endUTF16
+    }
+  }
+
+  private static func appendRegexLinks(
+    pattern: String,
+    raw: String,
+    targetCapture: Int,
+    labelCapture: Int?,
+    kind: OrgEditableInlineLink.Kind,
+    into links: inout [OrgEditableInlineLink]
+  ) {
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
+    let ns = raw as NSString
+    let matches = regex.matches(in: raw, range: NSRange(location: 0, length: ns.length))
+    for match in matches {
+      let rawRange = match.range(at: 0)
+      guard rawRange.location != NSNotFound,
+            rawRange.length > 0,
+            !links.contains(where: { rangesOverlap(rawRange, $0.rawRange) }),
+            match.numberOfRanges > targetCapture,
+            match.range(at: targetCapture).location != NSNotFound
+      else {
+        continue
+      }
+
+      var linkRange = rawRange
+      var target = ns.substring(with: match.range(at: targetCapture))
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      while let last = target.last, [".", ",", ";", ":"].contains(String(last)) {
+        target.removeLast()
+        if targetCapture == 0 {
+          linkRange.length -= 1
+        }
+      }
+      guard !target.isEmpty else { continue }
+
+      let label: String
+      if let labelCapture,
+         match.numberOfRanges > labelCapture,
+         match.range(at: labelCapture).location != NSNotFound {
+        label = ns.substring(with: match.range(at: labelCapture))
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+      } else if kind == .fileReference,
+                let reference = OpenClawFileReference.fromLinkTarget(target) {
+        label = reference.displayTitle
+      } else {
+        label = target
+      }
+
+      links.append(OrgEditableInlineLink(
+        id: "link:\(rawRange.location)",
+        kind: kind,
+        label: label.isEmpty ? target : label,
+        target: target,
+        startUTF16: linkRange.location,
+        endUTF16: linkRange.location + linkRange.length
+      ))
+    }
+  }
+
+  private static func rangesOverlap(_ lhs: NSRange, _ rhs: NSRange) -> Bool {
+    lhs.location < rhs.location + rhs.length && rhs.location < lhs.location + lhs.length
+  }
+}
+
+public struct OrgEditableInlineLink: Identifiable, Equatable, Sendable {
+  public enum Kind: String, Sendable {
+    case orgBracket
+    case markdown
+    case plainURL
+    case fileReference
+  }
+
+  public let id: String
+  public let kind: Kind
+  public let label: String
+  public let target: String
+  public let startUTF16: Int
+  public let endUTF16: Int
+
+  fileprivate var rawRange: NSRange {
+    NSRange(location: startUTF16, length: endUTF16 - startUTF16)
+  }
+}
+
 public enum OrgInlineParser {
   public static func parse(_ raw: String) -> [OrgInlineSpan] {
     var spans: [OrgInlineSpan] = []

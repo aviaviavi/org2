@@ -729,6 +729,40 @@ final class Org2ModelsTests: XCTestCase {
     ])
   }
 
+  func testEditableInlineLinkSetRewritesLinksInParagraphs() {
+    let set = OrgEditableInlineLinkSet(rawText: """
+    See [[id:11111111-1111-4111-8111-111111111111][Alice]], [docs](https://example.com/docs), and ~/notes/project.org2:12.
+    """)
+
+    XCTAssertEqual(set.links.map(\.kind), [.orgBracket, .markdown, .fileReference])
+    XCTAssertEqual(set.links.map(\.label), ["Alice", "docs", "project.org2:12"])
+    XCTAssertEqual(set.links.map(\.target), [
+      "id:11111111-1111-4111-8111-111111111111",
+      "https://example.com/docs",
+      "~/notes/project.org2:12"
+    ])
+
+    let updatedLabel = set.replacing(link: set.links[0], label: "Alicia")
+    XCTAssertTrue(updatedLabel.contains("[[id:11111111-1111-4111-8111-111111111111][Alicia]]"))
+
+    let updatedTarget = set.replacing(link: set.links[1], target: "https://example.com/reference")
+    XCTAssertTrue(updatedTarget.contains("[[https://example.com/reference][docs]]"))
+
+    let updatedFile = set.replacing(link: set.links[2], label: "Project")
+    XCTAssertTrue(updatedFile.contains("[[~/notes/project.org2:12][Project]]."))
+  }
+
+  func testEditableInlineLinkSetTrimsTrailingURLPunctuation() {
+    let set = OrgEditableInlineLinkSet(rawText: "Open https://example.com/docs.")
+
+    XCTAssertEqual(set.links.count, 1)
+    XCTAssertEqual(set.links[0].target, "https://example.com/docs")
+    XCTAssertEqual(
+      set.replacing(link: set.links[0], label: "Docs"),
+      "Open [[https://example.com/docs][Docs]]."
+    )
+  }
+
   func testEditableSourceBlockFormatsAndSwitchesKind() {
     var source = OrgEditableSourceBlock(rawText: """
     #+BEGIN_SRC swift :results output
