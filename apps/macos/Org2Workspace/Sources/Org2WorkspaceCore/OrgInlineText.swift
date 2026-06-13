@@ -64,6 +64,33 @@ struct OrgInlineText: View {
 }
 
 enum OrgInlineAttributedString {
+  final class CacheKey: NSObject {
+    let raw: String
+    let fontDescription: String
+
+    init(raw: String, baseFont: Font) {
+      self.raw = raw
+      self.fontDescription = String(describing: baseFont)
+    }
+
+    init(raw: String, fontDescription: String) {
+      self.raw = raw
+      self.fontDescription = fontDescription
+    }
+
+    override var hash: Int {
+      var hasher = Hasher()
+      hasher.combine(raw)
+      hasher.combine(fontDescription)
+      return hasher.finalize()
+    }
+
+    override func isEqual(_ object: Any?) -> Bool {
+      guard let other = object as? CacheKey else { return false }
+      return raw == other.raw && fontDescription == other.fontDescription
+    }
+  }
+
   private final class CachedValue {
     let attributedString: AttributedString
 
@@ -72,11 +99,15 @@ enum OrgInlineAttributedString {
     }
   }
 
-  @MainActor private static let cache = NSCache<NSString, CachedValue>()
+  @MainActor private static let cache: NSCache<CacheKey, CachedValue> = {
+    let cache = NSCache<CacheKey, CachedValue>()
+    cache.countLimit = 4_096
+    return cache
+  }()
 
   @MainActor
   static func cached(raw: String, baseFont: Font = .body) -> AttributedString {
-    let key = cacheKey(raw: raw, baseFont: baseFont)
+    let key = CacheKey(raw: raw, baseFont: baseFont)
     if let cached = cache.object(forKey: key) {
       return cached.attributedString
     }
@@ -92,10 +123,6 @@ enum OrgInlineAttributedString {
       output.append(chunk(for: span, baseFont: baseFont))
     }
     return output
-  }
-
-  private static func cacheKey(raw: String, baseFont: Font) -> NSString {
-    "\(String(describing: baseFont))\u{1F}\(raw)" as NSString
   }
 
   private static func chunk(for span: OrgInlineSpan, baseFont: Font) -> AttributedString {
