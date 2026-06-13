@@ -2112,6 +2112,79 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  func testRenderedBlockEditingPolicyStartsInlineEditingForRichBlocks() {
+    let editableBlocks = [
+      OrgEditableBlock(
+        id: "heading",
+        startLine: 1,
+        endLineExclusive: 2,
+        rawText: "* TODO Heading",
+        rendered: .heading(OrgHeadingBlock(level: 1, todo: "TODO", priority: nil, title: "Heading", tags: []))
+      ),
+      OrgEditableBlock(
+        id: "properties",
+        startLine: 2,
+        endLineExclusive: 5,
+        rawText: ":PROPERTIES:\n:Owner: Avi\n:END:",
+        rendered: .properties([OrgPropertyRow(key: "Owner", value: "Avi")])
+      ),
+      OrgEditableBlock(
+        id: "quote",
+        startLine: 5,
+        endLineExclusive: 8,
+        rawText: "#+begin_quote\nquoted\n#+end_quote",
+        rendered: .quote(["quoted"])
+      ),
+      OrgEditableBlock(
+        id: "source",
+        startLine: 8,
+        endLineExclusive: 11,
+        rawText: "#+begin_src sh\necho hi\n#+end_src",
+        rendered: .source(language: "sh", lines: ["echo hi"])
+      ),
+      OrgEditableBlock(
+        id: "table",
+        startLine: 11,
+        endLineExclusive: 13,
+        rawText: "| A | B |\n| 1 | 2 |",
+        rendered: .table(OrgTableBlock(rows: [
+          .cells(["A", "B"]),
+          .cells(["1", "2"])
+        ]))
+      )
+    ]
+
+    for block in editableBlocks {
+      XCTAssertTrue(
+        RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: block, isSourceEditable: true),
+        block.id
+      )
+      XCTAssertFalse(
+        RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: block, isSourceEditable: false),
+        block.id
+      )
+    }
+  }
+
+  func testRenderedBlockEditingPolicyLeavesStructuralBlocksSelectableOnly() {
+    let divider = OrgEditableBlock(
+      id: "divider",
+      startLine: 1,
+      endLineExclusive: 2,
+      rawText: "-----",
+      rendered: .horizontalRule
+    )
+    let blank = OrgEditableBlock(
+      id: "blank",
+      startLine: 2,
+      endLineExclusive: 3,
+      rawText: "",
+      rendered: .blank
+    )
+    XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: divider, isSourceEditable: true))
+    XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: blank, isSourceEditable: true))
+  }
+
   @MainActor
   func testRenderedBlockViewEqualityUsesCachedRenderIdentity() {
     let longBody = String(repeating: "Long plain paragraph body.\n", count: 1_500)
