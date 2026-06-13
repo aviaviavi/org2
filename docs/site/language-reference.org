@@ -293,7 +293,7 @@ npm run org2 -- query-data --file report.org2 --inspect --include-script
 cat report.org2 | npm run org2 -- query-data --stdin --results fetches_by_state --format json
 #+end_src
 
-Use =--stdin= when an editor, agent, or notebook-style client wants to run the current buffer without saving it first. Use =--line N= to select the SQL result block containing or after the cursor line. JSON output includes =resultBlocks= with each available SQL result id and source range so clients can populate result pickers or recover from duplicate-id diagnostics without reparsing the file. Use =--inspect= to return parsed datasets, SQL views, result block metadata, structural diagnostics, and selected-query provenance without running DuckDB; =--include-script= also returns the generated DuckDB SQL for the selected result. Relative file dataset paths are resolved from the current working directory for stdin input. SQL result ids must be unique within the note so materialized tables and provenance stay deterministic. Dataset ids and SQL view ids must also be distinct because they become DuckDB relation names during execution. SQL result blocks can include =artifact=PATH= to record the intended materialized output in JSON provenance and the =#+query-data:= line; =--out FILE= stamps the actual written artifact path.
+Use =--stdin= when an editor, agent, or notebook-style client wants to run the current buffer without saving it first. Use =--line N= to select the SQL result block containing or after the cursor line. JSON output includes =resultBlocks= with each available SQL result id and source range so clients can populate result pickers or recover from duplicate-id diagnostics without reparsing the file. Use =--inspect= to return parsed datasets, SQL views, result block metadata, structural diagnostics, and selected-query provenance without running DuckDB; =--include-script= also returns the generated DuckDB SQL for the selected result. Relative file dataset paths are resolved from the current working directory for stdin input. SQL result ids must be unique within the note so materialized tables and provenance stay deterministic. Dataset ids and SQL view ids must also be distinct because they become DuckDB relation names during execution. Dataset blocks may include metadata-only =credential:= or =auth:= references such as =env:SCARF_API_TOKEN=, =secret:analytics-token=, or =profile:product-analytics= and =config:= or =profile:= references such as =config:dashboard-local=; these are exposed as JSON metadata for clients and agents, but are not inserted into the generated DuckDB SQL. Inline bearer tokens, passwords, and other literal secrets are rejected. SQL result blocks can include =artifact=PATH= to record the intended materialized output in JSON provenance and the =#+query-data:= line; =--out FILE= stamps the actual written artifact path.
 
 Use =sql view=NAME= when a report needs a reusable local projection before the final result table:
 
@@ -318,6 +318,8 @@ Use =url:= instead of =path:= when DuckDB should read a declared HTTP(S) or =fil
 type: csv
 url: https://data.example.test/package-fetches.csv
 engine: duckdb
+credential: env:SCARF_API_TOKEN
+config: profile:product-analytics
 ```
 
 ```sql results=remote_fetches_by_state
@@ -348,7 +350,7 @@ FROM fetches
 ```
 #+end_src
 
-This is deliberately scoped to explicit local/ad hoc data sources. Org2 stores the source path, read-only URL, or table name, query, and materialized result/provenance; secrets, bearer tokens, and remote warehouse credentials belong in external tooling, not in notes.
+This is deliberately scoped to explicit local/ad hoc data sources. Org2 stores the source path, read-only URL, table name, credential/config reference, query, and materialized result/provenance; secrets, bearer tokens, and remote warehouse credentials belong in external tooling, not in notes.
 
 * Keyword/directive lines
 
