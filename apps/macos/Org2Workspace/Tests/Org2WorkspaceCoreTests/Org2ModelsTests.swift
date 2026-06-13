@@ -1503,6 +1503,46 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testCompletingAgendaItemSelectsNextActionableItemByVisibleOrder() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-agenda-done-selection-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("agenda.org2")
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd EEE"
+    let today = formatter.string(from: Date())
+
+    try """
+    * TODO First task
+    SCHEDULED: <\(today)>
+
+    * TODO Second task
+    SCHEDULED: <\(today)>
+
+    * TODO Third task
+    SCHEDULED: <\(today)>
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.refreshAgenda()
+
+    let second = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Second task" })
+    store.selectAgendaItem(second)
+
+    await store.applyTodoShortcut(.done)
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* DONE Second task"))
+    guard case .agenda(let selected)? = store.selectedLocation else {
+      return XCTFail("Expected agenda selection")
+    }
+    XCTAssertEqual(selected.headline, "Third task")
+    XCTAssertEqual(selected.todo, "TODO")
+  }
+
+  @MainActor
   func testOpenDailyNoteCreatesAndSelectsConfiguredDailyFile() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-daily-open-\(UUID().uuidString)", isDirectory: true)

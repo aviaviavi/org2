@@ -2609,6 +2609,8 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Select an agenda item first"
       return
     }
+    let originalVisibleIndex = visibleAgendaItems.firstIndex(where: { $0.id == item.id })
+    var shouldAdvanceSelection = status.map { Self.isTerminalTodoStatus($0.rawValue) } ?? false
 
     do {
       if let status {
@@ -2630,9 +2632,13 @@ public final class WorkspaceStore: ObservableObject {
           "--apply"
         ])
         statusText = "\(payload.newStatus) -> \(item.headline)"
+        shouldAdvanceSelection = Self.isTerminalTodoStatus(payload.newStatus)
       }
       invalidateCanonicalDocumentCache(for: item.file)
       await refreshAgenda()
+      if shouldAdvanceSelection {
+        selectNextActionableAgendaItem(afterMutating: item.id, originalVisibleIndex: originalVisibleIndex)
+      }
     } catch {
       errorText = error.localizedDescription
       statusText = "TODO update failed"
@@ -3700,6 +3706,30 @@ public final class WorkspaceStore: ObservableObject {
       return visibleAgendaItems.first(where: { $0.id == selectedAgendaItemID })
     }
     return visibleAgendaItems.first
+  }
+
+  private func selectNextActionableAgendaItem(afterMutating mutatedID: String, originalVisibleIndex: Int?) {
+    let items = visibleAgendaItems
+    guard !items.isEmpty else { return }
+
+    let actionableItems = items.enumerated().filter { offset, item in
+      item.id != mutatedID && item.isActionable
+    }
+    guard !actionableItems.isEmpty else { return }
+
+    let anchor = originalVisibleIndex ?? 0
+    let selection = actionableItems.first { offset, _ in
+      offset >= anchor
+    } ?? actionableItems.last
+
+    if let item = selection?.element {
+      selectAgendaItem(item)
+    }
+  }
+
+  private static func isTerminalTodoStatus(_ status: String) -> Bool {
+    let normalized = status.uppercased()
+    return normalized == "DONE" || normalized == "CANCELED" || normalized == "CANCELLED"
   }
 
   private func syncOpenClawSelectionAfterRefresh() {
