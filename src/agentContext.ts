@@ -750,9 +750,20 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       .reduce((byKey, thread) => byKey.set(thread.key, thread), new Map<string, AgentRelatedThread>())
       .values(),
   ).sort((a, b) => a.title.localeCompare(b.title) || a.citation.localeCompare(b.citation));
+  const directDataLinks: AgentRelatedDataLink[] = results
+    .filter((node): node is AgentNode & { dataLink: AgentDataLinkMetadata } => Boolean(node.dataLink))
+    .map((node) => ({
+      key: node.key,
+      id: node.id,
+      title: node.title,
+      kind: node.dataLink.kind,
+      file: node.file,
+      sourceRange: node.sourceRange,
+      citation: node.citation,
+      dataLink: node.dataLink,
+    }));
   const relatedDataLinks = Array.from(
-    results
-      .flatMap((node) => node.relatedDataLinks || [])
+    [...directDataLinks, ...results.flatMap((node) => node.relatedDataLinks || [])]
       .reduce((byKey, dataLink) => byKey.set(dataLink.key, dataLink), new Map<string, AgentRelatedDataLink>())
       .values(),
   ).sort((a, b) => a.citation.localeCompare(b.citation) || a.title.localeCompare(b.title));

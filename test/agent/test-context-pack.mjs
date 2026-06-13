@@ -91,6 +91,13 @@ assert.match(selected, /Data link: ticket volume/);
 assert.match(selected, /query: support\.ticket_volume\.v1/);
 assert.match(selected, /artifact: reports\/support-ticket-volume\.csv/);
 
+const selectedDataLink = run("context", "--id", "support-ticket-volume", "--dir", tmp, "--format", "markdown");
+assert.match(selectedDataLink, /## Related data links/);
+assert.match(selectedDataLink, /Data link: ticket volume/);
+assert.match(selectedDataLink, /kind: warehouse-query/);
+assert.match(selectedDataLink, /query: support\.ticket_volume\.v1/);
+assert.match(selectedDataLink, /rows: 42/);
+
 const org = run("context", "scarf support triage", "--dir", tmp, "--format", "org");
 assert.match(org, /^\* Org2 Context Pack/m);
 assert.match(org, /\*\* Top cited notes/);
