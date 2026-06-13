@@ -2142,6 +2142,135 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  @MainActor
+  func testRenderedEntryViewEqualityUsesRenderContext() {
+    let source = EntrySource(
+      file: "/tmp/render-context.org2",
+      startLine: 1,
+      endLineExclusive: 3,
+      text: "Alpha\nBeta",
+      isSubtree: false
+    )
+    let blocks = [
+      OrgEditableBlock(
+        id: "alpha",
+        startLine: 1,
+        endLineExclusive: 2,
+        rawText: "Alpha",
+        rendered: .paragraph("Alpha")
+      ),
+      OrgEditableBlock(
+        id: "source",
+        startLine: 2,
+        endLineExclusive: 3,
+        rawText: "#+begin_src sh\necho hi\n#+end_src",
+        rendered: .source(language: "sh", lines: ["echo hi"])
+      )
+    ]
+    let signature = WorkspaceStore.renderedBlocksRenderSignature(for: blocks)
+    let base = OrgRenderedEntryView(
+      blocks: blocks,
+      blocksRenderSignature: signature,
+      source: source,
+      corpusRoot: nil,
+      selectedBlockID: nil,
+      selectedBlockIndex: nil,
+      editingBlockID: nil,
+      isSavingBlock: false,
+      sourceBlockRuns: [:]
+    )
+
+    XCTAssertEqual(
+      base,
+      OrgRenderedEntryView(
+        blocks: blocks,
+        blocksRenderSignature: signature,
+        source: source,
+        corpusRoot: nil,
+        selectedBlockID: nil,
+        selectedBlockIndex: nil,
+        editingBlockID: nil,
+        isSavingBlock: false,
+        sourceBlockRuns: [:]
+      )
+    )
+
+    var updatedBlocks = blocks
+    updatedBlocks[0] = OrgEditableBlock(
+      id: "alpha",
+      startLine: 1,
+      endLineExclusive: 2,
+      rawText: "Alpha updated",
+      rendered: .paragraph("Alpha updated")
+    )
+    XCTAssertNotEqual(
+      base,
+      OrgRenderedEntryView(
+        blocks: updatedBlocks,
+        blocksRenderSignature: WorkspaceStore.renderedBlocksRenderSignature(for: updatedBlocks),
+        source: source,
+        corpusRoot: nil,
+        selectedBlockID: nil,
+        selectedBlockIndex: nil,
+        editingBlockID: nil,
+        isSavingBlock: false,
+        sourceBlockRuns: [:]
+      )
+    )
+
+    XCTAssertNotEqual(
+      base,
+      OrgRenderedEntryView(
+        blocks: blocks,
+        blocksRenderSignature: signature,
+        source: source,
+        corpusRoot: nil,
+        selectedBlockID: "alpha",
+        selectedBlockIndex: 0,
+        editingBlockID: nil,
+        isSavingBlock: false,
+        sourceBlockRuns: [:]
+      )
+    )
+
+    XCTAssertNotEqual(
+      base,
+      OrgRenderedEntryView(
+        blocks: blocks,
+        blocksRenderSignature: signature,
+        source: source,
+        corpusRoot: nil,
+        selectedBlockID: nil,
+        selectedBlockIndex: nil,
+        editingBlockID: nil,
+        isSavingBlock: true,
+        sourceBlockRuns: [:]
+      )
+    )
+
+    XCTAssertNotEqual(
+      base,
+      OrgRenderedEntryView(
+        blocks: blocks,
+        blocksRenderSignature: signature,
+        source: source,
+        corpusRoot: nil,
+        selectedBlockID: nil,
+        selectedBlockIndex: nil,
+        editingBlockID: nil,
+        isSavingBlock: false,
+        sourceBlockRuns: [
+          "/tmp/render-context.org2:source": SourceBlockRunState(
+            status: .succeeded,
+            language: "sh",
+            commandLabel: "sh",
+            stdout: "hi\n"
+          )
+        ]
+      )
+    )
+  }
+
   func testRenderedEntryWindowExpandsAndKeepsSelectionVisible() {
     let blocks = (1...500).map { line in
       OrgEditableBlock(

@@ -110,6 +110,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedEntrySource: EntrySource?
   @Published public var selectedRenderedBlocks: [OrgEditableBlock] = [] {
     didSet {
+      selectedRenderedBlocksRenderSignature = Self.renderedBlocksRenderSignature(for: selectedRenderedBlocks)
       if preservesSelectedRenderedBlocksMetadataForNextAssignment {
         preservesSelectedRenderedBlocksMetadataForNextAssignment = false
         return
@@ -118,6 +119,7 @@ public final class WorkspaceStore: ObservableObject {
       selectedRenderedBlockIndexes = Self.renderedBlockIndexes(for: selectedRenderedBlocks)
     }
   }
+  public private(set) var selectedRenderedBlocksRenderSignature = WorkspaceStore.renderedBlocksRenderSignature(for: [])
   public private(set) var selectedRenderedBlocksSignature = WorkspaceStore.renderedBlocksSignature(for: [])
   public private(set) var selectedRenderedBlockIndexes: [OrgEditableBlock.ID: Int] = [:]
   @Published public var selectedEntrySourceMode: EntrySourceMode = .entry
@@ -2348,7 +2350,7 @@ public final class WorkspaceStore: ObservableObject {
     return nil
   }
 
-  private func sourceBlockRunKey(for block: OrgEditableBlock) -> String {
+  func sourceBlockRunKey(for block: OrgEditableBlock) -> String {
     let file = selectedEntrySource?.file ?? selectedLocation?.file ?? ""
     return "\(file):\(block.id)"
   }
@@ -3235,6 +3237,23 @@ public final class WorkspaceStore: ObservableObject {
       hasher.combine(block.id)
       hasher.combine(block.startLine)
       hasher.combine(block.endLineExclusive)
+      hasher.combine(block.isEditable)
+    }
+    return "\(blocks.count):\(hasher.finalize())"
+  }
+
+  nonisolated static func renderedBlocksRenderSignature(for blocks: [OrgEditableBlock]) -> String {
+    guard !blocks.isEmpty else { return "empty" }
+
+    var hasher = Hasher()
+    hasher.combine(blocks.count)
+    for block in blocks {
+      hasher.combine(block.renderIdentity.id)
+      hasher.combine(block.renderIdentity.startLine)
+      hasher.combine(block.renderIdentity.endLineExclusive)
+      hasher.combine(block.renderIdentity.rawUTF8Count)
+      hasher.combine(block.renderIdentity.rawHash)
+      hasher.combine(block.renderIdentity.renderedKind)
       hasher.combine(block.isEditable)
     }
     return "\(blocks.count):\(hasher.finalize())"

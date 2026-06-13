@@ -1,20 +1,34 @@
 import SwiftUI
 
-struct OrgRenderedEntryView: View {
+struct OrgRenderedEntryView: View, Equatable {
   @EnvironmentObject private var store: WorkspaceStore
   let blocks: [OrgEditableBlock]
+  let blocksRenderSignature: String
+  let source: EntrySource?
+  let corpusRoot: URL?
+  let selectedBlockID: OrgEditableBlock.ID?
+  let selectedBlockIndex: Int?
+  let editingBlockID: OrgEditableBlock.ID?
+  let isSavingBlock: Bool
+  let sourceBlockRuns: [String: SourceBlockRunState]
   @State private var renderedBlockWindow: Range<Int>?
   @State private var renderWindowResetKey = ""
   @State private var moveAvailability = OrgRenderedEntryMoveAvailability.empty
 
+  nonisolated static func == (lhs: OrgRenderedEntryView, rhs: OrgRenderedEntryView) -> Bool {
+    lhs.blocksRenderSignature == rhs.blocksRenderSignature
+      && lhs.source == rhs.source
+      && lhs.corpusRoot == rhs.corpusRoot
+      && lhs.selectedBlockID == rhs.selectedBlockID
+      && lhs.selectedBlockIndex == rhs.selectedBlockIndex
+      && lhs.editingBlockID == rhs.editingBlockID
+      && lhs.isSavingBlock == rhs.isSavingBlock
+      && lhs.sourceBlockRuns == rhs.sourceBlockRuns
+  }
+
   var body: some View {
-    let source = store.selectedEntrySource
     let sourceFile = source?.file
-    let corpusRoot = store.corpusRoot
     let isSourceEditable = source?.isEditable == true
-    let selectedBlockID = store.selectedBlockID
-    let blocksSignature = store.selectedRenderedBlocksSignature
-    let selectedBlockIndex = selectedBlockID.flatMap { store.selectedRenderedBlockIndexes[$0] }
     let resetKey = Self.renderWindowResetKey(for: source)
     let visibleWindow = Self.visibleWindow(
       requestedWindow: renderedBlockWindow,
@@ -25,7 +39,7 @@ struct OrgRenderedEntryView: View {
     let visibleBlocks = blocks[visibleWindow.range]
     let allowsHoverChrome = Self.allowsHoverChrome(blockCount: blocks.count)
     let moveAvailabilitySignature = OrgRenderedEntryMoveAvailability.signature(
-      blocksSignature: blocksSignature,
+      blocksSignature: blocksRenderSignature,
       source: source,
       visibleRange: visibleRange
     )
@@ -47,7 +61,7 @@ struct OrgRenderedEntryView: View {
           block: block,
           isSourceEditable: isSourceEditable,
           isSelected: selectedBlockID == block.id,
-          isEditing: store.editingBlockID == block.id,
+          isEditing: editingBlockID == block.id,
           canMoveUp: moveAvailabilityValues[block.id]?.up == true,
           canMoveDown: moveAvailabilityValues[block.id]?.down == true,
           sourceFile: sourceFile,
@@ -106,7 +120,6 @@ struct OrgRenderedEntryView: View {
   }
 
   private func expandRenderedBlocks(_ direction: OrgRenderedBlockWindowExpansionDirection) {
-    let selectedBlockIndex = store.selectedBlockID.flatMap { store.selectedRenderedBlockIndexes[$0] }
     let visibleWindow = Self.visibleWindow(
       requestedWindow: renderedBlockWindow,
       blocks: blocks,
@@ -152,7 +165,7 @@ struct OrgRenderedEntryView: View {
       }
       return false
     }()
-    let sourceBlockRunState = isSourceBlock ? store.sourceBlockRunState(for: block) : nil
+    let sourceBlockRunState = isSourceBlock ? sourceBlockRuns[store.sourceBlockRunKey(for: block)] : nil
     let runSourceBlock: (@MainActor @Sendable () -> Void)?
     if isSourceBlock {
       runSourceBlock = { @MainActor @Sendable in
