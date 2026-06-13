@@ -1446,11 +1446,6 @@ private struct TableBlockEditor: View {
   @State private var table: OrgEditableTable
   @FocusState private var focusedCell: TableCellFocus?
 
-  private struct TableCellFocus: Hashable {
-    let row: Int
-    let column: Int
-  }
-
   init(block: OrgEditableBlock, table: OrgTableBlock) {
     self.block = block
     _table = State(initialValue: OrgEditableTable(rawText: block.rawText, fallback: table))
@@ -1545,17 +1540,22 @@ private struct TableBlockEditor: View {
   private func editableRow(rowIndex: Int) -> some View {
     HStack(spacing: 0) {
       ForEach(0..<table.columnCount, id: \.self) { columnIndex in
-        TextField("", text: cellBinding(row: rowIndex, column: columnIndex))
-          .textFieldStyle(.plain)
-          .font(.callout)
+        let focus = TableCellFocus(row: rowIndex, column: columnIndex)
+        TableCellTextField(
+          text: cellBinding(row: rowIndex, column: columnIndex),
+          focusedCell: $focusedCell,
+          focus: focus,
+          onAdvance: {
+            advanceCellFocus(from: focus)
+          },
+          onRetreat: {
+            retreatCellFocus(from: focus)
+          }
+        )
           .padding(.horizontal, 8)
           .padding(.vertical, 6)
           .frame(width: 150, alignment: .leading)
           .background(cellBackground(row: rowIndex, column: columnIndex))
-          .focused($focusedCell, equals: TableCellFocus(row: rowIndex, column: columnIndex))
-          .onSubmit {
-            advanceCellFocus(from: TableCellFocus(row: rowIndex, column: columnIndex))
-          }
           .overlay(alignment: .trailing) {
             Divider()
           }
@@ -1654,6 +1654,25 @@ private struct TableBlockEditor: View {
     }
   }
 
+  private func retreatCellFocus(from current: TableCellFocus) {
+    if current.column > 0 {
+      focusedCell = TableCellFocus(row: current.row, column: current.column - 1)
+      return
+    }
+
+    let previousRow = table.rows.indices
+      .reversed()
+      .filter { $0 < current.row }
+      .first { rowIndex in
+        if case .cells = table.rows[rowIndex] { return true }
+        return false
+      }
+
+    if let previousRow {
+      focusedCell = TableCellFocus(row: previousRow, column: max(0, table.columnCount - 1))
+    }
+  }
+
   private func cellBackground(row rowIndex: Int, column columnIndex: Int) -> Color {
     let focus = TableCellFocus(row: rowIndex, column: columnIndex)
     if focusedCell == focus {
@@ -1665,5 +1684,88 @@ private struct TableBlockEditor: View {
   private func saveTable() {
     store.editableBlockText = table.formattedRawText
     Task { await store.saveEditedBlock(block) }
+  }
+}
+
+private struct TableCellFocus: Hashable {
+  let row: Int
+  let column: Int
+}
+
+private struct TableCellTextField: NSViewRepresentable {
+  @Binding var text: String
+  let focusedCell: FocusState<TableCellFocus?>.Binding
+  let focus: TableCellFocus
+  let onAdvance: () -> Void
+  let onRetreat: () -> Void
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator(parent: self)
+  }
+
+  func makeNSView(context: Context) -> NSTextField {
+    let textField = NSTextField(string: text)
+    textField.delegate = context.coordinator
+    textField.isBordered = false
+    textField.isBezeled = false
+    textField.drawsBackground = false
+    textField.focusRingType = .none
+    textField.lineBreakMode = .byTruncatingTail
+    textField.usesSingleLineMode = true
+    textField.font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+    return textField
+  }
+
+  func updateNSView(_ textField: NSTextField, context: Context) {
+    context.coordinator.parent = self
+    if textField.stringValue != text {
+      textField.stringValue = text
+    }
+
+    guard focusedCell.wrappedValue == focus,
+          textField.window?.firstResponder !== textField.currentEditor()
+    else {
+      return
+    }
+
+    DispatchQueue.main.async {
+      textField.window?.makeFirstResponder(textField)
+    }
+  }
+
+  final class Coordinator: NSObject, NSTextFieldDelegate {
+    var parent: TableCellTextField
+
+    init(parent: TableCellTextField) {
+      self.parent = parent
+    }
+
+    func controlTextDidBeginEditing(_ notification: Notification) {
+      parent.focusedCell.wrappedValue = parent.focus
+    }
+
+    func controlTextDidChange(_ notification: Notification) {
+      guard let textField = notification.object as? NSTextField else { return }
+      parent.text = textField.stringValue
+    }
+
+    func control(
+      _ control: NSControl,
+      textView: NSTextView,
+      doCommandBy commandSelector: Selector
+    ) -> Bool {
+      parent.text = textView.string
+      switch commandSelector {
+      case #selector(NSResponder.insertNewline(_:)),
+           #selector(NSResponder.insertTab(_:)):
+        parent.onAdvance()
+        return true
+      case #selector(NSResponder.insertBacktab(_:)):
+        parent.onRetreat()
+        return true
+      default:
+        return false
+      }
+    }
   }
 }
