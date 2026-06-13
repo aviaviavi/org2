@@ -61,6 +61,10 @@ public struct ContentView: View {
       QuickOpenView()
         .environmentObject(store)
     }
+    .sheet(isPresented: $store.isKeyboardShortcutsPresented) {
+      KeyboardShortcutsView()
+        .environmentObject(store)
+    }
   }
 }
 
@@ -89,8 +93,15 @@ private struct SidebarView: View {
     List(selection: $store.selectedSurface) {
       Section("Workspace") {
         ForEach(WorkspaceSurface.allCases) { surface in
-          Label(surface.title, systemImage: surface.systemImage)
-            .tag(surface)
+          HStack(spacing: 8) {
+            Label(surface.title, systemImage: surface.systemImage)
+            Spacer(minLength: 0)
+            Text(surface.commandShortcutTitle)
+              .font(.caption.monospaced())
+              .foregroundStyle(.tertiary)
+          }
+          .tag(surface)
+          .help("\(surface.title) (\(surface.commandShortcutTitle))")
         }
       }
 
@@ -292,6 +303,129 @@ private struct QuickOpenView: View {
   }
 }
 
+private struct KeyboardShortcutsView: View {
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Keyboard Shortcuts")
+            .font(.title2.weight(.semibold))
+          Text("Global navigation uses Command keys. Agenda and document panes keep Vim-style local keys.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+        Spacer(minLength: 0)
+        Button {
+          dismiss()
+        } label: {
+          Label("Close", systemImage: "xmark")
+        }
+        .labelStyle(.iconOnly)
+        .keyboardShortcut(.cancelAction)
+      }
+
+      ScrollView {
+        LazyVGrid(columns: [
+          GridItem(.flexible(), spacing: 16),
+          GridItem(.flexible(), spacing: 16)
+        ], alignment: .leading, spacing: 18) {
+          ShortcutSection(title: "Navigate", shortcuts: [
+            ShortcutHelpItem(keys: "⌘1", action: "Today"),
+            ShortcutHelpItem(keys: "⌘2", action: "Files"),
+            ShortcutHelpItem(keys: "⌘3 / ⌘F", action: "Search"),
+            ShortcutHelpItem(keys: "⌘4", action: "OpenClaw Chat"),
+            ShortcutHelpItem(keys: "⌘5", action: "Agent Space"),
+            ShortcutHelpItem(keys: "⌘P / ⌘K", action: "Quick Open"),
+            ShortcutHelpItem(keys: "⌘0", action: "Toggle OpenClaw side panel"),
+            ShortcutHelpItem(keys: "⌘? / ⌘/", action: "Show shortcuts")
+          ])
+
+          ShortcutSection(title: "Agenda", shortcuts: [
+            ShortcutHelpItem(keys: "j / ↓", action: "Next item"),
+            ShortcutHelpItem(keys: "k / ↑", action: "Previous item"),
+            ShortcutHelpItem(keys: "gg / G", action: "First / last item"),
+            ShortcutHelpItem(keys: "1 2 3", action: "Agenda mode"),
+            ShortcutHelpItem(keys: "/", action: "Filter agenda"),
+            ShortcutHelpItem(keys: "o / Return", action: "Open item"),
+            ShortcutHelpItem(keys: "e", action: "Edit item source"),
+            ShortcutHelpItem(keys: "t i d x", action: "TODO / in-progress / done / canceled"),
+            ShortcutHelpItem(keys: "A", action: "Assign to agent"),
+            ShortcutHelpItem(keys: "p", action: "Priority mode"),
+            ShortcutHelpItem(keys: "s n w m", action: "Schedule today / tomorrow / week / month")
+          ])
+
+          ShortcutSection(title: "Document", shortcuts: [
+            ShortcutHelpItem(keys: "j / k", action: "Move block selection"),
+            ShortcutHelpItem(keys: "Return", action: "Edit selected block"),
+            ShortcutHelpItem(keys: "⌘Return", action: "Insert paragraph after block"),
+            ShortcutHelpItem(keys: "/", action: "Insert slash-command paragraph"),
+            ShortcutHelpItem(keys: "Delete", action: "Delete selected block"),
+            ShortcutHelpItem(keys: "⌘D", action: "Duplicate selected block"),
+            ShortcutHelpItem(keys: "⌘⇧↑ / ⌘⇧↓", action: "Move block"),
+            ShortcutHelpItem(keys: "Esc", action: "Clear block selection")
+          ])
+
+          ShortcutSection(title: "Editing", shortcuts: [
+            ShortcutHelpItem(keys: "⌘S", action: "Save active inline editor"),
+            ShortcutHelpItem(keys: "Esc", action: "Cancel active inline editor"),
+            ShortcutHelpItem(keys: "⌘B / ⌘I", action: "Bold / italic selected inline text"),
+            ShortcutHelpItem(keys: "⌘U", action: "Underline selected inline text"),
+            ShortcutHelpItem(keys: "⌘R", action: "Run source block while editing source")
+          ])
+        }
+        .padding(.vertical, 2)
+      }
+    }
+    .padding(20)
+    .frame(width: 760, height: 620)
+  }
+}
+
+private struct ShortcutHelpItem: Identifiable {
+  let keys: String
+  let action: String
+
+  var id: String {
+    "\(keys):\(action)"
+  }
+}
+
+private struct ShortcutSection: View {
+  let title: String
+  let shortcuts: [ShortcutHelpItem]
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(title)
+        .font(.headline)
+
+      VStack(alignment: .leading, spacing: 6) {
+        ForEach(shortcuts) { shortcut in
+          HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(shortcut.keys)
+              .font(.caption.monospaced().weight(.semibold))
+              .foregroundStyle(.secondary)
+              .frame(width: 92, alignment: .leading)
+            Text(shortcut.action)
+              .font(.callout)
+              .foregroundStyle(.primary)
+              .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+          }
+        }
+      }
+    }
+    .padding(12)
+    .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .stroke(Color.secondary.opacity(0.12))
+    )
+  }
+}
+
 private struct AgendaView: View {
   @EnvironmentObject private var store: WorkspaceStore
   @FocusState private var agendaFilterFocused: Bool
@@ -481,6 +615,7 @@ private struct AgendaRow: View {
 
 private struct SearchView: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @FocusState private var isSearchFocused: Bool
 
   var body: some View {
     VStack(spacing: 0) {
@@ -494,6 +629,7 @@ private struct SearchView: View {
       HStack(spacing: 8) {
         TextField("Search corpus", text: $store.searchQuery)
           .textFieldStyle(.roundedBorder)
+          .focused($isSearchFocused)
           .onSubmit {
             Task { await store.runSearch() }
           }
@@ -528,6 +664,14 @@ private struct SearchView: View {
         }
         .listStyle(.inset)
       }
+    }
+    .onAppear {
+      if store.selectedSurface == .search {
+        isSearchFocused = true
+      }
+    }
+    .onChange(of: store.searchFocusToken) {
+      isSearchFocused = true
     }
   }
 }
