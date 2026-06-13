@@ -1124,20 +1124,49 @@ public final class WorkspaceStore: ObservableObject {
     defer { isSavingBlock = false }
 
     do {
+      let replacement = "\n" + block.rawText
+      let updatedSource = try Self.replacingSourceRange(
+        in: source,
+        startLine: block.endLineExclusive,
+        endLineExclusive: block.endLineExclusive,
+        replacement: replacement
+      )
+      let currentRenderedBlocks = selectedRenderedBlocks
       try await Task.detached(priority: .userInitiated) {
         try Self.replaceSourceRange(
           file: source.file,
           startLine: block.endLineExclusive,
           endLineExclusive: block.endLineExclusive,
-          replacement: "\n" + block.rawText
+          replacement: replacement
         )
       }.value
-      await finishBlockMutation(
-        file: source.file,
-        status: "Duplicated block in \(relativePath(source.file))",
-        selectLine: block.endLineExclusive + 1,
-        selectionMode: .nextOrNearest
-      )
+
+      let updatedBlocks = await Task.detached(priority: .userInitiated) {
+        Self.locallyInsertingRenderedBlocks(
+          currentRenderedBlocks,
+          atLine: block.endLineExclusive,
+          replacement: replacement
+        )
+      }.value
+
+      guard selectedEntrySource?.id == source.id else {
+        return
+      }
+
+      invalidateCanonicalDocumentCache(for: source.file)
+      transientDraftBlock = nil
+      resetBlockEditing()
+      isEditingEntry = false
+      selectedEntrySource = updatedSource
+      let updatedVisibleBlocks = blocksWithTransientDraft(updatedBlocks, for: updatedSource)
+      selectedRenderedBlocks = updatedVisibleBlocks
+      selectedBlockID = blockForSelectionLine(
+        block.endLineExclusive + 1,
+        mode: .nextOrNearest,
+        in: updatedVisibleBlocks
+      )?.id
+      statusText = "Duplicated block in \(relativePath(source.file))"
+      scheduleAgendaRefresh(preserveSelection: true)
     } catch {
       errorText = error.localizedDescription
       statusText = "Duplicate failed"
@@ -3243,18 +3272,32 @@ public final class WorkspaceStore: ObservableObject {
     in source: EntrySource,
     with replacement: String
   ) throws -> EntrySource {
+    try replacingSourceRange(
+      in: source,
+      startLine: block.startLine,
+      endLineExclusive: block.endLineExclusive,
+      replacement: replacement
+    )
+  }
+
+  nonisolated private static func replacingSourceRange(
+    in source: EntrySource,
+    startLine: Int,
+    endLineExclusive: Int,
+    replacement: String
+  ) throws -> EntrySource {
     var lines = normalizeLineEndings(source.text)
       .split(separator: "\n", omittingEmptySubsequences: false)
       .map(String.init)
 
-    let startIndex = block.startLine - source.startLine
-    let endIndex = block.endLineExclusive - source.startLine
+    let startIndex = startLine - source.startLine
+    let endIndex = endLineExclusive - source.startLine
     guard startIndex >= 0,
           startIndex <= lines.count,
           endIndex >= startIndex,
           endIndex <= lines.count
     else {
-      throw WorkspaceEditError.invalidRange(file: source.file, line: block.startLine)
+      throw WorkspaceEditError.invalidRange(file: source.file, line: startLine)
     }
 
     let normalizedReplacement = normalizeLineEndings(replacement)
@@ -3562,6 +3605,31 @@ public final class WorkspaceStore: ObservableObject {
       updated.append(contentsOf: replacementBlocks)
     }
 
+    return sortEditableBlocksForDisplay(updated)
+  }
+
+  nonisolated private static func locallyInsertingRenderedBlocks(
+    _ blocks: [OrgEditableBlock],
+    atLine insertionLine: Int,
+    replacement: String
+  ) -> [OrgEditableBlock] {
+    let normalizedReplacement = normalizeLineEndings(replacement)
+    let insertedBlocks = OrgEntryRenderer.parseEditable(
+      normalizedReplacement,
+      baseLine: insertionLine
+    )
+    let lineDelta = normalizedReplacement.isEmpty ? 0 : lineCount(in: normalizedReplacement)
+
+    var updated: [OrgEditableBlock] = []
+    updated.reserveCapacity(blocks.count + insertedBlocks.count)
+    for block in blocks {
+      if block.startLine >= insertionLine {
+        updated.append(shiftedBlock(block, by: lineDelta))
+      } else {
+        updated.append(block)
+      }
+    }
+    updated.append(contentsOf: insertedBlocks)
     return sortEditableBlocksForDisplay(updated)
   }
 
