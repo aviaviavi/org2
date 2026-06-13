@@ -941,6 +941,7 @@ private struct PropertyDrawerBlockEditor: View {
   let block: OrgEditableBlock
   @State private var drawer: OrgEditablePropertyDrawer
   @State private var isHovered = false
+  @State private var autosaveTask: Task<Void, Never>?
   @FocusState private var focusedProperty: PropertyFocus?
 
   private enum PropertyFocus: Hashable {
@@ -982,6 +983,7 @@ private struct PropertyDrawerBlockEditor: View {
         Button {
           drawer.addProperty()
           focusedProperty = .key(max(0, drawer.rows.count - 1))
+          schedulePropertiesAutosave()
         } label: {
           Image(systemName: "plus")
         }
@@ -1027,6 +1029,10 @@ private struct PropertyDrawerBlockEditor: View {
         .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
     )
     .onHover { isHovered = $0 }
+    .onDisappear {
+      autosaveTask?.cancel()
+      autosaveTask = nil
+    }
     .onAppear {
       if focusedProperty == nil, !drawer.rows.isEmpty {
         focusedProperty = .value(0)
@@ -1064,6 +1070,7 @@ private struct PropertyDrawerBlockEditor: View {
 
       Button {
         drawer.removeProperty(at: index)
+        schedulePropertiesAutosave()
       } label: {
         Image(systemName: "trash")
       }
@@ -1086,7 +1093,10 @@ private struct PropertyDrawerBlockEditor: View {
         guard drawer.rows.indices.contains(index) else { return "" }
         return drawer.rows[index].key
       },
-      set: { drawer.setKey(at: index, value: $0) }
+      set: { newValue in
+        drawer.setKey(at: index, value: newValue)
+        schedulePropertiesAutosave()
+      }
     )
   }
 
@@ -1096,13 +1106,38 @@ private struct PropertyDrawerBlockEditor: View {
         guard drawer.rows.indices.contains(index) else { return "" }
         return drawer.rows[index].value
       },
-      set: { drawer.setValue(at: index, value: $0) }
+      set: { newValue in
+        drawer.setValue(at: index, value: newValue)
+        schedulePropertiesAutosave()
+      }
     )
   }
 
   private func saveProperties() {
+    autosaveTask?.cancel()
+    autosaveTask = nil
     store.editableBlockText = drawer.formattedRawText
     Task { await store.saveEditedBlock(block) }
+  }
+
+  private func schedulePropertiesAutosave() {
+    let draft = drawer.formattedRawText
+    store.updateEditingBlockDraft(block, draft: draft)
+    autosaveTask?.cancel()
+
+    guard draft != block.rawText else {
+      return
+    }
+
+    autosaveTask = Task { [block] in
+      do {
+        try await Task.sleep(nanoseconds: 600_000_000)
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      await store.autosaveEditedBlock(block, replacement: draft)
+    }
   }
 }
 
