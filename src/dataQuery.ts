@@ -18,6 +18,8 @@ export type DataQueryDataset = {
   engine: "duckdb";
   path?: string;
   url?: string;
+  credentialRef?: string;
+  configRef?: string;
   resolvedPath?: string;
   sourceTable?: string;
   source?: {
@@ -121,6 +123,19 @@ function parseKeyValueBody(body: string): Map<string, string> {
     out.set(String(match[1] || "").toLowerCase(), String(match[2] || "").trim());
   }
   return out;
+}
+
+function isSafeCredentialRef(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  if (/^none$/i.test(trimmed)) return true;
+  return /^(?:env|secret|config|profile):[A-Za-z0-9_.:-]+$/.test(trimmed);
+}
+
+function isSafeConfigRef(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  return /^(?:config|profile|env|file):[A-Za-z0-9_./:-]+$/.test(trimmed);
 }
 
 function parseFenceArgs(raw: string): { kind: string; args: string[] } | null {
@@ -327,6 +342,8 @@ function parseDataset(block: FencedBlock, baseDir: string, namedTables: Map<stri
   const sourcePath = values.get("path") || values.get("file") || "";
   const sourceUrl = values.get("url") || values.get("uri") || values.get("endpoint") || "";
   const sourceTable = values.get("source") || values.get("table") || "";
+  const credentialRef = values.get("credential") || values.get("credentials") || values.get("auth") || values.get("auth-ref") || "";
+  const configRef = values.get("config") || values.get("profile") || "";
 
   if (!SUPPORTED_DATASET_TYPES.has(typeRaw)) {
     diagnostics.push(diagnostic("Dataset type must be csv, parquet, json, or table", { line: block.line, ...(id ? { blockId: id } : {}) }));
@@ -345,6 +362,12 @@ function parseDataset(block: FencedBlock, baseDir: string, namedTables: Map<stri
   if (type === "table" && sourceTable && !table) {
     diagnostics.push(diagnostic(`No named org table found for dataset source "${sourceTable}"`, { line: block.line, ...(id ? { blockId: id } : {}) }));
   }
+  if (credentialRef && !isSafeCredentialRef(credentialRef)) {
+    diagnostics.push(diagnostic("Dataset credential/auth metadata must be a reference such as env:VAR, secret:NAME, config:NAME, profile:NAME, or none; inline secrets are not accepted", { line: block.line, ...(id ? { blockId: id } : {}) }));
+  }
+  if (configRef && !isSafeConfigRef(configRef)) {
+    diagnostics.push(diagnostic("Dataset config/profile metadata must be a reference such as config:NAME, profile:NAME, env:VAR, or file:PATH", { line: block.line, ...(id ? { blockId: id } : {}) }));
+  }
   if (diagnostics.some((item) => item.severity === "error")) return { diagnostics };
 
   if (type === "table" && table) {
@@ -354,6 +377,8 @@ function parseDataset(block: FencedBlock, baseDir: string, namedTables: Map<stri
         line: block.line,
         type: "table",
         engine: "duckdb",
+        ...(credentialRef ? { credentialRef } : {}),
+        ...(configRef ? { configRef } : {}),
         sourceTable,
         source: { line: table.line, endLine: table.endLine },
         rowCount: table.rows.length,
@@ -371,6 +396,8 @@ function parseDataset(block: FencedBlock, baseDir: string, namedTables: Map<stri
       engine: "duckdb",
       ...(sourcePath ? { path: sourcePath, resolvedPath } : {}),
       ...(sourceUrl ? { url: sourceUrl } : {}),
+      ...(credentialRef ? { credentialRef } : {}),
+      ...(configRef ? { configRef } : {}),
     },
     diagnostics,
   };
