@@ -227,6 +227,135 @@ enum OrgPropertyDrawerRawValueCache {
   }
 }
 
+enum OrgRenderedLineDisplayCache {
+  final class CacheKey: NSObject {
+    let kind: String
+    let rawText: String
+    let fallback: String
+    private let cachedHash: Int
+
+    init(kind: String, rawText: String, fallback: String) {
+      self.kind = kind
+      self.rawText = rawText
+      self.fallback = fallback
+      var hasher = Hasher()
+      hasher.combine(kind)
+      hasher.combine(rawText)
+      hasher.combine(fallback)
+      self.cachedHash = hasher.finalize()
+    }
+
+    override var hash: Int {
+      cachedHash
+    }
+
+    override func isEqual(_ object: Any?) -> Bool {
+      guard let other = object as? CacheKey else { return false }
+      return kind == other.kind
+        && rawText == other.rawText
+        && fallback == other.fallback
+    }
+  }
+
+  private final class CachedValue {
+    let value: String
+
+    init(_ value: String) {
+      self.value = value
+    }
+  }
+
+  nonisolated(unsafe) private static let cache: NSCache<CacheKey, CachedValue> = {
+    let cache = NSCache<CacheKey, CachedValue>()
+    cache.countLimit = 8_192
+    return cache
+  }()
+
+  nonisolated static func headingTitle(rawText: String?, fallback: String) -> String {
+    cached(kind: "heading-title", rawText: rawText, fallback: fallback, parse: parseHeadingTitle)
+  }
+
+  nonisolated static func listText(rawText: String?, fallback: String) -> String {
+    cached(kind: "list-text", rawText: rawText, fallback: fallback, parse: parseListText)
+  }
+
+  nonisolated static func keywordValue(rawText: String?, fallback: String) -> String {
+    cached(kind: "keyword-value", rawText: rawText, fallback: fallback, parse: parseKeywordValue)
+  }
+
+  private static func cached(
+    kind: String,
+    rawText: String?,
+    fallback: String,
+    parse: (String, String) -> String
+  ) -> String {
+    guard let rawText else { return fallback }
+    let key = CacheKey(kind: kind, rawText: rawText, fallback: fallback)
+    if let cached = cache.object(forKey: key) {
+      return cached.value
+    }
+
+    let value = parse(rawText, fallback)
+    cache.setObject(CachedValue(value), forKey: key)
+    return value
+  }
+
+  private static func parseHeadingTitle(rawText: String, fallback: String) -> String {
+    guard let line = firstLine(in: rawText) else { return fallback }
+    let stars = line.prefix { $0 == "*" }
+    guard !stars.isEmpty else { return fallback }
+
+    var rest = String(line.dropFirst(stars.count)).trimmingCharacters(in: .whitespaces)
+    if let tagRange = rest.range(of: #"\s+(:[A-Za-z0-9_@#%:.-]+:)\s*$"#, options: .regularExpression) {
+      rest.removeSubrange(tagRange)
+      rest = rest.trimmingCharacters(in: .whitespaces)
+    }
+
+    var tokens = rest.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+    if let first = tokens.first, todoKeywords.contains(first.uppercased()) {
+      tokens.removeFirst()
+    }
+    if let first = tokens.first,
+       first.range(of: #"^\[#([A-Za-z0-9])\]$"#, options: .regularExpression) != nil {
+      tokens.removeFirst()
+    }
+    return tokens.joined(separator: " ")
+  }
+
+  private static func parseListText(rawText: String, fallback: String) -> String {
+    guard let line = firstLine(in: rawText) else { return fallback }
+    let leadingWhitespace = line.prefix { $0 == " " || $0 == "\t" }
+    let rest = String(line.dropFirst(leadingWhitespace.count))
+    guard let separator = rest.firstIndex(where: { $0.isWhitespace }) else { return fallback }
+    let textStart = rest[separator...].firstIndex { !$0.isWhitespace } ?? rest.endIndex
+    return stripCheckbox(String(rest[textStart...]))
+  }
+
+  private static func parseKeywordValue(rawText: String, fallback: String) -> String {
+    guard let line = firstLine(in: rawText) else { return fallback }
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    guard let separator = trimmed.firstIndex(of: ":") else { return fallback }
+    return String(trimmed[trimmed.index(after: separator)...]).trimmingCharacters(in: .whitespaces)
+  }
+
+  private static func firstLine(in rawText: String) -> Substring? {
+    guard !rawText.isEmpty else { return nil }
+    guard let newline = rawText.firstIndex(of: "\n") else {
+      return rawText[...]
+    }
+    return rawText[..<newline]
+  }
+
+  private static func stripCheckbox(_ text: String) -> String {
+    if text.hasPrefix("[ ] ") || text.hasPrefix("[X] ") || text.hasPrefix("[x] ") || text.hasPrefix("[-] ") {
+      return String(text.dropFirst(4))
+    }
+    return text
+  }
+
+  private static let todoKeywords = Set(["TODO", "IN_PROGRESS", "PROG", "WAIT", "HOLD", "PAUSED", "DONE", "CANCELED", "CANCELLED"])
+}
+
 struct RenderedBlockInlineActions: Sendable {
   let isSourceEditable: Bool
   let toggleHeadingTodo: (@MainActor @Sendable () -> Void)?
@@ -527,32 +656,8 @@ private struct RenderedHeadingView: View {
   }
 
   private var rawTitle: String {
-    guard let rawText,
-          let line = rawText.split(separator: "\n", omittingEmptySubsequences: false).first
-    else {
-      return heading.title
-    }
-
-    let stars = line.prefix { $0 == "*" }
-    guard !stars.isEmpty else { return heading.title }
-    var rest = String(line.dropFirst(stars.count)).trimmingCharacters(in: .whitespaces)
-    if let tagRange = rest.range(of: #"\s+(:[A-Za-z0-9_@#%:.-]+:)\s*$"#, options: .regularExpression) {
-      rest.removeSubrange(tagRange)
-      rest = rest.trimmingCharacters(in: .whitespaces)
-    }
-
-    var tokens = rest.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
-    if let first = tokens.first, Self.todoKeywords.contains(first.uppercased()) {
-      tokens.removeFirst()
-    }
-    if let first = tokens.first,
-       first.range(of: #"^\[#([A-Za-z0-9])\]$"#, options: .regularExpression) != nil {
-      tokens.removeFirst()
-    }
-    return tokens.joined(separator: " ")
+    OrgRenderedLineDisplayCache.headingTitle(rawText: rawText, fallback: heading.title)
   }
-
-  private static let todoKeywords = Set(["TODO", "IN_PROGRESS", "PROG", "WAIT", "HOLD", "PAUSED", "DONE", "CANCELED", "CANCELLED"])
 }
 
 private struct RenderedHeadingTodoButton: View {
@@ -1900,23 +2005,7 @@ private struct RenderedListItemView: View {
   }
 
   private var rawListText: String {
-    guard let rawText,
-          let line = rawText.split(separator: "\n", omittingEmptySubsequences: false).first
-    else {
-      return text
-    }
-    let leadingWhitespace = line.prefix { $0 == " " || $0 == "\t" }
-    let rest = String(line.dropFirst(leadingWhitespace.count))
-    guard let separator = rest.firstIndex(where: { $0.isWhitespace }) else { return text }
-    let textStart = rest[separator...].firstIndex { !$0.isWhitespace } ?? rest.endIndex
-    return Self.stripCheckbox(String(rest[textStart...]))
-  }
-
-  private static func stripCheckbox(_ text: String) -> String {
-    if text.hasPrefix("[ ] ") || text.hasPrefix("[X] ") || text.hasPrefix("[x] ") || text.hasPrefix("[-] ") {
-      return String(text.dropFirst(4))
-    }
-    return text
+    OrgRenderedLineDisplayCache.listText(rawText: rawText, fallback: text)
   }
 }
 
@@ -1965,13 +2054,6 @@ private struct RenderedKeywordView: View {
   }
 
   private var rawValue: String {
-    guard let rawText,
-          let line = rawText.split(separator: "\n", omittingEmptySubsequences: false).first
-    else {
-      return value
-    }
-    let trimmed = line.trimmingCharacters(in: .whitespaces)
-    guard let separator = trimmed.firstIndex(of: ":") else { return value }
-    return String(trimmed[trimmed.index(after: separator)...]).trimmingCharacters(in: .whitespaces)
+    OrgRenderedLineDisplayCache.keywordValue(rawText: rawText, fallback: value)
   }
 }

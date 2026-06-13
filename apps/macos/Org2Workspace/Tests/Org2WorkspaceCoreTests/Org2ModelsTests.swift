@@ -2140,6 +2140,40 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedBlock?.id, "second")
   }
 
+  func testRenderedLineDisplayCacheUsesRawTextAndFallbacks() {
+    XCTAssertEqual(
+      OrgRenderedLineDisplayCache.headingTitle(
+        rawText: "* TODO [#A] Review [[id:abc][Alice]] :work:\nBody",
+        fallback: "Review Alice"
+      ),
+      "Review [[id:abc][Alice]]"
+    )
+    XCTAssertEqual(
+      OrgRenderedLineDisplayCache.headingTitle(rawText: "Not a heading", fallback: "Fallback title"),
+      "Fallback title"
+    )
+    XCTAssertEqual(
+      OrgRenderedLineDisplayCache.headingTitle(rawText: "Not a heading", fallback: "Current title"),
+      "Current title"
+    )
+    XCTAssertEqual(
+      OrgRenderedLineDisplayCache.listText(rawText: "  - [X] Finish task\ncontinued", fallback: "Finish task"),
+      "Finish task"
+    )
+    XCTAssertEqual(
+      OrgRenderedLineDisplayCache.listText(rawText: "not-list", fallback: "Fallback item"),
+      "Fallback item"
+    )
+    XCTAssertEqual(
+      OrgRenderedLineDisplayCache.keywordValue(rawText: "#+TITLE: Project Plan\nBody", fallback: "Project Plan"),
+      "Project Plan"
+    )
+    XCTAssertEqual(
+      OrgRenderedLineDisplayCache.keywordValue(rawText: "not-keyword", fallback: "Fallback value"),
+      "Fallback value"
+    )
+  }
+
   func testHeadingTodoStatusCycle() {
     XCTAssertEqual(WorkspaceStore.nextHeadingTodoStatus(after: "TODO"), "DONE")
     XCTAssertEqual(WorkspaceStore.nextHeadingTodoStatus(after: "IN_PROGRESS"), "DONE")
