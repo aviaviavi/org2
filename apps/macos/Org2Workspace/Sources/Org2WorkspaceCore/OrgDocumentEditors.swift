@@ -3,6 +3,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum InlineEditorChrome {
+  static let savingIndicatorSize: CGFloat = 14
+
   static func rendersControls(_ isActive: Bool) -> Bool {
     true
   }
@@ -27,6 +29,27 @@ enum InlineEditorChrome {
       return 0.16
     }
     return isFocused ? 0.07 : 0
+  }
+
+  static func savingIndicatorOpacity(_ isSaving: Bool) -> Double {
+    isSaving ? 1 : 0
+  }
+}
+
+private struct InlineEditorSavingIndicator: View {
+  let isSaving: Bool
+
+  var body: some View {
+    ZStack {
+      if isSaving {
+        ProgressView()
+          .controlSize(.small)
+      }
+    }
+    .frame(width: InlineEditorChrome.savingIndicatorSize, height: InlineEditorChrome.savingIndicatorSize)
+    .opacity(InlineEditorChrome.savingIndicatorOpacity(isSaving))
+    .accessibilityHidden(!isSaving)
+    .accessibilityLabel("Saving")
   }
 }
 
@@ -168,10 +191,7 @@ private struct HorizontalRuleBlockEditor: View {
         .frame(maxWidth: .infinity)
 
       HStack(spacing: 4) {
-        if store.isSavingBlock {
-          ProgressView()
-            .controlSize(.small)
-        }
+        InlineEditorSavingIndicator(isSaving: store.isSavingBlock)
 
         Button {
           saveDivider()
@@ -399,10 +419,8 @@ private struct HeadingBlockEditor: View {
 
   private var headingControls: some View {
     HStack(spacing: 4) {
-      if store.isSavingBlock {
-        ProgressView()
-          .controlSize(.small)
-      }
+      InlineEditorSavingIndicator(isSaving: store.isSavingBlock)
+
       Button {
         showsDetails.toggle()
       } label: {
@@ -590,10 +608,7 @@ private struct PlanningBlockEditor: View {
       .padding(.trailing, 74)
 
       HStack(spacing: 4) {
-        if store.isSavingBlock {
-          ProgressView()
-            .controlSize(.small)
-        }
+        InlineEditorSavingIndicator(isSaving: store.isSavingBlock)
 
         Button {
           savePlanning()
@@ -831,10 +846,7 @@ private struct ListItemBlockEditor: View {
 
   private var listItemControls: some View {
     HStack(spacing: 4) {
-      if store.isSavingBlock {
-        ProgressView()
-          .controlSize(.small)
-      }
+      InlineEditorSavingIndicator(isSaving: store.isSavingBlock)
 
       Button {
         saveListItem()
@@ -992,10 +1004,7 @@ private struct KeywordBlockEditor: View {
       .padding(.trailing, 74)
 
       HStack(spacing: 4) {
-        if store.isSavingBlock {
-          ProgressView()
-            .controlSize(.small)
-        }
+        InlineEditorSavingIndicator(isSaving: store.isSavingBlock)
 
         Button {
           saveKeyword()
@@ -1159,10 +1168,7 @@ private struct PropertyDrawerBlockEditor: View {
         .buttonStyle(.borderless)
         .help("Add property")
 
-        if store.isSavingBlock {
-          ProgressView()
-            .controlSize(.small)
-        }
+        InlineEditorSavingIndicator(isSaving: store.isSavingBlock)
 
         Button {
           saveProperties()
@@ -1448,10 +1454,8 @@ private struct ParagraphBlockEditor: View {
 
   private var paragraphControls: some View {
     HStack(spacing: 4) {
-      if store.isSavingBlock {
-        ProgressView()
-          .controlSize(.small)
-      }
+      InlineEditorSavingIndicator(isSaving: store.isSavingBlock)
+
       Button {
         showsInlineDetails.toggle()
       } label: {
@@ -1610,10 +1614,7 @@ private struct MediaBlockEditor: View {
       }
 
       HStack(spacing: 4) {
-        if store.isSavingBlock {
-          ProgressView()
-            .controlSize(.small)
-        }
+        InlineEditorSavingIndicator(isSaving: store.isSavingBlock)
 
         Button {
           chooseFile()
@@ -1891,10 +1892,7 @@ private struct QuoteBlockEditor: View {
 
   private var quoteControls: some View {
     HStack(spacing: 4) {
-      if store.isSavingBlock {
-        ProgressView()
-          .controlSize(.small)
-      }
+      InlineEditorSavingIndicator(isSaving: store.isSavingBlock)
 
       Button {
         saveQuote()
@@ -2055,10 +2053,7 @@ private struct SourceBlockEditor: View {
           .help("\(sourceRunHelp) (Command-R)")
         }
 
-        if store.isSavingBlock {
-          ProgressView()
-            .controlSize(.small)
-        }
+        InlineEditorSavingIndicator(isSaving: store.isSavingBlock)
 
         Button {
           saveSource()
@@ -2245,10 +2240,7 @@ private struct TableBlockEditor: View {
         .buttonStyle(.borderless)
         .help("Add separator")
 
-        if store.isSavingBlock {
-          ProgressView()
-            .controlSize(.small)
-        }
+        InlineEditorSavingIndicator(isSaving: store.isSavingBlock)
 
         Button {
           saveTable()

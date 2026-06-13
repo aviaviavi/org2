@@ -977,6 +977,39 @@ struct QuoteLineWindow: Equatable {
   static let defaultLimit = 40
   static let pageSize = 80
 
+  final class CacheKey: NSObject {
+    let rawText: String
+    private let cachedHash: Int
+
+    init(rawText: String) {
+      self.rawText = rawText
+      self.cachedHash = rawText.hashValue
+    }
+
+    override var hash: Int {
+      cachedHash
+    }
+
+    override func isEqual(_ object: Any?) -> Bool {
+      guard let other = object as? CacheKey else { return false }
+      return rawText == other.rawText
+    }
+  }
+
+  private final class CachedDisplayLines {
+    let lines: [String]?
+
+    init(_ lines: [String]?) {
+      self.lines = lines
+    }
+  }
+
+  nonisolated(unsafe) private static let displayLineCache: NSCache<CacheKey, CachedDisplayLines> = {
+    let cache = NSCache<CacheKey, CachedDisplayLines>()
+    cache.countLimit = 512
+    return cache
+  }()
+
   let visibleLines: [String]
   let totalLineCount: Int
   let limit: Int
@@ -1000,15 +1033,28 @@ struct QuoteLineWindow: Equatable {
   }
 
   static func displayLines(rawText: String?, fallback lines: [String]) -> [String] {
-    guard let rawText,
-          rawBodyMayContainInlineSyntax(rawText)
-    else {
+    guard let rawText else {
+      return lines
+    }
+
+    let key = CacheKey(rawText: rawText)
+    if let cached = displayLineCache.object(forKey: key) {
+      return cached.lines ?? lines
+    }
+
+    guard rawBodyMayContainInlineSyntax(rawText) else {
+      displayLineCache.setObject(CachedDisplayLines(nil), forKey: key)
       return lines
     }
 
     let rawLines = rawText.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-    guard rawLines.count >= 2 else { return lines }
-    return Array(rawLines.dropFirst().dropLast())
+    guard rawLines.count >= 2 else {
+      displayLineCache.setObject(CachedDisplayLines(nil), forKey: key)
+      return lines
+    }
+    let displayLines = Array(rawLines.dropFirst().dropLast())
+    displayLineCache.setObject(CachedDisplayLines(displayLines), forKey: key)
+    return displayLines
   }
 
   static func rawBodyMayContainInlineSyntax(_ rawText: String) -> Bool {
