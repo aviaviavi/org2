@@ -615,6 +615,119 @@ public struct OpenClawFileReference: Identifiable, Hashable, Sendable {
   }
 }
 
+public struct OrgRoamNodeReference: Identifiable, Hashable, Sendable {
+  public let idValue: String?
+  public let title: String
+  public let aliases: [String]
+  public let file: String
+  public let line: Int
+
+  public init(idValue: String?, title: String, aliases: [String] = [], file: String, line: Int) {
+    let trimmedID = idValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    self.idValue = trimmedID.isEmpty ? nil : trimmedID
+    self.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.aliases = aliases
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    self.file = file
+    self.line = max(1, line)
+  }
+
+  public var id: String {
+    "\(file):\(line):\(idValue ?? title)"
+  }
+
+  public var fileReference: OpenClawFileReference {
+    OpenClawFileReference(path: file, line: line)
+  }
+}
+
+public struct OrgRoamResolvedLink: Equatable, Sendable {
+  public let title: String
+  public let fileReference: OpenClawFileReference
+
+  public init(title: String, fileReference: OpenClawFileReference) {
+    self.title = title
+    self.fileReference = fileReference
+  }
+}
+
+public struct OrgRoamLinkResolver: Equatable, Sendable {
+  public static let empty = OrgRoamLinkResolver(nodes: [])
+
+  public let nodes: [OrgRoamNodeReference]
+  public let signature: String
+  private let nodesByID: [String: OrgRoamNodeReference]
+  private let nodesByTitle: [String: OrgRoamNodeReference]
+
+  public init(nodes: [OrgRoamNodeReference]) {
+    self.nodes = nodes
+
+    var idCandidates: [String: [OrgRoamNodeReference]] = [:]
+    var titleCandidates: [String: [OrgRoamNodeReference]] = [:]
+    for node in nodes {
+      if let idValue = node.idValue {
+        idCandidates[Self.normalizedID(idValue), default: []].append(node)
+      }
+
+      for title in [node.title] + node.aliases {
+        let key = Self.normalizedTitle(title)
+        guard !key.isEmpty else { continue }
+        titleCandidates[key, default: []].append(node)
+      }
+    }
+
+    nodesByID = idCandidates.compactMapValues { candidates in
+      candidates.count == 1 ? candidates[0] : nil
+    }
+    nodesByTitle = titleCandidates.compactMapValues { candidates in
+      candidates.count == 1 ? candidates[0] : nil
+    }
+    signature = Self.makeSignature(nodes)
+  }
+
+  public func resolve(target rawTarget: String) -> OrgRoamResolvedLink? {
+    let target = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !target.isEmpty else { return nil }
+
+    let lowercased = target.lowercased()
+    let node: OrgRoamNodeReference?
+    if lowercased.hasPrefix("id:") {
+      node = nodesByID[Self.normalizedID(String(target.dropFirst(3)))]
+    } else {
+      node = nodesByTitle[Self.normalizedTitle(target)]
+    }
+
+    guard let node else { return nil }
+    return OrgRoamResolvedLink(title: node.title, fileReference: node.fileReference)
+  }
+
+  public static func normalizedTitle(_ raw: String) -> String {
+    raw
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .split(whereSeparator: { $0.isWhitespace })
+      .joined(separator: " ")
+      .lowercased()
+  }
+
+  private static func normalizedID(_ raw: String) -> String {
+    raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+  }
+
+  private static func makeSignature(_ nodes: [OrgRoamNodeReference]) -> String {
+    var hasher = Hasher()
+    hasher.combine(nodes.count)
+    for node in nodes.sorted(by: { $0.id < $1.id }) {
+      hasher.combine(node.idValue)
+      hasher.combine(node.title)
+      hasher.combine(node.aliases)
+      hasher.combine(node.file)
+      hasher.combine(node.line)
+    }
+    return "\(nodes.count):\(hasher.finalize())"
+  }
+}
+
 public enum OrgInlineSpan: Equatable, Sendable {
   case text(String)
   case code(String)
@@ -1321,7 +1434,7 @@ public struct OrgEditableInlineTimestamp: Identifiable, Equatable, Sendable {
 }
 
 public enum OrgInlineParser {
-  public static func parse(_ raw: String) -> [OrgInlineSpan] {
+  public static func parse(_ raw: String, linkResolver: OrgRoamLinkResolver = .empty) -> [OrgInlineSpan] {
     guard hasInlineSyntaxCandidate(raw) else {
       return raw.isEmpty ? [] : [.text(raw)]
     }
@@ -1337,14 +1450,14 @@ public enum OrgInlineParser {
     }
 
     while cursor < raw.endIndex {
-      if let parsed = parseBracketLink(raw, at: cursor) {
+      if let parsed = parseBracketLink(raw, at: cursor, linkResolver: linkResolver) {
         flushText()
         spans.append(parsed.span)
         cursor = parsed.end
         continue
       }
 
-      if let parsed = parseMarkdownLink(raw, at: cursor) {
+      if let parsed = parseMarkdownLink(raw, at: cursor, linkResolver: linkResolver) {
         flushText()
         spans.append(parsed.span)
         cursor = parsed.end
@@ -1488,7 +1601,11 @@ public enum OrgInlineParser {
     case strike
   }
 
-  private static func parseBracketLink(_ raw: String, at cursor: String.Index) -> (span: OrgInlineSpan, end: String.Index)? {
+  private static func parseBracketLink(
+    _ raw: String,
+    at cursor: String.Index,
+    linkResolver: OrgRoamLinkResolver
+  ) -> (span: OrgInlineSpan, end: String.Index)? {
     guard raw[cursor...].hasPrefix("[[") else { return nil }
     let bodyStart = raw.index(cursor, offsetBy: 2)
     guard let closeRange = raw[bodyStart...].range(of: "]]") else { return nil }
@@ -1498,14 +1615,28 @@ public enum OrgInlineParser {
       return nil
     }
     let label = parts.dropFirst().joined(separator: "][").trimmingCharacters(in: .whitespacesAndNewlines)
-    let display = label.isEmpty ? target : label
+    let resolved = OpenClawFileReference.fromLinkTarget(target).map {
+      OrgRoamResolvedLink(title: $0.displayTitle, fileReference: $0)
+    } ?? linkResolver.resolve(target: target)
+    let display: String
+    if !label.isEmpty {
+      display = label
+    } else if target.lowercased().hasPrefix("id:") {
+      display = resolved?.title ?? target
+    } else {
+      display = target
+    }
     return (
-      .link(label: display, target: target, fileReference: OpenClawFileReference.fromLinkTarget(target)),
+      .link(label: display, target: target, fileReference: resolved?.fileReference),
       closeRange.upperBound
     )
   }
 
-  private static func parseMarkdownLink(_ raw: String, at cursor: String.Index) -> (span: OrgInlineSpan, end: String.Index)? {
+  private static func parseMarkdownLink(
+    _ raw: String,
+    at cursor: String.Index,
+    linkResolver: OrgRoamLinkResolver
+  ) -> (span: OrgInlineSpan, end: String.Index)? {
     guard raw[cursor] == "[", !raw[cursor...].hasPrefix("[[") else { return nil }
     let labelStart = raw.index(after: cursor)
     guard let labelEnd = raw[labelStart...].firstIndex(of: "]") else { return nil }
@@ -1516,8 +1647,11 @@ public enum OrgInlineParser {
     let label = String(raw[labelStart..<labelEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
     let target = String(raw[targetStart..<targetEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
     guard !label.isEmpty, !target.isEmpty else { return nil }
+    let resolved = OpenClawFileReference.fromLinkTarget(target).map {
+      OrgRoamResolvedLink(title: $0.displayTitle, fileReference: $0)
+    } ?? linkResolver.resolve(target: target)
     return (
-      .link(label: label, target: target, fileReference: OpenClawFileReference.fromLinkTarget(target)),
+      .link(label: label, target: target, fileReference: resolved?.fileReference),
       raw.index(after: targetEnd)
     )
   }
