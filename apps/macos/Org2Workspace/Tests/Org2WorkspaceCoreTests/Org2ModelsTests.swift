@@ -850,6 +850,63 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(result.timedOut)
   }
 
+  @MainActor
+  func testRunsEditedSourceBlockDraftWithoutSavingFirst() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-source-draft-run-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("source-draft.org2")
+    try """
+    #+TITLE: Source Draft
+
+    * Code
+    #+begin_src sh
+    printf saved
+    #+end_src
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": null,
+      "headline": "Code",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 3,
+      "body": "",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.selectedEntrySourceMode = .page
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let sourceBlock = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .source = $0.rendered { return true }
+      return false
+    })
+
+    await store.runSourceBlock(sourceBlock, rawText: """
+    #+begin_src sh
+    printf draft
+    #+end_src
+    """)
+
+    try await waitForCondition {
+      store.sourceBlockRunState(for: sourceBlock)?.stdout == "draft"
+    }
+    XCTAssertEqual(store.sourceBlockRunState(for: sourceBlock)?.status, .succeeded)
+
+    let saved = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(saved.contains("printf saved"))
+    XCTAssertFalse(saved.contains("printf draft"))
+  }
+
   func testParsesEditableOrgBlocksWithSourceRanges() {
     let blocks = OrgEntryRenderer.parseEditable("""
     * TODO Parent

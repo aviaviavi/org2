@@ -1120,12 +1120,12 @@ private struct SourceBlockEditor: View {
 
         if runPlan != nil {
           Button {
-            Task { await store.runSourceBlock(block) }
+            Task { await store.runSourceBlock(block, rawText: source.formattedRawText) }
           } label: {
             Image(systemName: "play.fill")
           }
           .buttonStyle(.borderless)
-          .disabled(store.isSavingBlock || runState?.status == .running || hasUnsavedSourceChanges)
+          .disabled(store.isSavingBlock || runState?.status == .running)
           .help(sourceRunHelp)
         }
 
@@ -1221,13 +1221,9 @@ private struct SourceBlockEditor: View {
     store.sourceBlockRunState(for: block)
   }
 
-  private var hasUnsavedSourceChanges: Bool {
-    source.formattedRawText != block.rawText
-  }
-
   private var sourceRunHelp: String {
-    if hasUnsavedSourceChanges {
-      return "Save before running source block"
+    if source.formattedRawText != block.rawText {
+      return "Run current source draft"
     }
     return "Run source block"
   }
