@@ -3422,6 +3422,56 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSetsRenderedPlanningBlockInSource() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-rendered-planning-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("rendered-planning.org2")
+    try """
+    #+TITLE: Rendered Planning Test
+
+    * TODO Parent
+    SCHEDULED: <2026-06-12 Fri>
+    Body
+    * Sibling
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let planning = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .planning(let planning) = $0.rendered { return planning.kind == "SCHEDULED" }
+      return false
+    })
+
+    await store.setPlanningBlock(planning, kind: "DEADLINE", value: "<2026-06-15 Mon 09:30>")
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "DEADLINE: <2026-06-15 Mon 09:30>"
+    }
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* TODO Parent\nDEADLINE: <2026-06-15 Mon 09:30>\nBody\n* Sibling"))
+  }
+
+  @MainActor
   func testSelectsRenderedBlockAndHandlesDocumentKeyboard() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-block-selection-\(UUID().uuidString)", isDirectory: true)
