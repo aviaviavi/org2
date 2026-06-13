@@ -1,4 +1,5 @@
 import Foundation
+import LocalAuthentication
 import Security
 
 public struct OpenClawGatewaySettings: Sendable {
@@ -20,13 +21,13 @@ public struct OpenClawGatewaySettings: Sendable {
   ) -> OpenClawGatewaySettings {
     let config = ClawdbotConfig.load(from: configURL)
     let endpoint = endpointURL(environment: environment, config: config, userEndpoint: userEndpoint)
-    let bearerToken = clean(userBearerToken)
+    let bearerToken = normalizedBearerToken(userBearerToken)
       ?? explicitBearerToken(environment: environment)
-      ?? config?.gateway?.auth?.preferredBearerToken
+      ?? normalizedBearerToken(config?.gateway?.auth?.preferredBearerToken)
 
     return OpenClawGatewaySettings(
       endpoint: endpoint,
-      bearerToken: bearerToken?.isEmpty == false ? bearerToken : nil,
+      bearerToken: bearerToken,
       chatCompletionsEnabled: config?.gateway?.http?.endpoints?.chatCompletions?.enabled
     )
   }
@@ -35,6 +36,14 @@ public struct OpenClawGatewaySettings: Sendable {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, let url = URL(string: trimmed) else { return nil }
     return chatCompletionsEndpoint(from: url).absoluteString
+  }
+
+  public static func normalizedBearerToken(_ raw: String?) -> String? {
+    guard var value = clean(raw) else { return nil }
+    if let schemeRange = value.range(of: #"^Bearer\s+"#, options: [.regularExpression, .caseInsensitive]) {
+      value.removeSubrange(schemeRange)
+    }
+    return clean(value)
   }
 
   private static func endpointURL(environment: [String: String], config: ClawdbotConfig?, userEndpoint: String?) -> URL {
@@ -65,8 +74,7 @@ public struct OpenClawGatewaySettings: Sendable {
 
   private static func explicitBearerToken(environment: [String: String]) -> String? {
     for key in ["ORG2_WORKSPACE_OPENCLAW_TOKEN", "CLAWDBOT_GATEWAY_PASSWORD", "CLAWDBOT_GATEWAY_TOKEN"] {
-      let value = environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines)
-      if value?.isEmpty == false {
+      if let value = normalizedBearerToken(environment[key]) {
         return value
       }
     }
@@ -476,15 +484,19 @@ public enum OpenClawKeychain {
     var query: [String: Any] = baseQuery
     query[kSecReturnAttributes as String] = true
     query[kSecMatchLimit as String] = kSecMatchLimitOne
+    query[kSecUseAuthenticationContext as String] = noninteractiveAuthenticationContext()
 
     let status = SecItemCopyMatching(query as CFDictionary, nil)
     return status == errSecSuccess
   }
 
-  public static func readToken() -> String? {
+  public static func readToken(allowUserInteraction: Bool = false) -> String? {
     var query: [String: Any] = baseQuery
     query[kSecReturnData as String] = true
     query[kSecMatchLimit as String] = kSecMatchLimitOne
+    if !allowUserInteraction {
+      query[kSecUseAuthenticationContext as String] = noninteractiveAuthenticationContext()
+    }
 
     var result: AnyObject?
     let status = SecItemCopyMatching(query as CFDictionary, &result)
@@ -494,16 +506,19 @@ public enum OpenClawKeychain {
     else {
       return nil
     }
-    return token.isEmpty ? nil : token
+    return OpenClawGatewaySettings.normalizedBearerToken(token)
   }
 
   public static func saveToken(_ token: String) throws {
-    let data = Data(token.utf8)
+    let normalizedToken = OpenClawGatewaySettings.normalizedBearerToken(token) ?? ""
+    let data = Data(normalizedToken.utf8)
     var query = baseQuery
     query[kSecValueData as String] = data
     let status = SecItemAdd(query as CFDictionary, nil)
     if status == errSecDuplicateItem {
-      let updateStatus = SecItemUpdate(baseQuery as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+      var updateQuery = baseQuery
+      updateQuery[kSecUseAuthenticationContext as String] = noninteractiveAuthenticationContext()
+      let updateStatus = SecItemUpdate(updateQuery as CFDictionary, [kSecValueData as String: data] as CFDictionary)
       guard updateStatus == errSecSuccess else { throw OpenClawKeychainError.status(updateStatus) }
       return
     }
@@ -523,6 +538,12 @@ public enum OpenClawKeychain {
       kSecAttrService as String: service,
       kSecAttrAccount as String: account
     ]
+  }
+
+  private static func noninteractiveAuthenticationContext() -> LAContext {
+    let context = LAContext()
+    context.interactionNotAllowed = true
+    return context
   }
 }
 

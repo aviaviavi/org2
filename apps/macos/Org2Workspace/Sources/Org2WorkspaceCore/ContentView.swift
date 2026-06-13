@@ -18,6 +18,8 @@ public struct ContentView: View {
         FilesView()
       case .search:
         SearchView()
+      case .meetings:
+        MeetingsView()
       case .openClaw:
         OpenClawChatView()
       case .agentSpace:
@@ -723,6 +725,250 @@ private struct SearchRow: View {
   }
 }
 
+private struct MeetingsView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HeaderBar(title: "Meetings", subtitle: "\(store.meetings.count) local meeting\(store.meetings.count == 1 ? "" : "s")") {
+        if store.isLoadingMeetings || store.isProcessingMeeting {
+          ProgressView()
+            .controlSize(.small)
+        }
+
+        if store.isRecordingMeeting {
+          Button {
+            Task { await store.stopMeetingRecording() }
+          } label: {
+            Label("Stop", systemImage: "stop.fill")
+          }
+        } else {
+          Button {
+            store.promptAndStartMeetingRecording()
+          } label: {
+            Label("Record", systemImage: "record.circle")
+          }
+          .disabled(store.corpusRoot == nil || store.isProcessingMeeting)
+        }
+
+        Button {
+          store.promptAndImportMeetingAudio()
+        } label: {
+          Label("Import", systemImage: "tray.and.arrow.down")
+        }
+        .disabled(store.corpusRoot == nil || store.isRecordingMeeting || store.isProcessingMeeting)
+
+        Button {
+          Task { await store.refreshMeetings() }
+        } label: {
+          Label("Refresh", systemImage: "arrow.clockwise")
+        }
+        .disabled(store.corpusRoot == nil || store.isLoadingMeetings)
+      }
+
+      VStack(alignment: .leading, spacing: 8) {
+        TextField("Meeting title", text: $store.meetingTitleDraft)
+          .textFieldStyle(.roundedBorder)
+          .disabled(store.isRecordingMeeting || store.isProcessingMeeting)
+
+        HStack(spacing: 10) {
+          Text(store.meetingStatusText)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+
+          Spacer(minLength: 0)
+
+          MeetingInputStatusView(
+            isRecording: store.isRecordingMeeting,
+            averageLevel: store.meetingInputAverageLevel,
+            peakLevel: store.meetingInputPeakLevel,
+            systemAverageLevel: store.meetingSystemAudioAverageLevel,
+            systemPeakLevel: store.meetingSystemAudioPeakLevel,
+            isCapturingSystemAudio: store.isCapturingSystemAudio,
+            systemAudioStatusText: store.meetingSystemAudioStatusText,
+            sourceText: store.meetingCaptureSourceText
+          )
+        }
+      }
+      .padding(.horizontal, 16)
+      .padding(.bottom, 12)
+
+      if store.meetings.isEmpty {
+        if store.isLoadingMeetings {
+          Spacer()
+          ProgressView()
+          Spacer()
+        } else {
+          EmptyStateView(title: "No Meetings", detail: store.meetingStatusText, action: "Record") {
+            store.promptAndStartMeetingRecording()
+          }
+        }
+      } else {
+        List(selection: $store.selectedMeetingID) {
+          ForEach(store.meetingDisplaySections) { section in
+            Section(section.label) {
+              ForEach(section.meetings) { meeting in
+                MeetingRow(meeting: meeting)
+                  .tag(meeting.id)
+                  .contentShape(Rectangle())
+                  .onTapGesture {
+                    store.selectMeeting(meeting)
+                  }
+              }
+            }
+          }
+        }
+        .listStyle(.inset)
+        .onChange(of: store.selectedMeetingID) {
+          guard let id = store.selectedMeetingID,
+                let meeting = store.meetings.first(where: { $0.id == id })
+          else {
+            return
+          }
+          store.select(.meeting(meeting))
+        }
+      }
+    }
+    .onAppear {
+      if store.meetings.isEmpty {
+        Task { await store.refreshMeetings() }
+      }
+    }
+  }
+}
+
+private struct MeetingInputStatusView: View {
+  let isRecording: Bool
+  let averageLevel: Double
+  let peakLevel: Double
+  let systemAverageLevel: Double
+  let systemPeakLevel: Double
+  let isCapturingSystemAudio: Bool
+  let systemAudioStatusText: String
+  let sourceText: String
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Image(systemName: isRecording ? "waveform" : "mic")
+        .foregroundStyle(isRecording ? .red : .secondary)
+
+      if isRecording {
+        VStack(alignment: .leading, spacing: 4) {
+          MeetingInputMeterRow(label: "Mic", averageLevel: averageLevel, peakLevel: peakLevel)
+          if isCapturingSystemAudio {
+            MeetingInputMeterRow(label: "System", averageLevel: systemAverageLevel, peakLevel: systemPeakLevel)
+          } else {
+            Text(systemAudioStatusText)
+              .font(.caption2)
+              .foregroundStyle(.orange)
+              .lineLimit(1)
+              .truncationMode(.middle)
+          }
+        }
+      } else {
+        Text(sourceText)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+      }
+    }
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(isRecording ? "Meeting audio input levels" : sourceText)
+    .help(sourceText)
+  }
+}
+
+private struct MeetingInputMeterRow: View {
+  let label: String
+  let averageLevel: Double
+  let peakLevel: Double
+
+  var body: some View {
+    HStack(spacing: 6) {
+      Text(label)
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .frame(width: 42, alignment: .trailing)
+
+      MeetingInputMeterView(averageLevel: averageLevel, peakLevel: peakLevel)
+        .frame(width: 120, height: 7)
+    }
+  }
+}
+
+private struct MeetingInputMeterView: View {
+  let averageLevel: Double
+  let peakLevel: Double
+
+  var body: some View {
+    GeometryReader { proxy in
+      let width = max(proxy.size.width, 1)
+      ZStack(alignment: .leading) {
+        Capsule()
+          .fill(Color.secondary.opacity(0.16))
+
+        Capsule()
+          .fill(Color.red.opacity(0.28))
+          .frame(width: max(2, width * clamped(peakLevel)))
+
+        Capsule()
+          .fill(Color.red)
+          .frame(width: max(2, width * clamped(averageLevel)))
+      }
+    }
+    .frame(height: 8)
+  }
+
+  private func clamped(_ value: Double) -> Double {
+    min(1, max(0, value))
+  }
+}
+
+private struct MeetingRow: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let meeting: MeetingWorkspaceItem
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 5) {
+      HStack(spacing: 8) {
+        Text(Org2Display.cleanInline(meeting.title))
+          .font(.body)
+          .lineLimit(1)
+        Spacer(minLength: 0)
+        if let status = meeting.transcriptionStatus {
+          StatusPill(text: status.uppercased())
+        }
+      }
+
+      HStack(spacing: 8) {
+        if let recordedAt = meeting.recordedAt {
+          Text(recordedAt)
+        }
+        if let modifiedAt = meeting.modifiedAt {
+          Text(Self.relativeDate(modifiedAt))
+        }
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+
+      Text(store.relativePath(meeting.file) + ":\(meeting.lineForEditor)")
+        .font(.caption)
+        .foregroundStyle(.tertiary)
+        .lineLimit(1)
+    }
+    .padding(.vertical, 4)
+  }
+
+  private static func relativeDate(_ date: Date) -> String {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .short
+    return formatter.localizedString(for: date, relativeTo: Date())
+  }
+}
+
 private enum OpenClawChatPresentation {
   case fullPage
   case assistantPanel
@@ -1291,6 +1537,14 @@ private struct DetailHeader: View {
             Label("Property", systemImage: "tag")
           }
         }
+
+        if case .meeting = location {
+          Button {
+            store.askOpenClawAboutSelectedMeeting()
+          } label: {
+            Label("Ask", systemImage: "sparkles")
+          }
+        }
       }
     }
     .padding(16)
@@ -1384,6 +1638,10 @@ private struct EntryBodyView: View {
       Text("Source unavailable")
         .font(.callout)
         .foregroundStyle(.secondary)
+    case .meeting:
+      Text("Meeting source unavailable")
+        .font(.callout)
+        .foregroundStyle(.secondary)
     }
   }
 
@@ -1399,7 +1657,7 @@ private struct EntryBodyView: View {
         ("Tags", item.tags.joined(separator: ", ")),
         ("ID", item.idValue.map(Org2Display.shortID) ?? "")
       ]
-      return rows.filter { !$0.1.isEmpty }
+      return nonEmptyRows(rows)
     case .search(let result):
       let rows: [(String, String)] = [
         ("TODO", result.todo ?? ""),
@@ -1408,7 +1666,7 @@ private struct EntryBodyView: View {
         ("Tags", result.tags.joined(separator: ", ")),
         ("ID", result.idValue.map(Org2Display.shortID) ?? "")
       ]
-      return rows.filter { !$0.1.isEmpty }
+      return nonEmptyRows(rows)
     case .backlink(let backlink):
       return [
         ("Source", Org2Display.cleanInline(backlink.srcTitle)),
@@ -1420,8 +1678,22 @@ private struct EntryBodyView: View {
         ("Modified", thread.modifiedAt.map(Self.dateLabel) ?? ""),
         ("ID", thread.idValue.map(Org2Display.shortID) ?? "")
       ]
-      return rows.filter { !$0.1.isEmpty }
+      return nonEmptyRows(rows)
+    case .meeting(let meeting):
+      let rows: [(String, String)] = [
+        ("Recorded", meeting.recordedAt ?? ""),
+        ("Audio", meeting.audioArtifact ?? ""),
+        ("System Audio", meeting.systemAudioArtifact ?? ""),
+        ("Transcript", meeting.transcriptArtifact ?? ""),
+        ("Transcription", meeting.transcriptionStatus ?? ""),
+        ("ID", meeting.idValue.map(Org2Display.shortID) ?? "")
+      ]
+      return nonEmptyRows(rows)
     }
+  }
+
+  private func nonEmptyRows(_ rows: [(String, String)]) -> [(String, String)] {
+    rows.filter { !$0.1.isEmpty }
   }
 
   private static func dateLabel(_ date: Date) -> String {
