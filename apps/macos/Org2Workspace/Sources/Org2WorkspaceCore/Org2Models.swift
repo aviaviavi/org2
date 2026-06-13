@@ -618,6 +618,29 @@ public struct OrgEditableInlineMarkupSet: Equatable, Sendable {
     )
   }
 
+  public static func wrappingSelection(
+    in rawText: String,
+    range: NSRange,
+    kind: OrgEditableInlineMarkup.Kind
+  ) -> OrgInlineSelectionEdit {
+    let ns = rawText as NSString
+    let location = min(max(0, range.location), ns.length)
+    let length = min(max(0, range.length), ns.length - location)
+    let safeRange = NSRange(location: location, length: length)
+    let selectedText = ns.substring(with: safeRange)
+    let replacementText = selectedText.isEmpty ? kind.placeholderText : selectedText
+    let marker = kind.defaultMarker
+    let wrappedText = "\(marker)\(replacementText)\(marker)"
+    let updatedText = ns.replacingCharacters(in: safeRange, with: wrappedText)
+    return OrgInlineSelectionEdit(
+      text: updatedText,
+      selectedRange: NSRange(
+        location: location + (marker as NSString).length,
+        length: (replacementText as NSString).length
+      )
+    )
+  }
+
   private static func parseMarkups(_ raw: String) -> [OrgEditableInlineMarkup] {
     let ignoredRanges = ignoredInlineRanges(raw)
     var markups: [OrgEditableInlineMarkup] = []
@@ -759,6 +782,15 @@ public struct OrgEditableInlineMarkup: Identifiable, Equatable, Sendable {
         return "Strike"
       }
     }
+
+    var placeholderText: String {
+      switch self {
+      case .code:
+        return "code"
+      case .bold, .italic, .underline, .strike:
+        return "text"
+      }
+    }
   }
 
   public let id: String
@@ -767,6 +799,11 @@ public struct OrgEditableInlineMarkup: Identifiable, Equatable, Sendable {
   public let text: String
   public let startUTF16: Int
   public let endUTF16: Int
+}
+
+public struct OrgInlineSelectionEdit: Equatable, Sendable {
+  public let text: String
+  public let selectedRange: NSRange
 }
 
 public struct OrgEditableInlineLinkSet: Equatable, Sendable {

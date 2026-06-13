@@ -1,5 +1,35 @@
 import SwiftUI
 
+struct ParagraphInlineFormatBar: View {
+  @Binding var text: String
+  @Binding var selectedRange: NSRange
+
+  var body: some View {
+    HStack(spacing: 4) {
+      ForEach(OrgEditableInlineMarkup.Kind.allCases, id: \.self) { kind in
+        Button {
+          wrapSelection(kind)
+        } label: {
+          Image(systemName: kind.editorIcon)
+            .frame(width: 18, height: 18)
+        }
+        .buttonStyle(.borderless)
+        .help("Format as \(kind.displayTitle)")
+      }
+    }
+    .controlSize(.small)
+    .padding(.horizontal, 6)
+    .padding(.vertical, 3)
+    .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+  }
+
+  private func wrapSelection(_ kind: OrgEditableInlineMarkup.Kind) {
+    let edit = OrgEditableInlineMarkupSet.wrappingSelection(in: text, range: selectedRange, kind: kind)
+    text = edit.text
+    selectedRange = edit.selectedRange
+  }
+}
+
 struct ParagraphInlineMarkupEditor: View {
   @Binding var text: String
 
@@ -16,7 +46,7 @@ struct ParagraphInlineMarkupEditor: View {
                 }
               }
             } label: {
-              Label(markup.kind.displayTitle, systemImage: icon(for: markup.kind))
+              Label(markup.kind.displayTitle, systemImage: markup.kind.editorIcon)
                 .font(.caption.weight(.medium))
                 .labelStyle(.titleAndIcon)
                 .frame(width: 104, alignment: .leading)
@@ -64,9 +94,11 @@ struct ParagraphInlineMarkupEditor: View {
     guard let current = set.markups.first(where: { $0.id == markup.id }) else { return }
     text = set.replacing(markup: current, text: nextText, kind: nextKind)
   }
+}
 
-  private func icon(for kind: OrgEditableInlineMarkup.Kind) -> String {
-    switch kind {
+private extension OrgEditableInlineMarkup.Kind {
+  var editorIcon: String {
+    switch self {
     case .code:
       return "curlybraces"
     case .bold:
