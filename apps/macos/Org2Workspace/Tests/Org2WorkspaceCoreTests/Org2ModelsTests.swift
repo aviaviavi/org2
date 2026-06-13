@@ -1521,6 +1521,40 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertGreaterThan(correctedWindow.range.lowerBound, requestedWindow.lowerBound)
   }
 
+  func testRenderedEntryWindowUsesSmallerPagesForLargeDocuments() {
+    let blocks = (1...1_500).map { line in
+      OrgEditableBlock(
+        id: "block-\(line)",
+        startLine: line,
+        endLineExclusive: line + 1,
+        rawText: "Line \(line)",
+        rendered: .paragraph("Line \(line)")
+      )
+    }
+
+    XCTAssertEqual(OrgRenderedEntryView.initialRenderedBlockLimit(for: 500), 80)
+    XCTAssertEqual(OrgRenderedEntryView.initialRenderedBlockLimit(for: blocks.count), 48)
+    XCTAssertEqual(OrgRenderedEntryView.renderedBlockPageSize(for: blocks.count), 48)
+
+    let topWindow = OrgRenderedEntryView.visibleWindow(
+      requestedWindow: nil,
+      blocks: blocks,
+      selectedBlockIndex: nil
+    )
+    XCTAssertEqual(topWindow.range, 0..<48)
+    XCTAssertTrue(OrgRenderedEntryView.shouldAutoExpandNextFooter(visibleWindow: topWindow))
+
+    let expandedNext = topWindow.expanding(
+      .next,
+      by: OrgRenderedEntryView.renderedBlockPageSize(for: blocks.count),
+      totalCount: blocks.count
+    )
+    XCTAssertEqual(expandedNext, 0..<96)
+    XCTAssertFalse(OrgRenderedEntryView.shouldAutoExpandNextFooter(
+      visibleWindow: OrgRenderedBlockWindow(range: expandedNext, totalCount: blocks.count)
+    ))
+  }
+
   @MainActor
   func testSelectedRenderedBlocksMetadataTracksAssignmentsAndMutations() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
