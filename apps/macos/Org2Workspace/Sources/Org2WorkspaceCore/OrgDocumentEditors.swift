@@ -907,6 +907,7 @@ private struct ParagraphBlockEditor: View {
   @State private var draftText: String
   @State private var selectedRange = NSRange(location: 0, length: 0)
   @State private var showsInlineDetails = false
+  @State private var isHovered = false
 
   init(block: OrgEditableBlock, text: String) {
     self.block = block
@@ -923,56 +924,55 @@ private struct ParagraphBlockEditor: View {
   }
 
   private var paragraphEditorContent: some View {
-    VStack(alignment: .leading, spacing: 5) {
-      OrgSyntaxTextEditor(
-        text: $draftText,
-        showsScrollers: false,
-        textInset: NSSize(width: 0, height: 4),
-        focusOnAppear: true,
-        selection: $selectedRange,
-        onSubmitContext: submitParagraph
-      )
-      .frame(minHeight: editorHeight, maxHeight: editorHeight)
+    ZStack(alignment: .topTrailing) {
+      VStack(alignment: .leading, spacing: 5) {
+        OrgSyntaxTextEditor(
+          text: $draftText,
+          showsScrollers: false,
+          textInset: NSSize(width: 0, height: 2),
+          focusOnAppear: true,
+          selection: $selectedRange,
+          onSubmitContext: submitParagraph
+        )
+        .frame(minHeight: editorHeight, maxHeight: editorHeight)
+        .padding(.trailing, 74)
 
-      if selectedRange.length > 0 {
-        ParagraphInlineFormatBar(text: $draftText, selectedRange: $selectedRange)
-      }
+        if selectedRange.length > 0 {
+          ParagraphInlineFormatBar(text: $draftText, selectedRange: $selectedRange)
+        }
 
-      if !slashCommandKinds.isEmpty {
-        HStack(spacing: 8) {
-          Text("Turn into")
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
+        if !slashCommandKinds.isEmpty {
+          HStack(spacing: 8) {
+            Text("Turn into")
+              .font(.caption.weight(.medium))
+              .foregroundStyle(.secondary)
 
-          ForEach(slashCommandKinds) { kind in
-            Button {
-              convertParagraph(to: kind)
-            } label: {
-              Label("/\(kind.slashCommand)", systemImage: kind.systemImage)
+            ForEach(slashCommandKinds) { kind in
+              Button {
+                convertParagraph(to: kind)
+              } label: {
+                Label("/\(kind.slashCommand)", systemImage: kind.systemImage)
+              }
+              .buttonStyle(.borderless)
+              .controlSize(.small)
+              .help("Convert to \(kind.title)")
             }
-            .buttonStyle(.borderless)
-            .controlSize(.small)
-            .help("Convert to \(kind.title)")
+          }
+          .padding(.horizontal, 6)
+          .padding(.vertical, 4)
+          .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+
+        if showsInlineDetails {
+          VStack(alignment: .leading, spacing: 6) {
+            ParagraphInlineMarkupEditor(text: $draftText)
+            ParagraphInlineLinkEditor(text: $draftText)
+            ParagraphInlineTimestampEditor(text: $draftText)
           }
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
       }
 
-      if showsInlineDetails {
-        VStack(alignment: .leading, spacing: 6) {
-          ParagraphInlineMarkupEditor(text: $draftText)
-          ParagraphInlineLinkEditor(text: $draftText)
-          ParagraphInlineTimestampEditor(text: $draftText)
-        }
-      }
-
-      HStack(spacing: 8) {
-        Text("line \(block.displayRange)")
-          .font(.caption.monospacedDigit())
-          .foregroundStyle(.secondary)
-        Spacer(minLength: 0)
+      HStack(spacing: 4) {
         if store.isSavingBlock {
           ProgressView()
             .controlSize(.small)
@@ -1006,19 +1006,24 @@ private struct ParagraphBlockEditor: View {
         .disabled(store.isSavingBlock)
       }
       .controlSize(.small)
+      .padding(.horizontal, 4)
+      .padding(.vertical, 2)
+      .background(.regularMaterial, in: Capsule())
+      .opacity(isHovered || selectedRange.length > 0 || showsInlineDetails || store.isSavingBlock ? 1 : 0.66)
     }
     .padding(.horizontal, 6)
-    .padding(.vertical, 4)
-    .background(Color.accentColor.opacity(0.025), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .padding(.vertical, 3)
+    .background(Color.accentColor.opacity(isHovered ? 0.035 : 0.018), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     .overlay(
       RoundedRectangle(cornerRadius: 6, style: .continuous)
-        .stroke(Color.accentColor.opacity(0.16))
+        .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
     )
+    .onHover { isHovered = $0 }
   }
 
   private var editorHeight: CGFloat {
     let lineCount = max(1, draftText.split(separator: "\n", omittingEmptySubsequences: false).count)
-    return min(320, max(38, CGFloat(lineCount) * 23 + 12))
+    return min(320, max(30, CGFloat(lineCount) * 21 + 8))
   }
 
   private var slashCommandKinds: [OrgInsertBlockKind] {
