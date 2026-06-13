@@ -904,7 +904,14 @@ private struct ParagraphBlockEditor: View {
   @EnvironmentObject private var store: WorkspaceStore
   let block: OrgEditableBlock
   let text: String
+  @State private var draftText: String
   @State private var selectedRange = NSRange(location: 0, length: 0)
+
+  init(block: OrgEditableBlock, text: String) {
+    self.block = block
+    self.text = text
+    _draftText = State(initialValue: block.rawText)
+  }
 
   var body: some View {
     if let media = OrgEditableMediaLink(rawText: block.rawText) {
@@ -916,10 +923,10 @@ private struct ParagraphBlockEditor: View {
 
   private var paragraphEditorContent: some View {
     VStack(alignment: .leading, spacing: 6) {
-      ParagraphInlineFormatBar(text: $store.editableBlockText, selectedRange: $selectedRange)
+      ParagraphInlineFormatBar(text: $draftText, selectedRange: $selectedRange)
 
       OrgSyntaxTextEditor(
-        text: $store.editableBlockText,
+        text: $draftText,
         showsScrollers: false,
         textInset: NSSize(width: 2, height: 4),
         focusOnAppear: true,
@@ -929,7 +936,7 @@ private struct ParagraphBlockEditor: View {
       .frame(minHeight: editorHeight, maxHeight: editorHeight)
 
       if shouldShowRenderedPreview {
-        OrgInlineText(store.editableBlockText)
+        OrgInlineText(draftText)
           .padding(.horizontal, 9)
           .padding(.vertical, 7)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -940,9 +947,9 @@ private struct ParagraphBlockEditor: View {
           )
       }
 
-      ParagraphInlineMarkupEditor(text: $store.editableBlockText)
-      ParagraphInlineLinkEditor(text: $store.editableBlockText)
-      ParagraphInlineTimestampEditor(text: $store.editableBlockText)
+      ParagraphInlineMarkupEditor(text: $draftText)
+      ParagraphInlineLinkEditor(text: $draftText)
+      ParagraphInlineTimestampEditor(text: $draftText)
 
       if !slashCommandKinds.isEmpty {
         HStack(spacing: 8) {
@@ -952,7 +959,7 @@ private struct ParagraphBlockEditor: View {
 
           ForEach(slashCommandKinds) { kind in
             Button {
-              Task { await store.convertEditingBlock(block, to: kind) }
+              convertParagraph(to: kind)
             } label: {
               Label("/\(kind.slashCommand)", systemImage: kind.systemImage)
             }
@@ -976,7 +983,7 @@ private struct ParagraphBlockEditor: View {
             .controlSize(.small)
         }
         Button {
-          Task { await store.saveEditedBlock(block) }
+          saveParagraph()
         } label: {
           Image(systemName: "checkmark")
         }
@@ -1007,12 +1014,12 @@ private struct ParagraphBlockEditor: View {
   }
 
   private var editorHeight: CGFloat {
-    let lineCount = max(1, store.editableBlockText.split(separator: "\n", omittingEmptySubsequences: false).count)
+    let lineCount = max(1, draftText.split(separator: "\n", omittingEmptySubsequences: false).count)
     return min(320, max(38, CGFloat(lineCount) * 23 + 12))
   }
 
   private var shouldShowRenderedPreview: Bool {
-    let trimmed = store.editableBlockText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
     return !trimmed.isEmpty && slashCommandQuery == nil
   }
 
@@ -1035,7 +1042,7 @@ private struct ParagraphBlockEditor: View {
   }
 
   private var slashCommandQuery: String? {
-    let trimmed = store.editableBlockText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard trimmed.hasPrefix("/") else { return nil }
 
     let command = trimmed
@@ -1045,14 +1052,25 @@ private struct ParagraphBlockEditor: View {
   }
 
   private func submitParagraph(_ context: OrgSyntaxTextEditorSubmitContext) -> Bool {
-    store.editableBlockText = context.text
+    draftText = context.text
     if let kind = primarySlashCommandKind {
-      Task { await store.convertEditingBlock(block, to: kind) }
+      convertParagraph(to: kind)
       return true
     }
 
+    store.editableBlockText = context.text
     Task { await store.splitEditingBlock(block, atUTF16Offset: context.selectedRange.location) }
     return true
+  }
+
+  private func saveParagraph() {
+    store.editableBlockText = draftText
+    Task { await store.saveEditedBlock(block) }
+  }
+
+  private func convertParagraph(to kind: OrgInsertBlockKind) {
+    store.editableBlockText = draftText
+    Task { await store.convertEditingBlock(block, to: kind) }
   }
 }
 
