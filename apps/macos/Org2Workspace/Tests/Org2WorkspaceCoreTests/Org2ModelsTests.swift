@@ -425,6 +425,12 @@ final class Org2ModelsTests: XCTestCase {
       near: NSRange(location: (longLinkedText as NSString).length + 10_000, length: 0),
       radius: 64
     ))
+    let longTrailingURL = String(repeating: "plain text ", count: 400) + "see HTTPS://example.com"
+    XCTAssertTrue(OrgInlineParser.hasInlineSyntaxCandidate(
+      longTrailingURL,
+      near: NSRange(location: (longTrailingURL as NSString).length - 8, length: 0),
+      radius: 64
+    ))
     let unicodeLinkedText = String(repeating: "🙂 ", count: 20) + "See [[id:abc][Alice]]."
     XCTAssertTrue(OrgInlineParser.hasInlineSyntaxCandidate(
       unicodeLinkedText,

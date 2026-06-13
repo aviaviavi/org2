@@ -1417,13 +1417,13 @@ public enum OrgInlineParser {
     radius: Int
   ) -> Bool {
     guard !raw.isEmpty else { return false }
-    let utf16 = raw.utf16
+    let text = raw as NSString
     let safeRadius = max(0, radius)
-    let textLength = utf16.count
+    let textLength = text.length
     let safeLocation = min(max(0, range.location), textLength)
     let selectionEnd = min(textLength, safeLocation + min(max(0, range.length), textLength - safeLocation))
     return hasInlineSyntaxCandidate(
-      utf16,
+      text,
       startUTF16: max(0, safeLocation - safeRadius),
       endUTF16: min(textLength, selectionEnd + safeRadius)
     )
@@ -1697,55 +1697,54 @@ public enum OrgInlineParser {
   }
 
   private static func hasInlineSyntaxCandidate(
-    _ utf16: String.UTF16View,
+    _ text: NSString,
     startUTF16: Int,
     endUTF16: Int
   ) -> Bool {
-    let safeStart = max(0, startUTF16)
-    let safeEnd = max(safeStart, endUTF16)
-    guard safeStart < safeEnd,
-          var index = utf16.index(utf16.startIndex, offsetBy: safeStart, limitedBy: utf16.endIndex)
-    else {
+    let safeStart = min(max(0, startUTF16), text.length)
+    let safeEnd = min(max(safeStart, endUTF16), text.length)
+    guard safeStart < safeEnd else {
       return false
     }
-    let end = utf16.index(index, offsetBy: safeEnd - safeStart, limitedBy: utf16.endIndex) ?? utf16.endIndex
 
+    var index = safeStart
+    let end = safeEnd
     while index < end {
-      switch utf16[index] {
+      switch text.character(at: index) {
       case 0x5B, 0x5D, 0x3C, 0x3E, 0x60, 0x7E, 0x3D, 0x2A, 0x2F, 0x5F, 0x2B:
         return true
       case 0x2E:
-        if utf16Matches(utf16, at: index, before: end, pattern: orgExtensionUTF16)
-          || utf16Matches(utf16, at: index, before: end, pattern: mdExtensionUTF16) {
+        if utf16Matches(text, at: index, before: end, pattern: orgExtensionUTF16)
+          || utf16Matches(text, at: index, before: end, pattern: mdExtensionUTF16) {
           return true
         }
       case 0x68, 0x48:
-        if utf16Matches(utf16, at: index, before: end, pattern: httpUTF16)
-          || utf16Matches(utf16, at: index, before: end, pattern: httpsUTF16)
-          || utf16Matches(utf16, at: index, before: end, pattern: uppercaseHTTPUTF16)
-          || utf16Matches(utf16, at: index, before: end, pattern: uppercaseHTTPSUTF16) {
+        if utf16Matches(text, at: index, before: end, pattern: httpUTF16)
+          || utf16Matches(text, at: index, before: end, pattern: httpsUTF16)
+          || utf16Matches(text, at: index, before: end, pattern: uppercaseHTTPUTF16)
+          || utf16Matches(text, at: index, before: end, pattern: uppercaseHTTPSUTF16) {
           return true
         }
       default:
         break
       }
-      index = utf16.index(after: index)
+      index += 1
     }
     return false
   }
 
   private static func utf16Matches(
-    _ codeUnits: String.UTF16View,
-    at start: String.UTF16View.Index,
-    before end: String.UTF16View.Index,
+    _ text: NSString,
+    at start: Int,
+    before end: Int,
     pattern: [UInt16]
   ) -> Bool {
     var index = start
     for expected in pattern {
-      guard index < end, codeUnits[index] == expected else {
+      guard index < end, text.character(at: index) == expected else {
         return false
       }
-      index = codeUnits.index(after: index)
+      index += 1
     }
     return true
   }
