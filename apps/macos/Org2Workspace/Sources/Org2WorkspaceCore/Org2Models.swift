@@ -1701,14 +1701,14 @@ public enum OrgInlineParser {
     startUTF16: Int,
     endUTF16: Int
   ) -> Bool {
-    let safeStart = min(max(0, startUTF16), utf16.count)
-    let safeEnd = min(max(safeStart, endUTF16), utf16.count)
+    let safeStart = max(0, startUTF16)
+    let safeEnd = max(safeStart, endUTF16)
     guard safeStart < safeEnd,
-          var index = utf16.index(utf16.startIndex, offsetBy: safeStart, limitedBy: utf16.endIndex),
-          let end = utf16.index(utf16.startIndex, offsetBy: safeEnd, limitedBy: utf16.endIndex)
+          var index = utf16.index(utf16.startIndex, offsetBy: safeStart, limitedBy: utf16.endIndex)
     else {
       return false
     }
+    let end = utf16.index(index, offsetBy: safeEnd - safeStart, limitedBy: utf16.endIndex) ?? utf16.endIndex
 
     while index < end {
       switch utf16[index] {
