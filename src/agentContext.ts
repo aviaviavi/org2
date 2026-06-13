@@ -106,6 +106,7 @@ type AgentRelatedDataLink = {
   sourceRange: { startLine: number; endLine: number };
   citation: string;
   dataLink: AgentDataLinkMetadata;
+  matchingAttachments?: AgentContextAttachment[];
 };
 
 type AgentNode = {
@@ -633,6 +634,45 @@ function dataLinkMetadataFor(node: CompiledCorpusNode): AgentDataLinkMetadata | 
   };
 }
 
+function parseUntypedAttachmentList(raw: string | undefined, defaultType: AgentContextAttachment["type"] = "other"): AgentContextAttachment[] {
+  if (!raw) return [];
+  return String(raw)
+    .split(/[;,]/)
+    .map((token) => {
+      const value = token.trim();
+      if (!value) return null;
+      if (/^[A-Za-z][A-Za-z0-9_-]*:/.test(value)) return parseContextAttachmentToken(value, "property");
+      return { type: defaultType, ref: defaultType === "other" ? value : `${defaultType}:${value}`, source: "property" };
+    })
+    .filter((item): item is AgentContextAttachment => !!item);
+}
+
+function dataLinkAttachmentsFor(corpus: CompiledCorpus, node: CompiledCorpusNode): AgentContextAttachment[] {
+  if (!dataLinkKindFor(node)) return [];
+  const props = node.properties || {};
+  const propertyAttachments = [
+    ...parseContextAttachmentList(props.CONTEXT),
+    ...parseContextAttachmentList(props.ORG2_CONTEXT),
+    ...parseContextAttachmentList(props.CONTEXT_ATTACHMENTS),
+    ...parseContextAttachmentList(props.ORG2_CONTEXT_ATTACHMENTS),
+    ...parseUntypedAttachmentList(props.TARGET),
+    ...parseUntypedAttachmentList(props.TARGETS),
+    ...parseUntypedAttachmentList(props.TARGET_ID, "id"),
+    ...parseUntypedAttachmentList(props.TARGET_IDS, "id"),
+    ...parseUntypedAttachmentList(props.RELATED),
+    ...parseUntypedAttachmentList(props.RELATED_TO),
+    ...parseUntypedAttachmentList(props.ATTACHED_TO),
+    ...parseUntypedAttachmentList(props.REPORT, "report"),
+    ...parseUntypedAttachmentList(props.REPORT_ID, "report"),
+    ...parseUntypedAttachmentList(props.NOTE, "note"),
+    ...parseUntypedAttachmentList(props.NOTE_ID, "note"),
+    ...parseUntypedAttachmentList(props.ENTITY, "entity"),
+    ...parseUntypedAttachmentList(props.ENTITY_ID, "entity"),
+  ];
+  const linkAttachments = node.links.map(attachmentFromLink).filter((item): item is AgentContextAttachment => !!item);
+  return resolveAttachmentTargets(corpus, mergeAttachments([...propertyAttachments, ...linkAttachments]));
+}
+
 function headingSubtreeEndLine(corpus: CompiledCorpus, node: CompiledCorpusNode): number {
   if (node.kind !== "heading") return Number.POSITIVE_INFINITY;
   const nextPeerOrAncestor = corpus.nodes
@@ -652,12 +692,15 @@ function isDescendantDataLink(corpus: CompiledCorpus, node: CompiledCorpusNode, 
 
 function relatedDataLinksFor(corpus: CompiledCorpus, node: CompiledCorpusNode): AgentRelatedDataLink[] {
   if (dataLinkKindFor(node)) return [];
-  const out: AgentRelatedDataLink[] = [];
+  const out = new Map<string, AgentRelatedDataLink>();
   for (const candidate of corpus.nodes) {
-    if (!isDescendantDataLink(corpus, node, candidate)) continue;
+    if (candidate.key === node.key || !dataLinkKindFor(candidate)) continue;
+    const descendant = isDescendantDataLink(corpus, node, candidate);
+    const matchingAttachments = descendant ? [] : dataLinkAttachmentsFor(corpus, candidate).filter((attachment) => attachmentMatchesNode(node, attachment));
+    if (!descendant && matchingAttachments.length === 0) continue;
     const dataLink = dataLinkMetadataFor(candidate);
     if (!dataLink) continue;
-    out.push({
+    out.set(candidate.key, {
       key: candidate.key,
       id: candidate.id,
       title: candidate.title,
@@ -666,9 +709,10 @@ function relatedDataLinksFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
       sourceRange: candidate.sourceRange,
       citation: citationFor(candidate),
       dataLink,
+      ...(matchingAttachments.length ? { matchingAttachments } : {}),
     });
   }
-  return out.sort((a, b) => a.citation.localeCompare(b.citation) || a.title.localeCompare(b.title));
+  return Array.from(out.values()).sort((a, b) => a.citation.localeCompare(b.citation) || a.title.localeCompare(b.title));
 }
 
 function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: Set<AgentInclude>, score?: { score: number; matchedTerms: string[]; selectionReason?: string[] }): AgentNode {
@@ -842,7 +886,9 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       item.dataLink.lastRun ? `last run: ${item.dataLink.lastRun}` : "",
       item.dataLink.freshness ? `freshness: ${item.dataLink.freshness}` : "",
     ].filter(Boolean);
+    const attachments = uniqueSorted((item.matchingAttachments || []).map((attachment) => attachment.ref));
     lines.push(`- ${item.title} (${item.citation})${details.length ? `; ${details.join("; ")}` : ""}`);
+    if (attachments.length) lines.push(`  - Matching attachments: ${attachments.join(", ")}`);
   }
   lines.push("");
   lines.push(`${h2} Open questions / known uncertainty`);
