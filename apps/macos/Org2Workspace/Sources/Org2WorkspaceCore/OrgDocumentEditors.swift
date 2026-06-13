@@ -36,50 +36,56 @@ struct InlineBlockEditorView: View {
 private struct HorizontalRuleBlockEditor: View {
   @EnvironmentObject private var store: WorkspaceStore
   let block: OrgEditableBlock
+  @State private var isHovered = false
 
   var body: some View {
-    HStack(spacing: 10) {
-      Label("Divider", systemImage: "minus")
-        .font(.caption.weight(.medium))
-        .foregroundStyle(.secondary)
-
+    ZStack(alignment: .topTrailing) {
       Rectangle()
         .fill(Color.secondary.opacity(0.26))
         .frame(height: 1)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity)
 
-      if store.isSavingBlock {
-        ProgressView()
-          .controlSize(.small)
-      }
+      HStack(spacing: 4) {
+        if store.isSavingBlock {
+          ProgressView()
+            .controlSize(.small)
+        }
 
-      Button {
-        saveDivider()
-      } label: {
-        Image(systemName: "checkmark")
-      }
-      .buttonStyle(.borderless)
-      .keyboardShortcut("s", modifiers: [.command])
-      .disabled(store.isSavingBlock)
-      .help("Save")
+        Button {
+          saveDivider()
+        } label: {
+          Image(systemName: "checkmark")
+        }
+        .buttonStyle(.borderless)
+        .keyboardShortcut("s", modifiers: [.command])
+        .disabled(store.isSavingBlock)
+        .help("Save")
 
-      Button {
-        store.cancelEditingBlock()
-      } label: {
-        Image(systemName: "xmark")
+        Button {
+          store.cancelEditingBlock()
+        } label: {
+          Image(systemName: "xmark")
+        }
+        .buttonStyle(.borderless)
+        .keyboardShortcut(.cancelAction)
+        .disabled(store.isSavingBlock)
+        .help("Cancel")
       }
-      .buttonStyle(.borderless)
-      .keyboardShortcut(.cancelAction)
-      .disabled(store.isSavingBlock)
-      .help("Cancel")
+      .controlSize(.small)
+      .padding(.horizontal, 4)
+      .padding(.vertical, 2)
+      .background(.regularMaterial, in: Capsule())
+      .opacity(isHovered || store.isSavingBlock ? 1 : 0.66)
     }
-    .padding(.horizontal, 8)
-    .padding(.vertical, 7)
-    .background(Color.accentColor.opacity(0.055), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .padding(.horizontal, 6)
+    .padding(.vertical, 3)
+    .background(Color.accentColor.opacity(isHovered ? 0.03 : 0.014), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     .overlay(
-      RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .stroke(Color.accentColor.opacity(0.2))
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .stroke(Color.accentColor.opacity(isHovered ? 0.16 : 0.09))
     )
+    .onHover { isHovered = $0 }
   }
 
   private func saveDivider() {
