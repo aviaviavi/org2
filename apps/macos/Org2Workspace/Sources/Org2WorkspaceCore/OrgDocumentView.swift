@@ -29,6 +29,7 @@ struct OrgRenderedEntryView: View, Equatable {
   let selectedBlockID: OrgEditableBlock.ID?
   let selectedBlockIndex: Int?
   let editingBlockID: OrgEditableBlock.ID?
+  let sourceBlockRunsRenderSignature: String
   let sourceBlockRuns: [String: SourceBlockRunState]
   @State private var renderedBlockWindow: Range<Int>?
   @State private var renderWindowResetKey = ""
@@ -41,7 +42,7 @@ struct OrgRenderedEntryView: View, Equatable {
       && lhs.selectedBlockID == rhs.selectedBlockID
       && lhs.selectedBlockIndex == rhs.selectedBlockIndex
       && lhs.editingBlockID == rhs.editingBlockID
-      && lhs.sourceBlockRuns == rhs.sourceBlockRuns
+      && lhs.sourceBlockRunsRenderSignature == rhs.sourceBlockRunsRenderSignature
   }
 
   var body: some View {

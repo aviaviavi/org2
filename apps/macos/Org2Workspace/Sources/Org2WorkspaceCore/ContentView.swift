@@ -1063,6 +1063,7 @@ private struct EntryBodyView: View {
             selectedBlockID: store.selectedBlockID,
             selectedBlockIndex: store.selectedBlockID.flatMap { store.selectedRenderedBlockIndexes[$0] },
             editingBlockID: store.editingBlockID,
+            sourceBlockRunsRenderSignature: store.sourceBlockRunsRenderSignature,
             sourceBlockRuns: store.sourceBlockRuns
           )
           .equatable()
