@@ -2728,6 +2728,8 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedRenderedBlockIndexes, originalIndexes)
     XCTAssertEqual(store.selectedBlock?.id, paragraph.id)
     XCTAssertEqual(store.selectedBlock?.rawText, "Body")
+    XCTAssertTrue(store.selectedEntrySource?.text.contains("* TODO Parent\nBody\n* Sibling") == true)
+    XCTAssertFalse(store.selectedEntrySource?.text.contains("Updated body") == true)
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("* TODO Parent\nUpdated body\n* Sibling"))
 
@@ -2736,6 +2738,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedRenderedBlockIndexes, originalIndexes)
     XCTAssertEqual(store.selectedBlock?.id, paragraph.id)
     XCTAssertEqual(store.selectedBlock?.rawText, "Updated body")
+    XCTAssertTrue(store.selectedEntrySource?.text.contains("* TODO Parent\nUpdated body\n* Sibling") == true)
   }
 
   @MainActor

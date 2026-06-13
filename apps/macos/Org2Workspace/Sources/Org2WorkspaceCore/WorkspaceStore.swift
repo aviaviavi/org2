@@ -792,9 +792,6 @@ public final class WorkspaceStore: ObservableObject {
         )
       }.value
 
-      invalidateCanonicalDocumentCache(for: source.file)
-      selectedEntrySource = updatedSource
-
       let updatedVisibleBlocks = blocksWithTransientDraft(updatedBlocks, for: updatedSource)
       let parsedUpdatedBlock = blockForSelectionLine(
         block.startLine,
@@ -822,6 +819,8 @@ public final class WorkspaceStore: ObservableObject {
         return
       }
 
+      invalidateCanonicalDocumentCache(for: source.file)
+      selectedEntrySource = updatedSource
       setSelectedRenderedBlocks(
         renderedBlocks,
         preservingMetadata: shouldPreserveRenderedBlockMetadata(
