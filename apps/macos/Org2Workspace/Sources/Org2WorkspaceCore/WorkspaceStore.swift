@@ -105,6 +105,10 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedEntrySource: EntrySource?
   @Published public var selectedRenderedBlocks: [OrgEditableBlock] = [] {
     didSet {
+      if preservesSelectedRenderedBlocksMetadataForNextAssignment {
+        preservesSelectedRenderedBlocksMetadataForNextAssignment = false
+        return
+      }
       selectedRenderedBlocksSignature = Self.renderedBlocksSignature(for: selectedRenderedBlocks)
       selectedRenderedBlockIndexes = Self.renderedBlockIndexes(for: selectedRenderedBlocks)
     }
@@ -151,6 +155,7 @@ public final class WorkspaceStore: ObservableObject {
   private var pendingBlockSelection: PendingBlockSelection?
   private var transientDraftBlock: TransientDraftBlock?
   private var activeBlockDrafts: [OrgEditableBlock.ID: String] = [:]
+  private var preservesSelectedRenderedBlocksMetadataForNextAssignment = false
   private var scheduledAgendaRefreshTask: Task<Void, Never>?
   private var pendingAgendaRefreshAfterBlockEditing = false
 
@@ -729,10 +734,18 @@ public final class WorkspaceStore: ObservableObject {
         in: updatedVisibleBlocks
       )
       let updatedBlock = parsedUpdatedBlock?.preservingID(block.id)
-      selectedRenderedBlocks = Self.replacingBlock(
+      let renderedBlocks = Self.replacingBlock(
         parsedUpdatedBlock,
         with: updatedBlock,
         in: updatedVisibleBlocks
+      )
+      setSelectedRenderedBlocks(
+        renderedBlocks,
+        preservingMetadata: shouldPreserveRenderedBlockMetadata(
+          original: block,
+          updated: updatedBlock,
+          renderedBlocks: renderedBlocks
+        )
       )
       if selectedBlockID != updatedBlock?.id {
         selectedBlockID = updatedBlock?.id
@@ -751,6 +764,29 @@ public final class WorkspaceStore: ObservableObject {
       errorText = error.localizedDescription
       statusText = "Autosave failed"
     }
+  }
+
+  private func setSelectedRenderedBlocks(
+    _ blocks: [OrgEditableBlock],
+    preservingMetadata: Bool
+  ) {
+    if preservingMetadata {
+      preservesSelectedRenderedBlocksMetadataForNextAssignment = true
+    }
+    selectedRenderedBlocks = blocks
+  }
+
+  private func shouldPreserveRenderedBlockMetadata(
+    original: OrgEditableBlock,
+    updated: OrgEditableBlock?,
+    renderedBlocks: [OrgEditableBlock]
+  ) -> Bool {
+    guard let updated else { return false }
+    return updated.id == original.id
+      && updated.startLine == original.startLine
+      && updated.endLineExclusive == original.endLineExclusive
+      && renderedBlocks.count == selectedRenderedBlocks.count
+      && selectedRenderedBlockIndexes[updated.id] != nil
   }
 
   private func isCurrentAutosaveDraft(
