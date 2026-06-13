@@ -543,6 +543,29 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(largeColor, NSColor.textColor)
   }
 
+  func testInlineEditorSizingStopsAtVisibleLineCap() {
+    XCTAssertEqual(
+      InlineEditorSizing.cappedLineCount(in: "", minimum: 1, maximum: 15),
+      1
+    )
+    XCTAssertEqual(
+      InlineEditorSizing.cappedLineCount(in: "one\ntwo\nthree", minimum: 1, maximum: 15),
+      3
+    )
+    XCTAssertEqual(
+      InlineEditorSizing.cappedLineCount(in: "one", minimum: 3, maximum: 15),
+      3
+    )
+    XCTAssertEqual(
+      InlineEditorSizing.cappedLineCount(
+        in: (1...1_000).map { "line \($0)" }.joined(separator: "\n"),
+        minimum: 1,
+        maximum: 15
+      ),
+      15
+    )
+  }
+
   func testOpenClawFileReferenceDeepLinkRoundTrips() throws {
     let reference = OpenClawFileReference(path: "file:notes/daily.org2#12", line: nil)
     let url = try XCTUnwrap(reference.deepLinkURL)
