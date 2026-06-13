@@ -1727,6 +1727,7 @@ final class Org2ModelsTests: XCTestCase {
       return false
     })
     store.beginEditingBlock(paragraph)
+    let editingBlockID = try XCTUnwrap(store.editingBlockID)
     store.editableBlockText = "Updated body\nSecond line"
     store.updateEditingBlockDraft(paragraph, draft: "Updated body\nSecond line")
     await store.autosaveEditedBlock(paragraph, replacement: "Updated body\nSecond line")
@@ -1734,7 +1735,9 @@ final class Org2ModelsTests: XCTestCase {
     var updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("Updated body\nSecond line\n* Sibling"))
     XCTAssertFalse(store.isEditingEntry)
-    XCTAssertNotNil(store.editingBlockID)
+    XCTAssertEqual(store.editingBlockID, editingBlockID)
+    XCTAssertEqual(store.selectedBlock?.id, editingBlockID)
+    XCTAssertEqual(store.selectedBlock?.endLineExclusive, paragraph.endLineExclusive + 1)
     XCTAssertEqual(store.selectedBlock?.rawText, "Updated body\nSecond line")
     XCTAssertEqual(store.editableBlockText, "Updated body\nSecond line")
 
@@ -1747,7 +1750,8 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(updated.contains("Updated again\nSecond line\n* Sibling"))
     XCTAssertFalse(updated.contains("Updated again\nSecond line\nSecond line"))
     XCTAssertEqual(store.selectedBlock?.rawText, "Updated again\nSecond line")
-    XCTAssertNotNil(store.editingBlockID)
+    XCTAssertEqual(store.editingBlockID, editingBlockID)
+    XCTAssertEqual(store.selectedBlock?.id, editingBlockID)
   }
 
   @MainActor
