@@ -1,5 +1,6 @@
 import AppKit
 import AVKit
+import ImageIO
 import SwiftUI
 
 struct RenderedBlockView: View {
@@ -130,9 +131,43 @@ private struct OrgImageAttachmentView: View {
         return
       }
       attemptedLoad = false
-      image = NSImage(contentsOf: url)
+      image = nil
+      let loaded = await Task.detached(priority: .utility) {
+        LoadedAttachmentImage(image: Self.previewImage(for: url))
+      }.value
+      guard !Task.isCancelled else { return }
+      image = loaded.image
       attemptedLoad = true
     }
+  }
+
+  nonisolated private static func previewImage(for url: URL) -> NSImage? {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, [
+      kCGImageSourceShouldCache: false
+    ] as CFDictionary) else {
+      return NSImage(contentsOf: url)
+    }
+
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceShouldCache: false,
+      kCGImageSourceShouldCacheImmediately: true,
+      kCGImageSourceThumbnailMaxPixelSize: 1_520
+    ]
+
+    if let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
+      return NSImage(
+        cgImage: thumbnail,
+        size: NSSize(width: thumbnail.width, height: thumbnail.height)
+      )
+    }
+
+    return NSImage(contentsOf: url)
+  }
+
+  private struct LoadedAttachmentImage: @unchecked Sendable {
+    let image: NSImage?
   }
 }
 
