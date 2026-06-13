@@ -603,6 +603,25 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(preservedColor, NSColor.systemRed)
   }
 
+  @MainActor
+  func testSyntaxEditorSkipsPlainCaretSelectionPublishing() {
+    XCTAssertFalse(OrgSyntaxTextEditor.Coordinator.shouldPublishSelection(
+      NSRange(location: 12, length: 0),
+      previousRange: NSRange(location: 11, length: 0),
+      text: "Plain paragraph text"
+    ))
+    XCTAssertTrue(OrgSyntaxTextEditor.Coordinator.shouldPublishSelection(
+      NSRange(location: 12, length: 4),
+      previousRange: NSRange(location: 11, length: 0),
+      text: "Plain paragraph text"
+    ))
+    XCTAssertTrue(OrgSyntaxTextEditor.Coordinator.shouldPublishSelection(
+      NSRange(location: 12, length: 0),
+      previousRange: NSRange(location: 11, length: 0),
+      text: "See [[id:abc][Alice]]"
+    ))
+  }
+
   func testInlineEditorSizingStopsAtVisibleLineCap() {
     XCTAssertEqual(
       InlineEditorSizing.cappedLineCount(in: "", minimum: 1, maximum: 15),
@@ -1096,6 +1115,15 @@ final class Org2ModelsTests: XCTestCase {
     } else {
       XCTFail("Expected selected range to focus overlapping link")
     }
+  }
+
+  func testEditableInlineTokenSkipsPlainParagraphs() {
+    let raw = String(repeating: "plain text without inline org markers ", count: 200)
+    let nsRaw = raw as NSString
+
+    XCTAssertFalse(OrgInlineParser.hasInlineSyntaxCandidate(raw))
+    XCTAssertEqual(OrgEditableInlineToken.boundedUTF16Length(in: raw), nsRaw.length)
+    XCTAssertNil(OrgEditableInlineToken.focused(in: raw, selection: NSRange(location: nsRaw.length / 2, length: 0)))
   }
 
   func testEditableInlineTokenSkipsFocusedScanForLargeParagraphs() {

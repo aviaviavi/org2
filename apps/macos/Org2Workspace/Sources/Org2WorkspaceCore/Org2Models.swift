@@ -849,6 +849,9 @@ public enum OrgEditableInlineToken: Equatable, Sendable {
     guard let textLength = boundedUTF16Length(in: rawText, maxUTF16Length: maxUTF16Length) else {
       return nil
     }
+    guard OrgInlineParser.hasInlineSyntaxCandidate(rawText) else {
+      return nil
+    }
 
     let safeLocation = min(max(0, selection.location), textLength)
     let safeSelection = NSRange(
