@@ -13,6 +13,7 @@ const tableNote = path.join(tmp, "table-report.org2");
 const urlNote = path.join(tmp, "url-report.org2");
 const viewNote = path.join(tmp, "view-report.org2");
 const orgViewNote = path.join(tmp, "org-view-report.org2");
+const duplicateDatasetNote = path.join(tmp, "duplicate-dataset-report.org2");
 const data = path.join(tmp, "package-fetches.csv");
 const fakeDuckdb = path.join(tmp, "duckdb");
 const out = path.join(tmp, "fetches_by_state.org");
@@ -122,6 +123,27 @@ ORDER BY fetches DESC
 \`\`\`
 `, "utf8");
 
+fs.writeFileSync(duplicateDatasetNote, `* Package fetch report with duplicate datasets
+
+\`\`\`dataset fetches
+type: csv
+path: ./package-fetches.csv
+engine: duckdb
+\`\`\`
+
+\`\`\`dataset fetches
+type: csv
+path: ./package-fetches.csv
+engine: duckdb
+\`\`\`
+
+\`\`\`sql results=fetches_by_state
+SELECT state, sum(fetches) AS fetches
+FROM fetches
+GROUP BY state
+\`\`\`
+`, "utf8");
+
 fs.writeFileSync(orgStyleNote, `* Package fetch report
 
 #+begin_dataset fetches
@@ -204,11 +226,18 @@ assert.equal(json.resultId, "fetches_by_state");
 assert.equal(json.rowCount, 2);
 assert.equal(json.datasets[0].id, "fetches");
 assert.equal(json.rows[0].state, "CA");
+assert.equal(json.provenance.resultId, "fetches_by_state");
+assert.deepEqual(json.provenance.datasetIds, ["fetches"]);
+assert.deepEqual(json.provenance.viewIds, []);
+assert.match(json.provenance.querySha256, /^[a-f0-9]{64}$/);
+assert.match(json.provenance.scriptSha256, /^[a-f0-9]{64}$/);
 assert.match(json.duckdbScript, /read_csv_auto/);
+assert.match(json.orgTable, /^#\+query-data: result=fetches_by_state rows=2 query_sha256=[a-f0-9]{64} script_sha256=[a-f0-9]{64}/);
 assert.match(json.orgTable, /#\+name: fetches_by_state/);
 assert.match(json.orgTable, /\| state \| fetches \|/);
 
 const org = cli(["query-data", "--file", note, "--results", "fetches_by_state", "--duckdb", fakeDuckdb]);
+assert.match(org, /^#\+query-data: result=fetches_by_state rows=2 query_sha256=[a-f0-9]{64} script_sha256=[a-f0-9]{64}/);
 assert.match(org, /#\+name: fetches_by_state/);
 assert.match(org, /\| state \| fetches \|/);
 assert.match(org, /\| CA    \| 42      \|/);
@@ -271,5 +300,11 @@ assert.notEqual(bad.status, 0);
 const badJson = JSON.parse(bad.stdout);
 assert.equal(badJson.ok, false);
 assert.match(badJson.diagnostics[0].message, /No SQL result block/);
+
+const duplicateDataset = spawnSync("node", ["dist/cli.js", "query-data", "--file", duplicateDatasetNote, "--results", "fetches_by_state", "--duckdb", fakeDuckdb, "--format", "json"], { cwd: repo, encoding: "utf8" });
+assert.notEqual(duplicateDataset.status, 0);
+const duplicateDatasetJson = JSON.parse(duplicateDataset.stdout);
+assert.equal(duplicateDatasetJson.ok, false);
+assert.match(duplicateDatasetJson.diagnostics[0].message, /Duplicate dataset block "fetches"/);
 
 console.log("✓ query-data CLI");
