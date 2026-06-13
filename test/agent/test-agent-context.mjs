@@ -291,3 +291,12 @@ assert.equal(dataset.results[0].dataLink.engine, "duckdb");
 assert.equal(dataset.results[0].dataLink.path, "data/package-fetches.csv");
 assert.equal(dataset.results[0].dataLink.paramsRaw, "packages=firebolt/foo");
 assert.equal(dataset.results[0].dataLink.result, "table:package_fetches");
+
+const reportWithDataLinks = runJson("agent", "fetch", "--id", "report-fetches", "--dir", dataDir, "--format", "json");
+assert.equal(reportWithDataLinks.results.length, 1);
+assert.equal(reportWithDataLinks.results[0].relatedDataLinks.length, 2);
+assert.equal(reportWithDataLinks.results[0].relatedDataLinks[0].id, "query-fetches-by-company");
+assert.equal(reportWithDataLinks.results[0].relatedDataLinks[0].kind, "warehouse-query");
+assert.equal(reportWithDataLinks.results[0].relatedDataLinks[0].dataLink.artifact, "customer-reports/firebolt/package_fetches_by_company.csv");
+assert.equal(reportWithDataLinks.results[0].relatedDataLinks[1].id, "dataset-package-fetches");
+assert.equal(reportWithDataLinks.results[0].relatedDataLinks[1].kind, "dataset");

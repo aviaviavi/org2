@@ -133,6 +133,8 @@ Keep credentials and secrets outside org2 files. Store only stable query IDs, no
 
 =org2 agent fetch --id query-fetches-by-company --format json= exposes this as =dataLink= metadata, including =kind=, =system=, =queryId=, parsed JSON =params= when possible, =artifact=, =rowCount=, =lastRun=, and =freshness=. A local DuckDB-style dataset can use =KIND: dataset= with =ENGINE=, =PATH=, =PARAMS=, and =RESULTS=, and the same =dataLink= field is returned for Workspace/search clients.
 
+Fetching a parent report or file also exposes descendant data/query records as =relatedDataLinks=. For example, =org2 agent fetch --id report-fetches --format json= includes child =warehouse-query= and =dataset= headings with their citations and compact =dataLink= metadata. The prompt-ready renderer mirrors this with a =Related data links= section, so a Workspace client can show the report's evidence, artifacts, row counts, and freshness next to the selected note without reparsing the org2 file.
+
 * What to save back
 
 Good generated outputs are inspectable artifacts, not silent canonical edits:
