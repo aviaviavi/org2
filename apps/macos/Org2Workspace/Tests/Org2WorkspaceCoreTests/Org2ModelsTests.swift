@@ -1253,18 +1253,14 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(ParagraphInlineFormatBarLayout.verticalOffset(editorHeight: 80), 88)
   }
 
-  func testParagraphEditorTextPublishingPolicyKeepsRichStatesResponsive() {
+  func testParagraphEditorTextPublishingPolicyDefersRichTextDraftPublishing() {
     XCTAssertFalse(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately("Plain paragraph text"))
     XCTAssertTrue(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately("/todo"))
-    XCTAssertTrue(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately("See [[id:abc][Alice]]"))
-    XCTAssertTrue(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately("Meet <2026-06-12 Fri>"))
-    XCTAssertTrue(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately("Use `code`"))
+    XCTAssertFalse(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately("See [[id:abc][Alice]]"))
+    XCTAssertFalse(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately("Meet <2026-06-12 Fri>"))
+    XCTAssertFalse(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately("Use `code`"))
 
-    let longRichParagraph = "See [[id:abc][Alice]]. " + String(
-      repeating: "Long paragraph body ",
-      count: 180
-    )
-    XCTAssertGreaterThan((longRichParagraph as NSString).length, ParagraphEditorTextPublishingPolicy.richImmediateUTF16Limit)
+    let longRichParagraph = "See [[id:abc][Alice]]. " + String(repeating: "Long paragraph body ", count: 180)
     XCTAssertFalse(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately(longRichParagraph))
     XCTAssertTrue(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately("/todo " + longRichParagraph))
   }
