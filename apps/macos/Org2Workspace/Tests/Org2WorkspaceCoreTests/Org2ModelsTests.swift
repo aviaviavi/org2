@@ -763,6 +763,41 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  func testEditableInlineTimestampSetRewritesTimestampsInParagraphs() {
+    let set = OrgEditableInlineTimestampSet(rawText: "Meet <2026-06-12 Fri 09:00-10:00 +1w> and review [2026-06-13 Sat].")
+
+    XCTAssertEqual(set.timestamps.count, 2)
+    XCTAssertEqual(set.timestamps[0].date, "2026-06-12")
+    XCTAssertEqual(set.timestamps[0].time, "09:00-10:00")
+    XCTAssertEqual(set.timestamps[0].detail, "+1w")
+    XCTAssertTrue(set.timestamps[0].isActive)
+    XCTAssertEqual(set.timestamps[1].date, "2026-06-13")
+    XCTAssertEqual(set.timestamps[1].time, "")
+    XCTAssertEqual(set.timestamps[1].detail, "")
+    XCTAssertFalse(set.timestamps[1].isActive)
+
+    XCTAssertEqual(
+      set.replacing(timestamp: set.timestamps[0], date: "2026-06-14", time: "11:30", detail: "+2w"),
+      "Meet <2026-06-14 Sun 11:30 +2w> and review [2026-06-13 Sat]."
+    )
+
+    XCTAssertEqual(
+      set.replacing(timestamp: set.timestamps[1], isActive: true),
+      "Meet <2026-06-12 Fri 09:00-10:00 +1w> and review <2026-06-13 Sat>."
+    )
+  }
+
+  func testEditableInlineTimestampSetAllowsPartialDateDrafts() {
+    let set = OrgEditableInlineTimestampSet(rawText: "Due <2026-06-12 Fri>.")
+
+    let updated = set.replacing(timestamp: set.timestamps[0], date: "2026-06")
+    XCTAssertEqual(updated, "Due <2026-06>.")
+
+    let partialSet = OrgEditableInlineTimestampSet(rawText: updated)
+    XCTAssertEqual(partialSet.timestamps.count, 1)
+    XCTAssertEqual(partialSet.timestamps[0].date, "2026-06")
+  }
+
   func testEditableSourceBlockFormatsAndSwitchesKind() {
     var source = OrgEditableSourceBlock(rawText: """
     #+BEGIN_SRC swift :results output

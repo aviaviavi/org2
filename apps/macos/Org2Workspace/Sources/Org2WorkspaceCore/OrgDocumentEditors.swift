@@ -883,6 +883,10 @@ private struct ParagraphBlockEditor: View {
         inlineLinkEditor
       }
 
+      if !inlineTimestampSet.timestamps.isEmpty {
+        inlineTimestampEditor
+      }
+
       if !slashCommandKinds.isEmpty {
         HStack(spacing: 8) {
           Text("Turn into")
@@ -959,6 +963,10 @@ private struct ParagraphBlockEditor: View {
     OrgEditableInlineLinkSet(rawText: store.editableBlockText)
   }
 
+  private var inlineTimestampSet: OrgEditableInlineTimestampSet {
+    OrgEditableInlineTimestampSet(rawText: store.editableBlockText)
+  }
+
   private var inlineLinkEditor: some View {
     VStack(alignment: .leading, spacing: 6) {
       ForEach(inlineLinkSet.links) { link in
@@ -976,6 +984,42 @@ private struct ParagraphBlockEditor: View {
             .textFieldStyle(.roundedBorder)
             .font(.caption.monospaced())
             .frame(minWidth: 220)
+        }
+        .controlSize(.small)
+      }
+    }
+    .padding(.horizontal, 7)
+    .padding(.vertical, 6)
+    .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+  }
+
+  private var inlineTimestampEditor: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      ForEach(inlineTimestampSet.timestamps) { timestamp in
+        HStack(spacing: 8) {
+          Toggle("", isOn: timestampActiveBinding(timestamp))
+            .toggleStyle(.checkbox)
+            .labelsHidden()
+            .help("Active timestamp")
+
+          Image(systemName: timestamp.isActive ? "calendar" : "calendar.badge.clock")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .frame(width: 18)
+
+          TextField("YYYY-MM-DD", text: timestampDateBinding(timestamp))
+            .textFieldStyle(.roundedBorder)
+            .font(.caption.monospacedDigit())
+            .frame(width: 108)
+
+          TextField("time", text: timestampTimeBinding(timestamp))
+            .textFieldStyle(.roundedBorder)
+            .font(.caption.monospacedDigit())
+            .frame(width: 92)
+
+          TextField("repeat/note", text: timestampDetailBinding(timestamp))
+            .textFieldStyle(.roundedBorder)
+            .frame(minWidth: 120)
         }
         .controlSize(.small)
       }
@@ -1057,6 +1101,58 @@ private struct ParagraphBlockEditor: View {
     let set = OrgEditableInlineLinkSet(rawText: store.editableBlockText)
     guard let current = set.links.first(where: { $0.id == link.id }) else { return }
     store.editableBlockText = set.replacing(link: current, label: label, target: target)
+  }
+
+  private func timestampActiveBinding(_ timestamp: OrgEditableInlineTimestamp) -> Binding<Bool> {
+    Binding(
+      get: { currentTimestamp(matching: timestamp)?.isActive ?? timestamp.isActive },
+      set: { updateInlineTimestamp(timestamp, isActive: $0) }
+    )
+  }
+
+  private func timestampDateBinding(_ timestamp: OrgEditableInlineTimestamp) -> Binding<String> {
+    Binding(
+      get: { currentTimestamp(matching: timestamp)?.date ?? timestamp.date },
+      set: { updateInlineTimestamp(timestamp, date: $0) }
+    )
+  }
+
+  private func timestampTimeBinding(_ timestamp: OrgEditableInlineTimestamp) -> Binding<String> {
+    Binding(
+      get: { currentTimestamp(matching: timestamp)?.time ?? timestamp.time },
+      set: { updateInlineTimestamp(timestamp, time: $0) }
+    )
+  }
+
+  private func timestampDetailBinding(_ timestamp: OrgEditableInlineTimestamp) -> Binding<String> {
+    Binding(
+      get: { currentTimestamp(matching: timestamp)?.detail ?? timestamp.detail },
+      set: { updateInlineTimestamp(timestamp, detail: $0) }
+    )
+  }
+
+  private func currentTimestamp(matching timestamp: OrgEditableInlineTimestamp) -> OrgEditableInlineTimestamp? {
+    OrgEditableInlineTimestampSet(rawText: store.editableBlockText)
+      .timestamps
+      .first { $0.id == timestamp.id }
+  }
+
+  private func updateInlineTimestamp(
+    _ timestamp: OrgEditableInlineTimestamp,
+    date: String? = nil,
+    time: String? = nil,
+    detail: String? = nil,
+    isActive: Bool? = nil
+  ) {
+    let set = OrgEditableInlineTimestampSet(rawText: store.editableBlockText)
+    guard let current = set.timestamps.first(where: { $0.id == timestamp.id }) else { return }
+    store.editableBlockText = set.replacing(
+      timestamp: current,
+      date: date,
+      time: time,
+      detail: detail,
+      isActive: isActive
+    )
   }
 }
 
