@@ -7,6 +7,10 @@ private enum InlineEditorChrome {
     isActive ? 1 : 0
   }
 
+  static func allowsHitTesting(_ isActive: Bool) -> Bool {
+    isActive
+  }
+
   static func backgroundOpacity(isHovered: Bool, isFocused: Bool = false) -> Double {
     if isHovered {
       return 0.032
@@ -143,6 +147,7 @@ private struct HorizontalRuleBlockEditor: View {
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
       .opacity(InlineEditorChrome.controlsOpacity(isHovered || store.isSavingBlock))
+      .allowsHitTesting(InlineEditorChrome.allowsHitTesting(isHovered || store.isSavingBlock))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 3)
@@ -312,7 +317,7 @@ private struct HeadingBlockEditor: View {
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
       .opacity(InlineEditorChrome.controlsOpacity(showsControls))
-      .allowsHitTesting(showsControls)
+      .allowsHitTesting(InlineEditorChrome.allowsHitTesting(showsControls))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
@@ -558,7 +563,7 @@ private struct PlanningBlockEditor: View {
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
       .opacity(InlineEditorChrome.controlsOpacity(showsControls))
-      .allowsHitTesting(showsControls)
+      .allowsHitTesting(InlineEditorChrome.allowsHitTesting(showsControls))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 3)
@@ -731,7 +736,7 @@ private struct ListItemBlockEditor: View {
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
       .opacity(InlineEditorChrome.controlsOpacity(showsControls))
-      .allowsHitTesting(showsControls)
+      .allowsHitTesting(InlineEditorChrome.allowsHitTesting(showsControls))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
@@ -954,7 +959,7 @@ private struct KeywordBlockEditor: View {
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
       .opacity(InlineEditorChrome.controlsOpacity(showsControls))
-      .allowsHitTesting(showsControls)
+      .allowsHitTesting(InlineEditorChrome.allowsHitTesting(showsControls))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 3)
@@ -1121,7 +1126,7 @@ private struct PropertyDrawerBlockEditor: View {
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
       .opacity(InlineEditorChrome.controlsOpacity(showsControls))
-      .allowsHitTesting(showsControls)
+      .allowsHitTesting(InlineEditorChrome.allowsHitTesting(showsControls))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
@@ -1369,7 +1374,7 @@ private struct ParagraphBlockEditor: View {
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
       .opacity(InlineEditorChrome.controlsOpacity(showsControls))
-      .allowsHitTesting(showsControls)
+      .allowsHitTesting(InlineEditorChrome.allowsHitTesting(showsControls))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 3)
@@ -1576,6 +1581,7 @@ private struct MediaBlockEditor: View {
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
       .opacity(InlineEditorChrome.controlsOpacity(isHovered || store.isSavingBlock))
+      .allowsHitTesting(InlineEditorChrome.allowsHitTesting(isHovered || store.isSavingBlock))
     }
     .frame(maxWidth: 780, alignment: .leading)
     .padding(.horizontal, 6)
@@ -1801,6 +1807,7 @@ private struct QuoteBlockEditor: View {
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
       .opacity(InlineEditorChrome.controlsOpacity(isHovered || store.isSavingBlock))
+      .allowsHitTesting(InlineEditorChrome.allowsHitTesting(isHovered || store.isSavingBlock))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
@@ -1991,6 +1998,7 @@ private struct SourceBlockEditor: View {
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
       .opacity(InlineEditorChrome.controlsOpacity(isHovered || store.isSavingBlock || runState != nil))
+      .allowsHitTesting(InlineEditorChrome.allowsHitTesting(isHovered || store.isSavingBlock || runState != nil))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
@@ -2171,6 +2179,7 @@ private struct TableBlockEditor: View {
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
       .opacity(InlineEditorChrome.controlsOpacity(isHovered || focusedCell != nil || store.isSavingBlock))
+      .allowsHitTesting(InlineEditorChrome.allowsHitTesting(isHovered || focusedCell != nil || store.isSavingBlock))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
