@@ -26,6 +26,8 @@ import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js
 import { compileCorpus, compileCorpusIncremental, extractCheckboxProgress, renderCompiledCorpus } from "./corpusCompile.js";
 import { extractClockReport } from "./clock.js";
 import { buildAgentContextPayload, renderAgentContextPack, type AgentInclude } from "./agentContext.js";
+import { renderOrgChart } from "./chartRender.js";
+import { runOrg2DataQuery } from "./dataQuery.js";
 import { loadAiJobManifest, validateAiJobManifest } from "./aiJobManifest.js";
 import { createAiAdapterRequest, MockAiAdapter, type AiAdapterContextItem, type AiAdapterResponse } from "./aiAdapter.js";
 import { buildGeneratedArtifactMetadata, formatOrg2ArtifactPropertyDrawer, sha256Hex } from "./artifactMetadata.js";
@@ -7855,6 +7857,25 @@ async function main(): Promise<void> {
   let compileIncremental = false;
   let compileCache = "";
 
+  // Chart rendering for editor/client integrations
+  let renderChartFile = "";
+  let renderChartLine = 0;
+  let renderChartBlockId = "";
+  let renderChartOut = "";
+  let renderChartStdin = false;
+  let renderChartFormat: "svg" | "json" = "svg";
+
+  // DuckDB-backed local/ad hoc data queries
+  let dataQueryFile = "";
+  let dataQueryResultId = "";
+  let dataQueryLine = 0;
+  let dataQueryOut = "";
+  let dataQueryDuckdb = "duckdb";
+  let dataQueryFormat: "org" | "json" = "org";
+  let dataQueryIncludeScript = false;
+  let dataQueryInspect = false;
+  let dataQueryStdin = false;
+
   // Clock reports
   let clockFormat: "text" | "json" = "text";
 
@@ -8049,6 +8070,12 @@ async function main(): Promise<void> {
           i++;
         }
       }
+    } else if (arg === "render-chart") {
+      command = "render-chart";
+      i++;
+    } else if (arg === "query-data" || arg === "data-query") {
+      command = "query-data";
+      i++;
     } else if (arg === "context") {
       command = "context";
       agentAction = "bundle";
@@ -8190,6 +8217,10 @@ async function main(): Promise<void> {
           refileFile = args[i]!;
         } else if (command === "export") {
           exportFile = args[i]!;
+        } else if (command === "render-chart") {
+          renderChartFile = args[i]!;
+        } else if (command === "query-data") {
+          dataQueryFile = args[i]!;
         } else if (command === "roam" && roamAction === "link") {
           roamLinkFile = args[i]!;
         } else if (command === "ai" && (aiAction === "promote" || aiAction === "review")) {
@@ -8213,6 +8244,10 @@ async function main(): Promise<void> {
           cryptLine = n;
         } else if (command === "id") {
           idLine = n;
+        } else if (command === "render-chart") {
+          renderChartLine = n;
+        } else if (command === "query-data") {
+          dataQueryLine = n;
         }
         i++;
       }
@@ -8919,8 +8954,10 @@ async function main(): Promise<void> {
           backlinksId = args[i]!;
         } else if (command === "query") {
           queryId = args[i]!;
-        } else if (command === "agent") {
+        } else if (command === "agent" || command === "context") {
           agentId = args[i]!;
+        } else if (command === "render-chart") {
+          renderChartBlockId = args[i]!;
         } else if (command === "roam") {
           if (roamAction === "link") {
             roamLinkId = args[i]!;
@@ -8930,6 +8967,24 @@ async function main(): Promise<void> {
             roamIdForced = args[i]!;
           }
         }
+        i++;
+      }
+    } else if ((arg === "--results" || arg === "--result") && command === "query-data") {
+      i++;
+      if (i < args.length) {
+        dataQueryResultId = args[i]!;
+        i++;
+      }
+    } else if (arg === "--duckdb" && command === "query-data") {
+      i++;
+      if (i < args.length) {
+        dataQueryDuckdb = args[i]!;
+        i++;
+      }
+    } else if (arg === "--block-id" && command === "render-chart") {
+      i++;
+      if (i < args.length) {
+        renderChartBlockId = args[i]!;
         i++;
       }
     } else if (arg === "--json") {
@@ -8951,6 +9006,8 @@ async function main(): Promise<void> {
       else if (command === "lint") lintFormat = "json";
       else if (command === "graph") graphFormat = "json";
       else if (command === "compile") compileFormat = "json";
+      else if (command === "render-chart") renderChartFormat = "json";
+      else if (command === "query-data") dataQueryFormat = "json";
       else if (command === "clock") clockFormat = "json";
       else if (command === "context" || command === "brief") contextFormat = "json";
       else if (command === "ai") aiFormat = "json";
@@ -8998,6 +9055,10 @@ async function main(): Promise<void> {
           graphFormat = v;
         } else if (command === "compile" && (v === "json" || v === "jsonl")) {
           compileFormat = v;
+        } else if (command === "render-chart" && (v === "svg" || v === "json")) {
+          renderChartFormat = v;
+        } else if (command === "query-data" && (v === "org" || v === "org-table" || v === "json")) {
+          dataQueryFormat = v === "org-table" ? "org" : v;
         } else if (command === "clock" && (v === "text" || v === "json")) {
           clockFormat = v;
         } else if ((command === "context" || command === "brief") && (v === "markdown" || v === "md" || v === "org" || v === "org2" || v === "json")) {
@@ -9107,6 +9168,10 @@ async function main(): Promise<void> {
           roamGraphOut = args[i]!;
         } else if (command === "compile") {
           compileOut = args[i]!;
+        } else if (command === "render-chart") {
+          renderChartOut = args[i]!;
+        } else if (command === "query-data") {
+          dataQueryOut = args[i]!;
         } else if (command === "ai") {
           aiOut = args[i]!;
         } else if (command === "brief") {
@@ -9231,6 +9296,8 @@ async function main(): Promise<void> {
           cryptLine = parseInt(rawPos.split(":")[0]!, 10);
         } else if (command === "id") {
           idLine = parseInt(rawPos.split(":")[0]!, 10);
+        } else if (command === "render-chart") {
+          renderChartLine = parseInt(rawPos.split(":")[0]!, 10);
         } else if (command === "roam" && roamAction === "link") {
           roamLinkPos = rawPos;
         }
@@ -9239,6 +9306,14 @@ async function main(): Promise<void> {
     } else if (arg === "--stdin") {
       if (command === "fmt") fmtStdin = true;
       if (command === "capture") captureReadStdin = true;
+      if (command === "render-chart") renderChartStdin = true;
+      if (command === "query-data") dataQueryStdin = true;
+      i++;
+    } else if (arg === "--include-script") {
+      if (command === "query-data") dataQueryIncludeScript = true;
+      i++;
+    } else if (arg === "--inspect") {
+      if (command === "query-data") dataQueryInspect = true;
       i++;
     } else if (arg === "--check") {
       if (command === "fmt") {
@@ -9318,6 +9393,8 @@ Roam / IDs:
   org2 query clocks --dir DIR [--recursive] [--format text|json]
   org2 clock --dir DIR [--recursive] [--format text|json]
   org2 compile corpus --dir DIR [--recursive] [--out FILE] [--format json|jsonl]
+  org2 render-chart --file FILE [--block-id ID|--line N] [--out FILE] [--format svg|json]
+  org2 query-data (--file FILE|--stdin) [--results NAME|--line N] [--out FILE] [--format org|json]
   org2 context QUERY [--dir DIR] [--recursive] [--budget 8k] [--format markdown|org|json]
   org2 brief today [--dir DIR] [--recursive] [--out views/today.org]
   org2 brief project NAME [--dir DIR] [--recursive] [--out views/NAME.org]
@@ -9614,14 +9691,70 @@ Output:
   standardized generated-artifact metadata, source hashes, headings, IDs,
   aliases, links, backlinks, TODO/planning state, properties, source ranges,
   and snippets. Org2 emits data only; it does not call an LLM.`;
+  } else if (command === "render-chart") {
+    text = `org2 render-chart
+
+Usage:
+  org2 render-chart --file FILE [--block-id ID|--line N] [--out FILE] [--format svg|json]
+  org2 render-chart --stdin [--out FILE] [--format svg|json]
+
+Flags:
+  --file FILE       Source Org/Org2 file
+  --stdin           Read Org/Org2 input from standard input
+  --block-id ID     Select a chart by adjacent #+name
+  --id ID           Alias for --block-id
+  --line N          Select the first chart table at or after line N
+  --out FILE        Write the SVG artifact to FILE
+  --format FORMAT   svg (default) or json diagnostics envelope
+
+Output:
+  Deterministic SVG for #+chart or #+plot metadata attached to an org2 table.
+  JSON output includes ok, format, artifact, source, diagnostics, and svg.`;
+  } else if (command === "query-data") {
+    text = `org2 query-data
+
+Usage:
+  org2 query-data --file FILE [--results NAME|--line N] [--out FILE] [--format org|json]
+  org2 query-data --stdin [--results NAME|--line N] [--out FILE] [--format org|json]
+  org2 query-data --file FILE --inspect
+
+Flags:
+  --file FILE         Source Org/Org2 file containing dataset and SQL blocks
+  --stdin             Read Org/Org2 input from standard input
+  --results NAME      SQL result block to run; optional when the file has one SQL block
+  --line N            Select the SQL result block containing or after line N
+  --duckdb PATH       DuckDB CLI path (default: duckdb)
+  --out FILE          Write materialized org table or JSON envelope to FILE
+  --format FORMAT     org (default) or json diagnostics envelope
+  --include-script    Include generated DuckDB SQL setup in JSON/inspect output
+  --inspect           Parse query-data blocks as JSON without running DuckDB
+
+Input:
+  Reads fenced \`\`\`dataset NAME blocks with engine: duckdb and either
+  type: csv|parquet|json plus path/url, or type: table plus source:
+  named_org_table. Optional \`\`\`sql view=NAME blocks define reusable
+  DuckDB views before the selected \`\`\`sql results=NAME block is run. SQL result
+  result names must be unique. Dataset names and SQL view names must not
+  conflict because they share DuckDB's relation namespace. SQL result blocks may
+  include artifact=PATH to record the intended materialized output, and
+  freshness=24h/ttl=24h/max-age=24h to tell clients how long a materialized
+  result should be treated as fresh; --out FILE records the actual artifact
+  path. Dataset credential/auth and config/profile metadata must be external
+  references such as env:VAR, secret:NAME, config:NAME, or profile:NAME; inline
+  secrets are rejected and references are not injected into DuckDB SQL.
+  This is an explicit
+  local/ad hoc data bridge; Org2 does not store credentials or call remote
+  warehouses.`;
   } else if (command === "context") {
     text = `org2 context
 
 Usage:
   org2 context QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--budget 8k] [--limit N] [--include sources,backlinks,neighbors] [--format markdown|org|json]
+  org2 context --id ID [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format markdown|org|json]
 
 Flags:
   --query QUERY      Retrieval query (or pass QUERY as first positional argument)
+  --id ID            Render a context pack for one selected heading/file ID
   --budget N         Approximate max context characters; supports k/m suffixes (default 12000)
   --format FORMAT    markdown (default), org, or json
   --scope NAME       Optional project/person/task scope filter
@@ -9807,7 +9940,7 @@ Flags:
     printGeneralUsage(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "clock" && command !== "compile" && command !== "entity" && command !== "agent" && command !== "context" && command !== "brief" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "clock" && command !== "compile" && command !== "render-chart" && command !== "query-data" && command !== "entity" && command !== "agent" && command !== "context" && command !== "brief" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
     printGeneralUsage(1);
   }
 
@@ -9815,6 +9948,98 @@ Flags:
     // The LSP server runs over stdio and expects to own stdin/stdout.
     // Importing this module starts the server.
     await import("./lsp.js");
+    return;
+  }
+
+  if (command === "render-chart") {
+    if (renderChartFile && renderChartStdin) {
+      console.error("Error: render-chart accepts only one of --file or --stdin");
+      process.exit(1);
+    }
+    if (!renderChartFile && !renderChartStdin) {
+      console.error("Error: render-chart requires --file FILE or --stdin");
+      process.exit(1);
+    }
+
+    const input = renderChartStdin
+      ? fs.readFileSync(0, "utf8").replace(/\r\n/g, "\n")
+      : fs.readFileSync(path.resolve(renderChartFile), "utf8").replace(/\r\n/g, "\n");
+    const sourceFile = renderChartStdin ? undefined : renderChartFile;
+    const result = renderOrgChart(input, {
+      ...(sourceFile ? { file: sourceFile } : {}),
+      ...(renderChartLine > 0 ? { line: renderChartLine } : {}),
+      ...(renderChartBlockId ? { blockId: renderChartBlockId } : {}),
+      ...(renderChartOut ? { outputPath: renderChartOut } : {}),
+    });
+
+    if (result.ok && result.svg && renderChartOut) {
+      const outputPath = path.resolve(renderChartOut);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fs.writeFileSync(outputPath, result.svg, "utf8");
+    }
+
+    if (renderChartFormat === "json") {
+      process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    } else if (result.ok && result.svg) {
+      if (renderChartOut) process.stdout.write(`Wrote chart SVG to ${renderChartOut}\n`);
+      else process.stdout.write(result.svg);
+    } else {
+      for (const item of result.diagnostics) {
+        const where = item.source?.line ? `:${item.source.line}` : "";
+        console.error(`${item.severity}: ${item.message}${where}`);
+      }
+    }
+
+    if (!result.ok) process.exit(1);
+    return;
+  }
+
+  if (command === "query-data") {
+    if (dataQueryFile && dataQueryStdin) {
+      console.error("Error: query-data accepts only one of --file or --stdin");
+      process.exit(1);
+    }
+    if (!dataQueryFile && !dataQueryStdin) {
+      console.error("Error: query-data requires --file FILE or --stdin");
+      process.exit(1);
+    }
+    if (dataQueryResultId && dataQueryLine > 0) {
+      console.error("Error: query-data accepts only one of --results or --line");
+      process.exit(1);
+    }
+
+    const input = dataQueryStdin
+      ? fs.readFileSync(0, "utf8").replace(/\r\n/g, "\n")
+      : fs.readFileSync(path.resolve(dataQueryFile), "utf8").replace(/\r\n/g, "\n");
+    const result = runOrg2DataQuery(input, {
+      ...(dataQueryFile ? { file: dataQueryFile } : {}),
+      ...(dataQueryResultId ? { resultId: dataQueryResultId } : {}),
+      ...(dataQueryLine > 0 ? { resultLine: dataQueryLine } : {}),
+      ...(dataQueryOut ? { outputArtifact: dataQueryOut } : {}),
+      duckdbPath: dataQueryDuckdb,
+      includeScript: dataQueryIncludeScript,
+      inspectOnly: dataQueryInspect,
+    });
+
+    const outputIsJson = dataQueryFormat === "json" || dataQueryInspect;
+    const output = outputIsJson ? JSON.stringify(result, null, 2) + "\n" : result.orgTable || "";
+    if (result.ok && dataQueryOut) {
+      const outputPath = path.resolve(dataQueryOut);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fs.writeFileSync(outputPath, output, "utf8");
+      if (!outputIsJson) process.stdout.write(`Wrote org table to ${dataQueryOut}\n`);
+    } else if (outputIsJson) {
+      process.stdout.write(output);
+    } else if (result.ok) {
+      process.stdout.write(output);
+    } else {
+      for (const item of result.diagnostics) {
+        const where = item.source?.line ? `:${item.source.line}` : "";
+        console.error(`${item.severity}: ${item.message}${where}`);
+      }
+    }
+
+    if (!result.ok) process.exit(1);
     return;
   }
 
@@ -9846,9 +10071,13 @@ Flags:
   }
 
   if (command === "agent" || command === "context") {
-    if (command === "context") agentAction = "bundle";
+    if (command === "context") agentAction = agentId.trim() ? "fetch" : "bundle";
     if (!agentAction) { console.error("Error: org2 agent requires a subcommand (bundle, context, search, or fetch)"); process.exit(1); }
-    if ((agentAction === "bundle" || agentAction === "context" || agentAction === "search") && !agentQuery.trim()) { console.error("Error: org2 agent/context requires --query QUERY"); process.exit(1); }
+    if (command === "context" && agentQuery.trim() && agentId.trim()) { console.error("Error: org2 context accepts either QUERY/--query or --id ID, not both"); process.exit(1); }
+    if ((agentAction === "bundle" || agentAction === "context" || agentAction === "search") && !agentQuery.trim()) {
+      console.error(command === "context" ? "Error: org2 context requires QUERY/--query or --id ID" : "Error: org2 agent/context requires --query QUERY");
+      process.exit(1);
+    }
     if (agentAction === "fetch" && !agentId.trim()) { console.error("Error: org2 agent fetch requires --id ID"); process.exit(1); }
     if (!dir && files.length === 0) {
       const configPath = findConfigFile(process.cwd());

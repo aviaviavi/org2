@@ -17,6 +17,10 @@
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-time.input.txt",
           "line": 2,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
           "time": "08:30"
         },
         {
@@ -25,6 +29,10 @@
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-time.input.txt",
           "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
           "time": "12:00"
         },
         {
@@ -33,6 +41,10 @@
           "kind": "DEADLINE",
           "file": "spec/v0/tests/cli/agenda-sort-filter-time.input.txt",
           "line": 6,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
           "time": "17:45"
         },
         {
@@ -40,7 +52,11 @@
           "headline": "Untimed note",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-time.input.txt",
-          "line": 4
+          "line": 4,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ],
       "groups": [
@@ -53,6 +69,10 @@
               "kind": "SCHEDULED",
               "file": "spec/v0/tests/cli/agenda-sort-filter-time.input.txt",
               "line": 2,
+              "body": "",
+              "level": 1,
+              "tags": [],
+              "properties": {},
               "time": "08:30"
             }
           ]
@@ -66,6 +86,10 @@
               "kind": "SCHEDULED",
               "file": "spec/v0/tests/cli/agenda-sort-filter-time.input.txt",
               "line": 0,
+              "body": "",
+              "level": 1,
+              "tags": [],
+              "properties": {},
               "time": "12:00"
             }
           ]
@@ -79,6 +103,10 @@
               "kind": "DEADLINE",
               "file": "spec/v0/tests/cli/agenda-sort-filter-time.input.txt",
               "line": 6,
+              "body": "",
+              "level": 1,
+              "tags": [],
+              "properties": {},
               "time": "17:45"
             }
           ]
@@ -91,7 +119,11 @@
               "headline": "Untimed note",
               "kind": "SCHEDULED",
               "file": "spec/v0/tests/cli/agenda-sort-filter-time.input.txt",
-              "line": 4
+              "line": 4,
+              "body": "",
+              "level": 1,
+              "tags": [],
+              "properties": {}
             }
           ]
         }

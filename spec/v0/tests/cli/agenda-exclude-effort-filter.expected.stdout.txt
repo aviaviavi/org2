@@ -16,7 +16,11 @@
           "headline": "Inbox cleanup",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-effort-filter.input.txt",
-          "line": 18
+          "line": 18,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

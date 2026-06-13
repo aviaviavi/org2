@@ -16,7 +16,12 @@
           "headline": "Ship release candidate",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-priority-filter.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
+          "priority": "A"
         }
       ]
     },
@@ -29,7 +34,11 @@
           "headline": "Capture stray notes",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-priority-filter.input.txt",
-          "line": 9
+          "line": 9,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

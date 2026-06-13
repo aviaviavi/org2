@@ -16,14 +16,22 @@
           "headline": "Alpha task",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter.input.txt",
-          "line": 2
+          "line": 2,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         },
         {
           "todo": "TODO",
           "headline": "Bravo task",
           "kind": "DEADLINE",
           "file": "spec/v0/tests/cli/agenda-sort-filter.input.txt",
-          "line": 4
+          "line": 4,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ],
       "groups": [
@@ -35,7 +43,11 @@
               "headline": "Alpha task",
               "kind": "SCHEDULED",
               "file": "spec/v0/tests/cli/agenda-sort-filter.input.txt",
-              "line": 2
+              "line": 2,
+              "body": "",
+              "level": 1,
+              "tags": [],
+              "properties": {}
             }
           ]
         },
@@ -47,7 +59,11 @@
               "headline": "Bravo task",
               "kind": "DEADLINE",
               "file": "spec/v0/tests/cli/agenda-sort-filter.input.txt",
-              "line": 4
+              "line": 4,
+              "body": "",
+              "level": 1,
+              "tags": [],
+              "properties": {}
             }
           ]
         }

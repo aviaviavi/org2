@@ -16,14 +16,25 @@
           "headline": "Handle support inbox",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-property-filter.input.txt",
-          "line": 14
+          "line": 14,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {
+            "OWNER": "AVI",
+            "TEAM": "Support"
+          }
         },
         {
           "todo": "TODO",
           "headline": "No properties task",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-property-filter.input.txt",
-          "line": 21
+          "line": 21,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

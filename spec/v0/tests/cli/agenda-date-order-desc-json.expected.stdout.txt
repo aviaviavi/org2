@@ -16,7 +16,11 @@
           "headline": "Upcoming task",
           "kind": "DEADLINE",
           "file": "spec/v0/tests/cli/agenda-when-filter.input.txt",
-          "line": 9
+          "line": 9,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     },
@@ -29,7 +33,11 @@
           "headline": "Today task",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-when-filter.input.txt",
-          "line": 6
+          "line": 6,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

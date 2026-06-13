@@ -14,6 +14,8 @@ public struct ContentView: View {
       switch store.selectedSurface {
       case .agenda:
         AgendaView()
+      case .files:
+        FilesView()
       case .search:
         SearchView()
       case .meetings:
@@ -24,10 +26,19 @@ public struct ContentView: View {
         OpenClawThreadsView()
       }
     } detail: {
-      DetailView()
+      WorkspaceDetailArea()
     }
     .toolbar {
       ToolbarItemGroup {
+        Button {
+          store.isOpenClawAssistantPresented.toggle()
+        } label: {
+          Label(
+            store.isOpenClawAssistantPresented ? "Hide OpenClaw" : "Show OpenClaw",
+            systemImage: store.isOpenClawAssistantPresented ? "sidebar.right" : "sidebar.trailing"
+          )
+        }
+
         Button {
           store.chooseCorpus()
         } label: {
@@ -43,7 +54,36 @@ public struct ContentView: View {
       }
     }
     .keyboardEventMonitor { event in
-      store.handleAgendaKeyDown(event)
+      store.handleWorkspaceKeyDown(event)
+    }
+    .environment(\.openOrgFileReference) { reference in
+      store.openChatFileReference(reference)
+    }
+    .sheet(isPresented: $store.isQuickOpenPresented) {
+      QuickOpenView()
+        .environmentObject(store)
+    }
+    .sheet(isPresented: $store.isKeyboardShortcutsPresented) {
+      KeyboardShortcutsView()
+        .environmentObject(store)
+    }
+  }
+}
+
+private struct WorkspaceDetailArea: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    if store.isOpenClawAssistantPresented && store.selectedSurface != .openClaw {
+      HSplitView {
+        DetailView()
+          .frame(minWidth: 420)
+
+        OpenClawChatView(presentation: .assistantPanel)
+          .frame(minWidth: 320, idealWidth: 380, maxWidth: 520)
+      }
+    } else {
+      DetailView()
     }
   }
 }
@@ -55,18 +95,30 @@ private struct SidebarView: View {
     List(selection: $store.selectedSurface) {
       Section("Workspace") {
         ForEach(WorkspaceSurface.allCases) { surface in
-          Label(surface.title, systemImage: surface.systemImage)
-            .tag(surface)
+          HStack(spacing: 8) {
+            Label(surface.title, systemImage: surface.systemImage)
+            Spacer(minLength: 0)
+            Text(surface.commandShortcutTitle)
+              .font(.caption.monospaced())
+              .foregroundStyle(.tertiary)
+          }
+          .tag(surface)
+          .help("\(surface.title) (\(surface.commandShortcutTitle))")
         }
       }
 
       Section("Corpus") {
         if let root = store.corpusRoot {
-          Text(root.path)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(4)
-            .textSelection(.enabled)
+          VStack(alignment: .leading, spacing: 3) {
+            Text(root.path)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(4)
+              .textSelection(.enabled)
+            Text("\(store.corpusFiles.count) file\(store.corpusFiles.count == 1 ? "" : "s")")
+              .font(.caption2)
+              .foregroundStyle(.tertiary)
+          }
         } else {
           Button("Open Corpus...") {
             store.chooseCorpus()
@@ -79,12 +131,314 @@ private struct SidebarView: View {
           Button {
             store.openDailyNote(target)
           } label: {
-            Label(target.title, systemImage: target == .today ? "sun.max" : "calendar")
+            HStack(spacing: 8) {
+              Label(target.title, systemImage: target == .today ? "sun.max" : "calendar")
+              Spacer(minLength: 0)
+              Text(target.commandShortcutTitle)
+                .font(.caption.monospaced())
+                .foregroundStyle(.tertiary)
+            }
           }
+          .help("\(target.title) daily note (\(target.commandShortcutTitle))")
         }
       }
     }
     .listStyle(.sidebar)
+  }
+}
+
+private struct FilesView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HeaderBar(title: "Files", subtitle: store.corpusRoot?.path ?? "Corpus files") {
+        if store.isScanningCorpusFiles {
+          ProgressView()
+            .controlSize(.small)
+        }
+
+        Button {
+          store.presentQuickOpen()
+        } label: {
+          Label("Quick Open", systemImage: "command")
+        }
+
+        Button {
+          Task { await store.refreshCorpusFiles() }
+        } label: {
+          Label("Refresh", systemImage: "arrow.clockwise")
+        }
+        .disabled(store.corpusRoot == nil || store.isScanningCorpusFiles)
+      }
+
+      HStack(spacing: 8) {
+        TextField("Filter files", text: $store.corpusFileFilter)
+          .textFieldStyle(.roundedBorder)
+        if !store.corpusFileFilter.isEmpty {
+          Button {
+            store.corpusFileFilter = ""
+          } label: {
+            Label("Clear", systemImage: "xmark.circle.fill")
+          }
+          .labelStyle(.iconOnly)
+        }
+      }
+      .padding(.horizontal, 16)
+      .padding(.bottom, 12)
+
+      if store.corpusRoot == nil {
+        EmptyStateView(title: "No Corpus", detail: store.statusText, action: "Open Corpus") {
+          store.chooseCorpus()
+        }
+      } else if store.corpusFiles.isEmpty && store.isScanningCorpusFiles {
+        Spacer()
+        ProgressView()
+        Spacer()
+      } else if store.filteredCorpusFiles.isEmpty {
+        EmptyStateView(title: "No Files", detail: "No org2, org, or markdown files matched.", action: "Refresh") {
+          Task { await store.refreshCorpusFiles() }
+        }
+      } else {
+        List(selection: $store.selectedCorpusFileID) {
+          ForEach(store.filteredCorpusFiles) { file in
+            CorpusFileRow(file: file)
+              .tag(file.id)
+          }
+        }
+        .listStyle(.inset)
+        .onChange(of: store.selectedCorpusFileID) {
+          guard let id = store.selectedCorpusFileID,
+                let file = store.corpusFiles.first(where: { $0.id == id })
+          else {
+            return
+          }
+          store.selectCorpusFile(file)
+        }
+      }
+    }
+  }
+}
+
+private struct CorpusFileRow: View {
+  let file: CorpusFile
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 8) {
+      Image(systemName: "doc.text")
+        .foregroundStyle(.secondary)
+      VStack(alignment: .leading, spacing: 3) {
+        Text(file.name)
+          .font(.body)
+          .lineLimit(1)
+        Text(file.relativePath)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+      }
+      Spacer(minLength: 0)
+      if let byteCount = file.byteCount {
+        Text(ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file))
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+      }
+    }
+    .padding(.vertical, 4)
+  }
+}
+
+private struct QuickOpenView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(\.dismiss) private var dismiss
+  @FocusState private var queryFocused: Bool
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      HStack(spacing: 8) {
+        Image(systemName: "magnifyingglass")
+          .foregroundStyle(.secondary)
+        TextField("Quick open file", text: $store.quickOpenQuery)
+          .textFieldStyle(.plain)
+          .font(.title3)
+          .focused($queryFocused)
+          .onSubmit {
+            openFirstMatch()
+          }
+      }
+      .padding(10)
+      .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+          .stroke(Color.secondary.opacity(0.18))
+      )
+
+      if store.isScanningCorpusFiles {
+        HStack(spacing: 8) {
+          ProgressView()
+            .controlSize(.small)
+          Text("Scanning files")
+            .foregroundStyle(.secondary)
+        }
+      }
+
+      List(store.quickOpenFiles) { file in
+        Button {
+          open(file)
+        } label: {
+          CorpusFileRow(file: file)
+        }
+        .buttonStyle(.plain)
+      }
+      .listStyle(.plain)
+      .frame(minHeight: 320)
+    }
+    .padding(16)
+    .frame(width: 720, height: 460)
+    .onAppear {
+      queryFocused = true
+    }
+  }
+
+  private func openFirstMatch() {
+    guard let file = store.quickOpenFiles.first else { return }
+    open(file)
+  }
+
+  private func open(_ file: CorpusFile) {
+    store.selectCorpusFile(file)
+    store.isQuickOpenPresented = false
+    dismiss()
+  }
+}
+
+private struct KeyboardShortcutsView: View {
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Keyboard Shortcuts")
+            .font(.title2.weight(.semibold))
+          Text("Global navigation uses Command keys. Agenda and document panes keep Vim-style local keys.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+        Spacer(minLength: 0)
+        Button {
+          dismiss()
+        } label: {
+          Label("Close", systemImage: "xmark")
+        }
+        .labelStyle(.iconOnly)
+        .keyboardShortcut(.cancelAction)
+      }
+
+      ScrollView {
+        LazyVGrid(columns: [
+          GridItem(.flexible(), spacing: 16),
+          GridItem(.flexible(), spacing: 16)
+        ], alignment: .leading, spacing: 18) {
+          ShortcutSection(title: "Navigate", shortcuts: [
+            ShortcutHelpItem(keys: "⌘1", action: "Agenda"),
+            ShortcutHelpItem(keys: "⌘2", action: "Files"),
+            ShortcutHelpItem(keys: "⌘3 / ⌘F", action: "Search"),
+            ShortcutHelpItem(keys: "⌘4", action: "OpenClaw Chat"),
+            ShortcutHelpItem(keys: "⌘5", action: "Agent Space"),
+            ShortcutHelpItem(keys: "⌘P / ⌘K", action: "Quick Open"),
+            ShortcutHelpItem(keys: "⌘0", action: "Toggle OpenClaw side panel"),
+            ShortcutHelpItem(keys: "⌘? / ⌘/", action: "Show shortcuts")
+          ])
+
+          ShortcutSection(title: "Daily Notes", shortcuts: [
+            ShortcutHelpItem(keys: "⌘6", action: "Today"),
+            ShortcutHelpItem(keys: "⌘7", action: "Yesterday"),
+            ShortcutHelpItem(keys: "⌘8", action: "Tomorrow")
+          ])
+
+          ShortcutSection(title: "Agenda", shortcuts: [
+            ShortcutHelpItem(keys: "j / ↓", action: "Next item"),
+            ShortcutHelpItem(keys: "k / ↑", action: "Previous item"),
+            ShortcutHelpItem(keys: "J / K", action: "Scroll detail pane"),
+            ShortcutHelpItem(keys: "gg / G", action: "First / last item"),
+            ShortcutHelpItem(keys: "1 2 3", action: "Agenda mode"),
+            ShortcutHelpItem(keys: "/", action: "Filter agenda"),
+            ShortcutHelpItem(keys: "o / Return", action: "Open item"),
+            ShortcutHelpItem(keys: "e", action: "Edit item source"),
+            ShortcutHelpItem(keys: "t i d x", action: "TODO / in-progress / done / canceled"),
+            ShortcutHelpItem(keys: "A", action: "Assign to agent"),
+            ShortcutHelpItem(keys: "p", action: "Priority mode"),
+            ShortcutHelpItem(keys: "s n w m", action: "Schedule today / tomorrow / week / month")
+          ])
+
+          ShortcutSection(title: "Document", shortcuts: [
+            ShortcutHelpItem(keys: "j / k", action: "Move block selection"),
+            ShortcutHelpItem(keys: "Return", action: "Edit selected block"),
+            ShortcutHelpItem(keys: "⌘Return", action: "Insert paragraph after block"),
+            ShortcutHelpItem(keys: "/", action: "Insert slash-command paragraph"),
+            ShortcutHelpItem(keys: "Delete", action: "Delete selected block"),
+            ShortcutHelpItem(keys: "⌘D", action: "Duplicate selected block"),
+            ShortcutHelpItem(keys: "⌘⇧↑ / ⌘⇧↓", action: "Move block"),
+            ShortcutHelpItem(keys: "Esc", action: "Clear block selection")
+          ])
+
+          ShortcutSection(title: "Editing", shortcuts: [
+            ShortcutHelpItem(keys: "⌘S", action: "Save active inline editor"),
+            ShortcutHelpItem(keys: "Esc", action: "Cancel active inline editor"),
+            ShortcutHelpItem(keys: "⌘B / ⌘I", action: "Bold / italic selected inline text"),
+            ShortcutHelpItem(keys: "⌘U", action: "Underline selected inline text"),
+            ShortcutHelpItem(keys: "⌘R", action: "Run source block while editing source")
+          ])
+        }
+        .padding(.vertical, 2)
+      }
+    }
+    .padding(20)
+    .frame(width: 760, height: 620)
+  }
+}
+
+private struct ShortcutHelpItem: Identifiable {
+  let keys: String
+  let action: String
+
+  var id: String {
+    "\(keys):\(action)"
+  }
+}
+
+private struct ShortcutSection: View {
+  let title: String
+  let shortcuts: [ShortcutHelpItem]
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(title)
+        .font(.headline)
+
+      VStack(alignment: .leading, spacing: 6) {
+        ForEach(shortcuts) { shortcut in
+          HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(shortcut.keys)
+              .font(.caption.monospaced().weight(.semibold))
+              .foregroundStyle(.secondary)
+              .frame(width: 92, alignment: .leading)
+            Text(shortcut.action)
+              .font(.callout)
+              .foregroundStyle(.primary)
+              .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+          }
+        }
+      }
+    }
+    .padding(12)
+    .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .stroke(Color.secondary.opacity(0.12))
+    )
   }
 }
 
@@ -277,6 +631,7 @@ private struct AgendaRow: View {
 
 private struct SearchView: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @FocusState private var isSearchFocused: Bool
 
   var body: some View {
     VStack(spacing: 0) {
@@ -290,6 +645,7 @@ private struct SearchView: View {
       HStack(spacing: 8) {
         TextField("Search corpus", text: $store.searchQuery)
           .textFieldStyle(.roundedBorder)
+          .focused($isSearchFocused)
           .onSubmit {
             Task { await store.runSearch() }
           }
@@ -324,6 +680,14 @@ private struct SearchView: View {
         }
         .listStyle(.inset)
       }
+    }
+    .onAppear {
+      if store.selectedSurface == .search {
+        isSearchFocused = true
+      }
+    }
+    .onChange(of: store.searchFocusToken) {
+      isSearchFocused = true
     }
   }
 }
@@ -502,32 +866,112 @@ private struct MeetingRow: View {
   }
 }
 
+private enum OpenClawChatPresentation {
+  case fullPage
+  case assistantPanel
+}
+
 private struct OpenClawChatView: View {
   @EnvironmentObject private var store: WorkspaceStore
-  @FocusState private var inputFocused: Bool
   @State private var isShowingConfiguration = false
+  let presentation: OpenClawChatPresentation
+
+  init(presentation: OpenClawChatPresentation = .fullPage) {
+    self.presentation = presentation
+  }
 
   var body: some View {
     VStack(spacing: 0) {
+      header
+
+      configurationStrip
+
+      Divider()
+
+      chatTranscript
+
+      Divider()
+
+      OpenClawComposerView(
+        focusOnAppear: presentation == .fullPage,
+        compact: presentation == .assistantPanel
+      )
+      .padding(presentation == .assistantPanel ? 10 : 16)
+    }
+    .sheet(isPresented: $isShowingConfiguration) {
+      OpenClawConfigurationSheet()
+        .environmentObject(store)
+    }
+  }
+
+  @ViewBuilder
+  private var header: some View {
+    switch presentation {
+    case .fullPage:
       HeaderBar(title: "OpenClaw Chat", subtitle: store.openClawStatusText) {
+        headerActions
+      }
+    case .assistantPanel:
+      HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text("OpenClaw")
+            .font(.headline)
+          Text(store.openClawStatusText)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+        }
+        Spacer(minLength: 0)
         if store.isSendingOpenClawMessage {
           ProgressView()
             .controlSize(.small)
         }
+        Button {
+          store.selectedSurface = .openClaw
+          store.isOpenClawAssistantPresented = false
+        } label: {
+          Label("Focus Chat", systemImage: "arrow.up.left.and.arrow.down.right")
+        }
+        .labelStyle(.iconOnly)
+        .help("Focus OpenClaw Chat")
 
         Button {
-          store.resetOpenClawChat()
+          store.isOpenClawAssistantPresented = false
         } label: {
-          Label("New", systemImage: "plus")
+          Label("Close", systemImage: "xmark")
         }
-
-        Button {
-          isShowingConfiguration = true
-        } label: {
-          Label("Configure", systemImage: "slider.horizontal.3")
-        }
+        .labelStyle(.iconOnly)
+        .help("Close OpenClaw panel")
       }
+      .padding(.horizontal, 12)
+      .padding(.vertical, 10)
+    }
+  }
 
+  @ViewBuilder
+  private var headerActions: some View {
+    if store.isSendingOpenClawMessage {
+      ProgressView()
+        .controlSize(.small)
+    }
+
+    Button {
+      store.resetOpenClawChat()
+    } label: {
+      Label("New", systemImage: "plus")
+    }
+
+    Button {
+      isShowingConfiguration = true
+    } label: {
+      Label("Configure", systemImage: "slider.horizontal.3")
+    }
+  }
+
+  @ViewBuilder
+  private var configurationStrip: some View {
+    if presentation == .fullPage {
       HStack(spacing: 8) {
         Text("Agent")
           .font(.caption.weight(.medium))
@@ -552,59 +996,57 @@ private struct OpenClawChatView: View {
       }
       .padding(.horizontal, 16)
       .padding(.bottom, 10)
-
-      Divider()
-
-      ScrollViewReader { proxy in
-        ScrollView {
-          LazyVStack(alignment: .leading, spacing: 10) {
-            if store.openClawMessages.isEmpty {
-              EmptyChatView(statusText: store.openClawStatusText)
-                .frame(maxWidth: .infinity, minHeight: 220)
-            } else {
-              ForEach(store.openClawMessages) { message in
-                ChatBubbleView(message: message)
-                  .id(message.id)
-              }
-            }
-          }
-          .padding(16)
-        }
-        .onChange(of: store.openClawMessages.count) {
-          if let last = store.openClawMessages.last {
-            withAnimation(.easeOut(duration: 0.18)) {
-              proxy.scrollTo(last.id, anchor: .bottom)
-            }
-          }
-        }
-      }
-
-      Divider()
-
-      HStack(alignment: .firstTextBaseline, spacing: 8) {
-        TextField("Message OpenClaw", text: $store.openClawDraft, axis: .vertical)
-          .lineLimit(1...5)
+    } else {
+      HStack(spacing: 8) {
+        TextField("Agent", text: $store.openClawAgentID)
           .textFieldStyle(.roundedBorder)
-          .focused($inputFocused)
-          .onSubmit {
-            Task { await store.sendOpenClawMessage() }
-          }
-
         Button {
-          Task { await store.sendOpenClawMessage() }
+          isShowingConfiguration = true
         } label: {
-          Label("Send", systemImage: "paperplane.fill")
+          Label("Configure", systemImage: "slider.horizontal.3")
         }
-        .disabled(store.openClawDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isSendingOpenClawMessage)
+        .labelStyle(.iconOnly)
+        .help("Configure OpenClaw")
       }
-      .padding(16)
+      .padding(.horizontal, 10)
+      .padding(.bottom, 10)
     }
-    .onAppear {
-      inputFocused = true
-    }
-    .sheet(isPresented: $isShowingConfiguration) {
-      OpenClawConfigurationSheet()
-        .environmentObject(store)
+  }
+
+  private var chatTranscript: some View {
+    ScrollViewReader { proxy in
+      ScrollView {
+        LazyVStack(alignment: .leading, spacing: presentation == .assistantPanel ? 8 : 10) {
+          if store.openClawMessages.isEmpty {
+            EmptyChatView(statusText: store.openClawStatusText)
+              .frame(maxWidth: .infinity, minHeight: presentation == .assistantPanel ? 140 : 220)
+          } else {
+            ForEach(store.openClawMessages) { message in
+              ChatBubbleView(message: message, compact: presentation == .assistantPanel)
+                .id(message.id)
+            }
+            if store.isSendingOpenClawMessage {
+              OpenClawTypingIndicatorView(startedAt: store.openClawRequestStartedAt)
+                .id("openclaw-typing")
+            }
+          }
+        }
+        .padding(presentation == .assistantPanel ? 10 : 16)
+      }
+      .onChange(of: store.openClawMessages.count) {
+        if let last = store.openClawMessages.last {
+          withAnimation(.easeOut(duration: 0.18)) {
+            proxy.scrollTo(last.id, anchor: .bottom)
+          }
+        }
+      }
+      .onChange(of: store.isSendingOpenClawMessage) {
+        if store.isSendingOpenClawMessage {
+          withAnimation(.easeOut(duration: 0.18)) {
+            proxy.scrollTo("openclaw-typing", anchor: .bottom)
+          }
+        }
+      }
     }
   }
 }
@@ -724,50 +1166,6 @@ private struct EmptyChatView: View {
   }
 }
 
-private struct ChatBubbleView: View {
-  let message: OpenClawChatMessage
-
-  var body: some View {
-    HStack {
-      if message.role == .user {
-        Spacer(minLength: 48)
-      }
-
-      VStack(alignment: .leading, spacing: 4) {
-        Text(message.role == .user ? "You" : "OpenClaw")
-          .font(.caption.weight(.medium))
-          .foregroundStyle(.secondary)
-        Text(message.content)
-          .font(.body)
-          .textSelection(.enabled)
-          .frame(maxWidth: 640, alignment: .leading)
-      }
-      .padding(10)
-      .background(background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-      .overlay(
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .stroke(Color.secondary.opacity(message.role == .user ? 0 : 0.16))
-      )
-
-      if message.role != .user {
-        Spacer(minLength: 48)
-      }
-    }
-    .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
-  }
-
-  private var background: Color {
-    switch message.role {
-    case .user:
-      return Color.accentColor.opacity(0.14)
-    case .assistant:
-      return Color.secondary.opacity(0.08)
-    case .system:
-      return Color.orange.opacity(0.10)
-    }
-  }
-}
-
 private struct OpenClawThreadsView: View {
   @EnvironmentObject private var store: WorkspaceStore
 
@@ -880,18 +1278,13 @@ private struct DetailView: View {
       if let location = store.selectedLocation {
         DetailHeader(location: location)
         Divider()
-        if store.isEditingEntry {
-          EntryEditorView()
-          Divider()
-          BacklinksView()
-        } else {
-          ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-              EntryBodyView(location: location)
-              Divider()
-              BacklinksView()
-            }
+        ScrollView {
+          VStack(alignment: .leading, spacing: 0) {
+            EntryBodyView(location: location)
+            Divider()
+            BacklinksView()
           }
+          .background(DetailScrollCommandBridge(request: store.detailScrollRequest))
         }
       } else {
         EmptyStateView(title: "No Selection", detail: store.statusText, action: "Open Corpus") {
@@ -902,49 +1295,43 @@ private struct DetailView: View {
   }
 }
 
-private struct EntryEditorView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+private struct DetailScrollCommandBridge: NSViewRepresentable {
+  let request: DetailScrollRequest?
 
-  var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      if let source = store.selectedEntrySource {
-        Text(store.relativePath(source.file) + ":\(source.displayRange)")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .textSelection(.enabled)
-      }
+  func makeCoordinator() -> Coordinator {
+    Coordinator()
+  }
 
-      TextEditor(text: $store.editableEntryText)
-        .font(.system(.body, design: .monospaced))
-        .frame(minHeight: 360)
-        .overlay(
-          RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .stroke(Color.secondary.opacity(0.25))
-        )
+  func makeNSView(context: Context) -> NSView {
+    NSView(frame: .zero)
+  }
 
-      HStack {
-        Button {
-          Task { await store.saveEditedEntry() }
-        } label: {
-          Label("Save", systemImage: "checkmark")
-        }
-        .keyboardShortcut("s", modifiers: [.command])
-        .disabled(store.isSavingEntry)
+  func updateNSView(_ view: NSView, context: Context) {
+    guard let request, context.coordinator.lastRequestID != request.id else { return }
+    context.coordinator.lastRequestID = request.id
 
-        Button {
-          store.cancelEditingSelectedEntry()
-        } label: {
-          Label("Cancel", systemImage: "xmark")
-        }
-        .keyboardShortcut(.cancelAction)
+    DispatchQueue.main.async {
+      guard let scrollView = view.enclosingScrollView,
+            let documentView = scrollView.documentView
+      else { return }
 
-        if store.isSavingEntry {
-          ProgressView()
-            .controlSize(.small)
-        }
-      }
+      let clipView = scrollView.contentView
+      let visibleHeight = clipView.bounds.height
+      guard visibleHeight > 0 else { return }
+
+      let distance = max(120, visibleHeight * 0.8)
+      let direction: CGFloat = request.direction == .down ? 1 : -1
+      let flippedMultiplier: CGFloat = documentView.isFlipped ? 1 : -1
+      let maxY = max(0, documentView.bounds.height - visibleHeight)
+      var origin = clipView.bounds.origin
+      origin.y = min(max(0, origin.y + distance * direction * flippedMultiplier), maxY)
+      clipView.scroll(to: origin)
+      scrollView.reflectScrolledClipView(clipView)
     }
-    .padding(16)
+  }
+
+  final class Coordinator {
+    var lastRequestID: Int?
   }
 }
 
@@ -994,22 +1381,22 @@ private struct DetailHeader: View {
           Task { await store.reloadSelectedEntrySource() }
         }
 
-        if store.isEditingEntry {
+        if store.hasActiveEdit {
           Button {
-            Task { await store.saveEditedEntry() }
+            Task { await store.saveActiveEdit() }
           } label: {
             Label("Save", systemImage: "checkmark")
           }
-          .disabled(store.isSavingEntry)
+          .disabled(!store.canSaveActiveEdit)
 
           Button {
-            store.cancelEditingSelectedEntry()
+            store.cancelActiveEdit()
           } label: {
             Label("Cancel", systemImage: "xmark")
           }
         } else {
           Button {
-            store.beginEditingSelectedEntry()
+            store.beginEditingCurrentScope()
           } label: {
             Label("Edit", systemImage: "square.and.pencil")
           }
@@ -1069,7 +1456,7 @@ private struct EntryBodyView: View {
     VStack(alignment: .leading, spacing: 14) {
       DetailMetadataGrid(rows: metadataRows(location))
 
-      if store.isLoadingEntrySource {
+      if store.isLoadingEntrySource && store.selectedEntrySource == nil {
         HStack(spacing: 8) {
           ProgressView()
             .controlSize(.small)
@@ -1086,7 +1473,42 @@ private struct EntryBodyView: View {
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
         }
-        OrgRenderedEntryView(blocks: OrgEntryRenderer.parse(source.text))
+        if store.isEditingEntry {
+          OrgSyntaxTextEditor(
+            text: $store.editableEntryText,
+            monospaced: true,
+            showsScrollers: true,
+            textInset: NSSize(width: 12, height: 12),
+            focusOnAppear: true
+          )
+          .frame(minHeight: 520)
+          .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+          .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+              .stroke(Color.secondary.opacity(0.16))
+          )
+        } else if store.isRenderingEntrySource && store.selectedRenderedBlocks.isEmpty {
+          HStack(spacing: 8) {
+            ProgressView()
+              .controlSize(.small)
+            Text("Rendering preview")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+          }
+        } else {
+          OrgRenderedEntryView(
+            blocks: store.selectedRenderedBlocks,
+            blocksRenderSignature: store.selectedRenderedBlocksRenderSignature,
+            source: store.selectedEntrySource.map(OrgRenderedEntrySourceContext.init),
+            corpusRoot: store.corpusRoot,
+            selectedBlockID: store.selectedBlockID,
+            selectedBlockIndex: store.selectedBlockID.flatMap { store.selectedRenderedBlockIndexes[$0] },
+            editingBlockID: store.editingBlockID,
+            sourceBlockRunsRenderSignature: store.sourceBlockRunsRenderSignature,
+            sourceBlockRuns: store.sourceBlockRuns
+          )
+          .equatable()
+        }
       } else {
         fallbackBody(location)
       }
@@ -1124,11 +1546,10 @@ private struct EntryBodyView: View {
     switch location {
     case .agenda(let item):
       let planning = [item.kind, item.time].compactMap { $0 }.joined(separator: " ")
-      let priority = item.priority.map { "[#\($0)]" } ?? ""
       let rows: [(String, String)] = [
         ("TODO", item.todo ?? ""),
         ("Planning", planning),
-        ("Priority", priority),
+        ("Priority", item.priority.map { "[#\($0)]" } ?? ""),
         ("Effort", item.effort ?? ""),
         ("Tags", item.tags.joined(separator: ", ")),
         ("ID", item.idValue.map(Org2Display.shortID) ?? "")
@@ -1176,243 +1597,6 @@ private struct EntryBodyView: View {
     formatter.dateStyle = .medium
     formatter.timeStyle = .short
     return formatter.string(from: date)
-  }
-}
-
-private struct OrgRenderedEntryView: View {
-  let blocks: [OrgRenderedBlock]
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-        blockView(block)
-      }
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
-  }
-
-  @ViewBuilder
-  private func blockView(_ block: OrgRenderedBlock) -> some View {
-    switch block {
-    case .heading(let heading):
-      RenderedHeadingView(heading: heading)
-    case .planning(let planning):
-      RenderedPlanningView(planning: planning)
-    case .properties(let rows):
-      RenderedPropertiesView(rows: rows)
-    case .quote(let lines):
-      RenderedQuoteView(lines: lines)
-    case .source(let language, let lines):
-      RenderedSourceView(language: language, lines: lines)
-    case .listItem(let indent, let marker, let text):
-      RenderedListItemView(indent: indent, marker: marker, text: text)
-    case .paragraph(let text):
-      Text(text)
-        .font(.body)
-        .lineSpacing(2)
-        .textSelection(.enabled)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    case .keyword(let key, let value):
-      RenderedKeywordView(key: key, value: value)
-    case .blank:
-      Spacer()
-        .frame(height: 4)
-    }
-  }
-}
-
-private struct RenderedHeadingView: View {
-  let heading: OrgHeadingBlock
-
-  var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
-      if let todo = heading.todo {
-        StatusPill(text: todo)
-      }
-      if let priority = heading.priority {
-        Label(priority, systemImage: "flag.fill")
-          .font(.caption.weight(.semibold))
-          .foregroundStyle(.orange)
-          .labelStyle(.titleAndIcon)
-      }
-      Text(heading.title)
-        .font(font)
-        .textSelection(.enabled)
-      if !heading.tags.isEmpty {
-        Text(heading.tags.map { "#\($0)" }.joined(separator: " "))
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-      Spacer(minLength: 0)
-    }
-    .padding(.top, topPadding)
-    .padding(.leading, CGFloat(max(0, heading.level - 1)) * 14)
-  }
-
-  private var font: Font {
-    switch heading.level {
-    case 1:
-      return .title3.weight(.semibold)
-    case 2:
-      return .headline.weight(.semibold)
-    case 3:
-      return .callout.weight(.semibold)
-    default:
-      return .body.weight(.semibold)
-    }
-  }
-
-  private var topPadding: CGFloat {
-    heading.level == 1 ? 2 : 8
-  }
-}
-
-private struct RenderedPlanningView: View {
-  let planning: OrgPlanningBlock
-
-  var body: some View {
-    HStack(spacing: 8) {
-      Text(planning.kind.capitalized)
-        .font(.caption.weight(.medium))
-        .foregroundStyle(.secondary)
-        .frame(width: 78, alignment: .leading)
-      Text(planning.value)
-        .font(.callout.monospacedDigit())
-        .textSelection(.enabled)
-    }
-    .padding(.leading, 2)
-  }
-}
-
-private struct RenderedPropertiesView: View {
-  let rows: [OrgPropertyRow]
-
-  var body: some View {
-    if !rows.isEmpty {
-      Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 4) {
-        ForEach(rows, id: \.key) { row in
-          GridRow {
-            Text(row.key)
-              .font(.caption.monospaced())
-              .foregroundStyle(.secondary)
-            Text(propertyValue(row))
-              .font(.callout)
-              .textSelection(.enabled)
-          }
-        }
-      }
-      .padding(.vertical, 4)
-    }
-  }
-
-  private func propertyValue(_ row: OrgPropertyRow) -> String {
-    if row.key.uppercased() == "ID",
-       row.value.range(of: #"^[0-9a-fA-F-]{36}$"#, options: .regularExpression) != nil {
-      return Org2Display.shortID(row.value)
-    }
-    return row.value
-  }
-}
-
-private struct RenderedQuoteView: View {
-  let lines: [String]
-
-  var body: some View {
-    HStack(alignment: .top, spacing: 10) {
-      Rectangle()
-        .fill(Color.accentColor.opacity(0.45))
-        .frame(width: 3)
-      VStack(alignment: .leading, spacing: 4) {
-        ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-          Text(line)
-            .font(.body.italic())
-            .foregroundStyle(.secondary)
-            .textSelection(.enabled)
-        }
-      }
-    }
-    .padding(.vertical, 5)
-    .padding(.leading, 8)
-  }
-}
-
-private struct RenderedSourceView: View {
-  let language: String?
-  let lines: [String]
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      if let language, !language.isEmpty {
-        Text(language)
-          .font(.caption.monospaced().weight(.medium))
-          .foregroundStyle(.secondary)
-      }
-      ScrollView(.horizontal) {
-        VStack(alignment: .leading, spacing: 2) {
-          ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-            Text(line.isEmpty ? " " : line)
-              .font(.system(.body, design: .monospaced))
-              .foregroundStyle(color(for: line))
-              .textSelection(.enabled)
-          }
-        }
-        .padding(10)
-      }
-      .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-      .overlay(
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
-          .stroke(Color.secondary.opacity(0.16))
-      )
-    }
-    .padding(.vertical, 4)
-  }
-
-  private func color(for line: String) -> Color {
-    let trimmed = line.trimmingCharacters(in: .whitespaces)
-    if trimmed.hasPrefix("#") || trimmed.hasPrefix("//") || trimmed.hasPrefix("--") {
-      return .secondary
-    }
-    if trimmed.hasPrefix("import ") || trimmed.hasPrefix("let ") || trimmed.hasPrefix("const ") || trimmed.hasPrefix("func ") {
-      return .purple
-    }
-    return .primary
-  }
-}
-
-private struct RenderedListItemView: View {
-  let indent: Int
-  let marker: String
-  let text: String
-
-  var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
-      Text(marker)
-        .font(.callout.monospaced())
-        .foregroundStyle(.secondary)
-        .frame(width: 28, alignment: .trailing)
-      Text(text)
-        .font(.body)
-        .textSelection(.enabled)
-      Spacer(minLength: 0)
-    }
-    .padding(.leading, CGFloat(indent) * 16)
-  }
-}
-
-private struct RenderedKeywordView: View {
-  let key: String
-  let value: String
-
-  var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
-      Text(key)
-        .font(.caption.monospaced().weight(.medium))
-        .foregroundStyle(.secondary)
-        .frame(width: 78, alignment: .leading)
-      Text(value)
-        .font(.callout)
-        .textSelection(.enabled)
-    }
   }
 }
 
@@ -1531,7 +1715,7 @@ private struct HeaderBar<Trailing: View>: View {
   }
 }
 
-private struct StatusPill: View {
+struct StatusPill: View {
   let text: String
 
   var body: some View {
