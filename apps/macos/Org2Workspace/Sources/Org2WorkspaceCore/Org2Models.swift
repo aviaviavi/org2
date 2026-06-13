@@ -1948,6 +1948,11 @@ public struct OrgMediaAttachment: Equatable, Sendable {
     case video
   }
 
+  public struct EmbeddedGroup: Equatable, Sendable {
+    public let displayText: String
+    public let attachments: [OrgMediaAttachment]
+  }
+
   public let kind: Kind
   public let label: String
   public let target: String
@@ -2006,6 +2011,44 @@ public struct OrgMediaAttachment: Equatable, Sendable {
     )
   }
 
+  public static func embedded(
+    in raw: String,
+    sourceFile: String? = nil,
+    corpusRoot: URL? = nil
+  ) -> EmbeddedGroup? {
+    guard mayContainMediaTarget(raw) else { return nil }
+
+    var cursor = raw.startIndex
+    var displayText = ""
+    var attachments: [OrgMediaAttachment] = []
+
+    while cursor < raw.endIndex {
+      if let parsed = parseEmbeddedBracketLink(raw, at: cursor, sourceFile: sourceFile, corpusRoot: corpusRoot) {
+        attachments.append(parsed.attachment)
+        cursor = parsed.end
+        continue
+      }
+
+      if let parsed = parseEmbeddedMarkdownLink(raw, at: cursor, sourceFile: sourceFile, corpusRoot: corpusRoot) {
+        attachments.append(parsed.attachment)
+        cursor = parsed.end
+        continue
+      }
+
+      if let parsed = parseEmbeddedPlainMediaURL(raw, at: cursor, sourceFile: sourceFile, corpusRoot: corpusRoot) {
+        attachments.append(parsed.attachment)
+        cursor = parsed.end
+        continue
+      }
+
+      displayText.append(raw[cursor])
+      cursor = raw.index(after: cursor)
+    }
+
+    guard !attachments.isEmpty else { return nil }
+    return EmbeddedGroup(displayText: normalizedEmbeddedDisplayText(displayText), attachments: attachments)
+  }
+
   public static func mayContainStandaloneMedia(_ raw: String) -> Bool {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, !trimmed.contains("\n") else { return false }
@@ -2029,6 +2072,22 @@ public struct OrgMediaAttachment: Equatable, Sendable {
       return true
     }
     return trimmed.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
+  }
+
+  public static func mayContainMediaTarget(_ raw: String) -> Bool {
+    let lowercased = raw.lowercased()
+    if lowercased.contains("youtube.com")
+      || lowercased.contains("youtu.be")
+      || lowercased.contains("vimeo.com") {
+      return true
+    }
+
+    for ext in imageExtensions.union(videoExtensions) {
+      if lowercased.contains(".\(ext)") {
+        return true
+      }
+    }
+    return false
   }
 
   private static func standaloneLink(_ raw: String) -> (label: String, target: String)? {
@@ -2076,6 +2135,99 @@ public struct OrgMediaAttachment: Equatable, Sendable {
     let target = ns.substring(with: match.range(at: 2)).trimmingCharacters(in: .whitespacesAndNewlines)
     guard !target.isEmpty else { return nil }
     return (label, target)
+  }
+
+  private static func parseEmbeddedBracketLink(
+    _ raw: String,
+    at cursor: String.Index,
+    sourceFile: String?,
+    corpusRoot: URL?
+  ) -> (attachment: OrgMediaAttachment, end: String.Index)? {
+    guard raw[cursor...].hasPrefix("[[") else { return nil }
+    let bodyStart = raw.index(cursor, offsetBy: 2)
+    guard let closeRange = raw[bodyStart...].range(of: "]]") else { return nil }
+    let linkRaw = String(raw[cursor..<closeRange.upperBound])
+    guard let link = parseBracketLink(linkRaw),
+          let attachment = attachment(label: link.label, target: link.target, sourceFile: sourceFile, corpusRoot: corpusRoot)
+    else {
+      return nil
+    }
+    return (attachment, closeRange.upperBound)
+  }
+
+  private static func parseEmbeddedMarkdownLink(
+    _ raw: String,
+    at cursor: String.Index,
+    sourceFile: String?,
+    corpusRoot: URL?
+  ) -> (attachment: OrgMediaAttachment, end: String.Index)? {
+    guard raw[cursor] == "[", !raw[cursor...].hasPrefix("[[") else { return nil }
+    let labelStart = raw.index(after: cursor)
+    guard let labelEnd = raw[labelStart...].firstIndex(of: "]") else { return nil }
+    let targetOpen = raw.index(after: labelEnd)
+    guard targetOpen < raw.endIndex, raw[targetOpen] == "(" else { return nil }
+    let targetStart = raw.index(after: targetOpen)
+    guard let targetEnd = raw[targetStart...].firstIndex(of: ")") else { return nil }
+    let linkRaw = String(raw[cursor...targetEnd])
+    guard let link = parseMarkdownLink(linkRaw),
+          let attachment = attachment(label: link.label, target: link.target, sourceFile: sourceFile, corpusRoot: corpusRoot)
+    else {
+      return nil
+    }
+    return (attachment, raw.index(after: targetEnd))
+  }
+
+  private static func parseEmbeddedPlainMediaURL(
+    _ raw: String,
+    at cursor: String.Index,
+    sourceFile: String?,
+    corpusRoot: URL?
+  ) -> (attachment: OrgMediaAttachment, end: String.Index)? {
+    guard raw[cursor...].hasPrefix("http://") || raw[cursor...].hasPrefix("https://") else { return nil }
+    var end = cursor
+    while end < raw.endIndex, !raw[end].isWhitespace, !["]", ")", "\"", "'", "`", "<", ">"].contains(raw[end]) {
+      end = raw.index(after: end)
+    }
+
+    var target = String(raw[cursor..<end])
+    while let last = target.last, [".", ",", ";", ":"].contains(last) {
+      target.removeLast()
+      end = raw.index(before: end)
+    }
+
+    guard let attachment = attachment(label: "", target: target, sourceFile: sourceFile, corpusRoot: corpusRoot) else {
+      return nil
+    }
+    return (attachment, end)
+  }
+
+  private static func attachment(
+    label: String,
+    target: String,
+    sourceFile: String?,
+    corpusRoot: URL?
+  ) -> OrgMediaAttachment? {
+    guard let kind = kind(forTarget: target) else { return nil }
+    return OrgMediaAttachment(
+      kind: kind,
+      label: label,
+      target: target,
+      resolvedPath: remoteURL(forTarget: target) == nil
+        ? resolvePath(target, sourceFile: sourceFile, corpusRoot: corpusRoot)
+        : nil
+    )
+  }
+
+  private static func normalizedEmbeddedDisplayText(_ raw: String) -> String {
+    raw
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map { line in
+        String(line)
+          .replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)
+          .trimmingCharacters(in: .whitespaces)
+      }
+      .joined(separator: "\n")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   public static func kind(forTarget target: String) -> Kind? {

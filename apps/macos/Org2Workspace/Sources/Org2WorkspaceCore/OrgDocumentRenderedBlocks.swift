@@ -94,6 +94,12 @@ struct RenderedBlockView: View, Equatable {
           corpusRoot: corpusRoot
          ) {
         OrgMediaAttachmentView(attachment: attachment)
+      } else if let embedded = OrgMediaAttachment.embedded(
+          in: paragraphText,
+          sourceFile: sourceFile,
+          corpusRoot: corpusRoot
+        ) {
+        RenderedParagraphMediaView(embedded: embedded)
       } else {
         OrgInlineText(paragraphText)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -552,6 +558,24 @@ private struct OrgMediaAttachmentView: View {
     }
     .frame(maxWidth: 760, alignment: .leading)
     .padding(.vertical, 4)
+  }
+}
+
+private struct RenderedParagraphMediaView: View {
+  let embedded: OrgMediaAttachment.EmbeddedGroup
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      if !embedded.displayText.isEmpty {
+        OrgInlineText(embedded.displayText)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+
+      ForEach(Array(embedded.attachments.enumerated()), id: \.offset) { _, attachment in
+        OrgMediaAttachmentView(attachment: attachment)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
 
