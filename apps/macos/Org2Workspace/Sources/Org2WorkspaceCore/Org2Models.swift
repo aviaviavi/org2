@@ -2621,8 +2621,8 @@ public enum PlanningDateTarget: Sendable {
 }
 
 public enum DailyNoteTarget: String, CaseIterable, Identifiable, Sendable {
-  case yesterday
   case today
+  case yesterday
   case tomorrow
 
   public var id: String { rawValue }
@@ -2632,6 +2632,14 @@ public enum DailyNoteTarget: String, CaseIterable, Identifiable, Sendable {
     case .yesterday: "Yesterday"
     case .today: "Today"
     case .tomorrow: "Tomorrow"
+    }
+  }
+
+  public var commandShortcutTitle: String {
+    switch self {
+    case .today: "⌘6"
+    case .yesterday: "⌘7"
+    case .tomorrow: "⌘8"
     }
   }
 }

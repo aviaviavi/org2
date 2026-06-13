@@ -129,8 +129,15 @@ private struct SidebarView: View {
           Button {
             store.openDailyNote(target)
           } label: {
-            Label(target.title, systemImage: target == .today ? "sun.max" : "calendar")
+            HStack(spacing: 8) {
+              Label(target.title, systemImage: target == .today ? "sun.max" : "calendar")
+              Spacer(minLength: 0)
+              Text(target.commandShortcutTitle)
+                .font(.caption.monospaced())
+                .foregroundStyle(.tertiary)
+            }
           }
+          .help("\(target.title) daily note (\(target.commandShortcutTitle))")
         }
       }
     }
@@ -332,7 +339,7 @@ private struct KeyboardShortcutsView: View {
           GridItem(.flexible(), spacing: 16)
         ], alignment: .leading, spacing: 18) {
           ShortcutSection(title: "Navigate", shortcuts: [
-            ShortcutHelpItem(keys: "⌘1", action: "Today"),
+            ShortcutHelpItem(keys: "⌘1", action: "Agenda"),
             ShortcutHelpItem(keys: "⌘2", action: "Files"),
             ShortcutHelpItem(keys: "⌘3 / ⌘F", action: "Search"),
             ShortcutHelpItem(keys: "⌘4", action: "OpenClaw Chat"),
@@ -340,6 +347,12 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "⌘P / ⌘K", action: "Quick Open"),
             ShortcutHelpItem(keys: "⌘0", action: "Toggle OpenClaw side panel"),
             ShortcutHelpItem(keys: "⌘? / ⌘/", action: "Show shortcuts")
+          ])
+
+          ShortcutSection(title: "Daily Notes", shortcuts: [
+            ShortcutHelpItem(keys: "⌘6", action: "Today"),
+            ShortcutHelpItem(keys: "⌘7", action: "Yesterday"),
+            ShortcutHelpItem(keys: "⌘8", action: "Tomorrow")
           ])
 
           ShortcutSection(title: "Agenda", shortcuts: [
