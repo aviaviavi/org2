@@ -679,17 +679,22 @@ public final class WorkspaceStore: ObservableObject {
 
       invalidateCanonicalDocumentCache(for: source.file)
       selectedEntrySource = updatedSource
-      selectedRenderedBlocks = blocksWithTransientDraft(blocks, for: updatedSource)
 
-      let updatedBlock = blockForSelectionLine(
+      let parsedVisibleBlocks = blocksWithTransientDraft(blocks, for: updatedSource)
+      let parsedUpdatedBlock = blockForSelectionLine(
         block.startLine,
         mode: .containingOrNearest,
-        in: selectedRenderedBlocks
+        in: parsedVisibleBlocks
+      )
+      let updatedBlock = parsedUpdatedBlock?.preservingID(block.id)
+      selectedRenderedBlocks = Self.replacingBlock(
+        parsedUpdatedBlock,
+        with: updatedBlock,
+        in: parsedVisibleBlocks
       )
       selectedBlockID = updatedBlock?.id
       editingBlockID = updatedBlock?.id
       editableBlockText = normalizedReplacement
-      activeBlockDrafts[block.id] = nil
       if let updatedBlock {
         activeBlockDrafts[updatedBlock.id] = normalizedReplacement
       }
@@ -3188,6 +3193,17 @@ public final class WorkspaceStore: ObservableObject {
         return lhs.endLineExclusive < rhs.endLineExclusive
       }
       return lhs.id < rhs.id
+    }
+  }
+
+  nonisolated private static func replacingBlock(
+    _ original: OrgEditableBlock?,
+    with replacement: OrgEditableBlock?,
+    in blocks: [OrgEditableBlock]
+  ) -> [OrgEditableBlock] {
+    guard let original, let replacement else { return blocks }
+    return blocks.map { block in
+      block.id == original.id ? replacement : block
     }
   }
 

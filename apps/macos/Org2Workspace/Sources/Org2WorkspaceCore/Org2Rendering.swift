@@ -22,11 +22,37 @@ public struct OrgEditableBlock: Identifiable, Equatable, Sendable {
   public let rendered: OrgRenderedBlock
 
   public init(startLine: Int, endLineExclusive: Int, rawText: String, rendered: OrgRenderedBlock) {
-    self.id = "\(startLine):\(endLineExclusive):\(Self.kindName(rendered))"
+    self.init(
+      id: "\(startLine):\(endLineExclusive):\(Self.kindName(rendered))",
+      startLine: startLine,
+      endLineExclusive: endLineExclusive,
+      rawText: rawText,
+      rendered: rendered
+    )
+  }
+
+  public init(
+    id: String,
+    startLine: Int,
+    endLineExclusive: Int,
+    rawText: String,
+    rendered: OrgRenderedBlock
+  ) {
+    self.id = id
     self.startLine = startLine
     self.endLineExclusive = endLineExclusive
     self.rawText = rawText
     self.rendered = rendered
+  }
+
+  public func preservingID(_ id: String) -> OrgEditableBlock {
+    OrgEditableBlock(
+      id: id,
+      startLine: startLine,
+      endLineExclusive: endLineExclusive,
+      rawText: rawText,
+      rendered: rendered
+    )
   }
 
   public var isEditable: Bool {
