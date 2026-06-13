@@ -349,6 +349,22 @@ public struct OrgEditableSourceBlock: Equatable, Sendable {
 public struct OrgTableBlock: Equatable, Sendable {
   public let rows: [OrgTableRow]
 
+  public var headerRowIndex: Int? {
+    guard let firstCellRowIndex = rows.firstIndex(where: { row in
+      if case .cells = row { return true }
+      return false
+    }) else {
+      return nil
+    }
+    let separatorIndex = rows.index(after: firstCellRowIndex)
+    guard rows.indices.contains(separatorIndex),
+          case .separator = rows[separatorIndex]
+    else {
+      return nil
+    }
+    return firstCellRowIndex
+  }
+
   public var columnCount: Int {
     rows.reduce(0) { count, row in
       switch row {

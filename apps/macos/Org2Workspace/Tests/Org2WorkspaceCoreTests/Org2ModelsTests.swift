@@ -667,6 +667,7 @@ final class Org2ModelsTests: XCTestCase {
     """)
 
     XCTAssertEqual(table.columnCount, 2)
+    XCTAssertEqual(table.renderedBlock.headerRowIndex, 0)
     XCTAssertEqual(table.formattedRawText, """
     | Name  | Value |
     |-------+-------|
@@ -688,6 +689,11 @@ final class Org2ModelsTests: XCTestCase {
     | Alice | Avi   |
     | Bob   |       |
     """)
+
+    XCTAssertNil(OrgEditableTable(rawText: """
+    | Name | Value |
+    | Alice | 42 |
+    """).renderedBlock.headerRowIndex)
   }
 
   func testEditablePropertyDrawerFormatsAndMutatesRows() {

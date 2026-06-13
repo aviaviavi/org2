@@ -761,25 +761,30 @@ private struct RenderedTableView: View {
   var body: some View {
     ScrollView(.horizontal) {
       Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 0, verticalSpacing: 0) {
-        ForEach(Array(table.rows.enumerated()), id: \.offset) { _, row in
+        ForEach(Array(table.rows.enumerated()), id: \.offset) { rowIndex, row in
           switch row {
           case .cells(let cells):
             GridRow {
               ForEach(0..<columnCount, id: \.self) { columnIndex in
-                OrgInlineText(cellText(cells, at: columnIndex), font: .callout)
-                  .padding(.horizontal, 9)
-                  .padding(.vertical, 6)
-                  .frame(minWidth: 88, alignment: .leading)
-                  .background(Color(nsColor: .textBackgroundColor))
+                OrgInlineText(cellText(cells, at: columnIndex), font: cellFont(rowIndex: rowIndex))
+                  .lineLimit(table.headerRowIndex == rowIndex ? 2 : 4)
+                  .padding(.horizontal, 10)
+                  .padding(.vertical, table.headerRowIndex == rowIndex ? 7 : 6)
+                  .frame(minWidth: 96, alignment: .leading)
+                  .background(cellBackground(rowIndex: rowIndex))
                   .overlay(alignment: .trailing) {
                     Divider()
+                  }
+                  .overlay(alignment: .bottom) {
+                    Divider()
+                      .opacity(table.headerRowIndex == rowIndex ? 0 : 0.65)
                   }
               }
             }
           case .separator:
             Rectangle()
-              .fill(Color.secondary.opacity(0.22))
-              .frame(height: 1)
+              .fill(separatorColor(rowIndex: rowIndex))
+              .frame(height: isHeaderSeparator(rowIndex: rowIndex) ? 1.5 : 1)
               .gridCellColumns(columnCount)
           }
         }
@@ -800,6 +805,33 @@ private struct RenderedTableView: View {
   private func cellText(_ cells: [String], at index: Int) -> String {
     guard cells.indices.contains(index) else { return "" }
     return cells[index]
+  }
+
+  private func cellFont(rowIndex: Int) -> Font {
+    if table.headerRowIndex == rowIndex {
+      return .callout.weight(.semibold)
+    }
+    return .callout
+  }
+
+  private func cellBackground(rowIndex: Int) -> Color {
+    if table.headerRowIndex == rowIndex {
+      return Color.secondary.opacity(0.08)
+    }
+    return rowIndex.isMultiple(of: 2)
+      ? Color(nsColor: .textBackgroundColor)
+      : Color.secondary.opacity(0.035)
+  }
+
+  private func separatorColor(rowIndex: Int) -> Color {
+    if isHeaderSeparator(rowIndex: rowIndex) {
+      return Color.secondary.opacity(0.34)
+    }
+    return Color.secondary.opacity(0.20)
+  }
+
+  private func isHeaderSeparator(rowIndex: Int) -> Bool {
+    table.headerRowIndex.map { $0 + 1 } == Optional(rowIndex)
   }
 }
 
