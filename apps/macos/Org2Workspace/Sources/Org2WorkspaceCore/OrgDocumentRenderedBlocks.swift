@@ -845,10 +845,7 @@ private struct RenderedQuoteView: View {
   }
 
   private var displayLines: [String] {
-    guard let rawText else { return lines }
-    let rawLines = rawText.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-    guard rawLines.count >= 2 else { return lines }
-    return Array(rawLines.dropFirst().dropLast())
+    QuoteLineWindow.displayLines(rawText: rawText, fallback: lines)
   }
 }
 
@@ -876,6 +873,51 @@ struct QuoteLineWindow: Equatable {
       totalLineCount: lines.count,
       limit: safeLimit
     )
+  }
+
+  static func displayLines(rawText: String?, fallback lines: [String]) -> [String] {
+    guard let rawText,
+          rawBodyMayContainInlineSyntax(rawText)
+    else {
+      return lines
+    }
+
+    let rawLines = rawText.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    guard rawLines.count >= 2 else { return lines }
+    return Array(rawLines.dropFirst().dropLast())
+  }
+
+  static func rawBodyMayContainInlineSyntax(_ rawText: String) -> Bool {
+    guard let firstBreak = rawText.firstIndex(of: "\n"),
+          let lastBreak = rawText.lastIndex(of: "\n"),
+          firstBreak < lastBreak
+    else {
+      return false
+    }
+
+    var cursor = rawText.index(after: firstBreak)
+    while cursor < lastBreak {
+      switch rawText[cursor] {
+      case "[", "]", "<", ">", "`", "~", "=", "*", "/", "_", "+":
+        return true
+      case ".":
+        if rawText[cursor...].hasPrefix(".org")
+          || rawText[cursor...].hasPrefix(".md") {
+          return true
+        }
+      case "h", "H":
+        if rawText[cursor...].hasPrefix("http")
+          || rawText[cursor...].hasPrefix("https")
+          || rawText[cursor...].hasPrefix("HTTP")
+          || rawText[cursor...].hasPrefix("HTTPS") {
+          return true
+        }
+      default:
+        break
+      }
+      cursor = rawText.index(after: cursor)
+    }
+    return false
   }
 }
 

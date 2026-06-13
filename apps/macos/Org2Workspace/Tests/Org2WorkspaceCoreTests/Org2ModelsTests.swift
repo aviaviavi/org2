@@ -1820,6 +1820,30 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(expanded.visibleLines.count, 90)
     XCTAssertFalse(expanded.isTruncated)
     XCTAssertEqual(expanded.hiddenLineCount, 0)
+
+    let plainRaw = """
+    #+begin_quote
+    Plain quote body
+    Second line
+    #+end_quote
+    """
+    XCTAssertFalse(QuoteLineWindow.rawBodyMayContainInlineSyntax(plainRaw))
+    XCTAssertEqual(
+      QuoteLineWindow.displayLines(rawText: plainRaw, fallback: ["Plain quote body", "Second line"]),
+      ["Plain quote body", "Second line"]
+    )
+
+    let richRaw = """
+    #+begin_quote
+    See [[id:abc][Alice]]
+    Use `code`
+    #+end_quote
+    """
+    XCTAssertTrue(QuoteLineWindow.rawBodyMayContainInlineSyntax(richRaw))
+    XCTAssertEqual(
+      QuoteLineWindow.displayLines(rawText: richRaw, fallback: ["See Alice", "Use `code`"]),
+      ["See [[id:abc][Alice]]", "Use `code`"]
+    )
   }
 
   func testSourceBlockLineWindowLeavesSmallBlocksWhole() {
