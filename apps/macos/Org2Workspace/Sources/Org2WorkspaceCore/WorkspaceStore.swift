@@ -499,6 +499,16 @@ public final class WorkspaceStore: ObservableObject {
     selectedBlock != nil
   }
 
+  public var canSaveActiveEdit: Bool {
+    if isEditingEntry {
+      return !isSavingEntry
+    }
+    if editingBlockID != nil {
+      return !isSavingBlock
+    }
+    return false
+  }
+
   public func selectBlock(_ block: OrgEditableBlock) {
     guard selectedEntrySource?.isEditable == true else { return }
     selectedBlockID = block.id
@@ -584,6 +594,19 @@ public final class WorkspaceStore: ObservableObject {
   public func canMoveSelectedBlock(_ direction: OrgBlockMoveDirection) -> Bool {
     guard let selectedBlock else { return false }
     return canMoveBlock(selectedBlock, direction: direction)
+  }
+
+  public func saveActiveEdit() async {
+    if isEditingEntry {
+      await saveEditedEntry()
+      return
+    }
+
+    guard let block = activeEditingBlock else {
+      statusText = "No active edit to save"
+      return
+    }
+    await saveEditedBlock(block)
   }
 
   public func saveEditedEntry() async {
@@ -1701,6 +1724,11 @@ public final class WorkspaceStore: ObservableObject {
     pendingBlockSelection = nil
     transientDraftBlock = nil
     resetBlockEditing()
+  }
+
+  private var activeEditingBlock: OrgEditableBlock? {
+    guard let editingBlockID else { return nil }
+    return selectedRenderedBlocks.first { $0.id == editingBlockID }
   }
 
   private func discardTransientDraft(status: String? = nil) {

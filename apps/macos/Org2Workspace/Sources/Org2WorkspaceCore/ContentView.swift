@@ -944,7 +944,7 @@ private struct EntryEditorView: View {
 
       HStack {
         Button {
-          Task { await store.saveEditedEntry() }
+          Task { await store.saveActiveEdit() }
         } label: {
           Label("Save", systemImage: "checkmark")
         }
@@ -1016,7 +1016,7 @@ private struct DetailHeader: View {
 
         if store.isEditingEntry {
           Button {
-            Task { await store.saveEditedEntry() }
+            Task { await store.saveActiveEdit() }
           } label: {
             Label("Save", systemImage: "checkmark")
           }
