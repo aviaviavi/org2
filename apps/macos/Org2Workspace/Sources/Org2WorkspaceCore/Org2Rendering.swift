@@ -451,6 +451,25 @@ public struct OrgEditableTable: Equatable, Sendable {
     rows[rowIndex] = .cells(cells)
   }
 
+  @discardableResult
+  public mutating func pasteGrid(row rowIndex: Int, column columnIndex: Int, rawValue: String) -> Bool {
+    guard columnIndex >= 0,
+          let grid = Self.pastedGrid(from: rawValue)
+    else {
+      return false
+    }
+
+    var destinationRow = max(0, rowIndex)
+    for pastedRow in grid {
+      let targetRow = ensureCellRow(startingAt: destinationRow)
+      for (columnOffset, value) in pastedRow.enumerated() {
+        setCell(row: targetRow, column: columnIndex + columnOffset, value: value)
+      }
+      destinationRow = targetRow + 1
+    }
+    return true
+  }
+
   public mutating func addRow(after rowIndex: Int? = nil) {
     let newRow = OrgEditableTableRow.cells(Array(repeating: "", count: columnCount))
     if let rowIndex, rows.indices.contains(rowIndex) {
@@ -516,6 +535,30 @@ public struct OrgEditableTable: Equatable, Sendable {
     }
   }
 
+  private mutating func ensureCellRow(startingAt rowIndex: Int) -> Int {
+    if rowIndex < 0 {
+      return ensureCellRow(startingAt: 0)
+    }
+
+    var cursor = rowIndex
+    while rows.indices.contains(cursor) {
+      if rows[cursor].isCellRow {
+        return cursor
+      }
+      cursor += 1
+    }
+
+    while rows.count <= rowIndex {
+      addRow()
+    }
+    if rows[rowIndex].isCellRow {
+      return rowIndex
+    }
+
+    rows.insert(.cells(Array(repeating: "", count: columnCount)), at: rowIndex)
+    return rowIndex
+  }
+
   public static func isTableLine(_ line: String) -> Bool {
     parseRow(line) != nil
   }
@@ -576,6 +619,26 @@ public struct OrgEditableTable: Equatable, Sendable {
       .split(separator: "|", omittingEmptySubsequences: false)
       .map { String($0).trimmingCharacters(in: .whitespaces) }
     return .cells(cells.isEmpty ? [""] : cells)
+  }
+
+  private static func pastedGrid(from rawValue: String) -> [[String]]? {
+    let normalized = rawValue
+      .replacingOccurrences(of: "\r\n", with: "\n")
+      .replacingOccurrences(of: "\r", with: "\n")
+      .trimmingCharacters(in: .newlines)
+    guard normalized.contains("\t") || normalized.contains("\n") else { return nil }
+
+    let rows = normalized
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map { line in
+        line
+          .split(separator: "\t", omittingEmptySubsequences: false)
+          .map { String($0).trimmingCharacters(in: .whitespaces) }
+      }
+      .filter { !$0.isEmpty }
+
+    guard rows.contains(where: { $0.count > 1 }) || rows.count > 1 else { return nil }
+    return rows
   }
 
   private static func formatCells(_ cells: [String], widths: [Int]) -> String {

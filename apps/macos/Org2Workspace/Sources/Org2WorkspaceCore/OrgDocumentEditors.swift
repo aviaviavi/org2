@@ -1615,7 +1615,11 @@ private struct TableBlockEditor: View {
   private func cellBinding(row rowIndex: Int, column columnIndex: Int) -> Binding<String> {
     Binding(
       get: { table.cell(row: rowIndex, column: columnIndex) },
-      set: { table.setCell(row: rowIndex, column: columnIndex, value: $0) }
+      set: { newValue in
+        if !table.pasteGrid(row: rowIndex, column: columnIndex, rawValue: newValue) {
+          table.setCell(row: rowIndex, column: columnIndex, value: newValue)
+        }
+      }
     )
   }
 
