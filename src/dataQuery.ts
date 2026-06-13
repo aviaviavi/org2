@@ -537,6 +537,14 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
     seenViewIds.add(view.id);
   }
 
+  const seenResultIds = new Set<string>();
+  for (const block of sqlBlocks) {
+    if (seenResultIds.has(block.resultId)) {
+      diagnostics.push(diagnostic(`Duplicate SQL result block "${block.resultId}"`, { line: block.line, blockId: block.resultId }));
+    }
+    seenResultIds.add(block.resultId);
+  }
+
   const selectedByLine = opts.resultLine && opts.resultLine > 0 ? selectSqlBlockByLine(sqlBlocks, opts.resultLine) : undefined;
   const resultId = opts.resultId?.trim() || selectedByLine?.resultId || (sqlBlocks.length === 1 ? sqlBlocks[0]?.resultId : "");
   const selected = selectedByLine || (resultId ? sqlBlocks.find((block) => block.resultId === resultId) : undefined);
