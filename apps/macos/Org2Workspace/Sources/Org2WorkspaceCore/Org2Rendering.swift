@@ -7,6 +7,7 @@ public enum OrgRenderedBlock: Equatable, Sendable {
   case quote([String])
   case source(language: String?, lines: [String])
   case table(OrgTableBlock)
+  case horizontalRule
   case listItem(indent: Int, marker: String, checkbox: OrgListCheckbox?, text: String)
   case paragraph(String)
   case keyword(key: String, value: String)
@@ -46,6 +47,7 @@ public struct OrgEditableBlock: Identifiable, Equatable, Sendable {
     case .quote: "quote"
     case .source: "source"
     case .table: "table"
+    case .horizontalRule: "horizontal-rule"
     case .listItem: "list"
     case .paragraph: "paragraph"
     case .keyword: "keyword"
@@ -738,6 +740,12 @@ public enum OrgEntryRenderer {
         continue
       }
 
+      if isHorizontalRule(trimmed) {
+        blocks.append(.horizontalRule)
+        index += 1
+        continue
+      }
+
       if let listItem = parseListItem(line) {
         blocks.append(.listItem(
           indent: listItem.indent,
@@ -839,6 +847,12 @@ public enum OrgEntryRenderer {
         continue
       }
 
+      if isHorizontalRule(trimmed) {
+        append(start: index, end: index + 1, rendered: .horizontalRule)
+        index += 1
+        continue
+      }
+
       if let listItem = parseListItem(line) {
         append(
           start: index,
@@ -935,6 +949,15 @@ public enum OrgEntryRenderer {
         appendNodes(headline.children)
       case .paragraph(let paragraph):
         guard let sourceRange = paragraph.sourceRange else { return }
+        let raw = rawText(startLine: sourceRange.startLine, endLineExclusive: sourceRange.endLine + 1)
+        if isHorizontalRule(raw.trimmingCharacters(in: .whitespacesAndNewlines)) {
+          appendBlock(
+            startLine: sourceRange.startLine,
+            endLineExclusive: sourceRange.endLine + 1,
+            rendered: .horizontalRule
+          )
+          return
+        }
         appendBlock(
           startLine: sourceRange.startLine,
           endLineExclusive: sourceRange.endLine + 1,
@@ -1236,6 +1259,10 @@ public enum OrgEntryRenderer {
     return (.table(table.renderedBlock), cursor)
   }
 
+  private static func isHorizontalRule(_ trimmed: String) -> Bool {
+    trimmed.range(of: #"^-{5,}$"#, options: .regularExpression) != nil
+  }
+
   private static func parseListItem(_ line: String) -> (indent: Int, marker: String, checkbox: OrgListCheckbox?, text: String)? {
     guard let range = line.range(of: #"^(\s*)([-+]|[0-9]+[.)])\s+(.*)$"#, options: .regularExpression) else {
       return nil
@@ -1288,6 +1315,7 @@ public enum OrgEntryRenderer {
       || sourceBlock(from: trimmed) != nil
       || parseKeyword(line) != nil
       || OrgEditableTable.isTableLine(line)
+      || isHorizontalRule(trimmed)
       || parseListItem(line) != nil
   }
 }
