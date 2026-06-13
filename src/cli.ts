@@ -7873,6 +7873,7 @@ async function main(): Promise<void> {
   let dataQueryDuckdb = "duckdb";
   let dataQueryFormat: "org" | "json" = "org";
   let dataQueryIncludeScript = false;
+  let dataQueryInspect = false;
   let dataQueryStdin = false;
 
   // Clock reports
@@ -9311,6 +9312,9 @@ async function main(): Promise<void> {
     } else if (arg === "--include-script") {
       if (command === "query-data") dataQueryIncludeScript = true;
       i++;
+    } else if (arg === "--inspect") {
+      if (command === "query-data") dataQueryInspect = true;
+      i++;
     } else if (arg === "--check") {
       if (command === "fmt") {
         fmtCheck = true;
@@ -9712,6 +9716,7 @@ Output:
 Usage:
   org2 query-data --file FILE [--results NAME|--line N] [--out FILE] [--format org|json]
   org2 query-data --stdin [--results NAME|--line N] [--out FILE] [--format org|json]
+  org2 query-data --file FILE --inspect
 
 Flags:
   --file FILE         Source Org/Org2 file containing dataset and SQL blocks
@@ -9722,6 +9727,7 @@ Flags:
   --out FILE          Write materialized org table or JSON envelope to FILE
   --format FORMAT     org (default) or json diagnostics envelope
   --include-script    Include generated DuckDB SQL setup in JSON output
+  --inspect           Parse query-data blocks as JSON without running DuckDB
 
 Input:
   Reads fenced \`\`\`dataset NAME blocks with engine: duckdb and either
@@ -10006,15 +10012,17 @@ Flags:
       ...(dataQueryOut ? { outputArtifact: dataQueryOut } : {}),
       duckdbPath: dataQueryDuckdb,
       includeScript: dataQueryIncludeScript,
+      inspectOnly: dataQueryInspect,
     });
 
-    const output = dataQueryFormat === "json" ? JSON.stringify(result, null, 2) + "\n" : result.orgTable || "";
+    const outputIsJson = dataQueryFormat === "json" || dataQueryInspect;
+    const output = outputIsJson ? JSON.stringify(result, null, 2) + "\n" : result.orgTable || "";
     if (result.ok && dataQueryOut) {
       const outputPath = path.resolve(dataQueryOut);
       fs.mkdirSync(path.dirname(outputPath), { recursive: true });
       fs.writeFileSync(outputPath, output, "utf8");
-      if (dataQueryFormat === "org") process.stdout.write(`Wrote org table to ${dataQueryOut}\n`);
-    } else if (dataQueryFormat === "json") {
+      if (!outputIsJson) process.stdout.write(`Wrote org table to ${dataQueryOut}\n`);
+    } else if (outputIsJson) {
       process.stdout.write(output);
     } else if (result.ok) {
       process.stdout.write(output);
