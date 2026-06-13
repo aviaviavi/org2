@@ -99,6 +99,16 @@ struct Org2WorkspaceApp: App {
         }
         .disabled(!store.hasSelectedBlock)
 
+        Button("Insert Image After") {
+          Task { await store.insertBlockAfterSelected(.image) }
+        }
+        .disabled(!store.hasSelectedBlock)
+
+        Button("Insert Video After") {
+          Task { await store.insertBlockAfterSelected(.video) }
+        }
+        .disabled(!store.hasSelectedBlock)
+
         Button("Insert Properties After") {
           Task { await store.insertBlockAfterSelected(.properties) }
         }

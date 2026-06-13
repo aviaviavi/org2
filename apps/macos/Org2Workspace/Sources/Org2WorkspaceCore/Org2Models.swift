@@ -306,6 +306,8 @@ public enum OrgInsertBlockKind: String, CaseIterable, Identifiable, Sendable {
   case heading
   case todo
   case table
+  case image
+  case video
   case properties
   case quote
   case source
@@ -318,6 +320,8 @@ public enum OrgInsertBlockKind: String, CaseIterable, Identifiable, Sendable {
     case .heading: "Heading"
     case .todo: "TODO"
     case .table: "Table"
+    case .image: "Image"
+    case .video: "Video"
     case .properties: "Properties"
     case .quote: "Quote"
     case .source: "Source"
@@ -330,6 +334,8 @@ public enum OrgInsertBlockKind: String, CaseIterable, Identifiable, Sendable {
     case .heading: "textformat.size"
     case .todo: "checklist"
     case .table: "tablecells"
+    case .image: "photo"
+    case .video: "film"
     case .properties: "tag"
     case .quote: "quote.opening"
     case .source: "chevron.left.forwardslash.chevron.right"
@@ -342,6 +348,8 @@ public enum OrgInsertBlockKind: String, CaseIterable, Identifiable, Sendable {
     case .heading: "heading"
     case .todo: "todo"
     case .table: "table"
+    case .image: "image"
+    case .video: "video"
     case .properties: "properties"
     case .quote: "quote"
     case .source: "source"
