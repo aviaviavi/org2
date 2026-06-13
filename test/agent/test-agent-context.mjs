@@ -301,6 +301,24 @@ fs.writeFileSync(path.join(dataDir, "catalog.org2"), `#+title: Data Catalog
 :FRESHNESS: hourly
 :END:
 External data catalog entry for [[id:report-fetches][package fetch report]].
+
+* Event stream: package customer changes
+:PROPERTIES:
+:ID: stream-package-customer-changes
+:KIND: event-stream
+:SYSTEM: clickhouse
+:EVENT_STREAM: scarf.package_customer_events
+:EVENT_TYPE: package_fetch_spike
+:ENTITY: package:firebolt/foo
+:ACTOR: ingest:scarf
+:OCCURRED_AT: 2026-06-12T11:45:00-07:00
+:CAPTURED_AT: 2026-06-12T11:46:10-07:00
+:SOURCE_CURSOR: ch:customer_events:92017
+:CHANGE_ID: evt_123
+:CHANGE_HASH: sha256:abc123
+:TARGET_ID: report-fetches
+:END:
+Timeline-backed evidence for [[id:report-fetches][package fetch report]].
 `, "utf8");
 
 const dataLink = runJson("agent", "fetch", "--id", "query-fetches-by-company", "--dir", dataDir, "--format", "json");
@@ -321,9 +339,21 @@ assert.equal(dataset.results[0].dataLink.path, "data/package-fetches.csv");
 assert.equal(dataset.results[0].dataLink.paramsRaw, "packages=firebolt/foo");
 assert.equal(dataset.results[0].dataLink.result, "table:package_fetches");
 
+const eventStream = runJson("agent", "fetch", "--id", "stream-package-customer-changes", "--dir", dataDir, "--format", "json");
+assert.equal(eventStream.results[0].dataLink.kind, "event-stream");
+assert.equal(eventStream.results[0].dataLink.eventStream, "scarf.package_customer_events");
+assert.equal(eventStream.results[0].dataLink.eventType, "package_fetch_spike");
+assert.equal(eventStream.results[0].dataLink.entity, "package:firebolt/foo");
+assert.equal(eventStream.results[0].dataLink.actor, "ingest:scarf");
+assert.equal(eventStream.results[0].dataLink.occurredAt, "2026-06-12T11:45:00-07:00");
+assert.equal(eventStream.results[0].dataLink.capturedAt, "2026-06-12T11:46:10-07:00");
+assert.equal(eventStream.results[0].dataLink.sourceCursor, "ch:customer_events:92017");
+assert.equal(eventStream.results[0].dataLink.changeId, "evt_123");
+assert.equal(eventStream.results[0].dataLink.changeHash, "sha256:abc123");
+
 const reportWithDataLinks = runJson("agent", "fetch", "--id", "report-fetches", "--dir", dataDir, "--format", "json");
 assert.equal(reportWithDataLinks.results.length, 1);
-assert.equal(reportWithDataLinks.results[0].relatedDataLinks.length, 3);
+assert.equal(reportWithDataLinks.results[0].relatedDataLinks.length, 4);
 const descendantQuery = reportWithDataLinks.results[0].relatedDataLinks.find((item) => item.id === "query-fetches-by-company");
 assert.equal(descendantQuery.kind, "warehouse-query");
 assert.equal(descendantQuery.dataLink.artifact, "customer-reports/firebolt/package_fetches_by_company.csv");
@@ -335,3 +365,9 @@ assert.equal(externalQuery.dataLink.system, "firebolt");
 assert.equal(externalQuery.dataLink.artifact, "customer-reports/firebolt/package_fetch_error_rate.csv");
 assert.ok(externalQuery.matchingAttachments.some((attachment) => attachment.ref === "id:report-fetches" && attachment.target.id === "report-fetches"));
 assert.ok(externalQuery.matchingAttachments.some((attachment) => attachment.ref === "report:report-fetches" && attachment.target.id === "report-fetches"));
+const externalEventStream = reportWithDataLinks.results[0].relatedDataLinks.find((item) => item.id === "stream-package-customer-changes");
+assert.equal(externalEventStream.kind, "event-stream");
+assert.equal(externalEventStream.dataLink.eventStream, "scarf.package_customer_events");
+assert.equal(externalEventStream.dataLink.eventType, "package_fetch_spike");
+assert.equal(externalEventStream.dataLink.occurredAt, "2026-06-12T11:45:00-07:00");
+assert.ok(externalEventStream.matchingAttachments.some((attachment) => attachment.ref === "id:report-fetches" && attachment.target.id === "report-fetches"));

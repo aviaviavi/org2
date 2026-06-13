@@ -80,6 +80,23 @@ Working notes for support triage.
 :CONTEXT: id:scarf-support-1
 :END:
 External catalog entry for [[id:scarf-support-1][Scarf support triage]].
+
+* Event stream: support state changes
+:PROPERTIES:
+:ID: support-state-changes
+:KIND: timeline-link
+:SYSTEM: linear
+:TIMELINE: support.ticket.lifecycle
+:EVENT_TYPE: status_changed
+:ENTITY: ticket:SUP-42
+:ACTOR: Casey
+:OCCURRED_AT: 2026-05-15T09:30:00-07:00
+:CAPTURED_AT: 2026-05-15T09:31:00-07:00
+:SOURCE_CURSOR: linear:SUP-42:9
+:CHANGE_ID: change-42
+:CONTEXT: id:scarf-support-1
+:END:
+Timeline projection for [[id:scarf-support-1][Scarf support triage]].
 `, "utf8");
 fs.writeFileSync(path.join(tmp, "decisions.org2"), `#+title: Decisions
 
@@ -124,6 +141,12 @@ assert.match(selected, /Data link: ticket volume/);
 assert.match(selected, /query: support\.ticket_volume\.v1/);
 assert.match(selected, /artifact: reports\/support-ticket-volume\.csv/);
 assert.match(selected, /Data catalog: support satisfaction score/);
+assert.match(selected, /Event stream: support state changes/);
+assert.match(selected, /kind: timeline-link/);
+assert.match(selected, /timeline: support\.ticket\.lifecycle/);
+assert.match(selected, /event: status_changed/);
+assert.match(selected, /entity: ticket:SUP-42/);
+assert.match(selected, /occurred: 2026-05-15T09:30:00-07:00/);
 assert.match(selected, /Matching attachments: id:scarf-support-1/);
 
 const selectedDataLink = run("context", "--id", "support-ticket-volume", "--dir", tmp, "--format", "markdown");
@@ -166,3 +189,5 @@ assert.equal(selectedJson.results[0].relatedThreads[0].id, "thread-scarf-triage"
 assert.equal(selectedJson.results[0].relatedDataLinks[0].id, "support-ticket-volume");
 assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.rowCount, 42);
 assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-satisfaction-score" && item.matchingAttachments.some((attachment) => attachment.ref === "id:scarf-support-1")));
+assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-state-changes" && item.dataLink.timeline === "support.ticket.lifecycle"));
+assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-state-changes" && item.dataLink.changeId === "change-42"));

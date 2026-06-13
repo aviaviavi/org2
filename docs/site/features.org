@@ -39,6 +39,7 @@ The format already has the building blocks for that direction:
 - IDs, aliases, backlinks, and file links for entity and graph navigation,
 - =KIND: agent-thread= records with selected context, session/transcript references, status, and durable outputs,
 - =KIND: warehouse-query=, =dataset=, =data-link=, =sql-view=, =event-stream=, and =timeline-link= records for report evidence,
+- event/timeline metadata such as stream IDs, event types, entities, actors, cursors, change IDs, and occurred/captured timestamps,
 - artifact role/provenance metadata for generated drafts, compiled views, and published outputs.
 
 This keeps Org2 useful both as a personal knowledge base and as an organizational context layer over notes, meetings, tickets, repos, files, metrics, and agent work.
