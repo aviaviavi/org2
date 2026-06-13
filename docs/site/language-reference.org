@@ -230,6 +230,7 @@ For new chart examples, prefer an adjacent fenced chart block when it is easier 
 ```chart histogram
 x: bucket
 y: fetches
+sort: y-desc
 source: previous-table
 ```
 #+end_src
@@ -251,7 +252,7 @@ source: package_fetches_result
 ```
 #+end_src
 
-The current renderer supports =bar=, =line=, and bucketed =histogram= charts over the previous table or a named table source.
+The current renderer supports =bar=, =line=, and bucketed =histogram= charts over the previous table or a named table source. Add =sort: x-asc=, =sort: x-desc=, =sort: y-asc=, or =sort: y-desc= when the visual should order marks independently of the table's source row order.
 
 The CLI can render chart-affiliated tables directly:
 

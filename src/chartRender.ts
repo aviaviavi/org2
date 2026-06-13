@@ -38,12 +38,14 @@ type Keyword = {
 };
 
 type ChartType = "bar" | "line" | "histogram";
+type ChartSort = "none" | "x-asc" | "x-desc" | "y-asc" | "y-desc";
 
 type ChartSpec = {
   type: ChartType;
   x: string;
   y: string;
   title?: string;
+  sort: ChartSort;
 };
 
 type ChartDataSource =
@@ -135,10 +137,23 @@ function parseChartSpec(raw: string, title?: string): { spec?: ChartSpec; diagno
 
   const x = params.get("x") || "";
   const y = params.get("y") || "";
+  const sortRaw = (params.get("sort") || "none").toLowerCase();
+  const sort = parseChartSort(sortRaw);
   if (!x) diagnostics.push(diagnostic("Chart spec requires x=column"));
   if (!y) diagnostics.push(diagnostic("Chart spec requires y=column"));
-  if (!type || !x || !y) return { diagnostics };
-  return { spec: { type, x, y, ...(title ? { title } : {}) }, diagnostics };
+  if (!sort) diagnostics.push(diagnostic(`Unsupported chart sort "${sortRaw}". Supported sorts: none, x-asc, x-desc, y-asc, y-desc`));
+  if (!type || !x || !y || !sort) return { diagnostics };
+  return { spec: { type, x, y, sort, ...(title ? { title } : {}) }, diagnostics };
+}
+
+function parseChartSort(raw: string): ChartSort | undefined {
+  const normalized = raw.toLowerCase();
+  if (normalized === "" || normalized === "none" || normalized === "source" || normalized === "input") return "none";
+  if (normalized === "x" || normalized === "x-asc" || normalized === "label" || normalized === "label-asc") return "x-asc";
+  if (normalized === "x-desc" || normalized === "label-desc") return "x-desc";
+  if (normalized === "y" || normalized === "y-asc" || normalized === "value" || normalized === "value-asc") return "y-asc";
+  if (normalized === "y-desc" || normalized === "value-desc") return "y-desc";
+  return undefined;
 }
 
 function keywordValue(keywords: Keyword[], key: string): string | undefined {
@@ -205,11 +220,13 @@ function parseFencedChartSpec(openerRest: string, bodyLines: string[]): ParsedFe
   const tokens = [type];
   const x = bodyParams.get("x");
   const y = bodyParams.get("y");
+  const sort = bodyParams.get("sort");
   const title = bodyParams.get("title");
   const source = bodyParams.get("source");
 
   if (x) tokens.push(`x=${x}`);
   if (y) tokens.push(`y=${y}`);
+  if (sort) tokens.push(`sort=${sort}`);
 
   for (const arg of openerArgs.slice(firstArg && !firstArg.includes("=") ? 1 : 0)) {
     if (!/^source=/i.test(arg)) tokens.push(arg);
@@ -267,7 +284,7 @@ type ParsedTableBlock = {
 function candidateFromTable(table: ParsedTableBlock, spec: ChartSpec | undefined, diagnostics: ChartRenderDiagnostic[], source?: Partial<ChartRenderSource>): ChartCandidate {
   return {
     source: { ...table.source, ...source },
-    spec: spec || { type: "bar", x: "", y: "" },
+    spec: spec || { type: "bar", x: "", y: "", sort: "none" },
     headers: table.headers,
     rows: table.rows,
     diagnostics: [...diagnostics, ...table.diagnostics],
@@ -386,7 +403,7 @@ function collectChartCandidates(raw: string, file?: string): ChartCandidate[] {
           } else {
             candidates.push({
               source: { ...(file ? { file } : {}), line: fencedChart?.startLine || tableStartLine, endLine: fencedChart?.endLine || chartEndLine, ...(name ? { blockId: name } : {}), kind: "table" },
-              spec: parsedSpec.spec || { type: "bar", x: "", y: "" },
+              spec: parsedSpec.spec || { type: "bar", x: "", y: "", sort: "none" },
               headers: [],
               rows: [],
               diagnostics: [
@@ -420,7 +437,7 @@ function collectChartCandidates(raw: string, file?: string): ChartCandidate[] {
         ));
         candidates.push({
           source: { ...(file ? { file } : {}), line: fencedChart.startLine, endLine: fencedChart.endLine, ...(name ? { blockId: name } : {}), kind: "table" },
-          spec: parsedSpec.spec || { type: "bar", x: "", y: "" },
+          spec: parsedSpec.spec || { type: "bar", x: "", y: "", sort: "none" },
           headers: [],
           rows: [],
           diagnostics,
@@ -482,13 +499,25 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
   }
   if (points.length === 0) return { diagnostics };
 
+  const sortedPoints = [...points];
+  const compareLabels = (a: string, b: string): number => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+  if (candidate.spec.sort === "x-asc") {
+    sortedPoints.sort((a, b) => compareLabels(a.label, b.label));
+  } else if (candidate.spec.sort === "x-desc") {
+    sortedPoints.sort((a, b) => compareLabels(b.label, a.label));
+  } else if (candidate.spec.sort === "y-asc") {
+    sortedPoints.sort((a, b) => a.value - b.value || compareLabels(a.label, b.label));
+  } else if (candidate.spec.sort === "y-desc") {
+    sortedPoints.sort((a, b) => b.value - a.value || compareLabels(a.label, b.label));
+  }
+
   const width = 720;
   const height = 420;
   const margin = { top: candidate.spec.title ? 54 : 28, right: 28, bottom: 74, left: 64 };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
-  const maxValue = Math.max(1, ...points.map((point) => point.value));
-  const minValue = Math.min(0, ...points.map((point) => point.value));
+  const maxValue = Math.max(1, ...sortedPoints.map((point) => point.value));
+  const minValue = Math.min(0, ...sortedPoints.map((point) => point.value));
   const span = Math.max(1, maxValue - minValue);
   const yFor = (value: number): number => margin.top + plotHeight - ((value - minValue) / span) * plotHeight;
   const zeroY = yFor(0);
@@ -496,10 +525,10 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
   const gridColor = "#d7dee8";
   const markColor = "#2563eb";
 
-  const labelEvery = Math.max(1, Math.ceil(points.length / 8));
-  const labels = points.map((point, index) => {
-    if (index % labelEvery !== 0 && index !== points.length - 1) return "";
-    const x = margin.left + (points.length === 1 ? plotWidth / 2 : (plotWidth * index) / (points.length - 1));
+  const labelEvery = Math.max(1, Math.ceil(sortedPoints.length / 8));
+  const labels = sortedPoints.map((point, index) => {
+    if (index % labelEvery !== 0 && index !== sortedPoints.length - 1) return "";
+    const x = margin.left + (sortedPoints.length === 1 ? plotWidth / 2 : (plotWidth * index) / (sortedPoints.length - 1));
     return `<text x="${x.toFixed(1)}" y="${height - 28}" font-size="12" fill="#475569" text-anchor="end" transform="rotate(-35 ${x.toFixed(1)} ${height - 28})">${escapeXml(point.label)}</text>`;
   }).filter(Boolean);
 
@@ -510,8 +539,8 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
   });
 
   const marks = candidate.spec.type === "bar" || candidate.spec.type === "histogram"
-    ? points.map((point, index) => {
-        const band = plotWidth / Math.max(1, points.length);
+    ? sortedPoints.map((point, index) => {
+        const band = plotWidth / Math.max(1, sortedPoints.length);
         const barWidth = Math.max(8, band * 0.62);
         const x = margin.left + band * index + (band - barWidth) / 2;
         const y = yFor(Math.max(0, point.value));
@@ -519,12 +548,12 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
         return `<rect x="${x.toFixed(1)}" y="${Math.min(y, zeroY).toFixed(1)}" width="${barWidth.toFixed(1)}" height="${h.toFixed(1)}" fill="${markColor}"><title>${escapeXml(point.label)}: ${point.value}</title></rect>`;
       })
     : [
-        `<polyline fill="none" stroke="${markColor}" stroke-width="3" points="${points.map((point, index) => {
-          const x = margin.left + (points.length === 1 ? plotWidth / 2 : (plotWidth * index) / (points.length - 1));
+        `<polyline fill="none" stroke="${markColor}" stroke-width="3" points="${sortedPoints.map((point, index) => {
+          const x = margin.left + (sortedPoints.length === 1 ? plotWidth / 2 : (plotWidth * index) / (sortedPoints.length - 1));
           return `${x.toFixed(1)},${yFor(point.value).toFixed(1)}`;
         }).join(" ")}"/>`,
-        ...points.map((point, index) => {
-          const x = margin.left + (points.length === 1 ? plotWidth / 2 : (plotWidth * index) / (points.length - 1));
+        ...sortedPoints.map((point, index) => {
+          const x = margin.left + (sortedPoints.length === 1 ? plotWidth / 2 : (plotWidth * index) / (sortedPoints.length - 1));
           return `<circle cx="${x.toFixed(1)}" cy="${yFor(point.value).toFixed(1)}" r="4" fill="${markColor}"><title>${escapeXml(point.label)}: ${point.value}</title></circle>`;
         }),
       ];
