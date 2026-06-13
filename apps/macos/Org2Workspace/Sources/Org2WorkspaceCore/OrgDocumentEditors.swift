@@ -160,6 +160,16 @@ enum ParagraphEditorTextPublishingPolicy {
   }
 }
 
+enum ParagraphSlashCommandPanelLayout {
+  static func isVisible(match: ParagraphSlashCommand.Match) -> Bool {
+    !match.kinds.isEmpty
+  }
+
+  static func verticalOffset(editorHeight: CGFloat) -> CGFloat {
+    max(38, editorHeight + 30)
+  }
+}
+
 struct InlineBlockEditorView: View {
   let block: OrgEditableBlock
 
@@ -1402,28 +1412,6 @@ private struct ParagraphBlockEditor: View {
           )
         }
 
-        if !slashCommandMatch.kinds.isEmpty {
-          HStack(spacing: 8) {
-            Text("Turn into")
-              .font(.caption.weight(.medium))
-              .foregroundStyle(.secondary)
-
-            ForEach(slashCommandMatch.kinds) { kind in
-              Button {
-                convertParagraph(to: kind)
-              } label: {
-                Label("/\(kind.slashCommand)", systemImage: kind.systemImage)
-              }
-              .buttonStyle(.borderless)
-              .controlSize(.small)
-              .help("Convert to \(kind.title)")
-            }
-          }
-          .padding(.horizontal, 6)
-          .padding(.vertical, 4)
-          .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        }
-
         if showsInlineDetails {
           VStack(alignment: .leading, spacing: 6) {
             ParagraphInlineMarkupEditor(text: $draftText)
@@ -1437,6 +1425,13 @@ private struct ParagraphBlockEditor: View {
         paragraphControls
           .opacity(InlineEditorChrome.controlsOpacity(showsControls))
           .allowsHitTesting(InlineEditorChrome.allowsHitTesting(showsControls))
+      }
+
+      if ParagraphSlashCommandPanelLayout.isVisible(match: slashCommandMatch) {
+        ParagraphSlashCommandPanel(match: slashCommandMatch, convert: convertParagraph)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .offset(y: ParagraphSlashCommandPanelLayout.verticalOffset(editorHeight: editorHeight))
+          .zIndex(2)
       }
     }
     .padding(.horizontal, 6)
@@ -1566,6 +1561,38 @@ private struct ParagraphBlockEditor: View {
       guard !Task.isCancelled else { return }
       await store.autosaveEditedBlock(block, replacement: replacement)
     }
+  }
+}
+
+private struct ParagraphSlashCommandPanel: View {
+  let match: ParagraphSlashCommand.Match
+  let convert: (OrgInsertBlockKind) -> Void
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Text("Turn into")
+        .font(.caption.weight(.medium))
+        .foregroundStyle(.secondary)
+
+      ForEach(match.kinds) { kind in
+        Button {
+          convert(kind)
+        } label: {
+          Label("/\(kind.slashCommand)", systemImage: kind.systemImage)
+        }
+        .buttonStyle(.borderless)
+        .controlSize(.small)
+        .help("Convert to \(kind.title)")
+      }
+    }
+    .padding(.horizontal, 7)
+    .padding(.vertical, 5)
+    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 7, style: .continuous)
+        .stroke(Color.secondary.opacity(0.14))
+    )
+    .shadow(color: Color.black.opacity(0.12), radius: 10, y: 4)
   }
 }
 
