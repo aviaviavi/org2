@@ -1433,12 +1433,17 @@ private struct SourceRunLineChartView: View {
 private struct RenderedTableView: View {
   let table: OrgTableBlock
   @State private var visibleRowLimit = TableRowWindow.defaultLimit
+  @State private var visibleColumnLimit = TableColumnWindow.defaultLimit
 
   var body: some View {
     let rowWindow = TableRowWindow.make(
       rows: table.rows,
       headerRowIndex: table.headerRowIndex,
       visibleLimit: visibleRowLimit
+    )
+    let columnWindow = TableColumnWindow.make(
+      columnCount: columnCount,
+      visibleLimit: visibleColumnLimit
     )
     VStack(alignment: .leading, spacing: 6) {
       ScrollView(.horizontal) {
@@ -1447,7 +1452,7 @@ private struct RenderedTableView: View {
             switch visibleRow.row {
             case .cells(let cells):
               GridRow {
-                ForEach(0..<columnCount, id: \.self) { columnIndex in
+                ForEach(columnWindow.visibleColumns, id: \.self) { columnIndex in
                   OrgInlineText(cellText(cells, at: columnIndex), font: cellFont(rowIndex: visibleRow.index))
                     .lineLimit(table.headerRowIndex == visibleRow.index ? 2 : 4)
                     .padding(.horizontal, 10)
@@ -1467,7 +1472,7 @@ private struct RenderedTableView: View {
               Rectangle()
                 .fill(separatorColor(rowIndex: visibleRow.index))
                 .frame(height: isHeaderSeparator(rowIndex: visibleRow.index) ? 1.5 : 1)
-                .gridCellColumns(columnCount)
+                .gridCellColumns(columnWindow.visibleColumns.count)
             }
           }
         }
@@ -1477,6 +1482,26 @@ private struct RenderedTableView: View {
         RoundedRectangle(cornerRadius: 6, style: .continuous)
           .stroke(Color.secondary.opacity(0.18))
       )
+
+      if columnCount > TableColumnWindow.defaultLimit {
+        Button {
+          if columnWindow.hiddenColumnCount == 0 {
+            visibleColumnLimit = TableColumnWindow.defaultLimit
+          } else {
+            visibleColumnLimit = min(columnCount, visibleColumnLimit + TableColumnWindow.pageSize)
+          }
+        } label: {
+          Label(
+            columnWindow.hiddenColumnCount == 0
+              ? "Show first \(TableColumnWindow.defaultLimit) columns"
+              : "Show \(min(TableColumnWindow.pageSize, columnWindow.hiddenColumnCount)) more columns",
+            systemImage: columnWindow.hiddenColumnCount == 0 ? "chevron.left" : "chevron.right"
+          )
+        }
+        .buttonStyle(.borderless)
+        .controlSize(.small)
+        .foregroundStyle(.secondary)
+      }
 
       if table.rows.count > TableRowWindow.defaultLimit {
         Button {
@@ -1603,6 +1628,30 @@ struct TableRowWindow: Equatable {
       rows: rows,
       headerRowIndex: headerRowIndex,
       isExpanded: safeLimit >= rows.count,
+      limit: safeLimit
+    )
+  }
+}
+
+struct TableColumnWindow: Equatable {
+  static let defaultLimit = 12
+  static let pageSize = 12
+
+  let visibleColumns: [Int]
+  let totalColumnCount: Int
+  let limit: Int
+
+  var hiddenColumnCount: Int {
+    max(0, totalColumnCount - visibleColumns.count)
+  }
+
+  static func make(columnCount: Int, visibleLimit: Int = defaultLimit) -> TableColumnWindow {
+    let safeTotal = max(1, columnCount)
+    let safeLimit = max(1, visibleLimit)
+    let visibleCount = min(safeTotal, safeLimit)
+    return TableColumnWindow(
+      visibleColumns: Array(0..<visibleCount),
+      totalColumnCount: safeTotal,
       limit: safeLimit
     )
   }
