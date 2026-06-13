@@ -93,8 +93,10 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var corpusFileFilter = ""
   @Published public var isScanningCorpusFiles = false
   @Published public var isQuickOpenPresented = false
+  @Published public var isKeyboardShortcutsPresented = false
   @Published public var quickOpenQuery = ""
   @Published public var searchQuery = ""
+  @Published public var searchFocusToken = 0
   @Published public var searchResults: [SearchResult] = []
   @Published public var openClawMessages: [OpenClawChatMessage] = [] {
     didSet {
@@ -1701,6 +1703,11 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func focusSearchSurface() {
+    selectedSurface = .search
+    searchFocusToken += 1
+  }
+
   public var filteredCorpusFiles: [CorpusFile] {
     filterFiles(corpusFileFilter, limit: 500)
   }
@@ -2799,10 +2806,55 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func handleWorkspaceKeyDown(_ event: NSEvent) -> Bool {
+    if handleGlobalKeyDown(event) {
+      return true
+    }
     if handleDocumentKeyDown(event) {
       return true
     }
     return handleAgendaKeyDown(event)
+  }
+
+  public func handleGlobalKeyDown(_ event: NSEvent) -> Bool {
+    let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+    guard modifiers == [.command] || modifiers == [.command, .shift] else {
+      return false
+    }
+
+    let key = (event.charactersIgnoringModifiers ?? event.characters ?? "").lowercased()
+    if modifiers == [.command] {
+      switch key {
+      case "0":
+        isOpenClawAssistantPresented.toggle()
+      case "1":
+        selectedSurface = .agenda
+      case "2":
+        selectedSurface = .files
+      case "3":
+        focusSearchSurface()
+      case "4":
+        selectedSurface = .openClaw
+      case "5":
+        selectedSurface = .agentSpace
+      case "f":
+        focusSearchSurface()
+      case "k", "p":
+        presentQuickOpen()
+      case "/":
+        isKeyboardShortcutsPresented = true
+      default:
+        return false
+      }
+      return true
+    }
+
+    if modifiers == [.command, .shift],
+       key == "/" || event.characters == "?" {
+      isKeyboardShortcutsPresented = true
+      return true
+    }
+
+    return false
   }
 
   public func handleDocumentKeyDown(_ event: NSEvent) -> Bool {
@@ -5233,6 +5285,16 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .search: "magnifyingglass"
     case .openClaw: "sparkles"
     case .agentSpace: "bubble.left.and.bubble.right"
+    }
+  }
+
+  public var commandShortcutTitle: String {
+    switch self {
+    case .agenda: "⌘1"
+    case .files: "⌘2"
+    case .search: "⌘3"
+    case .openClaw: "⌘4"
+    case .agentSpace: "⌘5"
     }
   }
 }

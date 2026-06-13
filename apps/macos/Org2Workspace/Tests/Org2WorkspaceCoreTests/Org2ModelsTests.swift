@@ -1411,6 +1411,60 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testGlobalKeyboardShortcutsNavigateWorkspaceSurfaces() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "1", keyCode: 18, modifiers: [.command])))
+    XCTAssertEqual(store.selectedSurface, .agenda)
+
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "2", keyCode: 19, modifiers: [.command])))
+    XCTAssertEqual(store.selectedSurface, .files)
+
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "3", keyCode: 20, modifiers: [.command])))
+    XCTAssertEqual(store.selectedSurface, .search)
+    XCTAssertEqual(store.searchFocusToken, 1)
+
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "f", keyCode: 3, modifiers: [.command])))
+    XCTAssertEqual(store.selectedSurface, .search)
+    XCTAssertEqual(store.searchFocusToken, 2)
+
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "4", keyCode: 21, modifiers: [.command])))
+    XCTAssertEqual(store.selectedSurface, .openClaw)
+
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "5", keyCode: 23, modifiers: [.command])))
+    XCTAssertEqual(store.selectedSurface, .agentSpace)
+
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "0", keyCode: 29, modifiers: [.command])))
+    XCTAssertTrue(store.isOpenClawAssistantPresented)
+
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "/", keyCode: 44, modifiers: [.command])))
+    XCTAssertTrue(store.isKeyboardShortcutsPresented)
+  }
+
+  @MainActor
+  func testGlobalQuickOpenShortcutRequiresCorpus() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-global-keys-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "p", keyCode: 35, modifiers: [.command])))
+    XCTAssertFalse(store.isQuickOpenPresented)
+
+    store.setCorpusRoot(root)
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "k", keyCode: 40, modifiers: [.command])))
+    XCTAssertTrue(store.isQuickOpenPresented)
+  }
+
+  func testWorkspaceSurfaceShortcutTitlesMatchCommandNavigation() {
+    XCTAssertEqual(WorkspaceSurface.agenda.commandShortcutTitle, "⌘1")
+    XCTAssertEqual(WorkspaceSurface.files.commandShortcutTitle, "⌘2")
+    XCTAssertEqual(WorkspaceSurface.search.commandShortcutTitle, "⌘3")
+    XCTAssertEqual(WorkspaceSurface.openClaw.commandShortcutTitle, "⌘4")
+    XCTAssertEqual(WorkspaceSurface.agentSpace.commandShortcutTitle, "⌘5")
+  }
+
+  @MainActor
   func testOpenDailyNoteCreatesAndSelectsConfiguredDailyFile() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-daily-open-\(UUID().uuidString)", isDirectory: true)
