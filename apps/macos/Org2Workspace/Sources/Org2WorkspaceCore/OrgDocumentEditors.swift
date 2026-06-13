@@ -1017,6 +1017,17 @@ private struct MediaBlockEditor: View {
           .font(.caption.weight(.medium))
           .foregroundStyle(.secondary)
 
+        Picker("Kind", selection: mediaKindBinding) {
+          ForEach(OrgMediaAttachment.Kind.allCases, id: \.self) { kind in
+            Label(kind.editorTitle, systemImage: kind.editorSystemImage)
+              .tag(kind)
+          }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(width: 148)
+        .help("Media kind")
+
         Text("line \(block.displayRange)")
           .font(.caption.monospacedDigit())
           .foregroundStyle(.tertiary)
@@ -1070,7 +1081,7 @@ private struct MediaBlockEditor: View {
           Text("File")
             .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
-          TextField("path/to/file", text: $media.target)
+          TextField("path/to/file", text: targetBinding)
             .textFieldStyle(.roundedBorder)
             .focused($targetFocused)
             .onSubmit {
@@ -1111,6 +1122,23 @@ private struct MediaBlockEditor: View {
     media.kind == .image ? "photo" : "film"
   }
 
+  private var mediaKindBinding: Binding<OrgMediaAttachment.Kind> {
+    Binding(
+      get: { media.kind },
+      set: { media.kind = $0 }
+    )
+  }
+
+  private var targetBinding: Binding<String> {
+    Binding(
+      get: { media.target },
+      set: { newTarget in
+        media.target = newTarget
+        inferKindFromTarget(newTarget)
+      }
+    )
+  }
+
   private func chooseFile() {
     let panel = NSOpenPanel()
     panel.canChooseDirectories = false
@@ -1120,25 +1148,25 @@ private struct MediaBlockEditor: View {
 
     guard panel.runModal() == .OK, let url = panel.url else { return }
     media.target = relativeTarget(for: url)
+    inferKindFromTarget(url.path)
     if media.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       media.label = url.deletingPathExtension().lastPathComponent
     }
   }
 
   private var allowedContentTypes: [UTType] {
-    switch media.kind {
-    case .image:
-      var types: [UTType] = [.image]
-      if let webp = UTType(filenameExtension: "webp") {
-        types.append(webp)
+    var types: [UTType] = [.image, .movie, .mpeg4Movie, .quickTimeMovie, .avi]
+    for extensionName in ["webp", "webm"] {
+      if let type = UTType(filenameExtension: extensionName) {
+        types.append(type)
       }
-      return types
-    case .video:
-      var types: [UTType] = [.movie, .mpeg4Movie, .quickTimeMovie, .avi]
-      if let webm = UTType(filenameExtension: "webm") {
-        types.append(webm)
-      }
-      return types
+    }
+    return types
+  }
+
+  private func inferKindFromTarget(_ target: String) {
+    if let kind = OrgMediaAttachment.kind(forTarget: target) {
+      media.kind = kind
     }
   }
 
@@ -1168,6 +1196,26 @@ private struct MediaBlockEditor: View {
   private func saveMedia() {
     store.editableBlockText = media.formattedRawText
     Task { await store.saveEditedBlock(block) }
+  }
+}
+
+private extension OrgMediaAttachment.Kind {
+  var editorTitle: String {
+    switch self {
+    case .image:
+      return "Image"
+    case .video:
+      return "Video"
+    }
+  }
+
+  var editorSystemImage: String {
+    switch self {
+    case .image:
+      return "photo"
+    case .video:
+      return "film"
+    }
   }
 }
 
