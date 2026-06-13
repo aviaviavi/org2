@@ -2225,6 +2225,9 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedBlock?.rawText, "Body")
     XCTAssertTrue(store.selectedEntrySource?.text.contains("Body") == true)
     XCTAssertFalse(store.selectedEntrySource?.text.contains("Stale body") == true)
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* TODO Parent\nBody\n* Sibling"))
+    XCTAssertFalse(updated.contains("Stale body"))
   }
 
   @MainActor
