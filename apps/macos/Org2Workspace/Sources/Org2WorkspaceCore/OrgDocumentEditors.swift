@@ -906,6 +906,7 @@ private struct ParagraphBlockEditor: View {
   let text: String
   @State private var draftText: String
   @State private var selectedRange = NSRange(location: 0, length: 0)
+  @State private var showsInlineDetails = false
 
   init(block: OrgEditableBlock, text: String) {
     self.block = block
@@ -922,34 +923,20 @@ private struct ParagraphBlockEditor: View {
   }
 
   private var paragraphEditorContent: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      ParagraphInlineFormatBar(text: $draftText, selectedRange: $selectedRange)
-
+    VStack(alignment: .leading, spacing: 5) {
       OrgSyntaxTextEditor(
         text: $draftText,
         showsScrollers: false,
-        textInset: NSSize(width: 2, height: 4),
+        textInset: NSSize(width: 0, height: 4),
         focusOnAppear: true,
         selection: $selectedRange,
         onSubmitContext: submitParagraph
       )
       .frame(minHeight: editorHeight, maxHeight: editorHeight)
 
-      if shouldShowRenderedPreview {
-        OrgInlineText(draftText)
-          .padding(.horizontal, 9)
-          .padding(.vertical, 7)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .background(Color.secondary.opacity(0.045), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-          .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-              .stroke(Color.secondary.opacity(0.12))
-          )
+      if selectedRange.length > 0 {
+        ParagraphInlineFormatBar(text: $draftText, selectedRange: $selectedRange)
       }
-
-      ParagraphInlineMarkupEditor(text: $draftText)
-      ParagraphInlineLinkEditor(text: $draftText)
-      ParagraphInlineTimestampEditor(text: $draftText)
 
       if !slashCommandKinds.isEmpty {
         HStack(spacing: 8) {
@@ -973,6 +960,14 @@ private struct ParagraphBlockEditor: View {
         .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
       }
 
+      if showsInlineDetails {
+        VStack(alignment: .leading, spacing: 6) {
+          ParagraphInlineMarkupEditor(text: $draftText)
+          ParagraphInlineLinkEditor(text: $draftText)
+          ParagraphInlineTimestampEditor(text: $draftText)
+        }
+      }
+
       HStack(spacing: 8) {
         Text("line \(block.displayRange)")
           .font(.caption.monospacedDigit())
@@ -982,6 +977,14 @@ private struct ParagraphBlockEditor: View {
           ProgressView()
             .controlSize(.small)
         }
+        Button {
+          showsInlineDetails.toggle()
+        } label: {
+          Image(systemName: showsInlineDetails ? "slider.horizontal.3" : "slider.horizontal.2.square")
+        }
+        .buttonStyle(.borderless)
+        .help(showsInlineDetails ? "Hide inline details" : "Show inline details")
+
         Button {
           saveParagraph()
         } label: {
@@ -1004,23 +1007,18 @@ private struct ParagraphBlockEditor: View {
       }
       .controlSize(.small)
     }
-    .padding(.horizontal, 8)
-    .padding(.vertical, 6)
-    .background(Color.accentColor.opacity(0.055), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .padding(.horizontal, 6)
+    .padding(.vertical, 4)
+    .background(Color.accentColor.opacity(0.025), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     .overlay(
-      RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .stroke(Color.accentColor.opacity(0.2))
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .stroke(Color.accentColor.opacity(0.16))
     )
   }
 
   private var editorHeight: CGFloat {
     let lineCount = max(1, draftText.split(separator: "\n", omittingEmptySubsequences: false).count)
     return min(320, max(38, CGFloat(lineCount) * 23 + 12))
-  }
-
-  private var shouldShowRenderedPreview: Bool {
-    let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
-    return !trimmed.isEmpty && slashCommandQuery == nil
   }
 
   private var slashCommandKinds: [OrgInsertBlockKind] {
