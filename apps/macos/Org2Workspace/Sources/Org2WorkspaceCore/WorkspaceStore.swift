@@ -892,16 +892,10 @@ public final class WorkspaceStore: ObservableObject {
     defer { isSavingBlock = false }
 
     do {
-      try await Task.detached(priority: .userInitiated) {
-        try Self.replaceSourceRange(
-          file: source.file,
-          startLine: block.startLine,
-          endLineExclusive: block.endLineExclusive,
-          replacement: replacement
-        )
-      }.value
-      await finishBlockMutation(
-        file: source.file,
+      try await replaceBlockSourceAndFinish(
+        source: source,
+        block: block,
+        replacement: replacement,
         status: checkbox == .checked ? "Marked incomplete" : "Marked complete",
         selectLine: block.startLine
       )
@@ -939,16 +933,10 @@ public final class WorkspaceStore: ObservableObject {
     defer { isSavingBlock = false }
 
     do {
-      try await Task.detached(priority: .userInitiated) {
-        try Self.replaceSourceRange(
-          file: source.file,
-          startLine: block.startLine,
-          endLineExclusive: block.endLineExclusive,
-          replacement: replacement
-        )
-      }.value
-      await finishBlockMutation(
-        file: source.file,
+      try await replaceBlockSourceAndFinish(
+        source: source,
+        block: block,
+        replacement: replacement,
         status: "\(nextStatus) -> heading",
         selectLine: block.startLine
       )
@@ -992,16 +980,10 @@ public final class WorkspaceStore: ObservableObject {
     defer { isSavingBlock = false }
 
     do {
-      try await Task.detached(priority: .userInitiated) {
-        try Self.replaceSourceRange(
-          file: source.file,
-          startLine: block.startLine,
-          endLineExclusive: block.endLineExclusive,
-          replacement: replacement
-        )
-      }.value
-      await finishBlockMutation(
-        file: source.file,
+      try await replaceBlockSourceAndFinish(
+        source: source,
+        block: block,
+        replacement: replacement,
         status: priority.map { "[#\($0)] -> heading" } ?? "Priority cleared",
         selectLine: block.startLine
       )
@@ -1033,16 +1015,10 @@ public final class WorkspaceStore: ObservableObject {
     defer { isSavingBlock = false }
 
     do {
-      try await Task.detached(priority: .userInitiated) {
-        try Self.replaceSourceRange(
-          file: source.file,
-          startLine: block.startLine,
-          endLineExclusive: block.endLineExclusive,
-          replacement: replacement
-        )
-      }.value
-      await finishBlockMutation(
-        file: source.file,
+      try await replaceBlockSourceAndFinish(
+        source: source,
+        block: block,
+        replacement: replacement,
         status: tags.isEmpty ? "Tags cleared" : "Tags -> \(tags.joined(separator: ", "))",
         selectLine: block.startLine
       )
@@ -1074,16 +1050,10 @@ public final class WorkspaceStore: ObservableObject {
     defer { isSavingBlock = false }
 
     do {
-      try await Task.detached(priority: .userInitiated) {
-        try Self.replaceSourceRange(
-          file: source.file,
-          startLine: block.startLine,
-          endLineExclusive: block.endLineExclusive,
-          replacement: replacement
-        )
-      }.value
-      await finishBlockMutation(
-        file: source.file,
+      try await replaceBlockSourceAndFinish(
+        source: source,
+        block: block,
+        replacement: replacement,
         status: "\(replacement) -> planning",
         selectLine: block.startLine
       )
@@ -1124,16 +1094,10 @@ public final class WorkspaceStore: ObservableObject {
     defer { isSavingBlock = false }
 
     do {
-      try await Task.detached(priority: .userInitiated) {
-        try Self.replaceSourceRange(
-          file: source.file,
-          startLine: block.startLine,
-          endLineExclusive: block.endLineExclusive,
-          replacement: replacement
-        )
-      }.value
-      await finishBlockMutation(
-        file: source.file,
+      try await replaceBlockSourceAndFinish(
+        source: source,
+        block: block,
+        replacement: replacement,
         status: "\(normalizedKey) -> property",
         selectLine: block.startLine
       )
@@ -1639,6 +1603,60 @@ public final class WorkspaceStore: ObservableObject {
     if let selectedLocation {
       await loadEntrySource(for: selectedLocation)
     }
+    scheduleAgendaRefresh(preserveSelection: true)
+  }
+
+  private func replaceBlockSourceAndFinish(
+    source: EntrySource,
+    block: OrgEditableBlock,
+    replacement: String,
+    status: String,
+    selectLine: Int? = nil,
+    selectionMode: PendingBlockSelectionMode = .containingOrNearest
+  ) async throws {
+    let normalizedReplacement = Self.normalizeLineEndings(replacement)
+    let updatedSource = try Self.replacingSourceBlock(
+      block,
+      in: source,
+      with: normalizedReplacement
+    )
+    let currentRenderedBlocks = selectedRenderedBlocks
+    try await Task.detached(priority: .userInitiated) {
+      try Self.replaceSourceRange(
+        file: source.file,
+        startLine: block.startLine,
+        endLineExclusive: block.endLineExclusive,
+        replacement: normalizedReplacement
+      )
+    }.value
+
+    let updatedBlocks = await Task.detached(priority: .userInitiated) {
+      Self.locallyUpdatingRenderedBlocks(
+        currentRenderedBlocks,
+        replacing: block,
+        with: normalizedReplacement
+      )
+    }.value
+
+    guard selectedEntrySource?.id == source.id else {
+      return
+    }
+
+    invalidateCanonicalDocumentCache(for: source.file)
+    transientDraftBlock = nil
+    resetBlockEditing()
+    isEditingEntry = false
+    selectedEntrySource = updatedSource
+    let updatedVisibleBlocks = blocksWithTransientDraft(updatedBlocks, for: updatedSource)
+    selectedRenderedBlocks = updatedVisibleBlocks
+    if let selectLine {
+      selectedBlockID = blockForSelectionLine(
+        max(1, selectLine),
+        mode: selectionMode,
+        in: updatedVisibleBlocks
+      )?.id
+    }
+    statusText = status
     scheduleAgendaRefresh(preserveSelection: true)
   }
 
