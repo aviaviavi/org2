@@ -810,6 +810,69 @@ public struct OrgInlineSelectionEdit: Equatable, Sendable {
   public let selectedRange: NSRange
 }
 
+public enum OrgEditableInlineToken: Equatable, Sendable {
+  case link(OrgEditableInlineLink)
+  case timestamp(OrgEditableInlineTimestamp)
+  case markup(OrgEditableInlineMarkup)
+
+  public var id: String {
+    switch self {
+    case .link(let link):
+      return link.id
+    case .timestamp(let timestamp):
+      return timestamp.id
+    case .markup(let markup):
+      return markup.id
+    }
+  }
+
+  public var range: NSRange {
+    switch self {
+    case .link(let link):
+      return NSRange(location: link.startUTF16, length: link.endUTF16 - link.startUTF16)
+    case .timestamp(let timestamp):
+      return NSRange(location: timestamp.startUTF16, length: timestamp.endUTF16 - timestamp.startUTF16)
+    case .markup(let markup):
+      return NSRange(location: markup.startUTF16, length: markup.endUTF16 - markup.startUTF16)
+    }
+  }
+
+  public static func focused(in rawText: String, selection: NSRange) -> OrgEditableInlineToken? {
+    let tokens = all(in: rawText)
+    guard !tokens.isEmpty else { return nil }
+    let textLength = (rawText as NSString).length
+    let safeSelection = NSRange(
+      location: min(max(0, selection.location), textLength),
+      length: min(max(0, selection.length), max(0, textLength - selection.location))
+    )
+
+    if safeSelection.length > 0 {
+      return tokens.first { rangesOverlap($0.range, safeSelection) }
+    }
+
+    return tokens.first { token in
+      let range = token.range
+      return safeSelection.location >= range.location && safeSelection.location <= range.location + range.length
+    }
+  }
+
+  private static func all(in rawText: String) -> [OrgEditableInlineToken] {
+    let links = OrgEditableInlineLinkSet(rawText: rawText).links.map(OrgEditableInlineToken.link)
+    let timestamps = OrgEditableInlineTimestampSet(rawText: rawText).timestamps.map(OrgEditableInlineToken.timestamp)
+    let markups = OrgEditableInlineMarkupSet(rawText: rawText).markups.map(OrgEditableInlineToken.markup)
+    return (links + timestamps + markups).sorted {
+      if $0.range.location != $1.range.location {
+        return $0.range.location < $1.range.location
+      }
+      return $0.range.length > $1.range.length
+    }
+  }
+
+  private static func rangesOverlap(_ lhs: NSRange, _ rhs: NSRange) -> Bool {
+    lhs.location < rhs.location + rhs.length && rhs.location < lhs.location + lhs.length
+  }
+}
+
 public struct OrgEditableInlineLinkSet: Equatable, Sendable {
   public let rawText: String
   public let links: [OrgEditableInlineLink]

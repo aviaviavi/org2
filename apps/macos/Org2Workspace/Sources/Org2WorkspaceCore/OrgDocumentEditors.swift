@@ -1223,6 +1223,10 @@ private struct ParagraphBlockEditor: View {
           ParagraphInlineFormatBar(text: $draftText, selectedRange: $selectedRange)
         }
 
+        if !showsInlineDetails {
+          ParagraphFocusedInlineEditor(text: $draftText, selectedRange: $selectedRange)
+        }
+
         if !slashCommandKinds.isEmpty {
           HStack(spacing: 8) {
             Text("Turn into")
