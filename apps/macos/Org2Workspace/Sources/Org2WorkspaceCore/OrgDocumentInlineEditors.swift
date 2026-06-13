@@ -7,6 +7,7 @@ struct ParagraphInlineFormatBar: View {
   var body: some View {
     HStack(spacing: 4) {
       ForEach(OrgEditableInlineMarkup.Kind.allCases, id: \.self) { kind in
+        let shortcut = keyboardShortcut(for: kind)
         Button {
           wrapSelection(kind)
         } label: {
@@ -14,7 +15,8 @@ struct ParagraphInlineFormatBar: View {
             .frame(width: 18, height: 18)
         }
         .buttonStyle(.borderless)
-        .help("Format as \(kind.displayTitle)")
+        .keyboardShortcut(shortcut.key, modifiers: shortcut.modifiers)
+        .help("Format as \(kind.displayTitle) (\(shortcut.title))")
       }
     }
     .controlSize(.small)
@@ -28,6 +30,27 @@ struct ParagraphInlineFormatBar: View {
     text = edit.text
     selectedRange = edit.selectedRange
   }
+
+  private func keyboardShortcut(for kind: OrgEditableInlineMarkup.Kind) -> InlineFormatShortcut {
+    switch kind {
+    case .code:
+      return InlineFormatShortcut(key: "c", modifiers: [.command, .shift], title: "Command-Shift-C")
+    case .bold:
+      return InlineFormatShortcut(key: "b", modifiers: .command, title: "Command-B")
+    case .italic:
+      return InlineFormatShortcut(key: "i", modifiers: .command, title: "Command-I")
+    case .underline:
+      return InlineFormatShortcut(key: "u", modifiers: .command, title: "Command-U")
+    case .strike:
+      return InlineFormatShortcut(key: "x", modifiers: [.command, .shift], title: "Command-Shift-X")
+    }
+  }
+}
+
+private struct InlineFormatShortcut {
+  let key: KeyEquivalent
+  let modifiers: EventModifiers
+  let title: String
 }
 
 struct ParagraphInlineMarkupEditor: View {
