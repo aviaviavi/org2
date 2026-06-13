@@ -4,6 +4,8 @@ import UniformTypeIdentifiers
 
 enum InlineEditorChrome {
   static let savingIndicatorSize: CGFloat = 14
+  static let controlsReserveWidth: CGFloat = 92
+  static let compactControlsReserveWidth: CGFloat = 78
 
   static func rendersControls(_ isActive: Bool) -> Bool {
     true
@@ -37,6 +39,10 @@ enum InlineEditorChrome {
 
   static func savingIndicatorOpacity(_ isSaving: Bool) -> Double {
     isSaving ? 1 : 0
+  }
+
+  static func controlsTrailingPadding(isPersistent: Bool = true) -> CGFloat {
+    isPersistent ? controlsReserveWidth : compactControlsReserveWidth
   }
 }
 
@@ -351,7 +357,7 @@ private struct HeadingBlockEditor: View {
 
           Spacer(minLength: 0)
         }
-        .padding(.trailing, 78)
+        .padding(.trailing, InlineEditorChrome.controlsTrailingPadding())
 
         if showsDetails || !tags.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
           HStack(spacing: 8) {
@@ -369,7 +375,7 @@ private struct HeadingBlockEditor: View {
               }
           }
           .padding(.leading, metadataIndent)
-          .padding(.trailing, 78)
+          .padding(.trailing, InlineEditorChrome.controlsTrailingPadding())
         }
       }
       .padding(.leading, editorIndent)
@@ -629,7 +635,7 @@ private struct PlanningBlockEditor: View {
 
         Spacer(minLength: 0)
       }
-      .padding(.trailing, 74)
+      .padding(.trailing, InlineEditorChrome.controlsTrailingPadding())
 
       HStack(spacing: 4) {
         InlineEditorSavingIndicator(isSaving: store.isSavingBlock)
@@ -799,7 +805,7 @@ private struct ListItemBlockEditor: View {
         Spacer(minLength: 0)
       }
       .padding(.leading, editorIndent)
-      .padding(.trailing, 74)
+      .padding(.trailing, InlineEditorChrome.controlsTrailingPadding())
 
       if InlineEditorChrome.rendersControls(showsControls) {
         listItemControls
@@ -1025,7 +1031,7 @@ private struct KeywordBlockEditor: View {
 
         Spacer(minLength: 0)
       }
-      .padding(.trailing, 74)
+      .padding(.trailing, InlineEditorChrome.controlsTrailingPadding())
 
       HStack(spacing: 4) {
         InlineEditorSavingIndicator(isSaving: store.isSavingBlock)
@@ -1397,7 +1403,7 @@ private struct ParagraphBlockEditor: View {
           onSubmitContext: submitParagraph
         )
         .frame(minHeight: editorHeight, maxHeight: editorHeight)
-        .padding(.trailing, 74)
+        .padding(.trailing, InlineEditorChrome.controlsTrailingPadding())
 
         ParagraphInlineFormatBar(text: $draftText, selectedRange: $selectedRange)
           .opacity(InlineEditorChrome.accessoryOpacity(hasSelection))
@@ -1501,7 +1507,7 @@ private struct ParagraphBlockEditor: View {
   }
 
   private var showsControls: Bool {
-    isHovered || hasSelection || showsInlineDetails || store.isSavingBlock
+    isHovered || showsInlineDetails || store.isSavingBlock
   }
 
   private var hasSelection: Bool {
@@ -2056,7 +2062,7 @@ private struct SourceBlockEditor: View {
 
           Spacer(minLength: 0)
         }
-        .padding(.trailing, 96)
+        .padding(.trailing, InlineEditorChrome.controlsTrailingPadding())
         .padding(.horizontal, 4)
 
         OrgSyntaxTextEditor(
