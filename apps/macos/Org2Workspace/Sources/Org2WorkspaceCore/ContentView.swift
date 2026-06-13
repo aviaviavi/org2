@@ -1137,6 +1137,12 @@ private struct OpenClawChatView: View {
         }
         .padding(presentation == .assistantPanel ? 10 : 16)
       }
+      .background(OpenClawChatScrollPositionBridge(
+        initialPosition: store.openClawChatScrollPosition,
+        onPositionChange: { position in
+          store.recordOpenClawChatScrollPosition(position)
+        }
+      ))
       .onChange(of: store.openClawMessages.count) {
         if let last = store.openClawMessages.last {
           withAnimation(.easeOut(duration: 0.18)) {
@@ -1151,6 +1157,130 @@ private struct OpenClawChatView: View {
           }
         }
       }
+    }
+  }
+}
+
+private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
+  let initialPosition: Double?
+  let onPositionChange: (Double) -> Void
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator(parent: self)
+  }
+
+  func makeNSView(context: Context) -> NSView {
+    NSView(frame: .zero)
+  }
+
+  func updateNSView(_ view: NSView, context: Context) {
+    context.coordinator.parent = self
+    context.coordinator.restoreIfNeeded(from: view)
+  }
+
+  static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+    coordinator.stopObserving()
+  }
+
+  @MainActor
+  final class Coordinator: NSObject {
+    var parent: OpenClawChatScrollPositionBridge
+    private weak var scrollView: NSScrollView?
+    private var didRestore = false
+    private var isRestoring = false
+
+    init(parent: OpenClawChatScrollPositionBridge) {
+      self.parent = parent
+      super.init()
+    }
+
+    func restoreIfNeeded(from view: NSView) {
+      guard !didRestore else {
+        startObservingIfPossible(from: view)
+        return
+      }
+
+      DispatchQueue.main.async {
+        DispatchQueue.main.async {
+          guard !self.didRestore,
+                let scrollView = view.enclosingScrollView
+          else {
+            self.startObservingIfPossible(from: view)
+            return
+          }
+          self.restore(scrollView, to: self.parent.initialPosition ?? 1)
+          self.didRestore = true
+          self.startObserving(scrollView)
+        }
+      }
+    }
+
+    func stopObserving() {
+      if let scrollView {
+        NotificationCenter.default.removeObserver(
+          self,
+          name: NSView.boundsDidChangeNotification,
+          object: scrollView.contentView
+        )
+      }
+      scrollView = nil
+    }
+
+    private func startObservingIfPossible(from view: NSView) {
+      guard let scrollView = view.enclosingScrollView else { return }
+      startObserving(scrollView)
+    }
+
+    private func startObserving(_ scrollView: NSScrollView) {
+      guard self.scrollView !== scrollView else { return }
+      stopObserving()
+      self.scrollView = scrollView
+      scrollView.contentView.postsBoundsChangedNotifications = true
+      NotificationCenter.default.addObserver(
+        self,
+        selector: #selector(boundsDidChange(_:)),
+        name: NSView.boundsDidChangeNotification,
+        object: scrollView.contentView
+      )
+    }
+
+    @objc private func boundsDidChange(_ notification: Notification) {
+      guard !isRestoring,
+            let scrollView
+      else {
+        return
+      }
+      parent.onPositionChange(Self.normalizedPosition(in: scrollView))
+    }
+
+    private func restore(_ scrollView: NSScrollView, to position: Double) {
+      guard let documentView = scrollView.documentView else { return }
+      let clipView = scrollView.contentView
+      let maxY = max(0, documentView.bounds.height - clipView.bounds.height)
+      guard maxY > 0 else {
+        parent.onPositionChange(1)
+        return
+      }
+
+      let clamped = min(1, max(0, position))
+      var origin = clipView.bounds.origin
+      origin.y = documentView.isFlipped ? maxY * clamped : maxY * (1 - clamped)
+      isRestoring = true
+      clipView.scroll(to: origin)
+      scrollView.reflectScrolledClipView(clipView)
+      isRestoring = false
+      parent.onPositionChange(clamped)
+    }
+
+    private static func normalizedPosition(in scrollView: NSScrollView) -> Double {
+      guard let documentView = scrollView.documentView else { return 1 }
+      let clipView = scrollView.contentView
+      let maxY = max(0, documentView.bounds.height - clipView.bounds.height)
+      guard maxY > 0 else { return 1 }
+      let raw = documentView.isFlipped
+        ? clipView.bounds.origin.y / maxY
+        : 1 - (clipView.bounds.origin.y / maxY)
+      return min(1, max(0, raw))
     }
   }
 }
@@ -1462,6 +1592,13 @@ private struct DetailHeader: View {
       }
 
       HStack {
+        Button {
+          store.navigateBackInDetail()
+        } label: {
+          Label("Back", systemImage: "chevron.left")
+        }
+        .disabled(!store.canNavigateBackInDetail)
+
         Button {
           store.open(location)
         } label: {

@@ -56,6 +56,20 @@ private struct DeferredStableAutosave {
   let block: OrgEditableBlock
 }
 
+private struct DetailNavigationSnapshot {
+  let location: WorkspaceLocation
+  let selectedSurface: WorkspaceSurface
+  let selectedEntrySourceMode: EntrySourceMode
+}
+
+private struct OrgIDLookupPayload: Decodable {
+  let id: String
+  let kind: String
+  let file: String
+  let line: Int
+  let headingLine: Int?
+}
+
 private struct SplitDraftSpec {
   let insertionLineOffset: Int
   let displayLineOffset: Int
@@ -132,6 +146,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var isSendingOpenClawMessage = false
   @Published public var openClawRequestStartedAt: Date?
   @Published public var isOpenClawAssistantPresented = false
+  public private(set) var openClawChatScrollPosition: Double?
   @Published public var openClawThreads: [OpenClawThread] = []
   @Published public var selectedOpenClawThreadID: String?
   @Published public var selectedLocation: WorkspaceLocation?
@@ -179,6 +194,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var priorityModeActive = false
   @Published public var statusText = ""
   @Published public var errorText: String?
+  @Published public private(set) var canNavigateBackInDetail = false
 
   public var meetingCaptureSourceText: String {
     Self.meetingCaptureSourceSummary
@@ -195,6 +211,7 @@ public final class WorkspaceStore: ObservableObject {
   private let openClawRemoteCorpusPathKey = "Org2Workspace.openClawRemoteCorpusPath"
   private static let canonicalParserLineLimit = 2_000
   private static let renderedBlocksCacheLimit = 12
+  private static let detailNavigationHistoryLimit = 100
   private let openClawTranscriptURL: URL
   private var openClawSessionKey = WorkspaceStore.makeOpenClawSessionKey()
   private var shouldPersistOpenClawMessages = false
@@ -204,6 +221,12 @@ public final class WorkspaceStore: ObservableObject {
   private var pendingG = false
   private var orgRoamLinkResolverGeneration = 0
   private var entrySourceLoadGeneration = 0
+  private var backlinksLoadGeneration = 0
+  private var detailNavigationBackStack: [DetailNavigationSnapshot] = [] {
+    didSet {
+      canNavigateBackInDetail = !detailNavigationBackStack.isEmpty
+    }
+  }
   private var canonicalDocumentCache: [String: CanonicalDocumentCacheEntry] = [:]
   private var renderedBlocksCache: [String: RenderedBlocksCacheEntry] = [:]
   private var renderedBlocksCacheOrder: [String] = []
@@ -277,6 +300,7 @@ public final class WorkspaceStore: ObservableObject {
     openClawThreads = []
     selectedOpenClawThreadID = nil
     selectedLocation = nil
+    detailNavigationBackStack = []
     selectedEntrySource = nil
     selectedRenderedBlocks = []
     sourceBlockRuns = [:]
@@ -672,6 +696,31 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func select(_ location: WorkspaceLocation) {
+    activateDetailLocation(location, mode: nil, recordsHistory: true)
+  }
+
+  public func navigateBackInDetail() {
+    guard let snapshot = detailNavigationBackStack.popLast() else { return }
+    selectedSurface = snapshot.selectedSurface
+    activateDetailLocation(snapshot.location, mode: snapshot.selectedEntrySourceMode, recordsHistory: false)
+  }
+
+  private func activateDetailLocation(
+    _ location: WorkspaceLocation,
+    mode: EntrySourceMode?,
+    recordsHistory: Bool
+  ) {
+    if recordsHistory, let selectedLocation, selectedLocation != location {
+      detailNavigationBackStack.append(DetailNavigationSnapshot(
+        location: selectedLocation,
+        selectedSurface: selectedSurface,
+        selectedEntrySourceMode: selectedEntrySourceMode
+      ))
+      if detailNavigationBackStack.count > Self.detailNavigationHistoryLimit {
+        detailNavigationBackStack.removeFirst(detailNavigationBackStack.count - Self.detailNavigationHistoryLimit)
+      }
+    }
+
     if case .agenda(let item) = location {
       selectedAgendaItemID = item.id
     }
@@ -685,7 +734,9 @@ public final class WorkspaceStore: ObservableObject {
     isEditingEntry = false
     editableEntryText = ""
     resetBlockState()
-    if case .meeting = location {
+    if let mode {
+      selectedEntrySourceMode = mode
+    } else if case .meeting = location {
       selectedEntrySourceMode = .page
     } else {
       selectedEntrySourceMode = .entry
@@ -1997,18 +2048,8 @@ public final class WorkspaceStore: ObservableObject {
       modifiedAt: file.modifiedAt,
       idValue: nil
     )
-    selectedLocation = .openClaw(thread)
+    activateDetailLocation(.openClaw(thread), mode: .page, recordsHistory: true)
     selectedOpenClawThreadID = nil
-    selectedEntrySourceMode = .page
-    selectedEntrySource = nil
-    selectedRenderedBlocks = []
-    editableEntryText = ""
-    resetBlockState()
-    isEditingEntry = false
-    isRenderingEntrySource = false
-    backlinks = nil
-    Task { await hydrateCorpusFileBacklinks(file) }
-    scheduleEntrySourceLoad(for: .openClaw(thread))
     statusText = "Opened \(file.relativePath)"
   }
 
@@ -2054,34 +2095,6 @@ public final class WorkspaceStore: ObservableObject {
       }
       .prefix(limit)
       .map(\.0)
-  }
-
-  private func hydrateCorpusFileBacklinks(_ file: CorpusFile) async {
-    do {
-      let idValue = try await Task.detached(priority: .utility) {
-        let prefix = try Self.readPrefix(URL(fileURLWithPath: file.path), maxBytes: 64 * 1024)
-        return Self.firstOrgID(in: prefix)
-      }.value
-      guard selectedLocation?.file == file.path else { return }
-      guard let idValue else {
-        backlinks = nil
-        return
-      }
-
-      let thread = OpenClawThread(
-        title: file.name,
-        file: file.path,
-        line: 1,
-        zone: file.directory.isEmpty ? "corpus" : file.directory,
-        modifiedAt: file.modifiedAt,
-        idValue: idValue
-      )
-      selectedLocation = .openClaw(thread)
-      await loadBacklinks(for: .openClaw(thread))
-    } catch {
-      guard selectedLocation?.file == file.path else { return }
-      backlinks = nil
-    }
   }
 
   private func selectedLocationMatches(_ location: WorkspaceLocation) -> Bool {
@@ -2760,7 +2773,12 @@ public final class WorkspaceStore: ObservableObject {
     openClawSessionKey = Self.makeOpenClawSessionKey()
     openClawMessages = []
     openClawDraft = ""
+    openClawChatScrollPosition = nil
     openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
+  }
+
+  public func recordOpenClawChatScrollPosition(_ position: Double) {
+    openClawChatScrollPosition = min(1, max(0, position))
   }
 
   public func openChatFileReference(_ reference: OpenClawFileReference) {
@@ -2778,18 +2796,7 @@ public final class WorkspaceStore: ObservableObject {
       modifiedAt: nil,
       idValue: nil
     )
-    selectedLocation = .openClaw(thread)
-    selectedOpenClawThreadID = thread.id
-    selectedEntrySourceMode = .page
-    selectedEntrySource = nil
-    selectedRenderedBlocks = []
-    editableEntryText = ""
-    resetBlockState()
-    isEditingEntry = false
-    isRenderingEntrySource = false
-    backlinks = nil
-    Task { await loadBacklinks(for: .openClaw(thread)) }
-    scheduleEntrySourceLoad(for: .openClaw(thread))
+    activateDetailLocation(.openClaw(thread), mode: .page, recordsHistory: true)
     statusText = "Opened \(relativePath(file))"
   }
 
@@ -3405,26 +3412,77 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func loadBacklinks(for location: WorkspaceLocation) async {
-    guard let id = location.idValue, !id.isEmpty else {
+    backlinksLoadGeneration += 1
+    let generation = backlinksLoadGeneration
+
+    guard let corpusRoot else {
       backlinks = nil
       return
     }
-    guard let corpusRoot else { return }
 
     isLoadingBacklinks = true
-    defer { isLoadingBacklinks = false }
+    defer {
+      if generation == backlinksLoadGeneration {
+        isLoadingBacklinks = false
+      }
+    }
 
     do {
-      backlinks = try await cli.runJSON([
+      guard let id = try await backlinkTargetID(for: location), !id.isEmpty else {
+        guard generation == backlinksLoadGeneration, selectedLocationMatches(location) else { return }
+        backlinks = nil
+        return
+      }
+
+      let payload: BacklinksPayload = try await cli.runJSON([
         "backlinks",
         "--id", id,
         "--dir", corpusRoot.path,
         "--recursive",
         "--format", "json"
       ])
+      guard generation == backlinksLoadGeneration, selectedLocationMatches(location) else { return }
+      backlinks = payload
     } catch {
+      guard generation == backlinksLoadGeneration, selectedLocationMatches(location) else { return }
       backlinks = nil
       errorText = error.localizedDescription
+    }
+  }
+
+  private func backlinkTargetID(for location: WorkspaceLocation) async throws -> String? {
+    if let id = location.idValue?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty {
+      return id
+    }
+
+    do {
+      let payload: OrgIDLookupPayload = try await cli.runJSON([
+        "id", "get",
+        "--file", location.file,
+        "--line", "\(location.lineForEditor)",
+        "--format", "json"
+      ])
+      applyResolvedID(payload.id, to: location)
+      return payload.id
+    } catch {
+      return nil
+    }
+  }
+
+  private func applyResolvedID(_ id: String, to location: WorkspaceLocation) {
+    guard selectedLocationMatches(location) else { return }
+    switch selectedLocation {
+    case .openClaw(let thread):
+      selectedLocation = .openClaw(OpenClawThread(
+        title: thread.title,
+        file: thread.file,
+        line: thread.lineForEditor,
+        zone: thread.zone,
+        modifiedAt: thread.modifiedAt,
+        idValue: id
+      ))
+    default:
+      break
     }
   }
 
