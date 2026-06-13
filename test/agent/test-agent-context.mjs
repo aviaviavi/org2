@@ -222,6 +222,10 @@ assert.equal(thread.results[0].thread.storage, "summary");
 assert.ok(thread.results[0].thread.contextAttachments.some((attachment) => attachment.type === "id" && attachment.ref === "id:report-1" && attachment.label === "Firebolt report"));
 assert.ok(thread.results[0].thread.contextAttachments.some((attachment) => attachment.type === "file" && attachment.ref === "file:reports/firebolt.csv"));
 assert.ok(thread.results[0].thread.contextAttachments.some((attachment) => attachment.type === "ticket" && attachment.ref === "ticket:REP-52"));
+const reportAttachment = thread.results[0].thread.contextAttachments.find((attachment) => attachment.ref === "id:report-1");
+assert.equal(reportAttachment.target.id, "report-1");
+assert.equal(reportAttachment.target.title, "Report: Firebolt package usage");
+assert.ok(reportAttachment.target.citation.endsWith("threads.org2:3-9"));
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-agent-data-link-test-"));
 fs.writeFileSync(path.join(dataDir, "reports.org2"), `#+title: Data Links
