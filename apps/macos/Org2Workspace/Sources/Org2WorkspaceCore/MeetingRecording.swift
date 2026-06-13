@@ -567,21 +567,29 @@ public final class MeetingAudioRecorder {
   }
 
   private func requestMicrophonePermission() async throws {
-    switch AVCaptureDevice.authorizationStatus(for: .audio) {
+    switch Self.microphoneAuthorizationStatus() {
     case .authorized:
       return
     case .notDetermined:
-      let granted = await withCheckedContinuation { continuation in
-        AVCaptureDevice.requestAccess(for: .audio) { granted in
-          continuation.resume(returning: granted)
-        }
-      }
+      let granted = await Self.requestMicrophoneAccess()
       if granted { return }
       throw MeetingRecorderError.microphoneDenied
     case .denied, .restricted:
       throw MeetingRecorderError.microphoneDenied
     @unknown default:
       throw MeetingRecorderError.microphoneDenied
+    }
+  }
+
+  nonisolated private static func microphoneAuthorizationStatus() -> AVAuthorizationStatus {
+    AVCaptureDevice.authorizationStatus(for: .audio)
+  }
+
+  nonisolated private static func requestMicrophoneAccess() async -> Bool {
+    await withCheckedContinuation { continuation in
+      AVCaptureDevice.requestAccess(for: .audio) { granted in
+        continuation.resume(returning: granted)
+      }
     }
   }
 }
