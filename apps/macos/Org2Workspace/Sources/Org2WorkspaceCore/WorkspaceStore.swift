@@ -734,9 +734,15 @@ public final class WorkspaceStore: ObservableObject {
         with: updatedBlock,
         in: updatedVisibleBlocks
       )
-      selectedBlockID = updatedBlock?.id
-      editingBlockID = updatedBlock?.id
-      editableBlockText = normalizedReplacement
+      if selectedBlockID != updatedBlock?.id {
+        selectedBlockID = updatedBlock?.id
+      }
+      if editingBlockID != updatedBlock?.id {
+        editingBlockID = updatedBlock?.id
+      }
+      if editableBlockText != normalizedReplacement {
+        editableBlockText = normalizedReplacement
+      }
       if let updatedBlock {
         activeBlockDrafts[updatedBlock.id] = normalizedReplacement
       }
