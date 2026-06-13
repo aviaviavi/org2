@@ -695,7 +695,7 @@ public final class WorkspaceStore: ObservableObject {
     defer { isSavingBlock = false }
 
     do {
-      let replacement = Self.normalizeLineEndings(editableBlockText)
+      let replacement = Self.normalizeLineEndings(saveReplacementText(for: block))
       let updatedSource = try Self.replacingSourceBlock(
         block,
         in: source,
@@ -879,6 +879,15 @@ public final class WorkspaceStore: ObservableObject {
     selectedEntrySource?.id == source.id
       && editingBlockID == block.id
       && Self.normalizeLineEndings(activeBlockDrafts[block.id] ?? "") == replacement
+  }
+
+  private func saveReplacementText(for block: OrgEditableBlock) -> String {
+    guard let draft = activeBlockDrafts[block.id],
+          draft != block.rawText
+    else {
+      return editableBlockText
+    }
+    return draft
   }
 
   public func splitEditingBlock(_ block: OrgEditableBlock, atUTF16Offset offset: Int) async {
