@@ -57,6 +57,10 @@ struct ParagraphFocusedInlineEditor: View {
   @Binding var text: String
   @Binding var selectedRange: NSRange
 
+  nonisolated static func shouldRender(text: String, showsInlineDetails: Bool) -> Bool {
+    !showsInlineDetails && OrgInlineParser.hasInlineSyntaxCandidate(text)
+  }
+
   var body: some View {
     if let token = OrgEditableInlineToken.focused(in: text, selection: selectedRange) {
       focusedEditor(for: token)

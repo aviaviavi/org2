@@ -1317,7 +1317,7 @@ private struct ParagraphBlockEditor: View {
           ParagraphInlineFormatBar(text: $draftText, selectedRange: $selectedRange)
         }
 
-        if !showsInlineDetails {
+        if ParagraphFocusedInlineEditor.shouldRender(text: draftText, showsInlineDetails: showsInlineDetails) {
           ParagraphFocusedInlineEditor(text: $draftText, selectedRange: $selectedRange)
         }
 
