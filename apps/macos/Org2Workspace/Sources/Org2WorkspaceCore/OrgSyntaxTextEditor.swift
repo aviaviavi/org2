@@ -139,7 +139,11 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       }
       publishSelectionIfNeeded(textView.selectedRange())
       markUserTextChangedForHighlighting(in: textView)
-      scheduleDeferredHighlighting(to: textView)
+      if Self.shouldScheduleDeferredHighlighting(utf16Length: (currentText as NSString).length) {
+        scheduleDeferredHighlighting(to: textView)
+      } else {
+        cancelDeferredHighlighting()
+      }
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
@@ -292,6 +296,10 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       return OrgInlineParser.hasInlineSyntaxCandidate(text)
     }
 
+    static func shouldScheduleDeferredHighlighting(utf16Length: Int) -> Bool {
+      OrgSyntaxHighlighter.shouldTokenizeLiveText(utf16Length: utf16Length)
+    }
+
     func applyHighlighting(to textView: NSTextView) {
       cancelDeferredHighlighting()
       guard let storage = textView.textStorage else { return }
@@ -398,11 +406,11 @@ enum OrgSyntaxHighlighter {
     var lineOffset = 0
     for (index, line) in lines.enumerated() {
       collectHeadingTokens(line: line, lineOffset: lineOffset, into: &tokens)
-      collectLineRegex(pattern: #"^\s*#\+([A-Za-z0-9_-]+):"#, kind: .keyword, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
-      collectLineRegex(pattern: #"^\s*#\+(begin_src|end_src|begin_quote|end_quote|begin_example|end_example)\b"#, kind: .keyword, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
-      collectLineRegex(pattern: #"^\s*(SCHEDULED|DEADLINE|CLOSED):"#, kind: .planningKeyword, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
-      collectLineRegex(pattern: #"^\s*:([^:\s]+):"#, kind: .propertyKey, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
-      collectLineRegex(pattern: #"^\s*#(?!\+).*$"#, kind: .comment, line: line, lineOffset: lineOffset, into: &tokens)
+      collectLineRegex(regex: keywordLineRegex, kind: .keyword, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
+      collectLineRegex(regex: blockKeywordLineRegex, kind: .keyword, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
+      collectLineRegex(regex: planningLineRegex, kind: .planningKeyword, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
+      collectLineRegex(regex: propertyLineRegex, kind: .propertyKey, line: line, lineOffset: lineOffset, capture: 1, into: &tokens)
+      collectLineRegex(regex: commentLineRegex, kind: .comment, line: line, lineOffset: lineOffset, into: &tokens)
       lineOffset += (line as NSString).length
       if index < lines.count - 1 {
         lineOffset += 1
@@ -413,8 +421,7 @@ enum OrgSyntaxHighlighter {
   private static func collectHeadingTokens(line: String, lineOffset: Int, into tokens: inout [OrgSyntaxHighlightToken]) {
     let ns = line as NSString
     let fullRange = NSRange(location: 0, length: ns.length)
-    guard let regex = try? NSRegularExpression(pattern: #"^(\*+)\s+(?:(TODO|IN_PROGRESS|PROG|WAIT|HOLD|PAUSED|DONE|CANCELED|CANCELLED)\b)?\s*(?:(\[#.\]))?"#),
-          let match = regex.firstMatch(in: line, range: fullRange),
+    guard let match = headingLineRegex.firstMatch(in: line, range: fullRange),
           match.range.location == 0
     else {
       return
@@ -425,7 +432,7 @@ enum OrgSyntaxHighlighter {
     append(match.range(at: 3), kind: .priority, lineOffset: lineOffset, into: &tokens)
 
     collectLineRegex(
-      pattern: #"\s(:[A-Za-z0-9_@#%:.-]+:)\s*$"#,
+      regex: headingTagRegex,
       kind: .tag,
       line: line,
       lineOffset: lineOffset,
@@ -435,14 +442,14 @@ enum OrgSyntaxHighlighter {
   }
 
   private static func collectInlineTokens(in text: String, into tokens: inout [OrgSyntaxHighlightToken]) {
-    collectRegex(pattern: #"\[\[[^\n\]]+(?:\]\[[^\n\]]+)?\]\]"#, kind: .link, text: text, into: &tokens)
-    collectRegex(pattern: #"\[[^\n\]]+\]\([^\n\)]+\)"#, kind: .link, text: text, into: &tokens)
-    collectRegex(pattern: #"https?://[^\s\]\)"'`<>]+"#, kind: .link, text: text, into: &tokens)
-    collectRegex(pattern: #"(?:(?:file:(?://)?)?(?:~|/|[A-Za-z0-9_.-]+/)[^\s\]\)"'`<>]*\.(?:org2?|md))(?:[:#]\d+)?"#, kind: .link, text: text, into: &tokens)
-    collectRegex(pattern: #"`[^`\n]+`"#, kind: .code, text: text, into: &tokens)
-    collectRegex(pattern: #"(?<!\w)[~=][^\s~=](?:[^\n]*?[^\s~=])?[~=](?!\w)"#, kind: .code, text: text, into: &tokens)
-    collectRegex(pattern: #"(?<!\w)[*/_+][^\s*/_+](?:[^\n]*?[^\s*/_+])?[*/_+](?!\w)"#, kind: .emphasis, text: text, into: &tokens)
-    collectRegex(pattern: #"[<\[]\d{4}-\d{2}-\d{2}[^>\]]*[>\]]"#, kind: .timestamp, text: text, into: &tokens)
+    collectRegex(regex: orgLinkRegex, kind: .link, text: text, into: &tokens)
+    collectRegex(regex: markdownLinkRegex, kind: .link, text: text, into: &tokens)
+    collectRegex(regex: urlRegex, kind: .link, text: text, into: &tokens)
+    collectRegex(regex: filePathRegex, kind: .link, text: text, into: &tokens)
+    collectRegex(regex: backtickCodeRegex, kind: .code, text: text, into: &tokens)
+    collectRegex(regex: orgCodeRegex, kind: .code, text: text, into: &tokens)
+    collectRegex(regex: emphasisRegex, kind: .emphasis, text: text, into: &tokens)
+    collectRegex(regex: timestampRegex, kind: .timestamp, text: text, into: &tokens)
     collectInlineDelimiterTokens(in: text, into: &tokens)
   }
 
@@ -542,7 +549,7 @@ enum OrgSyntaxHighlighter {
   }
 
   private static func collectLineRegex(
-    pattern: String,
+    regex: NSRegularExpression,
     kind: OrgSyntaxHighlightKind,
     line: String,
     lineOffset: Int,
@@ -551,23 +558,47 @@ enum OrgSyntaxHighlighter {
   ) {
     let ns = line as NSString
     let fullRange = NSRange(location: 0, length: ns.length)
-    guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
     for match in regex.matches(in: line, range: fullRange) {
       append(match.range(at: capture), kind: kind, lineOffset: lineOffset, into: &tokens)
     }
   }
 
   private static func collectRegex(
-    pattern: String,
+    regex: NSRegularExpression,
     kind: OrgSyntaxHighlightKind,
     text: String,
     into tokens: inout [OrgSyntaxHighlightToken]
   ) {
     let ns = text as NSString
     let fullRange = NSRange(location: 0, length: ns.length)
-    guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
     for match in regex.matches(in: text, range: fullRange) {
       append(match.range, kind: kind, lineOffset: 0, into: &tokens)
+    }
+  }
+
+  private static let headingLineRegex = regex(
+    #"^(\*+)\s+(?:(TODO|IN_PROGRESS|PROG|WAIT|HOLD|PAUSED|DONE|CANCELED|CANCELLED)\b)?\s*(?:(\[#.\]))?"#
+  )
+  private static let headingTagRegex = regex(#"\s(:[A-Za-z0-9_@#%:.-]+:)\s*$"#)
+  private static let keywordLineRegex = regex(#"^\s*#\+([A-Za-z0-9_-]+):"#)
+  private static let blockKeywordLineRegex = regex(#"^\s*#\+(begin_src|end_src|begin_quote|end_quote|begin_example|end_example)\b"#)
+  private static let planningLineRegex = regex(#"^\s*(SCHEDULED|DEADLINE|CLOSED):"#)
+  private static let propertyLineRegex = regex(#"^\s*:([^:\s]+):"#)
+  private static let commentLineRegex = regex(#"^\s*#(?!\+).*$"#)
+  private static let orgLinkRegex = regex(#"\[\[[^\n\]]+(?:\]\[[^\n\]]+)?\]\]"#)
+  private static let markdownLinkRegex = regex(#"\[[^\n\]]+\]\([^\n\)]+\)"#)
+  private static let urlRegex = regex(#"https?://[^\s\]\)"'`<>]+"#)
+  private static let filePathRegex = regex(#"(?:(?:file:(?://)?)?(?:~|/|[A-Za-z0-9_.-]+/)[^\s\]\)"'`<>]*\.(?:org2?|md))(?:[:#]\d+)?"#)
+  private static let backtickCodeRegex = regex(#"`[^`\n]+`"#)
+  private static let orgCodeRegex = regex(#"(?<!\w)[~=][^\s~=](?:[^\n]*?[^\s~=])?[~=](?!\w)"#)
+  private static let emphasisRegex = regex(#"(?<!\w)[*/_+][^\s*/_+](?:[^\n]*?[^\s*/_+])?[*/_+](?!\w)"#)
+  private static let timestampRegex = regex(#"[<\[]\d{4}-\d{2}-\d{2}[^>\]]*[>\]]"#)
+
+  private static func regex(_ pattern: String) -> NSRegularExpression {
+    do {
+      return try NSRegularExpression(pattern: pattern)
+    } catch {
+      preconditionFailure("Invalid org syntax regex: \(pattern)")
     }
   }
 
