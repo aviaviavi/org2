@@ -714,6 +714,33 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSyntaxEditorPublishesLatestDeferredTextAfterRapidEdits() async throws {
+    var boundText = "old"
+    let editor = OrgSyntaxTextEditor(
+      text: Binding(
+        get: { boundText },
+        set: { boundText = $0 }
+      ),
+      textPublishing: .deferred(milliseconds: 20)
+    )
+    let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
+    let textView = NSTextView()
+
+    textView.string = "first"
+    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+    XCTAssertTrue(coordinator.hasPendingTextPublishing(for: "first"))
+
+    textView.string = "second"
+    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+    XCTAssertFalse(coordinator.hasPendingTextPublishing(for: "first"))
+    XCTAssertTrue(coordinator.hasPendingTextPublishing(for: "second"))
+
+    try await Task.sleep(nanoseconds: 70_000_000)
+    XCTAssertEqual(boundText, "second")
+    XCTAssertFalse(coordinator.hasPendingTextPublishing(for: "second"))
+  }
+
+  @MainActor
   func testSyntaxEditorAdaptivePublishingCanBypassDeferredText() {
     var boundText = "old"
     let editor = OrgSyntaxTextEditor(
