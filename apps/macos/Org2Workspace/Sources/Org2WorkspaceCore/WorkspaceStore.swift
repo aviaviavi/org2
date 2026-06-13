@@ -3111,6 +3111,8 @@ public final class WorkspaceStore: ObservableObject {
 
     let line = explicitLine ?? selectedBlock?.startLine ?? selectedLocation?.lineForEditor ?? 1
     let settings = currentOrgCryptSettings(allowKeychainRead: true)
+    orgCryptStatusText = "\(action.title) running \(relativePath(file)):\(line)"
+    statusText = orgCryptStatusText
     var arguments = [
       "crypt",
       action.rawValue,
