@@ -14,6 +14,7 @@ const urlNote = path.join(tmp, "url-report.org2");
 const viewNote = path.join(tmp, "view-report.org2");
 const orgViewNote = path.join(tmp, "org-view-report.org2");
 const duplicateDatasetNote = path.join(tmp, "duplicate-dataset-report.org2");
+const duplicateResultNote = path.join(tmp, "duplicate-result-report.org2");
 const data = path.join(tmp, "package-fetches.csv");
 const fakeDuckdb = path.join(tmp, "duckdb");
 const out = path.join(tmp, "fetches_by_state.org");
@@ -144,6 +145,27 @@ engine: duckdb
 
 \`\`\`sql results=fetches_by_state
 SELECT state, sum(fetches) AS fetches
+FROM fetches
+GROUP BY state
+\`\`\`
+`, "utf8");
+
+fs.writeFileSync(duplicateResultNote, `* Package fetch report with duplicate SQL results
+
+\`\`\`dataset fetches
+type: csv
+path: ./package-fetches.csv
+engine: duckdb
+\`\`\`
+
+\`\`\`sql results=fetches_by_state
+SELECT state, sum(fetches) AS fetches
+FROM fetches
+GROUP BY state
+\`\`\`
+
+\`\`\`sql results=fetches_by_state
+SELECT state, count(*) AS rows
 FROM fetches
 GROUP BY state
 \`\`\`
@@ -339,5 +361,11 @@ assert.notEqual(duplicateDataset.status, 0);
 const duplicateDatasetJson = JSON.parse(duplicateDataset.stdout);
 assert.equal(duplicateDatasetJson.ok, false);
 assert.match(duplicateDatasetJson.diagnostics[0].message, /Duplicate dataset block "fetches"/);
+
+const duplicateResult = spawnSync("node", ["dist/cli.js", "query-data", "--file", duplicateResultNote, "--results", "fetches_by_state", "--duckdb", fakeDuckdb, "--format", "json"], { cwd: repo, encoding: "utf8" });
+assert.notEqual(duplicateResult.status, 0);
+const duplicateResultJson = JSON.parse(duplicateResult.stdout);
+assert.equal(duplicateResultJson.ok, false);
+assert.match(duplicateResultJson.diagnostics[0].message, /Duplicate SQL result block "fetches_by_state"/);
 
 console.log("✓ query-data CLI");
