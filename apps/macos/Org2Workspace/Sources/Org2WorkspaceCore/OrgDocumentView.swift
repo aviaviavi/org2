@@ -3,7 +3,7 @@ import SwiftUI
 struct OrgRenderedEntryView: View {
   @EnvironmentObject private var store: WorkspaceStore
   let blocks: [OrgEditableBlock]
-  @State private var renderedBlockLimit = Self.initialRenderedBlockLimit
+  @State private var renderedBlockWindow: Range<Int>?
   @State private var renderWindowResetKey = ""
   @State private var moveAvailability = OrgRenderedEntryMoveAvailability.empty
 
@@ -21,15 +21,24 @@ struct OrgRenderedEntryView: View {
     let moveAvailabilityValues = moveAvailability.signature == moveAvailabilitySignature ? moveAvailability.values : [:]
     let selectedBlockIndex = selectedBlockID.flatMap { store.selectedRenderedBlockIndexes[$0] }
     let resetKey = Self.renderWindowResetKey(for: source)
-    let visibleLimit = Self.visibleLimit(
-      requestedLimit: renderedBlockLimit,
+    let visibleWindow = Self.visibleWindow(
+      requestedWindow: renderedBlockWindow,
       blocks: blocks,
       selectedBlockIndex: selectedBlockIndex
     )
-    let visibleBlocks = blocks.prefix(visibleLimit)
+    let visibleBlocks = blocks[visibleWindow.range]
 
     LazyVStack(alignment: .leading, spacing: 8) {
-      ForEach(visibleBlocks) { block in
+      if visibleWindow.hasPrevious {
+        ProgressiveRenderFooter(
+          visibleRange: visibleWindow.displayRange,
+          totalCount: blocks.count,
+          direction: .previous,
+          loadMore: expandRenderedBlocks
+        )
+      }
+
+      ForEach(Array(visibleBlocks)) { block in
         OrgRenderedEntryRow(
           block: block,
           isSourceEditable: isSourceEditable,
@@ -43,10 +52,11 @@ struct OrgRenderedEntryView: View {
         .equatable()
       }
 
-      if visibleLimit < blocks.count {
+      if visibleWindow.hasNext {
         ProgressiveRenderFooter(
-          visibleCount: visibleLimit,
+          visibleRange: visibleWindow.displayRange,
           totalCount: blocks.count,
+          direction: .next,
           loadMore: expandRenderedBlocks
         )
       }
@@ -59,6 +69,13 @@ struct OrgRenderedEntryView: View {
     .onChange(of: resetKey) { _, newResetKey in
       resetRenderedBlockLimitIfNeeded(resetKey: newResetKey)
     }
+    .onChange(of: selectedBlockID) { _, _ in
+      if let selectedBlockIndex,
+         let renderedBlockWindow,
+         !renderedBlockWindow.contains(selectedBlockIndex) {
+        self.renderedBlockWindow = nil
+      }
+    }
     .onChange(of: moveAvailabilitySignature) { _, newSignature in
       refreshMoveAvailabilityIfNeeded(signature: newSignature, source: source)
     }
@@ -67,7 +84,7 @@ struct OrgRenderedEntryView: View {
   private func resetRenderedBlockLimitIfNeeded(resetKey: String) {
     guard resetKey != renderWindowResetKey else { return }
     renderWindowResetKey = resetKey
-    renderedBlockLimit = Self.initialRenderedBlockLimit
+    renderedBlockWindow = nil
   }
 
   private func refreshMoveAvailabilityIfNeeded(signature: String, source: EntrySource?) {
@@ -79,23 +96,45 @@ struct OrgRenderedEntryView: View {
     )
   }
 
-  private func expandRenderedBlocks() {
-    guard renderedBlockLimit < blocks.count else { return }
-    renderedBlockLimit = min(blocks.count, renderedBlockLimit + Self.renderedBlockPageSize)
+  private func expandRenderedBlocks(_ direction: OrgRenderedBlockWindowExpansionDirection) {
+    let selectedBlockIndex = store.selectedBlockID.flatMap { store.selectedRenderedBlockIndexes[$0] }
+    let visibleWindow = Self.visibleWindow(
+      requestedWindow: renderedBlockWindow,
+      blocks: blocks,
+      selectedBlockIndex: selectedBlockIndex
+    )
+    renderedBlockWindow = visibleWindow.expanding(direction, by: Self.renderedBlockPageSize, totalCount: blocks.count)
   }
 
-  private static func visibleLimit(
-    requestedLimit: Int,
+  nonisolated static func visibleWindow(
+    requestedWindow: Range<Int>?,
     blocks: [OrgEditableBlock],
     selectedBlockIndex: Int?
-  ) -> Int {
-    guard !blocks.isEmpty else { return 0 }
-    var limit = min(max(requestedLimit, initialRenderedBlockLimit), blocks.count)
-    if let selectedIndex = selectedBlockIndex,
-       blocks.indices.contains(selectedIndex) {
-      limit = min(blocks.count, max(limit, selectedIndex + selectedBlockLookahead))
+  ) -> OrgRenderedBlockWindow {
+    guard !blocks.isEmpty else {
+      return OrgRenderedBlockWindow(range: 0..<0, totalCount: 0)
     }
-    return limit
+
+    if let requestedWindow {
+      return OrgRenderedBlockWindow(
+        range: clampedWindow(requestedWindow, totalCount: blocks.count, selectedBlockIndex: selectedBlockIndex),
+        totalCount: blocks.count
+      )
+    }
+
+    if let selectedBlockIndex,
+       blocks.indices.contains(selectedBlockIndex),
+       selectedBlockIndex >= selectedBlockAnchorThreshold {
+      return OrgRenderedBlockWindow(
+        range: anchoredWindow(around: selectedBlockIndex, totalCount: blocks.count),
+        totalCount: blocks.count
+      )
+    }
+
+    return OrgRenderedBlockWindow(
+      range: 0..<min(blocks.count, initialRenderedBlockLimit),
+      totalCount: blocks.count
+    )
   }
 
   nonisolated static func renderWindowResetKey(for source: EntrySource?) -> String {
@@ -103,9 +142,88 @@ struct OrgRenderedEntryView: View {
     return "\(source.file):\(source.startLine):\(source.isSubtree):\(source.isEditable)"
   }
 
-  private static let initialRenderedBlockLimit = 220
-  private static let renderedBlockPageSize = 180
-  private static let selectedBlockLookahead = 48
+  nonisolated private static let initialRenderedBlockLimit = 120
+  private static let renderedBlockPageSize = 120
+  nonisolated private static let selectedBlockAnchorThreshold = 120
+  nonisolated private static let selectedBlockLookbehind = 24
+  nonisolated private static let selectedBlockLookahead = 48
+
+  nonisolated private static func anchoredWindow(around selectedIndex: Int, totalCount: Int) -> Range<Int> {
+    let start = max(0, selectedIndex - selectedBlockLookbehind)
+    let end = min(totalCount, selectedIndex + selectedBlockLookahead + 1)
+    return start..<max(start, end)
+  }
+
+  nonisolated private static func clampedWindow(
+    _ window: Range<Int>,
+    totalCount: Int,
+    selectedBlockIndex: Int?
+  ) -> Range<Int> {
+    let start = min(max(0, window.lowerBound), totalCount)
+    let end = min(max(start, window.upperBound), totalCount)
+
+    if let selectedBlockIndex,
+       selectedBlockIndex >= 0,
+       selectedBlockIndex < totalCount {
+      if selectedBlockIndex < start || selectedBlockIndex >= end {
+        return anchoredWindow(around: selectedBlockIndex, totalCount: totalCount)
+      }
+    }
+
+    return start..<max(start, end)
+  }
+}
+
+enum OrgRenderedBlockWindowExpansionDirection: Equatable, Sendable {
+  case previous
+  case next
+
+  var title: String {
+    switch self {
+    case .previous: "Load previous"
+    case .next: "Load more"
+    }
+  }
+
+  var systemImage: String {
+    switch self {
+    case .previous: "arrow.up.circle"
+    case .next: "arrow.down.circle"
+    }
+  }
+}
+
+struct OrgRenderedBlockWindow: Equatable, Sendable {
+  let range: Range<Int>
+  let totalCount: Int
+
+  var hasPrevious: Bool {
+    range.lowerBound > 0
+  }
+
+  var hasNext: Bool {
+    range.upperBound < totalCount
+  }
+
+  var displayRange: String {
+    guard !range.isEmpty else { return "0" }
+    return "\(range.lowerBound + 1)-\(range.upperBound)"
+  }
+
+  func expanding(
+    _ direction: OrgRenderedBlockWindowExpansionDirection,
+    by count: Int,
+    totalCount nextTotalCount: Int
+  ) -> Range<Int> {
+    let safeCount = max(1, count)
+    let safeTotal = max(0, nextTotalCount)
+    switch direction {
+    case .previous:
+      return max(0, range.lowerBound - safeCount)..<min(range.upperBound, safeTotal)
+    case .next:
+      return min(range.lowerBound, safeTotal)..<min(safeTotal, range.upperBound + safeCount)
+    }
+  }
 }
 
 private struct OrgRenderedEntryRow: View, Equatable {
@@ -258,19 +376,20 @@ struct OrgRenderedEntryMoveAvailability: Sendable {
 }
 
 private struct ProgressiveRenderFooter: View {
-  let visibleCount: Int
+  let visibleRange: String
   let totalCount: Int
-  let loadMore: () -> Void
+  let direction: OrgRenderedBlockWindowExpansionDirection
+  let loadMore: (OrgRenderedBlockWindowExpansionDirection) -> Void
 
   var body: some View {
     Button {
-      loadMore()
+      loadMore(direction)
     } label: {
       HStack(spacing: 8) {
-        Image(systemName: "arrow.down.circle")
-        Text("Showing \(visibleCount) of \(totalCount) blocks")
+        Image(systemName: direction.systemImage)
+        Text("Showing blocks \(visibleRange) of \(totalCount)")
           .font(.caption.weight(.medium))
-        Text("Load more")
+        Text(direction.title)
           .font(.caption)
           .foregroundStyle(.secondary)
       }
@@ -283,7 +402,9 @@ private struct ProgressiveRenderFooter: View {
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
     .onAppear {
-      loadMore()
+      if direction == .next {
+        loadMore(direction)
+      }
     }
   }
 }
