@@ -84,6 +84,8 @@ type AgentDataLinkMetadata = {
   engine?: string;
   source?: string;
   path?: string;
+  credentialRef?: string;
+  configRef?: string;
   eventStream?: string;
   timeline?: string;
   eventType?: string;
@@ -643,6 +645,18 @@ function stringDataProperty(props: Record<string, string>, names: string[]): str
   return undefined;
 }
 
+function safeCredentialRef(raw: string | undefined): string | undefined {
+  const value = String(raw || "").trim();
+  if (!value || /^none$/i.test(value)) return undefined;
+  return /^(?:env|secret|config|profile):[A-Za-z0-9_.:-]+$/.test(value) ? value : undefined;
+}
+
+function safeConfigRef(raw: string | undefined): string | undefined {
+  const value = String(raw || "").trim();
+  if (!value) return undefined;
+  return /^(?:config|profile|env|file):[A-Za-z0-9_./:-]+$/.test(value) ? value : undefined;
+}
+
 function dataLinkMetadataFor(node: CompiledCorpusNode): AgentDataLinkMetadata | undefined {
   const kind = dataLinkKindFor(node);
   if (!kind) return undefined;
@@ -652,6 +666,8 @@ function dataLinkMetadataFor(node: CompiledCorpusNode): AgentDataLinkMetadata | 
   const engine = stringDataProperty(props, ["ENGINE", "ORG2_ENGINE"]);
   const source = stringDataProperty(props, ["SOURCE", "DATA_SOURCE", "URI", "URL"]);
   const sourcePath = stringDataProperty(props, ["PATH", "FILE"]);
+  const credentialRef = safeCredentialRef(stringDataProperty(props, ["CREDENTIAL_REF", "CREDENTIAL", "CREDENTIALS", "AUTH_REF", "AUTH"]));
+  const configRef = safeConfigRef(stringDataProperty(props, ["CONFIG_REF", "CONFIG", "PROFILE"]));
   const eventStream = stringDataProperty(props, ["EVENT_STREAM", "STREAM", "STREAM_ID"]);
   const timeline = stringDataProperty(props, ["TIMELINE", "TIMELINE_ID"]);
   const eventType = stringDataProperty(props, ["EVENT_TYPE", "EVENT_KIND"]);
@@ -676,6 +692,8 @@ function dataLinkMetadataFor(node: CompiledCorpusNode): AgentDataLinkMetadata | 
     ...(engine ? { engine } : {}),
     ...(source ? { source } : {}),
     ...(sourcePath ? { path: sourcePath } : {}),
+    ...(credentialRef ? { credentialRef } : {}),
+    ...(configRef ? { configRef } : {}),
     ...(eventStream ? { eventStream } : {}),
     ...(timeline ? { timeline } : {}),
     ...(eventType ? { eventType } : {}),
@@ -1104,6 +1122,8 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       item.id ? `id: ${item.id}` : "",
       item.dataLink.system ? `system: ${item.dataLink.system}` : "",
       item.dataLink.engine ? `engine: ${item.dataLink.engine}` : "",
+      item.dataLink.credentialRef ? `credential: ${item.dataLink.credentialRef}` : "",
+      item.dataLink.configRef ? `config: ${item.dataLink.configRef}` : "",
       item.dataLink.eventStream ? `stream: ${item.dataLink.eventStream}` : "",
       item.dataLink.timeline ? `timeline: ${item.dataLink.timeline}` : "",
       item.dataLink.eventType ? `event: ${item.dataLink.eventType}` : "",
