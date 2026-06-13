@@ -15,7 +15,11 @@
           "headline": "Month-end billing",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-repeater-month-clamp.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }
@@ -30,7 +34,11 @@
           "headline": "Month-end billing",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-repeater-month-clamp.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     },
@@ -43,7 +51,11 @@
           "headline": "Month-end billing",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-repeater-month-clamp.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

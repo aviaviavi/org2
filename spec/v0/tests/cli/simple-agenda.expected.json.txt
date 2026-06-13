@@ -16,7 +16,11 @@
           "headline": "Task for today",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/simple-agenda.org",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     },
@@ -29,7 +33,11 @@
           "headline": "Task for tomorrow",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/simple-agenda.org",
-          "line": 3
+          "line": 3,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

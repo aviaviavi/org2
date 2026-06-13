@@ -2,6 +2,70 @@ import AppKit
 import Foundation
 import SwiftUI
 
+private struct CanonicalDocumentCacheEntry {
+  let modifiedAt: Date?
+  let document: Org2CanonicalDocument
+}
+
+private struct RenderedBlocksCacheEntry {
+  let modifiedAt: Date?
+  let sourceID: String
+  let textByteCount: Int
+  let blocks: [OrgEditableBlock]
+}
+
+private struct PendingBlockSelection {
+  let file: String
+  let line: Int
+  let mode: PendingBlockSelectionMode
+  let beginEditing: Bool
+
+  init(file: String, line: Int, mode: PendingBlockSelectionMode, beginEditing: Bool = false) {
+    self.file = file
+    self.line = line
+    self.mode = mode
+    self.beginEditing = beginEditing
+  }
+}
+
+private enum PendingBlockSelectionMode {
+  case containingOrNearest
+  case nextOrNearest
+}
+
+private struct TransientDraftBlock {
+  let file: String
+  let insertionLine: Int
+  let replacementPrefix: String
+  let replacementSuffix: String
+  let selectionLineOffset: Int
+  let block: OrgEditableBlock
+}
+
+private struct SplitDraftSpec {
+  let insertionLineOffset: Int
+  let displayLineOffset: Int
+  let rawText: String
+  let rendered: OrgRenderedBlock
+  let replacementPrefix: String
+  let replacementSuffix: String
+  let selectionLineOffset: Int
+}
+
+private struct SplitBlockPlan {
+  let replacement: String?
+  let newBlockLineOffset: Int?
+  let draft: SplitDraftSpec?
+}
+
+struct SourceBlockExecutionResult: Equatable, Sendable {
+  let exitCode: Int32
+  let stdout: String
+  let stderr: String
+  let timedOut: Bool
+  let timeout: TimeInterval
+}
+
 @MainActor
 public final class WorkspaceStore: ObservableObject {
   @Published public var selectedSurface: WorkspaceSurface = .agenda
@@ -11,9 +75,20 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedAgendaItemID: String?
   @Published public var corpusRoot: URL?
   @Published public var agenda: AgendaPayload?
+  @Published public var corpusFiles: [CorpusFile] = []
+  @Published public var selectedCorpusFileID: String?
+  @Published public var corpusFileFilter = ""
+  @Published public var isScanningCorpusFiles = false
+  @Published public var isQuickOpenPresented = false
+  @Published public var quickOpenQuery = ""
   @Published public var searchQuery = ""
   @Published public var searchResults: [SearchResult] = []
-  @Published public var openClawMessages: [OpenClawChatMessage] = []
+  @Published public var openClawMessages: [OpenClawChatMessage] = [] {
+    didSet {
+      guard shouldPersistOpenClawMessages else { return }
+      persistOpenClawMessages()
+    }
+  }
   @Published public var openClawDraft = ""
   @Published public var openClawAgentID = "main"
   @Published public var openClawEndpointText = ""
@@ -21,19 +96,27 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var openClawHasStoredToken = false
   @Published public var openClawStatusText = WorkspaceStore.defaultOpenClawStatusText()
   @Published public var isSendingOpenClawMessage = false
+  @Published public var openClawRequestStartedAt: Date?
   @Published public var openClawThreads: [OpenClawThread] = []
   @Published public var selectedOpenClawThreadID: String?
   @Published public var selectedLocation: WorkspaceLocation?
   @Published public var selectedEntrySource: EntrySource?
+  @Published public var selectedRenderedBlocks: [OrgEditableBlock] = []
   @Published public var selectedEntrySourceMode: EntrySourceMode = .entry
   @Published public var editableEntryText = ""
+  @Published public var selectedBlockID: OrgEditableBlock.ID?
+  @Published public var editingBlockID: OrgEditableBlock.ID?
+  @Published public var editableBlockText = ""
+  @Published public var sourceBlockRuns: [String: SourceBlockRunState] = [:]
   @Published public var backlinks: BacklinksPayload?
   @Published public var isLoadingAgenda = false
   @Published public var isSearching = false
   @Published public var isLoadingOpenClawThreads = false
   @Published public var isLoadingEntrySource = false
+  @Published public var isRenderingEntrySource = false
   @Published public var isEditingEntry = false
   @Published public var isSavingEntry = false
+  @Published public var isSavingBlock = false
   @Published public var isLoadingBacklinks = false
   @Published public var priorityModeActive = false
   @Published public var statusText = ""
@@ -45,17 +128,31 @@ public final class WorkspaceStore: ObservableObject {
   private let openClawEndpointKey = "Org2Workspace.openClawEndpoint"
   private let openClawAgentKey = "Org2Workspace.openClawAgent"
   private let openClawRemoteCorpusPathKey = "Org2Workspace.openClawRemoteCorpusPath"
-  private let openClawSessionKey = "org2-workspace:\(UUID().uuidString)"
+  private static let canonicalParserLineLimit = 2_000
+  private static let renderedBlocksCacheLimit = 12
+  private let openClawTranscriptURL: URL
+  private var openClawSessionKey = WorkspaceStore.makeOpenClawSessionKey()
+  private var shouldPersistOpenClawMessages = false
+  private var openClawBearerToken: String?
   private var pendingG = false
+  private var entrySourceLoadGeneration = 0
+  private var canonicalDocumentCache: [String: CanonicalDocumentCacheEntry] = [:]
+  private var renderedBlocksCache: [String: RenderedBlocksCacheEntry] = [:]
+  private var renderedBlocksCacheOrder: [String] = []
+  private var pendingBlockSelection: PendingBlockSelection?
+  private var transientDraftBlock: TransientDraftBlock?
 
-  public init(cli: Org2CLI? = nil, defaults: UserDefaults = .standard) {
+  public init(cli: Org2CLI? = nil, defaults: UserDefaults = .standard, openClawTranscriptURL: URL? = nil) {
     self.defaults = defaults
+    self.openClawTranscriptURL = openClawTranscriptURL ?? Self.defaultOpenClawTranscriptURL()
     self.cli = cli ?? (try? Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())) ?? Org2CLI(repoRoot: URL(fileURLWithPath: "/Users/avi/dev/org2"))
     let settings = OpenClawGatewaySettings.resolve()
     openClawEndpointText = defaults.string(forKey: openClawEndpointKey) ?? settings.endpoint.absoluteString
     openClawAgentID = defaults.string(forKey: openClawAgentKey) ?? "main"
     openClawRemoteCorpusPath = defaults.string(forKey: openClawRemoteCorpusPathKey) ?? ""
-    openClawHasStoredToken = OpenClawKeychain.readToken() != nil
+    openClawMessages = Self.loadOpenClawMessages(from: self.openClawTranscriptURL)
+    shouldPersistOpenClawMessages = true
+    openClawHasStoredToken = OpenClawKeychain.containsToken()
     openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
   }
 
@@ -66,6 +163,7 @@ public final class WorkspaceStore: ObservableObject {
 
     if corpusRoot != nil {
       await refreshAgenda()
+      await refreshCorpusFiles()
       Task { await refreshOpenClawThreads() }
     } else {
       statusText = "No corpus selected"
@@ -91,23 +189,59 @@ public final class WorkspaceStore: ObservableObject {
     corpusRoot = standardized
     defaults.set(standardized.path, forKey: corpusKey)
     agenda = nil
+    corpusFiles = []
+    selectedCorpusFileID = nil
+    corpusFileFilter = ""
+    quickOpenQuery = ""
     searchResults = []
     openClawThreads = []
     selectedOpenClawThreadID = nil
     selectedLocation = nil
     selectedEntrySource = nil
+    selectedRenderedBlocks = []
+    sourceBlockRuns = [:]
     editableEntryText = ""
+    canonicalDocumentCache = [:]
+    renderedBlocksCache = [:]
+    renderedBlocksCacheOrder = []
+    resetBlockState()
     isEditingEntry = false
+    isRenderingEntrySource = false
+    entrySourceLoadGeneration += 1
     backlinks = nil
     errorText = nil
   }
 
   public func refreshWorkspace() async {
     await refreshAgenda()
+    await refreshCorpusFiles()
     Task { await refreshOpenClawThreads() }
   }
 
-  public func refreshAgenda() async {
+  public func refreshCorpusFiles() async {
+    guard let corpusRoot else {
+      corpusFiles = []
+      return
+    }
+
+    isScanningCorpusFiles = true
+    defer { isScanningCorpusFiles = false }
+
+    do {
+      let files = try await Task.detached(priority: .utility) {
+        try Self.scanCorpusFiles(corpusRoot: corpusRoot)
+      }.value
+      corpusFiles = files
+      if selectedSurface == .files {
+        statusText = "\(files.count) corpus file\(files.count == 1 ? "" : "s")"
+      }
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "File scan failed"
+    }
+  }
+
+  public func refreshAgenda(preserveSelection: Bool = false) async {
     guard let corpusRoot else {
       statusText = "No corpus selected"
       return
@@ -130,7 +264,7 @@ public final class WorkspaceStore: ObservableObject {
         "--workload"
       ])
       agenda = payload
-      syncAgendaSelectionAfterRefresh()
+      syncAgendaSelectionAfterRefresh(preserveSelection: preserveSelection)
       statusText = "\(payload.totalItemCount) agenda item\(payload.totalItemCount == 1 ? "" : "s")"
     } catch {
       errorText = error.localizedDescription
@@ -183,15 +317,37 @@ public final class WorkspaceStore: ObservableObject {
     selectedLocation = location
     isEditingEntry = false
     editableEntryText = ""
+    resetBlockState()
     selectedEntrySourceMode = .entry
     selectedEntrySource = nil
+    selectedRenderedBlocks = []
+    isRenderingEntrySource = false
     Task { await loadBacklinks(for: location) }
-    Task { await loadEntrySource(for: location) }
+    scheduleEntrySourceLoad(for: location)
   }
 
   public func loadEntrySource(for location: WorkspaceLocation) async {
+    entrySourceLoadGeneration += 1
+    let generation = entrySourceLoadGeneration
+    await loadEntrySource(for: location, generation: generation)
+  }
+
+  private func scheduleEntrySourceLoad(for location: WorkspaceLocation) {
+    entrySourceLoadGeneration += 1
+    let generation = entrySourceLoadGeneration
+    Task { await loadEntrySource(for: location, generation: generation) }
+  }
+
+  private func loadEntrySource(for location: WorkspaceLocation, generation: Int) async {
+    guard generation == entrySourceLoadGeneration else { return }
     isLoadingEntrySource = true
-    defer { isLoadingEntrySource = false }
+    isRenderingEntrySource = false
+    resetBlockEditing()
+    defer {
+      if generation == entrySourceLoadGeneration {
+        isLoadingEntrySource = false
+      }
+    }
 
     do {
       let mode = selectedEntrySourceMode
@@ -203,14 +359,28 @@ public final class WorkspaceStore: ObservableObject {
           return try Self.pageSource(file: location.file)
         }
       }.value
-      guard selectedLocation == nil || selectedLocation == location else { return }
+      guard generation == entrySourceLoadGeneration,
+            selectedLocationMatches(location)
+      else {
+        return
+      }
       selectedEntrySource = source
       if isEditingEntry {
         editableEntryText = source.text
+        isRenderingEntrySource = false
+      } else {
+        renderEntrySource(source, generation: generation)
       }
     } catch {
-      guard selectedLocation == nil || selectedLocation == location else { return }
+      guard generation == entrySourceLoadGeneration,
+            selectedLocationMatches(location)
+      else {
+        return
+      }
       selectedEntrySource = nil
+      selectedRenderedBlocks = []
+      selectedBlockID = nil
+      isRenderingEntrySource = false
       errorText = error.localizedDescription
     }
   }
@@ -218,6 +388,7 @@ public final class WorkspaceStore: ObservableObject {
   public func reloadSelectedEntrySource() async {
     isEditingEntry = false
     editableEntryText = ""
+    resetBlockState()
     guard let selectedLocation else { return }
     await loadEntrySource(for: selectedLocation)
   }
@@ -228,12 +399,128 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
     editableEntryText = source.text
+    resetBlockState()
     isEditingEntry = true
   }
 
   public func cancelEditingSelectedEntry() {
     editableEntryText = selectedEntrySource?.text ?? ""
     isEditingEntry = false
+  }
+
+  public func beginEditingBlock(_ block: OrgEditableBlock) {
+    guard block.isEditable, selectedEntrySource?.isEditable == true else {
+      statusText = "Block is read-only"
+      return
+    }
+    isEditingEntry = false
+    selectedBlockID = block.id
+    editingBlockID = block.id
+    editableBlockText = block.rawText
+  }
+
+  public func cancelEditingBlock() {
+    if let draft = transientDraftBlock, editingBlockID == draft.block.id {
+      discardTransientDraft(status: "Draft discarded")
+      return
+    }
+    resetBlockEditing()
+  }
+
+  public var selectedBlock: OrgEditableBlock? {
+    guard let selectedBlockID else { return nil }
+    return selectedRenderedBlocks.first { $0.id == selectedBlockID }
+  }
+
+  public var hasSelectedBlock: Bool {
+    selectedBlock != nil
+  }
+
+  public func selectBlock(_ block: OrgEditableBlock) {
+    guard selectedEntrySource?.isEditable == true else { return }
+    selectedBlockID = block.id
+  }
+
+  public func clearSelectedBlock() {
+    selectedBlockID = nil
+  }
+
+  public func canSelectAdjacentBlock(_ direction: OrgBlockMoveDirection) -> Bool {
+    guard let selectedBlock else { return false }
+    let blocks = selectableBlocks
+    guard let index = blocks.firstIndex(where: { $0.id == selectedBlock.id }) else { return false }
+    switch direction {
+    case .up:
+      return index > 0
+    case .down:
+      return index < blocks.count - 1
+    }
+  }
+
+  public func selectAdjacentBlock(_ direction: OrgBlockMoveDirection) {
+    guard let selectedBlock else {
+      statusText = "Select a block first"
+      return
+    }
+    let blocks = selectableBlocks
+    guard let index = blocks.firstIndex(where: { $0.id == selectedBlock.id }) else {
+      selectedBlockID = nil
+      return
+    }
+
+    let nextIndex: Int
+    switch direction {
+    case .up:
+      nextIndex = max(0, index - 1)
+    case .down:
+      nextIndex = min(blocks.count - 1, index + 1)
+    }
+    selectedBlockID = blocks[nextIndex].id
+  }
+
+  public func beginEditingSelectedBlock() {
+    guard let selectedBlock else {
+      statusText = "Select a block first"
+      return
+    }
+    beginEditingBlock(selectedBlock)
+  }
+
+  public func duplicateSelectedBlock() async {
+    guard let selectedBlock else {
+      statusText = "Select a block first"
+      return
+    }
+    await duplicateBlock(selectedBlock)
+  }
+
+  public func deleteSelectedBlock() async {
+    guard let selectedBlock else {
+      statusText = "Select a block first"
+      return
+    }
+    await deleteBlock(selectedBlock)
+  }
+
+  public func moveSelectedBlock(_ direction: OrgBlockMoveDirection) async {
+    guard let selectedBlock else {
+      statusText = "Select a block first"
+      return
+    }
+    await moveBlock(selectedBlock, direction: direction)
+  }
+
+  public func insertBlockAfterSelected(_ kind: OrgInsertBlockKind) async {
+    guard let selectedBlock else {
+      statusText = "Select a block first"
+      return
+    }
+    await insertBlock(after: selectedBlock, kind: kind)
+  }
+
+  public func canMoveSelectedBlock(_ direction: OrgBlockMoveDirection) -> Bool {
+    guard let selectedBlock else { return false }
+    return canMoveBlock(selectedBlock, direction: direction)
   }
 
   public func saveEditedEntry() async {
@@ -254,15 +541,516 @@ public final class WorkspaceStore: ObservableObject {
       try await Task.detached(priority: .userInitiated) {
         try Self.replaceEntrySource(source, with: replacement)
       }.value
+      invalidateCanonicalDocumentCache(for: source.file)
       statusText = "Saved \(relativePath(source.file)):\(source.displayRange)"
       isEditingEntry = false
       if let selectedLocation {
         await loadEntrySource(for: selectedLocation)
       }
-      await refreshAgenda()
+      await refreshAgenda(preserveSelection: true)
     } catch {
       errorText = error.localizedDescription
       statusText = "Save failed"
+    }
+  }
+
+  public func saveEditedBlock(_ block: OrgEditableBlock) async {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "No editable source loaded"
+      return
+    }
+    guard editingBlockID == block.id else {
+      statusText = "Block edit is no longer active"
+      return
+    }
+
+    if let draft = transientDraftBlock, draft.block.id == block.id {
+      await saveTransientDraftBlock(draft)
+      return
+    }
+
+    isSavingBlock = true
+    defer { isSavingBlock = false }
+
+    do {
+      let replacement = editableBlockText
+      try await Task.detached(priority: .userInitiated) {
+        try Self.replaceSourceRange(
+          file: source.file,
+          startLine: block.startLine,
+          endLineExclusive: block.endLineExclusive,
+          replacement: replacement
+        )
+      }.value
+      invalidateCanonicalDocumentCache(for: source.file)
+      statusText = "Saved block \(relativePath(source.file)):\(block.displayRange)"
+      resetBlockEditing()
+      pendingBlockSelection = PendingBlockSelection(file: source.file, line: block.startLine, mode: .containingOrNearest)
+      if let selectedLocation {
+        await loadEntrySource(for: selectedLocation)
+      }
+      await refreshAgenda(preserveSelection: true)
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Block save failed"
+    }
+  }
+
+  public func splitEditingBlock(_ block: OrgEditableBlock, atUTF16Offset offset: Int) async {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "No editable source loaded"
+      return
+    }
+    guard editingBlockID == block.id else {
+      statusText = "Block edit is no longer active"
+      return
+    }
+    guard block.isEditable,
+          block.startLine >= source.startLine,
+          block.endLineExclusive <= source.endLineExclusive
+    else {
+      statusText = "Block cannot be split"
+      return
+    }
+    guard let plan = Self.splitBlockPlan(for: block, draft: editableBlockText, utf16Offset: offset) else {
+      statusText = "Block cannot be split"
+      return
+    }
+
+    isSavingBlock = true
+    defer { isSavingBlock = false }
+
+    do {
+      if let replacement = plan.replacement {
+        try await Task.detached(priority: .userInitiated) {
+          try Self.replaceSourceRange(
+            file: source.file,
+            startLine: block.startLine,
+            endLineExclusive: block.endLineExclusive,
+            replacement: replacement
+          )
+        }.value
+        invalidateCanonicalDocumentCache(for: source.file)
+      }
+      isEditingEntry = false
+
+      let draftToActivate: TransientDraftBlock?
+      if let draftSpec = plan.draft {
+        let draft = Self.transientDraftBlock(
+          from: draftSpec,
+          sourceFile: source.file,
+          originalBlock: block
+        )
+        transientDraftBlock = draft
+        draftToActivate = draft
+        statusText = "Started draft in \(relativePath(source.file))"
+      } else if let newBlockLineOffset = plan.newBlockLineOffset {
+        draftToActivate = nil
+        transientDraftBlock = nil
+        resetBlockEditing()
+        pendingBlockSelection = PendingBlockSelection(
+          file: source.file,
+          line: block.startLine + newBlockLineOffset,
+          mode: .containingOrNearest,
+          beginEditing: true
+        )
+        statusText = "Split block in \(relativePath(source.file))"
+      } else {
+        draftToActivate = nil
+      }
+
+      if plan.replacement != nil, let selectedLocation {
+        await loadEntrySource(for: selectedLocation)
+      }
+      if let draftToActivate {
+        activateTransientDraft(draftToActivate)
+      }
+      if plan.replacement != nil {
+        await refreshAgenda(preserveSelection: true)
+      }
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Split failed"
+    }
+  }
+
+  public func convertEditingBlock(_ block: OrgEditableBlock, to kind: OrgInsertBlockKind) async {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "No editable source loaded"
+      return
+    }
+    guard editingBlockID == block.id else {
+      statusText = "Block edit is no longer active"
+      return
+    }
+    guard block.startLine >= source.startLine,
+          block.endLineExclusive <= source.endLineExclusive
+    else {
+      statusText = "Block is outside the selected source"
+      return
+    }
+
+    isSavingBlock = true
+    defer { isSavingBlock = false }
+
+    do {
+      let replacement = conversionSnippet(
+        for: kind,
+        replacing: block,
+        in: source,
+        draft: editableBlockText
+      )
+      try await Task.detached(priority: .userInitiated) {
+        try Self.replaceSourceRange(
+          file: source.file,
+          startLine: block.startLine,
+          endLineExclusive: block.endLineExclusive,
+          replacement: replacement
+        )
+      }.value
+      invalidateCanonicalDocumentCache(for: source.file)
+      resetBlockEditing()
+      isEditingEntry = false
+      pendingBlockSelection = PendingBlockSelection(
+        file: source.file,
+        line: block.startLine,
+        mode: .containingOrNearest,
+        beginEditing: true
+      )
+      statusText = "Converted block to \(kind.title.lowercased())"
+      if let selectedLocation {
+        await loadEntrySource(for: selectedLocation)
+      }
+      await refreshAgenda(preserveSelection: true)
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Convert failed"
+    }
+  }
+
+  public func insertBlock(after block: OrgEditableBlock, kind: OrgInsertBlockKind) async {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "No editable source loaded"
+      return
+    }
+    guard block.startLine >= source.startLine,
+          block.endLineExclusive <= source.endLineExclusive
+    else {
+      statusText = "Block is outside the selected source"
+      return
+    }
+
+    isSavingBlock = true
+    defer { isSavingBlock = false }
+
+    do {
+      let replacement = "\n" + insertionSnippet(for: kind, after: block, in: source)
+      try await Task.detached(priority: .userInitiated) {
+        try Self.replaceSourceRange(
+          file: source.file,
+          startLine: block.endLineExclusive,
+          endLineExclusive: block.endLineExclusive,
+          replacement: replacement
+        )
+      }.value
+      invalidateCanonicalDocumentCache(for: source.file)
+      resetBlockEditing()
+      isEditingEntry = false
+      pendingBlockSelection = PendingBlockSelection(
+        file: source.file,
+        line: block.endLineExclusive + 1,
+        mode: .nextOrNearest,
+        beginEditing: true
+      )
+      statusText = "Inserted \(kind.title.lowercased()) in \(relativePath(source.file))"
+      if let selectedLocation {
+        await loadEntrySource(for: selectedLocation)
+      }
+      await refreshAgenda(preserveSelection: true)
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Insert failed"
+    }
+  }
+
+  public func toggleListItemCheckbox(_ block: OrgEditableBlock) async {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "No editable source loaded"
+      return
+    }
+    guard block.startLine >= source.startLine,
+          block.endLineExclusive <= source.endLineExclusive
+    else {
+      statusText = "Block is outside the selected source"
+      return
+    }
+    guard case .listItem(_, _, let checkbox, _) = block.rendered,
+          let checkbox,
+          let replacement = Self.toggledListItemCheckboxRawText(block.rawText, current: checkbox)
+    else {
+      statusText = "List item has no checkbox"
+      return
+    }
+
+    isSavingBlock = true
+    defer { isSavingBlock = false }
+
+    do {
+      try await Task.detached(priority: .userInitiated) {
+        try Self.replaceSourceRange(
+          file: source.file,
+          startLine: block.startLine,
+          endLineExclusive: block.endLineExclusive,
+          replacement: replacement
+        )
+      }.value
+      await finishBlockMutation(
+        file: source.file,
+        status: checkbox == .checked ? "Marked incomplete" : "Marked complete",
+        selectLine: block.startLine
+      )
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Checkbox update failed"
+    }
+  }
+
+  public func duplicateBlock(_ block: OrgEditableBlock) async {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "No editable source loaded"
+      return
+    }
+    guard block.isEditable,
+          block.startLine >= source.startLine,
+          block.endLineExclusive <= source.endLineExclusive
+    else {
+      statusText = "Block cannot be duplicated"
+      return
+    }
+
+    isSavingBlock = true
+    defer { isSavingBlock = false }
+
+    do {
+      try await Task.detached(priority: .userInitiated) {
+        try Self.replaceSourceRange(
+          file: source.file,
+          startLine: block.endLineExclusive,
+          endLineExclusive: block.endLineExclusive,
+          replacement: "\n" + block.rawText
+        )
+      }.value
+      await finishBlockMutation(
+        file: source.file,
+        status: "Duplicated block in \(relativePath(source.file))",
+        selectLine: block.endLineExclusive + 1,
+        selectionMode: .nextOrNearest
+      )
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Duplicate failed"
+    }
+  }
+
+  public func deleteBlock(_ block: OrgEditableBlock) async {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "No editable source loaded"
+      return
+    }
+    guard block.isEditable,
+          block.startLine >= source.startLine,
+          block.endLineExclusive <= source.endLineExclusive
+    else {
+      statusText = "Block cannot be deleted"
+      return
+    }
+    if source.isSubtree, block.startLine == source.startLine {
+      statusText = "Open the page to delete the entry heading"
+      return
+    }
+
+    isSavingBlock = true
+    defer { isSavingBlock = false }
+
+    do {
+      try await Task.detached(priority: .userInitiated) {
+        try Self.deleteSourceRangeCleaningAdjacentBlank(
+          file: source.file,
+          startLine: block.startLine,
+          endLineExclusive: block.endLineExclusive
+        )
+      }.value
+      await finishBlockMutation(
+        file: source.file,
+        status: "Deleted block in \(relativePath(source.file))",
+        selectLine: block.startLine,
+        selectionMode: .nextOrNearest
+      )
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Delete failed"
+    }
+  }
+
+  public func canMoveBlock(_ block: OrgEditableBlock, direction: OrgBlockMoveDirection) -> Bool {
+    guard block.isEditable,
+          let source = selectedEntrySource,
+          source.isEditable,
+          block.startLine >= source.startLine,
+          block.endLineExclusive <= source.endLineExclusive
+    else {
+      return false
+    }
+    if source.isSubtree, block.startLine == source.startLine {
+      return false
+    }
+
+    let blocks = movableBlocks
+    guard let index = blocks.firstIndex(where: { $0.id == block.id }) else { return false }
+    switch direction {
+    case .up:
+      return index > 0
+    case .down:
+      return index < blocks.count - 1
+    }
+  }
+
+  public func moveBlock(_ block: OrgEditableBlock, direction: OrgBlockMoveDirection) async {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "No editable source loaded"
+      return
+    }
+    guard canMoveBlock(block, direction: direction),
+          let target = moveTarget(for: block, direction: direction)
+    else {
+      statusText = "Block cannot move \(direction == .up ? "up" : "down")"
+      return
+    }
+
+    isSavingBlock = true
+    defer { isSavingBlock = false }
+
+    do {
+      try await Task.detached(priority: .userInitiated) {
+        switch direction {
+        case .up:
+          try Self.swapSourceRanges(
+            file: source.file,
+            firstStartLine: target.startLine,
+            firstEndLineExclusive: target.endLineExclusive,
+            secondStartLine: block.startLine,
+            secondEndLineExclusive: block.endLineExclusive
+          )
+        case .down:
+          try Self.swapSourceRanges(
+            file: source.file,
+            firstStartLine: block.startLine,
+            firstEndLineExclusive: block.endLineExclusive,
+            secondStartLine: target.startLine,
+            secondEndLineExclusive: target.endLineExclusive
+          )
+        }
+      }.value
+      let selectedLine: Int
+      switch direction {
+      case .up:
+        selectedLine = target.startLine
+      case .down:
+        selectedLine = block.startLine + (target.endLineExclusive - target.startLine) + max(0, target.startLine - block.endLineExclusive)
+      }
+      await finishBlockMutation(
+        file: source.file,
+        status: "Moved block \(direction == .up ? "up" : "down")",
+        selectLine: selectedLine
+      )
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Move failed"
+    }
+  }
+
+  public func sourceBlockRunState(for block: OrgEditableBlock) -> SourceBlockRunState? {
+    sourceBlockRuns[sourceBlockRunKey(for: block)]
+  }
+
+  public func runSourceBlock(_ block: OrgEditableBlock) async {
+    guard let selectedEntrySource else {
+      statusText = "No source loaded"
+      return
+    }
+    guard case .source(let fallbackLanguage, let fallbackLines) = block.rendered else {
+      statusText = "Select a source block first"
+      return
+    }
+
+    let source = OrgEditableSourceBlock(
+      rawText: block.rawText,
+      fallbackLanguage: fallbackLanguage,
+      fallbackLines: fallbackLines
+    )
+    let language = source.language.trimmingCharacters(in: .whitespacesAndNewlines)
+    let key = sourceBlockRunKey(for: block)
+    guard let plan = SourceBlockRunPlan.plan(for: language) else {
+      sourceBlockRuns[key] = SourceBlockRunState(
+        status: .unsupported,
+        language: language.isEmpty ? "source" : language,
+        commandLabel: "",
+        message: language.isEmpty
+          ? "Add a supported source language to run this block."
+          : "Running \(language) blocks is not supported yet."
+      )
+      return
+    }
+
+    let startedAt = Date()
+    sourceBlockRuns[key] = SourceBlockRunState(
+      status: .running,
+      language: language,
+      commandLabel: plan.commandLabel,
+      startedAt: startedAt,
+      message: "Running..."
+    )
+
+    let workingDirectory = URL(fileURLWithPath: selectedEntrySource.file)
+      .deletingLastPathComponent()
+      .standardizedFileURL
+
+    do {
+      let result = try await Task.detached(priority: .userInitiated) {
+        try Self.executeSourceBlock(source, plan: plan, workingDirectory: workingDirectory)
+      }.value
+      guard self.sourceBlockRunKey(for: block) == key else { return }
+      let finishedAt = Date()
+      let status: SourceBlockRunStatus
+      if result.timedOut {
+        status = .timedOut
+      } else if result.exitCode == 0 {
+        status = .succeeded
+      } else {
+        status = .failed
+      }
+      sourceBlockRuns[key] = SourceBlockRunState(
+        status: status,
+        language: language,
+        commandLabel: plan.commandLabel,
+        startedAt: startedAt,
+        finishedAt: finishedAt,
+        duration: finishedAt.timeIntervalSince(startedAt),
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        message: result.timedOut ? "Timed out after \(Int(result.timeout))s" : nil
+      )
+    } catch {
+      sourceBlockRuns[key] = SourceBlockRunState(
+        status: .failed,
+        language: language,
+        commandLabel: plan.commandLabel,
+        startedAt: startedAt,
+        finishedAt: Date(),
+        stderr: error.localizedDescription,
+        message: "Run failed"
+      )
     }
   }
 
@@ -302,6 +1090,403 @@ public final class WorkspaceStore: ObservableObject {
     select(.openClaw(thread))
   }
 
+  public func selectCorpusFile(_ file: CorpusFile) {
+    selectedSurface = .files
+    selectedCorpusFileID = file.id
+    let thread = OpenClawThread(
+      title: file.name,
+      file: file.path,
+      line: 1,
+      zone: file.directory.isEmpty ? "corpus" : file.directory,
+      modifiedAt: file.modifiedAt,
+      idValue: nil
+    )
+    selectedLocation = .openClaw(thread)
+    selectedOpenClawThreadID = nil
+    selectedEntrySourceMode = .page
+    selectedEntrySource = nil
+    selectedRenderedBlocks = []
+    editableEntryText = ""
+    resetBlockState()
+    isEditingEntry = false
+    isRenderingEntrySource = false
+    backlinks = nil
+    Task { await hydrateCorpusFileBacklinks(file) }
+    scheduleEntrySourceLoad(for: .openClaw(thread))
+    statusText = "Opened \(file.relativePath)"
+  }
+
+  public func presentQuickOpen() {
+    guard corpusRoot != nil else {
+      statusText = "No corpus selected"
+      return
+    }
+    quickOpenQuery = ""
+    isQuickOpenPresented = true
+    if corpusFiles.isEmpty {
+      Task { await refreshCorpusFiles() }
+    }
+  }
+
+  public var filteredCorpusFiles: [CorpusFile] {
+    filterFiles(corpusFileFilter, limit: 500)
+  }
+
+  public var quickOpenFiles: [CorpusFile] {
+    filterFiles(quickOpenQuery, limit: 80)
+  }
+
+  private func filterFiles(_ rawQuery: String, limit: Int) -> [CorpusFile] {
+    let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty else {
+      return Array(corpusFiles.prefix(limit))
+    }
+
+    return corpusFiles
+      .compactMap { file -> (CorpusFile, Int)? in
+        guard let score = Self.fuzzyScore(query: query, candidate: file.relativePath) else { return nil }
+        return (file, score)
+      }
+      .sorted { lhs, rhs in
+        if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
+        return lhs.0.relativePath.localizedStandardCompare(rhs.0.relativePath) == .orderedAscending
+      }
+      .prefix(limit)
+      .map(\.0)
+  }
+
+  private func hydrateCorpusFileBacklinks(_ file: CorpusFile) async {
+    do {
+      let idValue = try await Task.detached(priority: .utility) {
+        let prefix = try Self.readPrefix(URL(fileURLWithPath: file.path), maxBytes: 64 * 1024)
+        return Self.firstOrgID(in: prefix)
+      }.value
+      guard selectedLocation?.file == file.path else { return }
+      guard let idValue else {
+        backlinks = nil
+        return
+      }
+
+      let thread = OpenClawThread(
+        title: file.name,
+        file: file.path,
+        line: 1,
+        zone: file.directory.isEmpty ? "corpus" : file.directory,
+        modifiedAt: file.modifiedAt,
+        idValue: idValue
+      )
+      selectedLocation = .openClaw(thread)
+      await loadBacklinks(for: .openClaw(thread))
+    } catch {
+      guard selectedLocation?.file == file.path else { return }
+      backlinks = nil
+    }
+  }
+
+  private func selectedLocationMatches(_ location: WorkspaceLocation) -> Bool {
+    guard let selectedLocation else { return true }
+    return selectedLocation.file == location.file && selectedLocation.lineForEditor == location.lineForEditor
+  }
+
+  private func resetBlockEditing() {
+    editingBlockID = nil
+    editableBlockText = ""
+  }
+
+  private func resetBlockState() {
+    selectedBlockID = nil
+    pendingBlockSelection = nil
+    transientDraftBlock = nil
+    resetBlockEditing()
+  }
+
+  private func discardTransientDraft(status: String? = nil) {
+    guard let draft = transientDraftBlock else {
+      resetBlockEditing()
+      return
+    }
+    selectedRenderedBlocks.removeAll { $0.id == draft.block.id }
+    if selectedBlockID == draft.block.id {
+      selectedBlockID = nil
+    }
+    transientDraftBlock = nil
+    resetBlockEditing()
+    if let status {
+      statusText = status
+    }
+  }
+
+  private func activateTransientDraft(_ draft: TransientDraftBlock) {
+    selectedRenderedBlocks.removeAll { $0.id == draft.block.id }
+    selectedRenderedBlocks.append(draft.block)
+    selectedRenderedBlocks = Self.sortEditableBlocksForDisplay(selectedRenderedBlocks)
+    selectedBlockID = draft.block.id
+    editingBlockID = draft.block.id
+    editableBlockText = draft.block.rawText
+  }
+
+  private func saveTransientDraftBlock(_ draft: TransientDraftBlock) async {
+    guard selectedEntrySource?.isEditable == true else {
+      statusText = "No editable source loaded"
+      return
+    }
+
+    guard let replacementBody = Self.normalizedTransientDraftText(editableBlockText, for: draft.block) else {
+      discardTransientDraft(status: "Draft discarded")
+      return
+    }
+
+    isSavingBlock = true
+    defer { isSavingBlock = false }
+
+    let replacement = "\(draft.replacementPrefix)\(replacementBody)\(draft.replacementSuffix)"
+    do {
+      try await Task.detached(priority: .userInitiated) {
+        try Self.replaceSourceRange(
+          file: draft.file,
+          startLine: draft.insertionLine,
+          endLineExclusive: draft.insertionLine,
+          replacement: replacement
+        )
+      }.value
+      transientDraftBlock = nil
+      invalidateCanonicalDocumentCache(for: draft.file)
+      resetBlockEditing()
+      isEditingEntry = false
+      pendingBlockSelection = PendingBlockSelection(
+        file: draft.file,
+        line: draft.insertionLine + draft.selectionLineOffset,
+        mode: .containingOrNearest
+      )
+      statusText = "Saved block \(relativePath(draft.file)):\(draft.insertionLine)"
+      if let selectedLocation {
+        await loadEntrySource(for: selectedLocation)
+      }
+      await refreshAgenda(preserveSelection: true)
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Block save failed"
+    }
+  }
+
+  private func finishBlockMutation(
+    file: String,
+    status: String,
+    selectLine: Int? = nil,
+    selectionMode: PendingBlockSelectionMode = .containingOrNearest
+  ) async {
+    invalidateCanonicalDocumentCache(for: file)
+    transientDraftBlock = nil
+    resetBlockEditing()
+    isEditingEntry = false
+    if let selectLine {
+      pendingBlockSelection = PendingBlockSelection(file: file, line: max(1, selectLine), mode: selectionMode)
+    }
+    statusText = status
+    if let selectedLocation {
+      await loadEntrySource(for: selectedLocation)
+    }
+    await refreshAgenda(preserveSelection: true)
+  }
+
+  private var selectableBlocks: [OrgEditableBlock] {
+    guard let source = selectedEntrySource else { return [] }
+    return selectedRenderedBlocks.filter { block in
+      block.isEditable
+        && block.startLine >= source.startLine
+        && block.endLineExclusive <= source.endLineExclusive
+    }
+  }
+
+  private func blockForSelectionLine(
+    _ line: Int,
+    mode: PendingBlockSelectionMode,
+    in blocks: [OrgEditableBlock]
+  ) -> OrgEditableBlock? {
+    let editableBlocks = blocks.filter(\.isEditable)
+    switch mode {
+    case .containingOrNearest:
+      if let containing = editableBlocks.first(where: { $0.startLine <= line && line < $0.endLineExclusive }) {
+        return containing
+      }
+      if let next = editableBlocks.first(where: { $0.startLine >= line }) {
+        return next
+      }
+    case .nextOrNearest:
+      if let next = editableBlocks.first(where: { $0.startLine >= line }) {
+        return next
+      }
+      if let containing = editableBlocks.first(where: { $0.startLine <= line && line < $0.endLineExclusive }) {
+        return containing
+      }
+    }
+    return editableBlocks.last
+  }
+
+  private var movableBlocks: [OrgEditableBlock] {
+    guard let source = selectedEntrySource else { return [] }
+    return selectedRenderedBlocks.filter { block in
+      guard block.isEditable,
+            block.startLine >= source.startLine,
+            block.endLineExclusive <= source.endLineExclusive
+      else {
+        return false
+      }
+      return !(source.isSubtree && block.startLine == source.startLine)
+    }
+  }
+
+  private func moveTarget(for block: OrgEditableBlock, direction: OrgBlockMoveDirection) -> OrgEditableBlock? {
+    let blocks = movableBlocks
+    guard let index = blocks.firstIndex(where: { $0.id == block.id }) else { return nil }
+    switch direction {
+    case .up:
+      guard index > 0 else { return nil }
+      return blocks[index - 1]
+    case .down:
+      guard index < blocks.count - 1 else { return nil }
+      return blocks[index + 1]
+    }
+  }
+
+  private func insertionSnippet(
+    for kind: OrgInsertBlockKind,
+    after block: OrgEditableBlock,
+    in source: EntrySource
+  ) -> String {
+    let headingLevel = insertionHeadingLevel(after: block, in: source)
+    let stars = String(repeating: "*", count: max(1, headingLevel))
+    switch kind {
+    case .paragraph:
+      return "New text"
+    case .heading:
+      return "\(stars) New heading"
+    case .todo:
+      return "\(stars) TODO New task"
+    case .table:
+      return """
+      | Name | Value |
+      |------+-------|
+      |      |       |
+      """
+    case .properties:
+      return """
+      :PROPERTIES:
+      :KEY: value
+      :END:
+      """
+    case .quote:
+      return """
+      #+begin_quote
+      Quote
+      #+end_quote
+      """
+    case .source:
+      return """
+      #+begin_src sh
+      printf 'hello\\n'
+      #+end_src
+      """
+    }
+  }
+
+  private func conversionSnippet(
+    for kind: OrgInsertBlockKind,
+    replacing block: OrgEditableBlock,
+    in source: EntrySource,
+    draft: String
+  ) -> String {
+    let content = slashCommandContent(from: draft)
+    let headingLevel = insertionHeadingLevel(after: block, in: source)
+    let stars = String(repeating: "*", count: max(1, headingLevel))
+
+    switch kind {
+    case .paragraph:
+      return content.isEmpty ? "New text" : content
+    case .heading:
+      return "\(stars) \(singleLineTitle(content, fallback: "New heading"))"
+    case .todo:
+      return "\(stars) TODO \(singleLineTitle(content, fallback: "New task"))"
+    case .table:
+      if content.contains("|") {
+        return content
+      }
+      return insertionSnippet(for: .table, after: block, in: source)
+    case .properties:
+      return insertionSnippet(for: .properties, after: block, in: source)
+    case .quote:
+      return """
+      #+begin_quote
+      \(content.isEmpty ? "Quote" : content)
+      #+end_quote
+      """
+    case .source:
+      return """
+      #+begin_src sh
+      \(content.isEmpty ? "printf 'hello\\n'" : content)
+      #+end_src
+      """
+    }
+  }
+
+  private func slashCommandContent(from draft: String) -> String {
+    let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.hasPrefix("/") else { return trimmed }
+
+    let remainder = trimmed.dropFirst()
+    guard let contentStart = remainder.firstIndex(where: { $0.isWhitespace }) else {
+      return ""
+    }
+
+    return String(remainder[contentStart...])
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private func singleLineTitle(_ text: String, fallback: String) -> String {
+    let title = text
+      .split(whereSeparator: { $0.isWhitespace })
+      .joined(separator: " ")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return title.isEmpty ? fallback : title
+  }
+
+  private func insertionHeadingLevel(after block: OrgEditableBlock, in source: EntrySource) -> Int {
+    if source.isSubtree,
+       let rootLevel = Self.firstHeadingLevel(in: source.text) {
+      return min(6, rootLevel + 1)
+    }
+
+    if case .heading(let heading) = block.rendered {
+      return heading.level
+    }
+
+    if let previousHeading = selectedRenderedBlocks
+      .filter({ $0.startLine <= block.startLine })
+      .last(where: { candidate in
+        if case .heading = candidate.rendered { return true }
+        return false
+      }),
+      case .heading(let heading) = previousHeading.rendered {
+      return heading.level
+    }
+
+    return 1
+  }
+
+  nonisolated private static func firstHeadingLevel(in text: String) -> Int? {
+    for line in normalizeLineEndings(text).split(separator: "\n", omittingEmptySubsequences: false) {
+      if let level = headingLevel(String(line)) {
+        return level
+      }
+    }
+    return nil
+  }
+
+  private func sourceBlockRunKey(for block: OrgEditableBlock) -> String {
+    let file = selectedEntrySource?.file ?? selectedLocation?.file ?? ""
+    return "\(file):\(block.id)"
+  }
+
   public func openDailyNote(_ target: DailyNoteTarget) {
     guard let corpusRoot else {
       statusText = "No corpus selected"
@@ -316,10 +1501,13 @@ public final class WorkspaceStore: ObservableObject {
       selectedOpenClawThreadID = thread.id
       selectedEntrySourceMode = .page
       selectedEntrySource = nil
+      selectedRenderedBlocks = []
       editableEntryText = ""
+      resetBlockState()
       isEditingEntry = false
+      isRenderingEntrySource = false
       Task { await loadBacklinks(for: .openClaw(thread)) }
-      Task { await loadEntrySource(for: .openClaw(thread)) }
+      scheduleEntrySourceLoad(for: .openClaw(thread))
     } else {
       statusText = "Daily note not found: \(url.lastPathComponent)"
       NSWorkspace.shared.activateFileViewerSelecting([url.deletingLastPathComponent()])
@@ -334,11 +1522,15 @@ public final class WorkspaceStore: ObservableObject {
     openClawMessages.append(userMessage)
     openClawDraft = ""
     isSendingOpenClawMessage = true
+    openClawRequestStartedAt = Date()
     openClawStatusText = "Sending to OpenClaw..."
-    defer { isSendingOpenClawMessage = false }
+    defer {
+      isSendingOpenClawMessage = false
+      openClawRequestStartedAt = nil
+    }
 
     do {
-      let client = OpenClawChatClient(settings: currentOpenClawSettings())
+      let client = OpenClawChatClient(settings: currentOpenClawSettings(allowKeychainRead: true))
       let reply = try await client.send(
         messages: openClawMessages,
         agentID: openClawAgentID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "main" : openClawAgentID,
@@ -353,9 +1545,40 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func resetOpenClawChat() {
+    openClawSessionKey = Self.makeOpenClawSessionKey()
     openClawMessages = []
     openClawDraft = ""
     openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
+  }
+
+  public func openChatFileReference(_ reference: OpenClawFileReference) {
+    guard let file = localPathForOpenClawReference(reference.path) else {
+      openClawStatusText = "Could not resolve file link: \(reference.path)"
+      return
+    }
+
+    let url = URL(fileURLWithPath: file)
+    let thread = OpenClawThread(
+      title: url.deletingPathExtension().lastPathComponent,
+      file: file,
+      line: reference.line ?? 1,
+      zone: "chat link",
+      modifiedAt: nil,
+      idValue: nil
+    )
+    selectedLocation = .openClaw(thread)
+    selectedOpenClawThreadID = thread.id
+    selectedEntrySourceMode = .page
+    selectedEntrySource = nil
+    selectedRenderedBlocks = []
+    editableEntryText = ""
+    resetBlockState()
+    isEditingEntry = false
+    isRenderingEntrySource = false
+    backlinks = nil
+    Task { await loadBacklinks(for: .openClaw(thread)) }
+    scheduleEntrySourceLoad(for: .openClaw(thread))
+    statusText = "Opened \(relativePath(file))"
   }
 
   public func saveOpenClawConfiguration(endpoint: String, agent: String, remoteCorpusPath: String, token: String, clearToken: Bool) -> Bool {
@@ -380,11 +1603,16 @@ public final class WorkspaceStore: ObservableObject {
 
       if clearToken {
         try OpenClawKeychain.deleteToken()
+        openClawBearerToken = nil
+        openClawHasStoredToken = false
       } else if !token.isEmpty {
         try OpenClawKeychain.saveToken(token)
+        openClawBearerToken = token
+        openClawHasStoredToken = true
+      } else {
+        openClawHasStoredToken = OpenClawKeychain.containsToken()
       }
 
-      openClawHasStoredToken = OpenClawKeychain.readToken() != nil
       openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
       return true
     } catch {
@@ -512,6 +1740,7 @@ public final class WorkspaceStore: ObservableObject {
         ])
         statusText = "\(payload.newStatus) -> \(item.headline)"
       }
+      invalidateCanonicalDocumentCache(for: item.file)
       await refreshAgenda()
     } catch {
       errorText = error.localizedDescription
@@ -537,6 +1766,7 @@ public final class WorkspaceStore: ObservableObject {
         "--apply"
       ])
       statusText = "\(kind.rawValue.uppercased()) \(date) -> \(item.headline)"
+      invalidateCanonicalDocumentCache(for: item.file)
       await refreshAgenda()
     } catch {
       errorText = error.localizedDescription
@@ -568,6 +1798,7 @@ public final class WorkspaceStore: ObservableObject {
         ]
       )
       statusText = "Ready for agent -> \(Org2Display.cleanInline(item.headline))"
+      invalidateCanonicalDocumentCache(for: item.file)
       await refreshAgenda()
     } catch {
       errorText = error.localizedDescription
@@ -585,6 +1816,7 @@ public final class WorkspaceStore: ObservableObject {
       try updateHeadlinePriority(file: item.file, line: item.lineForEditor, priority: priority)
       statusText = priority.map { "Priority [#\($0)] -> \(Org2Display.cleanInline(item.headline))" }
         ?? "Priority cleared -> \(Org2Display.cleanInline(item.headline))"
+      invalidateCanonicalDocumentCache(for: item.file)
       await refreshAgenda()
     } catch {
       errorText = error.localizedDescription
@@ -657,6 +1889,7 @@ public final class WorkspaceStore: ObservableObject {
       let target = todayDailyNotePath(corpusRoot: corpusRoot)
       try appendScheduledTodo(title: title, to: target)
       statusText = "Captured TODO -> \(target.lastPathComponent)"
+      invalidateCanonicalDocumentCache(for: target.path)
       await refreshAgenda()
     } catch {
       errorText = error.localizedDescription
@@ -673,11 +1906,81 @@ public final class WorkspaceStore: ObservableObject {
     do {
       try upsertHeadlineProperties(file: item.file, line: item.lineForEditor, properties: [key: value])
       statusText = "\(key)=\(value) -> \(Org2Display.cleanInline(item.headline))"
+      invalidateCanonicalDocumentCache(for: item.file)
       await refreshAgenda()
     } catch {
       errorText = error.localizedDescription
       statusText = "Property update failed"
     }
+  }
+
+  public func handleWorkspaceKeyDown(_ event: NSEvent) -> Bool {
+    if handleDocumentKeyDown(event) {
+      return true
+    }
+    return handleAgendaKeyDown(event)
+  }
+
+  public func handleDocumentKeyDown(_ event: NSEvent) -> Bool {
+    guard selectedEntrySource?.isEditable == true,
+          selectedBlock != nil,
+          editingBlockID == nil,
+          !isEditingEntry
+    else {
+      return false
+    }
+
+    let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+    let key = (event.charactersIgnoringModifiers ?? event.characters ?? "").lowercased()
+
+    if event.keyCode == 53, modifiers.isEmpty {
+      clearSelectedBlock()
+      return true
+    }
+
+    if event.keyCode == 36, modifiers.isEmpty {
+      beginEditingSelectedBlock()
+      return true
+    }
+
+    if event.keyCode == 36, modifiers == [.command] {
+      Task { await insertBlockAfterSelected(.paragraph) }
+      return true
+    }
+
+    if modifiers.isEmpty {
+      if event.keyCode == 126 || key == "k" {
+        selectAdjacentBlock(.up)
+        return true
+      }
+      if event.keyCode == 125 || key == "j" {
+        selectAdjacentBlock(.down)
+        return true
+      }
+    }
+
+    if (event.keyCode == 51 || event.keyCode == 117), modifiers.isEmpty {
+      Task { await deleteSelectedBlock() }
+      return true
+    }
+
+    if modifiers == [.command], key == "d" {
+      Task { await duplicateSelectedBlock() }
+      return true
+    }
+
+    if modifiers == [.command, .shift] {
+      if event.keyCode == 126 {
+        Task { await moveSelectedBlock(.up) }
+        return true
+      }
+      if event.keyCode == 125 {
+        Task { await moveSelectedBlock(.down) }
+        return true
+      }
+    }
+
+    return false
   }
 
   public func handleAgendaKeyDown(_ event: NSEvent) -> Bool {
@@ -877,11 +2180,182 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func currentOpenClawSettings() -> OpenClawGatewaySettings {
-    OpenClawGatewaySettings.resolve(
+  private func currentOpenClawSettings(allowKeychainRead: Bool = false) -> OpenClawGatewaySettings {
+    if allowKeychainRead,
+       openClawBearerToken == nil,
+       openClawHasStoredToken {
+      openClawBearerToken = OpenClawKeychain.readToken()
+      openClawHasStoredToken = openClawBearerToken != nil || OpenClawKeychain.containsToken()
+    }
+
+    return OpenClawGatewaySettings.resolve(
       userEndpoint: openClawEndpointText,
-      userBearerToken: OpenClawKeychain.readToken()
+      userBearerToken: openClawBearerToken
     )
+  }
+
+  private func persistOpenClawMessages() {
+    do {
+      try Self.saveOpenClawMessages(openClawMessages, to: openClawTranscriptURL)
+    } catch {
+      errorText = "OpenClaw transcript save failed: \(error.localizedDescription)"
+    }
+  }
+
+  private func renderEntrySource(_ source: EntrySource, generation: Int) {
+    isRenderingEntrySource = true
+    let modifiedAt = Self.modificationDate(for: URL(fileURLWithPath: source.file).standardizedFileURL)
+    if let blocks = cachedRenderedBlocks(for: source, modifiedAt: modifiedAt) {
+      applyRenderedBlocks(blocks, for: source)
+      isRenderingEntrySource = false
+      return
+    }
+
+    Task { @MainActor in
+      let blocks: [OrgEditableBlock]
+      if source.endLineExclusive - source.startLine > Self.canonicalParserLineLimit {
+        blocks = await Task.detached(priority: .userInitiated) {
+          OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine)
+        }.value
+      } else {
+        do {
+          let document = try await canonicalDocument(for: source)
+          blocks = await Task.detached(priority: .userInitiated) {
+            OrgEntryRenderer.parseEditable(
+              source.text,
+              baseLine: source.startLine,
+              canonicalDocument: document
+            )
+          }.value
+        } catch {
+          blocks = await Task.detached(priority: .userInitiated) {
+            OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine)
+          }.value
+        }
+      }
+      guard generation == self.entrySourceLoadGeneration,
+            self.selectedEntrySource?.id == source.id
+      else {
+        return
+      }
+      self.cacheRenderedBlocks(blocks, for: source, modifiedAt: modifiedAt)
+      self.applyRenderedBlocks(blocks, for: source)
+      self.isRenderingEntrySource = false
+    }
+  }
+
+  private func applyRenderedBlocks(_ blocks: [OrgEditableBlock], for source: EntrySource) {
+    let visibleBlocks = blocksWithTransientDraft(blocks, for: source)
+    selectedRenderedBlocks = visibleBlocks
+    if let pending = pendingBlockSelection,
+       pending.file == source.file {
+      let pendingBlock = blockForSelectionLine(pending.line, mode: pending.mode, in: visibleBlocks)
+      selectedBlockID = pendingBlock?.id
+      pendingBlockSelection = nil
+      if pending.beginEditing,
+         let pendingBlock,
+         pendingBlock.isEditable,
+         source.isEditable {
+        editingBlockID = pendingBlock.id
+        editableBlockText = pendingBlock.rawText
+      }
+    } else if let selectedBlockID,
+       !visibleBlocks.contains(where: { $0.id == selectedBlockID }) {
+      self.selectedBlockID = nil
+    }
+  }
+
+  private func blocksWithTransientDraft(_ blocks: [OrgEditableBlock], for source: EntrySource) -> [OrgEditableBlock] {
+    guard let draft = transientDraftBlock, draft.file == source.file else {
+      return blocks
+    }
+    var visibleBlocks = blocks.filter { $0.id != draft.block.id }
+    visibleBlocks.append(draft.block)
+    return Self.sortEditableBlocksForDisplay(visibleBlocks)
+  }
+
+  private func canonicalDocument(for source: EntrySource) async throws -> Org2CanonicalDocument {
+    if source.isSubtree || source.startLine != 1 {
+      return try await cli.parseTextJSON(
+        source.text,
+        sourceRanges: true,
+        sourceLineOffset: max(0, source.startLine - 1)
+      )
+    }
+
+    return try await canonicalDocument(for: source.file)
+  }
+
+  private func canonicalDocument(for file: String) async throws -> Org2CanonicalDocument {
+    let url = URL(fileURLWithPath: file).standardizedFileURL
+    let modifiedAt = Self.modificationDate(for: url)
+    let cacheKey = url.path
+    if let cached = canonicalDocumentCache[cacheKey], cached.modifiedAt == modifiedAt {
+      return cached.document
+    }
+
+    let document: Org2CanonicalDocument = try await cli.parseFileJSON(url, sourceRanges: true)
+    canonicalDocumentCache[cacheKey] = CanonicalDocumentCacheEntry(
+      modifiedAt: Self.modificationDate(for: url),
+      document: document
+    )
+    return document
+  }
+
+  private func invalidateCanonicalDocumentCache(for file: String) {
+    canonicalDocumentCache.removeValue(forKey: URL(fileURLWithPath: file).standardizedFileURL.path)
+    invalidateRenderedBlocksCache(for: file)
+  }
+
+  private func renderedBlocksCacheKey(for source: EntrySource) -> String {
+    let path = URL(fileURLWithPath: source.file).standardizedFileURL.path
+    return "\(path)|\(source.startLine)|\(source.endLineExclusive)"
+  }
+
+  private func cacheRenderedBlocks(
+    _ blocks: [OrgEditableBlock],
+    for source: EntrySource,
+    modifiedAt: Date?
+  ) {
+    let key = renderedBlocksCacheKey(for: source)
+    renderedBlocksCache[key] = RenderedBlocksCacheEntry(
+      modifiedAt: modifiedAt,
+      sourceID: source.id,
+      textByteCount: source.text.utf8.count,
+      blocks: blocks
+    )
+    renderedBlocksCacheOrder.removeAll { $0 == key }
+    renderedBlocksCacheOrder.append(key)
+
+    while renderedBlocksCacheOrder.count > Self.renderedBlocksCacheLimit {
+      let evicted = renderedBlocksCacheOrder.removeFirst()
+      renderedBlocksCache.removeValue(forKey: evicted)
+    }
+  }
+
+  private func cachedRenderedBlocks(for source: EntrySource, modifiedAt: Date?) -> [OrgEditableBlock]? {
+    let key = renderedBlocksCacheKey(for: source)
+    guard let cached = renderedBlocksCache[key],
+          cached.modifiedAt == modifiedAt,
+          cached.sourceID == source.id,
+          cached.textByteCount == source.text.utf8.count
+    else {
+      return nil
+    }
+    renderedBlocksCacheOrder.removeAll { $0 == key }
+    renderedBlocksCacheOrder.append(key)
+    return cached.blocks
+  }
+
+  private func invalidateRenderedBlocksCache(for file: String) {
+    let path = URL(fileURLWithPath: file).standardizedFileURL.path + "|"
+    let keys = renderedBlocksCache.keys.filter { $0.hasPrefix(path) }
+    for key in keys {
+      renderedBlocksCache.removeValue(forKey: key)
+    }
+    renderedBlocksCacheOrder.removeAll { key in
+      key.hasPrefix(path)
+    }
   }
 
   private func currentOpenClawWorkspaceContext() -> OpenClawWorkspaceContext {
@@ -931,8 +2405,171 @@ public final class WorkspaceStore: ObservableObject {
     return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
   }
 
+  private func localPathForOpenClawReference(_ rawPath: String) -> String? {
+    let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !path.isEmpty else { return nil }
+
+    var candidates: [String] = []
+    if let corpusRoot,
+       let remoteRoot = effectiveOpenClawRemoteCorpusPath().map(Self.trimTrailingSlashes) {
+      let localRoot = Self.trimTrailingSlashes(corpusRoot.standardizedFileURL.path)
+      let normalizedPath = Self.trimTrailingSlashes(path)
+      if normalizedPath == remoteRoot {
+        candidates.append(localRoot)
+      } else if path.hasPrefix(remoteRoot + "/") {
+        candidates.append(localRoot + "/" + String(path.dropFirst(remoteRoot.count + 1)))
+      }
+    }
+
+    if path.hasPrefix("~/") {
+      candidates.append(NSHomeDirectory() + "/" + String(path.dropFirst(2)))
+    } else if NSString(string: path).isAbsolutePath {
+      candidates.append(path)
+    } else if let corpusRoot {
+      candidates.append(corpusRoot.appendingPathComponent(path).standardizedFileURL.path)
+    }
+
+    for candidate in candidates {
+      let standardized = URL(fileURLWithPath: candidate).standardizedFileURL.path
+      if FileManager.default.fileExists(atPath: standardized) {
+        return standardized
+      }
+    }
+    return nil
+  }
+
+  private static func trimTrailingSlashes(_ raw: String) -> String {
+    var value = raw
+    while value.count > 1 && value.hasSuffix("/") {
+      value.removeLast()
+    }
+    return value
+  }
+
   private static func defaultOpenClawStatusText() -> String {
     openClawStatusText(settings: OpenClawGatewaySettings.resolve())
+  }
+
+  private static func makeOpenClawSessionKey() -> String {
+    "org2-workspace:\(UUID().uuidString)"
+  }
+
+  nonisolated private static func defaultOpenClawTranscriptURL() -> URL {
+    let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+      ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support", isDirectory: true)
+    return base
+      .appendingPathComponent("Org2Workspace", isDirectory: true)
+      .appendingPathComponent("openclaw-chat.json")
+  }
+
+  nonisolated private static func loadOpenClawMessages(from url: URL) -> [OpenClawChatMessage] {
+    guard let data = try? Data(contentsOf: url),
+          let payload = try? JSONDecoder().decode(OpenClawTranscriptPayload.self, from: data)
+    else {
+      return []
+    }
+    return payload.messages
+  }
+
+  nonisolated private static func saveOpenClawMessages(_ messages: [OpenClawChatMessage], to url: URL) throws {
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let payload = OpenClawTranscriptPayload(version: 1, messages: messages)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    let data = try encoder.encode(payload)
+    try data.write(to: url, options: [.atomic])
+    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+  }
+
+  nonisolated private static func modificationDate(for url: URL) -> Date? {
+    try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+  }
+
+  nonisolated static func executeSourceBlock(
+    _ source: OrgEditableSourceBlock,
+    plan: SourceBlockRunPlan,
+    workingDirectory: URL?,
+    timeout: TimeInterval = 12,
+    maxOutputCharacters: Int = 20_000
+  ) throws -> SourceBlockExecutionResult {
+    let fileManager = FileManager.default
+    let tempDirectory = fileManager.temporaryDirectory
+      .appendingPathComponent("org2-source-run-\(UUID().uuidString)", isDirectory: true)
+    try fileManager.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+    defer {
+      try? fileManager.removeItem(at: tempDirectory)
+    }
+
+    let scriptURL = tempDirectory.appendingPathComponent("block.\(plan.scriptExtension)")
+    try source.body.write(to: scriptURL, atomically: true, encoding: .utf8)
+
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: plan.executable)
+    process.arguments = plan.arguments + [scriptURL.path]
+    if let workingDirectory {
+      process.currentDirectoryURL = workingDirectory
+    }
+    process.environment = ProcessInfo.processInfo.environment
+
+    let stdout = Pipe()
+    let stderr = Pipe()
+    process.standardOutput = stdout
+    process.standardError = stderr
+
+    let stdoutCollector = SourceRunOutputCollector()
+    let stderrCollector = SourceRunOutputCollector()
+    let readGroup = DispatchGroup()
+
+    try process.run()
+
+    readGroup.enter()
+    DispatchQueue.global(qos: .userInitiated).async {
+      stdoutCollector.set(stdout.fileHandleForReading.readDataToEndOfFile())
+      readGroup.leave()
+    }
+    readGroup.enter()
+    DispatchQueue.global(qos: .userInitiated).async {
+      stderrCollector.set(stderr.fileHandleForReading.readDataToEndOfFile())
+      readGroup.leave()
+    }
+
+    let deadline = Date().addingTimeInterval(timeout)
+    var timedOut = false
+    while process.isRunning {
+      if Date() >= deadline {
+        timedOut = true
+        process.terminate()
+        break
+      }
+      Thread.sleep(forTimeInterval: 0.03)
+    }
+
+    if timedOut {
+      let terminationDeadline = Date().addingTimeInterval(1)
+      while process.isRunning && Date() < terminationDeadline {
+        Thread.sleep(forTimeInterval: 0.03)
+      }
+    }
+
+    if process.isRunning {
+      process.interrupt()
+    }
+    process.waitUntilExit()
+    readGroup.wait()
+
+    return SourceBlockExecutionResult(
+      exitCode: process.terminationStatus,
+      stdout: truncateOutput(String(data: stdoutCollector.data, encoding: .utf8) ?? "", maxCharacters: maxOutputCharacters),
+      stderr: truncateOutput(String(data: stderrCollector.data, encoding: .utf8) ?? "", maxCharacters: maxOutputCharacters),
+      timedOut: timedOut,
+      timeout: timeout
+    )
+  }
+
+  nonisolated private static func truncateOutput(_ text: String, maxCharacters: Int) -> String {
+    guard text.count > maxCharacters else { return text }
+    let prefix = text.prefix(maxCharacters)
+    return "\(prefix)\n...[truncated \(text.count - maxCharacters) characters]"
   }
 
   private static func openClawStatusText(settings: OpenClawGatewaySettings) -> String {
@@ -942,11 +2579,11 @@ public final class WorkspaceStore: ObservableObject {
     return "OpenClaw gateway: \(settings.endpoint.host ?? settings.endpoint.absoluteString)"
   }
 
-  private func syncAgendaSelectionAfterRefresh() {
+  private func syncAgendaSelectionAfterRefresh(preserveSelection: Bool = false) {
     let items = visibleAgendaItems
     guard !items.isEmpty else {
       selectedAgendaItemID = nil
-      if case .agenda = selectedLocation {
+      if !preserveSelection, case .agenda = selectedLocation {
         selectedLocation = nil
         backlinks = nil
       }
@@ -955,8 +2592,16 @@ public final class WorkspaceStore: ObservableObject {
 
     if let selectedAgendaItemID, let item = items.first(where: { $0.id == selectedAgendaItemID }) {
       if case .agenda = selectedLocation {
-        select(.agenda(item))
+        if preserveSelection {
+          selectedLocation = .agenda(item)
+        } else {
+          select(.agenda(item))
+        }
       }
+      return
+    }
+
+    if preserveSelection, case .agenda = selectedLocation {
       return
     }
 
@@ -1023,8 +2668,7 @@ public final class WorkspaceStore: ObservableObject {
     let url = URL(fileURLWithPath: file)
     let raw = try String(contentsOf: url, encoding: .utf8)
     let normalized = normalizeLineEndings(raw)
-    let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-    let endLineExclusive = max(2, lines.count + 1)
+    let endLineExclusive = max(2, lineCount(in: normalized) + 1)
     return EntrySource(
       file: file,
       startLine: 1,
@@ -1035,23 +2679,348 @@ public final class WorkspaceStore: ObservableObject {
     )
   }
 
+  nonisolated private static func lineCount(in text: String) -> Int {
+    guard !text.isEmpty else { return 0 }
+    return text.reduce(1) { count, character in
+      character == "\n" ? count + 1 : count
+    }
+  }
+
   nonisolated private static func replaceEntrySource(_ source: EntrySource, with replacement: String) throws {
-    let url = URL(fileURLWithPath: source.file)
+    try replaceSourceRange(
+      file: source.file,
+      startLine: source.startLine,
+      endLineExclusive: source.endLineExclusive,
+      replacement: replacement
+    )
+  }
+
+  nonisolated private static func replaceSourceRange(file: String, startLine: Int, endLineExclusive: Int, replacement: String) throws {
+    let url = URL(fileURLWithPath: file)
     let raw = try String(contentsOf: url, encoding: .utf8)
     var lines = normalizeLineEndings(raw)
       .split(separator: "\n", omittingEmptySubsequences: false)
       .map(String.init)
 
-    let startIndex = source.startLine - 1
-    let endIndex = source.endLineExclusive - 1
+    let startIndex = startLine - 1
+    let endIndex = endLineExclusive - 1
     guard startIndex >= 0, startIndex <= lines.count, endIndex >= startIndex, endIndex <= lines.count else {
-      throw WorkspaceEditError.invalidRange(file: source.file, line: source.startLine)
+      throw WorkspaceEditError.invalidRange(file: file, line: startLine)
     }
 
-    let replacementLines = normalizeLineEndings(replacement)
+    let normalizedReplacement = normalizeLineEndings(replacement)
+    let replacementLines = normalizedReplacement.isEmpty
+      ? []
+      : normalizedReplacement
+        .split(separator: "\n", omittingEmptySubsequences: false)
+        .map(String.init)
+    lines.replaceSubrange(startIndex..<endIndex, with: replacementLines)
+
+    var output = lines.joined(separator: "\n")
+    if raw.hasSuffix("\n"), !output.hasSuffix("\n") {
+      output += "\n"
+    }
+    try output.write(to: url, atomically: true, encoding: .utf8)
+  }
+
+  nonisolated private static func splitBlockPlan(
+    for block: OrgEditableBlock,
+    draft: String,
+    utf16Offset: Int
+  ) -> SplitBlockPlan? {
+    switch block.rendered {
+    case .paragraph:
+      let normalizedDraft = normalizeLineEndings(draft)
+      let split = splitText(normalizedDraft, atUTF16Offset: utf16Offset)
+      let currentText = split.before.trimmingCharacters(in: .whitespacesAndNewlines)
+      let nextText = split.after.trimmingCharacters(in: .whitespacesAndNewlines)
+
+      if nextText.isEmpty {
+        return SplitBlockPlan(
+          replacement: currentText.isEmpty ? nil : currentText,
+          newBlockLineOffset: nil,
+          draft: SplitDraftSpec(
+            insertionLineOffset: block.endLineExclusive - block.startLine,
+            displayLineOffset: block.endLineExclusive - block.startLine,
+            rawText: "",
+            rendered: .paragraph(""),
+            replacementPrefix: "\n",
+            replacementSuffix: "",
+            selectionLineOffset: 1
+          )
+        )
+      }
+
+      if currentText.isEmpty {
+        return SplitBlockPlan(
+          replacement: nextText,
+          newBlockLineOffset: nil,
+          draft: SplitDraftSpec(
+            insertionLineOffset: 0,
+            displayLineOffset: 0,
+            rawText: "",
+            rendered: .paragraph(""),
+            replacementPrefix: "",
+            replacementSuffix: "\n",
+            selectionLineOffset: 0
+          )
+        )
+      }
+
+      return SplitBlockPlan(
+        replacement: "\(currentText)\n\n\(nextText)",
+        newBlockLineOffset: lineCount(in: currentText) + 1,
+        draft: nil
+      )
+    case .listItem(let indent, let marker, let checkbox, _):
+      let normalizedDraft = normalizeLineEndings(draft)
+      let split = splitText(normalizedDraft, atUTF16Offset: utf16Offset)
+      let firstBlock = split.before.trimmingCharacters(in: .newlines)
+      let nextText = split.after.trimmingCharacters(in: .whitespacesAndNewlines)
+      let prefix = continuedListPrefix(
+        draft: normalizedDraft,
+        fallbackMarker: marker,
+        checkbox: checkbox
+      )
+
+      if nextText.isEmpty {
+        return SplitBlockPlan(
+          replacement: firstBlock.isEmpty ? nil : firstBlock,
+          newBlockLineOffset: nil,
+          draft: SplitDraftSpec(
+            insertionLineOffset: block.endLineExclusive - block.startLine,
+            displayLineOffset: block.endLineExclusive - block.startLine,
+            rawText: prefix,
+            rendered: .listItem(
+              indent: indent,
+              marker: marker,
+              checkbox: checkbox == nil ? nil : .unchecked,
+              text: ""
+            ),
+            replacementPrefix: "",
+            replacementSuffix: "",
+            selectionLineOffset: 0
+          )
+        )
+      }
+
+      if firstBlock.isEmpty {
+        return SplitBlockPlan(
+          replacement: "\(prefix)\(nextText)",
+          newBlockLineOffset: nil,
+          draft: SplitDraftSpec(
+            insertionLineOffset: 0,
+            displayLineOffset: 0,
+            rawText: prefix,
+            rendered: .listItem(
+              indent: indent,
+              marker: marker,
+              checkbox: checkbox == nil ? nil : .unchecked,
+              text: ""
+            ),
+            replacementPrefix: "",
+            replacementSuffix: "",
+            selectionLineOffset: 0
+          )
+        )
+      }
+
+      return SplitBlockPlan(
+        replacement: "\(firstBlock)\n\(prefix)\(nextText)",
+        newBlockLineOffset: lineCount(in: firstBlock),
+        draft: nil
+      )
+    default:
+      return nil
+    }
+  }
+
+  nonisolated private static func transientDraftBlock(
+    from spec: SplitDraftSpec,
+    sourceFile: String,
+    originalBlock: OrgEditableBlock
+  ) -> TransientDraftBlock {
+    let insertionLine = originalBlock.startLine + spec.insertionLineOffset
+    let displayLine = originalBlock.startLine + spec.displayLineOffset
+    return TransientDraftBlock(
+      file: sourceFile,
+      insertionLine: insertionLine,
+      replacementPrefix: spec.replacementPrefix,
+      replacementSuffix: spec.replacementSuffix,
+      selectionLineOffset: spec.selectionLineOffset,
+      block: OrgEditableBlock(
+        startLine: displayLine,
+        endLineExclusive: displayLine,
+        rawText: spec.rawText,
+        rendered: spec.rendered
+      )
+    )
+  }
+
+  nonisolated private static func normalizedTransientDraftText(
+    _ raw: String,
+    for block: OrgEditableBlock
+  ) -> String? {
+    let normalized = normalizeLineEndings(raw)
+    switch block.rendered {
+    case .paragraph:
+      let text = normalized.trimmingCharacters(in: .whitespacesAndNewlines)
+      return text.isEmpty ? nil : text
+    case .listItem:
+      let text = normalized.trimmingCharacters(in: .newlines)
+      guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        return nil
+      }
+      guard let regex = try? NSRegularExpression(
+        pattern: #"^\s*(?:[-+]|[0-9]+[.)])\s+(?:\[(?: |X|x|-)\]\s*)?"#
+      ) else {
+        return text
+      }
+      let nsText = text as NSString
+      let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: nsText.length))
+      if let match,
+         match.range.location == 0,
+         match.range.length == nsText.length {
+        return nil
+      }
+      return text
+    default:
+      let text = normalized.trimmingCharacters(in: .whitespacesAndNewlines)
+      return text.isEmpty ? nil : text
+    }
+  }
+
+  nonisolated private static func sortEditableBlocksForDisplay(_ blocks: [OrgEditableBlock]) -> [OrgEditableBlock] {
+    blocks.sorted { lhs, rhs in
+      if lhs.startLine != rhs.startLine {
+        return lhs.startLine < rhs.startLine
+      }
+      if lhs.endLineExclusive != rhs.endLineExclusive {
+        return lhs.endLineExclusive < rhs.endLineExclusive
+      }
+      return lhs.id < rhs.id
+    }
+  }
+
+  nonisolated private static func continuedListPrefix(
+    draft: String,
+    fallbackMarker: String,
+    checkbox: OrgListCheckbox?
+  ) -> String {
+    let firstLine = draft.split(separator: "\n", omittingEmptySubsequences: false).first.map(String.init) ?? ""
+    let leadingWhitespace = String(firstLine.prefix { $0 == " " || $0 == "\t" })
+    let withoutLeading = firstLine.dropFirst(leadingWhitespace.count)
+    let marker = String(withoutLeading.prefix { !$0.isWhitespace })
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let markerText = marker.isEmpty ? fallbackMarker : String(marker)
+    let checkboxText = checkbox == nil ? "" : "[ ] "
+    return "\(leadingWhitespace)\(markerText) \(checkboxText)"
+  }
+
+  nonisolated private static func splitText(_ text: String, atUTF16Offset offset: Int) -> (before: String, after: String) {
+    let ns = text as NSString
+    let clampedOffset = max(0, min(offset, ns.length))
+    return (
+      ns.substring(to: clampedOffset),
+      ns.substring(from: clampedOffset)
+    )
+  }
+
+  nonisolated private static func toggledListItemCheckboxRawText(
+    _ rawText: String,
+    current: OrgListCheckbox
+  ) -> String? {
+    var lines = normalizeLineEndings(rawText)
       .split(separator: "\n", omittingEmptySubsequences: false)
       .map(String.init)
-    lines.replaceSubrange(startIndex..<endIndex, with: replacementLines)
+    guard let first = lines.first else { return nil }
+    guard let regex = try? NSRegularExpression(pattern: #"^(\s*(?:[-+]|[0-9]+[.)])\s+)\[( |X|x|-)\](\s+)"#) else {
+      return nil
+    }
+
+    let range = NSRange(location: 0, length: (first as NSString).length)
+    guard let match = regex.firstMatch(in: first, range: range),
+          match.range.location == 0
+    else {
+      return nil
+    }
+
+    let prefix = (first as NSString).substring(with: match.range(at: 1))
+    let suffix = (first as NSString).substring(with: match.range(at: 3))
+    let restLocation = match.range.location + match.range.length
+    let restLength = max(0, (first as NSString).length - restLocation)
+    let rest = (first as NSString).substring(with: NSRange(location: restLocation, length: restLength))
+    lines[0] = "\(prefix)\(current.toggled.rawMarker)\(suffix)\(rest)"
+    return lines.joined(separator: "\n")
+  }
+
+  nonisolated private static func deleteSourceRangeCleaningAdjacentBlank(
+    file: String,
+    startLine: Int,
+    endLineExclusive: Int
+  ) throws {
+    let url = URL(fileURLWithPath: file)
+    let raw = try String(contentsOf: url, encoding: .utf8)
+    var lines = normalizeLineEndings(raw)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+
+    var startIndex = startLine - 1
+    var endIndex = endLineExclusive - 1
+    guard startIndex >= 0,
+          startIndex <= lines.count,
+          endIndex >= startIndex,
+          endIndex <= lines.count
+    else {
+      throw WorkspaceEditError.invalidRange(file: file, line: startLine)
+    }
+
+    if startIndex > 0,
+       lines[startIndex - 1].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      startIndex -= 1
+    } else if endIndex < lines.count,
+              lines[endIndex].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      endIndex += 1
+    }
+
+    lines.replaceSubrange(startIndex..<endIndex, with: [])
+    var output = lines.joined(separator: "\n")
+    if raw.hasSuffix("\n"), !output.hasSuffix("\n") {
+      output += "\n"
+    }
+    try output.write(to: url, atomically: true, encoding: .utf8)
+  }
+
+  nonisolated private static func swapSourceRanges(
+    file: String,
+    firstStartLine: Int,
+    firstEndLineExclusive: Int,
+    secondStartLine: Int,
+    secondEndLineExclusive: Int
+  ) throws {
+    let url = URL(fileURLWithPath: file)
+    let raw = try String(contentsOf: url, encoding: .utf8)
+    var lines = normalizeLineEndings(raw)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+
+    let firstStartIndex = firstStartLine - 1
+    let firstEndIndex = firstEndLineExclusive - 1
+    let secondStartIndex = secondStartLine - 1
+    let secondEndIndex = secondEndLineExclusive - 1
+    guard firstStartIndex >= 0,
+          firstStartIndex < firstEndIndex,
+          firstEndIndex <= secondStartIndex,
+          secondStartIndex < secondEndIndex,
+          secondEndIndex <= lines.count
+    else {
+      throw WorkspaceEditError.invalidRange(file: file, line: firstStartLine)
+    }
+
+    let first = Array(lines[firstStartIndex..<firstEndIndex])
+    let between = Array(lines[firstEndIndex..<secondStartIndex])
+    let second = Array(lines[secondStartIndex..<secondEndIndex])
+    lines.replaceSubrange(firstStartIndex..<secondEndIndex, with: second + between + first)
 
     var output = lines.joined(separator: "\n")
     if raw.hasSuffix("\n"), !output.hasSuffix("\n") {
@@ -1105,6 +3074,88 @@ public final class WorkspaceStore: ObservableObject {
       }
       .prefix(250)
       .map { $0 }
+  }
+
+  nonisolated private static func scanCorpusFiles(corpusRoot: URL) throws -> [CorpusFile] {
+    let root = corpusRoot.standardizedFileURL
+    let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .isDirectoryKey, .contentModificationDateKey, .fileSizeKey]
+    let skippedDirectories = Set([".git", ".hg", ".svn", ".trash", "node_modules", "dist", "build", ".build", "DerivedData"])
+    let allowedExtensions = Set(["org", "org2", "md"])
+    guard let enumerator = FileManager.default.enumerator(
+      at: root,
+      includingPropertiesForKeys: Array(resourceKeys),
+      options: [.skipsHiddenFiles, .skipsPackageDescendants]
+    ) else {
+      return []
+    }
+
+    var files: [CorpusFile] = []
+    for case let url as URL in enumerator {
+      let values = try url.resourceValues(forKeys: resourceKeys)
+      if values.isDirectory == true {
+        if skippedDirectories.contains(url.lastPathComponent) {
+          enumerator.skipDescendants()
+        }
+        continue
+      }
+
+      guard values.isRegularFile == true,
+            allowedExtensions.contains(url.pathExtension.lowercased())
+      else {
+        continue
+      }
+
+      let path = url.standardizedFileURL.path
+      let relativePath = path.hasPrefix(root.path + "/")
+        ? String(path.dropFirst(root.path.count + 1))
+        : url.lastPathComponent
+      files.append(CorpusFile(
+        path: path,
+        relativePath: relativePath,
+        modifiedAt: values.contentModificationDate,
+        byteCount: values.fileSize.map(Int64.init)
+      ))
+    }
+
+    return files.sorted {
+      $0.relativePath.localizedStandardCompare($1.relativePath) == .orderedAscending
+    }
+  }
+
+  nonisolated private static func fuzzyScore(query: String, candidate: String) -> Int? {
+    let query = query.lowercased().filter { !$0.isWhitespace }
+    guard !query.isEmpty else { return 0 }
+
+    let candidate = candidate.lowercased()
+    var score = 0
+    var queryIndex = query.startIndex
+    var previousMatch: String.Index?
+
+    for candidateIndex in candidate.indices {
+      guard queryIndex < query.endIndex else { break }
+      if candidate[candidateIndex] != query[queryIndex] { continue }
+
+      score += 10
+      if let previousMatch, candidate.index(after: previousMatch) == candidateIndex {
+        score += 8
+      }
+      if candidateIndex == candidate.startIndex {
+        score += 6
+      } else {
+        let previous = candidate[candidate.index(before: candidateIndex)]
+        if ["/", "-", "_", ".", " "].contains(previous) {
+          score += 6
+        }
+      }
+      previousMatch = candidateIndex
+      queryIndex = query.index(after: queryIndex)
+    }
+
+    guard queryIndex == query.endIndex else { return nil }
+    if candidate.contains(query) { score += 30 }
+    if candidate.hasSuffix(query) { score += 20 }
+    score -= max(0, candidate.count - query.count) / 8
+    return score
   }
 
   nonisolated private static func normalizeLineEndings(_ raw: String) -> String {
@@ -1531,6 +3582,11 @@ private struct WorkspaceOrg2Config: Decodable {
   }
 }
 
+private struct OpenClawTranscriptPayload: Codable {
+  let version: Int
+  let messages: [OpenClawChatMessage]
+}
+
 private enum WorkspaceEditError: LocalizedError {
   case noHeadline(file: String, line: Int)
   case invalidRange(file: String, line: Int)
@@ -1545,8 +3601,27 @@ private enum WorkspaceEditError: LocalizedError {
   }
 }
 
+private final class SourceRunOutputCollector: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storage = Data()
+
+  func set(_ data: Data) {
+    lock.lock()
+    storage = data
+    lock.unlock()
+  }
+
+  var data: Data {
+    lock.lock()
+    let data = storage
+    lock.unlock()
+    return data
+  }
+}
+
 public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
   case agenda
+  case files
   case search
   case openClaw
   case agentSpace
@@ -1556,6 +3631,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
   public var title: String {
     switch self {
     case .agenda: "Today"
+    case .files: "Files"
     case .search: "Search"
     case .openClaw: "OpenClaw Chat"
     case .agentSpace: "Agent Space"
@@ -1565,6 +3641,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
   public var systemImage: String {
     switch self {
     case .agenda: "calendar"
+    case .files: "doc.text"
     case .search: "magnifyingglass"
     case .openClaw: "sparkles"
     case .agentSpace: "bubble.left.and.bubble.right"

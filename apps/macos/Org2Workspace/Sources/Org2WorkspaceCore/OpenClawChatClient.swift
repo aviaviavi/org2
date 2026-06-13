@@ -472,6 +472,15 @@ public enum OpenClawKeychain {
   public static let service = "Org2Workspace.OpenClawGateway"
   public static let account = "bearerToken"
 
+  public static func containsToken() -> Bool {
+    var query: [String: Any] = baseQuery
+    query[kSecReturnAttributes as String] = true
+    query[kSecMatchLimit as String] = kSecMatchLimitOne
+
+    let status = SecItemCopyMatching(query as CFDictionary, nil)
+    return status == errSecSuccess
+  }
+
   public static func readToken() -> String? {
     var query: [String: Any] = baseQuery
     query[kSecReturnData as String] = true
@@ -490,15 +499,14 @@ public enum OpenClawKeychain {
 
   public static func saveToken(_ token: String) throws {
     let data = Data(token.utf8)
-    if readToken() != nil {
-      let status = SecItemUpdate(baseQuery as CFDictionary, [kSecValueData as String: data] as CFDictionary)
-      guard status == errSecSuccess else { throw OpenClawKeychainError.status(status) }
-      return
-    }
-
     var query = baseQuery
     query[kSecValueData as String] = data
     let status = SecItemAdd(query as CFDictionary, nil)
+    if status == errSecDuplicateItem {
+      let updateStatus = SecItemUpdate(baseQuery as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+      guard updateStatus == errSecSuccess else { throw OpenClawKeychainError.status(updateStatus) }
+      return
+    }
     guard status == errSecSuccess else { throw OpenClawKeychainError.status(status) }
   }
 

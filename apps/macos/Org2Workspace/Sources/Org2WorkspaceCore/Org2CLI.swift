@@ -33,43 +33,98 @@ public struct Org2CLI: Sendable {
     return try JSONDecoder().decode(T.self, from: data)
   }
 
+  public func parseFileJSON<T: Decodable>(_ file: URL, sourceRanges: Bool = false, as type: T.Type = T.self) async throws -> T {
+    var arguments = [file.path]
+    if sourceRanges {
+      arguments.insert("--source-ranges", at: 0)
+    }
+    let data = try await Task.detached(priority: .userInitiated) {
+      try runProcess(scriptPath: repoRoot.appendingPathComponent("dist/parse.js"), arguments: arguments)
+    }.value
+    return try JSONDecoder().decode(T.self, from: data)
+  }
+
+  public func parseTextJSON<T: Decodable>(
+    _ text: String,
+    sourceRanges: Bool = false,
+    sourceLineOffset: Int = 0,
+    as type: T.Type = T.self
+  ) async throws -> T {
+    var arguments = ["-"]
+    if sourceLineOffset > 0 {
+      arguments.insert("\(sourceLineOffset)", at: 0)
+      arguments.insert("--source-line-offset", at: 0)
+    }
+    if sourceRanges {
+      arguments.insert("--source-ranges", at: 0)
+    }
+    let data = try await Task.detached(priority: .userInitiated) {
+      try runProcess(
+        scriptPath: repoRoot.appendingPathComponent("dist/parse.js"),
+        arguments: arguments,
+        standardInput: Data(text.utf8)
+      )
+    }.value
+    return try JSONDecoder().decode(T.self, from: data)
+  }
+
+  public func parseFileJSONSync<T: Decodable>(_ file: URL, sourceRanges: Bool = false, as type: T.Type = T.self) throws -> T {
+    var arguments = [file.path]
+    if sourceRanges {
+      arguments.insert("--source-ranges", at: 0)
+    }
+    let data = try runProcess(scriptPath: repoRoot.appendingPathComponent("dist/parse.js"), arguments: arguments)
+    return try JSONDecoder().decode(T.self, from: data)
+  }
+
   public func run(_ arguments: [String]) async throws -> Data {
     try await Task.detached(priority: .userInitiated) {
-      try runProcess(arguments: arguments)
+      try runProcess(scriptPath: cliPath, arguments: arguments)
     }.value
   }
 
   public func runSync(_ arguments: [String]) throws -> Data {
-    try runProcess(arguments: arguments)
+    try runProcess(scriptPath: cliPath, arguments: arguments)
   }
 
-  private func runProcess(arguments: [String]) throws -> Data {
-    guard FileManager.default.fileExists(atPath: cliPath.path) else {
-      throw Org2CLIError.missingCLI(cliPath.path)
+  private func runProcess(scriptPath: URL, arguments: [String], standardInput: Data? = nil) throws -> Data {
+    guard FileManager.default.fileExists(atPath: scriptPath.path) else {
+      throw Org2CLIError.missingCLI(scriptPath.path)
     }
 
     let process = Process()
     let node = nodePath ?? Self.resolveNodePath()
     if let node {
       process.executableURL = URL(fileURLWithPath: node)
-      process.arguments = [cliPath.path] + arguments
+      process.arguments = [scriptPath.path] + arguments
     } else {
       process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-      process.arguments = ["node", cliPath.path] + arguments
+      process.arguments = ["node", scriptPath.path] + arguments
     }
     process.currentDirectoryURL = repoRoot
     process.environment = Self.processEnvironment()
 
     let stdout = Pipe()
     let stderr = Pipe()
+    let stdin = standardInput.map { _ in Pipe() }
     process.standardOutput = stdout
     process.standardError = stderr
+    if let stdin {
+      process.standardInput = stdin
+    }
 
     let stdoutCollector = PipeOutputCollector()
     let stderrCollector = PipeOutputCollector()
     let readGroup = DispatchGroup()
 
     try process.run()
+
+    if let standardInput, let stdin {
+      DispatchQueue.global(qos: .userInitiated).async {
+        stdin.fileHandleForWriting.write(standardInput)
+        stdin.fileHandleForWriting.closeFile()
+      }
+    }
 
     readGroup.enter()
     DispatchQueue.global(qos: .userInitiated).async {

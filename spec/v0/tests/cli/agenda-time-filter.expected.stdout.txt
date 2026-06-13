@@ -17,6 +17,10 @@
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-time-filter.input.txt",
           "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
           "time": "09:30"
         },
         {
@@ -24,7 +28,11 @@
           "headline": "Untimed planning",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-time-filter.input.txt",
-          "line": 4
+          "line": 4,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

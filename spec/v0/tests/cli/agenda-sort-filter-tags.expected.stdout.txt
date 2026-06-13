@@ -16,28 +16,51 @@
           "headline": "No tag task",
           "kind": "DEADLINE",
           "file": "spec/v0/tests/cli/agenda-sort-filter-tags.input.txt",
-          "line": 6
+          "line": 6,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         },
         {
           "todo": "TODO",
           "headline": "Alpha tagged",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-tags.input.txt",
-          "line": 4
+          "line": 4,
+          "body": "",
+          "level": 1,
+          "tags": [
+            "alpha"
+          ],
+          "properties": {}
         },
         {
           "todo": "TODO",
           "headline": "Zebra tagged",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-tags.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [
+            "zeta",
+            "alpha"
+          ],
+          "properties": {}
         },
         {
           "todo": "TODO",
           "headline": "Bravo tagged",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-tags.input.txt",
-          "line": 2
+          "line": 2,
+          "body": "",
+          "level": 1,
+          "tags": [
+            "beta"
+          ],
+          "properties": {}
         }
       ]
     }

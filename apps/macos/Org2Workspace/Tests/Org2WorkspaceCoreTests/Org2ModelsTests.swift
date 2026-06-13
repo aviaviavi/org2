@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import Org2WorkspaceCore
 
@@ -123,6 +124,128 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(payload.results[0].snippet.count, 160000)
   }
 
+  func testOrg2CLIParsesCanonicalAstWithBuiltInParser() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-canonical-ast-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("canonical.org2")
+    try """
+    #+TITLE: Canonical Parser Test
+
+    * TODO Review [[id:11111111-1111-4111-8111-111111111111][Alice]] :work:
+    SCHEDULED: <2026-06-12 Fri>
+    Body with *bold* and ~code~.
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let cli = try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())
+    let document: Org2CanonicalDocument = try cli.parseFileJSONSync(note, sourceRanges: true)
+
+    XCTAssertEqual(document.type, "Document")
+    XCTAssertEqual(document.version, "0")
+    XCTAssertEqual(document.children.count, 2)
+
+    guard case .keywordLine(let title) = document.children[0] else {
+      return XCTFail("Expected title keyword")
+    }
+    XCTAssertEqual(title.keyRaw, "TITLE")
+    XCTAssertEqual(title.valueRaw, " Canonical Parser Test")
+    XCTAssertEqual(title.sourceRange, Org2CanonicalSourceRange(startLine: 1, endLine: 1))
+
+    guard case .headline(let headline) = document.children[1] else {
+      return XCTFail("Expected headline")
+    }
+    XCTAssertEqual(headline.level, 1)
+    XCTAssertEqual(headline.todo, "TODO")
+    XCTAssertEqual(headline.tags, ["work"])
+    XCTAssertEqual(headline.sourceRange, Org2CanonicalSourceRange(startLine: 3, endLine: 5))
+    XCTAssertTrue(headline.title.contains(.link(Org2CanonicalLink(
+      type: "Link",
+      format: "bracket",
+      raw: "[[id:11111111-1111-4111-8111-111111111111][Alice]]",
+      targetRaw: "id:11111111-1111-4111-8111-111111111111",
+      descriptionRaw: "Alice"
+    ))))
+    XCTAssertTrue(headline.children.contains(.planning(Org2CanonicalPlanning(
+      type: "Planning",
+      kind: "SCHEDULED",
+      raw: "SCHEDULED: <2026-06-12 Fri>",
+      sourceRange: Org2CanonicalSourceRange(startLine: 4, endLine: 4)
+    ))))
+  }
+
+  func testOrg2CLIParsesCanonicalAstFromTextWithLineOffset() async throws {
+    let cli = try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())
+    let document: Org2CanonicalDocument = try await cli.parseTextJSON(
+      """
+      * TODO Offset Test
+      Body
+      """,
+      sourceRanges: true,
+      sourceLineOffset: 40
+    )
+
+    XCTAssertEqual(document.children.count, 1)
+    guard case .headline(let headline) = document.children[0] else {
+      return XCTFail("Expected headline")
+    }
+    XCTAssertEqual(headline.sourceRange, Org2CanonicalSourceRange(startLine: 41, endLine: 42))
+    guard case .paragraph(let paragraph) = headline.children[0] else {
+      return XCTFail("Expected paragraph")
+    }
+    XCTAssertEqual(paragraph.sourceRange, Org2CanonicalSourceRange(startLine: 42, endLine: 42))
+  }
+
+  func testCanonicalAstRendersEditableBlocksWithFallbackGaps() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-canonical-render-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("render.org2")
+    let raw = """
+    #+TITLE: Render Test
+
+    * TODO Parent
+    SCHEDULED: <2026-06-12 Fri>
+    Body with [[id:11111111-1111-4111-8111-111111111111][Alice]]
+    | Name | Value |
+    |------+-------|
+    | Alice | 42 |
+    #+begin_src swift
+    let value = 1
+    #+end_src
+    - Fallback list item
+    """
+    try raw.write(to: note, atomically: true, encoding: .utf8)
+
+    let cli = try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())
+    let document: Org2CanonicalDocument = try cli.parseFileJSONSync(note, sourceRanges: true)
+    let blocks = OrgEntryRenderer.parseEditable(raw, canonicalDocument: document)
+
+    XCTAssertTrue(blocks.contains {
+      if case .keyword(let key, let value) = $0.rendered {
+        return key == "TITLE" && value == "Render Test" && $0.displayRange == "1"
+      }
+      return false
+    })
+    XCTAssertTrue(blocks.contains {
+      if case .table(let table) = $0.rendered {
+        return $0.displayRange == "6-8" && table.rows.count == 3
+      }
+      return false
+    })
+    XCTAssertTrue(blocks.contains {
+      if case .source(let language, let lines) = $0.rendered {
+        return $0.displayRange == "9-11" && language == "swift" && lines == ["let value = 1"]
+      }
+      return false
+    })
+    XCTAssertTrue(blocks.contains {
+      if case .listItem(_, _, _, let text) = $0.rendered {
+        return $0.displayRange == "12" && text == "Fallback list item"
+      }
+      return false
+    })
+  }
+
   func testOpenClawGatewaySettingsResolveLocalConfig() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-openclaw-config-\(UUID().uuidString)", isDirectory: true)
@@ -172,6 +295,43 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(payload.assistantText, "First\n\nSecond")
   }
 
+  @MainActor
+  func testOpenClawChatTranscriptPersistsLocally() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let suiteName = "org2-workspace-chat-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+    store.openClawMessages = [
+      OpenClawChatMessage(role: .user, content: "Hello OpenClaw"),
+      OpenClawChatMessage(role: .assistant, content: "Hello from the workspace")
+    ]
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+
+    XCTAssertEqual(restored.openClawMessages.map(\.content), ["Hello OpenClaw", "Hello from the workspace"])
+
+    restored.resetOpenClawChat()
+    let cleared = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+    XCTAssertTrue(cleared.openClawMessages.isEmpty)
+  }
+
   func testOpenClawChatClientNormalizesModelAndAgentNames() {
     XCTAssertEqual(OpenClawChatClient.openClawModelName(for: ""), "openclaw")
     XCTAssertEqual(OpenClawChatClient.openClawModelName(for: "openclaw"), "openclaw")
@@ -182,6 +342,187 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(OpenClawChatClient.openClawAgentHeaderValue(for: ""), "main")
     XCTAssertEqual(OpenClawChatClient.openClawAgentHeaderValue(for: "openclaw"), "main")
     XCTAssertEqual(OpenClawChatClient.openClawAgentHeaderValue(for: "openclaw/org2-workspace"), "org2-workspace")
+  }
+
+  func testOpenClawFileReferenceExtractsOrgPaths() {
+    let refs = OpenClawFileReference.extract(from: """
+    Check /srv/org2/notes/alice.org2:42 and notes/daily/2026-06-12.org.
+    Also [thread](file:///srv/org2/threads/follow-up.org2#9).
+    """)
+
+    XCTAssertEqual(refs.map(\.path), [
+      "/srv/org2/notes/alice.org2",
+      "notes/daily/2026-06-12.org",
+      "/srv/org2/threads/follow-up.org2"
+    ])
+    XCTAssertEqual(refs.map(\.line), [42, nil, 9])
+    XCTAssertEqual(refs[0].displayTitle, "alice.org2:42")
+  }
+
+  func testOrgInlineParserRendersCodeAndOrgBracketLinks() {
+    let spans = OrgInlineParser.parse("Plate `8CJB731` from [[/srv/org2/personal.org:58][personal.org]].")
+
+    XCTAssertEqual(spans, [
+      .text("Plate "),
+      .code("8CJB731"),
+      .text(" from "),
+      .link(
+        label: "personal.org",
+        target: "/srv/org2/personal.org:58",
+        fileReference: OpenClawFileReference(path: "/srv/org2/personal.org", line: 58)
+      ),
+      .text(".")
+    ])
+  }
+
+  func testOrgInlineParserRendersMarkdownFileCitationsInline() {
+    let spans = OrgInlineParser.parse("Found in [personal.org](/Users/avi/avi.org2/personal.org:58).")
+
+    XCTAssertEqual(spans, [
+      .text("Found in "),
+      .link(
+        label: "personal.org",
+        target: "/Users/avi/avi.org2/personal.org:58",
+        fileReference: OpenClawFileReference(path: "/Users/avi/avi.org2/personal.org", line: 58)
+      ),
+      .text(".")
+    ])
+  }
+
+  func testOrgInlineParserRendersMarkupAndTimestamps() {
+    let spans = OrgInlineParser.parse("Review *bold* /soon/ on <2026-06-12 Fri 09:30-10:00> with ~code~.")
+
+    XCTAssertEqual(spans, [
+      .text("Review "),
+      .bold("bold"),
+      .text(" "),
+      .italic("soon"),
+      .text(" on "),
+      .timestamp(OrgInlineTimestamp(
+        raw: "<2026-06-12 Fri 09:30-10:00>",
+        dateLabel: "Jun 12, 2026",
+        timeLabel: "09:30-10:00"
+      )),
+      .text(" with "),
+      .code("code"),
+      .text(".")
+    ])
+  }
+
+  func testOrgSyntaxHighlighterFindsEditableDocumentTokens() {
+    let raw = """
+    * TODO [#A] Review [[id:11111111-1111-4111-8111-111111111111][Alice]] :work:
+    SCHEDULED: <2026-06-12 Fri 09:30>
+    :OWNER: agent
+    Body with `code` and /emphasis/.
+    #+begin_src swift
+    let value = 1
+    #+end_src
+    """
+
+    let tokens = OrgSyntaxHighlighter.tokens(in: raw)
+
+    assertToken(.headingStars, "*", in: raw, tokens: tokens)
+    assertToken(.todo, "TODO", in: raw, tokens: tokens)
+    assertToken(.priority, "[#A]", in: raw, tokens: tokens)
+    assertToken(.link, "[[id:11111111-1111-4111-8111-111111111111][Alice]]", in: raw, tokens: tokens)
+    assertToken(.tag, ":work:", in: raw, tokens: tokens)
+    assertToken(.planningKeyword, "SCHEDULED", in: raw, tokens: tokens)
+    assertToken(.timestamp, "<2026-06-12 Fri 09:30>", in: raw, tokens: tokens)
+    assertToken(.propertyKey, "OWNER", in: raw, tokens: tokens)
+    assertToken(.code, "`code`", in: raw, tokens: tokens)
+    assertToken(.emphasis, "/emphasis/", in: raw, tokens: tokens)
+    assertToken(.keyword, "begin_src", in: raw, tokens: tokens)
+    assertToken(.keyword, "end_src", in: raw, tokens: tokens)
+  }
+
+  func testOpenClawFileReferenceDeepLinkRoundTrips() throws {
+    let reference = OpenClawFileReference(path: "file:notes/daily.org2#12", line: nil)
+    let url = try XCTUnwrap(reference.deepLinkURL)
+    let restored = try XCTUnwrap(OpenClawFileReference.fromDeepLinkURL(url))
+
+    XCTAssertEqual(restored.path, "notes/daily.org2")
+    XCTAssertEqual(restored.line, 12)
+  }
+
+  func testCorpusFileSplitsRelativePath() {
+    let rootFile = CorpusFile(path: "/tmp/today.org2", relativePath: "today.org2", modifiedAt: nil, byteCount: 10)
+    let nestedFile = CorpusFile(path: "/tmp/notes/people/alice.org2", relativePath: "notes/people/alice.org2", modifiedAt: nil, byteCount: 20)
+
+    XCTAssertEqual(rootFile.directory, "")
+    XCTAssertEqual(rootFile.name, "today.org2")
+    XCTAssertEqual(nestedFile.directory, "notes/people")
+    XCTAssertEqual(nestedFile.name, "alice.org2")
+  }
+
+  @MainActor
+  func testOpenClawFileReferenceMapsRemotePathIntoDetailPane() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-link-\(UUID().uuidString)", isDirectory: true)
+    let notes = root.appendingPathComponent("notes", isDirectory: true)
+    try FileManager.default.createDirectory(at: notes, withIntermediateDirectories: true)
+    let note = notes.appendingPathComponent("alice.org2")
+    try """
+    #+TITLE: Alice
+
+    * TODO Follow up
+    Body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.openClawRemoteCorpusPath = "/srv/org2"
+    store.openChatFileReference(OpenClawFileReference(path: "/srv/org2/notes/alice.org2", line: 3))
+
+    guard case .openClaw(let thread) = store.selectedLocation else {
+      return XCTFail("Expected selected chat file reference")
+    }
+    XCTAssertEqual(thread.file, note.path)
+    XCTAssertEqual(thread.lineForEditor, 3)
+    XCTAssertEqual(store.selectedEntrySourceMode, .page)
+  }
+
+  @MainActor
+  func testCorpusFileBrowserScansFiltersAndOpensFiles() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-files-\(UUID().uuidString)", isDirectory: true)
+    let notes = root.appendingPathComponent("notes", isDirectory: true)
+    let ignored = root.appendingPathComponent("node_modules/pkg", isDirectory: true)
+    try FileManager.default.createDirectory(at: notes, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: ignored, withIntermediateDirectories: true)
+
+    let alice = notes.appendingPathComponent("alice.org2")
+    try """
+    #+TITLE: Alice
+    :PROPERTIES:
+    :ID: 11111111-1111-4111-8111-111111111111
+    :END:
+
+    * Note
+    Body
+    """.write(to: alice, atomically: true, encoding: .utf8)
+    try "# Scratch\n".write(to: root.appendingPathComponent("scratch.md"), atomically: true, encoding: .utf8)
+    try "ignored\n".write(to: ignored.appendingPathComponent("ignored.org2"), atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.refreshCorpusFiles()
+
+    XCTAssertEqual(store.corpusFiles.map(\.relativePath), ["notes/alice.org2", "scratch.md"])
+
+    store.quickOpenQuery = "ali"
+    XCTAssertEqual(store.quickOpenFiles.first?.relativePath, "notes/alice.org2")
+
+    try await waitForCondition {
+      !store.isScanningCorpusFiles
+    }
+    store.selectCorpusFile(try XCTUnwrap(store.quickOpenFiles.first))
+    try await waitForCondition {
+      store.selectedEntrySource?.file == alice.path && store.selectedLocation?.idValue == "11111111-1111-4111-8111-111111111111"
+    }
+
+    XCTAssertEqual(store.selectedEntrySourceMode, .page)
+    XCTAssertEqual(store.selectedEntrySource?.startLine, 1)
   }
 
   func testOpenClawWorkspaceContextMapsRemotePathsAndIncludesGraphSlice() throws {
@@ -281,6 +622,11 @@ final class Org2ModelsTests: XCTestCase {
     #+begin_src swift
     let value = 1
     #+end_src
+    | Name | Value |
+    |------+-------|
+    | Alice | 42 |
+    - [ ] Open task
+    - [X] Done task
     ** Child
     Body text
     """)
@@ -298,6 +644,308 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(blocks.contains(.properties([OrgPropertyRow(key: "ID", value: "11111111-1111-4111-8111-111111111111")])))
     XCTAssertTrue(blocks.contains(.quote(["Quote with Slack"])))
     XCTAssertTrue(blocks.contains(.source(language: "swift", lines: ["let value = 1"])))
+    XCTAssertTrue(blocks.contains(.table(OrgTableBlock(rows: [
+      .cells(["Name", "Value"]),
+      .separator,
+      .cells(["Alice", "42"])
+    ]))))
+    XCTAssertTrue(blocks.contains {
+      if case .listItem(0, "-", .unchecked, "Open task") = $0 { return true }
+      return false
+    })
+    XCTAssertTrue(blocks.contains {
+      if case .listItem(0, "-", .checked, "Done task") = $0 { return true }
+      return false
+    })
+  }
+
+  func testEditableTableFormatsAndMutatesOrgTableText() {
+    var table = OrgEditableTable(rawText: """
+    | Name | Value |
+    |------+-------|
+    | Alice | 42 |
+    """)
+
+    XCTAssertEqual(table.columnCount, 2)
+    XCTAssertEqual(table.formattedRawText, """
+    | Name  | Value |
+    |-------+-------|
+    | Alice | 42    |
+    """)
+
+    table.setCell(row: 2, column: 1, value: "43")
+    table.addColumn()
+    table.setCell(row: 0, column: 2, value: "Owner")
+    table.setCell(row: 2, column: 2, value: "Avi")
+    table.addRow(after: 2)
+    table.setCell(row: 3, column: 0, value: "Bob")
+    table.setCell(row: 3, column: 1, value: "12")
+    table.removeColumn(1)
+
+    XCTAssertEqual(table.formattedRawText, """
+    | Name  | Owner |
+    |-------+-------|
+    | Alice | Avi   |
+    | Bob   |       |
+    """)
+  }
+
+  func testEditablePropertyDrawerFormatsAndMutatesRows() {
+    var drawer = OrgEditablePropertyDrawer(rawText: """
+    :PROPERTIES:
+    :ID: 11111111-1111-4111-8111-111111111111
+    :owner: agent
+    :EMPTY:
+    :END:
+    """)
+
+    XCTAssertEqual(drawer.rows, [
+      OrgEditablePropertyRow(key: "ID", value: "11111111-1111-4111-8111-111111111111"),
+      OrgEditablePropertyRow(key: "owner", value: "agent"),
+      OrgEditablePropertyRow(key: "EMPTY", value: "")
+    ])
+
+    drawer.setValue(at: 1, value: "openclaw")
+    drawer.removeProperty(at: 2)
+    drawer.addProperty(key: "status", value: "active")
+
+    XCTAssertEqual(drawer.formattedRawText, """
+    :PROPERTIES:
+    :ID: 11111111-1111-4111-8111-111111111111
+    :OWNER: openclaw
+    :STATUS: active
+    :END:
+    """)
+    XCTAssertEqual(drawer.renderedRows, [
+      OrgPropertyRow(key: "ID", value: "11111111-1111-4111-8111-111111111111"),
+      OrgPropertyRow(key: "OWNER", value: "openclaw"),
+      OrgPropertyRow(key: "STATUS", value: "active")
+    ])
+  }
+
+  func testEditableSourceBlockFormatsAndSwitchesKind() {
+    var source = OrgEditableSourceBlock(rawText: """
+    #+BEGIN_SRC swift :results output
+    let value = 1
+    #+END_SRC
+    """)
+
+    XCTAssertEqual(source.beginKeyword, "#+begin_src")
+    XCTAssertEqual(source.endKeyword, "#+end_src")
+    XCTAssertEqual(source.language, "swift")
+    XCTAssertEqual(source.parameters, ":results output")
+    XCTAssertEqual(source.body, "let value = 1")
+
+    source.language = "python"
+    source.parameters = ":results replace"
+    source.body = "print(42)"
+    XCTAssertEqual(source.formattedRawText, """
+    #+begin_src python :results replace
+    print(42)
+    #+end_src
+    """)
+
+    source.setBeginKeyword("#+begin_example")
+    XCTAssertEqual(source.language, "")
+    XCTAssertEqual(source.formattedRawText, """
+    #+begin_example :results replace
+    print(42)
+    #+end_example
+    """)
+  }
+
+  func testSourceBlockRunPlanSupportsCommonLanguages() {
+    XCTAssertEqual(SourceBlockRunPlan.plan(for: "sh")?.executable, "/bin/sh")
+    XCTAssertEqual(SourceBlockRunPlan.plan(for: "python")?.arguments, ["python3"])
+    XCTAssertEqual(SourceBlockRunPlan.plan(for: "js")?.scriptExtension, "mjs")
+    XCTAssertNil(SourceBlockRunPlan.plan(for: "mermaid"))
+  }
+
+  func testSourceRunOutputPresentationParsesJSONBars() {
+    XCTAssertEqual(
+      SourceRunOutputPresentation.make(from: #"{"A":2,"B":3.5}"#),
+      .bars([
+        SourceRunBar(label: "A", value: 2),
+        SourceRunBar(label: "B", value: 3.5)
+      ])
+    )
+  }
+
+  func testSourceRunOutputPresentationParsesJSONObjectsAsTable() {
+    XCTAssertEqual(
+      SourceRunOutputPresentation.make(from: #"[{"name":"A","value":2},{"name":"B","value":3}]"#),
+      .table(SourceRunTable(
+        columns: ["name", "value"],
+        rows: [
+          ["A", "2"],
+          ["B", "3"]
+        ]
+      ))
+    )
+  }
+
+  func testSourceRunOutputPresentationParsesDelimitedTables() {
+    XCTAssertEqual(
+      SourceRunOutputPresentation.make(from: """
+      Name,Value
+      A,2
+      B,3
+      """),
+      .table(SourceRunTable(
+        columns: ["Name", "Value"],
+        rows: [
+          ["A", "2"],
+          ["B", "3"]
+        ]
+      ))
+    )
+
+    XCTAssertEqual(
+      SourceRunOutputPresentation.make(from: "Name\tValue\nA\t2\nB\t3"),
+      .table(SourceRunTable(
+        columns: ["Name", "Value"],
+        rows: [
+          ["A", "2"],
+          ["B", "3"]
+        ]
+      ))
+    )
+  }
+
+  func testSourceRunOutputPresentationParsesPipeTable() {
+    XCTAssertEqual(
+      SourceRunOutputPresentation.make(from: """
+      | Name | Value |
+      |------+-------|
+      | A    | 2     |
+      | B    | 3     |
+      """),
+      .table(SourceRunTable(
+        columns: ["Name", "Value"],
+        rows: [
+          ["A", "2"],
+          ["B", "3"]
+        ]
+      ))
+    )
+  }
+
+  func testExecutesSourceBlockAndCapturesOutput() throws {
+    let source = OrgEditableSourceBlock(rawText: """
+    #+begin_src sh
+    printf hello
+    #+end_src
+    """)
+    let plan = try XCTUnwrap(SourceBlockRunPlan.plan(for: source.language))
+    let result = try WorkspaceStore.executeSourceBlock(
+      source,
+      plan: plan,
+      workingDirectory: FileManager.default.temporaryDirectory,
+      timeout: 2
+    )
+
+    XCTAssertEqual(result.exitCode, 0)
+    XCTAssertEqual(result.stdout, "hello")
+    XCTAssertEqual(result.stderr, "")
+    XCTAssertFalse(result.timedOut)
+  }
+
+  func testParsesEditableOrgBlocksWithSourceRanges() {
+    let blocks = OrgEntryRenderer.parseEditable("""
+    * TODO Parent
+    SCHEDULED: <2026-06-12 Fri>
+    | Name | Value |
+    |------+-------|
+    | Alice | 42 |
+    Body one
+    Body two
+    #+begin_src swift
+    let value = 1
+    #+end_src
+    """, baseLine: 42)
+
+    XCTAssertEqual(blocks.map(\.displayRange), ["42", "43", "44-46", "47-48", "49-51"])
+    XCTAssertEqual(blocks.map(\.rawText), [
+      "* TODO Parent",
+      "SCHEDULED: <2026-06-12 Fri>",
+      "| Name | Value |\n|------+-------|\n| Alice | 42 |",
+      "Body one\nBody two",
+      "#+begin_src swift\nlet value = 1\n#+end_src"
+    ])
+
+    guard case .table(let table) = blocks[2].rendered else {
+      return XCTFail("Expected table")
+    }
+    XCTAssertEqual(table.rows, [
+      .cells(["Name", "Value"]),
+      .separator,
+      .cells(["Alice", "42"])
+    ])
+
+    guard case .paragraph(let paragraph) = blocks[3].rendered else {
+      return XCTFail("Expected paragraph")
+    }
+    XCTAssertEqual(paragraph, "Body one\nBody two")
+  }
+
+  func testEditableParagraphPreservesRawInlineMarkupForEditing() {
+    let blocks = OrgEntryRenderer.parseEditable("""
+    Body with [[id:11111111-1111-4111-8111-111111111111][Alice]] and ~code~.
+    Second /line/.
+    """, baseLine: 12)
+
+    XCTAssertEqual(blocks.count, 1)
+    XCTAssertEqual(blocks[0].displayRange, "12-13")
+    XCTAssertEqual(blocks[0].rawText, """
+    Body with [[id:11111111-1111-4111-8111-111111111111][Alice]] and ~code~.
+    Second /line/.
+    """)
+
+    guard case .paragraph(let paragraph) = blocks[0].rendered else {
+      return XCTFail("Expected paragraph")
+    }
+    XCTAssertEqual(paragraph, "Body with Alice and ~code~.\nSecond /line/.")
+  }
+
+  func testOrgMediaAttachmentDetectsStandaloneLocalMediaLinks() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-media-\(UUID().uuidString)", isDirectory: true)
+    let assets = root.appendingPathComponent("assets", isDirectory: true)
+    let notes = root.appendingPathComponent("notes", isDirectory: true)
+    try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: notes, withIntermediateDirectories: true)
+
+    let image = assets.appendingPathComponent("diagram.png")
+    let video = notes.appendingPathComponent("clip.mov")
+    let note = notes.appendingPathComponent("daily.org2")
+    try Data().write(to: image)
+    try Data().write(to: video)
+    try Data().write(to: note)
+
+    let bracket = try XCTUnwrap(OrgMediaAttachment.standalone(
+      raw: "[[file:../assets/diagram.png][System Diagram]]",
+      sourceFile: note.path,
+      corpusRoot: root
+    ))
+    XCTAssertEqual(bracket.kind, .image)
+    XCTAssertEqual(bracket.displayName, "System Diagram")
+    XCTAssertEqual(bracket.resolvedPath, image.standardizedFileURL.path)
+
+    let markdown = try XCTUnwrap(OrgMediaAttachment.standalone(
+      raw: "[Clip](clip.mov)",
+      sourceFile: note.path,
+      corpusRoot: root
+    ))
+    XCTAssertEqual(markdown.kind, .video)
+    XCTAssertEqual(markdown.displayName, "Clip")
+    XCTAssertEqual(markdown.resolvedPath, video.standardizedFileURL.path)
+
+    XCTAssertNil(OrgMediaAttachment.standalone(
+      raw: "See [[file:../assets/diagram.png][System Diagram]]",
+      sourceFile: note.path,
+      corpusRoot: root
+    ))
+    XCTAssertNil(OrgMediaAttachment.standalone(raw: "https://example.com/image.png"))
   }
 
   @MainActor
@@ -458,6 +1106,603 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSavesRenderedBlockInPlace() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-block-edit-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("block-edit.org2")
+    try """
+    #+TITLE: Block Edit Test
+
+    * TODO Parent
+    SCHEDULED: <2026-06-12 Fri>
+    Body
+    Second line
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+    XCTAssertEqual(paragraph.displayRange, "5-6")
+
+    store.beginEditingBlock(paragraph)
+    store.editableBlockText = "Updated body\nSecond line"
+    await store.saveEditedBlock(paragraph)
+    try await waitForEntryRender(store)
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Updated body\nSecond line"))
+    XCTAssertTrue(updated.contains("* Sibling\nSibling body"))
+    XCTAssertNil(store.editingBlockID)
+  }
+
+  @MainActor
+  func testSplitsEditingParagraphAtCaretIntoNewEditableBlock() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-block-split-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("block-split.org2")
+    try """
+    #+TITLE: Block Split Test
+
+    * TODO Parent
+    Alpha beta gamma
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Alpha beta gamma",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph(let text) = $0.rendered { return text == "Alpha beta gamma" }
+      return false
+    })
+    store.beginEditingBlock(paragraph)
+    store.editableBlockText = "Alpha beta gamma"
+
+    await store.splitEditingBlock(paragraph, atUTF16Offset: 6)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "beta gamma" && store.editingBlockID == store.selectedBlock?.id
+    }
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Alpha\n\nbeta gamma\n* Sibling"))
+    XCTAssertEqual(store.editableBlockText, "beta gamma")
+  }
+
+  @MainActor
+  func testContinuesParagraphWithUnsavedDraftBlock() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-paragraph-draft-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("paragraph-draft.org2")
+    try """
+    #+TITLE: Paragraph Draft Test
+
+    * TODO Parent
+    Alpha beta
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Alpha beta",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph(let text) = $0.rendered { return text == "Alpha beta" }
+      return false
+    })
+    store.beginEditingBlock(paragraph)
+    store.editableBlockText = "Alpha beta"
+
+    await store.splitEditingBlock(paragraph, atUTF16Offset: (store.editableBlockText as NSString).length)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "" && store.editingBlockID == store.selectedBlock?.id
+    }
+
+    var updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertFalse(updated.contains("New text"))
+    XCTAssertTrue(updated.contains("Alpha beta\n* Sibling"))
+
+    let draft = try XCTUnwrap(store.selectedBlock)
+    store.editableBlockText = "Next paragraph"
+    await store.saveEditedBlock(draft)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "Next paragraph"
+    }
+
+    updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Alpha beta\n\nNext paragraph\n* Sibling"))
+  }
+
+  @MainActor
+  func testContinuesEditingChecklistItemWithUncheckedSibling() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-list-continue-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("list-continue.org2")
+    try """
+    #+TITLE: List Continue Test
+
+    * TODO Parent
+    - [X] Done task
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "- [X] Done task",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let task = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .listItem(_, _, .checked, let text) = $0.rendered { return text == "Done task" }
+      return false
+    })
+    store.beginEditingBlock(task)
+    store.editableBlockText = "- [X] Done task"
+
+    await store.splitEditingBlock(task, atUTF16Offset: (store.editableBlockText as NSString).length)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "- [ ] " && store.editingBlockID == store.selectedBlock?.id
+    }
+
+    var updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertFalse(updated.contains("New item"))
+    XCTAssertTrue(updated.contains("- [X] Done task\n* Sibling"))
+    XCTAssertEqual(store.editableBlockText, "- [ ] ")
+
+    let draft = try XCTUnwrap(store.selectedBlock)
+    store.editableBlockText = "- [ ] Follow up"
+    await store.saveEditedBlock(draft)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "- [ ] Follow up"
+    }
+
+    updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("- [X] Done task\n- [ ] Follow up\n* Sibling"))
+  }
+
+  @MainActor
+  func testInsertsBlockAfterRenderedBlockInsideSelectedEntry() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-block-insert-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("block-insert.org2")
+    try """
+    #+TITLE: Block Insert Test
+
+    * TODO Parent
+    Body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+    await store.insertBlock(after: paragraph, kind: .todo)
+    try await waitForEntryRender(store)
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Body\n\n** TODO New task\n* Sibling"))
+    guard case .heading(let selectedHeading) = store.selectedBlock?.rendered else {
+      return XCTFail("Expected inserted heading to be selected")
+    }
+    XCTAssertEqual(selectedHeading.title, "New task")
+    XCTAssertEqual(store.editingBlockID, store.selectedBlock?.id)
+    XCTAssertEqual(store.editableBlockText, "** TODO New task")
+    XCTAssertTrue(store.selectedRenderedBlocks.contains {
+      if case .heading(let heading) = $0.rendered {
+        return heading.level == 2 && heading.todo == "TODO" && heading.title == "New task"
+      }
+      return false
+    })
+  }
+
+  @MainActor
+  func testConvertsEditingParagraphWithSlashCommand() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-block-convert-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("block-convert.org2")
+    try """
+    #+TITLE: Block Convert Test
+
+    * TODO Parent
+    Body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+    store.beginEditingBlock(paragraph)
+    store.editableBlockText = "/todo Call Bob"
+
+    await store.convertEditingBlock(paragraph, to: .todo)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "** TODO Call Bob" && store.editingBlockID == store.selectedBlockID
+    }
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* TODO Parent\n** TODO Call Bob\n* Sibling"))
+    XCTAssertEqual(store.editableBlockText, "** TODO Call Bob")
+  }
+
+  @MainActor
+  func testDuplicatesDeletesAndMovesRenderedBlocks() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-block-actions-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("block-actions.org2")
+    try """
+    #+TITLE: Block Actions Test
+
+    * TODO Parent
+    Body
+    - One
+    - Two
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let one = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .listItem(_, _, _, let text) = $0.rendered { return text == "One" }
+      return false
+    })
+    XCTAssertTrue(store.canMoveBlock(one, direction: .down))
+
+    await store.moveBlock(one, direction: .down)
+    try await waitForEntryRender(store)
+    var updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("- Two\n- One\n* Sibling"))
+    XCTAssertEqual(store.selectedBlock?.rawText, "- One")
+
+    let movedOne = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .listItem(_, _, _, let text) = $0.rendered { return text == "One" }
+      return false
+    })
+    await store.duplicateBlock(movedOne)
+    try await waitForEntryRender(store)
+    updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("- Two\n- One\n\n- One\n* Sibling"))
+    XCTAssertEqual(store.selectedBlock?.rawText, "- One")
+
+    let duplicatedOne = try XCTUnwrap(store.selectedRenderedBlocks
+      .filter {
+        if case .listItem(_, _, _, let text) = $0.rendered { return text == "One" }
+        return false
+      }
+      .max { $0.startLine < $1.startLine })
+    await store.deleteBlock(duplicatedOne)
+    try await waitForEntryRender(store)
+    updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("- Two\n- One\n* Sibling"))
+    XCTAssertFalse(updated.contains("- One\n\n- One"))
+    XCTAssertEqual(store.selectedBlock?.rawText, "- One")
+  }
+
+  @MainActor
+  func testTogglesRenderedListItemCheckboxInSource() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-checkbox-toggle-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("checkbox-toggle.org2")
+    try """
+    #+TITLE: Checkbox Toggle Test
+
+    * TODO Parent
+    - [ ] Open task
+    - [X] Done task
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "- [ ] Open task",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let openTask = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .listItem(_, _, .unchecked, let text) = $0.rendered { return text == "Open task" }
+      return false
+    })
+
+    await store.toggleListItemCheckbox(openTask)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "- [X] Open task"
+    }
+
+    var updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("- [X] Open task\n- [X] Done task"))
+
+    let toggledTask = try XCTUnwrap(store.selectedBlock)
+    await store.toggleListItemCheckbox(toggledTask)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "- [ ] Open task"
+    }
+
+    updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("- [ ] Open task\n- [X] Done task"))
+  }
+
+  @MainActor
+  func testSelectsRenderedBlockAndHandlesDocumentKeyboard() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-block-selection-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("block-selection.org2")
+    try """
+    #+TITLE: Block Selection Test
+
+    * TODO Parent
+    Body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+    let heading = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .heading = $0.rendered { return true }
+      return false
+    })
+    store.selectBlock(paragraph)
+    XCTAssertEqual(store.selectedBlock?.id, paragraph.id)
+
+    XCTAssertTrue(store.canSelectAdjacentBlock(.up))
+    XCTAssertFalse(store.canSelectAdjacentBlock(.down))
+    XCTAssertTrue(store.handleDocumentKeyDown(keyDown(characters: "k", keyCode: 40)))
+    XCTAssertEqual(store.selectedBlock?.id, heading.id)
+    XCTAssertTrue(store.handleDocumentKeyDown(keyDown(keyCode: 125)))
+    XCTAssertEqual(store.selectedBlock?.id, paragraph.id)
+
+    XCTAssertTrue(store.handleDocumentKeyDown(keyDown(keyCode: 53)))
+    XCTAssertNil(store.selectedBlockID)
+
+    store.selectBlock(paragraph)
+    XCTAssertTrue(store.handleDocumentKeyDown(keyDown(characters: "\r", keyCode: 36)))
+    XCTAssertEqual(store.editingBlockID, paragraph.id)
+    XCTAssertEqual(store.editableBlockText, "Body")
+    XCTAssertFalse(store.handleDocumentKeyDown(keyDown(characters: "\u{7F}", keyCode: 51)))
+  }
+
+  @MainActor
+  func testInsertsBlockAfterSelectedBlockFromKeyboard() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-selected-block-insert-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("selected-block-insert.org2")
+    try """
+    #+TITLE: Selected Block Insert Test
+
+    * TODO Parent
+    Body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+    store.selectBlock(paragraph)
+
+    XCTAssertTrue(store.handleDocumentKeyDown(keyDown(characters: "\r", keyCode: 36, modifiers: [.command])))
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "New text" && store.editingBlockID == store.selectedBlockID
+    }
+    XCTAssertEqual(store.editableBlockText, "New text")
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Body\n\nNew text\n* Sibling"))
+  }
+
+  @MainActor
   func testLoadsSelectedPageSource() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-page-\(UUID().uuidString)", isDirectory: true)
@@ -499,6 +1744,49 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testLoadsAndRendersLargePageSource() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-large-page-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("large-page.org2")
+    let body = (1...2_500)
+      .map { index in
+        """
+        * TODO Large item \(index)
+        Body \(index)
+        """
+      }
+      .joined(separator: "\n")
+    try "#+TITLE: Large Page\n\n\(body)\n".write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Large item 1",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body 1",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.selectedEntrySourceMode = .page
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    XCTAssertEqual(store.selectedEntrySource?.startLine, 1)
+    XCTAssertEqual(store.selectedEntrySource?.displayRange, "1-5003")
+    XCTAssertGreaterThan(store.selectedRenderedBlocks.count, 4_000)
+    XCTAssertFalse(store.isRenderingEntrySource)
+  }
+
+  @MainActor
   func testOpenClawThreadsUseConfiguredDirectories() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-openclaw-\(UUID().uuidString)", isDirectory: true)
@@ -523,5 +1811,63 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.openClawThreads[0].title, "Agent Thread")
     XCTAssertEqual(store.openClawThreads[0].zone, "threads")
     XCTAssertEqual(store.openClawThreads[0].idValue, "11111111-1111-4111-8111-111111111111")
+  }
+
+  @MainActor
+  private func waitForEntryRender(_ store: WorkspaceStore, timeout: TimeInterval = 3) async throws {
+    let deadline = Date().addingTimeInterval(timeout)
+    while store.isRenderingEntrySource && Date() < deadline {
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    XCTAssertFalse(store.isRenderingEntrySource)
+  }
+
+  @MainActor
+  private func waitForCondition(timeout: TimeInterval = 3, _ condition: @escaping @MainActor () -> Bool) async throws {
+    let deadline = Date().addingTimeInterval(timeout)
+    while !condition() && Date() < deadline {
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    XCTAssertTrue(condition())
+  }
+
+  private func keyDown(
+    characters: String = "",
+    keyCode: UInt16,
+    modifiers: NSEvent.ModifierFlags = []
+  ) -> NSEvent {
+    NSEvent.keyEvent(
+      with: .keyDown,
+      location: .zero,
+      modifierFlags: modifiers,
+      timestamp: 0,
+      windowNumber: 0,
+      context: nil,
+      characters: characters,
+      charactersIgnoringModifiers: characters,
+      isARepeat: false,
+      keyCode: keyCode
+    )!
+  }
+
+  private func assertToken(
+    _ kind: OrgSyntaxHighlightKind,
+    _ substring: String,
+    in raw: String,
+    tokens: [OrgSyntaxHighlightToken],
+    file: StaticString = #filePath,
+    line: UInt = #line
+  ) {
+    guard let range = raw.range(of: substring) else {
+      XCTFail("Missing substring \(substring)", file: file, line: line)
+      return
+    }
+    let nsRange = NSRange(range, in: raw)
+    XCTAssertTrue(
+      tokens.contains { $0.kind == kind && NSEqualRanges($0.range, nsRange) },
+      "Missing \(kind) token for \(substring)",
+      file: file,
+      line: line
+    )
   }
 }
