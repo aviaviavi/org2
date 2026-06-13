@@ -2479,6 +2479,32 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  func testSourceRunOutputPresentationCacheUsesExactOutput() {
+    let raw = #"{"A":2,"B":3.5}"#
+    let key = SourceRunOutputPresentationCache.CacheKey(raw: raw)
+    let matching = SourceRunOutputPresentationCache.CacheKey(raw: raw)
+    let different = SourceRunOutputPresentationCache.CacheKey(raw: raw + "\n")
+
+    XCTAssertEqual(key, matching)
+    XCTAssertEqual(key.hash, matching.hash)
+    XCTAssertNotEqual(key, different)
+    XCTAssertEqual(
+      SourceRunOutputPresentationCache.presentation(from: raw),
+      .bars([
+        SourceRunBar(label: "A", value: 2),
+        SourceRunBar(label: "B", value: 3.5)
+      ])
+    )
+    XCTAssertEqual(
+      SourceRunOutputPresentationCache.presentation(from: raw),
+      SourceRunOutputPresentationCache.presentation(from: raw)
+    )
+    XCTAssertEqual(
+      SourceRunOutputPresentationCache.presentation(from: "plain output"),
+      .text("plain output")
+    )
+  }
+
   func testSourceRunOutputPresentationParsesJSONObjectsAsTable() {
     XCTAssertEqual(
       SourceRunOutputPresentation.make(from: #"[{"name":"A","status":"ready","value":2},{"name":"B","status":"done","value":3}]"#),
