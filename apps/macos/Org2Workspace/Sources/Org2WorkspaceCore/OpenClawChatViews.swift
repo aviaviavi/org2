@@ -11,27 +11,46 @@ struct ChatBubbleView: View {
   }
 
   var body: some View {
-    HStack {
+    HStack(alignment: .top, spacing: 10) {
       if message.role == .user {
         Spacer(minLength: compact ? 24 : 48)
       }
 
-      VStack(alignment: .leading, spacing: 4) {
-        Text(message.role == .user ? "You" : "OpenClaw")
-          .font(.caption.weight(.medium))
-          .foregroundStyle(.secondary)
+      if message.role != .user {
+        WorkspaceIconBadge(systemImage: message.role == .assistant ? "sparkles" : "gearshape", tint: roleTint, fill: background)
+          .padding(.top, 1)
+      }
+
+      VStack(alignment: .leading, spacing: 6) {
+        HStack(spacing: 6) {
+          Text(message.role == .user ? "You" : "OpenClaw")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(roleTint)
+          if message.role == .system {
+            Text("System")
+              .font(.caption2.weight(.semibold))
+              .foregroundStyle(.orange)
+              .padding(.horizontal, 5)
+              .padding(.vertical, 2)
+              .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+          }
+        }
         OrgInlineText(message.content)
           .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
       }
-      .padding(10)
+      .padding(.horizontal, 11)
+      .padding(.vertical, 9)
       .background(background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
       .overlay(
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .stroke(Color.secondary.opacity(message.role == .user ? 0 : 0.16))
+          .stroke(borderColor)
       )
 
       if message.role != .user {
         Spacer(minLength: compact ? 24 : 48)
+      } else {
+        WorkspaceIconBadge(systemImage: "person.fill", tint: .accentColor, fill: Color.accentColor.opacity(0.12))
+          .padding(.top, 1)
       }
     }
     .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
@@ -40,11 +59,33 @@ struct ChatBubbleView: View {
   private var background: Color {
     switch message.role {
     case .user:
-      return Color.accentColor.opacity(0.14)
+      return Color.accentColor.opacity(0.11)
     case .assistant:
-      return Color.secondary.opacity(0.08)
+      return WorkspaceDesign.surfaceBackground
     case .system:
       return Color.orange.opacity(0.10)
+    }
+  }
+
+  private var borderColor: Color {
+    switch message.role {
+    case .user:
+      return Color.accentColor.opacity(0.16)
+    case .assistant:
+      return WorkspaceDesign.hairline
+    case .system:
+      return Color.orange.opacity(0.20)
+    }
+  }
+
+  private var roleTint: Color {
+    switch message.role {
+    case .user:
+      return .accentColor
+    case .assistant:
+      return .secondary
+    case .system:
+      return .orange
     }
   }
 }
@@ -58,11 +99,11 @@ struct OpenClawComposerView: View {
     VStack(alignment: .trailing, spacing: 8) {
       let composerHeight = OpenClawComposerSizing.height(for: store.openClawDraft, compact: compact)
       ZStack(alignment: .topLeading) {
-        RoundedRectangle(cornerRadius: 7, style: .continuous)
-          .fill(Color(nsColor: .textBackgroundColor))
+        RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
+          .fill(WorkspaceDesign.surfaceBackground)
           .overlay(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-              .stroke(Color.secondary.opacity(0.22))
+            RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
+              .stroke(canSend ? Color.accentColor.opacity(0.26) : WorkspaceDesign.hairline)
           )
 
         if store.openClawDraft.isEmpty {
@@ -84,15 +125,22 @@ struct OpenClawComposerView: View {
       .animation(.easeOut(duration: 0.12), value: composerHeight)
 
       HStack(spacing: 8) {
-        Text("Return for newline. Cmd-Return to send.")
-          .font(.caption2)
-          .foregroundStyle(.tertiary)
+        if store.isSendingOpenClawMessage {
+          HStack(spacing: 6) {
+            ProgressView()
+              .controlSize(.small)
+            Text("Sending")
+              .font(.caption.weight(.medium))
+              .foregroundStyle(.secondary)
+          }
+        }
         Spacer(minLength: 0)
         Button {
           _ = sendIfPossible()
         } label: {
           Label("Send", systemImage: "paperplane.fill")
         }
+        .buttonStyle(WorkspaceActionButtonStyle())
         .disabled(!canSend)
       }
     }

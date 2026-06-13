@@ -731,10 +731,10 @@ private struct EditableRenderedBlockView<Content: View>: View {
     rowInnerContent
     .padding(.horizontal, 6)
     .padding(.vertical, OrgRenderedBlockDisplayPolicy.verticalPadding(for: block))
-    .background(backgroundColor, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .background(backgroundColor, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous))
     .overlay(
-      RoundedRectangle(cornerRadius: 6, style: .continuous)
-        .stroke(isSelected ? Color.accentColor.opacity(0.32) : Color.clear)
+      RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
+        .stroke(isSelected ? Color.accentColor.opacity(0.34) : Color.clear)
     )
     .contentShape(Rectangle())
     .onTapGesture(count: 1) {
@@ -776,10 +776,10 @@ private struct EditableRenderedBlockView<Content: View>: View {
   private var backgroundColor: Color {
     guard isSourceEditable else { return .clear }
     if isSelected {
-      return Color.accentColor.opacity(0.075)
+      return WorkspaceDesign.selectedFill
     }
     if showsChrome, allowsHoverChrome && isHovered {
-      return Color.secondary.opacity(0.08)
+      return WorkspaceDesign.subtleFill
     }
     return .clear
   }
@@ -827,6 +827,7 @@ private struct EditableRenderedBlockView<Content: View>: View {
       .menuStyle(.borderlessButton)
       .menuIndicator(.hidden)
       .controlSize(.small)
+      .foregroundStyle(.secondary)
       .help("Add block after line \(block.displayRange)")
 
       if block.isEditable {
@@ -838,6 +839,7 @@ private struct EditableRenderedBlockView<Content: View>: View {
         }
         .buttonStyle(.borderless)
         .controlSize(.small)
+        .foregroundStyle(.secondary)
         .help("Edit line \(block.displayRange)")
 
         Menu {
