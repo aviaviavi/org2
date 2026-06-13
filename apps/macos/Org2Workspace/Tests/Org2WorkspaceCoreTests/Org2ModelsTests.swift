@@ -458,6 +458,8 @@ final class Org2ModelsTests: XCTestCase {
   func testOrgInlineSyntaxCandidateCacheUsesExactText() {
     let plain = "Plain sentence with no inline syntax."
     let rich = "See [[id:abc][Alice]] and `code`."
+    let longPlain = String(repeating: "plain text ", count: 20)
+    let longRich = "See [[id:abc][Alice]]. " + String(repeating: "plain text ", count: 20)
     let plainKey = OrgInlineSyntaxCandidateCache.CacheKey(raw: plain)
     let matchingPlainKey = OrgInlineSyntaxCandidateCache.CacheKey(raw: plain)
     let differentKey = OrgInlineSyntaxCandidateCache.CacheKey(raw: plain + " ")
@@ -465,10 +467,18 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(plainKey, matchingPlainKey)
     XCTAssertEqual(plainKey.hash, matchingPlainKey.hash)
     XCTAssertNotEqual(plainKey, differentKey)
+    XCTAssertFalse(OrgInlineSyntaxCandidateCache.shouldCacheLookup(plain))
+    XCTAssertFalse(OrgInlineSyntaxCandidateCache.shouldCacheLookup(rich))
+    XCTAssertTrue(OrgInlineSyntaxCandidateCache.shouldCacheLookup(longPlain))
+    XCTAssertTrue(OrgInlineSyntaxCandidateCache.shouldCacheLookup(longRich))
     XCTAssertFalse(OrgInlineSyntaxCandidateCache.containsSyntax(plain))
     XCTAssertFalse(OrgInlineSyntaxCandidateCache.containsSyntax(plain))
     XCTAssertTrue(OrgInlineSyntaxCandidateCache.containsSyntax(rich))
     XCTAssertTrue(OrgInlineSyntaxCandidateCache.containsSyntax(rich))
+    XCTAssertFalse(OrgInlineSyntaxCandidateCache.containsSyntax(longPlain))
+    XCTAssertFalse(OrgInlineSyntaxCandidateCache.containsSyntax(longPlain))
+    XCTAssertTrue(OrgInlineSyntaxCandidateCache.containsSyntax(longRich))
+    XCTAssertTrue(OrgInlineSyntaxCandidateCache.containsSyntax(longRich))
   }
 
   func testOrgInlineParserRendersMarkupAndTimestamps() {

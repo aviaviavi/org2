@@ -98,6 +98,10 @@ enum OrgInlineSyntaxCandidateCache {
   }()
 
   nonisolated static func containsSyntax(_ raw: String) -> Bool {
+    guard shouldCacheLookup(raw) else {
+      return OrgInlineParser.hasInlineSyntaxCandidate(raw)
+    }
+
     let key = CacheKey(raw: raw)
     if let cached = cache.object(forKey: key) {
       return cached.containsSyntax
@@ -107,6 +111,19 @@ enum OrgInlineSyntaxCandidateCache {
     cache.setObject(CachedValue(containsSyntax), forKey: key)
     return containsSyntax
   }
+
+  nonisolated static func shouldCacheLookup(_ raw: String) -> Bool {
+    var count = 0
+    for _ in raw.utf8 {
+      count += 1
+      if count > cacheLookupUTF8Threshold {
+        return true
+      }
+    }
+    return false
+  }
+
+  private static let cacheLookupUTF8Threshold = 96
 }
 
 enum OrgInlineAttributedString {
