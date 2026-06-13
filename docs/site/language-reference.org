@@ -284,7 +284,7 @@ y: fetches
 ```
 #+end_src
 
-=org2 query-data= reads these blocks, creates DuckDB views for =csv=, =parquet=, =json=, URL-backed sources, or named org2 table datasets, creates any declared SQL views, runs a selected SQL result block through the local DuckDB CLI, and materializes the returned rows as a named org table or JSON envelope:
+=org2 query-data= reads these blocks, creates DuckDB views for =csv=, =parquet=, =json=, URL-backed sources, or named org2 table datasets, creates any declared SQL views, runs a selected SQL result block through the local DuckDB CLI, and materializes the returned rows as a named org table or JSON envelope. Materialized org tables include a =#+query-data:= provenance line with the result id, row count, selected SQL hash, and full DuckDB script hash:
 
 #+begin_src sh
 npm run org2 -- query-data --file report.org2 --results fetches_by_state --out report.fetches.org
