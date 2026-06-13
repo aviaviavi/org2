@@ -216,7 +216,7 @@ struct OrgRenderedEntryView: View, Equatable {
   }
 
   private func inlineActions(for block: OrgEditableBlock, isSourceEditable: Bool) -> RenderedBlockInlineActions {
-    let decryptSubtree: (@MainActor @Sendable () -> Void)? = {
+    let decryptSubtree: (@MainActor @Sendable () async -> Bool)? = {
       guard isSourceEditable,
             OrgCrypt.armorSummary(block.rawText) != nil
       else {
@@ -224,7 +224,7 @@ struct OrgRenderedEntryView: View, Equatable {
       }
       let line = OrgRenderedCryptTarget.headingLine(for: block, in: blocks)
       return {
-        Task { await store.runOrgCrypt(.decrypt, line: line) }
+        await store.runOrgCrypt(.decrypt, line: line)
       }
     }()
 

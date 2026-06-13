@@ -3103,10 +3103,11 @@ public final class WorkspaceStore: ObservableObject {
     isOrgCryptConfigurationPresented = true
   }
 
-  public func runOrgCrypt(_ action: OrgCryptAction, line explicitLine: Int? = nil) async {
+  @discardableResult
+  public func runOrgCrypt(_ action: OrgCryptAction, line explicitLine: Int? = nil) async -> Bool {
     guard let file = selectedEntrySource?.file ?? selectedLocation?.file else {
       statusText = "Open a file before running org crypt"
-      return
+      return false
     }
 
     let line = explicitLine ?? selectedBlock?.startLine ?? selectedLocation?.lineForEditor ?? 1
@@ -3152,10 +3153,12 @@ public final class WorkspaceStore: ObservableObject {
         await loadEntrySource(for: selectedLocation)
       }
       scheduleAgendaRefresh(preserveSelection: true)
+      return true
     } catch {
       errorText = error.localizedDescription
       orgCryptStatusText = error.localizedDescription
       statusText = error.localizedDescription
+      return false
     }
   }
 
