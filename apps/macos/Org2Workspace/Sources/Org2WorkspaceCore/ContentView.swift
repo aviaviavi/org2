@@ -98,10 +98,9 @@ private struct SidebarView: View {
         ForEach(WorkspaceSurface.allCases) { surface in
           HStack(spacing: 8) {
             Label(surface.title, systemImage: surface.systemImage)
+              .font(.callout.weight(.medium))
             Spacer(minLength: 0)
-            Text(surface.commandShortcutTitle)
-              .font(.caption.monospaced())
-              .foregroundStyle(.tertiary)
+            KeyboardShortcutBadge(text: surface.commandShortcutTitle)
           }
           .tag(surface)
           .help("\(surface.title) (\(surface.commandShortcutTitle))")
@@ -110,19 +109,24 @@ private struct SidebarView: View {
 
       Section("Corpus") {
         if let root = store.corpusRoot {
-          VStack(alignment: .leading, spacing: 3) {
+          VStack(alignment: .leading, spacing: 5) {
             Text(root.path)
               .font(.caption)
               .foregroundStyle(.secondary)
               .lineLimit(4)
               .textSelection(.enabled)
-            Text("\(store.corpusFiles.count) file\(store.corpusFiles.count == 1 ? "" : "s")")
-              .font(.caption2)
-              .foregroundStyle(.tertiary)
+            HStack(spacing: 5) {
+              Image(systemName: "doc.text")
+              Text("\(store.corpusFiles.count) file\(store.corpusFiles.count == 1 ? "" : "s")")
+            }
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.tertiary)
           }
         } else {
-          Button("Open Corpus...") {
+          Button {
             store.chooseCorpus()
+          } label: {
+            Label("Open Corpus", systemImage: "folder")
           }
         }
       }
@@ -134,10 +138,9 @@ private struct SidebarView: View {
           } label: {
             HStack(spacing: 8) {
               Label(target.title, systemImage: target == .today ? "sun.max" : "calendar")
+                .font(.callout.weight(.medium))
               Spacer(minLength: 0)
-              Text(target.commandShortcutTitle)
-                .font(.caption.monospaced())
-                .foregroundStyle(.tertiary)
+              KeyboardShortcutBadge(text: target.commandShortcutTitle)
             }
           }
           .help("\(target.title) daily note (\(target.commandShortcutTitle))")
@@ -185,7 +188,7 @@ private struct FilesView: View {
           .labelStyle(.iconOnly)
         }
       }
-      .padding(.horizontal, 16)
+      .padding(.horizontal, WorkspaceDesign.contentInset)
       .padding(.bottom, 12)
 
       if store.corpusRoot == nil {
@@ -225,12 +228,11 @@ private struct CorpusFileRow: View {
   let file: CorpusFile
 
   var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
-      Image(systemName: "doc.text")
-        .foregroundStyle(.secondary)
+    HStack(alignment: .center, spacing: 8) {
+      WorkspaceIconBadge(systemImage: "doc.text")
       VStack(alignment: .leading, spacing: 3) {
         Text(file.name)
-          .font(.body)
+          .font(.body.weight(.medium))
           .lineLimit(1)
         Text(file.relativePath)
           .font(.caption)
@@ -245,7 +247,7 @@ private struct CorpusFileRow: View {
           .foregroundStyle(.tertiary)
       }
     }
-    .padding(.vertical, 4)
+    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
   }
 }
 
@@ -492,7 +494,7 @@ private struct AgendaView: View {
             .labelStyle(.iconOnly)
           }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, WorkspaceDesign.contentInset)
         .padding(.bottom, 12)
 
         AgendaSummaryView(agenda: agenda)
@@ -529,7 +531,7 @@ private struct AgendaSummaryView: View {
       }
       Spacer(minLength: 0)
     }
-    .padding(.horizontal, 16)
+    .padding(.horizontal, WorkspaceDesign.contentInset)
     .padding(.bottom, 12)
   }
 
@@ -551,11 +553,19 @@ private struct MetricView: View {
     VStack(alignment: .leading, spacing: 2) {
       Text(value)
         .font(.title3.weight(.semibold))
+        .monospacedDigit()
       Text(title)
-        .font(.caption)
+        .font(.caption.weight(.medium))
         .foregroundStyle(.secondary)
     }
     .frame(width: 94, alignment: .leading)
+    .padding(.horizontal, 10)
+    .padding(.vertical, 8)
+    .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
+        .stroke(WorkspaceDesign.hairline)
+    )
   }
 }
 
@@ -604,7 +614,7 @@ private struct AgendaRow: View {
       VStack(alignment: .leading, spacing: 4) {
         HStack(spacing: 6) {
           Text(Org2Display.cleanInline(item.headline))
-            .font(.body)
+            .font(.body.weight(.medium))
             .lineLimit(1)
           if item.idValue != nil {
             Image(systemName: "link")
@@ -624,9 +634,12 @@ private struct AgendaRow: View {
         Text(effort)
           .font(.caption.monospacedDigit())
           .foregroundStyle(.secondary)
+          .padding(.horizontal, 7)
+          .padding(.vertical, 3)
+          .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
       }
     }
-    .padding(.vertical, 3)
+    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
   }
 }
 
@@ -658,7 +671,7 @@ private struct SearchView: View {
         }
         .disabled(store.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isSearching)
       }
-      .padding(.horizontal, 16)
+      .padding(.horizontal, WorkspaceDesign.contentInset)
       .padding(.bottom, 12)
 
       if store.searchResults.isEmpty {
@@ -698,31 +711,34 @@ private struct SearchRow: View {
   let result: SearchResult
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 5) {
-      HStack(spacing: 8) {
-        if let todo = result.todo {
-          StatusPill(text: todo)
+    HStack(alignment: .top, spacing: 8) {
+      WorkspaceIconBadge(systemImage: "magnifyingglass")
+      VStack(alignment: .leading, spacing: 5) {
+        HStack(spacing: 8) {
+          if let todo = result.todo {
+            StatusPill(text: todo)
+          }
+          Text(Org2Display.cleanInline(result.title))
+            .font(.body.weight(.medium))
+            .lineLimit(1)
+          Spacer(minLength: 0)
+          if result.idValue != nil {
+            Image(systemName: "link")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
         }
-        Text(Org2Display.cleanInline(result.title))
-          .font(.body)
-          .lineLimit(1)
-        Spacer(minLength: 0)
-        if result.idValue != nil {
-          Image(systemName: "link")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
+        Text(Org2Display.cleanInline(result.snippet))
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .lineLimit(2)
+        Text(store.relativePath(result.file) + ":\(result.lineForEditor)")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
       }
-      Text(Org2Display.cleanInline(result.snippet))
-        .font(.callout)
-        .foregroundStyle(.secondary)
-        .lineLimit(2)
-      Text(store.relativePath(result.file) + ":\(result.lineForEditor)")
-        .font(.caption)
-        .foregroundStyle(.tertiary)
     }
-    .padding(.horizontal, 16)
-    .padding(.vertical, 6)
+    .padding(.horizontal, WorkspaceDesign.contentInset)
+    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
   }
 }
 
@@ -793,7 +809,7 @@ private struct MeetingsView: View {
           )
         }
       }
-      .padding(.horizontal, 16)
+      .padding(.horizontal, WorkspaceDesign.contentInset)
       .padding(.bottom, 12)
 
       if store.meetings.isEmpty {
@@ -933,34 +949,37 @@ private struct MeetingRow: View {
   let meeting: MeetingWorkspaceItem
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 5) {
-      HStack(spacing: 8) {
-        Text(Org2Display.cleanInline(meeting.title))
-          .font(.body)
-          .lineLimit(1)
-        Spacer(minLength: 0)
-        if let status = meeting.transcriptionStatus {
-          StatusPill(text: status.uppercased())
+    HStack(alignment: .top, spacing: 8) {
+      WorkspaceIconBadge(systemImage: "waveform.and.mic")
+      VStack(alignment: .leading, spacing: 5) {
+        HStack(spacing: 8) {
+          Text(Org2Display.cleanInline(meeting.title))
+            .font(.body.weight(.medium))
+            .lineLimit(1)
+          Spacer(minLength: 0)
+          if let status = meeting.transcriptionStatus {
+            StatusPill(text: status.uppercased())
+          }
         }
-      }
 
-      HStack(spacing: 8) {
-        if let recordedAt = meeting.recordedAt {
-          Text(recordedAt)
+        HStack(spacing: 8) {
+          if let recordedAt = meeting.recordedAt {
+            Text(recordedAt)
+          }
+          if let modifiedAt = meeting.modifiedAt {
+            Text(Self.relativeDate(modifiedAt))
+          }
         }
-        if let modifiedAt = meeting.modifiedAt {
-          Text(Self.relativeDate(modifiedAt))
-        }
-      }
-      .font(.caption)
-      .foregroundStyle(.secondary)
-
-      Text(store.relativePath(meeting.file) + ":\(meeting.lineForEditor)")
         .font(.caption)
-        .foregroundStyle(.tertiary)
-        .lineLimit(1)
+        .foregroundStyle(.secondary)
+
+        Text(store.relativePath(meeting.file) + ":\(meeting.lineForEditor)")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+          .lineLimit(1)
+      }
     }
-    .padding(.vertical, 4)
+    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
   }
 
   private static func relativeDate(_ date: Date) -> String {
@@ -1050,6 +1069,10 @@ private struct OpenClawChatView: View {
       }
       .padding(.horizontal, 12)
       .padding(.vertical, 10)
+      .background(WorkspaceDesign.barBackground)
+      .overlay(alignment: .bottom) {
+        Divider()
+      }
     }
   }
 
@@ -1077,13 +1100,13 @@ private struct OpenClawChatView: View {
   private var configurationStrip: some View {
     if presentation == .fullPage {
       HStack(spacing: 8) {
-        Text("Agent")
+        Label("Agent", systemImage: "cpu")
           .font(.caption.weight(.medium))
           .foregroundStyle(.secondary)
         TextField("main", text: $store.openClawAgentID)
           .textFieldStyle(.roundedBorder)
           .frame(width: 180)
-        Text("Org2")
+        Label("Org2", systemImage: "folder")
           .font(.caption.weight(.medium))
           .foregroundStyle(.secondary)
         Text(store.openClawContextRootText)
@@ -1098,7 +1121,7 @@ private struct OpenClawChatView: View {
           .truncationMode(.middle)
         Spacer(minLength: 0)
       }
-      .padding(.horizontal, 16)
+      .padding(.horizontal, WorkspaceDesign.contentInset)
       .padding(.bottom, 10)
     } else {
       HStack(spacing: 8) {
@@ -1468,33 +1491,36 @@ private struct OpenClawThreadRow: View {
   let thread: OpenClawThread
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 5) {
-      HStack(spacing: 8) {
-        Text(Org2Display.cleanInline(thread.title))
-          .font(.body)
-          .lineLimit(1)
-        Spacer(minLength: 0)
-        if thread.idValue != nil {
-          Image(systemName: "link")
-            .font(.caption)
-            .foregroundStyle(.secondary)
+    HStack(alignment: .top, spacing: 8) {
+      WorkspaceIconBadge(systemImage: thread.idValue == nil ? "doc.text" : "link")
+      VStack(alignment: .leading, spacing: 5) {
+        HStack(spacing: 8) {
+          Text(Org2Display.cleanInline(thread.title))
+            .font(.body.weight(.medium))
+            .lineLimit(1)
+          Spacer(minLength: 0)
+          if thread.idValue != nil {
+            Image(systemName: "link")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
         }
-      }
-      HStack(spacing: 8) {
-        Text(thread.zone)
-        if let modifiedAt = thread.modifiedAt {
-          Text(Self.relativeDate(modifiedAt))
+        HStack(spacing: 8) {
+          Text(thread.zone)
+          if let modifiedAt = thread.modifiedAt {
+            Text(Self.relativeDate(modifiedAt))
+          }
         }
-      }
-      .font(.caption)
-      .foregroundStyle(.secondary)
-
-      Text(store.relativePath(thread.file) + ":\(thread.lineForEditor)")
         .font(.caption)
-        .foregroundStyle(.tertiary)
-        .lineLimit(1)
+        .foregroundStyle(.secondary)
+
+        Text(store.relativePath(thread.file) + ":\(thread.lineForEditor)")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+          .lineLimit(1)
+      }
     }
-    .padding(.vertical, 4)
+    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
   }
 
   private static func relativeDate(_ date: Date) -> String {
@@ -1575,23 +1601,26 @@ private struct DetailHeader: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      VStack(alignment: .leading, spacing: 6) {
-        Text(location.title)
-          .font(.title3.weight(.semibold))
-          .lineLimit(nil)
-        if !location.subtitle.isEmpty {
-          Text(location.subtitle)
-            .font(.callout)
-            .foregroundStyle(.secondary)
+      HStack(alignment: .top, spacing: 12) {
+        WorkspaceIconBadge(systemImage: locationIcon, tint: .accentColor, fill: Color.accentColor.opacity(0.12))
+        VStack(alignment: .leading, spacing: 6) {
+          Text(location.title)
+            .font(.title3.weight(.semibold))
             .lineLimit(nil)
+          if !location.subtitle.isEmpty {
+            Text(location.subtitle)
+              .font(.callout)
+              .foregroundStyle(.secondary)
+              .lineLimit(nil)
+          }
+          Text(store.relativePath(location.file) + ":\(location.lineForEditor)")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .textSelection(.enabled)
         }
-        Text(store.relativePath(location.file) + ":\(location.lineForEditor)")
-          .font(.caption)
-          .foregroundStyle(.tertiary)
-          .textSelection(.enabled)
       }
 
-      HStack {
+      HStack(spacing: 8) {
         Button {
           store.navigateBackInDetail()
         } label: {
@@ -1685,7 +1714,23 @@ private struct DetailHeader: View {
         }
       }
     }
-    .padding(16)
+    .padding(WorkspaceDesign.contentInset)
+    .background(WorkspaceDesign.barBackground)
+  }
+
+  private var locationIcon: String {
+    switch location {
+    case .agenda:
+      return "calendar"
+    case .search:
+      return "magnifyingglass"
+    case .backlink:
+      return "link"
+    case .openClaw:
+      return "doc.text"
+    case .meeting:
+      return "waveform.and.mic"
+    }
   }
 }
 
@@ -1707,12 +1752,17 @@ private struct EntryBodyView: View {
         }
       } else if let source = store.selectedEntrySource {
         VStack(alignment: .leading, spacing: 4) {
-          Text(store.selectedEntrySourceMode.title)
-            .font(.headline)
-          Text(store.relativePath(source.file) + ":\(source.displayRange)")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .textSelection(.enabled)
+          HStack(spacing: 8) {
+            WorkspaceIconBadge(systemImage: "doc.richtext")
+            VStack(alignment: .leading, spacing: 2) {
+              Text(store.selectedEntrySourceMode.title)
+                .font(.headline)
+              Text(store.relativePath(source.file) + ":\(source.displayRange)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            }
+          }
         }
         if store.isEditingEntry {
           OrgSyntaxTextEditor(
@@ -1859,6 +1909,12 @@ private struct DetailMetadataGrid: View {
           }
         }
       }
+      .padding(10)
+      .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
+          .stroke(WorkspaceDesign.hairline)
+      )
     }
   }
 }
@@ -1869,7 +1925,7 @@ private struct BacklinksView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       HStack {
-        Text("Backlinks")
+        Label("Backlinks", systemImage: "link")
           .font(.headline)
         Spacer()
         if store.isLoadingBacklinks {
@@ -1879,9 +1935,12 @@ private struct BacklinksView: View {
           Text("\(count)")
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
         }
       }
-      .padding(.horizontal, 16)
+      .padding(.horizontal, WorkspaceDesign.contentInset)
       .padding(.vertical, 12)
 
       if let backlinks = store.backlinks {
@@ -1889,7 +1948,7 @@ private struct BacklinksView: View {
           Text("No backlinks")
             .font(.callout)
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, WorkspaceDesign.contentInset)
         } else {
           LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(backlinks.backlinks) { backlink in
@@ -1908,7 +1967,7 @@ private struct BacklinksView: View {
         Text("No ID on selection")
           .font(.callout)
           .foregroundStyle(.secondary)
-          .padding(.horizontal, 16)
+          .padding(.horizontal, WorkspaceDesign.contentInset)
       }
     }
   }
@@ -1919,20 +1978,23 @@ private struct BacklinkRow: View {
   let backlink: BacklinkItem
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 5) {
-      Text(Org2Display.cleanInline(backlink.srcTitle))
-        .font(.body)
-        .lineLimit(1)
-      Text(Org2Display.cleanInline(backlink.context))
-        .font(.callout)
-        .foregroundStyle(.secondary)
-        .lineLimit(2)
-      Text(store.relativePath(backlink.file) + ":\(backlink.lineForEditor)")
-        .font(.caption)
-        .foregroundStyle(.tertiary)
+    HStack(alignment: .top, spacing: 8) {
+      WorkspaceIconBadge(systemImage: "link")
+      VStack(alignment: .leading, spacing: 5) {
+        Text(Org2Display.cleanInline(backlink.srcTitle))
+          .font(.body.weight(.medium))
+          .lineLimit(1)
+        Text(Org2Display.cleanInline(backlink.context))
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .lineLimit(2)
+        Text(store.relativePath(backlink.file) + ":\(backlink.lineForEditor)")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+      }
     }
-    .padding(.horizontal, 16)
-    .padding(.vertical, 6)
+    .padding(.horizontal, WorkspaceDesign.contentInset)
+    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
   }
 }
 
@@ -1942,18 +2004,27 @@ private struct HeaderBar<Trailing: View>: View {
   @ViewBuilder let trailing: Trailing
 
   var body: some View {
-    HStack(alignment: .firstTextBaseline) {
+    HStack(alignment: .center, spacing: 12) {
       VStack(alignment: .leading, spacing: 2) {
         Text(title)
-          .font(.largeTitle.weight(.semibold))
+          .font(.title2.weight(.semibold))
         Text(subtitle)
-          .font(.callout)
+          .font(.caption)
           .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.middle)
       }
       Spacer(minLength: 0)
       trailing
+        .controlSize(.small)
+        .buttonStyle(WorkspaceActionButtonStyle())
     }
-    .padding(16)
+    .padding(.horizontal, 18)
+    .padding(.vertical, 14)
+    .background(WorkspaceDesign.barBackground)
+    .overlay(alignment: .bottom) {
+      Divider()
+    }
   }
 }
 
@@ -1962,14 +2033,29 @@ struct StatusPill: View {
 
   var body: some View {
     Text(text)
-      .font(.caption.weight(.semibold))
-      .foregroundStyle(.white)
+      .font(.caption2.weight(.bold))
+      .foregroundStyle(statusForeground)
       .padding(.horizontal, 7)
       .padding(.vertical, 3)
       .background(statusColor, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: 5, style: .continuous)
+          .stroke(statusForeground.opacity(0.10))
+      )
   }
 
   private var statusColor: Color {
+    switch text.uppercased() {
+    case "TODO": .blue.opacity(0.15)
+    case "PROG", "IN_PROGRESS": .indigo.opacity(0.16)
+    case "WAIT", "HOLD", "PAUSED": .orange.opacity(0.16)
+    case "DONE": .green.opacity(0.16)
+    case "CANCELLED", "CANCELED": .red.opacity(0.15)
+    default: WorkspaceDesign.subtleFill
+    }
+  }
+
+  private var statusForeground: Color {
     switch text.uppercased() {
     case "TODO": .blue
     case "PROG", "IN_PROGRESS": .indigo
@@ -1990,6 +2076,8 @@ private struct EmptyStateView: View {
   var body: some View {
     VStack(spacing: 12) {
       Spacer()
+      WorkspaceIconBadge(systemImage: emptyStateIcon, tint: .secondary, fill: WorkspaceDesign.subtleFill)
+        .scaleEffect(1.25)
       Text(title)
         .font(.headline)
       if !detail.isEmpty {
@@ -2003,9 +2091,19 @@ private struct EmptyStateView: View {
       Button(action) {
         perform()
       }
+      .buttonStyle(WorkspaceActionButtonStyle())
       Spacer()
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  private var emptyStateIcon: String {
+    if title.localizedCaseInsensitiveContains("agenda") { return "calendar" }
+    if title.localizedCaseInsensitiveContains("meeting") { return "waveform.and.mic" }
+    if title.localizedCaseInsensitiveContains("result") { return "magnifyingglass" }
+    if title.localizedCaseInsensitiveContains("agent") { return "tray" }
+    if title.localizedCaseInsensitiveContains("selection") { return "cursorarrow" }
+    return "doc.text"
   }
 }
 
