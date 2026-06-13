@@ -4128,6 +4128,57 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(remoteVideoPage.resolvedURL?.absoluteString, "https://youtu.be/dQw4w9WgXcQ")
   }
 
+  func testOrgCryptFindsPlaintextCryptSubtreesAndProperties() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-crypt-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("secrets.org2")
+    let key = root.appendingPathComponent("keys/agent.asc")
+    try FileManager.default.createDirectory(at: key.deletingLastPathComponent(), withIntermediateDirectories: true)
+
+    let text = """
+    * Public
+    Body
+    * Secret :crypt:
+    :PROPERTIES:
+    :CRYPT_RECIPIENTS: user@example.com, agent@example.com
+    :CRYPT_RECIPIENT_FILE: keys/agent.asc
+    :END:
+    plaintext
+    ** Child
+    more
+    * Already encrypted :crypt:
+    -----BEGIN PGP MESSAGE-----
+    abc
+    -----END PGP MESSAGE-----
+    """
+
+    let targets = OrgCrypt.findPlaintextCryptSubtrees(in: text, file: note.path)
+
+    XCTAssertEqual(targets.count, 1)
+    XCTAssertEqual(targets[0].headingLine, 3)
+    XCTAssertEqual(targets[0].bodyStartLine, 7)
+    XCTAssertEqual(targets[0].endLine, 10)
+    XCTAssertEqual(targets[0].recipients, ["user@example.com", "agent@example.com"])
+    XCTAssertEqual(targets[0].recipientFiles, [key.standardizedFileURL.path])
+  }
+
+  func testOrgCryptArmorSummaryDetectsPGPBlocks() {
+    let raw = """
+    -----BEGIN PGP MESSAGE-----
+    abc
+    def
+    -----END PGP MESSAGE-----
+    """
+
+    let summary = OrgCrypt.armorSummary(raw)
+
+    XCTAssertEqual(summary?.lineCount, 4)
+    XCTAssertEqual(summary?.payloadLineCount, 2)
+    XCTAssertEqual(summary?.byteCount, Data(raw.utf8).count)
+    XCTAssertNil(OrgCrypt.armorSummary("not encrypted"))
+  }
+
   func testOrgMediaAttachmentRenderCacheUsesExactSourceContext() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-media-cache-\(UUID().uuidString)", isDirectory: true)

@@ -88,7 +88,9 @@ struct RenderedBlockView: View, Equatable {
       )
     case .paragraph(let text):
       let paragraphText = rawText ?? text
-      if let attachment = OrgMediaAttachmentRenderCache.standalone(
+      if let summary = OrgCrypt.armorSummary(paragraphText) {
+        RenderedEncryptedBlockView(summary: summary)
+      } else if let attachment = OrgMediaAttachmentRenderCache.standalone(
           raw: paragraphText,
           sourceFile: sourceFile,
           corpusRoot: corpusRoot
@@ -558,6 +560,46 @@ private struct OrgMediaAttachmentView: View {
     }
     .frame(maxWidth: 760, alignment: .leading)
     .padding(.vertical, 4)
+  }
+}
+
+private struct RenderedEncryptedBlockView: View {
+  let summary: OrgCrypt.PGPArmorSummary
+
+  var body: some View {
+    HStack(spacing: 10) {
+      WorkspaceIconBadge(systemImage: "lock.fill", tint: .accentColor, fill: Color.accentColor.opacity(0.10))
+
+      VStack(alignment: .leading, spacing: 3) {
+        Text("Encrypted subtree")
+          .font(.callout.weight(.semibold))
+        Text("\(summary.payloadLineCount) armored line\(summary.payloadLineCount == 1 ? "" : "s") • \(formattedBytes(summary.byteCount))")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
+      Spacer(minLength: 0)
+    }
+    .padding(.vertical, 7)
+    .padding(.horizontal, 10)
+    .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
+        .stroke(WorkspaceDesign.hairline)
+    )
+    .frame(maxWidth: 760, alignment: .leading)
+    .help("Use Org Crypt > Decrypt Subtree to edit the plaintext.")
+  }
+
+  private func formattedBytes(_ count: Int) -> String {
+    if count < 1_024 {
+      return "\(count) B"
+    }
+    let kb = Double(count) / 1_024
+    if kb < 1_024 {
+      return String(format: "%.1f KB", kb)
+    }
+    return String(format: "%.1f MB", kb / 1_024)
   }
 }
 
