@@ -1134,10 +1134,68 @@ public enum OrgEntryRenderer {
       canonicalIndex += 1
     }
 
-    return output.sorted {
+    let sortedOutput = output.sorted {
       if $0.startLine != $1.startLine { return $0.startLine < $1.startLine }
       return $0.endLineExclusive < $1.endLineExclusive
     }
+    return coalescingPGPArmorBlocks(sortedOutput)
+  }
+
+  private static func coalescingPGPArmorBlocks(_ blocks: [OrgEditableBlock]) -> [OrgEditableBlock] {
+    var output: [OrgEditableBlock] = []
+    var index = 0
+    while index < blocks.count {
+      let block = blocks[index]
+      guard startsPGPArmor(block.rawText) else {
+        output.append(block)
+        index += 1
+        continue
+      }
+
+      var endIndex = index
+      var rawParts: [String] = []
+      var foundEnd = false
+      while endIndex < blocks.count {
+        let next = blocks[endIndex]
+        rawParts.append(next.rawText)
+        if endsPGPArmor(next.rawText) {
+          foundEnd = true
+          break
+        }
+        endIndex += 1
+      }
+
+      guard foundEnd else {
+        output.append(block)
+        index += 1
+        continue
+      }
+
+      let raw = rawParts.joined(separator: "\n")
+      let endLineExclusive = blocks[endIndex].endLineExclusive
+      output.append(OrgEditableBlock(
+        startLine: block.startLine,
+        endLineExclusive: endLineExclusive,
+        rawText: raw,
+        rendered: .paragraph(Org2Display.cleanInline(raw))
+      ))
+      index = endIndex + 1
+    }
+    return output
+  }
+
+  private static func startsPGPArmor(_ rawText: String) -> Bool {
+    rawText
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .first?
+      .trimmingCharacters(in: .whitespacesAndNewlines) == "-----BEGIN PGP MESSAGE-----"
+  }
+
+  private static func endsPGPArmor(_ rawText: String) -> Bool {
+    rawText
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .last?
+      .trimmingCharacters(in: .whitespacesAndNewlines) == "-----END PGP MESSAGE-----"
   }
 
   private static func normalizedLines(_ raw: String) -> [String] {

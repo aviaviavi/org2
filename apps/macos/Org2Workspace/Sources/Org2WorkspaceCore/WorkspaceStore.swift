@@ -3103,13 +3103,13 @@ public final class WorkspaceStore: ObservableObject {
     isOrgCryptConfigurationPresented = true
   }
 
-  public func runOrgCrypt(_ action: OrgCryptAction) async {
+  public func runOrgCrypt(_ action: OrgCryptAction, line explicitLine: Int? = nil) async {
     guard let file = selectedEntrySource?.file ?? selectedLocation?.file else {
       statusText = "Open a file before running org crypt"
       return
     }
 
-    let line = selectedBlock?.startLine ?? selectedLocation?.lineForEditor ?? 1
+    let line = explicitLine ?? selectedBlock?.startLine ?? selectedLocation?.lineForEditor ?? 1
     let settings = currentOrgCryptSettings(allowKeychainRead: true)
     var arguments = [
       "crypt",
