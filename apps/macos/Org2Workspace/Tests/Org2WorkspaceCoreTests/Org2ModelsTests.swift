@@ -651,6 +651,43 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSyntaxEditorDefersTextPublishingWithoutApplyingStaleBoundText() async throws {
+    var boundText = "old"
+    let liveText = OrgSyntaxTextEditorDraftBuffer()
+    let editor = OrgSyntaxTextEditor(
+      text: Binding(
+        get: { boundText },
+        set: { boundText = $0 }
+      ),
+      textPublishing: .deferred(milliseconds: 20),
+      onLocalTextChange: liveText.update
+    )
+    let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
+    let textView = NSTextView()
+    textView.string = "new"
+
+    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+
+    XCTAssertEqual(boundText, "old")
+    XCTAssertEqual(liveText.current(fallback: ""), "new")
+    XCTAssertTrue(coordinator.hasPendingTextPublishing(for: "new"))
+    XCTAssertFalse(OrgSyntaxTextEditor.shouldApplyProgrammaticText(
+      editorText: "new",
+      boundText: "old",
+      hasPendingLocalText: true
+    ))
+    XCTAssertTrue(OrgSyntaxTextEditor.shouldApplyProgrammaticText(
+      editorText: "new",
+      boundText: "old",
+      hasPendingLocalText: false
+    ))
+
+    try await Task.sleep(nanoseconds: 60_000_000)
+    XCTAssertEqual(boundText, "new")
+    XCTAssertFalse(coordinator.hasPendingTextPublishing(for: "new"))
+  }
+
+  @MainActor
   func testSyntaxEditorDoesNotScheduleDeferredHighlightingForLargeBuffers() {
     let largeText = String(repeating: "Body with [[id:abc][Alice]].\n", count: 2_000)
     XCTAssertGreaterThan((largeText as NSString).length, OrgSyntaxHighlighter.liveTokenizationUTF16Limit)

@@ -1767,6 +1767,7 @@ private struct QuoteBlockEditor: View {
   @State private var isHovered = false
   @State private var isTextFocused = false
   @State private var autosaveTask: Task<Void, Never>?
+  @State private var liveText = OrgSyntaxTextEditorDraftBuffer()
 
   init(block: OrgEditableBlock) {
     self.block = block
@@ -1791,8 +1792,10 @@ private struct QuoteBlockEditor: View {
           showsScrollers: false,
           textInset: NSSize(width: 2, height: 4),
           focusOnAppear: true,
+          textPublishing: .deferred(milliseconds: 120),
           selection: $selectedRange,
-          isFocused: $isTextFocused
+          isFocused: $isTextFocused,
+          onLocalTextChange: liveText.update
         )
         .frame(minHeight: editorHeight, maxHeight: editorHeight)
         .background(Color.clear)
@@ -1822,10 +1825,17 @@ private struct QuoteBlockEditor: View {
       autosaveTask?.cancel()
       autosaveTask = nil
     }
+    .onAppear {
+      liveText.update(quoteText)
+    }
   }
 
   private var rawQuote: String {
-    "\(beginLine)\n\(quoteText)\n\(endLine)"
+    "\(beginLine)\n\(currentQuoteText)\n\(endLine)"
+  }
+
+  private var currentQuoteText: String {
+    liveText.current(fallback: quoteText)
   }
 
   private var editorHeight: CGFloat {
@@ -1902,6 +1912,7 @@ private struct SourceBlockEditor: View {
   @State private var isHovered = false
   @State private var isBodyFocused = false
   @State private var autosaveTask: Task<Void, Never>?
+  @State private var liveBody = OrgSyntaxTextEditorDraftBuffer()
 
   init(block: OrgEditableBlock, language: String?, lines: [String]) {
     self.block = block
@@ -1964,8 +1975,10 @@ private struct SourceBlockEditor: View {
           showsScrollers: false,
           textInset: NSSize(width: 10, height: 10),
           focusOnAppear: true,
+          textPublishing: .deferred(milliseconds: 120),
           selection: $selectedRange,
-          isFocused: $isBodyFocused
+          isFocused: $isBodyFocused,
+          onLocalTextChange: liveBody.update
         )
         .frame(minHeight: editorHeight, maxHeight: editorHeight)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -1986,7 +1999,7 @@ private struct SourceBlockEditor: View {
 
         if runPlan != nil {
           Button {
-            Task { await store.runSourceBlock(block, rawText: source.formattedRawText) }
+            Task { await store.runSourceBlock(block, rawText: currentSource.formattedRawText) }
           } label: {
             Image(systemName: "play.fill")
           }
@@ -2046,6 +2059,9 @@ private struct SourceBlockEditor: View {
       autosaveTask?.cancel()
       autosaveTask = nil
     }
+    .onAppear {
+      liveBody.update(source.body)
+    }
   }
 
   private var languageBinding: Binding<String> {
@@ -2089,8 +2105,14 @@ private struct SourceBlockEditor: View {
     store.sourceBlockRunState(for: block)
   }
 
+  private var currentSource: OrgEditableSourceBlock {
+    var draft = source
+    draft.body = liveBody.current(fallback: source.body)
+    return draft
+  }
+
   private var sourceRunHelp: String {
-    if source.formattedRawText != block.rawText {
+    if currentSource.formattedRawText != block.rawText {
       return "Run current source draft"
     }
     return "Run source block"
@@ -2099,12 +2121,12 @@ private struct SourceBlockEditor: View {
   private func saveSource() {
     autosaveTask?.cancel()
     autosaveTask = nil
-    store.editableBlockText = source.formattedRawText
+    store.editableBlockText = currentSource.formattedRawText
     Task { await store.saveEditedBlock(block) }
   }
 
   private func scheduleSourceAutosave() {
-    let draft = source.formattedRawText
+    let draft = currentSource.formattedRawText
     store.updateEditingBlockDraft(block, draft: draft)
     autosaveTask?.cancel()
 
