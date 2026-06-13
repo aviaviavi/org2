@@ -929,7 +929,7 @@ public final class WorkspaceStore: ObservableObject {
     sourceBlockRuns[sourceBlockRunKey(for: block)]
   }
 
-  public func runSourceBlock(_ block: OrgEditableBlock) async {
+  public func runSourceBlock(_ block: OrgEditableBlock, rawText: String? = nil) async {
     guard let selectedEntrySource else {
       statusText = "No source loaded"
       return
@@ -940,7 +940,7 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     let source = OrgEditableSourceBlock(
-      rawText: block.rawText,
+      rawText: rawText ?? block.rawText,
       fallbackLanguage: fallbackLanguage,
       fallbackLines: fallbackLines
     )
