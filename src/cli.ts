@@ -9728,8 +9728,10 @@ Input:
   type: csv|parquet|json plus path: ./local-file or type: table plus
   source: named_org_table. Optional \`\`\`sql view=NAME blocks define reusable
   DuckDB views before the selected \`\`\`sql results=NAME block is run. SQL result
-  result names must be unique. SQL result blocks may include artifact=PATH to
-  record the intended materialized output; --out FILE records the actual path.
+  result names must be unique. Dataset names and SQL view names must not
+  conflict because they share DuckDB's relation namespace. SQL result blocks may
+  include artifact=PATH to record the intended materialized output; --out FILE
+  records the actual path.
   This is an explicit
   local/ad hoc data bridge; Org2 does not store credentials or call remote
   warehouses.`;

@@ -534,6 +534,9 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
     if (seenViewIds.has(view.id)) {
       diagnostics.push(diagnostic(`Duplicate SQL view block "${view.id}"`, { line: view.line, blockId: view.id }));
     }
+    if (seenDatasetIds.has(view.id)) {
+      diagnostics.push(diagnostic(`SQL view block "${view.id}" conflicts with a dataset block of the same name`, { line: view.line, blockId: view.id }));
+    }
     seenViewIds.add(view.id);
   }
 
