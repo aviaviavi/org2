@@ -524,6 +524,20 @@ final class Org2ModelsTests: XCTestCase {
     assertToken(.keyword, "end_src", in: raw, tokens: tokens)
   }
 
+  func testOrgSyntaxHighlighterKeepsLineOffsetsAcrossBlankLines() {
+    let raw = "Intro\n\n#+begin_quote\nSee [[id:abc][Alice]].\n#+end_quote\n"
+    let tokens = OrgSyntaxHighlighter.tokens(in: raw)
+    let nsRaw = raw as NSString
+
+    let beginRange = nsRaw.range(of: "begin_quote")
+    let linkRange = nsRaw.range(of: "[[id:abc][Alice]]")
+    let separatorRange = nsRaw.range(of: "][")
+
+    XCTAssertTrue(tokens.contains(OrgSyntaxHighlightToken(kind: .keyword, range: beginRange)))
+    XCTAssertTrue(tokens.contains(OrgSyntaxHighlightToken(kind: .link, range: linkRange)))
+    XCTAssertTrue(tokens.contains(OrgSyntaxHighlightToken(kind: .syntaxDelimiter, range: separatorRange)))
+  }
+
   func testOrgSyntaxHighlighterVisuallyRecedesEditableDelimiters() throws {
     let raw = "See [[id:abc][Alice]] and [Docs](https://example.com/docs) and `code`."
     let storage = NSTextStorage(string: raw)
