@@ -791,6 +791,7 @@ private struct KeywordBlockEditor: View {
   @State private var key: String
   @State private var value: String
   @State private var isHovered = false
+  @State private var autosaveTask: Task<Void, Never>?
   @FocusState private var valueFocused: Bool
 
   init(block: OrgEditableBlock, key: String, value: String) {
@@ -869,6 +870,16 @@ private struct KeywordBlockEditor: View {
         .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
     )
     .onHover { isHovered = $0 }
+    .onChange(of: key) {
+      scheduleKeywordAutosave()
+    }
+    .onChange(of: value) {
+      scheduleKeywordAutosave()
+    }
+    .onDisappear {
+      autosaveTask?.cancel()
+      autosaveTask = nil
+    }
     .onAppear {
       valueFocused = true
     }
@@ -880,8 +891,30 @@ private struct KeywordBlockEditor: View {
   }
 
   private func saveKeyword() {
+    autosaveTask?.cancel()
+    autosaveTask = nil
     store.editableBlockText = rawKeyword
     Task { await store.saveEditedBlock(block) }
+  }
+
+  private func scheduleKeywordAutosave() {
+    let draft = rawKeyword
+    store.updateEditingBlockDraft(block, draft: draft)
+    autosaveTask?.cancel()
+
+    guard draft != block.rawText else {
+      return
+    }
+
+    autosaveTask = Task { [block] in
+      do {
+        try await Task.sleep(nanoseconds: 600_000_000)
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      await store.autosaveEditedBlock(block, replacement: draft)
+    }
   }
 
   private static func rawKeywordParts(
