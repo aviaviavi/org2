@@ -420,6 +420,11 @@ final class Org2ModelsTests: XCTestCase {
       near: NSRange(location: (longLinkedText as NSString).length, length: 0),
       radius: 64
     ))
+    XCTAssertFalse(OrgInlineParser.hasInlineSyntaxCandidate(
+      longLinkedText,
+      near: NSRange(location: (longLinkedText as NSString).length + 10_000, length: 0),
+      radius: 64
+    ))
     let unicodeLinkedText = String(repeating: "🙂 ", count: 20) + "See [[id:abc][Alice]]."
     XCTAssertTrue(OrgInlineParser.hasInlineSyntaxCandidate(
       unicodeLinkedText,
