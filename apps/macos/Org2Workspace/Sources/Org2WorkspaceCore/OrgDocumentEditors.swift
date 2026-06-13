@@ -1630,6 +1630,7 @@ private struct TableBlockEditor: View {
   @EnvironmentObject private var store: WorkspaceStore
   let block: OrgEditableBlock
   @State private var table: OrgEditableTable
+  @State private var isHovered = false
   @FocusState private var focusedCell: TableCellFocus?
 
   init(block: OrgEditableBlock, table: OrgTableBlock) {
@@ -1638,12 +1639,21 @@ private struct TableBlockEditor: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      HStack(spacing: 8) {
-        Label("Table", systemImage: "tablecells")
-          .font(.caption.weight(.medium))
-          .foregroundStyle(.secondary)
+    ZStack(alignment: .topTrailing) {
+      ScrollView(.horizontal) {
+        VStack(alignment: .leading, spacing: 0) {
+          ForEach(Array(table.rows.enumerated()), id: \.offset) { rowIndex, row in
+            switch row {
+            case .cells:
+              editableRow(rowIndex: rowIndex)
+            case .separator:
+              separatorRow(rowIndex: rowIndex)
+            }
+          }
+        }
+      }
 
+      HStack(spacing: 4) {
         Button {
           table.addRow()
         } label: {
@@ -1667,8 +1677,6 @@ private struct TableBlockEditor: View {
         }
         .buttonStyle(.borderless)
         .help("Add separator")
-
-        Spacer(minLength: 0)
 
         if store.isSavingBlock {
           ProgressView()
@@ -1695,29 +1703,20 @@ private struct TableBlockEditor: View {
         .disabled(store.isSavingBlock)
         .help("Cancel")
       }
-      .padding(.horizontal, 10)
-      .padding(.vertical, 8)
-      .background(Color.secondary.opacity(0.07))
-
-      ScrollView(.horizontal) {
-        VStack(alignment: .leading, spacing: 0) {
-          ForEach(Array(table.rows.enumerated()), id: \.offset) { rowIndex, row in
-            switch row {
-            case .cells:
-              editableRow(rowIndex: rowIndex)
-            case .separator:
-              separatorRow(rowIndex: rowIndex)
-            }
-          }
-        }
-        .background(Color(nsColor: .textBackgroundColor))
-      }
+      .controlSize(.small)
+      .padding(.horizontal, 4)
+      .padding(.vertical, 2)
+      .background(.regularMaterial, in: Capsule())
+      .opacity(isHovered || focusedCell != nil || store.isSavingBlock ? 1 : 0.66)
     }
-    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .padding(.horizontal, 6)
+    .padding(.vertical, 4)
+    .background(Color.accentColor.opacity(isHovered ? 0.03 : 0.014), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     .overlay(
-      RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .stroke(Color.accentColor.opacity(0.24))
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .stroke(Color.accentColor.opacity(isHovered ? 0.16 : 0.09))
     )
+    .onHover { isHovered = $0 }
     .onAppear {
       focusedCell = firstEditableCellFocus
     }
@@ -1740,7 +1739,7 @@ private struct TableBlockEditor: View {
         )
           .padding(.horizontal, 8)
           .padding(.vertical, 6)
-          .frame(width: 150, alignment: .leading)
+          .frame(width: 132, alignment: .leading)
           .background(cellBackground(row: rowIndex, column: columnIndex))
           .overlay(alignment: .trailing) {
             Divider()
@@ -1760,7 +1759,7 @@ private struct TableBlockEditor: View {
     HStack(spacing: 0) {
       Rectangle()
         .fill(Color.secondary.opacity(0.28))
-        .frame(width: CGFloat(table.columnCount) * 150, height: 1)
+        .frame(width: CGFloat(table.columnCount) * 132, height: 1)
         .padding(.vertical, 12)
       rowMenu(rowIndex: rowIndex)
         .frame(width: 34)
