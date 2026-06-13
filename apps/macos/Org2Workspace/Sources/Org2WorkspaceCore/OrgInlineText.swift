@@ -59,7 +59,53 @@ struct OrgInlineText: View {
   }
 
   nonisolated static func usesAttributedRendering(_ raw: String) -> Bool {
-    OrgInlineParser.hasInlineSyntaxCandidate(raw)
+    OrgInlineSyntaxCandidateCache.containsSyntax(raw)
+  }
+}
+
+enum OrgInlineSyntaxCandidateCache {
+  final class CacheKey: NSObject {
+    let raw: String
+    private let cachedHash: Int
+
+    init(raw: String) {
+      self.raw = raw
+      self.cachedHash = raw.hashValue
+    }
+
+    override var hash: Int {
+      cachedHash
+    }
+
+    override func isEqual(_ object: Any?) -> Bool {
+      guard let other = object as? CacheKey else { return false }
+      return raw == other.raw
+    }
+  }
+
+  private final class CachedValue {
+    let containsSyntax: Bool
+
+    init(_ containsSyntax: Bool) {
+      self.containsSyntax = containsSyntax
+    }
+  }
+
+  nonisolated(unsafe) private static let cache: NSCache<CacheKey, CachedValue> = {
+    let cache = NSCache<CacheKey, CachedValue>()
+    cache.countLimit = 8_192
+    return cache
+  }()
+
+  nonisolated static func containsSyntax(_ raw: String) -> Bool {
+    let key = CacheKey(raw: raw)
+    if let cached = cache.object(forKey: key) {
+      return cached.containsSyntax
+    }
+
+    let containsSyntax = OrgInlineParser.hasInlineSyntaxCandidate(raw)
+    cache.setObject(CachedValue(containsSyntax), forKey: key)
+    return containsSyntax
   }
 }
 
