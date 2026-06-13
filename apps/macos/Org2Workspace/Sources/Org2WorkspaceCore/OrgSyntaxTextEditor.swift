@@ -755,6 +755,8 @@ enum OrgSyntaxHighlighter {
   }
 
   private static func collectInlineTokens(in text: String, into tokens: inout [OrgSyntaxHighlightToken]) {
+    guard textMayContainInlineSyntax(text) else { return }
+
     collectRegex(regex: orgLinkRegex, kind: .link, text: text, into: &tokens)
     collectRegex(regex: markdownLinkRegex, kind: .link, text: text, into: &tokens)
     collectRegex(regex: urlRegex, kind: .link, text: text, into: &tokens)
@@ -764,6 +766,27 @@ enum OrgSyntaxHighlighter {
     collectRegex(regex: emphasisRegex, kind: .emphasis, text: text, into: &tokens)
     collectRegex(regex: timestampRegex, kind: .timestamp, text: text, into: &tokens)
     collectInlineDelimiterTokens(in: text, into: &tokens)
+  }
+
+  static func textMayContainInlineSyntax(_ text: String) -> Bool {
+    guard !text.isEmpty else { return false }
+    var httpMatchIndex = 0
+    for byte in text.utf8 {
+      switch byte {
+      case 42, 43, 46, 47, 60, 61, 91, 95, 96, 126:
+        return true
+      default:
+        if byte == httpBytes[httpMatchIndex] {
+          httpMatchIndex += 1
+          if httpMatchIndex == httpBytes.count {
+            return true
+          }
+        } else {
+          httpMatchIndex = byte == httpBytes[0] ? 1 : 0
+        }
+      }
+    }
+    return false
   }
 
   private static func collectInlineDelimiterTokens(in text: String, into tokens: inout [OrgSyntaxHighlightToken]) {
