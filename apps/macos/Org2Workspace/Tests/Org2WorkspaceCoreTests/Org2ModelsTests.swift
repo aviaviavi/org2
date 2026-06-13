@@ -4877,6 +4877,57 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testRepeatBeginEditingActiveBlockPreservesDraft() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-repeat-edit-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("repeat-edit.org2")
+    try """
+    * TODO Parent
+    Body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 1,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+    store.beginEditingBlock(paragraph)
+    store.editableBlockText = "Body draft"
+    store.updateEditingBlockDraft(paragraph, draft: "Body draft")
+
+    store.beginEditingBlock(paragraph)
+
+    XCTAssertEqual(store.editingBlockID, paragraph.id)
+    XCTAssertEqual(store.selectedBlockID, paragraph.id)
+    XCTAssertEqual(store.editableBlockText, "Body draft")
+
+    await store.saveEditedBlock(paragraph)
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* TODO Parent\nBody draft"))
+  }
+
+  @MainActor
   func testInsertsBlockAfterSelectedBlockFromKeyboard() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-selected-block-insert-\(UUID().uuidString)", isDirectory: true)
