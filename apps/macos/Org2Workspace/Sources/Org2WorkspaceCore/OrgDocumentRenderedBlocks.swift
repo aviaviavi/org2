@@ -497,7 +497,6 @@ private struct RenderedQuoteView: View {
 }
 
 private struct RenderedSourceView: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let language: String?
   let lines: [String]
   let editableBlock: OrgEditableBlock?
@@ -515,19 +514,7 @@ private struct RenderedSourceView: View {
             .foregroundStyle(.secondary)
         }
         Spacer(minLength: 0)
-        if let state = runState {
-          SourceRunStatusLabel(state: state)
-        }
-        if let editableBlock {
-          Button {
-            Task { await store.runSourceBlock(editableBlock) }
-          } label: {
-            Label("Run", systemImage: "play.fill")
-          }
-          .controlSize(.small)
-          .disabled(isRunning)
-          .help(runHelp)
-        }
+        SourceRunHeaderAccessory(language: language, editableBlock: editableBlock)
       }
 
       ScrollView(.horizontal) {
@@ -548,11 +535,45 @@ private struct RenderedSourceView: View {
           .stroke(Color.secondary.opacity(0.16))
       )
 
-      if let state = runState, state.status != .running || state.message != nil {
-        SourceRunOutputView(state: state)
-      }
+      SourceRunOutputAccessory(editableBlock: editableBlock)
     }
     .padding(.vertical, 4)
+  }
+
+  private func color(for line: String) -> Color {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    if trimmed.hasPrefix("#") || trimmed.hasPrefix("//") || trimmed.hasPrefix("--") {
+      return .secondary
+    }
+    if trimmed.hasPrefix("import ") || trimmed.hasPrefix("let ") || trimmed.hasPrefix("const ") || trimmed.hasPrefix("func ") {
+      return .purple
+    }
+    return .primary
+  }
+}
+
+private struct SourceRunHeaderAccessory: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let language: String?
+  let editableBlock: OrgEditableBlock?
+
+  var body: some View {
+    if let editableBlock {
+      HStack(spacing: 8) {
+        if let state = runState {
+          SourceRunStatusLabel(state: state)
+        }
+
+        Button {
+          Task { await store.runSourceBlock(editableBlock) }
+        } label: {
+          Label("Run", systemImage: "play.fill")
+        }
+        .controlSize(.small)
+        .disabled(isRunning)
+        .help(runHelp)
+      }
+    }
   }
 
   private var runState: SourceBlockRunState? {
@@ -570,16 +591,21 @@ private struct RenderedSourceView: View {
     }
     return "Run source block"
   }
+}
 
-  private func color(for line: String) -> Color {
-    let trimmed = line.trimmingCharacters(in: .whitespaces)
-    if trimmed.hasPrefix("#") || trimmed.hasPrefix("//") || trimmed.hasPrefix("--") {
-      return .secondary
+private struct SourceRunOutputAccessory: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let editableBlock: OrgEditableBlock?
+
+  var body: some View {
+    if let state = runState, state.status != .running || state.message != nil {
+      SourceRunOutputView(state: state)
     }
-    if trimmed.hasPrefix("import ") || trimmed.hasPrefix("let ") || trimmed.hasPrefix("const ") || trimmed.hasPrefix("func ") {
-      return .purple
-    }
-    return .primary
+  }
+
+  private var runState: SourceBlockRunState? {
+    guard let editableBlock else { return nil }
+    return store.sourceBlockRunState(for: editableBlock)
   }
 }
 
