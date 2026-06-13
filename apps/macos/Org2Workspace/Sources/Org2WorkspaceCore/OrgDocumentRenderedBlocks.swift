@@ -46,9 +46,9 @@ struct RenderedBlockView: View, Equatable {
         inlineActions: inlineActions
       )
     case .planning(let planning):
-      RenderedPlanningView(planning: planning, editableBlock: editableBlock)
+      RenderedPlanningView(planning: planning, inlineActions: inlineActions)
     case .properties(let rows):
-      RenderedPropertiesView(rows: rows, rawText: rawText, editableBlock: editableBlock)
+      RenderedPropertiesView(rows: rows, rawText: rawText, inlineActions: inlineActions)
     case .quote(let lines):
       RenderedQuoteView(lines: lines, rawText: rawText)
     case .source(let language, let lines):
@@ -92,6 +92,8 @@ struct RenderedBlockInlineActions: Sendable {
   let toggleHeadingTodo: (@MainActor @Sendable () -> Void)?
   let setHeadingPriority: (@MainActor @Sendable (String?) -> Void)?
   let setHeadingTags: (@MainActor @Sendable ([String]) -> Void)?
+  let setPlanningBlock: (@MainActor @Sendable (_ kind: String, _ value: String) -> Void)?
+  let setPropertyValue: (@MainActor @Sendable (_ key: String, _ value: String) -> Void)?
   let toggleListItemCheckbox: (@MainActor @Sendable () -> Void)?
 
   static let readOnly = RenderedBlockInlineActions(
@@ -99,6 +101,8 @@ struct RenderedBlockInlineActions: Sendable {
     toggleHeadingTodo: nil,
     setHeadingPriority: nil,
     setHeadingTags: nil,
+    setPlanningBlock: nil,
+    setPropertyValue: nil,
     toggleListItemCheckbox: nil
   )
 }
@@ -482,9 +486,8 @@ private struct RenderedHeadingTagsButton: View {
 }
 
 private struct RenderedPlanningView: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let planning: OrgPlanningBlock
-  let editableBlock: OrgEditableBlock?
+  let inlineActions: RenderedBlockInlineActions
   @State private var isEditingValue = false
   @State private var draftValue = ""
 
@@ -575,7 +578,7 @@ private struct RenderedPlanningView: View {
   }
 
   private var isEditable: Bool {
-    editableBlock != nil && store.selectedEntrySource?.isEditable == true
+    inlineActions.setPlanningBlock != nil && inlineActions.isSourceEditable
   }
 
   private func beginEditingValue() {
@@ -589,9 +592,7 @@ private struct RenderedPlanningView: View {
   }
 
   private func setPlanning(kind: String, value: String) {
-    if let editableBlock {
-      Task { await store.setPlanningBlock(editableBlock, kind: kind, value: value) }
-    }
+    inlineActions.setPlanningBlock?(kind, value)
   }
 }
 
@@ -656,7 +657,7 @@ private struct OrgTimestampDisplay {
 private struct RenderedPropertiesView: View {
   let rows: [OrgPropertyRow]
   let rawText: String?
-  let editableBlock: OrgEditableBlock?
+  let inlineActions: RenderedBlockInlineActions
 
   var body: some View {
     if !rows.isEmpty {
@@ -672,7 +673,7 @@ private struct RenderedPropertiesView: View {
                 .font(.callout)
                 .textSelection(.enabled)
             } else {
-              RenderedPropertyValueButton(row: row, value: propertyValue(row), editableBlock: editableBlock)
+              RenderedPropertyValueButton(row: row, value: propertyValue(row), inlineActions: inlineActions)
             }
           }
         }
@@ -705,10 +706,9 @@ private struct RenderedPropertiesView: View {
 }
 
 private struct RenderedPropertyValueButton: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let row: OrgPropertyRow
   let value: String
-  let editableBlock: OrgEditableBlock?
+  let inlineActions: RenderedBlockInlineActions
   @State private var isPresented = false
   @State private var draftValue = ""
 
@@ -721,7 +721,7 @@ private struct RenderedPropertyValueButton: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
     .buttonStyle(.plain)
-    .disabled(editableBlock == nil || store.selectedEntrySource?.isEditable != true)
+    .disabled(inlineActions.setPropertyValue == nil || !inlineActions.isSourceEditable)
     .help("Edit \(row.key)")
     .popover(isPresented: $isPresented, arrowEdge: .bottom) {
       VStack(alignment: .leading, spacing: 8) {
@@ -750,9 +750,7 @@ private struct RenderedPropertyValueButton: View {
   }
 
   private func saveValue() {
-    if let editableBlock {
-      Task { await store.setPropertyValue(editableBlock, key: row.key, value: draftValue) }
-    }
+    inlineActions.setPropertyValue?(row.key, draftValue)
     isPresented = false
   }
 }
