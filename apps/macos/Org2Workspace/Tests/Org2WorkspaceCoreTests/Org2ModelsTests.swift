@@ -977,6 +977,38 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  func testSourceRunOutputPresentationParsesLineCharts() {
+    XCTAssertEqual(
+      SourceRunOutputPresentation.make(from: """
+      x,y
+      1,2
+      2,4
+      3,8
+      """),
+      .line(SourceRunLineChart(
+        xLabel: "x",
+        yLabel: "y",
+        points: [
+          SourceRunLinePoint(x: 1, y: 2),
+          SourceRunLinePoint(x: 2, y: 4),
+          SourceRunLinePoint(x: 3, y: 8)
+        ]
+      ))
+    )
+
+    XCTAssertEqual(
+      SourceRunOutputPresentation.make(from: #"[{"x":1,"y":2},{"x":2,"y":4}]"#),
+      .line(SourceRunLineChart(
+        xLabel: "x",
+        yLabel: "y",
+        points: [
+          SourceRunLinePoint(x: 1, y: 2),
+          SourceRunLinePoint(x: 2, y: 4)
+        ]
+      ))
+    )
+  }
+
   func testSourceRunOutputPresentationParsesPipeTable() {
     XCTAssertEqual(
       SourceRunOutputPresentation.make(from: """

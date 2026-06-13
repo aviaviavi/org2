@@ -668,6 +668,8 @@ struct SourceRunOutputView: View {
       SourceRunTableView(table: table)
     case .bars(let bars):
       SourceRunBarsView(bars: bars)
+    case .line(let chart):
+      SourceRunLineChartView(chart: chart)
     }
   }
 }
@@ -780,6 +782,144 @@ private struct SourceRunBarsView: View {
     guard availableWidth.isFinite, availableWidth > 0 else { return 0 }
     let fraction = min(1, abs(value) / maximumMagnitude)
     return max(value == 0 ? 0 : 2, availableWidth * CGFloat(fraction))
+  }
+
+  private func formattedValue(_ value: Double) -> String {
+    if value.rounded() == value {
+      return String(format: "%.0f", value)
+    }
+    return String(format: "%.2f", value)
+  }
+}
+
+private struct SourceRunLineChartView: View {
+  let chart: SourceRunLineChart
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 8) {
+        Text(yTitle)
+          .font(.caption.weight(.medium))
+        Text("\(chart.points.count) points")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        Spacer(minLength: 0)
+      }
+
+      GeometryReader { proxy in
+        ZStack {
+          RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(Color.secondary.opacity(0.045))
+
+          chartGrid
+
+          linePath(in: proxy.size)
+            .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+
+          ForEach(Array(displayPoints.enumerated()), id: \.offset) { _, point in
+            Circle()
+              .fill(Color.accentColor)
+              .frame(width: 5, height: 5)
+              .position(position(for: point, in: proxy.size))
+          }
+        }
+      }
+      .frame(height: 150)
+      .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+          .stroke(Color.secondary.opacity(0.14))
+      )
+
+      HStack {
+        Text(formattedValue(xBounds.min))
+        Spacer(minLength: 0)
+        Text(xTitle)
+          .foregroundStyle(.secondary)
+        Spacer(minLength: 0)
+        Text(formattedValue(xBounds.max))
+      }
+      .font(.caption2.monospacedDigit())
+      .foregroundStyle(.secondary)
+    }
+    .padding(10)
+    .background(Color.secondary.opacity(0.045), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+  }
+
+  private var displayPoints: [SourceRunLinePoint] {
+    chart.points.sorted {
+      if $0.x != $1.x {
+        return $0.x < $1.x
+      }
+      return $0.y < $1.y
+    }
+  }
+
+  private var xTitle: String {
+    chart.xLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "x" : chart.xLabel
+  }
+
+  private var yTitle: String {
+    chart.yLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "y" : chart.yLabel
+  }
+
+  private var xBounds: (min: Double, max: Double) {
+    bounds(displayPoints.map(\.x))
+  }
+
+  private var yBounds: (min: Double, max: Double) {
+    bounds(displayPoints.map(\.y))
+  }
+
+  private var chartGrid: some View {
+    VStack(spacing: 0) {
+      ForEach(0..<4, id: \.self) { index in
+        Divider()
+          .opacity(index == 0 ? 0 : 0.55)
+        if index < 3 {
+          Spacer(minLength: 0)
+        }
+      }
+    }
+    .padding(.vertical, 12)
+  }
+
+  private func linePath(in size: CGSize) -> Path {
+    var path = Path()
+    for (index, point) in displayPoints.enumerated() {
+      let cgPoint = position(for: point, in: size)
+      if index == 0 {
+        path.move(to: cgPoint)
+      } else {
+        path.addLine(to: cgPoint)
+      }
+    }
+    return path
+  }
+
+  private func position(for point: SourceRunLinePoint, in size: CGSize) -> CGPoint {
+    let inset: CGFloat = 14
+    let width = max(1, size.width - inset * 2)
+    let height = max(1, size.height - inset * 2)
+    let currentXBounds = xBounds
+    let currentYBounds = yBounds
+    let xSpan = currentXBounds.max - currentXBounds.min
+    let ySpan = currentYBounds.max - currentYBounds.min
+    let xFraction = xSpan == 0 ? 0.5 : (point.x - currentXBounds.min) / xSpan
+    let yFraction = ySpan == 0 ? 0.5 : (point.y - currentYBounds.min) / ySpan
+    return CGPoint(
+      x: inset + width * CGFloat(xFraction),
+      y: inset + height * CGFloat(1 - yFraction)
+    )
+  }
+
+  private func bounds(_ values: [Double]) -> (min: Double, max: Double) {
+    let minValue = values.min() ?? 0
+    let maxValue = values.max() ?? 1
+    if minValue == maxValue {
+      return (minValue - 1, maxValue + 1)
+    }
+    return (minValue, maxValue)
   }
 
   private func formattedValue(_ value: Double) -> String {

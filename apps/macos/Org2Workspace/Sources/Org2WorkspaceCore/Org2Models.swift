@@ -1702,6 +1702,7 @@ public enum SourceRunOutputPresentation: Equatable, Sendable {
   case text(String)
   case table(SourceRunTable)
   case bars([SourceRunBar])
+  case line(SourceRunLineChart)
 
   public static func make(from raw: String) -> SourceRunOutputPresentation {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1711,12 +1712,21 @@ public enum SourceRunOutputPresentation: Equatable, Sendable {
       return json
     }
     if let table = pipeTablePresentation(trimmed) {
+      if let line = lineChart(from: table) {
+        return .line(line)
+      }
       return .table(table)
     }
     if let table = separatedTablePresentation(trimmed, delimiter: "\t") {
+      if let line = lineChart(from: table) {
+        return .line(line)
+      }
       return .table(table)
     }
     if let table = separatedTablePresentation(trimmed, delimiter: ",") {
+      if let line = lineChart(from: table) {
+        return .line(line)
+      }
       return .table(table)
     }
     return .text(raw)
@@ -1741,13 +1751,17 @@ public enum SourceRunOutputPresentation: Equatable, Sendable {
 
     if let rows = object as? [[String: Any]], !rows.isEmpty {
       let columns = Array(Set(rows.flatMap(\.keys))).sorted()
+      let table = SourceRunTable(
+        columns: columns,
+        rows: rows.map { row in columns.map { stringValue(row[$0] ?? "") } }
+      )
+      if let line = lineChart(from: table) {
+        return .line(line)
+      }
       if let bars = rowBars(from: rows, columns: columns), !bars.isEmpty {
         return .bars(bars)
       }
-      return .table(SourceRunTable(
-        columns: columns,
-        rows: rows.map { row in columns.map { stringValue(row[$0] ?? "") } }
-      ))
+      return .table(table)
     }
 
     if let values = object as? [Any], !values.isEmpty {
@@ -1847,6 +1861,32 @@ public enum SourceRunOutputPresentation: Equatable, Sendable {
     return bars
   }
 
+  private static func lineChart(from table: SourceRunTable) -> SourceRunLineChart? {
+    guard table.columns.count == 2,
+          table.rows.count >= 2
+    else {
+      return nil
+    }
+
+    var points: [SourceRunLinePoint] = []
+    for row in table.rows {
+      guard row.count == 2,
+            let x = numericValue(row[0]),
+            let y = numericValue(row[1])
+      else {
+        return nil
+      }
+      points.append(SourceRunLinePoint(x: x, y: y))
+    }
+
+    guard !points.isEmpty else { return nil }
+    return SourceRunLineChart(
+      xLabel: table.columns[0],
+      yLabel: table.columns[1],
+      points: points
+    )
+  }
+
   private static func numericValue(_ value: Any) -> Double? {
     if let number = value as? NSNumber {
       if CFGetTypeID(number) == CFBooleanGetTypeID() {
@@ -1896,6 +1936,28 @@ public struct SourceRunBar: Equatable, Sendable {
   public init(label: String, value: Double) {
     self.label = label
     self.value = value
+  }
+}
+
+public struct SourceRunLineChart: Equatable, Sendable {
+  public let xLabel: String
+  public let yLabel: String
+  public let points: [SourceRunLinePoint]
+
+  public init(xLabel: String, yLabel: String, points: [SourceRunLinePoint]) {
+    self.xLabel = xLabel
+    self.yLabel = yLabel
+    self.points = points
+  }
+}
+
+public struct SourceRunLinePoint: Equatable, Sendable {
+  public let x: Double
+  public let y: Double
+
+  public init(x: Double, y: Double) {
+    self.x = x
+    self.y = y
   }
 }
 
