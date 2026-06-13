@@ -1142,6 +1142,34 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  @MainActor
+  func testSelectedRenderedBlocksSignatureTracksAssignmentsAndMutations() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let initialSignature = store.selectedRenderedBlocksSignature
+    let firstBlock = OrgEditableBlock(
+      id: "first",
+      startLine: 1,
+      endLineExclusive: 2,
+      rawText: "First",
+      rendered: .paragraph("First")
+    )
+    let secondBlock = OrgEditableBlock(
+      id: "second",
+      startLine: 2,
+      endLineExclusive: 3,
+      rawText: "Second",
+      rendered: .paragraph("Second")
+    )
+
+    store.selectedRenderedBlocks = [firstBlock]
+    let assignedSignature = store.selectedRenderedBlocksSignature
+
+    store.selectedRenderedBlocks.append(secondBlock)
+
+    XCTAssertNotEqual(initialSignature, assignedSignature)
+    XCTAssertNotEqual(assignedSignature, store.selectedRenderedBlocksSignature)
+  }
+
   func testEditableSourceBlockFormatsAndSwitchesKind() {
     var source = OrgEditableSourceBlock(rawText: """
     #+BEGIN_SRC swift :results output

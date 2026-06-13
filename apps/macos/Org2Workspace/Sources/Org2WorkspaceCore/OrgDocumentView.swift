@@ -13,7 +13,11 @@ struct OrgRenderedEntryView: View {
     let corpusRoot = store.corpusRoot
     let isSourceEditable = source?.isEditable == true
     let selectedBlockID = store.selectedBlockID
-    let moveAvailabilitySignature = OrgRenderedEntryMoveAvailability.signature(for: blocks, source: source)
+    let blocksSignature = store.selectedRenderedBlocksSignature
+    let moveAvailabilitySignature = OrgRenderedEntryMoveAvailability.signature(
+      blocksSignature: blocksSignature,
+      source: source
+    )
     let moveAvailabilityValues = moveAvailability.signature == moveAvailabilitySignature ? moveAvailability.values : [:]
     let visibleLimit = Self.visibleLimit(
       requestedLimit: renderedBlockLimit,
@@ -100,7 +104,11 @@ struct OrgRenderedEntryView: View {
 
   private func refreshMoveAvailabilityIfNeeded(signature: String, source: EntrySource?) {
     guard moveAvailability.signature != signature else { return }
-    moveAvailability = OrgRenderedEntryMoveAvailability.make(for: blocks, source: source)
+    moveAvailability = OrgRenderedEntryMoveAvailability.make(
+      for: blocks,
+      source: source,
+      precomputedSignature: signature
+    )
   }
 
   private func expandRenderedBlocks() {
@@ -145,8 +153,12 @@ struct OrgRenderedEntryMoveAvailability: Sendable {
 
   static let empty = OrgRenderedEntryMoveAvailability(signature: "empty", values: [:])
 
-  static func make(for blocks: [OrgEditableBlock], source: EntrySource?) -> OrgRenderedEntryMoveAvailability {
-    let signature = signature(for: blocks, source: source)
+  static func make(
+    for blocks: [OrgEditableBlock],
+    source: EntrySource?,
+    precomputedSignature: String? = nil
+  ) -> OrgRenderedEntryMoveAvailability {
+    let signature = precomputedSignature ?? signature(for: blocks, source: source)
     guard let source, source.isEditable else {
       return OrgRenderedEntryMoveAvailability(signature: signature, values: [:])
     }
@@ -174,14 +186,20 @@ struct OrgRenderedEntryMoveAvailability: Sendable {
   }
 
   static func signature(for blocks: [OrgEditableBlock], source: EntrySource?) -> String {
+    signature(blocksSignature: Self.blocksSignature(for: blocks), source: source)
+  }
+
+  static func signature(blocksSignature: String, source: EntrySource?) -> String {
     guard let source, source.isEditable else {
       return "read-only:\(source?.id ?? "none")"
     }
+    return "editable:\(source.id):\(source.isSubtree):\(source.isEditable):\(blocksSignature)"
+  }
+
+  private static func blocksSignature(for blocks: [OrgEditableBlock]) -> String {
+    guard !blocks.isEmpty else { return "empty" }
 
     var hasher = Hasher()
-    hasher.combine(source.id)
-    hasher.combine(source.isSubtree)
-    hasher.combine(source.isEditable)
     hasher.combine(blocks.count)
     for block in blocks {
       hasher.combine(block.id)
@@ -189,7 +207,7 @@ struct OrgRenderedEntryMoveAvailability: Sendable {
       hasher.combine(block.endLineExclusive)
       hasher.combine(block.isEditable)
     }
-    return "editable:\(hasher.finalize())"
+    return "\(blocks.count):\(hasher.finalize())"
   }
 }
 
