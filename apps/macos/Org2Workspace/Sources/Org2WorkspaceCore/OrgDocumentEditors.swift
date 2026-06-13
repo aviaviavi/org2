@@ -37,6 +37,33 @@ enum InlineEditorSizing {
   }
 }
 
+enum ParagraphSlashCommand {
+  static let leadingWhitespaceScanLimit = 128
+
+  static func query(in text: String) -> String? {
+    var index = text.startIndex
+    var scannedLeadingWhitespace = 0
+
+    while index < text.endIndex {
+      let character = text[index]
+      guard character.isWhitespace else { break }
+      scannedLeadingWhitespace += 1
+      guard scannedLeadingWhitespace <= leadingWhitespaceScanLimit else {
+        return nil
+      }
+      index = text.index(after: index)
+    }
+
+    guard index < text.endIndex, text[index] == "/" else {
+      return nil
+    }
+
+    let commandStart = text.index(after: index)
+    let commandEnd = text[commandStart...].firstIndex { $0.isWhitespace } ?? text.endIndex
+    return String(text[commandStart..<commandEnd])
+  }
+}
+
 struct InlineBlockEditorView: View {
   let block: OrgEditableBlock
 
@@ -1245,7 +1272,8 @@ private struct ParagraphBlockEditor: View {
   }
 
   private var paragraphEditorContent: some View {
-    ZStack(alignment: .topTrailing) {
+    let slashKinds = slashCommandKinds
+    return ZStack(alignment: .topTrailing) {
       VStack(alignment: .leading, spacing: 5) {
         OrgSyntaxTextEditor(
           text: $draftText,
@@ -1267,13 +1295,13 @@ private struct ParagraphBlockEditor: View {
           ParagraphFocusedInlineEditor(text: $draftText, selectedRange: $selectedRange)
         }
 
-        if !slashCommandKinds.isEmpty {
+        if !slashKinds.isEmpty {
           HStack(spacing: 8) {
             Text("Turn into")
               .font(.caption.weight(.medium))
               .foregroundStyle(.secondary)
 
-            ForEach(slashCommandKinds) { kind in
+            ForEach(slashKinds) { kind in
               Button {
                 convertParagraph(to: kind)
               } label: {
@@ -1386,13 +1414,7 @@ private struct ParagraphBlockEditor: View {
   }
 
   private var slashCommandQuery: String? {
-    let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard trimmed.hasPrefix("/") else { return nil }
-
-    let command = trimmed
-      .dropFirst()
-      .prefix { !$0.isWhitespace }
-    return String(command)
+    ParagraphSlashCommand.query(in: draftText)
   }
 
   private func submitParagraph(_ context: OrgSyntaxTextEditorSubmitContext) -> Bool {
