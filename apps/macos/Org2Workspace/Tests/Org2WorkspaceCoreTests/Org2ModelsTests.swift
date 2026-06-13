@@ -799,6 +799,23 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSyntaxEditorKnownTextCacheUsesStorageLength() {
+    let editor = OrgSyntaxTextEditor(text: .constant("Initial text"))
+    let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
+
+    coordinator.recordKnownText("Initial text", utf16Length: 12)
+
+    XCTAssertEqual(coordinator.knownText(matchingUTF16Length: 12), "Initial text")
+    XCTAssertNil(coordinator.knownText(matchingUTF16Length: 13))
+    XCTAssertNil(coordinator.knownText(matchingUTF16Length: nil))
+
+    coordinator.recordKnownText("Updated 😀", utf16Length: 10)
+
+    XCTAssertEqual(coordinator.knownText(matchingUTF16Length: 10), "Updated 😀")
+    XCTAssertNil(coordinator.knownText(matchingUTF16Length: 9))
+  }
+
+  @MainActor
   func testSyntaxEditorDoesNotApplyStalePlainCaretSelectionWhileFocused() {
     XCTAssertEqual(
       OrgSyntaxTextEditor.clampedRange(NSRange(location: 10, length: 5), utf16Length: 12),

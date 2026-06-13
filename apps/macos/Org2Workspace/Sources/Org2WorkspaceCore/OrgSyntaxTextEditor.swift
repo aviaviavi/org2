@@ -99,6 +99,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     textView.autoresizingMask = [.width]
 
     scrollView.documentView = textView
+    context.coordinator.recordKnownText(text, utf16Length: textView.textStorage?.length)
     context.coordinator.applyHighlighting(to: textView)
     if focusOnAppear {
       DispatchQueue.main.async {
@@ -112,7 +113,12 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     context.coordinator.parent = self
     guard let textView = scrollView.documentView as? NSTextView else { return }
 
-    var editorText = textView.string
+    var currentUTF16Length = textView.textStorage?.length
+    let cachedEditorText = context.coordinator.knownText(matchingUTF16Length: currentUTF16Length)
+    var editorText = cachedEditorText ?? textView.string
+    if cachedEditorText == nil {
+      context.coordinator.recordKnownText(editorText, utf16Length: currentUTF16Length)
+    }
     var appliedProgrammaticText = false
     if Self.shouldApplyProgrammaticText(
       editorText: editorText,
@@ -124,6 +130,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       context.coordinator.isApplyingProgrammaticChange = true
       textView.string = text
       context.coordinator.isApplyingProgrammaticChange = false
+      currentUTF16Length = textView.textStorage?.length
+      context.coordinator.recordKnownText(text, utf16Length: currentUTF16Length)
       context.coordinator.invalidateHighlighting()
       editorText = text
       appliedProgrammaticText = true
@@ -132,7 +140,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     if let selection {
       let requestedSelection = Self.clampedRange(
         selection.wrappedValue,
-        utf16Length: textView.textStorage?.length ?? OrgSyntaxHighlighter.utf16Length(of: editorText)
+        utf16Length: currentUTF16Length ?? OrgSyntaxHighlighter.utf16Length(of: editorText)
       )
       let currentSelection = textView.selectedRange()
       if currentSelection != requestedSelection,
@@ -184,6 +192,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     private var deferredTextPublishText: String?
     private var deferredTextPublishWorkItem: DispatchWorkItem?
     private var deferredTextPublishGeneration = 0
+    private var lastKnownText: String?
+    private var lastKnownTextUTF16Length: Int?
 
     init(parent: OrgSyntaxTextEditor) {
       self.parent = parent
@@ -193,6 +203,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       guard let textView = notification.object as? NSTextView else { return }
       let currentText = textView.string
       let currentUTF16Length = textView.textStorage?.length ?? (currentText as NSString).length
+      recordKnownText(currentText, utf16Length: currentUTF16Length)
       parent.onLocalTextChange?(currentText)
       if !isApplyingProgrammaticChange {
         publishTextChange(currentText)
@@ -266,6 +277,21 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       lastHighlightedText = nil
       lastHighlightedMonospaced = nil
       hasHighlightedText = false
+    }
+
+    func recordKnownText(_ text: String, utf16Length providedUTF16Length: Int? = nil) {
+      lastKnownText = text
+      lastKnownTextUTF16Length = providedUTF16Length ?? (text as NSString).length
+    }
+
+    func knownText(matchingUTF16Length utf16Length: Int?) -> String? {
+      guard let utf16Length,
+            let lastKnownText,
+            lastKnownTextUTF16Length == utf16Length
+      else {
+        return nil
+      }
+      return lastKnownText
     }
 
     func markUserTextChangedForHighlighting(
