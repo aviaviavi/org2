@@ -900,17 +900,11 @@ private struct DetailView: View {
       if let location = store.selectedLocation {
         DetailHeader(location: location)
         Divider()
-        if store.isEditingEntry {
-          EntryEditorView()
-          Divider()
-          BacklinksView()
-        } else {
-          ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-              EntryBodyView(location: location)
-              Divider()
-              BacklinksView()
-            }
+        ScrollView {
+          VStack(alignment: .leading, spacing: 0) {
+            EntryBodyView(location: location)
+            Divider()
+            BacklinksView()
           }
         }
       } else {
@@ -919,52 +913,6 @@ private struct DetailView: View {
         }
       }
     }
-  }
-}
-
-private struct EntryEditorView: View {
-  @EnvironmentObject private var store: WorkspaceStore
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      if let source = store.selectedEntrySource {
-        Text(store.relativePath(source.file) + ":\(source.displayRange)")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .textSelection(.enabled)
-      }
-
-      OrgSyntaxTextEditor(text: $store.editableEntryText, monospaced: true)
-        .frame(minHeight: 360)
-        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .overlay(
-          RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .stroke(Color.secondary.opacity(0.25))
-        )
-
-      HStack {
-        Button {
-          Task { await store.saveActiveEdit() }
-        } label: {
-          Label("Save", systemImage: "checkmark")
-        }
-        .keyboardShortcut("s", modifiers: [.command])
-        .disabled(store.isSavingEntry)
-
-        Button {
-          store.cancelEditingSelectedEntry()
-        } label: {
-          Label("Cancel", systemImage: "xmark")
-        }
-        .keyboardShortcut(.cancelAction)
-
-        if store.isSavingEntry {
-          ProgressView()
-            .controlSize(.small)
-        }
-      }
-    }
-    .padding(16)
   }
 }
 
