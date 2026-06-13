@@ -9726,7 +9726,7 @@ Flags:
   --duckdb PATH       DuckDB CLI path (default: duckdb)
   --out FILE          Write materialized org table or JSON envelope to FILE
   --format FORMAT     org (default) or json diagnostics envelope
-  --include-script    Include generated DuckDB SQL setup in JSON output
+  --include-script    Include generated DuckDB SQL setup in JSON/inspect output
   --inspect           Parse query-data blocks as JSON without running DuckDB
 
 Input:
