@@ -1710,6 +1710,7 @@ public struct OrgMediaAttachment: Equatable, Sendable {
     sourceFile: String? = nil,
     corpusRoot: URL? = nil
   ) -> OrgMediaAttachment? {
+    guard mayContainStandaloneMedia(raw) else { return nil }
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, !trimmed.contains("\n") else { return nil }
     guard let link = standaloneLink(trimmed) else { return nil }
@@ -1722,6 +1723,29 @@ public struct OrgMediaAttachment: Equatable, Sendable {
       target: link.target,
       resolvedPath: resolvePath(link.target, sourceFile: sourceFile, corpusRoot: corpusRoot)
     )
+  }
+
+  public static func mayContainStandaloneMedia(_ raw: String) -> Bool {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty, !trimmed.contains("\n") else { return false }
+    let lowercased = trimmed.lowercased()
+    guard !lowercased.hasPrefix("http://"), !lowercased.hasPrefix("https://") else { return false }
+    guard let dot = trimmed.lastIndex(of: ".") else { return false }
+
+    let extensionStart = trimmed.index(after: dot)
+    guard extensionStart < trimmed.endIndex else { return false }
+    let extensionEnd = trimmed[extensionStart...].firstIndex { character in
+      character == "]" || character == ")" || character == "#" || character == "?" || character.isWhitespace
+    } ?? trimmed.endIndex
+    let ext = String(trimmed[extensionStart..<extensionEnd]).lowercased()
+    guard imageExtensions.contains(ext) || videoExtensions.contains(ext) else {
+      return false
+    }
+
+    if trimmed.hasPrefix("[[") || trimmed.hasPrefix("[") {
+      return true
+    }
+    return trimmed.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
   }
 
   private static func standaloneLink(_ raw: String) -> (label: String, target: String)? {

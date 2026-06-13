@@ -2231,6 +2231,13 @@ final class Org2ModelsTests: XCTestCase {
     try Data().write(to: video)
     try Data().write(to: note)
 
+    XCTAssertFalse(OrgMediaAttachment.mayContainStandaloneMedia("Plain paragraph with no media link."))
+    XCTAssertFalse(OrgMediaAttachment.mayContainStandaloneMedia("See [[file:../assets/diagram.png][System Diagram]]"))
+    XCTAssertFalse(OrgMediaAttachment.mayContainStandaloneMedia("https://example.com/image.png"))
+    XCTAssertTrue(OrgMediaAttachment.mayContainStandaloneMedia("[[file:../assets/diagram.png][System Diagram]]"))
+    XCTAssertTrue(OrgMediaAttachment.mayContainStandaloneMedia("[Clip](clip.mov)"))
+    XCTAssertTrue(OrgMediaAttachment.mayContainStandaloneMedia("assets/diagram.png"))
+
     let bracket = try XCTUnwrap(OrgMediaAttachment.standalone(
       raw: "[[file:../assets/diagram.png][System Diagram]]",
       sourceFile: note.path,
