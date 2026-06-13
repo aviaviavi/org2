@@ -409,6 +409,7 @@ private struct PlanningBlockEditor: View {
   @State private var kind: String
   @State private var value: String
   @State private var isHovered = false
+  @State private var autosaveTask: Task<Void, Never>?
   @FocusState private var valueFocused: Bool
 
   init(block: OrgEditableBlock, planning: OrgPlanningBlock) {
@@ -489,6 +490,16 @@ private struct PlanningBlockEditor: View {
         .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
     )
     .onHover { isHovered = $0 }
+    .onChange(of: kind) {
+      schedulePlanningAutosave()
+    }
+    .onChange(of: value) {
+      schedulePlanningAutosave()
+    }
+    .onDisappear {
+      autosaveTask?.cancel()
+      autosaveTask = nil
+    }
     .onAppear {
       valueFocused = true
     }
@@ -499,8 +510,30 @@ private struct PlanningBlockEditor: View {
   }
 
   private func savePlanning() {
+    autosaveTask?.cancel()
+    autosaveTask = nil
     store.editableBlockText = rawPlanning
     Task { await store.saveEditedBlock(block) }
+  }
+
+  private func schedulePlanningAutosave() {
+    let draft = rawPlanning
+    store.updateEditingBlockDraft(block, draft: draft)
+    autosaveTask?.cancel()
+
+    guard draft != block.rawText else {
+      return
+    }
+
+    autosaveTask = Task { [block] in
+      do {
+        try await Task.sleep(nanoseconds: 600_000_000)
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      await store.autosaveEditedBlock(block, replacement: draft)
+    }
   }
 
   private static let planningKinds = ["SCHEDULED", "DEADLINE", "CLOSED"]

@@ -1658,6 +1658,65 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testAutosavesPlanningBlockWithoutLeavingInlineEditMode() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-planning-autosave-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("planning-autosave.org2")
+    try """
+    #+TITLE: Planning Autosave Test
+
+    * TODO Parent
+    SCHEDULED: <2026-06-12 Fri>
+    Body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let planning = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .planning = $0.rendered { return true }
+      return false
+    })
+    store.beginEditingBlock(planning)
+    let replacement = "DEADLINE: <2026-06-15 Mon>"
+    store.updateEditingBlockDraft(planning, draft: replacement)
+    await store.autosaveEditedBlock(planning, replacement: replacement)
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("DEADLINE: <2026-06-15 Mon>\nBody"))
+    XCTAssertFalse(store.isEditingEntry)
+    XCTAssertEqual(store.selectedBlock?.rawText, replacement)
+    XCTAssertEqual(store.editableBlockText, replacement)
+    XCTAssertNotNil(store.editingBlockID)
+    guard case .planning(let renderedPlanning) = store.selectedBlock?.rendered else {
+      return XCTFail("Expected planning block")
+    }
+    XCTAssertEqual(renderedPlanning.kind, "DEADLINE")
+    XCTAssertEqual(renderedPlanning.value, "<2026-06-15 Mon>")
+  }
+
+  @MainActor
   func testSplitsEditingParagraphAtCaretIntoNewEditableBlock() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-block-split-\(UUID().uuidString)", isDirectory: true)
