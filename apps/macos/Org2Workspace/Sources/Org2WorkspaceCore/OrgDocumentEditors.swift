@@ -52,6 +52,16 @@ enum InlineEditorSizing {
 enum ParagraphSlashCommand {
   static let leadingWhitespaceScanLimit = 128
 
+  struct Match: Equatable {
+    let query: String?
+    let kinds: [OrgInsertBlockKind]
+
+    var primaryKind: OrgInsertBlockKind? {
+      guard let query, !query.isEmpty else { return nil }
+      return kinds.first
+    }
+  }
+
   static func query(in text: String) -> String? {
     var index = text.startIndex
     var scannedLeadingWhitespace = 0
@@ -73,6 +83,18 @@ enum ParagraphSlashCommand {
     let commandStart = text.index(after: index)
     let commandEnd = text[commandStart...].firstIndex { $0.isWhitespace } ?? text.endIndex
     return String(text[commandStart..<commandEnd])
+  }
+
+  static func match(in text: String) -> Match {
+    guard let query = query(in: text) else {
+      return Match(query: nil, kinds: [])
+    }
+    let kinds = OrgInsertBlockKind.allCases.filter { kind in
+      query.isEmpty
+        || kind.slashCommand.localizedCaseInsensitiveContains(query)
+        || kind.title.localizedCaseInsensitiveContains(query)
+    }
+    return Match(query: query, kinds: kinds)
   }
 }
 
@@ -1324,7 +1346,7 @@ private struct ParagraphBlockEditor: View {
   }
 
   private var paragraphEditorContent: some View {
-    let slashKinds = slashCommandKinds
+    let slashCommandMatch = ParagraphSlashCommand.match(in: draftText)
     let focusedInlineToken = ParagraphFocusedInlineEditor.focusedToken(
       text: draftText,
       selectedRange: selectedRange,
@@ -1359,13 +1381,13 @@ private struct ParagraphBlockEditor: View {
           )
         }
 
-        if !slashKinds.isEmpty {
+        if !slashCommandMatch.kinds.isEmpty {
           HStack(spacing: 8) {
             Text("Turn into")
               .font(.caption.weight(.medium))
               .foregroundStyle(.secondary)
 
-            ForEach(slashKinds) { kind in
+            ForEach(slashCommandMatch.kinds) { kind in
               Button {
                 convertParagraph(to: kind)
               } label: {
@@ -1468,28 +1490,6 @@ private struct ParagraphBlockEditor: View {
     isHovered || selectedRange.length > 0 || showsInlineDetails || store.isSavingBlock
   }
 
-  private var slashCommandKinds: [OrgInsertBlockKind] {
-    guard let query = slashCommandQuery else { return [] }
-    return OrgInsertBlockKind.allCases.filter { kind in
-      query.isEmpty
-        || kind.slashCommand.localizedCaseInsensitiveContains(query)
-        || kind.title.localizedCaseInsensitiveContains(query)
-    }
-  }
-
-  private var primarySlashCommandKind: OrgInsertBlockKind? {
-    guard let query = slashCommandQuery,
-          !query.isEmpty
-    else {
-      return nil
-    }
-    return slashCommandKinds.first
-  }
-
-  private var slashCommandQuery: String? {
-    ParagraphSlashCommand.query(in: draftText)
-  }
-
   private var currentParagraphText: String {
     liveText.current(fallback: draftText)
   }
@@ -1498,7 +1498,7 @@ private struct ParagraphBlockEditor: View {
     autosaveTask?.cancel()
     autosaveTask = nil
     draftText = context.text
-    if let kind = primarySlashCommandKind {
+    if let kind = ParagraphSlashCommand.match(in: context.text).primaryKind {
       convertParagraph(to: kind)
       return true
     }
@@ -1527,7 +1527,7 @@ private struct ParagraphBlockEditor: View {
     store.updateEditingBlockDraft(block, draft: draft)
     autosaveTask?.cancel()
 
-    guard slashCommandQuery == nil,
+    guard ParagraphSlashCommand.match(in: draft).query == nil,
           draft != block.rawText
     else {
       return

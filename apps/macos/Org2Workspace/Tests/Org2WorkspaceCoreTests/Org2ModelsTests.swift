@@ -1016,6 +1016,21 @@ final class Org2ModelsTests: XCTestCase {
       repeating: " ",
       count: ParagraphSlashCommand.leadingWhitespaceScanLimit + 1
     ) + "/todo"))
+
+    let todoMatch = ParagraphSlashCommand.match(in: "/todo Call Bob")
+    XCTAssertEqual(todoMatch.query, "todo")
+    XCTAssertEqual(todoMatch.primaryKind, .todo)
+    XCTAssertEqual(todoMatch.kinds.first, .todo)
+
+    let emptyMatch = ParagraphSlashCommand.match(in: "/")
+    XCTAssertEqual(emptyMatch.query, "")
+    XCTAssertEqual(emptyMatch.kinds, OrgInsertBlockKind.allCases)
+    XCTAssertNil(emptyMatch.primaryKind)
+
+    let noMatch = ParagraphSlashCommand.match(in: "Body /todo")
+    XCTAssertNil(noMatch.query)
+    XCTAssertEqual(noMatch.kinds, [])
+    XCTAssertNil(noMatch.primaryKind)
   }
 
   func testParagraphEditorTextPublishingPolicyKeepsRichStatesResponsive() {
