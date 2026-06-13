@@ -11,6 +11,7 @@ const note = path.join(tmp, "report.org2");
 const orgStyleNote = path.join(tmp, "org-style-report.org2");
 const tableNote = path.join(tmp, "table-report.org2");
 const urlNote = path.join(tmp, "url-report.org2");
+const unsafeCredentialNote = path.join(tmp, "unsafe-credential-report.org2");
 const viewNote = path.join(tmp, "view-report.org2");
 const orgViewNote = path.join(tmp, "org-view-report.org2");
 const duplicateDatasetNote = path.join(tmp, "duplicate-dataset-report.org2");
@@ -74,6 +75,8 @@ fs.writeFileSync(urlNote, `* Remote package fetch report
 type: csv
 url: https://data.example.test/package-fetches.csv
 engine: duckdb
+credential: env:SCARF_API_TOKEN
+config: profile:product-analytics
 \`\`\`
 
 \`\`\`sql results=remote_fetches_by_state
@@ -81,6 +84,22 @@ SELECT state, sum(fetches) AS fetches
 FROM remote_fetches
 GROUP BY state
 ORDER BY fetches DESC
+\`\`\`
+`, "utf8");
+
+fs.writeFileSync(unsafeCredentialNote, `* Remote package fetch report with unsafe auth metadata
+
+\`\`\`dataset remote_fetches
+type: csv
+url: https://data.example.test/package-fetches.csv
+engine: duckdb
+auth: Bearer inline-secret-token
+\`\`\`
+
+\`\`\`sql results=remote_fetches_by_state
+SELECT state, sum(fetches) AS fetches
+FROM remote_fetches
+GROUP BY state
 \`\`\`
 `, "utf8");
 
@@ -382,9 +401,18 @@ const urlJson = JSON.parse(cli(["query-data", "--file", urlNote, "--results", "r
 assert.equal(urlJson.ok, true);
 assert.equal(urlJson.datasets[0].id, "remote_fetches");
 assert.equal(urlJson.datasets[0].url, "https://data.example.test/package-fetches.csv");
+assert.equal(urlJson.datasets[0].credentialRef, "env:SCARF_API_TOKEN");
+assert.equal(urlJson.datasets[0].configRef, "profile:product-analytics");
 assert.equal(urlJson.datasets[0].path, undefined);
 assert.match(urlJson.duckdbScript, /read_csv_auto\('https:\/\/data\.example\.test\/package-fetches\.csv'\)/);
+assert.doesNotMatch(urlJson.duckdbScript, /SCARF_API_TOKEN|product-analytics/);
 assert.equal(urlJson.rows[0].state, "CA");
+
+const unsafeCredential = spawnSync("node", ["dist/cli.js", "query-data", "--file", unsafeCredentialNote, "--inspect", "--format", "json"], { cwd: repo, encoding: "utf8" });
+assert.notEqual(unsafeCredential.status, 0);
+const unsafeCredentialJson = JSON.parse(unsafeCredential.stdout);
+assert.equal(unsafeCredentialJson.ok, false);
+assert.match(unsafeCredentialJson.diagnostics[0].message, /credential\/auth metadata must be a reference/);
 
 const viewJson = JSON.parse(cli(["query-data", "--file", viewNote, "--results", "fetches_by_state", "--duckdb", fakeDuckdb, "--format", "json", "--include-script"]));
 assert.equal(viewJson.ok, true);
