@@ -1107,15 +1107,6 @@ private struct EntryBodyView: View {
             .foregroundStyle(.secondary)
           }
         } else {
-          if store.isLoadingEntrySource || store.isRenderingEntrySource {
-            HStack(spacing: 8) {
-              ProgressView()
-                .controlSize(.small)
-              Text(store.isLoadingEntrySource ? "Updating source" : "Updating preview")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-          }
           OrgRenderedEntryView(blocks: store.selectedRenderedBlocks)
         }
       } else {
