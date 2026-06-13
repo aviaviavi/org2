@@ -3,6 +3,8 @@ import SwiftUI
 struct OrgRenderedEntryView: View {
   @EnvironmentObject private var store: WorkspaceStore
   let blocks: [OrgEditableBlock]
+  @State private var renderedBlockLimit = Self.initialRenderedBlockLimit
+  @State private var blockSignature = ""
 
   var body: some View {
     let source = store.selectedEntrySource
@@ -11,9 +13,15 @@ struct OrgRenderedEntryView: View {
     let isSourceEditable = source?.isEditable == true
     let selectedBlockID = store.selectedBlockID
     let moveAvailability = Self.moveAvailability(for: blocks, source: source)
+    let visibleLimit = Self.visibleLimit(
+      requestedLimit: renderedBlockLimit,
+      blocks: blocks,
+      selectedBlockID: selectedBlockID
+    )
+    let visibleBlocks = Array(blocks.prefix(visibleLimit))
 
     LazyVStack(alignment: .leading, spacing: 8) {
-      ForEach(blocks) { block in
+      ForEach(visibleBlocks) { block in
         if store.editingBlockID == block.id {
           InlineBlockEditorView(block: block)
         } else {
@@ -36,8 +44,22 @@ struct OrgRenderedEntryView: View {
           }
         }
       }
+
+      if visibleLimit < blocks.count {
+        ProgressiveRenderFooter(
+          visibleCount: visibleLimit,
+          totalCount: blocks.count,
+          loadMore: expandRenderedBlocks
+        )
+      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+    .onAppear {
+      resetRenderedBlockLimitIfNeeded()
+    }
+    .onChange(of: Self.blockSignature(for: blocks)) {
+      resetRenderedBlockLimitIfNeeded()
+    }
   }
 
   private func actions(for block: OrgEditableBlock) -> RenderedBlockActions {
@@ -88,6 +110,74 @@ struct OrgRenderedEntryView: View {
       )
     }
     return availability
+  }
+
+  private func resetRenderedBlockLimitIfNeeded() {
+    let signature = Self.blockSignature(for: blocks)
+    guard signature != blockSignature else { return }
+    blockSignature = signature
+    renderedBlockLimit = Self.initialRenderedBlockLimit
+  }
+
+  private func expandRenderedBlocks() {
+    guard renderedBlockLimit < blocks.count else { return }
+    renderedBlockLimit = min(blocks.count, renderedBlockLimit + Self.renderedBlockPageSize)
+  }
+
+  private static func visibleLimit(
+    requestedLimit: Int,
+    blocks: [OrgEditableBlock],
+    selectedBlockID: OrgEditableBlock.ID?
+  ) -> Int {
+    guard !blocks.isEmpty else { return 0 }
+    var limit = min(max(requestedLimit, initialRenderedBlockLimit), blocks.count)
+    if let selectedBlockID,
+       let selectedIndex = blocks.firstIndex(where: { $0.id == selectedBlockID }) {
+      limit = min(blocks.count, max(limit, selectedIndex + selectedBlockLookahead))
+    }
+    return limit
+  }
+
+  private static func blockSignature(for blocks: [OrgEditableBlock]) -> String {
+    guard let first = blocks.first, let last = blocks.last else {
+      return "empty"
+    }
+    return "\(blocks.count):\(first.id):\(last.id)"
+  }
+
+  private static let initialRenderedBlockLimit = 220
+  private static let renderedBlockPageSize = 180
+  private static let selectedBlockLookahead = 48
+}
+
+private struct ProgressiveRenderFooter: View {
+  let visibleCount: Int
+  let totalCount: Int
+  let loadMore: () -> Void
+
+  var body: some View {
+    Button {
+      loadMore()
+    } label: {
+      HStack(spacing: 8) {
+        Image(systemName: "arrow.down.circle")
+        Text("Showing \(visibleCount) of \(totalCount) blocks")
+          .font(.caption.weight(.medium))
+        Text("Load more")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+      .frame(maxWidth: .infinity)
+      .padding(.vertical, 8)
+    }
+    .buttonStyle(.plain)
+    .foregroundStyle(.secondary)
+    .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .padding(.horizontal, 6)
+    .padding(.vertical, 4)
+    .onAppear {
+      loadMore()
+    }
   }
 }
 
@@ -188,6 +278,9 @@ private struct EditableRenderedBlockView<Content: View>: View {
     .onHover { isHovered = $0 }
     .onTapGesture(count: 1) {
       actions.select()
+      if startsEditingOnSingleClick {
+        actions.beginEditing()
+      }
     }
     .onTapGesture(count: 2) {
       if block.isEditable {
@@ -209,6 +302,16 @@ private struct EditableRenderedBlockView<Content: View>: View {
 
   private var showsControls: Bool {
     isSourceEditable && (isHovered || isSelected)
+  }
+
+  private var startsEditingOnSingleClick: Bool {
+    guard isSourceEditable, block.isEditable else { return false }
+    switch block.rendered {
+    case .heading, .planning, .paragraph, .listItem, .keyword:
+      return true
+    case .blank, .horizontalRule, .properties, .quote, .source, .table:
+      return false
+    }
   }
 }
 
