@@ -120,9 +120,15 @@ private struct OrgRenderedEntryRow: View, Equatable {
   let corpusRoot: URL?
 
   nonisolated static func == (lhs: OrgRenderedEntryRow, rhs: OrgRenderedEntryRow) -> Bool {
-    // Keep the active editor fully reactive; use row equality to quiet the surrounding rendered document.
-    guard !lhs.isEditing, !rhs.isEditing else {
-      return false
+    if lhs.isEditing || rhs.isEditing {
+      return lhs.isEditing == rhs.isEditing
+        && lhs.block.id == rhs.block.id
+        && lhs.block.startLine == rhs.block.startLine
+        && lhs.block.endLineExclusive == rhs.block.endLineExclusive
+        && lhs.isSourceEditable == rhs.isSourceEditable
+        && lhs.isSelected == rhs.isSelected
+        && lhs.sourceFile == rhs.sourceFile
+        && lhs.corpusRoot == rhs.corpusRoot
     }
     return lhs.block == rhs.block
       && lhs.isSourceEditable == rhs.isSourceEditable
