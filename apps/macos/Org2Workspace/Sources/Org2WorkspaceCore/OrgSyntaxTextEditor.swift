@@ -33,6 +33,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   let selection: Binding<NSRange>?
   let isFocused: Binding<Bool>?
   let onLocalTextChange: ((String) -> Void)?
+  let shouldPublishTextImmediately: ((String) -> Bool)?
   let onSubmit: (() -> Bool)?
   let onSubmitContext: ((OrgSyntaxTextEditorSubmitContext) -> Bool)?
 
@@ -46,6 +47,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     selection: Binding<NSRange>? = nil,
     isFocused: Binding<Bool>? = nil,
     onLocalTextChange: ((String) -> Void)? = nil,
+    shouldPublishTextImmediately: ((String) -> Bool)? = nil,
     onSubmit: (() -> Bool)? = nil,
     onSubmitContext: ((OrgSyntaxTextEditorSubmitContext) -> Bool)? = nil
   ) {
@@ -58,6 +60,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     self.selection = selection
     self.isFocused = isFocused
     self.onLocalTextChange = onLocalTextChange
+    self.shouldPublishTextImmediately = shouldPublishTextImmediately
     self.onSubmit = onSubmit
     self.onSubmitContext = onSubmitContext
   }
@@ -318,6 +321,12 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     private func publishTextChange(_ currentText: String) {
       guard parent.text != currentText else {
         cancelDeferredTextPublishing()
+        return
+      }
+
+      if parent.shouldPublishTextImmediately?(currentText) == true {
+        cancelDeferredTextPublishing()
+        parent.text = currentText
         return
       }
 
