@@ -35,6 +35,7 @@ struct OrgRenderedEntryView: View {
           visibleRange: visibleWindow.displayRange,
           totalCount: blocks.count,
           direction: .previous,
+          autoLoadsOnAppear: false,
           loadMore: expandRenderedBlocks
         )
       }
@@ -61,6 +62,7 @@ struct OrgRenderedEntryView: View {
           visibleRange: visibleWindow.displayRange,
           totalCount: blocks.count,
           direction: .next,
+          autoLoadsOnAppear: Self.shouldAutoExpandNextFooter(visibleWindow: visibleWindow),
           loadMore: expandRenderedBlocks
         )
       }
@@ -215,6 +217,10 @@ struct OrgRenderedEntryView: View {
 
   nonisolated static func allowsHoverChrome(blockCount: Int) -> Bool {
     blockCount <= hoverChromeBlockLimit
+  }
+
+  nonisolated static func shouldAutoExpandNextFooter(visibleWindow: OrgRenderedBlockWindow) -> Bool {
+    visibleWindow.hasNext && visibleWindow.range.upperBound <= initialRenderedBlockLimit
   }
 
   nonisolated private static let initialRenderedBlockLimit = 80
@@ -442,6 +448,7 @@ private struct ProgressiveRenderFooter: View {
   let visibleRange: String
   let totalCount: Int
   let direction: OrgRenderedBlockWindowExpansionDirection
+  let autoLoadsOnAppear: Bool
   let loadMore: (OrgRenderedBlockWindowExpansionDirection) -> Void
 
   var body: some View {
@@ -465,7 +472,7 @@ private struct ProgressiveRenderFooter: View {
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
     .onAppear {
-      if direction == .next {
+      if autoLoadsOnAppear {
         loadMore(direction)
       }
     }
