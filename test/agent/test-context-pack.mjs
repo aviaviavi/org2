@@ -156,6 +156,15 @@ assert.match(selectedDataLink, /kind: warehouse-query/);
 assert.match(selectedDataLink, /query: support\.ticket_volume\.v1/);
 assert.match(selectedDataLink, /rows: 42/);
 
+const selectedThread = run("context", "--id", "thread-scarf-triage", "--dir", tmp, "--format", "markdown");
+assert.match(selectedThread, /## Selected agent threads/);
+assert.match(selectedThread, /Thread: Scarf triage help/);
+assert.match(selectedThread, /agent: openclaw/);
+assert.match(selectedThread, /session: openclaw:session:triage-1/);
+assert.match(selectedThread, /storage: summary/);
+assert.match(selectedThread, /Context attachments:/);
+assert.match(selectedThread, /id:scarf-support-1 -> Scarf support triage \(support\.org2:3-/);
+
 const org = run("context", "scarf support triage", "--dir", tmp, "--format", "org");
 assert.match(org, /^\* Org2 Context Pack/m);
 assert.match(org, /\*\* Top cited notes/);
