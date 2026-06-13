@@ -304,77 +304,8 @@ private struct EditableRenderedBlockView<Content: View>: View {
         .padding(.trailing, isSourceEditable ? 92 : 0)
         .frame(maxWidth: .infinity, alignment: .leading)
 
-      if isSourceEditable {
-        HStack(spacing: 3) {
-          Menu {
-            ForEach(OrgInsertBlockKind.allCases) { kind in
-              Button {
-                actions.insert(kind)
-              } label: {
-                Label(kind.title, systemImage: kind.systemImage)
-              }
-            }
-          } label: {
-            Image(systemName: "plus")
-              .font(.caption.weight(.semibold))
-          }
-          .menuStyle(.borderlessButton)
-          .menuIndicator(.hidden)
-          .controlSize(.small)
-          .help("Add block after line \(block.displayRange)")
-
-          if block.isEditable {
-            Button {
-              actions.beginEditing()
-            } label: {
-              Image(systemName: "pencil")
-                .font(.caption.weight(.semibold))
-            }
-            .buttonStyle(.borderless)
-            .controlSize(.small)
-            .help("Edit line \(block.displayRange)")
-
-            Menu {
-              Button {
-                actions.move(.up)
-              } label: {
-                Label("Move Up", systemImage: "arrow.up")
-              }
-              .disabled(!canMoveUp)
-
-              Button {
-                actions.move(.down)
-              } label: {
-                Label("Move Down", systemImage: "arrow.down")
-              }
-              .disabled(!canMoveDown)
-
-              Divider()
-
-              Button {
-                actions.duplicate()
-              } label: {
-                Label("Duplicate", systemImage: "plus.square.on.square")
-              }
-
-              Button(role: .destructive) {
-                actions.delete()
-              } label: {
-                Label("Delete", systemImage: "trash")
-              }
-            } label: {
-              Image(systemName: "ellipsis")
-                .font(.caption.weight(.semibold))
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .controlSize(.small)
-            .help("Block actions")
-          }
-        }
-        .opacity(showsControls ? 1 : 0)
-        .allowsHitTesting(showsControls)
-        .accessibilityHidden(!showsControls)
+      if showsControls {
+        rowControls
       }
     }
     .padding(.horizontal, 6)
@@ -412,6 +343,76 @@ private struct EditableRenderedBlockView<Content: View>: View {
 
   private var showsControls: Bool {
     isSourceEditable && (isHovered || isSelected)
+  }
+
+  private var rowControls: some View {
+    HStack(spacing: 3) {
+      Menu {
+        ForEach(OrgInsertBlockKind.allCases) { kind in
+          Button {
+            actions.insert(kind)
+          } label: {
+            Label(kind.title, systemImage: kind.systemImage)
+          }
+        }
+      } label: {
+        Image(systemName: "plus")
+          .font(.caption.weight(.semibold))
+      }
+      .menuStyle(.borderlessButton)
+      .menuIndicator(.hidden)
+      .controlSize(.small)
+      .help("Add block after line \(block.displayRange)")
+
+      if block.isEditable {
+        Button {
+          actions.beginEditing()
+        } label: {
+          Image(systemName: "pencil")
+            .font(.caption.weight(.semibold))
+        }
+        .buttonStyle(.borderless)
+        .controlSize(.small)
+        .help("Edit line \(block.displayRange)")
+
+        Menu {
+          Button {
+            actions.move(.up)
+          } label: {
+            Label("Move Up", systemImage: "arrow.up")
+          }
+          .disabled(!canMoveUp)
+
+          Button {
+            actions.move(.down)
+          } label: {
+            Label("Move Down", systemImage: "arrow.down")
+          }
+          .disabled(!canMoveDown)
+
+          Divider()
+
+          Button {
+            actions.duplicate()
+          } label: {
+            Label("Duplicate", systemImage: "plus.square.on.square")
+          }
+
+          Button(role: .destructive) {
+            actions.delete()
+          } label: {
+            Label("Delete", systemImage: "trash")
+          }
+        } label: {
+          Image(systemName: "ellipsis")
+            .font(.caption.weight(.semibold))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .controlSize(.small)
+        .help("Block actions")
+      }
+    }
   }
 
   private var startsEditingOnSingleClick: Bool {
