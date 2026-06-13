@@ -258,7 +258,7 @@ private struct HorizontalRuleBlockEditor: View {
   }
 
   private func saveDivider() {
-    store.editableBlockText = "-----"
+    store.updateEditingBlockDraft(block, draft: "-----")
     Task { await store.saveEditedBlock(block) }
   }
 }
@@ -482,7 +482,7 @@ private struct HeadingBlockEditor: View {
   private func saveHeading() {
     autosaveTask?.cancel()
     autosaveTask = nil
-    store.editableBlockText = rawHeading
+    store.updateEditingBlockDraft(block, draft: rawHeading)
     Task { await store.saveEditedBlock(block) }
   }
 
@@ -698,7 +698,7 @@ private struct PlanningBlockEditor: View {
   private func savePlanning() {
     autosaveTask?.cancel()
     autosaveTask = nil
-    store.editableBlockText = rawPlanning
+    store.updateEditingBlockDraft(block, draft: rawPlanning)
     Task { await store.saveEditedBlock(block) }
   }
 
@@ -905,15 +905,15 @@ private struct ListItemBlockEditor: View {
   private func saveListItem() {
     autosaveTask?.cancel()
     autosaveTask = nil
-    store.editableBlockText = rawListItem
+    store.updateEditingBlockDraft(block, draft: rawListItem)
     Task { await store.saveEditedBlock(block) }
   }
 
   private func continueListItem() {
     autosaveTask?.cancel()
     autosaveTask = nil
-    store.editableBlockText = rawListItem
-    Task { await store.splitEditingBlock(block, atUTF16Offset: (rawListItem as NSString).length) }
+    store.updateEditingBlockDraft(block, draft: rawListItem)
+    Task { await store.splitEditingBlock(block, atUTF16Offset: (rawListItem as NSString).length, draftText: rawListItem) }
   }
 
   private func scheduleListItemAutosave() {
@@ -1095,7 +1095,7 @@ private struct KeywordBlockEditor: View {
   private func saveKeyword() {
     autosaveTask?.cancel()
     autosaveTask = nil
-    store.editableBlockText = rawKeyword
+    store.updateEditingBlockDraft(block, draft: rawKeyword)
     Task { await store.saveEditedBlock(block) }
   }
 
@@ -1323,7 +1323,7 @@ private struct PropertyDrawerBlockEditor: View {
   private func saveProperties() {
     autosaveTask?.cancel()
     autosaveTask = nil
-    store.editableBlockText = drawer.formattedRawText
+    store.updateEditingBlockDraft(block, draft: drawer.formattedRawText)
     Task { await store.saveEditedBlock(block) }
   }
 
@@ -1805,7 +1805,7 @@ private struct MediaBlockEditor: View {
   private func saveMedia() {
     autosaveTask?.cancel()
     autosaveTask = nil
-    store.editableBlockText = media.formattedRawText
+    store.updateEditingBlockDraft(block, draft: media.formattedRawText)
     Task { await store.saveEditedBlock(block) }
   }
 
@@ -1969,7 +1969,7 @@ private struct QuoteBlockEditor: View {
   private func saveQuote() {
     autosaveTask?.cancel()
     autosaveTask = nil
-    store.editableBlockText = rawQuote
+    store.updateEditingBlockDraft(block, draft: rawQuote)
     Task { await store.saveEditedBlock(block) }
   }
 
@@ -2485,7 +2485,7 @@ private struct TableBlockEditor: View {
   private func saveTable() {
     autosaveTask?.cancel()
     autosaveTask = nil
-    store.editableBlockText = table.formattedRawText
+    store.updateEditingBlockDraft(block, draft: table.formattedRawText)
     Task { await store.saveEditedBlock(block) }
   }
 
