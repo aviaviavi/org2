@@ -551,6 +551,18 @@ final class Org2ModelsTests: XCTestCase {
     assertToken(.keyword, "end_src", in: raw, tokens: tokens)
   }
 
+  func testOrgSyntaxHighlighterSkipsPlainBlockLines() {
+    XCTAssertFalse(OrgSyntaxHighlighter.lineMayContainBlockSyntax("plain paragraph line"[...]))
+    XCTAssertFalse(OrgSyntaxHighlighter.lineMayContainBlockSyntax("  plain indented content"[...]))
+    XCTAssertFalse(OrgSyntaxHighlighter.lineMayContainBlockSyntax(""[...]))
+    XCTAssertTrue(OrgSyntaxHighlighter.lineMayContainBlockSyntax("* TODO Heading"[...]))
+    XCTAssertTrue(OrgSyntaxHighlighter.lineMayContainBlockSyntax("#+TITLE: Demo"[...]))
+    XCTAssertTrue(OrgSyntaxHighlighter.lineMayContainBlockSyntax("  :ID: abc"[...]))
+    XCTAssertTrue(OrgSyntaxHighlighter.lineMayContainBlockSyntax("SCHEDULED: <2026-06-13>"[...]))
+    XCTAssertTrue(OrgSyntaxHighlighter.lineMayContainBlockSyntax("  DEADLINE: <2026-06-13>"[...]))
+    XCTAssertTrue(OrgSyntaxHighlighter.lineMayContainBlockSyntax("CLOSED: [2026-06-13]"[...]))
+  }
+
   func testOrgSyntaxHighlighterKeepsLineOffsetsAcrossBlankLines() {
     let raw = "Intro\n\n#+begin_quote\nSee [[id:abc][Alice]].\n#+end_quote\n"
     let tokens = OrgSyntaxHighlighter.tokens(in: raw)
@@ -971,6 +983,8 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(InlineEditorChrome.controlsOpacity(false), 0)
     XCTAssertTrue(InlineEditorChrome.allowsHitTesting(true))
     XCTAssertFalse(InlineEditorChrome.allowsHitTesting(false))
+    XCTAssertEqual(InlineEditorChrome.accessoryOpacity(true), 1)
+    XCTAssertEqual(InlineEditorChrome.accessoryOpacity(false), 0)
     XCTAssertEqual(InlineEditorChrome.savingIndicatorSize, 14)
     XCTAssertEqual(InlineEditorChrome.savingIndicatorOpacity(true), 1)
     XCTAssertEqual(InlineEditorChrome.savingIndicatorOpacity(false), 0)

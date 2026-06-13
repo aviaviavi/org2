@@ -17,6 +17,10 @@ enum InlineEditorChrome {
     isActive
   }
 
+  static func accessoryOpacity(_ isActive: Bool) -> Double {
+    isActive ? 1 : 0
+  }
+
   static func backgroundOpacity(isHovered: Bool, isFocused: Bool = false) -> Double {
     if isHovered {
       return 0.032
@@ -1375,9 +1379,10 @@ private struct ParagraphBlockEditor: View {
         .frame(minHeight: editorHeight, maxHeight: editorHeight)
         .padding(.trailing, 74)
 
-        if selectedRange.length > 0 {
-          ParagraphInlineFormatBar(text: $draftText, selectedRange: $selectedRange)
-        }
+        ParagraphInlineFormatBar(text: $draftText, selectedRange: $selectedRange)
+          .opacity(InlineEditorChrome.accessoryOpacity(hasSelection))
+          .allowsHitTesting(InlineEditorChrome.allowsHitTesting(hasSelection))
+          .accessibilityHidden(!hasSelection)
 
         if let focusedInlineToken {
           ParagraphFocusedInlineEditor(
@@ -1491,7 +1496,11 @@ private struct ParagraphBlockEditor: View {
   }
 
   private var showsControls: Bool {
-    isHovered || selectedRange.length > 0 || showsInlineDetails || store.isSavingBlock
+    isHovered || hasSelection || showsInlineDetails || store.isSavingBlock
+  }
+
+  private var hasSelection: Bool {
+    selectedRange.length > 0
   }
 
   private var currentParagraphText: String {
