@@ -1137,6 +1137,43 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNil(OrgEditableInlineToken.boundedUTF16Length(in: "", maxUTF16Length: -1))
   }
 
+  func testEditableInlineTokenUsesLocalScanForLargeParagraphs() {
+    let prefix = String(repeating: "x", count: OrgEditableInlineToken.focusedFullParseUTF16Limit + 32)
+    let raw = "\(prefix) See [[id:abc][Alice]] on <2026-06-12 Fri> with `code`."
+    let nsRaw = raw as NSString
+
+    let aliceRange = nsRaw.range(of: "Alice")
+    let linkToken = OrgEditableInlineToken.focused(in: raw, selection: NSRange(location: aliceRange.location, length: 0))
+    if case .link(let link) = linkToken {
+      XCTAssertEqual(link.id, "link:\(nsRaw.range(of: "[[id:abc][Alice]]").location)")
+      XCTAssertEqual(link.label, "Alice")
+      XCTAssertEqual(link.target, "id:abc")
+    } else {
+      XCTFail("Expected focused link token in large paragraph")
+    }
+
+    let timestampRange = nsRaw.range(of: "2026-06-12")
+    let timestampToken = OrgEditableInlineToken.focused(
+      in: raw,
+      selection: NSRange(location: timestampRange.location, length: 0)
+    )
+    if case .timestamp(let timestamp) = timestampToken {
+      XCTAssertEqual(timestamp.id, "timestamp:\(nsRaw.range(of: "<2026-06-12 Fri>").location)")
+      XCTAssertEqual(timestamp.date, "2026-06-12")
+    } else {
+      XCTFail("Expected focused timestamp token in large paragraph")
+    }
+
+    let codeRange = nsRaw.range(of: "code")
+    let markupToken = OrgEditableInlineToken.focused(in: raw, selection: NSRange(location: codeRange.location, length: 0))
+    if case .markup(let markup) = markupToken {
+      XCTAssertEqual(markup.id, "markup:\(nsRaw.range(of: "`code`").location)")
+      XCTAssertEqual(markup.text, "code")
+    } else {
+      XCTFail("Expected focused markup token in large paragraph")
+    }
+  }
+
   func testRenderedEntryMoveAvailabilityUsesStableSignatures() {
     let blocks = [
       OrgEditableBlock(
