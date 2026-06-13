@@ -8954,7 +8954,7 @@ async function main(): Promise<void> {
           backlinksId = args[i]!;
         } else if (command === "query") {
           queryId = args[i]!;
-        } else if (command === "agent") {
+        } else if (command === "agent" || command === "context") {
           agentId = args[i]!;
         } else if (command === "render-chart") {
           renderChartBlockId = args[i]!;
@@ -9750,9 +9750,11 @@ Input:
 
 Usage:
   org2 context QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--budget 8k] [--limit N] [--include sources,backlinks,neighbors] [--format markdown|org|json]
+  org2 context --id ID [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--format markdown|org|json]
 
 Flags:
   --query QUERY      Retrieval query (or pass QUERY as first positional argument)
+  --id ID            Render a context pack for one selected heading/file ID
   --budget N         Approximate max context characters; supports k/m suffixes (default 12000)
   --format FORMAT    markdown (default), org, or json
   --scope NAME       Optional project/person/task scope filter
@@ -10069,9 +10071,13 @@ Flags:
   }
 
   if (command === "agent" || command === "context") {
-    if (command === "context") agentAction = "bundle";
+    if (command === "context") agentAction = agentId.trim() ? "fetch" : "bundle";
     if (!agentAction) { console.error("Error: org2 agent requires a subcommand (bundle, context, search, or fetch)"); process.exit(1); }
-    if ((agentAction === "bundle" || agentAction === "context" || agentAction === "search") && !agentQuery.trim()) { console.error("Error: org2 agent/context requires --query QUERY"); process.exit(1); }
+    if (command === "context" && agentQuery.trim() && agentId.trim()) { console.error("Error: org2 context accepts either QUERY/--query or --id ID, not both"); process.exit(1); }
+    if ((agentAction === "bundle" || agentAction === "context" || agentAction === "search") && !agentQuery.trim()) {
+      console.error(command === "context" ? "Error: org2 context requires QUERY/--query or --id ID" : "Error: org2 agent/context requires --query QUERY");
+      process.exit(1);
+    }
     if (agentAction === "fetch" && !agentId.trim()) { console.error("Error: org2 agent fetch requires --id ID"); process.exit(1); }
     if (!dir && files.length === 0) {
       const configPath = findConfigFile(process.cwd());
