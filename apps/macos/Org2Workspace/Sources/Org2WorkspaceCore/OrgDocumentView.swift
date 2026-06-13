@@ -38,7 +38,7 @@ struct OrgRenderedEntryView: View {
         )
       }
 
-      ForEach(Array(visibleBlocks)) { block in
+      ForEach(visibleBlocks) { block in
         OrgRenderedEntryRow(
           block: block,
           isSourceEditable: isSourceEditable,
@@ -47,7 +47,8 @@ struct OrgRenderedEntryView: View {
           canMoveUp: moveAvailabilityValues[block.id]?.up == true,
           canMoveDown: moveAvailabilityValues[block.id]?.down == true,
           sourceFile: sourceFile,
-          corpusRoot: corpusRoot
+          corpusRoot: corpusRoot,
+          actions: actions(for: block)
         )
         .equatable()
       }
@@ -104,6 +105,29 @@ struct OrgRenderedEntryView: View {
       selectedBlockIndex: selectedBlockIndex
     )
     renderedBlockWindow = visibleWindow.expanding(direction, by: Self.renderedBlockPageSize, totalCount: blocks.count)
+  }
+
+  private func actions(for block: OrgEditableBlock) -> RenderedBlockActions {
+    RenderedBlockActions(
+      select: {
+        store.selectBlock(block)
+      },
+      beginEditing: {
+        store.beginEditingBlock(block)
+      },
+      insert: { kind in
+        Task { await store.insertBlock(after: block, kind: kind) }
+      },
+      move: { direction in
+        Task { await store.moveBlock(block, direction: direction) }
+      },
+      duplicate: {
+        Task { await store.duplicateBlock(block) }
+      },
+      delete: {
+        Task { await store.deleteBlock(block) }
+      }
+    )
   }
 
   nonisolated static func visibleWindow(
@@ -227,7 +251,6 @@ struct OrgRenderedBlockWindow: Equatable, Sendable {
 }
 
 private struct OrgRenderedEntryRow: View, Equatable {
-  @EnvironmentObject private var store: WorkspaceStore
   let block: OrgEditableBlock
   let isSourceEditable: Bool
   let isSelected: Bool
@@ -236,6 +259,7 @@ private struct OrgRenderedEntryRow: View, Equatable {
   let canMoveDown: Bool
   let sourceFile: String?
   let corpusRoot: URL?
+  let actions: RenderedBlockActions
 
   nonisolated static func == (lhs: OrgRenderedEntryRow, rhs: OrgRenderedEntryRow) -> Bool {
     if lhs.isEditing || rhs.isEditing {
@@ -280,29 +304,6 @@ private struct OrgRenderedEntryRow: View, Equatable {
         .equatable()
       }
     }
-  }
-
-  private var actions: RenderedBlockActions {
-    RenderedBlockActions(
-      select: {
-        store.selectBlock(block)
-      },
-      beginEditing: {
-        store.beginEditingBlock(block)
-      },
-      insert: { kind in
-        Task { await store.insertBlock(after: block, kind: kind) }
-      },
-      move: { direction in
-        Task { await store.moveBlock(block, direction: direction) }
-      },
-      duplicate: {
-        Task { await store.duplicateBlock(block) }
-      },
-      delete: {
-        Task { await store.deleteBlock(block) }
-      }
-    )
   }
 }
 
