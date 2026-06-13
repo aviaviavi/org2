@@ -317,6 +317,37 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(settings.bearerToken, "secret")
   }
 
+  func testOpenClawGatewaySettingsNormalizeBearerTokenInputs() throws {
+    let missingConfig = URL(fileURLWithPath: "/tmp/missing-clawdbot-\(UUID().uuidString).json")
+    let userSettings = OpenClawGatewaySettings.resolve(
+      environment: [:],
+      configURL: missingConfig,
+      userBearerToken: "  Bearer user-secret  "
+    )
+    XCTAssertEqual(userSettings.bearerToken, "user-secret")
+
+    let environmentSettings = OpenClawGatewaySettings.resolve(
+      environment: ["ORG2_WORKSPACE_OPENCLAW_TOKEN": "bearer env-secret"],
+      configURL: missingConfig
+    )
+    XCTAssertEqual(environmentSettings.bearerToken, "env-secret")
+
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-openclaw-bearer-config-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let config = root.appendingPathComponent("clawdbot.json")
+    try """
+    {
+      "gateway": {
+        "auth": { "mode": "password", "password": "Bearer config-secret" }
+      }
+    }
+    """.write(to: config, atomically: true, encoding: .utf8)
+
+    let configSettings = OpenClawGatewaySettings.resolve(environment: [:], configURL: config)
+    XCTAssertEqual(configSettings.bearerToken, "config-secret")
+  }
+
   func testOpenClawChatCompletionPayloadDecodesAssistantText() throws {
     let json = """
     {
