@@ -624,6 +624,17 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  func testParagraphSlashCommandUsesBoundedPrefixScan() {
+    XCTAssertEqual(ParagraphSlashCommand.query(in: "/todo"), "todo")
+    XCTAssertEqual(ParagraphSlashCommand.query(in: " \n\t/source swift"), "source")
+    XCTAssertEqual(ParagraphSlashCommand.query(in: "/"), "")
+    XCTAssertNil(ParagraphSlashCommand.query(in: "Body /todo"))
+    XCTAssertNil(ParagraphSlashCommand.query(in: String(
+      repeating: " ",
+      count: ParagraphSlashCommand.leadingWhitespaceScanLimit + 1
+    ) + "/todo"))
+  }
+
   func testOpenClawFileReferenceDeepLinkRoundTrips() throws {
     let reference = OpenClawFileReference(path: "file:notes/daily.org2#12", line: nil)
     let url = try XCTUnwrap(reference.deepLinkURL)
