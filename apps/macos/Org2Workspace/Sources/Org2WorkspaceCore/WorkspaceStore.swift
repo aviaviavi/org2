@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import SwiftUI
+import UniformTypeIdentifiers
 
 private struct CanonicalDocumentCacheEntry {
   let modifiedAt: Date?
@@ -81,6 +82,8 @@ struct SourceBlockExecutionResult: Equatable, Sendable {
 
 @MainActor
 public final class WorkspaceStore: ObservableObject {
+  nonisolated public static let meetingCaptureSourceSummary = "Captures microphone and system/call audio when Screen Recording permission is granted."
+
   @Published public var selectedSurface: WorkspaceSurface = .agenda
   @Published public var agendaMode: AgendaMode = .focus {
     didSet {
@@ -103,6 +106,16 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var searchQuery = ""
   @Published public var searchFocusToken = 0
   @Published public var searchResults: [SearchResult] = []
+  @Published public var meetings: [MeetingWorkspaceItem] = []
+  @Published public var selectedMeetingID: String?
+  @Published public var meetingTitleDraft = ""
+  @Published public var meetingStatusText = WorkspaceStore.defaultMeetingStatusText()
+  @Published public var meetingInputAverageLevel = 0.0
+  @Published public var meetingInputPeakLevel = 0.0
+  @Published public var meetingSystemAudioAverageLevel = 0.0
+  @Published public var meetingSystemAudioPeakLevel = 0.0
+  @Published public var isCapturingSystemAudio = false
+  @Published public var meetingSystemAudioStatusText = "System audio not recording"
   @Published public var openClawMessages: [OpenClawChatMessage] = [] {
     didSet {
       guard shouldPersistOpenClawMessages else { return }
@@ -152,6 +165,9 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var backlinks: BacklinksPayload?
   @Published public var isLoadingAgenda = false
   @Published public var isSearching = false
+  @Published public var isLoadingMeetings = false
+  @Published public var isRecordingMeeting = false
+  @Published public var isProcessingMeeting = false
   @Published public var isLoadingOpenClawThreads = false
   @Published public var isLoadingEntrySource = false
   @Published public var isRenderingEntrySource = false
@@ -163,8 +179,14 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var statusText = ""
   @Published public var errorText: String?
 
+  public var meetingCaptureSourceText: String {
+    Self.meetingCaptureSourceSummary
+  }
+
   public let cli: Org2CLI
   private let defaults: UserDefaults
+  private let meetingRecorder = MeetingAudioRecorder()
+  private let meetingSystemAudioRecorder = MeetingSystemAudioRecorder()
   private let corpusKey = "Org2Workspace.corpusRoot"
   private let agendaModeKey = "Org2Workspace.agendaMode"
   private let openClawEndpointKey = "Org2Workspace.openClawEndpoint"
@@ -176,6 +198,8 @@ public final class WorkspaceStore: ObservableObject {
   private var openClawSessionKey = WorkspaceStore.makeOpenClawSessionKey()
   private var shouldPersistOpenClawMessages = false
   private var openClawBearerToken: String?
+  private var activeMeetingRecording: PendingMeetingRecording?
+  private var meetingMeterTask: Task<Void, Never>?
   private var pendingG = false
   private var entrySourceLoadGeneration = 0
   private var canonicalDocumentCache: [String: CanonicalDocumentCacheEntry] = [:]
@@ -212,6 +236,7 @@ public final class WorkspaceStore: ObservableObject {
 
     if corpusRoot != nil {
       await refreshAgenda()
+      await refreshMeetings()
       await refreshCorpusFiles()
       Task { await refreshOpenClawThreads() }
     } else {
@@ -243,6 +268,8 @@ public final class WorkspaceStore: ObservableObject {
     corpusFileFilter = ""
     quickOpenQuery = ""
     searchResults = []
+    meetings = []
+    selectedMeetingID = nil
     openClawThreads = []
     selectedOpenClawThreadID = nil
     selectedLocation = nil
@@ -265,6 +292,7 @@ public final class WorkspaceStore: ObservableObject {
 
   public func refreshWorkspace() async {
     await refreshAgenda()
+    await refreshMeetings()
     await refreshCorpusFiles()
     Task { await refreshOpenClawThreads() }
   }
@@ -364,6 +392,276 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func refreshMeetings() async {
+    guard let corpusRoot else {
+      meetings = []
+      return
+    }
+
+    isLoadingMeetings = true
+    defer { isLoadingMeetings = false }
+
+    do {
+      let items = try await Task.detached(priority: .utility) {
+        try Self.scanMeetingItems(corpusRoot: corpusRoot)
+      }.value
+      meetings = items
+      if selectedSurface == .meetings {
+        statusText = "\(items.count) meeting\(items.count == 1 ? "" : "s")"
+      }
+      syncMeetingSelectionAfterRefresh()
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Meeting scan failed"
+    }
+  }
+
+  public func promptAndStartMeetingRecording() {
+    guard corpusRoot != nil else {
+      statusText = "No corpus selected"
+      return
+    }
+    guard !isRecordingMeeting && !isProcessingMeeting else { return }
+
+    let alert = NSAlert()
+    alert.messageText = "Record Meeting"
+    alert.informativeText = "Record local microphone audio into the selected Org2 corpus."
+    alert.addButton(withTitle: "Start Recording")
+    alert.addButton(withTitle: "Cancel")
+
+    let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
+    field.placeholderString = "Meeting title"
+    field.stringValue = meetingTitleDraft
+    alert.accessoryView = field
+
+    let response = alert.runModal()
+    guard response == .alertFirstButtonReturn else { return }
+
+    meetingTitleDraft = field.stringValue
+    Task { await startMeetingRecording(title: field.stringValue) }
+  }
+
+  public func startMeetingRecording(title rawTitle: String) async {
+    guard let corpusRoot else {
+      statusText = "No corpus selected"
+      return
+    }
+    guard !isRecordingMeeting else {
+      meetingStatusText = "A meeting is already recording"
+      return
+    }
+    guard !isProcessingMeeting else {
+      meetingStatusText = "Finish the current meeting import first"
+      return
+    }
+
+    do {
+      let startedAt = Date()
+      let paths = try MeetingArtifactWriter.preparePaths(
+        corpusRoot: corpusRoot,
+        title: rawTitle,
+        recordedAt: startedAt
+      )
+      try await meetingRecorder.startRecording(to: paths.audioURL)
+      let systemAudioStartError: String?
+      do {
+        try await meetingSystemAudioRecorder.startRecording(to: paths.systemAudioURL)
+        isCapturingSystemAudio = true
+        meetingSystemAudioStatusText = "System audio recording"
+        systemAudioStartError = nil
+      } catch {
+        isCapturingSystemAudio = false
+        meetingSystemAudioStatusText = "System audio unavailable: \(error.localizedDescription)"
+        systemAudioStartError = error.localizedDescription
+      }
+      activeMeetingRecording = PendingMeetingRecording(
+        paths: paths,
+        capturesSystemAudio: systemAudioStartError == nil,
+        systemAudioStartError: systemAudioStartError
+      )
+      isRecordingMeeting = true
+      startMeetingInputMetering()
+      selectedSurface = .meetings
+      meetingStatusText = "Recording \(paths.title)"
+      statusText = meetingStatusText
+    } catch {
+      isCapturingSystemAudio = false
+      meetingSystemAudioStatusText = "System audio not recording"
+      stopMeetingInputMetering()
+      errorText = error.localizedDescription
+      meetingStatusText = "Recording failed: \(error.localizedDescription)"
+      statusText = "Recording failed"
+    }
+  }
+
+  public func stopMeetingRecording() async {
+    guard let corpusRoot else {
+      statusText = "No corpus selected"
+      return
+    }
+    guard let activeMeetingRecording else {
+      meetingStatusText = "No active recording"
+      return
+    }
+
+    do {
+      let duration = try meetingRecorder.stopRecording()
+      var systemAudioURL: URL?
+      var systemAudioCaptureError = activeMeetingRecording.systemAudioStartError
+      if activeMeetingRecording.capturesSystemAudio {
+        do {
+          if let systemDuration = try await meetingSystemAudioRecorder.stopRecording(), systemDuration > 0 {
+            systemAudioURL = activeMeetingRecording.paths.systemAudioURL
+          } else {
+            try? FileManager.default.removeItem(at: activeMeetingRecording.paths.systemAudioURL)
+            systemAudioCaptureError = "No system audio samples were captured."
+          }
+        } catch {
+          try? FileManager.default.removeItem(at: activeMeetingRecording.paths.systemAudioURL)
+          systemAudioCaptureError = error.localizedDescription
+        }
+      }
+      self.activeMeetingRecording = nil
+      isRecordingMeeting = false
+      isCapturingSystemAudio = false
+      stopMeetingInputMetering()
+      isProcessingMeeting = true
+      meetingStatusText = "Transcribing \(activeMeetingRecording.paths.title) locally..."
+      defer { isProcessingMeeting = false }
+
+      let transcript = await transcribeRecordedMeetingAudio(
+        microphoneAudioURL: activeMeetingRecording.paths.audioURL,
+        systemAudioURL: systemAudioURL,
+        systemAudioCaptureError: systemAudioCaptureError
+      )
+      let bundle = try MeetingArtifactWriter.writeArtifacts(
+        paths: activeMeetingRecording.paths,
+        corpusRoot: corpusRoot,
+        duration: duration,
+        transcript: transcript,
+        systemAudioURL: systemAudioURL
+      )
+      meetingTitleDraft = ""
+      meetingSystemAudioStatusText = systemAudioURL == nil
+        ? "System audio not captured"
+        : "System audio saved"
+      meetingStatusText = transcript.status == .complete
+        ? "Saved \(bundle.noteURL.lastPathComponent)"
+        : "Saved \(bundle.noteURL.lastPathComponent); transcription \(transcript.status.label)"
+      statusText = meetingStatusText
+      await refreshAfterMeetingWrite(selecting: bundle.item)
+    } catch {
+      isRecordingMeeting = false
+      if isCapturingSystemAudio {
+        _ = try? await meetingSystemAudioRecorder.stopRecording()
+      }
+      isCapturingSystemAudio = false
+      meetingSystemAudioStatusText = "System audio not recording"
+      stopMeetingInputMetering()
+      isProcessingMeeting = false
+      errorText = error.localizedDescription
+      meetingStatusText = "Stop failed: \(error.localizedDescription)"
+      statusText = "Recording stop failed"
+    }
+  }
+
+  public func promptAndImportMeetingAudio() {
+    guard corpusRoot != nil else {
+      statusText = "No corpus selected"
+      return
+    }
+    guard !isRecordingMeeting && !isProcessingMeeting else { return }
+
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = true
+    panel.canChooseDirectories = false
+    panel.allowsMultipleSelection = false
+    panel.allowedContentTypes = [.audio, .movie]
+    panel.prompt = "Import"
+    panel.message = "Choose an audio or video file to transcribe into an Org2 meeting."
+
+    if panel.runModal() == .OK, let url = panel.url {
+      let title = meetingTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        ? url.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "-", with: " ")
+        : meetingTitleDraft
+      Task { await importMeetingAudio(url: url, title: title) }
+    }
+  }
+
+  public func importMeetingAudio(url sourceURL: URL, title rawTitle: String) async {
+    guard let corpusRoot else {
+      statusText = "No corpus selected"
+      return
+    }
+    guard !isRecordingMeeting else {
+      meetingStatusText = "Stop the active recording before importing audio"
+      return
+    }
+
+    isProcessingMeeting = true
+    defer { isProcessingMeeting = false }
+    let recordedAt = Date()
+
+    do {
+      let ext = sourceURL.pathExtension.isEmpty ? "m4a" : sourceURL.pathExtension.lowercased()
+      let paths = try MeetingArtifactWriter.preparePaths(
+        corpusRoot: corpusRoot,
+        title: rawTitle,
+        recordedAt: recordedAt,
+        audioExtension: ext
+      )
+      try FileManager.default.copyItem(at: sourceURL, to: paths.audioURL)
+      meetingStatusText = "Transcribing \(paths.title) locally..."
+      let transcript = await transcribeAudioForMeeting(paths.audioURL)
+      let bundle = try MeetingArtifactWriter.writeArtifacts(
+        paths: paths,
+        corpusRoot: corpusRoot,
+        duration: nil,
+        transcript: transcript,
+        captureSources: "imported_audio"
+      )
+      meetingTitleDraft = ""
+      meetingStatusText = transcript.status == .complete
+        ? "Imported \(bundle.noteURL.lastPathComponent)"
+        : "Imported \(bundle.noteURL.lastPathComponent); transcription \(transcript.status.label)"
+      statusText = meetingStatusText
+      await refreshAfterMeetingWrite(selecting: bundle.item)
+    } catch {
+      errorText = error.localizedDescription
+      meetingStatusText = "Import failed: \(error.localizedDescription)"
+      statusText = "Meeting import failed"
+    }
+  }
+
+  public func selectMeeting(_ meeting: MeetingWorkspaceItem) {
+    selectedSurface = .meetings
+    select(.meeting(meeting))
+  }
+
+  public func askOpenClawAboutSelectedMeeting() {
+    guard case .meeting = selectedLocation else {
+      statusText = "Select a meeting first"
+      return
+    }
+    openClawDraft = "Use the selected meeting note and transcript artifact as context. Summarize the meeting, extract decisions, list action items, and cite the org2 file paths you used."
+    selectedSurface = .openClaw
+  }
+
+  public var meetingDisplaySections: [MeetingSection] {
+    let grouped = Dictionary(grouping: meetings) { item -> String in
+      guard let recordedAt = item.recordedAt, recordedAt.count >= 10 else {
+        return "Unknown date"
+      }
+      return String(recordedAt.prefix(10))
+    }
+    return grouped.keys.sorted(by: >).map { key in
+      let items = (grouped[key] ?? []).sorted {
+        ($0.recordedAt ?? "") > ($1.recordedAt ?? "")
+      }
+      return MeetingSection(id: key, label: key, meetings: items)
+    }
+  }
+
   public func select(_ location: WorkspaceLocation) {
     if case .agenda(let item) = location {
       selectedAgendaItemID = item.id
@@ -371,11 +669,18 @@ public final class WorkspaceStore: ObservableObject {
     if case .openClaw(let thread) = location {
       selectedOpenClawThreadID = thread.id
     }
+    if case .meeting(let meeting) = location {
+      selectedMeetingID = meeting.id
+    }
     selectedLocation = location
     isEditingEntry = false
     editableEntryText = ""
     resetBlockState()
-    selectedEntrySourceMode = .entry
+    if case .meeting = location {
+      selectedEntrySourceMode = .page
+    } else {
+      selectedEntrySourceMode = .entry
+    }
     selectedEntrySource = nil
     selectedRenderedBlocks = []
     isRenderingEntrySource = false
@@ -2489,7 +2794,7 @@ public final class WorkspaceStore: ObservableObject {
     let rawAgent = agent.trimmingCharacters(in: .whitespacesAndNewlines)
     let agent = rawAgent.isEmpty ? "main" : rawAgent
     let remoteCorpusPath = remoteCorpusPath.trimmingCharacters(in: .whitespacesAndNewlines)
-    let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedToken = OpenClawGatewaySettings.normalizedBearerToken(token)
 
     do {
       defaults.set(normalizedEndpoint, forKey: openClawEndpointKey)
@@ -2503,7 +2808,7 @@ public final class WorkspaceStore: ObservableObject {
         try OpenClawKeychain.deleteToken()
         openClawBearerToken = nil
         openClawHasStoredToken = false
-      } else if !token.isEmpty {
+      } else if let token = normalizedToken {
         try OpenClawKeychain.saveToken(token)
         openClawBearerToken = token
         openClawHasStoredToken = true
@@ -2853,14 +3158,16 @@ public final class WorkspaceStore: ObservableObject {
       case "3":
         focusSearchSurface()
       case "4":
-        selectedSurface = .openClaw
+        selectedSurface = .meetings
       case "5":
-        selectedSurface = .agentSpace
+        selectedSurface = .openClaw
       case "6":
-        openDailyNote(.today)
+        selectedSurface = .agentSpace
       case "7":
-        openDailyNote(.yesterday)
+        openDailyNote(.today)
       case "8":
+        openDailyNote(.yesterday)
+      case "9":
         openDailyNote(.tomorrow)
       case "f":
         focusSearchSurface()
@@ -3170,7 +3477,7 @@ public final class WorkspaceStore: ObservableObject {
     if allowKeychainRead,
        openClawBearerToken == nil,
        openClawHasStoredToken {
-      openClawBearerToken = OpenClawKeychain.readToken()
+      openClawBearerToken = OpenClawKeychain.readToken(allowUserInteraction: true)
       openClawHasStoredToken = openClawBearerToken != nil || OpenClawKeychain.containsToken()
     }
 
@@ -3563,6 +3870,10 @@ public final class WorkspaceStore: ObservableObject {
 
   private static func defaultOpenClawStatusText() -> String {
     openClawStatusText(settings: OpenClawGatewaySettings.resolve())
+  }
+
+  private static func defaultMeetingStatusText() -> String {
+    "Local transcription: \(LocalWhisperTranscriber.resolvedBackendDescription())"
   }
 
   private static func makeOpenClawSessionKey() -> String {
@@ -4537,6 +4848,102 @@ public final class WorkspaceStore: ObservableObject {
     return lines.joined(separator: "\n")
   }
 
+  private func syncMeetingSelectionAfterRefresh() {
+    guard selectedSurface == .meetings, !meetings.isEmpty else { return }
+    if let selectedMeetingID,
+       let meeting = meetings.first(where: { $0.id == selectedMeetingID }) {
+      select(.meeting(meeting))
+      return
+    }
+    selectMeeting(meetings[0])
+  }
+
+  private func startMeetingInputMetering() {
+    meetingMeterTask?.cancel()
+    updateMeetingInputMeter()
+    meetingMeterTask = Task { [weak self] in
+      while !Task.isCancelled {
+        let shouldContinue = await MainActor.run { () -> Bool in
+          guard let self, self.isRecordingMeeting else { return false }
+          self.updateMeetingInputMeter()
+          return true
+        }
+        guard shouldContinue else { return }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+      }
+    }
+  }
+
+  private func stopMeetingInputMetering() {
+    meetingMeterTask?.cancel()
+    meetingMeterTask = nil
+    meetingInputAverageLevel = 0
+    meetingInputPeakLevel = 0
+    meetingSystemAudioAverageLevel = 0
+    meetingSystemAudioPeakLevel = 0
+  }
+
+  private func updateMeetingInputMeter() {
+    let snapshot = meetingRecorder.inputMeterSnapshot
+    meetingInputAverageLevel = snapshot.averageLevel
+    meetingInputPeakLevel = snapshot.peakLevel
+    let systemSnapshot = meetingSystemAudioRecorder.inputMeterSnapshot
+    meetingSystemAudioAverageLevel = systemSnapshot.averageLevel
+    meetingSystemAudioPeakLevel = systemSnapshot.peakLevel
+  }
+
+  private func transcribeRecordedMeetingAudio(
+    microphoneAudioURL: URL,
+    systemAudioURL: URL?,
+    systemAudioCaptureError: String?
+  ) async -> MeetingTranscriptResult {
+    guard let systemAudioURL else {
+      let microphone = await transcribeAudioForMeeting(microphoneAudioURL)
+      return MeetingTranscriptResult.combined(
+        microphone: microphone,
+        systemAudio: nil,
+        systemAudioCaptureError: systemAudioCaptureError
+      )
+    }
+
+    async let microphone = transcribeAudioForMeeting(microphoneAudioURL)
+    async let systemAudio = transcribeAudioForMeeting(systemAudioURL)
+    return await MeetingTranscriptResult.combined(
+      microphone: microphone,
+      systemAudio: systemAudio,
+      systemAudioCaptureError: systemAudioCaptureError
+    )
+  }
+
+  private func transcribeAudioForMeeting(_ audioURL: URL) async -> MeetingTranscriptResult {
+    do {
+      return try await LocalWhisperTranscriber().transcribe(audioURL: audioURL)
+    } catch {
+      let localError = error as? LocalWhisperError
+      let status: MeetingTranscriptionStatus = localError == .notConfigured
+        ? .unavailable
+        : .failed
+      return MeetingTranscriptResult(
+        text: "",
+        status: status,
+        engine: LocalWhisperTranscriber.resolvedBackendDescription(),
+        errorMessage: error.localizedDescription
+      )
+    }
+  }
+
+  private func refreshAfterMeetingWrite(selecting item: MeetingWorkspaceItem) async {
+    await refreshMeetings()
+    if let refreshed = meetings.first(where: { $0.file == item.file }) {
+      selectMeeting(refreshed)
+    } else {
+      meetings.insert(item, at: 0)
+      selectMeeting(item)
+    }
+    await refreshAgenda()
+    Task { await refreshOpenClawThreads() }
+  }
+
   nonisolated private static func normalizedHeadingTags(_ tags: [String]) -> [String] {
     var seen: Set<String> = []
     var output: [String] = []
@@ -4724,6 +5131,7 @@ public final class WorkspaceStore: ObservableObject {
 
         let ext = fileURL.pathExtension.lowercased()
         guard allowedExtensions.contains(ext) else { continue }
+        if fileURL.lastPathComponent.hasSuffix(".transcript.org2") { continue }
 
         let prefix = (try? readPrefix(fileURL, maxBytes: 48 * 1024)) ?? ""
         let titleInfo = openClawTitle(from: prefix, fallback: fileURL.deletingPathExtension().lastPathComponent)
@@ -4748,6 +5156,62 @@ public final class WorkspaceStore: ObservableObject {
       }
       .prefix(250)
       .map { $0 }
+  }
+
+  nonisolated private static func scanMeetingItems(corpusRoot: URL) throws -> [MeetingWorkspaceItem] {
+    let fileManager = FileManager.default
+    let meetingsDirectory = corpusRoot.appendingPathComponent("meetings", isDirectory: true)
+    guard isDirectoryURL(meetingsDirectory),
+          let enumerator = fileManager.enumerator(
+            at: meetingsDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+          )
+    else {
+      return []
+    }
+
+    var items: [MeetingWorkspaceItem] = []
+    for case let fileURL as URL in enumerator {
+      let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey])
+      guard values?.isRegularFile == true,
+            fileURL.pathExtension.lowercased() == "org2",
+            !fileURL.lastPathComponent.hasSuffix(".transcript.org2")
+      else {
+        continue
+      }
+
+      let prefix = (try? readPrefix(fileURL, maxBytes: 96 * 1024)) ?? ""
+      guard meetingProperty("kind", in: prefix)?.lowercased() == "meeting"
+        || prefix.contains("#+ORG2_KIND: meeting")
+      else {
+        continue
+      }
+
+      let titleInfo = openClawTitle(from: prefix, fallback: fileURL.deletingPathExtension().lastPathComponent)
+      items.append(MeetingWorkspaceItem(
+        title: titleInfo.title.replacingOccurrences(of: #"^Meeting:\s*"#, with: "", options: .regularExpression),
+        file: fileURL.path,
+        line: titleInfo.line,
+        recordedAt: meetingProperty("recorded_at", in: prefix),
+        modifiedAt: values?.contentModificationDate,
+        audioArtifact: meetingProperty("audio_artifact", in: prefix),
+        systemAudioArtifact: meetingProperty("system_audio_artifact", in: prefix),
+        transcriptArtifact: meetingProperty("transcript_artifact", in: prefix),
+        transcriptionStatus: meetingProperty("transcription_status", in: prefix),
+        idValue: firstOrgID(in: prefix)
+      ))
+    }
+
+    return items.sorted {
+      let leftRecorded = $0.recordedAt ?? ""
+      let rightRecorded = $1.recordedAt ?? ""
+      if leftRecorded != rightRecorded { return leftRecorded > rightRecorded }
+      let leftModified = $0.modifiedAt ?? .distantPast
+      let rightModified = $1.modifiedAt ?? .distantPast
+      if leftModified != rightModified { return leftModified > rightModified }
+      return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+    }
   }
 
   nonisolated private static func scanCorpusFiles(corpusRoot: URL) throws -> [CorpusFile] {
@@ -4871,7 +5335,7 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated private static func openClawThreadDirectories(corpusRoot: URL) -> [URL] {
     let configured = workspaceConfig(corpusRoot: corpusRoot)?.openClaw?.threadDirs ?? []
     let rawDirectories = configured.isEmpty
-      ? ["agents", "notes/openclaw", "raw/openclaw", "views/openclaw"]
+      ? ["agents", "meetings", "notes/openclaw", "raw/openclaw", "views/openclaw"]
       : configured
 
     return rawDirectories.map { raw in
@@ -4944,6 +5408,21 @@ public final class WorkspaceStore: ObservableObject {
       return nil
     }
     return nsText.substring(with: match.range(at: 1))
+  }
+
+  nonisolated private static func meetingProperty(_ key: String, in prefix: String) -> String? {
+    let escaped = NSRegularExpression.escapedPattern(for: key)
+    let pattern = "(?im)^\\s*:" + escaped + ":\\s*(.*?)\\s*$"
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+    let nsText = prefix as NSString
+    guard let match = regex.firstMatch(in: prefix, range: NSRange(location: 0, length: nsText.length)),
+          match.numberOfRanges >= 2
+    else {
+      return nil
+    }
+    let value = nsText.substring(with: match.range(at: 1))
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return value.isEmpty ? nil : value
   }
 
   private func upsertHeadlineProperties(file: String, line: Int, properties: [String: String]) throws {
@@ -5258,6 +5737,12 @@ public final class WorkspaceStore: ObservableObject {
   }
 }
 
+private struct PendingMeetingRecording {
+  let paths: MeetingArtifactPaths
+  let capturesSystemAudio: Bool
+  let systemAudioStartError: String?
+}
+
 private struct WorkspaceOrg2Config: Decodable {
   let roam: Roam?
   let openClaw: OpenClaw?
@@ -5326,6 +5811,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
   case agenda
   case files
   case search
+  case meetings
   case openClaw
   case agentSpace
 
@@ -5336,6 +5822,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .agenda: "Agenda"
     case .files: "Files"
     case .search: "Search"
+    case .meetings: "Meetings"
     case .openClaw: "OpenClaw Chat"
     case .agentSpace: "Agent Space"
     }
@@ -5346,6 +5833,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .agenda: "calendar"
     case .files: "doc.text"
     case .search: "magnifyingglass"
+    case .meetings: "mic"
     case .openClaw: "sparkles"
     case .agentSpace: "bubble.left.and.bubble.right"
     }
@@ -5356,8 +5844,9 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .agenda: "⌘1"
     case .files: "⌘2"
     case .search: "⌘3"
-    case .openClaw: "⌘4"
-    case .agentSpace: "⌘5"
+    case .meetings: "⌘4"
+    case .openClaw: "⌘5"
+    case .agentSpace: "⌘6"
     }
   }
 }

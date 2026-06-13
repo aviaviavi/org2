@@ -317,6 +317,37 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(settings.bearerToken, "secret")
   }
 
+  func testOpenClawGatewaySettingsNormalizeBearerTokenInputs() throws {
+    let missingConfig = URL(fileURLWithPath: "/tmp/missing-clawdbot-\(UUID().uuidString).json")
+    let userSettings = OpenClawGatewaySettings.resolve(
+      environment: [:],
+      configURL: missingConfig,
+      userBearerToken: "  Bearer user-secret  "
+    )
+    XCTAssertEqual(userSettings.bearerToken, "user-secret")
+
+    let environmentSettings = OpenClawGatewaySettings.resolve(
+      environment: ["ORG2_WORKSPACE_OPENCLAW_TOKEN": "bearer env-secret"],
+      configURL: missingConfig
+    )
+    XCTAssertEqual(environmentSettings.bearerToken, "env-secret")
+
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-openclaw-bearer-config-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let config = root.appendingPathComponent("clawdbot.json")
+    try """
+    {
+      "gateway": {
+        "auth": { "mode": "password", "password": "Bearer config-secret" }
+      }
+    }
+    """.write(to: config, atomically: true, encoding: .utf8)
+
+    let configSettings = OpenClawGatewaySettings.resolve(environment: [:], configURL: config)
+    XCTAssertEqual(configSettings.bearerToken, "config-secret")
+  }
+
   func testOpenClawChatCompletionPayloadDecodesAssistantText() throws {
     let json = """
     {
@@ -404,6 +435,122 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(OpenClawChatClient.openClawAgentHeaderValue(for: ""), "main")
     XCTAssertEqual(OpenClawChatClient.openClawAgentHeaderValue(for: "openclaw"), "main")
     XCTAssertEqual(OpenClawChatClient.openClawAgentHeaderValue(for: "openclaw/org2-workspace"), "org2-workspace")
+  }
+
+  func testMeetingArtifactWriterCreatesNoteAndTranscript() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-meeting-artifacts-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let recordedAt = ISO8601DateFormatter().date(from: "2026-06-11T21:00:00Z")!
+    let paths = try MeetingArtifactWriter.preparePaths(
+      corpusRoot: root,
+      title: "Scarf reporting sync",
+      recordedAt: recordedAt
+    )
+    try Data("fake audio".utf8).write(to: paths.audioURL)
+    try Data("fake system audio".utf8).write(to: paths.systemAudioURL)
+
+    let bundle = try MeetingArtifactWriter.writeArtifacts(
+      paths: paths,
+      corpusRoot: root,
+      duration: 12.5,
+      transcript: MeetingTranscriptResult(
+        text: "We decided to publish the reporting update.",
+        status: .complete,
+        engine: "whisper.cpp"
+      ),
+      systemAudioURL: paths.systemAudioURL
+    )
+
+    let note = try String(contentsOf: bundle.noteURL, encoding: .utf8)
+    let transcript = try String(contentsOf: bundle.transcriptURL, encoding: .utf8)
+
+    XCTAssertTrue(note.contains("* Meeting: Scarf reporting sync"))
+    XCTAssertTrue(note.contains(":kind: meeting"))
+    XCTAssertTrue(note.contains(":audio_artifact: meetings/"))
+    XCTAssertTrue(note.contains(":system_audio_artifact: meetings/"))
+    XCTAssertTrue(note.contains(":transcript_artifact: meetings/"))
+    XCTAssertTrue(note.contains(":capture_sources: microphone, system_audio"))
+    XCTAssertTrue(note.contains(":transcription_engine: whisper.cpp"))
+    XCTAssertTrue(note.contains("** Decisions"))
+    XCTAssertTrue(transcript.contains("* Transcript: Scarf reporting sync"))
+    XCTAssertTrue(transcript.contains(":kind: meeting_transcript"))
+    XCTAssertTrue(transcript.contains(":system_audio_artifact: meetings/"))
+    XCTAssertTrue(transcript.contains("We decided to publish the reporting update."))
+  }
+
+  func testMeetingRecorderMeterNormalizesAudioPower() {
+    XCTAssertEqual(MeetingAudioRecorder.normalizedMeterLevel(fromDecibels: -80), 0)
+    XCTAssertEqual(MeetingAudioRecorder.normalizedMeterLevel(fromDecibels: 0), 1)
+    XCTAssertEqual(MeetingAudioRecorder.normalizedMeterLevel(fromDecibels: 20), 1)
+    XCTAssertEqual(
+      MeetingAudioRecorder.normalizedMeterLevel(fromDecibels: -30),
+      0.5,
+      accuracy: 0.001
+    )
+  }
+
+  func testMeetingCaptureSourceDisclosesSystemAudioPermission() {
+    let source = WorkspaceStore.meetingCaptureSourceSummary.lowercased()
+    XCTAssertTrue(source.contains("microphone"))
+    XCTAssertTrue(source.contains("system"))
+    XCTAssertTrue(source.contains("screen recording"))
+  }
+
+  func testMeetingTranscriptCombinesMicrophoneAndSystemAudioSections() {
+    let transcript = MeetingTranscriptResult.combined(
+      microphone: MeetingTranscriptResult(
+        text: "I can ship that today.",
+        status: .complete,
+        engine: "whisper.cpp"
+      ),
+      systemAudio: MeetingTranscriptResult(
+        text: "The customer asked for Friday.",
+        status: .complete,
+        engine: "whisper.cpp"
+      )
+    )
+
+    XCTAssertEqual(transcript.status, .complete)
+    XCTAssertTrue(transcript.text.contains("** Microphone"))
+    XCTAssertTrue(transcript.text.contains("I can ship that today."))
+    XCTAssertTrue(transcript.text.contains("** System Audio"))
+    XCTAssertTrue(transcript.text.contains("The customer asked for Friday."))
+  }
+
+  @MainActor
+  func testWorkspaceScansMeetingArtifacts() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-meeting-scan-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let recordedAt = ISO8601DateFormatter().date(from: "2026-06-11T21:00:00Z")!
+    let paths = try MeetingArtifactWriter.preparePaths(
+      corpusRoot: root,
+      title: "Planning sync",
+      recordedAt: recordedAt
+    )
+    try Data("fake audio".utf8).write(to: paths.audioURL)
+    _ = try MeetingArtifactWriter.writeArtifacts(
+      paths: paths,
+      corpusRoot: root,
+      duration: nil,
+      transcript: MeetingTranscriptResult(
+        text: "Action item: ship the meeting recorder.",
+        status: .complete,
+        engine: "whisper.cpp"
+      )
+    )
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.refreshMeetings()
+
+    XCTAssertEqual(store.meetings.count, 1)
+    XCTAssertEqual(store.meetings[0].title, "Planning sync")
+    XCTAssertEqual(store.meetings[0].transcriptionStatus, "complete")
+    XCTAssertTrue(store.meetings[0].audioArtifact?.hasPrefix("meetings/") == true)
+    XCTAssertNil(store.meetings[0].systemAudioArtifact)
+    XCTAssertTrue(store.meetings[0].transcriptArtifact?.hasSuffix(".transcript.org2") == true)
   }
 
   func testOpenClawComposerSizingGrowsAndCaps() {
@@ -1454,9 +1601,12 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.searchFocusToken, 2)
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "4", keyCode: 21, modifiers: [.command])))
-    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertEqual(store.selectedSurface, .meetings)
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "5", keyCode: 23, modifiers: [.command])))
+    XCTAssertEqual(store.selectedSurface, .openClaw)
+
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "6", keyCode: 22, modifiers: [.command])))
     XCTAssertEqual(store.selectedSurface, .agentSpace)
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "0", keyCode: 29, modifiers: [.command])))
@@ -1485,8 +1635,9 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(WorkspaceSurface.agenda.commandShortcutTitle, "⌘1")
     XCTAssertEqual(WorkspaceSurface.files.commandShortcutTitle, "⌘2")
     XCTAssertEqual(WorkspaceSurface.search.commandShortcutTitle, "⌘3")
-    XCTAssertEqual(WorkspaceSurface.openClaw.commandShortcutTitle, "⌘4")
-    XCTAssertEqual(WorkspaceSurface.agentSpace.commandShortcutTitle, "⌘5")
+    XCTAssertEqual(WorkspaceSurface.meetings.commandShortcutTitle, "⌘4")
+    XCTAssertEqual(WorkspaceSurface.openClaw.commandShortcutTitle, "⌘5")
+    XCTAssertEqual(WorkspaceSurface.agentSpace.commandShortcutTitle, "⌘6")
   }
 
   @MainActor
@@ -1500,7 +1651,7 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
 
-    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "6", keyCode: 22, modifiers: [.command])))
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "7", keyCode: 26, modifiers: [.command])))
 
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -1518,9 +1669,9 @@ final class Org2ModelsTests: XCTestCase {
 
   func testDailyNoteTargetsPutTodayFirstAndExposeCommandShortcuts() {
     XCTAssertEqual(DailyNoteTarget.allCases, [.today, .yesterday, .tomorrow])
-    XCTAssertEqual(DailyNoteTarget.today.commandShortcutTitle, "⌘6")
-    XCTAssertEqual(DailyNoteTarget.yesterday.commandShortcutTitle, "⌘7")
-    XCTAssertEqual(DailyNoteTarget.tomorrow.commandShortcutTitle, "⌘8")
+    XCTAssertEqual(DailyNoteTarget.today.commandShortcutTitle, "⌘7")
+    XCTAssertEqual(DailyNoteTarget.yesterday.commandShortcutTitle, "⌘8")
+    XCTAssertEqual(DailyNoteTarget.tomorrow.commandShortcutTitle, "⌘9")
   }
 
   func testAgendaSurfaceIsNamedAgenda() {
