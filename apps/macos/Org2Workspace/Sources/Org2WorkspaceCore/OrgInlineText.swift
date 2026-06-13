@@ -5,15 +5,25 @@ struct OpenOrgFileReferenceActionKey: EnvironmentKey {
   static let defaultValue: @MainActor @Sendable (OpenClawFileReference) -> Void = { _ in }
 }
 
+struct OrgRoamLinkResolverKey: EnvironmentKey {
+  static let defaultValue = OrgRoamLinkResolver.empty
+}
+
 extension EnvironmentValues {
   var openOrgFileReference: @MainActor @Sendable (OpenClawFileReference) -> Void {
     get { self[OpenOrgFileReferenceActionKey.self] }
     set { self[OpenOrgFileReferenceActionKey.self] = newValue }
   }
+
+  var orgRoamLinkResolver: OrgRoamLinkResolver {
+    get { self[OrgRoamLinkResolverKey.self] }
+    set { self[OrgRoamLinkResolverKey.self] = newValue }
+  }
 }
 
 struct OrgInlineText: View {
   @Environment(\.openOrgFileReference) private var openOrgFileReference
+  @Environment(\.orgRoamLinkResolver) private var orgRoamLinkResolver
   let raw: String
   let font: Font
   let lineSpacing: CGFloat
@@ -52,7 +62,7 @@ struct OrgInlineText: View {
   @ViewBuilder
   private var renderedText: some View {
     if Self.usesAttributedRendering(raw) {
-      Text(OrgInlineAttributedString.cached(raw: raw, baseFont: font))
+      Text(OrgInlineAttributedString.cached(raw: raw, baseFont: font, linkResolver: orgRoamLinkResolver))
     } else {
       Text(raw)
     }
@@ -130,34 +140,48 @@ enum OrgInlineAttributedString {
   final class CacheKey: NSObject {
     let raw: String
     let fontDescription: String
+    let linkResolverSignature: String
     private let cachedHash: Int
 
-    init(raw: String, baseFont: Font) {
+    init(raw: String, baseFont: Font, linkResolverSignature: String = OrgRoamLinkResolver.empty.signature) {
       self.raw = raw
       self.fontDescription = String(describing: baseFont)
-      self.cachedHash = Self.makeHash(raw: raw, fontDescription: self.fontDescription)
+      self.linkResolverSignature = linkResolverSignature
+      self.cachedHash = Self.makeHash(
+        raw: raw,
+        fontDescription: self.fontDescription,
+        linkResolverSignature: linkResolverSignature
+      )
     }
 
-    init(raw: String, fontDescription: String) {
+    init(raw: String, fontDescription: String, linkResolverSignature: String = OrgRoamLinkResolver.empty.signature) {
       self.raw = raw
       self.fontDescription = fontDescription
-      self.cachedHash = Self.makeHash(raw: raw, fontDescription: fontDescription)
+      self.linkResolverSignature = linkResolverSignature
+      self.cachedHash = Self.makeHash(
+        raw: raw,
+        fontDescription: fontDescription,
+        linkResolverSignature: linkResolverSignature
+      )
     }
 
     override var hash: Int {
       cachedHash
     }
 
-    private static func makeHash(raw: String, fontDescription: String) -> Int {
+    private static func makeHash(raw: String, fontDescription: String, linkResolverSignature: String) -> Int {
       var hasher = Hasher()
       hasher.combine(raw)
       hasher.combine(fontDescription)
+      hasher.combine(linkResolverSignature)
       return hasher.finalize()
     }
 
     override func isEqual(_ object: Any?) -> Bool {
       guard let other = object as? CacheKey else { return false }
-      return raw == other.raw && fontDescription == other.fontDescription
+      return raw == other.raw
+        && fontDescription == other.fontDescription
+        && linkResolverSignature == other.linkResolverSignature
     }
   }
 
@@ -176,13 +200,17 @@ enum OrgInlineAttributedString {
   }()
 
   @MainActor
-  static func cached(raw: String, baseFont: Font = .body) -> AttributedString {
-    let key = CacheKey(raw: raw, baseFont: baseFont)
+  static func cached(
+    raw: String,
+    baseFont: Font = .body,
+    linkResolver: OrgRoamLinkResolver = .empty
+  ) -> AttributedString {
+    let key = CacheKey(raw: raw, baseFont: baseFont, linkResolverSignature: linkResolver.signature)
     if let cached = cache.object(forKey: key) {
       return cached.attributedString
     }
 
-    let attributedString = make(OrgInlineParser.parse(raw), baseFont: baseFont)
+    let attributedString = make(OrgInlineParser.parse(raw, linkResolver: linkResolver), baseFont: baseFont)
     cache.setObject(CachedValue(attributedString), forKey: key)
     return attributedString
   }

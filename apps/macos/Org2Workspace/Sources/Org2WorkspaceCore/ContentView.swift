@@ -59,6 +59,7 @@ public struct ContentView: View {
     .environment(\.openOrgFileReference) { reference in
       store.openChatFileReference(reference)
     }
+    .environment(\.orgRoamLinkResolver, store.orgRoamLinkResolver)
     .sheet(isPresented: $store.isQuickOpenPresented) {
       QuickOpenView()
         .environmentObject(store)

@@ -625,6 +625,99 @@ final class Org2ModelsTests: XCTestCase {
     ])
   }
 
+  func testOrgInlineParserResolvesRoamIDAndWikiLinks() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-roam-links-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let alpha = root.appendingPathComponent("alpha.org2")
+    let beta = root.appendingPathComponent("beta.org2")
+    try """
+    #+TITLE: Alpha Node
+    #+ROAM_ALIASES: "A Node"
+    :PROPERTIES:
+    :ID: alpha-123
+    :END:
+
+    * Beta Heading
+    :PROPERTIES:
+    :ID: beta-456
+    :END:
+    """.write(to: alpha, atomically: true, encoding: .utf8)
+    try """
+    #+TITLE: Duplicate
+    :PROPERTIES:
+    :ID: duplicate-1
+    :END:
+    """.write(to: beta, atomically: true, encoding: .utf8)
+
+    let resolver = WorkspaceStore.buildOrgRoamLinkResolver(files: [
+      CorpusFile(path: alpha.path, relativePath: "alpha.org2", modifiedAt: nil, byteCount: nil),
+      CorpusFile(path: beta.path, relativePath: "beta.org2", modifiedAt: nil, byteCount: nil)
+    ])
+
+    XCTAssertEqual(
+      OrgInlineParser.parse("See [[id:beta-456][Beta]] and [[A Node]].", linkResolver: resolver),
+      [
+        .text("See "),
+        .link(
+          label: "Beta",
+          target: "id:beta-456",
+          fileReference: OpenClawFileReference(path: alpha.path, line: 7)
+        ),
+        .text(" and "),
+        .link(
+          label: "A Node",
+          target: "A Node",
+          fileReference: OpenClawFileReference(path: alpha.path, line: 1)
+        ),
+        .text(".")
+      ]
+    )
+
+    XCTAssertEqual(
+      OrgInlineParser.parse("See [[id:alpha-123]].", linkResolver: resolver),
+      [
+        .text("See "),
+        .link(
+          label: "Alpha Node",
+          target: "id:alpha-123",
+          fileReference: OpenClawFileReference(path: alpha.path, line: 1)
+        ),
+        .text(".")
+      ]
+    )
+  }
+
+  func testOrgRoamLinkResolverDoesNotGuessAmbiguousWikiLinks() {
+    let resolver = OrgRoamLinkResolver(nodes: [
+      OrgRoamNodeReference(idValue: "one", title: "Shared", file: "/tmp/one.org2", line: 1),
+      OrgRoamNodeReference(idValue: "two", title: "Shared", file: "/tmp/two.org2", line: 1)
+    ])
+
+    XCTAssertNil(resolver.resolve(target: "Shared"))
+    XCTAssertEqual(
+      resolver.resolve(target: "id:one"),
+      OrgRoamResolvedLink(
+        title: "Shared",
+        fileReference: OpenClawFileReference(path: "/tmp/one.org2", line: 1)
+      )
+    )
+  }
+
+  func testOrgRoamLinkResolverAllowsPunctuationInWikiTitles() {
+    let resolver = OrgRoamLinkResolver(nodes: [
+      OrgRoamNodeReference(idValue: "punctuation", title: "Project: Alpha/Beta", file: "/tmp/project.org2", line: 12)
+    ])
+
+    XCTAssertEqual(
+      resolver.resolve(target: "Project: Alpha/Beta"),
+      OrgRoamResolvedLink(
+        title: "Project: Alpha/Beta",
+        fileReference: OpenClawFileReference(path: "/tmp/project.org2", line: 12)
+      )
+    )
+  }
+
   func testOrgInlineParserFastPathsPlainTextButKeepsRelativeFileReferences() {
     XCTAssertFalse(OrgInlineParser.hasInlineSyntaxCandidate("Plain sentence with no org syntax here."))
     XCTAssertFalse(OrgInlineText.usesAttributedRendering("Plain sentence with no org syntax here."))

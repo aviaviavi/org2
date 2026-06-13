@@ -96,6 +96,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var corpusRoot: URL?
   @Published public var agenda: AgendaPayload?
   @Published public var corpusFiles: [CorpusFile] = []
+  @Published public private(set) var orgRoamLinkResolver = OrgRoamLinkResolver.empty
   @Published public var selectedCorpusFileID: String?
   @Published public var corpusFileFilter = ""
   @Published public var isScanningCorpusFiles = false
@@ -201,6 +202,7 @@ public final class WorkspaceStore: ObservableObject {
   private var activeMeetingRecording: PendingMeetingRecording?
   private var meetingMeterTask: Task<Void, Never>?
   private var pendingG = false
+  private var orgRoamLinkResolverGeneration = 0
   private var entrySourceLoadGeneration = 0
   private var canonicalDocumentCache: [String: CanonicalDocumentCacheEntry] = [:]
   private var renderedBlocksCache: [String: RenderedBlocksCacheEntry] = [:]
@@ -264,6 +266,8 @@ public final class WorkspaceStore: ObservableObject {
     defaults.set(standardized.path, forKey: corpusKey)
     agenda = nil
     corpusFiles = []
+    orgRoamLinkResolver = .empty
+    orgRoamLinkResolverGeneration += 1
     selectedCorpusFileID = nil
     corpusFileFilter = ""
     quickOpenQuery = ""
@@ -300,6 +304,8 @@ public final class WorkspaceStore: ObservableObject {
   public func refreshCorpusFiles() async {
     guard let corpusRoot else {
       corpusFiles = []
+      orgRoamLinkResolver = .empty
+      orgRoamLinkResolverGeneration += 1
       return
     }
 
@@ -311,10 +317,13 @@ public final class WorkspaceStore: ObservableObject {
         try Self.scanCorpusFiles(corpusRoot: corpusRoot)
       }.value
       corpusFiles = files
+      refreshOrgRoamLinkResolver(files: files)
       if selectedSurface == .files {
         statusText = "\(files.count) corpus file\(files.count == 1 ? "" : "s")"
       }
     } catch {
+      orgRoamLinkResolver = .empty
+      orgRoamLinkResolverGeneration += 1
       errorText = error.localizedDescription
       statusText = "File scan failed"
     }
@@ -5213,6 +5222,224 @@ public final class WorkspaceStore: ObservableObject {
       return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
     }
   }
+
+  private func refreshOrgRoamLinkResolver(files: [CorpusFile]) {
+    orgRoamLinkResolverGeneration += 1
+    let generation = orgRoamLinkResolverGeneration
+    Task {
+      let resolver = await Task.detached(priority: .utility) {
+        Self.buildOrgRoamLinkResolver(files: files)
+      }.value
+      guard generation == orgRoamLinkResolverGeneration else { return }
+      orgRoamLinkResolver = resolver
+    }
+  }
+
+  nonisolated static func buildOrgRoamLinkResolver(files: [CorpusFile]) -> OrgRoamLinkResolver {
+    OrgRoamLinkResolver(nodes: files.flatMap(scanRoamNodes))
+  }
+
+  nonisolated private static func scanRoamNodes(file: CorpusFile) -> [OrgRoamNodeReference] {
+    guard let raw = try? String(contentsOf: URL(fileURLWithPath: file.path), encoding: .utf8) else {
+      return []
+    }
+
+    let lines = normalizeLineEndings(raw)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    var nodes: [OrgRoamNodeReference] = []
+    var fileTitle: (value: String, line: Int)?
+    var fileAliases: [String] = []
+    var fileID: String?
+    var currentHeading: RoamHeadingDraft?
+
+    func flushCurrentHeading() {
+      guard let heading = currentHeading else { return }
+      nodes.append(OrgRoamNodeReference(
+        idValue: heading.idValue,
+        title: heading.title,
+        aliases: heading.aliases,
+        file: file.path,
+        line: heading.line
+      ))
+      currentHeading = nil
+    }
+
+    for (index, line) in lines.enumerated() {
+      let lineNumber = index + 1
+
+      if let headingTitle = roamHeadingTitle(line) {
+        flushCurrentHeading()
+        currentHeading = RoamHeadingDraft(title: headingTitle, line: lineNumber)
+        continue
+      }
+
+      if let keyword = roamKeyword(line) {
+        switch keyword.key {
+        case "TITLE":
+          if fileTitle == nil {
+            fileTitle = (Org2Display.cleanInline(keyword.value), lineNumber)
+          }
+        case "ID":
+          if currentHeading == nil, fileID == nil {
+            fileID = keyword.value
+          }
+        case "ROAM_ALIASES", "ROAM_ALIAS":
+          if currentHeading == nil {
+            fileAliases.append(contentsOf: parseRoamAliases(keyword.value))
+          } else {
+            currentHeading?.aliases.append(contentsOf: parseRoamAliases(keyword.value))
+          }
+        default:
+          break
+        }
+        continue
+      }
+
+      if let property = roamProperty(line) {
+        switch property.key {
+        case "ID":
+          if currentHeading == nil {
+            fileID = fileID ?? property.value
+          } else if currentHeading?.idValue == nil {
+            currentHeading?.idValue = property.value
+          }
+        case "ROAM_ALIASES", "ROAM_ALIAS":
+          if currentHeading == nil {
+            fileAliases.append(contentsOf: parseRoamAliases(property.value))
+          } else {
+            currentHeading?.aliases.append(contentsOf: parseRoamAliases(property.value))
+          }
+        default:
+          break
+        }
+      }
+    }
+
+    flushCurrentHeading()
+    let fallbackFileTitle = URL(fileURLWithPath: file.path).deletingPathExtension().lastPathComponent
+    let resolvedFileTitle = fileTitle?.value ?? fallbackFileTitle
+    if fileTitle != nil || fileID != nil || !fileAliases.isEmpty {
+      nodes.append(OrgRoamNodeReference(
+        idValue: fileID,
+        title: resolvedFileTitle,
+        aliases: fileAliases,
+        file: file.path,
+        line: fileTitle?.line ?? 1
+      ))
+    }
+    return nodes
+  }
+
+  private struct RoamHeadingDraft {
+    var title: String
+    var line: Int
+    var idValue: String?
+    var aliases: [String] = []
+  }
+
+  nonisolated private static func roamKeyword(_ line: String) -> (key: String, value: String)? {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    guard trimmed.hasPrefix("#+"), let colon = trimmed.firstIndex(of: ":") else { return nil }
+    let keyStart = trimmed.index(trimmed.startIndex, offsetBy: 2)
+    let key = String(trimmed[keyStart..<colon]).trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    let valueStart = trimmed.index(after: colon)
+    let value = String(trimmed[valueStart...]).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !key.isEmpty, !value.isEmpty else { return nil }
+    return (key, value)
+  }
+
+  nonisolated private static func roamProperty(_ line: String) -> (key: String, value: String)? {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    guard trimmed.hasPrefix(":"),
+          let keyEnd = trimmed.dropFirst().firstIndex(of: ":")
+    else {
+      return nil
+    }
+    let key = String(trimmed[trimmed.index(after: trimmed.startIndex)..<keyEnd]).uppercased()
+    let valueStart = trimmed.index(after: keyEnd)
+    let value = String(trimmed[valueStart...]).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !key.isEmpty, !value.isEmpty else { return nil }
+    return (key, value)
+  }
+
+  nonisolated private static func roamHeadingTitle(_ line: String) -> String? {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    guard let first = trimmed.first, first == "*" else { return nil }
+    let starCount = trimmed.prefix { $0 == "*" }.count
+    guard trimmed.count > starCount else { return nil }
+    let afterStars = trimmed.dropFirst(starCount)
+    guard afterStars.first?.isWhitespace == true else { return nil }
+
+    var tokens = afterStars
+      .split(whereSeparator: { $0.isWhitespace })
+      .map(String.init)
+    guard !tokens.isEmpty else { return nil }
+
+    if let last = tokens.last, isTagSuffix(last) {
+      tokens.removeLast()
+    }
+    if let first = tokens.first, roamTodoKeywords.contains(first.uppercased()) {
+      tokens.removeFirst()
+    }
+    if let first = tokens.first, first.range(of: #"^\[#.\]$"#, options: .regularExpression) != nil {
+      tokens.removeFirst()
+    }
+
+    let title = Org2Display.cleanInline(tokens.joined(separator: " "))
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return title.isEmpty ? nil : title
+  }
+
+  nonisolated private static func parseRoamAliases(_ raw: String) -> [String] {
+    var aliases: [String] = []
+    var current = ""
+    var isQuoted = false
+    var iterator = raw.makeIterator()
+
+    while let character = iterator.next() {
+      if character == "\"" {
+        if isQuoted {
+          let alias = current.trimmingCharacters(in: .whitespacesAndNewlines)
+          if !alias.isEmpty { aliases.append(alias) }
+          current = ""
+          isQuoted = false
+        } else {
+          if !current.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            aliases.append(current.trimmingCharacters(in: .whitespacesAndNewlines))
+            current = ""
+          }
+          isQuoted = true
+        }
+        continue
+      }
+
+      if character.isWhitespace && !isQuoted {
+        let alias = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !alias.isEmpty { aliases.append(alias) }
+        current = ""
+      } else {
+        current.append(character)
+      }
+    }
+
+    let alias = current.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !alias.isEmpty { aliases.append(alias) }
+    return aliases
+  }
+
+  nonisolated private static func isTagSuffix(_ raw: String) -> Bool {
+    raw.count > 2
+      && raw.first == ":"
+      && raw.last == ":"
+      && raw.dropFirst().dropLast().allSatisfy { character in
+        character.isLetter || character.isNumber || character == "_" || character == "@" || character == "#"
+      }
+  }
+
+  nonisolated private static let roamTodoKeywords = Set([
+    "TODO", "OPEN", "BACKLOG", "IN_PROGRESS", "PROG", "WAIT", "HOLD", "PAUSED", "DONE", "CANCELED", "CANCELLED"
+  ])
 
   nonisolated private static func scanCorpusFiles(corpusRoot: URL) throws -> [CorpusFile] {
     let root = corpusRoot.standardizedFileURL
