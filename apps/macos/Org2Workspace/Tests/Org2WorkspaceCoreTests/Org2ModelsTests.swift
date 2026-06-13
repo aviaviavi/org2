@@ -725,6 +725,25 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(InlineEditorChrome.allowsHitTesting(false))
   }
 
+  func testParagraphFocusedInlineEditorSkipsPlainText() {
+    XCTAssertFalse(ParagraphFocusedInlineEditor.shouldRender(
+      text: "Plain paragraph without editable inline syntax",
+      showsInlineDetails: false
+    ))
+    XCTAssertFalse(ParagraphFocusedInlineEditor.shouldRender(
+      text: "Review [[id:abc][Alice]]",
+      showsInlineDetails: true
+    ))
+    XCTAssertTrue(ParagraphFocusedInlineEditor.shouldRender(
+      text: "Review [[id:abc][Alice]]",
+      showsInlineDetails: false
+    ))
+    XCTAssertTrue(ParagraphFocusedInlineEditor.shouldRender(
+      text: "Meet on <2026-06-13 Sat>",
+      showsInlineDetails: false
+    ))
+  }
+
   func testParagraphSlashCommandUsesBoundedPrefixScan() {
     XCTAssertEqual(ParagraphSlashCommand.query(in: "/todo"), "todo")
     XCTAssertEqual(ParagraphSlashCommand.query(in: " \n\t/source swift"), "source")
