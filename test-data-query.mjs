@@ -277,6 +277,7 @@ function lineOf(file, needle) {
 
 const json = JSON.parse(cli(["query-data", "--file", note, "--results", "fetches_by_state", "--duckdb", fakeDuckdb, "--format", "json", "--include-script"]));
 assert.equal(json.ok, true);
+assert.equal(json.mode, "execute");
 assert.equal(json.engine, "duckdb");
 assert.equal(json.resultId, "fetches_by_state");
 assert.equal(json.rowCount, 2);
@@ -304,6 +305,27 @@ assert.match(org, /^#\+query-data: result=fetches_by_state rows=2 artifact=views
 assert.match(org, /#\+name: fetches_by_state/);
 assert.match(org, /\| state \| fetches \|/);
 assert.match(org, /\| CA    \| 42      \|/);
+
+const inspect = JSON.parse(cli(["query-data", "--file", note, "--inspect", "--duckdb", path.join(tmp, "missing-duckdb")]));
+assert.equal(inspect.ok, true);
+assert.equal(inspect.mode, "inspect");
+assert.equal(inspect.rowCount, 0);
+assert.deepEqual(inspect.rows, []);
+assert.equal(inspect.provenance, undefined);
+assert.equal(inspect.orgTable, undefined);
+assert.equal(inspect.datasets[0].id, "fetches");
+assert.deepEqual(inspect.resultBlocks, [{
+  resultId: "fetches_by_state",
+  artifact: "views/fetches_by_state.org",
+  line: 9,
+  endLine: 14,
+}]);
+
+const inspectLine = JSON.parse(cli(["query-data", "--file", note, "--inspect", "--line", lineOf(note, "SELECT state"), "--duckdb", path.join(tmp, "missing-duckdb")]));
+assert.equal(inspectLine.ok, true);
+assert.equal(inspectLine.mode, "inspect");
+assert.equal(inspectLine.resultId, "fetches_by_state");
+assert.equal(inspectLine.source.line, Number(lineOf(note, "```sql results=fetches_by_state")));
 
 const lineJson = JSON.parse(cli(["query-data", "--file", note, "--line", lineOf(note, "SELECT state"), "--duckdb", fakeDuckdb, "--format", "json"]));
 assert.equal(lineJson.ok, true);
