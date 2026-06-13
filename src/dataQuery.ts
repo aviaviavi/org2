@@ -99,7 +99,11 @@ function parseFenceArgs(raw: string): { kind: string; args: string[] } | null {
   return { kind, args: tokens };
 }
 
-function collectFencedBlocks(input: string): FencedBlock[] {
+function tokenizeBlockArgs(raw: string): string[] {
+  return raw.trim().split(/\s+/).filter(Boolean);
+}
+
+function collectMarkdownFencedBlocks(input: string): FencedBlock[] {
   const lines = input.replace(/\r\n/g, "\n").split("\n");
   const blocks: FencedBlock[] = [];
   let i = 0;
@@ -137,14 +141,75 @@ function collectFencedBlocks(input: string): FencedBlock[] {
   return blocks;
 }
 
-function argValue(args: string[], keys: string[]): string | undefined {
-  for (const arg of args) {
+function collectOrgStyleBlocks(input: string): FencedBlock[] {
+  const lines = input.replace(/\r\n/g, "\n").split("\n");
+  const blocks: FencedBlock[] = [];
+  let pendingName = "";
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i] || "";
+    const keyword = parseKeywordLine(line);
+    if (keyword) {
+      pendingName = keyword.key === "NAME" ? keyword.value : pendingName;
+      i++;
+      continue;
+    }
+
+    const srcMatch = /^\s*#\+begin_src(?:\s+([A-Za-z0-9_-]+))?(.*)$/i.exec(line);
+    const blockMatch = /^\s*#\+begin_(dataset|data|sql)\b(.*)$/i.exec(line);
+    const kind = srcMatch ? String(srcMatch[1] || "").toLowerCase() : blockMatch ? String(blockMatch[1] || "").toLowerCase() : "";
+    const argsRaw = srcMatch ? String(srcMatch[2] || "") : blockMatch ? String(blockMatch[2] || "") : "";
+
+    if (kind) {
+      const endPattern = srcMatch ? /^\s*#\+end_src\b/i : new RegExp(`^\\s*#\\+end_${kind}\\b`, "i");
+      const bodyLines: string[] = [];
+      let j = i + 1;
+      while (j < lines.length && !endPattern.test(lines[j] || "")) {
+        bodyLines.push(lines[j] || "");
+        j++;
+      }
+      blocks.push({
+        kind,
+        args: [...(pendingName ? [`name=${pendingName}`] : []), ...tokenizeBlockArgs(argsRaw)],
+        line: i + 1,
+        endLine: Math.min(j + 1, lines.length),
+        body: bodyLines.join("\n").trim(),
+      });
+      pendingName = "";
+      i = j + 1;
+      continue;
+    }
+
+    if (line.trim() !== "") pendingName = "";
+    i++;
+  }
+
+  return blocks;
+}
+
+function collectFencedBlocks(input: string): FencedBlock[] {
+  return [...collectMarkdownFencedBlocks(input), ...collectOrgStyleBlocks(input)].sort((a, b) => a.line - b.line || a.endLine - b.endLine);
+}
+
+function argValue(args: string[], keys: string[], opts: { separated?: boolean } = {}): string | undefined {
+  const separated = opts.separated !== false;
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index] || "";
     for (const key of keys) {
-      const match = new RegExp(`^${key}=(.+)$`, "i").exec(arg);
+      const match = new RegExp(`^:?${key}(?:=|:)(.+)$`, "i").exec(arg);
       if (match) return String(match[1] || "").trim();
+      if (separated && new RegExp(`^:?${key}$`, "i").test(arg)) {
+        const value = args[index + 1];
+        if (value && !value.startsWith(":")) return value.trim();
+      }
     }
   }
   return undefined;
+}
+
+function positionalArg(args: string[]): string | undefined {
+  return args.find((arg, index) => Boolean(arg && !arg.includes("=") && !arg.startsWith(":") && !(args[index - 1] || "").startsWith(":")));
 }
 
 function parseKeywordLine(line: string): { key: string; value: string } | null {
@@ -221,7 +286,7 @@ function collectNamedOrgTables(input: string): Map<string, NamedOrgTable> {
 
 function parseDataset(block: FencedBlock, baseDir: string, namedTables: Map<string, NamedOrgTable>): { dataset?: DataQueryDataset; diagnostics: DataQueryDiagnostic[] } {
   const diagnostics: DataQueryDiagnostic[] = [];
-  const id = argValue(block.args, ["id", "name"]) || block.args.find((arg) => !arg.includes("=")) || "";
+  const id = argValue(block.args, ["id", "name"]) || positionalArg(block.args) || "";
   if (!id) diagnostics.push(diagnostic("Dataset block requires a name, e.g. ```dataset fetches", { line: block.line }));
 
   const values = parseKeyValueBody(block.body);
@@ -278,7 +343,7 @@ function parseDataset(block: FencedBlock, baseDir: string, namedTables: Map<stri
 }
 
 function parseSqlBlock(block: FencedBlock): { sql?: DataQuerySqlBlock; diagnostics: DataQueryDiagnostic[] } {
-  const resultId = argValue(block.args, ["results", "result", "id", "name"]) || block.args.find((arg) => !arg.includes("=")) || "";
+  const resultId = argValue(block.args, ["id", "name"]) || argValue(block.args, ["results", "result"], { separated: false }) || positionalArg(block.args) || "";
   const diagnostics: DataQueryDiagnostic[] = [];
   if (!resultId) diagnostics.push(diagnostic("SQL block requires results=NAME", { line: block.line }));
   if (!block.body.trim()) diagnostics.push(diagnostic("SQL block is empty", { line: block.line, ...(resultId ? { blockId: resultId } : {}) }));
