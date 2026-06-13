@@ -1,1 +1,1 @@
-Error: crypt encrypt/reencrypt requires --passphrase PASS, at least one --recipient/--recipient-file, or CRYPT_RECIPIENT(S)/CRYPT_RECIPIENT_FILE(S) properties
+Error: crypt encrypt/reencrypt requires --passphrase PASS, --default-recipient-self, at least one --recipient/--recipient-file, or CRYPT_RECIPIENT(S)/CRYPT_RECIPIENT_FILE(S) properties

@@ -160,7 +160,7 @@ function collectMarkdownFencedBlocks(input: string): FencedBlock[] {
   let i = 0;
 
   while (i < lines.length) {
-    const opener = /^\s*```(.*)$/.exec(lines[i] || "");
+    const opener = /^\s*```($|[^`].*)$/.exec(lines[i] || "");
     if (!opener) {
       i++;
       continue;

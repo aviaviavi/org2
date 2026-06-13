@@ -1,0 +1,30 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Paragraph",
+      "children": [
+        {
+          "type": "Text",
+          "value": "````org\nnot a source block\n````"
+        }
+      ]
+    },
+    {
+      "type": "SrcBlock",
+      "terminated": true,
+      "begin": {
+        "indent": "",
+        "keywordRaw": "```",
+        "afterKeywordRaw": "sql"
+      },
+      "bodyRaw": "select 1",
+      "end": {
+        "indent": "",
+        "keywordRaw": "```",
+        "afterKeywordRaw": ""
+      }
+    }
+  ]
+}
