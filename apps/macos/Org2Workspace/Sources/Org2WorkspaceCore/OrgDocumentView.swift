@@ -29,7 +29,6 @@ struct OrgRenderedEntryView: View, Equatable {
   let selectedBlockID: OrgEditableBlock.ID?
   let selectedBlockIndex: Int?
   let editingBlockID: OrgEditableBlock.ID?
-  let isSavingBlock: Bool
   let sourceBlockRuns: [String: SourceBlockRunState]
   @State private var renderedBlockWindow: Range<Int>?
   @State private var renderWindowResetKey = ""
@@ -42,7 +41,6 @@ struct OrgRenderedEntryView: View, Equatable {
       && lhs.selectedBlockID == rhs.selectedBlockID
       && lhs.selectedBlockIndex == rhs.selectedBlockIndex
       && lhs.editingBlockID == rhs.editingBlockID
-      && lhs.isSavingBlock == rhs.isSavingBlock
       && lhs.sourceBlockRuns == rhs.sourceBlockRuns
   }
 
