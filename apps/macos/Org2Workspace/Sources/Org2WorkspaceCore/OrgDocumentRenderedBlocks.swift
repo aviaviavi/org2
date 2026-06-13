@@ -47,6 +47,12 @@ struct RenderedBlockView: View, Equatable {
   }
 
   var body: some View {
+    let expansionKey = RenderedBlockExpansionState.key(
+      sourceFile: sourceFile,
+      editableBlock: editableBlock,
+      renderedKind: renderedKind,
+      rawText: rawText ?? fallbackRenderedText
+    )
     switch block {
     case .heading(let heading):
       RenderedHeadingView(
@@ -60,11 +66,16 @@ struct RenderedBlockView: View, Equatable {
     case .properties(let rows):
       RenderedPropertiesView(rows: rows, rawText: rawText, inlineActions: inlineActions)
     case .quote(let lines):
-      RenderedQuoteView(lines: lines, rawText: rawText)
+      RenderedQuoteView(lines: lines, rawText: rawText, expansionKey: expansionKey)
     case .source(let language, let lines):
-      RenderedSourceView(language: language, lines: lines, inlineActions: inlineActions)
+      RenderedSourceView(
+        language: language,
+        lines: lines,
+        inlineActions: inlineActions,
+        expansionKey: expansionKey
+      )
     case .table(let table):
-      RenderedTableView(table: table)
+      RenderedTableView(table: table, expansionKey: expansionKey)
     case .horizontalRule:
       RenderedHorizontalRuleView()
     case .listItem(let indent, let marker, let checkbox, let text):
@@ -95,6 +106,116 @@ struct RenderedBlockView: View, Equatable {
       Spacer()
         .frame(height: 4)
     }
+  }
+
+  private var renderedKind: String {
+    switch block {
+    case .heading: "heading"
+    case .planning: "planning"
+    case .properties: "properties"
+    case .quote: "quote"
+    case .source: "source"
+    case .table: "table"
+    case .horizontalRule: "horizontal-rule"
+    case .listItem: "list"
+    case .paragraph: "paragraph"
+    case .keyword: "keyword"
+    case .blank: "blank"
+    }
+  }
+
+  private var fallbackRenderedText: String {
+    switch block {
+    case .heading(let heading):
+      heading.title
+    case .planning(let planning):
+      planning.value
+    case .properties(let rows):
+      rows.map { "\($0.key):\($0.value)" }.joined(separator: "\n")
+    case .quote(let lines), .source(_, let lines):
+      lines.joined(separator: "\n")
+    case .table(let table):
+      table.rows.map { row in
+        switch row {
+        case .separator:
+          return "|-"
+        case .cells(let cells):
+          return cells.joined(separator: "|")
+        }
+      }.joined(separator: "\n")
+    case .horizontalRule:
+      "-----"
+    case .listItem(_, let marker, _, let text):
+      "\(marker) \(text)"
+    case .paragraph(let text), .keyword(_, let text):
+      text
+    case .blank:
+      ""
+    }
+  }
+}
+
+enum RenderedBlockExpansionState {
+  nonisolated(unsafe) private static var visibleLimits: [String: Int] = [:]
+  nonisolated(unsafe) private static var insertionOrder: [String] = []
+  private static let lock = NSLock()
+  private static let limitCount = 512
+
+  static func key(
+    sourceFile: String?,
+    editableBlock: OrgEditableBlock?,
+    renderedKind: String,
+    rawText: String?
+  ) -> String {
+    if let editableBlock {
+      return [
+        sourceFile ?? "",
+        editableBlock.renderIdentity.id,
+        String(editableBlock.renderIdentity.startLine),
+        String(editableBlock.renderIdentity.endLineExclusive),
+        String(editableBlock.renderIdentity.rawUTF8Count),
+        String(editableBlock.renderIdentity.rawHash),
+        editableBlock.renderIdentity.renderedKind
+      ].joined(separator: "|")
+    }
+    return [
+      sourceFile ?? "",
+      renderedKind,
+      String(rawText?.utf8.count ?? 0),
+      String(rawText?.hashValue ?? 0)
+    ].joined(separator: "|")
+  }
+
+  static func visibleLimit(for key: String, default defaultLimit: Int) -> Int {
+    lock.withLock {
+      visibleLimits[key] ?? defaultLimit
+    }
+  }
+
+  static func setVisibleLimit(_ limit: Int, for key: String) {
+    lock.withLock {
+      if visibleLimits[key] == nil {
+        insertionOrder.append(key)
+      }
+      visibleLimits[key] = limit
+      while insertionOrder.count > limitCount, let oldest = insertionOrder.first {
+        insertionOrder.removeFirst()
+        visibleLimits.removeValue(forKey: oldest)
+      }
+    }
+  }
+
+  static func toggledLimit(
+    currentLimit: Int,
+    totalCount: Int,
+    hiddenCount: Int,
+    defaultLimit: Int,
+    pageSize: Int
+  ) -> Int {
+    if hiddenCount == 0 {
+      return defaultLimit
+    }
+    return min(totalCount, currentLimit + pageSize)
   }
 }
 
@@ -1039,7 +1160,18 @@ private struct RenderedPropertyValueButton: View {
 private struct RenderedQuoteView: View {
   let lines: [String]
   let rawText: String?
-  @State private var visibleLineLimit = QuoteLineWindow.defaultLimit
+  let expansionKey: String
+  @State private var visibleLineLimit: Int
+
+  init(lines: [String], rawText: String?, expansionKey: String) {
+    self.lines = lines
+    self.rawText = rawText
+    self.expansionKey = expansionKey
+    _visibleLineLimit = State(initialValue: RenderedBlockExpansionState.visibleLimit(
+      for: expansionKey,
+      default: QuoteLineWindow.defaultLimit
+    ))
+  }
 
   var body: some View {
     let allLines = displayLines
@@ -1056,11 +1188,13 @@ private struct RenderedQuoteView: View {
 
         if allLines.count > QuoteLineWindow.defaultLimit {
           Button {
-            if lineWindow.hiddenLineCount == 0 {
-              visibleLineLimit = QuoteLineWindow.defaultLimit
-            } else {
-              visibleLineLimit = min(allLines.count, visibleLineLimit + QuoteLineWindow.pageSize)
-            }
+            setVisibleLineLimit(RenderedBlockExpansionState.toggledLimit(
+              currentLimit: visibleLineLimit,
+              totalCount: allLines.count,
+              hiddenCount: lineWindow.hiddenLineCount,
+              defaultLimit: QuoteLineWindow.defaultLimit,
+              pageSize: QuoteLineWindow.pageSize
+            ))
           } label: {
             Label(
               lineWindow.hiddenLineCount == 0
@@ -1082,6 +1216,11 @@ private struct RenderedQuoteView: View {
 
   private var displayLines: [String] {
     QuoteLineWindow.displayLines(rawText: rawText, fallback: lines)
+  }
+
+  private func setVisibleLineLimit(_ limit: Int) {
+    visibleLineLimit = limit
+    RenderedBlockExpansionState.setVisibleLimit(limit, for: expansionKey)
   }
 }
 
@@ -1207,7 +1346,24 @@ private struct RenderedSourceView: View {
   let language: String?
   let lines: [String]
   let inlineActions: RenderedBlockInlineActions
-  @State private var visibleLineLimit = SourceBlockLineWindow.defaultLimit
+  let expansionKey: String
+  @State private var visibleLineLimit: Int
+
+  init(
+    language: String?,
+    lines: [String],
+    inlineActions: RenderedBlockInlineActions,
+    expansionKey: String
+  ) {
+    self.language = language
+    self.lines = lines
+    self.inlineActions = inlineActions
+    self.expansionKey = expansionKey
+    _visibleLineLimit = State(initialValue: RenderedBlockExpansionState.visibleLimit(
+      for: expansionKey,
+      default: SourceBlockLineWindow.defaultLimit
+    ))
+  }
 
   var body: some View {
     let lineWindow = SourceBlockLineWindow.make(lines: lines, visibleLimit: visibleLineLimit)
@@ -1246,11 +1402,13 @@ private struct RenderedSourceView: View {
 
       if lines.count > SourceBlockLineWindow.defaultLimit {
         Button {
-          if lineWindow.hiddenLineCount == 0 {
-            visibleLineLimit = SourceBlockLineWindow.defaultLimit
-          } else {
-            visibleLineLimit = min(lines.count, visibleLineLimit + SourceBlockLineWindow.pageSize)
-          }
+          setVisibleLineLimit(RenderedBlockExpansionState.toggledLimit(
+            currentLimit: visibleLineLimit,
+            totalCount: lines.count,
+            hiddenCount: lineWindow.hiddenLineCount,
+            defaultLimit: SourceBlockLineWindow.defaultLimit,
+            pageSize: SourceBlockLineWindow.pageSize
+          ))
         } label: {
           Label(
             lineWindow.hiddenLineCount == 0
@@ -1267,6 +1425,11 @@ private struct RenderedSourceView: View {
       SourceRunOutputAccessory(runState: inlineActions.sourceBlockRunState)
     }
     .padding(.vertical, 4)
+  }
+
+  private func setVisibleLineLimit(_ limit: Int) {
+    visibleLineLimit = limit
+    RenderedBlockExpansionState.setVisibleLimit(limit, for: expansionKey)
   }
 
   private func color(for line: String) -> Color {
@@ -1804,8 +1967,22 @@ private struct SourceRunLineChartView: View {
 
 private struct RenderedTableView: View {
   let table: OrgTableBlock
-  @State private var visibleRowLimit = TableRowWindow.defaultLimit
-  @State private var visibleColumnLimit = TableColumnWindow.defaultLimit
+  let expansionKey: String
+  @State private var visibleRowLimit: Int
+  @State private var visibleColumnLimit: Int
+
+  init(table: OrgTableBlock, expansionKey: String) {
+    self.table = table
+    self.expansionKey = expansionKey
+    _visibleRowLimit = State(initialValue: RenderedBlockExpansionState.visibleLimit(
+      for: "\(expansionKey)|rows",
+      default: TableRowWindow.defaultLimit
+    ))
+    _visibleColumnLimit = State(initialValue: RenderedBlockExpansionState.visibleLimit(
+      for: "\(expansionKey)|columns",
+      default: TableColumnWindow.defaultLimit
+    ))
+  }
 
   var body: some View {
     let rowWindow = TableRowWindow.make(
@@ -1857,11 +2034,13 @@ private struct RenderedTableView: View {
 
       if columnCount > TableColumnWindow.defaultLimit {
         Button {
-          if columnWindow.hiddenColumnCount == 0 {
-            visibleColumnLimit = TableColumnWindow.defaultLimit
-          } else {
-            visibleColumnLimit = min(columnCount, visibleColumnLimit + TableColumnWindow.pageSize)
-          }
+          setVisibleColumnLimit(RenderedBlockExpansionState.toggledLimit(
+            currentLimit: visibleColumnLimit,
+            totalCount: columnCount,
+            hiddenCount: columnWindow.hiddenColumnCount,
+            defaultLimit: TableColumnWindow.defaultLimit,
+            pageSize: TableColumnWindow.pageSize
+          ))
         } label: {
           Label(
             columnWindow.hiddenColumnCount == 0
@@ -1877,11 +2056,13 @@ private struct RenderedTableView: View {
 
       if table.rows.count > TableRowWindow.defaultLimit {
         Button {
-          if rowWindow.hiddenRowCount == 0 {
-            visibleRowLimit = TableRowWindow.defaultLimit
-          } else {
-            visibleRowLimit = min(table.rows.count, visibleRowLimit + TableRowWindow.pageSize)
-          }
+          setVisibleRowLimit(RenderedBlockExpansionState.toggledLimit(
+            currentLimit: visibleRowLimit,
+            totalCount: table.rows.count,
+            hiddenCount: rowWindow.hiddenRowCount,
+            defaultLimit: TableRowWindow.defaultLimit,
+            pageSize: TableRowWindow.pageSize
+          ))
         } label: {
           Label(
             rowWindow.hiddenRowCount == 0
@@ -1900,6 +2081,16 @@ private struct RenderedTableView: View {
 
   private var columnCount: Int {
     max(1, table.columnCount)
+  }
+
+  private func setVisibleRowLimit(_ limit: Int) {
+    visibleRowLimit = limit
+    RenderedBlockExpansionState.setVisibleLimit(limit, for: "\(expansionKey)|rows")
+  }
+
+  private func setVisibleColumnLimit(_ limit: Int) {
+    visibleColumnLimit = limit
+    RenderedBlockExpansionState.setVisibleLimit(limit, for: "\(expansionKey)|columns")
   }
 
   private func cellText(_ cells: [String], at index: Int) -> String {
