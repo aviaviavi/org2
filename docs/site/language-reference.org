@@ -199,6 +199,8 @@ const x = 1
 
 Prefer the fenced form for new hand-written examples and docs. The verbose =#+begin_src= form remains fully supported for compatibility and explicit Org-style interchange.
 
+Fenced source blocks use exactly three backticks for the opener and closer. Four-or-more backticks remain ordinary text in v0, which keeps Markdown examples that quote org2 fences from accidentally becoming executable org2 source, chart, dataset, or SQL blocks.
+
 * Tables
 
 - Pipe table rows: =| a | b |=

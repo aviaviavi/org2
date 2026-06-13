@@ -67,6 +67,7 @@ Org2 v0 keeps Org begin/end and inline forms as canonical, while allowing a smal
 - Fenced source blocks: =```lang= ... =```=
   - Parsed as =SrcBlock=.
   - Additive sugar only; parsers MUST remain compatible with =#+begin_src= / =#+end_src=.
+  - The fence marker is exactly three backticks; four-or-more backticks are ordinary text in v0.
 - Org2 source alias: =#+begin_org2= ... =#+end_org2=
   - Parsed equivalently to =#+begin_src org2= ... =#+end_src= in v0.
 - Backtick inline code: =`...`=
@@ -270,7 +271,7 @@ A source block is a block consisting of:
 
 - A begin line matching one of:
   - =#+begin_src= or =#+begin_org2= (case-insensitive), with optional indentation, or
-  - a fenced code opener line starting with exactly three backticks (=```=) and optional trailing language token bytes.
+  - a fenced code opener line starting with exactly three backticks (=```=) and optional trailing language token bytes. A line starting with four-or-more backticks is not a fenced opener in v0.
 - Zero or more body lines (treated as raw text).
 - A matching end line:
   - =#+end_src= or =#+end_org2= for begin/end style blocks, or

@@ -776,7 +776,7 @@ function parseSrcBlockLine(line: string, lineNumber: number): SrcBlockLine | nul
 
   // Additive syntax sugar: fenced source blocks (```lang ... ```)
   // Stored in the same SrcBlockLine shape for round-tripping.
-  const fenceMatch = /^(\s*)```(.*)$/.exec(line);
+  const fenceMatch = /^(\s*)```($|[^`].*)$/.exec(line);
   if (fenceMatch) {
     const indent = fenceMatch[1] || "";
     const afterKeywordRaw = fenceMatch[2] || "";

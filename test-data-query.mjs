@@ -17,6 +17,7 @@ const orgViewNote = path.join(tmp, "org-view-report.org2");
 const duplicateDatasetNote = path.join(tmp, "duplicate-dataset-report.org2");
 const conflictingRelationNote = path.join(tmp, "conflicting-relation-report.org2");
 const duplicateResultNote = path.join(tmp, "duplicate-result-report.org2");
+const fourTickDatasetNote = path.join(tmp, "four-tick-dataset-report.org2");
 const data = path.join(tmp, "package-fetches.csv");
 const fakeDuckdb = path.join(tmp, "duckdb");
 const out = path.join(tmp, "fetches_by_state.org");
@@ -101,6 +102,21 @@ SELECT state, sum(fetches) AS fetches
 FROM remote_fetches
 GROUP BY state
 \`\`\`
+`, "utf8");
+
+fs.writeFileSync(fourTickDatasetNote, `* Package fetch report with quoted dataset example
+
+\`\`\`\`dataset fetches
+type: csv
+path: ./package-fetches.csv
+engine: duckdb
+\`\`\`\`
+
+\`\`\`\`sql results=fetches_by_state
+SELECT state, sum(fetches) AS fetches
+FROM fetches
+GROUP BY state
+\`\`\`\`
 `, "utf8");
 
 fs.writeFileSync(viewNote, `* Package fetch report with reusable SQL views
@@ -422,6 +438,14 @@ assert.notEqual(unsafeCredential.status, 0);
 const unsafeCredentialJson = JSON.parse(unsafeCredential.stdout);
 assert.equal(unsafeCredentialJson.ok, false);
 assert.match(unsafeCredentialJson.diagnostics[0].message, /credential\/auth metadata must be a reference/);
+
+const fourTickDataset = spawnSync("node", ["dist/cli.js", "query-data", "--file", fourTickDatasetNote, "--inspect", "--format", "json"], { cwd: repo, encoding: "utf8" });
+assert.notEqual(fourTickDataset.status, 0);
+const fourTickDatasetJson = JSON.parse(fourTickDataset.stdout);
+assert.equal(fourTickDatasetJson.ok, false);
+assert.deepEqual(fourTickDatasetJson.datasets, []);
+assert.deepEqual(fourTickDatasetJson.resultBlocks, []);
+assert.match(fourTickDatasetJson.diagnostics[0].message, /No SQL result blocks found|No dataset blocks found/);
 
 const viewJson = JSON.parse(cli(["query-data", "--file", viewNote, "--results", "fetches_by_state", "--duckdb", fakeDuckdb, "--format", "json", "--include-script"]));
 assert.equal(viewJson.ok, true);
