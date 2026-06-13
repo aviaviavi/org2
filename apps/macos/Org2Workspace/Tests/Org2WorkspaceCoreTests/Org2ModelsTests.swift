@@ -4128,6 +4128,43 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(remoteVideoPage.resolvedURL?.absoluteString, "https://youtu.be/dQw4w9WgXcQ")
   }
 
+  func testRenderedInlineMediaPresentationUsesRawParagraphAndListText() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-inline-media-render-\(UUID().uuidString)", isDirectory: true)
+    let assets = root.appendingPathComponent("assets", isDirectory: true)
+    try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
+    let image = assets.appendingPathComponent("diagram.png")
+    let note = root.appendingPathComponent("note.org2")
+    try Data().write(to: image)
+    try Data().write(to: note)
+
+    let paragraphBlock = try XCTUnwrap(OrgEntryRenderer.parseEditable(
+      "inline images [[file:assets/diagram.png][Image]]"
+    ).first)
+    let paragraphEmbedded = try XCTUnwrap(RenderedInlineMediaPresentation.embedded(
+      raw: paragraphBlock.rawText,
+      sourceFile: note.path,
+      corpusRoot: root
+    ))
+    XCTAssertEqual(paragraphEmbedded.displayText, "inline images")
+    XCTAssertEqual(paragraphEmbedded.attachments.first?.resolvedPath, image.standardizedFileURL.path)
+
+    let listBlock = try XCTUnwrap(OrgEntryRenderer.parseEditable(
+      "- inline images [[file:assets/diagram.png][Image]]"
+    ).first)
+    guard case .listItem(_, _, _, let renderedText) = listBlock.rendered else {
+      return XCTFail("Expected list item")
+    }
+    let rawListText = OrgRenderedLineDisplayCache.listText(rawText: listBlock.rawText, fallback: renderedText)
+    let listEmbedded = try XCTUnwrap(RenderedInlineMediaPresentation.embedded(
+      raw: rawListText,
+      sourceFile: note.path,
+      corpusRoot: root
+    ))
+    XCTAssertEqual(listEmbedded.displayText, "inline images")
+    XCTAssertEqual(listEmbedded.attachments.first?.resolvedPath, image.standardizedFileURL.path)
+  }
+
   func testOrgCryptFindsPlaintextCryptSubtreesAndProperties() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-crypt-\(UUID().uuidString)", isDirectory: true)
