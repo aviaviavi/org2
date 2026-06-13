@@ -82,7 +82,11 @@ struct SourceBlockExecutionResult: Equatable, Sendable {
 @MainActor
 public final class WorkspaceStore: ObservableObject {
   @Published public var selectedSurface: WorkspaceSurface = .agenda
-  @Published public var agendaMode: AgendaMode = .range
+  @Published public var agendaMode: AgendaMode = .focus {
+    didSet {
+      defaults.set(agendaMode.rawValue, forKey: agendaModeKey)
+    }
+  }
   @Published public var agendaFilter = ""
   @Published public var agendaFilterFocusToken = 0
   @Published public var selectedAgendaItemID: String?
@@ -162,6 +166,7 @@ public final class WorkspaceStore: ObservableObject {
   public let cli: Org2CLI
   private let defaults: UserDefaults
   private let corpusKey = "Org2Workspace.corpusRoot"
+  private let agendaModeKey = "Org2Workspace.agendaMode"
   private let openClawEndpointKey = "Org2Workspace.openClawEndpoint"
   private let openClawAgentKey = "Org2Workspace.openClawAgent"
   private let openClawRemoteCorpusPathKey = "Org2Workspace.openClawRemoteCorpusPath"
@@ -189,6 +194,7 @@ public final class WorkspaceStore: ObservableObject {
     self.defaults = defaults
     self.openClawTranscriptURL = openClawTranscriptURL ?? Self.defaultOpenClawTranscriptURL()
     self.cli = cli ?? (try? Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())) ?? Org2CLI(repoRoot: URL(fileURLWithPath: "/Users/avi/dev/org2"))
+    agendaMode = Self.restoreAgendaMode(from: defaults, key: agendaModeKey)
     let settings = OpenClawGatewaySettings.resolve()
     openClawEndpointText = defaults.string(forKey: openClawEndpointKey) ?? settings.endpoint.absoluteString
     openClawAgentID = defaults.string(forKey: openClawAgentKey) ?? "main"
@@ -3132,6 +3138,15 @@ public final class WorkspaceStore: ObservableObject {
 
   public var openClawContextRootText: String {
     effectiveOpenClawRemoteCorpusPath() ?? "Remote org2 root not configured"
+  }
+
+  private static func restoreAgendaMode(from defaults: UserDefaults, key: String) -> AgendaMode {
+    guard let rawValue = defaults.string(forKey: key),
+          let mode = AgendaMode(rawValue: rawValue)
+    else {
+      return .focus
+    }
+    return mode
   }
 
   private func restoreCorpusRoot() -> URL? {

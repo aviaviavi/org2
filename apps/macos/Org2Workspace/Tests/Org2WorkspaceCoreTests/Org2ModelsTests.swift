@@ -369,6 +369,31 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(cleared.openClawMessages.isEmpty)
   }
 
+  @MainActor
+  func testAgendaModeDefaultsToFocus() throws {
+    let suiteName = "org2-workspace-agenda-mode-default-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+
+    XCTAssertEqual(store.agendaMode, .focus)
+  }
+
+  @MainActor
+  func testAgendaModePersistsLastSelection() throws {
+    let suiteName = "org2-workspace-agenda-mode-persist-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+    store.agendaMode = .range
+
+    let restored = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+
+    XCTAssertEqual(restored.agendaMode, .range)
+  }
+
   func testOpenClawChatClientNormalizesModelAndAgentNames() {
     XCTAssertEqual(OpenClawChatClient.openClawModelName(for: ""), "openclaw")
     XCTAssertEqual(OpenClawChatClient.openClawModelName(for: "openclaw"), "openclaw")
