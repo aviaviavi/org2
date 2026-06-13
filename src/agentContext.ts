@@ -948,6 +948,9 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       .reduce((byKey, thread) => byKey.set(thread.key, thread), new Map<string, AgentRelatedThread>())
       .values(),
   ).sort((a, b) => a.title.localeCompare(b.title) || a.citation.localeCompare(b.citation));
+  const selectedThreads = results
+    .filter((node): node is AgentNode & { thread: AgentThreadMetadata } => Boolean(node.thread))
+    .sort((a, b) => a.citation.localeCompare(b.citation) || a.title.localeCompare(b.title));
   const directDataLinks: AgentRelatedDataLink[] = results
     .filter((node): node is AgentNode & { dataLink: AgentDataLinkMetadata } => Boolean(node.dataLink))
     .map((node) => ({
@@ -1054,6 +1057,30 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
     if (profile.reviewNeeded.length) lines.push(`  - Review needed: ${profile.reviewNeeded.map((item) => item.message).join("; ")}`);
   }
   for (const value of backlinkValues.slice(0, 12)) lines.push(`- Backlink: ${value}`);
+  lines.push("");
+  lines.push(`${h2} Selected agent threads`);
+  if (selectedThreads.length === 0) lines.push("- None found");
+  for (const node of selectedThreads) {
+    const thread = node.thread;
+    const details = [
+      thread.agent ? `agent: ${thread.agent}` : "",
+      thread.session ? `session: ${thread.session}` : "",
+      thread.status ? `status: ${thread.status}` : "",
+      thread.storage ? `storage: ${thread.storage}` : "",
+      thread.transcript ? `transcript: ${thread.transcript}` : "",
+    ].filter(Boolean);
+    lines.push(`- ${node.title} (${node.citation})${details.length ? `; ${details.join("; ")}` : ""}`);
+    if (thread.contextAttachments.length === 0) {
+      lines.push("  - Context attachments: none");
+    } else {
+      lines.push("  - Context attachments:");
+      for (const attachment of thread.contextAttachments) {
+        const target = attachment.target ? ` -> ${attachment.target.title} (${attachment.target.citation})` : "";
+        const label = attachment.label ? `; label: ${attachment.label}` : "";
+        lines.push(`    - ${attachment.ref}${label}${target}`);
+      }
+    }
+  }
   lines.push("");
   lines.push(`${h2} Related agent threads`);
   if (relatedThreads.length === 0) lines.push("- None found");
