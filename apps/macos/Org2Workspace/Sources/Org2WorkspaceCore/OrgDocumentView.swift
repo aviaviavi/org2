@@ -29,27 +29,17 @@ struct OrgRenderedEntryView: View {
 
     LazyVStack(alignment: .leading, spacing: 8) {
       ForEach(visibleBlocks) { block in
-        if store.editingBlockID == block.id {
-          InlineBlockEditorView(block: block)
-        } else {
-          EditableRenderedBlockView(
-            block: block,
-            isSourceEditable: isSourceEditable,
-            isSelected: selectedBlockID == block.id,
-            canMoveUp: moveAvailabilityValues[block.id]?.up == true,
-            canMoveDown: moveAvailabilityValues[block.id]?.down == true,
-            actions: actions(for: block)
-          ) {
-            RenderedBlockView(
-              block: block.rendered,
-              rawText: block.rawText,
-              editableBlock: block,
-              sourceFile: sourceFile,
-              corpusRoot: corpusRoot
-            )
-            .equatable()
-          }
-        }
+        OrgRenderedEntryRow(
+          block: block,
+          isSourceEditable: isSourceEditable,
+          isSelected: selectedBlockID == block.id,
+          isEditing: store.editingBlockID == block.id,
+          canMoveUp: moveAvailabilityValues[block.id]?.up == true,
+          canMoveDown: moveAvailabilityValues[block.id]?.down == true,
+          sourceFile: sourceFile,
+          corpusRoot: corpusRoot
+        )
+        .equatable()
       }
 
       if visibleLimit < blocks.count {
@@ -71,29 +61,6 @@ struct OrgRenderedEntryView: View {
     .onChange(of: moveAvailabilitySignature) { _, newSignature in
       refreshMoveAvailabilityIfNeeded(signature: newSignature, source: source)
     }
-  }
-
-  private func actions(for block: OrgEditableBlock) -> RenderedBlockActions {
-    RenderedBlockActions(
-      select: {
-        store.selectBlock(block)
-      },
-      beginEditing: {
-        store.beginEditingBlock(block)
-      },
-      insert: { kind in
-        Task { await store.insertBlock(after: block, kind: kind) }
-      },
-      move: { direction in
-        Task { await store.moveBlock(block, direction: direction) }
-      },
-      duplicate: {
-        Task { await store.duplicateBlock(block) }
-      },
-      delete: {
-        Task { await store.deleteBlock(block) }
-      }
-    )
   }
 
   private func resetRenderedBlockLimitIfNeeded() {
@@ -141,6 +108,80 @@ struct OrgRenderedEntryView: View {
   private static let initialRenderedBlockLimit = 220
   private static let renderedBlockPageSize = 180
   private static let selectedBlockLookahead = 48
+}
+
+private struct OrgRenderedEntryRow: View, Equatable {
+  @EnvironmentObject private var store: WorkspaceStore
+  let block: OrgEditableBlock
+  let isSourceEditable: Bool
+  let isSelected: Bool
+  let isEditing: Bool
+  let canMoveUp: Bool
+  let canMoveDown: Bool
+  let sourceFile: String?
+  let corpusRoot: URL?
+
+  nonisolated static func == (lhs: OrgRenderedEntryRow, rhs: OrgRenderedEntryRow) -> Bool {
+    // Keep the active editor fully reactive; use row equality to quiet the surrounding rendered document.
+    guard !lhs.isEditing, !rhs.isEditing else {
+      return false
+    }
+    return lhs.block == rhs.block
+      && lhs.isSourceEditable == rhs.isSourceEditable
+      && lhs.isSelected == rhs.isSelected
+      && lhs.isEditing == rhs.isEditing
+      && lhs.canMoveUp == rhs.canMoveUp
+      && lhs.canMoveDown == rhs.canMoveDown
+      && lhs.sourceFile == rhs.sourceFile
+      && lhs.corpusRoot == rhs.corpusRoot
+  }
+
+  var body: some View {
+    if isEditing {
+      InlineBlockEditorView(block: block)
+    } else {
+      EditableRenderedBlockView(
+        block: block,
+        isSourceEditable: isSourceEditable,
+        isSelected: isSelected,
+        canMoveUp: canMoveUp,
+        canMoveDown: canMoveDown,
+        actions: actions
+      ) {
+        RenderedBlockView(
+          block: block.rendered,
+          rawText: block.rawText,
+          editableBlock: block,
+          sourceFile: sourceFile,
+          corpusRoot: corpusRoot
+        )
+        .equatable()
+      }
+    }
+  }
+
+  private var actions: RenderedBlockActions {
+    RenderedBlockActions(
+      select: {
+        store.selectBlock(block)
+      },
+      beginEditing: {
+        store.beginEditingBlock(block)
+      },
+      insert: { kind in
+        Task { await store.insertBlock(after: block, kind: kind) }
+      },
+      move: { direction in
+        Task { await store.moveBlock(block, direction: direction) }
+      },
+      duplicate: {
+        Task { await store.duplicateBlock(block) }
+      },
+      delete: {
+        Task { await store.deleteBlock(block) }
+      }
+    )
+  }
 }
 
 struct OrgRenderedEntryBlockMoveAvailability: Equatable, Sendable {
