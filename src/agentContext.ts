@@ -692,6 +692,12 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
   const todos = results.filter((node) => Boolean(node.todo));
   const entityValues = uniqueSorted(results.flatMap((node) => [node.properties.PROJECT, node.properties.PERSON, node.properties.PEOPLE, ...node.tags, ...node.aliases]));
   const backlinkValues = uniqueSorted(results.flatMap((node) => (node.backlinks || []).map((link) => `${link.sourceTitle} (${link.citation})`)));
+  const relatedThreads = Array.from(
+    results
+      .flatMap((node) => node.relatedThreads || [])
+      .reduce((byKey, thread) => byKey.set(thread.key, thread), new Map<string, AgentRelatedThread>())
+      .values(),
+  ).sort((a, b) => a.title.localeCompare(b.title) || a.citation.localeCompare(b.citation));
   const profiles = payload.entityProfiles || [];
   const caveats = uniqueSorted([
     ...(payload.errors || []),
@@ -737,6 +743,20 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
     if (profile.reviewNeeded.length) lines.push(`  - Review needed: ${profile.reviewNeeded.map((item) => item.message).join("; ")}`);
   }
   for (const value of backlinkValues.slice(0, 12)) lines.push(`- Backlink: ${value}`);
+  lines.push("");
+  lines.push(`${h2} Related agent threads`);
+  if (relatedThreads.length === 0) lines.push("- None found");
+  for (const thread of relatedThreads) {
+    const details = [
+      thread.id ? `id: ${thread.id}` : "",
+      thread.agent ? `agent: ${thread.agent}` : "",
+      thread.session ? `session: ${thread.session}` : "",
+      thread.status ? `status: ${thread.status}` : "",
+    ].filter(Boolean);
+    const attachments = uniqueSorted(thread.matchingAttachments.map((attachment) => attachment.ref));
+    lines.push(`- ${thread.title} (${thread.citation})${details.length ? `; ${details.join("; ")}` : ""}`);
+    if (attachments.length) lines.push(`  - Matching attachments: ${attachments.join(", ")}`);
+  }
   lines.push("");
   lines.push(`${h2} Open questions / known uncertainty`);
   if (caveats.length === 0) lines.push("- None surfaced by org2; verify any task-specific assumptions before acting.");

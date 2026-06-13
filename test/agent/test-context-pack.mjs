@@ -28,6 +28,18 @@ See [[id:decision-1][decision note]].
 :UPDATED: 2020-01-01
 :END:
 Old support context.
+
+* Thread: Scarf triage help
+:PROPERTIES:
+:ID: thread-scarf-triage
+:KIND: agent-thread
+:AGENT: openclaw
+:SESSION: openclaw:session:triage-1
+:STATUS: active
+:CONTEXT: id:scarf-support-1
+:STORAGE: summary
+:END:
+Working notes for support triage.
 `, "utf8");
 fs.writeFileSync(path.join(tmp, "decisions.org2"), `#+title: Decisions
 
@@ -50,8 +62,17 @@ assert.match(md, /## Active TODOs \/ scheduled items/);
 assert.match(md, /TODO Scarf support triage/);
 assert.match(md, /## Related entities and backlinks/);
 assert.match(md, /Entity: scarf/);
+assert.match(md, /## Related agent threads/);
 assert.match(md, /## Open questions \/ known uncertainty/);
 assert.match(md, /## Suggested next actions/);
+
+const selected = run("context", "--id", "scarf-support-1", "--dir", tmp, "--format", "markdown");
+assert.match(selected, /# Org2 Context Pack/);
+assert.match(selected, /- scarf-support-1/);
+assert.match(selected, /## Related agent threads/);
+assert.match(selected, /Thread: Scarf triage help/);
+assert.match(selected, /session: openclaw:session:triage-1/);
+assert.match(selected, /Matching attachments: id:scarf-support-1/);
 
 const org = run("context", "scarf support triage", "--dir", tmp, "--format", "org");
 assert.match(org, /^\* Org2 Context Pack/m);
@@ -63,3 +84,8 @@ assert.equal(json.action, "bundle");
 assert.equal(json.query, "scarf support triage");
 assert.ok(json.context.citations[0].citation.includes("support.org2"));
 assert.equal(json.maxChars, 8000);
+
+const selectedJson = JSON.parse(run("context", "--id", "scarf-support-1", "--dir", tmp, "--format", "json"));
+assert.equal(selectedJson.action, "fetch");
+assert.equal(selectedJson.id, "scarf-support-1");
+assert.equal(selectedJson.results[0].relatedThreads[0].id, "thread-scarf-triage");
