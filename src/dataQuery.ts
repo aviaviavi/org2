@@ -32,6 +32,7 @@ export type DataQueryDataset = {
 export type DataQuerySqlBlock = {
   resultId: string;
   artifact?: string;
+  freshness?: string;
   line: number;
   endLine: number;
   sql: string;
@@ -40,6 +41,7 @@ export type DataQuerySqlBlock = {
 export type DataQueryResultBlock = {
   resultId: string;
   artifact?: string;
+  freshness?: string;
   line: number;
   endLine: number;
 };
@@ -69,6 +71,7 @@ export type DataQueryResult = {
   provenance?: {
     resultId: string;
     artifact?: string;
+    freshness?: string;
     querySha256: string;
     scriptSha256: string;
     datasetIds: string[];
@@ -406,11 +409,15 @@ function parseDataset(block: FencedBlock, baseDir: string, namedTables: Map<stri
 function parseSqlBlock(block: FencedBlock): { sql?: DataQuerySqlBlock; diagnostics: DataQueryDiagnostic[] } {
   const resultId = argValue(block.args, ["id", "name"]) || argValue(block.args, ["results", "result"], { separated: false }) || positionalArg(block.args) || "";
   const artifact = argValue(block.args, ["artifact", "out", "output"]);
+  const freshness = argValue(block.args, ["freshness", "ttl", "max-age"], { separated: false });
   const diagnostics: DataQueryDiagnostic[] = [];
   if (!resultId) diagnostics.push(diagnostic("SQL block requires results=NAME", { line: block.line }));
   if (!block.body.trim()) diagnostics.push(diagnostic("SQL block is empty", { line: block.line, ...(resultId ? { blockId: resultId } : {}) }));
+  if (freshness && !/^[A-Za-z0-9_.:/+-]+$/.test(freshness)) {
+    diagnostics.push(diagnostic("SQL result freshness metadata must be a compact token such as 1h, 24h, P1D, or manual", { line: block.line, ...(resultId ? { blockId: resultId } : {}) }));
+  }
   if (diagnostics.some((item) => item.severity === "error")) return { diagnostics };
-  return { sql: { resultId, ...(artifact ? { artifact } : {}), line: block.line, endLine: block.endLine, sql: block.body.trim() }, diagnostics };
+  return { sql: { resultId, ...(artifact ? { artifact } : {}), ...(freshness ? { freshness } : {}), line: block.line, endLine: block.endLine, sql: block.body.trim() }, diagnostics };
 }
 
 function hasSqlViewArg(block: FencedBlock): boolean {
@@ -522,7 +529,8 @@ export function rowsToOrgTable(rows: Record<string, unknown>[]): string {
 
 function materializedResultTable(resultId: string, rows: Record<string, unknown>[], provenance: NonNullable<DataQueryResult["provenance"]>): string {
   const artifact = provenance.artifact ? ` artifact=${provenance.artifact}` : "";
-  return `#+query-data: result=${resultId} rows=${rows.length}${artifact} query_sha256=${provenance.querySha256} script_sha256=${provenance.scriptSha256}\n#+name: ${resultId}\n#+results: query-data-${resultId}\n${rowsToOrgTable(rows)}`;
+  const freshness = provenance.freshness ? ` freshness=${provenance.freshness}` : "";
+  return `#+query-data: result=${resultId} rows=${rows.length}${artifact}${freshness} query_sha256=${provenance.querySha256} script_sha256=${provenance.scriptSha256}\n#+name: ${resultId}\n#+results: query-data-${resultId}\n${rowsToOrgTable(rows)}`;
 }
 
 function selectSqlBlockByLine(blocks: DataQuerySqlBlock[], line: number): DataQuerySqlBlock | undefined {
@@ -533,6 +541,7 @@ function resultBlockMetadata(blocks: DataQuerySqlBlock[]): DataQueryResultBlock[
   return blocks.map((block) => ({
     resultId: block.resultId,
     ...(block.artifact ? { artifact: block.artifact } : {}),
+    ...(block.freshness ? { freshness: block.freshness } : {}),
     line: block.line,
     endLine: block.endLine,
   }));
@@ -548,6 +557,7 @@ function resultProvenance(
   return {
     resultId: selected.resultId,
     ...(outputArtifact || selected.artifact ? { artifact: outputArtifact || selected.artifact } : {}),
+    ...(selected.freshness ? { freshness: selected.freshness } : {}),
     querySha256: sha256(selected.sql),
     scriptSha256: sha256(script),
     datasetIds: datasets.map((dataset) => dataset.id),
