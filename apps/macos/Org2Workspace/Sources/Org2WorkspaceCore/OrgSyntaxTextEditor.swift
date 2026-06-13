@@ -192,6 +192,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     func textDidChange(_ notification: Notification) {
       guard let textView = notification.object as? NSTextView else { return }
       let currentText = textView.string
+      let currentUTF16Length = textView.textStorage?.length ?? (currentText as NSString).length
       parent.onLocalTextChange?(currentText)
       if !isApplyingProgrammaticChange {
         publishTextChange(currentText)
@@ -199,12 +200,14 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       publishSelectionIfNeeded(textView.selectedRange(), in: currentText)
       let shouldScheduleHighlighting = Self.shouldScheduleDeferredHighlighting(
         text: currentText,
+        utf16Length: currentUTF16Length,
         previousHighlightedText: lastHighlightedText,
         monospacedUnchanged: lastHighlightedMonospaced == parent.monospaced
       )
       markUserTextChangedForHighlighting(
         in: textView,
         currentText: currentText,
+        utf16Length: currentUTF16Length,
         willScheduleDeferredHighlighting: shouldScheduleHighlighting
       )
       if shouldScheduleHighlighting {
@@ -266,10 +269,11 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     func markUserTextChangedForHighlighting(
       in textView: NSTextView,
       currentText: String? = nil,
+      utf16Length providedUTF16Length: Int? = nil,
       willScheduleDeferredHighlighting: Bool = true
     ) {
       let text = currentText ?? textView.string
-      let utf16Length = textView.textStorage?.length ?? (text as NSString).length
+      let utf16Length = providedUTF16Length ?? textView.textStorage?.length ?? (text as NSString).length
       if canPreserveLargeBufferAttributes(utf16Length: utf16Length) {
         textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
         recordHighlightedState(text: text, utf16Length: utf16Length)
@@ -497,7 +501,24 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       previousHighlightedText: String?,
       monospacedUnchanged: Bool
     ) -> Bool {
-      guard OrgSyntaxHighlighter.shouldTokenizeLiveText(text) else {
+      shouldScheduleDeferredHighlighting(
+        text: text,
+        utf16Length: OrgSyntaxHighlighter.utf16Length(
+          of: text,
+          upTo: OrgSyntaxHighlighter.liveTokenizationUTF16Limit + 1
+        ),
+        previousHighlightedText: previousHighlightedText,
+        monospacedUnchanged: monospacedUnchanged
+      )
+    }
+
+    static func shouldScheduleDeferredHighlighting(
+      text: String,
+      utf16Length: Int,
+      previousHighlightedText: String?,
+      monospacedUnchanged: Bool
+    ) -> Bool {
+      guard OrgSyntaxHighlighter.shouldTokenizeLiveText(utf16Length: utf16Length) else {
         return false
       }
       guard monospacedUnchanged else {
