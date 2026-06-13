@@ -2,6 +2,26 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+private enum InlineEditorChrome {
+  static func controlsOpacity(_ isActive: Bool) -> Double {
+    isActive ? 1 : 0
+  }
+
+  static func backgroundOpacity(isHovered: Bool, isFocused: Bool = false) -> Double {
+    if isHovered {
+      return 0.032
+    }
+    return isFocused ? 0.012 : 0.004
+  }
+
+  static func strokeOpacity(isHovered: Bool, isFocused: Bool = false) -> Double {
+    if isHovered {
+      return 0.16
+    }
+    return isFocused ? 0.07 : 0
+  }
+}
+
 struct InlineBlockEditorView: View {
   let block: OrgEditableBlock
 
@@ -76,14 +96,17 @@ private struct HorizontalRuleBlockEditor: View {
       .padding(.horizontal, 4)
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
-      .opacity(isHovered || store.isSavingBlock ? 1 : 0.66)
+      .opacity(InlineEditorChrome.controlsOpacity(isHovered || store.isSavingBlock))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 3)
-    .background(Color.accentColor.opacity(isHovered ? 0.03 : 0.014), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .background(
+      Color.accentColor.opacity(InlineEditorChrome.backgroundOpacity(isHovered: isHovered)),
+      in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+    )
     .overlay(
       RoundedRectangle(cornerRadius: 6, style: .continuous)
-        .stroke(Color.accentColor.opacity(isHovered ? 0.16 : 0.09))
+        .stroke(Color.accentColor.opacity(InlineEditorChrome.strokeOpacity(isHovered: isHovered)))
     )
     .onHover { isHovered = $0 }
   }
@@ -242,14 +265,17 @@ private struct HeadingBlockEditor: View {
       .padding(.horizontal, 4)
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
-      .opacity(isHovered || showsDetails || store.isSavingBlock ? 1 : 0.66)
+      .opacity(InlineEditorChrome.controlsOpacity(isHovered || showsDetails || store.isSavingBlock))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
-    .background(Color.accentColor.opacity(isHovered ? 0.04 : 0.02), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .background(
+      Color.accentColor.opacity(InlineEditorChrome.backgroundOpacity(isHovered: isHovered, isFocused: titleFocused)),
+      in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+    )
     .overlay(
       RoundedRectangle(cornerRadius: 6, style: .continuous)
-        .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
+        .stroke(Color.accentColor.opacity(InlineEditorChrome.strokeOpacity(isHovered: isHovered, isFocused: titleFocused)))
     )
     .onHover { isHovered = $0 }
     .onChange(of: todo) {
@@ -480,14 +506,17 @@ private struct PlanningBlockEditor: View {
       .padding(.horizontal, 4)
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
-      .opacity(isHovered || store.isSavingBlock ? 1 : 0.66)
+      .opacity(InlineEditorChrome.controlsOpacity(isHovered || store.isSavingBlock))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 3)
-    .background(Color.accentColor.opacity(isHovered ? 0.035 : 0.018), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .background(
+      Color.accentColor.opacity(InlineEditorChrome.backgroundOpacity(isHovered: isHovered, isFocused: valueFocused)),
+      in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+    )
     .overlay(
       RoundedRectangle(cornerRadius: 6, style: .continuous)
-        .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
+        .stroke(Color.accentColor.opacity(InlineEditorChrome.strokeOpacity(isHovered: isHovered, isFocused: valueFocused)))
     )
     .onHover { isHovered = $0 }
     .onChange(of: kind) {
@@ -645,14 +674,17 @@ private struct ListItemBlockEditor: View {
       .padding(.horizontal, 4)
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
-      .opacity(isHovered || store.isSavingBlock ? 1 : 0.66)
+      .opacity(InlineEditorChrome.controlsOpacity(isHovered || store.isSavingBlock))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
-    .background(Color.accentColor.opacity(isHovered ? 0.035 : 0.018), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .background(
+      Color.accentColor.opacity(InlineEditorChrome.backgroundOpacity(isHovered: isHovered, isFocused: textFocused)),
+      in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+    )
     .overlay(
       RoundedRectangle(cornerRadius: 6, style: .continuous)
-        .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
+        .stroke(Color.accentColor.opacity(InlineEditorChrome.strokeOpacity(isHovered: isHovered, isFocused: textFocused)))
     )
     .onHover { isHovered = $0 }
     .onChange(of: marker) {
@@ -860,14 +892,17 @@ private struct KeywordBlockEditor: View {
       .padding(.horizontal, 4)
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
-      .opacity(isHovered || store.isSavingBlock ? 1 : 0.66)
+      .opacity(InlineEditorChrome.controlsOpacity(isHovered || store.isSavingBlock))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 3)
-    .background(Color.accentColor.opacity(isHovered ? 0.035 : 0.018), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .background(
+      Color.accentColor.opacity(InlineEditorChrome.backgroundOpacity(isHovered: isHovered, isFocused: valueFocused)),
+      in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+    )
     .overlay(
       RoundedRectangle(cornerRadius: 6, style: .continuous)
-        .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
+        .stroke(Color.accentColor.opacity(InlineEditorChrome.strokeOpacity(isHovered: isHovered, isFocused: valueFocused)))
     )
     .onHover { isHovered = $0 }
     .onChange(of: key) {
@@ -1019,14 +1054,17 @@ private struct PropertyDrawerBlockEditor: View {
       .padding(.horizontal, 4)
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
-      .opacity(isHovered || focusedProperty != nil || store.isSavingBlock ? 1 : 0.66)
+      .opacity(InlineEditorChrome.controlsOpacity(isHovered || focusedProperty != nil || store.isSavingBlock))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
-    .background(Color.accentColor.opacity(isHovered ? 0.035 : 0.018), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .background(
+      Color.accentColor.opacity(InlineEditorChrome.backgroundOpacity(isHovered: isHovered, isFocused: focusedProperty != nil)),
+      in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+    )
     .overlay(
       RoundedRectangle(cornerRadius: 6, style: .continuous)
-        .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
+        .stroke(Color.accentColor.opacity(InlineEditorChrome.strokeOpacity(isHovered: isHovered, isFocused: focusedProperty != nil)))
     )
     .onHover { isHovered = $0 }
     .onDisappear {
@@ -1149,6 +1187,7 @@ private struct ParagraphBlockEditor: View {
   @State private var selectedRange = NSRange(location: 0, length: 0)
   @State private var showsInlineDetails = false
   @State private var isHovered = false
+  @State private var isTextFocused = false
   @State private var autosaveTask: Task<Void, Never>?
 
   init(block: OrgEditableBlock, text: String) {
@@ -1174,6 +1213,7 @@ private struct ParagraphBlockEditor: View {
           textInset: NSSize(width: 0, height: 2),
           focusOnAppear: true,
           selection: $selectedRange,
+          isFocused: $isTextFocused,
           onSubmitContext: submitParagraph
         )
         .frame(minHeight: editorHeight, maxHeight: editorHeight)
@@ -1251,14 +1291,21 @@ private struct ParagraphBlockEditor: View {
       .padding(.horizontal, 4)
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
-      .opacity(isHovered || selectedRange.length > 0 || showsInlineDetails || store.isSavingBlock ? 1 : 0.66)
+      .opacity(
+        InlineEditorChrome.controlsOpacity(
+          isHovered || selectedRange.length > 0 || showsInlineDetails || store.isSavingBlock
+        )
+      )
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 3)
-    .background(Color.accentColor.opacity(isHovered ? 0.035 : 0.018), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .background(
+      Color.accentColor.opacity(InlineEditorChrome.backgroundOpacity(isHovered: isHovered, isFocused: isTextFocused)),
+      in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+    )
     .overlay(
       RoundedRectangle(cornerRadius: 6, style: .continuous)
-        .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
+        .stroke(Color.accentColor.opacity(InlineEditorChrome.strokeOpacity(isHovered: isHovered, isFocused: isTextFocused)))
     )
     .onHover { isHovered = $0 }
     .onChange(of: draftText) {
@@ -1456,15 +1503,18 @@ private struct MediaBlockEditor: View {
       .padding(.horizontal, 4)
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
-      .opacity(isHovered || store.isSavingBlock ? 1 : 0.66)
+      .opacity(InlineEditorChrome.controlsOpacity(isHovered || store.isSavingBlock))
     }
     .frame(maxWidth: 780, alignment: .leading)
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
-    .background(Color.accentColor.opacity(isHovered ? 0.035 : 0.018), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .background(
+      Color.accentColor.opacity(InlineEditorChrome.backgroundOpacity(isHovered: isHovered, isFocused: targetFocused)),
+      in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+    )
     .overlay(
       RoundedRectangle(cornerRadius: 6, style: .continuous)
-        .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
+        .stroke(Color.accentColor.opacity(InlineEditorChrome.strokeOpacity(isHovered: isHovered, isFocused: targetFocused)))
     )
     .onHover { isHovered = $0 }
     .onAppear {
@@ -1614,6 +1664,7 @@ private struct QuoteBlockEditor: View {
   private let endLine: String
   @State private var quoteText: String
   @State private var isHovered = false
+  @State private var isTextFocused = false
   @State private var autosaveTask: Task<Void, Never>?
 
   init(block: OrgEditableBlock) {
@@ -1637,7 +1688,8 @@ private struct QuoteBlockEditor: View {
           text: $quoteText,
           showsScrollers: false,
           textInset: NSSize(width: 2, height: 4),
-          focusOnAppear: true
+          focusOnAppear: true,
+          isFocused: $isTextFocused
         )
         .frame(minHeight: editorHeight, maxHeight: editorHeight)
         .background(Color.clear)
@@ -1673,14 +1725,17 @@ private struct QuoteBlockEditor: View {
       .padding(.horizontal, 4)
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
-      .opacity(isHovered || store.isSavingBlock ? 1 : 0.66)
+      .opacity(InlineEditorChrome.controlsOpacity(isHovered || store.isSavingBlock))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
-    .background(Color.accentColor.opacity(isHovered ? 0.035 : 0.018), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .background(
+      Color.accentColor.opacity(InlineEditorChrome.backgroundOpacity(isHovered: isHovered, isFocused: isTextFocused)),
+      in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+    )
     .overlay(
       RoundedRectangle(cornerRadius: 6, style: .continuous)
-        .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
+        .stroke(Color.accentColor.opacity(InlineEditorChrome.strokeOpacity(isHovered: isHovered, isFocused: isTextFocused)))
     )
     .onHover { isHovered = $0 }
     .onChange(of: quoteText) {
@@ -1734,6 +1789,7 @@ private struct SourceBlockEditor: View {
   let block: OrgEditableBlock
   @State private var source: OrgEditableSourceBlock
   @State private var isHovered = false
+  @State private var isBodyFocused = false
   @State private var autosaveTask: Task<Void, Never>?
 
   init(block: OrgEditableBlock, language: String?, lines: [String]) {
@@ -1794,7 +1850,8 @@ private struct SourceBlockEditor: View {
           monospaced: true,
           showsScrollers: false,
           textInset: NSSize(width: 10, height: 10),
-          focusOnAppear: true
+          focusOnAppear: true,
+          isFocused: $isBodyFocused
         )
         .frame(minHeight: editorHeight, maxHeight: editorHeight)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -1854,14 +1911,17 @@ private struct SourceBlockEditor: View {
       .padding(.horizontal, 4)
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
-      .opacity(isHovered || store.isSavingBlock || runState != nil ? 1 : 0.66)
+      .opacity(InlineEditorChrome.controlsOpacity(isHovered || store.isSavingBlock || runState != nil))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
-    .background(Color.accentColor.opacity(isHovered ? 0.025 : 0.012), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .background(
+      Color.accentColor.opacity(InlineEditorChrome.backgroundOpacity(isHovered: isHovered, isFocused: isBodyFocused)),
+      in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+    )
     .overlay(
       RoundedRectangle(cornerRadius: 6, style: .continuous)
-        .stroke(Color.accentColor.opacity(isHovered ? 0.16 : 0.09))
+        .stroke(Color.accentColor.opacity(InlineEditorChrome.strokeOpacity(isHovered: isHovered, isFocused: isBodyFocused)))
     )
     .onHover { isHovered = $0 }
     .onChange(of: source) {
@@ -2031,14 +2091,17 @@ private struct TableBlockEditor: View {
       .padding(.horizontal, 4)
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
-      .opacity(isHovered || focusedCell != nil || store.isSavingBlock ? 1 : 0.66)
+      .opacity(InlineEditorChrome.controlsOpacity(isHovered || focusedCell != nil || store.isSavingBlock))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
-    .background(Color.accentColor.opacity(isHovered ? 0.03 : 0.014), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .background(
+      Color.accentColor.opacity(InlineEditorChrome.backgroundOpacity(isHovered: isHovered, isFocused: focusedCell != nil)),
+      in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+    )
     .overlay(
       RoundedRectangle(cornerRadius: 6, style: .continuous)
-        .stroke(Color.accentColor.opacity(isHovered ? 0.16 : 0.09))
+        .stroke(Color.accentColor.opacity(InlineEditorChrome.strokeOpacity(isHovered: isHovered, isFocused: focusedCell != nil)))
     )
     .onHover { isHovered = $0 }
     .onAppear {
