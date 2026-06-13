@@ -25,7 +25,7 @@ struct OrgRenderedEntryView: View {
       blocks: blocks,
       selectedBlockIndex: selectedBlockIndex
     )
-    let visibleBlocks = Array(blocks.prefix(visibleLimit))
+    let visibleBlocks = blocks.prefix(visibleLimit)
 
     LazyVStack(alignment: .leading, spacing: 8) {
       ForEach(visibleBlocks) { block in
@@ -259,7 +259,7 @@ private struct EditableRenderedBlockView<Content: View>: View {
         .padding(.trailing, isSourceEditable ? 92 : 0)
         .frame(maxWidth: .infinity, alignment: .leading)
 
-      if showsControls {
+      if isSourceEditable {
         HStack(spacing: 3) {
           Menu {
             ForEach(OrgInsertBlockKind.allCases) { kind in
@@ -327,6 +327,9 @@ private struct EditableRenderedBlockView<Content: View>: View {
             .help("Block actions")
           }
         }
+        .opacity(showsControls ? 1 : 0)
+        .allowsHitTesting(showsControls)
+        .accessibilityHidden(!showsControls)
       }
     }
     .padding(.horizontal, 6)
