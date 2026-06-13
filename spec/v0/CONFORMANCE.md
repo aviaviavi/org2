@@ -110,7 +110,7 @@ The following node types are stable in v0:
 - **Structural**: Document, Headline, Paragraph, List, ListItem
 - **Blocks**: SrcBlock, Block, Table, TableRow, TableHline
 - **Drawers**: PropertyDrawer, Drawer
-- **Metadata**: KeywordLine, DirectiveLine, CommentLine, Planning
+- **Metadata**: KeywordLine, affiliatedKeywords on blocks/tables, DirectiveLine, CommentLine, Planning
 - **Inline**: Text, Emphasis, Link, Timestamp, TimestampRange
 
 All of these types and their field schemas are covered by normative fixtures and MUST NOT change within v0.
