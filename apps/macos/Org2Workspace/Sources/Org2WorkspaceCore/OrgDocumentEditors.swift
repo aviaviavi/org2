@@ -78,6 +78,7 @@ enum InlineEditorSizing {
 
 enum ParagraphSlashCommand {
   static let leadingWhitespaceScanLimit = 128
+  static let commandScanLimit = 64
 
   struct Match: Equatable {
     let query: String?
@@ -108,7 +109,16 @@ enum ParagraphSlashCommand {
     }
 
     let commandStart = text.index(after: index)
-    let commandEnd = text[commandStart...].firstIndex { $0.isWhitespace } ?? text.endIndex
+    var commandEnd = commandStart
+    var scannedCommandCharacters = 0
+    while commandEnd < text.endIndex {
+      guard !text[commandEnd].isWhitespace else { break }
+      scannedCommandCharacters += 1
+      guard scannedCommandCharacters <= commandScanLimit else {
+        return nil
+      }
+      commandEnd = text.index(after: commandEnd)
+    }
     return String(text[commandStart..<commandEnd])
   }
 

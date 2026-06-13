@@ -1073,6 +1073,16 @@ final class Org2ModelsTests: XCTestCase {
       text: longRichParagraph,
       showsInlineDetails: false
     ))
+    XCTAssertNil(ParagraphFocusedInlineEditor.focusedToken(
+      text: "Plain paragraph without editable inline syntax",
+      selectedRange: NSRange(location: 6, length: 0),
+      showsInlineDetails: false
+    ))
+    XCTAssertNil(ParagraphFocusedInlineEditor.focusedToken(
+      text: longRichParagraph,
+      selectedRange: NSRange(location: 6, length: 0),
+      showsInlineDetails: false
+    ))
   }
 
   func testParagraphFocusedInlineEditorFindsFocusedTokenOnce() {
@@ -1110,6 +1120,10 @@ final class Org2ModelsTests: XCTestCase {
       repeating: " ",
       count: ParagraphSlashCommand.leadingWhitespaceScanLimit + 1
     ) + "/todo"))
+    XCTAssertNil(ParagraphSlashCommand.query(in: "/" + String(
+      repeating: "x",
+      count: ParagraphSlashCommand.commandScanLimit + 1
+    )))
 
     let todoMatch = ParagraphSlashCommand.match(in: "/todo Call Bob")
     XCTAssertEqual(todoMatch.query, "todo")

@@ -69,7 +69,7 @@ struct ParagraphFocusedInlineEditor: View {
     selectedRange: NSRange,
     showsInlineDetails: Bool
   ) -> OrgEditableInlineToken? {
-    guard !showsInlineDetails else { return nil }
+    guard shouldRender(text: text, showsInlineDetails: showsInlineDetails) else { return nil }
     return OrgEditableInlineToken.focused(in: text, selection: selectedRange)
   }
 
