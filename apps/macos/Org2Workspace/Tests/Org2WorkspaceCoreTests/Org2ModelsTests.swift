@@ -580,6 +580,22 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(OpenClawComposerKeyCommand.isSendCommand(keyCode: 49, modifiers: [.command]))
   }
 
+  @MainActor
+  func testOpenClawChatScrollPositionPersistsAndResets() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+
+    XCTAssertNil(store.openClawChatScrollPosition)
+
+    store.recordOpenClawChatScrollPosition(0.42)
+    XCTAssertEqual(try XCTUnwrap(store.openClawChatScrollPosition), 0.42, accuracy: 0.001)
+
+    store.recordOpenClawChatScrollPosition(2)
+    XCTAssertEqual(try XCTUnwrap(store.openClawChatScrollPosition), 1, accuracy: 0.001)
+
+    store.resetOpenClawChat()
+    XCTAssertNil(store.openClawChatScrollPosition)
+  }
+
   func testOpenClawFileReferenceExtractsOrgPaths() {
     let refs = OpenClawFileReference.extract(from: """
     Check /srv/org2/notes/alice.org2:42 and notes/daily/2026-06-12.org.
@@ -1630,6 +1646,70 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(thread.file, note.path)
     XCTAssertEqual(thread.lineForEditor, 3)
     XCTAssertEqual(store.selectedEntrySourceMode, .page)
+  }
+
+  @MainActor
+  func testDetailNavigationBackRestoresPreviousLocation() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-detail-back-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let first = root.appendingPathComponent("first.org2")
+    let second = root.appendingPathComponent("second.org2")
+    try "#+TITLE: First\n".write(to: first, atomically: true, encoding: .utf8)
+    try "#+TITLE: Second\n".write(to: second, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    let firstThread = OpenClawThread(title: "First", file: first.path, line: 1, zone: "test", modifiedAt: nil)
+    store.select(.openClaw(firstThread))
+    XCTAssertFalse(store.canNavigateBackInDetail)
+
+    store.openChatFileReference(OpenClawFileReference(path: second.path, line: 1))
+
+    XCTAssertTrue(store.canNavigateBackInDetail)
+    XCTAssertEqual(store.selectedLocation?.file, second.path)
+
+    store.navigateBackInDetail()
+
+    XCTAssertFalse(store.canNavigateBackInDetail)
+    XCTAssertEqual(store.selectedLocation?.file, first.path)
+  }
+
+  @MainActor
+  func testBacklinksResolveSelectedFileLineIdThroughCLI() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-cli-backlinks-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let target = root.appendingPathComponent("target.org2")
+    let source = root.appendingPathComponent("source.org2")
+    try """
+    #+TITLE: Target
+
+    * Target Heading
+    :PROPERTIES:
+    :ID: 11111111-1111-4111-8111-111111111111
+    :END:
+    Body
+    """.write(to: target, atomically: true, encoding: .utf8)
+    try """
+    #+TITLE: Source
+    :PROPERTIES:
+    :ID: 22222222-2222-4222-8222-222222222222
+    :END:
+
+    Link to [[id:11111111-1111-4111-8111-111111111111][Target Heading]].
+    """.write(to: source, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.openChatFileReference(OpenClawFileReference(path: target.path, line: 3))
+
+    try await waitForCondition {
+      store.backlinks?.backlinks.count == 1
+        && store.selectedLocation?.idValue == "11111111-1111-4111-8111-111111111111"
+    }
+
+    XCTAssertEqual(store.backlinks?.backlinks.first?.file, source.path)
   }
 
   @MainActor
