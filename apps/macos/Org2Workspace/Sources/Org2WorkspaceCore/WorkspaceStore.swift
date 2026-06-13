@@ -1188,8 +1188,7 @@ public final class WorkspaceStore: ObservableObject {
         statusText = "No plaintext :crypt: subtrees to encrypt"
       }
     } catch {
-      errorText = error.localizedDescription
-      statusText = "Org crypt save encryption failed"
+      recordOrgCryptEncryptionFailure(error, savedPrefix: nil)
     }
   }
 
@@ -1206,25 +1205,52 @@ public final class WorkspaceStore: ObservableObject {
     isSavingEntry = true
     defer { isSavingEntry = false }
 
+    let replacement = editableEntryText
     do {
-      let replacement = editableEntryText
       try await Task.detached(priority: .userInitiated) {
         try Self.replaceEntrySource(source, with: replacement)
       }.value
-      let encryptedCount = try await encryptOrgCryptSubtreesAfterExplicitSave(file: source.file)
-      invalidateCanonicalDocumentCache(for: source.file)
-      statusText = encryptedCount > 0
-        ? "Saved and encrypted \(encryptedCount) subtree\(encryptedCount == 1 ? "" : "s")"
-        : "Saved \(relativePath(source.file)):\(source.displayRange)"
-      isEditingEntry = false
-      if let selectedLocation {
-        await loadEntrySource(for: selectedLocation)
-      }
-      scheduleAgendaRefresh(preserveSelection: true)
     } catch {
       errorText = error.localizedDescription
       statusText = "Save failed"
+      return
     }
+
+    let savedStatus: String
+    do {
+      let encryptedCount = try await encryptOrgCryptSubtreesAfterExplicitSave(file: source.file)
+      savedStatus = encryptedCount > 0
+        ? "Saved and encrypted \(encryptedCount) subtree\(encryptedCount == 1 ? "" : "s")"
+        : "Saved \(relativePath(source.file)):\(source.displayRange)"
+    } catch {
+      recordOrgCryptEncryptionFailure(error, savedPrefix: "Saved, but")
+      await finishSavedEntry(source: source)
+      return
+    }
+
+    statusText = savedStatus
+    await finishSavedEntry(source: source)
+  }
+
+  private func finishSavedEntry(source: EntrySource) async {
+    invalidateCanonicalDocumentCache(for: source.file)
+    isEditingEntry = false
+    if let selectedLocation {
+      await loadEntrySource(for: selectedLocation)
+    }
+    scheduleAgendaRefresh(preserveSelection: true)
+  }
+
+  private func recordOrgCryptEncryptionFailure(_ error: Error, savedPrefix: String?) {
+    let message = error.localizedDescription
+    errorText = message
+    orgCryptStatusText = message
+    if case OrgCryptError.missingEncryptionConfiguration = error {
+      statusText = [savedPrefix, "org crypt needs configuration"].compactMap(\.self).joined(separator: " ")
+      isOrgCryptConfigurationPresented = true
+      return
+    }
+    statusText = [savedPrefix, "org crypt encryption failed"].compactMap(\.self).joined(separator: " ")
   }
 
   public func saveEditedBlock(_ block: OrgEditableBlock) async {

@@ -4588,6 +4588,47 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testPageScopeSaveCompletesWhenOrgCryptEncryptionFails() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-page-crypt-save-failure-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("secrets.org2")
+    try """
+    #+TITLE: Secrets
+
+    * Secret :crypt:
+    plaintext
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.orgCryptRecipientsText = "person@example.com"
+    store.orgCryptGpgProgram = "/bin/false"
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    guard let location = store.selectedLocation else {
+      return XCTFail("Expected selected file")
+    }
+    await store.loadEntrySource(for: location)
+    try await waitForEntryRender(store)
+
+    store.beginEditingCurrentScope()
+    store.editableEntryText = store.editableEntryText.replacingOccurrences(of: "plaintext", with: "changed plaintext")
+    await store.saveActiveEdit()
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("changed plaintext"))
+    XCTAssertFalse(updated.contains("-----BEGIN PGP MESSAGE-----"))
+    XCTAssertFalse(store.isEditingEntry)
+    XCTAssertEqual(store.statusText, "Saved, but org crypt encryption failed")
+    XCTAssertTrue(store.errorText?.contains("Org crypt encryption failed") == true)
+  }
+
+  @MainActor
   func testLegacyEntryEditStateKeepsRenderedSourceLoaded() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-rendered-entry-edit-\(UUID().uuidString)", isDirectory: true)
