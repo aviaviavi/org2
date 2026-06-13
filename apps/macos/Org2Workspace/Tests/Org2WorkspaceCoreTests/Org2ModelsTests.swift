@@ -2176,6 +2176,58 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testStaleAutosaveDoesNotUpdateVisibleEditorState() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-stale-autosave-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("stale-autosave.org2")
+    try """
+    #+TITLE: Stale Autosave Test
+
+    * TODO Parent
+    Body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+    store.beginEditingBlock(paragraph)
+    store.updateEditingBlockDraft(paragraph, draft: "Still typing")
+
+    await store.autosaveEditedBlock(paragraph, replacement: "Stale body")
+
+    XCTAssertEqual(store.editingBlockID, paragraph.id)
+    XCTAssertEqual(store.editableBlockText, "Body")
+    XCTAssertEqual(store.selectedBlock?.rawText, "Body")
+    XCTAssertTrue(store.selectedEntrySource?.text.contains("Body") == true)
+    XCTAssertFalse(store.selectedEntrySource?.text.contains("Stale body") == true)
+  }
+
+  @MainActor
   func testAutosavesHeadingBlockWithoutLeavingInlineEditMode() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-heading-autosave-\(UUID().uuidString)", isDirectory: true)
