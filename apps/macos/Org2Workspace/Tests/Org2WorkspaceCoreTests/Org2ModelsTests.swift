@@ -464,6 +464,24 @@ final class Org2ModelsTests: XCTestCase {
     ])
   }
 
+  @MainActor
+  func testOrgInlineAttributedStringCacheKeysUseExactTextAndFont() {
+    let raw = "See [[id:abc][Alice]] and `code`."
+    let key = OrgInlineAttributedString.CacheKey(raw: raw, baseFont: .body)
+    let matching = OrgInlineAttributedString.CacheKey(raw: raw, baseFont: .body)
+    let differentRaw = OrgInlineAttributedString.CacheKey(raw: raw + " ", baseFont: .body)
+    let differentFont = OrgInlineAttributedString.CacheKey(raw: raw, fontDescription: "different-font")
+
+    XCTAssertEqual(key, matching)
+    XCTAssertEqual(key.hash, matching.hash)
+    XCTAssertNotEqual(key, differentRaw)
+    XCTAssertNotEqual(key, differentFont)
+    XCTAssertEqual(
+      OrgInlineAttributedString.cached(raw: raw, baseFont: .body),
+      OrgInlineAttributedString.cached(raw: raw, baseFont: .body)
+    )
+  }
+
   func testOrgSyntaxHighlighterFindsEditableDocumentTokens() {
     let raw = """
     * TODO [#A] Review [[id:11111111-1111-4111-8111-111111111111][Alice]] :work:
