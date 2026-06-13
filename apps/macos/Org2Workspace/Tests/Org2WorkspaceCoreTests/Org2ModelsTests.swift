@@ -1161,6 +1161,79 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSavingRenderedBlockSchedulesAgendaRefreshWithoutBlocking() async throws {
+    let workspace = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-nonblocking-save-\(UUID().uuidString)", isDirectory: true)
+    let repoRoot = workspace.appendingPathComponent("repo", isDirectory: true)
+    let dist = repoRoot.appendingPathComponent("dist", isDirectory: true)
+    let corpus = workspace.appendingPathComponent("corpus", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: corpus, withIntermediateDirectories: true)
+    try """
+    setTimeout(() => {
+      process.stdout.write(JSON.stringify({
+        "$schema": "org2:agenda:v1",
+        "range": { "start": "2026-06-12", "end": "2026-06-18", "days": 7 },
+        "overdue": [],
+        "days": [{ "date": "2026-06-12", "weekday": "Fri", "items": [] }],
+        "skippedFiles": 0
+      }));
+    }, 1800);
+    """.write(to: dist.appendingPathComponent("cli.js"), atomically: true, encoding: .utf8)
+
+    let note = corpus.appendingPathComponent("nonblocking-save.org2")
+    try """
+    #+TITLE: Nonblocking Save Test
+
+    * TODO Parent
+    Body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = WorkspaceStore(cli: Org2CLI(repoRoot: repoRoot))
+    store.setCorpusRoot(corpus)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+    store.beginEditingBlock(paragraph)
+    store.editableBlockText = "Updated body"
+
+    let started = Date()
+    await store.saveEditedBlock(paragraph)
+    let elapsed = Date().timeIntervalSince(started)
+
+    XCTAssertLessThan(elapsed, 1.0)
+    XCTAssertTrue(store.statusText.hasPrefix("Saved block"))
+    XCTAssertTrue((try String(contentsOf: note, encoding: .utf8)).contains("Updated body"))
+
+    try await waitForCondition(timeout: 5) {
+      store.agenda?.totalItemCount == 0 && !store.isLoadingAgenda
+    }
+    XCTAssertTrue(store.statusText.hasPrefix("Saved block"))
+  }
+
+  @MainActor
   func testSplitsEditingParagraphAtCaretIntoNewEditableBlock() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-block-split-\(UUID().uuidString)", isDirectory: true)
