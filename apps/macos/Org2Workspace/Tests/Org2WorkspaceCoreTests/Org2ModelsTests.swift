@@ -2268,6 +2268,20 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.editingBlockID, paragraph.id)
     XCTAssertEqual(store.editableBlockText, "Body")
     XCTAssertFalse(store.handleDocumentKeyDown(keyDown(characters: "\u{7F}", keyCode: 51)))
+
+    store.cancelEditingBlock()
+    XCTAssertFalse(store.isEditingEntry)
+    XCTAssertTrue(store.handleAgendaKeyDown(keyDown(characters: "e", keyCode: 14)))
+    XCTAssertEqual(store.editingBlockID, paragraph.id)
+    XCTAssertEqual(store.editableBlockText, "Body")
+    XCTAssertFalse(store.isEditingEntry)
+
+    store.cancelEditingBlock()
+    store.clearSelectedBlock()
+    store.beginEditingVisibleBlock()
+    XCTAssertEqual(store.editingBlockID, heading.id)
+    XCTAssertEqual(store.editableBlockText, "* TODO Parent")
+    XCTAssertFalse(store.isEditingEntry)
   }
 
   @MainActor
