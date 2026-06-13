@@ -265,6 +265,7 @@ enum OrgSyntaxHighlightKind: String {
   case priority
   case tag
   case link
+  case linkTarget
   case code
   case emphasis
   case timestamp
@@ -391,6 +392,11 @@ enum OrgSyntaxHighlighter {
       appendSyntaxDelimiter(location: tokenRange.location, length: 2, into: &tokens)
       appendSyntaxDelimiter(location: NSMaxRange(tokenRange) - 2, length: 2, into: &tokens)
       if let separator = raw.range(of: "][") {
+        appendLinkTarget(
+          location: tokenRange.location + 2,
+          length: separator.lowerBound.utf16Offset(in: raw) - 2,
+          into: &tokens
+        )
         appendSyntaxDelimiter(
           location: tokenRange.location + separator.lowerBound.utf16Offset(in: raw),
           length: 2,
@@ -403,6 +409,11 @@ enum OrgSyntaxHighlighter {
     if raw.hasPrefix("["), raw.hasSuffix(")"),
        let separator = raw.range(of: "](") {
       appendSyntaxDelimiter(location: tokenRange.location, length: 1, into: &tokens)
+      appendLinkTarget(
+        location: tokenRange.location + separator.upperBound.utf16Offset(in: raw),
+        length: raw.utf16.count - separator.upperBound.utf16Offset(in: raw) - 1,
+        into: &tokens
+      )
       appendSyntaxDelimiter(
         location: tokenRange.location + separator.lowerBound.utf16Offset(in: raw),
         length: 2,
@@ -431,6 +442,18 @@ enum OrgSyntaxHighlighter {
     guard length > 0 else { return }
     tokens.append(OrgSyntaxHighlightToken(
       kind: .syntaxDelimiter,
+      range: NSRange(location: location, length: length)
+    ))
+  }
+
+  private static func appendLinkTarget(
+    location: Int,
+    length: Int,
+    into tokens: inout [OrgSyntaxHighlightToken]
+  ) {
+    guard length > 0 else { return }
+    tokens.append(OrgSyntaxHighlightToken(
+      kind: .linkTarget,
       range: NSRange(location: location, length: length)
     ))
   }
@@ -535,6 +558,13 @@ enum OrgSyntaxHighlighter {
       return [
         .foregroundColor: NSColor.controlAccentColor,
         .underlineStyle: NSUnderlineStyle.single.rawValue
+      ]
+    case .linkTarget:
+      return [
+        .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.34),
+        .backgroundColor: NSColor.clear,
+        .underlineStyle: 0,
+        .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular)
       ]
     case .code:
       return [
