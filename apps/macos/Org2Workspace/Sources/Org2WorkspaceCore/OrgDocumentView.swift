@@ -849,6 +849,16 @@ enum RenderedBlockEditingPolicy {
   }
 }
 
+enum RenderedBlockInteractionPolicy {
+  static func usesRowTapGestures(block: OrgEditableBlock, isSourceEditable: Bool) -> Bool {
+    guard isSourceEditable else { return false }
+    if OrgCrypt.armorSummary(block.rawText) != nil {
+      return false
+    }
+    return true
+  }
+}
+
 enum OrgRenderedBlockDisplayPolicy {
   static func isVisible(_ block: OrgEditableBlock) -> Bool {
     switch block.rendered {
@@ -910,26 +920,33 @@ private struct EditableRenderedBlockView<Content: View>: View {
     }
   }
 
+  @ViewBuilder
   private var rowContent: some View {
-    rowInnerContent
-    .padding(.horizontal, 6)
-    .padding(.vertical, OrgRenderedBlockDisplayPolicy.verticalPadding(for: block))
-    .background(backgroundColor, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous))
-    .overlay(
-      RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
-        .stroke(isSelected ? Color.accentColor.opacity(0.34) : Color.clear)
-    )
-    .contentShape(Rectangle())
-    .onTapGesture(count: 1) {
-      actions.select()
-      if startsEditingOnSingleClick {
-        actions.beginEditing()
-      }
-    }
-    .onTapGesture(count: 2) {
-      if block.isEditable {
-        actions.beginEditing()
-      }
+    let content = rowInnerContent
+      .padding(.horizontal, 6)
+      .padding(.vertical, OrgRenderedBlockDisplayPolicy.verticalPadding(for: block))
+      .background(backgroundColor, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
+          .stroke(isSelected ? Color.accentColor.opacity(0.34) : Color.clear)
+      )
+
+    if usesRowTapGestures {
+      content
+        .contentShape(Rectangle())
+        .onTapGesture(count: 1) {
+          actions.select()
+          if startsEditingOnSingleClick {
+            actions.beginEditing()
+          }
+        }
+        .onTapGesture(count: 2) {
+          if block.isEditable {
+            actions.beginEditing()
+          }
+        }
+    } else {
+      content
     }
   }
 
@@ -1095,6 +1112,10 @@ private struct EditableRenderedBlockView<Content: View>: View {
 
   private var startsEditingOnSingleClick: Bool {
     RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: block, isSourceEditable: isSourceEditable)
+  }
+
+  private var usesRowTapGestures: Bool {
+    RenderedBlockInteractionPolicy.usesRowTapGestures(block: block, isSourceEditable: isSourceEditable)
   }
 }
 
