@@ -2312,13 +2312,28 @@ final class Org2ModelsTests: XCTestCase {
     })
     store.selectBlock(paragraph)
 
+    XCTAssertTrue(store.handleDocumentKeyDown(keyDown(characters: "/", keyCode: 44)))
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "/" && store.editingBlockID == store.selectedBlockID
+    }
+    XCTAssertEqual(store.editableBlockText, "/")
+    var updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Body\n* Sibling"))
+    XCTAssertFalse(updated.contains("Body\n\n/\n* Sibling"))
+
+    store.cancelEditingBlock()
+    XCTAssertNil(store.selectedBlock)
+    updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Body\n* Sibling"))
+
+    store.selectBlock(paragraph)
     XCTAssertTrue(store.handleDocumentKeyDown(keyDown(characters: "\r", keyCode: 36, modifiers: [.command])))
     try await waitForCondition {
       store.selectedBlock?.rawText == "" && store.editingBlockID == store.selectedBlockID
     }
     XCTAssertEqual(store.editableBlockText, "")
 
-    var updated = try String(contentsOf: note, encoding: .utf8)
+    updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertFalse(updated.contains("New text"))
     XCTAssertTrue(updated.contains("Body\n* Sibling"))
 
