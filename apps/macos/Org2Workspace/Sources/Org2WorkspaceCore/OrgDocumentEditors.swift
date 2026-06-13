@@ -176,6 +176,12 @@ enum ParagraphSlashCommandPanelLayout {
   }
 }
 
+enum ParagraphFocusedInlinePanelLayout {
+  static func verticalOffset(editorHeight: CGFloat) -> CGFloat {
+    max(36, editorHeight + 26)
+  }
+}
+
 struct InlineBlockEditorView: View {
   let block: OrgEditableBlock
 
@@ -1410,14 +1416,6 @@ private struct ParagraphBlockEditor: View {
           .allowsHitTesting(InlineEditorChrome.allowsHitTesting(hasSelection))
           .accessibilityHidden(!hasSelection)
 
-        if let focusedInlineToken {
-          ParagraphFocusedInlineEditor(
-            text: $draftText,
-            selectedRange: $selectedRange,
-            token: focusedInlineToken
-          )
-        }
-
         if showsInlineDetails {
           VStack(alignment: .leading, spacing: 6) {
             ParagraphInlineMarkupEditor(text: $draftText)
@@ -1438,6 +1436,17 @@ private struct ParagraphBlockEditor: View {
           .frame(maxWidth: .infinity, alignment: .leading)
           .offset(y: ParagraphSlashCommandPanelLayout.verticalOffset(editorHeight: editorHeight))
           .zIndex(2)
+      }
+
+      if let focusedInlineToken {
+        ParagraphFocusedInlineEditor(
+          text: $draftText,
+          selectedRange: $selectedRange,
+          token: focusedInlineToken
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .offset(y: ParagraphFocusedInlinePanelLayout.verticalOffset(editorHeight: editorHeight))
+        .zIndex(1)
       }
     }
     .padding(.horizontal, 6)
