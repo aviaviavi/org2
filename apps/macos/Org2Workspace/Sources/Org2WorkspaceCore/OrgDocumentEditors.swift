@@ -1331,8 +1331,9 @@ private struct SourceBlockEditor: View {
             Image(systemName: "play.fill")
           }
           .buttonStyle(.borderless)
+          .keyboardShortcut("r", modifiers: [.command])
           .disabled(store.isSavingBlock || runState?.status == .running)
-          .help(sourceRunHelp)
+          .help("\(sourceRunHelp) (Command-R)")
         }
 
         if store.isSavingBlock {
