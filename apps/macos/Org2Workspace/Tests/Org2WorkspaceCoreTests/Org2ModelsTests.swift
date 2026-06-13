@@ -3243,10 +3243,11 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.canMoveBlock(one, direction: .down))
 
     await store.moveBlock(one, direction: .down)
-    try await waitForEntryRender(store)
     var updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("- Two\n- One\n* Sibling"))
     XCTAssertEqual(store.selectedBlock?.rawText, "- One")
+    XCTAssertEqual(store.selectedBlock?.startLine, one.startLine + 1)
+    XCTAssertEqual(store.selectedEntrySource?.displayRange, "3-6")
 
     let movedOne = try XCTUnwrap(store.selectedRenderedBlocks.first {
       if case .listItem(_, _, _, let text) = $0.rendered { return text == "One" }

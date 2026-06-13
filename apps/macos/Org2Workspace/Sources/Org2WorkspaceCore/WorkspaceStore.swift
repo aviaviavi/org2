@@ -1279,6 +1279,25 @@ public final class WorkspaceStore: ObservableObject {
     defer { isSavingBlock = false }
 
     do {
+      let sourceSwap: EntrySource
+      switch direction {
+      case .up:
+        sourceSwap = try Self.swappingSourceRanges(
+          in: source,
+          firstStartLine: target.startLine,
+          firstEndLineExclusive: target.endLineExclusive,
+          secondStartLine: block.startLine,
+          secondEndLineExclusive: block.endLineExclusive
+        )
+      case .down:
+        sourceSwap = try Self.swappingSourceRanges(
+          in: source,
+          firstStartLine: block.startLine,
+          firstEndLineExclusive: block.endLineExclusive,
+          secondStartLine: target.startLine,
+          secondEndLineExclusive: target.endLineExclusive
+        )
+      }
       try await Task.detached(priority: .userInitiated) {
         switch direction {
         case .up:
@@ -1306,11 +1325,35 @@ public final class WorkspaceStore: ObservableObject {
       case .down:
         selectedLine = block.startLine + (target.endLineExclusive - target.startLine) + max(0, target.startLine - block.endLineExclusive)
       }
-      await finishBlockMutation(
-        file: source.file,
-        status: "Moved block \(direction == .up ? "up" : "down")",
-        selectLine: selectedLine
-      )
+      let currentRenderedBlocks = selectedRenderedBlocks
+      let updatedBlocks = await Task.detached(priority: .userInitiated) {
+        Self.locallyMovingRenderedBlocks(
+          currentRenderedBlocks,
+          firstStartLine: direction == .up ? target.startLine : block.startLine,
+          firstEndLineExclusive: direction == .up ? target.endLineExclusive : block.endLineExclusive,
+          secondStartLine: direction == .up ? block.startLine : target.startLine,
+          secondEndLineExclusive: direction == .up ? block.endLineExclusive : target.endLineExclusive
+        )
+      }.value
+
+      guard selectedEntrySource?.id == source.id else {
+        return
+      }
+
+      invalidateCanonicalDocumentCache(for: source.file)
+      transientDraftBlock = nil
+      resetBlockEditing()
+      isEditingEntry = false
+      selectedEntrySource = sourceSwap
+      let updatedVisibleBlocks = blocksWithTransientDraft(updatedBlocks, for: sourceSwap)
+      selectedRenderedBlocks = updatedVisibleBlocks
+      selectedBlockID = blockForSelectionLine(
+        selectedLine,
+        mode: .containingOrNearest,
+        in: updatedVisibleBlocks
+      )?.id
+      statusText = "Moved block \(direction == .up ? "up" : "down")"
+      scheduleAgendaRefresh(preserveSelection: true)
     } catch {
       errorText = error.localizedDescription
       statusText = "Move failed"
@@ -3377,6 +3420,45 @@ public final class WorkspaceStore: ObservableObject {
     )
   }
 
+  nonisolated private static func swappingSourceRanges(
+    in source: EntrySource,
+    firstStartLine: Int,
+    firstEndLineExclusive: Int,
+    secondStartLine: Int,
+    secondEndLineExclusive: Int
+  ) throws -> EntrySource {
+    var lines = normalizeLineEndings(source.text)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+
+    let firstStartIndex = firstStartLine - source.startLine
+    let firstEndIndex = firstEndLineExclusive - source.startLine
+    let secondStartIndex = secondStartLine - source.startLine
+    let secondEndIndex = secondEndLineExclusive - source.startLine
+    guard firstStartIndex >= 0,
+          firstStartIndex < firstEndIndex,
+          firstEndIndex <= secondStartIndex,
+          secondStartIndex < secondEndIndex,
+          secondEndIndex <= lines.count
+    else {
+      throw WorkspaceEditError.invalidRange(file: source.file, line: firstStartLine)
+    }
+
+    let first = Array(lines[firstStartIndex..<firstEndIndex])
+    let between = Array(lines[firstEndIndex..<secondStartIndex])
+    let second = Array(lines[secondStartIndex..<secondEndIndex])
+    lines.replaceSubrange(firstStartIndex..<secondEndIndex, with: second + between + first)
+
+    return EntrySource(
+      file: source.file,
+      startLine: source.startLine,
+      endLineExclusive: source.startLine + lines.count,
+      text: lines.joined(separator: "\n"),
+      isSubtree: source.isSubtree,
+      isEditable: source.isEditable
+    )
+  }
+
   nonisolated private static func replaceSourceRange(file: String, startLine: Int, endLineExclusive: Int, replacement: String) throws {
     let url = URL(fileURLWithPath: file)
     let raw = try String(contentsOf: url, encoding: .utf8)
@@ -3689,6 +3771,38 @@ public final class WorkspaceStore: ObservableObject {
       }
     }
     updated.append(contentsOf: insertedBlocks)
+    return sortEditableBlocksForDisplay(updated)
+  }
+
+  nonisolated private static func locallyMovingRenderedBlocks(
+    _ blocks: [OrgEditableBlock],
+    firstStartLine: Int,
+    firstEndLineExclusive: Int,
+    secondStartLine: Int,
+    secondEndLineExclusive: Int
+  ) -> [OrgEditableBlock] {
+    let firstLineCount = firstEndLineExclusive - firstStartLine
+    let secondLineCount = secondEndLineExclusive - secondStartLine
+    let betweenLineCount = secondStartLine - firstEndLineExclusive
+    let firstShift = secondLineCount + betweenLineCount
+    let betweenShift = secondLineCount
+    let secondShift = -(firstLineCount + betweenLineCount)
+
+    var updated: [OrgEditableBlock] = []
+    updated.reserveCapacity(blocks.count)
+
+    for block in blocks {
+      if block.endLineExclusive <= firstStartLine || block.startLine >= secondEndLineExclusive {
+        updated.append(block)
+      } else if block.startLine >= firstStartLine && block.endLineExclusive <= firstEndLineExclusive {
+        updated.append(shiftedBlock(block, by: firstShift))
+      } else if block.startLine >= firstEndLineExclusive && block.endLineExclusive <= secondStartLine {
+        updated.append(shiftedBlock(block, by: betweenShift))
+      } else if block.startLine >= secondStartLine && block.endLineExclusive <= secondEndLineExclusive {
+        updated.append(shiftedBlock(block, by: secondShift))
+      }
+    }
+
     return sortEditableBlocksForDisplay(updated)
   }
 
