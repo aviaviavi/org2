@@ -1998,7 +1998,7 @@ final class Org2ModelsTests: XCTestCase {
 
   func testRenderedRowChromeUsesStableHiddenState() {
     XCTAssertTrue(RenderedRowChrome.rendersControls(isVisible: true))
-    XCTAssertFalse(RenderedRowChrome.rendersControls(isVisible: false))
+    XCTAssertTrue(RenderedRowChrome.rendersControls(isVisible: false))
     XCTAssertEqual(RenderedRowChrome.controlsOpacity(isVisible: true), 1)
     XCTAssertEqual(RenderedRowChrome.controlsOpacity(isVisible: false), 0)
     XCTAssertTrue(RenderedRowChrome.allowsHitTesting(isVisible: true))
@@ -2154,7 +2154,7 @@ final class Org2ModelsTests: XCTestCase {
       selectedBlockIndex: nil
     )
     XCTAssertEqual(topWindow.range, 0..<48)
-    XCTAssertTrue(OrgRenderedEntryView.shouldAutoExpandNextFooter(visibleWindow: topWindow))
+    XCTAssertFalse(OrgRenderedEntryView.shouldAutoExpandNextFooter(visibleWindow: topWindow))
 
     let expandedNext = topWindow.expanding(
       .next,

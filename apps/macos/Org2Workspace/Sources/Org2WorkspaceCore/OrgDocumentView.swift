@@ -228,6 +228,7 @@ struct OrgRenderedEntryView: View {
 
   nonisolated static func shouldAutoExpandNextFooter(visibleWindow: OrgRenderedBlockWindow) -> Bool {
     visibleWindow.hasNext
+      && visibleWindow.totalCount < largePageBlockThreshold
       && visibleWindow.range.upperBound <= initialRenderedBlockLimit(for: visibleWindow.totalCount)
   }
 
@@ -537,7 +538,7 @@ enum RenderedRowChrome {
   static let controlsReserveWidth: CGFloat = 92
 
   static func rendersControls(isVisible: Bool) -> Bool {
-    isVisible
+    true
   }
 
   static func rendersControlLayer(
