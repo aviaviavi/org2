@@ -106,6 +106,7 @@ The first renderer supports deterministic =bar=, =line=, and bucketed =histogram
 ```chart histogram
 x: bucket
 y: fetches
+sort: y-desc
 source: previous-table
 ```
 #+end_src
@@ -127,7 +128,7 @@ source: package_fetches_result
 ```
 #+end_src
 
-JSON output includes =ok=, =format=, =artifact=, =source=, =diagnostics=, and =svg= so VS Code, Vim, or agent tooling can show useful errors for missing columns, unsupported chart types, missing named source tables, or missing chart blocks.
+Add =sort: x-asc=, =sort: x-desc=, =sort: y-asc=, or =sort: y-desc= when a chart preview should be ordered independently of the table rows. JSON output includes =ok=, =format=, =artifact=, =source=, =diagnostics=, and =svg= so VS Code, Vim, or agent tooling can show useful errors for missing columns, unsupported chart types, missing chart sorts, missing named source tables, or missing chart blocks.
 
 * Local data queries
 

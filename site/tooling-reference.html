@@ -136,6 +136,7 @@ npm run org2 -- render-chart --file report.org2 --line 42 --format json</code></
 ```chart histogram
 x: bucket
 y: fetches
+sort: y-desc
 source: previous-table
 ```</code></pre>
 <p>For data-backed reports, a chart block can also point at a named materialized result table in the same note:</p>
@@ -151,7 +152,7 @@ x: day
 y: fetches
 source: package_fetches_result
 ```</code></pre>
-<p>JSON output includes <code>ok</code>, <code>format</code>, <code>artifact</code>, <code>source</code>, <code>diagnostics</code>, and <code>svg</code> so VS Code, Vim, or agent tooling can show useful errors for missing columns, unsupported chart types, missing named source tables, or missing chart blocks.</p>
+<p>Add <code>sort: x-asc</code>, <code>sort: x-desc</code>, <code>sort: y-asc</code>, or <code>sort: y-desc</code> when a chart preview should be ordered independently of the table rows. JSON output includes <code>ok</code>, <code>format</code>, <code>artifact</code>, <code>source</code>, <code>diagnostics</code>, and <code>svg</code> so VS Code, Vim, or agent tooling can show useful errors for missing columns, unsupported chart types, missing chart sorts, missing named source tables, or missing chart blocks.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="local-data-queries">Local data queries</h1>
