@@ -475,6 +475,7 @@ private struct ListItemBlockEditor: View {
   @State private var checkbox: OrgListCheckbox?
   @State private var text: String
   @State private var isHovered = false
+  @State private var autosaveTask: Task<Void, Never>?
   @FocusState private var textFocused: Bool
 
   init(block: OrgEditableBlock, indent: Int, marker: String, checkbox: OrgListCheckbox?, text: String) {
@@ -582,6 +583,19 @@ private struct ListItemBlockEditor: View {
         .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
     )
     .onHover { isHovered = $0 }
+    .onChange(of: marker) {
+      scheduleListItemAutosave()
+    }
+    .onChange(of: checkbox) {
+      scheduleListItemAutosave()
+    }
+    .onChange(of: text) {
+      scheduleListItemAutosave()
+    }
+    .onDisappear {
+      autosaveTask?.cancel()
+      autosaveTask = nil
+    }
     .onAppear {
       textFocused = true
     }
@@ -620,13 +634,37 @@ private struct ListItemBlockEditor: View {
   }
 
   private func saveListItem() {
+    autosaveTask?.cancel()
+    autosaveTask = nil
     store.editableBlockText = rawListItem
     Task { await store.saveEditedBlock(block) }
   }
 
   private func continueListItem() {
+    autosaveTask?.cancel()
+    autosaveTask = nil
     store.editableBlockText = rawListItem
     Task { await store.splitEditingBlock(block, atUTF16Offset: (rawListItem as NSString).length) }
+  }
+
+  private func scheduleListItemAutosave() {
+    let draft = rawListItem
+    store.updateEditingBlockDraft(block, draft: draft)
+    autosaveTask?.cancel()
+
+    guard draft != block.rawText else {
+      return
+    }
+
+    autosaveTask = Task { [block] in
+      do {
+        try await Task.sleep(nanoseconds: 500_000_000)
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      await store.autosaveEditedBlock(block, replacement: draft)
+    }
   }
 
   private func checkboxSystemImage(_ checkbox: OrgListCheckbox) -> String {

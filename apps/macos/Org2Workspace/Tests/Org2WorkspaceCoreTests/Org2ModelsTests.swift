@@ -1778,6 +1778,59 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testAutosavesListItemWithoutLeavingInlineEditMode() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-list-autosave-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("list-autosave.org2")
+    try """
+    #+TITLE: List Autosave Test
+
+    * TODO Parent
+    - [ ] Open task
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "- [ ] Open task",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let task = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .listItem(_, _, .unchecked, let text) = $0.rendered { return text == "Open task" }
+      return false
+    })
+    store.beginEditingBlock(task)
+    let replacement = "- [X] Closed task"
+    store.updateEditingBlockDraft(task, draft: replacement)
+    await store.autosaveEditedBlock(task, replacement: replacement)
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("- [X] Closed task\n* Sibling"))
+    XCTAssertFalse(store.isEditingEntry)
+    XCTAssertEqual(store.selectedBlock?.rawText, replacement)
+    XCTAssertEqual(store.editableBlockText, replacement)
+    XCTAssertNotNil(store.editingBlockID)
+  }
+
+  @MainActor
   func testInsertsBlockAfterRenderedBlockInsideSelectedEntry() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-block-insert-\(UUID().uuidString)", isDirectory: true)
