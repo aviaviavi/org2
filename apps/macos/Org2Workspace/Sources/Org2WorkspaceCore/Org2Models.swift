@@ -750,6 +750,119 @@ public struct OrgEditableInlineLink: Identifiable, Equatable, Sendable {
   }
 }
 
+public struct OrgEditableInlineTimestampSet: Equatable, Sendable {
+  public let rawText: String
+  public let timestamps: [OrgEditableInlineTimestamp]
+
+  public init(rawText: String) {
+    self.rawText = rawText
+    self.timestamps = Self.parseTimestamps(rawText)
+  }
+
+  public func replacing(
+    timestamp: OrgEditableInlineTimestamp,
+    date: String? = nil,
+    time: String? = nil,
+    detail: String? = nil,
+    isActive: Bool? = nil
+  ) -> String {
+    let replacement = Self.formattedTimestamp(
+      date: date ?? timestamp.date,
+      time: time ?? timestamp.time,
+      detail: detail ?? timestamp.detail,
+      isActive: isActive ?? timestamp.isActive
+    )
+    return (rawText as NSString).replacingCharacters(
+      in: NSRange(location: timestamp.startUTF16, length: timestamp.endUTF16 - timestamp.startUTF16),
+      with: replacement
+    )
+  }
+
+  private static func parseTimestamps(_ raw: String) -> [OrgEditableInlineTimestamp] {
+    let pattern = #"([<\[])(\d{4}(?:-\d{0,2}(?:-\d{0,2})?)?)(?:\s+[A-Za-z]{3})?(?:\s+(\d{1,2}:\d{2}(?:-\d{1,2}:\d{2})?))?([^>\]]*)([>\]])"#
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+    let ns = raw as NSString
+    let matches = regex.matches(in: raw, range: NSRange(location: 0, length: ns.length))
+    return matches.compactMap { match in
+      guard match.numberOfRanges == 6,
+            match.range(at: 1).location != NSNotFound,
+            match.range(at: 2).location != NSNotFound,
+            match.range(at: 5).location != NSNotFound
+      else {
+        return nil
+      }
+
+      let open = ns.substring(with: match.range(at: 1))
+      let close = ns.substring(with: match.range(at: 5))
+      guard (open == "<" && close == ">") || (open == "[" && close == "]") else {
+        return nil
+      }
+
+      let rawRange = match.range(at: 0)
+      let time = match.range(at: 3).location == NSNotFound
+        ? ""
+        : ns.substring(with: match.range(at: 3)).trimmingCharacters(in: .whitespacesAndNewlines)
+      let detail = match.range(at: 4).location == NSNotFound
+        ? ""
+        : ns.substring(with: match.range(at: 4)).trimmingCharacters(in: .whitespacesAndNewlines)
+
+      return OrgEditableInlineTimestamp(
+        id: "timestamp:\(rawRange.location)",
+        date: ns.substring(with: match.range(at: 2)),
+        time: time,
+        detail: detail,
+        isActive: open == "<",
+        startUTF16: rawRange.location,
+        endUTF16: rawRange.location + rawRange.length
+      )
+    }
+  }
+
+  private static func formattedTimestamp(date: String, time: String, detail: String, isActive: Bool) -> String {
+    let normalizedDate = date.trimmingCharacters(in: .whitespacesAndNewlines)
+    let timestampDate = normalizedDate.isEmpty ? "1970-01-01" : normalizedDate
+    var parts = [timestampDate]
+    if let weekday = weekdayLabel(for: timestampDate) {
+      parts.append(weekday)
+    }
+
+    let normalizedTime = time.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !normalizedTime.isEmpty {
+      parts.append(normalizedTime)
+    }
+
+    let normalizedDetail = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !normalizedDetail.isEmpty {
+      parts.append(normalizedDetail)
+    }
+
+    let body = parts.joined(separator: " ")
+    return isActive ? "<\(body)>" : "[\(body)]"
+  }
+
+  private static func weekdayLabel(for date: String) -> String? {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "yyyy-MM-dd"
+    formatter.isLenient = false
+    guard let parsed = formatter.date(from: date) else { return nil }
+    formatter.dateFormat = "EEE"
+    return formatter.string(from: parsed)
+  }
+}
+
+public struct OrgEditableInlineTimestamp: Identifiable, Equatable, Sendable {
+  public let id: String
+  public let date: String
+  public let time: String
+  public let detail: String
+  public let isActive: Bool
+  public let startUTF16: Int
+  public let endUTF16: Int
+}
+
 public enum OrgInlineParser {
   public static func parse(_ raw: String) -> [OrgInlineSpan] {
     var spans: [OrgInlineSpan] = []
