@@ -2701,6 +2701,19 @@ final class Org2ModelsTests: XCTestCase {
 
     store.selectedRenderedBlocks = [firstBlock]
     let assignedSignature = store.selectedRenderedBlocksSignature
+    let assignedRenderSignature = store.selectedRenderedBlocksRenderSignature
+
+    let updatedFirstBlock = OrgEditableBlock(
+      id: "first",
+      startLine: 1,
+      endLineExclusive: 2,
+      rawText: "First updated",
+      rendered: .paragraph("First updated")
+    )
+    store.selectedRenderedBlocks = [updatedFirstBlock]
+    XCTAssertEqual(store.selectedRenderedBlocksSignature, assignedSignature)
+    XCTAssertNotEqual(store.selectedRenderedBlocksRenderSignature, assignedRenderSignature)
+    XCTAssertEqual(store.selectedRenderedBlockIndexes["first"], 0)
 
     store.selectedRenderedBlocks.append(secondBlock)
 
