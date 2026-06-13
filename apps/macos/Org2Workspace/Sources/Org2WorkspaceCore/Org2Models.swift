@@ -1417,18 +1417,16 @@ public enum OrgInlineParser {
     radius: Int
   ) -> Bool {
     guard !raw.isEmpty else { return false }
-    let ns = raw as NSString
+    let utf16 = raw.utf16
     let safeRadius = max(0, radius)
-    let safeLocation = min(max(0, range.location), ns.length)
-    let selectionEnd = min(ns.length, safeLocation + min(max(0, range.length), ns.length - safeLocation))
-    guard let window = substringWindow(
-      in: raw,
+    let textLength = utf16.count
+    let safeLocation = min(max(0, range.location), textLength)
+    let selectionEnd = min(textLength, safeLocation + min(max(0, range.length), textLength - safeLocation))
+    return hasInlineSyntaxCandidate(
+      utf16,
       startUTF16: max(0, safeLocation - safeRadius),
-      endUTF16: min(ns.length, selectionEnd + safeRadius)
-    ) else {
-      return false
-    }
-    return hasInlineSyntaxCandidate(window)
+      endUTF16: min(textLength, selectionEnd + safeRadius)
+    )
   }
 
   private enum DelimitedKind {
@@ -1437,29 +1435,6 @@ public enum OrgInlineParser {
     case italic
     case underline
     case strike
-  }
-
-  private static func substringWindow(
-    in text: String,
-    startUTF16 requestedStart: Int,
-    endUTF16 requestedEnd: Int
-  ) -> String? {
-    let ns = text as NSString
-    var start = min(max(0, requestedStart), ns.length)
-    var end = min(max(start, requestedEnd), ns.length)
-
-    while start >= 0 {
-      while end <= ns.length {
-        let range = NSRange(location: start, length: end - start)
-        if let swiftRange = Range(range, in: text) {
-          return String(text[swiftRange])
-        }
-        end += 1
-      }
-      start -= 1
-      end = min(max(start, requestedEnd), ns.length)
-    }
-    return nil
   }
 
   private static func parseBracketLink(_ raw: String, at cursor: String.Index) -> (span: OrgInlineSpan, end: String.Index)? {
@@ -1703,6 +1678,12 @@ public enum OrgInlineParser {
   private static let httpsBytes: [UInt8] = [0x68, 0x74, 0x74, 0x70, 0x73, 0x3A, 0x2F, 0x2F]
   private static let uppercaseHTTPBytes: [UInt8] = [0x48, 0x54, 0x54, 0x50, 0x3A, 0x2F, 0x2F]
   private static let uppercaseHTTPSBytes: [UInt8] = [0x48, 0x54, 0x54, 0x50, 0x53, 0x3A, 0x2F, 0x2F]
+  private static let orgExtensionUTF16: [UInt16] = [0x2E, 0x6F, 0x72, 0x67]
+  private static let mdExtensionUTF16: [UInt16] = [0x2E, 0x6D, 0x64]
+  private static let httpUTF16: [UInt16] = [0x68, 0x74, 0x74, 0x70, 0x3A, 0x2F, 0x2F]
+  private static let httpsUTF16: [UInt16] = [0x68, 0x74, 0x74, 0x70, 0x73, 0x3A, 0x2F, 0x2F]
+  private static let uppercaseHTTPUTF16: [UInt16] = [0x48, 0x54, 0x54, 0x50, 0x3A, 0x2F, 0x2F]
+  private static let uppercaseHTTPSUTF16: [UInt16] = [0x48, 0x54, 0x54, 0x50, 0x53, 0x3A, 0x2F, 0x2F]
 
   private static func utf8(_ bytes: String.UTF8View, at start: String.UTF8View.Index, matches pattern: [UInt8]) -> Bool {
     var index = start
@@ -1711,6 +1692,60 @@ public enum OrgInlineParser {
         return false
       }
       index = bytes.index(after: index)
+    }
+    return true
+  }
+
+  private static func hasInlineSyntaxCandidate(
+    _ utf16: String.UTF16View,
+    startUTF16: Int,
+    endUTF16: Int
+  ) -> Bool {
+    let safeStart = min(max(0, startUTF16), utf16.count)
+    let safeEnd = min(max(safeStart, endUTF16), utf16.count)
+    guard safeStart < safeEnd,
+          var index = utf16.index(utf16.startIndex, offsetBy: safeStart, limitedBy: utf16.endIndex),
+          let end = utf16.index(utf16.startIndex, offsetBy: safeEnd, limitedBy: utf16.endIndex)
+    else {
+      return false
+    }
+
+    while index < end {
+      switch utf16[index] {
+      case 0x5B, 0x5D, 0x3C, 0x3E, 0x60, 0x7E, 0x3D, 0x2A, 0x2F, 0x5F, 0x2B:
+        return true
+      case 0x2E:
+        if utf16Matches(utf16, at: index, before: end, pattern: orgExtensionUTF16)
+          || utf16Matches(utf16, at: index, before: end, pattern: mdExtensionUTF16) {
+          return true
+        }
+      case 0x68, 0x48:
+        if utf16Matches(utf16, at: index, before: end, pattern: httpUTF16)
+          || utf16Matches(utf16, at: index, before: end, pattern: httpsUTF16)
+          || utf16Matches(utf16, at: index, before: end, pattern: uppercaseHTTPUTF16)
+          || utf16Matches(utf16, at: index, before: end, pattern: uppercaseHTTPSUTF16) {
+          return true
+        }
+      default:
+        break
+      }
+      index = utf16.index(after: index)
+    }
+    return false
+  }
+
+  private static func utf16Matches(
+    _ codeUnits: String.UTF16View,
+    at start: String.UTF16View.Index,
+    before end: String.UTF16View.Index,
+    pattern: [UInt16]
+  ) -> Bool {
+    var index = start
+    for expected in pattern {
+      guard index < end, codeUnits[index] == expected else {
+        return false
+      }
+      index = codeUnits.index(after: index)
     }
     return true
   }
