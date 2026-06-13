@@ -23,6 +23,10 @@ private enum InlineEditorChrome {
 }
 
 enum InlineEditorSizing {
+  static func endSelection(in text: String) -> NSRange {
+    NSRange(location: (text as NSString).length, length: 0)
+  }
+
   static func cappedLineCount(in text: String, minimum: Int, maximum: Int) -> Int {
     let safeMinimum = max(1, minimum)
     let safeMaximum = max(safeMinimum, maximum)
@@ -1261,6 +1265,7 @@ private struct ParagraphBlockEditor: View {
     self.block = block
     self.text = text
     _draftText = State(initialValue: block.rawText)
+    _selectedRange = State(initialValue: InlineEditorSizing.endSelection(in: block.rawText))
   }
 
   var body: some View {
@@ -1730,6 +1735,7 @@ private struct QuoteBlockEditor: View {
   private let beginLine: String
   private let endLine: String
   @State private var quoteText: String
+  @State private var selectedRange: NSRange
   @State private var isHovered = false
   @State private var isTextFocused = false
   @State private var autosaveTask: Task<Void, Never>?
@@ -1741,6 +1747,7 @@ private struct QuoteBlockEditor: View {
     self.endLine = lines.last ?? "#+end_quote"
     let body = lines.count >= 2 ? Array(lines.dropFirst().dropLast()).joined(separator: "\n") : ""
     _quoteText = State(initialValue: body)
+    _selectedRange = State(initialValue: InlineEditorSizing.endSelection(in: body))
   }
 
   var body: some View {
@@ -1756,6 +1763,7 @@ private struct QuoteBlockEditor: View {
           showsScrollers: false,
           textInset: NSSize(width: 2, height: 4),
           focusOnAppear: true,
+          selection: $selectedRange,
           isFocused: $isTextFocused
         )
         .frame(minHeight: editorHeight, maxHeight: editorHeight)
@@ -1855,17 +1863,20 @@ private struct SourceBlockEditor: View {
   @EnvironmentObject private var store: WorkspaceStore
   let block: OrgEditableBlock
   @State private var source: OrgEditableSourceBlock
+  @State private var selectedRange: NSRange
   @State private var isHovered = false
   @State private var isBodyFocused = false
   @State private var autosaveTask: Task<Void, Never>?
 
   init(block: OrgEditableBlock, language: String?, lines: [String]) {
     self.block = block
-    _source = State(initialValue: OrgEditableSourceBlock(
+    let source = OrgEditableSourceBlock(
       rawText: block.rawText,
       fallbackLanguage: language,
       fallbackLines: lines
-    ))
+    )
+    _source = State(initialValue: source)
+    _selectedRange = State(initialValue: InlineEditorSizing.endSelection(in: source.body))
   }
 
   var body: some View {
@@ -1918,6 +1929,7 @@ private struct SourceBlockEditor: View {
           showsScrollers: false,
           textInset: NSSize(width: 10, height: 10),
           focusOnAppear: true,
+          selection: $selectedRange,
           isFocused: $isBodyFocused
         )
         .frame(minHeight: editorHeight, maxHeight: editorHeight)
