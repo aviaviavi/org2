@@ -500,6 +500,14 @@ enum RenderedRowChrome {
     isVisible
   }
 
+  static func rendersControlLayer(
+    isSourceEditable: Bool,
+    allowsHoverChrome: Bool,
+    isSelected: Bool
+  ) -> Bool {
+    isSourceEditable && (allowsHoverChrome || isSelected)
+  }
+
   static func contentTrailingPadding(
     isSourceEditable: Bool,
     allowsHoverChrome: Bool,
@@ -543,19 +551,7 @@ private struct EditableRenderedBlockView<Content: View>: View {
   }
 
   private var rowContent: some View {
-    ZStack(alignment: .topTrailing) {
-      content
-        .padding(.trailing, contentTrailingPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-
-      if isSourceEditable {
-        if RenderedRowChrome.rendersControls(isVisible: showsControls) {
-          rowControls
-            .opacity(RenderedRowChrome.controlsOpacity(isVisible: showsControls))
-            .allowsHitTesting(RenderedRowChrome.allowsHitTesting(isVisible: showsControls))
-        }
-      }
-    }
+    rowInnerContent
     .padding(.horizontal, 6)
     .padding(.vertical, 3)
     .background(backgroundColor, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -577,6 +573,29 @@ private struct EditableRenderedBlockView<Content: View>: View {
     }
   }
 
+  @ViewBuilder
+  private var rowInnerContent: some View {
+    if rendersControlLayer {
+      ZStack(alignment: .topTrailing) {
+        renderedContent
+
+        if RenderedRowChrome.rendersControls(isVisible: showsControls) {
+          rowControls
+            .opacity(RenderedRowChrome.controlsOpacity(isVisible: showsControls))
+            .allowsHitTesting(RenderedRowChrome.allowsHitTesting(isVisible: showsControls))
+        }
+      }
+    } else {
+      renderedContent
+    }
+  }
+
+  private var renderedContent: some View {
+    content
+      .padding(.trailing, contentTrailingPadding)
+      .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
   private var backgroundColor: Color {
     guard isSourceEditable else { return .clear }
     if isSelected {
@@ -590,6 +609,14 @@ private struct EditableRenderedBlockView<Content: View>: View {
 
   private var showsControls: Bool {
     isSourceEditable && (isSelected || (allowsHoverChrome && isHovered))
+  }
+
+  private var rendersControlLayer: Bool {
+    RenderedRowChrome.rendersControlLayer(
+      isSourceEditable: isSourceEditable,
+      allowsHoverChrome: allowsHoverChrome,
+      isSelected: isSelected
+    )
   }
 
   private var contentTrailingPadding: CGFloat {
