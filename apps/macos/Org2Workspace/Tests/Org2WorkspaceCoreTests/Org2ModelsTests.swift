@@ -909,6 +909,31 @@ final class Org2ModelsTests: XCTestCase {
     """)
   }
 
+  func testSourceBlockLineWindowLimitsCollapsedLargeBlocks() {
+    let lines = (1...120).map { "line \($0)" }
+
+    let collapsed = SourceBlockLineWindow.make(lines: lines, isExpanded: false, limit: 80)
+    XCTAssertEqual(collapsed.visibleLines.count, 80)
+    XCTAssertEqual(collapsed.visibleLines.first, "line 1")
+    XCTAssertEqual(collapsed.visibleLines.last, "line 80")
+    XCTAssertTrue(collapsed.isTruncated)
+    XCTAssertEqual(collapsed.hiddenLineCount, 40)
+
+    let expanded = SourceBlockLineWindow.make(lines: lines, isExpanded: true, limit: 80)
+    XCTAssertEqual(expanded.visibleLines.count, 120)
+    XCTAssertTrue(expanded.isTruncated)
+    XCTAssertEqual(expanded.hiddenLineCount, 0)
+  }
+
+  func testSourceBlockLineWindowLeavesSmallBlocksWhole() {
+    let lines = ["one", "two", "three"]
+
+    let collapsed = SourceBlockLineWindow.make(lines: lines, isExpanded: false, limit: 80)
+    XCTAssertEqual(collapsed.visibleLines, lines)
+    XCTAssertFalse(collapsed.isTruncated)
+    XCTAssertEqual(collapsed.hiddenLineCount, 0)
+  }
+
   func testSourceBlockRunPlanSupportsCommonLanguages() {
     XCTAssertEqual(SourceBlockRunPlan.plan(for: "sh")?.executable, "/bin/sh")
     XCTAssertEqual(SourceBlockRunPlan.plan(for: "python")?.arguments, ["python3"])
