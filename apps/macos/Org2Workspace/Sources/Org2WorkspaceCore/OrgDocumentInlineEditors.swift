@@ -56,18 +56,28 @@ private struct InlineFormatShortcut {
 struct ParagraphFocusedInlineEditor: View {
   @Binding var text: String
   @Binding var selectedRange: NSRange
+  let token: OrgEditableInlineToken
 
   nonisolated static func shouldRender(text: String, showsInlineDetails: Bool) -> Bool {
-    !showsInlineDetails && OrgInlineParser.hasInlineSyntaxCandidate(text)
+    !showsInlineDetails
+      && OrgEditableInlineToken.boundedUTF16Length(in: text) != nil
+      && OrgInlineParser.hasInlineSyntaxCandidate(text)
+  }
+
+  nonisolated static func focusedToken(
+    text: String,
+    selectedRange: NSRange,
+    showsInlineDetails: Bool
+  ) -> OrgEditableInlineToken? {
+    guard !showsInlineDetails else { return nil }
+    return OrgEditableInlineToken.focused(in: text, selection: selectedRange)
   }
 
   var body: some View {
-    if let token = OrgEditableInlineToken.focused(in: text, selection: selectedRange) {
-      focusedEditor(for: token)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 6)
-        .background(Color.accentColor.opacity(0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
+    focusedEditor(for: token)
+      .padding(.horizontal, 7)
+      .padding(.vertical, 6)
+      .background(Color.accentColor.opacity(0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
   }
 
   @ViewBuilder
