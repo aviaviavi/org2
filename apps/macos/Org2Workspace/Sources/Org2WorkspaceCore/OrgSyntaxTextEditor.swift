@@ -139,8 +139,13 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         parent.text = currentText
       }
       publishSelectionIfNeeded(textView.selectedRange())
-      markUserTextChangedForHighlighting(in: textView)
-      if Self.shouldScheduleDeferredHighlighting(utf16Length: (currentText as NSString).length) {
+      let shouldScheduleHighlighting = Self.shouldScheduleDeferredHighlighting(
+        text: currentText,
+        previousHighlightedText: lastHighlightedText,
+        monospacedUnchanged: lastHighlightedMonospaced == parent.monospaced
+      )
+      markUserTextChangedForHighlighting(in: textView, willScheduleDeferredHighlighting: shouldScheduleHighlighting)
+      if shouldScheduleHighlighting {
         scheduleDeferredHighlighting(to: textView)
       } else {
         cancelDeferredHighlighting()
@@ -193,8 +198,16 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       hasHighlightedText = false
     }
 
-    func markUserTextChangedForHighlighting(in textView: NSTextView) {
+    func markUserTextChangedForHighlighting(
+      in textView: NSTextView,
+      willScheduleDeferredHighlighting: Bool = true
+    ) {
       if canPreserveLargeBufferAttributes(for: textView) {
+        textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
+        recordHighlightedState(for: textView)
+        return
+      }
+      if !willScheduleDeferredHighlighting {
         textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
         recordHighlightedState(for: textView)
         return
@@ -297,8 +310,24 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       return OrgInlineParser.hasInlineSyntaxCandidate(text)
     }
 
-    static func shouldScheduleDeferredHighlighting(utf16Length: Int) -> Bool {
-      OrgSyntaxHighlighter.shouldTokenizeLiveText(utf16Length: utf16Length)
+    static func shouldScheduleDeferredHighlighting(
+      text: String,
+      previousHighlightedText: String?,
+      monospacedUnchanged: Bool
+    ) -> Bool {
+      guard OrgSyntaxHighlighter.shouldTokenizeLiveText(utf16Length: (text as NSString).length) else {
+        return false
+      }
+      guard monospacedUnchanged else {
+        return true
+      }
+      if OrgSyntaxHighlighter.hasSyntaxCandidate(text) {
+        return true
+      }
+      if let previousHighlightedText {
+        return OrgSyntaxHighlighter.hasSyntaxCandidate(previousHighlightedText)
+      }
+      return false
     }
 
     func applyHighlighting(to textView: NSTextView) {
@@ -392,6 +421,28 @@ enum OrgSyntaxHighlighter {
 
   static func shouldTokenizeLiveText(utf16Length: Int) -> Bool {
     utf16Length <= liveTokenizationUTF16Limit
+  }
+
+  static func hasSyntaxCandidate(_ text: String) -> Bool {
+    guard !text.isEmpty else { return false }
+    var httpMatchIndex = 0
+    let http = Array("http".utf8)
+    for byte in text.utf8 {
+      switch byte {
+      case 35, 40, 42, 43, 47, 58, 60, 61, 91, 93, 95, 96, 126:
+        return true
+      default:
+        if byte == http[httpMatchIndex] {
+          httpMatchIndex += 1
+          if httpMatchIndex == http.count {
+            return true
+          }
+        } else {
+          httpMatchIndex = byte == http[0] ? 1 : 0
+        }
+      }
+    }
+    return false
   }
 
   static func shouldPreserveExistingAttributesAfterEdit(

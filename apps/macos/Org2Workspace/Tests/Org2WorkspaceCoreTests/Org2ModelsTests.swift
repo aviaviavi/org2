@@ -624,11 +624,36 @@ final class Org2ModelsTests: XCTestCase {
 
   @MainActor
   func testSyntaxEditorDoesNotScheduleDeferredHighlightingForLargeBuffers() {
-    XCTAssertTrue(OrgSyntaxTextEditor.Coordinator.shouldScheduleDeferredHighlighting(
-      utf16Length: OrgSyntaxHighlighter.liveTokenizationUTF16Limit
+    let largeText = String(repeating: "Body with [[id:abc][Alice]].\n", count: 2_000)
+    XCTAssertGreaterThan((largeText as NSString).length, OrgSyntaxHighlighter.liveTokenizationUTF16Limit)
+    XCTAssertFalse(OrgSyntaxTextEditor.Coordinator.shouldScheduleDeferredHighlighting(
+      text: largeText,
+      previousHighlightedText: nil,
+      monospacedUnchanged: true
+    ))
+  }
+
+  @MainActor
+  func testSyntaxEditorSkipsDeferredHighlightingForPlainTextEdits() {
+    XCTAssertFalse(OrgSyntaxTextEditor.Coordinator.shouldScheduleDeferredHighlighting(
+      text: "Plain paragraph text",
+      previousHighlightedText: "Plain paragraph tex",
+      monospacedUnchanged: true
     ))
     XCTAssertFalse(OrgSyntaxTextEditor.Coordinator.shouldScheduleDeferredHighlighting(
-      utf16Length: OrgSyntaxHighlighter.liveTokenizationUTF16Limit + 1
+      text: "Plain paragraph text",
+      previousHighlightedText: nil,
+      monospacedUnchanged: true
+    ))
+    XCTAssertTrue(OrgSyntaxTextEditor.Coordinator.shouldScheduleDeferredHighlighting(
+      text: "Plain paragraph text",
+      previousHighlightedText: "See [[id:abc][Alice]]",
+      monospacedUnchanged: true
+    ))
+    XCTAssertTrue(OrgSyntaxTextEditor.Coordinator.shouldScheduleDeferredHighlighting(
+      text: "See [[id:abc][Alice]]",
+      previousHighlightedText: "Plain paragraph text",
+      monospacedUnchanged: true
     ))
   }
 
