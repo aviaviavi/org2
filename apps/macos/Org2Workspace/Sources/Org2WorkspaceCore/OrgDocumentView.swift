@@ -146,6 +146,12 @@ struct OrgRenderedEntryView: View {
       setHeadingTags: { tags in
         Task { await store.setHeadingTags(block, tags: tags) }
       },
+      setPlanningBlock: { kind, value in
+        Task { await store.setPlanningBlock(block, kind: kind, value: value) }
+      },
+      setPropertyValue: { key, value in
+        Task { await store.setPropertyValue(block, key: key, value: value) }
+      },
       toggleListItemCheckbox: {
         Task { await store.toggleListItemCheckbox(block) }
       }
