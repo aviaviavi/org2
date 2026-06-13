@@ -1925,6 +1925,7 @@ private struct QuoteBlockEditor: View {
   private let beginLine: String
   private let endLine: String
   @State private var quoteText: String
+  @State private var presentationText: String
   @State private var selectedRange: NSRange
   @State private var isHovered = false
   @State private var isTextFocused = false
@@ -1939,6 +1940,7 @@ private struct QuoteBlockEditor: View {
     self.endLine = lines.last ?? "#+end_quote"
     let body = lines.count >= 2 ? Array(lines.dropFirst().dropLast()).joined(separator: "\n") : ""
     _quoteText = State(initialValue: body)
+    _presentationText = State(initialValue: body)
     _selectedRange = State(initialValue: InlineEditorSizing.endSelection(in: body))
     _reservedLineCount = State(initialValue: InlineEditorSizing.cappedLineCount(
       in: body,
@@ -1987,7 +1989,10 @@ private struct QuoteBlockEditor: View {
     )
     .onHover { isHovered = $0 }
     .onChange(of: quoteText) {
-      reserveEditorLines(for: quoteText)
+      if presentationText != quoteText {
+        presentationText = quoteText
+      }
+      reserveEditorLines(for: presentationText)
       scheduleQuoteAutosave()
     }
     .onDisappear {
@@ -1996,7 +2001,8 @@ private struct QuoteBlockEditor: View {
     }
     .onAppear {
       liveText.update(quoteText)
-      reserveEditorLines(for: quoteText)
+      presentationText = quoteText
+      reserveEditorLines(for: presentationText)
     }
   }
 
@@ -2010,7 +2016,7 @@ private struct QuoteBlockEditor: View {
 
   private var editorHeight: CGFloat {
     let lineCount = InlineEditorSizing.stickyCappedLineCount(
-      in: quoteText,
+      in: presentationText,
       reservedLineCount: reservedLineCount,
       minimum: 2,
       maximum: 11
@@ -2031,6 +2037,9 @@ private struct QuoteBlockEditor: View {
 
   private func handleLocalTextChange(_ text: String) {
     liveText.update(text)
+    if presentationText != text {
+      presentationText = text
+    }
     reserveEditorLines(for: text)
   }
 
@@ -2096,6 +2105,7 @@ private struct SourceBlockEditor: View {
   @EnvironmentObject private var store: WorkspaceStore
   let block: OrgEditableBlock
   @State private var source: OrgEditableSourceBlock
+  @State private var presentationBody: String
   @State private var selectedRange: NSRange
   @State private var isHovered = false
   @State private var isBodyFocused = false
@@ -2111,6 +2121,7 @@ private struct SourceBlockEditor: View {
       fallbackLines: lines
     )
     _source = State(initialValue: source)
+    _presentationBody = State(initialValue: source.body)
     _selectedRange = State(initialValue: InlineEditorSizing.endSelection(in: source.body))
     _reservedLineCount = State(initialValue: InlineEditorSizing.cappedLineCount(
       in: source.body,
@@ -2244,7 +2255,11 @@ private struct SourceBlockEditor: View {
     )
     .onHover { isHovered = $0 }
     .onChange(of: source) {
-      reserveEditorLines(for: source.body)
+      let currentBody = currentSource.body
+      if presentationBody != currentBody {
+        presentationBody = currentBody
+      }
+      reserveEditorLines(for: presentationBody)
       scheduleSourceAutosave()
     }
     .onDisappear {
@@ -2253,7 +2268,8 @@ private struct SourceBlockEditor: View {
     }
     .onAppear {
       liveBody.update(source.body)
-      reserveEditorLines(for: source.body)
+      presentationBody = source.body
+      reserveEditorLines(for: presentationBody)
     }
   }
 
@@ -2280,7 +2296,7 @@ private struct SourceBlockEditor: View {
 
   private var editorHeight: CGFloat {
     let lineCount = InlineEditorSizing.stickyCappedLineCount(
-      in: source.body,
+      in: presentationBody,
       reservedLineCount: reservedLineCount,
       minimum: 3,
       maximum: 15
@@ -2301,6 +2317,9 @@ private struct SourceBlockEditor: View {
 
   private func handleLocalBodyChange(_ text: String) {
     liveBody.update(text)
+    if presentationBody != text {
+      presentationBody = text
+    }
     reserveEditorLines(for: text)
   }
 
