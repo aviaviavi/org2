@@ -2250,45 +2250,108 @@ private struct SourceBlockEditor: View {
   }
 
   var body: some View {
-    BlockEditorContainer(
-      block: block,
-      title: "Source",
-      previewText: source.formattedRawText,
-      onSave: { store.editableBlockText = source.formattedRawText }
-    ) {
-      VStack(alignment: .leading, spacing: 8) {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-          Picker("Kind", selection: kindBinding) {
-            Text("Source").tag("#+begin_src")
-            Text("Example").tag("#+begin_example")
-            Text("Org2").tag("#+begin_org2")
+    VStack(alignment: .leading, spacing: 0) {
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Menu {
+          Button("Source") {
+            source.setBeginKeyword("#+begin_src")
           }
-          .frame(width: 150)
+          Button("Example") {
+            source.setBeginKeyword("#+begin_example")
+          }
+          Button("Org2") {
+            source.setBeginKeyword("#+begin_org2")
+          }
+        } label: {
+          Text(sourceKindTitle)
+            .font(.caption.monospaced().weight(.medium))
+            .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Source block kind")
 
-          TextField("Language", text: languageBinding)
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 140)
-            .disabled(source.beginKeyword.lowercased().hasSuffix("begin_example"))
-
-          TextField("Parameters", text: parametersBinding)
-            .textFieldStyle(.roundedBorder)
+        if !source.beginKeyword.lowercased().hasSuffix("begin_example") {
+          TextField("language", text: languageBinding)
+            .textFieldStyle(.plain)
+            .font(.caption.monospaced())
+            .foregroundStyle(.secondary)
+            .frame(width: 110)
+            .help("Language")
         }
 
-        OrgSyntaxTextEditor(text: bodyBinding, monospaced: true, focusOnAppear: true)
-          .frame(minHeight: editorHeight, maxHeight: editorHeight)
-          .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-          .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-              .stroke(Color.secondary.opacity(0.22))
-          )
+        TextField("parameters", text: parametersBinding)
+          .textFieldStyle(.plain)
+          .font(.caption.monospaced())
+          .foregroundStyle(.secondary)
+          .help("Source parameters")
+
+        Spacer(minLength: 0)
+
+        if let runState {
+          SourceRunStatusLabel(state: runState)
+        }
+
+        if runPlan != nil {
+          Button {
+            Task { await store.runSourceBlock(block) }
+          } label: {
+            Image(systemName: "play.fill")
+          }
+          .buttonStyle(.borderless)
+          .disabled(store.isSavingBlock || runState?.status == .running || hasUnsavedSourceChanges)
+          .help(sourceRunHelp)
+        }
+
+        if store.isSavingBlock {
+          ProgressView()
+            .controlSize(.small)
+        }
+
+        Button {
+          saveSource()
+        } label: {
+          Image(systemName: "checkmark")
+        }
+        .buttonStyle(.borderless)
+        .keyboardShortcut("s", modifiers: [.command])
+        .disabled(store.isSavingBlock)
+        .help("Save")
+
+        Button {
+          store.cancelEditingBlock()
+        } label: {
+          Image(systemName: "xmark")
+        }
+        .buttonStyle(.borderless)
+        .keyboardShortcut(.cancelAction)
+        .disabled(store.isSavingBlock)
+        .help("Cancel")
+      }
+      .padding(.horizontal, 10)
+      .padding(.vertical, 8)
+      .background(Color.secondary.opacity(0.07))
+
+      OrgSyntaxTextEditor(
+        text: bodyBinding,
+        monospaced: true,
+        showsScrollers: false,
+        textInset: NSSize(width: 10, height: 10),
+        focusOnAppear: true
+      )
+      .frame(minHeight: editorHeight, maxHeight: editorHeight)
+
+      if let state = runState, state.status != .running || state.message != nil {
+        SourceRunOutputView(state: state)
+          .padding(10)
+          .background(Color(nsColor: .textBackgroundColor))
       }
     }
-  }
-
-  private var kindBinding: Binding<String> {
-    Binding(
-      get: { source.beginKeyword },
-      set: { source.setBeginKeyword($0) }
+    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 7, style: .continuous)
+        .stroke(Color.accentColor.opacity(0.24))
     )
   }
 
@@ -2317,6 +2380,37 @@ private struct SourceBlockEditor: View {
     let lineCount = max(3, source.body.split(separator: "\n", omittingEmptySubsequences: false).count)
     return min(360, max(96, CGFloat(lineCount) * 22 + 34))
   }
+
+  private var sourceKindTitle: String {
+    let normalized = source.beginKeyword.lowercased()
+    if normalized.hasSuffix("begin_example") { return "example" }
+    if normalized.hasSuffix("begin_org2") { return "org2" }
+    return source.renderedLanguage ?? "source"
+  }
+
+  private var runPlan: SourceBlockRunPlan? {
+    SourceBlockRunPlan.plan(for: source.renderedLanguage)
+  }
+
+  private var runState: SourceBlockRunState? {
+    store.sourceBlockRunState(for: block)
+  }
+
+  private var hasUnsavedSourceChanges: Bool {
+    source.formattedRawText != block.rawText
+  }
+
+  private var sourceRunHelp: String {
+    if hasUnsavedSourceChanges {
+      return "Save before running source block"
+    }
+    return "Run source block"
+  }
+
+  private func saveSource() {
+    store.editableBlockText = source.formattedRawText
+    Task { await store.saveEditedBlock(block) }
+  }
 }
 
 private struct TableBlockEditor: View {
@@ -2336,59 +2430,86 @@ private struct TableBlockEditor: View {
   }
 
   var body: some View {
-    BlockEditorContainer(
-      block: block,
-      title: "Table",
-      previewText: table.formattedRawText,
-      onSave: { store.editableBlockText = table.formattedRawText }
-    ) {
-      VStack(alignment: .leading, spacing: 8) {
-        HStack(spacing: 8) {
-          Button {
-            table.addRow()
-          } label: {
-            Label("Row", systemImage: "plus")
-          }
-          .help("Add row")
+    VStack(alignment: .leading, spacing: 0) {
+      HStack(spacing: 8) {
+        Label("Table", systemImage: "tablecells")
+          .font(.caption.weight(.medium))
+          .foregroundStyle(.secondary)
 
-          Button {
-            table.addColumn()
-          } label: {
-            Label("Column", systemImage: "rectangle.split.3x1")
-          }
-          .help("Add column")
-
-          Button {
-            table.addSeparator()
-          } label: {
-            Label("Separator", systemImage: "minus")
-          }
-          .help("Add separator")
-
-          Spacer(minLength: 0)
+        Button {
+          table.addRow()
+        } label: {
+          Image(systemName: "plus")
         }
-        .controlSize(.small)
+        .buttonStyle(.borderless)
+        .help("Add row")
 
-        ScrollView(.horizontal) {
-          VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(table.rows.enumerated()), id: \.offset) { rowIndex, row in
-              switch row {
-              case .cells:
-                editableRow(rowIndex: rowIndex)
-              case .separator:
-                separatorRow(rowIndex: rowIndex)
-              }
+        Button {
+          table.addColumn()
+        } label: {
+          Image(systemName: "rectangle.split.3x1")
+        }
+        .buttonStyle(.borderless)
+        .help("Add column")
+
+        Button {
+          table.addSeparator()
+        } label: {
+          Image(systemName: "minus")
+        }
+        .buttonStyle(.borderless)
+        .help("Add separator")
+
+        Spacer(minLength: 0)
+
+        if store.isSavingBlock {
+          ProgressView()
+            .controlSize(.small)
+        }
+
+        Button {
+          saveTable()
+        } label: {
+          Image(systemName: "checkmark")
+        }
+        .buttonStyle(.borderless)
+        .keyboardShortcut("s", modifiers: [.command])
+        .disabled(store.isSavingBlock)
+        .help("Save")
+
+        Button {
+          store.cancelEditingBlock()
+        } label: {
+          Image(systemName: "xmark")
+        }
+        .buttonStyle(.borderless)
+        .keyboardShortcut(.cancelAction)
+        .disabled(store.isSavingBlock)
+        .help("Cancel")
+      }
+      .padding(.horizontal, 10)
+      .padding(.vertical, 8)
+      .background(Color.secondary.opacity(0.07))
+
+      ScrollView(.horizontal) {
+        VStack(alignment: .leading, spacing: 0) {
+          ForEach(Array(table.rows.enumerated()), id: \.offset) { rowIndex, row in
+            switch row {
+            case .cells:
+              editableRow(rowIndex: rowIndex)
+            case .separator:
+              separatorRow(rowIndex: rowIndex)
             }
           }
-          .padding(1)
-          .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-          .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-              .stroke(Color.secondary.opacity(0.2))
-          )
         }
+        .background(Color(nsColor: .textBackgroundColor))
       }
     }
+    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 7, style: .continuous)
+        .stroke(Color.accentColor.opacity(0.24))
+    )
     .onAppear {
       focusedCell = firstEditableCellFocus
     }
@@ -2403,7 +2524,7 @@ private struct TableBlockEditor: View {
           .padding(.horizontal, 8)
           .padding(.vertical, 6)
           .frame(width: 150, alignment: .leading)
-          .background(Color(nsColor: .controlBackgroundColor))
+          .background(cellBackground(row: rowIndex, column: columnIndex))
           .focused($focusedCell, equals: TableCellFocus(row: rowIndex, column: columnIndex))
           .onSubmit {
             advanceCellFocus(from: TableCellFocus(row: rowIndex, column: columnIndex))
@@ -2500,6 +2621,19 @@ private struct TableBlockEditor: View {
       table.addRow(after: current.row)
       focusedCell = TableCellFocus(row: min(current.row + 1, table.rows.count - 1), column: 0)
     }
+  }
+
+  private func cellBackground(row rowIndex: Int, column columnIndex: Int) -> Color {
+    let focus = TableCellFocus(row: rowIndex, column: columnIndex)
+    if focusedCell == focus {
+      return Color.accentColor.opacity(0.12)
+    }
+    return Color(nsColor: .controlBackgroundColor)
+  }
+
+  private func saveTable() {
+    store.editableBlockText = table.formattedRawText
+    Task { await store.saveEditedBlock(block) }
   }
 }
 
