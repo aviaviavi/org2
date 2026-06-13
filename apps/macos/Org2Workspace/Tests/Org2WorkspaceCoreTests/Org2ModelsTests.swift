@@ -2845,6 +2845,15 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(key.hash, matching.hash)
     XCTAssertNotEqual(key, differentSource)
 
+    XCTAssertFalse(OrgMediaAttachmentRenderCache.shouldAttemptStandaloneLookup(raw: "Plain paragraph"))
+    XCTAssertFalse(OrgMediaAttachmentRenderCache.shouldAttemptStandaloneLookup(
+      raw: "See [[file:../assets/diagram.png][System Diagram]]"
+    ))
+    XCTAssertFalse(OrgMediaAttachmentRenderCache.shouldAttemptStandaloneLookup(
+      raw: "https://example.com/image.png"
+    ))
+    XCTAssertTrue(OrgMediaAttachmentRenderCache.shouldAttemptStandaloneLookup(raw: raw))
+
     let first = try XCTUnwrap(OrgMediaAttachmentRenderCache.standalone(raw: raw, sourceFile: note.path, corpusRoot: root))
     let second = try XCTUnwrap(OrgMediaAttachmentRenderCache.standalone(raw: raw, sourceFile: note.path, corpusRoot: root))
     XCTAssertEqual(first, second)
