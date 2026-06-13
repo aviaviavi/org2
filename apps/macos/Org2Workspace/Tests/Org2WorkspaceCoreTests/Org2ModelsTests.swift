@@ -1071,6 +1071,12 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(InlineEditorChrome.savingIndicatorSize, 14)
     XCTAssertEqual(InlineEditorChrome.savingIndicatorOpacity(true), 1)
     XCTAssertEqual(InlineEditorChrome.savingIndicatorOpacity(false), 0)
+    XCTAssertEqual(InlineEditorChrome.controlsReserveWidth, RenderedRowChrome.controlsReserveWidth)
+    XCTAssertEqual(InlineEditorChrome.controlsTrailingPadding(), RenderedRowChrome.controlsReserveWidth)
+    XCTAssertEqual(
+      InlineEditorChrome.controlsTrailingPadding(isPersistent: false),
+      InlineEditorChrome.compactControlsReserveWidth
+    )
   }
 
   func testParagraphFocusedInlineEditorSkipsPlainText() {
