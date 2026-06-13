@@ -131,7 +131,7 @@ JSON output includes =ok=, =format=, =artifact=, =source=, =diagnostics=, and =s
 
 * Local data queries
 
-=org2 query-data= is the first DuckDB-backed bridge for local/ad hoc datasets described in org2 notes. It scans fenced =```dataset= blocks, creates DuckDB views for explicit =csv=, =parquet=, or =json= paths or named org2 tables, then runs a fenced =```sql results=NAME= block and materializes the returned rows.
+=org2 query-data= is the first DuckDB-backed bridge for local/ad hoc datasets described in org2 notes. It scans fenced =```dataset= blocks, creates DuckDB views for explicit =csv=, =parquet=, or =json= paths/URLs or named org2 tables, then runs a fenced =```sql results=NAME= block and materializes the returned rows.
 
 #+begin_src org
 ```dataset fetches
@@ -145,6 +145,22 @@ SELECT state, count(*) AS fetches
 FROM fetches
 GROUP BY state
 ORDER BY fetches DESC
+```
+#+end_src
+
+Read-only HTTP(S) or =file:= URLs can be recorded with =url:= when DuckDB can read the source directly:
+
+#+begin_src org
+```dataset remote_fetches
+type: csv
+url: https://data.example.test/package-fetches.csv
+engine: duckdb
+```
+
+```sql results=remote_fetches_by_state
+SELECT state, count(*) AS fetches
+FROM remote_fetches
+GROUP BY state
 ```
 #+end_src
 
@@ -175,7 +191,7 @@ npm run org2 -- query-data --file report.org2 --results fetches_by_state --forma
 cat report.org2 | npm run org2 -- query-data --stdin --results fetches_by_state
 #+end_src
 
-The default output is a named org table with =#+name: fetches_by_state= so it can be pasted or written into the note and consumed by =render-chart= via =source: fetches_by_state=. JSON output includes diagnostics, dataset metadata, rows, and the generated org table; =--include-script= also includes the DuckDB setup SQL for debugging. Editor and agent clients can pass an unsaved buffer with =--stdin=; file-backed dataset paths are then resolved relative to the current working directory. The command expects a local DuckDB CLI on =PATH=, or a custom path via =--duckdb=.
+The default output is a named org table with =#+name: fetches_by_state= so it can be pasted or written into the note and consumed by =render-chart= via =source: fetches_by_state=. JSON output includes diagnostics, dataset metadata, rows, and the generated org table; =--include-script= also includes the DuckDB setup SQL for debugging. Editor and agent clients can pass an unsaved buffer with =--stdin=; file-backed dataset paths are then resolved relative to the current working directory, while URL datasets are passed through as declared. The command expects a local DuckDB CLI on =PATH=, or a custom path via =--duckdb=.
 
 * Corpus lint
 

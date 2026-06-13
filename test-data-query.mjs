@@ -10,6 +10,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "org2-data-query-"));
 const note = path.join(tmp, "report.org2");
 const orgStyleNote = path.join(tmp, "org-style-report.org2");
 const tableNote = path.join(tmp, "table-report.org2");
+const urlNote = path.join(tmp, "url-report.org2");
 const data = path.join(tmp, "package-fetches.csv");
 const fakeDuckdb = path.join(tmp, "duckdb");
 const out = path.join(tmp, "fetches_by_state.org");
@@ -57,6 +58,22 @@ FROM fetches
 \`\`\`
 `, "utf8");
 
+fs.writeFileSync(urlNote, `* Remote package fetch report
+
+\`\`\`dataset remote_fetches
+type: csv
+url: https://data.example.test/package-fetches.csv
+engine: duckdb
+\`\`\`
+
+\`\`\`sql results=remote_fetches_by_state
+SELECT state, sum(fetches) AS fetches
+FROM remote_fetches
+GROUP BY state
+ORDER BY fetches DESC
+\`\`\`
+`, "utf8");
+
 fs.writeFileSync(orgStyleNote, `* Package fetch report
 
 #+begin_dataset fetches
@@ -94,6 +111,14 @@ if (input.includes('CREATE OR REPLACE VIEW "fetches" AS SELECT * FROM (VALUES'))
     process.exit(5);
   }
   process.stdout.write(JSON.stringify([{ fetches: 66 }]));
+  process.exit(0);
+}
+if (input.includes('CREATE OR REPLACE VIEW "remote_fetches" AS SELECT * FROM read_csv_auto(\\'https://data.example.test/package-fetches.csv\\')')) {
+  if (!input.includes("FROM remote_fetches")) {
+    console.error("missing remote SQL query");
+    process.exit(6);
+  }
+  process.stdout.write(JSON.stringify([{ state: "CA", fetches: 42 }, { state: "NY", fetches: 24 }]));
   process.exit(0);
 }
 if (!input.includes('CREATE OR REPLACE VIEW "fetches" AS SELECT * FROM read_csv_auto(')) {
@@ -149,6 +174,14 @@ assert.equal(tableJson.datasets[0].rowCount, 2);
 assert.match(tableJson.duckdbScript, /VALUES \('CA', 42\), \('NY', 24\)/);
 assert.equal(tableJson.rows[0].fetches, 66);
 assert.match(tableJson.orgTable, /\| fetches \|/);
+
+const urlJson = JSON.parse(cli(["query-data", "--file", urlNote, "--results", "remote_fetches_by_state", "--duckdb", fakeDuckdb, "--format", "json", "--include-script"]));
+assert.equal(urlJson.ok, true);
+assert.equal(urlJson.datasets[0].id, "remote_fetches");
+assert.equal(urlJson.datasets[0].url, "https://data.example.test/package-fetches.csv");
+assert.equal(urlJson.datasets[0].path, undefined);
+assert.match(urlJson.duckdbScript, /read_csv_auto\('https:\/\/data\.example\.test\/package-fetches\.csv'\)/);
+assert.equal(urlJson.rows[0].state, "CA");
 
 const stdinJson = JSON.parse(cli(["query-data", "--stdin", "--results", "fetches_total", "--duckdb", fakeDuckdb, "--format", "json"], {
   input: fs.readFileSync(tableNote, "utf8"),
