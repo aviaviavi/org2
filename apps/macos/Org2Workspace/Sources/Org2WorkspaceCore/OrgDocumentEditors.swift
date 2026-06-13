@@ -1362,6 +1362,7 @@ private struct QuoteBlockEditor: View {
   private let beginLine: String
   private let endLine: String
   @State private var quoteText: String
+  @State private var isHovered = false
 
   init(block: OrgEditableBlock) {
     self.block = block
@@ -1373,18 +1374,24 @@ private struct QuoteBlockEditor: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      HStack(spacing: 8) {
-        Text("Quote")
-          .font(.caption.weight(.medium))
-          .foregroundStyle(.secondary)
+    ZStack(alignment: .topTrailing) {
+      HStack(alignment: .top, spacing: 9) {
+        Rectangle()
+          .fill(Color.accentColor.opacity(0.45))
+          .frame(width: 3)
+          .clipShape(Capsule())
 
-        Text("line \(block.displayRange)")
-          .font(.caption.monospacedDigit())
-          .foregroundStyle(.tertiary)
+        OrgSyntaxTextEditor(
+          text: $quoteText,
+          showsScrollers: false,
+          textInset: NSSize(width: 2, height: 4),
+          focusOnAppear: true
+        )
+        .frame(minHeight: editorHeight, maxHeight: editorHeight)
+        .background(Color.clear)
+      }
 
-        Spacer(minLength: 0)
-
+      HStack(spacing: 4) {
         if store.isSavingBlock {
           ProgressView()
             .controlSize(.small)
@@ -1410,30 +1417,20 @@ private struct QuoteBlockEditor: View {
         .disabled(store.isSavingBlock)
         .help("Cancel")
       }
-
-      HStack(alignment: .top, spacing: 9) {
-        Rectangle()
-          .fill(Color.secondary.opacity(0.35))
-          .frame(width: 3)
-          .clipShape(Capsule())
-
-        OrgSyntaxTextEditor(
-          text: $quoteText,
-          showsScrollers: false,
-          textInset: NSSize(width: 2, height: 4),
-          focusOnAppear: true
-        )
-        .frame(minHeight: editorHeight, maxHeight: editorHeight)
-        .background(Color.clear)
-      }
+      .controlSize(.small)
+      .padding(.horizontal, 4)
+      .padding(.vertical, 2)
+      .background(.regularMaterial, in: Capsule())
+      .opacity(isHovered || store.isSavingBlock ? 1 : 0.66)
     }
-    .padding(.horizontal, 8)
-    .padding(.vertical, 7)
-    .background(Color.accentColor.opacity(0.055), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .padding(.horizontal, 6)
+    .padding(.vertical, 4)
+    .background(Color.accentColor.opacity(isHovered ? 0.035 : 0.018), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     .overlay(
-      RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .stroke(Color.accentColor.opacity(0.2))
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
     )
+    .onHover { isHovered = $0 }
   }
 
   private var rawQuote: String {
