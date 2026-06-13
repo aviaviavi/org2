@@ -11,6 +11,8 @@ const note = path.join(tmp, "report.org2");
 const orgStyleNote = path.join(tmp, "org-style-report.org2");
 const tableNote = path.join(tmp, "table-report.org2");
 const urlNote = path.join(tmp, "url-report.org2");
+const viewNote = path.join(tmp, "view-report.org2");
+const orgViewNote = path.join(tmp, "org-view-report.org2");
 const data = path.join(tmp, "package-fetches.csv");
 const fakeDuckdb = path.join(tmp, "duckdb");
 const out = path.join(tmp, "fetches_by_state.org");
@@ -74,6 +76,52 @@ ORDER BY fetches DESC
 \`\`\`
 `, "utf8");
 
+fs.writeFileSync(viewNote, `* Package fetch report with reusable SQL views
+
+\`\`\`dataset fetches
+type: csv
+path: ./package-fetches.csv
+engine: duckdb
+\`\`\`
+
+\`\`\`sql view=big_fetches
+SELECT state, fetches
+FROM fetches
+WHERE fetches >= 40
+\`\`\`
+
+#+name: fetches_by_state
+#+begin_src sql
+SELECT state, sum(fetches) AS fetches
+FROM big_fetches
+GROUP BY state
+ORDER BY fetches DESC
+#+end_src
+`, "utf8");
+
+fs.writeFileSync(orgViewNote, `* Package fetch report with org-style SQL views
+
+#+begin_dataset fetches
+type: csv
+path: ./package-fetches.csv
+engine: duckdb
+#+end_dataset
+
+#+name: big_fetches
+#+begin_src sql :view
+SELECT state, fetches
+FROM fetches
+WHERE fetches >= 40
+#+end_src
+
+\`\`\`sql results=fetches_by_state
+SELECT state, sum(fetches) AS fetches
+FROM big_fetches
+GROUP BY state
+ORDER BY fetches DESC
+\`\`\`
+`, "utf8");
+
 fs.writeFileSync(orgStyleNote, `* Package fetch report
 
 #+begin_dataset fetches
@@ -119,6 +167,18 @@ if (input.includes('CREATE OR REPLACE VIEW "remote_fetches" AS SELECT * FROM rea
     process.exit(6);
   }
   process.stdout.write(JSON.stringify([{ state: "CA", fetches: 42 }, { state: "NY", fetches: 24 }]));
+  process.exit(0);
+}
+if (input.includes('CREATE OR REPLACE VIEW "big_fetches" AS SELECT * FROM (SELECT state, fetches')) {
+  if (!input.includes("FROM fetches\\nWHERE fetches >= 40) AS org2_view;")) {
+    console.error("missing SQL view body");
+    process.exit(7);
+  }
+  if (!input.includes("FROM big_fetches")) {
+    console.error("missing query over SQL view");
+    process.exit(8);
+  }
+  process.stdout.write(JSON.stringify([{ state: "CA", fetches: 42 }]));
   process.exit(0);
 }
 if (!input.includes('CREATE OR REPLACE VIEW "fetches" AS SELECT * FROM read_csv_auto(')) {
@@ -182,6 +242,20 @@ assert.equal(urlJson.datasets[0].url, "https://data.example.test/package-fetches
 assert.equal(urlJson.datasets[0].path, undefined);
 assert.match(urlJson.duckdbScript, /read_csv_auto\('https:\/\/data\.example\.test\/package-fetches\.csv'\)/);
 assert.equal(urlJson.rows[0].state, "CA");
+
+const viewJson = JSON.parse(cli(["query-data", "--file", viewNote, "--results", "fetches_by_state", "--duckdb", fakeDuckdb, "--format", "json", "--include-script"]));
+assert.equal(viewJson.ok, true);
+assert.equal(viewJson.views[0].id, "big_fetches");
+assert.equal(viewJson.views[0].line, 9);
+assert.match(viewJson.duckdbScript, /CREATE OR REPLACE VIEW "big_fetches" AS SELECT \* FROM/);
+assert.match(viewJson.duckdbScript, /FROM big_fetches/);
+assert.equal(viewJson.rows[0].fetches, 42);
+
+const orgViewJson = JSON.parse(cli(["query-data", "--file", orgViewNote, "--results", "fetches_by_state", "--duckdb", fakeDuckdb, "--format", "json", "--include-script"]));
+assert.equal(orgViewJson.ok, true);
+assert.equal(orgViewJson.views[0].id, "big_fetches");
+assert.equal(orgViewJson.views[0].line, 10);
+assert.equal(orgViewJson.rows[0].state, "CA");
 
 const stdinJson = JSON.parse(cli(["query-data", "--stdin", "--results", "fetches_total", "--duckdb", fakeDuckdb, "--format", "json"], {
   input: fs.readFileSync(tableNote, "utf8"),

@@ -9722,9 +9722,10 @@ Flags:
 Input:
   Reads fenced \`\`\`dataset NAME blocks with engine: duckdb and either
   type: csv|parquet|json plus path: ./local-file or type: table plus
-  source: named_org_table, then runs fenced \`\`\`sql results=NAME blocks
-  through the DuckDB CLI. This is an explicit local/ad hoc data bridge; Org2
-  does not store credentials or call remote warehouses.`;
+  source: named_org_table. Optional \`\`\`sql view=NAME blocks define reusable
+  DuckDB views before the selected \`\`\`sql results=NAME block is run. This is
+  an explicit local/ad hoc data bridge; Org2 does not store credentials or call
+  remote warehouses.`;
   } else if (command === "context") {
     text = `org2 context
 
