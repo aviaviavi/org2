@@ -9736,11 +9736,12 @@ Input:
   DuckDB views before the selected \`\`\`sql results=NAME block is run. SQL result
   result names must be unique. Dataset names and SQL view names must not
   conflict because they share DuckDB's relation namespace. SQL result blocks may
-  include artifact=PATH to record the intended materialized output; --out FILE
-  records the actual path. Dataset credential/auth and config/profile metadata
-  must be external references such as env:VAR, secret:NAME, config:NAME, or
-  profile:NAME; inline secrets are rejected and references are not injected into
-  DuckDB SQL.
+  include artifact=PATH to record the intended materialized output, and
+  freshness=24h/ttl=24h/max-age=24h to tell clients how long a materialized
+  result should be treated as fresh; --out FILE records the actual artifact
+  path. Dataset credential/auth and config/profile metadata must be external
+  references such as env:VAR, secret:NAME, config:NAME, or profile:NAME; inline
+  secrets are rejected and references are not injected into DuckDB SQL.
   This is an explicit
   local/ad hoc data bridge; Org2 does not store credentials or call remote
   warehouses.`;
