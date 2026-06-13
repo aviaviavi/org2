@@ -70,6 +70,17 @@ private struct OrgIDLookupPayload: Decodable {
   let headingLine: Int?
 }
 
+private struct OrgCryptCLIPayload: Decodable {
+  let action: String
+  let file: String
+  let headingLine: Int
+  let applied: Bool
+  let changed: Bool
+  let gpgProgram: String
+  let recipients: [String]
+  let recipientFiles: [String]
+}
+
 private struct SplitDraftSpec {
   let insertionLineOffset: Int
   let displayLineOffset: Int
@@ -143,6 +154,17 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var openClawRemoteCorpusPath = ""
   @Published public var openClawHasStoredToken = false
   @Published public var openClawStatusText = WorkspaceStore.defaultOpenClawStatusText()
+  @Published public var isOrgCryptConfigurationPresented = false
+  @Published public var orgCryptEncryptOnSave = true {
+    didSet {
+      defaults.set(orgCryptEncryptOnSave, forKey: orgCryptEncryptOnSaveKey)
+    }
+  }
+  @Published public var orgCryptRecipientsText = ""
+  @Published public var orgCryptRecipientFilesText = ""
+  @Published public var orgCryptGpgProgram = "gpg"
+  @Published public var orgCryptHasStoredPassphrase = false
+  @Published public var orgCryptStatusText = "Org crypt encrypts :crypt: subtree bodies with GPG."
   @Published public var isSendingOpenClawMessage = false
   @Published public var openClawRequestStartedAt: Date?
   @Published public var isOpenClawAssistantPresented = false
@@ -216,6 +238,10 @@ public final class WorkspaceStore: ObservableObject {
   private let openClawEndpointKey = "Org2Workspace.openClawEndpoint"
   private let openClawAgentKey = "Org2Workspace.openClawAgent"
   private let openClawRemoteCorpusPathKey = "Org2Workspace.openClawRemoteCorpusPath"
+  private let orgCryptEncryptOnSaveKey = "Org2Workspace.orgCrypt.encryptOnSave"
+  private let orgCryptRecipientsKey = "Org2Workspace.orgCrypt.recipients"
+  private let orgCryptRecipientFilesKey = "Org2Workspace.orgCrypt.recipientFiles"
+  private let orgCryptGpgProgramKey = "Org2Workspace.orgCrypt.gpgProgram"
   private static let canonicalParserLineLimit = 2_000
   private static let renderedBlocksCacheLimit = 12
   private static let detailNavigationHistoryLimit = 100
@@ -255,9 +281,14 @@ public final class WorkspaceStore: ObservableObject {
     openClawEndpointText = defaults.string(forKey: openClawEndpointKey) ?? settings.endpoint.absoluteString
     openClawAgentID = defaults.string(forKey: openClawAgentKey) ?? "main"
     openClawRemoteCorpusPath = defaults.string(forKey: openClawRemoteCorpusPathKey) ?? ""
+    orgCryptEncryptOnSave = defaults.object(forKey: orgCryptEncryptOnSaveKey) as? Bool ?? true
+    orgCryptRecipientsText = OrgCryptSettings.listText(defaults.stringArray(forKey: orgCryptRecipientsKey) ?? [])
+    orgCryptRecipientFilesText = OrgCryptSettings.listText(defaults.stringArray(forKey: orgCryptRecipientFilesKey) ?? [])
+    orgCryptGpgProgram = defaults.string(forKey: orgCryptGpgProgramKey) ?? "gpg"
     openClawMessages = Self.loadOpenClawMessages(from: self.openClawTranscriptURL)
     shouldPersistOpenClawMessages = true
     openClawHasStoredToken = OpenClawKeychain.containsToken()
+    orgCryptHasStoredPassphrase = OrgCryptKeychain.containsPassphrase()
     openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
   }
 
@@ -1144,8 +1175,11 @@ public final class WorkspaceStore: ObservableObject {
       try await Task.detached(priority: .userInitiated) {
         try Self.replaceEntrySource(source, with: replacement)
       }.value
+      let encryptedCount = try await encryptOrgCryptSubtreesAfterExplicitSave(file: source.file)
       invalidateCanonicalDocumentCache(for: source.file)
-      statusText = "Saved \(relativePath(source.file)):\(source.displayRange)"
+      statusText = encryptedCount > 0
+        ? "Saved and encrypted \(encryptedCount) subtree\(encryptedCount == 1 ? "" : "s")"
+        : "Saved \(relativePath(source.file)):\(source.displayRange)"
       isEditingEntry = false
       if let selectedLocation {
         await loadEntrySource(for: selectedLocation)
@@ -1191,6 +1225,20 @@ public final class WorkspaceStore: ObservableObject {
           replacement: replacement
         )
       }.value
+      let encryptedCount = try await encryptOrgCryptSubtreesAfterExplicitSave(file: source.file)
+
+      if encryptedCount > 0 {
+        guard selectedEntrySource?.id == source.id else { return }
+        deferredStableAutosaves.removeValue(forKey: block.id)
+        invalidateCanonicalDocumentCache(for: source.file)
+        resetBlockEditing()
+        statusText = "Saved and encrypted \(encryptedCount) subtree\(encryptedCount == 1 ? "" : "s")"
+        if let selectedLocation {
+          await loadEntrySource(for: selectedLocation)
+        }
+        scheduleAgendaRefresh(preserveSelection: true)
+        return
+      }
 
       let updatedBlocks = await Task.detached(priority: .userInitiated) {
         Self.locallyUpdatingRenderedBlocks(
@@ -2379,6 +2427,7 @@ public final class WorkspaceStore: ObservableObject {
           replacement: replacement
         )
       }.value
+      let encryptedCount = try await encryptOrgCryptSubtreesAfterExplicitSave(file: draft.file)
       transientDraftBlock = nil
       selectedRenderedBlocks.removeAll { $0.id == draft.block.id }
       if selectedBlockID == draft.block.id {
@@ -2392,7 +2441,9 @@ public final class WorkspaceStore: ObservableObject {
         line: draft.insertionLine + draft.selectionLineOffset,
         mode: .containingOrNearest
       )
-      statusText = "Saved block \(relativePath(draft.file)):\(draft.insertionLine)"
+      statusText = encryptedCount > 0
+        ? "Saved and encrypted \(encryptedCount) subtree\(encryptedCount == 1 ? "" : "s")"
+        : "Saved block \(relativePath(draft.file)):\(draft.insertionLine)"
       if let selectedLocation {
         await loadEntrySource(for: selectedLocation)
       }
@@ -2426,6 +2477,21 @@ public final class WorkspaceStore: ObservableObject {
         replacement: normalizedReplacement
       )
     }.value
+    let encryptedCount = try await encryptOrgCryptSubtreesAfterExplicitSave(file: source.file)
+
+    if encryptedCount > 0 {
+      guard selectedEntrySource?.id == source.id else { return }
+      invalidateCanonicalDocumentCache(for: source.file)
+      transientDraftBlock = nil
+      resetBlockEditing()
+      isEditingEntry = false
+      statusText = "Saved and encrypted \(encryptedCount) subtree\(encryptedCount == 1 ? "" : "s")"
+      if let selectedLocation {
+        await loadEntrySource(for: selectedLocation)
+      }
+      scheduleAgendaRefresh(preserveSelection: true)
+      return
+    }
 
     let updatedBlocks = await Task.detached(priority: .userInitiated) {
       Self.locallyUpdatingRenderedBlocks(
@@ -2917,6 +2983,104 @@ public final class WorkspaceStore: ObservableObject {
     } catch {
       openClawStatusText = error.localizedDescription
       return false
+    }
+  }
+
+  public func saveOrgCryptConfiguration(
+    encryptOnSave: Bool,
+    recipientsText: String,
+    recipientFilesText: String,
+    gpgProgram: String,
+    passphrase: String,
+    clearPassphrase: Bool
+  ) -> Bool {
+    let recipients = OrgCryptSettings.splitListText(recipientsText)
+    let recipientFiles = OrgCryptSettings.splitListText(recipientFilesText)
+    let normalizedGpgProgram = gpgProgram.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      ? "gpg"
+      : gpgProgram.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    do {
+      defaults.set(encryptOnSave, forKey: orgCryptEncryptOnSaveKey)
+      defaults.set(recipients, forKey: orgCryptRecipientsKey)
+      defaults.set(recipientFiles, forKey: orgCryptRecipientFilesKey)
+      defaults.set(normalizedGpgProgram, forKey: orgCryptGpgProgramKey)
+
+      orgCryptEncryptOnSave = encryptOnSave
+      orgCryptRecipientsText = OrgCryptSettings.listText(recipients)
+      orgCryptRecipientFilesText = OrgCryptSettings.listText(recipientFiles)
+      orgCryptGpgProgram = normalizedGpgProgram
+
+      if clearPassphrase {
+        try OrgCryptKeychain.deletePassphrase()
+        orgCryptHasStoredPassphrase = false
+      } else if !passphrase.isEmpty {
+        try OrgCryptKeychain.savePassphrase(passphrase)
+        orgCryptHasStoredPassphrase = true
+      } else {
+        orgCryptHasStoredPassphrase = OrgCryptKeychain.containsPassphrase()
+      }
+
+      orgCryptStatusText = orgCryptStatusText(settings: currentOrgCryptSettings())
+      statusText = "Org crypt configuration saved"
+      return true
+    } catch {
+      orgCryptStatusText = error.localizedDescription
+      errorText = error.localizedDescription
+      return false
+    }
+  }
+
+  public func presentOrgCryptConfiguration() {
+    isOrgCryptConfigurationPresented = true
+  }
+
+  public func runOrgCrypt(_ action: OrgCryptAction) async {
+    guard let file = selectedEntrySource?.file ?? selectedLocation?.file else {
+      statusText = "Open a file before running org crypt"
+      return
+    }
+
+    let line = selectedBlock?.startLine ?? selectedLocation?.lineForEditor ?? 1
+    let settings = currentOrgCryptSettings(allowKeychainRead: true)
+    var arguments = [
+      "crypt",
+      action.rawValue,
+      "--file",
+      file,
+      "--line",
+      "\(line)",
+      "--gpg-program",
+      settings.gpgProgram,
+      "--format",
+      "json",
+      "--apply"
+    ]
+    if let passphrase = settings.passphrase {
+      arguments += ["--passphrase", passphrase]
+    }
+    for recipient in settings.recipients {
+      arguments += ["--recipient", recipient]
+    }
+    for recipientFile in settings.recipientFiles {
+      arguments += ["--recipient-file", recipientFile]
+    }
+
+    do {
+      let result = try await cli.runJSON(arguments, as: OrgCryptCLIPayload.self)
+      invalidateCanonicalDocumentCache(for: file)
+      resetBlockEditing()
+      isEditingEntry = false
+      orgCryptStatusText = "\(action.title) \(result.changed ? "updated" : "made no changes") \(relativePath(file)):\(result.headingLine)"
+      statusText = orgCryptStatusText
+      if let selectedLocation {
+        await loadEntrySource(for: selectedLocation)
+      }
+      scheduleAgendaRefresh(preserveSelection: true)
+    } catch {
+      errorText = error.localizedDescription
+      orgCryptStatusText = error.localizedDescription
+      statusText = "Org crypt \(action.rawValue) failed"
     }
   }
 
@@ -3653,6 +3817,37 @@ public final class WorkspaceStore: ObservableObject {
     )
   }
 
+  private func currentOrgCryptSettings(allowKeychainRead: Bool = false) -> OrgCryptSettings {
+    let passphrase = allowKeychainRead
+      ? OrgCryptKeychain.readPassphrase(allowUserInteraction: true)
+      : nil
+    if allowKeychainRead {
+      orgCryptHasStoredPassphrase = passphrase != nil || OrgCryptKeychain.containsPassphrase()
+    }
+
+    return OrgCryptSettings(
+      encryptOnSave: orgCryptEncryptOnSave,
+      recipients: OrgCryptSettings.splitListText(orgCryptRecipientsText),
+      recipientFiles: OrgCryptSettings.splitListText(orgCryptRecipientFilesText),
+      gpgProgram: orgCryptGpgProgram,
+      passphrase: passphrase
+    )
+  }
+
+  private func encryptOrgCryptSubtreesAfterExplicitSave(file: String) async throws -> Int {
+    let settings = currentOrgCryptSettings(allowKeychainRead: true)
+    guard settings.encryptOnSave else { return 0 }
+
+    return try await Task.detached(priority: .userInitiated) {
+      let url = URL(fileURLWithPath: file)
+      let raw = try String(contentsOf: url, encoding: .utf8)
+      let result = try OrgCrypt.encryptPlaintextCryptSubtrees(in: raw, file: file, settings: settings)
+      guard result.encryptedCount > 0, result.text != raw else { return 0 }
+      try result.text.write(to: url, atomically: true, encoding: .utf8)
+      return result.encryptedCount
+    }.value
+  }
+
   private func persistOpenClawMessages() {
     do {
       try Self.saveOpenClawMessages(openClawMessages, to: openClawTranscriptURL)
@@ -4169,6 +4364,21 @@ public final class WorkspaceStore: ObservableObject {
       return "OpenClaw chat endpoint may need enabling in the local gateway config"
     }
     return "OpenClaw gateway: \(settings.endpoint.host ?? settings.endpoint.absoluteString)"
+  }
+
+  private func orgCryptStatusText(settings: OrgCryptSettings) -> String {
+    var parts = [settings.encryptOnSave ? "Encrypt on save" : "Manual encryption"]
+    if settings.passphrase != nil || orgCryptHasStoredPassphrase {
+      parts.append("passphrase configured")
+    }
+    if !settings.recipients.isEmpty {
+      parts.append("\(settings.recipients.count) recipient\(settings.recipients.count == 1 ? "" : "s")")
+    }
+    if !settings.recipientFiles.isEmpty {
+      parts.append("\(settings.recipientFiles.count) recipient file\(settings.recipientFiles.count == 1 ? "" : "s")")
+    }
+    parts.append("GPG: \(settings.gpgProgram)")
+    return parts.joined(separator: " • ")
   }
 
   private func syncAgendaSelectionAfterRefresh(preserveSelection: Bool = false) {

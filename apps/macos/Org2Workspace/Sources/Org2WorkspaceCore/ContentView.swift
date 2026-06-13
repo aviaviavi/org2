@@ -68,6 +68,10 @@ public struct ContentView: View {
       KeyboardShortcutsView()
         .environmentObject(store)
     }
+    .sheet(isPresented: $store.isOrgCryptConfigurationPresented) {
+      OrgCryptConfigurationSheet()
+        .environmentObject(store)
+    }
   }
 }
 
@@ -1407,6 +1411,118 @@ private struct OpenClawConfigurationSheet: View {
       remoteCorpusPath = store.openClawRemoteCorpusPath
       token = ""
       clearToken = false
+    }
+  }
+}
+
+private struct OrgCryptConfigurationSheet: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(\.dismiss) private var dismiss
+  @State private var encryptOnSave = true
+  @State private var recipientsText = ""
+  @State private var recipientFilesText = ""
+  @State private var gpgProgram = "gpg"
+  @State private var passphrase = ""
+  @State private var clearPassphrase = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Org Crypt")
+          .font(.title3.weight(.semibold))
+        Text("Configure GPG encryption for :crypt: subtrees.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      }
+
+      Toggle("Encrypt plaintext :crypt: subtrees on explicit save", isOn: $encryptOnSave)
+
+      Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 10) {
+        GridRow {
+          Text("Recipients")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+          TextEditor(text: $recipientsText)
+            .font(.system(.body, design: .monospaced))
+            .frame(width: 430, height: 72)
+            .overlay(
+              RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(WorkspaceDesign.hairline)
+            )
+        }
+
+        GridRow {
+          Text("Recipient Files")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+          TextEditor(text: $recipientFilesText)
+            .font(.system(.body, design: .monospaced))
+            .frame(width: 430, height: 72)
+            .overlay(
+              RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(WorkspaceDesign.hairline)
+            )
+        }
+
+        GridRow {
+          Text("GPG")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+          TextField("gpg", text: $gpgProgram)
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 220)
+        }
+
+        GridRow {
+          Text("Passphrase")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+          SecureField(store.orgCryptHasStoredPassphrase ? "Saved passphrase unchanged" : "Optional symmetric passphrase", text: $passphrase)
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 430)
+        }
+      }
+
+      Toggle("Clear saved passphrase", isOn: $clearPassphrase)
+        .disabled(!store.orgCryptHasStoredPassphrase)
+
+      if !store.orgCryptStatusText.isEmpty {
+        Text(store.orgCryptStatusText)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(3)
+      }
+
+      HStack {
+        Spacer()
+        Button("Cancel") {
+          dismiss()
+        }
+        Button("Save") {
+          let saved = store.saveOrgCryptConfiguration(
+            encryptOnSave: encryptOnSave,
+            recipientsText: recipientsText,
+            recipientFilesText: recipientFilesText,
+            gpgProgram: gpgProgram,
+            passphrase: passphrase,
+            clearPassphrase: clearPassphrase
+          )
+          if saved {
+            dismiss()
+          }
+        }
+        .buttonStyle(.borderedProminent)
+      }
+    }
+    .padding(22)
+    .frame(width: 620)
+    .onAppear {
+      encryptOnSave = store.orgCryptEncryptOnSave
+      recipientsText = store.orgCryptRecipientsText
+      recipientFilesText = store.orgCryptRecipientFilesText
+      gpgProgram = store.orgCryptGpgProgram
+      passphrase = ""
+      clearPassphrase = false
     }
   }
 }

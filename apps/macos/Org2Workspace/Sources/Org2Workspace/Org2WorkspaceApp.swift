@@ -166,6 +166,29 @@ struct Org2WorkspaceApp: App {
         }
         .disabled(!store.hasSelectedBlock)
       }
+
+      CommandMenu("Org Crypt") {
+        Button("Decrypt Subtree") {
+          Task { await store.runOrgCrypt(.decrypt) }
+        }
+        .disabled(store.selectedLocation == nil)
+
+        Button("Encrypt Subtree") {
+          Task { await store.runOrgCrypt(.encrypt) }
+        }
+        .disabled(store.selectedLocation == nil)
+
+        Button("Re-encrypt Subtree") {
+          Task { await store.runOrgCrypt(.reencrypt) }
+        }
+        .disabled(store.selectedLocation == nil)
+
+        Divider()
+
+        Button("Configure Org Crypt...") {
+          store.presentOrgCryptConfiguration()
+        }
+      }
     }
   }
 }
