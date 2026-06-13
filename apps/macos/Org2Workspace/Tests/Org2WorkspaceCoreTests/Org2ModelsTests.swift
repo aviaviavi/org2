@@ -4179,6 +4179,84 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNil(OrgCrypt.armorSummary("not encrypted"))
   }
 
+  func testOrgCryptEncryptionTimesOutNonInteractiveGPG() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-crypt-timeout-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("secrets.org2")
+    let fakeGPG = root.appendingPathComponent("fake-gpg.sh")
+    try """
+    #!/bin/sh
+    sleep 5
+    """.write(to: fakeGPG, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeGPG.path)
+
+    let text = """
+    * Secret :crypt:
+    plaintext
+    """
+    let settings = OrgCryptSettings(
+      recipients: ["person@example.com"],
+      gpgProgram: fakeGPG.path,
+      gpgTimeout: 0.2
+    )
+
+    XCTAssertThrowsError(try OrgCrypt.encryptPlaintextCryptSubtrees(in: text, file: note.path, settings: settings)) { error in
+      guard case OrgCryptError.gpgTimedOut = error else {
+        return XCTFail("Expected gpg timeout, got \(error)")
+      }
+    }
+  }
+
+  @MainActor
+  func testSaveCurrentFileEncryptsPlaintextCryptSubtreesWithoutActiveEdit() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-crypt-save-file-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("secrets.org2")
+    let fakeGPG = root.appendingPathComponent("fake-gpg.sh")
+    try """
+    #!/bin/sh
+    cat >/dev/null
+    printf '%s\\n' '-----BEGIN PGP MESSAGE-----' 'fake encrypted payload' '-----END PGP MESSAGE-----'
+    """.write(to: fakeGPG, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeGPG.path)
+    try """
+    * Secret :crypt:
+    plaintext
+    * Public
+    body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.orgCryptRecipientsText = "person@example.com"
+    store.orgCryptGpgProgram = fakeGPG.path
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    guard let location = store.selectedLocation else {
+      return XCTFail("Expected selected file")
+    }
+    await store.loadEntrySource(for: location)
+    try await waitForEntryRender(store)
+
+    XCTAssertFalse(store.hasActiveEdit)
+    XCTAssertTrue(store.canSaveCurrentFile)
+
+    await store.saveActiveEdit()
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* Secret :crypt:\n-----BEGIN PGP MESSAGE-----"))
+    XCTAssertTrue(updated.contains("fake encrypted payload"))
+    XCTAssertFalse(updated.contains("* Secret :crypt:\nplaintext"))
+    XCTAssertTrue(updated.contains("* Public\nbody"))
+    XCTAssertEqual(store.statusText, "Encrypted 1 subtree")
+  }
+
   func testOrgMediaAttachmentRenderCacheUsesExactSourceContext() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-media-cache-\(UUID().uuidString)", isDirectory: true)

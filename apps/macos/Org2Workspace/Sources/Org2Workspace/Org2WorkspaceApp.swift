@@ -71,7 +71,7 @@ struct Org2WorkspaceApp: App {
           Task { await store.saveActiveEdit() }
         }
         .keyboardShortcut("s", modifiers: [.command])
-        .disabled(!store.canSaveActiveEdit)
+        .disabled(!store.canSaveCurrentFile)
       }
 
       CommandMenu("Block") {
