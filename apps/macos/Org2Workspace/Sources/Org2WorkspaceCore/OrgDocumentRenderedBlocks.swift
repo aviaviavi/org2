@@ -1476,7 +1476,7 @@ struct SourceRunOutputView: View {
       Text(title)
         .font(.caption2.monospaced().weight(.medium))
         .foregroundStyle(.secondary)
-      outputBody(for: SourceRunOutputPresentation.make(from: text))
+      outputBody(for: SourceRunOutputPresentationCache.presentation(from: text))
     }
   }
 
@@ -1495,6 +1495,52 @@ struct SourceRunOutputView: View {
     case .line(let chart):
       SourceRunLineChartView(chart: chart)
     }
+  }
+}
+
+enum SourceRunOutputPresentationCache {
+  final class CacheKey: NSObject {
+    let raw: String
+    private let cachedHash: Int
+
+    init(raw: String) {
+      self.raw = raw
+      self.cachedHash = raw.hashValue
+    }
+
+    override var hash: Int {
+      cachedHash
+    }
+
+    override func isEqual(_ object: Any?) -> Bool {
+      guard let other = object as? CacheKey else { return false }
+      return raw == other.raw
+    }
+  }
+
+  private final class CachedValue {
+    let presentation: SourceRunOutputPresentation
+
+    init(_ presentation: SourceRunOutputPresentation) {
+      self.presentation = presentation
+    }
+  }
+
+  nonisolated(unsafe) private static let cache: NSCache<CacheKey, CachedValue> = {
+    let cache = NSCache<CacheKey, CachedValue>()
+    cache.countLimit = 512
+    return cache
+  }()
+
+  nonisolated static func presentation(from raw: String) -> SourceRunOutputPresentation {
+    let key = CacheKey(raw: raw)
+    if let cached = cache.object(forKey: key) {
+      return cached.presentation
+    }
+
+    let presentation = SourceRunOutputPresentation.make(from: raw)
+    cache.setObject(CachedValue(presentation), forKey: key)
+    return presentation
   }
 }
 
