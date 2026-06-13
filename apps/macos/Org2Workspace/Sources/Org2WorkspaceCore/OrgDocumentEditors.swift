@@ -791,6 +791,7 @@ private struct PropertyDrawerBlockEditor: View {
   @EnvironmentObject private var store: WorkspaceStore
   let block: OrgEditableBlock
   @State private var drawer: OrgEditablePropertyDrawer
+  @State private var isHovered = false
   @FocusState private var focusedProperty: PropertyFocus?
 
   private enum PropertyFocus: Hashable {
@@ -804,12 +805,31 @@ private struct PropertyDrawerBlockEditor: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      HStack(spacing: 8) {
-        Label("Properties", systemImage: "tag")
-          .font(.caption.weight(.medium))
-          .foregroundStyle(.secondary)
+    ZStack(alignment: .topTrailing) {
+      if drawer.rows.isEmpty {
+        HStack(spacing: 8) {
+          Image(systemName: "tag")
+            .foregroundStyle(.secondary)
+          Text("No properties")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 6)
+        .padding(.trailing, 86)
+      } else {
+        VStack(alignment: .leading, spacing: 0) {
+          ForEach(Array(drawer.rows.enumerated()), id: \.offset) { index, row in
+            propertyRow(index: index, row: row)
+            if index < drawer.rows.count - 1 {
+              Divider()
+            }
+          }
+        }
+        .padding(.trailing, 86)
+      }
 
+      HStack(spacing: 4) {
         Button {
           drawer.addProperty()
           focusedProperty = .key(max(0, drawer.rows.count - 1))
@@ -818,12 +838,6 @@ private struct PropertyDrawerBlockEditor: View {
         }
         .buttonStyle(.borderless)
         .help("Add property")
-
-        Text("line \(block.displayRange)")
-          .font(.caption.monospacedDigit())
-          .foregroundStyle(.tertiary)
-
-        Spacer(minLength: 0)
 
         if store.isSavingBlock {
           ProgressView()
@@ -850,36 +864,20 @@ private struct PropertyDrawerBlockEditor: View {
         .disabled(store.isSavingBlock)
         .help("Cancel")
       }
-      .padding(.horizontal, 10)
-      .padding(.vertical, 8)
-      .background(Color.secondary.opacity(0.07))
-
-      if drawer.rows.isEmpty {
-        HStack(spacing: 8) {
-          Image(systemName: "tag")
-            .foregroundStyle(.secondary)
-          Text("No properties")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-        }
-        .padding(10)
-      } else {
-        VStack(alignment: .leading, spacing: 0) {
-          ForEach(Array(drawer.rows.enumerated()), id: \.offset) { index, row in
-            propertyRow(index: index, row: row)
-            if index < drawer.rows.count - 1 {
-              Divider()
-            }
-          }
-        }
-        .background(Color(nsColor: .textBackgroundColor))
-      }
+      .controlSize(.small)
+      .padding(.horizontal, 4)
+      .padding(.vertical, 2)
+      .background(.regularMaterial, in: Capsule())
+      .opacity(isHovered || focusedProperty != nil || store.isSavingBlock ? 1 : 0.66)
     }
-    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .padding(.horizontal, 6)
+    .padding(.vertical, 4)
+    .background(Color.accentColor.opacity(isHovered ? 0.035 : 0.018), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     .overlay(
-      RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .stroke(Color.accentColor.opacity(0.24))
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
     )
+    .onHover { isHovered = $0 }
     .onAppear {
       if focusedProperty == nil, !drawer.rows.isEmpty {
         focusedProperty = .value(0)
@@ -895,9 +893,9 @@ private struct PropertyDrawerBlockEditor: View {
 
       TextField("Key", text: propertyKeyBinding(index))
         .textFieldStyle(.plain)
-        .font(.callout.monospaced().weight(.medium))
+        .font(.caption.monospaced().weight(.medium))
         .foregroundStyle(.secondary)
-        .frame(width: 150)
+        .frame(width: 112)
         .focused($focusedProperty, equals: .key(index))
         .onSubmit {
           focusedProperty = .value(index)
@@ -924,13 +922,13 @@ private struct PropertyDrawerBlockEditor: View {
       .foregroundStyle(.secondary)
       .help("Delete \(row.normalizedKey.isEmpty ? "property" : row.normalizedKey)")
     }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 7)
+    .padding(.horizontal, 0)
+    .padding(.vertical, 4)
     .background(rowBackground(index))
   }
 
   private func rowBackground(_ index: Int) -> Color {
-    index.isMultiple(of: 2) ? Color.clear : Color.secondary.opacity(0.035)
+    index.isMultiple(of: 2) ? Color.clear : Color.secondary.opacity(0.025)
   }
 
   private func propertyKeyBinding(_ index: Int) -> Binding<String> {
