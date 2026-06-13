@@ -3272,20 +3272,34 @@ public final class WorkspaceStore: ObservableObject {
     for key in runs.keys.sorted() {
       guard let state = runs[key] else { continue }
       hasher.combine(key)
-      hasher.combine(sourceBlockRunStatusSignature(state.status))
-      hasher.combine(state.language)
-      hasher.combine(state.commandLabel)
-      hasher.combine(state.startedAt)
-      hasher.combine(state.finishedAt)
-      hasher.combine(state.duration)
-      hasher.combine(state.exitCode)
-      hasher.combine(state.stdout.utf8.count)
-      hasher.combine(state.stdout.hashValue)
-      hasher.combine(state.stderr.utf8.count)
-      hasher.combine(state.stderr.hashValue)
-      hasher.combine(state.message)
+      combineSourceBlockRunSignature(state, into: &hasher)
     }
     return "\(runs.count):\(hasher.finalize())"
+  }
+
+  nonisolated static func sourceBlockRunRenderSignature(for state: SourceBlockRunState?) -> String? {
+    guard let state else { return nil }
+    var hasher = Hasher()
+    combineSourceBlockRunSignature(state, into: &hasher)
+    return hasher.finalize().description
+  }
+
+  nonisolated private static func combineSourceBlockRunSignature(
+    _ state: SourceBlockRunState,
+    into hasher: inout Hasher
+  ) {
+    hasher.combine(sourceBlockRunStatusSignature(state.status))
+    hasher.combine(state.language)
+    hasher.combine(state.commandLabel)
+    hasher.combine(state.startedAt)
+    hasher.combine(state.finishedAt)
+    hasher.combine(state.duration)
+    hasher.combine(state.exitCode)
+    hasher.combine(state.stdout.utf8.count)
+    hasher.combine(state.stdout.hashValue)
+    hasher.combine(state.stderr.utf8.count)
+    hasher.combine(state.stderr.hashValue)
+    hasher.combine(state.message)
   }
 
   nonisolated private static func sourceBlockRunStatusSignature(_ status: SourceBlockRunStatus) -> String {

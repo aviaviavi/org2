@@ -2302,6 +2302,93 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  @MainActor
+  func testRenderedBlockViewEqualityUsesSourceRunSignature() {
+    let block = OrgEditableBlock(
+      id: "source",
+      startLine: 1,
+      endLineExclusive: 4,
+      rawText: "#+begin_src sh\necho hi\n#+end_src",
+      rendered: .source(language: "sh", lines: ["echo hi"])
+    )
+    let baseActions = RenderedBlockInlineActions(
+      isSourceEditable: true,
+      toggleHeadingTodo: nil,
+      setHeadingPriority: nil,
+      setHeadingTags: nil,
+      setPlanningBlock: nil,
+      setPropertyValue: nil,
+      toggleListItemCheckbox: nil,
+      sourceBlockRunRenderSignature: "same-output",
+      sourceBlockRunState: SourceBlockRunState(
+        status: .succeeded,
+        language: "sh",
+        commandLabel: "sh",
+        stdout: "hi\n"
+      ),
+      runSourceBlock: nil
+    )
+    let changedStateSameSignature = RenderedBlockInlineActions(
+      isSourceEditable: true,
+      toggleHeadingTodo: nil,
+      setHeadingPriority: nil,
+      setHeadingTags: nil,
+      setPlanningBlock: nil,
+      setPropertyValue: nil,
+      toggleListItemCheckbox: nil,
+      sourceBlockRunRenderSignature: "same-output",
+      sourceBlockRunState: SourceBlockRunState(
+        status: .succeeded,
+        language: "sh",
+        commandLabel: "sh",
+        stdout: String(repeating: "large output\n", count: 1_000)
+      ),
+      runSourceBlock: nil
+    )
+    let changedSignature = RenderedBlockInlineActions(
+      isSourceEditable: true,
+      toggleHeadingTodo: nil,
+      setHeadingPriority: nil,
+      setHeadingTags: nil,
+      setPlanningBlock: nil,
+      setPropertyValue: nil,
+      toggleListItemCheckbox: nil,
+      sourceBlockRunRenderSignature: "changed-output",
+      sourceBlockRunState: SourceBlockRunState(
+        status: .succeeded,
+        language: "sh",
+        commandLabel: "sh",
+        stdout: "hi again\n"
+      ),
+      runSourceBlock: nil
+    )
+
+    let base = RenderedBlockView(
+      block: block.rendered,
+      rawText: block.rawText,
+      editableBlock: block,
+      inlineActions: baseActions
+    )
+    XCTAssertEqual(
+      base,
+      RenderedBlockView(
+        block: block.rendered,
+        rawText: block.rawText,
+        editableBlock: block,
+        inlineActions: changedStateSameSignature
+      )
+    )
+    XCTAssertNotEqual(
+      base,
+      RenderedBlockView(
+        block: block.rendered,
+        rawText: block.rawText,
+        editableBlock: block,
+        inlineActions: changedSignature
+      )
+    )
+  }
+
   func testRenderedEntryWindowExpandsAndKeepsSelectionVisible() {
     let blocks = (1...500).map { line in
       OrgEditableBlock(
