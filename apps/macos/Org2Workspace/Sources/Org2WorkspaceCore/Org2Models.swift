@@ -1405,7 +1405,7 @@ public enum OrgInlineParser {
 }
 
 public struct OrgMediaAttachment: Equatable, Sendable {
-  public enum Kind: String, Sendable {
+  public enum Kind: String, CaseIterable, Sendable {
     case image
     case video
   }
@@ -1437,7 +1437,7 @@ public struct OrgMediaAttachment: Equatable, Sendable {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, !trimmed.contains("\n") else { return nil }
     guard let link = standaloneLink(trimmed) else { return nil }
-    guard let kind = kind(for: link.target) else { return nil }
+    guard let kind = kind(forTarget: link.target) else { return nil }
     guard !isRemoteURL(link.target) else { return nil }
 
     return OrgMediaAttachment(
@@ -1495,7 +1495,7 @@ public struct OrgMediaAttachment: Equatable, Sendable {
     return (label, target)
   }
 
-  private static func kind(for target: String) -> Kind? {
+  public static func kind(forTarget target: String) -> Kind? {
     let ext = URL(fileURLWithPath: cleanTarget(target)).pathExtension.lowercased()
     if imageExtensions.contains(ext) { return .image }
     if videoExtensions.contains(ext) { return .video }

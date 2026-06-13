@@ -1194,6 +1194,13 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(bracket.formattedRawText, "[[file:../assets/diagram.png][Diagram]]")
   }
 
+  func testMediaAttachmentInfersKindFromTargets() {
+    XCTAssertEqual(OrgMediaAttachment.kind(forTarget: "images/diagram.webp"), .image)
+    XCTAssertEqual(OrgMediaAttachment.kind(forTarget: "file:clips/demo.webm"), .video)
+    XCTAssertEqual(OrgMediaAttachment.kind(forTarget: "/tmp/movie.MP4#clip"), .video)
+    XCTAssertNil(OrgMediaAttachment.kind(forTarget: "notes/project.org2"))
+  }
+
   @MainActor
   func testAgentHandoffShortcutUpdatesTempNote() async throws {
     let root = FileManager.default.temporaryDirectory
