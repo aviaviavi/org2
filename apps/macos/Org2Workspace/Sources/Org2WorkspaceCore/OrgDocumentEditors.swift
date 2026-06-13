@@ -104,6 +104,7 @@ private struct HeadingBlockEditor: View {
   @State private var tags: String
   @State private var showsDetails = false
   @State private var isHovered = false
+  @State private var autosaveTask: Task<Void, Never>?
   @FocusState private var titleFocused: Bool
 
   init(block: OrgEditableBlock, heading: OrgHeadingBlock) {
@@ -251,6 +252,22 @@ private struct HeadingBlockEditor: View {
         .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
     )
     .onHover { isHovered = $0 }
+    .onChange(of: todo) {
+      scheduleHeadingAutosave()
+    }
+    .onChange(of: priority) {
+      scheduleHeadingAutosave()
+    }
+    .onChange(of: title) {
+      scheduleHeadingAutosave()
+    }
+    .onChange(of: tags) {
+      scheduleHeadingAutosave()
+    }
+    .onDisappear {
+      autosaveTask?.cancel()
+      autosaveTask = nil
+    }
     .onAppear {
       titleFocused = true
     }
@@ -282,8 +299,30 @@ private struct HeadingBlockEditor: View {
   }
 
   private func saveHeading() {
+    autosaveTask?.cancel()
+    autosaveTask = nil
     store.editableBlockText = rawHeading
     Task { await store.saveEditedBlock(block) }
+  }
+
+  private func scheduleHeadingAutosave() {
+    let draft = rawHeading
+    store.updateEditingBlockDraft(block, draft: draft)
+    autosaveTask?.cancel()
+
+    guard draft != block.rawText else {
+      return
+    }
+
+    autosaveTask = Task { [block] in
+      do {
+        try await Task.sleep(nanoseconds: 600_000_000)
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      await store.autosaveEditedBlock(block, replacement: draft)
+    }
   }
 
   private var headingFont: Font {
