@@ -138,7 +138,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         parent.text = currentText
       }
       publishSelectionIfNeeded(textView.selectedRange())
-      invalidateHighlighting()
+      markUserTextChangedForHighlighting(in: textView)
       scheduleDeferredHighlighting(to: textView)
     }
 
@@ -185,6 +185,16 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     func invalidateHighlighting() {
       lastHighlightedText = nil
       lastHighlightedMonospaced = nil
+    }
+
+    func markUserTextChangedForHighlighting(in textView: NSTextView) {
+      if canPreserveLargeBufferAttributes(for: textView) {
+        textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
+        lastHighlightedText = textView.string
+        lastHighlightedMonospaced = parent.monospaced
+        return
+      }
+      invalidateHighlighting()
     }
 
     func cancelDeferredHighlighting() {

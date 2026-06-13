@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import XCTest
 @testable import Org2WorkspaceCore
 
@@ -562,6 +563,42 @@ final class Org2ModelsTests: XCTestCase {
       effectiveRange: nil
     ) as? NSColor
     XCTAssertEqual(largeColor, NSColor.textColor)
+  }
+
+  @MainActor
+  func testSyntaxEditorPreservesLargeBufferAttributesAfterUserEdit() {
+    let largeText = "* TODO Large\n" + String(
+      repeating: "Body line with [[id:abc][Alice]] and <2026-06-12 Fri>.\n",
+      count: 600
+    )
+    XCTAssertGreaterThan((largeText as NSString).length, OrgSyntaxHighlighter.liveTokenizationUTF16Limit)
+
+    var boundText = largeText
+    let editor = OrgSyntaxTextEditor(text: Binding(
+      get: { boundText },
+      set: { boundText = $0 }
+    ))
+    let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
+    let textView = NSTextView()
+    textView.string = largeText
+    coordinator.applyHighlighting(to: textView)
+
+    textView.textStorage?.addAttribute(
+      .foregroundColor,
+      value: NSColor.systemRed,
+      range: NSRange(location: 0, length: 1)
+    )
+    textView.textStorage?.append(NSAttributedString(string: "x"))
+
+    coordinator.markUserTextChangedForHighlighting(in: textView)
+    coordinator.applyHighlightingIfNeeded(to: textView)
+
+    let preservedColor = textView.textStorage?.attribute(
+      .foregroundColor,
+      at: 0,
+      effectiveRange: nil
+    ) as? NSColor
+    XCTAssertEqual(preservedColor, NSColor.systemRed)
   }
 
   func testInlineEditorSizingStopsAtVisibleLineCap() {
