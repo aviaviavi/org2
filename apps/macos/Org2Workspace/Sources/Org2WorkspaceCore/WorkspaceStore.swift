@@ -623,7 +623,13 @@ public final class WorkspaceStore: ObservableObject {
     defer { isSavingBlock = false }
 
     do {
-      let replacement = editableBlockText
+      let replacement = Self.normalizeLineEndings(editableBlockText)
+      let updatedSource = try Self.replacingSourceBlock(
+        block,
+        in: source,
+        with: replacement
+      )
+      let currentRenderedBlocks = selectedRenderedBlocks
       try await Task.detached(priority: .userInitiated) {
         try Self.replaceSourceRange(
           file: source.file,
@@ -632,13 +638,30 @@ public final class WorkspaceStore: ObservableObject {
           replacement: replacement
         )
       }.value
+
+      let updatedBlocks = await Task.detached(priority: .userInitiated) {
+        Self.locallyUpdatingRenderedBlocks(
+          currentRenderedBlocks,
+          replacing: block,
+          with: replacement
+        )
+      }.value
+
+      guard selectedEntrySource?.id == source.id else {
+        return
+      }
+
       invalidateCanonicalDocumentCache(for: source.file)
+      selectedEntrySource = updatedSource
+      let updatedVisibleBlocks = blocksWithTransientDraft(updatedBlocks, for: updatedSource)
+      selectedRenderedBlocks = updatedVisibleBlocks
+      selectedBlockID = blockForSelectionLine(
+        block.startLine,
+        mode: .containingOrNearest,
+        in: updatedVisibleBlocks
+      )?.id
       statusText = "Saved block \(relativePath(source.file)):\(block.displayRange)"
       resetBlockEditing()
-      pendingBlockSelection = PendingBlockSelection(file: source.file, line: block.startLine, mode: .containingOrNearest)
-      if let selectedLocation {
-        await loadEntrySource(for: selectedLocation)
-      }
       scheduleAgendaRefresh(preserveSelection: true)
     } catch {
       errorText = error.localizedDescription
