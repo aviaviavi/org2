@@ -1310,6 +1310,28 @@ final class Org2ModelsTests: XCTestCase {
     ])
   }
 
+  func testOrgPropertyDrawerRawValueCacheUsesExactText() {
+    let raw = """
+    :PROPERTIES:
+    :ID: 11111111-1111-4111-8111-111111111111
+    :Owner: Alice
+    :END:
+    """
+    let key = OrgPropertyDrawerRawValueCache.CacheKey(rawText: raw)
+    let matchingKey = OrgPropertyDrawerRawValueCache.CacheKey(rawText: raw)
+    let differentKey = OrgPropertyDrawerRawValueCache.CacheKey(rawText: raw + "\n")
+
+    XCTAssertEqual(key, matchingKey)
+    XCTAssertEqual(key.hash, matchingKey.hash)
+    XCTAssertNotEqual(key, differentKey)
+    XCTAssertEqual(OrgPropertyDrawerRawValueCache.values(nil), [:])
+    XCTAssertEqual(OrgPropertyDrawerRawValueCache.values(raw)["OWNER"], "Alice")
+    XCTAssertEqual(OrgPropertyDrawerRawValueCache.values(raw)["ID"], "11111111-1111-4111-8111-111111111111")
+    XCTAssertEqual(OrgPropertyDrawerRawValueCache.values(raw)["PROPERTIES"], nil)
+    XCTAssertEqual(OrgPropertyDrawerRawValueCache.values(raw)["END"], nil)
+    XCTAssertEqual(OrgPropertyDrawerRawValueCache.values(raw), OrgPropertyDrawerRawValueCache.values(raw))
+  }
+
   func testEditableInlineLinkSetRewritesLinksInParagraphs() {
     let set = OrgEditableInlineLinkSet(rawText: """
     See [[id:11111111-1111-4111-8111-111111111111][Alice]], [docs](https://example.com/docs), and ~/notes/project.org2:12.

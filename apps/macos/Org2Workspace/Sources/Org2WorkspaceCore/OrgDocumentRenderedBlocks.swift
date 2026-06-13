@@ -162,6 +162,71 @@ enum OrgMediaAttachmentRenderCache {
   }
 }
 
+enum OrgPropertyDrawerRawValueCache {
+  final class CacheKey: NSObject {
+    let rawText: String
+    private let cachedHash: Int
+
+    init(rawText: String) {
+      self.rawText = rawText
+      self.cachedHash = rawText.hashValue
+    }
+
+    override var hash: Int {
+      cachedHash
+    }
+
+    override func isEqual(_ object: Any?) -> Bool {
+      guard let other = object as? CacheKey else { return false }
+      return rawText == other.rawText
+    }
+  }
+
+  private final class CachedValue {
+    let values: [String: String]
+
+    init(_ values: [String: String]) {
+      self.values = values
+    }
+  }
+
+  nonisolated(unsafe) private static let cache: NSCache<CacheKey, CachedValue> = {
+    let cache = NSCache<CacheKey, CachedValue>()
+    cache.countLimit = 4_096
+    return cache
+  }()
+
+  nonisolated static func values(_ rawText: String?) -> [String: String] {
+    guard let rawText else { return [:] }
+
+    let key = CacheKey(rawText: rawText)
+    if let cached = cache.object(forKey: key) {
+      return cached.values
+    }
+
+    let parsedValues = parseValues(rawText)
+    cache.setObject(CachedValue(parsedValues), forKey: key)
+    return parsedValues
+  }
+
+  private static func parseValues(_ rawText: String) -> [String: String] {
+    var values: [String: String] = [:]
+    for line in rawText.split(separator: "\n", omittingEmptySubsequences: false) {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      guard trimmed.hasPrefix(":"),
+            let secondColon = trimmed.dropFirst().firstIndex(of: ":")
+      else {
+        continue
+      }
+      let key = String(trimmed[trimmed.index(after: trimmed.startIndex)..<secondColon]).uppercased()
+      let value = String(trimmed[trimmed.index(after: secondColon)...]).trimmingCharacters(in: .whitespaces)
+      guard key != "PROPERTIES", key != "END" else { continue }
+      values[key] = value
+    }
+    return values
+  }
+}
+
 struct RenderedBlockInlineActions: Sendable {
   let isSourceEditable: Bool
   let toggleHeadingTodo: (@MainActor @Sendable () -> Void)?
@@ -778,6 +843,7 @@ private struct RenderedPropertiesView: View {
 
   var body: some View {
     if !rows.isEmpty {
+      let rawPropertyValues = OrgPropertyDrawerRawValueCache.values(rawText)
       Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 4) {
         ForEach(rows, id: \.key) { row in
           GridRow {
@@ -790,7 +856,11 @@ private struct RenderedPropertiesView: View {
                 .font(.callout)
                 .textSelection(.enabled)
             } else {
-              RenderedPropertyValueButton(row: row, value: propertyValue(row), inlineActions: inlineActions)
+              RenderedPropertyValueButton(
+                row: row,
+                value: propertyValue(row, rawPropertyValues: rawPropertyValues),
+                inlineActions: inlineActions
+              )
             }
           }
         }
@@ -799,26 +869,8 @@ private struct RenderedPropertiesView: View {
     }
   }
 
-  private func propertyValue(_ row: OrgPropertyRow) -> String {
+  private func propertyValue(_ row: OrgPropertyRow, rawPropertyValues: [String: String]) -> String {
     rawPropertyValues[row.key.uppercased()] ?? row.value
-  }
-
-  private var rawPropertyValues: [String: String] {
-    guard let rawText else { return [:] }
-    var values: [String: String] = [:]
-    for line in rawText.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
-      let trimmed = line.trimmingCharacters(in: .whitespaces)
-      guard trimmed.hasPrefix(":"),
-            let secondColon = trimmed.dropFirst().firstIndex(of: ":")
-      else {
-        continue
-      }
-      let key = String(trimmed[trimmed.index(after: trimmed.startIndex)..<secondColon]).uppercased()
-      let value = String(trimmed[trimmed.index(after: secondColon)...]).trimmingCharacters(in: .whitespaces)
-      guard key != "PROPERTIES", key != "END" else { continue }
-      values[key] = value
-    }
-    return values
   }
 }
 
