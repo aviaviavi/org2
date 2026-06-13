@@ -75,6 +75,8 @@ Working notes for support triage.
 :ID: support-satisfaction-score
 :KIND: dataset
 :PATH: reports/support-satisfaction.csv
+:CREDENTIAL_REF: secret:support-analytics
+:CONFIG_REF: profile:support-local
 :ROW_COUNT: 5
 :FRESHNESS: weekly
 :CONTEXT: id:scarf-support-1
@@ -141,6 +143,8 @@ assert.match(selected, /Data link: ticket volume/);
 assert.match(selected, /query: support\.ticket_volume\.v1/);
 assert.match(selected, /artifact: reports\/support-ticket-volume\.csv/);
 assert.match(selected, /Data catalog: support satisfaction score/);
+assert.match(selected, /credential: secret:support-analytics/);
+assert.match(selected, /config: profile:support-local/);
 assert.match(selected, /Event stream: support state changes/);
 assert.match(selected, /kind: timeline-link/);
 assert.match(selected, /timeline: support\.ticket\.lifecycle/);

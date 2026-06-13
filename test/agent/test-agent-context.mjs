@@ -282,6 +282,8 @@ Materialized query metadata for [[id:report-fetches][package fetch report]].
 :KIND: dataset
 :ENGINE: duckdb
 :PATH: data/package-fetches.csv
+:CREDENTIAL: env:SCARF_DATA_TOKEN
+:CONFIG: profile:local-analytics
 :PARAMS: packages=firebolt/foo
 :RESULTS: table:package_fetches
 :END:
@@ -336,6 +338,8 @@ const dataset = runJson("agent", "fetch", "--id", "dataset-package-fetches", "--
 assert.equal(dataset.results[0].dataLink.kind, "dataset");
 assert.equal(dataset.results[0].dataLink.engine, "duckdb");
 assert.equal(dataset.results[0].dataLink.path, "data/package-fetches.csv");
+assert.equal(dataset.results[0].dataLink.credentialRef, "env:SCARF_DATA_TOKEN");
+assert.equal(dataset.results[0].dataLink.configRef, "profile:local-analytics");
 assert.equal(dataset.results[0].dataLink.paramsRaw, "packages=firebolt/foo");
 assert.equal(dataset.results[0].dataLink.result, "table:package_fetches");
 
