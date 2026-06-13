@@ -16,7 +16,11 @@
           "headline": "Active today should show",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-canceled-overdue.input.txt",
-          "line": 3
+          "line": 3,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

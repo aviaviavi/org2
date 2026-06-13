@@ -16,7 +16,12 @@
           "headline": "Later high priority",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-priority-limit-global.input.txt",
-          "line": 3
+          "line": 3,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
+          "priority": "A"
         }
       ]
     }

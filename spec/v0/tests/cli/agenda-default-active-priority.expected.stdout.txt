@@ -16,35 +16,60 @@
           "headline": "Todo A",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-default-active-priority.input.txt",
-          "line": 12
+          "line": 12,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
+          "priority": "A"
         },
         {
           "todo": "IN_PROGRESS",
           "headline": "In progress B",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-default-active-priority.input.txt",
-          "line": 9
+          "line": 9,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
+          "priority": "B"
         },
         {
           "todo": "TODO",
           "headline": "Todo C",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-default-active-priority.input.txt",
-          "line": 3
+          "line": 3,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
+          "priority": "C"
         },
         {
           "todo": "DONE",
           "headline": "Done A",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-default-active-priority.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
+          "priority": "A"
         },
         {
           "todo": "CANCELED",
           "headline": "Canceled A",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-default-active-priority.input.txt",
-          "line": 6
+          "line": 6,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
+          "priority": "A"
         }
       ]
     }

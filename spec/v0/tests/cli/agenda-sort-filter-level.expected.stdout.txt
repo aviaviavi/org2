@@ -16,21 +16,33 @@
           "headline": "Beta deep",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-level.input.txt",
-          "line": 4
+          "line": 4,
+          "body": "",
+          "level": 3,
+          "tags": [],
+          "properties": {}
         },
         {
           "todo": "TODO",
           "headline": "Alpha middle",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-level.input.txt",
-          "line": 2
+          "line": 2,
+          "body": "",
+          "level": 2,
+          "tags": [],
+          "properties": {}
         },
         {
           "todo": "TODO",
           "headline": "Zebra top",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-sort-filter-level.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

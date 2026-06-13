@@ -1,0 +1,209 @@
+import Foundation
+
+public struct Org2CLI: Sendable {
+  public let repoRoot: URL
+  private let cliPath: URL
+  private let nodePath: String?
+
+  public init(repoRoot: URL, nodePath: String? = nil) {
+    self.repoRoot = repoRoot
+    self.cliPath = repoRoot.appendingPathComponent("dist/cli.js")
+    self.nodePath = nodePath
+  }
+
+  public static func defaultRepoRoot(filePath: String = #filePath) throws -> URL {
+    if let override = ProcessInfo.processInfo.environment["ORG2_REPO_ROOT"], !override.isEmpty {
+      return URL(fileURLWithPath: override).standardizedFileURL
+    }
+
+    var url = URL(fileURLWithPath: filePath).deletingLastPathComponent()
+    for _ in 0..<5 {
+      url.deleteLastPathComponent()
+    }
+    return url.standardizedFileURL
+  }
+
+  public func runJSON<T: Decodable>(_ arguments: [String], as type: T.Type = T.self) async throws -> T {
+    let data = try await run(arguments)
+    return try JSONDecoder().decode(T.self, from: data)
+  }
+
+  public func runJSONSync<T: Decodable>(_ arguments: [String], as type: T.Type = T.self) throws -> T {
+    let data = try runSync(arguments)
+    return try JSONDecoder().decode(T.self, from: data)
+  }
+
+  public func parseFileJSON<T: Decodable>(_ file: URL, sourceRanges: Bool = false, as type: T.Type = T.self) async throws -> T {
+    var arguments = [file.path]
+    if sourceRanges {
+      arguments.insert("--source-ranges", at: 0)
+    }
+    let data = try await Task.detached(priority: .userInitiated) {
+      try runProcess(scriptPath: repoRoot.appendingPathComponent("dist/parse.js"), arguments: arguments)
+    }.value
+    return try JSONDecoder().decode(T.self, from: data)
+  }
+
+  public func parseTextJSON<T: Decodable>(
+    _ text: String,
+    sourceRanges: Bool = false,
+    sourceLineOffset: Int = 0,
+    as type: T.Type = T.self
+  ) async throws -> T {
+    var arguments = ["-"]
+    if sourceLineOffset > 0 {
+      arguments.insert("\(sourceLineOffset)", at: 0)
+      arguments.insert("--source-line-offset", at: 0)
+    }
+    if sourceRanges {
+      arguments.insert("--source-ranges", at: 0)
+    }
+    let data = try await Task.detached(priority: .userInitiated) {
+      try runProcess(
+        scriptPath: repoRoot.appendingPathComponent("dist/parse.js"),
+        arguments: arguments,
+        standardInput: Data(text.utf8)
+      )
+    }.value
+    return try JSONDecoder().decode(T.self, from: data)
+  }
+
+  public func parseFileJSONSync<T: Decodable>(_ file: URL, sourceRanges: Bool = false, as type: T.Type = T.self) throws -> T {
+    var arguments = [file.path]
+    if sourceRanges {
+      arguments.insert("--source-ranges", at: 0)
+    }
+    let data = try runProcess(scriptPath: repoRoot.appendingPathComponent("dist/parse.js"), arguments: arguments)
+    return try JSONDecoder().decode(T.self, from: data)
+  }
+
+  public func run(_ arguments: [String]) async throws -> Data {
+    try await Task.detached(priority: .userInitiated) {
+      try runProcess(scriptPath: cliPath, arguments: arguments)
+    }.value
+  }
+
+  public func runSync(_ arguments: [String]) throws -> Data {
+    try runProcess(scriptPath: cliPath, arguments: arguments)
+  }
+
+  private func runProcess(scriptPath: URL, arguments: [String], standardInput: Data? = nil) throws -> Data {
+    guard FileManager.default.fileExists(atPath: scriptPath.path) else {
+      throw Org2CLIError.missingCLI(scriptPath.path)
+    }
+
+    let process = Process()
+    let node = nodePath ?? Self.resolveNodePath()
+    if let node {
+      process.executableURL = URL(fileURLWithPath: node)
+      process.arguments = [scriptPath.path] + arguments
+    } else {
+      process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+      process.arguments = ["node", scriptPath.path] + arguments
+    }
+    process.currentDirectoryURL = repoRoot
+    process.environment = Self.processEnvironment()
+
+    let stdout = Pipe()
+    let stderr = Pipe()
+    let stdin = standardInput.map { _ in Pipe() }
+    process.standardOutput = stdout
+    process.standardError = stderr
+    if let stdin {
+      process.standardInput = stdin
+    }
+
+    let stdoutCollector = PipeOutputCollector()
+    let stderrCollector = PipeOutputCollector()
+    let readGroup = DispatchGroup()
+
+    try process.run()
+
+    if let standardInput, let stdin {
+      DispatchQueue.global(qos: .userInitiated).async {
+        stdin.fileHandleForWriting.write(standardInput)
+        stdin.fileHandleForWriting.closeFile()
+      }
+    }
+
+    readGroup.enter()
+    DispatchQueue.global(qos: .userInitiated).async {
+      stdoutCollector.set(stdout.fileHandleForReading.readDataToEndOfFile())
+      readGroup.leave()
+    }
+    readGroup.enter()
+    DispatchQueue.global(qos: .userInitiated).async {
+      stderrCollector.set(stderr.fileHandleForReading.readDataToEndOfFile())
+      readGroup.leave()
+    }
+
+    process.waitUntilExit()
+    readGroup.wait()
+
+    let outData = stdoutCollector.data
+    let errData = stderrCollector.data
+
+    guard process.terminationStatus == 0 else {
+      let stderrText = String(data: errData, encoding: .utf8)?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      throw Org2CLIError.commandFailed(
+        status: Int(process.terminationStatus),
+        message: stderrText?.isEmpty == false ? stderrText! : "org2 exited with status \(process.terminationStatus)"
+      )
+    }
+
+    return outData
+  }
+
+  private static func resolveNodePath() -> String? {
+    let candidates = [
+      "/opt/homebrew/bin/node",
+      "/usr/local/bin/node",
+      "/usr/bin/node"
+    ]
+    return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+  }
+
+  private static func processEnvironment() -> [String: String] {
+    var environment = ProcessInfo.processInfo.environment
+    let defaultPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+    if let existing = environment["PATH"], !existing.isEmpty {
+      environment["PATH"] = "\(defaultPath):\(existing)"
+    } else {
+      environment["PATH"] = defaultPath
+    }
+    return environment
+  }
+}
+
+private final class PipeOutputCollector: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storage = Data()
+
+  func set(_ data: Data) {
+    lock.lock()
+    storage = data
+    lock.unlock()
+  }
+
+  var data: Data {
+    lock.lock()
+    let data = storage
+    lock.unlock()
+    return data
+  }
+}
+
+public enum Org2CLIError: LocalizedError, Equatable {
+  case missingCLI(String)
+  case commandFailed(status: Int, message: String)
+
+  public var errorDescription: String? {
+    switch self {
+    case .missingCLI(let path):
+      "Org2 CLI not found at \(path). Run npm run build in the org2 repo."
+    case .commandFailed(_, let message):
+      message
+    }
+  }
+}
