@@ -7868,6 +7868,7 @@ async function main(): Promise<void> {
   // DuckDB-backed local/ad hoc data queries
   let dataQueryFile = "";
   let dataQueryResultId = "";
+  let dataQueryLine = 0;
   let dataQueryOut = "";
   let dataQueryDuckdb = "duckdb";
   let dataQueryFormat: "org" | "json" = "org";
@@ -8244,6 +8245,8 @@ async function main(): Promise<void> {
           idLine = n;
         } else if (command === "render-chart") {
           renderChartLine = n;
+        } else if (command === "query-data") {
+          dataQueryLine = n;
         }
         i++;
       }
@@ -9387,7 +9390,7 @@ Roam / IDs:
   org2 clock --dir DIR [--recursive] [--format text|json]
   org2 compile corpus --dir DIR [--recursive] [--out FILE] [--format json|jsonl]
   org2 render-chart --file FILE [--block-id ID|--line N] [--out FILE] [--format svg|json]
-  org2 query-data (--file FILE|--stdin) [--results NAME] [--out FILE] [--format org|json]
+  org2 query-data (--file FILE|--stdin) [--results NAME|--line N] [--out FILE] [--format org|json]
   org2 context QUERY [--dir DIR] [--recursive] [--budget 8k] [--format markdown|org|json]
   org2 brief today [--dir DIR] [--recursive] [--out views/today.org]
   org2 brief project NAME [--dir DIR] [--recursive] [--out views/NAME.org]
@@ -9707,13 +9710,14 @@ Output:
     text = `org2 query-data
 
 Usage:
-  org2 query-data --file FILE [--results NAME] [--out FILE] [--format org|json]
-  org2 query-data --stdin [--results NAME] [--out FILE] [--format org|json]
+  org2 query-data --file FILE [--results NAME|--line N] [--out FILE] [--format org|json]
+  org2 query-data --stdin [--results NAME|--line N] [--out FILE] [--format org|json]
 
 Flags:
   --file FILE         Source Org/Org2 file containing dataset and SQL blocks
   --stdin             Read Org/Org2 input from standard input
   --results NAME      SQL result block to run; optional when the file has one SQL block
+  --line N            Select the SQL result block containing or after line N
   --duckdb PATH       DuckDB CLI path (default: duckdb)
   --out FILE          Write materialized org table or JSON envelope to FILE
   --format FORMAT     org (default) or json diagnostics envelope
@@ -9982,6 +9986,10 @@ Flags:
       console.error("Error: query-data requires --file FILE or --stdin");
       process.exit(1);
     }
+    if (dataQueryResultId && dataQueryLine > 0) {
+      console.error("Error: query-data accepts only one of --results or --line");
+      process.exit(1);
+    }
 
     const input = dataQueryStdin
       ? fs.readFileSync(0, "utf8").replace(/\r\n/g, "\n")
@@ -9989,6 +9997,7 @@ Flags:
     const result = runOrg2DataQuery(input, {
       ...(dataQueryFile ? { file: dataQueryFile } : {}),
       ...(dataQueryResultId ? { resultId: dataQueryResultId } : {}),
+      ...(dataQueryLine > 0 ? { resultLine: dataQueryLine } : {}),
       duckdbPath: dataQueryDuckdb,
       includeScript: dataQueryIncludeScript,
     });
