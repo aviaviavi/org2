@@ -83,11 +83,14 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     context.coordinator.parent = self
     guard let textView = scrollView.documentView as? NSTextView else { return }
 
+    var appliedProgrammaticText = false
     if textView.string != text {
+      context.coordinator.cancelDeferredHighlighting()
       context.coordinator.isApplyingProgrammaticChange = true
       textView.string = text
       context.coordinator.isApplyingProgrammaticChange = false
       context.coordinator.invalidateHighlighting()
+      appliedProgrammaticText = true
     }
 
     if let selection {
@@ -97,7 +100,9 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       }
     }
 
-    context.coordinator.applyHighlightingIfNeeded(to: textView)
+    if appliedProgrammaticText || !context.coordinator.hasDeferredHighlighting(for: textView) {
+      context.coordinator.applyHighlightingIfNeeded(to: textView)
+    }
   }
 
   private static func clampedRange(_ range: NSRange, in text: String) -> NSRange {
@@ -115,6 +120,9 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     var isApplyingProgrammaticChange = false
     private var lastHighlightedText: String?
     private var lastHighlightedMonospaced: Bool?
+    private var deferredHighlightText: String?
+    private var deferredHighlightMonospaced: Bool?
+    private var deferredHighlightWorkItem: DispatchWorkItem?
 
     init(parent: OrgSyntaxTextEditor) {
       self.parent = parent
@@ -127,7 +135,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       }
       parent.selection?.wrappedValue = textView.selectedRange()
       invalidateHighlighting()
-      applyHighlightingIfNeeded(to: textView)
+      scheduleDeferredHighlighting(to: textView)
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
@@ -167,6 +175,19 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       lastHighlightedMonospaced = nil
     }
 
+    func cancelDeferredHighlighting() {
+      deferredHighlightWorkItem?.cancel()
+      deferredHighlightWorkItem = nil
+      deferredHighlightText = nil
+      deferredHighlightMonospaced = nil
+    }
+
+    func hasDeferredHighlighting(for textView: NSTextView) -> Bool {
+      deferredHighlightWorkItem != nil
+        && deferredHighlightText == textView.string
+        && deferredHighlightMonospaced == parent.monospaced
+    }
+
     func applyHighlightingIfNeeded(to textView: NSTextView) {
       guard lastHighlightedText != textView.string
               || lastHighlightedMonospaced != parent.monospaced
@@ -176,7 +197,35 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       applyHighlighting(to: textView)
     }
 
+    private func scheduleDeferredHighlighting(to textView: NSTextView) {
+      cancelDeferredHighlighting()
+      let expectedText = textView.string
+      let expectedMonospaced = parent.monospaced
+      deferredHighlightText = expectedText
+      deferredHighlightMonospaced = expectedMonospaced
+
+      let workItem = DispatchWorkItem { [weak self, weak textView] in
+        Task { @MainActor in
+          guard let self, let textView else { return }
+          guard self.deferredHighlightText == expectedText,
+                self.deferredHighlightMonospaced == expectedMonospaced,
+                textView.string == expectedText
+          else {
+            return
+          }
+
+          self.deferredHighlightWorkItem = nil
+          self.deferredHighlightText = nil
+          self.deferredHighlightMonospaced = nil
+          self.applyHighlightingIfNeeded(to: textView)
+        }
+      }
+      deferredHighlightWorkItem = workItem
+      DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(90), execute: workItem)
+    }
+
     func applyHighlighting(to textView: NSTextView) {
+      cancelDeferredHighlighting()
       guard let storage = textView.textStorage else { return }
       let selectedRanges = textView.selectedRanges
       let typingAttributes = OrgSyntaxHighlighter.apply(
