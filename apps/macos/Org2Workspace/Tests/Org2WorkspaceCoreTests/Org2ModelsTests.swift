@@ -798,6 +798,29 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(partialSet.timestamps[0].date, "2026-06")
   }
 
+  func testEditableInlineMarkupSetRewritesDelimitedMarkup() {
+    let set = OrgEditableInlineMarkupSet(rawText: "Use `code`, *bold*, /italic/, _under_, +gone+, ~verb~, and =lit=.")
+
+    XCTAssertEqual(set.markups.map(\.kind), [.code, .bold, .italic, .underline, .strike, .code, .code])
+    XCTAssertEqual(set.markups.map(\.text), ["code", "bold", "italic", "under", "gone", "verb", "lit"])
+
+    XCTAssertEqual(
+      set.replacing(markup: set.markups[0], text: "new code"),
+      "Use `new code`, *bold*, /italic/, _under_, +gone+, ~verb~, and =lit=."
+    )
+
+    XCTAssertEqual(
+      set.replacing(markup: set.markups[2], kind: .bold),
+      "Use `code`, *bold*, *italic*, _under_, +gone+, ~verb~, and =lit=."
+    )
+  }
+
+  func testEditableInlineMarkupSetSkipsLinksAndTimestamps() {
+    let set = OrgEditableInlineMarkupSet(rawText: "See [[id:abc][*Alice*]], [*docs*](https://example.com), and <2026-06-12 Fri +1w>.")
+
+    XCTAssertTrue(set.markups.isEmpty)
+  }
+
   func testEditableSourceBlockFormatsAndSwitchesKind() {
     var source = OrgEditableSourceBlock(rawText: """
     #+BEGIN_SRC swift :results output

@@ -1,5 +1,86 @@
 import SwiftUI
 
+struct ParagraphInlineMarkupEditor: View {
+  @Binding var text: String
+
+  var body: some View {
+    let markups = inlineMarkupSet.markups
+    if !markups.isEmpty {
+      VStack(alignment: .leading, spacing: 6) {
+        ForEach(markups) { markup in
+          HStack(spacing: 8) {
+            Menu {
+              ForEach(OrgEditableInlineMarkup.Kind.allCases, id: \.self) { kind in
+                Button(kind.displayTitle) {
+                  updateInlineMarkup(markup, kind: kind)
+                }
+              }
+            } label: {
+              Label(markup.kind.displayTitle, systemImage: icon(for: markup.kind))
+                .font(.caption.weight(.medium))
+                .labelStyle(.titleAndIcon)
+                .frame(width: 104, alignment: .leading)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+
+            TextField(markup.kind.displayTitle.lowercased(), text: markupTextBinding(markup))
+              .textFieldStyle(.roundedBorder)
+              .font(markup.kind == .code ? .caption.monospaced() : .caption)
+          }
+          .controlSize(.small)
+        }
+      }
+      .padding(.horizontal, 7)
+      .padding(.vertical, 6)
+      .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+  }
+
+  private var inlineMarkupSet: OrgEditableInlineMarkupSet {
+    OrgEditableInlineMarkupSet(rawText: text)
+  }
+
+  private func markupTextBinding(_ markup: OrgEditableInlineMarkup) -> Binding<String> {
+    Binding(
+      get: { currentMarkup(matching: markup)?.text ?? markup.text },
+      set: { updateInlineMarkup(markup, text: $0) }
+    )
+  }
+
+  private func currentMarkup(matching markup: OrgEditableInlineMarkup) -> OrgEditableInlineMarkup? {
+    OrgEditableInlineMarkupSet(rawText: text)
+      .markups
+      .first { $0.id == markup.id }
+  }
+
+  private func updateInlineMarkup(
+    _ markup: OrgEditableInlineMarkup,
+    text nextText: String? = nil,
+    kind nextKind: OrgEditableInlineMarkup.Kind? = nil
+  ) {
+    let set = OrgEditableInlineMarkupSet(rawText: text)
+    guard let current = set.markups.first(where: { $0.id == markup.id }) else { return }
+    text = set.replacing(markup: current, text: nextText, kind: nextKind)
+  }
+
+  private func icon(for kind: OrgEditableInlineMarkup.Kind) -> String {
+    switch kind {
+    case .code:
+      return "curlybraces"
+    case .bold:
+      return "bold"
+    case .italic:
+      return "italic"
+    case .underline:
+      return "underline"
+    case .strike:
+      return "strikethrough"
+    }
+  }
+}
+
 struct ParagraphInlineLinkEditor: View {
   @Binding var text: String
 
