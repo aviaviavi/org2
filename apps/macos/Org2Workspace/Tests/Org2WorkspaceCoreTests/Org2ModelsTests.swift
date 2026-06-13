@@ -703,6 +703,27 @@ final class Org2ModelsTests: XCTestCase {
     """).renderedBlock.headerRowIndex)
   }
 
+  func testEditableTablePastesTabSeparatedGrid() {
+    var table = OrgEditableTable(rawText: """
+    | Name | Value |
+    |------+-------|
+    | Alice | 42 |
+    """)
+
+    XCTAssertTrue(table.pasteGrid(row: 0, column: 0, rawValue: "Metric\tScore\nQuality\t9\nSpeed\t8\n"))
+
+    XCTAssertEqual(table.formattedRawText, """
+    | Metric  | Score |
+    |---------+-------|
+    | Quality | 9     |
+    | Speed   | 8     |
+    """)
+
+    XCTAssertFalse(table.pasteGrid(row: 2, column: 1, rawValue: "single cell"))
+    table.setCell(row: 2, column: 1, value: "10")
+    XCTAssertEqual(table.cell(row: 2, column: 1), "10")
+  }
+
   func testEditablePropertyDrawerFormatsAndMutatesRows() {
     var drawer = OrgEditablePropertyDrawer(rawText: """
     :PROPERTIES:
