@@ -2342,6 +2342,74 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSetsRenderedPropertyValueInSource() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-rendered-property-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("rendered-property.org2")
+    try """
+    * TODO Parent
+    :PROPERTIES:
+    :OWNER: agent
+    :ID: 11111111-1111-4111-8111-111111111111
+    :END:
+    Body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 1,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {
+        "OWNER": "agent",
+        "ID": "11111111-1111-4111-8111-111111111111"
+      }
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let properties = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .properties = $0.rendered { return true }
+      return false
+    })
+    await store.setPropertyValue(properties, key: "OWNER", value: "avi")
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains(":OWNER: avi\n:ID: 11111111-1111-4111-8111-111111111111\n:END:\nBody"))
+    try await waitForCondition {
+      store.selectedRenderedBlocks.contains {
+        if case .properties(let rows) = $0.rendered {
+          return rows.contains(OrgPropertyRow(key: "OWNER", value: "avi"))
+        }
+        return false
+      }
+    }
+    let updatedProperties = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .properties = $0.rendered { return true }
+      return false
+    })
+    guard case .properties(let rows) = updatedProperties.rendered else {
+      return XCTFail("Expected property drawer")
+    }
+    XCTAssertEqual(rows, [
+      OrgPropertyRow(key: "OWNER", value: "avi"),
+      OrgPropertyRow(key: "ID", value: "11111111-1111-4111-8111-111111111111")
+    ])
+  }
+
+  @MainActor
   func testAutosavesQuoteBlockWithoutLeavingInlineEditMode() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-quote-autosave-\(UUID().uuidString)", isDirectory: true)

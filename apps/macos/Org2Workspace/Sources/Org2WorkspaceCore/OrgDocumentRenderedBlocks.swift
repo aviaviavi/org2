@@ -39,7 +39,7 @@ struct RenderedBlockView: View, Equatable {
     case .planning(let planning):
       RenderedPlanningView(planning: planning, editableBlock: editableBlock)
     case .properties(let rows):
-      RenderedPropertiesView(rows: rows, rawText: rawText)
+      RenderedPropertiesView(rows: rows, rawText: rawText, editableBlock: editableBlock)
     case .quote(let lines):
       RenderedQuoteView(lines: lines, rawText: rawText)
     case .source(let language, let lines):
@@ -638,6 +638,7 @@ private struct OrgTimestampDisplay {
 private struct RenderedPropertiesView: View {
   let rows: [OrgPropertyRow]
   let rawText: String?
+  let editableBlock: OrgEditableBlock?
 
   var body: some View {
     if !rows.isEmpty {
@@ -653,7 +654,7 @@ private struct RenderedPropertiesView: View {
                 .font(.callout)
                 .textSelection(.enabled)
             } else {
-              OrgInlineText(propertyValue(row), font: .callout)
+              RenderedPropertyValueButton(row: row, value: propertyValue(row), editableBlock: editableBlock)
             }
           }
         }
@@ -682,6 +683,59 @@ private struct RenderedPropertiesView: View {
       values[key] = value
     }
     return values
+  }
+}
+
+private struct RenderedPropertyValueButton: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let row: OrgPropertyRow
+  let value: String
+  let editableBlock: OrgEditableBlock?
+  @State private var isPresented = false
+  @State private var draftValue = ""
+
+  var body: some View {
+    Button {
+      draftValue = value
+      isPresented = true
+    } label: {
+      OrgInlineText(value, font: .callout)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .buttonStyle(.plain)
+    .disabled(editableBlock == nil || store.selectedEntrySource?.isEditable != true)
+    .help("Edit \(row.key)")
+    .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+      VStack(alignment: .leading, spacing: 8) {
+        Label(row.key, systemImage: "tag")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.secondary)
+
+        TextField("Value", text: $draftValue)
+          .textFieldStyle(.roundedBorder)
+          .frame(width: 280)
+          .onSubmit {
+            saveValue()
+          }
+
+        HStack(spacing: 8) {
+          Spacer(minLength: 0)
+          Button("Save") {
+            saveValue()
+          }
+          .keyboardShortcut(.defaultAction)
+        }
+        .controlSize(.small)
+      }
+      .padding(12)
+    }
+  }
+
+  private func saveValue() {
+    if let editableBlock {
+      Task { await store.setPropertyValue(editableBlock, key: row.key, value: draftValue) }
+    }
+    isPresented = false
   }
 }
 
