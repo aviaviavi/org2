@@ -271,7 +271,25 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       else {
         return
       }
+      guard Self.shouldPublishSelection(
+        selectedRange,
+        previousRange: selection.wrappedValue,
+        text: parent.text
+      ) else {
+        return
+      }
       selection.wrappedValue = selectedRange
+    }
+
+    static func shouldPublishSelection(
+      _ selectedRange: NSRange,
+      previousRange: NSRange,
+      text: String
+    ) -> Bool {
+      if selectedRange.length > 0 || previousRange.length > 0 {
+        return true
+      }
+      return OrgInlineParser.hasInlineSyntaxCandidate(text)
     }
 
     func applyHighlighting(to textView: NSTextView) {
