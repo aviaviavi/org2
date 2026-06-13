@@ -1153,6 +1153,30 @@ final class Org2ModelsTests: XCTestCase {
     }
   }
 
+  func testEditingDraftAppendsToHeadingTitlePreservingStructure() {
+    let heading = OrgEditableBlock(
+      startLine: 3,
+      endLineExclusive: 4,
+      rawText: "* TODO [#A] Parent :work:",
+      rendered: .heading(OrgHeadingBlock(level: 1, todo: "TODO", priority: "A", title: "Parent", tags: ["work"]))
+    )
+    XCTAssertEqual(
+      WorkspaceStore.editingDraft(heading, appending: "!"),
+      "* TODO [#A] Parent! :work:"
+    )
+
+    let emptyTodo = OrgEditableBlock(
+      startLine: 4,
+      endLineExclusive: 5,
+      rawText: "** TODO",
+      rendered: .heading(OrgHeadingBlock(level: 2, todo: "TODO", priority: nil, title: "", tags: []))
+    )
+    XCTAssertEqual(
+      WorkspaceStore.editingDraft(emptyTodo, appending: "Call Bob"),
+      "** TODO Call Bob"
+    )
+  }
+
   func testEditableInlineTokenUsesBoundedUTF16Length() {
     XCTAssertEqual(
       OrgEditableInlineToken.boundedUTF16Length(in: "abcd", maxUTF16Length: 4),
@@ -4083,8 +4107,14 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedBlock?.rawText, "Body")
 
     store.selectBlock(heading)
-    XCTAssertFalse(store.handleDocumentKeyDown(keyDown(characters: "!", keyCode: 18)))
+    XCTAssertTrue(store.handleDocumentKeyDown(keyDown(characters: "!", keyCode: 18)))
+    XCTAssertEqual(store.editingBlockID, heading.id)
+    XCTAssertEqual(store.editableBlockText, "* TODO Parent!")
+    XCTAssertEqual(store.selectedBlock?.rawText, "* TODO Parent!")
+
+    store.cancelEditingBlock()
     XCTAssertNil(store.editingBlockID)
+    XCTAssertEqual(store.selectedBlock?.rawText, "* TODO Parent")
 
     store.selectBlock(paragraph)
     XCTAssertFalse(store.isEditingEntry)

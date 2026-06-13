@@ -1790,11 +1790,63 @@ public final class WorkspaceStore: ObservableObject {
   ) -> String? {
     guard !text.isEmpty else { return nil }
     switch block.rendered {
+    case .heading:
+      return headingEditingDraft(block.rawText, appending: text)
     case .paragraph, .listItem:
       return block.rawText + text
     default:
       return nil
     }
+  }
+
+  nonisolated private static func headingEditingDraft(
+    _ rawText: String,
+    appending text: String
+  ) -> String? {
+    var lines = normalizeLineEndings(rawText)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    guard let first = lines.first,
+          let regex = try? NSRegularExpression(pattern: #"^(\*+\s+)(.*)$"#)
+    else {
+      return nil
+    }
+
+    let nsFirst = first as NSString
+    let fullRange = NSRange(location: 0, length: nsFirst.length)
+    guard let match = regex.firstMatch(in: first, range: fullRange),
+          match.range.location == 0
+    else {
+      return nil
+    }
+
+    let prefix = nsFirst.substring(with: match.range(at: 1))
+    var rest = nsFirst.substring(with: match.range(at: 2))
+      .trimmingCharacters(in: .whitespaces)
+    var tagsSuffix = ""
+    if let tagRange = rest.range(of: #"\s+(:[A-Za-z0-9_@#%:.-]+:)\s*$"#, options: .regularExpression) {
+      tagsSuffix = String(rest[tagRange])
+      rest.removeSubrange(tagRange)
+      rest = rest.trimmingCharacters(in: .whitespaces)
+    }
+
+    var tokens = rest.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+    var prefixTokens: [String] = []
+    if let firstToken = tokens.first,
+       allHeadingTodoKeywords.contains(firstToken.uppercased()) {
+      prefixTokens.append(firstToken.uppercased())
+      tokens.removeFirst()
+    }
+    if let firstToken = tokens.first,
+       firstToken.range(of: #"^\[#([A-Za-z0-9])\]$"#, options: .regularExpression) != nil {
+      prefixTokens.append(firstToken.uppercased())
+      tokens.removeFirst()
+    }
+
+    let title = tokens.joined(separator: " ")
+    let updatedTitle = title.isEmpty ? text : title + text
+    lines[0] = "\(prefix)\((prefixTokens + [updatedTitle]).joined(separator: " "))\(tagsSuffix)"
+    return lines.joined(separator: "\n")
   }
 
   private func discardTransientDraft(status: String? = nil) {
