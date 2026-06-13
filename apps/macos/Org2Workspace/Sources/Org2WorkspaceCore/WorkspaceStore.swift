@@ -694,7 +694,6 @@ public final class WorkspaceStore: ObservableObject {
       let file = source.file
       let startLine = block.startLine
       let endLineExclusive = block.endLineExclusive
-      let currentRenderedBlocks = selectedRenderedBlocks
       try await Task.detached(priority: .utility) {
         try Self.replaceSourceRange(
           file: file,
@@ -704,6 +703,14 @@ public final class WorkspaceStore: ObservableObject {
         )
       }.value
 
+      guard selectedEntrySource?.id == source.id,
+            editingBlockID == block.id,
+            Self.normalizeLineEndings(activeBlockDrafts[block.id] ?? "") == normalizedReplacement
+      else {
+        return
+      }
+
+      let currentRenderedBlocks = selectedRenderedBlocks
       let updatedBlocks = await Task.detached(priority: .utility) {
         Self.locallyUpdatingRenderedBlocks(
           currentRenderedBlocks,
@@ -711,13 +718,6 @@ public final class WorkspaceStore: ObservableObject {
           with: normalizedReplacement
         )
       }.value
-
-      guard selectedEntrySource?.id == source.id,
-            editingBlockID == block.id,
-            Self.normalizeLineEndings(activeBlockDrafts[block.id] ?? "") == normalizedReplacement
-      else {
-        return
-      }
 
       invalidateCanonicalDocumentCache(for: source.file)
       selectedEntrySource = updatedSource
