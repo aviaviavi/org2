@@ -130,7 +130,10 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     }
 
     if let selection {
-      let requestedSelection = Self.clampedRange(selection.wrappedValue, in: editorText)
+      let requestedSelection = Self.clampedRange(
+        selection.wrappedValue,
+        utf16Length: textView.textStorage?.length ?? OrgSyntaxHighlighter.utf16Length(of: editorText)
+      )
       let currentSelection = textView.selectedRange()
       if currentSelection != requestedSelection,
          Coordinator.shouldApplyExternalSelection(
@@ -149,7 +152,10 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   }
 
   private static func clampedRange(_ range: NSRange, in text: String) -> NSRange {
-    let length = (text as NSString).length
+    clampedRange(range, utf16Length: OrgSyntaxHighlighter.utf16Length(of: text))
+  }
+
+  static func clampedRange(_ range: NSRange, utf16Length length: Int) -> NSRange {
     let location = min(max(0, range.location), length)
     return NSRange(
       location: location,
@@ -471,7 +477,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       previousHighlightedText: String?,
       monospacedUnchanged: Bool
     ) -> Bool {
-      guard OrgSyntaxHighlighter.shouldTokenizeLiveText(utf16Length: (text as NSString).length) else {
+      guard OrgSyntaxHighlighter.shouldTokenizeLiveText(text) else {
         return false
       }
       guard monospacedUnchanged else {
@@ -603,27 +609,43 @@ enum OrgSyntaxHighlighter {
     utf16Length <= liveTokenizationUTF16Limit
   }
 
+  static func shouldTokenizeLiveText(_ text: String) -> Bool {
+    utf16Length(of: text, upTo: liveTokenizationUTF16Limit + 1) <= liveTokenizationUTF16Limit
+  }
+
+  static func utf16Length(of text: String, upTo limit: Int? = nil) -> Int {
+    var count = 0
+    for _ in text.utf16 {
+      count += 1
+      if let limit, count >= limit {
+        return count
+      }
+    }
+    return count
+  }
+
   static func hasSyntaxCandidate(_ text: String) -> Bool {
     guard !text.isEmpty else { return false }
     var httpMatchIndex = 0
-    let http = Array("http".utf8)
     for byte in text.utf8 {
       switch byte {
       case 35, 40, 42, 43, 47, 58, 60, 61, 91, 93, 95, 96, 126:
         return true
       default:
-        if byte == http[httpMatchIndex] {
+        if byte == httpBytes[httpMatchIndex] {
           httpMatchIndex += 1
-          if httpMatchIndex == http.count {
+          if httpMatchIndex == httpBytes.count {
             return true
           }
         } else {
-          httpMatchIndex = byte == http[0] ? 1 : 0
+          httpMatchIndex = byte == httpBytes[0] ? 1 : 0
         }
       }
     }
     return false
   }
+
+  private static let httpBytes: [UInt8] = [104, 116, 116, 112]
 
   static func shouldPreserveExistingAttributesAfterEdit(
     utf16Length: Int,

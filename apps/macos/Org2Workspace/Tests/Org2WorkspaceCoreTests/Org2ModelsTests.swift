@@ -584,6 +584,14 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(OrgSyntaxHighlighter.shouldTokenizeLiveText(
       utf16Length: OrgSyntaxHighlighter.liveTokenizationUTF16Limit + 1
     ))
+    XCTAssertEqual(OrgSyntaxHighlighter.utf16Length(of: "a😀"), 3)
+    XCTAssertEqual(OrgSyntaxHighlighter.utf16Length(of: String(repeating: "a", count: 20), upTo: 5), 5)
+    XCTAssertTrue(OrgSyntaxHighlighter.shouldTokenizeLiveText(
+      String(repeating: "a", count: OrgSyntaxHighlighter.liveTokenizationUTF16Limit)
+    ))
+    XCTAssertFalse(OrgSyntaxHighlighter.shouldTokenizeLiveText(
+      String(repeating: "a", count: OrgSyntaxHighlighter.liveTokenizationUTF16Limit + 1)
+    ))
     XCTAssertFalse(OrgSyntaxHighlighter.shouldPreserveExistingAttributesAfterEdit(
       utf16Length: OrgSyntaxHighlighter.liveTokenizationUTF16Limit,
       hasHighlightedBefore: true,
@@ -699,6 +707,15 @@ final class Org2ModelsTests: XCTestCase {
 
   @MainActor
   func testSyntaxEditorDoesNotApplyStalePlainCaretSelectionWhileFocused() {
+    XCTAssertEqual(
+      OrgSyntaxTextEditor.clampedRange(NSRange(location: 10, length: 5), utf16Length: 12),
+      NSRange(location: 10, length: 2)
+    )
+    XCTAssertEqual(
+      OrgSyntaxTextEditor.clampedRange(NSRange(location: -3, length: 2), utf16Length: 12),
+      NSRange(location: 0, length: 2)
+    )
+
     XCTAssertFalse(OrgSyntaxTextEditor.Coordinator.shouldApplyExternalSelection(
       requestedSelection: NSRange(location: 2, length: 0),
       currentSelection: NSRange(location: 3, length: 0),
