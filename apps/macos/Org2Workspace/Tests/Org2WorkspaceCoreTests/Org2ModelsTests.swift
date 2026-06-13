@@ -398,10 +398,12 @@ final class Org2ModelsTests: XCTestCase {
 
   func testOrgInlineParserFastPathsPlainTextButKeepsRelativeFileReferences() {
     XCTAssertFalse(OrgInlineParser.hasInlineSyntaxCandidate("Plain sentence with no org syntax here."))
+    XCTAssertFalse(OrgInlineText.usesAttributedRendering("Plain sentence with no org syntax here."))
     XCTAssertEqual(
       OrgInlineParser.parse("Plain sentence with no org syntax here."),
       [.text("Plain sentence with no org syntax here.")]
     )
+    XCTAssertTrue(OrgInlineText.usesAttributedRendering("Review [[id:abc][Alice]] soon."))
 
     let spans = OrgInlineParser.parse("See notes/daily/2026-06-12.org:7 for context.")
     XCTAssertEqual(spans, [
