@@ -16,6 +16,7 @@ export type DataQueryDataset = {
   type: "csv" | "parquet" | "json" | "table";
   engine: "duckdb";
   path?: string;
+  url?: string;
   resolvedPath?: string;
   sourceTable?: string;
   source?: {
@@ -294,6 +295,7 @@ function parseDataset(block: FencedBlock, baseDir: string, namedTables: Map<stri
   const type = typeRaw === "org-table" ? "table" : typeRaw;
   const engineRaw = (values.get("engine") || "duckdb").toLowerCase();
   const sourcePath = values.get("path") || values.get("file") || "";
+  const sourceUrl = values.get("url") || values.get("uri") || values.get("endpoint") || "";
   const sourceTable = values.get("source") || values.get("table") || "";
 
   if (!SUPPORTED_DATASET_TYPES.has(typeRaw)) {
@@ -304,8 +306,10 @@ function parseDataset(block: FencedBlock, baseDir: string, namedTables: Map<stri
   }
   if (type === "table" && !sourceTable) {
     diagnostics.push(diagnostic("Table dataset block requires source: named_table", { line: block.line, ...(id ? { blockId: id } : {}) }));
-  } else if (type !== "table" && !sourcePath) {
-    diagnostics.push(diagnostic("Dataset block requires path: ./file.csv", { line: block.line, ...(id ? { blockId: id } : {}) }));
+  } else if (type !== "table" && !sourcePath && !sourceUrl) {
+    diagnostics.push(diagnostic("Dataset block requires path: ./file.csv or url: https://example.com/file.csv", { line: block.line, ...(id ? { blockId: id } : {}) }));
+  } else if (type !== "table" && sourcePath && sourceUrl) {
+    diagnostics.push(diagnostic("Dataset block accepts only one of path/file or url/uri/endpoint", { line: block.line, ...(id ? { blockId: id } : {}) }));
   }
   const table = type === "table" && sourceTable ? namedTables.get(sourceTable) : undefined;
   if (type === "table" && sourceTable && !table) {
@@ -328,15 +332,15 @@ function parseDataset(block: FencedBlock, baseDir: string, namedTables: Map<stri
     };
   }
 
-  const resolvedPath = path.isAbsolute(sourcePath) ? sourcePath : path.resolve(baseDir, sourcePath);
+  const resolvedPath = sourcePath ? (path.isAbsolute(sourcePath) ? sourcePath : path.resolve(baseDir, sourcePath)) : "";
   return {
     dataset: {
       id,
       line: block.line,
       type: type as DataQueryDataset["type"],
       engine: "duckdb",
-      path: sourcePath,
-      resolvedPath,
+      ...(sourcePath ? { path: sourcePath, resolvedPath } : {}),
+      ...(sourceUrl ? { url: sourceUrl } : {}),
     },
     diagnostics,
   };
@@ -393,7 +397,7 @@ function buildDuckDbScript(datasets: DataQueryDataset[], sql: string, namedTable
       if (table) return inlineOrgTableView(dataset, table);
     }
     const readFn = readFunctionForType(dataset.type);
-    return `CREATE OR REPLACE VIEW ${quoteIdentifier(dataset.id)} AS SELECT * FROM ${readFn}(${quoteString(dataset.resolvedPath || "")});`;
+    return `CREATE OR REPLACE VIEW ${quoteIdentifier(dataset.id)} AS SELECT * FROM ${readFn}(${quoteString(dataset.url || dataset.resolvedPath || "")});`;
   });
   return [...setup, sql.replace(/;\s*$/, "") + ";"].join("\n");
 }
