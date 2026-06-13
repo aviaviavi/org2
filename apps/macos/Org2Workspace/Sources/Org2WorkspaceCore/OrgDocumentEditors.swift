@@ -39,7 +39,7 @@ enum InlineEditorSizing {
     let safeMinimum = max(1, minimum)
     let safeMaximum = max(safeMinimum, maximum)
     var count = 1
-    for character in text where character == "\n" {
+    for byte in text.utf8 where byte == UInt8(ascii: "\n") {
       count += 1
       if count >= safeMaximum {
         return safeMaximum
