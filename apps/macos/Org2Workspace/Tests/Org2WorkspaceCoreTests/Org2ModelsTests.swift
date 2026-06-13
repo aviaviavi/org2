@@ -926,6 +926,10 @@ final class Org2ModelsTests: XCTestCase {
       3
     )
     XCTAssertEqual(
+      InlineEditorSizing.cappedLineCount(in: "one 😀\ntwo é\nthree", minimum: 1, maximum: 15),
+      3
+    )
+    XCTAssertEqual(
       InlineEditorSizing.cappedLineCount(in: "one", minimum: 3, maximum: 15),
       3
     )
