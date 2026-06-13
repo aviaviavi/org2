@@ -1776,8 +1776,19 @@ public struct OrgMediaAttachment: Equatable, Sendable {
   public let target: String
   public let resolvedPath: String?
 
+  public var remoteURL: URL? {
+    Self.remoteURL(forTarget: target)
+  }
+
+  public var isRemote: Bool {
+    remoteURL != nil
+  }
+
   public var resolvedURL: URL? {
-    resolvedPath.map { URL(fileURLWithPath: $0) }
+    if let remoteURL {
+      return remoteURL
+    }
+    return resolvedPath.map { URL(fileURLWithPath: $0) }
   }
 
   public var displayName: String {
@@ -1786,6 +1797,13 @@ public struct OrgMediaAttachment: Equatable, Sendable {
       return trimmedLabel
     }
     let cleaned = Self.cleanTarget(target)
+    if let url = Self.remoteURL(forTarget: cleaned) {
+      let pathName = url.lastPathComponent
+      if !pathName.isEmpty {
+        return pathName
+      }
+      return url.host ?? target
+    }
     let name = URL(fileURLWithPath: cleaned).lastPathComponent
     return name.isEmpty ? target : name
   }
@@ -1800,21 +1818,24 @@ public struct OrgMediaAttachment: Equatable, Sendable {
     guard !trimmed.isEmpty, !trimmed.contains("\n") else { return nil }
     guard let link = standaloneLink(trimmed) else { return nil }
     guard let kind = kind(forTarget: link.target) else { return nil }
-    guard !isRemoteURL(link.target) else { return nil }
 
     return OrgMediaAttachment(
       kind: kind,
       label: link.label,
       target: link.target,
-      resolvedPath: resolvePath(link.target, sourceFile: sourceFile, corpusRoot: corpusRoot)
+      resolvedPath: remoteURL(forTarget: link.target) == nil
+        ? resolvePath(link.target, sourceFile: sourceFile, corpusRoot: corpusRoot)
+        : nil
     )
   }
 
   public static func mayContainStandaloneMedia(_ raw: String) -> Bool {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, !trimmed.contains("\n") else { return false }
-    let lowercased = trimmed.lowercased()
-    guard !lowercased.hasPrefix("http://"), !lowercased.hasPrefix("https://") else { return false }
+    if let link = standaloneLink(trimmed),
+       kind(forTarget: link.target) != nil {
+      return true
+    }
     guard let dot = trimmed.lastIndex(of: ".") else { return false }
 
     let extensionStart = trimmed.index(after: dot)
@@ -1881,7 +1902,16 @@ public struct OrgMediaAttachment: Equatable, Sendable {
   }
 
   public static func kind(forTarget target: String) -> Kind? {
-    let ext = URL(fileURLWithPath: cleanTarget(target)).pathExtension.lowercased()
+    let cleaned = cleanTarget(target)
+    if isKnownVideoPageURL(cleaned) {
+      return .video
+    }
+    let ext: String
+    if let remoteURL = remoteURL(forTarget: cleaned) {
+      ext = remoteURL.pathExtension.lowercased()
+    } else {
+      ext = URL(fileURLWithPath: cleaned).pathExtension.lowercased()
+    }
     if imageExtensions.contains(ext) { return .image }
     if videoExtensions.contains(ext) { return .video }
     return nil
@@ -1927,13 +1957,27 @@ public struct OrgMediaAttachment: Equatable, Sendable {
     return cleaned.removingPercentEncoding ?? cleaned
   }
 
-  private static func isRemoteURL(_ target: String) -> Bool {
-    guard let url = URL(string: target),
+  public static func remoteURL(forTarget target: String) -> URL? {
+    let cleaned = cleanTarget(target)
+    guard let url = URL(string: cleaned),
           let scheme = url.scheme?.lowercased()
+    else {
+      return nil
+    }
+    return scheme == "http" || scheme == "https" ? url : nil
+  }
+
+  private static func isKnownVideoPageURL(_ target: String) -> Bool {
+    guard let url = remoteURL(forTarget: target),
+          let host = url.host?.lowercased()
     else {
       return false
     }
-    return scheme == "http" || scheme == "https"
+    return host == "youtu.be"
+      || host.hasSuffix(".youtube.com")
+      || host == "youtube.com"
+      || host.hasSuffix(".vimeo.com")
+      || host == "vimeo.com"
   }
 
   private static let imageExtensions = Set(["png", "jpg", "jpeg", "gif", "tiff", "tif", "bmp", "heic", "heif", "webp"])
@@ -1972,6 +2016,9 @@ public struct OrgEditableMediaLink: Equatable, Sendable {
     let trimmed = target.trimmingCharacters(in: .whitespacesAndNewlines)
     let fallback = kind == .image ? "images/image.png" : "videos/video.mp4"
     let rawTarget = trimmed.isEmpty ? fallback : trimmed
+    if let remoteURL = OrgMediaAttachment.remoteURL(forTarget: rawTarget) {
+      return remoteURL.absoluteString
+    }
     return rawTarget.lowercased().hasPrefix("file:")
       ? rawTarget
       : "file:\(rawTarget)"
@@ -1996,6 +2043,13 @@ public struct OrgEditableMediaLink: Equatable, Sendable {
       cleaned = String(cleaned[..<fragment])
     }
     cleaned = cleaned.removingPercentEncoding ?? cleaned
+    if let url = OrgMediaAttachment.remoteURL(forTarget: cleaned) {
+      let filename = url.lastPathComponent
+      if !filename.isEmpty {
+        return filename
+      }
+      return url.host ?? (kind == .image ? "Image" : "Video")
+    }
     let filename = URL(fileURLWithPath: cleaned).lastPathComponent
     if !filename.isEmpty {
       return filename
