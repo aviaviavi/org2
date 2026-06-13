@@ -1465,6 +1465,44 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testGlobalDailyNoteShortcutsCreateAndOpenDailyFiles() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-daily-shortcuts-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try #"{"roam":{"dailiesDir":"dailies"}}"#
+      .write(to: root.appendingPathComponent("org2.json"), atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "6", keyCode: 22, modifiers: [.command])))
+
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    let todayFileName = "\(formatter.string(from: Date())).org2"
+    let today = root
+      .appendingPathComponent("dailies", isDirectory: true)
+      .appendingPathComponent(todayFileName)
+      .standardizedFileURL
+
+    XCTAssertTrue(FileManager.default.fileExists(atPath: today.path))
+    XCTAssertEqual(store.selectedCorpusFileID, today.path)
+    XCTAssertEqual(store.selectedSurface, .files)
+  }
+
+  func testDailyNoteTargetsPutTodayFirstAndExposeCommandShortcuts() {
+    XCTAssertEqual(DailyNoteTarget.allCases, [.today, .yesterday, .tomorrow])
+    XCTAssertEqual(DailyNoteTarget.today.commandShortcutTitle, "⌘6")
+    XCTAssertEqual(DailyNoteTarget.yesterday.commandShortcutTitle, "⌘7")
+    XCTAssertEqual(DailyNoteTarget.tomorrow.commandShortcutTitle, "⌘8")
+  }
+
+  func testAgendaSurfaceIsNamedAgenda() {
+    XCTAssertEqual(WorkspaceSurface.agenda.title, "Agenda")
+  }
+
+  @MainActor
   func testOpenDailyNoteCreatesAndSelectsConfiguredDailyFile() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-daily-open-\(UUID().uuidString)", isDirectory: true)

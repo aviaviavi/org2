@@ -2836,6 +2836,12 @@ public final class WorkspaceStore: ObservableObject {
         selectedSurface = .openClaw
       case "5":
         selectedSurface = .agentSpace
+      case "6":
+        openDailyNote(.today)
+      case "7":
+        openDailyNote(.yesterday)
+      case "8":
+        openDailyNote(.tomorrow)
       case "f":
         focusSearchSurface()
       case "k", "p":
@@ -5270,7 +5276,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
 
   public var title: String {
     switch self {
-    case .agenda: "Today"
+    case .agenda: "Agenda"
     case .files: "Files"
     case .search: "Search"
     case .openClaw: "OpenClaw Chat"
