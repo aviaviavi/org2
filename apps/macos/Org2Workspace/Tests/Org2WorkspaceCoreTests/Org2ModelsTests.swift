@@ -2259,6 +2259,63 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSameRangeAutosavePreservesRenderedBlockMetadata() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-same-range-autosave-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("same-range-autosave.org2")
+    try """
+    #+TITLE: Same Range Autosave Test
+
+    * TODO Parent
+    Body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    store.selectedEntrySourceMode = .page
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+    let originalSignature = store.selectedRenderedBlocksSignature
+    let originalIndexes = store.selectedRenderedBlockIndexes
+
+    store.beginEditingBlock(paragraph)
+    store.editableBlockText = "Updated body"
+    store.updateEditingBlockDraft(paragraph, draft: "Updated body")
+    await store.autosaveEditedBlock(paragraph, replacement: "Updated body")
+
+    XCTAssertEqual(store.selectedRenderedBlocksSignature, originalSignature)
+    XCTAssertEqual(store.selectedRenderedBlockIndexes, originalIndexes)
+    XCTAssertEqual(store.selectedBlock?.id, paragraph.id)
+    XCTAssertEqual(store.selectedBlock?.rawText, "Updated body")
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* TODO Parent\nUpdated body\n* Sibling"))
+  }
+
+  @MainActor
   func testStaleAutosaveDoesNotUpdateVisibleEditorState() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-stale-autosave-\(UUID().uuidString)", isDirectory: true)
