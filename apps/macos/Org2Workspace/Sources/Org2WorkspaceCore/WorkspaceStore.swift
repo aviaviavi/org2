@@ -988,6 +988,47 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func setHeadingTags(_ block: OrgEditableBlock, tags: [String]) async {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "No editable source loaded"
+      return
+    }
+    guard block.startLine >= source.startLine,
+          block.endLineExclusive <= source.endLineExclusive
+    else {
+      statusText = "Block is outside the selected source"
+      return
+    }
+    guard case .heading = block.rendered,
+          let replacement = Self.headingRawTextSettingTags(block.rawText, tags: tags)
+    else {
+      statusText = "Heading tag update failed"
+      return
+    }
+
+    isSavingBlock = true
+    defer { isSavingBlock = false }
+
+    do {
+      try await Task.detached(priority: .userInitiated) {
+        try Self.replaceSourceRange(
+          file: source.file,
+          startLine: block.startLine,
+          endLineExclusive: block.endLineExclusive,
+          replacement: replacement
+        )
+      }.value
+      await finishBlockMutation(
+        file: source.file,
+        status: tags.isEmpty ? "Tags cleared" : "Tags -> \(tags.joined(separator: ", "))",
+        selectLine: block.startLine
+      )
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Tag update failed"
+    }
+  }
+
   public func duplicateBlock(_ block: OrgEditableBlock) async {
     guard let source = selectedEntrySource, source.isEditable else {
       statusText = "No editable source loaded"
@@ -3494,6 +3535,58 @@ public final class WorkspaceStore: ObservableObject {
       return nil
     }
     return priority
+  }
+
+  nonisolated private static func headingRawTextSettingTags(
+    _ rawText: String,
+    tags: [String]
+  ) -> String? {
+    var lines = normalizeLineEndings(rawText)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    guard let first = lines.first else { return nil }
+    guard let regex = try? NSRegularExpression(pattern: #"^(\*+\s+)(.*)$"#) else {
+      return nil
+    }
+
+    let nsFirst = first as NSString
+    let range = NSRange(location: 0, length: nsFirst.length)
+    guard let match = regex.firstMatch(in: first, range: range),
+          match.range.location == 0
+    else {
+      return nil
+    }
+
+    let prefix = nsFirst.substring(with: match.range(at: 1))
+    var rest = nsFirst.substring(with: match.range(at: 2))
+      .trimmingCharacters(in: .whitespaces)
+    if let tagRange = rest.range(of: #"\s+(:[A-Za-z0-9_@#%:.-]+:)\s*$"#, options: .regularExpression) {
+      rest.removeSubrange(tagRange)
+      rest = rest.trimmingCharacters(in: .whitespaces)
+    }
+
+    let normalizedTags = normalizedHeadingTags(tags)
+    let tagSuffix = normalizedTags.isEmpty ? "" : " :\(normalizedTags.joined(separator: ":")):"
+    lines[0] = "\(prefix)\(rest)\(tagSuffix)"
+    return lines.joined(separator: "\n")
+  }
+
+  nonisolated private static func normalizedHeadingTags(_ tags: [String]) -> [String] {
+    var seen: Set<String> = []
+    var output: [String] = []
+    for tag in tags {
+      let normalized = tag
+        .trimmingCharacters(in: CharacterSet(charactersIn: "#: \n\t"))
+      guard !normalized.isEmpty,
+            normalized.range(of: #"^[A-Za-z0-9_@#%.-]+$"#, options: .regularExpression) != nil,
+            !seen.contains(normalized)
+      else {
+        continue
+      }
+      seen.insert(normalized)
+      output.append(normalized)
+    }
+    return output
   }
 
   nonisolated private static let activeHeadingTodoKeywords = Set([

@@ -288,9 +288,7 @@ private struct RenderedHeadingView: View {
       }
       OrgInlineText(rawTitle, font: font)
       if !heading.tags.isEmpty {
-        Text(heading.tags.map { "#\($0)" }.joined(separator: " "))
-          .font(.caption)
-          .foregroundStyle(.secondary)
+        RenderedHeadingTagsButton(tags: heading.tags, editableBlock: editableBlock)
       }
       Spacer(minLength: 0)
     }
@@ -400,6 +398,68 @@ private struct RenderedHeadingPriorityMenu: View {
     if let editableBlock {
       Task { await store.setHeadingPriority(editableBlock, priority: value) }
     }
+  }
+}
+
+private struct RenderedHeadingTagsButton: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let tags: [String]
+  let editableBlock: OrgEditableBlock?
+  @State private var isPresented = false
+  @State private var draftTags = ""
+
+  var body: some View {
+    Button {
+      draftTags = tags.joined(separator: " ")
+      isPresented = true
+    } label: {
+      Text(tags.map { "#\($0)" }.joined(separator: " "))
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+    .buttonStyle(.plain)
+    .disabled(editableBlock == nil || store.selectedEntrySource?.isEditable != true)
+    .help("Tags")
+    .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+      VStack(alignment: .leading, spacing: 8) {
+        Label("Tags", systemImage: "tag")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.secondary)
+
+        TextField("work focus", text: $draftTags)
+          .textFieldStyle(.roundedBorder)
+          .frame(width: 220)
+
+        HStack(spacing: 8) {
+          Button("Clear") {
+            saveTags([])
+          }
+          Spacer(minLength: 0)
+          Button("Save") {
+            saveTags(parsedDraftTags)
+          }
+          .keyboardShortcut(.defaultAction)
+        }
+        .controlSize(.small)
+      }
+      .padding(12)
+    }
+  }
+
+  private var parsedDraftTags: [String] {
+    draftTags
+      .split { $0.isWhitespace || $0 == "," }
+      .map { token in
+        String(token).trimmingCharacters(in: CharacterSet(charactersIn: "#:"))
+      }
+      .filter { !$0.isEmpty }
+  }
+
+  private func saveTags(_ tags: [String]) {
+    if let editableBlock {
+      Task { await store.setHeadingTags(editableBlock, tags: tags) }
+    }
+    isPresented = false
   }
 }
 
