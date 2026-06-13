@@ -35,6 +35,13 @@ export type DataQuerySqlBlock = {
   sql: string;
 };
 
+export type DataQueryResultBlock = {
+  resultId: string;
+  artifact?: string;
+  line: number;
+  endLine: number;
+};
+
 export type DataQuerySqlView = {
   id: string;
   line: number;
@@ -53,6 +60,7 @@ export type DataQueryResult = {
   };
   datasets: DataQueryDataset[];
   views: DataQuerySqlView[];
+  resultBlocks: DataQueryResultBlock[];
   rowCount: number;
   rows: Record<string, unknown>[];
   provenance?: {
@@ -492,6 +500,15 @@ function selectSqlBlockByLine(blocks: DataQuerySqlBlock[], line: number): DataQu
   return blocks.find((block) => line >= block.line && line <= block.endLine) || blocks.find((block) => block.line >= line);
 }
 
+function resultBlockMetadata(blocks: DataQuerySqlBlock[]): DataQueryResultBlock[] {
+  return blocks.map((block) => ({
+    resultId: block.resultId,
+    ...(block.artifact ? { artifact: block.artifact } : {}),
+    line: block.line,
+    endLine: block.endLine,
+  }));
+}
+
 export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}): DataQueryResult {
   const file = opts.file;
   const baseDir = file ? path.dirname(path.resolve(file)) : process.cwd();
@@ -548,6 +565,7 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
     seenResultIds.add(block.resultId);
   }
 
+  const resultBlocks = resultBlockMetadata(sqlBlocks);
   const selectedByLine = opts.resultLine && opts.resultLine > 0 ? selectSqlBlockByLine(sqlBlocks, opts.resultLine) : undefined;
   const resultId = opts.resultId?.trim() || selectedByLine?.resultId || (sqlBlocks.length === 1 ? sqlBlocks[0]?.resultId : "");
   const selected = selectedByLine || (resultId ? sqlBlocks.find((block) => block.resultId === resultId) : undefined);
@@ -558,7 +576,7 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
   if (resultId && !selected) diagnostics.push(diagnostic(`No SQL result block found for "${resultId}"`, { blockId: resultId }));
 
   if (diagnostics.some((item) => item.severity === "error") || !selected) {
-    return { ok: false, engine: "duckdb", ...(resultId ? { resultId } : {}), datasets, views, rowCount: 0, rows: [], diagnostics };
+    return { ok: false, engine: "duckdb", ...(resultId ? { resultId } : {}), datasets, views, resultBlocks, rowCount: 0, rows: [], diagnostics };
   }
 
   const script = buildDuckDbScript(datasets, views, selected.sql, namedTables);
@@ -600,6 +618,7 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
     source: { ...(file ? { file } : {}), line: selected.line, endLine: selected.endLine },
     datasets,
     views,
+    resultBlocks,
     rowCount: rows.length,
     rows,
     provenance,
