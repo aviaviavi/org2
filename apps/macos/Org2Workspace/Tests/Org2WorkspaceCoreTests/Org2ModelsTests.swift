@@ -939,9 +939,9 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
-  func testInlineEditorChromeSkipsHiddenControls() {
+  func testInlineEditorChromeKeepsStableHiddenControls() {
     XCTAssertTrue(InlineEditorChrome.rendersControls(true))
-    XCTAssertFalse(InlineEditorChrome.rendersControls(false))
+    XCTAssertTrue(InlineEditorChrome.rendersControls(false))
     XCTAssertEqual(InlineEditorChrome.controlsOpacity(true), 1)
     XCTAssertEqual(InlineEditorChrome.controlsOpacity(false), 0)
     XCTAssertTrue(InlineEditorChrome.allowsHitTesting(true))
