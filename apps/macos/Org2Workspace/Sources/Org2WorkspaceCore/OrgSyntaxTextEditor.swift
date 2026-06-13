@@ -87,6 +87,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       context.coordinator.isApplyingProgrammaticChange = true
       textView.string = text
       context.coordinator.isApplyingProgrammaticChange = false
+      context.coordinator.invalidateHighlighting()
     }
 
     if let selection {
@@ -96,7 +97,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       }
     }
 
-    context.coordinator.applyHighlighting(to: textView)
+    context.coordinator.applyHighlightingIfNeeded(to: textView)
   }
 
   private static func clampedRange(_ range: NSRange, in text: String) -> NSRange {
@@ -112,6 +113,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   final class Coordinator: NSObject, NSTextViewDelegate {
     var parent: OrgSyntaxTextEditor
     var isApplyingProgrammaticChange = false
+    private var lastHighlightedText: String?
+    private var lastHighlightedMonospaced: Bool?
 
     init(parent: OrgSyntaxTextEditor) {
       self.parent = parent
@@ -123,7 +126,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         parent.text = textView.string
       }
       parent.selection?.wrappedValue = textView.selectedRange()
-      applyHighlighting(to: textView)
+      invalidateHighlighting()
+      applyHighlightingIfNeeded(to: textView)
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
@@ -158,6 +162,20 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       return onSubmit()
     }
 
+    func invalidateHighlighting() {
+      lastHighlightedText = nil
+      lastHighlightedMonospaced = nil
+    }
+
+    func applyHighlightingIfNeeded(to textView: NSTextView) {
+      guard lastHighlightedText != textView.string
+              || lastHighlightedMonospaced != parent.monospaced
+      else {
+        return
+      }
+      applyHighlighting(to: textView)
+    }
+
     func applyHighlighting(to textView: NSTextView) {
       guard let storage = textView.textStorage else { return }
       let selectedRanges = textView.selectedRanges
@@ -167,6 +185,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       )
       textView.typingAttributes = typingAttributes
       textView.selectedRanges = selectedRanges
+      lastHighlightedText = textView.string
+      lastHighlightedMonospaced = parent.monospaced
     }
   }
 }
