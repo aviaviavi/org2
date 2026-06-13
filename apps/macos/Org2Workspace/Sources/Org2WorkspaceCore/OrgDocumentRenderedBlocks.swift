@@ -79,8 +79,7 @@ struct RenderedBlockView: View, Equatable {
       )
     case .paragraph(let text):
       let paragraphText = rawText ?? text
-      if OrgMediaAttachment.mayContainStandaloneMedia(paragraphText),
-         let attachment = OrgMediaAttachment.standalone(
+      if let attachment = OrgMediaAttachmentRenderCache.standalone(
           raw: paragraphText,
           sourceFile: sourceFile,
           corpusRoot: corpusRoot
@@ -96,6 +95,70 @@ struct RenderedBlockView: View, Equatable {
       Spacer()
         .frame(height: 4)
     }
+  }
+}
+
+enum OrgMediaAttachmentRenderCache {
+  final class CacheKey: NSObject {
+    let raw: String
+    let sourceFile: String
+    let corpusRootPath: String
+    private let cachedHash: Int
+
+    init(raw: String, sourceFile: String?, corpusRoot: URL?) {
+      self.raw = raw
+      self.sourceFile = sourceFile ?? ""
+      self.corpusRootPath = corpusRoot?.standardizedFileURL.path ?? ""
+      self.cachedHash = Self.makeHash(
+        raw: raw,
+        sourceFile: self.sourceFile,
+        corpusRootPath: self.corpusRootPath
+      )
+    }
+
+    override var hash: Int {
+      cachedHash
+    }
+
+    override func isEqual(_ object: Any?) -> Bool {
+      guard let other = object as? CacheKey else { return false }
+      return raw == other.raw
+        && sourceFile == other.sourceFile
+        && corpusRootPath == other.corpusRootPath
+    }
+
+    private static func makeHash(raw: String, sourceFile: String, corpusRootPath: String) -> Int {
+      var hasher = Hasher()
+      hasher.combine(raw)
+      hasher.combine(sourceFile)
+      hasher.combine(corpusRootPath)
+      return hasher.finalize()
+    }
+  }
+
+  private final class CachedValue {
+    let attachment: OrgMediaAttachment?
+
+    init(_ attachment: OrgMediaAttachment?) {
+      self.attachment = attachment
+    }
+  }
+
+  nonisolated(unsafe) private static let cache: NSCache<CacheKey, CachedValue> = {
+    let cache = NSCache<CacheKey, CachedValue>()
+    cache.countLimit = 4_096
+    return cache
+  }()
+
+  nonisolated static func standalone(raw: String, sourceFile: String? = nil, corpusRoot: URL? = nil) -> OrgMediaAttachment? {
+    let key = CacheKey(raw: raw, sourceFile: sourceFile, corpusRoot: corpusRoot)
+    if let cached = cache.object(forKey: key) {
+      return cached.attachment
+    }
+
+    let attachment = OrgMediaAttachment.standalone(raw: raw, sourceFile: sourceFile, corpusRoot: corpusRoot)
+    cache.setObject(CachedValue(attachment), forKey: key)
+    return attachment
   }
 }
 
