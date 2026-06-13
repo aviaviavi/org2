@@ -90,6 +90,16 @@ enum InlineEditorSizing {
     let currentCount = cappedLineCount(in: text, minimum: minimum, maximum: maximum)
     return min(max(currentCount, reservedLineCount), max(max(1, minimum), maximum))
   }
+
+  static func expandedReservedLineCount(
+    in text: String,
+    reservedLineCount: Int,
+    minimum: Int,
+    maximum: Int
+  ) -> Int {
+    let currentCount = cappedLineCount(in: text, minimum: minimum, maximum: maximum)
+    return currentCount > reservedLineCount ? currentCount : reservedLineCount
+  }
 }
 
 enum ParagraphSlashCommand {
@@ -1426,7 +1436,7 @@ private struct ParagraphBlockEditor: View {
           textPublishing: .deferred(milliseconds: 90),
           selection: $selectedRange,
           isFocused: $isTextFocused,
-          onLocalTextChange: liveText.update,
+          onLocalTextChange: handleLocalTextChange,
           shouldPublishTextImmediately: ParagraphEditorTextPublishingPolicy.shouldPublishImmediately,
           onSubmitContext: submitParagraph
         )
@@ -1512,12 +1522,19 @@ private struct ParagraphBlockEditor: View {
   }
 
   private func reserveEditorLines(for text: String) {
-    reservedLineCount = InlineEditorSizing.stickyCappedLineCount(
+    let nextReservedLineCount = InlineEditorSizing.expandedReservedLineCount(
       in: text,
       reservedLineCount: reservedLineCount,
       minimum: 1,
       maximum: 15
     )
+    guard nextReservedLineCount != reservedLineCount else { return }
+    reservedLineCount = nextReservedLineCount
+  }
+
+  private func handleLocalTextChange(_ text: String) {
+    liveText.update(text)
+    reserveEditorLines(for: text)
   }
 
   private var paragraphControls: some View {
@@ -1952,7 +1969,7 @@ private struct QuoteBlockEditor: View {
           textPublishing: .deferred(milliseconds: 120),
           selection: $selectedRange,
           isFocused: $isTextFocused,
-          onLocalTextChange: liveText.update
+          onLocalTextChange: handleLocalTextChange
         )
         .frame(minHeight: editorHeight, maxHeight: editorHeight)
         .background(Color.clear)
@@ -2008,12 +2025,19 @@ private struct QuoteBlockEditor: View {
   }
 
   private func reserveEditorLines(for text: String) {
-    reservedLineCount = InlineEditorSizing.stickyCappedLineCount(
+    let nextReservedLineCount = InlineEditorSizing.expandedReservedLineCount(
       in: text,
       reservedLineCount: reservedLineCount,
       minimum: 2,
       maximum: 11
     )
+    guard nextReservedLineCount != reservedLineCount else { return }
+    reservedLineCount = nextReservedLineCount
+  }
+
+  private func handleLocalTextChange(_ text: String) {
+    liveText.update(text)
+    reserveEditorLines(for: text)
   }
 
   private var quoteControls: some View {
@@ -2154,7 +2178,7 @@ private struct SourceBlockEditor: View {
           textPublishing: .deferred(milliseconds: 120),
           selection: $selectedRange,
           isFocused: $isBodyFocused,
-          onLocalTextChange: liveBody.update
+          onLocalTextChange: handleLocalBodyChange
         )
         .frame(minHeight: editorHeight, maxHeight: editorHeight)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -2271,12 +2295,19 @@ private struct SourceBlockEditor: View {
   }
 
   private func reserveEditorLines(for text: String) {
-    reservedLineCount = InlineEditorSizing.stickyCappedLineCount(
+    let nextReservedLineCount = InlineEditorSizing.expandedReservedLineCount(
       in: text,
       reservedLineCount: reservedLineCount,
       minimum: 3,
       maximum: 15
     )
+    guard nextReservedLineCount != reservedLineCount else { return }
+    reservedLineCount = nextReservedLineCount
+  }
+
+  private func handleLocalBodyChange(_ text: String) {
+    liveBody.update(text)
+    reserveEditorLines(for: text)
   }
 
   private var sourceKindTitle: String {

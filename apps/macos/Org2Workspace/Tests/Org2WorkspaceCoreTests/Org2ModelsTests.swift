@@ -1084,6 +1084,33 @@ final class Org2ModelsTests: XCTestCase {
       ),
       15
     )
+    XCTAssertEqual(
+      InlineEditorSizing.expandedReservedLineCount(
+        in: "one",
+        reservedLineCount: 8,
+        minimum: 1,
+        maximum: 15
+      ),
+      8
+    )
+    XCTAssertEqual(
+      InlineEditorSizing.expandedReservedLineCount(
+        in: "one\ntwo\nthree",
+        reservedLineCount: 1,
+        minimum: 1,
+        maximum: 15
+      ),
+      3
+    )
+    XCTAssertEqual(
+      InlineEditorSizing.expandedReservedLineCount(
+        in: (1...1_000).map { "line \($0)" }.joined(separator: "\n"),
+        reservedLineCount: 3,
+        minimum: 1,
+        maximum: 15
+      ),
+      15
+    )
   }
 
   func testInlineEditorChromeKeepsStableHiddenControls() {
