@@ -461,6 +461,12 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Block is read-only"
       return
     }
+    if initialDraft == nil,
+       !isEditingEntry,
+       selectedBlockID == block.id,
+       editingBlockID == block.id {
+      return
+    }
     let draft = initialDraft ?? block.rawText
     isEditingEntry = false
     selectedBlockID = block.id
@@ -535,6 +541,7 @@ public final class WorkspaceStore: ObservableObject {
 
   public func selectBlock(_ block: OrgEditableBlock) {
     guard selectedEntrySource?.isEditable == true else { return }
+    guard selectedBlockID != block.id else { return }
     selectedBlockID = block.id
   }
 
