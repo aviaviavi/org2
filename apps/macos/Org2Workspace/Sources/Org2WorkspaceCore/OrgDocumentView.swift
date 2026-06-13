@@ -107,7 +107,7 @@ private struct EditableRenderedBlockView<Content: View>: View {
         .padding(.trailing, isSourceEditable ? 92 : 0)
         .frame(maxWidth: .infinity, alignment: .leading)
 
-      if isSourceEditable {
+      if showsControls {
         HStack(spacing: 3) {
           Menu {
             ForEach(OrgInsertBlockKind.allCases) { kind in
@@ -175,7 +175,6 @@ private struct EditableRenderedBlockView<Content: View>: View {
             .help("Block actions")
           }
         }
-        .opacity(isHovered || isSelected ? 1 : 0)
       }
     }
     .padding(.horizontal, 6)
@@ -206,6 +205,10 @@ private struct EditableRenderedBlockView<Content: View>: View {
       return Color.secondary.opacity(0.08)
     }
     return .clear
+  }
+
+  private var showsControls: Bool {
+    isSourceEditable && (isHovered || isSelected)
   }
 }
 
