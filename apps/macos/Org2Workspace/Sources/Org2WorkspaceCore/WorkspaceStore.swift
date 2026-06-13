@@ -145,6 +145,7 @@ public final class WorkspaceStore: ObservableObject {
   private var transientDraftBlock: TransientDraftBlock?
   private var activeBlockDrafts: [OrgEditableBlock.ID: String] = [:]
   private var scheduledAgendaRefreshTask: Task<Void, Never>?
+  private var pendingAgendaRefreshAfterBlockEditing = false
 
   public init(cli: Org2CLI? = nil, defaults: UserDefaults = .standard, openClawTranscriptURL: URL? = nil) {
     self.defaults = defaults
@@ -703,7 +704,7 @@ public final class WorkspaceStore: ObservableObject {
         for: updatedSource,
         modifiedAt: Self.modificationDate(for: URL(fileURLWithPath: updatedSource.file).standardizedFileURL)
       )
-      scheduleAgendaRefresh(preserveSelection: true)
+      pendingAgendaRefreshAfterBlockEditing = true
     } catch {
       errorText = error.localizedDescription
       statusText = "Autosave failed"
@@ -1257,9 +1258,14 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func resetBlockEditing() {
+    let wasEditingBlock = editingBlockID != nil
     editingBlockID = nil
     editableBlockText = ""
     activeBlockDrafts.removeAll()
+    if wasEditingBlock, pendingAgendaRefreshAfterBlockEditing {
+      pendingAgendaRefreshAfterBlockEditing = false
+      scheduleAgendaRefresh(preserveSelection: true)
+    }
   }
 
   private func resetBlockState() {

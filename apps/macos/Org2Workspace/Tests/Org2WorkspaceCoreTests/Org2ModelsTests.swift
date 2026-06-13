@@ -1687,6 +1687,80 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testAutosaveDefersAgendaRefreshUntilBlockEditingEnds() async throws {
+    let workspace = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-autosave-deferred-agenda-\(UUID().uuidString)", isDirectory: true)
+    let repoRoot = workspace.appendingPathComponent("repo", isDirectory: true)
+    let dist = repoRoot.appendingPathComponent("dist", isDirectory: true)
+    let corpus = workspace.appendingPathComponent("corpus", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: corpus, withIntermediateDirectories: true)
+    try """
+    setTimeout(() => {
+      process.stdout.write(JSON.stringify({
+        "$schema": "org2:agenda:v1",
+        "range": { "start": "2026-06-12", "end": "2026-06-18", "days": 7 },
+        "overdue": [],
+        "days": [{ "date": "2026-06-12", "weekday": "Fri", "items": [] }],
+        "skippedFiles": 0
+      }));
+    }, 120);
+    """.write(to: dist.appendingPathComponent("cli.js"), atomically: true, encoding: .utf8)
+
+    let note = corpus.appendingPathComponent("autosave-deferred-agenda.org2")
+    try """
+    #+TITLE: Autosave Deferred Agenda Test
+
+    * TODO Parent
+    Body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = WorkspaceStore(cli: Org2CLI(repoRoot: repoRoot))
+    store.setCorpusRoot(corpus)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+    store.beginEditingBlock(paragraph)
+    store.updateEditingBlockDraft(paragraph, draft: "Updated body")
+    await store.autosaveEditedBlock(paragraph, replacement: "Updated body")
+
+    XCTAssertFalse(store.isLoadingAgenda)
+    XCTAssertNil(store.agenda)
+    XCTAssertNotNil(store.editingBlockID)
+
+    try await Task.sleep(nanoseconds: 350_000_000)
+    XCTAssertFalse(store.isLoadingAgenda)
+    XCTAssertNil(store.agenda)
+
+    store.cancelEditingBlock()
+    try await waitForCondition(timeout: 2) {
+      store.agenda?.totalItemCount == 0 && !store.isLoadingAgenda
+    }
+  }
+
+  @MainActor
   func testAutosavesParagraphBlockWithoutLeavingInlineEditMode() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-paragraph-autosave-\(UUID().uuidString)", isDirectory: true)
