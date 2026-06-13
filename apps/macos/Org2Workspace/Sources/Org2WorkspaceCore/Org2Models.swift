@@ -1194,6 +1194,9 @@ public enum SourceRunOutputPresentation: Equatable, Sendable {
 
     if let rows = object as? [[String: Any]], !rows.isEmpty {
       let columns = Array(Set(rows.flatMap(\.keys))).sorted()
+      if let bars = rowBars(from: rows, columns: columns), !bars.isEmpty {
+        return .bars(bars)
+      }
       return .table(SourceRunTable(
         columns: columns,
         rows: rows.map { row in columns.map { stringValue(row[$0] ?? "") } }
@@ -1269,8 +1272,39 @@ public enum SourceRunOutputPresentation: Equatable, Sendable {
     return bars.count == dictionary.count ? bars : nil
   }
 
+  private static func rowBars(from rows: [[String: Any]], columns: [String]) -> [SourceRunBar]? {
+    guard columns.count == 2 else { return nil }
+    let numericColumns = columns.filter { column in
+      rows.allSatisfy { numericValue($0[column] ?? "") != nil }
+    }
+    guard numericColumns.count == 1,
+          let numericColumn = numericColumns.first,
+          let labelColumn = columns.first(where: { $0 != numericColumn })
+    else {
+      return nil
+    }
+
+    var bars: [SourceRunBar] = []
+    var seenLabels: [String: Int] = [:]
+    for row in rows {
+      guard let value = numericValue(row[numericColumn] ?? "") else { return nil }
+      let baseLabel = stringValue(row[labelColumn] ?? "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !baseLabel.isEmpty else { return nil }
+
+      let count = (seenLabels[baseLabel] ?? 0) + 1
+      seenLabels[baseLabel] = count
+      let label = count == 1 ? baseLabel : "\(baseLabel) \(count)"
+      bars.append(SourceRunBar(label: label, value: value))
+    }
+    return bars
+  }
+
   private static func numericValue(_ value: Any) -> Double? {
     if let number = value as? NSNumber {
+      if CFGetTypeID(number) == CFBooleanGetTypeID() {
+        return nil
+      }
       return number.doubleValue
     }
     if let string = value as? String {

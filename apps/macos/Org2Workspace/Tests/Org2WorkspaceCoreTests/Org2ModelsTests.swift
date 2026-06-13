@@ -775,16 +775,35 @@ final class Org2ModelsTests: XCTestCase {
         SourceRunBar(label: "B", value: 3.5)
       ])
     )
+
+    XCTAssertEqual(
+      SourceRunOutputPresentation.make(from: #"[{"name":"A","value":2},{"name":"B","value":3}]"#),
+      .bars([
+        SourceRunBar(label: "A", value: 2),
+        SourceRunBar(label: "B", value: 3)
+      ])
+    )
   }
 
   func testSourceRunOutputPresentationParsesJSONObjectsAsTable() {
     XCTAssertEqual(
-      SourceRunOutputPresentation.make(from: #"[{"name":"A","value":2},{"name":"B","value":3}]"#),
+      SourceRunOutputPresentation.make(from: #"[{"name":"A","status":"ready","value":2},{"name":"B","status":"done","value":3}]"#),
       .table(SourceRunTable(
-        columns: ["name", "value"],
+        columns: ["name", "status", "value"],
         rows: [
-          ["A", "2"],
-          ["B", "3"]
+          ["A", "ready", "2"],
+          ["B", "done", "3"]
+        ]
+      ))
+    )
+
+    XCTAssertEqual(
+      SourceRunOutputPresentation.make(from: #"[{"active":true,"name":"A"},{"active":false,"name":"B"}]"#),
+      .table(SourceRunTable(
+        columns: ["active", "name"],
+        rows: [
+          ["1", "A"],
+          ["0", "B"]
         ]
       ))
     )
