@@ -143,6 +143,7 @@ public final class WorkspaceStore: ObservableObject {
   private var renderedBlocksCacheOrder: [String] = []
   private var pendingBlockSelection: PendingBlockSelection?
   private var transientDraftBlock: TransientDraftBlock?
+  private var activeBlockDrafts: [OrgEditableBlock.ID: String] = [:]
   private var scheduledAgendaRefreshTask: Task<Void, Never>?
 
   public init(cli: Org2CLI? = nil, defaults: UserDefaults = .standard, openClawTranscriptURL: URL? = nil) {
@@ -446,6 +447,12 @@ public final class WorkspaceStore: ObservableObject {
     selectedBlockID = block.id
     editingBlockID = block.id
     editableBlockText = block.rawText
+    activeBlockDrafts[block.id] = block.rawText
+  }
+
+  public func updateEditingBlockDraft(_ block: OrgEditableBlock, draft: String) {
+    guard editingBlockID == block.id else { return }
+    activeBlockDrafts[block.id] = draft
   }
 
   public func cancelEditingBlock() {
@@ -622,6 +629,79 @@ public final class WorkspaceStore: ObservableObject {
     } catch {
       errorText = error.localizedDescription
       statusText = "Block save failed"
+    }
+  }
+
+  public func autosaveEditedBlock(_ block: OrgEditableBlock, replacement: String) async {
+    guard let source = selectedEntrySource, source.isEditable else { return }
+    guard editingBlockID == block.id else { return }
+    guard transientDraftBlock?.block.id != block.id else { return }
+
+    let normalizedReplacement = Self.normalizeLineEndings(replacement)
+    guard normalizedReplacement != block.rawText else { return }
+
+    let updatedSource: EntrySource
+    do {
+      updatedSource = try Self.replacingSourceBlock(
+        block,
+        in: source,
+        with: normalizedReplacement
+      )
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Autosave failed"
+      return
+    }
+
+    do {
+      let file = source.file
+      let startLine = block.startLine
+      let endLineExclusive = block.endLineExclusive
+      try await Task.detached(priority: .utility) {
+        try Self.replaceSourceRange(
+          file: file,
+          startLine: startLine,
+          endLineExclusive: endLineExclusive,
+          replacement: normalizedReplacement
+        )
+      }.value
+
+      let blocks = await Task.detached(priority: .utility) {
+        OrgEntryRenderer.parseEditable(updatedSource.text, baseLine: updatedSource.startLine)
+      }.value
+
+      guard selectedEntrySource?.id == source.id,
+            editingBlockID == block.id,
+            Self.normalizeLineEndings(activeBlockDrafts[block.id] ?? "") == normalizedReplacement
+      else {
+        return
+      }
+
+      invalidateCanonicalDocumentCache(for: source.file)
+      selectedEntrySource = updatedSource
+      selectedRenderedBlocks = blocksWithTransientDraft(blocks, for: updatedSource)
+
+      let updatedBlock = blockForSelectionLine(
+        block.startLine,
+        mode: .containingOrNearest,
+        in: selectedRenderedBlocks
+      )
+      selectedBlockID = updatedBlock?.id
+      editingBlockID = updatedBlock?.id
+      editableBlockText = normalizedReplacement
+      activeBlockDrafts[block.id] = nil
+      if let updatedBlock {
+        activeBlockDrafts[updatedBlock.id] = normalizedReplacement
+      }
+      cacheRenderedBlocks(
+        blocks,
+        for: updatedSource,
+        modifiedAt: Self.modificationDate(for: URL(fileURLWithPath: updatedSource.file).standardizedFileURL)
+      )
+      scheduleAgendaRefresh(preserveSelection: true)
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Autosave failed"
     }
   }
 
@@ -1174,6 +1254,7 @@ public final class WorkspaceStore: ObservableObject {
   private func resetBlockEditing() {
     editingBlockID = nil
     editableBlockText = ""
+    activeBlockDrafts.removeAll()
   }
 
   private func resetBlockState() {
@@ -1211,6 +1292,7 @@ public final class WorkspaceStore: ObservableObject {
     selectedBlockID = draft.block.id
     editingBlockID = draft.block.id
     editableBlockText = draft.block.rawText
+    activeBlockDrafts[draft.block.id] = draft.block.rawText
   }
 
   private func saveTransientDraftBlock(_ draft: TransientDraftBlock) async {
@@ -2395,6 +2477,7 @@ public final class WorkspaceStore: ObservableObject {
          source.isEditable {
         editingBlockID = pendingBlock.id
         editableBlockText = pendingBlock.rawText
+        activeBlockDrafts[pendingBlock.id] = pendingBlock.rawText
       }
     } else if let selectedBlockID,
        !visibleBlocks.contains(where: { $0.id == selectedBlockID }) {
@@ -2830,6 +2913,43 @@ public final class WorkspaceStore: ObservableObject {
       startLine: source.startLine,
       endLineExclusive: source.endLineExclusive,
       replacement: replacement
+    )
+  }
+
+  nonisolated private static func replacingSourceBlock(
+    _ block: OrgEditableBlock,
+    in source: EntrySource,
+    with replacement: String
+  ) throws -> EntrySource {
+    var lines = normalizeLineEndings(source.text)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+
+    let startIndex = block.startLine - source.startLine
+    let endIndex = block.endLineExclusive - source.startLine
+    guard startIndex >= 0,
+          startIndex <= lines.count,
+          endIndex >= startIndex,
+          endIndex <= lines.count
+    else {
+      throw WorkspaceEditError.invalidRange(file: source.file, line: block.startLine)
+    }
+
+    let normalizedReplacement = normalizeLineEndings(replacement)
+    let replacementLines = normalizedReplacement.isEmpty
+      ? []
+      : normalizedReplacement
+        .split(separator: "\n", omittingEmptySubsequences: false)
+        .map(String.init)
+    lines.replaceSubrange(startIndex..<endIndex, with: replacementLines)
+
+    return EntrySource(
+      file: source.file,
+      startLine: source.startLine,
+      endLineExclusive: source.startLine + lines.count,
+      text: lines.joined(separator: "\n"),
+      isSubtree: source.isSubtree,
+      isEditable: source.isEditable
     )
   }
 
