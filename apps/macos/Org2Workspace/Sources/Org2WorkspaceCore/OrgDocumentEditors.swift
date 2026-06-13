@@ -76,6 +76,13 @@ enum ParagraphSlashCommand {
   }
 }
 
+enum ParagraphEditorTextPublishingPolicy {
+  static func shouldPublishImmediately(_ text: String) -> Bool {
+    ParagraphSlashCommand.query(in: text) != nil
+      || OrgInlineParser.hasInlineSyntaxCandidate(text)
+  }
+}
+
 struct InlineBlockEditorView: View {
   let block: OrgEditableBlock
 
@@ -1281,6 +1288,7 @@ private struct ParagraphBlockEditor: View {
   @State private var isHovered = false
   @State private var isTextFocused = false
   @State private var autosaveTask: Task<Void, Never>?
+  @State private var liveText = OrgSyntaxTextEditorDraftBuffer()
 
   init(block: OrgEditableBlock, text: String) {
     self.block = block
@@ -1306,8 +1314,11 @@ private struct ParagraphBlockEditor: View {
           showsScrollers: false,
           textInset: NSSize(width: 0, height: 2),
           focusOnAppear: true,
+          textPublishing: .deferred(milliseconds: 90),
           selection: $selectedRange,
           isFocused: $isTextFocused,
+          onLocalTextChange: liveText.update,
+          shouldPublishTextImmediately: ParagraphEditorTextPublishingPolicy.shouldPublishImmediately,
           onSubmitContext: submitParagraph
         )
         .frame(minHeight: editorHeight, maxHeight: editorHeight)
@@ -1375,6 +1386,9 @@ private struct ParagraphBlockEditor: View {
     .onDisappear {
       autosaveTask?.cancel()
       autosaveTask = nil
+    }
+    .onAppear {
+      liveText.update(draftText)
     }
   }
 
@@ -1449,6 +1463,10 @@ private struct ParagraphBlockEditor: View {
     ParagraphSlashCommand.query(in: draftText)
   }
 
+  private var currentParagraphText: String {
+    liveText.current(fallback: draftText)
+  }
+
   private func submitParagraph(_ context: OrgSyntaxTextEditorSubmitContext) -> Bool {
     autosaveTask?.cancel()
     autosaveTask = nil
@@ -1466,28 +1484,29 @@ private struct ParagraphBlockEditor: View {
   private func saveParagraph() {
     autosaveTask?.cancel()
     autosaveTask = nil
-    store.editableBlockText = draftText
+    store.editableBlockText = currentParagraphText
     Task { await store.saveEditedBlock(block) }
   }
 
   private func convertParagraph(to kind: OrgInsertBlockKind) {
     autosaveTask?.cancel()
     autosaveTask = nil
-    store.editableBlockText = draftText
+    store.editableBlockText = currentParagraphText
     Task { await store.convertEditingBlock(block, to: kind) }
   }
 
   private func scheduleParagraphAutosave() {
-    store.updateEditingBlockDraft(block, draft: draftText)
+    let draft = currentParagraphText
+    store.updateEditingBlockDraft(block, draft: draft)
     autosaveTask?.cancel()
 
     guard slashCommandQuery == nil,
-          draftText != block.rawText
+          draft != block.rawText
     else {
       return
     }
 
-    let replacement = draftText
+    let replacement = draft
     autosaveTask = Task { [block] in
       do {
         try await Task.sleep(nanoseconds: 700_000_000)

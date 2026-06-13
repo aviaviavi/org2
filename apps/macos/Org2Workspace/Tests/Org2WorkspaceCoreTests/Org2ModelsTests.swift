@@ -688,6 +688,31 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSyntaxEditorAdaptivePublishingCanBypassDeferredText() {
+    var boundText = "old"
+    let editor = OrgSyntaxTextEditor(
+      text: Binding(
+        get: { boundText },
+        set: { boundText = $0 }
+      ),
+      textPublishing: .deferred(milliseconds: 2_000),
+      shouldPublishTextImmediately: { $0.hasPrefix("/") }
+    )
+    let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
+    let textView = NSTextView()
+
+    textView.string = "plain"
+    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+    XCTAssertEqual(boundText, "old")
+    XCTAssertTrue(coordinator.hasPendingTextPublishing(for: "plain"))
+
+    textView.string = "/todo"
+    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+    XCTAssertEqual(boundText, "/todo")
+    XCTAssertFalse(coordinator.hasPendingTextPublishing(for: "/todo"))
+  }
+
+  @MainActor
   func testSyntaxEditorDoesNotScheduleDeferredHighlightingForLargeBuffers() {
     let largeText = String(repeating: "Body with [[id:abc][Alice]].\n", count: 2_000)
     XCTAssertGreaterThan((largeText as NSString).length, OrgSyntaxHighlighter.liveTokenizationUTF16Limit)
@@ -790,6 +815,14 @@ final class Org2ModelsTests: XCTestCase {
       repeating: " ",
       count: ParagraphSlashCommand.leadingWhitespaceScanLimit + 1
     ) + "/todo"))
+  }
+
+  func testParagraphEditorTextPublishingPolicyKeepsRichStatesResponsive() {
+    XCTAssertFalse(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately("Plain paragraph text"))
+    XCTAssertTrue(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately("/todo"))
+    XCTAssertTrue(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately("See [[id:abc][Alice]]"))
+    XCTAssertTrue(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately("Meet <2026-06-12 Fri>"))
+    XCTAssertTrue(ParagraphEditorTextPublishingPolicy.shouldPublishImmediately("Use `code`"))
   }
 
   func testOpenClawFileReferenceDeepLinkRoundTrips() throws {
