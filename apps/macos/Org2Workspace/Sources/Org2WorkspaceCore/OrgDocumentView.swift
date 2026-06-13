@@ -5,18 +5,30 @@ struct OrgRenderedEntryView: View {
   let blocks: [OrgEditableBlock]
 
   var body: some View {
+    let sourceFile = store.selectedEntrySource?.file
+    let corpusRoot = store.corpusRoot
+    let isSourceEditable = store.selectedEntrySource?.isEditable == true
+    let selectedBlockID = store.selectedBlockID
+
     LazyVStack(alignment: .leading, spacing: 8) {
       ForEach(blocks) { block in
         if store.editingBlockID == block.id {
           InlineBlockEditorView(block: block)
         } else {
-          EditableRenderedBlockView(block: block) {
+          EditableRenderedBlockView(
+            block: block,
+            isSourceEditable: isSourceEditable,
+            isSelected: selectedBlockID == block.id,
+            canMoveUp: store.canMoveBlock(block, direction: .up),
+            canMoveDown: store.canMoveBlock(block, direction: .down),
+            actions: actions(for: block)
+          ) {
             RenderedBlockView(
               block: block.rendered,
               rawText: block.rawText,
               editableBlock: block,
-              sourceFile: store.selectedEntrySource?.file,
-              corpusRoot: store.corpusRoot
+              sourceFile: sourceFile,
+              corpusRoot: corpusRoot
             )
             .equatable()
           }
@@ -25,26 +37,53 @@ struct OrgRenderedEntryView: View {
     }
     .frame(maxWidth: .infinity, alignment: .leading)
   }
+
+  private func actions(for block: OrgEditableBlock) -> RenderedBlockActions {
+    RenderedBlockActions(
+      select: {
+        store.selectBlock(block)
+      },
+      beginEditing: {
+        store.beginEditingBlock(block)
+      },
+      insert: { kind in
+        Task { await store.insertBlock(after: block, kind: kind) }
+      },
+      move: { direction in
+        Task { await store.moveBlock(block, direction: direction) }
+      },
+      duplicate: {
+        Task { await store.duplicateBlock(block) }
+      },
+      delete: {
+        Task { await store.deleteBlock(block) }
+      }
+    )
+  }
 }
 
 private struct EditableRenderedBlockView<Content: View>: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let block: OrgEditableBlock
+  let isSourceEditable: Bool
+  let isSelected: Bool
+  let canMoveUp: Bool
+  let canMoveDown: Bool
+  let actions: RenderedBlockActions
   @ViewBuilder let content: Content
   @State private var isHovered = false
 
   var body: some View {
     ZStack(alignment: .topTrailing) {
       content
-        .padding(.trailing, store.selectedEntrySource?.isEditable == true ? 92 : 0)
+        .padding(.trailing, isSourceEditable ? 92 : 0)
         .frame(maxWidth: .infinity, alignment: .leading)
 
-      if store.selectedEntrySource?.isEditable == true {
+      if isSourceEditable {
         HStack(spacing: 3) {
           Menu {
             ForEach(OrgInsertBlockKind.allCases) { kind in
               Button {
-                Task { await store.insertBlock(after: block, kind: kind) }
+                actions.insert(kind)
               } label: {
                 Label(kind.title, systemImage: kind.systemImage)
               }
@@ -60,7 +99,7 @@ private struct EditableRenderedBlockView<Content: View>: View {
 
           if block.isEditable {
             Button {
-              store.beginEditingBlock(block)
+              actions.beginEditing()
             } label: {
               Image(systemName: "pencil")
                 .font(.caption.weight(.semibold))
@@ -71,29 +110,29 @@ private struct EditableRenderedBlockView<Content: View>: View {
 
             Menu {
               Button {
-                Task { await store.moveBlock(block, direction: .up) }
+                actions.move(.up)
               } label: {
                 Label("Move Up", systemImage: "arrow.up")
               }
-              .disabled(!store.canMoveBlock(block, direction: .up))
+              .disabled(!canMoveUp)
 
               Button {
-                Task { await store.moveBlock(block, direction: .down) }
+                actions.move(.down)
               } label: {
                 Label("Move Down", systemImage: "arrow.down")
               }
-              .disabled(!store.canMoveBlock(block, direction: .down))
+              .disabled(!canMoveDown)
 
               Divider()
 
               Button {
-                Task { await store.duplicateBlock(block) }
+                actions.duplicate()
               } label: {
                 Label("Duplicate", systemImage: "plus.square.on.square")
               }
 
               Button(role: .destructive) {
-                Task { await store.deleteBlock(block) }
+                actions.delete()
               } label: {
                 Label("Delete", systemImage: "trash")
               }
@@ -120,21 +159,17 @@ private struct EditableRenderedBlockView<Content: View>: View {
     .contentShape(Rectangle())
     .onHover { isHovered = $0 }
     .onTapGesture(count: 1) {
-      store.selectBlock(block)
+      actions.select()
     }
     .onTapGesture(count: 2) {
       if block.isEditable {
-        store.beginEditingBlock(block)
+        actions.beginEditing()
       }
     }
   }
 
-  private var isSelected: Bool {
-    store.selectedBlockID == block.id
-  }
-
   private var backgroundColor: Color {
-    guard store.selectedEntrySource?.isEditable == true else { return .clear }
+    guard isSourceEditable else { return .clear }
     if isSelected {
       return Color.accentColor.opacity(0.075)
     }
@@ -143,4 +178,13 @@ private struct EditableRenderedBlockView<Content: View>: View {
     }
     return .clear
   }
+}
+
+private struct RenderedBlockActions {
+  let select: () -> Void
+  let beginEditing: () -> Void
+  let insert: (OrgInsertBlockKind) -> Void
+  let move: (OrgBlockMoveDirection) -> Void
+  let duplicate: () -> Void
+  let delete: () -> Void
 }
