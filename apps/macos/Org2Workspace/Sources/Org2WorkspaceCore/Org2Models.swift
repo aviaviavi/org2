@@ -1411,12 +1411,55 @@ public enum OrgInlineParser {
     return false
   }
 
+  public static func hasInlineSyntaxCandidate(
+    _ raw: String,
+    near range: NSRange,
+    radius: Int
+  ) -> Bool {
+    guard !raw.isEmpty else { return false }
+    let ns = raw as NSString
+    let safeRadius = max(0, radius)
+    let safeLocation = min(max(0, range.location), ns.length)
+    let selectionEnd = min(ns.length, safeLocation + min(max(0, range.length), ns.length - safeLocation))
+    guard let window = substringWindow(
+      in: raw,
+      startUTF16: max(0, safeLocation - safeRadius),
+      endUTF16: min(ns.length, selectionEnd + safeRadius)
+    ) else {
+      return false
+    }
+    return hasInlineSyntaxCandidate(window)
+  }
+
   private enum DelimitedKind {
     case code
     case bold
     case italic
     case underline
     case strike
+  }
+
+  private static func substringWindow(
+    in text: String,
+    startUTF16 requestedStart: Int,
+    endUTF16 requestedEnd: Int
+  ) -> String? {
+    let ns = text as NSString
+    var start = min(max(0, requestedStart), ns.length)
+    var end = min(max(start, requestedEnd), ns.length)
+
+    while start >= 0 {
+      while end <= ns.length {
+        let range = NSRange(location: start, length: end - start)
+        if let swiftRange = Range(range, in: text) {
+          return String(text[swiftRange])
+        }
+        end += 1
+      }
+      start -= 1
+      end = min(max(start, requestedEnd), ns.length)
+    }
+    return nil
   }
 
   private static func parseBracketLink(_ raw: String, at cursor: String.Index) -> (span: OrgInlineSpan, end: String.Index)? {
