@@ -432,6 +432,7 @@ public struct MeetingWorkspaceItem: Identifiable, Hashable, Sendable {
   public let recordedAt: String?
   public let modifiedAt: Date?
   public let audioArtifact: String?
+  public let systemAudioArtifact: String?
   public let transcriptArtifact: String?
   public let transcriptionStatus: String?
   public let idValue: String?
@@ -443,6 +444,7 @@ public struct MeetingWorkspaceItem: Identifiable, Hashable, Sendable {
     recordedAt: String?,
     modifiedAt: Date?,
     audioArtifact: String?,
+    systemAudioArtifact: String? = nil,
     transcriptArtifact: String?,
     transcriptionStatus: String?,
     idValue: String?
@@ -453,6 +455,7 @@ public struct MeetingWorkspaceItem: Identifiable, Hashable, Sendable {
     self.recordedAt = recordedAt
     self.modifiedAt = modifiedAt
     self.audioArtifact = audioArtifact
+    self.systemAudioArtifact = systemAudioArtifact
     self.transcriptArtifact = transcriptArtifact
     self.transcriptionStatus = transcriptionStatus
     self.idValue = idValue

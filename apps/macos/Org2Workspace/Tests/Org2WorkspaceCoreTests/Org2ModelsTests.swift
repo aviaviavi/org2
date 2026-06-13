@@ -417,6 +417,7 @@ final class Org2ModelsTests: XCTestCase {
       recordedAt: recordedAt
     )
     try Data("fake audio".utf8).write(to: paths.audioURL)
+    try Data("fake system audio".utf8).write(to: paths.systemAudioURL)
 
     let bundle = try MeetingArtifactWriter.writeArtifacts(
       paths: paths,
@@ -426,7 +427,8 @@ final class Org2ModelsTests: XCTestCase {
         text: "We decided to publish the reporting update.",
         status: .complete,
         engine: "whisper.cpp"
-      )
+      ),
+      systemAudioURL: paths.systemAudioURL
     )
 
     let note = try String(contentsOf: bundle.noteURL, encoding: .utf8)
@@ -435,11 +437,14 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(note.contains("* Meeting: Scarf reporting sync"))
     XCTAssertTrue(note.contains(":kind: meeting"))
     XCTAssertTrue(note.contains(":audio_artifact: meetings/"))
+    XCTAssertTrue(note.contains(":system_audio_artifact: meetings/"))
     XCTAssertTrue(note.contains(":transcript_artifact: meetings/"))
+    XCTAssertTrue(note.contains(":capture_sources: microphone, system_audio"))
     XCTAssertTrue(note.contains(":transcription_engine: whisper.cpp"))
     XCTAssertTrue(note.contains("** Decisions"))
     XCTAssertTrue(transcript.contains("* Transcript: Scarf reporting sync"))
     XCTAssertTrue(transcript.contains(":kind: meeting_transcript"))
+    XCTAssertTrue(transcript.contains(":system_audio_artifact: meetings/"))
     XCTAssertTrue(transcript.contains("We decided to publish the reporting update."))
   }
 
@@ -454,11 +459,32 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
-  func testMeetingCaptureSourceDisclosesMicrophoneOnlyRecording() {
+  func testMeetingCaptureSourceDisclosesSystemAudioPermission() {
     let source = WorkspaceStore.meetingCaptureSourceSummary.lowercased()
     XCTAssertTrue(source.contains("microphone"))
     XCTAssertTrue(source.contains("system"))
-    XCTAssertTrue(source.contains("not recorded"))
+    XCTAssertTrue(source.contains("screen recording"))
+  }
+
+  func testMeetingTranscriptCombinesMicrophoneAndSystemAudioSections() {
+    let transcript = MeetingTranscriptResult.combined(
+      microphone: MeetingTranscriptResult(
+        text: "I can ship that today.",
+        status: .complete,
+        engine: "whisper.cpp"
+      ),
+      systemAudio: MeetingTranscriptResult(
+        text: "The customer asked for Friday.",
+        status: .complete,
+        engine: "whisper.cpp"
+      )
+    )
+
+    XCTAssertEqual(transcript.status, .complete)
+    XCTAssertTrue(transcript.text.contains("** Microphone"))
+    XCTAssertTrue(transcript.text.contains("I can ship that today."))
+    XCTAssertTrue(transcript.text.contains("** System Audio"))
+    XCTAssertTrue(transcript.text.contains("The customer asked for Friday."))
   }
 
   @MainActor
@@ -492,6 +518,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.meetings[0].title, "Planning sync")
     XCTAssertEqual(store.meetings[0].transcriptionStatus, "complete")
     XCTAssertTrue(store.meetings[0].audioArtifact?.hasPrefix("meetings/") == true)
+    XCTAssertNil(store.meetings[0].systemAudioArtifact)
     XCTAssertTrue(store.meetings[0].transcriptArtifact?.hasSuffix(".transcript.org2") == true)
   }
 

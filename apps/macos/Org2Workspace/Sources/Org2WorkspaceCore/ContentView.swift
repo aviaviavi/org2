@@ -784,6 +784,10 @@ private struct MeetingsView: View {
             isRecording: store.isRecordingMeeting,
             averageLevel: store.meetingInputAverageLevel,
             peakLevel: store.meetingInputPeakLevel,
+            systemAverageLevel: store.meetingSystemAudioAverageLevel,
+            systemPeakLevel: store.meetingSystemAudioPeakLevel,
+            isCapturingSystemAudio: store.isCapturingSystemAudio,
+            systemAudioStatusText: store.meetingSystemAudioStatusText,
             sourceText: store.meetingCaptureSourceText
           )
         }
@@ -839,6 +843,10 @@ private struct MeetingInputStatusView: View {
   let isRecording: Bool
   let averageLevel: Double
   let peakLevel: Double
+  let systemAverageLevel: Double
+  let systemPeakLevel: Double
+  let isCapturingSystemAudio: Bool
+  let systemAudioStatusText: String
   let sourceText: String
 
   var body: some View {
@@ -847,12 +855,18 @@ private struct MeetingInputStatusView: View {
         .foregroundStyle(isRecording ? .red : .secondary)
 
       if isRecording {
-        MeetingInputMeterView(averageLevel: averageLevel, peakLevel: peakLevel)
-          .frame(width: 120, height: 8)
-
-        Text("Mic only")
-          .font(.caption)
-          .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 4) {
+          MeetingInputMeterRow(label: "Mic", averageLevel: averageLevel, peakLevel: peakLevel)
+          if isCapturingSystemAudio {
+            MeetingInputMeterRow(label: "System", averageLevel: systemAverageLevel, peakLevel: systemPeakLevel)
+          } else {
+            Text(systemAudioStatusText)
+              .font(.caption2)
+              .foregroundStyle(.orange)
+              .lineLimit(1)
+              .truncationMode(.middle)
+          }
+        }
       } else {
         Text(sourceText)
           .font(.caption)
@@ -862,8 +876,26 @@ private struct MeetingInputStatusView: View {
       }
     }
     .accessibilityElement(children: .combine)
-    .accessibilityLabel(isRecording ? "Microphone input level" : sourceText)
+    .accessibilityLabel(isRecording ? "Meeting audio input levels" : sourceText)
     .help(sourceText)
+  }
+}
+
+private struct MeetingInputMeterRow: View {
+  let label: String
+  let averageLevel: Double
+  let peakLevel: Double
+
+  var body: some View {
+    HStack(spacing: 6) {
+      Text(label)
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .frame(width: 42, alignment: .trailing)
+
+      MeetingInputMeterView(averageLevel: averageLevel, peakLevel: peakLevel)
+        .frame(width: 120, height: 7)
+    }
   }
 }
 
@@ -1651,6 +1683,7 @@ private struct EntryBodyView: View {
       let rows: [(String, String)] = [
         ("Recorded", meeting.recordedAt ?? ""),
         ("Audio", meeting.audioArtifact ?? ""),
+        ("System Audio", meeting.systemAudioArtifact ?? ""),
         ("Transcript", meeting.transcriptArtifact ?? ""),
         ("Transcription", meeting.transcriptionStatus ?? ""),
         ("ID", meeting.idValue.map(Org2Display.shortID) ?? "")
