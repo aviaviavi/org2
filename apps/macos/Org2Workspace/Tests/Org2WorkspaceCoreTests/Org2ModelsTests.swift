@@ -2549,6 +2549,37 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNil(OrgMediaAttachment.standalone(raw: "https://example.com/image.png"))
   }
 
+  func testOrgMediaAttachmentRenderCacheUsesExactSourceContext() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-media-cache-\(UUID().uuidString)", isDirectory: true)
+    let assets = root.appendingPathComponent("assets", isDirectory: true)
+    let notes = root.appendingPathComponent("notes", isDirectory: true)
+    try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: notes, withIntermediateDirectories: true)
+
+    let image = assets.appendingPathComponent("diagram.png")
+    let note = notes.appendingPathComponent("daily.org2")
+    try Data().write(to: image)
+    try Data().write(to: note)
+
+    let raw = "[[file:../assets/diagram.png][System Diagram]]"
+    let key = OrgMediaAttachmentRenderCache.CacheKey(raw: raw, sourceFile: note.path, corpusRoot: root)
+    let matching = OrgMediaAttachmentRenderCache.CacheKey(raw: raw, sourceFile: note.path, corpusRoot: root)
+    let differentSource = OrgMediaAttachmentRenderCache.CacheKey(raw: raw, sourceFile: image.path, corpusRoot: root)
+
+    XCTAssertEqual(key, matching)
+    XCTAssertEqual(key.hash, matching.hash)
+    XCTAssertNotEqual(key, differentSource)
+
+    let first = try XCTUnwrap(OrgMediaAttachmentRenderCache.standalone(raw: raw, sourceFile: note.path, corpusRoot: root))
+    let second = try XCTUnwrap(OrgMediaAttachmentRenderCache.standalone(raw: raw, sourceFile: note.path, corpusRoot: root))
+    XCTAssertEqual(first, second)
+    XCTAssertEqual(second.resolvedPath, image.standardizedFileURL.path)
+
+    XCTAssertNil(OrgMediaAttachmentRenderCache.standalone(raw: "Plain paragraph", sourceFile: note.path, corpusRoot: root))
+    XCTAssertNil(OrgMediaAttachmentRenderCache.standalone(raw: "Plain paragraph", sourceFile: note.path, corpusRoot: root))
+  }
+
   func testEditableMediaLinkFormatsOrgBracketLinks() throws {
     XCTAssertEqual(
       OrgEditableMediaLink(kind: .image, target: "images/diagram.png", label: "System Diagram").formattedRawText,
