@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 const repo = process.cwd();
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "org2-data-query-"));
 const note = path.join(tmp, "report.org2");
+const orgStyleNote = path.join(tmp, "org-style-report.org2");
 const tableNote = path.join(tmp, "table-report.org2");
 const data = path.join(tmp, "package-fetches.csv");
 const fakeDuckdb = path.join(tmp, "duckdb");
@@ -56,6 +57,30 @@ FROM fetches
 \`\`\`
 `, "utf8");
 
+fs.writeFileSync(orgStyleNote, `* Package fetch report
+
+#+begin_dataset fetches
+type: csv
+path: ./package-fetches.csv
+engine: duckdb
+#+end_dataset
+
+#+name: fetches_by_state_src
+#+begin_src sql
+SELECT state, sum(fetches) AS fetches
+FROM fetches
+GROUP BY state
+ORDER BY fetches DESC
+#+end_src
+
+#+begin_src sql :id fetches_by_state_header
+SELECT state, sum(fetches) AS fetches
+FROM fetches
+GROUP BY state
+ORDER BY fetches DESC
+#+end_src
+`, "utf8");
+
 fs.writeFileSync(fakeDuckdb, `#!/usr/bin/env node
 import fs from "node:fs";
 const input = fs.readFileSync(0, "utf8");
@@ -102,6 +127,16 @@ const org = cli(["query-data", "--file", note, "--results", "fetches_by_state", 
 assert.match(org, /#\+name: fetches_by_state/);
 assert.match(org, /\| state \| fetches \|/);
 assert.match(org, /\| CA    \| 42      \|/);
+
+const orgStyleByName = JSON.parse(cli(["query-data", "--file", orgStyleNote, "--results", "fetches_by_state_src", "--duckdb", fakeDuckdb, "--format", "json"]));
+assert.equal(orgStyleByName.ok, true);
+assert.equal(orgStyleByName.resultId, "fetches_by_state_src");
+assert.equal(orgStyleByName.rowCount, 2);
+
+const orgStyleByHeaderArg = JSON.parse(cli(["query-data", "--file", orgStyleNote, "--results", "fetches_by_state_header", "--duckdb", fakeDuckdb, "--format", "json"]));
+assert.equal(orgStyleByHeaderArg.ok, true);
+assert.equal(orgStyleByHeaderArg.resultId, "fetches_by_state_header");
+assert.equal(orgStyleByHeaderArg.rows[0].state, "CA");
 
 cli(["query-data", "--file", note, "--results", "fetches_by_state", "--duckdb", fakeDuckdb, "--out", out]);
 assert.match(fs.readFileSync(out, "utf8"), /\| NY    \| 24      \|/);
