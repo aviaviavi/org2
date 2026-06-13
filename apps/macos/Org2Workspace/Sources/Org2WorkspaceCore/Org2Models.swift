@@ -812,6 +812,8 @@ public struct OrgInlineSelectionEdit: Equatable, Sendable {
 
 public enum OrgEditableInlineToken: Equatable, Sendable {
   public static let focusedScanUTF16Limit = 12_000
+  public static let focusedFullParseUTF16Limit = 2_000
+  public static let focusedLocalScanUTF16Radius = 1_024
 
   case link(OrgEditableInlineLink)
   case timestamp(OrgEditableInlineTimestamp)
@@ -848,13 +850,18 @@ public enum OrgEditableInlineToken: Equatable, Sendable {
       return nil
     }
 
-    let tokens = all(in: rawText)
-    guard !tokens.isEmpty else { return nil }
     let safeLocation = min(max(0, selection.location), textLength)
     let safeSelection = NSRange(
       location: safeLocation,
       length: min(max(0, selection.length), max(0, textLength - safeLocation))
     )
+
+    if textLength > focusedFullParseUTF16Limit {
+      return focusedInLocalWindow(rawText, selection: safeSelection, textLength: textLength)
+    }
+
+    let tokens = all(in: rawText)
+    guard !tokens.isEmpty else { return nil }
 
     if safeSelection.length > 0 {
       return tokens.first { rangesOverlap($0.range, safeSelection) }
@@ -888,6 +895,57 @@ public enum OrgEditableInlineToken: Equatable, Sendable {
     return count
   }
 
+  private static func focusedInLocalWindow(
+    _ rawText: String,
+    selection safeSelection: NSRange,
+    textLength: Int
+  ) -> OrgEditableInlineToken? {
+    let localEnd = min(
+      textLength,
+      safeSelection.location + max(0, safeSelection.length) + focusedLocalScanUTF16Radius
+    )
+    guard let window = substringWindow(
+      in: rawText,
+      startUTF16: max(0, safeSelection.location - focusedLocalScanUTF16Radius),
+      endUTF16: localEnd
+    ) else {
+      return nil
+    }
+
+    let localTokens = all(in: window.text).map { $0.shiftingUTF16Ranges(by: window.startUTF16) }
+    guard !localTokens.isEmpty else { return nil }
+    if safeSelection.length > 0 {
+      return localTokens.first { rangesOverlap($0.range, safeSelection) }
+    }
+    return localTokens.first { token in
+      let range = token.range
+      return safeSelection.location >= range.location && safeSelection.location <= range.location + range.length
+    }
+  }
+
+  private static func substringWindow(
+    in text: String,
+    startUTF16 requestedStart: Int,
+    endUTF16 requestedEnd: Int
+  ) -> (text: String, startUTF16: Int)? {
+    let ns = text as NSString
+    var start = min(max(0, requestedStart), ns.length)
+    var end = min(max(start, requestedEnd), ns.length)
+
+    while start >= 0 {
+      while end <= ns.length {
+        let range = NSRange(location: start, length: end - start)
+        if let swiftRange = Range(range, in: text) {
+          return (String(text[swiftRange]), start)
+        }
+        end += 1
+      }
+      start -= 1
+      end = min(max(start, requestedEnd), ns.length)
+    }
+    return nil
+  }
+
   private static func all(in rawText: String) -> [OrgEditableInlineToken] {
     let links = OrgEditableInlineLinkSet(rawText: rawText).links.map(OrgEditableInlineToken.link)
     let timestamps = OrgEditableInlineTimestampSet(rawText: rawText).timestamps.map(OrgEditableInlineToken.timestamp)
@@ -902,6 +960,39 @@ public enum OrgEditableInlineToken: Equatable, Sendable {
 
   private static func rangesOverlap(_ lhs: NSRange, _ rhs: NSRange) -> Bool {
     lhs.location < rhs.location + rhs.length && rhs.location < lhs.location + lhs.length
+  }
+
+  private func shiftingUTF16Ranges(by offset: Int) -> OrgEditableInlineToken {
+    switch self {
+    case .link(let link):
+      return .link(OrgEditableInlineLink(
+        id: "link:\(link.startUTF16 + offset)",
+        kind: link.kind,
+        label: link.label,
+        target: link.target,
+        startUTF16: link.startUTF16 + offset,
+        endUTF16: link.endUTF16 + offset
+      ))
+    case .timestamp(let timestamp):
+      return .timestamp(OrgEditableInlineTimestamp(
+        id: "timestamp:\(timestamp.startUTF16 + offset)",
+        date: timestamp.date,
+        time: timestamp.time,
+        detail: timestamp.detail,
+        isActive: timestamp.isActive,
+        startUTF16: timestamp.startUTF16 + offset,
+        endUTF16: timestamp.endUTF16 + offset
+      ))
+    case .markup(let markup):
+      return .markup(OrgEditableInlineMarkup(
+        id: "markup:\(markup.startUTF16 + offset)",
+        kind: markup.kind,
+        marker: markup.marker,
+        text: markup.text,
+        startUTF16: markup.startUTF16 + offset,
+        endUTF16: markup.endUTF16 + offset
+      ))
+    }
   }
 }
 
