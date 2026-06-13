@@ -742,16 +742,40 @@ private struct RenderedPropertyValueButton: View {
 private struct RenderedQuoteView: View {
   let lines: [String]
   let rawText: String?
+  @State private var visibleLineLimit = QuoteLineWindow.defaultLimit
 
   var body: some View {
+    let allLines = displayLines
+    let lineWindow = QuoteLineWindow.make(lines: allLines, visibleLimit: visibleLineLimit)
     HStack(alignment: .top, spacing: 10) {
       Rectangle()
         .fill(Color.accentColor.opacity(0.45))
         .frame(width: 3)
       VStack(alignment: .leading, spacing: 4) {
-        ForEach(displayLines.indices, id: \.self) { index in
-          OrgInlineText(displayLines[index], font: .body.italic())
+        ForEach(lineWindow.visibleLines.indices, id: \.self) { index in
+          OrgInlineText(lineWindow.visibleLines[index], font: .body.italic())
             .foregroundStyle(.secondary)
+        }
+
+        if allLines.count > QuoteLineWindow.defaultLimit {
+          Button {
+            if lineWindow.hiddenLineCount == 0 {
+              visibleLineLimit = QuoteLineWindow.defaultLimit
+            } else {
+              visibleLineLimit = min(allLines.count, visibleLineLimit + QuoteLineWindow.pageSize)
+            }
+          } label: {
+            Label(
+              lineWindow.hiddenLineCount == 0
+                ? "Show first \(QuoteLineWindow.defaultLimit) quote lines"
+                : "Show \(min(QuoteLineWindow.pageSize, lineWindow.hiddenLineCount)) more quote lines",
+              systemImage: lineWindow.hiddenLineCount == 0 ? "chevron.up" : "chevron.down"
+            )
+          }
+          .buttonStyle(.borderless)
+          .controlSize(.small)
+          .foregroundStyle(.secondary)
+          .padding(.top, 2)
         }
       }
     }
@@ -764,6 +788,33 @@ private struct RenderedQuoteView: View {
     let rawLines = rawText.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
     guard rawLines.count >= 2 else { return lines }
     return Array(rawLines.dropFirst().dropLast())
+  }
+}
+
+struct QuoteLineWindow: Equatable {
+  static let defaultLimit = 40
+  static let pageSize = 80
+
+  let visibleLines: [String]
+  let totalLineCount: Int
+  let limit: Int
+
+  var isTruncated: Bool {
+    totalLineCount > limit
+  }
+
+  var hiddenLineCount: Int {
+    max(0, totalLineCount - visibleLines.count)
+  }
+
+  static func make(lines: [String], visibleLimit: Int = defaultLimit) -> QuoteLineWindow {
+    let safeLimit = max(1, visibleLimit)
+    let clampedLimit = min(lines.count, safeLimit)
+    return QuoteLineWindow(
+      visibleLines: lines.count <= clampedLimit ? lines : Array(lines.prefix(clampedLimit)),
+      totalLineCount: lines.count,
+      limit: safeLimit
+    )
   }
 }
 

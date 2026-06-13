@@ -1258,6 +1258,28 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(partial.hiddenLineCount, 20)
   }
 
+  func testQuoteLineWindowLimitsLargeQuotes() {
+    let lines = (1...90).map { "quote \($0)" }
+
+    let collapsed = QuoteLineWindow.make(lines: lines, visibleLimit: 40)
+    XCTAssertEqual(collapsed.visibleLines.count, 40)
+    XCTAssertEqual(collapsed.visibleLines.first, "quote 1")
+    XCTAssertEqual(collapsed.visibleLines.last, "quote 40")
+    XCTAssertTrue(collapsed.isTruncated)
+    XCTAssertEqual(collapsed.hiddenLineCount, 50)
+
+    let partial = QuoteLineWindow.make(lines: lines, visibleLimit: 70)
+    XCTAssertEqual(partial.visibleLines.count, 70)
+    XCTAssertEqual(partial.visibleLines.last, "quote 70")
+    XCTAssertTrue(partial.isTruncated)
+    XCTAssertEqual(partial.hiddenLineCount, 20)
+
+    let expanded = QuoteLineWindow.make(lines: lines, visibleLimit: 120)
+    XCTAssertEqual(expanded.visibleLines.count, 90)
+    XCTAssertFalse(expanded.isTruncated)
+    XCTAssertEqual(expanded.hiddenLineCount, 0)
+  }
+
   func testSourceBlockLineWindowLeavesSmallBlocksWhole() {
     let lines = ["one", "two", "three"]
 
