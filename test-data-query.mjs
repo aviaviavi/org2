@@ -281,6 +281,12 @@ assert.equal(json.engine, "duckdb");
 assert.equal(json.resultId, "fetches_by_state");
 assert.equal(json.rowCount, 2);
 assert.equal(json.datasets[0].id, "fetches");
+assert.deepEqual(json.resultBlocks, [{
+  resultId: "fetches_by_state",
+  artifact: "views/fetches_by_state.org",
+  line: 9,
+  endLine: 14,
+}]);
 assert.equal(json.rows[0].state, "CA");
 assert.equal(json.provenance.resultId, "fetches_by_state");
 assert.equal(json.provenance.artifact, "views/fetches_by_state.org");
@@ -394,6 +400,14 @@ const duplicateResult = spawnSync("node", ["dist/cli.js", "query-data", "--file"
 assert.notEqual(duplicateResult.status, 0);
 const duplicateResultJson = JSON.parse(duplicateResult.stdout);
 assert.equal(duplicateResultJson.ok, false);
+assert.deepEqual(duplicateResultJson.resultBlocks.map((block) => ({
+  resultId: block.resultId,
+  line: block.line,
+  endLine: block.endLine,
+})), [
+  { resultId: "fetches_by_state", line: 9, endLine: 13 },
+  { resultId: "fetches_by_state", line: 15, endLine: 19 },
+]);
 assert.match(duplicateResultJson.diagnostics[0].message, /Duplicate SQL result block "fetches_by_state"/);
 
 console.log("✓ query-data CLI");
