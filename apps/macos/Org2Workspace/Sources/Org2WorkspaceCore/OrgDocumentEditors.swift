@@ -1521,23 +1521,23 @@ private struct ParagraphBlockEditor: View {
       return true
     }
 
-    store.editableBlockText = context.text
-    Task { await store.splitEditingBlock(block, atUTF16Offset: context.selectedRange.location) }
+    store.updateEditingBlockDraft(block, draft: context.text)
+    Task { await store.splitEditingBlock(block, atUTF16Offset: context.selectedRange.location, draftText: context.text) }
     return true
   }
 
   private func saveParagraph() {
     autosaveTask?.cancel()
     autosaveTask = nil
-    store.editableBlockText = currentParagraphText
+    store.updateEditingBlockDraft(block, draft: currentParagraphText)
     Task { await store.saveEditedBlock(block) }
   }
 
   private func convertParagraph(to kind: OrgInsertBlockKind) {
     autosaveTask?.cancel()
     autosaveTask = nil
-    store.editableBlockText = currentParagraphText
-    Task { await store.convertEditingBlock(block, to: kind) }
+    store.updateEditingBlockDraft(block, draft: currentParagraphText)
+    Task { await store.convertEditingBlock(block, to: kind, draftText: currentParagraphText) }
   }
 
   private func scheduleParagraphAutosave() {
@@ -2208,7 +2208,7 @@ private struct SourceBlockEditor: View {
   private func saveSource() {
     autosaveTask?.cancel()
     autosaveTask = nil
-    store.editableBlockText = currentSource.formattedRawText
+    store.updateEditingBlockDraft(block, draft: currentSource.formattedRawText)
     Task { await store.saveEditedBlock(block) }
   }
 

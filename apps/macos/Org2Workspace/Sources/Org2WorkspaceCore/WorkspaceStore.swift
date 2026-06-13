@@ -889,15 +889,21 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func saveReplacementText(for block: OrgEditableBlock) -> String {
-    guard let draft = activeBlockDrafts[block.id],
-          draft != block.rawText
-    else {
-      return editableBlockText
-    }
-    return draft
+    editingDraftText(for: block)
   }
 
-  public func splitEditingBlock(_ block: OrgEditableBlock, atUTF16Offset offset: Int) async {
+  private func editingDraftText(for block: OrgEditableBlock) -> String {
+    if let draft = activeBlockDrafts[block.id],
+       draft != block.rawText {
+      return draft
+    }
+    if editableBlockText != block.rawText {
+      return editableBlockText
+    }
+    return activeBlockDrafts[block.id] ?? editableBlockText
+  }
+
+  public func splitEditingBlock(_ block: OrgEditableBlock, atUTF16Offset offset: Int, draftText: String? = nil) async {
     guard let source = selectedEntrySource, source.isEditable else {
       statusText = "No editable source loaded"
       return
@@ -913,7 +919,8 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Block cannot be split"
       return
     }
-    guard let plan = Self.splitBlockPlan(for: block, draft: editableBlockText, utf16Offset: offset) else {
+    let draft = draftText ?? editingDraftText(for: block)
+    guard let plan = Self.splitBlockPlan(for: block, draft: draft, utf16Offset: offset) else {
       statusText = "Block cannot be split"
       return
     }
@@ -975,7 +982,7 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public func convertEditingBlock(_ block: OrgEditableBlock, to kind: OrgInsertBlockKind) async {
+  public func convertEditingBlock(_ block: OrgEditableBlock, to kind: OrgInsertBlockKind, draftText: String? = nil) async {
     guard let source = selectedEntrySource, source.isEditable else {
       statusText = "No editable source loaded"
       return
@@ -991,7 +998,8 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
-    let draft = conversionDraftBlock(for: kind, replacing: block, in: source, draft: editableBlockText)
+    let draftText = draftText ?? editingDraftText(for: block)
+    let draft = conversionDraftBlock(for: kind, replacing: block, in: source, draft: draftText)
     transientDraftBlock = draft
     pendingBlockSelection = nil
     isEditingEntry = false
