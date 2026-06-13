@@ -1250,6 +1250,12 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(expanded.visibleLines.count, 120)
     XCTAssertTrue(expanded.isTruncated)
     XCTAssertEqual(expanded.hiddenLineCount, 0)
+
+    let partial = SourceBlockLineWindow.make(lines: lines, visibleLimit: 100)
+    XCTAssertEqual(partial.visibleLines.count, 100)
+    XCTAssertEqual(partial.visibleLines.last, "line 100")
+    XCTAssertTrue(partial.isTruncated)
+    XCTAssertEqual(partial.hiddenLineCount, 20)
   }
 
   func testSourceBlockLineWindowLeavesSmallBlocksWhole() {
@@ -1275,6 +1281,13 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(expanded.visibleRows.count, 60)
     XCTAssertTrue(expanded.isTruncated)
     XCTAssertEqual(expanded.hiddenRowCount, 0)
+
+    let partial = TableRowWindow.make(rows: rows, headerRowIndex: nil, visibleLimit: 50)
+    XCTAssertEqual(partial.visibleRows.count, 50)
+    XCTAssertEqual(partial.visibleRows.first?.index, 0)
+    XCTAssertEqual(partial.visibleRows.last?.index, 49)
+    XCTAssertTrue(partial.isTruncated)
+    XCTAssertEqual(partial.hiddenRowCount, 10)
   }
 
   func testTableRowWindowKeepsHeaderAndSeparatorVisible() {
