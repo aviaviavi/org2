@@ -41,6 +41,10 @@ enum InlineEditorChrome {
     isSaving ? 1 : 0
   }
 
+  static func rendersSavingIndicator(_ isSaving: Bool) -> Bool {
+    true
+  }
+
   static func controlsTrailingPadding(isPersistent: Bool = true) -> CGFloat {
     isPersistent ? controlsReserveWidth : compactControlsReserveWidth
   }
@@ -51,7 +55,7 @@ private struct InlineEditorSavingIndicator: View {
 
   var body: some View {
     ZStack {
-      if isSaving {
+      if InlineEditorChrome.rendersSavingIndicator(isSaving) {
         ProgressView()
           .controlSize(.small)
       }
