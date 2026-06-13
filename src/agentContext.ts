@@ -63,6 +63,19 @@ type AgentThreadMetadata = {
   contextAttachments: AgentContextAttachment[];
 };
 
+type AgentRelatedThread = {
+  key: string;
+  id: string | null;
+  title: string;
+  agent?: string;
+  session?: string;
+  status?: string;
+  file: string;
+  sourceRange: { startLine: number; endLine: number };
+  citation: string;
+  matchingAttachments: AgentContextAttachment[];
+};
+
 type AgentDataLinkKind = "data-link" | "warehouse-query" | "dataset" | "sql-view" | "event-stream" | "timeline-link";
 
 type AgentDataLinkMetadata = {
@@ -104,6 +117,7 @@ type AgentNode = {
   selectionReason?: string[];
   claimState: AgentClaimState;
   thread?: AgentThreadMetadata;
+  relatedThreads?: AgentRelatedThread[];
   dataLink?: AgentDataLinkMetadata;
   sources?: AgentSource[];
   backlinks?: Array<{ sourceKey: string; sourceId: string | null; sourceTitle: string; file: string; line: number; citation: string; linkType: "id" | "wiki" }>;
@@ -351,7 +365,7 @@ function normalizeTypedKind(raw: string | null | undefined): string {
 }
 
 function kindPropertyFor(node: CompiledCorpusNode): string {
-  const props = node.effectiveProperties || node.properties || {};
+  const props = node.properties || {};
   return normalizeTypedKind(props.KIND || props.ORG2_KIND || props.TYPE || props.ORG2_TYPE);
 }
 
@@ -422,6 +436,18 @@ function normalizeFileRef(raw: string): string {
     .replace(/^\.\//, "");
 }
 
+function refTail(raw: string): string {
+  const value = String(raw || "").trim();
+  const match = /^[A-Za-z][A-Za-z0-9_-]*:(.*)$/.exec(value);
+  return String(match ? match[1] : value).trim();
+}
+
+function nodeHasExactLabel(node: CompiledCorpusNode, raw: string): boolean {
+  const needle = normalizeLabel(raw);
+  if (!needle) return false;
+  return normalizeLabel(node.title) === needle || node.aliases.some((alias) => normalizeLabel(alias) === needle);
+}
+
 function attachmentTargetFor(corpus: CompiledCorpus, attachment: AgentContextAttachment): AgentContextAttachment["target"] | undefined {
   let target: CompiledCorpusNode | undefined;
   if (attachment.type === "id") {
@@ -433,6 +459,9 @@ function attachmentTargetFor(corpus: CompiledCorpus, attachment: AgentContextAtt
   } else if (attachment.type === "file") {
     const wanted = normalizeFileRef(attachment.ref);
     target = corpus.nodes.find((node) => normalizeFileRef(node.file) === wanted) || corpus.nodes.find((node) => normalizeFileRef(node.file).endsWith(`/${wanted}`));
+  } else if (attachment.type !== "url" && attachment.type !== "session") {
+    const tail = refTail(attachment.ref);
+    target = corpus.nodes.find((node) => (node.id && normalizeId(node.id) === normalizeId(tail)) || nodeHasExactLabel(node, tail));
   }
   if (!target) return undefined;
   return {
@@ -479,6 +508,47 @@ function agentThreadMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode
     ...(normalizeThreadStorage(props.STORAGE || props.TRANSCRIPT_STORAGE || props.ORG2_STORAGE) ? { storage: normalizeThreadStorage(props.STORAGE || props.TRANSCRIPT_STORAGE || props.ORG2_STORAGE) } : {}),
     contextAttachments,
   };
+}
+
+function attachmentMatchesNode(node: CompiledCorpusNode, attachment: AgentContextAttachment): boolean {
+  if (attachment.target?.key === node.key) return true;
+  if (attachment.type === "id" && node.id && normalizeId(refTail(attachment.ref)) === normalizeId(node.id)) return true;
+  if (attachment.type === "file" && node.kind === "file") {
+    const wanted = normalizeFileRef(attachment.ref);
+    const actual = normalizeFileRef(node.file);
+    return actual === wanted || actual.endsWith(`/${wanted}`);
+  }
+  if (attachment.type === "note" && nodeHasExactLabel(node, attachment.ref)) return true;
+  if (attachment.type !== "url" && attachment.type !== "session") {
+    const tail = refTail(attachment.ref);
+    return Boolean((node.id && normalizeId(tail) === normalizeId(node.id)) || nodeHasExactLabel(node, tail));
+  }
+  return false;
+}
+
+function relatedThreadsFor(corpus: CompiledCorpus, node: CompiledCorpusNode): AgentRelatedThread[] {
+  if (isAgentThreadNode(node)) return [];
+  const out: AgentRelatedThread[] = [];
+  for (const candidate of corpus.nodes) {
+    if (candidate.key === node.key || !isAgentThreadNode(candidate)) continue;
+    const thread = agentThreadMetadataFor(corpus, candidate);
+    if (!thread) continue;
+    const matchingAttachments = thread.contextAttachments.filter((attachment) => attachmentMatchesNode(node, attachment));
+    if (matchingAttachments.length === 0) continue;
+    out.push({
+      key: candidate.key,
+      id: candidate.id,
+      title: candidate.title,
+      ...(thread.agent ? { agent: thread.agent } : {}),
+      ...(thread.session ? { session: thread.session } : {}),
+      ...(thread.status ? { status: thread.status } : {}),
+      file: candidate.file,
+      sourceRange: candidate.sourceRange,
+      citation: citationFor(candidate),
+      matchingAttachments,
+    });
+  }
+  return out.sort((a, b) => a.title.localeCompare(b.title) || a.citation.localeCompare(b.citation));
 }
 
 function dataLinkKindFor(node: CompiledCorpusNode): AgentDataLinkKind | null {
@@ -554,6 +624,7 @@ function dataLinkMetadataFor(node: CompiledCorpusNode): AgentDataLinkMetadata | 
 function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: Set<AgentInclude>, score?: { score: number; matchedTerms: string[]; selectionReason?: string[] }): AgentNode {
   const source = { file: node.file, sourceRange: node.sourceRange, citation: citationFor(node) };
   const thread = agentThreadMetadataFor(corpus, node);
+  const relatedThreads = relatedThreadsFor(corpus, node);
   const dataLink = dataLinkMetadataFor(node);
   return {
     key: node.key,
@@ -573,6 +644,7 @@ function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: 
     ...(score ? { score: score.score, matchedTerms: score.matchedTerms, selectionReason: score.selectionReason || [] } : {}),
     claimState: claimStateFor(node),
     ...(thread ? { thread } : {}),
+    ...(relatedThreads.length ? { relatedThreads } : {}),
     ...(dataLink ? { dataLink } : {}),
     ...(include.has("sources") ? { sources: [source] } : {}),
     ...(include.has("backlinks") ? { backlinks: inferredBacklinksFor(corpus, node) } : {}),
