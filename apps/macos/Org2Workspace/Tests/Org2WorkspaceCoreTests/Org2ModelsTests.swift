@@ -1163,6 +1163,52 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  func testRenderedEntryWindowResetKeyIgnoresEditedSourceLength() {
+    let source = EntrySource(
+      file: "/tmp/test.org2",
+      startLine: 1,
+      endLineExclusive: 50,
+      text: "",
+      isSubtree: false
+    )
+    let editedSource = EntrySource(
+      file: "/tmp/test.org2",
+      startLine: 1,
+      endLineExclusive: 54,
+      text: "",
+      isSubtree: false
+    )
+    let differentStart = EntrySource(
+      file: "/tmp/test.org2",
+      startLine: 4,
+      endLineExclusive: 54,
+      text: "",
+      isSubtree: false
+    )
+    let readOnlySource = EntrySource(
+      file: "/tmp/test.org2",
+      startLine: 1,
+      endLineExclusive: 54,
+      text: "",
+      isSubtree: false,
+      isEditable: false
+    )
+
+    XCTAssertEqual(
+      OrgRenderedEntryView.renderWindowResetKey(for: source),
+      OrgRenderedEntryView.renderWindowResetKey(for: editedSource)
+    )
+    XCTAssertNotEqual(
+      OrgRenderedEntryView.renderWindowResetKey(for: source),
+      OrgRenderedEntryView.renderWindowResetKey(for: differentStart)
+    )
+    XCTAssertNotEqual(
+      OrgRenderedEntryView.renderWindowResetKey(for: source),
+      OrgRenderedEntryView.renderWindowResetKey(for: readOnlySource)
+    )
+    XCTAssertEqual(OrgRenderedEntryView.renderWindowResetKey(for: nil), "none")
+  }
+
   @MainActor
   func testSelectedRenderedBlocksMetadataTracksAssignmentsAndMutations() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))

@@ -4,7 +4,7 @@ struct OrgRenderedEntryView: View {
   @EnvironmentObject private var store: WorkspaceStore
   let blocks: [OrgEditableBlock]
   @State private var renderedBlockLimit = Self.initialRenderedBlockLimit
-  @State private var blockSignature = ""
+  @State private var renderWindowResetKey = ""
   @State private var moveAvailability = OrgRenderedEntryMoveAvailability.empty
 
   var body: some View {
@@ -20,6 +20,7 @@ struct OrgRenderedEntryView: View {
     )
     let moveAvailabilityValues = moveAvailability.signature == moveAvailabilitySignature ? moveAvailability.values : [:]
     let selectedBlockIndex = selectedBlockID.flatMap { store.selectedRenderedBlockIndexes[$0] }
+    let resetKey = Self.renderWindowResetKey(for: source)
     let visibleLimit = Self.visibleLimit(
       requestedLimit: renderedBlockLimit,
       blocks: blocks,
@@ -52,21 +53,20 @@ struct OrgRenderedEntryView: View {
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .onAppear {
-      resetRenderedBlockLimitIfNeeded()
+      resetRenderedBlockLimitIfNeeded(resetKey: resetKey)
       refreshMoveAvailabilityIfNeeded(signature: moveAvailabilitySignature, source: source)
     }
-    .onChange(of: Self.blockSignature(for: blocks)) {
-      resetRenderedBlockLimitIfNeeded()
+    .onChange(of: resetKey) { _, newResetKey in
+      resetRenderedBlockLimitIfNeeded(resetKey: newResetKey)
     }
     .onChange(of: moveAvailabilitySignature) { _, newSignature in
       refreshMoveAvailabilityIfNeeded(signature: newSignature, source: source)
     }
   }
 
-  private func resetRenderedBlockLimitIfNeeded() {
-    let signature = Self.blockSignature(for: blocks)
-    guard signature != blockSignature else { return }
-    blockSignature = signature
+  private func resetRenderedBlockLimitIfNeeded(resetKey: String) {
+    guard resetKey != renderWindowResetKey else { return }
+    renderWindowResetKey = resetKey
     renderedBlockLimit = Self.initialRenderedBlockLimit
   }
 
@@ -98,11 +98,9 @@ struct OrgRenderedEntryView: View {
     return limit
   }
 
-  private static func blockSignature(for blocks: [OrgEditableBlock]) -> String {
-    guard let first = blocks.first, let last = blocks.last else {
-      return "empty"
-    }
-    return "\(blocks.count):\(first.id):\(last.id)"
+  nonisolated static func renderWindowResetKey(for source: EntrySource?) -> String {
+    guard let source else { return "none" }
+    return "\(source.file):\(source.startLine):\(source.isSubtree):\(source.isEditable)"
   }
 
   private static let initialRenderedBlockLimit = 220
