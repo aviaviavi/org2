@@ -511,6 +511,23 @@ function resultBlockMetadata(blocks: DataQuerySqlBlock[]): DataQueryResultBlock[
   }));
 }
 
+function resultProvenance(
+  selected: DataQuerySqlBlock,
+  datasets: DataQueryDataset[],
+  views: DataQuerySqlView[],
+  script: string,
+  outputArtifact?: string,
+): NonNullable<DataQueryResult["provenance"]> {
+  return {
+    resultId: selected.resultId,
+    ...(outputArtifact || selected.artifact ? { artifact: outputArtifact || selected.artifact } : {}),
+    querySha256: sha256(selected.sql),
+    scriptSha256: sha256(script),
+    datasetIds: datasets.map((dataset) => dataset.id),
+    viewIds: views.map((view) => view.id),
+  };
+}
+
 export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}): DataQueryResult {
   const file = opts.file;
   const baseDir = file ? path.dirname(path.resolve(file)) : process.cwd();
@@ -577,6 +594,8 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
     if (opts.resultLine && opts.resultLine > 0 && !selectedByLine) diagnostics.push(diagnostic(`No SQL result block found at or after line ${opts.resultLine}`, { line: opts.resultLine }));
     if (resultId && !selected) diagnostics.push(diagnostic(`No SQL result block found for "${resultId}"`, { blockId: resultId }));
     const ok = !diagnostics.some((item) => item.severity === "error");
+    const script = ok && selected ? buildDuckDbScript(datasets, views, selected.sql, namedTables) : "";
+    const provenance = ok && selected ? resultProvenance(selected, datasets, views, script, opts.outputArtifact) : undefined;
     return {
       ok,
       mode: "inspect",
@@ -587,6 +606,8 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
       resultBlocks,
       rowCount: 0,
       rows: [],
+      ...(provenance ? { provenance } : {}),
+      ...(opts.includeScript && script ? { duckdbScript: script } : {}),
       diagnostics,
     };
   }
@@ -602,14 +623,7 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
   }
 
   const script = buildDuckDbScript(datasets, views, selected.sql, namedTables);
-  const provenance = {
-    resultId: selected.resultId,
-    ...(opts.outputArtifact || selected.artifact ? { artifact: opts.outputArtifact || selected.artifact } : {}),
-    querySha256: sha256(selected.sql),
-    scriptSha256: sha256(script),
-    datasetIds: datasets.map((dataset) => dataset.id),
-    viewIds: views.map((view) => view.id),
-  };
+  const provenance = resultProvenance(selected, datasets, views, script, opts.outputArtifact);
   const child = spawnSync(duckdbPath, ["-json", ":memory:"], {
     encoding: "utf8",
     input: script,
