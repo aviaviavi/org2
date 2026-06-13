@@ -143,6 +143,7 @@ public final class WorkspaceStore: ObservableObject {
   private var renderedBlocksCacheOrder: [String] = []
   private var pendingBlockSelection: PendingBlockSelection?
   private var transientDraftBlock: TransientDraftBlock?
+  private var scheduledAgendaRefreshTask: Task<Void, Never>?
 
   public init(cli: Org2CLI? = nil, defaults: UserDefaults = .standard, openClawTranscriptURL: URL? = nil) {
     self.defaults = defaults
@@ -206,6 +207,8 @@ public final class WorkspaceStore: ObservableObject {
     canonicalDocumentCache = [:]
     renderedBlocksCache = [:]
     renderedBlocksCacheOrder = []
+    scheduledAgendaRefreshTask?.cancel()
+    scheduledAgendaRefreshTask = nil
     resetBlockState()
     isEditingEntry = false
     isRenderingEntrySource = false
@@ -243,9 +246,11 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public func refreshAgenda(preserveSelection: Bool = false) async {
+  public func refreshAgenda(preserveSelection: Bool = false, updatesStatus: Bool = true) async {
     guard let corpusRoot else {
-      statusText = "No corpus selected"
+      if updatesStatus {
+        statusText = "No corpus selected"
+      }
       return
     }
 
@@ -267,10 +272,14 @@ public final class WorkspaceStore: ObservableObject {
       ])
       agenda = payload
       syncAgendaSelectionAfterRefresh(preserveSelection: preserveSelection)
-      statusText = "\(payload.totalItemCount) agenda item\(payload.totalItemCount == 1 ? "" : "s")"
+      if updatesStatus {
+        statusText = "\(payload.totalItemCount) agenda item\(payload.totalItemCount == 1 ? "" : "s")"
+      }
     } catch {
       errorText = error.localizedDescription
-      statusText = "Agenda failed"
+      if updatesStatus {
+        statusText = "Agenda failed"
+      }
     }
   }
 
@@ -549,7 +558,7 @@ public final class WorkspaceStore: ObservableObject {
       if let selectedLocation {
         await loadEntrySource(for: selectedLocation)
       }
-      await refreshAgenda(preserveSelection: true)
+      scheduleAgendaRefresh(preserveSelection: true)
     } catch {
       errorText = error.localizedDescription
       statusText = "Save failed"
@@ -591,7 +600,7 @@ public final class WorkspaceStore: ObservableObject {
       if let selectedLocation {
         await loadEntrySource(for: selectedLocation)
       }
-      await refreshAgenda(preserveSelection: true)
+      scheduleAgendaRefresh(preserveSelection: true)
     } catch {
       errorText = error.localizedDescription
       statusText = "Block save failed"
@@ -668,7 +677,7 @@ public final class WorkspaceStore: ObservableObject {
         activateTransientDraft(draftToActivate)
       }
       if plan.replacement != nil {
-        await refreshAgenda(preserveSelection: true)
+        scheduleAgendaRefresh(preserveSelection: true)
       }
     } catch {
       errorText = error.localizedDescription
@@ -1135,6 +1144,15 @@ public final class WorkspaceStore: ObservableObject {
     return selectedLocation.file == location.file && selectedLocation.lineForEditor == location.lineForEditor
   }
 
+  private func scheduleAgendaRefresh(preserveSelection: Bool = true, updatesStatus: Bool = false) {
+    scheduledAgendaRefreshTask?.cancel()
+    scheduledAgendaRefreshTask = Task { @MainActor in
+      try? await Task.sleep(nanoseconds: 150_000_000)
+      guard !Task.isCancelled else { return }
+      await refreshAgenda(preserveSelection: preserveSelection, updatesStatus: updatesStatus)
+    }
+  }
+
   private func resetBlockEditing() {
     editingBlockID = nil
     editableBlockText = ""
@@ -1214,7 +1232,7 @@ public final class WorkspaceStore: ObservableObject {
       if let selectedLocation {
         await loadEntrySource(for: selectedLocation)
       }
-      await refreshAgenda(preserveSelection: true)
+      scheduleAgendaRefresh(preserveSelection: true)
     } catch {
       errorText = error.localizedDescription
       statusText = "Block save failed"
@@ -1238,7 +1256,7 @@ public final class WorkspaceStore: ObservableObject {
     if let selectedLocation {
       await loadEntrySource(for: selectedLocation)
     }
-    await refreshAgenda(preserveSelection: true)
+    scheduleAgendaRefresh(preserveSelection: true)
   }
 
   private var selectableBlocks: [OrgEditableBlock] {
