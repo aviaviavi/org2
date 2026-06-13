@@ -1,5 +1,7 @@
-import AVFoundation
+@preconcurrency import AVFoundation
+import CoreMedia
 import Foundation
+import ScreenCaptureKit
 
 public enum MeetingTranscriptionStatus: String, Sendable {
   case complete
@@ -22,6 +24,7 @@ public struct MeetingArtifactPaths: Sendable {
   public let baseName: String
   public let noteURL: URL
   public let audioURL: URL
+  public let systemAudioURL: URL
   public let transcriptURL: URL
 }
 
@@ -42,12 +45,75 @@ public struct MeetingTranscriptResult: Sendable {
     self.engine = engine
     self.errorMessage = errorMessage
   }
+
+  public static func combined(
+    microphone: MeetingTranscriptResult,
+    systemAudio: MeetingTranscriptResult?,
+    systemAudioCaptureError: String? = nil
+  ) -> MeetingTranscriptResult {
+    guard systemAudio != nil || systemAudioCaptureError != nil else {
+      return microphone
+    }
+
+    var sections = [
+      transcriptSection(title: "Microphone", transcript: microphone)
+    ]
+    if let systemAudio {
+      sections.append(transcriptSection(title: "System Audio", transcript: systemAudio))
+    } else if let systemAudioCaptureError {
+      sections.append("""
+      ** System Audio
+
+      System audio was not captured: \(systemAudioCaptureError)
+      """)
+    }
+
+    let status: MeetingTranscriptionStatus
+    if microphone.status == .complete || systemAudio?.status == .complete {
+      status = .complete
+    } else if microphone.status == .unavailable && (systemAudio?.status == .unavailable || systemAudio == nil) {
+      status = .unavailable
+    } else {
+      status = .failed
+    }
+
+    let engine = [
+      "microphone: \(microphone.engine)",
+      systemAudio.map { "system: \($0.engine)" }
+    ].compactMap { $0 }.joined(separator: "; ")
+    let errorMessage = [
+      microphone.errorMessage.map { "microphone: \($0)" },
+      systemAudio?.errorMessage.map { "system: \($0)" },
+      systemAudioCaptureError.map { "system capture: \($0)" }
+    ].compactMap { $0 }.joined(separator: "; ").nilIfEmpty
+
+    return MeetingTranscriptResult(
+      text: sections.joined(separator: "\n\n"),
+      status: status,
+      engine: engine,
+      errorMessage: errorMessage
+    )
+  }
+
+  private static func transcriptSection(title: String, transcript: MeetingTranscriptResult) -> String {
+    let body = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    let text = body.isEmpty
+      ? "Transcription \(transcript.status.label). \(transcript.errorMessage ?? "")"
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      : body
+    return """
+    ** \(title)
+
+    \(text)
+    """
+  }
 }
 
 public struct MeetingArtifactBundle: Sendable {
   public let item: MeetingWorkspaceItem
   public let noteURL: URL
   public let audioURL: URL
+  public let systemAudioURL: URL?
   public let transcriptURL: URL
 }
 
@@ -70,7 +136,8 @@ public enum MeetingArtifactWriter {
     corpusRoot: URL,
     title rawTitle: String,
     recordedAt: Date,
-    audioExtension: String = "wav"
+    audioExtension: String = "wav",
+    systemAudioExtension: String = "m4a"
   ) throws -> MeetingArtifactPaths {
     let fileManager = FileManager.default
     let title = normalizedTitle(rawTitle)
@@ -83,7 +150,8 @@ public enum MeetingArtifactWriter {
     var suffix = 2
     while fileManager.fileExists(atPath: baseDirectory.appendingPathComponent("\(baseName).org2").path)
       || fileManager.fileExists(atPath: baseDirectory.appendingPathComponent("\(baseName).transcript.org2").path)
-      || fileManager.fileExists(atPath: baseDirectory.appendingPathComponent("\(baseName).\(audioExtension)").path) {
+      || fileManager.fileExists(atPath: baseDirectory.appendingPathComponent("\(baseName).\(audioExtension)").path)
+      || fileManager.fileExists(atPath: baseDirectory.appendingPathComponent("\(baseName).system.\(systemAudioExtension)").path) {
       baseName = "\(basePrefix)-\(suffix)"
       suffix += 1
     }
@@ -95,6 +163,7 @@ public enum MeetingArtifactWriter {
       baseName: baseName,
       noteURL: baseDirectory.appendingPathComponent("\(baseName).org2"),
       audioURL: baseDirectory.appendingPathComponent("\(baseName).\(audioExtension)"),
+      systemAudioURL: baseDirectory.appendingPathComponent("\(baseName).system.\(systemAudioExtension)"),
       transcriptURL: baseDirectory.appendingPathComponent("\(baseName).transcript.org2")
     )
   }
@@ -103,7 +172,9 @@ public enum MeetingArtifactWriter {
     paths: MeetingArtifactPaths,
     corpusRoot: URL,
     duration: TimeInterval?,
-    transcript: MeetingTranscriptResult
+    transcript: MeetingTranscriptResult,
+    systemAudioURL: URL? = nil,
+    captureSources: String? = nil
   ) throws -> MeetingArtifactBundle {
     let fileManager = FileManager.default
     try fileManager.createDirectory(
@@ -115,7 +186,9 @@ public enum MeetingArtifactWriter {
       paths: paths,
       corpusRoot: corpusRoot,
       duration: duration,
-      transcript: transcript
+      transcript: transcript,
+      systemAudioURL: systemAudioURL,
+      captureSources: captureSources ?? defaultCaptureSources(systemAudioURL: systemAudioURL)
     )
     try transcriptText.write(to: paths.transcriptURL, atomically: true, encoding: .utf8)
 
@@ -123,7 +196,9 @@ public enum MeetingArtifactWriter {
       paths: paths,
       corpusRoot: corpusRoot,
       duration: duration,
-      transcript: transcript
+      transcript: transcript,
+      systemAudioURL: systemAudioURL,
+      captureSources: captureSources ?? defaultCaptureSources(systemAudioURL: systemAudioURL)
     )
     try noteText.write(to: paths.noteURL, atomically: true, encoding: .utf8)
 
@@ -134,6 +209,7 @@ public enum MeetingArtifactWriter {
       recordedAt: isoTimestamp(paths.recordedAt),
       modifiedAt: Date(),
       audioArtifact: relativePath(from: corpusRoot, to: paths.audioURL),
+      systemAudioArtifact: systemAudioURL.map { relativePath(from: corpusRoot, to: $0) },
       transcriptArtifact: relativePath(from: corpusRoot, to: paths.transcriptURL),
       transcriptionStatus: transcript.status.rawValue,
       idValue: paths.meetingID
@@ -142,6 +218,7 @@ public enum MeetingArtifactWriter {
       item: item,
       noteURL: paths.noteURL,
       audioURL: paths.audioURL,
+      systemAudioURL: systemAudioURL,
       transcriptURL: paths.transcriptURL
     )
   }
@@ -150,9 +227,14 @@ public enum MeetingArtifactWriter {
     paths: MeetingArtifactPaths,
     corpusRoot: URL,
     duration: TimeInterval?,
-    transcript: MeetingTranscriptResult
+    transcript: MeetingTranscriptResult,
+    systemAudioURL: URL? = nil,
+    captureSources: String? = nil
   ) -> String {
     let audioPath = relativePath(from: corpusRoot, to: paths.audioURL)
+    let systemAudioLine = systemAudioURL.map {
+      ":system_audio_artifact: \(relativePath(from: corpusRoot, to: $0))\n"
+    } ?? ""
     let transcriptPath = relativePath(from: corpusRoot, to: paths.transcriptURL)
     let durationLine = duration.map { ":duration_seconds: \(String(format: "%.1f", $0))\n" } ?? ""
     let errorLine = transcript.errorMessage.map { ":transcription_error: \(propertyValue($0))\n" } ?? ""
@@ -171,6 +253,7 @@ public enum MeetingArtifactWriter {
     :kind: meeting
     :recorded_at: \(isoTimestamp(paths.recordedAt))
     \(durationLine):audio_artifact: \(audioPath)
+    \(systemAudioLine):capture_sources: \(captureSources ?? defaultCaptureSources(systemAudioURL: systemAudioURL))
     :transcript_artifact: \(transcriptPath)
     :transcription_engine: \(transcript.engine)
     :transcription_status: \(transcript.status.rawValue)
@@ -197,9 +280,14 @@ public enum MeetingArtifactWriter {
     paths: MeetingArtifactPaths,
     corpusRoot: URL,
     duration: TimeInterval?,
-    transcript: MeetingTranscriptResult
+    transcript: MeetingTranscriptResult,
+    systemAudioURL: URL? = nil,
+    captureSources: String? = nil
   ) -> String {
     let audioPath = relativePath(from: corpusRoot, to: paths.audioURL)
+    let systemAudioLine = systemAudioURL.map {
+      ":system_audio_artifact: \(relativePath(from: corpusRoot, to: $0))\n"
+    } ?? ""
     let durationLine = duration.map { ":duration_seconds: \(String(format: "%.1f", $0))\n" } ?? ""
     let errorLine = transcript.errorMessage.map { ":transcription_error: \(propertyValue($0))\n" } ?? ""
     let body = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -218,6 +306,7 @@ public enum MeetingArtifactWriter {
     :meeting_id: \(paths.meetingID)
     :recorded_at: \(isoTimestamp(paths.recordedAt))
     \(durationLine):audio_artifact: \(audioPath)
+    \(systemAudioLine):capture_sources: \(captureSources ?? defaultCaptureSources(systemAudioURL: systemAudioURL))
     :transcription_engine: \(transcript.engine)
     :transcription_status: \(transcript.status.rawValue)
     \(errorLine):source: org2-workspace
@@ -289,6 +378,10 @@ public enum MeetingArtifactWriter {
     ...[transcript truncated in meeting note; see artifact]
     #+end_quote
     """
+  }
+
+  private static func defaultCaptureSources(systemAudioURL: URL?) -> String {
+    systemAudioURL == nil ? "microphone" : "microphone, system_audio"
   }
 
   private static func propertyValue(_ raw: String) -> String {
@@ -538,6 +631,338 @@ public struct LocalWhisperTranscriber: Sendable {
   }
 }
 
+public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
+  private let sampleQueue = DispatchQueue(label: "org2.workspace.meeting.system-audio.samples")
+  private let stateLock = NSLock()
+  private var stream: SCStream?
+  private var writer: AVAssetWriter?
+  private var writerInput: AVAssetWriterInput?
+  private var firstPresentationTime: CMTime?
+  private var lastPresentationTime: CMTime?
+  private var sampleCount = 0
+  private var latestSnapshot = MeetingInputMeterSnapshot.silent
+
+  public override init() {}
+
+  public var inputMeterSnapshot: MeetingInputMeterSnapshot {
+    stateLock.withLock { latestSnapshot }
+  }
+
+  public func startRecording(to audioURL: URL) async throws {
+    let alreadyRecording = stateLock.withLock { self.stream != nil }
+    guard !alreadyRecording else { throw MeetingSystemAudioRecorderError.alreadyRecording }
+
+    try FileManager.default.createDirectory(
+      at: audioURL.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    if FileManager.default.fileExists(atPath: audioURL.path) {
+      try FileManager.default.removeItem(at: audioURL)
+    }
+
+    let writer = try AVAssetWriter(outputURL: audioURL, fileType: .m4a)
+    let writerInput = AVAssetWriterInput(
+      mediaType: .audio,
+      outputSettings: [
+        AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+        AVSampleRateKey: 48_000,
+        AVNumberOfChannelsKey: 2,
+        AVEncoderBitRateKey: 128_000
+      ]
+    )
+    writerInput.expectsMediaDataInRealTime = true
+    guard writer.canAdd(writerInput) else {
+      throw MeetingSystemAudioRecorderError.writerSetupFailed("Cannot add audio writer input.")
+    }
+    writer.add(writerInput)
+
+    let content = try await SCShareableContent.current
+    guard let display = content.displays.first else {
+      throw MeetingSystemAudioRecorderError.noDisplayAvailable
+    }
+
+    let configuration = SCStreamConfiguration()
+    configuration.width = 2
+    configuration.height = 2
+    configuration.minimumFrameInterval = CMTime(value: 1, timescale: 1)
+    configuration.queueDepth = 3
+    configuration.showsCursor = false
+    configuration.capturesAudio = true
+    configuration.sampleRate = 48_000
+    configuration.channelCount = 2
+    configuration.excludesCurrentProcessAudio = true
+
+    let filter = SCContentFilter(display: display, excludingWindows: [])
+    let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
+    try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
+
+    stateLock.withLock {
+      self.stream = stream
+      self.writer = writer
+      self.writerInput = writerInput
+      firstPresentationTime = nil
+      lastPresentationTime = nil
+      sampleCount = 0
+      latestSnapshot = .silent
+    }
+
+    do {
+      try await startCapture(stream)
+    } catch {
+      resetState(cancelWriter: true)
+      throw error
+    }
+  }
+
+  public func stopRecording() async throws -> TimeInterval? {
+    let state = stateLock.withLock {
+      (stream: stream, writer: writer, writerInput: writerInput)
+    }
+
+    guard let stream = state.stream,
+          let writer = state.writer,
+          let writerInput = state.writerInput
+    else {
+      throw MeetingSystemAudioRecorderError.notRecording
+    }
+
+    try await stopCapture(stream)
+    return try await finishWriting(writer: writer, writerInput: writerInput)
+  }
+
+  public nonisolated func stream(
+    _ stream: SCStream,
+    didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
+    of type: SCStreamOutputType
+  ) {
+    guard type == .audio,
+          sampleBuffer.isValid,
+          CMSampleBufferDataIsReady(sampleBuffer)
+    else {
+      return
+    }
+
+    stateLock.withLock {
+      guard let writer, let writerInput else {
+        return
+      }
+
+      if writer.status == .unknown {
+        let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        guard writer.startWriting() else {
+          return
+        }
+        writer.startSession(atSourceTime: presentationTime)
+        firstPresentationTime = presentationTime
+      }
+
+      if writer.status == .writing, writerInput.isReadyForMoreMediaData {
+        if writerInput.append(sampleBuffer) {
+          sampleCount += 1
+          lastPresentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+          if let snapshot = Self.meterSnapshot(from: sampleBuffer) {
+            latestSnapshot = snapshot
+          }
+        }
+      }
+    }
+  }
+
+  public nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
+    stateLock.withLock {
+      latestSnapshot = .silent
+    }
+  }
+
+  private func startCapture(_ stream: SCStream) async throws {
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+      stream.startCapture { error in
+        if let error {
+          continuation.resume(throwing: MeetingSystemAudioRecorderError.startFailed(error.localizedDescription))
+        } else {
+          continuation.resume()
+        }
+      }
+    }
+  }
+
+  private func stopCapture(_ stream: SCStream) async throws {
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+      stream.stopCapture { error in
+        if let error {
+          continuation.resume(throwing: MeetingSystemAudioRecorderError.stopFailed(error.localizedDescription))
+        } else {
+          continuation.resume()
+        }
+      }
+    }
+  }
+
+  private func finishWriting(
+    writer: AVAssetWriter,
+    writerInput: AVAssetWriterInput
+  ) async throws -> TimeInterval? {
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<TimeInterval?, Error>) in
+      sampleQueue.async {
+        let state = self.stateLock.withLock {
+          let state = (
+            firstPresentationTime: self.firstPresentationTime,
+            lastPresentationTime: self.lastPresentationTime,
+            sampleCount: self.sampleCount
+          )
+          self.stream = nil
+          self.writer = nil
+          self.writerInput = nil
+          self.firstPresentationTime = nil
+          self.lastPresentationTime = nil
+          self.sampleCount = 0
+          self.latestSnapshot = .silent
+          return state
+        }
+
+        guard state.sampleCount > 0, writer.status != .unknown else {
+          writer.cancelWriting()
+          continuation.resume(returning: nil)
+          return
+        }
+
+        writerInput.markAsFinished()
+        writer.finishWriting {
+          if let error = writer.error {
+            continuation.resume(throwing: MeetingSystemAudioRecorderError.writerSetupFailed(error.localizedDescription))
+            return
+          }
+          if let firstPresentationTime = state.firstPresentationTime,
+             let lastPresentationTime = state.lastPresentationTime {
+            continuation.resume(returning: max(0, CMTimeGetSeconds(lastPresentationTime - firstPresentationTime)))
+          } else {
+            continuation.resume(returning: nil)
+          }
+        }
+      }
+    }
+  }
+
+  private func resetState(cancelWriter: Bool) {
+    let writer = stateLock.withLock {
+      let writer = self.writer
+      stream = nil
+      self.writer = nil
+      writerInput = nil
+      firstPresentationTime = nil
+      lastPresentationTime = nil
+      sampleCount = 0
+      latestSnapshot = .silent
+      return writer
+    }
+
+    if cancelWriter {
+      writer?.cancelWriting()
+    }
+  }
+
+  private static func meterSnapshot(from sampleBuffer: CMSampleBuffer) -> MeetingInputMeterSnapshot? {
+    guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
+          let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription)
+    else {
+      return nil
+    }
+
+    var audioBufferListSize = 0
+    var blockBuffer: CMBlockBuffer?
+    var status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+      sampleBuffer,
+      bufferListSizeNeededOut: &audioBufferListSize,
+      bufferListOut: nil,
+      bufferListSize: 0,
+      blockBufferAllocator: kCFAllocatorDefault,
+      blockBufferMemoryAllocator: kCFAllocatorDefault,
+      flags: 0,
+      blockBufferOut: &blockBuffer
+    )
+    guard status == noErr || audioBufferListSize > 0 else { return nil }
+
+    let rawAudioBufferList = UnsafeMutableRawPointer.allocate(
+      byteCount: audioBufferListSize,
+      alignment: MemoryLayout<AudioBufferList>.alignment
+    )
+    defer { rawAudioBufferList.deallocate() }
+
+    let audioBufferList = rawAudioBufferList.bindMemory(to: AudioBufferList.self, capacity: 1)
+    status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+      sampleBuffer,
+      bufferListSizeNeededOut: &audioBufferListSize,
+      bufferListOut: audioBufferList,
+      bufferListSize: audioBufferListSize,
+      blockBufferAllocator: kCFAllocatorDefault,
+      blockBufferMemoryAllocator: kCFAllocatorDefault,
+      flags: 0,
+      blockBufferOut: &blockBuffer
+    )
+    guard status == noErr else { return nil }
+
+    return meterSnapshot(from: UnsafeMutableAudioBufferListPointer(audioBufferList), format: streamDescription.pointee)
+  }
+
+  private static func meterSnapshot(
+    from audioBuffers: UnsafeMutableAudioBufferListPointer,
+    format: AudioStreamBasicDescription
+  ) -> MeetingInputMeterSnapshot? {
+    let bytesPerSample = max(1, Int(format.mBitsPerChannel / 8))
+    let formatFlags = format.mFormatFlags
+    let isFloat = (formatFlags & kAudioFormatFlagIsFloat) != 0
+    let isSignedInteger = (formatFlags & kAudioFormatFlagIsSignedInteger) != 0
+
+    var sumSquares = 0.0
+    var peak = 0.0
+    var sampleCount = 0
+
+    for audioBuffer in audioBuffers {
+      guard let data = audioBuffer.mData else { continue }
+      let byteCount = Int(audioBuffer.mDataByteSize)
+      if isFloat && bytesPerSample == MemoryLayout<Float>.size {
+        let values = data.bindMemory(to: Float.self, capacity: byteCount / MemoryLayout<Float>.size)
+        for index in 0..<(byteCount / MemoryLayout<Float>.size) {
+          let value = min(1, max(-1, Double(values[index])))
+          let magnitude = abs(value)
+          sumSquares += value * value
+          peak = max(peak, magnitude)
+          sampleCount += 1
+        }
+      } else if isSignedInteger && bytesPerSample == MemoryLayout<Int16>.size {
+        let values = data.bindMemory(to: Int16.self, capacity: byteCount / MemoryLayout<Int16>.size)
+        for index in 0..<(byteCount / MemoryLayout<Int16>.size) {
+          let value = Double(values[index]) / Double(Int16.max)
+          let magnitude = abs(value)
+          sumSquares += value * value
+          peak = max(peak, magnitude)
+          sampleCount += 1
+        }
+      } else if isSignedInteger && bytesPerSample == MemoryLayout<Int32>.size {
+        let values = data.bindMemory(to: Int32.self, capacity: byteCount / MemoryLayout<Int32>.size)
+        for index in 0..<(byteCount / MemoryLayout<Int32>.size) {
+          let value = Double(values[index]) / Double(Int32.max)
+          let magnitude = abs(value)
+          sumSquares += value * value
+          peak = max(peak, magnitude)
+          sampleCount += 1
+        }
+      }
+    }
+
+    guard sampleCount > 0 else { return nil }
+    let rms = sqrt(sumSquares / Double(sampleCount))
+    let averageDecibels = Float(20 * log10(max(rms, 0.000_001)))
+    let peakDecibels = Float(20 * log10(max(peak, 0.000_001)))
+    return MeetingInputMeterSnapshot(
+      averageLevel: MeetingAudioRecorder.normalizedMeterLevel(fromDecibels: averageDecibels),
+      peakLevel: MeetingAudioRecorder.normalizedMeterLevel(fromDecibels: peakDecibels),
+      averagePowerDecibels: averageDecibels,
+      peakPowerDecibels: peakDecibels
+    )
+  }
+}
+
 @MainActor
 public final class MeetingAudioRecorder {
   private var recorder: AVAudioRecorder?
@@ -662,6 +1087,32 @@ public enum MeetingRecorderError: LocalizedError, Equatable {
       "Microphone access is required to record meetings."
     case .startFailed:
       "Could not start the meeting recorder."
+    }
+  }
+}
+
+public enum MeetingSystemAudioRecorderError: LocalizedError, Equatable {
+  case alreadyRecording
+  case notRecording
+  case noDisplayAvailable
+  case writerSetupFailed(String)
+  case startFailed(String)
+  case stopFailed(String)
+
+  public var errorDescription: String? {
+    switch self {
+    case .alreadyRecording:
+      "System audio recording is already active."
+    case .notRecording:
+      "No system audio recording is active."
+    case .noDisplayAvailable:
+      "No display is available for system audio capture."
+    case .writerSetupFailed(let message):
+      "Could not prepare the system audio recorder: \(message)"
+    case .startFailed(let message):
+      "Could not start system audio capture: \(message)"
+    case .stopFailed(let message):
+      "Could not stop system audio capture: \(message)"
     }
   }
 }

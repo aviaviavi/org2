@@ -82,7 +82,7 @@ struct SourceBlockExecutionResult: Equatable, Sendable {
 
 @MainActor
 public final class WorkspaceStore: ObservableObject {
-  nonisolated public static let meetingCaptureSourceSummary = "Microphone input only. System/call audio is not recorded."
+  nonisolated public static let meetingCaptureSourceSummary = "Captures microphone and system/call audio when Screen Recording permission is granted."
 
   @Published public var selectedSurface: WorkspaceSurface = .agenda
   @Published public var agendaMode: AgendaMode = .focus {
@@ -112,6 +112,10 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var meetingStatusText = WorkspaceStore.defaultMeetingStatusText()
   @Published public var meetingInputAverageLevel = 0.0
   @Published public var meetingInputPeakLevel = 0.0
+  @Published public var meetingSystemAudioAverageLevel = 0.0
+  @Published public var meetingSystemAudioPeakLevel = 0.0
+  @Published public var isCapturingSystemAudio = false
+  @Published public var meetingSystemAudioStatusText = "System audio not recording"
   @Published public var openClawMessages: [OpenClawChatMessage] = [] {
     didSet {
       guard shouldPersistOpenClawMessages else { return }
@@ -182,6 +186,7 @@ public final class WorkspaceStore: ObservableObject {
   public let cli: Org2CLI
   private let defaults: UserDefaults
   private let meetingRecorder = MeetingAudioRecorder()
+  private let meetingSystemAudioRecorder = MeetingSystemAudioRecorder()
   private let corpusKey = "Org2Workspace.corpusRoot"
   private let agendaModeKey = "Org2Workspace.agendaMode"
   private let openClawEndpointKey = "Org2Workspace.openClawEndpoint"
@@ -458,13 +463,30 @@ public final class WorkspaceStore: ObservableObject {
         recordedAt: startedAt
       )
       try await meetingRecorder.startRecording(to: paths.audioURL)
-      activeMeetingRecording = PendingMeetingRecording(paths: paths)
+      let systemAudioStartError: String?
+      do {
+        try await meetingSystemAudioRecorder.startRecording(to: paths.systemAudioURL)
+        isCapturingSystemAudio = true
+        meetingSystemAudioStatusText = "System audio recording"
+        systemAudioStartError = nil
+      } catch {
+        isCapturingSystemAudio = false
+        meetingSystemAudioStatusText = "System audio unavailable: \(error.localizedDescription)"
+        systemAudioStartError = error.localizedDescription
+      }
+      activeMeetingRecording = PendingMeetingRecording(
+        paths: paths,
+        capturesSystemAudio: systemAudioStartError == nil,
+        systemAudioStartError: systemAudioStartError
+      )
       isRecordingMeeting = true
       startMeetingInputMetering()
       selectedSurface = .meetings
       meetingStatusText = "Recording \(paths.title)"
       statusText = meetingStatusText
     } catch {
+      isCapturingSystemAudio = false
+      meetingSystemAudioStatusText = "System audio not recording"
       stopMeetingInputMetering()
       errorText = error.localizedDescription
       meetingStatusText = "Recording failed: \(error.localizedDescription)"
@@ -484,21 +506,45 @@ public final class WorkspaceStore: ObservableObject {
 
     do {
       let duration = try meetingRecorder.stopRecording()
+      var systemAudioURL: URL?
+      var systemAudioCaptureError = activeMeetingRecording.systemAudioStartError
+      if activeMeetingRecording.capturesSystemAudio {
+        do {
+          if let systemDuration = try await meetingSystemAudioRecorder.stopRecording(), systemDuration > 0 {
+            systemAudioURL = activeMeetingRecording.paths.systemAudioURL
+          } else {
+            try? FileManager.default.removeItem(at: activeMeetingRecording.paths.systemAudioURL)
+            systemAudioCaptureError = "No system audio samples were captured."
+          }
+        } catch {
+          try? FileManager.default.removeItem(at: activeMeetingRecording.paths.systemAudioURL)
+          systemAudioCaptureError = error.localizedDescription
+        }
+      }
       self.activeMeetingRecording = nil
       isRecordingMeeting = false
+      isCapturingSystemAudio = false
       stopMeetingInputMetering()
       isProcessingMeeting = true
       meetingStatusText = "Transcribing \(activeMeetingRecording.paths.title) locally..."
       defer { isProcessingMeeting = false }
 
-      let transcript = await transcribeAudioForMeeting(activeMeetingRecording.paths.audioURL)
+      let transcript = await transcribeRecordedMeetingAudio(
+        microphoneAudioURL: activeMeetingRecording.paths.audioURL,
+        systemAudioURL: systemAudioURL,
+        systemAudioCaptureError: systemAudioCaptureError
+      )
       let bundle = try MeetingArtifactWriter.writeArtifacts(
         paths: activeMeetingRecording.paths,
         corpusRoot: corpusRoot,
         duration: duration,
-        transcript: transcript
+        transcript: transcript,
+        systemAudioURL: systemAudioURL
       )
       meetingTitleDraft = ""
+      meetingSystemAudioStatusText = systemAudioURL == nil
+        ? "System audio not captured"
+        : "System audio saved"
       meetingStatusText = transcript.status == .complete
         ? "Saved \(bundle.noteURL.lastPathComponent)"
         : "Saved \(bundle.noteURL.lastPathComponent); transcription \(transcript.status.label)"
@@ -506,6 +552,11 @@ public final class WorkspaceStore: ObservableObject {
       await refreshAfterMeetingWrite(selecting: bundle.item)
     } catch {
       isRecordingMeeting = false
+      if isCapturingSystemAudio {
+        _ = try? await meetingSystemAudioRecorder.stopRecording()
+      }
+      isCapturingSystemAudio = false
+      meetingSystemAudioStatusText = "System audio not recording"
       stopMeetingInputMetering()
       isProcessingMeeting = false
       errorText = error.localizedDescription
@@ -566,7 +617,8 @@ public final class WorkspaceStore: ObservableObject {
         paths: paths,
         corpusRoot: corpusRoot,
         duration: nil,
-        transcript: transcript
+        transcript: transcript,
+        captureSources: "imported_audio"
       )
       meetingTitleDraft = ""
       meetingStatusText = transcript.status == .complete
@@ -4827,12 +4879,40 @@ public final class WorkspaceStore: ObservableObject {
     meetingMeterTask = nil
     meetingInputAverageLevel = 0
     meetingInputPeakLevel = 0
+    meetingSystemAudioAverageLevel = 0
+    meetingSystemAudioPeakLevel = 0
   }
 
   private func updateMeetingInputMeter() {
     let snapshot = meetingRecorder.inputMeterSnapshot
     meetingInputAverageLevel = snapshot.averageLevel
     meetingInputPeakLevel = snapshot.peakLevel
+    let systemSnapshot = meetingSystemAudioRecorder.inputMeterSnapshot
+    meetingSystemAudioAverageLevel = systemSnapshot.averageLevel
+    meetingSystemAudioPeakLevel = systemSnapshot.peakLevel
+  }
+
+  private func transcribeRecordedMeetingAudio(
+    microphoneAudioURL: URL,
+    systemAudioURL: URL?,
+    systemAudioCaptureError: String?
+  ) async -> MeetingTranscriptResult {
+    guard let systemAudioURL else {
+      let microphone = await transcribeAudioForMeeting(microphoneAudioURL)
+      return MeetingTranscriptResult.combined(
+        microphone: microphone,
+        systemAudio: nil,
+        systemAudioCaptureError: systemAudioCaptureError
+      )
+    }
+
+    async let microphone = transcribeAudioForMeeting(microphoneAudioURL)
+    async let systemAudio = transcribeAudioForMeeting(systemAudioURL)
+    return await MeetingTranscriptResult.combined(
+      microphone: microphone,
+      systemAudio: systemAudio,
+      systemAudioCaptureError: systemAudioCaptureError
+    )
   }
 
   private func transcribeAudioForMeeting(_ audioURL: URL) async -> MeetingTranscriptResult {
@@ -5116,6 +5196,7 @@ public final class WorkspaceStore: ObservableObject {
         recordedAt: meetingProperty("recorded_at", in: prefix),
         modifiedAt: values?.contentModificationDate,
         audioArtifact: meetingProperty("audio_artifact", in: prefix),
+        systemAudioArtifact: meetingProperty("system_audio_artifact", in: prefix),
         transcriptArtifact: meetingProperty("transcript_artifact", in: prefix),
         transcriptionStatus: meetingProperty("transcription_status", in: prefix),
         idValue: firstOrgID(in: prefix)
@@ -5658,6 +5739,8 @@ public final class WorkspaceStore: ObservableObject {
 
 private struct PendingMeetingRecording {
   let paths: MeetingArtifactPaths
+  let capturesSystemAudio: Bool
+  let systemAudioStartError: String?
 }
 
 private struct WorkspaceOrg2Config: Decodable {
