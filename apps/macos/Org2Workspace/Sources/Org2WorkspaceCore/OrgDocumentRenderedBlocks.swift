@@ -151,6 +151,7 @@ enum OrgMediaAttachmentRenderCache {
   }()
 
   nonisolated static func standalone(raw: String, sourceFile: String? = nil, corpusRoot: URL? = nil) -> OrgMediaAttachment? {
+    guard shouldAttemptStandaloneLookup(raw: raw) else { return nil }
     let key = CacheKey(raw: raw, sourceFile: sourceFile, corpusRoot: corpusRoot)
     if let cached = cache.object(forKey: key) {
       return cached.attachment
@@ -159,6 +160,10 @@ enum OrgMediaAttachmentRenderCache {
     let attachment = OrgMediaAttachment.standalone(raw: raw, sourceFile: sourceFile, corpusRoot: corpusRoot)
     cache.setObject(CachedValue(attachment), forKey: key)
     return attachment
+  }
+
+  nonisolated static func shouldAttemptStandaloneLookup(raw: String) -> Bool {
+    OrgMediaAttachment.mayContainStandaloneMedia(raw)
   }
 }
 
