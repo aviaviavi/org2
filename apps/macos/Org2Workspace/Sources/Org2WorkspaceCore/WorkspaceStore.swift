@@ -3712,6 +3712,14 @@ public final class WorkspaceStore: ObservableObject {
     let newLineCount = normalizedReplacement.isEmpty ? 0 : lineCount(in: normalizedReplacement)
     let lineDelta = newLineCount - oldLineCount
 
+    if lineDelta == 0,
+       replacementBlocks.count == 1,
+       let originalIndex = blocks.firstIndex(where: { $0.id == original.id }) {
+      var updated = blocks
+      updated[originalIndex] = replacementBlocks[0]
+      return updated
+    }
+
     var updated: [OrgEditableBlock] = []
     updated.reserveCapacity(blocks.count + max(0, replacementBlocks.count - 1))
     var insertedReplacement = false
