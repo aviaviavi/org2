@@ -611,7 +611,7 @@ enum OrgSyntaxHighlighter {
       ]
     case .linkTarget:
       return [
-        .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.34),
+        .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.18),
         .backgroundColor: NSColor.clear,
         .underlineStyle: 0,
         .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular)
@@ -635,7 +635,7 @@ enum OrgSyntaxHighlighter {
       ]
     case .syntaxDelimiter:
       return [
-        .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.26),
+        .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.12),
         .backgroundColor: NSColor.clear,
         .underlineStyle: 0,
         .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular)

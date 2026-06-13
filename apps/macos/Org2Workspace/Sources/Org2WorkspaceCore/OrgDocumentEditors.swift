@@ -280,7 +280,8 @@ private struct HeadingBlockEditor: View {
       .padding(.horizontal, 4)
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
-      .opacity(InlineEditorChrome.controlsOpacity(isHovered || showsDetails || store.isSavingBlock))
+      .opacity(InlineEditorChrome.controlsOpacity(showsControls))
+      .allowsHitTesting(showsControls)
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
@@ -337,6 +338,10 @@ private struct HeadingBlockEditor: View {
       line += " :\(normalizedTags.joined(separator: ":")):"
     }
     return line
+  }
+
+  private var showsControls: Bool {
+    isHovered || showsDetails || store.isSavingBlock
   }
 
   private func saveHeading() {
@@ -521,7 +526,8 @@ private struct PlanningBlockEditor: View {
       .padding(.horizontal, 4)
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
-      .opacity(InlineEditorChrome.controlsOpacity(isHovered || store.isSavingBlock))
+      .opacity(InlineEditorChrome.controlsOpacity(showsControls))
+      .allowsHitTesting(showsControls)
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 3)
@@ -551,6 +557,10 @@ private struct PlanningBlockEditor: View {
 
   private var rawPlanning: String {
     "\(kind): \(value.trimmingCharacters(in: .whitespacesAndNewlines))"
+  }
+
+  private var showsControls: Bool {
+    isHovered || store.isSavingBlock
   }
 
   private func savePlanning() {
@@ -689,7 +699,8 @@ private struct ListItemBlockEditor: View {
       .padding(.horizontal, 4)
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
-      .opacity(InlineEditorChrome.controlsOpacity(isHovered || store.isSavingBlock))
+      .opacity(InlineEditorChrome.controlsOpacity(showsControls))
+      .allowsHitTesting(showsControls)
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
@@ -746,6 +757,10 @@ private struct ListItemBlockEditor: View {
     let normalized = marker.trimmingCharacters(in: .whitespacesAndNewlines)
     if normalized == "-" { return "•" }
     return normalized.isEmpty ? "•" : normalized
+  }
+
+  private var showsControls: Bool {
+    isHovered || store.isSavingBlock
   }
 
   private var editorIndent: CGFloat {
@@ -907,7 +922,8 @@ private struct KeywordBlockEditor: View {
       .padding(.horizontal, 4)
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
-      .opacity(InlineEditorChrome.controlsOpacity(isHovered || store.isSavingBlock))
+      .opacity(InlineEditorChrome.controlsOpacity(showsControls))
+      .allowsHitTesting(showsControls)
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 3)
@@ -938,6 +954,10 @@ private struct KeywordBlockEditor: View {
   private var rawKeyword: String {
     let normalizedKey = key.trimmingCharacters(in: CharacterSet(charactersIn: "#+: \n\t")).uppercased()
     return "#+\(normalizedKey.isEmpty ? "KEYWORD" : normalizedKey): \(value.trimmingCharacters(in: .whitespacesAndNewlines))"
+  }
+
+  private var showsControls: Bool {
+    isHovered || store.isSavingBlock
   }
 
   private func saveKeyword() {
@@ -1069,7 +1089,8 @@ private struct PropertyDrawerBlockEditor: View {
       .padding(.horizontal, 4)
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
-      .opacity(InlineEditorChrome.controlsOpacity(isHovered || focusedProperty != nil || store.isSavingBlock))
+      .opacity(InlineEditorChrome.controlsOpacity(showsControls))
+      .allowsHitTesting(showsControls)
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
@@ -1138,6 +1159,10 @@ private struct PropertyDrawerBlockEditor: View {
 
   private func rowBackground(_ index: Int) -> Color {
     index.isMultiple(of: 2) ? Color.clear : Color.secondary.opacity(0.025)
+  }
+
+  private var showsControls: Bool {
+    isHovered || focusedProperty != nil || store.isSavingBlock
   }
 
   private func propertyKeyBinding(_ index: Int) -> Binding<String> {
@@ -1310,11 +1335,8 @@ private struct ParagraphBlockEditor: View {
       .padding(.horizontal, 4)
       .padding(.vertical, 2)
       .background(.regularMaterial, in: Capsule())
-      .opacity(
-        InlineEditorChrome.controlsOpacity(
-          isHovered || selectedRange.length > 0 || showsInlineDetails || store.isSavingBlock
-        )
-      )
+      .opacity(InlineEditorChrome.controlsOpacity(showsControls))
+      .allowsHitTesting(showsControls)
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 3)
@@ -1339,6 +1361,10 @@ private struct ParagraphBlockEditor: View {
   private var editorHeight: CGFloat {
     let lineCount = InlineEditorSizing.cappedLineCount(in: draftText, minimum: 1, maximum: 15)
     return min(320, max(30, CGFloat(lineCount) * 21 + 8))
+  }
+
+  private var showsControls: Bool {
+    isHovered || selectedRange.length > 0 || showsInlineDetails || store.isSavingBlock
   }
 
   private var slashCommandKinds: [OrgInsertBlockKind] {
