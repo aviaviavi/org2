@@ -98,7 +98,14 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     if let selection {
       let requestedSelection = Self.clampedRange(selection.wrappedValue, in: textView.string)
-      if textView.selectedRange() != requestedSelection {
+      let currentSelection = textView.selectedRange()
+      if currentSelection != requestedSelection,
+         Coordinator.shouldApplyExternalSelection(
+          requestedSelection: requestedSelection,
+          currentSelection: currentSelection,
+          isFirstResponder: textView.window?.firstResponder === textView,
+          didApplyProgrammaticText: appliedProgrammaticText
+         ) {
         textView.setSelectedRange(requestedSelection)
       }
     }
@@ -308,6 +315,21 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         return true
       }
       return OrgInlineParser.hasInlineSyntaxCandidate(text)
+    }
+
+    static func shouldApplyExternalSelection(
+      requestedSelection: NSRange,
+      currentSelection: NSRange,
+      isFirstResponder: Bool,
+      didApplyProgrammaticText: Bool
+    ) -> Bool {
+      if didApplyProgrammaticText {
+        return true
+      }
+      if !isFirstResponder {
+        return true
+      }
+      return requestedSelection.length > 0 || currentSelection.length > 0
     }
 
     static func shouldScheduleDeferredHighlighting(

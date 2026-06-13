@@ -623,6 +623,34 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSyntaxEditorDoesNotApplyStalePlainCaretSelectionWhileFocused() {
+    XCTAssertFalse(OrgSyntaxTextEditor.Coordinator.shouldApplyExternalSelection(
+      requestedSelection: NSRange(location: 2, length: 0),
+      currentSelection: NSRange(location: 3, length: 0),
+      isFirstResponder: true,
+      didApplyProgrammaticText: false
+    ))
+    XCTAssertTrue(OrgSyntaxTextEditor.Coordinator.shouldApplyExternalSelection(
+      requestedSelection: NSRange(location: 2, length: 0),
+      currentSelection: NSRange(location: 3, length: 0),
+      isFirstResponder: false,
+      didApplyProgrammaticText: false
+    ))
+    XCTAssertTrue(OrgSyntaxTextEditor.Coordinator.shouldApplyExternalSelection(
+      requestedSelection: NSRange(location: 2, length: 1),
+      currentSelection: NSRange(location: 3, length: 0),
+      isFirstResponder: true,
+      didApplyProgrammaticText: false
+    ))
+    XCTAssertTrue(OrgSyntaxTextEditor.Coordinator.shouldApplyExternalSelection(
+      requestedSelection: NSRange(location: 2, length: 0),
+      currentSelection: NSRange(location: 3, length: 0),
+      isFirstResponder: true,
+      didApplyProgrammaticText: true
+    ))
+  }
+
+  @MainActor
   func testSyntaxEditorDoesNotScheduleDeferredHighlightingForLargeBuffers() {
     let largeText = String(repeating: "Body with [[id:abc][Alice]].\n", count: 2_000)
     XCTAssertGreaterThan((largeText as NSString).length, OrgSyntaxHighlighter.liveTokenizationUTF16Limit)
