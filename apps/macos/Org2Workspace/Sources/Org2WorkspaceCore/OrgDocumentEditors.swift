@@ -2,7 +2,11 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-private enum InlineEditorChrome {
+enum InlineEditorChrome {
+  static func rendersControls(_ isActive: Bool) -> Bool {
+    isActive
+  }
+
   static func controlsOpacity(_ isActive: Bool) -> Double {
     isActive ? 1 : 0
   }
@@ -1336,45 +1340,11 @@ private struct ParagraphBlockEditor: View {
         }
       }
 
-      HStack(spacing: 4) {
-        if store.isSavingBlock {
-          ProgressView()
-            .controlSize(.small)
-        }
-        Button {
-          showsInlineDetails.toggle()
-        } label: {
-          Image(systemName: showsInlineDetails ? "slider.horizontal.3" : "slider.horizontal.2.square")
-        }
-        .buttonStyle(.borderless)
-        .help(showsInlineDetails ? "Hide inline details" : "Show inline details")
-
-        Button {
-          saveParagraph()
-        } label: {
-          Image(systemName: "checkmark")
-        }
-        .buttonStyle(.borderless)
-        .keyboardShortcut("s", modifiers: [.command])
-        .help("Save")
-        .disabled(store.isSavingBlock)
-
-        Button {
-          store.cancelEditingBlock()
-        } label: {
-          Image(systemName: "xmark")
-        }
-        .buttonStyle(.borderless)
-        .keyboardShortcut(.cancelAction)
-        .help("Cancel")
-        .disabled(store.isSavingBlock)
+      if InlineEditorChrome.rendersControls(showsControls) {
+        paragraphControls
+          .opacity(InlineEditorChrome.controlsOpacity(showsControls))
+          .allowsHitTesting(InlineEditorChrome.allowsHitTesting(showsControls))
       }
-      .controlSize(.small)
-      .padding(.horizontal, 4)
-      .padding(.vertical, 2)
-      .background(.regularMaterial, in: Capsule())
-      .opacity(InlineEditorChrome.controlsOpacity(showsControls))
-      .allowsHitTesting(InlineEditorChrome.allowsHitTesting(showsControls))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 3)
@@ -1399,6 +1369,46 @@ private struct ParagraphBlockEditor: View {
   private var editorHeight: CGFloat {
     let lineCount = InlineEditorSizing.cappedLineCount(in: draftText, minimum: 1, maximum: 15)
     return min(320, max(30, CGFloat(lineCount) * 21 + 8))
+  }
+
+  private var paragraphControls: some View {
+    HStack(spacing: 4) {
+      if store.isSavingBlock {
+        ProgressView()
+          .controlSize(.small)
+      }
+      Button {
+        showsInlineDetails.toggle()
+      } label: {
+        Image(systemName: showsInlineDetails ? "slider.horizontal.3" : "slider.horizontal.2.square")
+      }
+      .buttonStyle(.borderless)
+      .help(showsInlineDetails ? "Hide inline details" : "Show inline details")
+
+      Button {
+        saveParagraph()
+      } label: {
+        Image(systemName: "checkmark")
+      }
+      .buttonStyle(.borderless)
+      .keyboardShortcut("s", modifiers: [.command])
+      .help("Save")
+      .disabled(store.isSavingBlock)
+
+      Button {
+        store.cancelEditingBlock()
+      } label: {
+        Image(systemName: "xmark")
+      }
+      .buttonStyle(.borderless)
+      .keyboardShortcut(.cancelAction)
+      .help("Cancel")
+      .disabled(store.isSavingBlock)
+    }
+    .controlSize(.small)
+    .padding(.horizontal, 4)
+    .padding(.vertical, 2)
+    .background(.regularMaterial, in: Capsule())
   }
 
   private var showsControls: Bool {

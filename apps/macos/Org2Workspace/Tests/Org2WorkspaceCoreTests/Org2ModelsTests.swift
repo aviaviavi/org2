@@ -716,6 +716,15 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  func testInlineEditorChromeSkipsHiddenControls() {
+    XCTAssertTrue(InlineEditorChrome.rendersControls(true))
+    XCTAssertFalse(InlineEditorChrome.rendersControls(false))
+    XCTAssertEqual(InlineEditorChrome.controlsOpacity(true), 1)
+    XCTAssertEqual(InlineEditorChrome.controlsOpacity(false), 0)
+    XCTAssertTrue(InlineEditorChrome.allowsHitTesting(true))
+    XCTAssertFalse(InlineEditorChrome.allowsHitTesting(false))
+  }
+
   func testParagraphSlashCommandUsesBoundedPrefixScan() {
     XCTAssertEqual(ParagraphSlashCommand.query(in: "/todo"), "todo")
     XCTAssertEqual(ParagraphSlashCommand.query(in: " \n\t/source swift"), "source")
