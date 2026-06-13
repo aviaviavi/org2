@@ -1138,6 +1138,7 @@ private struct MediaBlockEditor: View {
   @EnvironmentObject private var store: WorkspaceStore
   let block: OrgEditableBlock
   @State private var media: OrgEditableMediaLink
+  @State private var isHovered = false
   @FocusState private var targetFocused: Bool
 
   init(block: OrgEditableBlock, media: OrgEditableMediaLink) {
@@ -1146,29 +1147,56 @@ private struct MediaBlockEditor: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 8) {
-        Label(title, systemImage: systemImage)
-          .font(.caption.weight(.medium))
-          .foregroundStyle(.secondary)
-
-        Picker("Kind", selection: mediaKindBinding) {
-          ForEach(OrgMediaAttachment.Kind.allCases, id: \.self) { kind in
-            Label(kind.editorTitle, systemImage: kind.editorSystemImage)
-              .tag(kind)
+    ZStack(alignment: .topTrailing) {
+      VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 8) {
+          Picker("Kind", selection: mediaKindBinding) {
+            ForEach(OrgMediaAttachment.Kind.allCases, id: \.self) { kind in
+              Label(kind.editorTitle, systemImage: kind.editorSystemImage)
+                .tag(kind)
+            }
           }
+          .pickerStyle(.segmented)
+          .labelsHidden()
+          .frame(width: 148)
+          .help("Media kind")
+
+          TextField("path/to/file", text: targetBinding)
+            .textFieldStyle(.plain)
+            .focused($targetFocused)
+            .onSubmit {
+              saveMedia()
+            }
+            .font(.callout)
+
+          Spacer(minLength: 0)
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .frame(width: 148)
-        .help("Media kind")
+        .padding(.trailing, 86)
 
-        Text("line \(block.displayRange)")
-          .font(.caption.monospacedDigit())
-          .foregroundStyle(.tertiary)
+        RenderedBlockView(
+          block: .paragraph(media.formattedRawText),
+          rawText: media.formattedRawText,
+          editableBlock: block,
+          sourceFile: store.selectedEntrySource?.file,
+          corpusRoot: store.corpusRoot
+        )
+        .padding(.vertical, 2)
 
-        Spacer(minLength: 0)
+        HStack(spacing: 8) {
+          Image(systemName: "text.quote")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+          TextField("caption", text: $media.label)
+            .textFieldStyle(.plain)
+            .font(.callout)
+            .onSubmit {
+              saveMedia()
+            }
+          Spacer(minLength: 0)
+        }
+      }
 
+      HStack(spacing: 4) {
         if store.isSavingBlock {
           ProgressView()
             .controlSize(.small)
@@ -1203,49 +1231,21 @@ private struct MediaBlockEditor: View {
         .disabled(store.isSavingBlock)
         .help("Cancel")
       }
-
-      RenderedBlockView(
-        block: .paragraph(media.formattedRawText),
-        rawText: media.formattedRawText,
-        editableBlock: block,
-        sourceFile: store.selectedEntrySource?.file,
-        corpusRoot: store.corpusRoot
-      )
+      .controlSize(.small)
+      .padding(.horizontal, 4)
       .padding(.vertical, 2)
-
-      Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 8) {
-        GridRow {
-          Text("File")
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-          TextField("path/to/file", text: targetBinding)
-            .textFieldStyle(.roundedBorder)
-            .focused($targetFocused)
-            .onSubmit {
-              saveMedia()
-            }
-        }
-
-        GridRow {
-          Text("Caption")
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-          TextField("caption", text: $media.label)
-            .textFieldStyle(.roundedBorder)
-            .onSubmit {
-              saveMedia()
-            }
-        }
-      }
-      .frame(maxWidth: 620, alignment: .leading)
+      .background(.regularMaterial, in: Capsule())
+      .opacity(isHovered || store.isSavingBlock ? 1 : 0.66)
     }
-    .padding(.horizontal, 8)
-    .padding(.vertical, 7)
-    .background(Color.accentColor.opacity(0.055), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .frame(maxWidth: 780, alignment: .leading)
+    .padding(.horizontal, 6)
+    .padding(.vertical, 4)
+    .background(Color.accentColor.opacity(isHovered ? 0.035 : 0.018), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     .overlay(
-      RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .stroke(Color.accentColor.opacity(0.2))
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .stroke(Color.accentColor.opacity(isHovered ? 0.18 : 0.1))
     )
+    .onHover { isHovered = $0 }
     .onAppear {
       targetFocused = true
     }
