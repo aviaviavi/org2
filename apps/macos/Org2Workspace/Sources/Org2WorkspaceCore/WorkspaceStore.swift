@@ -676,6 +676,9 @@ public final class WorkspaceStore: ObservableObject {
 
     let normalizedReplacement = Self.normalizeLineEndings(replacement)
     guard normalizedReplacement != block.rawText else { return }
+    guard isCurrentAutosaveDraft(block, in: source, replacement: normalizedReplacement) else {
+      return
+    }
 
     let updatedSource: EntrySource
     do {
@@ -703,10 +706,7 @@ public final class WorkspaceStore: ObservableObject {
         )
       }.value
 
-      guard selectedEntrySource?.id == source.id,
-            editingBlockID == block.id,
-            Self.normalizeLineEndings(activeBlockDrafts[block.id] ?? "") == normalizedReplacement
-      else {
+      guard isCurrentAutosaveDraft(block, in: source, replacement: normalizedReplacement) else {
         return
       }
 
@@ -745,6 +745,16 @@ public final class WorkspaceStore: ObservableObject {
       errorText = error.localizedDescription
       statusText = "Autosave failed"
     }
+  }
+
+  private func isCurrentAutosaveDraft(
+    _ block: OrgEditableBlock,
+    in source: EntrySource,
+    replacement: String
+  ) -> Bool {
+    selectedEntrySource?.id == source.id
+      && editingBlockID == block.id
+      && Self.normalizeLineEndings(activeBlockDrafts[block.id] ?? "") == replacement
   }
 
   public func splitEditingBlock(_ block: OrgEditableBlock, atUTF16Offset offset: Int) async {
