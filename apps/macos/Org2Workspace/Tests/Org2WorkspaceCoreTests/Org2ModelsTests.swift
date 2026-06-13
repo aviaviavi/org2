@@ -2087,6 +2087,10 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNil(OrgMediaAttachment.kind(forTarget: "notes/project.org2"))
   }
 
+  func testRenderedMediaDoesNotAutoloadVideoPlayers() {
+    XCTAssertFalse(RenderedMediaPreviewPolicy.autoloadsVideoPlayerOnAppear)
+  }
+
   @MainActor
   func testAgentHandoffShortcutUpdatesTempNote() async throws {
     let root = FileManager.default.temporaryDirectory

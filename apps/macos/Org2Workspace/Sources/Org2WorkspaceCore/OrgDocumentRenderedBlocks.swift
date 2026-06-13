@@ -167,6 +167,10 @@ private struct OrgMediaAttachmentView: View {
   }
 }
 
+enum RenderedMediaPreviewPolicy {
+  static let autoloadsVideoPlayerOnAppear = false
+}
+
 private struct OrgImageAttachmentView: View {
   let attachment: OrgMediaAttachment
   @State private var image: NSImage?
@@ -257,15 +261,16 @@ private struct OrgImageAttachmentView: View {
 private struct OrgVideoAttachmentView: View {
   let attachment: OrgMediaAttachment
   @State private var player: AVPlayer?
+  @State private var isPlaying = false
 
   var body: some View {
     Group {
-      if let player {
+      if isPlaying, let player {
         VideoPlayer(player: player)
           .frame(maxWidth: 760, minHeight: 260, maxHeight: 420)
       } else {
-        MissingMediaView(kind: attachment.kind, name: attachment.displayName, attemptedLoad: true)
-          .frame(maxWidth: 760, minHeight: 120)
+        videoPoster
+          .frame(maxWidth: 760, minHeight: 180)
       }
     }
     .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -274,13 +279,46 @@ private struct OrgVideoAttachmentView: View {
         .stroke(Color.secondary.opacity(0.16))
     )
     .onAppear {
-      if player == nil, let url = attachment.resolvedURL {
-        player = AVPlayer(url: url)
+      if RenderedMediaPreviewPolicy.autoloadsVideoPlayerOnAppear {
+        startPlayback()
       }
     }
     .onDisappear {
       player?.pause()
     }
+  }
+
+  private var videoPoster: some View {
+    Button {
+      startPlayback()
+    } label: {
+      VStack(spacing: 10) {
+        Image(systemName: attachment.resolvedURL == nil ? "film" : "play.circle.fill")
+          .font(.system(size: 34, weight: .semibold))
+          .foregroundStyle(attachment.resolvedURL == nil ? .secondary : .primary)
+        Text(attachment.resolvedURL == nil ? "Video unavailable" : "Play video")
+          .font(.callout.weight(.medium))
+        Text(attachment.displayName)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .padding(16)
+      .background(Color.secondary.opacity(0.06))
+    }
+    .buttonStyle(.plain)
+    .disabled(attachment.resolvedURL == nil)
+  }
+
+  private func startPlayback() {
+    guard let url = attachment.resolvedURL else { return }
+    if player == nil {
+      player = AVPlayer(url: url)
+    }
+    isPlaying = true
+    player?.play()
   }
 }
 
