@@ -182,15 +182,16 @@ struct OrgRenderedEntryView: View, Equatable {
     guard block.isEditable else {
       return .readOnly
     }
-    let isSourceBlock: Bool = {
-      if case .source = block.rendered {
-        return true
+    let runnableSourceLanguage: String? = {
+      if Self.isRunnableSourceBlock(block),
+         case .source(let language, _) = block.rendered {
+        return language
       }
-      return false
+      return nil
     }()
-    let sourceBlockRunState = isSourceBlock ? sourceBlockRuns[store.sourceBlockRunKey(for: block)] : nil
+    let sourceBlockRunState = runnableSourceLanguage != nil ? sourceBlockRuns[store.sourceBlockRunKey(for: block)] : nil
     let runSourceBlock: (@MainActor @Sendable () -> Void)?
-    if isSourceBlock {
+    if runnableSourceLanguage != nil {
       runSourceBlock = { @MainActor @Sendable in
         let _: Task<Void, Never> = Task { await store.runSourceBlock(block) }
       }
@@ -274,6 +275,13 @@ struct OrgRenderedEntryView: View, Equatable {
       return visibleWindow.range.lowerBound == 0
     }
     return visibleWindow.range.upperBound <= initialRenderedBlockLimit(for: visibleWindow.totalCount)
+  }
+
+  nonisolated static func isRunnableSourceBlock(_ block: OrgEditableBlock) -> Bool {
+    if case .source(let language, _) = block.rendered {
+      return SourceBlockRunPlan.plan(for: language) != nil
+    }
+    return false
   }
 
   nonisolated static func initialRenderedBlockLimit(for blockCount: Int) -> Int {

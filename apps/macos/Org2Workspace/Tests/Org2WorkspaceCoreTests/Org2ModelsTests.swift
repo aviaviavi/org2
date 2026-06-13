@@ -254,6 +254,35 @@ final class Org2ModelsTests: XCTestCase {
     })
   }
 
+  func testCanonicalAstKeepsBeginQuoteBlocksAsQuotes() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-canonical-quote-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("quote.org2")
+    let raw = """
+    * Follow up
+    #+begin_quote
+    Quoted body
+    #+end_quote
+    """
+    try raw.write(to: note, atomically: true, encoding: .utf8)
+
+    let cli = try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())
+    let document: Org2CanonicalDocument = try cli.parseFileJSONSync(note, sourceRanges: true)
+    let blocks = OrgEntryRenderer.parseEditable(raw, canonicalDocument: document)
+
+    XCTAssertTrue(blocks.contains {
+      if case .quote(let lines) = $0.rendered {
+        return lines == ["Quoted body"] && $0.displayRange == "2-4"
+      }
+      return false
+    })
+    XCTAssertFalse(blocks.contains {
+      if case .source = $0.rendered { return true }
+      return false
+    })
+  }
+
   func testOpenClawGatewaySettingsResolveLocalConfig() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-openclaw-config-\(UUID().uuidString)", isDirectory: true)
@@ -1477,6 +1506,9 @@ final class Org2ModelsTests: XCTestCase {
     #+begin_quote
     Quote with [[id:c8277d02-6536-4766-9999-709e059edb47][Slack]]
     #+end_quote
+    #+begin_example
+    Example text should render as prose
+    #+end_example
     #+begin_src swift
     let value = 1
     #+end_src
@@ -1502,6 +1534,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(blocks.contains(.planning(OrgPlanningBlock(kind: "SCHEDULED", value: "<2026-06-12 Fri>"))))
     XCTAssertTrue(blocks.contains(.properties([OrgPropertyRow(key: "ID", value: "11111111-1111-4111-8111-111111111111")])))
     XCTAssertTrue(blocks.contains(.quote(["Quote with Slack"])))
+    XCTAssertTrue(blocks.contains(.quote(["Example text should render as prose"])))
     XCTAssertTrue(blocks.contains(.source(language: "swift", lines: ["let value = 1"])))
     XCTAssertTrue(blocks.contains(.table(OrgTableBlock(rows: [
       .cells(["Name", "Value"]),
@@ -3035,6 +3068,38 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(SourceBlockRunPlan.plan(for: "python")?.arguments, ["python3"])
     XCTAssertEqual(SourceBlockRunPlan.plan(for: "js")?.scriptExtension, "mjs")
     XCTAssertNil(SourceBlockRunPlan.plan(for: "mermaid"))
+  }
+
+  func testRenderedEntryOnlyMarksExecutableSourceBlocksRunnable() {
+    let shell = OrgEditableBlock(
+      startLine: 1,
+      endLineExclusive: 4,
+      rawText: "#+begin_src sh\necho hi\n#+end_src",
+      rendered: .source(language: "sh", lines: ["echo hi"])
+    )
+    let unlabeled = OrgEditableBlock(
+      startLine: 1,
+      endLineExclusive: 4,
+      rawText: "#+begin_src\nplain text\n#+end_src",
+      rendered: .source(language: nil, lines: ["plain text"])
+    )
+    let unsupported = OrgEditableBlock(
+      startLine: 1,
+      endLineExclusive: 4,
+      rawText: "#+begin_src mermaid\ngraph TD\n#+end_src",
+      rendered: .source(language: "mermaid", lines: ["graph TD"])
+    )
+    let quote = OrgEditableBlock(
+      startLine: 1,
+      endLineExclusive: 4,
+      rawText: "#+begin_quote\nplain text\n#+end_quote",
+      rendered: .quote(["plain text"])
+    )
+
+    XCTAssertTrue(OrgRenderedEntryView.isRunnableSourceBlock(shell))
+    XCTAssertFalse(OrgRenderedEntryView.isRunnableSourceBlock(unlabeled))
+    XCTAssertFalse(OrgRenderedEntryView.isRunnableSourceBlock(unsupported))
+    XCTAssertFalse(OrgRenderedEntryView.isRunnableSourceBlock(quote))
   }
 
   func testSourceRunOutputPresentationParsesJSONBars() {
