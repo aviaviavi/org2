@@ -622,6 +622,16 @@ final class Org2ModelsTests: XCTestCase {
     ))
   }
 
+  @MainActor
+  func testSyntaxEditorDoesNotScheduleDeferredHighlightingForLargeBuffers() {
+    XCTAssertTrue(OrgSyntaxTextEditor.Coordinator.shouldScheduleDeferredHighlighting(
+      utf16Length: OrgSyntaxHighlighter.liveTokenizationUTF16Limit
+    ))
+    XCTAssertFalse(OrgSyntaxTextEditor.Coordinator.shouldScheduleDeferredHighlighting(
+      utf16Length: OrgSyntaxHighlighter.liveTokenizationUTF16Limit + 1
+    ))
+  }
+
   func testInlineEditorSizingStopsAtVisibleLineCap() {
     XCTAssertEqual(
       InlineEditorSizing.endSelection(in: "abc"),
