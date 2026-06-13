@@ -1421,7 +1421,7 @@ private struct OrgCryptConfigurationSheet: View {
   @State private var encryptOnSave = true
   @State private var recipientsText = ""
   @State private var recipientFilesText = ""
-  @State private var useDefaultGpgKey = false
+  @State private var useDefaultGpgKey = true
   @State private var gpgProgram = "gpg"
   @State private var passphrase = ""
   @State private var clearPassphrase = false

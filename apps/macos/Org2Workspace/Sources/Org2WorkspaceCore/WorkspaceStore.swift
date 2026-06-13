@@ -162,7 +162,7 @@ public final class WorkspaceStore: ObservableObject {
   }
   @Published public var orgCryptRecipientsText = ""
   @Published public var orgCryptRecipientFilesText = ""
-  @Published public var orgCryptUseDefaultGpgKey = false
+  @Published public var orgCryptUseDefaultGpgKey = true
   @Published public var orgCryptGpgProgram = "gpg"
   @Published public var orgCryptHasStoredPassphrase = false
   @Published public var orgCryptStatusText = "Org crypt encrypts :crypt: subtree bodies with GPG."
@@ -243,6 +243,7 @@ public final class WorkspaceStore: ObservableObject {
   private let orgCryptRecipientsKey = "Org2Workspace.orgCrypt.recipients"
   private let orgCryptRecipientFilesKey = "Org2Workspace.orgCrypt.recipientFiles"
   private let orgCryptUseDefaultGpgKeyKey = "Org2Workspace.orgCrypt.useDefaultGpgKey"
+  private let orgCryptUseDefaultGpgKeyMigrationKey = "Org2Workspace.orgCrypt.useDefaultGpgKeyDefaulted.v2"
   private let orgCryptGpgProgramKey = "Org2Workspace.orgCrypt.gpgProgram"
   private static let canonicalParserLineLimit = 2_000
   private static let renderedBlocksCacheLimit = 12
@@ -286,7 +287,12 @@ public final class WorkspaceStore: ObservableObject {
     orgCryptEncryptOnSave = defaults.object(forKey: orgCryptEncryptOnSaveKey) as? Bool ?? true
     orgCryptRecipientsText = OrgCryptSettings.listText(defaults.stringArray(forKey: orgCryptRecipientsKey) ?? [])
     orgCryptRecipientFilesText = OrgCryptSettings.listText(defaults.stringArray(forKey: orgCryptRecipientFilesKey) ?? [])
-    orgCryptUseDefaultGpgKey = defaults.object(forKey: orgCryptUseDefaultGpgKeyKey) as? Bool ?? false
+    orgCryptUseDefaultGpgKey = defaults.object(forKey: orgCryptUseDefaultGpgKeyKey) as? Bool ?? true
+    if defaults.object(forKey: orgCryptUseDefaultGpgKeyMigrationKey) == nil {
+      orgCryptUseDefaultGpgKey = true
+      defaults.set(true, forKey: orgCryptUseDefaultGpgKeyKey)
+      defaults.set(true, forKey: orgCryptUseDefaultGpgKeyMigrationKey)
+    }
     orgCryptGpgProgram = defaults.string(forKey: orgCryptGpgProgramKey) ?? "gpg"
     openClawMessages = Self.loadOpenClawMessages(from: self.openClawTranscriptURL)
     shouldPersistOpenClawMessages = true
@@ -3104,10 +3110,11 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   @discardableResult
-  public func runOrgCrypt(_ action: OrgCryptAction, line explicitLine: Int? = nil) async -> Bool {
+  public func runOrgCrypt(_ action: OrgCryptAction, line explicitLine: Int? = nil) async -> OrgCryptRunResult {
     guard let file = selectedEntrySource?.file ?? selectedLocation?.file else {
-      statusText = "Open a file before running org crypt"
-      return false
+      let message = "Open a file before running org crypt"
+      statusText = message
+      return .failure(message: message)
     }
 
     let line = explicitLine ?? selectedBlock?.startLine ?? selectedLocation?.lineForEditor ?? 1
@@ -3147,18 +3154,22 @@ public final class WorkspaceStore: ObservableObject {
       invalidateCanonicalDocumentCache(for: file)
       resetBlockEditing()
       isEditingEntry = false
+      let succeeded = action == .decrypt ? result.changed : true
       orgCryptStatusText = "\(action.title) \(result.changed ? "updated" : "made no changes") \(relativePath(file)):\(result.headingLine)"
       statusText = orgCryptStatusText
       if let selectedLocation {
         await loadEntrySource(for: selectedLocation)
       }
       scheduleAgendaRefresh(preserveSelection: true)
-      return true
+      if succeeded {
+        return .success(changed: result.changed, headingLine: result.headingLine, message: orgCryptStatusText)
+      }
+      return .failure(message: orgCryptStatusText, headingLine: result.headingLine)
     } catch {
       errorText = error.localizedDescription
       orgCryptStatusText = error.localizedDescription
       statusText = error.localizedDescription
-      return false
+      return .failure(message: error.localizedDescription, headingLine: line)
     }
   }
 

@@ -16,6 +16,21 @@ public enum OrgCryptAction: String, CaseIterable, Sendable {
   }
 }
 
+public struct OrgCryptRunResult: Equatable, Sendable {
+  public let succeeded: Bool
+  public let changed: Bool
+  public let headingLine: Int?
+  public let message: String
+
+  public static func success(changed: Bool, headingLine: Int?, message: String) -> OrgCryptRunResult {
+    OrgCryptRunResult(succeeded: true, changed: changed, headingLine: headingLine, message: message)
+  }
+
+  public static func failure(message: String, headingLine: Int? = nil) -> OrgCryptRunResult {
+    OrgCryptRunResult(succeeded: false, changed: false, headingLine: headingLine, message: message)
+  }
+}
+
 public struct OrgCryptSettings: Equatable, Sendable {
   public var encryptOnSave: Bool
   public var recipients: [String]
@@ -32,7 +47,7 @@ public struct OrgCryptSettings: Equatable, Sendable {
     gpgProgram: String = "gpg",
     passphrase: String? = nil,
     gpgTimeout: TimeInterval = 30,
-    useDefaultGpgKey: Bool = false
+    useDefaultGpgKey: Bool = true
   ) {
     self.encryptOnSave = encryptOnSave
     self.recipients = recipients
