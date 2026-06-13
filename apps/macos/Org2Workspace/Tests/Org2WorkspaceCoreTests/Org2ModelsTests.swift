@@ -2779,6 +2779,73 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(partial.hiddenLineCount, 20)
   }
 
+  func testRenderedBlockExpansionStatePersistsVisibleLimitsByBlockKey() {
+    let block = OrgEditableBlock(
+      id: "source-block",
+      startLine: 10,
+      endLineExclusive: 13,
+      rawText: "#+begin_src swift\nprint(1)\n#+end_src",
+      rendered: .source(language: "swift", lines: ["print(1)"])
+    )
+    let key = RenderedBlockExpansionState.key(
+      sourceFile: "/tmp/example.org2",
+      editableBlock: block,
+      renderedKind: "source",
+      rawText: block.rawText
+    )
+    let shiftedBlock = OrgEditableBlock(
+      id: "source-block",
+      startLine: 11,
+      endLineExclusive: 14,
+      rawText: block.rawText,
+      rendered: block.rendered
+    )
+    let shiftedKey = RenderedBlockExpansionState.key(
+      sourceFile: "/tmp/example.org2",
+      editableBlock: shiftedBlock,
+      renderedKind: "source",
+      rawText: shiftedBlock.rawText
+    )
+
+    XCTAssertEqual(RenderedBlockExpansionState.visibleLimit(for: key, default: 80), 80)
+    RenderedBlockExpansionState.setVisibleLimit(240, for: key)
+    XCTAssertEqual(RenderedBlockExpansionState.visibleLimit(for: key, default: 80), 240)
+    XCTAssertEqual(RenderedBlockExpansionState.visibleLimit(for: shiftedKey, default: 80), 80)
+  }
+
+  func testRenderedBlockExpansionStateComputesToggleLimits() {
+    XCTAssertEqual(
+      RenderedBlockExpansionState.toggledLimit(
+        currentLimit: 80,
+        totalCount: 300,
+        hiddenCount: 220,
+        defaultLimit: 80,
+        pageSize: 160
+      ),
+      240
+    )
+    XCTAssertEqual(
+      RenderedBlockExpansionState.toggledLimit(
+        currentLimit: 240,
+        totalCount: 300,
+        hiddenCount: 60,
+        defaultLimit: 80,
+        pageSize: 160
+      ),
+      300
+    )
+    XCTAssertEqual(
+      RenderedBlockExpansionState.toggledLimit(
+        currentLimit: 300,
+        totalCount: 300,
+        hiddenCount: 0,
+        defaultLimit: 80,
+        pageSize: 160
+      ),
+      80
+    )
+  }
+
   func testQuoteLineWindowLimitsLargeQuotes() {
     let lines = (1...90).map { "quote \($0)" }
 
