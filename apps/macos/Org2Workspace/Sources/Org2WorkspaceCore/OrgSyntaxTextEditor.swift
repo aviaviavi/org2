@@ -187,7 +187,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       if !isApplyingProgrammaticChange {
         publishTextChange(currentText)
       }
-      publishSelectionIfNeeded(textView.selectedRange())
+      publishSelectionIfNeeded(textView.selectedRange(), in: currentText)
       let shouldScheduleHighlighting = Self.shouldScheduleDeferredHighlighting(
         text: currentText,
         previousHighlightedText: lastHighlightedText,
@@ -203,7 +203,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     func textViewDidChangeSelection(_ notification: Notification) {
       guard let textView = notification.object as? NSTextView else { return }
-      publishSelectionIfNeeded(textView.selectedRange())
+      publishSelectionIfNeeded(textView.selectedRange(), in: textView.string)
     }
 
     func textDidBeginEditing(_ notification: Notification) {
@@ -399,7 +399,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(90), execute: workItem)
     }
 
-    private func publishSelectionIfNeeded(_ selectedRange: NSRange) {
+    private func publishSelectionIfNeeded(_ selectedRange: NSRange, in text: String) {
       guard let selection = parent.selection,
             selection.wrappedValue != selectedRange
       else {
@@ -408,7 +408,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       guard Self.shouldPublishSelection(
         selectedRange,
         previousRange: selection.wrappedValue,
-        text: parent.text
+        text: text
       ) else {
         return
       }
@@ -423,8 +423,18 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       if selectedRange.length > 0 || previousRange.length > 0 {
         return true
       }
-      return OrgInlineParser.hasInlineSyntaxCandidate(text)
+      return OrgInlineParser.hasInlineSyntaxCandidate(
+        text,
+        near: selectedRange,
+        radius: selectionInlineSyntaxRadius
+      ) || OrgInlineParser.hasInlineSyntaxCandidate(
+        text,
+        near: previousRange,
+        radius: selectionInlineSyntaxRadius
+      )
     }
+
+    static let selectionInlineSyntaxRadius = 512
 
     static func shouldApplyExternalSelection(
       requestedSelection: NSRange,

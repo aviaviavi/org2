@@ -408,6 +408,19 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(OrgInlineText.usesAttributedRendering("See agenda.org for context."))
     XCTAssertFalse(OrgInlineText.usesAttributedRendering(String(repeating: "plain text ", count: 1_000)))
 
+    let longLinkedText = "See [[id:abc][Alice]]. " + String(repeating: "plain text ", count: 120)
+    XCTAssertTrue(OrgInlineParser.hasInlineSyntaxCandidate(longLinkedText))
+    XCTAssertTrue(OrgInlineParser.hasInlineSyntaxCandidate(
+      longLinkedText,
+      near: NSRange(location: 6, length: 0),
+      radius: 64
+    ))
+    XCTAssertFalse(OrgInlineParser.hasInlineSyntaxCandidate(
+      longLinkedText,
+      near: NSRange(location: (longLinkedText as NSString).length, length: 0),
+      radius: 64
+    ))
+
     let spans = OrgInlineParser.parse("See notes/daily/2026-06-12.org:7 for context.")
     XCTAssertEqual(spans, [
       .text("See "),
@@ -619,6 +632,19 @@ final class Org2ModelsTests: XCTestCase {
       NSRange(location: 12, length: 0),
       previousRange: NSRange(location: 11, length: 0),
       text: "See [[id:abc][Alice]]"
+    ))
+
+    let longLinkedText = "See [[id:abc][Alice]]. " + String(repeating: "plain text ", count: 120)
+    let farCaret = NSRange(location: (longLinkedText as NSString).length, length: 0)
+    XCTAssertFalse(OrgSyntaxTextEditor.Coordinator.shouldPublishSelection(
+      farCaret,
+      previousRange: NSRange(location: farCaret.location - 1, length: 0),
+      text: longLinkedText
+    ))
+    XCTAssertTrue(OrgSyntaxTextEditor.Coordinator.shouldPublishSelection(
+      farCaret,
+      previousRange: NSRange(location: 8, length: 0),
+      text: longLinkedText
     ))
   }
 
