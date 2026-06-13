@@ -1058,7 +1058,7 @@ private struct EntryBodyView: View {
           OrgRenderedEntryView(
             blocks: store.selectedRenderedBlocks,
             blocksRenderSignature: store.selectedRenderedBlocksRenderSignature,
-            source: store.selectedEntrySource,
+            source: store.selectedEntrySource.map(OrgRenderedEntrySourceContext.init),
             corpusRoot: store.corpusRoot,
             selectedBlockID: store.selectedBlockID,
             selectedBlockIndex: store.selectedBlockID.flatMap { store.selectedRenderedBlockIndexes[$0] },
