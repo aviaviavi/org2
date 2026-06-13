@@ -444,6 +444,22 @@ final class Org2ModelsTests: XCTestCase {
     ])
   }
 
+  func testOrgInlineSyntaxCandidateCacheUsesExactText() {
+    let plain = "Plain sentence with no inline syntax."
+    let rich = "See [[id:abc][Alice]] and `code`."
+    let plainKey = OrgInlineSyntaxCandidateCache.CacheKey(raw: plain)
+    let matchingPlainKey = OrgInlineSyntaxCandidateCache.CacheKey(raw: plain)
+    let differentKey = OrgInlineSyntaxCandidateCache.CacheKey(raw: plain + " ")
+
+    XCTAssertEqual(plainKey, matchingPlainKey)
+    XCTAssertEqual(plainKey.hash, matchingPlainKey.hash)
+    XCTAssertNotEqual(plainKey, differentKey)
+    XCTAssertFalse(OrgInlineSyntaxCandidateCache.containsSyntax(plain))
+    XCTAssertFalse(OrgInlineSyntaxCandidateCache.containsSyntax(plain))
+    XCTAssertTrue(OrgInlineSyntaxCandidateCache.containsSyntax(rich))
+    XCTAssertTrue(OrgInlineSyntaxCandidateCache.containsSyntax(rich))
+  }
+
   func testOrgInlineParserRendersMarkupAndTimestamps() {
     let spans = OrgInlineParser.parse("Review *bold* /soon/ on <2026-06-12 Fri 09:30-10:00> with ~code~.")
 
