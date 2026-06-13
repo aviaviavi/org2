@@ -16,6 +16,8 @@ public struct ContentView: View {
         AgendaView()
       case .search:
         SearchView()
+      case .meetings:
+        MeetingsView()
       case .openClaw:
         OpenClawChatView()
       case .agentSpace:
@@ -356,6 +358,147 @@ private struct SearchRow: View {
     }
     .padding(.horizontal, 16)
     .padding(.vertical, 6)
+  }
+}
+
+private struct MeetingsView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HeaderBar(title: "Meetings", subtitle: "\(store.meetings.count) local meeting\(store.meetings.count == 1 ? "" : "s")") {
+        if store.isLoadingMeetings || store.isProcessingMeeting {
+          ProgressView()
+            .controlSize(.small)
+        }
+
+        if store.isRecordingMeeting {
+          Button {
+            Task { await store.stopMeetingRecording() }
+          } label: {
+            Label("Stop", systemImage: "stop.fill")
+          }
+        } else {
+          Button {
+            store.promptAndStartMeetingRecording()
+          } label: {
+            Label("Record", systemImage: "record.circle")
+          }
+          .disabled(store.corpusRoot == nil || store.isProcessingMeeting)
+        }
+
+        Button {
+          store.promptAndImportMeetingAudio()
+        } label: {
+          Label("Import", systemImage: "tray.and.arrow.down")
+        }
+        .disabled(store.corpusRoot == nil || store.isRecordingMeeting || store.isProcessingMeeting)
+
+        Button {
+          Task { await store.refreshMeetings() }
+        } label: {
+          Label("Refresh", systemImage: "arrow.clockwise")
+        }
+        .disabled(store.corpusRoot == nil || store.isLoadingMeetings)
+      }
+
+      HStack(spacing: 8) {
+        TextField("Meeting title", text: $store.meetingTitleDraft)
+          .textFieldStyle(.roundedBorder)
+          .disabled(store.isRecordingMeeting || store.isProcessingMeeting)
+
+        Text(store.meetingStatusText)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+      }
+      .padding(.horizontal, 16)
+      .padding(.bottom, 12)
+
+      if store.meetings.isEmpty {
+        if store.isLoadingMeetings {
+          Spacer()
+          ProgressView()
+          Spacer()
+        } else {
+          EmptyStateView(title: "No Meetings", detail: store.meetingStatusText, action: "Record") {
+            store.promptAndStartMeetingRecording()
+          }
+        }
+      } else {
+        List(selection: $store.selectedMeetingID) {
+          ForEach(store.meetingDisplaySections) { section in
+            Section(section.label) {
+              ForEach(section.meetings) { meeting in
+                MeetingRow(meeting: meeting)
+                  .tag(meeting.id)
+                  .contentShape(Rectangle())
+                  .onTapGesture {
+                    store.selectMeeting(meeting)
+                  }
+              }
+            }
+          }
+        }
+        .listStyle(.inset)
+        .onChange(of: store.selectedMeetingID) {
+          guard let id = store.selectedMeetingID,
+                let meeting = store.meetings.first(where: { $0.id == id })
+          else {
+            return
+          }
+          store.select(.meeting(meeting))
+        }
+      }
+    }
+    .onAppear {
+      if store.meetings.isEmpty {
+        Task { await store.refreshMeetings() }
+      }
+    }
+  }
+}
+
+private struct MeetingRow: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let meeting: MeetingWorkspaceItem
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 5) {
+      HStack(spacing: 8) {
+        Text(Org2Display.cleanInline(meeting.title))
+          .font(.body)
+          .lineLimit(1)
+        Spacer(minLength: 0)
+        if let status = meeting.transcriptionStatus {
+          StatusPill(text: status.uppercased())
+        }
+      }
+
+      HStack(spacing: 8) {
+        if let recordedAt = meeting.recordedAt {
+          Text(recordedAt)
+        }
+        if let modifiedAt = meeting.modifiedAt {
+          Text(Self.relativeDate(modifiedAt))
+        }
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+
+      Text(store.relativePath(meeting.file) + ":\(meeting.lineForEditor)")
+        .font(.caption)
+        .foregroundStyle(.tertiary)
+        .lineLimit(1)
+    }
+    .padding(.vertical, 4)
+  }
+
+  private static func relativeDate(_ date: Date) -> String {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .short
+    return formatter.localizedString(for: date, relativeTo: Date())
   }
 }
 
@@ -904,6 +1047,14 @@ private struct DetailHeader: View {
             Label("Property", systemImage: "tag")
           }
         }
+
+        if case .meeting = location {
+          Button {
+            store.askOpenClawAboutSelectedMeeting()
+          } label: {
+            Label("Ask", systemImage: "sparkles")
+          }
+        }
       }
     }
     .padding(16)
@@ -962,40 +1113,62 @@ private struct EntryBodyView: View {
       Text("Source unavailable")
         .font(.callout)
         .foregroundStyle(.secondary)
+    case .meeting:
+      Text("Meeting source unavailable")
+        .font(.callout)
+        .foregroundStyle(.secondary)
     }
   }
 
   private func metadataRows(_ location: WorkspaceLocation) -> [(String, String)] {
     switch location {
     case .agenda(let item):
-      return [
+      let planning = [item.kind, item.time].compactMap { $0 }.joined(separator: " ")
+      let priority = item.priority.map { "[#\($0)]" } ?? ""
+      let rows: [(String, String)] = [
         ("TODO", item.todo ?? ""),
-        ("Planning", [item.kind, item.time].compactMap { $0 }.joined(separator: " ")),
-        ("Priority", item.priority.map { "[#\($0)]" } ?? ""),
+        ("Planning", planning),
+        ("Priority", priority),
         ("Effort", item.effort ?? ""),
         ("Tags", item.tags.joined(separator: ", ")),
         ("ID", item.idValue.map(Org2Display.shortID) ?? "")
-      ].filter { !$0.1.isEmpty }
+      ]
+      return nonEmptyRows(rows)
     case .search(let result):
-      return [
+      let rows: [(String, String)] = [
         ("TODO", result.todo ?? ""),
         ("Heading", result.heading.map(Org2Display.cleanInline) ?? ""),
         ("Date", result.date ?? ""),
         ("Tags", result.tags.joined(separator: ", ")),
         ("ID", result.idValue.map(Org2Display.shortID) ?? "")
-      ].filter { !$0.1.isEmpty }
+      ]
+      return nonEmptyRows(rows)
     case .backlink(let backlink):
       return [
         ("Source", Org2Display.cleanInline(backlink.srcTitle)),
         ("Line", "\(backlink.lineForEditor)")
       ]
     case .openClaw(let thread):
-      return [
+      let rows: [(String, String)] = [
         ("Zone", thread.zone),
         ("Modified", thread.modifiedAt.map(Self.dateLabel) ?? ""),
         ("ID", thread.idValue.map(Org2Display.shortID) ?? "")
-      ].filter { !$0.1.isEmpty }
+      ]
+      return nonEmptyRows(rows)
+    case .meeting(let meeting):
+      let rows: [(String, String)] = [
+        ("Recorded", meeting.recordedAt ?? ""),
+        ("Audio", meeting.audioArtifact ?? ""),
+        ("Transcript", meeting.transcriptArtifact ?? ""),
+        ("Transcription", meeting.transcriptionStatus ?? ""),
+        ("ID", meeting.idValue.map(Org2Display.shortID) ?? "")
+      ]
+      return nonEmptyRows(rows)
     }
+  }
+
+  private func nonEmptyRows(_ rows: [(String, String)]) -> [(String, String)] {
+    rows.filter { !$0.1.isEmpty }
   }
 
   private static func dateLabel(_ date: Date) -> String {

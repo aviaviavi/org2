@@ -339,6 +339,46 @@ public struct OpenClawThread: Identifiable, Hashable, Sendable {
   }
 }
 
+public struct MeetingWorkspaceItem: Identifiable, Hashable, Sendable {
+  public let title: String
+  public let file: String
+  public let line: Int
+  public let recordedAt: String?
+  public let modifiedAt: Date?
+  public let audioArtifact: String?
+  public let transcriptArtifact: String?
+  public let transcriptionStatus: String?
+  public let idValue: String?
+
+  public init(
+    title: String,
+    file: String,
+    line: Int = 1,
+    recordedAt: String?,
+    modifiedAt: Date?,
+    audioArtifact: String?,
+    transcriptArtifact: String?,
+    transcriptionStatus: String?,
+    idValue: String?
+  ) {
+    self.title = title
+    self.file = file
+    self.line = line
+    self.recordedAt = recordedAt
+    self.modifiedAt = modifiedAt
+    self.audioArtifact = audioArtifact
+    self.transcriptArtifact = transcriptArtifact
+    self.transcriptionStatus = transcriptionStatus
+    self.idValue = idValue
+  }
+
+  public var id: String { file }
+
+  public var lineForEditor: Int {
+    max(1, line)
+  }
+}
+
 public struct OpenClawChatMessage: Identifiable, Hashable, Sendable {
   public enum Role: String, Sendable {
     case user
@@ -384,6 +424,7 @@ public enum WorkspaceLocation: Hashable, Sendable {
   case search(SearchResult)
   case backlink(BacklinkItem)
   case openClaw(OpenClawThread)
+  case meeting(MeetingWorkspaceItem)
 
   public var title: String {
     switch self {
@@ -391,6 +432,7 @@ public enum WorkspaceLocation: Hashable, Sendable {
     case .search(let result): Org2Display.cleanInline(result.title)
     case .backlink(let backlink): Org2Display.cleanInline(backlink.srcTitle)
     case .openClaw(let thread): Org2Display.cleanInline(thread.title)
+    case .meeting(let meeting): Org2Display.cleanInline(meeting.title)
     }
   }
 
@@ -400,6 +442,8 @@ public enum WorkspaceLocation: Hashable, Sendable {
     case .search(let result): Org2Display.cleanInline(result.snippet)
     case .backlink(let backlink): Org2Display.cleanInline(backlink.context)
     case .openClaw(let thread): thread.zone
+    case .meeting(let meeting):
+      [meeting.recordedAt, meeting.transcriptionStatus].compactMap { $0 }.joined(separator: " ")
     }
   }
 
@@ -409,6 +453,7 @@ public enum WorkspaceLocation: Hashable, Sendable {
     case .search(let result): result.file
     case .backlink(let backlink): backlink.file
     case .openClaw(let thread): thread.file
+    case .meeting(let meeting): meeting.file
     }
   }
 
@@ -418,6 +463,7 @@ public enum WorkspaceLocation: Hashable, Sendable {
     case .search(let result): result.lineForEditor
     case .backlink(let backlink): backlink.lineForEditor
     case .openClaw(let thread): thread.lineForEditor
+    case .meeting(let meeting): meeting.lineForEditor
     }
   }
 
@@ -427,6 +473,7 @@ public enum WorkspaceLocation: Hashable, Sendable {
     case .search(let result): result.idValue
     case .backlink(let backlink): backlink.srcId
     case .openClaw(let thread): thread.idValue
+    case .meeting(let meeting): meeting.idValue
     }
   }
 }
@@ -542,6 +589,18 @@ public struct OpenClawThreadSection: Identifiable, Sendable {
     self.id = id
     self.label = label
     self.threads = threads
+  }
+}
+
+public struct MeetingSection: Identifiable, Sendable {
+  public let id: String
+  public let label: String
+  public let meetings: [MeetingWorkspaceItem]
+
+  public init(id: String, label: String, meetings: [MeetingWorkspaceItem]) {
+    self.id = id
+    self.label = label
+    self.meetings = meetings
   }
 }
 

@@ -184,6 +184,77 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(OpenClawChatClient.openClawAgentHeaderValue(for: "openclaw/org2-workspace"), "org2-workspace")
   }
 
+  func testMeetingArtifactWriterCreatesNoteAndTranscript() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-meeting-artifacts-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let recordedAt = ISO8601DateFormatter().date(from: "2026-06-11T21:00:00Z")!
+    let paths = try MeetingArtifactWriter.preparePaths(
+      corpusRoot: root,
+      title: "Scarf reporting sync",
+      recordedAt: recordedAt
+    )
+    try Data("fake audio".utf8).write(to: paths.audioURL)
+
+    let bundle = try MeetingArtifactWriter.writeArtifacts(
+      paths: paths,
+      corpusRoot: root,
+      duration: 12.5,
+      transcript: MeetingTranscriptResult(
+        text: "We decided to publish the reporting update.",
+        status: .complete,
+        engine: "whisper.cpp"
+      )
+    )
+
+    let note = try String(contentsOf: bundle.noteURL, encoding: .utf8)
+    let transcript = try String(contentsOf: bundle.transcriptURL, encoding: .utf8)
+
+    XCTAssertTrue(note.contains("* Meeting: Scarf reporting sync"))
+    XCTAssertTrue(note.contains(":kind: meeting"))
+    XCTAssertTrue(note.contains(":audio_artifact: meetings/"))
+    XCTAssertTrue(note.contains(":transcript_artifact: meetings/"))
+    XCTAssertTrue(note.contains(":transcription_engine: whisper.cpp"))
+    XCTAssertTrue(note.contains("** Decisions"))
+    XCTAssertTrue(transcript.contains("* Transcript: Scarf reporting sync"))
+    XCTAssertTrue(transcript.contains(":kind: meeting_transcript"))
+    XCTAssertTrue(transcript.contains("We decided to publish the reporting update."))
+  }
+
+  @MainActor
+  func testWorkspaceScansMeetingArtifacts() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-meeting-scan-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let recordedAt = ISO8601DateFormatter().date(from: "2026-06-11T21:00:00Z")!
+    let paths = try MeetingArtifactWriter.preparePaths(
+      corpusRoot: root,
+      title: "Planning sync",
+      recordedAt: recordedAt
+    )
+    try Data("fake audio".utf8).write(to: paths.audioURL)
+    _ = try MeetingArtifactWriter.writeArtifacts(
+      paths: paths,
+      corpusRoot: root,
+      duration: nil,
+      transcript: MeetingTranscriptResult(
+        text: "Action item: ship the meeting recorder.",
+        status: .complete,
+        engine: "whisper.cpp"
+      )
+    )
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.refreshMeetings()
+
+    XCTAssertEqual(store.meetings.count, 1)
+    XCTAssertEqual(store.meetings[0].title, "Planning sync")
+    XCTAssertEqual(store.meetings[0].transcriptionStatus, "complete")
+    XCTAssertTrue(store.meetings[0].audioArtifact?.hasPrefix("meetings/") == true)
+    XCTAssertTrue(store.meetings[0].transcriptArtifact?.hasSuffix(".transcript.org2") == true)
+  }
+
   func testOpenClawWorkspaceContextMapsRemotePathsAndIncludesGraphSlice() throws {
     let localRoot = "/local/org2"
     let remoteRoot = "/srv/org2"
