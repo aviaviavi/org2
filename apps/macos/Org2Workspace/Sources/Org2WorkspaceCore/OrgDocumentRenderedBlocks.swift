@@ -91,7 +91,7 @@ struct RenderedBlockView: View, Equatable {
     case .paragraph(let text):
       let paragraphText = rawText ?? text
       if let summary = OrgCrypt.armorSummary(paragraphText) {
-        RenderedEncryptedBlockView(summary: summary)
+        RenderedEncryptedBlockView(summary: summary, decrypt: inlineActions.decryptSubtree)
       } else if let attachment = RenderedInlineMediaPresentation.standalone(
         raw: paragraphText,
         sourceFile: sourceFile,
@@ -496,6 +496,7 @@ enum OrgRenderedLineDisplayCache {
 
 struct RenderedBlockInlineActions: Sendable {
   let isSourceEditable: Bool
+  let decryptSubtree: (@MainActor @Sendable () -> Void)?
   let toggleHeadingTodo: (@MainActor @Sendable () -> Void)?
   let setHeadingPriority: (@MainActor @Sendable (String?) -> Void)?
   let setHeadingTags: (@MainActor @Sendable ([String]) -> Void)?
@@ -508,6 +509,7 @@ struct RenderedBlockInlineActions: Sendable {
 
   static let readOnly = RenderedBlockInlineActions(
     isSourceEditable: false,
+    decryptSubtree: nil,
     toggleHeadingTodo: nil,
     setHeadingPriority: nil,
     setHeadingTags: nil,
@@ -581,6 +583,7 @@ private struct OrgMediaAttachmentView: View {
 
 private struct RenderedEncryptedBlockView: View {
   let summary: OrgCrypt.PGPArmorSummary
+  let decrypt: (@MainActor @Sendable () -> Void)?
 
   var body: some View {
     HStack(spacing: 10) {
@@ -595,6 +598,16 @@ private struct RenderedEncryptedBlockView: View {
       }
 
       Spacer(minLength: 0)
+
+      if let decrypt {
+        Button {
+          decrypt()
+        } label: {
+          Label("Decrypt", systemImage: "lock.open")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+      }
     }
     .padding(.vertical, 7)
     .padding(.horizontal, 10)
@@ -604,7 +617,7 @@ private struct RenderedEncryptedBlockView: View {
         .stroke(WorkspaceDesign.hairline)
     )
     .frame(maxWidth: 760, alignment: .leading)
-    .help("Use Org Crypt > Decrypt Subtree to edit the plaintext.")
+    .help("Decrypt this subtree to edit the plaintext.")
   }
 
   private func formattedBytes(_ count: Int) -> String {

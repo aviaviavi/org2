@@ -425,6 +425,30 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(restored.agendaMode, .range)
   }
 
+  @MainActor
+  func testOrgCryptConfigurationPersistsRecipientFilesAsDefaults() throws {
+    let suiteName = "org2-workspace-crypt-config-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+    XCTAssertTrue(store.saveOrgCryptConfiguration(
+      encryptOnSave: true,
+      recipientsText: "person@example.com",
+      recipientFilesText: "/tmp/team.asc\nkeys/project.asc",
+      useDefaultGpgKey: true,
+      gpgProgram: "gpg",
+      passphrase: "",
+      clearPassphrase: false
+    ))
+
+    let restored = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+
+    XCTAssertEqual(restored.orgCryptRecipientsText, "person@example.com")
+    XCTAssertEqual(restored.orgCryptRecipientFilesText, "/tmp/team.asc\nkeys/project.asc")
+    XCTAssertTrue(restored.orgCryptUseDefaultGpgKey)
+  }
+
   func testOpenClawChatClientNormalizesModelAndAgentNames() {
     XCTAssertEqual(OpenClawChatClient.openClawModelName(for: ""), "openclaw")
     XCTAssertEqual(OpenClawChatClient.openClawModelName(for: "openclaw"), "openclaw")
@@ -1257,7 +1281,9 @@ final class Org2ModelsTests: XCTestCase {
       hasPendingLocalText: false
     ))
 
-    try await Task.sleep(nanoseconds: 60_000_000)
+    try await waitForCondition {
+      boundText == "new" && !coordinator.hasPendingTextPublishing(for: "new")
+    }
     XCTAssertEqual(boundText, "new")
     XCTAssertFalse(coordinator.hasPendingTextPublishing(for: "new"))
   }
@@ -1284,7 +1310,9 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(coordinator.hasPendingTextPublishing(for: "first"))
     XCTAssertTrue(coordinator.hasPendingTextPublishing(for: "second"))
 
-    try await Task.sleep(nanoseconds: 70_000_000)
+    try await waitForCondition {
+      boundText == "second" && !coordinator.hasPendingTextPublishing(for: "second")
+    }
     XCTAssertEqual(boundText, "second")
     XCTAssertFalse(coordinator.hasPendingTextPublishing(for: "second"))
   }
@@ -3141,6 +3169,7 @@ final class Org2ModelsTests: XCTestCase {
     )
     let baseActions = RenderedBlockInlineActions(
       isSourceEditable: true,
+      decryptSubtree: nil,
       toggleHeadingTodo: nil,
       setHeadingPriority: nil,
       setHeadingTags: nil,
@@ -3158,6 +3187,7 @@ final class Org2ModelsTests: XCTestCase {
     )
     let changedStateSameSignature = RenderedBlockInlineActions(
       isSourceEditable: true,
+      decryptSubtree: nil,
       toggleHeadingTodo: nil,
       setHeadingPriority: nil,
       setHeadingTags: nil,
@@ -3175,6 +3205,7 @@ final class Org2ModelsTests: XCTestCase {
     )
     let changedSignature = RenderedBlockInlineActions(
       isSourceEditable: true,
+      decryptSubtree: nil,
       toggleHeadingTodo: nil,
       setHeadingPriority: nil,
       setHeadingTags: nil,
@@ -4278,6 +4309,56 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(args.contains("--default-recipient-self\n"))
   }
 
+  func testCanonicalEditableRenderCoalescesSplitPGPArmorBlocks() throws {
+    let raw = """
+    * Secret :crypt:
+    -----BEGIN PGP MESSAGE-----
+    abc
+    -----END PGP MESSAGE-----
+    """
+    let json = """
+    {
+      "type": "Document",
+      "version": "test",
+      "children": [
+        {
+          "type": "Headline",
+          "level": 1,
+          "todo": null,
+          "tags": ["crypt"],
+          "title": [{ "type": "Text", "value": "Secret" }],
+          "sourceRange": { "startLine": 1, "endLine": 1 },
+          "children": [
+            {
+              "type": "Paragraph",
+              "children": [{ "type": "Text", "value": "-----BEGIN PGP MESSAGE-----" }],
+              "sourceRange": { "startLine": 2, "endLine": 2 }
+            },
+            {
+              "type": "Paragraph",
+              "children": [{ "type": "Text", "value": "abc" }],
+              "sourceRange": { "startLine": 3, "endLine": 3 }
+            },
+            {
+              "type": "Paragraph",
+              "children": [{ "type": "Text", "value": "-----END PGP MESSAGE-----" }],
+              "sourceRange": { "startLine": 4, "endLine": 4 }
+            }
+          ]
+        }
+      ]
+    }
+    """
+    let document = try JSONDecoder().decode(Org2CanonicalDocument.self, from: Data(json.utf8))
+
+    let blocks = OrgEntryRenderer.parseEditable(raw, canonicalDocument: document)
+
+    let encrypted = blocks.filter { OrgCrypt.armorSummary($0.rawText) != nil }
+    XCTAssertEqual(encrypted.count, 1)
+    XCTAssertEqual(encrypted.first?.startLine, 2)
+    XCTAssertEqual(encrypted.first?.endLineExclusive, 5)
+  }
+
   @MainActor
   func testSaveCurrentFileEncryptsPlaintextCryptSubtreesWithoutActiveEdit() async throws {
     let root = FileManager.default.temporaryDirectory
@@ -4325,6 +4406,58 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(updated.contains("* Secret :crypt:\nplaintext"))
     XCTAssertTrue(updated.contains("* Public\nbody"))
     XCTAssertEqual(store.statusText, "Encrypted 1 subtree")
+  }
+
+  @MainActor
+  func testAddingCryptTagToHeadingEncryptsSubtreeOnSave() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-crypt-heading-tag-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("secrets.org2")
+    let fakeGPG = root.appendingPathComponent("fake-gpg.sh")
+    try """
+    #!/bin/sh
+    cat >/dev/null
+    printf '%s\\n' '-----BEGIN PGP MESSAGE-----' 'fake encrypted payload' '-----END PGP MESSAGE-----'
+    """.write(to: fakeGPG, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeGPG.path)
+    try """
+    * Secret
+    plaintext
+    * Public
+    body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.orgCryptRecipientsText = "person@example.com"
+    store.orgCryptGpgProgram = fakeGPG.path
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    guard let location = store.selectedLocation else {
+      return XCTFail("Expected selected file")
+    }
+    await store.loadEntrySource(for: location)
+    try await waitForEntryRender(store)
+
+    let heading = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .heading(let heading) = $0.rendered {
+        return heading.title == "Secret"
+      }
+      return false
+    })
+    await store.setHeadingTags(heading, tags: ["crypt"])
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* Secret :crypt:\n-----BEGIN PGP MESSAGE-----"))
+    XCTAssertTrue(updated.contains("fake encrypted payload"))
+    XCTAssertFalse(updated.contains("* Secret :crypt:\nplaintext"))
+    XCTAssertTrue(updated.contains("* Public\nbody"))
+    XCTAssertEqual(store.statusText, "Saved and encrypted 1 subtree")
   }
 
   func testOrgMediaAttachmentRenderCacheUsesExactSourceContext() throws {

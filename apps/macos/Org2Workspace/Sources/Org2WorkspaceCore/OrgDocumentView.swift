@@ -237,6 +237,9 @@ struct OrgRenderedEntryView: View, Equatable {
     }
     return RenderedBlockInlineActions(
       isSourceEditable: isSourceEditable,
+      decryptSubtree: {
+        Task { await store.runOrgCrypt(.decrypt, line: block.startLine) }
+      },
       toggleHeadingTodo: {
         Task { await store.toggleHeadingTodo(block) }
       },
