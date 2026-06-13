@@ -1309,6 +1309,76 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(OrgRenderedEntryView.renderWindowResetKey(for: nil), "none")
   }
 
+  func testRenderedEntryWindowAnchorsDeepSelections() {
+    let blocks = (1...500).map { line in
+      OrgEditableBlock(
+        id: "block-\(line)",
+        startLine: line,
+        endLineExclusive: line + 1,
+        rawText: "Line \(line)",
+        rendered: .paragraph("Line \(line)")
+      )
+    }
+
+    let topWindow = OrgRenderedEntryView.visibleWindow(
+      requestedWindow: nil,
+      blocks: blocks,
+      selectedBlockIndex: nil
+    )
+    XCTAssertEqual(topWindow.range.lowerBound, 0)
+    XCTAssertLessThan(topWindow.range.upperBound, blocks.count)
+    XCTAssertFalse(topWindow.hasPrevious)
+    XCTAssertTrue(topWindow.hasNext)
+
+    let selectedIndex = 360
+    let anchoredWindow = OrgRenderedEntryView.visibleWindow(
+      requestedWindow: nil,
+      blocks: blocks,
+      selectedBlockIndex: selectedIndex
+    )
+    XCTAssertTrue(anchoredWindow.range.contains(selectedIndex))
+    XCTAssertGreaterThan(anchoredWindow.range.lowerBound, 0)
+    XCTAssertLessThan(anchoredWindow.range.upperBound, blocks.count)
+    XCTAssertLessThan(anchoredWindow.range.count, topWindow.range.upperBound)
+    XCTAssertTrue(anchoredWindow.hasPrevious)
+    XCTAssertTrue(anchoredWindow.hasNext)
+  }
+
+  func testRenderedEntryWindowExpandsAndKeepsSelectionVisible() {
+    let blocks = (1...500).map { line in
+      OrgEditableBlock(
+        id: "block-\(line)",
+        startLine: line,
+        endLineExclusive: line + 1,
+        rawText: "Line \(line)",
+        rendered: .paragraph("Line \(line)")
+      )
+    }
+
+    let selectedIndex = 360
+    let anchoredWindow = OrgRenderedEntryView.visibleWindow(
+      requestedWindow: nil,
+      blocks: blocks,
+      selectedBlockIndex: selectedIndex
+    )
+    let expandedPrevious = anchoredWindow.expanding(.previous, by: 50, totalCount: blocks.count)
+    XCTAssertLessThan(expandedPrevious.lowerBound, anchoredWindow.range.lowerBound)
+    XCTAssertEqual(expandedPrevious.upperBound, anchoredWindow.range.upperBound)
+
+    let expandedNext = anchoredWindow.expanding(.next, by: 50, totalCount: blocks.count)
+    XCTAssertEqual(expandedNext.lowerBound, anchoredWindow.range.lowerBound)
+    XCTAssertGreaterThan(expandedNext.upperBound, anchoredWindow.range.upperBound)
+
+    let requestedWindow = 0..<40
+    let correctedWindow = OrgRenderedEntryView.visibleWindow(
+      requestedWindow: requestedWindow,
+      blocks: blocks,
+      selectedBlockIndex: selectedIndex
+    )
+    XCTAssertTrue(correctedWindow.range.contains(selectedIndex))
+    XCTAssertGreaterThan(correctedWindow.range.lowerBound, requestedWindow.lowerBound)
+  }
+
   @MainActor
   func testSelectedRenderedBlocksMetadataTracksAssignmentsAndMutations() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
