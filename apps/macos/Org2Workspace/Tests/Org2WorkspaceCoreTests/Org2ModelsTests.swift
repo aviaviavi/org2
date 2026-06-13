@@ -2192,7 +2192,6 @@ final class Org2ModelsTests: XCTestCase {
       selectedBlockID: nil,
       selectedBlockIndex: nil,
       editingBlockID: nil,
-      isSavingBlock: false,
       sourceBlockRuns: [:]
     )
 
@@ -2206,7 +2205,6 @@ final class Org2ModelsTests: XCTestCase {
         selectedBlockID: nil,
         selectedBlockIndex: nil,
         editingBlockID: nil,
-        isSavingBlock: false,
         sourceBlockRuns: [:]
       )
     )
@@ -2229,7 +2227,6 @@ final class Org2ModelsTests: XCTestCase {
         selectedBlockID: nil,
         selectedBlockIndex: nil,
         editingBlockID: nil,
-        isSavingBlock: false,
         sourceBlockRuns: [:]
       )
     )
@@ -2244,7 +2241,20 @@ final class Org2ModelsTests: XCTestCase {
         selectedBlockID: "alpha",
         selectedBlockIndex: 0,
         editingBlockID: nil,
-        isSavingBlock: false,
+        sourceBlockRuns: [:]
+      )
+    )
+
+    XCTAssertEqual(
+      base,
+      OrgRenderedEntryView(
+        blocks: blocks,
+        blocksRenderSignature: signature,
+        source: sourceContext,
+        corpusRoot: nil,
+        selectedBlockID: nil,
+        selectedBlockIndex: nil,
+        editingBlockID: nil,
         sourceBlockRuns: [:]
       )
     )
@@ -2259,22 +2269,6 @@ final class Org2ModelsTests: XCTestCase {
         selectedBlockID: nil,
         selectedBlockIndex: nil,
         editingBlockID: nil,
-        isSavingBlock: true,
-        sourceBlockRuns: [:]
-      )
-    )
-
-    XCTAssertNotEqual(
-      base,
-      OrgRenderedEntryView(
-        blocks: blocks,
-        blocksRenderSignature: signature,
-        source: sourceContext,
-        corpusRoot: nil,
-        selectedBlockID: nil,
-        selectedBlockIndex: nil,
-        editingBlockID: nil,
-        isSavingBlock: false,
         sourceBlockRuns: [
           "/tmp/render-context.org2:source": SourceBlockRunState(
             status: .succeeded,
