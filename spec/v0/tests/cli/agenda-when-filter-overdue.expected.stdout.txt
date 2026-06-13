@@ -15,14 +15,22 @@
           "headline": "Old task",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-when-filter.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         },
         {
           "todo": "IN_PROGRESS",
           "headline": "Old in progress task",
           "kind": "DEADLINE",
           "file": "spec/v0/tests/cli/agenda-when-filter.input.txt",
-          "line": 3
+          "line": 3,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

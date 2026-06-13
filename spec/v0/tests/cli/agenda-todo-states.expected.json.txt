@@ -15,7 +15,11 @@
           "headline": "Another overdue todo (should show)",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-todo-states.org",
-          "line": 15
+          "line": 15,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     },
@@ -28,7 +32,11 @@
           "headline": "In progress and overdue (should show)",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-todo-states.org",
-          "line": 18
+          "line": 18,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }
@@ -43,7 +51,11 @@
           "headline": "Normal todo today",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-todo-states.org",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     },
@@ -56,7 +68,11 @@
           "headline": "Done but upcoming (should show)",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-todo-states.org",
-          "line": 3
+          "line": 3,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

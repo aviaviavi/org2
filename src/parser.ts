@@ -35,6 +35,11 @@ export type ParseError = {
   column: number;
 };
 
+export type ParseOptions = {
+  sourceRanges?: boolean;
+  sourceLineOffset?: number;
+};
+
 function makeError(message: string, line: number, column: number): ParseError {
   return { message, line, column };
 }
@@ -983,7 +988,7 @@ function parseTable(lines: string[], startLineIndex: number, indent: string): Pa
   return { table: { type: "Table", rows }, nextLineIndex: lines.length };
 }
 
-export function parseOrgToCanonicalAst(input: string): DocumentNode {
+export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}): DocumentNode {
   if (input.includes("\r\n")) {
     fail(makeError("Unsupported line endings: CRLF", 1, 1));
   }
@@ -993,9 +998,35 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
   const headlineStack: HeadlineNode[] = [];
 
   let paragraphLines: string[] = [];
+  let paragraphStartLine: number | null = null;
   let currentList: ListNode | null = null;
   let pendingBlankLinesBeforeNextNode = 0;
   let pendingAffiliatedKeywords: KeywordLineNode[] = [];
+
+  const sourceLineOffset = options.sourceLineOffset ?? 0;
+
+  function setSourceRange<T extends object>(node: T, startLine: number, endLine: number): T {
+    if (options.sourceRanges) {
+      const absoluteStartLine = startLine + sourceLineOffset;
+      const absoluteEndLine = Math.max(startLine, endLine) + sourceLineOffset;
+      (node as T & { sourceRange: { startLine: number; endLine: number } }).sourceRange = {
+        startLine: absoluteStartLine,
+        endLine: absoluteEndLine,
+      };
+    }
+    return node;
+  }
+
+  function sourceRangeStart(node: object): number | undefined {
+    const startLine = (node as { sourceRange?: { startLine: number; endLine: number } }).sourceRange?.startLine;
+    return startLine === undefined ? undefined : startLine - sourceLineOffset;
+  }
+
+  function finalizeHeadline(headline: HeadlineNode, endLine: number): void {
+    if (!options.sourceRanges) return;
+    const startLine = sourceRangeStart(headline);
+    if (startLine !== undefined) setSourceRange(headline, startLine, endLine);
+  }
 
   function currentContainer(): DocumentNode | HeadlineNode {
     return headlineStack.length > 0 ? headlineStack[headlineStack.length - 1] : doc;
@@ -1013,7 +1044,10 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
     return node;
   }
 
-  function pushCurrent(node: Node): void {
+  function pushCurrent(node: Node, startLine?: number, endLine?: number): void {
+    if (startLine !== undefined) {
+      setSourceRange(node, startLine, endLine ?? startLine);
+    }
     getChildrenArray(currentContainer()).push(attachBlankLinesBefore(node));
   }
 
@@ -1040,8 +1074,12 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
     if (paragraphLines.length === 0) return;
 
     const node = paragraphFromLines(paragraphLines);
+    if (paragraphStartLine !== null) {
+      setSourceRange(node, paragraphStartLine, paragraphStartLine + paragraphLines.length - 1);
+    }
     pushCurrent(node);
     paragraphLines = [];
+    paragraphStartLine = null;
   }
 
   function endList(): void {
@@ -1075,6 +1113,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
   }
 
   const lines = input.split("\n");
+  const documentEndLine = input.endsWith("\n") ? Math.max(1, lines.length - 1) : lines.length;
 
   for (let i = 0; i < lines.length; ) {
     const lineNumber = i + 1;
@@ -1086,12 +1125,13 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
         flushParagraph();
         endList();
         if (isAffiliatedKeyword(keyword)) {
+          setSourceRange(keyword, lineNumber, lineNumber);
           pendingAffiliatedKeywords.push(keyword);
           i += 1;
           continue;
         }
         flushAffiliatedKeywords();
-        pushCurrent(keyword);
+        pushCurrent(keyword, lineNumber);
         i += 1;
         continue;
       }
@@ -1101,7 +1141,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
         flushParagraph();
         endList();
         flushAffiliatedKeywords();
-        for (const node of planning) pushCurrent(node);
+        for (const node of planning) pushCurrent(node, lineNumber);
         i += 1;
         continue;
       }
@@ -1111,7 +1151,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
         flushParagraph();
         endList();
         flushAffiliatedKeywords();
-        pushCurrent(clock);
+        pushCurrent(clock, lineNumber);
         i += 1;
         continue;
       }
@@ -1121,7 +1161,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
         flushParagraph();
         endList();
         flushAffiliatedKeywords();
-        pushCurrent(comment);
+        pushCurrent(comment, lineNumber);
         i += 1;
         continue;
       }
@@ -1133,7 +1173,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
           endList();
 
           const { block, nextLineIndex } = parseSrcBlock(lines, i);
-          pushCurrent(attachAffiliatedKeywords(block));
+          pushCurrent(attachAffiliatedKeywords(block), lineNumber, nextLineIndex);
           i = nextLineIndex;
           continue;
         }
@@ -1144,7 +1184,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
           endList();
 
           const { block, nextLineIndex } = parseBlock(lines, i, kind);
-          pushCurrent(attachAffiliatedKeywords(block));
+          pushCurrent(attachAffiliatedKeywords(block), lineNumber, nextLineIndex);
           i = nextLineIndex;
           continue;
         }
@@ -1158,7 +1198,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
           indent: directive.indent,
           keywordRaw: directive.keywordRaw,
           afterKeywordRaw: directive.afterKeywordRaw,
-        });
+        }, lineNumber);
         i += 1;
         continue;
       }
@@ -1169,7 +1209,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
       endList();
 
       const { table, nextLineIndex } = parseTable(lines, i, "");
-      pushCurrent(attachAffiliatedKeywords(table));
+      pushCurrent(attachAffiliatedKeywords(table), lineNumber, nextLineIndex);
       i = nextLineIndex;
       continue;
     }
@@ -1182,7 +1222,8 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
       const { level, title, todo, tags } = parseHeadline(line, lineNumber);
 
       while (headlineStack.length > 0 && headlineStack[headlineStack.length - 1].level >= level) {
-        headlineStack.pop();
+        const popped = headlineStack.pop();
+        if (popped) finalizeHeadline(popped, lineNumber - 1);
       }
 
       const node: HeadlineNode = {
@@ -1194,7 +1235,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
         children: [],
       };
 
-      pushCurrent(node);
+      pushCurrent(node, lineNumber);
       headlineStack.push(node);
       i += 1;
       continue;
@@ -1206,7 +1247,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
       flushAffiliatedKeywords();
 
       const { drawer, nextLineIndex } = parsePropertyDrawer(lines, i);
-      pushCurrent(drawer);
+      pushCurrent(drawer, lineNumber, nextLineIndex);
       i = nextLineIndex;
       continue;
     }
@@ -1221,7 +1262,7 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
         flushAffiliatedKeywords();
 
         const { drawer, nextLineIndex } = parseDrawer(lines, i);
-        pushCurrent(drawer);
+        pushCurrent(drawer, lineNumber, nextLineIndex);
         i = nextLineIndex;
         continue;
       }
@@ -1530,12 +1571,17 @@ export function parseOrgToCanonicalAst(input: string): DocumentNode {
 
     endList();
     flushAffiliatedKeywords();
+    if (paragraphStartLine === null) paragraphStartLine = lineNumber;
     paragraphLines.push(line);
     i += 1;
   }
 
   flushAffiliatedKeywords();
   flushParagraph();
+  while (headlineStack.length > 0) {
+    const popped = headlineStack.pop();
+    if (popped) finalizeHeadline(popped, documentEndLine);
+  }
   return doc;
 }
 
@@ -1551,11 +1597,11 @@ export interface ParseResult {
  * Parse org content and collect errors as diagnostics instead of throwing
  * Useful for LSP and editor integrations that need to report errors without failing
  */
-export function parseOrgWithDiagnostics(input: string): ParseResult {
+export function parseOrgWithDiagnostics(input: string, options: ParseOptions = {}): ParseResult {
   const diagnostics: ParseError[] = [];
 
   try {
-    const ast = parseOrgToCanonicalAst(input);
+    const ast = parseOrgToCanonicalAst(input, options);
     return { ast, diagnostics };
   } catch (error: any) {
     // Extract line:column from error message format: "LINE:COL MESSAGE"

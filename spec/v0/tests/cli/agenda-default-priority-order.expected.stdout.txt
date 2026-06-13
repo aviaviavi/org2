@@ -16,28 +16,47 @@
           "headline": "Alpha task",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-default-priority-order.input.txt",
-          "line": 3
+          "line": 3,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
+          "priority": "A"
         },
         {
           "todo": "TODO",
           "headline": "Bravo task",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-default-priority-order.input.txt",
-          "line": 6
+          "line": 6,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
+          "priority": "B"
         },
         {
           "todo": "TODO",
           "headline": "Charlie task",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-default-priority-order.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
+          "priority": "C"
         },
         {
           "todo": "TODO",
           "headline": "No priority task",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-default-priority-order.input.txt",
-          "line": 9
+          "line": 9,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

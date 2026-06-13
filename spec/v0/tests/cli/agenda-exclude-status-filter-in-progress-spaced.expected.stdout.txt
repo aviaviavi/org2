@@ -16,21 +16,33 @@
           "headline": "Ship MVP filter",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-status-filter.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         },
         {
           "todo": "DONE",
           "headline": "Already wrapped",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-status-filter.input.txt",
-          "line": 9
+          "line": 9,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         },
         {
           "todo": "SOMEDAY",
           "headline": "Custom bucket item",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-status-filter.input.txt",
-          "line": 15
+          "line": 15,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     },
@@ -43,7 +55,11 @@
           "headline": "Skip this",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-status-filter.input.txt",
-          "line": 12
+          "line": 12,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
         }
       ]
     }

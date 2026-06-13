@@ -16,7 +16,14 @@
           "headline": "Follow up with Avi",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-property-filter.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {
+            "OWNER": "Avi",
+            "TEAM": "Platform"
+          }
         }
       ]
     },
@@ -29,7 +36,14 @@
           "headline": "Handle support inbox",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-property-filter.input.txt",
-          "line": 14
+          "line": 14,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {
+            "OWNER": "AVI",
+            "TEAM": "Support"
+          }
         }
       ]
     }

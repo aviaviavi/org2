@@ -16,7 +16,12 @@
           "headline": "Ship release candidate",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-priority-filter.input.txt",
-          "line": 0
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
+          "priority": "A"
         }
       ]
     },
@@ -29,7 +34,12 @@
           "headline": "Refactor old script",
           "kind": "SCHEDULED",
           "file": "spec/v0/tests/cli/agenda-priority-filter.input.txt",
-          "line": 6
+          "line": 6,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {},
+          "priority": "C"
         }
       ]
     }
