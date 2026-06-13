@@ -405,6 +405,8 @@ final class Org2ModelsTests: XCTestCase {
       [.text("Plain sentence with no org syntax here.")]
     )
     XCTAssertTrue(OrgInlineText.usesAttributedRendering("Review [[id:abc][Alice]] soon."))
+    XCTAssertTrue(OrgInlineText.usesAttributedRendering("See agenda.org for context."))
+    XCTAssertFalse(OrgInlineText.usesAttributedRendering(String(repeating: "plain text ", count: 1_000)))
 
     let spans = OrgInlineParser.parse("See notes/daily/2026-06-12.org:7 for context.")
     XCTAssertEqual(spans, [
