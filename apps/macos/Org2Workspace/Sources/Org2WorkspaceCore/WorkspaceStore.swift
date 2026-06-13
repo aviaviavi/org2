@@ -1070,6 +1070,56 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func setPropertyValue(_ block: OrgEditableBlock, key: String, value: String) async {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "No editable source loaded"
+      return
+    }
+    guard block.startLine >= source.startLine,
+          block.endLineExclusive <= source.endLineExclusive
+    else {
+      statusText = "Block is outside the selected source"
+      return
+    }
+    let normalizedKey = Self.normalizedPropertyKey(key)
+    guard normalizedKey != "ID" else {
+      statusText = "ID property is read-only"
+      return
+    }
+    guard case .properties = block.rendered,
+          let replacement = Self.propertyDrawerRawTextSettingValue(
+            block.rawText,
+            key: normalizedKey,
+            value: value
+          )
+    else {
+      statusText = "Property update failed"
+      return
+    }
+
+    isSavingBlock = true
+    defer { isSavingBlock = false }
+
+    do {
+      try await Task.detached(priority: .userInitiated) {
+        try Self.replaceSourceRange(
+          file: source.file,
+          startLine: block.startLine,
+          endLineExclusive: block.endLineExclusive,
+          replacement: replacement
+        )
+      }.value
+      await finishBlockMutation(
+        file: source.file,
+        status: "\(normalizedKey) -> property",
+        selectLine: block.startLine
+      )
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Property update failed"
+    }
+  }
+
   public func duplicateBlock(_ block: OrgEditableBlock) async {
     guard let source = selectedEntrySource, source.isEditable else {
       statusText = "No editable source loaded"
@@ -3628,6 +3678,30 @@ public final class WorkspaceStore: ObservableObject {
       output.append(normalized)
     }
     return output
+  }
+
+  nonisolated private static func propertyDrawerRawTextSettingValue(
+    _ rawText: String,
+    key: String,
+    value: String
+  ) -> String? {
+    let normalizedKey = normalizedPropertyKey(key)
+    guard !normalizedKey.isEmpty, normalizedKey != "PROPERTIES", normalizedKey != "END" else {
+      return nil
+    }
+
+    var drawer = OrgEditablePropertyDrawer(rawText: rawText)
+    guard let index = drawer.rows.firstIndex(where: { $0.normalizedKey == normalizedKey }) else {
+      return nil
+    }
+    drawer.setValue(at: index, value: value)
+    return drawer.formattedRawText
+  }
+
+  nonisolated private static func normalizedPropertyKey(_ key: String) -> String {
+    key
+      .trimmingCharacters(in: CharacterSet(charactersIn: ": \t\r\n"))
+      .uppercased()
   }
 
   nonisolated private static func planningRawText(kind: String, value: String) -> String? {
