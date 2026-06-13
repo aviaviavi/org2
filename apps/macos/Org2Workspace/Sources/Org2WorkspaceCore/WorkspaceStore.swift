@@ -3120,6 +3120,8 @@ public final class WorkspaceStore: ObservableObject {
       "\(line)",
       "--gpg-program",
       settings.gpgProgram,
+      "--gpg-timeout",
+      "\(settings.gpgTimeout)",
       "--format",
       "json",
       "--apply"
@@ -3151,7 +3153,7 @@ public final class WorkspaceStore: ObservableObject {
     } catch {
       errorText = error.localizedDescription
       orgCryptStatusText = error.localizedDescription
-      statusText = "Org crypt \(action.rawValue) failed"
+      statusText = error.localizedDescription
     }
   }
 

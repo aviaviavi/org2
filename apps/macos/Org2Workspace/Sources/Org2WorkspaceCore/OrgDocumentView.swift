@@ -216,8 +216,32 @@ struct OrgRenderedEntryView: View, Equatable {
   }
 
   private func inlineActions(for block: OrgEditableBlock, isSourceEditable: Bool) -> RenderedBlockInlineActions {
+    let decryptSubtree: (@MainActor @Sendable () -> Void)? = {
+      guard isSourceEditable,
+            OrgCrypt.armorSummary(block.rawText) != nil
+      else {
+        return nil
+      }
+      let line = OrgRenderedCryptTarget.headingLine(for: block, in: blocks)
+      return {
+        Task { await store.runOrgCrypt(.decrypt, line: line) }
+      }
+    }()
+
     guard block.isEditable else {
-      return .readOnly
+      return RenderedBlockInlineActions(
+        isSourceEditable: isSourceEditable,
+        decryptSubtree: decryptSubtree,
+        toggleHeadingTodo: nil,
+        setHeadingPriority: nil,
+        setHeadingTags: nil,
+        setPlanningBlock: nil,
+        setPropertyValue: nil,
+        toggleListItemCheckbox: nil,
+        sourceBlockRunRenderSignature: "",
+        sourceBlockRunState: nil,
+        runSourceBlock: nil
+      )
     }
     let runnableSourceLanguage: String? = {
       if Self.isRunnableSourceBlock(block),
@@ -237,9 +261,7 @@ struct OrgRenderedEntryView: View, Equatable {
     }
     return RenderedBlockInlineActions(
       isSourceEditable: isSourceEditable,
-      decryptSubtree: {
-        Task { await store.runOrgCrypt(.decrypt, line: block.startLine) }
-      },
+      decryptSubtree: decryptSubtree,
       toggleHeadingTodo: {
         Task { await store.toggleHeadingTodo(block) }
       },
@@ -363,6 +385,17 @@ struct OrgRenderedEntryView: View, Equatable {
     }
 
     return start..<max(start, end)
+  }
+}
+
+enum OrgRenderedCryptTarget {
+  static func headingLine(for block: OrgEditableBlock, in blocks: [OrgEditableBlock]) -> Int {
+    for candidate in blocks.reversed() where candidate.startLine <= block.startLine {
+      if case .heading = candidate.rendered {
+        return candidate.startLine
+      }
+    }
+    return block.startLine
   }
 }
 
@@ -808,7 +841,9 @@ enum RenderedBlockEditingPolicy {
     switch block.rendered {
     case .blank, .horizontalRule, .properties:
       return false
-    case .heading, .planning, .quote, .source, .table, .listItem, .paragraph, .keyword:
+    case .paragraph:
+      return OrgCrypt.armorSummary(block.rawText) == nil
+    case .heading, .planning, .quote, .source, .table, .listItem, .keyword:
       return true
     }
   }

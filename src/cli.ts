@@ -7799,6 +7799,7 @@ async function main(): Promise<void> {
   let cryptApply = false;
   let cryptFormat: "text" | "json" | "diff" = "json";
   let cryptGpgProgram = "gpg";
+  let cryptGpgTimeoutMs = 30_000;
 
   // Formatter
   let fmtStdin = false;
@@ -8893,6 +8894,19 @@ async function main(): Promise<void> {
         }
         i++;
       }
+    } else if (arg === "--gpg-timeout") {
+      i++;
+      if (i < args.length) {
+        if (command === "crypt") {
+          const seconds = Number.parseFloat(args[i] ?? "");
+          if (!Number.isFinite(seconds) || seconds <= 0) {
+            console.error("Error: --gpg-timeout requires a positive number of seconds");
+            process.exit(1);
+          }
+          cryptGpgTimeoutMs = Math.max(100, Math.round(seconds * 1000));
+        }
+        i++;
+      }
     } else if (arg === "--query" && (command === "agent" || command === "context" || command === "brief")) {
       i++;
       if (i < args.length) {
@@ -9379,7 +9393,7 @@ Core commands:
   org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
   org2 todo <set|toggle> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
-  org2 crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--default-recipient-self] [--gpg-program PATH] [--apply]
+  org2 crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--default-recipient-self] [--gpg-program PATH] [--gpg-timeout SECONDS] [--apply]
   org2 capture --file FILE --title TITLE [--template note|task] [--apply]
   org2 capture (--text TEXT|--stdin|--url URL|--file SOURCE) --to FILE [--title TITLE] [--apply]
   org2 archive --file FILE --pos LINE[:COL] [--archive-file FILE] [--apply]
@@ -9503,7 +9517,7 @@ Flags:
     text = `org2 crypt ${options.cryptAction}
 
 Usage:
-  org2 crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--default-recipient-self] [--gpg-program PATH] [--apply]
+  org2 crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--default-recipient-self] [--gpg-program PATH] [--gpg-timeout SECONDS] [--apply]
 
 Flags:
   --file FILE         Target file
@@ -9514,6 +9528,7 @@ Flags:
   --recipient-file FILE Public-key recipient file (repeatable)
   --default-recipient-self Use GPG's default key as the public-key recipient
   --gpg-program PATH  Optional gpg binary path
+  --gpg-timeout SECONDS Maximum time to wait for gpg
   --apply             Write changes instead of previewing`;
   } else if (command === "capture") {
     text = `org2 capture
@@ -13219,7 +13234,11 @@ Flags:
       action: "encrypt" | "decrypt",
       inputText: string,
     ): { ok: boolean; stdout: string; stderr: string; error?: string } => {
-      const commonArgs = ["--batch", "--yes", "--pinentry-mode", "loopback", "--trust-model", "always"];
+      const commonArgs = ["--yes", "--trust-model", "always"];
+      if (action !== "decrypt" || cryptPassphrase) {
+        commonArgs.unshift("--batch");
+        commonArgs.push("--pinentry-mode", "loopback");
+      }
       if (cryptPassphrase) commonArgs.push("--passphrase", cryptPassphrase);
       const defaultRecipientArgs = cryptUseDefaultRecipientSelf ? ["--default-recipient-self"] : [];
       const recipientArgs = cryptRecipients.flatMap((recipient) => ["--recipient", recipient]);
@@ -13234,6 +13253,7 @@ Flags:
       const res = spawnSync(cryptGpgProgram, commandArgs, {
         input: inputText,
         encoding: "utf8",
+        timeout: cryptGpgTimeoutMs,
       });
 
       if (res.error) {

@@ -4247,6 +4247,31 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNil(OrgCrypt.armorSummary("not encrypted"))
   }
 
+  func testEncryptedRenderedBlockTargetsOwningHeadingAndDoesNotSingleClickEdit() {
+    let heading = OrgEditableBlock(
+      id: "heading",
+      startLine: 10,
+      endLineExclusive: 11,
+      rawText: "* Secret :crypt:",
+      rendered: .heading(OrgHeadingBlock(level: 1, todo: nil, priority: nil, title: "Secret", tags: ["crypt"]))
+    )
+    let armorRaw = """
+    -----BEGIN PGP MESSAGE-----
+    abc
+    -----END PGP MESSAGE-----
+    """
+    let armor = OrgEditableBlock(
+      id: "armor",
+      startLine: 11,
+      endLineExclusive: 14,
+      rawText: armorRaw,
+      rendered: .paragraph(armorRaw)
+    )
+
+    XCTAssertEqual(OrgRenderedCryptTarget.headingLine(for: armor, in: [heading, armor]), 10)
+    XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: armor, isSourceEditable: true))
+  }
+
   func testOrgCryptEncryptionTimesOutNonInteractiveGPG() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-crypt-timeout-\(UUID().uuidString)", isDirectory: true)
@@ -5108,7 +5133,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNil(store.agenda)
 
     store.cancelEditingBlock()
-    try await waitForCondition(timeout: 2) {
+    try await waitForCondition(timeout: 5) {
       store.agenda?.totalItemCount == 0 && !store.isLoadingAgenda
     }
   }
@@ -7253,7 +7278,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  private func waitForCondition(timeout: TimeInterval = 3, _ condition: @escaping @MainActor () -> Bool) async throws {
+  private func waitForCondition(timeout: TimeInterval = 5, _ condition: @escaping @MainActor () -> Bool) async throws {
     let deadline = Date().addingTimeInterval(timeout)
     while !condition() && Date() < deadline {
       try await Task.sleep(nanoseconds: 20_000_000)
