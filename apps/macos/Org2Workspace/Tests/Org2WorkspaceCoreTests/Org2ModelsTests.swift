@@ -4271,6 +4271,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(OrgRenderedCryptTarget.headingLine(for: armor, in: [heading, armor]), 10)
     XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: armor, isSourceEditable: true))
     XCTAssertFalse(RenderedBlockInteractionPolicy.usesRowTapGestures(block: armor, isSourceEditable: true))
+    XCTAssertFalse(RenderedBlockInteractionPolicy.showsRowChrome(for: armor))
   }
 
   func testOrgCryptEncryptionTimesOutNonInteractiveGPG() throws {

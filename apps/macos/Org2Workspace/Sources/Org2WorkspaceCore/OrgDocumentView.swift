@@ -857,6 +857,13 @@ enum RenderedBlockInteractionPolicy {
     }
     return true
   }
+
+  static func showsRowChrome(for block: OrgEditableBlock) -> Bool {
+    guard OrgCrypt.armorSummary(block.rawText) == nil else {
+      return false
+    }
+    return OrgRenderedBlockDisplayPolicy.showsRowChrome(for: block)
+  }
 }
 
 enum OrgRenderedBlockDisplayPolicy {
@@ -1024,7 +1031,7 @@ private struct EditableRenderedBlockView<Content: View>: View {
   }
 
   private var showsChrome: Bool {
-    OrgRenderedBlockDisplayPolicy.showsRowChrome(for: block)
+    RenderedBlockInteractionPolicy.showsRowChrome(for: block)
   }
 
   private var showsDisclosureSlot: Bool {
