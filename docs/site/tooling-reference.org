@@ -131,7 +131,7 @@ JSON output includes =ok=, =format=, =artifact=, =source=, =diagnostics=, and =s
 
 * Local data queries
 
-=org2 query-data= is the first DuckDB-backed bridge for local/ad hoc datasets described in org2 notes. It scans fenced =```dataset= blocks, creates DuckDB views for explicit =csv=, =parquet=, or =json= paths, then runs a fenced =```sql results=NAME= block and materializes the returned rows.
+=org2 query-data= is the first DuckDB-backed bridge for local/ad hoc datasets described in org2 notes. It scans fenced =```dataset= blocks, creates DuckDB views for explicit =csv=, =parquet=, or =json= paths or named org2 tables, then runs a fenced =```sql results=NAME= block and materializes the returned rows.
 
 #+begin_src org
 ```dataset fetches
@@ -145,6 +145,27 @@ SELECT state, count(*) AS fetches
 FROM fetches
 GROUP BY state
 ORDER BY fetches DESC
+```
+#+end_src
+
+Named org2 tables can also become local DuckDB views without an intermediate CSV export:
+
+#+begin_src org
+#+name: raw_fetches
+| state | fetches |
+|-------+---------|
+| CA    | 42      |
+| NY    | 24      |
+
+```dataset fetches
+type: table
+source: raw_fetches
+engine: duckdb
+```
+
+```sql results=fetches_total
+SELECT sum(fetches) AS fetches
+FROM fetches
 ```
 #+end_src
 
