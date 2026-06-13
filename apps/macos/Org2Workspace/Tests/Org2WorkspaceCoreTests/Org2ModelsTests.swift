@@ -1579,6 +1579,26 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(RenderedRowChrome.controlsOpacity(isVisible: false), 0)
     XCTAssertTrue(RenderedRowChrome.allowsHitTesting(isVisible: true))
     XCTAssertFalse(RenderedRowChrome.allowsHitTesting(isVisible: false))
+    XCTAssertTrue(RenderedRowChrome.rendersControlLayer(
+      isSourceEditable: true,
+      allowsHoverChrome: true,
+      isSelected: false
+    ))
+    XCTAssertFalse(RenderedRowChrome.rendersControlLayer(
+      isSourceEditable: true,
+      allowsHoverChrome: false,
+      isSelected: false
+    ))
+    XCTAssertTrue(RenderedRowChrome.rendersControlLayer(
+      isSourceEditable: true,
+      allowsHoverChrome: false,
+      isSelected: true
+    ))
+    XCTAssertFalse(RenderedRowChrome.rendersControlLayer(
+      isSourceEditable: false,
+      allowsHoverChrome: true,
+      isSelected: true
+    ))
     XCTAssertEqual(
       RenderedRowChrome.contentTrailingPadding(
         isSourceEditable: true,
