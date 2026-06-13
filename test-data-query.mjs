@@ -14,6 +14,7 @@ const urlNote = path.join(tmp, "url-report.org2");
 const viewNote = path.join(tmp, "view-report.org2");
 const orgViewNote = path.join(tmp, "org-view-report.org2");
 const duplicateDatasetNote = path.join(tmp, "duplicate-dataset-report.org2");
+const conflictingRelationNote = path.join(tmp, "conflicting-relation-report.org2");
 const duplicateResultNote = path.join(tmp, "duplicate-result-report.org2");
 const data = path.join(tmp, "package-fetches.csv");
 const fakeDuckdb = path.join(tmp, "duckdb");
@@ -141,6 +142,27 @@ engine: duckdb
 type: csv
 path: ./package-fetches.csv
 engine: duckdb
+\`\`\`
+
+\`\`\`sql results=fetches_by_state
+SELECT state, sum(fetches) AS fetches
+FROM fetches
+GROUP BY state
+\`\`\`
+`, "utf8");
+
+fs.writeFileSync(conflictingRelationNote, `* Package fetch report with conflicting relation ids
+
+\`\`\`dataset fetches
+type: csv
+path: ./package-fetches.csv
+engine: duckdb
+\`\`\`
+
+\`\`\`sql view=fetches
+SELECT state, fetches
+FROM fetches
+WHERE fetches > 0
 \`\`\`
 
 \`\`\`sql results=fetches_by_state
@@ -361,6 +383,12 @@ assert.notEqual(duplicateDataset.status, 0);
 const duplicateDatasetJson = JSON.parse(duplicateDataset.stdout);
 assert.equal(duplicateDatasetJson.ok, false);
 assert.match(duplicateDatasetJson.diagnostics[0].message, /Duplicate dataset block "fetches"/);
+
+const conflictingRelation = spawnSync("node", ["dist/cli.js", "query-data", "--file", conflictingRelationNote, "--results", "fetches_by_state", "--duckdb", fakeDuckdb, "--format", "json"], { cwd: repo, encoding: "utf8" });
+assert.notEqual(conflictingRelation.status, 0);
+const conflictingRelationJson = JSON.parse(conflictingRelation.stdout);
+assert.equal(conflictingRelationJson.ok, false);
+assert.match(conflictingRelationJson.diagnostics[0].message, /SQL view block "fetches" conflicts with a dataset block/);
 
 const duplicateResult = spawnSync("node", ["dist/cli.js", "query-data", "--file", duplicateResultNote, "--results", "fetches_by_state", "--duckdb", fakeDuckdb, "--format", "json"], { cwd: repo, encoding: "utf8" });
 assert.notEqual(duplicateResult.status, 0);
