@@ -1598,6 +1598,66 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testAutosavesHeadingBlockWithoutLeavingInlineEditMode() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-heading-autosave-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("heading-autosave.org2")
+    try """
+    #+TITLE: Heading Autosave Test
+
+    * TODO [#A] Parent :work:
+    Body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": ["work"],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let heading = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .heading = $0.rendered { return true }
+      return false
+    })
+    store.beginEditingBlock(heading)
+    let replacement = "* DONE [#B] Renamed parent :work:focus:"
+    store.updateEditingBlockDraft(heading, draft: replacement)
+    await store.autosaveEditedBlock(heading, replacement: replacement)
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* DONE [#B] Renamed parent :work:focus:\nBody"))
+    XCTAssertFalse(store.isEditingEntry)
+    XCTAssertEqual(store.selectedBlock?.rawText, replacement)
+    XCTAssertEqual(store.editableBlockText, replacement)
+    XCTAssertNotNil(store.editingBlockID)
+    guard case .heading(let renderedHeading) = store.selectedBlock?.rendered else {
+      return XCTFail("Expected heading block")
+    }
+    XCTAssertEqual(renderedHeading.todo, "DONE")
+    XCTAssertEqual(renderedHeading.priority, "B")
+    XCTAssertEqual(renderedHeading.title, "Renamed parent")
+    XCTAssertEqual(renderedHeading.tags, ["work", "focus"])
+  }
+
+  @MainActor
   func testSplitsEditingParagraphAtCaretIntoNewEditableBlock() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-block-split-\(UUID().uuidString)", isDirectory: true)
