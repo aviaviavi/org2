@@ -34,6 +34,7 @@ struct RenderedBlockView: View, Equatable {
       && lhs.sourceFile == rhs.sourceFile
       && lhs.corpusRoot == rhs.corpusRoot
       && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
+      && lhs.inlineActions.sourceBlockRunState == rhs.inlineActions.sourceBlockRunState
   }
 
   var body: some View {
@@ -52,7 +53,7 @@ struct RenderedBlockView: View, Equatable {
     case .quote(let lines):
       RenderedQuoteView(lines: lines, rawText: rawText)
     case .source(let language, let lines):
-      RenderedSourceView(language: language, lines: lines, editableBlock: editableBlock)
+      RenderedSourceView(language: language, lines: lines, inlineActions: inlineActions)
     case .table(let table):
       RenderedTableView(table: table)
     case .horizontalRule:
@@ -95,6 +96,8 @@ struct RenderedBlockInlineActions: Sendable {
   let setPlanningBlock: (@MainActor @Sendable (_ kind: String, _ value: String) -> Void)?
   let setPropertyValue: (@MainActor @Sendable (_ key: String, _ value: String) -> Void)?
   let toggleListItemCheckbox: (@MainActor @Sendable () -> Void)?
+  let sourceBlockRunState: SourceBlockRunState?
+  let runSourceBlock: (@MainActor @Sendable () -> Void)?
 
   static let readOnly = RenderedBlockInlineActions(
     isSourceEditable: false,
@@ -103,7 +106,9 @@ struct RenderedBlockInlineActions: Sendable {
     setHeadingTags: nil,
     setPlanningBlock: nil,
     setPropertyValue: nil,
-    toggleListItemCheckbox: nil
+    toggleListItemCheckbox: nil,
+    sourceBlockRunState: nil,
+    runSourceBlock: nil
   )
 }
 
@@ -837,7 +842,7 @@ struct QuoteLineWindow: Equatable {
 private struct RenderedSourceView: View {
   let language: String?
   let lines: [String]
-  let editableBlock: OrgEditableBlock?
+  let inlineActions: RenderedBlockInlineActions
   @State private var visibleLineLimit = SourceBlockLineWindow.defaultLimit
 
   var body: some View {
@@ -854,7 +859,7 @@ private struct RenderedSourceView: View {
             .foregroundStyle(.secondary)
         }
         Spacer(minLength: 0)
-        SourceRunHeaderAccessory(language: language, editableBlock: editableBlock)
+        SourceRunHeaderAccessory(language: language, inlineActions: inlineActions)
       }
 
       ScrollView(.horizontal) {
@@ -895,7 +900,7 @@ private struct RenderedSourceView: View {
         .foregroundStyle(.secondary)
       }
 
-      SourceRunOutputAccessory(editableBlock: editableBlock)
+      SourceRunOutputAccessory(runState: inlineActions.sourceBlockRunState)
     }
     .padding(.vertical, 4)
   }
@@ -962,19 +967,18 @@ struct SourceBlockLineWindow: Equatable {
 }
 
 private struct SourceRunHeaderAccessory: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let language: String?
-  let editableBlock: OrgEditableBlock?
+  let inlineActions: RenderedBlockInlineActions
 
   var body: some View {
-    if let editableBlock {
+    if inlineActions.runSourceBlock != nil {
       HStack(spacing: 8) {
         if let state = runState {
           SourceRunStatusLabel(state: state)
         }
 
         Button {
-          Task { await store.runSourceBlock(editableBlock) }
+          inlineActions.runSourceBlock?()
         } label: {
           Label("Run", systemImage: "play.fill")
         }
@@ -986,8 +990,7 @@ private struct SourceRunHeaderAccessory: View {
   }
 
   private var runState: SourceBlockRunState? {
-    guard let editableBlock else { return nil }
-    return store.sourceBlockRunState(for: editableBlock)
+    inlineActions.sourceBlockRunState
   }
 
   private var isRunning: Bool {
@@ -1003,18 +1006,12 @@ private struct SourceRunHeaderAccessory: View {
 }
 
 private struct SourceRunOutputAccessory: View {
-  @EnvironmentObject private var store: WorkspaceStore
-  let editableBlock: OrgEditableBlock?
+  let runState: SourceBlockRunState?
 
   var body: some View {
     if let state = runState, state.status != .running || state.message != nil {
       SourceRunOutputView(state: state)
     }
-  }
-
-  private var runState: SourceBlockRunState? {
-    guard let editableBlock else { return nil }
-    return store.sourceBlockRunState(for: editableBlock)
   }
 }
 
