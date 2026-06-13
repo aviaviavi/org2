@@ -47,12 +47,6 @@ struct RenderedBlockView: View, Equatable {
   }
 
   var body: some View {
-    let expansionKey = RenderedBlockExpansionState.key(
-      sourceFile: sourceFile,
-      editableBlock: editableBlock,
-      renderedKind: renderedKind,
-      rawText: rawText ?? fallbackRenderedText
-    )
     switch block {
     case .heading(let heading):
       RenderedHeadingView(
@@ -66,16 +60,20 @@ struct RenderedBlockView: View, Equatable {
     case .properties(let rows):
       RenderedPropertiesView(rows: rows, rawText: rawText, inlineActions: inlineActions)
     case .quote(let lines):
-      RenderedQuoteView(lines: lines, rawText: rawText, expansionKey: expansionKey)
+      RenderedQuoteView(
+        lines: lines,
+        rawText: rawText,
+        expansionKey: expansionKey(rawText: rawText ?? lines.joined(separator: "\n"))
+      )
     case .source(let language, let lines):
       RenderedSourceView(
         language: language,
         lines: lines,
         inlineActions: inlineActions,
-        expansionKey: expansionKey
+        expansionKey: expansionKey(rawText: rawText ?? lines.joined(separator: "\n"))
       )
     case .table(let table):
-      RenderedTableView(table: table, expansionKey: expansionKey)
+      RenderedTableView(table: table, expansionKey: expansionKey(rawText: rawText ?? fallbackTableText(table)))
     case .horizontalRule:
       RenderedHorizontalRuleView()
     case .listItem(let indent, let marker, let checkbox, let text):
@@ -124,34 +122,24 @@ struct RenderedBlockView: View, Equatable {
     }
   }
 
-  private var fallbackRenderedText: String {
-    switch block {
-    case .heading(let heading):
-      heading.title
-    case .planning(let planning):
-      planning.value
-    case .properties(let rows):
-      rows.map { "\($0.key):\($0.value)" }.joined(separator: "\n")
-    case .quote(let lines), .source(_, let lines):
-      lines.joined(separator: "\n")
-    case .table(let table):
-      table.rows.map { row in
-        switch row {
-        case .separator:
-          return "|-"
-        case .cells(let cells):
-          return cells.joined(separator: "|")
-        }
-      }.joined(separator: "\n")
-    case .horizontalRule:
-      "-----"
-    case .listItem(_, let marker, _, let text):
-      "\(marker) \(text)"
-    case .paragraph(let text), .keyword(_, let text):
-      text
-    case .blank:
-      ""
-    }
+  private func expansionKey(rawText: String?) -> String {
+    RenderedBlockExpansionState.key(
+      sourceFile: sourceFile,
+      editableBlock: editableBlock,
+      renderedKind: renderedKind,
+      rawText: rawText
+    )
+  }
+
+  private func fallbackTableText(_ table: OrgTableBlock) -> String {
+    table.rows.map { row in
+      switch row {
+      case .separator:
+        return "|-"
+      case .cells(let cells):
+        return cells.joined(separator: "|")
+      }
+    }.joined(separator: "\n")
   }
 }
 
