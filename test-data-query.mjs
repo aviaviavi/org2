@@ -311,8 +311,14 @@ assert.equal(inspect.ok, true);
 assert.equal(inspect.mode, "inspect");
 assert.equal(inspect.rowCount, 0);
 assert.deepEqual(inspect.rows, []);
-assert.equal(inspect.provenance, undefined);
+assert.equal(inspect.provenance.resultId, "fetches_by_state");
+assert.equal(inspect.provenance.artifact, "views/fetches_by_state.org");
+assert.deepEqual(inspect.provenance.datasetIds, ["fetches"]);
+assert.deepEqual(inspect.provenance.viewIds, []);
+assert.match(inspect.provenance.querySha256, /^[a-f0-9]{64}$/);
+assert.match(inspect.provenance.scriptSha256, /^[a-f0-9]{64}$/);
 assert.equal(inspect.orgTable, undefined);
+assert.equal(inspect.duckdbScript, undefined);
 assert.equal(inspect.datasets[0].id, "fetches");
 assert.deepEqual(inspect.resultBlocks, [{
   resultId: "fetches_by_state",
@@ -321,11 +327,22 @@ assert.deepEqual(inspect.resultBlocks, [{
   endLine: 14,
 }]);
 
+const inspectWithScript = JSON.parse(cli(["query-data", "--file", note, "--inspect", "--results", "fetches_by_state", "--duckdb", path.join(tmp, "missing-duckdb"), "--include-script"]));
+assert.equal(inspectWithScript.ok, true);
+assert.equal(inspectWithScript.mode, "inspect");
+assert.equal(inspectWithScript.rowCount, 0);
+assert.deepEqual(inspectWithScript.rows, []);
+assert.equal(inspectWithScript.provenance.resultId, "fetches_by_state");
+assert.equal(inspectWithScript.provenance.artifact, "views/fetches_by_state.org");
+assert.match(inspectWithScript.duckdbScript, /CREATE OR REPLACE VIEW "fetches" AS SELECT \* FROM read_csv_auto/);
+assert.match(inspectWithScript.duckdbScript, /SELECT state, sum\(fetches\) AS fetches/);
+
 const inspectLine = JSON.parse(cli(["query-data", "--file", note, "--inspect", "--line", lineOf(note, "SELECT state"), "--duckdb", path.join(tmp, "missing-duckdb")]));
 assert.equal(inspectLine.ok, true);
 assert.equal(inspectLine.mode, "inspect");
 assert.equal(inspectLine.resultId, "fetches_by_state");
 assert.equal(inspectLine.source.line, Number(lineOf(note, "```sql results=fetches_by_state")));
+assert.equal(inspectLine.provenance.resultId, "fetches_by_state");
 
 const lineJson = JSON.parse(cli(["query-data", "--file", note, "--line", lineOf(note, "SELECT state"), "--duckdb", fakeDuckdb, "--format", "json"]));
 assert.equal(lineJson.ok, true);
