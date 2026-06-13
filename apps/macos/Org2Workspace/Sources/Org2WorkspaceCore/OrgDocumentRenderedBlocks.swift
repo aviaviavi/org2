@@ -528,12 +528,16 @@ private struct OrgMediaAttachmentView: View {
         Spacer(minLength: 0)
         if let url = attachment.resolvedURL {
           Button {
-            NSWorkspace.shared.activateFileViewerSelecting([url])
+            if attachment.isRemote {
+              NSWorkspace.shared.open(url)
+            } else {
+              NSWorkspace.shared.activateFileViewerSelecting([url])
+            }
           } label: {
-            Image(systemName: "folder")
+            Image(systemName: attachment.isRemote ? "safari" : "folder")
           }
           .buttonStyle(.borderless)
-          .help("Reveal")
+          .help(attachment.isRemote ? "Open URL" : "Reveal")
 
           Button {
             NSWorkspace.shared.open(url)
@@ -559,7 +563,7 @@ private struct OrgImageAttachmentView: View {
   let attachment: OrgMediaAttachment
   @State private var image: NSImage?
   @State private var attemptedLoad = false
-  @State private var activeLoadPath: String?
+  @State private var activeLoadID: String?
 
   @MainActor private static let thumbnailCache = NSCache<NSString, NSImage>()
 
@@ -580,35 +584,41 @@ private struct OrgImageAttachmentView: View {
       RoundedRectangle(cornerRadius: 7, style: .continuous)
         .stroke(Color.secondary.opacity(0.16))
     )
-    .task(id: attachment.resolvedPath) {
+    .task(id: attachment.resolvedURL?.absoluteString) {
       guard let url = attachment.resolvedURL else {
         attemptedLoad = true
         image = nil
-        activeLoadPath = nil
+        activeLoadID = nil
         return
       }
 
-      let cacheKey = url.standardizedFileURL.path as NSString
+      let loadID = attachment.isRemote ? url.absoluteString : url.standardizedFileURL.path
+      let cacheKey = loadID as NSString
       if let cached = Self.thumbnailCache.object(forKey: cacheKey) {
         image = cached
         attemptedLoad = true
-        activeLoadPath = nil
+        activeLoadID = nil
         return
       }
 
-      activeLoadPath = url.standardizedFileURL.path
+      activeLoadID = loadID
       attemptedLoad = false
-      let loaded = await Task.detached(priority: .utility) {
-        LoadedAttachmentImage(image: Self.previewImage(for: url))
-      }.value
+      let loaded: LoadedAttachmentImage
+      if attachment.isRemote {
+        loaded = await Self.remotePreviewImage(for: url)
+      } else {
+        loaded = await Task.detached(priority: .utility) {
+          LoadedAttachmentImage(image: Self.previewImage(for: url))
+        }.value
+      }
       guard !Task.isCancelled else { return }
-      guard activeLoadPath == url.standardizedFileURL.path else { return }
+      guard activeLoadID == loadID else { return }
       if let loadedImage = loaded.image {
         Self.thumbnailCache.setObject(loadedImage, forKey: cacheKey)
       }
       image = loaded.image
       attemptedLoad = true
-      activeLoadPath = nil
+      activeLoadID = nil
     }
   }
 
@@ -635,6 +645,47 @@ private struct OrgImageAttachmentView: View {
     }
 
     return NSImage(contentsOf: url)
+  }
+
+  private static func remotePreviewImage(for url: URL) async -> LoadedAttachmentImage {
+    var request = URLRequest(url: url)
+    request.timeoutInterval = 15
+    request.cachePolicy = .returnCacheDataElseLoad
+
+    guard let (data, response) = try? await URLSession.shared.data(for: request),
+          let http = response as? HTTPURLResponse,
+          (200..<300).contains(http.statusCode)
+    else {
+      return LoadedAttachmentImage(image: nil)
+    }
+
+    return await Task.detached(priority: .utility) {
+      LoadedAttachmentImage(image: previewImage(from: data) ?? NSImage(data: data))
+    }.value
+  }
+
+  nonisolated private static func previewImage(from data: Data) -> NSImage? {
+    guard let source = CGImageSourceCreateWithData(data as CFData, [
+      kCGImageSourceShouldCache: false
+    ] as CFDictionary) else {
+      return nil
+    }
+
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceShouldCache: false,
+      kCGImageSourceShouldCacheImmediately: true,
+      kCGImageSourceThumbnailMaxPixelSize: 1_520
+    ]
+
+    guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+      return nil
+    }
+    return NSImage(
+      cgImage: thumbnail,
+      size: NSSize(width: thumbnail.width, height: thumbnail.height)
+    )
   }
 
   private struct LoadedAttachmentImage: @unchecked Sendable {
@@ -677,10 +728,10 @@ private struct OrgVideoAttachmentView: View {
       startPlayback()
     } label: {
       VStack(spacing: 10) {
-        Image(systemName: attachment.resolvedURL == nil ? "film" : "play.circle.fill")
+        Image(systemName: videoPosterSystemImage)
           .font(.system(size: 34, weight: .semibold))
           .foregroundStyle(attachment.resolvedURL == nil ? .secondary : .primary)
-        Text(attachment.resolvedURL == nil ? "Video unavailable" : "Play video")
+        Text(videoPosterTitle)
           .font(.callout.weight(.medium))
         Text(attachment.displayName)
           .font(.caption)
@@ -696,14 +747,43 @@ private struct OrgVideoAttachmentView: View {
     .disabled(attachment.resolvedURL == nil)
   }
 
+  private var videoPosterSystemImage: String {
+    if attachment.resolvedURL == nil {
+      return "film"
+    }
+    return shouldOpenExternally ? "play.rectangle" : "play.circle.fill"
+  }
+
+  private var videoPosterTitle: String {
+    if attachment.resolvedURL == nil {
+      return "Video unavailable"
+    }
+    return shouldOpenExternally ? "Open video" : "Play video"
+  }
+
+  private var shouldOpenExternally: Bool {
+    guard attachment.isRemote,
+          let url = attachment.resolvedURL
+    else {
+      return false
+    }
+    return !Self.directRemoteVideoExtensions.contains(url.pathExtension.lowercased())
+  }
+
   private func startPlayback() {
     guard let url = attachment.resolvedURL else { return }
+    if shouldOpenExternally {
+      NSWorkspace.shared.open(url)
+      return
+    }
     if player == nil {
       player = AVPlayer(url: url)
     }
     isPlaying = true
     player?.play()
   }
+
+  private static let directRemoteVideoExtensions = Set(["mov", "mp4", "m4v"])
 }
 
 private struct MissingMediaView: View {

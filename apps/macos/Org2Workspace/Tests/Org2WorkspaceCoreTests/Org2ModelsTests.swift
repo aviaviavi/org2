@@ -3525,8 +3525,10 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertFalse(OrgMediaAttachment.mayContainStandaloneMedia("Plain paragraph with no media link."))
     XCTAssertFalse(OrgMediaAttachment.mayContainStandaloneMedia("See [[file:../assets/diagram.png][System Diagram]]"))
-    XCTAssertFalse(OrgMediaAttachment.mayContainStandaloneMedia("https://example.com/image.png"))
+    XCTAssertTrue(OrgMediaAttachment.mayContainStandaloneMedia("https://example.com/image.png"))
     XCTAssertTrue(OrgMediaAttachment.mayContainStandaloneMedia("[[file:../assets/diagram.png][System Diagram]]"))
+    XCTAssertTrue(OrgMediaAttachment.mayContainStandaloneMedia("[[https://example.com/image.png][Remote Image]]"))
+    XCTAssertTrue(OrgMediaAttachment.mayContainStandaloneMedia("https://youtu.be/dQw4w9WgXcQ"))
     XCTAssertTrue(OrgMediaAttachment.mayContainStandaloneMedia("[Clip](clip.mov)"))
     XCTAssertTrue(OrgMediaAttachment.mayContainStandaloneMedia("assets/diagram.png"))
 
@@ -3553,7 +3555,16 @@ final class Org2ModelsTests: XCTestCase {
       sourceFile: note.path,
       corpusRoot: root
     ))
-    XCTAssertNil(OrgMediaAttachment.standalone(raw: "https://example.com/image.png"))
+
+    let remoteImage = try XCTUnwrap(OrgMediaAttachment.standalone(raw: "https://example.com/image.png"))
+    XCTAssertEqual(remoteImage.kind, .image)
+    XCTAssertEqual(remoteImage.target, "https://example.com/image.png")
+    XCTAssertEqual(remoteImage.resolvedPath, nil)
+    XCTAssertEqual(remoteImage.resolvedURL?.absoluteString, "https://example.com/image.png")
+
+    let remoteVideoPage = try XCTUnwrap(OrgMediaAttachment.standalone(raw: "https://youtu.be/dQw4w9WgXcQ"))
+    XCTAssertEqual(remoteVideoPage.kind, .video)
+    XCTAssertEqual(remoteVideoPage.resolvedURL?.absoluteString, "https://youtu.be/dQw4w9WgXcQ")
   }
 
   func testOrgMediaAttachmentRenderCacheUsesExactSourceContext() throws {
@@ -3582,7 +3593,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(OrgMediaAttachmentRenderCache.shouldAttemptStandaloneLookup(
       raw: "See [[file:../assets/diagram.png][System Diagram]]"
     ))
-    XCTAssertFalse(OrgMediaAttachmentRenderCache.shouldAttemptStandaloneLookup(
+    XCTAssertTrue(OrgMediaAttachmentRenderCache.shouldAttemptStandaloneLookup(
       raw: "https://example.com/image.png"
     ))
     XCTAssertTrue(OrgMediaAttachmentRenderCache.shouldAttemptStandaloneLookup(raw: raw))
@@ -3618,11 +3629,24 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(bracket.target, "file:../assets/diagram.png")
     XCTAssertEqual(bracket.label, "Diagram")
     XCTAssertEqual(bracket.formattedRawText, "[[file:../assets/diagram.png][Diagram]]")
+
+    let remote = try XCTUnwrap(OrgEditableMediaLink(rawText: "[[https://example.com/diagram.png][Diagram]]"))
+    XCTAssertEqual(remote.kind, .image)
+    XCTAssertEqual(remote.target, "https://example.com/diagram.png")
+    XCTAssertEqual(remote.formattedRawText, "[[https://example.com/diagram.png][Diagram]]")
+
+    XCTAssertEqual(
+      OrgEditableMediaLink(kind: .image, target: "file:https://example.com/diagram.png", label: "Diagram").formattedRawText,
+      "[[https://example.com/diagram.png][Diagram]]"
+    )
   }
 
   func testMediaAttachmentInfersKindFromTargets() {
     XCTAssertEqual(OrgMediaAttachment.kind(forTarget: "images/diagram.webp"), .image)
+    XCTAssertEqual(OrgMediaAttachment.kind(forTarget: "https://example.com/diagram.webp?raw=1"), .image)
     XCTAssertEqual(OrgMediaAttachment.kind(forTarget: "file:clips/demo.webm"), .video)
+    XCTAssertEqual(OrgMediaAttachment.kind(forTarget: "https://example.com/demo.mp4"), .video)
+    XCTAssertEqual(OrgMediaAttachment.kind(forTarget: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"), .video)
     XCTAssertEqual(OrgMediaAttachment.kind(forTarget: "/tmp/movie.MP4#clip"), .video)
     XCTAssertNil(OrgMediaAttachment.kind(forTarget: "notes/project.org2"))
   }
