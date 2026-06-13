@@ -112,11 +112,12 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     context.coordinator.parent = self
     guard let textView = scrollView.documentView as? NSTextView else { return }
 
+    var editorText = textView.string
     var appliedProgrammaticText = false
     if Self.shouldApplyProgrammaticText(
-      editorText: textView.string,
+      editorText: editorText,
       boundText: text,
-      hasPendingLocalText: context.coordinator.hasPendingTextPublishing(for: textView.string)
+      hasPendingLocalText: context.coordinator.hasPendingTextPublishing(for: editorText)
     ) {
       context.coordinator.cancelDeferredHighlighting()
       context.coordinator.cancelDeferredTextPublishing()
@@ -124,11 +125,12 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       textView.string = text
       context.coordinator.isApplyingProgrammaticChange = false
       context.coordinator.invalidateHighlighting()
+      editorText = text
       appliedProgrammaticText = true
     }
 
     if let selection {
-      let requestedSelection = Self.clampedRange(selection.wrappedValue, in: textView.string)
+      let requestedSelection = Self.clampedRange(selection.wrappedValue, in: editorText)
       let currentSelection = textView.selectedRange()
       if currentSelection != requestedSelection,
          Coordinator.shouldApplyExternalSelection(
@@ -141,8 +143,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       }
     }
 
-    if appliedProgrammaticText || !context.coordinator.hasDeferredHighlighting(for: textView) {
-      context.coordinator.applyHighlightingIfNeeded(to: textView)
+    if appliedProgrammaticText || !context.coordinator.hasDeferredHighlighting(for: editorText) {
+      context.coordinator.applyHighlightingIfNeeded(to: textView, currentText: editorText)
     }
   }
 
@@ -194,7 +196,11 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         previousHighlightedText: lastHighlightedText,
         monospacedUnchanged: lastHighlightedMonospaced == parent.monospaced
       )
-      markUserTextChangedForHighlighting(in: textView, willScheduleDeferredHighlighting: shouldScheduleHighlighting)
+      markUserTextChangedForHighlighting(
+        in: textView,
+        currentText: currentText,
+        willScheduleDeferredHighlighting: shouldScheduleHighlighting
+      )
       if shouldScheduleHighlighting {
         scheduleDeferredHighlighting(to: textView)
       } else {
@@ -253,16 +259,19 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     func markUserTextChangedForHighlighting(
       in textView: NSTextView,
+      currentText: String? = nil,
       willScheduleDeferredHighlighting: Bool = true
     ) {
-      if canPreserveLargeBufferAttributes(for: textView) {
+      let text = currentText ?? textView.string
+      let utf16Length = textView.textStorage?.length ?? (text as NSString).length
+      if canPreserveLargeBufferAttributes(utf16Length: utf16Length) {
         textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
-        recordHighlightedState(for: textView)
+        recordHighlightedState(text: text, utf16Length: utf16Length)
         return
       }
       if !willScheduleDeferredHighlighting {
         textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
-        recordHighlightedState(for: textView)
+        recordHighlightedState(text: text, utf16Length: utf16Length)
         return
       }
       invalidateHighlighting()
@@ -286,20 +295,22 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       deferredTextPublishWorkItem != nil && deferredTextPublishText == text
     }
 
-    func hasDeferredHighlighting(for textView: NSTextView) -> Bool {
+    func hasDeferredHighlighting(for text: String) -> Bool {
       deferredHighlightWorkItem != nil
-        && deferredHighlightText == textView.string
+        && deferredHighlightText == text
         && deferredHighlightMonospaced == parent.monospaced
     }
 
-    func applyHighlightingIfNeeded(to textView: NSTextView) {
-      if canPreserveLargeBufferAttributes(for: textView) {
+    func applyHighlightingIfNeeded(to textView: NSTextView, currentText: String? = nil) {
+      let text = currentText ?? textView.string
+      let utf16Length = textView.textStorage?.length ?? (text as NSString).length
+      if canPreserveLargeBufferAttributes(utf16Length: utf16Length) {
         textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
-        recordHighlightedState(for: textView)
+        recordHighlightedState(text: text, utf16Length: utf16Length)
         return
       }
 
-      guard lastHighlightedText != textView.string
+      guard lastHighlightedText != text
               || lastHighlightedMonospaced != parent.monospaced
       else {
         return
@@ -307,14 +318,14 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       applyHighlighting(to: textView)
     }
 
-    private func canPreserveLargeBufferAttributes(for textView: NSTextView) -> Bool {
+    private func canPreserveLargeBufferAttributes(utf16Length: Int) -> Bool {
       guard hasHighlightedText,
             lastHighlightedMonospaced == parent.monospaced
       else {
         return false
       }
       return OrgSyntaxHighlighter.shouldPreserveExistingAttributesAfterEdit(
-        utf16Length: (textView.string as NSString).length,
+        utf16Length: utf16Length,
         hasHighlightedBefore: hasHighlightedText,
         monospacedUnchanged: lastHighlightedMonospaced == parent.monospaced
       )
@@ -396,7 +407,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
           self.deferredHighlightWorkItem = nil
           self.deferredHighlightText = nil
           self.deferredHighlightMonospaced = nil
-          self.applyHighlightingIfNeeded(to: textView)
+          self.applyHighlightingIfNeeded(to: textView, currentText: expectedText)
         }
       }
       deferredHighlightWorkItem = workItem
@@ -507,10 +518,16 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     }
 
     private func recordHighlightedState(for textView: NSTextView) {
+      let text = textView.string
+      let utf16Length = textView.textStorage?.length ?? (text as NSString).length
+      recordHighlightedState(text: text, utf16Length: utf16Length)
+    }
+
+    private func recordHighlightedState(text: String, utf16Length: Int) {
       hasHighlightedText = true
       lastHighlightedMonospaced = parent.monospaced
-      if OrgSyntaxHighlighter.shouldTokenizeLiveText(utf16Length: (textView.string as NSString).length) {
-        lastHighlightedText = textView.string
+      if OrgSyntaxHighlighter.shouldTokenizeLiveText(utf16Length: utf16Length) {
+        lastHighlightedText = text
       } else {
         lastHighlightedText = nil
       }
