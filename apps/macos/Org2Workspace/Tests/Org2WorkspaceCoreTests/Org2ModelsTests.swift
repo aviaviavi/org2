@@ -432,6 +432,13 @@ final class Org2ModelsTests: XCTestCase {
     assertToken(.propertyKey, "OWNER", in: raw, tokens: tokens)
     assertToken(.code, "`code`", in: raw, tokens: tokens)
     assertToken(.emphasis, "/emphasis/", in: raw, tokens: tokens)
+    assertToken(.syntaxDelimiter, "`", in: raw, tokens: tokens)
+    assertToken(.syntaxDelimiter, "/", in: raw, tokens: tokens)
+    assertToken(.syntaxDelimiter, "[[", in: raw, tokens: tokens)
+    assertToken(.syntaxDelimiter, "][", in: raw, tokens: tokens)
+    assertToken(.syntaxDelimiter, "]]", in: raw, tokens: tokens)
+    assertToken(.syntaxDelimiter, "<", in: raw, tokens: tokens)
+    assertToken(.syntaxDelimiter, ">", in: raw, tokens: tokens)
     assertToken(.keyword, "begin_src", in: raw, tokens: tokens)
     assertToken(.keyword, "end_src", in: raw, tokens: tokens)
   }

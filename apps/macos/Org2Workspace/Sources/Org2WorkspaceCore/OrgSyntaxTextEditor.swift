@@ -188,6 +188,7 @@ enum OrgSyntaxHighlightKind: String {
   case code
   case emphasis
   case timestamp
+  case syntaxDelimiter
   case comment
 }
 
@@ -202,7 +203,7 @@ enum OrgSyntaxHighlighter {
       if $0.range.location != $1.range.location {
         return $0.range.location < $1.range.location
       }
-      return $0.range.length < $1.range.length
+      return $0.range.length > $1.range.length
     }
   }
 
@@ -275,6 +276,80 @@ enum OrgSyntaxHighlighter {
     collectRegex(pattern: #"(?<!\w)[~=][^\s~=](?:[^\n]*?[^\s~=])?[~=](?!\w)"#, kind: .code, text: text, into: &tokens)
     collectRegex(pattern: #"(?<!\w)[*/_+][^\s*/_+](?:[^\n]*?[^\s*/_+])?[*/_+](?!\w)"#, kind: .emphasis, text: text, into: &tokens)
     collectRegex(pattern: #"[<\[]\d{4}-\d{2}-\d{2}[^>\]]*[>\]]"#, kind: .timestamp, text: text, into: &tokens)
+    collectInlineDelimiterTokens(in: text, into: &tokens)
+  }
+
+  private static func collectInlineDelimiterTokens(in text: String, into tokens: inout [OrgSyntaxHighlightToken]) {
+    let inlineTokens = tokens.filter { [.link, .code, .emphasis, .timestamp].contains($0.kind) }
+    for token in inlineTokens {
+      guard let raw = substring(in: text, range: token.range) else { continue }
+      switch token.kind {
+      case .link:
+        collectLinkDelimiters(raw: raw, tokenRange: token.range, into: &tokens)
+      case .code, .emphasis, .timestamp:
+        appendEdgeDelimiters(token.range, openingLength: 1, closingLength: 1, into: &tokens)
+      default:
+        break
+      }
+    }
+  }
+
+  private static func collectLinkDelimiters(
+    raw: String,
+    tokenRange: NSRange,
+    into tokens: inout [OrgSyntaxHighlightToken]
+  ) {
+    if raw.hasPrefix("[["), raw.hasSuffix("]]") {
+      appendSyntaxDelimiter(location: tokenRange.location, length: 2, into: &tokens)
+      appendSyntaxDelimiter(location: NSMaxRange(tokenRange) - 2, length: 2, into: &tokens)
+      if let separator = raw.range(of: "][") {
+        appendSyntaxDelimiter(
+          location: tokenRange.location + separator.lowerBound.utf16Offset(in: raw),
+          length: 2,
+          into: &tokens
+        )
+      }
+      return
+    }
+
+    if raw.hasPrefix("["), raw.hasSuffix(")"),
+       let separator = raw.range(of: "](") {
+      appendSyntaxDelimiter(location: tokenRange.location, length: 1, into: &tokens)
+      appendSyntaxDelimiter(
+        location: tokenRange.location + separator.lowerBound.utf16Offset(in: raw),
+        length: 2,
+        into: &tokens
+      )
+      appendSyntaxDelimiter(location: NSMaxRange(tokenRange) - 1, length: 1, into: &tokens)
+    }
+  }
+
+  private static func appendEdgeDelimiters(
+    _ tokenRange: NSRange,
+    openingLength: Int,
+    closingLength: Int,
+    into tokens: inout [OrgSyntaxHighlightToken]
+  ) {
+    guard tokenRange.length >= openingLength + closingLength else { return }
+    appendSyntaxDelimiter(location: tokenRange.location, length: openingLength, into: &tokens)
+    appendSyntaxDelimiter(location: NSMaxRange(tokenRange) - closingLength, length: closingLength, into: &tokens)
+  }
+
+  private static func appendSyntaxDelimiter(
+    location: Int,
+    length: Int,
+    into tokens: inout [OrgSyntaxHighlightToken]
+  ) {
+    guard length > 0 else { return }
+    tokens.append(OrgSyntaxHighlightToken(
+      kind: .syntaxDelimiter,
+      range: NSRange(location: location, length: length)
+    ))
+  }
+
+  private static func substring(in text: String, range: NSRange) -> String? {
+    guard let swiftRange = Range(range, in: text) else { return nil }
+    return String(text[swiftRange])
   }
 
   private static func collectLineRegex(
@@ -389,6 +464,11 @@ enum OrgSyntaxHighlighter {
         .foregroundColor: NSColor.labelColor,
         .backgroundColor: NSColor.controlAccentColor.withAlphaComponent(0.10),
         .font: NSFont.monospacedDigitSystemFont(ofSize: baseFont.pointSize, weight: .regular)
+      ]
+    case .syntaxDelimiter:
+      return [
+        .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.58),
+        .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular)
       ]
     case .comment:
       return [
