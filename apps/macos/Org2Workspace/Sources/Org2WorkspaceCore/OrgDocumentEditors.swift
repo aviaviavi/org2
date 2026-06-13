@@ -867,6 +867,22 @@ private struct ParagraphBlockEditor: View {
       )
       .frame(minHeight: editorHeight, maxHeight: editorHeight)
 
+      if shouldShowRenderedPreview {
+        OrgInlineText(store.editableBlockText)
+          .padding(.horizontal, 9)
+          .padding(.vertical, 7)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .background(Color.secondary.opacity(0.045), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+          .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+              .stroke(Color.secondary.opacity(0.12))
+          )
+      }
+
+      if !inlineLinkSet.links.isEmpty {
+        inlineLinkEditor
+      }
+
       if !slashCommandKinds.isEmpty {
         HStack(spacing: 8) {
           Text("Turn into")
@@ -934,6 +950,50 @@ private struct ParagraphBlockEditor: View {
     return min(320, max(38, CGFloat(lineCount) * 23 + 12))
   }
 
+  private var shouldShowRenderedPreview: Bool {
+    let trimmed = store.editableBlockText.trimmingCharacters(in: .whitespacesAndNewlines)
+    return !trimmed.isEmpty && slashCommandQuery == nil
+  }
+
+  private var inlineLinkSet: OrgEditableInlineLinkSet {
+    OrgEditableInlineLinkSet(rawText: store.editableBlockText)
+  }
+
+  private var inlineLinkEditor: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      ForEach(inlineLinkSet.links) { link in
+        HStack(spacing: 8) {
+          Image(systemName: linkIcon(for: link))
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .frame(width: 18)
+
+          TextField("label", text: linkLabelBinding(link))
+            .textFieldStyle(.roundedBorder)
+            .frame(minWidth: 120)
+
+          TextField("target", text: linkTargetBinding(link))
+            .textFieldStyle(.roundedBorder)
+            .font(.caption.monospaced())
+            .frame(minWidth: 220)
+        }
+        .controlSize(.small)
+      }
+    }
+    .padding(.horizontal, 7)
+    .padding(.vertical, 6)
+    .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+  }
+
+  private func linkIcon(for link: OrgEditableInlineLink) -> String {
+    switch link.kind {
+    case .orgBracket, .markdown, .plainURL:
+      return "link"
+    case .fileReference:
+      return "doc.text.magnifyingglass"
+    }
+  }
+
   private var slashCommandKinds: [OrgInsertBlockKind] {
     guard let query = slashCommandQuery else { return [] }
     return OrgInsertBlockKind.allCases.filter { kind in
@@ -971,6 +1031,32 @@ private struct ParagraphBlockEditor: View {
 
     Task { await store.splitEditingBlock(block, atUTF16Offset: context.selectedRange.location) }
     return true
+  }
+
+  private func linkLabelBinding(_ link: OrgEditableInlineLink) -> Binding<String> {
+    Binding(
+      get: { currentLink(matching: link)?.label ?? link.label },
+      set: { updateInlineLink(link, label: $0) }
+    )
+  }
+
+  private func linkTargetBinding(_ link: OrgEditableInlineLink) -> Binding<String> {
+    Binding(
+      get: { currentLink(matching: link)?.target ?? link.target },
+      set: { updateInlineLink(link, target: $0) }
+    )
+  }
+
+  private func currentLink(matching link: OrgEditableInlineLink) -> OrgEditableInlineLink? {
+    OrgEditableInlineLinkSet(rawText: store.editableBlockText)
+      .links
+      .first { $0.id == link.id }
+  }
+
+  private func updateInlineLink(_ link: OrgEditableInlineLink, label: String? = nil, target: String? = nil) {
+    let set = OrgEditableInlineLinkSet(rawText: store.editableBlockText)
+    guard let current = set.links.first(where: { $0.id == link.id }) else { return }
+    store.editableBlockText = set.replacing(link: current, label: label, target: target)
   }
 }
 
