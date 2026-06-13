@@ -155,7 +155,7 @@ source: package_fetches_result
 </section>
 <section class="org2-headline level-1">
 <h1 id="local-data-queries">Local data queries</h1>
-<p><code>org2 query-data</code> is the first DuckDB-backed bridge for local/ad hoc datasets described in org2 notes. It scans fenced <code>```dataset</code> blocks, creates DuckDB views for explicit <code>csv</code>, <code>parquet</code>, or <code>json</code> paths/URLs or named org2 tables, then runs a fenced <code>```sql results=NAME</code> block and materializes the returned rows.</p>
+<p><code>org2 query-data</code> is the first DuckDB-backed bridge for local/ad hoc datasets described in org2 notes. It scans fenced <code>```dataset</code> blocks, creates DuckDB views for explicit <code>csv</code>, <code>parquet</code>, or <code>json</code> paths/URLs or named org2 tables, optionally creates reusable SQL views from <code>```sql view=NAME</code> blocks, then runs a fenced <code>```sql results=NAME</code> block and materializes the returned rows.</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```dataset fetches
 type: csv
 path: ./data/package-fetches.csv
@@ -167,6 +167,18 @@ SELECT state, count(*) AS fetches
 FROM fetches
 GROUP BY state
 ORDER BY fetches DESC
+```</code></pre>
+<p>Reusable SQL views can sit between datasets and the final materialized result:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```sql view=california_fetches
+SELECT state, fetches
+FROM fetches
+WHERE state = 'CA'
+```
+
+```sql results=fetches_by_state
+SELECT state, sum(fetches) AS fetches
+FROM california_fetches
+GROUP BY state
 ```</code></pre>
 <p>Read-only HTTP(S) or <code>file:</code> URLs can be recorded with <code>url:</code> when DuckDB can read the source directly:</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```dataset remote_fetches
@@ -200,7 +212,7 @@ FROM fetches
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- query-data --file report.org2 --results fetches_by_state
 npm run org2 -- query-data --file report.org2 --results fetches_by_state --format json
 cat report.org2 | npm run org2 -- query-data --stdin --results fetches_by_state</code></pre>
-<p>The default output is a named org table with <code>#+name: fetches_by_state</code> so it can be pasted or written into the note and consumed by <code>render-chart</code> via <code>source: fetches_by_state</code>. JSON output includes diagnostics, dataset metadata, rows, and the generated org table; <code>--include-script</code> also includes the DuckDB setup SQL for debugging. Editor and agent clients can pass an unsaved buffer with <code>--stdin</code>; file-backed dataset paths are then resolved relative to the current working directory, while URL datasets are passed through as declared. The command expects a local DuckDB CLI on <code>PATH</code>, or a custom path via <code>--duckdb</code>.</p>
+<p>The default output is a named org table with <code>#+name: fetches_by_state</code> so it can be pasted or written into the note and consumed by <code>render-chart</code> via <code>source: fetches_by_state</code>. JSON output includes diagnostics, dataset metadata, SQL view metadata, rows, and the generated org table; <code>--include-script</code> also includes the DuckDB setup SQL for debugging. Editor and agent clients can pass an unsaved buffer with <code>--stdin</code>; file-backed dataset paths are then resolved relative to the current working directory, while URL datasets are passed through as declared. The command expects a local DuckDB CLI on <code>PATH</code>, or a custom path via <code>--duckdb</code>.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="corpus-lint">Corpus lint</h1>
