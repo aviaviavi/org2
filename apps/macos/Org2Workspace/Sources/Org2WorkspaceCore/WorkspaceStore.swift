@@ -2794,7 +2794,7 @@ public final class WorkspaceStore: ObservableObject {
     let rawAgent = agent.trimmingCharacters(in: .whitespacesAndNewlines)
     let agent = rawAgent.isEmpty ? "main" : rawAgent
     let remoteCorpusPath = remoteCorpusPath.trimmingCharacters(in: .whitespacesAndNewlines)
-    let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedToken = OpenClawGatewaySettings.normalizedBearerToken(token)
 
     do {
       defaults.set(normalizedEndpoint, forKey: openClawEndpointKey)
@@ -2808,7 +2808,7 @@ public final class WorkspaceStore: ObservableObject {
         try OpenClawKeychain.deleteToken()
         openClawBearerToken = nil
         openClawHasStoredToken = false
-      } else if !token.isEmpty {
+      } else if let token = normalizedToken {
         try OpenClawKeychain.saveToken(token)
         openClawBearerToken = token
         openClawHasStoredToken = true
@@ -3477,7 +3477,7 @@ public final class WorkspaceStore: ObservableObject {
     if allowKeychainRead,
        openClawBearerToken == nil,
        openClawHasStoredToken {
-      openClawBearerToken = OpenClawKeychain.readToken()
+      openClawBearerToken = OpenClawKeychain.readToken(allowUserInteraction: true)
       openClawHasStoredToken = openClawBearerToken != nil || OpenClawKeychain.containsToken()
     }
 
