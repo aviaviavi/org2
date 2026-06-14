@@ -191,6 +191,30 @@ assert.equal(recencyFirst.ranking.recencyWeight, 8);
 assert.equal(recencyFirst.results[0].id, "recent-trivial");
 assert.ok(recencyFirst.results[0].selectionReason.some((reason) => reason.includes("recency weight 8")));
 
+const strictRankingDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-agent-strict-ranking-test-"));
+fs.writeFileSync(path.join(strictRankingDir, "strict-ranking.org2"), `#+title: Strict Ranking
+
+* Malformed salience metadata
+:PROPERTIES:
+:ID: malformed-salience
+:ORG2_SALIENCE: 20 high
+:END:
+Zirconium guardrail token.
+
+* Valid salience metadata
+:PROPERTIES:
+:ID: valid-salience
+:ORG2_SALIENCE: 1
+:END:
+Zirconium guardrail token.
+`, "utf8");
+const strictNumericRanking = runJson("agent", "search", "--query", "Zirconium guardrail token", "--dir", strictRankingDir, "--limit", "2", "--recency-weight", "0", "--salience-weight", "1");
+assert.equal(strictNumericRanking.results[0].id, "valid-salience");
+assert.ok(strictNumericRanking.results[0].selectionReason.some((reason) => reason.includes("explicit salience 1")));
+const malformedSalience = strictNumericRanking.results.find((result) => result.id === "malformed-salience");
+assert.ok(malformedSalience);
+assert.ok(!malformedSalience.selectionReason.some((reason) => reason.includes("explicit salience")));
+
 const explainedContext = execFileSync("node", ["dist/cli.js", "context", "Copper launch retrieval", "--dir", rankingDir, "--limit", "1", "--recency-weight", "0", "--salience-weight", "1"], { encoding: "utf8" });
 assert.match(explainedContext, /Selected because:/);
 assert.match(explainedContext, /explicit salience/);
