@@ -111,6 +111,10 @@ type AgentDataLinkMetadata = {
   dimensions?: string[];
   measures?: string[];
   grain?: string;
+  filters?: string[];
+  groupBy?: string[];
+  timeColumn?: string;
+  timezone?: string;
   credentialRef?: string;
   configRef?: string;
   refreshRef?: string;
@@ -753,6 +757,15 @@ function parseDataLabelList(raw: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function parseDataClauseList(raw: string | undefined): string[] {
+  const value = String(raw || "").trim();
+  if (!value) return [];
+  return value
+    .split(/;+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 function parseDataSortList(raw: string | undefined): AgentDataSortKey[] {
   if (!raw) return [];
   return String(raw)
@@ -806,6 +819,10 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
   const dimensions = parseDataNameList(stringDataProperty(props, ["DIMENSIONS", "DIMENSION_KEYS", "GROUP_BY", "ORG2_DIMENSIONS"]));
   const measures = parseDataNameList(stringDataProperty(props, ["MEASURES", "METRICS", "ORG2_MEASURES"]));
   const grain = stringDataProperty(props, ["GRAIN", "TIME_GRAIN", "ORG2_GRAIN"]);
+  const filters = parseDataClauseList(stringDataProperty(props, ["FILTER", "FILTERS", "FILTER_BY", "WHERE", "WHERE_CLAUSES", "ORG2_FILTERS"]));
+  const groupBy = parseDataNameList(stringDataProperty(props, ["GROUP_BY", "GROUP_KEYS", "GROUP_BY_KEYS", "ORG2_GROUP_BY"]));
+  const timeColumn = stringDataProperty(props, ["TIME_COLUMN", "TIMESTAMP_COLUMN", "DATE_COLUMN", "ORG2_TIME_COLUMN"]);
+  const timezone = stringDataProperty(props, ["TIMEZONE", "TIME_ZONE", "ORG2_TIMEZONE"]);
   const credentialRef = safeCredentialRef(stringDataProperty(props, ["CREDENTIAL_REF", "CREDENTIAL", "CREDENTIALS", "AUTH_REF", "AUTH"]));
   const configRef = safeConfigRef(stringDataProperty(props, ["CONFIG_REF", "CONFIG", "PROFILE"]));
   const refreshRef = stringDataProperty(props, ["REFRESH_REF", "REFRESH_ID", "REFRESH_JOB", "ORG2_REFRESH_REF"]);
@@ -883,6 +900,10 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
     ...(dimensions.length ? { dimensions } : {}),
     ...(measures.length ? { measures } : {}),
     ...(grain ? { grain } : {}),
+    ...(filters.length ? { filters } : {}),
+    ...(groupBy.length ? { groupBy } : {}),
+    ...(timeColumn ? { timeColumn } : {}),
+    ...(timezone ? { timezone } : {}),
     ...(credentialRef ? { credentialRef } : {}),
     ...(configRef ? { configRef } : {}),
     ...(refreshRef ? { refreshRef } : {}),
@@ -1362,6 +1383,10 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       item.dataLink.dimensions?.length ? `dimensions: ${item.dataLink.dimensions.join(", ")}` : "",
       item.dataLink.measures?.length ? `measures: ${item.dataLink.measures.join(", ")}` : "",
       item.dataLink.grain ? `grain: ${item.dataLink.grain}` : "",
+      item.dataLink.filters?.length ? `filters: ${item.dataLink.filters.join("; ")}` : "",
+      item.dataLink.groupBy?.length ? `group by: ${item.dataLink.groupBy.join(", ")}` : "",
+      item.dataLink.timeColumn ? `time column: ${item.dataLink.timeColumn}` : "",
+      item.dataLink.timezone ? `timezone: ${item.dataLink.timezone}` : "",
       item.dataLink.credentialRef ? `credential: ${item.dataLink.credentialRef}` : "",
       item.dataLink.configRef ? `config: ${item.dataLink.configRef}` : "",
       item.dataLink.refreshRef ? `refresh ref: ${item.dataLink.refreshRef}` : "",

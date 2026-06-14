@@ -53,6 +53,10 @@ See [[id:decision-1][decision note]].
 :DIMENSIONS: date
 :MEASURES: ticket_count
 :GRAIN: daily
+:FILTERS: status = 'open'; ticket_count > 0
+:GROUP_BY: date
+:TIME_COLUMN: date
+:TIMEZONE: America/Los_Angeles
 :SOURCE: s3://support/ticket-volume/
 :QUERY_ID: support.ticket_volume.v1
 :QUERY_HASH: sha256:supportquery123
@@ -209,6 +213,10 @@ assert.match(selected, /sort by: date:desc/);
 assert.match(selected, /dimensions: date/);
 assert.match(selected, /measures: ticket_count/);
 assert.match(selected, /grain: daily/);
+assert.match(selected, /filters: status = 'open'; ticket_count > 0/);
+assert.match(selected, /group by: date/);
+assert.match(selected, /time column: date/);
+assert.match(selected, /timezone: America\/Los_Angeles/);
 assert.match(selected, /source: s3:\/\/support\/ticket-volume\//);
 assert.match(selected, /query: support\.ticket_volume\.v1/);
 assert.match(selected, /query hash: sha256:supportquery123/);
@@ -339,6 +347,10 @@ assert.deepEqual(supportTicketVolume.dataLink.sortBy, [{ field: "date", directio
 assert.deepEqual(supportTicketVolume.dataLink.dimensions, ["date"]);
 assert.deepEqual(supportTicketVolume.dataLink.measures, ["ticket_count"]);
 assert.equal(supportTicketVolume.dataLink.grain, "daily");
+assert.deepEqual(supportTicketVolume.dataLink.filters, ["status = 'open'", "ticket_count > 0"]);
+assert.deepEqual(supportTicketVolume.dataLink.groupBy, ["date"]);
+assert.equal(supportTicketVolume.dataLink.timeColumn, "date");
+assert.equal(supportTicketVolume.dataLink.timezone, "America/Los_Angeles");
 assert.equal(supportTicketVolume.dataLink.refreshRef, "query-data:support-ticket-volume");
 assert.equal(supportTicketVolume.dataLink.refreshCommand, "org2 query-data --file support.org2 --results support_ticket_volume --out views/support-ticket-volume.org2");
 assert.equal(supportTicketVolume.dataLink.refreshStatus, "due");
