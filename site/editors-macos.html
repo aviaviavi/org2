@@ -54,7 +54,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <h1 class="org2-document-title">macOS Workspace</h1>
 </header>
 <p>Org2 Workspace is the native macOS client for working with an Org2 corpus. It is an alpha app in <code>apps/macos/Org2Workspace</code>, built as a Swift Package, and uses the same parser/CLI output as the rest of Org2 instead of maintaining a private database.</p>
-<p>The app is currently best understood as a local workspace shell for dogfooding the product direction: agenda review, file navigation, search, rendered block editing, meeting capture, OpenClaw handoff, workstream kickoff, and crypt workflows over normal files.</p>
+<p>The app is currently best understood as a local workspace shell for dogfooding the product direction: agenda review, file navigation, search, rendered block editing, meeting capture, OpenClaw handoff, knowledge-node creation, and crypt workflows over normal files.</p>
 <section class="org2-headline level-1">
 <h1 id="current-surfaces">Current surfaces</h1>
 <p>The sidebar exposes the main workspace surfaces:</p>
@@ -65,7 +65,6 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><strong>Meetings</strong> :: record or import local audio, create meeting/transcript artifacts under the corpus, and keep transcription provenance in Org2 files.</p></li>
 <li><p><strong>OpenClaw Chat</strong> :: send selected workspace context to a configured OpenClaw endpoint while keeping the conversation state local to the app.</p></li>
 <li><p><strong>Agent Space</strong> :: browse durable OpenClaw/agent thread records and reopen their source context.</p></li>
-<li><p><strong>Workstreams</strong> :: track the parallel app slices, start autonomous loop artifacts, create knowledge nodes, and run first-run health checks for repo/build/corpus readiness.</p></li>
 </ul>
 <p>The detail pane can render a selected file, agenda item, search result, backlink, meeting note, or agent thread. It supports both raw source editing and structured rendered-block editing.</p>
 </section>
@@ -102,15 +101,9 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>The app includes configuration and run actions for GPG-backed <code>:crypt:</code> subtrees. It can encrypt plaintext <code>:crypt:</code> subtrees on save, decrypt selected encrypted subtrees for review, manage recipient lists, and use the macOS keychain for the optional passphrase workflow.</p>
 </section>
 <section class="org2-headline level-1">
-<h1 id="parallel-workstreams">Parallel workstreams</h1>
-<p>The Workstreams surface is the kickoff point for building several major slices in parallel without losing the shared product shape. It is oriented around creating durable corpus artifacts, not adding manual queues that only the Mac app understands:</p>
-<ul>
-<li><p><strong>Autonomous Capture</strong> starts a capture loop under <code>loops/</code> that records its workstream, loop status, creation timestamp, and next actions in ordinary Org2 text.</p></li>
-<li><p><strong>Meeting to Action</strong> starts a meeting action loop for the selected meeting artifact, carrying the meeting file, transcript reference, and durable follow-up prompts into the corpus.</p></li>
-<li><p><strong>Knowledge Browser</strong> opens ID/backlink context when a selected node already has an ID, and otherwise helps create a new ID-backed knowledge node in the configured roam/index directory.</p></li>
-<li><p><strong>Packaging and First Run</strong> runs local health checks for repo discovery, built CLI/parser files, Node dependencies, Swift package presence, corpus writability, corpus config, and loop-directory readiness.</p></li>
-</ul>
-<p>The loop artifacts are intentionally plain files. External agents, scripts, Git review, and other editors can inspect or continue the same work without relying on private app state.</p>
+<h1 id="knowledge-creation">Knowledge creation</h1>
+<p>The Search surface includes a <code>New Node</code> action for creating an ID-backed Org2 note in the configured roam/index directory. This belongs with search and backlinks because node creation is part of navigating and extending the knowledge graph, not a separate planning surface.</p>
+<p>The next knowledge-browser work should make this more useful by adding graph-neighborhood views, link insertion, backlink-driven navigation, and broken-link repair.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="keyboard-model">Keyboard model</h1>
@@ -119,7 +112,6 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <ul>
 <li><p><code>Cmd-1</code> through <code>Cmd-5</code> for primary surfaces,</p></li>
 <li><p><code>Cmd-6</code> for Agent Space,</p></li>
-<li><p><code>Cmd-Shift-7</code> for Workstreams,</p></li>
 <li><p><code>Cmd-P</code> / <code>Cmd-K</code> for quick open,</p></li>
 <li><p><code>Cmd-7</code>, <code>Cmd-8</code>, and <code>Cmd-9</code> for today/yesterday/tomorrow daily notes,</p></li>
 <li><p>agenda-local <code>j</code> / <code>k</code> navigation, <code>/</code> filtering, and TODO/planning shortcuts,</p></li>
@@ -139,16 +131,16 @@ swift run Org2Workspace</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="next-major-slices">Next major slices</h1>
-<p>The recommended lead slice remains <strong>autonomous capture and knowledge loops</strong>.</p>
-<p>The goal is to make the Mac app good at creating the right durable work context with as little human shepherding as possible:</p>
+<p>The recommended lead slice remains <strong>real capture and refiling</strong>.</p>
+<p>The app still needs the actual daily-driver capture workflow:</p>
 <ul>
-<li><p>one-click creation of capture loops, meeting loops, and knowledge nodes,</p></li>
-<li><p>loop artifacts that agents can pick up without scraping app UI state,</p></li>
-<li><p>source-linked meeting promotion into decisions, TODOs, and durable notes,</p></li>
-<li><p>ID/backlink-first knowledge creation rather than private graph state,</p></li>
-<li><p>acceptance paths where generated tasks, notes, and loop status remain clean <code>.org2</code> text.</p></li>
+<li><p>system-wide capture or a global capture panel,</p></li>
+<li><p>fast TODO/note capture into a predictable capture target,</p></li>
+<li><p>refile into existing files/headings,</p></li>
+<li><p>scheduling/deadline/priority/tag/effort controls at capture time,</p></li>
+<li><p>an acceptance path where captured work appears in agenda and the resulting <code>.org2</code> text remains clean.</p></li>
 </ul>
-<p>That slice should stay first because it closes the core loop from signal to durable knowledge. Meeting promotion, knowledge browsing, and packaging can proceed in parallel as long as they preserve shared write semantics: meeting promotion should create ordinary TODOs/notes, the knowledge browser should reuse IDs/backlinks rather than private graph state, and packaging should verify the same CLI/parser artifacts the app actually calls.</p>
+<p>Meeting promotion, knowledge browsing, and packaging can proceed in parallel as long as they preserve shared write semantics: meeting promotion should create ordinary TODOs/notes, the knowledge browser should reuse IDs/backlinks rather than private graph state, and packaging should verify the same CLI/parser artifacts the app actually calls.</p>
 </section>
 </main>
 </div>

@@ -192,8 +192,6 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedOpenClawThreadID: String?
   @Published public var workspaceHealthChecks: [WorkspaceHealthCheck] = []
   @Published public var isCheckingWorkspaceHealth = false
-  @Published public var loopArtifacts: [WorkspaceLoopArtifact] = []
-  @Published public var isLoadingLoopArtifacts = false
   @Published public var selectedLocation: WorkspaceLocation?
   @Published public var selectedEntrySource: EntrySource?
   @Published public var selectedRenderedBlocks: [OrgEditableBlock] = [] {
@@ -346,7 +344,6 @@ public final class WorkspaceStore: ObservableObject {
 
     if corpusRoot != nil {
       await refreshAgenda()
-      await refreshLoopArtifacts()
       await refreshMeetings()
       await refreshCorpusFiles()
       refreshOrgCryptManagedRecipientFiles()
@@ -384,7 +381,6 @@ public final class WorkspaceStore: ObservableObject {
     searchResults = []
     meetings = []
     selectedMeetingID = nil
-    loopArtifacts = []
     openClawThreads = []
     selectedOpenClawThreadID = nil
     refreshOrgCryptManagedRecipientFiles()
@@ -410,7 +406,6 @@ public final class WorkspaceStore: ObservableObject {
 
   public func refreshWorkspace() async {
     await refreshAgenda()
-    await refreshLoopArtifacts()
     await refreshMeetings()
     await refreshCorpusFiles()
     refreshWorkspaceHealth()
@@ -424,37 +419,12 @@ public final class WorkspaceStore: ObservableObject {
     workspaceHealthChecks = Self.workspaceHealthChecks(cli: cli, corpusRoot: corpusRoot)
     let blockingCount = workspaceHealthChecks.filter { $0.status == .blocking }.count
     let warningCount = workspaceHealthChecks.filter { $0.status == .warning }.count
-    if selectedSurface == .workstreams {
-      if blockingCount > 0 {
-        statusText = "\(blockingCount) setup blocker\(blockingCount == 1 ? "" : "s")"
-      } else if warningCount > 0 {
-        statusText = "\(warningCount) setup warning\(warningCount == 1 ? "" : "s")"
-      } else {
-        statusText = "Workspace setup looks ready"
-      }
-    }
-  }
-
-  public func refreshLoopArtifacts() async {
-    guard let corpusRoot else {
-      loopArtifacts = []
-      return
-    }
-
-    isLoadingLoopArtifacts = true
-    defer { isLoadingLoopArtifacts = false }
-
-    do {
-      let artifacts = try await Task.detached(priority: .utility) {
-        try Self.scanLoopArtifacts(corpusRoot: corpusRoot)
-      }.value
-      loopArtifacts = artifacts
-      if selectedSurface == .workstreams {
-        statusText = "\(artifacts.count) loop artifact\(artifacts.count == 1 ? "" : "s")"
-      }
-    } catch {
-      errorText = error.localizedDescription
-      statusText = "Loop artifact refresh failed"
+    if blockingCount > 0 {
+      statusText = "\(blockingCount) setup blocker\(blockingCount == 1 ? "" : "s")"
+    } else if warningCount > 0 {
+      statusText = "\(warningCount) setup warning\(warningCount == 1 ? "" : "s")"
+    } else {
+      statusText = "Workspace setup looks ready"
     }
   }
 
@@ -555,33 +525,6 @@ public final class WorkspaceStore: ObservableObject {
     } catch {
       errorText = error.localizedDescription
       statusText = "Search failed"
-    }
-  }
-
-  public func kickOffWorkstream(_ workstream: WorkspaceWorkstream) async {
-    switch workstream {
-    case .captureTriage:
-      selectedSurface = .workstreams
-      await startCaptureLoop()
-    case .meetingActions:
-      await startMeetingActionLoopForSelectedMeeting()
-    case .knowledgeBrowser:
-      selectedSurface = .search
-      if let selectedLocation {
-        if let id = selectedLocation.idValue {
-          searchQuery = "id:\(id)"
-          await loadBacklinks(for: selectedLocation)
-          searchFocusToken += 1
-          statusText = "Loaded backlinks and search target for \(selectedLocation.title)"
-        } else {
-          await createKnowledgeNode(title: selectedLocation.title)
-        }
-      } else {
-        promptAndCreateKnowledgeNode()
-      }
-    case .packagingFirstRun:
-      selectedSurface = .workstreams
-      refreshWorkspaceHealth()
     }
   }
 
@@ -3593,47 +3536,6 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public var workstreamStatuses: [WorkspaceWorkstream: WorkstreamStatus] {
-    let blockingHealthChecks = workspaceHealthChecks.filter { $0.status == .blocking }.count
-    let warningHealthChecks = workspaceHealthChecks.filter { $0.status == .warning }.count
-    let selectedHasID = selectedLocation?.idValue != nil
-    let backlinkCount = backlinks?.backlinks.count
-    let loopCounts = Dictionary(grouping: loopArtifacts, by: \.workstream).mapValues(\.count)
-    let captureLoopCount = loopCounts[.captureTriage] ?? 0
-    let meetingLoopCount = loopCounts[.meetingActions] ?? 0
-
-    return [
-      .captureTriage: WorkstreamStatus(
-        id: .captureTriage,
-        state: corpusRoot == nil ? .blocked : .ready,
-        detail: corpusRoot == nil
-          ? "Open a corpus before starting autonomous capture loops."
-          : "\(captureLoopCount) capture loop artifact\(captureLoopCount == 1 ? "" : "s") in the corpus."
-      ),
-      .meetingActions: WorkstreamStatus(
-        id: .meetingActions,
-        state: corpusRoot == nil ? .blocked : (meetings.isEmpty ? .needsInput : .ready),
-        detail: meetings.isEmpty
-          ? "Record or import a meeting before starting meeting loops."
-          : "\(meetings.count) meeting artifact\(meetings.count == 1 ? "" : "s"), \(meetingLoopCount) loop artifact\(meetingLoopCount == 1 ? "" : "s")."
-      ),
-      .knowledgeBrowser: WorkstreamStatus(
-        id: .knowledgeBrowser,
-        state: corpusRoot == nil ? .blocked : (selectedHasID ? .ready : .needsInput),
-        detail: selectedHasID
-          ? "\(backlinkCount.map(String.init) ?? "Computed") backlink context for the selected node."
-          : "Select an entry with an ID or create a new knowledge node."
-      ),
-      .packagingFirstRun: WorkstreamStatus(
-        id: .packagingFirstRun,
-        state: blockingHealthChecks > 0 ? .blocked : (warningHealthChecks > 0 ? .needsInput : .ready),
-        detail: workspaceHealthChecks.isEmpty
-          ? "Run health checks for repo, build, and corpus readiness."
-          : "\(blockingHealthChecks) blocker\(blockingHealthChecks == 1 ? "" : "s"), \(warningHealthChecks) warning\(warningHealthChecks == 1 ? "" : "s")."
-      )
-    ]
-  }
-
   public var visibleAgendaItems: [AgendaItem] {
     agendaDisplaySections.flatMap(\.items)
   }
@@ -3884,94 +3786,6 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public func startCaptureLoop() async {
-    guard let corpusRoot else {
-      statusText = "No corpus selected"
-      return
-    }
-
-    do {
-      let target = loopPath(corpusRoot: corpusRoot, filename: "capture-loop.org2")
-      let id = try upsertLoopArtifact(
-        at: target,
-        workstream: .captureTriage,
-        title: "Autonomous capture loop",
-        body: """
-        This loop watches fresh work signals, captures candidate tasks or notes, and promotes durable knowledge with minimal manual handoff.
-
-        ** TODO Collect new work signals
-        ** TODO Promote durable notes and actions
-        ** TODO Link outputs back to source context
-        """
-      )
-      statusText = "Capture loop ready -> \(relativePath(target.path))"
-      invalidateCanonicalDocumentCache(for: target.path)
-      await refreshLoopArtifacts()
-      await refreshCorpusFiles()
-      searchQuery = "id:\(id)"
-      selectedSurface = .search
-      await runSearch()
-    } catch {
-      errorText = error.localizedDescription
-      statusText = "Capture loop setup failed"
-    }
-  }
-
-  public func startMeetingActionLoopForSelectedMeeting() async {
-    guard let corpusRoot else {
-      statusText = "No corpus selected"
-      return
-    }
-
-    let selectedMeeting = selectedMeetingID.flatMap { id in
-      meetings.first { $0.id == id }
-    } ?? {
-      if case .meeting(let meeting) = selectedLocation {
-        return meeting
-      }
-      return nil
-    }()
-    guard let meeting = selectedMeeting ?? meetings.first else {
-      selectedSurface = .meetings
-      statusText = "Record or import a meeting first"
-      return
-    }
-
-    do {
-      let target = loopPath(corpusRoot: corpusRoot, filename: "meeting-\(Self.slug(meeting.title))-loop.org2")
-      let meetingPath = relativePath(meeting.file)
-      let transcriptLine = meeting.transcriptArtifact.map { "- Transcript: \($0)" } ?? "- Transcript: pending"
-      let id = try upsertLoopArtifact(
-        at: target,
-        workstream: .meetingActions,
-        title: "Meeting action loop: \(Org2Display.cleanInline(meeting.title))",
-        extraProperties: [
-          "ORG2_MEETING_FILE": meetingPath,
-          "ORG2_MEETING_TRANSCRIPT": meeting.transcriptArtifact ?? "",
-          "ORG2_MEETING_ID": meeting.idValue ?? ""
-        ].filter { !$0.value.isEmpty },
-        body: """
-        Source meeting: [[file:\(meetingPath)][\(Org2Display.cleanInline(meeting.title))]]
-        \(transcriptLine)
-
-        ** TODO Extract decisions with source citations
-        ** TODO Promote action items into linked tasks
-        ** TODO Create or update knowledge nodes for durable context
-        """
-      )
-      statusText = "Meeting loop ready -> \(relativePath(target.path))"
-      invalidateCanonicalDocumentCache(for: target.path)
-      await refreshLoopArtifacts()
-      await refreshCorpusFiles()
-      searchQuery = "id:\(id)"
-      selectedSurface = .search
-      await runSearch()
-    } catch {
-      errorText = error.localizedDescription
-      statusText = "Meeting loop setup failed"
-    }
-  }
-
   public func captureReviewTodoForSelectedMeeting() async {
     guard let corpusRoot else {
       statusText = "No corpus selected"
@@ -4076,10 +3890,6 @@ public final class WorkspaceStore: ObservableObject {
 
     if modifiers == [.command, .shift] {
       switch key {
-      case "7":
-        selectedSurface = .workstreams
-        refreshWorkspaceHealth()
-        return true
       case "z":
         performRedoCommand()
         return true
@@ -4470,10 +4280,6 @@ public final class WorkspaceStore: ObservableObject {
 
   public func open(_ location: WorkspaceLocation) {
     openFile(path: location.file, line: location.lineForEditor)
-  }
-
-  public func openLoopArtifact(_ artifact: WorkspaceLoopArtifact) {
-    openFile(path: artifact.file, line: artifact.lineForEditor)
   }
 
   public func revealSelectedLocation() {
@@ -6356,52 +6162,6 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  nonisolated private static func scanLoopArtifacts(corpusRoot: URL) throws -> [WorkspaceLoopArtifact] {
-    let loopsDirectory = corpusRoot.appendingPathComponent("loops", isDirectory: true)
-    guard isDirectoryURL(loopsDirectory),
-          let enumerator = FileManager.default.enumerator(
-            at: loopsDirectory,
-            includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
-          )
-    else {
-      return []
-    }
-
-    var artifacts: [WorkspaceLoopArtifact] = []
-    for case let fileURL as URL in enumerator {
-      let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey])
-      guard values?.isRegularFile == true,
-            ["org", "org2"].contains(fileURL.pathExtension.lowercased())
-      else {
-        continue
-      }
-
-      let prefix = (try? readPrefix(fileURL, maxBytes: 96 * 1024)) ?? ""
-      guard let rawWorkstream = meetingProperty("ORG2_WORKSTREAM", in: prefix),
-            let workstream = WorkspaceWorkstream(rawValue: rawWorkstream)
-      else {
-        continue
-      }
-      let titleInfo = openClawTitle(from: prefix, fallback: fileURL.deletingPathExtension().lastPathComponent)
-      artifacts.append(WorkspaceLoopArtifact(
-        workstream: workstream,
-        title: titleInfo.title,
-        file: fileURL.path,
-        line: titleInfo.line,
-        status: meetingProperty("ORG2_LOOP_STATUS", in: prefix),
-        idValue: firstOrgID(in: prefix)
-      ))
-    }
-
-    return artifacts.sorted {
-      if $0.workstream.rawValue != $1.workstream.rawValue {
-        return $0.workstream.rawValue < $1.workstream.rawValue
-      }
-      return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-    }
-  }
-
   private func refreshOrgRoamLinkResolver(files: [CorpusFile]) {
     orgRoamLinkResolverGeneration += 1
     let generation = orgRoamLinkResolverGeneration
@@ -7030,12 +6790,6 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func loopPath(corpusRoot: URL, filename: String) -> URL {
-    corpusRoot
-      .appendingPathComponent("loops", isDirectory: true)
-      .appendingPathComponent(filename)
-  }
-
   private func knowledgeNodePath(corpusRoot: URL, title: String) -> URL {
     let config = Self.workspaceConfig(corpusRoot: corpusRoot)
     let rawBase = config?.roam?.indexDir?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -7048,52 +6802,6 @@ public final class WorkspaceStore: ObservableObject {
       base = corpusRoot.appendingPathComponent("notes", isDirectory: true)
     }
     return base.appendingPathComponent("\(Self.slug(title)).org2")
-  }
-
-  @discardableResult
-  private func upsertLoopArtifact(
-    at target: URL,
-    workstream: WorkspaceWorkstream,
-    title: String,
-    extraProperties: [String: String] = [:],
-    body: String
-  ) throws -> String {
-    try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-    let id: String
-    if FileManager.default.fileExists(atPath: target.path) {
-      let existing = try String(contentsOf: target, encoding: .utf8)
-      id = Self.firstOrgID(in: existing) ?? UUID().uuidString
-      if existing.contains(":ORG2_LOOP_STATUS: active") {
-        return id
-      }
-      let separator = existing.hasSuffix("\n") ? "" : "\n"
-      try "\(existing)\(separator):ORG2_LOOP_STATUS: active\n".write(to: target, atomically: true, encoding: .utf8)
-      return id
-    }
-
-    id = UUID().uuidString
-    let properties = [
-      "ID": id,
-      "ORG2_WORKSTREAM": workstream.rawValue,
-      "ORG2_LOOP_STATUS": "active",
-      "ORG2_CREATED_AT": Self.orgDateTimestamp(Date())
-    ].merging(extraProperties) { _, new in new }
-    let propertyLines = properties
-      .sorted { $0.key < $1.key }
-      .map { ":\($0.key): \($0.value)" }
-      .joined(separator: "\n")
-    let text = """
-    #+TITLE: \(title)
-
-    * \(title)
-    :PROPERTIES:
-    \(propertyLines)
-    :END:
-    \(body.trimmingCharacters(in: .whitespacesAndNewlines))
-
-    """
-    try text.write(to: target, atomically: true, encoding: .utf8)
-    return id
   }
 
   public func createKnowledgeNode(title: String) async {
@@ -7128,7 +6836,6 @@ public final class WorkspaceStore: ObservableObject {
         * \(cleanTitle)
         :PROPERTIES:
         :ID: \(id)
-        :ORG2_WORKSTREAM: \(WorkspaceWorkstream.knowledgeBrowser.rawValue)
         :ORG2_CREATED_AT: \(Self.orgDateTimestamp(Date()))
         :END:
         \(sourceLink)
@@ -7237,7 +6944,6 @@ public final class WorkspaceStore: ObservableObject {
 
     if let corpusRoot {
       let config = corpusRoot.appendingPathComponent("org2.json")
-      let loops = corpusRoot.appendingPathComponent("loops", isDirectory: true)
       let corpusWritable = fileManager.isWritableFile(atPath: corpusRoot.path)
       checks.append(WorkspaceHealthCheck(
         id: "corpus-root",
@@ -7250,7 +6956,7 @@ public final class WorkspaceStore: ObservableObject {
         title: "Corpus writable",
         status: corpusWritable ? .ready : .blocking,
         detail: corpusWritable
-          ? "App can create loop artifacts and notes in the selected corpus"
+          ? "App can create notes and capture entries in the selected corpus"
           : "Selected corpus is not writable",
         remediationTitle: corpusWritable ? nil : "Fix permissions"
       ))
@@ -7263,21 +6969,12 @@ public final class WorkspaceStore: ObservableObject {
           : "No org2.json in selected corpus; defaults will be used",
         remediationTitle: fileManager.fileExists(atPath: config.path) ? nil : "Add config"
       ))
-      checks.append(WorkspaceHealthCheck(
-        id: "loop-directory",
-        title: "Loop directory",
-        status: fileManager.fileExists(atPath: loops.path) ? .ready : .warning,
-        detail: fileManager.fileExists(atPath: loops.path)
-          ? "loops/ exists for autonomous loop artifacts"
-          : "loops/ will be created when the first loop starts",
-        remediationTitle: fileManager.fileExists(atPath: loops.path) ? nil : "Start loop"
-      ))
     } else {
       checks.append(WorkspaceHealthCheck(
         id: "corpus-root",
         title: "Corpus",
         status: .blocking,
-        detail: "Open a corpus to enable agenda, meetings, search, and autonomous loops",
+        detail: "Open a corpus to enable agenda, meetings, search, capture, and notes",
         remediationTitle: "Open Corpus"
       ))
     }
@@ -7483,9 +7180,12 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
   case meetings
   case openClaw
   case agentSpace
-  case workstreams
 
   public var id: String { rawValue }
+
+  public static var sidebarCases: [WorkspaceSurface] {
+    allCases
+  }
 
   public var title: String {
     switch self {
@@ -7495,7 +7195,6 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .meetings: "Meetings"
     case .openClaw: "OpenClaw Chat"
     case .agentSpace: "Agent Space"
-    case .workstreams: "Workstreams"
     }
   }
 
@@ -7507,7 +7206,6 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .meetings: "mic"
     case .openClaw: "sparkles"
     case .agentSpace: "bubble.left.and.bubble.right"
-    case .workstreams: "rectangle.3.group"
     }
   }
 
@@ -7519,7 +7217,6 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .meetings: "⌘4"
     case .openClaw: "⌘5"
     case .agentSpace: "⌘6"
-    case .workstreams: "⌘⇧7"
     }
   }
 }
