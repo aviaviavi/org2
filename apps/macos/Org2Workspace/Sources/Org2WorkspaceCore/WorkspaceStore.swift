@@ -261,6 +261,10 @@ public final class WorkspaceStore: ObservableObject {
   }
   public private(set) var sourceBlockRunsRenderSignature = WorkspaceStore.sourceBlockRunsRenderSignature(for: [:])
   @Published public var backlinks: BacklinksPayload?
+  @Published public var isNodeContextPanePresented = true
+  @Published public var nodeContextTab: NodeContextTab = .overview
+  @Published public var expandedBacklinkFileIDs: Set<String> = []
+  @Published public var isBuildingNodeBrief = false
   @Published public var isLoadingAgenda = false
   @Published public var isSearching = false
   @Published public var isLoadingMeetings = false
@@ -843,6 +847,10 @@ public final class WorkspaceStore: ObservableObject {
     selectedEntrySource != nil || selectedLocation != nil
   }
 
+  public var canBriefCurrentNodeInOpenClaw: Bool {
+    selectedLocation != nil && corpusRoot != nil && !isBuildingNodeBrief
+  }
+
   public func askOpenClawAboutCurrentSelection() {
     guard let pointer = openClawContextPointerForCurrentSelection() else {
       statusText = "Select a page or entry first"
@@ -863,6 +871,45 @@ public final class WorkspaceStore: ObservableObject {
     isOpenClawAssistantPresented = true
     openClawStatusText = "Added \(pointer.displayReference) to OpenClaw"
     statusText = "Added \(pointer.displayReference) to OpenClaw"
+  }
+
+  public func briefCurrentNodeInOpenClaw() async {
+    guard let location = selectedLocation else {
+      statusText = "Select a node first"
+      return
+    }
+    guard let corpusRoot else {
+      statusText = "Open a corpus first"
+      return
+    }
+
+    isBuildingNodeBrief = true
+    openClawStatusText = "Building node context..."
+    statusText = "Building node context..."
+    defer { isBuildingNodeBrief = false }
+
+    do {
+      let id = try await backlinkTargetID(for: location)
+      let contextPack = try await nodeBriefContextPack(for: location, id: id, corpusRoot: corpusRoot)
+      let prompt = Self.nodeBriefPrompt(
+        title: location.title,
+        reference: "\(relativePath(location.file)):\(location.lineForEditor)",
+        contextPack: contextPack
+      )
+      let previousDraft = openClawDraft
+      openClawDraft = prompt
+      if openClawDraft != previousDraft {
+        recordWorkspaceUndo(.openClawDraft(previous: previousDraft, next: openClawDraft))
+      }
+      selectedSurface = .openClaw
+      isOpenClawAssistantPresented = true
+      openClawStatusText = "Node brief prompt ready"
+      statusText = "Node brief prompt ready"
+    } catch {
+      errorText = error.localizedDescription
+      openClawStatusText = "Node brief failed"
+      statusText = "Node brief failed"
+    }
   }
 
   public var meetingDisplaySections: [MeetingSection] {
@@ -4731,6 +4778,154 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public var backlinkFileGroups: [BacklinkFileGroup] {
+    guard let backlinks else { return [] }
+    let grouped = Dictionary(grouping: backlinks.backlinks, by: \.file)
+    return grouped.map { file, items in
+      let sortedItems = items.sorted {
+        if $0.line != $1.line { return $0.line < $1.line }
+        return $0.srcTitle.localizedCaseInsensitiveCompare($1.srcTitle) == .orderedAscending
+      }
+      return BacklinkFileGroup(
+        file: file,
+        relativePath: relativePath(file),
+        backlinks: sortedItems
+      )
+    }
+    .sorted { lhs, rhs in
+      if lhs.count != rhs.count { return lhs.count > rhs.count }
+      return lhs.relativePath.localizedStandardCompare(rhs.relativePath) == .orderedAscending
+    }
+  }
+
+  public var backlinkFileCount: Int {
+    backlinkFileGroups.count
+  }
+
+  public var backlinkReferenceCount: Int {
+    backlinks?.backlinks.count ?? 0
+  }
+
+  public func toggleNodeContextPane() {
+    isNodeContextPanePresented.toggle()
+  }
+
+  public func toggleBacklinkFileGroup(_ group: BacklinkFileGroup) {
+    if expandedBacklinkFileIDs.contains(group.id) {
+      expandedBacklinkFileIDs.remove(group.id)
+    } else {
+      expandedBacklinkFileIDs.insert(group.id)
+    }
+  }
+
+  public func selectBacklink(_ backlink: BacklinkItem) {
+    select(.backlink(backlink))
+  }
+
+  private func nodeBriefContextPack(for location: WorkspaceLocation, id: String?, corpusRoot: URL) async throws -> String {
+    var contextPack = ""
+    if let id, !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      let data = try await cli.run([
+        "brief",
+        "node",
+        "--id", id,
+        "--dir", corpusRoot.path,
+        "--recursive",
+        "--format", "markdown",
+        "--budget", "20000"
+      ])
+      contextPack = String(decoding: data, as: UTF8.self)
+    }
+
+    let backlinkSummary = Self.nodeBriefBacklinkSummary(
+      groups: backlinkFileGroups,
+      totalReferences: backlinkReferenceCount,
+      totalFiles: backlinkFileCount,
+      maxFiles: 24,
+      maxReferencesPerFile: 4
+    )
+    let selectedSource = selectedEntrySource.map(Self.nodeBriefSelectedSource) ?? ""
+    let header = """
+    Selected node
+    - Title: \(location.title)
+    - Source: \(relativePath(location.file)):\(location.lineForEditor)
+    \(id.map { "- ID: \($0)" } ?? "- ID: unavailable")
+    """
+    return [header, selectedSource, backlinkSummary, contextPack]
+      .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+      .joined(separator: "\n\n---\n\n")
+  }
+
+  nonisolated static func nodeBriefPrompt(title: String, reference: String, contextPack: String) -> String {
+    """
+    Give me the highlights of \(title) from my org2 corpus.
+
+    Focus on:
+    - the most important facts and current state
+    - active work, decisions, and unresolved questions
+    - important files or clusters of references
+    - anything stale, contradictory, or review-required
+
+    Cite file paths and line numbers for concrete claims. Do not edit files unless I explicitly ask.
+
+    Selected node: \(reference)
+
+    Deterministic org2 context pack:
+
+    \(limitedNodeBriefContext(contextPack))
+    """
+  }
+
+  nonisolated private static func limitedNodeBriefContext(_ context: String) -> String {
+    let maxCharacters = 28_000
+    guard context.count > maxCharacters else { return context }
+    let end = context.index(context.startIndex, offsetBy: maxCharacters)
+    return String(context[..<end]) + "\n\n[Context truncated by Org2Workspace.]"
+  }
+
+  nonisolated private static func nodeBriefSelectedSource(_ source: EntrySource) -> String {
+    """
+    Selected source
+    Source: \(source.file):\(source.displayRange)
+
+    ```org
+    \(source.text)
+    ```
+    """
+  }
+
+  nonisolated private static func nodeBriefBacklinkSummary(
+    groups: [BacklinkFileGroup],
+    totalReferences: Int,
+    totalFiles: Int,
+    maxFiles: Int,
+    maxReferencesPerFile: Int
+  ) -> String {
+    guard totalReferences > 0 else {
+      return "Computed backlinks\nNo backlinks found for this node."
+    }
+
+    var lines = [
+      "Computed backlinks",
+      "\(totalReferences) reference\(totalReferences == 1 ? "" : "s") across \(totalFiles) file\(totalFiles == 1 ? "" : "s")."
+    ]
+    for group in groups.prefix(maxFiles) {
+      lines.append("")
+      lines.append("- \(group.relativePath) (\(group.count))")
+      for backlink in group.backlinks.prefix(maxReferencesPerFile) {
+        lines.append("  - \(Org2Display.cleanInline(backlink.srcTitle)):\(backlink.lineForEditor) \(Org2Display.cleanInline(backlink.context))")
+      }
+      if group.backlinks.count > maxReferencesPerFile {
+        lines.append("  - ... \(group.backlinks.count - maxReferencesPerFile) more in this file")
+      }
+    }
+    if groups.count > maxFiles {
+      lines.append("")
+      lines.append("... \(groups.count - maxFiles) more files with backlinks omitted from prompt.")
+    }
+    return lines.joined(separator: "\n")
+  }
+
   private func backlinkTargetID(for location: WorkspaceLocation) async throws -> String? {
     if let id = location.idValue?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty {
       return id
@@ -8119,5 +8314,41 @@ public enum WorkspaceSearchMode: String, CaseIterable, Identifiable, Sendable {
     case .nodes:
       "Live search over the local node index, including titles, aliases, IDs, and file paths."
     }
+  }
+}
+
+public enum NodeContextTab: String, CaseIterable, Identifiable, Sendable {
+  case overview
+  case references
+  case related
+  case brief
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .overview: "Overview"
+    case .references: "References"
+    case .related: "Related"
+    case .brief: "Brief"
+    }
+  }
+}
+
+public struct BacklinkFileGroup: Identifiable, Hashable, Sendable {
+  public let file: String
+  public let relativePath: String
+  public let backlinks: [BacklinkItem]
+
+  public init(file: String, relativePath: String, backlinks: [BacklinkItem]) {
+    self.file = file
+    self.relativePath = relativePath
+    self.backlinks = backlinks
+  }
+
+  public var id: String { file }
+  public var count: Int { backlinks.count }
+  public var displayTitle: String {
+    URL(fileURLWithPath: relativePath).lastPathComponent
   }
 }

@@ -1985,13 +1985,17 @@ private struct DetailView: View {
       if let location = store.selectedLocation {
         DetailHeader(location: location)
         Divider()
-        ScrollView {
-          VStack(alignment: .leading, spacing: 0) {
+        HSplitView {
+          ScrollView {
             EntryBodyView(location: location)
-            Divider()
-            BacklinksView()
+              .background(DetailScrollCommandBridge(request: store.detailScrollRequest))
           }
-          .background(DetailScrollCommandBridge(request: store.detailScrollRequest))
+          .frame(minWidth: 420)
+
+          if store.isNodeContextPanePresented {
+            NodeContextPane()
+              .frame(minWidth: 300, idealWidth: 380, maxWidth: 520)
+          }
         }
       } else {
         EmptyStateView(title: "No Selection", detail: store.statusText, action: "Open Corpus") {
@@ -2095,6 +2099,25 @@ private struct DetailHeader: View {
         }
         .disabled(!store.canAskOpenClawAboutCurrentSelection || store.isLoadingEntrySource)
         .help("Ask OpenClaw about this page or entry")
+
+        Button {
+          store.toggleNodeContextPane()
+        } label: {
+          Label("Context", systemImage: "sidebar.right")
+        }
+        .help("Show or hide node context")
+
+        Button {
+          Task { await store.briefCurrentNodeInOpenClaw() }
+        } label: {
+          if store.isBuildingNodeBrief {
+            Label("Brief", systemImage: "hourglass")
+          } else {
+            Label("Brief", systemImage: "text.bubble")
+          }
+        }
+        .disabled(!store.canBriefCurrentNodeInOpenClaw)
+        .help("Build a node context pack and prepare an OpenClaw briefing prompt")
 
         if store.hasRenderedSearchHighlight {
           Button {
@@ -2411,63 +2434,351 @@ private struct DetailMetadataGrid: View {
   }
 }
 
-private struct BacklinksView: View {
+private struct NodeContextPane: View {
   @EnvironmentObject private var store: WorkspaceStore
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      HStack {
-        Label("Backlinks", systemImage: "link")
+      HStack(spacing: 8) {
+        Label("Context", systemImage: "sidebar.right")
           .font(.headline)
         Spacer()
         if store.isLoadingBacklinks {
           ProgressView()
             .controlSize(.small)
-        } else if let count = store.backlinks?.backlinks.count {
-          Text("\(count)")
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
         }
+        Button {
+          store.toggleNodeContextPane()
+        } label: {
+          Label("Hide Context", systemImage: "xmark")
+        }
+        .labelStyle(.iconOnly)
+        .help("Hide context")
       }
       .padding(.horizontal, WorkspaceDesign.contentInset)
-      .padding(.vertical, 12)
+      .padding(.top, 12)
+      .padding(.bottom, 8)
 
-      if let backlinks = store.backlinks {
-        if backlinks.backlinks.isEmpty {
-          Text("No backlinks")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, WorkspaceDesign.contentInset)
+      Picker("Context view", selection: $store.nodeContextTab) {
+        ForEach(NodeContextTab.allCases) { tab in
+          Text(tab.title).tag(tab)
+        }
+      }
+      .pickerStyle(.segmented)
+      .padding(.horizontal, WorkspaceDesign.contentInset)
+      .padding(.bottom, 10)
+
+      Divider()
+
+      ScrollView {
+        switch store.nodeContextTab {
+        case .overview:
+          NodeContextOverview()
+        case .references:
+          NodeContextReferences()
+        case .related:
+          NodeContextRelated()
+        case .brief:
+          NodeContextBrief()
+        }
+      }
+    }
+    .background(WorkspaceDesign.barBackground)
+    .overlay(alignment: .leading) {
+      Divider()
+    }
+  }
+}
+
+private struct NodeContextOverview: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      NodeContextStats()
+
+      Button {
+        Task { await store.briefCurrentNodeInOpenClaw() }
+      } label: {
+        if store.isBuildingNodeBrief {
+          Label("Building Brief", systemImage: "hourglass")
         } else {
-          LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(backlinks.backlinks) { backlink in
-              BacklinkRow(backlink: backlink)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                  store.select(.backlink(backlink))
-                }
-              Divider()
-                .padding(.leading, 16)
+          Label("Brief This Node", systemImage: "text.bubble")
+        }
+      }
+      .buttonStyle(WorkspaceActionButtonStyle())
+      .disabled(!store.canBriefCurrentNodeInOpenClaw)
+
+      if store.backlinkFileGroups.isEmpty {
+        NodeContextEmptyText()
+      } else {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Top Referencing Files")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+          ForEach(store.backlinkFileGroups.prefix(8)) { group in
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+              Text(group.displayTitle)
+                .font(.callout.weight(.medium))
+                .lineLimit(1)
+              Spacer(minLength: 0)
+              CountPill(count: group.count)
+            }
+            Text(group.relativePath)
+              .font(.caption)
+              .foregroundStyle(.tertiary)
+              .lineLimit(1)
+          }
+        }
+      }
+    }
+    .padding(WorkspaceDesign.contentInset)
+  }
+}
+
+private struct NodeContextReferences: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    if store.backlinkFileGroups.isEmpty {
+      NodeContextEmptyText()
+        .padding(WorkspaceDesign.contentInset)
+    } else {
+      LazyVStack(alignment: .leading, spacing: 0) {
+        ForEach(store.backlinkFileGroups) { group in
+          BacklinkFileGroupRow(group: group)
+          Divider()
+            .padding(.leading, WorkspaceDesign.contentInset)
+        }
+      }
+      .padding(.bottom, 8)
+    }
+  }
+}
+
+private struct NodeContextRelated: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    let items = relatedItems
+    if items.isEmpty {
+      Text("Related nodes appear here when backlinks include source IDs.")
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .padding(WorkspaceDesign.contentInset)
+    } else {
+      LazyVStack(alignment: .leading, spacing: 0) {
+        ForEach(items) { item in
+          VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+              WorkspaceIconBadge(systemImage: "link")
+              Text(item.title)
+                .font(.callout.weight(.medium))
+                .lineLimit(2)
+              Spacer(minLength: 0)
+              CountPill(count: item.count)
+            }
+            if let idValue = item.idValue {
+              Text(Org2Display.shortID(idValue))
+                .font(.caption)
+                .foregroundStyle(.tertiary)
             }
           }
-          .padding(.bottom, 8)
-        }
-      } else {
-        Text("No ID on selection")
-          .font(.callout)
-          .foregroundStyle(.secondary)
           .padding(.horizontal, WorkspaceDesign.contentInset)
+          .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
+          Divider()
+            .padding(.leading, WorkspaceDesign.contentInset)
+        }
       }
     }
   }
+
+  private var relatedItems: [RelatedBacklinkNode] {
+    guard let backlinks = store.backlinks?.backlinks else { return [] }
+    let grouped = Dictionary(grouping: backlinks) { backlink in
+      backlink.srcId ?? backlink.srcTitle
+    }
+    return grouped.compactMap { key, items in
+      guard let first = items.first else { return nil }
+      return RelatedBacklinkNode(
+        id: key,
+        idValue: first.srcId,
+        title: Org2Display.cleanInline(first.srcTitle),
+        count: items.count
+      )
+    }
+    .sorted { lhs, rhs in
+      if lhs.count != rhs.count { return lhs.count > rhs.count }
+      return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+    }
+  }
+}
+
+private struct NodeContextBrief: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Build a bounded context pack from the selected node, its source, and grouped backlinks, then stage a briefing prompt in OpenClaw.")
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+
+      Button {
+        Task { await store.briefCurrentNodeInOpenClaw() }
+      } label: {
+        if store.isBuildingNodeBrief {
+          Label("Building Brief", systemImage: "hourglass")
+        } else {
+          Label("Brief This Node", systemImage: "text.bubble")
+        }
+      }
+      .buttonStyle(WorkspaceActionButtonStyle())
+      .disabled(!store.canBriefCurrentNodeInOpenClaw)
+
+      Text("This does not write generated summaries into the corpus. It prepares an OpenClaw draft with citations and asks for review-required synthesis.")
+        .font(.caption)
+        .foregroundStyle(.tertiary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .padding(WorkspaceDesign.contentInset)
+  }
+}
+
+private struct NodeContextStats: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    HStack(spacing: 8) {
+      StatTile(label: "Files", value: "\(store.backlinkFileCount)")
+      StatTile(label: "Refs", value: "\(store.backlinkReferenceCount)")
+      StatTile(label: "Related", value: "\(relatedCount)")
+    }
+  }
+
+  private var relatedCount: Int {
+    Set(store.backlinks?.backlinks.compactMap(\.srcId) ?? []).count
+  }
+}
+
+private struct StatTile: View {
+  let label: String
+  let value: String
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 3) {
+      Text(value)
+        .font(.headline.monospacedDigit())
+      Text(label)
+        .font(.caption2.weight(.medium))
+        .foregroundStyle(.secondary)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.horizontal, 9)
+    .padding(.vertical, 8)
+    .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+  }
+}
+
+private struct CountPill: View {
+  let count: Int
+
+  var body: some View {
+    Text("\(count)")
+      .font(.caption.monospacedDigit())
+      .foregroundStyle(.secondary)
+      .padding(.horizontal, 7)
+      .padding(.vertical, 3)
+      .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+  }
+}
+
+private struct NodeContextEmptyText: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    Text(emptyText)
+      .font(.callout)
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
+  }
+
+  private var emptyText: String {
+    if store.isLoadingBacklinks { return "Loading backlinks..." }
+    if store.backlinks == nil { return "No ID is available for this selection yet." }
+    return "No backlinks found for this node."
+  }
+}
+
+private struct BacklinkFileGroupRow: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let group: BacklinkFileGroup
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      Button {
+        store.toggleBacklinkFileGroup(group)
+      } label: {
+        HStack(alignment: .center, spacing: 8) {
+          Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .frame(width: 14)
+          VStack(alignment: .leading, spacing: 3) {
+            Text(group.displayTitle)
+              .font(.callout.weight(.medium))
+              .lineLimit(1)
+            Text(group.relativePath)
+              .font(.caption)
+              .foregroundStyle(.tertiary)
+              .lineLimit(1)
+          }
+          Spacer(minLength: 0)
+          CountPill(count: group.count)
+        }
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .padding(.horizontal, WorkspaceDesign.contentInset)
+      .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
+
+      if isExpanded {
+        ForEach(group.backlinks) { backlink in
+          BacklinkRow(backlink: backlink, compact: true)
+            .contentShape(Rectangle())
+            .onTapGesture {
+              store.selectBacklink(backlink)
+            }
+          Divider()
+            .padding(.leading, WorkspaceDesign.contentInset * 2)
+        }
+      } else if let first = group.backlinks.first {
+        Text(Org2Display.cleanInline(first.context))
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(2)
+          .padding(.horizontal, WorkspaceDesign.contentInset + 22)
+          .padding(.bottom, 8)
+      }
+    }
+  }
+
+  private var isExpanded: Bool {
+    store.expandedBacklinkFileIDs.contains(group.id)
+  }
+}
+
+private struct RelatedBacklinkNode: Identifiable, Hashable {
+  let id: String
+  let idValue: String?
+  let title: String
+  let count: Int
 }
 
 private struct BacklinkRow: View {
   @EnvironmentObject private var store: WorkspaceStore
   let backlink: BacklinkItem
+  var compact = false
 
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
@@ -2485,7 +2796,7 @@ private struct BacklinkRow: View {
           .foregroundStyle(.tertiary)
       }
     }
-    .padding(.horizontal, WorkspaceDesign.contentInset)
+    .padding(.horizontal, compact ? WorkspaceDesign.contentInset + 22 : WorkspaceDesign.contentInset)
     .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
   }
 }
