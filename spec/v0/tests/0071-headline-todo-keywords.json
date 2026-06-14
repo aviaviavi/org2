@@ -1,0 +1,41 @@
+{
+  "type": "Document",
+  "version": "0",
+  "children": [
+    {
+      "type": "Headline",
+      "level": 1,
+      "todo": "TODO",
+      "title": [{ "type": "Text", "value": "Write parser" }],
+      "children": []
+    },
+    {
+      "type": "Headline",
+      "level": 1,
+      "todo": "IN_PROGRESS",
+      "title": [{ "type": "Text", "value": "Implement fixtures" }],
+      "children": []
+    },
+    {
+      "type": "Headline",
+      "level": 1,
+      "todo": "DONE",
+      "title": [{ "type": "Text", "value": "Publish docs" }],
+      "children": []
+    },
+    {
+      "type": "Headline",
+      "level": 1,
+      "todo": "CANCELED",
+      "title": [{ "type": "Text", "value": "Drop stale task" }],
+      "children": []
+    },
+    {
+      "type": "Headline",
+      "level": 1,
+      "todo": "CANCELLED",
+      "title": [{ "type": "Text", "value": "Keep British spelling" }],
+      "children": []
+    }
+  ]
+}

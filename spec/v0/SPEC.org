@@ -119,10 +119,17 @@ A headline line produces a =Headline= node with:
 
 A headline title MAY begin with a TODO keyword.
 
-In v0, the only supported TODO keyword is =TODO=.
+In v0, the supported TODO keywords are:
+
+- =TODO=
+- =IN_PROGRESS=
+- =DONE=
+- =CANCELED=
+- =CANCELLED=
 
 Example:
 - =* TODO Fix bug= produces a =Headline= with =todo: "TODO"= and =title: "Fix bug"=.
+- =* DONE Ship docs= produces a =Headline= with =todo: "DONE"= and =title: "Ship docs"=.
 
 TODO workflow semantics are out of scope for v0.
 

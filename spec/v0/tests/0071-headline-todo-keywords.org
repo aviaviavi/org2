@@ -1,0 +1,9 @@
+* TODO Write parser
+
+* IN_PROGRESS Implement fixtures
+
+* DONE Publish docs
+
+* CANCELED Drop stale task
+
+* CANCELLED Keep British spelling
