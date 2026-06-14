@@ -273,6 +273,8 @@ Business question for package fetch activity.
 :ARTIFACT: customer-reports/firebolt/package_fetches_by_company.csv
 :ROW_COUNT: 1,234
 :FRESHNESS: live
+:ORG2_PROVENANCE: query:scarf.package_fetches_by_company.v1, artifact:customer-reports/firebolt/package_fetches_by_company.csv
+:ORG2_SOURCE_HASHES: query:scarf.package_fetches_by_company.v1=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 :END:
 Materialized query metadata for [[id:report-fetches][package fetch report]].
 
@@ -318,6 +320,8 @@ External data catalog entry for [[id:report-fetches][package fetch report]].
 :SOURCE_CURSOR: ch:customer_events:92017
 :CHANGE_ID: evt_123
 :CHANGE_HASH: sha256:abc123
+:ORG2_PROVENANCE: run:ingest-package-events, url:https://warehouse.example/events/evt_123
+:ORG2_SOURCE_HASHES: artifact:events/package-customer-changes.json=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 :TARGET_ID: report-fetches
 :END:
 Timeline-backed evidence for [[id:report-fetches][package fetch report]].
@@ -333,6 +337,10 @@ assert.equal(dataLink.results[0].dataLink.lastRun, "2026-06-12T12:30:00-07:00");
 assert.equal(dataLink.results[0].dataLink.artifact, "customer-reports/firebolt/package_fetches_by_company.csv");
 assert.equal(dataLink.results[0].dataLink.rowCount, 1234);
 assert.equal(dataLink.results[0].dataLink.freshness, "live");
+assert.ok(dataLink.results[0].dataLink.provenance.some((ref) => ref.ref === "query:scarf.package_fetches_by_company.v1"));
+assert.equal(dataLink.results[0].dataLink.sourceHashes[0].kind, "query");
+assert.equal(dataLink.results[0].dataLink.sourceHashes[0].value, "scarf.package_fetches_by_company.v1");
+assert.equal(dataLink.results[0].dataLink.sourceHashes[0].sha256, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
 const dataset = runJson("agent", "fetch", "--id", "dataset-package-fetches", "--dir", dataDir, "--format", "json");
 assert.equal(dataset.results[0].dataLink.kind, "dataset");
@@ -354,6 +362,9 @@ assert.equal(eventStream.results[0].dataLink.capturedAt, "2026-06-12T11:46:10-07
 assert.equal(eventStream.results[0].dataLink.sourceCursor, "ch:customer_events:92017");
 assert.equal(eventStream.results[0].dataLink.changeId, "evt_123");
 assert.equal(eventStream.results[0].dataLink.changeHash, "sha256:abc123");
+assert.ok(eventStream.results[0].dataLink.provenance.some((ref) => ref.ref === "run:ingest-package-events"));
+assert.equal(eventStream.results[0].dataLink.sourceHashes[0].kind, "artifact");
+assert.equal(eventStream.results[0].dataLink.sourceHashes[0].value, "events/package-customer-changes.json");
 
 const reportWithDataLinks = runJson("agent", "fetch", "--id", "report-fetches", "--dir", dataDir, "--format", "json");
 assert.equal(reportWithDataLinks.results.length, 1);
