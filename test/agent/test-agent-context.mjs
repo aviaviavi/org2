@@ -267,6 +267,11 @@ Business question for package fetch activity.
 :ID: query-fetches-by-company
 :KIND: warehouse-query
 :SYSTEM: clickhouse
+:DATABASE: scarf_analytics
+:SCHEMA: package_usage
+:TABLE: package_fetches_by_company
+:COLUMNS: company_id:string, package:string, fetches:int
+:PRIMARY_KEY: company_id, package
 :QUERY_ID: scarf.package_fetches_by_company.v1
 :PARAMS: {"packages":["firebolt/foo"],"from":"2026-01-01"}
 :LAST_RUN: 2026-06-12T12:30:00-07:00
@@ -289,6 +294,8 @@ Materialized query metadata for [[id:report-fetches][package fetch report]].
 :KIND: dataset
 :ENGINE: duckdb
 :PATH: data/package-fetches.csv
+:TABLE: package_fetches
+:COLUMNS: state:string, fetches:int
 :CREDENTIAL: env:SCARF_DATA_TOKEN
 :CONFIG: profile:local-analytics
 :PARAMS: packages=firebolt/foo
@@ -303,6 +310,9 @@ fs.writeFileSync(path.join(dataDir, "catalog.org2"), `#+title: Data Catalog
 :ID: query-fetch-error-rate
 :KIND: warehouse-query
 :SYSTEM: firebolt
+:DATABASE: scarf_warehouse
+:SCHEMA: product
+:VIEW: package_fetch_error_rate_daily
 :QUERY_ID: scarf.package_fetch_error_rate.v1
 :REPORT_ID: report-fetches
 :ARTIFACT: customer-reports/firebolt/package_fetch_error_rate.csv
@@ -336,6 +346,15 @@ const dataLink = runJson("agent", "fetch", "--id", "query-fetches-by-company", "
 assert.equal(dataLink.results.length, 1);
 assert.equal(dataLink.results[0].dataLink.kind, "warehouse-query");
 assert.equal(dataLink.results[0].dataLink.system, "clickhouse");
+assert.equal(dataLink.results[0].dataLink.database, "scarf_analytics");
+assert.equal(dataLink.results[0].dataLink.schema, "package_usage");
+assert.equal(dataLink.results[0].dataLink.table, "package_fetches_by_company");
+assert.deepEqual(dataLink.results[0].dataLink.columns, [
+  { name: "company_id", type: "string" },
+  { name: "package", type: "string" },
+  { name: "fetches", type: "int" },
+]);
+assert.deepEqual(dataLink.results[0].dataLink.primaryKey, ["company_id", "package"]);
 assert.equal(dataLink.results[0].dataLink.queryId, "scarf.package_fetches_by_company.v1");
 assert.deepEqual(dataLink.results[0].dataLink.params, { packages: ["firebolt/foo"], from: "2026-01-01" });
 assert.equal(dataLink.results[0].dataLink.lastRun, "2026-06-12T12:30:00-07:00");
@@ -356,6 +375,11 @@ const dataset = runJson("agent", "fetch", "--id", "dataset-package-fetches", "--
 assert.equal(dataset.results[0].dataLink.kind, "dataset");
 assert.equal(dataset.results[0].dataLink.engine, "duckdb");
 assert.equal(dataset.results[0].dataLink.path, "data/package-fetches.csv");
+assert.equal(dataset.results[0].dataLink.table, "package_fetches");
+assert.deepEqual(dataset.results[0].dataLink.columns, [
+  { name: "state", type: "string" },
+  { name: "fetches", type: "int" },
+]);
 assert.equal(dataset.results[0].dataLink.credentialRef, "env:SCARF_DATA_TOKEN");
 assert.equal(dataset.results[0].dataLink.configRef, "profile:local-analytics");
 assert.equal(dataset.results[0].dataLink.paramsRaw, "packages=firebolt/foo");
@@ -388,6 +412,9 @@ assert.equal(descendantDataset.kind, "dataset");
 const externalQuery = reportWithDataLinks.results[0].relatedDataLinks.find((item) => item.id === "query-fetch-error-rate");
 assert.equal(externalQuery.kind, "warehouse-query");
 assert.equal(externalQuery.dataLink.system, "firebolt");
+assert.equal(externalQuery.dataLink.database, "scarf_warehouse");
+assert.equal(externalQuery.dataLink.schema, "product");
+assert.equal(externalQuery.dataLink.view, "package_fetch_error_rate_daily");
 assert.equal(externalQuery.dataLink.artifact, "customer-reports/firebolt/package_fetch_error_rate.csv");
 assert.ok(externalQuery.matchingAttachments.some((attachment) => attachment.ref === "id:report-fetches" && attachment.target.id === "report-fetches"));
 assert.ok(externalQuery.matchingAttachments.some((attachment) => attachment.ref === "report:report-fetches" && attachment.target.id === "report-fetches"));

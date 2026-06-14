@@ -353,7 +353,7 @@ FROM fetches
 ```
 #+end_src
 
-This is deliberately scoped to explicit local/ad hoc data sources. Org2 stores the source path, read-only URL, table name, credential/config reference, query, and materialized result/provenance; secrets, bearer tokens, and remote warehouse credentials belong in external tooling, not in notes.
+This is deliberately scoped to explicit local/ad hoc data sources. Org2 stores the source path, read-only URL, table/view name, optional column and primary-key metadata, credential/config reference, query, and materialized result/provenance; secrets, bearer tokens, and remote warehouse credentials belong in external tooling, not in notes.
 
 * Keyword/directive lines
 

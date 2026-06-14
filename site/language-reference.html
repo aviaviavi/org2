@@ -361,7 +361,7 @@ engine: duckdb
 SELECT sum(fetches) AS fetches
 FROM fetches
 ```</code></pre>
-<p>This is deliberately scoped to explicit local/ad hoc data sources. Org2 stores the source path, read-only URL, table name, credential/config reference, query, and materialized result/provenance; secrets, bearer tokens, and remote warehouse credentials belong in external tooling, not in notes.</p>
+<p>This is deliberately scoped to explicit local/ad hoc data sources. Org2 stores the source path, read-only URL, table/view name, optional column and primary-key metadata, credential/config reference, query, and materialized result/provenance; secrets, bearer tokens, and remote warehouse credentials belong in external tooling, not in notes.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="keyworddirective-lines">Keyword/directive lines</h1>
