@@ -975,13 +975,13 @@ private struct MeetingInputMeterRow: View {
         .foregroundStyle(.secondary)
         .frame(width: 42, alignment: .trailing)
 
-      MeetingInputMeterView(averageLevel: averageLevel, peakLevel: peakLevel)
+      WorkspaceInputMeterView(averageLevel: averageLevel, peakLevel: peakLevel)
         .frame(width: 120, height: 7)
     }
   }
 }
 
-private struct MeetingInputMeterView: View {
+struct WorkspaceInputMeterView: View {
   let averageLevel: Double
   let peakLevel: Double
 

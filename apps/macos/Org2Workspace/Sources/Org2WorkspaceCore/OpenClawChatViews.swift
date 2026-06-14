@@ -117,7 +117,7 @@ struct OpenClawComposerView: View {
         OpenClawComposerTextView(
           text: $store.openClawDraft,
           focusOnAppear: focusOnAppear,
-          onCommandReturn: sendIfPossible
+          onReturn: handleReturn
         )
         .padding(4)
       }
@@ -134,7 +134,39 @@ struct OpenClawComposerView: View {
               .foregroundStyle(.secondary)
           }
         }
+        if store.isRecordingOpenClawVoiceNote {
+          HStack(spacing: 6) {
+            Image(systemName: "waveform")
+              .foregroundStyle(.red)
+            WorkspaceInputMeterView(
+              averageLevel: store.openClawVoiceAverageLevel,
+              peakLevel: store.openClawVoicePeakLevel
+            )
+            .frame(width: compact ? 72 : 110, height: 7)
+          }
+          .help("Recording OpenClaw dictation")
+        } else if store.isTranscribingOpenClawVoiceNote {
+          HStack(spacing: 6) {
+            ProgressView()
+              .controlSize(.small)
+            Text("Transcribing")
+              .font(.caption.weight(.medium))
+              .foregroundStyle(.secondary)
+          }
+        }
         Spacer(minLength: 0)
+        Button {
+          Task { await store.toggleOpenClawVoiceNoteRecording() }
+        } label: {
+          Label(
+            store.isRecordingOpenClawVoiceNote ? "Stop Dictation" : "Dictate",
+            systemImage: store.isRecordingOpenClawVoiceNote ? "stop.fill" : "mic.fill"
+          )
+        }
+        .buttonStyle(WorkspaceActionButtonStyle())
+        .disabled(!store.isRecordingOpenClawVoiceNote && !store.canStartOpenClawVoiceNoteRecording)
+        .help(store.isRecordingOpenClawVoiceNote ? "Stop, transcribe, and send" : "Record a local voice note and send the transcript")
+
         Button {
           _ = sendIfPossible()
         } label: {
@@ -153,6 +185,11 @@ struct OpenClawComposerView: View {
   private func sendIfPossible() -> Bool {
     guard canSend else { return false }
     Task { await store.sendOpenClawMessage() }
+    return true
+  }
+
+  private func handleReturn() -> Bool {
+    _ = sendIfPossible()
     return true
   }
 }
@@ -182,14 +219,23 @@ enum OpenClawComposerSizing {
 enum OpenClawComposerKeyCommand {
   static func isSendCommand(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
     let relevantModifiers = modifiers.intersection([.command, .option, .control, .shift])
-    return (keyCode == 36 || keyCode == 76) && relevantModifiers == [.command]
+    return isReturnKey(keyCode) && relevantModifiers.isEmpty
+  }
+
+  static func isNewlineCommand(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
+    let relevantModifiers = modifiers.intersection([.command, .option, .control, .shift])
+    return isReturnKey(keyCode) && relevantModifiers == [.command]
+  }
+
+  private static func isReturnKey(_ keyCode: UInt16) -> Bool {
+    keyCode == 36 || keyCode == 76
   }
 }
 
 private struct OpenClawComposerTextView: NSViewRepresentable {
   @Binding var text: String
   let focusOnAppear: Bool
-  let onCommandReturn: () -> Bool
+  let onReturn: () -> Bool
 
   func makeCoordinator() -> Coordinator {
     Coordinator(parent: self)
@@ -205,8 +251,8 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
 
     let textView = CommandSubmitTextView()
     textView.delegate = context.coordinator
-    textView.onCommandReturn = {
-      context.coordinator.parent.onCommandReturn()
+    textView.onReturn = {
+      context.coordinator.parent.onReturn()
     }
     textView.string = text
     textView.font = .systemFont(ofSize: NSFont.systemFontSize)
@@ -235,8 +281,8 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
     guard let textView = scrollView.documentView as? CommandSubmitTextView else { return }
     context.coordinator.parent = self
-    textView.onCommandReturn = {
-      context.coordinator.parent.onCommandReturn()
+    textView.onReturn = {
+      context.coordinator.parent.onReturn()
     }
     if textView.string != text {
       let selectedRange = textView.selectedRange()
@@ -262,11 +308,15 @@ private struct OpenClawComposerTextView: NSViewRepresentable {
   }
 
   final class CommandSubmitTextView: NSTextView {
-    var onCommandReturn: (() -> Bool)?
+    var onReturn: (() -> Bool)?
 
     override func keyDown(with event: NSEvent) {
       if OpenClawComposerKeyCommand.isSendCommand(keyCode: event.keyCode, modifiers: event.modifierFlags),
-         onCommandReturn?() == true {
+         onReturn?() == true {
+        return
+      }
+      if OpenClawComposerKeyCommand.isNewlineCommand(keyCode: event.keyCode, modifiers: event.modifierFlags) {
+        insertText("\n", replacementRange: selectedRange())
         return
       }
       super.keyDown(with: event)

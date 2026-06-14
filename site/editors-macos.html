@@ -94,7 +94,8 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p>a chat panel/full-page chat for sending messages with current workspace context,</p></li>
 <li><p>an Agent Space browser for durable agent-thread records in the corpus.</p></li>
 </ul>
-<p>This is deliberately a handoff boundary. The corpus stores selected context, thread references, transcript references, and durable outputs; the external agent can act on that context without the Mac app becoming the only source of truth.</p>
+<p>The chat composer sends with <code>Return</code> and inserts a newline with <code>Cmd-Return</code>. The <code>Dictate</code> control records a short local microphone note, transcribes it with the same local Whisper resolution path used by meeting capture, and sends the transcript as a normal OpenClaw message.</p>
+<p>This is deliberately a handoff boundary. The corpus stores selected context, thread references, transcript references, and durable outputs; the external agent can act on that context without the Mac app becoming the only source of truth. OpenClaw receives prompt context that points handoff requests toward durable <code>KIND: agent-thread</code> records in the configured Agent Space directories rather than transient chat-only state.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="org-crypt">Org-crypt</h1>

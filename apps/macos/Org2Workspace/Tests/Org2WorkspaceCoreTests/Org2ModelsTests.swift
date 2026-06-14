@@ -702,12 +702,28 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(compactLongHeight, 150)
   }
 
-  func testOpenClawComposerCommandReturnOnlySendsWithCommandModifier() {
-    XCTAssertTrue(OpenClawComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: [.command]))
-    XCTAssertTrue(OpenClawComposerKeyCommand.isSendCommand(keyCode: 76, modifiers: [.command]))
-    XCTAssertFalse(OpenClawComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: []))
+  func testOpenClawComposerReturnSendsAndCommandReturnAddsNewline() {
+    XCTAssertTrue(OpenClawComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: []))
+    XCTAssertTrue(OpenClawComposerKeyCommand.isSendCommand(keyCode: 76, modifiers: []))
+    XCTAssertFalse(OpenClawComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: [.command]))
     XCTAssertFalse(OpenClawComposerKeyCommand.isSendCommand(keyCode: 36, modifiers: [.command, .shift]))
     XCTAssertFalse(OpenClawComposerKeyCommand.isSendCommand(keyCode: 49, modifiers: [.command]))
+
+    XCTAssertTrue(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: [.command]))
+    XCTAssertTrue(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 76, modifiers: [.command]))
+    XCTAssertFalse(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: []))
+    XCTAssertFalse(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: [.command, .shift]))
+  }
+
+  func testOpenClawVoiceDictationAppendsToDraftBeforeSend() {
+    XCTAssertEqual(
+      WorkspaceStore.openClawDraftByAppendingDictation(existing: "Existing instruction", dictatedText: "Dictated note"),
+      "Existing instruction\n\nDictated note"
+    )
+    XCTAssertEqual(
+      WorkspaceStore.openClawDraftByAppendingDictation(existing: "  ", dictatedText: " Dictated note\n"),
+      "Dictated note"
+    )
   }
 
   @MainActor
@@ -2270,13 +2286,18 @@ final class Org2ModelsTests: XCTestCase {
       backlinks: backlinks,
       agenda: nil,
       searchQuery: "",
-      searchResults: []
+      searchResults: [],
+      agentThreadDirectories: ["\(localRoot)/agents", "\(localRoot)/notes/openclaw"]
     )
 
     let prompt = context.systemPrompt()
 
     XCTAssertTrue(prompt.contains("Remote org2 root for OpenClaw: \(remoteRoot)"))
+    XCTAssertTrue(prompt.contains("Agent-thread directories: \(remoteRoot)/agents, \(remoteRoot)/notes/openclaw"))
     XCTAssertTrue(prompt.contains("Do not write generated Backlinks sections"))
+    XCTAssertTrue(prompt.contains("OpenClaw handoff rules"))
+    XCTAssertTrue(prompt.contains(":KIND: agent-thread"))
+    XCTAssertTrue(prompt.contains("Context attachments"))
     XCTAssertTrue(prompt.contains("org2 search <query> --dir <root>"))
     XCTAssertTrue(prompt.contains("\(remoteRoot)/notes/alice.org2:4"))
     XCTAssertTrue(prompt.contains("\(remoteRoot)/threads/follow-up.org2:8"))
