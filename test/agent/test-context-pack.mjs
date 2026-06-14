@@ -57,6 +57,12 @@ See [[id:decision-1][decision note]].
 :REFRESH_STATUS: due
 :REFRESH_AFTER: 24h
 :NEXT_REFRESH: 2026-05-16T10:00:00-07:00
+:VALIDATION_STATUS: reconciled
+:VALIDATION_AT: 2026-05-15T10:30:00-07:00
+:VALIDATION_BY: Casey
+:VALIDATION_NOTE: Compared against Zendesk dashboard totals.
+:CONFIDENCE: medium
+:VALIDATION_REFS: id:decision-1
 :ORG2_PROVENANCE: query:support.ticket_volume.v1, artifact:reports/support-ticket-volume.csv
 :ORG2_SOURCE_HASHES: query:support.ticket_volume.v1=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 :ORG2_REVIEW_STATUS: reviewed
@@ -176,6 +182,12 @@ assert.match(selected, /refresh command: org2 query-data --file support\.org2 --
 assert.match(selected, /refresh status: due/);
 assert.match(selected, /refresh after: 24h/);
 assert.match(selected, /next refresh: 2026-05-16T10:00:00-07:00/);
+assert.match(selected, /validation: reconciled/);
+assert.match(selected, /validated at: 2026-05-15T10:30:00-07:00/);
+assert.match(selected, /validated by: Casey/);
+assert.match(selected, /confidence: medium/);
+assert.match(selected, /validation note: Compared against Zendesk dashboard totals\./);
+assert.match(selected, /validation refs: id:decision-1/);
 assert.match(selected, /provenance: artifact:reports\/support-ticket-volume\.csv, query:support\.ticket_volume\.v1/);
 assert.match(selected, /source hashes: query:support\.ticket_volume\.v1=sha256:aaaaaaaaaaaa/);
 assert.match(selected, /Data catalog: support satisfaction score/);
@@ -242,25 +254,32 @@ assert.ok(selectedJson.results[0].collaboration.run.sourceArtifacts.some((attach
 assert.equal(selectedJson.results[0].collaboration.handoff.summary, "Response draft is ready but must be approved before sending.");
 assert.ok(selectedJson.results[0].collaboration.handoff.links.some((attachment) => attachment.ref === "id:decision-1" && attachment.target.id === "decision-1"));
 assert.equal(selectedJson.results[0].relatedThreads[0].id, "thread-scarf-triage");
-assert.equal(selectedJson.results[0].relatedDataLinks[0].id, "support-ticket-volume");
-assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.rowCount, 42);
-assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.database, "support_warehouse");
-assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.schema, "support");
-assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.table, "ticket_volume_daily");
-assert.deepEqual(selectedJson.results[0].relatedDataLinks[0].dataLink.columns, [
+const supportTicketVolume = selectedJson.results[0].relatedDataLinks.find((item) => item.id === "support-ticket-volume");
+assert.ok(supportTicketVolume);
+assert.equal(supportTicketVolume.dataLink.rowCount, 42);
+assert.equal(supportTicketVolume.dataLink.database, "support_warehouse");
+assert.equal(supportTicketVolume.dataLink.schema, "support");
+assert.equal(supportTicketVolume.dataLink.table, "ticket_volume_daily");
+assert.deepEqual(supportTicketVolume.dataLink.columns, [
   { name: "date", type: "date" },
   { name: "ticket_count", type: "int" },
 ]);
-assert.deepEqual(selectedJson.results[0].relatedDataLinks[0].dataLink.primaryKey, ["date"]);
-assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.refreshRef, "query-data:support-ticket-volume");
-assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.refreshCommand, "org2 query-data --file support.org2 --results support_ticket_volume --out views/support-ticket-volume.org2");
-assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.refreshStatus, "due");
-assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.refreshAfter, "24h");
-assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.nextRefresh, "2026-05-16T10:00:00-07:00");
-assert.ok(selectedJson.results[0].relatedDataLinks[0].dataLink.provenance.some((ref) => ref.ref === "query:support.ticket_volume.v1"));
-assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.sourceHashes[0].sha256, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-assert.equal(selectedJson.results[0].relatedDataLinks[0].claimState.reviewStatus, "reviewed");
-assert.equal(selectedJson.results[0].relatedDataLinks[0].claimState.freshness, "fresh");
+assert.deepEqual(supportTicketVolume.dataLink.primaryKey, ["date"]);
+assert.equal(supportTicketVolume.dataLink.refreshRef, "query-data:support-ticket-volume");
+assert.equal(supportTicketVolume.dataLink.refreshCommand, "org2 query-data --file support.org2 --results support_ticket_volume --out views/support-ticket-volume.org2");
+assert.equal(supportTicketVolume.dataLink.refreshStatus, "due");
+assert.equal(supportTicketVolume.dataLink.refreshAfter, "24h");
+assert.equal(supportTicketVolume.dataLink.nextRefresh, "2026-05-16T10:00:00-07:00");
+assert.equal(supportTicketVolume.dataLink.validationStatus, "reconciled");
+assert.equal(supportTicketVolume.dataLink.validationAt, "2026-05-15T10:30:00-07:00");
+assert.equal(supportTicketVolume.dataLink.validationBy, "Casey");
+assert.equal(supportTicketVolume.dataLink.validationNote, "Compared against Zendesk dashboard totals.");
+assert.equal(supportTicketVolume.dataLink.confidence, "medium");
+assert.ok(supportTicketVolume.dataLink.validationRefs.some((ref) => ref.ref === "id:decision-1" && ref.target.id === "decision-1"));
+assert.ok(supportTicketVolume.dataLink.provenance.some((ref) => ref.ref === "query:support.ticket_volume.v1"));
+assert.equal(supportTicketVolume.dataLink.sourceHashes[0].sha256, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+assert.equal(supportTicketVolume.claimState.reviewStatus, "reviewed");
+assert.equal(supportTicketVolume.claimState.freshness, "fresh");
 assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-satisfaction-score" && item.claimState.reviewStatus === "review-required" && item.claimState.freshness === "stale"));
 assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-satisfaction-score" && item.matchingAttachments.some((attachment) => attachment.ref === "id:scarf-support-1")));
 assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-state-changes" && item.dataLink.timeline === "support.ticket.lifecycle"));
