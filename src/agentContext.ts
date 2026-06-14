@@ -714,7 +714,9 @@ function numericDataProperty(props: Record<string, string>, names: string[]): nu
   for (const name of names) {
     const raw = props[name];
     if (!raw) continue;
-    const parsed = Number.parseFloat(String(raw).replace(/,/g, "").trim());
+    const normalized = String(raw).replace(/,/g, "").trim();
+    if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) continue;
+    const parsed = Number.parseFloat(normalized);
     if (Number.isFinite(parsed)) return parsed;
   }
   return undefined;
