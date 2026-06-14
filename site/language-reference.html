@@ -80,14 +80,14 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 </section>
 <section class="org2-headline level-1">
 <h1 id="keywords"><span class="org2-todo">TODO</span> keywords</h1>
-<p>Headline TODO states parsed by Org2 workflows:</p>
+<p>Headline TODO states parsed into the canonical AST:</p>
 <ul>
 <li><p><code>TODO</code></p></li>
 <li><p><code>IN_PROGRESS</code></p></li>
-<li><p><code>PROG</code></p></li>
 <li><p><code>DONE</code></p></li>
 <li><p><code>CANCELLED</code> / <code>CANCELED</code></p></li>
 </ul>
+<p>Workflow tools may accept aliases such as <code>PROG</code> or <code>WAITING</code> and normalize them to one of the canonical TODO keywords above.</p>
 <p>Example:</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* TODO Ship docs
 * IN_PROGRESS Implement parser tests

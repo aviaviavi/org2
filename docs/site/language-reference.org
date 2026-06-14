@@ -28,13 +28,14 @@ Use this mapping when deciding where behavior is defined:
 
 * TODO keywords
 
-Headline TODO states parsed by Org2 workflows:
+Headline TODO states parsed into the canonical AST:
 
 - =TODO=
 - =IN_PROGRESS=
-- =PROG=
 - =DONE=
 - =CANCELLED= / =CANCELED=
+
+Workflow tools may accept aliases such as =PROG= or =WAITING= and normalize them to one of the canonical TODO keywords above.
 
 Example:
 
