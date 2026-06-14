@@ -843,9 +843,15 @@ enum RenderedBlockEditingPolicy {
       return false
     case .paragraph:
       return OrgCrypt.armorSummary(block.rawText) == nil
+        && !paragraphContainsRenderableMedia(block.rawText)
     case .heading, .planning, .quote, .source, .table, .listItem, .keyword:
       return true
     }
+  }
+
+  private static func paragraphContainsRenderableMedia(_ rawText: String) -> Bool {
+    OrgMediaAttachment.standalone(raw: rawText) != nil
+      || OrgMediaAttachment.embedded(in: rawText) != nil
   }
 }
 

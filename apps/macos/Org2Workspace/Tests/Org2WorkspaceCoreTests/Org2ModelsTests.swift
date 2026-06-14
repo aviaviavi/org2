@@ -3188,6 +3188,18 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: properties, isSourceEditable: true))
   }
 
+  func testRenderedBlockEditingPolicyLeavesMediaParagraphsPreviewableOnSingleClick() throws {
+    let embedded = try XCTUnwrap(OrgEntryRenderer.parseEditable(
+      "inline images [[file:images/image.png][Image]]"
+    ).first)
+    let standalone = try XCTUnwrap(OrgEntryRenderer.parseEditable(
+      "[[file:images/image.png][Image]]"
+    ).first)
+
+    XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: embedded, isSourceEditable: true))
+    XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: standalone, isSourceEditable: true))
+  }
+
   func testRenderedBlockDisplayPolicyCollapsesBlankButKeepsProperties() {
     let blank = OrgEditableBlock(
       id: "blank",
@@ -4491,6 +4503,30 @@ final class Org2ModelsTests: XCTestCase {
     ))
     XCTAssertEqual(listEmbedded.displayText, "inline images")
     XCTAssertEqual(listEmbedded.attachments.first?.resolvedPath, image.standardizedFileURL.path)
+  }
+
+  func testParagraphEditorInlineMediaPreviewUsesLiveDraftText() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-inline-media-editor-\(UUID().uuidString)", isDirectory: true)
+    let assets = root.appendingPathComponent("assets", isDirectory: true)
+    try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
+    let image = assets.appendingPathComponent("diagram.png")
+    let note = root.appendingPathComponent("note.org2")
+    try Data().write(to: image)
+    try Data().write(to: note)
+
+    let preview = try XCTUnwrap(ParagraphEditorInlineMediaPreview.embedded(
+      raw: "inline images [[file:assets/diagram.png][Image]]",
+      sourceFile: note.path,
+      corpusRoot: root
+    ))
+    XCTAssertEqual(preview.displayText, "inline images")
+    XCTAssertEqual(preview.attachments.first?.resolvedPath, image.standardizedFileURL.path)
+    XCTAssertNil(ParagraphEditorInlineMediaPreview.embedded(
+      raw: "inline images Image",
+      sourceFile: note.path,
+      corpusRoot: root
+    ))
   }
 
   func testOrgCryptFindsPlaintextCryptSubtreesAndProperties() throws {

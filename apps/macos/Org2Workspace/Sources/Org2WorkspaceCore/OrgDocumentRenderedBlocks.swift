@@ -671,12 +671,18 @@ private struct RenderedEncryptedBlockView: View {
   }
 }
 
-private struct RenderedParagraphMediaView: View {
+struct RenderedParagraphMediaView: View {
   let embedded: OrgMediaAttachment.EmbeddedGroup
+  let showsDisplayText: Bool
+
+  init(embedded: OrgMediaAttachment.EmbeddedGroup, showsDisplayText: Bool = true) {
+    self.embedded = embedded
+    self.showsDisplayText = showsDisplayText
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      if !embedded.displayText.isEmpty {
+      if showsDisplayText, !embedded.displayText.isEmpty {
         OrgInlineText(embedded.displayText)
           .frame(maxWidth: .infinity, alignment: .leading)
       }
