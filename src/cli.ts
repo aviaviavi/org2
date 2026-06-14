@@ -9661,6 +9661,8 @@ Flags:
 Usage:
   org2 search QUERY [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
 
+Search scans .org and .org2 files for literal, case-insensitive text and returns cited file/line matches. Directory scans are non-recursive unless --recursive is set.
+
 Flags:
   --dir DIR          Root directory to scan
   --recursive        Recurse into subdirectories

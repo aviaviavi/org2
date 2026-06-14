@@ -708,7 +708,7 @@ private struct SearchView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      HeaderBar(title: "Search", subtitle: "Cited corpus lookup") {
+      HeaderBar(title: "Search", subtitle: "Full-text corpus search") {
         if store.isSearching {
           ProgressView()
             .controlSize(.small)
@@ -722,7 +722,7 @@ private struct SearchView: View {
       }
 
       HStack(spacing: 8) {
-        TextField("Search corpus", text: $store.searchQuery)
+        TextField("Search all org text", text: $store.searchQuery)
           .textFieldStyle(.roundedBorder)
           .focused($isSearchFocused)
           .onSubmit {
@@ -737,7 +737,14 @@ private struct SearchView: View {
         .disabled(store.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isSearching)
       }
       .padding(.horizontal, WorkspaceDesign.contentInset)
-      .padding(.bottom, 12)
+
+      Text("Literal, case-insensitive search across .org and .org2 files under the selected corpus.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, WorkspaceDesign.contentInset)
+        .padding(.top, 4)
+        .padding(.bottom, 12)
 
       if store.searchResults.isEmpty {
         if store.isSearching {
@@ -745,8 +752,8 @@ private struct SearchView: View {
           ProgressView()
           Spacer()
         } else {
-          EmptyStateView(title: "No Results", detail: store.statusText, action: "Refresh Agenda") {
-            Task { await store.refreshAgenda() }
+          EmptyStateView(title: "No Results", detail: searchEmptyStateDetail, action: "Search") {
+            Task { await store.runSearch() }
           }
         }
       } else {
@@ -768,6 +775,14 @@ private struct SearchView: View {
     .onChange(of: store.searchFocusToken) {
       isSearchFocused = true
     }
+  }
+
+  private var searchEmptyStateDetail: String {
+    if store.corpusRoot == nil { return "Open a corpus to search its org files." }
+    if store.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return "Enter text to search the corpus."
+    }
+    return store.statusText
   }
 }
 

@@ -268,7 +268,7 @@ npm run org2 -- compile corpus --dir ~/notes --recursive --format jsonl --out co
 </section>
 <section class="org2-headline level-1">
 <h1 id="search-cited-query">Search + cited query</h1>
-<p>Use <code>search</code> for workspace text lookup and <code>query</code> when you want cited context suitable for answering factual questions from notes. The <a href="llm-consumers.html">External LLM consumer pattern</a> page shows how provider-agnostic agents can turn this JSON into cited model context without adding LLM calls to Org2 core.</p>
+<p>Use <code>search</code> for literal, case-insensitive full-text lookup over <code>.org</code> and <code>.org2</code> files, and <code>query</code> when you want cited context suitable for answering factual questions from notes. Directory scans are non-recursive unless <code>--recursive</code> is set. The <a href="llm-consumers.html">External LLM consumer pattern</a> page shows how provider-agnostic agents can turn this JSON into cited model context without adding LLM calls to Org2 core.</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- search &quot;Chris Martin&quot; --dir ~/notes --recursive --context 3 --sort date-desc
 npm run org2 -- query &quot;Chris Martin&quot; --dir ~/notes --recursive --subtree --sort date-desc --format json
 npm run org2 -- query &quot;Sentra&quot; --dir ~/notes --recursive --format json</code></pre>

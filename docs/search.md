@@ -1,6 +1,6 @@
 # Cited local search
 
-`org2 search` provides a local-first cited retrieval surface for humans and agents working over an Org2 corpus. It does not synthesize answers; it returns grounded matches with file/line citations and nearby org metadata.
+`org2 search` provides a local-first cited retrieval surface for humans and agents working over an Org2 corpus. It is a literal, case-insensitive full-text line scan over `.org` and `.org2` files. It does not synthesize answers; it returns grounded matches with file/line citations and nearby org metadata.
 
 ## Examples
 
@@ -42,7 +42,7 @@ JSON output uses the `org2:search:v1` schema:
 
 ## Flags
 
-- `--dir DIR`, `--recursive`, `--file FILE`, `--files FILE ...` select the corpus. If omitted, `org2.json` is used when present.
+- `--dir DIR`, `--recursive`, `--file FILE`, `--files FILE ...` select the corpus. If omitted, `org2.json` is used when present. Directory scans are non-recursive unless `--recursive` is set.
 - `--format text|json` chooses human or machine-readable output.
 - `--todo TODO`, `--tag TAG`, and `--heading TEXT` filter by nearest containing heading metadata.
 - `--limit N` caps matches (default: 50).

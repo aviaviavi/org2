@@ -10,7 +10,7 @@ The sidebar exposes the main workspace surfaces:
 
 - *Agenda* :: review scheduled/deadline work across the selected corpus, filter items, switch agenda modes, mutate TODO/planning state, and open the selected item in the detail pane.
 - *Files* :: scan =.org2=, =.org=, and Markdown files, filter them, and quick-open a file with keyboard shortcuts.
-- *Search* :: run corpus search through the shared Org2 tooling and open results with source context.
+- *Search* :: run literal, case-insensitive full-text search across =.org2= and =.org= files under the selected corpus, then open results with source context.
 - *Meetings* :: record or import local audio, create meeting/transcript artifacts under the corpus, and keep transcription provenance in Org2 files.
 - *OpenClaw Chat* :: send selected workspace context to a configured OpenClaw endpoint while keeping the conversation state local to the app.
 - *Agent Space* :: browse durable OpenClaw/agent thread records and reopen their source context.
@@ -53,9 +53,11 @@ This is deliberately a handoff boundary. The corpus stores selected context, thr
 
 The app includes configuration and run actions for GPG-backed =:crypt:= subtrees. It can encrypt plaintext =:crypt:= subtrees on save, decrypt selected encrypted subtrees for review, manage recipient lists, and use the macOS keychain for the optional passphrase workflow.
 
-* Knowledge creation
+* Search and knowledge creation
 
-The Search surface includes a =New Node= action for creating an ID-backed Org2 note in the configured roam/index directory. This belongs with search and backlinks because node creation is part of navigating and extending the knowledge graph, not a separate planning surface.
+The Search surface calls =org2 search= with the selected corpus root, recursive scanning, a 50-result limit, one line of context, and JSON output. It is a literal text lookup, not semantic/vector search: it matches case-insensitive text in normal =.org2= and =.org= files and returns cited file/line snippets with nearest-heading metadata. Archive files and directories stay excluded.
+
+The same surface includes a =New Node= action for creating an ID-backed Org2 note in the configured roam/index directory. This belongs with search and backlinks because node creation is part of navigating and extending the knowledge graph, not a separate planning surface.
 
 The next knowledge-browser work should make this more useful by adding graph-neighborhood views, link insertion, backlink-driven navigation, and broken-link repair.
 
