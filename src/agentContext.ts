@@ -114,6 +114,12 @@ type AgentDataLinkMetadata = {
   validationNote?: string;
   confidence?: string;
   validationRefs?: AgentContextAttachment[];
+  dataOwner?: string;
+  dataSteward?: string;
+  sensitivity?: string;
+  visibility?: string;
+  accessPolicy?: string;
+  retention?: string;
   eventStream?: string;
   timeline?: string;
   eventType?: string;
@@ -758,6 +764,12 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
   const validationRefs = resolveAttachmentTargets(corpus, mergeAttachments([
     ...parseContextAttachmentList(stringDataProperty(props, ["VALIDATION_REF", "VALIDATION_REFS", "ORG2_VALIDATION_REFS"])),
   ]));
+  const dataOwner = stringDataProperty(props, ["DATA_OWNER", "DATASET_OWNER", "ORG2_DATA_OWNER"]);
+  const dataSteward = stringDataProperty(props, ["DATA_STEWARD", "STEWARD", "ORG2_DATA_STEWARD"]);
+  const sensitivity = stringDataProperty(props, ["SENSITIVITY", "DATA_SENSITIVITY", "ORG2_SENSITIVITY"]);
+  const visibility = stringDataProperty(props, ["VISIBILITY", "DATA_VISIBILITY", "ORG2_VISIBILITY"]);
+  const accessPolicy = stringDataProperty(props, ["ACCESS_POLICY", "ACCESS", "DATA_ACCESS", "ORG2_ACCESS_POLICY"]);
+  const retention = stringDataProperty(props, ["RETENTION", "RETENTION_POLICY", "DATA_RETENTION", "ORG2_RETENTION"]);
   const eventStream = stringDataProperty(props, ["EVENT_STREAM", "STREAM", "STREAM_ID"]);
   const timeline = stringDataProperty(props, ["TIMELINE", "TIMELINE_ID"]);
   const eventType = stringDataProperty(props, ["EVENT_TYPE", "EVENT_KIND"]);
@@ -805,6 +817,12 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
     ...(validationNote ? { validationNote } : {}),
     ...(confidence ? { confidence } : {}),
     ...(validationRefs.length ? { validationRefs } : {}),
+    ...(dataOwner ? { dataOwner } : {}),
+    ...(dataSteward ? { dataSteward } : {}),
+    ...(sensitivity ? { sensitivity } : {}),
+    ...(visibility ? { visibility } : {}),
+    ...(accessPolicy ? { accessPolicy } : {}),
+    ...(retention ? { retention } : {}),
     ...(eventStream ? { eventStream } : {}),
     ...(timeline ? { timeline } : {}),
     ...(eventType ? { eventType } : {}),
@@ -1258,6 +1276,12 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       item.dataLink.confidence ? `confidence: ${item.dataLink.confidence}` : "",
       item.dataLink.validationNote ? `validation note: ${item.dataLink.validationNote}` : "",
       item.dataLink.validationRefs?.length ? `validation refs: ${item.dataLink.validationRefs.map((ref) => ref.ref).join(", ")}` : "",
+      item.dataLink.dataOwner ? `data owner: ${item.dataLink.dataOwner}` : "",
+      item.dataLink.dataSteward ? `data steward: ${item.dataLink.dataSteward}` : "",
+      item.dataLink.sensitivity ? `sensitivity: ${item.dataLink.sensitivity}` : "",
+      item.dataLink.visibility ? `visibility: ${item.dataLink.visibility}` : "",
+      item.dataLink.accessPolicy ? `access: ${item.dataLink.accessPolicy}` : "",
+      item.dataLink.retention ? `retention: ${item.dataLink.retention}` : "",
       item.dataLink.eventStream ? `stream: ${item.dataLink.eventStream}` : "",
       item.dataLink.timeline ? `timeline: ${item.dataLink.timeline}` : "",
       item.dataLink.eventType ? `event: ${item.dataLink.eventType}` : "",

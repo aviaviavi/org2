@@ -289,6 +289,12 @@ Business question for package fetch activity.
 :VALIDATION_NOTE: Compared row counts against the dashboard export.
 :CONFIDENCE: high
 :VALIDATION_REFS: file:validation/package-fetches-check.md
+:DATA_OWNER: Product Analytics
+:DATA_STEWARD: Casey
+:SENSITIVITY: customer-private
+:VISIBILITY: internal
+:ACCESS_POLICY: approval-required
+:RETENTION: 90d
 :ORG2_PROVENANCE: query:scarf.package_fetches_by_company.v1, artifact:customer-reports/firebolt/package_fetches_by_company.csv
 :ORG2_SOURCE_HASHES: query:scarf.package_fetches_by_company.v1=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 :END:
@@ -378,6 +384,12 @@ assert.equal(dataLink.results[0].dataLink.validationBy, "Casey");
 assert.equal(dataLink.results[0].dataLink.validationNote, "Compared row counts against the dashboard export.");
 assert.equal(dataLink.results[0].dataLink.confidence, "high");
 assert.ok(dataLink.results[0].dataLink.validationRefs.some((ref) => ref.ref === "file:validation/package-fetches-check.md"));
+assert.equal(dataLink.results[0].dataLink.dataOwner, "Product Analytics");
+assert.equal(dataLink.results[0].dataLink.dataSteward, "Casey");
+assert.equal(dataLink.results[0].dataLink.sensitivity, "customer-private");
+assert.equal(dataLink.results[0].dataLink.visibility, "internal");
+assert.equal(dataLink.results[0].dataLink.accessPolicy, "approval-required");
+assert.equal(dataLink.results[0].dataLink.retention, "90d");
 assert.ok(dataLink.results[0].dataLink.provenance.some((ref) => ref.ref === "query:scarf.package_fetches_by_company.v1"));
 assert.equal(dataLink.results[0].dataLink.sourceHashes[0].kind, "query");
 assert.equal(dataLink.results[0].dataLink.sourceHashes[0].value, "scarf.package_fetches_by_company.v1");
@@ -420,6 +432,8 @@ assert.equal(descendantQuery.kind, "warehouse-query");
 assert.equal(descendantQuery.dataLink.artifact, "customer-reports/firebolt/package_fetches_by_company.csv");
 assert.equal(descendantQuery.dataLink.refreshStatus, "ready");
 assert.equal(descendantQuery.dataLink.validationStatus, "sampled");
+assert.equal(descendantQuery.dataLink.sensitivity, "customer-private");
+assert.equal(descendantQuery.dataLink.accessPolicy, "approval-required");
 const descendantDataset = reportWithDataLinks.results[0].relatedDataLinks.find((item) => item.id === "dataset-package-fetches");
 assert.equal(descendantDataset.kind, "dataset");
 const externalQuery = reportWithDataLinks.results[0].relatedDataLinks.find((item) => item.id === "query-fetch-error-rate");
