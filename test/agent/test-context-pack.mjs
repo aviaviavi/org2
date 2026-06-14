@@ -47,6 +47,11 @@ See [[id:decision-1][decision note]].
 :ARTIFACT: reports/support-ticket-volume.csv
 :ROW_COUNT: 42
 :FRESHNESS: daily
+:REFRESH_REF: query-data:support-ticket-volume
+:REFRESH_COMMAND: org2 query-data --file support.org2 --results support_ticket_volume --out views/support-ticket-volume.org2
+:REFRESH_STATUS: due
+:REFRESH_AFTER: 24h
+:NEXT_REFRESH: 2026-05-16T10:00:00-07:00
 :ORG2_PROVENANCE: query:support.ticket_volume.v1, artifact:reports/support-ticket-volume.csv
 :ORG2_SOURCE_HASHES: query:support.ticket_volume.v1=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 :ORG2_REVIEW_STATUS: reviewed
@@ -154,6 +159,11 @@ assert.match(selected, /review: reviewed/);
 assert.match(selected, /claim freshness: fresh/);
 assert.match(selected, /query: support\.ticket_volume\.v1/);
 assert.match(selected, /artifact: reports\/support-ticket-volume\.csv/);
+assert.match(selected, /refresh ref: query-data:support-ticket-volume/);
+assert.match(selected, /refresh command: org2 query-data --file support\.org2 --results support_ticket_volume --out views\/support-ticket-volume\.org2/);
+assert.match(selected, /refresh status: due/);
+assert.match(selected, /refresh after: 24h/);
+assert.match(selected, /next refresh: 2026-05-16T10:00:00-07:00/);
 assert.match(selected, /provenance: artifact:reports\/support-ticket-volume\.csv, query:support\.ticket_volume\.v1/);
 assert.match(selected, /source hashes: query:support\.ticket_volume\.v1=sha256:aaaaaaaaaaaa/);
 assert.match(selected, /Data catalog: support satisfaction score/);
@@ -220,6 +230,11 @@ assert.ok(selectedJson.results[0].collaboration.handoff.links.some((attachment) 
 assert.equal(selectedJson.results[0].relatedThreads[0].id, "thread-scarf-triage");
 assert.equal(selectedJson.results[0].relatedDataLinks[0].id, "support-ticket-volume");
 assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.rowCount, 42);
+assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.refreshRef, "query-data:support-ticket-volume");
+assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.refreshCommand, "org2 query-data --file support.org2 --results support_ticket_volume --out views/support-ticket-volume.org2");
+assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.refreshStatus, "due");
+assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.refreshAfter, "24h");
+assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.nextRefresh, "2026-05-16T10:00:00-07:00");
 assert.ok(selectedJson.results[0].relatedDataLinks[0].dataLink.provenance.some((ref) => ref.ref === "query:support.ticket_volume.v1"));
 assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.sourceHashes[0].sha256, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 assert.equal(selectedJson.results[0].relatedDataLinks[0].claimState.reviewStatus, "reviewed");
