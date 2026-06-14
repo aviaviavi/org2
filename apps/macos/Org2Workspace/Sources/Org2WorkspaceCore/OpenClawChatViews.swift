@@ -37,6 +37,11 @@ struct ChatBubbleView: View {
         }
         OrgInlineText(message.content)
           .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
+        if message.role == .assistant, let changeSummary = message.changeSummary {
+          Divider()
+            .padding(.vertical, 2)
+          OpenClawChangeSummaryView(summary: changeSummary, compact: compact)
+        }
       }
       .padding(.horizontal, 11)
       .padding(.vertical, 9)
@@ -87,6 +92,95 @@ struct ChatBubbleView: View {
     case .system:
       return .orange
     }
+  }
+}
+
+private struct OpenClawChangeSummaryView: View {
+  let summary: OpenClawCorpusChangeSummary
+  let compact: Bool
+
+  private var visibleLimit: Int {
+    compact ? 4 : 6
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 7) {
+      HStack(spacing: 8) {
+        Label(summary.title, systemImage: "doc.text.magnifyingglass")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.primary)
+        Spacer(minLength: 8)
+        OpenClawChangeDeltaView(insertions: summary.totalInsertions, deletions: summary.totalDeletions)
+      }
+
+      ForEach(summary.files.prefix(visibleLimit)) { change in
+        HStack(spacing: 7) {
+          Image(systemName: iconName(for: change.status))
+            .font(.caption)
+            .foregroundStyle(iconColor(for: change.status))
+            .frame(width: 14)
+          Text(change.relativePath)
+            .font(.caption.monospaced())
+            .lineLimit(1)
+            .truncationMode(.middle)
+          Spacer(minLength: 8)
+          OpenClawChangeDeltaView(insertions: change.insertions, deletions: change.deletions)
+        }
+      }
+
+      if summary.files.count > visibleLimit {
+        Text("+\(summary.files.count - visibleLimit) more file\(summary.files.count - visibleLimit == 1 ? "" : "s")")
+          .font(.caption2.weight(.medium))
+          .foregroundStyle(.secondary)
+      }
+    }
+    .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
+  }
+
+  private func iconName(for status: OpenClawCorpusFileChange.Status) -> String {
+    switch status {
+    case .created:
+      return "plus.circle"
+    case .modified:
+      return "pencil"
+    case .deleted:
+      return "minus.circle"
+    }
+  }
+
+  private func iconColor(for status: OpenClawCorpusFileChange.Status) -> Color {
+    switch status {
+    case .created:
+      return .green
+    case .modified:
+      return .secondary
+    case .deleted:
+      return .red
+    }
+  }
+}
+
+private struct OpenClawChangeDeltaView: View {
+  let insertions: Int
+  let deletions: Int
+
+  var body: some View {
+    HStack(spacing: 4) {
+      if insertions > 0 {
+        Text("+\(insertions)")
+          .foregroundStyle(.green)
+      }
+      if deletions > 0 {
+        Text("-\(deletions)")
+          .foregroundStyle(.red)
+      }
+      if insertions == 0 && deletions == 0 {
+        Text("0")
+          .foregroundStyle(.secondary)
+      }
+    }
+    .font(.caption.monospacedDigit().weight(.medium))
+    .lineLimit(1)
   }
 }
 

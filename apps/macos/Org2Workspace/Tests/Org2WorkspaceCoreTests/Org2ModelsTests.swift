@@ -443,6 +443,60 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testOpenClawReplyRecordsCorpusChangeSummary() async throws {
+    let temp = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-changes-\(UUID().uuidString)", isDirectory: true)
+    let root = temp.appendingPathComponent("corpus", isDirectory: true)
+    let transcript = temp.appendingPathComponent("transcript", isDirectory: true)
+      .appendingPathComponent("openclaw-chat.json")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+    let notePath = root.appendingPathComponent("note.org").path
+    let createdPath = root.appendingPathComponent("created.org").path
+    try "Line one\n".write(toFile: notePath, atomically: true, encoding: .utf8)
+
+    let suiteName = "org2-workspace-chat-changes-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      openClawSendHandler: { _, _, _, _ in
+        try "Line one\nLine two\n".write(toFile: notePath, atomically: true, encoding: .utf8)
+        try "Alpha\nBeta\n".write(toFile: createdPath, atomically: true, encoding: .utf8)
+        return "Updated the corpus"
+      }
+    )
+    store.setCorpusRoot(root)
+    store.openClawDraft = "Update these notes"
+
+    await store.sendOpenClawMessage()
+
+    let assistantMessage = try XCTUnwrap(store.openClawMessages.last)
+    let summary = try XCTUnwrap(assistantMessage.changeSummary)
+    XCTAssertEqual(summary.title, "Edited 2 files")
+    XCTAssertEqual(summary.changedFileCount, 2)
+    XCTAssertEqual(summary.totalInsertions, 3)
+    XCTAssertEqual(summary.totalDeletions, 0)
+    XCTAssertEqual(
+      summary.files,
+      [
+        OpenClawCorpusFileChange(relativePath: "created.org", status: .created, insertions: 2, deletions: 0),
+        OpenClawCorpusFileChange(relativePath: "note.org", status: .modified, insertions: 1, deletions: 0)
+      ]
+    )
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+    XCTAssertEqual(restored.openClawMessages.last?.changeSummary, summary)
+  }
+
+  @MainActor
   func testOpenClawChatTranscriptPersistsInCorpusStorageAcrossBootstrap() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-corpus-\(UUID().uuidString)", isDirectory: true)
