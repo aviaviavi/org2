@@ -13208,7 +13208,41 @@ Flags:
 
     applyCryptProperties(lines, headingIdx, subtreeEnd);
 
-    if (cryptAction !== "decrypt" && !cryptPassphrase && !cryptUseDefaultRecipientSelf && cryptRecipients.length === 0 && cryptRecipientFiles.length === 0) {
+    const resolveDefaultGpgRecipient = (): string | null => {
+      const candidates: string[] = [];
+      if (cryptGpgProgram.includes("/") || cryptGpgProgram.includes(path.sep)) {
+        candidates.push(path.join(path.dirname(cryptGpgProgram), "gpgconf"));
+      }
+      candidates.push("gpgconf");
+
+      for (const candidate of candidates) {
+        const res = spawnSync(candidate, ["--list-options", "gpg"], {
+          encoding: "utf8",
+          timeout: 5_000,
+        });
+        if (res.error || res.status !== 0) continue;
+        const line = String(res.stdout || "")
+          .split(/\r?\n/)
+          .find((entry) => entry.startsWith("default-key:"));
+        if (!line) continue;
+        const fields = line.split(":");
+        const value = String(fields[9] || "")
+          .replace(/^"+|"+$/g, "")
+          .trim();
+        if (value) return value;
+      }
+
+      return null;
+    };
+
+    const defaultGpgRecipient = cryptUseDefaultRecipientSelf ? resolveDefaultGpgRecipient() : null;
+
+    if (cryptAction !== "decrypt" && cryptUseDefaultRecipientSelf && !defaultGpgRecipient) {
+      console.error("Error: crypt could not resolve GPG's configured default key as a recipient");
+      process.exit(1);
+    }
+
+    if (cryptAction !== "decrypt" && !cryptPassphrase && !defaultGpgRecipient && cryptRecipients.length === 0 && cryptRecipientFiles.length === 0) {
       console.error(
         "Error: crypt encrypt/reencrypt requires --passphrase PASS, --default-recipient-self, at least one --recipient/--recipient-file, or CRYPT_RECIPIENT(S)/CRYPT_RECIPIENT_FILE(S) properties",
       );
@@ -13240,7 +13274,7 @@ Flags:
         commonArgs.push("--pinentry-mode", "loopback");
       }
       if (cryptPassphrase) commonArgs.push("--passphrase", cryptPassphrase);
-      const defaultRecipientArgs = cryptUseDefaultRecipientSelf ? ["--default-recipient-self"] : [];
+      const defaultRecipientArgs = defaultGpgRecipient ? ["--recipient", defaultGpgRecipient] : [];
       const recipientArgs = cryptRecipients.flatMap((recipient) => ["--recipient", recipient]);
       const recipientFileArgs = cryptRecipientFiles.flatMap((recipientFile) => ["--recipient-file", recipientFile]);
       const commandArgs =
