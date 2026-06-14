@@ -31,7 +31,7 @@ What already works well today:
 
 * Workspace and context records
 
-Org2 Workspace is the product direction for focused clients over the same local corpus. Agenda review, entity pages, meeting memory, search, OpenClaw threads, and data-backed reports should all use parser/compiler output instead of private app state.
+Org2 Workspace is the product direction for focused clients over the same local corpus. The macOS app now exists as an alpha client for agenda review, file navigation, search, rendered block editing, meeting capture, OpenClaw handoff, agent-thread browsing, daily notes, autonomous loop artifacts, knowledge-node creation, and org-crypt workflows. Entity pages, richer meeting memory, capture loops, and data-backed reports should continue to use parser/compiler output instead of private app state.
 
 The format already has the building blocks for that direction:
 
@@ -102,9 +102,28 @@ This matters because Org-style notes get dramatically better once links, referen
 A few concrete ways Org2 fits into a real workflow:
 
 - *Daily planning*: keep TODOs, scheduled dates, deadlines, priorities, effort, and tags in plain files; derive agenda views in the CLI, VS Code, or the agenda TUI.
+- *Mac workspace*: open a corpus in the native macOS app, review agenda items, quick-open files, edit rendered blocks, record/import meetings, and hand selected context to OpenClaw without moving the source of truth out of plain files.
 - *Meeting pipeline*: store transcripts as raw evidence, curate summaries/TODOs/Linear candidates into notes, then run backlinking and lint to keep the result connected and auditable.
 - *Research corpus*: capture source material, assign IDs, strengthen weak references into links, query with file/line citations, and publish selected pages.
 - *Automation boundary*: let scripts and agents read compiled corpus artifacts instead of scraping editor state, while generated outputs remain reviewable under =views/= or =compiled/=.
+
+* macOS Workspace
+
+The native Mac app lives in =apps/macos/Org2Workspace=. It is early, but it is already more than a parser demo:
+
+- corpus picker and file scanner,
+- agenda surface with filtering, modes, keyboard navigation, and task/planning mutations,
+- quick-open and daily-note navigation,
+- search and backlinks-backed detail navigation,
+- rendered document view with structured block editors,
+- meeting recording/import with local-first transcription artifacts,
+- OpenClaw chat and Agent Space surfaces,
+- Workstreams surface for parallel slice kickoff, autonomous loop artifacts, knowledge-node creation, and first-run health checks,
+- GPG-backed org-crypt configuration and encrypt/decrypt actions.
+
+The next major app slice should lead with *autonomous capture and knowledge loops*: one-click creation of loop artifacts under =loops/=, meeting loops that retain transcript/source references, ID-backed knowledge-node creation, and status that remains visible in plain Org2 files. Meeting-to-action, knowledge-browser, and packaging/first-run work can now hang off the Workstreams surface in parallel without adding manual bottlenecks.
+
+See [[file:editors-macos.org][macOS Workspace]] for the current app surface and build/run notes.
 
 * VS Code experience
 

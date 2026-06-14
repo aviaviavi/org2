@@ -62,6 +62,21 @@ private struct DetailNavigationSnapshot {
   let selectedEntrySourceMode: EntrySourceMode
 }
 
+private struct OpenClawContextPointer: Equatable, Sendable {
+  let kind: String
+  let reference: String
+  let displayReference: String
+}
+
+private enum WorkspaceUndoAction: Equatable, Sendable {
+  case openClawDraft(previous: String, next: String)
+}
+
+public enum QuickOpenSelectionDirection: Equatable, Sendable {
+  case up
+  case down
+}
+
 private struct OrgIDLookupPayload: Decodable {
   let id: String
   let kind: String
@@ -129,6 +144,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var isKeyboardShortcutsPresented = false
   @Published public var detailScrollRequest: DetailScrollRequest?
   @Published public var quickOpenQuery = ""
+  @Published public var selectedQuickOpenFileID: String?
   @Published public var searchQuery = ""
   @Published public var searchFocusToken = 0
   @Published public var searchResults: [SearchResult] = []
@@ -162,16 +178,22 @@ public final class WorkspaceStore: ObservableObject {
   }
   @Published public var orgCryptRecipientsText = ""
   @Published public var orgCryptRecipientFilesText = ""
+  @Published public private(set) var orgCryptManagedRecipientFiles: [OrgCryptRecipientFile] = []
   @Published public var orgCryptUseDefaultGpgKey = true
   @Published public var orgCryptGpgProgram = "gpg"
   @Published public var orgCryptHasStoredPassphrase = false
-  @Published public var orgCryptStatusText = "Org crypt encrypts :crypt: subtree bodies with GPG."
+  @Published public var orgCryptStatusText = "Encrypt :crypt: subtrees with GPG."
   @Published public var isSendingOpenClawMessage = false
+  @Published public private(set) var openClawQueuedMessageCount = 0
   @Published public var openClawRequestStartedAt: Date?
   @Published public var isOpenClawAssistantPresented = false
   public private(set) var openClawChatScrollPosition: Double?
   @Published public var openClawThreads: [OpenClawThread] = []
   @Published public var selectedOpenClawThreadID: String?
+  @Published public var workspaceHealthChecks: [WorkspaceHealthCheck] = []
+  @Published public var isCheckingWorkspaceHealth = false
+  @Published public var loopArtifacts: [WorkspaceLoopArtifact] = []
+  @Published public var isLoadingLoopArtifacts = false
   @Published public var selectedLocation: WorkspaceLocation?
   @Published public var selectedEntrySource: EntrySource?
   @Published public var selectedRenderedBlocks: [OrgEditableBlock] = [] {
@@ -245,13 +267,21 @@ public final class WorkspaceStore: ObservableObject {
   private let orgCryptUseDefaultGpgKeyKey = "Org2Workspace.orgCrypt.useDefaultGpgKey"
   private let orgCryptUseDefaultGpgKeyMigrationKey = "Org2Workspace.orgCrypt.useDefaultGpgKeyDefaulted.v2"
   private let orgCryptGpgProgramKey = "Org2Workspace.orgCrypt.gpgProgram"
+  private static let orgCryptPublicKeysDirectoryName = "public-keys"
   private static let canonicalParserLineLimit = 2_000
   private static let renderedBlocksCacheLimit = 12
   private static let detailNavigationHistoryLimit = 100
   private let openClawTranscriptURL: URL
+  private let openClawSendHandler: (@Sendable ([OpenClawChatMessage], String, String, OpenClawWorkspaceContext?) async throws -> String)?
   private var openClawSessionKey = WorkspaceStore.makeOpenClawSessionKey()
   private var shouldPersistOpenClawMessages = false
   private var openClawBearerToken: String?
+  private var openClawPendingUserMessageIDs: [UUID] = [] {
+    didSet {
+      openClawQueuedMessageCount = openClawPendingUserMessageIDs.count
+    }
+  }
+  private var isDrainingOpenClawQueue = false
   private var activeMeetingRecording: PendingMeetingRecording?
   private var meetingMeterTask: Task<Void, Never>?
   private var pendingG = false
@@ -263,6 +293,8 @@ public final class WorkspaceStore: ObservableObject {
       canNavigateBackInDetail = !detailNavigationBackStack.isEmpty
     }
   }
+  private var workspaceUndoStack: [WorkspaceUndoAction] = []
+  private var workspaceRedoStack: [WorkspaceUndoAction] = []
   private var canonicalDocumentCache: [String: CanonicalDocumentCacheEntry] = [:]
   private var renderedBlocksCache: [String: RenderedBlocksCacheEntry] = [:]
   private var renderedBlocksCacheOrder: [String] = []
@@ -275,9 +307,15 @@ public final class WorkspaceStore: ObservableObject {
   private var scheduledAgendaRefreshTask: Task<Void, Never>?
   private var pendingAgendaRefreshAfterBlockEditing = false
 
-  public init(cli: Org2CLI? = nil, defaults: UserDefaults = .standard, openClawTranscriptURL: URL? = nil) {
+  public init(
+    cli: Org2CLI? = nil,
+    defaults: UserDefaults = .standard,
+    openClawTranscriptURL: URL? = nil,
+    openClawSendHandler: (@Sendable ([OpenClawChatMessage], String, String, OpenClawWorkspaceContext?) async throws -> String)? = nil
+  ) {
     self.defaults = defaults
     self.openClawTranscriptURL = openClawTranscriptURL ?? Self.defaultOpenClawTranscriptURL()
+    self.openClawSendHandler = openClawSendHandler
     self.cli = cli ?? (try? Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())) ?? Org2CLI(repoRoot: URL(fileURLWithPath: "/Users/avi/dev/org2"))
     agendaMode = Self.restoreAgendaMode(from: defaults, key: agendaModeKey)
     let settings = OpenClawGatewaySettings.resolve()
@@ -308,8 +346,10 @@ public final class WorkspaceStore: ObservableObject {
 
     if corpusRoot != nil {
       await refreshAgenda()
+      await refreshLoopArtifacts()
       await refreshMeetings()
       await refreshCorpusFiles()
+      refreshOrgCryptManagedRecipientFiles()
       Task { await refreshOpenClawThreads() }
     } else {
       statusText = "No corpus selected"
@@ -344,8 +384,10 @@ public final class WorkspaceStore: ObservableObject {
     searchResults = []
     meetings = []
     selectedMeetingID = nil
+    loopArtifacts = []
     openClawThreads = []
     selectedOpenClawThreadID = nil
+    refreshOrgCryptManagedRecipientFiles()
     selectedLocation = nil
     detailNavigationBackStack = []
     selectedEntrySource = nil
@@ -368,9 +410,52 @@ public final class WorkspaceStore: ObservableObject {
 
   public func refreshWorkspace() async {
     await refreshAgenda()
+    await refreshLoopArtifacts()
     await refreshMeetings()
     await refreshCorpusFiles()
+    refreshWorkspaceHealth()
+    refreshOrgCryptManagedRecipientFiles()
     Task { await refreshOpenClawThreads() }
+  }
+
+  public func refreshWorkspaceHealth() {
+    isCheckingWorkspaceHealth = true
+    defer { isCheckingWorkspaceHealth = false }
+    workspaceHealthChecks = Self.workspaceHealthChecks(cli: cli, corpusRoot: corpusRoot)
+    let blockingCount = workspaceHealthChecks.filter { $0.status == .blocking }.count
+    let warningCount = workspaceHealthChecks.filter { $0.status == .warning }.count
+    if selectedSurface == .workstreams {
+      if blockingCount > 0 {
+        statusText = "\(blockingCount) setup blocker\(blockingCount == 1 ? "" : "s")"
+      } else if warningCount > 0 {
+        statusText = "\(warningCount) setup warning\(warningCount == 1 ? "" : "s")"
+      } else {
+        statusText = "Workspace setup looks ready"
+      }
+    }
+  }
+
+  public func refreshLoopArtifacts() async {
+    guard let corpusRoot else {
+      loopArtifacts = []
+      return
+    }
+
+    isLoadingLoopArtifacts = true
+    defer { isLoadingLoopArtifacts = false }
+
+    do {
+      let artifacts = try await Task.detached(priority: .utility) {
+        try Self.scanLoopArtifacts(corpusRoot: corpusRoot)
+      }.value
+      loopArtifacts = artifacts
+      if selectedSurface == .workstreams {
+        statusText = "\(artifacts.count) loop artifact\(artifacts.count == 1 ? "" : "s")"
+      }
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Loop artifact refresh failed"
+    }
   }
 
   public func refreshCorpusFiles() async {
@@ -470,6 +555,33 @@ public final class WorkspaceStore: ObservableObject {
     } catch {
       errorText = error.localizedDescription
       statusText = "Search failed"
+    }
+  }
+
+  public func kickOffWorkstream(_ workstream: WorkspaceWorkstream) async {
+    switch workstream {
+    case .captureTriage:
+      selectedSurface = .workstreams
+      await startCaptureLoop()
+    case .meetingActions:
+      await startMeetingActionLoopForSelectedMeeting()
+    case .knowledgeBrowser:
+      selectedSurface = .search
+      if let selectedLocation {
+        if let id = selectedLocation.idValue {
+          searchQuery = "id:\(id)"
+          await loadBacklinks(for: selectedLocation)
+          searchFocusToken += 1
+          statusText = "Loaded backlinks and search target for \(selectedLocation.title)"
+        } else {
+          await createKnowledgeNode(title: selectedLocation.title)
+        }
+      } else {
+        promptAndCreateKnowledgeNode()
+      }
+    case .packagingFirstRun:
+      selectedSurface = .workstreams
+      refreshWorkspaceHealth()
     }
   }
 
@@ -726,6 +838,32 @@ public final class WorkspaceStore: ObservableObject {
     }
     openClawDraft = "Use the selected meeting note and transcript artifact as context. Summarize the meeting, extract decisions, list action items, and cite the org2 file paths you used."
     selectedSurface = .openClaw
+  }
+
+  public var canAskOpenClawAboutCurrentSelection: Bool {
+    selectedEntrySource != nil || selectedLocation != nil
+  }
+
+  public func askOpenClawAboutCurrentSelection() {
+    guard let pointer = openClawContextPointerForCurrentSelection() else {
+      statusText = "Select a page or entry first"
+      return
+    }
+
+    let injectedContext = "Use \(pointer.kind) at \(pointer.reference) as context.\n\n"
+    let previousDraft = openClawDraft
+    if openClawDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      openClawDraft = injectedContext
+    } else if !openClawDraft.contains(pointer.reference) {
+      openClawDraft = injectedContext + openClawDraft
+    }
+    if openClawDraft != previousDraft {
+      recordWorkspaceUndo(.openClawDraft(previous: previousDraft, next: openClawDraft))
+    }
+
+    isOpenClawAssistantPresented = true
+    openClawStatusText = "Added \(pointer.displayReference) to OpenClaw"
+    statusText = "Added \(pointer.displayReference) to OpenClaw"
   }
 
   public var meetingDisplaySections: [MeetingSection] {
@@ -1255,11 +1393,11 @@ public final class WorkspaceStore: ObservableObject {
     errorText = message
     orgCryptStatusText = message
     if case OrgCryptError.missingEncryptionConfiguration = error {
-      statusText = [savedPrefix, "org crypt needs configuration"].compactMap(\.self).joined(separator: " ")
+      statusText = [savedPrefix, "encryption needs configuration"].compactMap(\.self).joined(separator: " ")
       isOrgCryptConfigurationPresented = true
       return
     }
-    statusText = [savedPrefix, "org crypt encryption failed"].compactMap(\.self).joined(separator: " ")
+    statusText = [savedPrefix, "encryption failed"].compactMap(\.self).joined(separator: " ")
   }
 
   public func saveEditedBlock(_ block: OrgEditableBlock) async {
@@ -2255,6 +2393,7 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
     quickOpenQuery = ""
+    resetQuickOpenSelection()
     isQuickOpenPresented = true
     if corpusFiles.isEmpty {
       Task { await refreshCorpusFiles() }
@@ -2272,6 +2411,43 @@ public final class WorkspaceStore: ObservableObject {
 
   public var quickOpenFiles: [CorpusFile] {
     filterFiles(quickOpenQuery, limit: 80)
+  }
+
+  public var selectedQuickOpenFile: CorpusFile? {
+    let files = quickOpenFiles
+    if let selectedQuickOpenFileID,
+       let selected = files.first(where: { $0.id == selectedQuickOpenFileID }) {
+      return selected
+    }
+    return files.first
+  }
+
+  public func resetQuickOpenSelection() {
+    selectedQuickOpenFileID = nil
+  }
+
+  public func moveQuickOpenSelection(_ direction: QuickOpenSelectionDirection) {
+    let files = quickOpenFiles
+    guard !files.isEmpty else {
+      selectedQuickOpenFileID = nil
+      return
+    }
+
+    let currentIndex = selectedQuickOpenFileID.flatMap { id in
+      files.firstIndex { $0.id == id }
+    }
+    let nextIndex: Int
+    switch (direction, currentIndex) {
+    case (.down, nil):
+      nextIndex = files.startIndex
+    case (.up, nil):
+      nextIndex = files.index(before: files.endIndex)
+    case (.down, let index?):
+      nextIndex = index == files.index(before: files.endIndex) ? files.startIndex : files.index(after: index)
+    case (.up, let index?):
+      nextIndex = index == files.startIndex ? files.index(before: files.endIndex) : files.index(before: index)
+    }
+    selectedQuickOpenFileID = files[nextIndex].id
   }
 
   private func filterFiles(_ rawQuery: String, limit: Int) -> [CorpusFile] {
@@ -2962,34 +3138,94 @@ public final class WorkspaceStore: ObservableObject {
 
     let userMessage = OpenClawChatMessage(role: .user, content: text)
     openClawMessages.append(userMessage)
+    openClawPendingUserMessageIDs.append(userMessage.id)
     openClawDraft = ""
+    if isDrainingOpenClawQueue {
+      openClawStatusText = openClawQueuedStatusText()
+      return
+    }
+    await drainOpenClawSendQueue()
+  }
+
+  private func drainOpenClawSendQueue() async {
+    guard !isDrainingOpenClawQueue else { return }
+    isDrainingOpenClawQueue = true
     isSendingOpenClawMessage = true
     openClawRequestStartedAt = Date()
-    openClawStatusText = "Sending to OpenClaw..."
     defer {
       isSendingOpenClawMessage = false
+      isDrainingOpenClawQueue = false
       openClawRequestStartedAt = nil
     }
 
-    do {
-      let client = OpenClawChatClient(settings: currentOpenClawSettings(allowKeychainRead: true))
-      let reply = try await client.send(
-        messages: openClawMessages,
-        agentID: openClawAgentID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "main" : openClawAgentID,
-        sessionKey: openClawSessionKey,
-        workspaceContext: currentOpenClawWorkspaceContext()
-      )
-      openClawMessages.append(OpenClawChatMessage(role: .assistant, content: reply))
-      openClawStatusText = "OpenClaw replied"
-    } catch {
-      openClawStatusText = error.localizedDescription
+    while let userMessageID = openClawPendingUserMessageIDs.first {
+      guard let requestMessages = openClawMessagesThrough(userMessageID) else {
+        openClawPendingUserMessageIDs.removeFirst()
+        continue
+      }
+      openClawStatusText = openClawQueuedStatusText()
+
+      do {
+        let reply = try await sendOpenClawRequest(messages: requestMessages)
+        insertOpenClawReply(reply, after: userMessageID)
+        openClawPendingUserMessageIDs.removeFirst()
+        openClawStatusText = openClawPendingUserMessageIDs.isEmpty
+          ? "OpenClaw replied"
+          : openClawQueuedStatusText()
+      } catch {
+        openClawStatusText = error.localizedDescription
+        openClawPendingUserMessageIDs.removeAll()
+        return
+      }
     }
+  }
+
+  private func sendOpenClawRequest(messages: [OpenClawChatMessage]) async throws -> String {
+    let agentID = openClawAgentID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "main" : openClawAgentID
+    let workspaceContext = currentOpenClawWorkspaceContext()
+    if let openClawSendHandler {
+      return try await openClawSendHandler(messages, agentID, openClawSessionKey, workspaceContext)
+    }
+    let client = OpenClawChatClient(settings: currentOpenClawSettings(allowKeychainRead: true))
+    return try await client.send(
+      messages: messages,
+      agentID: agentID,
+      sessionKey: openClawSessionKey,
+      workspaceContext: workspaceContext
+    )
+  }
+
+  private func openClawMessagesThrough(_ messageID: UUID) -> [OpenClawChatMessage]? {
+    guard let index = openClawMessages.firstIndex(where: { $0.id == messageID }) else {
+      return nil
+    }
+    return Array(openClawMessages[...index])
+  }
+
+  private func insertOpenClawReply(_ reply: String, after userMessageID: UUID) {
+    let assistantMessage = OpenClawChatMessage(role: .assistant, content: reply)
+    guard let index = openClawMessages.firstIndex(where: { $0.id == userMessageID }) else {
+      openClawMessages.append(assistantMessage)
+      return
+    }
+    openClawMessages.insert(assistantMessage, at: openClawMessages.index(after: index))
+  }
+
+  private func openClawQueuedStatusText() -> String {
+    if openClawPendingUserMessageIDs.count > 1 {
+      return "Sending to OpenClaw... \(openClawPendingUserMessageIDs.count - 1) queued"
+    }
+    return "Sending to OpenClaw..."
   }
 
   public func resetOpenClawChat() {
     openClawSessionKey = Self.makeOpenClawSessionKey()
     openClawMessages = []
     openClawDraft = ""
+    openClawPendingUserMessageIDs.removeAll()
+    isDrainingOpenClawQueue = false
+    isSendingOpenClawMessage = false
+    openClawRequestStartedAt = nil
     openClawChatScrollPosition = nil
     openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
   }
@@ -3096,13 +3332,158 @@ public final class WorkspaceStore: ObservableObject {
       }
 
       orgCryptStatusText = orgCryptStatusText(settings: currentOrgCryptSettings())
-      statusText = "Org crypt configuration saved"
+      statusText = "Encryption settings saved"
       return true
     } catch {
       orgCryptStatusText = error.localizedDescription
       errorText = error.localizedDescription
       return false
     }
+  }
+
+  public var orgCryptPublicKeysDirectoryURL: URL? {
+    corpusRoot?.appendingPathComponent(Self.orgCryptPublicKeysDirectoryName, isDirectory: true)
+  }
+
+  public func refreshOrgCryptManagedRecipientFiles() {
+    guard let corpusRoot else {
+      orgCryptManagedRecipientFiles = []
+      return
+    }
+    do {
+      orgCryptManagedRecipientFiles = try Self.scanOrgCryptManagedRecipientFiles(corpusRoot: corpusRoot)
+    } catch {
+      orgCryptManagedRecipientFiles = []
+      orgCryptStatusText = error.localizedDescription
+    }
+  }
+
+  public static func scanOrgCryptManagedRecipientFiles(corpusRoot: URL) throws -> [OrgCryptRecipientFile] {
+    let root = corpusRoot.standardizedFileURL
+    let directory = root.appendingPathComponent(orgCryptPublicKeysDirectoryName, isDirectory: true)
+    let fileManager = FileManager.default
+    var isDirectory: ObjCBool = false
+    guard fileManager.fileExists(atPath: directory.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+      return []
+    }
+
+    return try fileManager.contentsOfDirectory(
+      at: directory,
+      includingPropertiesForKeys: [.isRegularFileKey],
+      options: [.skipsHiddenFiles]
+    )
+    .filter { url in
+      (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+    }
+    .map { url in
+      let standardized = url.standardizedFileURL
+      return OrgCryptRecipientFile(
+        path: standardized.path,
+        relativePath: Self.relativePath(for: standardized.path, root: root)
+      )
+    }
+    .sorted { $0.relativePath.localizedStandardCompare($1.relativePath) == .orderedAscending }
+  }
+
+  @discardableResult
+  public func importOrgCryptAgentPublicKey(from sourceURL: URL) throws -> OrgCryptRecipientFile {
+    guard let corpusRoot else {
+      throw OrgCryptPublicKeyImportError.missingCorpusRoot
+    }
+
+    let fileManager = FileManager.default
+    let source = sourceURL.standardizedFileURL
+    var isDirectory: ObjCBool = false
+    guard fileManager.fileExists(atPath: source.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+      throw OrgCryptPublicKeyImportError.invalidSource
+    }
+
+    let destinationDirectory = corpusRoot.standardizedFileURL
+      .appendingPathComponent(Self.orgCryptPublicKeysDirectoryName, isDirectory: true)
+    try fileManager.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+    let destination = destinationDirectory.appendingPathComponent(source.lastPathComponent, isDirectory: false).standardizedFileURL
+
+    if source.path != destination.path {
+      if fileManager.fileExists(atPath: destination.path) {
+        try fileManager.removeItem(at: destination)
+      }
+      try fileManager.copyItem(at: source, to: destination)
+    }
+
+    refreshOrgCryptManagedRecipientFiles()
+    guard let imported = orgCryptManagedRecipientFiles.first(where: { $0.path == destination.path }) else {
+      let file = OrgCryptRecipientFile(
+        path: destination.path,
+        relativePath: Self.relativePath(for: destination.path, root: corpusRoot.standardizedFileURL)
+      )
+      orgCryptManagedRecipientFiles.append(file)
+      orgCryptManagedRecipientFiles.sort { $0.relativePath.localizedStandardCompare($1.relativePath) == .orderedAscending }
+      return file
+    }
+    orgCryptStatusText = "Added \(imported.name) to public keys"
+    return imported
+  }
+
+  public func chooseOrgCryptAgentPublicKey() -> OrgCryptRecipientFile? {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = true
+    panel.canChooseDirectories = false
+    panel.allowsMultipleSelection = false
+    panel.prompt = "Add"
+    panel.message = "Choose an agent public key to copy into public-keys"
+
+    guard panel.runModal() == .OK, let url = panel.url else { return nil }
+    do {
+      return try importOrgCryptAgentPublicKey(from: url)
+    } catch {
+      orgCryptStatusText = error.localizedDescription
+      errorText = error.localizedDescription
+      return nil
+    }
+  }
+
+  public func normalizedOrgCryptRecipientFilePath(_ rawPath: String) -> String {
+    let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return "" }
+    if NSString(string: trimmed).isAbsolutePath {
+      return URL(fileURLWithPath: trimmed).standardizedFileURL.path
+    }
+    guard let corpusRoot else { return trimmed }
+    return corpusRoot.standardizedFileURL.appendingPathComponent(trimmed).standardizedFileURL.path
+  }
+
+  public func selectedManagedOrgCryptRecipientFilePaths(in recipientFilesText: String) -> Set<String> {
+    let managed = Set(orgCryptManagedRecipientFiles.map(\.path))
+    return Set(OrgCryptSettings.splitListText(recipientFilesText)
+      .map { normalizedOrgCryptRecipientFilePath($0) }
+      .filter { managed.contains($0) })
+  }
+
+  public func manualOrgCryptRecipientFilesText(from recipientFilesText: String) -> String {
+    let managed = Set(orgCryptManagedRecipientFiles.map(\.path))
+    let manual = OrgCryptSettings.splitListText(recipientFilesText)
+      .filter { !managed.contains(normalizedOrgCryptRecipientFilePath($0)) }
+    return OrgCryptSettings.listText(manual)
+  }
+
+  public func combinedOrgCryptRecipientFilesText(
+    manualText: String,
+    selectedManagedPaths: Set<String>
+  ) -> String {
+    var seen = Set<String>()
+    var values: [String] = []
+    for value in OrgCryptSettings.splitListText(manualText) {
+      if seen.insert(normalizedOrgCryptRecipientFilePath(value)).inserted {
+        values.append(value)
+      }
+    }
+    for path in selectedManagedPaths.sorted() {
+      let normalized = normalizedOrgCryptRecipientFilePath(path)
+      if !normalized.isEmpty, seen.insert(normalized).inserted {
+        values.append(normalized)
+      }
+    }
+    return OrgCryptSettings.listText(values)
   }
 
   public func presentOrgCryptConfiguration() {
@@ -3112,7 +3493,7 @@ public final class WorkspaceStore: ObservableObject {
   @discardableResult
   public func runOrgCrypt(_ action: OrgCryptAction, line explicitLine: Int? = nil) async -> OrgCryptRunResult {
     guard let file = selectedEntrySource?.file ?? selectedLocation?.file else {
-      let message = "Open a file before running org crypt"
+      let message = "Open a file before running encryption"
       statusText = message
       return .failure(message: message)
     }
@@ -3210,6 +3591,47 @@ public final class WorkspaceStore: ObservableObject {
         AgendaDisplaySection(id: "later", label: "Later", items: later, hint: "upcoming")
       ].filter { !$0.items.isEmpty }
     }
+  }
+
+  public var workstreamStatuses: [WorkspaceWorkstream: WorkstreamStatus] {
+    let blockingHealthChecks = workspaceHealthChecks.filter { $0.status == .blocking }.count
+    let warningHealthChecks = workspaceHealthChecks.filter { $0.status == .warning }.count
+    let selectedHasID = selectedLocation?.idValue != nil
+    let backlinkCount = backlinks?.backlinks.count
+    let loopCounts = Dictionary(grouping: loopArtifacts, by: \.workstream).mapValues(\.count)
+    let captureLoopCount = loopCounts[.captureTriage] ?? 0
+    let meetingLoopCount = loopCounts[.meetingActions] ?? 0
+
+    return [
+      .captureTriage: WorkstreamStatus(
+        id: .captureTriage,
+        state: corpusRoot == nil ? .blocked : .ready,
+        detail: corpusRoot == nil
+          ? "Open a corpus before starting autonomous capture loops."
+          : "\(captureLoopCount) capture loop artifact\(captureLoopCount == 1 ? "" : "s") in the corpus."
+      ),
+      .meetingActions: WorkstreamStatus(
+        id: .meetingActions,
+        state: corpusRoot == nil ? .blocked : (meetings.isEmpty ? .needsInput : .ready),
+        detail: meetings.isEmpty
+          ? "Record or import a meeting before starting meeting loops."
+          : "\(meetings.count) meeting artifact\(meetings.count == 1 ? "" : "s"), \(meetingLoopCount) loop artifact\(meetingLoopCount == 1 ? "" : "s")."
+      ),
+      .knowledgeBrowser: WorkstreamStatus(
+        id: .knowledgeBrowser,
+        state: corpusRoot == nil ? .blocked : (selectedHasID ? .ready : .needsInput),
+        detail: selectedHasID
+          ? "\(backlinkCount.map(String.init) ?? "Computed") backlink context for the selected node."
+          : "Select an entry with an ID or create a new knowledge node."
+      ),
+      .packagingFirstRun: WorkstreamStatus(
+        id: .packagingFirstRun,
+        state: blockingHealthChecks > 0 ? .blocked : (warningHealthChecks > 0 ? .needsInput : .ready),
+        detail: workspaceHealthChecks.isEmpty
+          ? "Run health checks for repo, build, and corpus readiness."
+          : "\(blockingHealthChecks) blocker\(blockingHealthChecks == 1 ? "" : "s"), \(warningHealthChecks) warning\(warningHealthChecks == 1 ? "" : "s")."
+      )
+    ]
   }
 
   public var visibleAgendaItems: [AgendaItem] {
@@ -3462,6 +3884,126 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func startCaptureLoop() async {
+    guard let corpusRoot else {
+      statusText = "No corpus selected"
+      return
+    }
+
+    do {
+      let target = loopPath(corpusRoot: corpusRoot, filename: "capture-loop.org2")
+      let id = try upsertLoopArtifact(
+        at: target,
+        workstream: .captureTriage,
+        title: "Autonomous capture loop",
+        body: """
+        This loop watches fresh work signals, captures candidate tasks or notes, and promotes durable knowledge with minimal manual handoff.
+
+        ** TODO Collect new work signals
+        ** TODO Promote durable notes and actions
+        ** TODO Link outputs back to source context
+        """
+      )
+      statusText = "Capture loop ready -> \(relativePath(target.path))"
+      invalidateCanonicalDocumentCache(for: target.path)
+      await refreshLoopArtifacts()
+      await refreshCorpusFiles()
+      searchQuery = "id:\(id)"
+      selectedSurface = .search
+      await runSearch()
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Capture loop setup failed"
+    }
+  }
+
+  public func startMeetingActionLoopForSelectedMeeting() async {
+    guard let corpusRoot else {
+      statusText = "No corpus selected"
+      return
+    }
+
+    let selectedMeeting = selectedMeetingID.flatMap { id in
+      meetings.first { $0.id == id }
+    } ?? {
+      if case .meeting(let meeting) = selectedLocation {
+        return meeting
+      }
+      return nil
+    }()
+    guard let meeting = selectedMeeting ?? meetings.first else {
+      selectedSurface = .meetings
+      statusText = "Record or import a meeting first"
+      return
+    }
+
+    do {
+      let target = loopPath(corpusRoot: corpusRoot, filename: "meeting-\(Self.slug(meeting.title))-loop.org2")
+      let meetingPath = relativePath(meeting.file)
+      let transcriptLine = meeting.transcriptArtifact.map { "- Transcript: \($0)" } ?? "- Transcript: pending"
+      let id = try upsertLoopArtifact(
+        at: target,
+        workstream: .meetingActions,
+        title: "Meeting action loop: \(Org2Display.cleanInline(meeting.title))",
+        extraProperties: [
+          "ORG2_MEETING_FILE": meetingPath,
+          "ORG2_MEETING_TRANSCRIPT": meeting.transcriptArtifact ?? "",
+          "ORG2_MEETING_ID": meeting.idValue ?? ""
+        ].filter { !$0.value.isEmpty },
+        body: """
+        Source meeting: [[file:\(meetingPath)][\(Org2Display.cleanInline(meeting.title))]]
+        \(transcriptLine)
+
+        ** TODO Extract decisions with source citations
+        ** TODO Promote action items into linked tasks
+        ** TODO Create or update knowledge nodes for durable context
+        """
+      )
+      statusText = "Meeting loop ready -> \(relativePath(target.path))"
+      invalidateCanonicalDocumentCache(for: target.path)
+      await refreshLoopArtifacts()
+      await refreshCorpusFiles()
+      searchQuery = "id:\(id)"
+      selectedSurface = .search
+      await runSearch()
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Meeting loop setup failed"
+    }
+  }
+
+  public func captureReviewTodoForSelectedMeeting() async {
+    guard let corpusRoot else {
+      statusText = "No corpus selected"
+      return
+    }
+    let selectedMeeting = selectedMeetingID.flatMap { id in
+      meetings.first { $0.id == id }
+    } ?? {
+      if case .meeting(let meeting) = selectedLocation {
+        return meeting
+      }
+      return nil
+    }()
+    guard let meeting = selectedMeeting ?? meetings.first else {
+      selectedSurface = .meetings
+      statusText = "Select or record a meeting first"
+      return
+    }
+
+    do {
+      let target = todayDailyNotePath(corpusRoot: corpusRoot)
+      try appendScheduledTodo(title: "Review meeting: \(Org2Display.cleanInline(meeting.title))", to: target)
+      statusText = "Captured meeting review TODO -> \(target.lastPathComponent)"
+      invalidateCanonicalDocumentCache(for: target.path)
+      selectedSurface = .agenda
+      await refreshAgenda()
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Meeting review capture failed"
+    }
+  }
+
   public func applyPropertyShortcut(key: String, value: String) async {
     guard let item = selectedAgendaItemForMutation() else {
       statusText = "Select an agenda item first"
@@ -3524,19 +4066,102 @@ public final class WorkspaceStore: ObservableObject {
         presentQuickOpen()
       case "/":
         isKeyboardShortcutsPresented = true
+      case "z":
+        performUndoCommand()
       default:
         return false
       }
       return true
     }
 
-    if modifiers == [.command, .shift],
-       key == "/" || event.characters == "?" {
-      isKeyboardShortcutsPresented = true
-      return true
+    if modifiers == [.command, .shift] {
+      switch key {
+      case "7":
+        selectedSurface = .workstreams
+        refreshWorkspaceHealth()
+        return true
+      case "z":
+        performRedoCommand()
+        return true
+      default:
+        break
+      }
+      if key == "/" || event.characters == "?" {
+        isKeyboardShortcutsPresented = true
+        return true
+      }
     }
 
     return false
+  }
+
+  public func performUndoCommand() {
+    if performTextUndo(redo: false) {
+      return
+    }
+    if let action = workspaceUndoStack.popLast() {
+      applyWorkspaceUndo(action)
+      workspaceRedoStack.append(action)
+      return
+    }
+    statusText = "Undo is available while editing text"
+  }
+
+  public func performRedoCommand() {
+    if performTextUndo(redo: true) {
+      return
+    }
+    if let action = workspaceRedoStack.popLast() {
+      applyWorkspaceRedo(action)
+      workspaceUndoStack.append(action)
+      return
+    }
+    statusText = "Redo is available while editing text"
+  }
+
+  private func recordWorkspaceUndo(_ action: WorkspaceUndoAction) {
+    guard workspaceUndoStack.last != action else { return }
+    workspaceUndoStack.append(action)
+    if workspaceUndoStack.count > 100 {
+      workspaceUndoStack.removeFirst(workspaceUndoStack.count - 100)
+    }
+    workspaceRedoStack.removeAll()
+  }
+
+  private func applyWorkspaceUndo(_ action: WorkspaceUndoAction) {
+    switch action {
+    case .openClawDraft(let previous, _):
+      openClawDraft = previous
+      openClawStatusText = "Undid OpenClaw draft change"
+      statusText = "Undid OpenClaw draft change"
+    }
+  }
+
+  private func applyWorkspaceRedo(_ action: WorkspaceUndoAction) {
+    switch action {
+    case .openClawDraft(_, let next):
+      openClawDraft = next
+      openClawStatusText = "Redid OpenClaw draft change"
+      statusText = "Redid OpenClaw draft change"
+    }
+  }
+
+  @discardableResult
+  private func performTextUndo(redo: Bool) -> Bool {
+    guard let textView = NSApplication.shared.keyWindow?.firstResponder as? NSTextView,
+          let undoManager = textView.undoManager
+    else {
+      return false
+    }
+
+    if redo {
+      guard undoManager.canRedo else { return true }
+      undoManager.redo()
+    } else {
+      guard undoManager.canUndo else { return true }
+      undoManager.undo()
+    }
+    return true
   }
 
   public func handleDocumentKeyDown(_ event: NSEvent) -> Bool {
@@ -3847,6 +4472,10 @@ public final class WorkspaceStore: ObservableObject {
     openFile(path: location.file, line: location.lineForEditor)
   }
 
+  public func openLoopArtifact(_ artifact: WorkspaceLoopArtifact) {
+    openFile(path: artifact.file, line: artifact.lineForEditor)
+  }
+
   public func revealSelectedLocation() {
     guard let selectedLocation else { return }
     NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: selectedLocation.file)])
@@ -3854,10 +4483,54 @@ public final class WorkspaceStore: ObservableObject {
 
   public func relativePath(_ path: String) -> String {
     guard let corpusRoot else { return path }
-    let root = corpusRoot.standardizedFileURL.path
-    if path == root { return "." }
-    if path.hasPrefix(root + "/") {
-      return String(path.dropFirst(root.count + 1))
+    return Self.relativePath(for: path, root: corpusRoot)
+  }
+
+  private static func relativePath(for path: String, root: URL) -> String {
+    let originalPath = URL(fileURLWithPath: path).standardizedFileURL.path
+    let resolvedPath = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+    let rootPath = root.resolvingSymlinksInPath().standardizedFileURL.path
+    if resolvedPath == rootPath { return "." }
+    if resolvedPath.hasPrefix(rootPath + "/") {
+      return String(resolvedPath.dropFirst(rootPath.count + 1))
+    }
+    return originalPath
+  }
+
+  private func openClawContextPointerForCurrentSelection() -> OpenClawContextPointer? {
+    if let source = selectedEntrySource {
+      let kind = source.isSubtree ? "selected entry" : "selected page"
+      return OpenClawContextPointer(
+        kind: kind,
+        reference: "\(mappedPathForOpenClaw(source.file)):\(source.startLine)",
+        displayReference: "\(relativePath(source.file)):\(source.startLine)"
+      )
+    }
+
+    if let location = selectedLocation {
+      return OpenClawContextPointer(
+        kind: "current selection",
+        reference: "\(mappedPathForOpenClaw(location.file)):\(location.lineForEditor)",
+        displayReference: "\(relativePath(location.file)):\(location.lineForEditor)"
+      )
+    }
+
+    return nil
+  }
+
+  private func mappedPathForOpenClaw(_ path: String) -> String {
+    guard let corpusRoot,
+          let remoteRoot = effectiveOpenClawRemoteCorpusPath().map(Self.trimTrailingSlashes)
+    else {
+      return path
+    }
+
+    let localRoot = Self.trimTrailingSlashes(corpusRoot.standardizedFileURL.path)
+    if path == localRoot {
+      return remoteRoot
+    }
+    if path.hasPrefix(localRoot + "/") {
+      return remoteRoot + "/" + String(path.dropFirst(localRoot.count + 1))
     }
     return path
   }
@@ -5683,6 +6356,52 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  nonisolated private static func scanLoopArtifacts(corpusRoot: URL) throws -> [WorkspaceLoopArtifact] {
+    let loopsDirectory = corpusRoot.appendingPathComponent("loops", isDirectory: true)
+    guard isDirectoryURL(loopsDirectory),
+          let enumerator = FileManager.default.enumerator(
+            at: loopsDirectory,
+            includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+          )
+    else {
+      return []
+    }
+
+    var artifacts: [WorkspaceLoopArtifact] = []
+    for case let fileURL as URL in enumerator {
+      let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey])
+      guard values?.isRegularFile == true,
+            ["org", "org2"].contains(fileURL.pathExtension.lowercased())
+      else {
+        continue
+      }
+
+      let prefix = (try? readPrefix(fileURL, maxBytes: 96 * 1024)) ?? ""
+      guard let rawWorkstream = meetingProperty("ORG2_WORKSTREAM", in: prefix),
+            let workstream = WorkspaceWorkstream(rawValue: rawWorkstream)
+      else {
+        continue
+      }
+      let titleInfo = openClawTitle(from: prefix, fallback: fileURL.deletingPathExtension().lastPathComponent)
+      artifacts.append(WorkspaceLoopArtifact(
+        workstream: workstream,
+        title: titleInfo.title,
+        file: fileURL.path,
+        line: titleInfo.line,
+        status: meetingProperty("ORG2_LOOP_STATUS", in: prefix),
+        idValue: firstOrgID(in: prefix)
+      ))
+    }
+
+    return artifacts.sorted {
+      if $0.workstream.rawValue != $1.workstream.rawValue {
+        return $0.workstream.rawValue < $1.workstream.rawValue
+      }
+      return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+    }
+  }
+
   private func refreshOrgRoamLinkResolver(files: [CorpusFile]) {
     orgRoamLinkResolverGeneration += 1
     let generation = orgRoamLinkResolverGeneration
@@ -5987,6 +6706,23 @@ public final class WorkspaceStore: ObservableObject {
     raw
       .replacingOccurrences(of: "\r\n", with: "\n")
       .replacingOccurrences(of: "\r", with: "\n")
+  }
+
+  nonisolated public static func slug(_ raw: String) -> String {
+    let lowercased = raw.lowercased()
+    var output = ""
+    var lastWasSeparator = false
+    for scalar in lowercased.unicodeScalars {
+      if CharacterSet.alphanumerics.contains(scalar) {
+        output.unicodeScalars.append(scalar)
+        lastWasSeparator = false
+      } else if !lastWasSeparator {
+        output.append("-")
+        lastWasSeparator = true
+      }
+    }
+    let trimmed = output.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    return trimmed.isEmpty ? "untitled" : String(trimmed.prefix(80))
   }
 
   nonisolated private static func headingIndex(in lines: [String], atOrBefore targetIndex: Int) -> Int? {
@@ -6294,6 +7030,147 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  private func loopPath(corpusRoot: URL, filename: String) -> URL {
+    corpusRoot
+      .appendingPathComponent("loops", isDirectory: true)
+      .appendingPathComponent(filename)
+  }
+
+  private func knowledgeNodePath(corpusRoot: URL, title: String) -> URL {
+    let config = Self.workspaceConfig(corpusRoot: corpusRoot)
+    let rawBase = config?.roam?.indexDir?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let base: URL
+    if let rawBase, !rawBase.isEmpty {
+      base = NSString(string: rawBase).isAbsolutePath
+        ? URL(fileURLWithPath: rawBase)
+        : corpusRoot.appendingPathComponent(rawBase, isDirectory: true)
+    } else {
+      base = corpusRoot.appendingPathComponent("notes", isDirectory: true)
+    }
+    return base.appendingPathComponent("\(Self.slug(title)).org2")
+  }
+
+  @discardableResult
+  private func upsertLoopArtifact(
+    at target: URL,
+    workstream: WorkspaceWorkstream,
+    title: String,
+    extraProperties: [String: String] = [:],
+    body: String
+  ) throws -> String {
+    try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let id: String
+    if FileManager.default.fileExists(atPath: target.path) {
+      let existing = try String(contentsOf: target, encoding: .utf8)
+      id = Self.firstOrgID(in: existing) ?? UUID().uuidString
+      if existing.contains(":ORG2_LOOP_STATUS: active") {
+        return id
+      }
+      let separator = existing.hasSuffix("\n") ? "" : "\n"
+      try "\(existing)\(separator):ORG2_LOOP_STATUS: active\n".write(to: target, atomically: true, encoding: .utf8)
+      return id
+    }
+
+    id = UUID().uuidString
+    let properties = [
+      "ID": id,
+      "ORG2_WORKSTREAM": workstream.rawValue,
+      "ORG2_LOOP_STATUS": "active",
+      "ORG2_CREATED_AT": Self.orgDateTimestamp(Date())
+    ].merging(extraProperties) { _, new in new }
+    let propertyLines = properties
+      .sorted { $0.key < $1.key }
+      .map { ":\($0.key): \($0.value)" }
+      .joined(separator: "\n")
+    let text = """
+    #+TITLE: \(title)
+
+    * \(title)
+    :PROPERTIES:
+    \(propertyLines)
+    :END:
+    \(body.trimmingCharacters(in: .whitespacesAndNewlines))
+
+    """
+    try text.write(to: target, atomically: true, encoding: .utf8)
+    return id
+  }
+
+  public func createKnowledgeNode(title: String) async {
+    guard let corpusRoot else {
+      statusText = "No corpus selected"
+      return
+    }
+    let cleanTitle = Org2Display.cleanInline(title).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanTitle.isEmpty else {
+      statusText = "Knowledge node creation canceled"
+      return
+    }
+
+    do {
+      let target = knowledgeNodePath(corpusRoot: corpusRoot, title: cleanTitle)
+      try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+      let id: String
+      if FileManager.default.fileExists(atPath: target.path) {
+        let existing = try String(contentsOf: target, encoding: .utf8)
+        id = Self.firstOrgID(in: existing) ?? UUID().uuidString
+      } else {
+        id = UUID().uuidString
+        let sourceLink: String
+        if let selectedLocation {
+          sourceLink = "\nOrigin: [[file:\(relativePath(selectedLocation.file))][\(selectedLocation.title)]]"
+        } else {
+          sourceLink = ""
+        }
+        let text = """
+        #+TITLE: \(cleanTitle)
+
+        * \(cleanTitle)
+        :PROPERTIES:
+        :ID: \(id)
+        :ORG2_WORKSTREAM: \(WorkspaceWorkstream.knowledgeBrowser.rawValue)
+        :ORG2_CREATED_AT: \(Self.orgDateTimestamp(Date()))
+        :END:
+        \(sourceLink)
+
+        """
+        try text.write(to: target, atomically: true, encoding: .utf8)
+      }
+      statusText = "Knowledge node ready -> \(relativePath(target.path))"
+      invalidateCanonicalDocumentCache(for: target.path)
+      await refreshCorpusFiles()
+      searchQuery = "id:\(id)"
+      selectedSurface = .search
+      await runSearch()
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Knowledge node creation failed"
+    }
+  }
+
+  public func promptAndCreateKnowledgeNode() {
+    guard corpusRoot != nil else {
+      statusText = "No corpus selected"
+      return
+    }
+
+    let alert = NSAlert()
+    alert.messageText = "Create Knowledge Node"
+    alert.informativeText = "Create a linked Org2 node in the corpus."
+    alert.addButton(withTitle: "Create")
+    alert.addButton(withTitle: "Cancel")
+
+    let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
+    field.placeholderString = selectedLocation?.title ?? "New knowledge node"
+    alert.accessoryView = field
+
+    let response = alert.runModal()
+    guard response == .alertFirstButtonReturn else { return }
+
+    let title = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    Task { await createKnowledgeNode(title: title.isEmpty ? field.placeholderString ?? "" : title) }
+  }
+
   private func appendScheduledTodo(title: String, to target: URL) throws {
     try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
     let safeTitle = title.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -6301,6 +7178,111 @@ public final class WorkspaceStore: ObservableObject {
     let existing = (try? String(contentsOf: target, encoding: .utf8)) ?? ""
     let prefix = existing.isEmpty || existing.hasSuffix("\n") ? existing : "\(existing)\n"
     try "\(prefix)\(entry)".write(to: target, atomically: true, encoding: .utf8)
+  }
+
+  nonisolated public static func workspaceHealthChecks(cli: Org2CLI, corpusRoot: URL?) -> [WorkspaceHealthCheck] {
+    let fileManager = FileManager.default
+    let repoRoot = cli.repoRoot.standardizedFileURL
+    let dist = repoRoot.appendingPathComponent("dist", isDirectory: true)
+    let cliScript = dist.appendingPathComponent("cli.js")
+    let parseScript = dist.appendingPathComponent("parse.js")
+    let packageFile = repoRoot.appendingPathComponent("package.json")
+    let nodeModules = repoRoot.appendingPathComponent("node_modules", isDirectory: true)
+    let macPackage = repoRoot.appendingPathComponent("apps/macos/Org2Workspace/Package.swift")
+
+    var checks: [WorkspaceHealthCheck] = [
+      WorkspaceHealthCheck(
+        id: "repo-root",
+        title: "Repo root",
+        status: fileManager.fileExists(atPath: repoRoot.path) ? .ready : .blocking,
+        detail: repoRoot.path
+      ),
+      WorkspaceHealthCheck(
+        id: "node-build",
+        title: "Node build",
+        status: fileManager.fileExists(atPath: cliScript.path) && fileManager.fileExists(atPath: parseScript.path) ? .ready : .blocking,
+        detail: fileManager.fileExists(atPath: cliScript.path) && fileManager.fileExists(atPath: parseScript.path)
+          ? "dist/cli.js and dist/parse.js are available"
+          : "Run npm run build from the repo root",
+        remediationTitle: fileManager.fileExists(atPath: cliScript.path) && fileManager.fileExists(atPath: parseScript.path) ? nil : "Build CLI"
+      ),
+      WorkspaceHealthCheck(
+        id: "package-json",
+        title: "Package manifest",
+        status: fileManager.fileExists(atPath: packageFile.path) ? .ready : .warning,
+        detail: fileManager.fileExists(atPath: packageFile.path)
+          ? "package.json found"
+          : "Repo package.json was not found",
+        remediationTitle: fileManager.fileExists(atPath: packageFile.path) ? nil : "Check repo root"
+      ),
+      WorkspaceHealthCheck(
+        id: "node-modules",
+        title: "Node dependencies",
+        status: fileManager.fileExists(atPath: nodeModules.path) ? .ready : .warning,
+        detail: fileManager.fileExists(atPath: nodeModules.path)
+          ? "node_modules found"
+          : "Run npm install before using local CLI workflows",
+        remediationTitle: fileManager.fileExists(atPath: nodeModules.path) ? nil : "Install deps"
+      ),
+      WorkspaceHealthCheck(
+        id: "mac-package",
+        title: "Mac package",
+        status: fileManager.fileExists(atPath: macPackage.path) ? .ready : .blocking,
+        detail: fileManager.fileExists(atPath: macPackage.path)
+          ? "Swift package manifest found"
+          : "apps/macos/Org2Workspace/Package.swift was not found",
+        remediationTitle: fileManager.fileExists(atPath: macPackage.path) ? nil : "Restore package"
+      )
+    ]
+
+    if let corpusRoot {
+      let config = corpusRoot.appendingPathComponent("org2.json")
+      let loops = corpusRoot.appendingPathComponent("loops", isDirectory: true)
+      let corpusWritable = fileManager.isWritableFile(atPath: corpusRoot.path)
+      checks.append(WorkspaceHealthCheck(
+        id: "corpus-root",
+        title: "Corpus",
+        status: fileManager.fileExists(atPath: corpusRoot.path) ? .ready : .blocking,
+        detail: corpusRoot.path
+      ))
+      checks.append(WorkspaceHealthCheck(
+        id: "corpus-writable",
+        title: "Corpus writable",
+        status: corpusWritable ? .ready : .blocking,
+        detail: corpusWritable
+          ? "App can create loop artifacts and notes in the selected corpus"
+          : "Selected corpus is not writable",
+        remediationTitle: corpusWritable ? nil : "Fix permissions"
+      ))
+      checks.append(WorkspaceHealthCheck(
+        id: "corpus-config",
+        title: "Corpus config",
+        status: fileManager.fileExists(atPath: config.path) ? .ready : .warning,
+        detail: fileManager.fileExists(atPath: config.path)
+          ? "org2.json found"
+          : "No org2.json in selected corpus; defaults will be used",
+        remediationTitle: fileManager.fileExists(atPath: config.path) ? nil : "Add config"
+      ))
+      checks.append(WorkspaceHealthCheck(
+        id: "loop-directory",
+        title: "Loop directory",
+        status: fileManager.fileExists(atPath: loops.path) ? .ready : .warning,
+        detail: fileManager.fileExists(atPath: loops.path)
+          ? "loops/ exists for autonomous loop artifacts"
+          : "loops/ will be created when the first loop starts",
+        remediationTitle: fileManager.fileExists(atPath: loops.path) ? nil : "Start loop"
+      ))
+    } else {
+      checks.append(WorkspaceHealthCheck(
+        id: "corpus-root",
+        title: "Corpus",
+        status: .blocking,
+        detail: "Open a corpus to enable agenda, meetings, search, and autonomous loops",
+        remediationTitle: "Open Corpus"
+      ))
+    }
+
+    return checks
   }
 
   private func isDirectory(_ path: String) -> Bool {
@@ -6501,6 +7483,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
   case meetings
   case openClaw
   case agentSpace
+  case workstreams
 
   public var id: String { rawValue }
 
@@ -6512,6 +7495,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .meetings: "Meetings"
     case .openClaw: "OpenClaw Chat"
     case .agentSpace: "Agent Space"
+    case .workstreams: "Workstreams"
     }
   }
 
@@ -6523,6 +7507,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .meetings: "mic"
     case .openClaw: "sparkles"
     case .agentSpace: "bubble.left.and.bubble.right"
+    case .workstreams: "rectangle.3.group"
     }
   }
 
@@ -6534,6 +7519,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .meetings: "⌘4"
     case .openClaw: "⌘5"
     case .agentSpace: "⌘6"
+    case .workstreams: "⌘⇧7"
     }
   }
 }
