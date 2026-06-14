@@ -240,13 +240,24 @@ struct OpenClawComposerView: View {
           }
           .help("Recording OpenClaw dictation")
         } else if store.isTranscribingOpenClawVoiceNote {
-          HStack(spacing: 6) {
-            ProgressView()
-              .controlSize(.small)
-            Text("Transcribing")
-              .font(.caption.weight(.medium))
-              .foregroundStyle(.secondary)
+          HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 3) {
+              HStack(spacing: 5) {
+                Text("Transcribing")
+                  .font(.caption.weight(.medium))
+                  .foregroundStyle(.secondary)
+                if !store.openClawVoiceTranscriptionElapsedText.isEmpty {
+                  Text(store.openClawVoiceTranscriptionElapsedText)
+                    .font(.caption2.monospacedDigit().weight(.medium))
+                    .foregroundStyle(.tertiary)
+                }
+              }
+              ProgressView(value: store.openClawVoiceTranscriptionProgress)
+                .progressViewStyle(.linear)
+                .frame(width: compact ? 92 : 140)
+            }
           }
+          .help("Estimated local dictation transcription progress")
         }
         Spacer(minLength: 0)
         Button {

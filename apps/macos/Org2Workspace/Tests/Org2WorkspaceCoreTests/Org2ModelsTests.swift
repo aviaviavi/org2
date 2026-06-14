@@ -878,6 +878,34 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  func testOpenClawVoiceTranscriptionProgressIsEstimatedAndCapped() {
+    XCTAssertEqual(WorkspaceStore.estimatedOpenClawVoiceTranscriptionDuration(for: 1), 8)
+    XCTAssertEqual(WorkspaceStore.estimatedOpenClawVoiceTranscriptionDuration(for: 20), 80)
+    XCTAssertEqual(WorkspaceStore.estimatedOpenClawVoiceTranscriptionDuration(for: 100), 180)
+
+    XCTAssertEqual(
+      WorkspaceStore.openClawVoiceTranscriptionProgress(elapsed: 0, estimatedDuration: 10),
+      0.02,
+      accuracy: 0.001
+    )
+    XCTAssertEqual(
+      WorkspaceStore.openClawVoiceTranscriptionProgress(elapsed: 5, estimatedDuration: 10),
+      0.5,
+      accuracy: 0.001
+    )
+    XCTAssertEqual(
+      WorkspaceStore.openClawVoiceTranscriptionProgress(elapsed: 20, estimatedDuration: 10),
+      0.95,
+      accuracy: 0.001
+    )
+  }
+
+  func testOpenClawVoiceTranscriptionElapsedTextFormatsDuration() {
+    XCTAssertEqual(WorkspaceStore.openClawVoiceTranscriptionElapsedText(elapsed: 0.8), "0s")
+    XCTAssertEqual(WorkspaceStore.openClawVoiceTranscriptionElapsedText(elapsed: 12.4), "12s")
+    XCTAssertEqual(WorkspaceStore.openClawVoiceTranscriptionElapsedText(elapsed: 75.9), "1m 15s")
+  }
+
   @MainActor
   func testOpenClawSendQueueSerializesConsecutiveMessages() async throws {
     let recorder = OpenClawQueuedSendRecorder()
