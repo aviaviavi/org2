@@ -53,8 +53,8 @@ public struct ContentView: View {
         .disabled(store.corpusRoot == nil || store.isLoadingAgenda)
       }
     }
-    .keyboardEventMonitor { event in
-      store.handleWorkspaceKeyDown(event)
+    .keyboardEventMonitor { event, scope in
+      store.handleWorkspaceKeyDown(event, scope: scope)
     }
     .environment(\.openOrgFileReference) { reference in
       store.openChatFileReference(reference)
@@ -2378,17 +2378,21 @@ private struct EmptyStateView: View {
 }
 
 private struct KeyboardEventMonitor: ViewModifier {
-  let handler: (NSEvent) -> Bool
+  let handler: (NSEvent, WorkspaceKeyboardShortcutScope) -> Bool
   @State private var monitor: Any?
 
   func body(content: Content) -> some View {
     content
       .onAppear {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-          if Self.isTextInputActive {
+          let scope = WorkspaceKeyboardEventRouting.scope(
+            for: event,
+            textInputActive: Self.isTextInputActive
+          )
+          guard let scope else {
             return event
           }
-          return handler(event) ? nil : event
+          return handler(event, scope) ? nil : event
         }
       }
       .onDisappear {
@@ -2407,8 +2411,20 @@ private struct KeyboardEventMonitor: ViewModifier {
   }
 }
 
+enum WorkspaceKeyboardEventRouting {
+  static func scope(for event: NSEvent, textInputActive: Bool) -> WorkspaceKeyboardShortcutScope? {
+    guard textInputActive else { return .all }
+    return isCommandShortcut(event) ? .globalOnly : nil
+  }
+
+  static func isCommandShortcut(_ event: NSEvent) -> Bool {
+    let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+    return modifiers == [.command] || modifiers == [.command, .shift]
+  }
+}
+
 private extension View {
-  func keyboardEventMonitor(_ handler: @escaping (NSEvent) -> Bool) -> some View {
+  func keyboardEventMonitor(_ handler: @escaping (NSEvent, WorkspaceKeyboardShortcutScope) -> Bool) -> some View {
     modifier(KeyboardEventMonitor(handler: handler))
   }
 }

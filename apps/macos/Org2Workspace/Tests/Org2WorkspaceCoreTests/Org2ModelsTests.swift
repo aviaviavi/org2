@@ -2089,6 +2089,52 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testGlobalKeyboardShortcutsIncludeRefreshAndSave() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-global-menu-keys-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+
+    XCTAssertFalse(store.handleGlobalKeyDown(keyDown(characters: "r", keyCode: 15, modifiers: [.command])))
+    XCTAssertFalse(store.handleGlobalKeyDown(keyDown(characters: "s", keyCode: 1, modifiers: [.command])))
+
+    store.setCorpusRoot(root)
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "r", keyCode: 15, modifiers: [.command])))
+  }
+
+  func testWorkspaceKeyboardEventRoutingLetsCommandShortcutsThroughTextInputs() {
+    XCTAssertEqual(
+      WorkspaceKeyboardEventRouting.scope(
+        for: keyDown(characters: "1", keyCode: 18, modifiers: [.command]),
+        textInputActive: true
+      ),
+      .globalOnly
+    )
+    XCTAssertEqual(
+      WorkspaceKeyboardEventRouting.scope(
+        for: keyDown(characters: "Z", keyCode: 6, modifiers: [.command, .shift]),
+        textInputActive: true
+      ),
+      .globalOnly
+    )
+    XCTAssertNil(WorkspaceKeyboardEventRouting.scope(
+      for: keyDown(characters: "j", keyCode: 38),
+      textInputActive: true
+    ))
+    XCTAssertNil(WorkspaceKeyboardEventRouting.scope(
+      for: keyDown(characters: "f", keyCode: 3, modifiers: [.command, .option]),
+      textInputActive: true
+    ))
+    XCTAssertEqual(
+      WorkspaceKeyboardEventRouting.scope(
+        for: keyDown(characters: "j", keyCode: 38),
+        textInputActive: false
+      ),
+      .all
+    )
+  }
+
+  @MainActor
   func testGlobalQuickOpenShortcutRequiresCorpus() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-global-keys-\(UUID().uuidString)", isDirectory: true)
