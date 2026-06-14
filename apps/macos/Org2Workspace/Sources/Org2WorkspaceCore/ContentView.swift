@@ -2117,7 +2117,7 @@ private struct DetailHeader: View {
           }
         }
         .disabled(!store.canBriefCurrentNodeInOpenClaw)
-        .help("Build a node context pack and prepare an OpenClaw briefing prompt")
+        .help("Open the cached node brief or prepare an OpenClaw prompt that writes it")
 
         if store.hasRenderedSearchHighlight {
           Button {
@@ -2619,7 +2619,7 @@ private struct NodeContextBrief: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text("Build a bounded context pack from the selected node, its source, and grouped backlinks, then stage a briefing prompt in OpenClaw.")
+      Text("Open the cached node brief when one exists, or stage an OpenClaw prompt that writes the generated brief into views/openclaw.")
         .font(.callout)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
@@ -2636,7 +2636,7 @@ private struct NodeContextBrief: View {
       .buttonStyle(WorkspaceActionButtonStyle())
       .disabled(!store.canBriefCurrentNodeInOpenClaw)
 
-      Text("This does not write generated summaries into the corpus. It prepares an OpenClaw draft with citations and asks for review-required synthesis.")
+      Text("Generated briefs live as review-required org2 view artifacts. Re-running this action opens the cached artifact once OpenClaw has written it.")
         .font(.caption)
         .foregroundStyle(.tertiary)
         .fixedSize(horizontal: false, vertical: true)

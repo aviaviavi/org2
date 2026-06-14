@@ -332,6 +332,8 @@ public final class WorkspaceStore: ObservableObject {
   private var openClawVoiceTranscriptionProgressTask: Task<Void, Never>?
   private var openClawVoiceTranscriptionStartedAt: Date?
   private var openClawVoiceTranscriptionEstimatedDuration: TimeInterval = 8
+  private var pendingNodeBriefArtifactRelativePath: String?
+  private var pendingNodeBriefTitle: String?
   private var pendingG = false
   private var orgRoamLinkResolverGeneration = 0
   private var entrySourceLoadGeneration = 0
@@ -883,6 +885,19 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
+    let existingID = location.idValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let initialArtifactRelativePath = Self.nodeBriefArtifactRelativePath(
+      title: location.title,
+      id: existingID?.isEmpty == false ? existingID : nil,
+      file: relativePath(location.file),
+      line: location.lineForEditor
+    )
+    let initialArtifactURL = corpusRoot.appendingPathComponent(initialArtifactRelativePath).standardizedFileURL
+    if Self.hasUsableNodeBriefArtifact(at: initialArtifactURL) {
+      openNodeBriefArtifact(url: initialArtifactURL, relativePath: initialArtifactRelativePath, title: location.title)
+      return
+    }
+
     isBuildingNodeBrief = true
     openClawStatusText = "Building node context..."
     statusText = "Building node context..."
@@ -890,20 +905,38 @@ public final class WorkspaceStore: ObservableObject {
 
     do {
       let id = try await backlinkTargetID(for: location)
+      let artifactRelativePath = Self.nodeBriefArtifactRelativePath(
+        title: location.title,
+        id: id,
+        file: relativePath(location.file),
+        line: location.lineForEditor
+      )
+      let artifactURL = corpusRoot.appendingPathComponent(artifactRelativePath).standardizedFileURL
+      if Self.hasUsableNodeBriefArtifact(at: artifactURL) {
+        openNodeBriefArtifact(url: artifactURL, relativePath: artifactRelativePath, title: location.title)
+        return
+      }
+
       let contextPack = try await nodeBriefContextPack(for: location, id: id, corpusRoot: corpusRoot)
       let prompt = Self.nodeBriefPrompt(
         title: location.title,
         reference: "\(relativePath(location.file)):\(location.lineForEditor)",
-        contextPack: contextPack
+        contextPack: contextPack,
+        artifactRelativePath: artifactRelativePath,
+        artifactLocalPath: artifactURL.path,
+        artifactOpenClawPath: mappedPathForOpenClaw(artifactURL.path),
+        sourceID: id
       )
       let previousDraft = openClawDraft
       openClawDraft = prompt
       if openClawDraft != previousDraft {
         recordWorkspaceUndo(.openClawDraft(previous: previousDraft, next: openClawDraft))
       }
+      pendingNodeBriefArtifactRelativePath = artifactRelativePath
+      pendingNodeBriefTitle = location.title
       selectedSurface = .openClaw
       isOpenClawAssistantPresented = true
-      openClawStatusText = "Node brief prompt ready"
+      openClawStatusText = "Node brief prompt ready for \(artifactRelativePath)"
       statusText = "Node brief prompt ready"
     } catch {
       errorText = error.localizedDescription
@@ -3489,6 +3522,10 @@ public final class WorkspaceStore: ObservableObject {
     guard let corpusRoot else { return }
     let root = corpusRoot.standardizedFileURL
     let changedFiles = summary.files.map { root.appendingPathComponent($0.relativePath).standardizedFileURL.path }
+    let generatedBriefTitle = pendingNodeBriefTitle
+    let generatedBriefRelativePath = pendingNodeBriefArtifactRelativePath.flatMap { pending in
+      summary.files.contains(where: { $0.relativePath == pending }) ? pending : nil
+    }
     for file in changedFiles {
       invalidateCanonicalDocumentCache(for: file)
     }
@@ -3503,6 +3540,15 @@ public final class WorkspaceStore: ObservableObject {
     await refreshAgenda(preserveSelection: true, updatesStatus: false)
     await refreshMeetings()
     Task { await refreshOpenClawThreads() }
+
+    if let generatedBriefRelativePath {
+      let artifactURL = root.appendingPathComponent(generatedBriefRelativePath).standardizedFileURL
+      openNodeBriefArtifact(
+        url: artifactURL,
+        relativePath: generatedBriefRelativePath,
+        title: generatedBriefTitle ?? artifactURL.deletingPathExtension().lastPathComponent
+      )
+    }
   }
 
   private func openClawQueuedStatusText() -> String {
@@ -4856,9 +4902,99 @@ public final class WorkspaceStore: ObservableObject {
       .joined(separator: "\n\n---\n\n")
   }
 
-  nonisolated static func nodeBriefPrompt(title: String, reference: String, contextPack: String) -> String {
-    """
+  private func openNodeBriefArtifact(url: URL, relativePath: String, title: String) {
+    let modifiedAt = Self.modificationDate(for: url)
+    let thread = OpenClawThread(
+      title: "Brief: \(title)",
+      file: url.path,
+      line: 1,
+      zone: "views/openclaw",
+      modifiedAt: modifiedAt,
+      idValue: nil
+    )
+    selectedSurface = .agentSpace
+    activateDetailLocation(.openClaw(thread), mode: .page, recordsHistory: true)
+    selectedOpenClawThreadID = thread.id
+    pendingNodeBriefArtifactRelativePath = nil
+    pendingNodeBriefTitle = nil
+    openClawStatusText = "Opened cached node brief"
+    statusText = "Opened \(relativePath)"
+  }
+
+  nonisolated static func nodeBriefArtifactRelativePath(title: String, id: String?, file: String, line: Int) -> String {
+    let titleSlug = slug(title)
+    let tokenRaw: String
+    if let id = id?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty {
+      tokenRaw = id
+    } else {
+      tokenRaw = "\(file)-line-\(max(1, line))"
+    }
+    return "views/openclaw/node-briefs/\(titleSlug)-\(slug(tokenRaw)).org2"
+  }
+
+  nonisolated private static func hasUsableNodeBriefArtifact(at url: URL) -> Bool {
+    guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+          values.isRegularFile == true,
+          (values.fileSize ?? 0) > 0,
+          let raw = try? String(contentsOf: url, encoding: .utf8)
+    else {
+      return false
+    }
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return false }
+    return !trimmed.contains("ORG2_NODE_BRIEF_STATUS: pending")
+  }
+
+  nonisolated static func nodeBriefPrompt(
+    title: String,
+    reference: String,
+    contextPack: String,
+    artifactRelativePath: String,
+    artifactLocalPath: String,
+    artifactOpenClawPath: String,
+    sourceID: String?
+  ) -> String {
+    let artifactID = "node-brief-\(slug(sourceID ?? reference))"
+    let provenance = [
+      sourceID.map { "id:\($0)" },
+      "file:\(reference)"
+    ].compactMap { $0 }.joined(separator: ", ")
+    return """
     Give me the highlights of \(title) from my org2 corpus.
+
+    Write the generated brief into the org2 corpus artifact below, then reply with a short confirmation and the file path. Do not leave the result only in chat.
+
+    Target artifact relative path: \(artifactRelativePath)
+    Target artifact path for OpenClaw: \(artifactOpenClawPath)
+    Local artifact path: \(artifactLocalPath)
+
+    If the parent directory does not exist, create it. Replace the file atomically if it already exists.
+
+    The artifact must be valid org2 and start with this metadata shape:
+
+    #+TITLE: Node brief: \(title)
+    :PROPERTIES:
+    :ID: \(artifactID)
+    :ORG2_ARTIFACT_SCHEMA: org2-artifact-metadata/v1
+    :ORG2_ARTIFACT_ROLE: view
+    :ORG2_PROVENANCE: \(provenance)
+    :ORG2_GENERATOR: OpenClaw via Org2Workspace node brief
+    :ORG2_GENERATED_AT: <ISO-8601 timestamp>
+    :ORG2_CLAIM_STATE: source-backed
+    :ORG2_REVIEW_STATUS: review-required
+    :ORG2_AI_TASK: node-brief
+    :ORG2_PROMPT_TEMPLATE: node-brief@v1
+    :END:
+
+    Required sections:
+    * Review checklist
+    - [ ] Verify every generated claim against the cited source lines.
+    - [ ] Promote reviewed facts into canonical notes only after human review.
+    * Highlights
+    * Active work and decisions
+    * Reference clusters
+    * Stale, contradictory, or review-required context
+    * Sources
 
     Focus on:
     - the most important facts and current state
@@ -4866,7 +5002,7 @@ public final class WorkspaceStore: ObservableObject {
     - important files or clusters of references
     - anything stale, contradictory, or review-required
 
-    Cite file paths and line numbers for concrete claims. Do not edit files unless I explicitly ask.
+    Cite file paths and line numbers for every concrete claim. Do not edit canonical notes.
 
     Selected node: \(reference)
 
