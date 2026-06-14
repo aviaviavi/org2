@@ -3,6 +3,20 @@ import SwiftUI
 import XCTest
 @testable import Org2WorkspaceCore
 
+private actor OpenClawQueuedSendRecorder {
+  private var calls: [[String]] = []
+
+  func send(messages: [OpenClawChatMessage]) async throws -> String {
+    calls.append(messages.map { "\($0.role.rawValue):\($0.content)" })
+    try await Task.sleep(nanoseconds: 20_000_000)
+    return "reply \(calls.count)"
+  }
+
+  func recordedCalls() -> [[String]] {
+    calls
+  }
+}
+
 final class Org2ModelsTests: XCTestCase {
   func testDecodesAgendaPayload() throws {
     let json = """
@@ -450,6 +464,74 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testOrgCryptImportsAgentPublicKeysIntoCorpusPublicKeys() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-public-keys-\(UUID().uuidString)", isDirectory: true)
+    let sourceDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-public-key-source-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+    let source = sourceDirectory.appendingPathComponent("clavi.asc")
+    try "PUBLIC KEY".write(to: source, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+
+    let imported = try store.importOrgCryptAgentPublicKey(from: source)
+
+    XCTAssertEqual(imported.relativePath, "public-keys/clavi.asc")
+    XCTAssertEqual(imported.name, "clavi.asc")
+    XCTAssertEqual(try String(contentsOf: URL(fileURLWithPath: imported.path), encoding: .utf8), "PUBLIC KEY")
+    XCTAssertEqual(store.orgCryptManagedRecipientFiles, [imported])
+    XCTAssertTrue(store.orgCryptStatusText.contains("Added clavi.asc"))
+  }
+
+  @MainActor
+  func testOrgCryptManagedRecipientFilesSplitAndPersistWithManualFiles() throws {
+    let suiteName = "org2-workspace-crypt-managed-config-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-managed-public-keys-\(UUID().uuidString)", isDirectory: true)
+    let publicKeys = root.appendingPathComponent("public-keys", isDirectory: true)
+    try FileManager.default.createDirectory(at: publicKeys, withIntermediateDirectories: true)
+    let clavi = publicKeys.appendingPathComponent("clavi.asc")
+    let helper = publicKeys.appendingPathComponent("helper.asc")
+    try "CLAVI".write(to: clavi, atomically: true, encoding: .utf8)
+    try "HELPER".write(to: helper, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+    store.setCorpusRoot(root)
+
+    XCTAssertEqual(store.orgCryptManagedRecipientFiles.map(\.relativePath), [
+      "public-keys/clavi.asc",
+      "public-keys/helper.asc"
+    ])
+
+    let savedRecipientFiles = "\(clavi.path)\n/tmp/team.asc\npublic-keys/helper.asc"
+    XCTAssertEqual(store.selectedManagedOrgCryptRecipientFilePaths(in: savedRecipientFiles), Set([clavi.path, helper.path]))
+    XCTAssertEqual(store.manualOrgCryptRecipientFilesText(from: savedRecipientFiles), "/tmp/team.asc")
+
+    let combined = store.combinedOrgCryptRecipientFilesText(
+      manualText: "/tmp/team.asc",
+      selectedManagedPaths: Set([helper.path])
+    )
+    XCTAssertEqual(combined, "/tmp/team.asc\n\(helper.path)")
+    XCTAssertTrue(store.saveOrgCryptConfiguration(
+      encryptOnSave: true,
+      recipientsText: "",
+      recipientFilesText: combined,
+      useDefaultGpgKey: true,
+      gpgProgram: "gpg",
+      passphrase: "",
+      clearPassphrase: false
+    ))
+
+    let restored = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+    XCTAssertEqual(restored.orgCryptRecipientFilesText, "/tmp/team.asc\n\(helper.path)")
+  }
+
+  @MainActor
   func testOrgCryptConfigurationDefaultsToIncludingDefaultGPGKey() throws {
     let suiteName = "org2-workspace-crypt-config-default-key-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
@@ -629,6 +711,46 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testOpenClawSendQueueSerializesConsecutiveMessages() async throws {
+    let recorder = OpenClawQueuedSendRecorder()
+    let transcriptURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-openclaw-queue-\(UUID().uuidString).json")
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcriptURL,
+      openClawSendHandler: { messages, _, _, _ in
+        try await recorder.send(messages: messages)
+      }
+    )
+
+    store.openClawDraft = "first"
+    let firstSend = Task { await store.sendOpenClawMessage() }
+    try await waitForCondition {
+      store.isSendingOpenClawMessage
+    }
+    store.openClawDraft = "second"
+    let secondSend = Task { await store.sendOpenClawMessage() }
+
+    await firstSend.value
+    await secondSend.value
+
+    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+      "user:first",
+      "assistant:reply 1",
+      "user:second",
+      "assistant:reply 2"
+    ])
+    let calls = await recorder.recordedCalls()
+    XCTAssertEqual(calls, [
+      ["user:first"],
+      ["user:first", "assistant:reply 1", "user:second"]
+    ])
+    XCTAssertFalse(store.isSendingOpenClawMessage)
+    XCTAssertEqual(store.openClawQueuedMessageCount, 0)
+    XCTAssertEqual(store.openClawStatusText, "OpenClaw replied")
+  }
+
+  @MainActor
   func testOpenClawChatScrollPositionPersistsAndResets() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
 
@@ -642,6 +764,51 @@ final class Org2ModelsTests: XCTestCase {
 
     store.resetOpenClawChat()
     XCTAssertNil(store.openClawChatScrollPosition)
+  }
+
+  @MainActor
+  func testAskOpenClawAboutCurrentEntryInjectsMappedReference() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-ai-context-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let file = root.appendingPathComponent("daily.org2")
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.corpusRoot = root
+    store.openClawRemoteCorpusPath = "/remote/org2"
+    store.selectedEntrySource = EntrySource(
+      file: file.path,
+      startLine: 7,
+      endLineExclusive: 11,
+      text: "* Test\nbody",
+      isSubtree: true
+    )
+    store.openClawDraft = "What should I do next?"
+
+    store.askOpenClawAboutCurrentSelection()
+
+    XCTAssertTrue(store.isOpenClawAssistantPresented)
+    XCTAssertEqual(
+      store.openClawDraft,
+      "Use selected entry at /remote/org2/daily.org2:7 as context.\n\nWhat should I do next?"
+    )
+    XCTAssertEqual(store.openClawStatusText, "Added daily.org2:7 to OpenClaw")
+
+    store.askOpenClawAboutCurrentSelection()
+    XCTAssertEqual(
+      store.openClawDraft,
+      "Use selected entry at /remote/org2/daily.org2:7 as context.\n\nWhat should I do next?"
+    )
+
+    store.performUndoCommand()
+    XCTAssertEqual(store.openClawDraft, "What should I do next?")
+    XCTAssertEqual(store.openClawStatusText, "Undid OpenClaw draft change")
+
+    store.performRedoCommand()
+    XCTAssertEqual(
+      store.openClawDraft,
+      "Use selected entry at /remote/org2/daily.org2:7 as context.\n\nWhat should I do next?"
+    )
+    XCTAssertEqual(store.openClawStatusText, "Redid OpenClaw draft change")
   }
 
   func testOpenClawFileReferenceExtractsOrgPaths() {
@@ -1674,6 +1841,36 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testQuickOpenSelectionMovesThroughFilteredFiles() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.corpusFiles = [
+      CorpusFile(path: "/tmp/alpha.org2", relativePath: "alpha.org2", modifiedAt: nil, byteCount: nil),
+      CorpusFile(path: "/tmp/beta.org2", relativePath: "beta.org2", modifiedAt: nil, byteCount: nil),
+      CorpusFile(path: "/tmp/notes/gamma.org2", relativePath: "notes/gamma.org2", modifiedAt: nil, byteCount: nil)
+    ]
+
+    XCTAssertEqual(store.selectedQuickOpenFile?.relativePath, "alpha.org2")
+    XCTAssertNil(store.selectedQuickOpenFileID)
+
+    store.moveQuickOpenSelection(.down)
+    XCTAssertEqual(store.selectedQuickOpenFile?.relativePath, "alpha.org2")
+
+    store.moveQuickOpenSelection(.down)
+    XCTAssertEqual(store.selectedQuickOpenFile?.relativePath, "beta.org2")
+
+    store.moveQuickOpenSelection(.up)
+    XCTAssertEqual(store.selectedQuickOpenFile?.relativePath, "alpha.org2")
+
+    store.resetQuickOpenSelection()
+    store.moveQuickOpenSelection(.up)
+    XCTAssertEqual(store.selectedQuickOpenFile?.relativePath, "notes/gamma.org2")
+
+    store.quickOpenQuery = "bet"
+    store.resetQuickOpenSelection()
+    XCTAssertEqual(store.selectedQuickOpenFile?.relativePath, "beta.org2")
+  }
+
+  @MainActor
   func testOpenClawFileReferenceMapsRemotePathIntoDetailPane() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-link-\(UUID().uuidString)", isDirectory: true)
@@ -1834,11 +2031,20 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "6", keyCode: 22, modifiers: [.command])))
     XCTAssertEqual(store.selectedSurface, .agentSpace)
 
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "7", keyCode: 26, modifiers: [.command, .shift])))
+    XCTAssertEqual(store.selectedSurface, .workstreams)
+
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "0", keyCode: 29, modifiers: [.command])))
     XCTAssertTrue(store.isOpenClawAssistantPresented)
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "/", keyCode: 44, modifiers: [.command])))
     XCTAssertTrue(store.isKeyboardShortcutsPresented)
+
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "z", keyCode: 6, modifiers: [.command])))
+    XCTAssertEqual(store.statusText, "Undo is available while editing text")
+
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "Z", keyCode: 6, modifiers: [.command, .shift])))
+    XCTAssertEqual(store.statusText, "Redo is available while editing text")
   }
 
   @MainActor
@@ -1863,6 +2069,41 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(WorkspaceSurface.meetings.commandShortcutTitle, "⌘4")
     XCTAssertEqual(WorkspaceSurface.openClaw.commandShortcutTitle, "⌘5")
     XCTAssertEqual(WorkspaceSurface.agentSpace.commandShortcutTitle, "⌘6")
+    XCTAssertEqual(WorkspaceSurface.workstreams.commandShortcutTitle, "⌘⇧7")
+  }
+
+  func testWorkspaceWorkstreamsExposeParallelSlices() {
+    XCTAssertEqual(WorkspaceWorkstream.allCases, [
+      .captureTriage,
+      .meetingActions,
+      .knowledgeBrowser,
+      .packagingFirstRun
+    ])
+    XCTAssertEqual(WorkspaceWorkstream.captureTriage.nextActionTitle, "Start Capture Loop")
+    XCTAssertEqual(WorkspaceWorkstream.meetingActions.nextActionTitle, "Start Meeting Loop")
+    XCTAssertEqual(WorkspaceWorkstream.knowledgeBrowser.nextActionTitle, "Open Link Context")
+    XCTAssertEqual(WorkspaceWorkstream.packagingFirstRun.nextActionTitle, "Run Health Check")
+  }
+
+  func testWorkspaceHealthChecksReportRepoBuildAndCorpusReadiness() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-health-\(UUID().uuidString)", isDirectory: true)
+    let dist = root.appendingPathComponent("dist", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    try "{}".write(to: root.appendingPathComponent("package.json"), atomically: true, encoding: .utf8)
+    try "".write(to: dist.appendingPathComponent("cli.js"), atomically: true, encoding: .utf8)
+    try "".write(to: dist.appendingPathComponent("parse.js"), atomically: true, encoding: .utf8)
+
+    let corpus = root.appendingPathComponent("notes", isDirectory: true)
+    try FileManager.default.createDirectory(at: corpus, withIntermediateDirectories: true)
+    let checks = WorkspaceStore.workspaceHealthChecks(cli: Org2CLI(repoRoot: root), corpusRoot: corpus)
+
+    XCTAssertEqual(checks.first { $0.id == "repo-root" }?.status, .ready)
+    XCTAssertEqual(checks.first { $0.id == "node-build" }?.status, .ready)
+    XCTAssertEqual(checks.first { $0.id == "corpus-root" }?.status, .ready)
+    XCTAssertEqual(checks.first { $0.id == "corpus-config" }?.status, .warning)
+    XCTAssertEqual(checks.first { $0.id == "loop-directory" }?.status, .warning)
+    XCTAssertNotNil(checks.first { $0.id == "node-modules" }?.remediationTitle)
   }
 
   @MainActor
@@ -4559,6 +4800,61 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSaveCurrentFileEncryptsMultipleCryptSubtreesIncludingFinalBlock() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-crypt-save-multiple-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("secrets.org2")
+    let fakeGPG = root.appendingPathComponent("fake-gpg.sh")
+    try """
+    #!/bin/sh
+    input=$(cat)
+    if printf '%s' "$input" | grep -q 'first secret'; then
+      printf '%s\\n' '-----BEGIN PGP MESSAGE-----' 'encrypted alpha payload' '-----END PGP MESSAGE-----'
+    else
+      printf '%s\\n' '-----BEGIN PGP MESSAGE-----' 'encrypted beta payload' '-----END PGP MESSAGE-----'
+    fi
+    """.write(to: fakeGPG, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeGPG.path)
+    let original = """
+    * First :crypt:
+    first secret
+    * Public
+    body
+    * Second :crypt:
+    second secret
+    """ + "\n"
+    try original.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.orgCryptRecipientsText = "person@example.com"
+    store.orgCryptGpgProgram = fakeGPG.path
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    guard let location = store.selectedLocation else {
+      return XCTFail("Expected selected file")
+    }
+    await store.loadEntrySource(for: location)
+    try await waitForEntryRender(store)
+
+    await store.saveActiveEdit()
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* First :crypt:\n-----BEGIN PGP MESSAGE-----\nencrypted alpha payload\n-----END PGP MESSAGE-----"))
+    XCTAssertTrue(updated.contains("* Public\nbody"))
+    XCTAssertTrue(updated.contains("* Second :crypt:\n-----BEGIN PGP MESSAGE-----\nencrypted beta payload\n-----END PGP MESSAGE-----\n"))
+    XCTAssertFalse(updated.contains("first secret"))
+    XCTAssertFalse(updated.contains("second secret"))
+    XCTAssertTrue(updated.hasSuffix("\n"))
+    XCTAssertEqual(store.statusText, "Encrypted 2 subtrees")
+  }
+
+  @MainActor
   func testAddingCryptTagToHeadingEncryptsSubtreeOnSave() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-crypt-heading-tag-\(UUID().uuidString)", isDirectory: true)
@@ -4805,6 +5101,83 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testStartCaptureLoopCreatesAutonomousLoopArtifact() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-capture-loop-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.startCaptureLoop()
+
+    let loop = root
+      .appendingPathComponent("loops", isDirectory: true)
+      .appendingPathComponent("capture-loop.org2")
+    let text = try String(contentsOf: loop, encoding: .utf8)
+    XCTAssertTrue(text.contains(":ORG2_WORKSTREAM: captureTriage"))
+    XCTAssertTrue(text.contains(":ORG2_LOOP_STATUS: active"))
+    XCTAssertTrue(text.contains("promotes durable knowledge"))
+
+    await store.refreshLoopArtifacts()
+    XCTAssertEqual(store.loopArtifacts.first?.workstream, .captureTriage)
+  }
+
+  @MainActor
+  func testStartMeetingActionLoopReferencesSelectedMeetingArtifact() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-meeting-loop-\(UUID().uuidString)", isDirectory: true)
+    let meetings = root.appendingPathComponent("meetings", isDirectory: true)
+    try FileManager.default.createDirectory(at: meetings, withIntermediateDirectories: true)
+    let meeting = meetings.appendingPathComponent("scarf-sync.org2")
+    try """
+    #+TITLE: Meeting: Scarf sync
+    #+ORG2_KIND: meeting
+    :PROPERTIES:
+    :ID: 11111111-1111-1111-1111-111111111111
+    :kind: meeting
+    :transcript_artifact: meetings/scarf-sync.transcript.org2
+    :END:
+
+    Notes
+    """.write(to: meeting, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.refreshMeetings()
+    store.selectedMeetingID = store.meetings.first?.id
+    await store.startMeetingActionLoopForSelectedMeeting()
+
+    let loop = root
+      .appendingPathComponent("loops", isDirectory: true)
+      .appendingPathComponent("meeting-scarf-sync-loop.org2")
+    let text = try String(contentsOf: loop, encoding: .utf8)
+    XCTAssertTrue(text.contains(":ORG2_WORKSTREAM: meetingActions"))
+    XCTAssertTrue(text.contains(":ORG2_MEETING_FILE: meetings/scarf-sync.org2"))
+    XCTAssertTrue(text.contains("Extract decisions with source citations"))
+  }
+
+  @MainActor
+  func testCreateKnowledgeNodeUsesConfiguredIndexDir() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-knowledge-node-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try #"{"roam":{"indexDir":"knowledge"}}"#
+      .write(to: root.appendingPathComponent("org2.json"), atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.createKnowledgeNode(title: "Autonomous Loops")
+
+    let node = root
+      .appendingPathComponent("knowledge", isDirectory: true)
+      .appendingPathComponent("autonomous-loops.org2")
+    let text = try String(contentsOf: node, encoding: .utf8)
+    XCTAssertTrue(text.contains("#+TITLE: Autonomous Loops"))
+    XCTAssertTrue(text.contains(":ORG2_WORKSTREAM: knowledgeBrowser"))
+    XCTAssertTrue(text.contains(":ID: "))
+  }
+
+  @MainActor
   func testLoadsAndSavesSelectedEntrySource() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-edit-\(UUID().uuidString)", isDirectory: true)
@@ -4940,8 +5313,8 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(updated.contains("changed plaintext"))
     XCTAssertFalse(updated.contains("-----BEGIN PGP MESSAGE-----"))
     XCTAssertFalse(store.isEditingEntry)
-    XCTAssertEqual(store.statusText, "Saved, but org crypt encryption failed")
-    XCTAssertTrue(store.errorText?.contains("Org crypt encryption failed") == true)
+    XCTAssertEqual(store.statusText, "Saved, but encryption failed")
+    XCTAssertTrue(store.errorText?.contains("Encryption failed") == true)
   }
 
   @MainActor

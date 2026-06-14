@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>macOS Workspace</title>
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="macOS Workspace" />
+<meta property="og:description" content="macOS Workspace" />
+<meta property="og:url" content="https://org2.avi.press/editors-macos.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/editors-macos.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="macOS Workspace" />
+<meta name="twitter:description" content="macOS Workspace" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/editors-macos.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">macOS Workspace</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a><a href="org2-vs-obsidian.html">Org2 vs Obsidian</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open docs search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">macOS Workspace</h1>
+</header>
+<p>Org2 Workspace is the native macOS client for working with an Org2 corpus. It is an alpha app in <code>apps/macos/Org2Workspace</code>, built as a Swift Package, and uses the same parser/CLI output as the rest of Org2 instead of maintaining a private database.</p>
+<p>The app is currently best understood as a local workspace shell for dogfooding the product direction: agenda review, file navigation, search, rendered block editing, meeting capture, OpenClaw handoff, workstream kickoff, and crypt workflows over normal files.</p>
+<section class="org2-headline level-1">
+<h1 id="current-surfaces">Current surfaces</h1>
+<p>The sidebar exposes the main workspace surfaces:</p>
+<ul>
+<li><p><strong>Agenda</strong> :: review scheduled/deadline work across the selected corpus, filter items, switch agenda modes, mutate TODO/planning state, and open the selected item in the detail pane.</p></li>
+<li><p><strong>Files</strong> :: scan <code>.org2</code>, <code>.org</code>, and Markdown files, filter them, and quick-open a file with keyboard shortcuts.</p></li>
+<li><p><strong>Search</strong> :: run corpus search through the shared Org2 tooling and open results with source context.</p></li>
+<li><p><strong>Meetings</strong> :: record or import local audio, create meeting/transcript artifacts under the corpus, and keep transcription provenance in Org2 files.</p></li>
+<li><p><strong>OpenClaw Chat</strong> :: send selected workspace context to a configured OpenClaw endpoint while keeping the conversation state local to the app.</p></li>
+<li><p><strong>Agent Space</strong> :: browse durable OpenClaw/agent thread records and reopen their source context.</p></li>
+<li><p><strong>Workstreams</strong> :: track the parallel app slices, start autonomous loop artifacts, create knowledge nodes, and run first-run health checks for repo/build/corpus readiness.</p></li>
+</ul>
+<p>The detail pane can render a selected file, agenda item, search result, backlink, meeting note, or agent thread. It supports both raw source editing and structured rendered-block editing.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="document-editing">Document editing</h1>
+<p>The rendered editor is meant to make Org-shaped text feel native without hiding the source file. Current editing affordances include:</p>
+<ul>
+<li><p>heading, planning, keyword, property drawer, paragraph, list item, media, quote, source, and table block editors,</p></li>
+<li><p>block selection, insertion, duplication, deletion, movement, and folding,</p></li>
+<li><p>inline editing for links, timestamps, and markup,</p></li>
+<li><p>TODO, priority, tag, planning, property, and checkbox quick edits,</p></li>
+<li><p>source block execution for supported local languages,</p></li>
+<li><p>syntax-highlighted raw text editing with autosave-oriented block updates.</p></li>
+</ul>
+<p>The important product rule is that the app should write ordinary Org2 text. Users should be able to inspect every change in Git or another editor.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="meetings">Meetings</h1>
+<p>Org2 Workspace records meetings as local corpus artifacts. A meeting write normally creates an audio file, a meeting note, and a transcript artifact under <code>meetings/</code>.</p>
+<p>Transcription is local-first. The app tries a configured <code>ORG2_WORKSPACE_WHISPER_COMMAND</code>, then common whisper.cpp commands, then the OpenAI Whisper CLI. If no local transcriber is available, it still writes the meeting artifacts with <code>:transcription_status: unavailable</code> rather than uploading private audio.</p>
+<p>See <a href="https://github.com/aviaviavi/org2/blob/main/docs/meetings.md">Org2 meetings</a> for the artifact shape and transcriber resolution order.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="openclaw-and-agents">OpenClaw and agents</h1>
+<p>The app includes two OpenClaw-oriented surfaces:</p>
+<ul>
+<li><p>a chat panel/full-page chat for sending messages with current workspace context,</p></li>
+<li><p>an Agent Space browser for durable agent-thread records in the corpus.</p></li>
+</ul>
+<p>This is deliberately a handoff boundary. The corpus stores selected context, thread references, transcript references, and durable outputs; the external agent can act on that context without the Mac app becoming the only source of truth.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="org-crypt">Org-crypt</h1>
+<p>The app includes configuration and run actions for GPG-backed <code>:crypt:</code> subtrees. It can encrypt plaintext <code>:crypt:</code> subtrees on save, decrypt selected encrypted subtrees for review, manage recipient lists, and use the macOS keychain for the optional passphrase workflow.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="parallel-workstreams">Parallel workstreams</h1>
+<p>The Workstreams surface is the kickoff point for building several major slices in parallel without losing the shared product shape. It is oriented around creating durable corpus artifacts, not adding manual queues that only the Mac app understands:</p>
+<ul>
+<li><p><strong>Autonomous Capture</strong> starts a capture loop under <code>loops/</code> that records its workstream, loop status, creation timestamp, and next actions in ordinary Org2 text.</p></li>
+<li><p><strong>Meeting to Action</strong> starts a meeting action loop for the selected meeting artifact, carrying the meeting file, transcript reference, and durable follow-up prompts into the corpus.</p></li>
+<li><p><strong>Knowledge Browser</strong> opens ID/backlink context when a selected node already has an ID, and otherwise helps create a new ID-backed knowledge node in the configured roam/index directory.</p></li>
+<li><p><strong>Packaging and First Run</strong> runs local health checks for repo discovery, built CLI/parser files, Node dependencies, Swift package presence, corpus writability, corpus config, and loop-directory readiness.</p></li>
+</ul>
+<p>The loop artifacts are intentionally plain files. External agents, scripts, Git review, and other editors can inspect or continue the same work without relying on private app state.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="keyboard-model">Keyboard model</h1>
+<p>The app has global navigation shortcuts for major surfaces and local keyboard loops for agenda/document work.</p>
+<p>High-value shortcuts include:</p>
+<ul>
+<li><p><code>Cmd-1</code> through <code>Cmd-5</code> for primary surfaces,</p></li>
+<li><p><code>Cmd-6</code> for Agent Space,</p></li>
+<li><p><code>Cmd-Shift-7</code> for Workstreams,</p></li>
+<li><p><code>Cmd-P</code> / <code>Cmd-K</code> for quick open,</p></li>
+<li><p><code>Cmd-7</code>, <code>Cmd-8</code>, and <code>Cmd-9</code> for today/yesterday/tomorrow daily notes,</p></li>
+<li><p>agenda-local <code>j</code> / <code>k</code> navigation, <code>/</code> filtering, and TODO/planning shortcuts,</p></li>
+<li><p>document-local block navigation, editing, insertion, folding, duplication, movement, and deletion shortcuts.</p></li>
+</ul>
+<p>Use the in-app keyboard shortcuts sheet for the full current map.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="build-and-run">Build and run</h1>
+<p>From the repository root:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm install
+npm run build
+cd apps/macos/Org2Workspace
+swift run Org2Workspace</code></pre>
+<p>The app expects <code>dist/cli.js</code> and <code>dist/parse.js</code> to exist. If the app cannot find the repo root automatically, set <code>ORG2_REPO_ROOT</code> before launching:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">ORG2_REPO_ROOT=/path/to/org2 swift run Org2Workspace</code></pre>
+</section>
+<section class="org2-headline level-1">
+<h1 id="next-major-slices">Next major slices</h1>
+<p>The recommended lead slice remains <strong>autonomous capture and knowledge loops</strong>.</p>
+<p>The goal is to make the Mac app good at creating the right durable work context with as little human shepherding as possible:</p>
+<ul>
+<li><p>one-click creation of capture loops, meeting loops, and knowledge nodes,</p></li>
+<li><p>loop artifacts that agents can pick up without scraping app UI state,</p></li>
+<li><p>source-linked meeting promotion into decisions, TODOs, and durable notes,</p></li>
+<li><p>ID/backlink-first knowledge creation rather than private graph state,</p></li>
+<li><p>acceptance paths where generated tasks, notes, and loop status remain clean <code>.org2</code> text.</p></li>
+</ul>
+<p>That slice should stay first because it closes the core loop from signal to durable knowledge. Meeting promotion, knowledge browsing, and packaging can proceed in parallel as long as they preserve shared write semantics: meeting promotion should create ordinary TODOs/notes, the knowledge browser should reuse IDs/backlinks rather than private graph state, and packaging should verify the same CLI/parser artifacts the app actually calls.</p>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

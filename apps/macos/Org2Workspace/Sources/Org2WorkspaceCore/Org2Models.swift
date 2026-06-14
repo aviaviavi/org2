@@ -387,6 +387,20 @@ public struct CorpusFile: Identifiable, Hashable, Sendable {
   public var id: String { path }
 }
 
+public struct OrgCryptRecipientFile: Identifiable, Hashable, Sendable {
+  public let path: String
+  public let relativePath: String
+  public let name: String
+
+  public init(path: String, relativePath: String) {
+    self.path = path
+    self.relativePath = relativePath
+    self.name = NSString(string: relativePath).lastPathComponent
+  }
+
+  public var id: String { path }
+}
+
 public enum EntrySourceMode: String, CaseIterable, Identifiable, Sendable {
   case entry
   case page
@@ -2921,6 +2935,144 @@ public struct MeetingSection: Identifiable, Sendable {
     self.id = id
     self.label = label
     self.meetings = meetings
+  }
+}
+
+public struct WorkspaceLoopArtifact: Identifiable, Equatable, Sendable {
+  public let workstream: WorkspaceWorkstream
+  public let title: String
+  public let file: String
+  public let line: Int
+  public let status: String?
+  public let idValue: String?
+
+  public init(
+    workstream: WorkspaceWorkstream,
+    title: String,
+    file: String,
+    line: Int,
+    status: String? = nil,
+    idValue: String? = nil
+  ) {
+    self.workstream = workstream
+    self.title = title
+    self.file = file
+    self.line = line
+    self.status = status
+    self.idValue = idValue
+  }
+
+  public var id: String {
+    "\(workstream.rawValue):\(file):\(line):\(title)"
+  }
+
+  public var lineForEditor: Int {
+    line
+  }
+}
+
+public struct WorkstreamStatus: Identifiable, Equatable, Sendable {
+  public enum State: String, Sendable {
+    case ready
+    case needsInput
+    case blocked
+
+    public var title: String {
+      switch self {
+      case .ready: "Ready"
+      case .needsInput: "Needs input"
+      case .blocked: "Blocked"
+      }
+    }
+  }
+
+  public let id: WorkspaceWorkstream
+  public let state: State
+  public let detail: String
+
+  public init(id: WorkspaceWorkstream, state: State, detail: String) {
+    self.id = id
+    self.state = state
+    self.detail = detail
+  }
+}
+
+public enum WorkspaceWorkstream: String, CaseIterable, Identifiable, Sendable {
+  case captureTriage
+  case meetingActions
+  case knowledgeBrowser
+  case packagingFirstRun
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .captureTriage: "Autonomous Capture"
+    case .meetingActions: "Meeting to Action"
+    case .knowledgeBrowser: "Knowledge Browser"
+    case .packagingFirstRun: "Packaging and First Run"
+    }
+  }
+
+  public var summary: String {
+    switch self {
+    case .captureTriage:
+      "Autonomous capture loops that turn work signals into linked tasks and notes."
+    case .meetingActions:
+      "Turn meeting artifacts into action loops, decisions, follow-ups, and promoted notes."
+    case .knowledgeBrowser:
+      "Browse IDs, backlinks, graph neighborhoods, node creation, and link maintenance."
+    case .packagingFirstRun:
+      "Make launch, dependency checks, corpus setup, and app diagnostics self-explanatory."
+    }
+  }
+
+  public var nextActionTitle: String {
+    switch self {
+    case .captureTriage: "Start Capture Loop"
+    case .meetingActions: "Start Meeting Loop"
+    case .knowledgeBrowser: "Open Link Context"
+    case .packagingFirstRun: "Run Health Check"
+    }
+  }
+
+  public var systemImage: String {
+    switch self {
+    case .captureTriage: "tray.and.arrow.down"
+    case .meetingActions: "checklist"
+    case .knowledgeBrowser: "point.3.connected.trianglepath.dotted"
+    case .packagingFirstRun: "stethoscope"
+    }
+  }
+}
+
+public struct WorkspaceHealthCheck: Identifiable, Equatable, Sendable {
+  public enum Status: String, Sendable {
+    case ready
+    case warning
+    case blocking
+
+    public var title: String {
+      switch self {
+      case .ready: "Ready"
+      case .warning: "Warning"
+      case .blocking: "Blocked"
+      }
+    }
+  }
+
+  public let id: String
+  public let title: String
+  public let status: Status
+  public let detail: String
+  public let remediationTitle: String?
+
+  public init(id: String, title: String, status: Status, detail: String, remediationTitle: String? = nil) {
+    self.id = id
+    self.title = title
+    self.status = status
+    self.detail = detail
+    self.remediationTitle = remediationTitle
   }
 }
 
