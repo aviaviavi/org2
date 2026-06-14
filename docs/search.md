@@ -72,10 +72,10 @@ Agents should prefer claims that are source-backed, reviewed, and fresh enough f
 - `ORG2_PROVENANCE`: comma-separated refs like `file:notes/foo.org2`, `id:project-alpha`, `url:https://...`, `query:...`, or `artifact:...`.
 - `ORG2_CLAIM_STATE`: one of `source-backed`, `inference`, `human-reviewed`, or `raw-source`.
 - `ORG2_REVIEW_STATUS`: one of `generated`, `review-required`, `reviewed`, or `promoted`.
-- `ORG2_OBSERVED_AT`: when the source was observed.
-- `ORG2_VALID_AS_OF`: date/time the claim was known valid.
-- `ORG2_STALE_AFTER`: date/time after which the claim should be treated as stale.
-- `ORG2_EXPIRES_AT`: date/time after which the claim should be treated as expired.
+- `ORG2_OBSERVED_AT`: ISO date or timestamp when the source was observed.
+- `ORG2_VALID_AS_OF`: ISO date or timestamp the claim was known valid.
+- `ORG2_STALE_AFTER`: ISO date or timestamp after which the claim should be treated as stale.
+- `ORG2_EXPIRES_AT`: ISO date or timestamp after which the claim should be treated as expired.
 
 Generated `compiled`, `view`, and `report` artifacts must include provenance plus either `ORG2_OBSERVED_AT` or `ORG2_VALID_AS_OF`, and must set `ORG2_CLAIM_STATE`. The artifact linter reports missing or invalid values.
 

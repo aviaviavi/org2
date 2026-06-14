@@ -358,6 +358,37 @@ function nodeMatchesFilters(node: CompiledCorpusNode, opts: AgentContextOptions)
 function parseDateMs(raw: string | null | undefined): number | null {
   const value = String(raw || "").trim();
   if (!value) return null;
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const dateTime = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  const match = dateOnly || dateTime;
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const calendarDate = new Date(Date.UTC(year, month - 1, day));
+  if (
+    calendarDate.getUTCFullYear() !== year ||
+    calendarDate.getUTCMonth() !== month - 1 ||
+    calendarDate.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  if (!dateTime) return calendarDate.getTime();
+
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = match[6] === undefined ? 0 : Number(match[6]);
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  const timezone = String(match[7] || "");
+  if (timezone !== "Z") {
+    const [, offsetHourRaw, offsetMinuteRaw] = /^([+-]\d{2}):(\d{2})$/.exec(timezone) || [];
+    const offsetHour = Number(String(offsetHourRaw || "").slice(1));
+    const offsetMinute = Number(offsetMinuteRaw || "");
+    if (offsetHour > 23 || offsetMinute > 59) return null;
+  }
+
   const ms = Date.parse(value);
   return Number.isFinite(ms) ? ms : null;
 }
