@@ -118,6 +118,14 @@ Daily materialized support ticket counts.
 :END:
 Old support context.
 
+* TODO Ancient Scarf follow-up :scarf:
+:PROPERTIES:
+:ID: ancient-scarf-followup
+:PROJECT: scarf
+:UPDATED: 2020-01-01
+:END:
+Old open Scarf support task.
+
 * Thread: Scarf triage help
 :PROPERTIES:
 :ID: thread-scarf-triage
@@ -192,6 +200,8 @@ assert.match(md, /support\.org2:3-/);
 assert.match(md, /## Recent timeline entries/);
 assert.match(md, /## Active TODOs \/ scheduled items/);
 assert.match(md, /TODO Scarf support triage/);
+assert.match(md, /## Possible stale open TODOs/);
+assert.match(md, /TODO Ancient Scarf follow-up/);
 assert.match(md, /## Collaboration state/);
 assert.match(md, /owner: Casey/);
 assert.match(md, /assignee: openclaw/);

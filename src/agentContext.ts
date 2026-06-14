@@ -288,6 +288,27 @@ function termsFor(query: string): string[] {
   return Array.from(new Set(String(query || "").toLowerCase().match(/[a-z0-9][a-z0-9_-]{1,}/g) || []));
 }
 
+function isOperationalContextFile(file: string): boolean {
+  const normalized = file.replace(/\\/g, "/").toLowerCase();
+  return normalized.startsWith("agents/")
+    || normalized.startsWith("views/")
+    || normalized.includes("/agents/")
+    || normalized.includes("/views/")
+    || normalized.includes("sync-conflict")
+    || normalized.includes("generated")
+    || normalized.includes("brief");
+}
+
+function isActiveTodoKeyword(raw: string | null | undefined): boolean {
+  return Boolean(raw) && !/^(DONE|CANCELLED|CANCELED)$/i.test(String(raw || ""));
+}
+
+function isTerminalTodoKeyword(raw: string | null | undefined): "done" | "canceled" | null {
+  if (/^(CANCELLED|CANCELED)$/i.test(String(raw || ""))) return "canceled";
+  if (/^DONE$/i.test(String(raw || ""))) return "done";
+  return null;
+}
+
 function titlePathFor(corpus: CompiledCorpus, node: CompiledCorpusNode): string[] {
   if (node.kind === "file") return [node.title];
   return corpus.nodes
@@ -437,7 +458,7 @@ function salienceScoreFor(corpus: CompiledCorpus, node: CompiledCorpusNode, opts
   if (explicit !== null) { score += explicit * 3; reasons.push(`explicit salience ${explicit}`); }
   const pinned = numericProperty(node, ["ORG2_PINNED", "PINNED", "IMPORTANT"]);
   if (pinned !== null && pinned > 0) { score += 4; reasons.push("pinned/important metadata"); }
-  if (node.todo && !/^(DONE|CANCELLED|CANCELED)$/i.test(node.todo)) { score += 2; reasons.push(`active TODO ${node.todo}`); }
+  if (isActiveTodoKeyword(node.todo)) { score += 2; reasons.push(`active TODO ${node.todo}`); }
   const activePlanning = node.planning.filter((p) => p.kind === "SCHEDULED" || p.kind === "DEADLINE");
   if (activePlanning.length) { score += Math.min(3, activePlanning.length * 1.5); reasons.push("scheduled/deadline planning"); }
   const backlinkCount = inferredBacklinksFor(corpus, node).length;
@@ -454,6 +475,16 @@ function scoreNode(corpus: CompiledCorpus, node: CompiledCorpusNode, terms: stri
   const haystack = [node.title, node.snippet, node.id || "", ...node.tags, ...node.aliases, ...Object.keys(node.effectiveProperties || node.properties), ...Object.values(node.effectiveProperties || node.properties)].join("\n").toLowerCase();
   const matchedTerms = terms.filter((term) => haystack.includes(term));
   const selectionReason: string[] = matchedTerms.length ? [`matched ${matchedTerms.length} query term${matchedTerms.length === 1 ? "" : "s"}: ${matchedTerms.join(", ")}`] : [];
+  const directScope = opts.scope ? opts.scope.toLowerCase().replace(/^[^:]+:/, "").trim() : "";
+  const directlyScoped = Boolean(directScope && [
+    propertyValue(node, ["PROJECT", "PERSON", "PEOPLE", "ENTITY"]).toLowerCase(),
+    node.title.toLowerCase(),
+    node.id || "",
+    ...node.tags.map((tag) => tag.toLowerCase()),
+    ...node.aliases.map((alias) => alias.toLowerCase()),
+  ].some((value) => value === directScope || value.includes(directScope)));
+  if (terms.length > 0 && matchedTerms.length === 0 && !directlyScoped) return { score: 0, matchedTerms, selectionReason };
+  if (directlyScoped && matchedTerms.length === 0) selectionReason.push(`directly scoped to '${directScope}'`);
   let score = matchedTerms.length;
   for (const term of matchedTerms) {
     if (node.title.toLowerCase().includes(term)) { score += 4; selectionReason.push(`title contains '${term}'`); }
@@ -472,6 +503,18 @@ function scoreNode(corpus: CompiledCorpus, node: CompiledCorpusNode, terms: stri
   const salience = salienceScoreFor(corpus, node, opts);
   if (salience.score && salienceWeight) selectionReason.push(...salience.reasons.map((reason) => `${reason} × salience weight ${salienceWeight}`));
   score += salience.score * salienceWeight;
+  if (isOperationalContextFile(node.file)) {
+    score -= 5;
+    selectionReason.push("downranked operational/generated file");
+  }
+  const terminalTodo = isTerminalTodoKeyword(node.todo);
+  if (terminalTodo === "canceled") {
+    score -= 5;
+    selectionReason.push("downranked canceled task");
+  } else if (terminalTodo === "done") {
+    score -= 3;
+    selectionReason.push("downranked completed task");
+  }
   return { score, matchedTerms, selectionReason };
 }
 
@@ -482,9 +525,34 @@ function findNodeById(corpus: CompiledCorpus, id: string): CompiledCorpusNode | 
 }
 
 function inferredBacklinksFor(corpus: CompiledCorpus, node: CompiledCorpusNode): NonNullable<AgentNode["backlinks"]> {
-  const out = new Map<string, NonNullable<AgentNode["backlinks"]>[number]>();
+  type AgentBacklink = NonNullable<AgentNode["backlinks"]>[number];
+  const nodeByKey = new Map(corpus.nodes.map((candidate) => [candidate.key, candidate]));
+  const out = new Map<string, AgentBacklink>();
+  const candidateScore = (backlink: AgentBacklink): [number, number, number] => {
+    const source = nodeByKey.get(backlink.sourceKey);
+    if (!source) return [0, 0, 0];
+    const start = source.sourceRange.startLine || 0;
+    const span = Math.max(1, (source.sourceRange.endLine || start) - start);
+    const level = source.level || (source.kind === "heading" ? 1 : 0);
+    return [level, start, -span];
+  };
+  const addBacklink = (backlink: AgentBacklink) => {
+    const key = `${backlink.file}:${backlink.line}`;
+    const existing = out.get(key);
+    if (!existing) {
+      out.set(key, backlink);
+      return;
+    }
+    const left = candidateScore(backlink);
+    const right = candidateScore(existing);
+    for (let i = 0; i < left.length; i += 1) {
+      if (left[i]! === right[i]!) continue;
+      if (left[i]! > right[i]!) out.set(key, backlink);
+      return;
+    }
+  };
   for (const backlink of node.backlinks) {
-    out.set(`${backlink.sourceKey}:${backlink.line}`, { ...backlink, citation: `${backlink.file}:${backlink.line}` });
+    addBacklink({ ...backlink, citation: `${backlink.file}:${backlink.line}` });
   }
   if (node.id) {
     const needle = normalizeId(node.id);
@@ -492,7 +560,7 @@ function inferredBacklinksFor(corpus: CompiledCorpus, node: CompiledCorpusNode):
       if (source.key === node.key) continue;
       for (const link of source.links) {
         if (normalizeId(link.target.replace(/^id:/i, "")) !== needle) continue;
-        out.set(`${source.key}:${link.line}`, {
+        addBacklink({
           sourceKey: source.key,
           sourceId: source.id,
           sourceTitle: source.title,
@@ -1261,6 +1329,25 @@ function uniqueSorted(values: Array<string | null | undefined>): string[] {
   return Array.from(new Set(values.map((value) => String(value || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 }
 
+function dateStringForAgentNode(node: AgentNode): string {
+  const explicit = String(node.properties.UPDATED || node.properties.DATE || node.properties.CREATED || node.properties.CLOSED || node.claimState.validAsOf || node.claimState.observedAt || "");
+  const explicitMatch = explicit.match(/\d{4}-\d{2}-\d{2}/);
+  if (explicitMatch) return explicitMatch[0] || "";
+  const fileMatch = String(node.file || node.citation || "").match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
+  if (fileMatch) return `${fileMatch[1]}-${fileMatch[2]}-${fileMatch[3]}`;
+  return "";
+}
+
+function isStaleOpenAgentTodo(node: AgentNode, nowMs = Date.now()): boolean {
+  if (!isActiveTodoKeyword(node.todo)) return false;
+  const date = dateStringForAgentNode(node);
+  if (!date) return false;
+  const parsed = Date.parse(`${date}T00:00:00Z`);
+  if (!Number.isFinite(parsed)) return false;
+  const ageDays = Math.max(0, (nowMs - parsed) / (24 * 60 * 60 * 1000));
+  return ageDays > 365;
+}
+
 export function renderAgentContextPack(payload: AgentPayload, format: "markdown" | "org" = "markdown"): string {
   const isOrg = format === "org";
   const h1 = isOrg ? "*" : "#";
@@ -1274,7 +1361,8 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
     .filter((item) => /\d{4}-\d{2}-\d{2}/.test(item.date))
     .sort((a, b) => b.date.localeCompare(a.date) || a.node.citation.localeCompare(b.node.citation))
     .slice(0, 8);
-  const todos = results.filter((node) => Boolean(node.todo));
+  const todos = results.filter((node) => isActiveTodoKeyword(node.todo) && !isStaleOpenAgentTodo(node));
+  const staleTodos = results.filter((node) => isStaleOpenAgentTodo(node));
   const collaborationStates = results
     .filter((node): node is AgentNode & { collaboration: AgentCollaborationState } => Boolean(node.collaboration))
     .sort((a, b) => a.citation.localeCompare(b.citation) || a.title.localeCompare(b.title));
@@ -1343,6 +1431,10 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
   lines.push(`${h2} Active TODOs / scheduled items`);
   if (todos.length === 0) lines.push("- None found");
   for (const node of todos) lines.push(`- ${node.todo} ${node.title} (${node.citation})`);
+  lines.push("");
+  lines.push(`${h2} Possible stale open TODOs`);
+  if (staleTodos.length === 0) lines.push("- None found");
+  for (const node of staleTodos.slice(0, 8)) lines.push(`- ${node.todo} ${node.title} (${node.citation})`);
   lines.push("");
   lines.push(`${h2} Collaboration state`);
   if (collaborationStates.length === 0) lines.push("- None found");
