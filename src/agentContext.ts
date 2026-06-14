@@ -108,6 +108,9 @@ type AgentDataLinkMetadata = {
   primaryKey?: string[];
   partitionBy?: string[];
   sortBy?: AgentDataSortKey[];
+  dimensions?: string[];
+  measures?: string[];
+  grain?: string;
   credentialRef?: string;
   configRef?: string;
   refreshRef?: string;
@@ -785,6 +788,9 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
   const primaryKey = parseDataNameList(stringDataProperty(props, ["PRIMARY_KEY", "PRIMARY_KEYS", "PK", "KEY_COLUMNS", "ORG2_PRIMARY_KEY"]));
   const partitionBy = parseDataNameList(stringDataProperty(props, ["PARTITION_BY", "PARTITION_KEYS", "PARTITIONS", "ORG2_PARTITION_BY"]));
   const sortBy = parseDataSortList(stringDataProperty(props, ["SORT_BY", "ORDER_BY", "ORG2_SORT_BY"]));
+  const dimensions = parseDataNameList(stringDataProperty(props, ["DIMENSIONS", "DIMENSION_KEYS", "GROUP_BY", "ORG2_DIMENSIONS"]));
+  const measures = parseDataNameList(stringDataProperty(props, ["MEASURES", "METRICS", "ORG2_MEASURES"]));
+  const grain = stringDataProperty(props, ["GRAIN", "TIME_GRAIN", "ORG2_GRAIN"]);
   const credentialRef = safeCredentialRef(stringDataProperty(props, ["CREDENTIAL_REF", "CREDENTIAL", "CREDENTIALS", "AUTH_REF", "AUTH"]));
   const configRef = safeConfigRef(stringDataProperty(props, ["CONFIG_REF", "CONFIG", "PROFILE"]));
   const refreshRef = stringDataProperty(props, ["REFRESH_REF", "REFRESH_ID", "REFRESH_JOB", "ORG2_REFRESH_REF"]);
@@ -850,6 +856,9 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
     ...(primaryKey.length ? { primaryKey } : {}),
     ...(partitionBy.length ? { partitionBy } : {}),
     ...(sortBy.length ? { sortBy } : {}),
+    ...(dimensions.length ? { dimensions } : {}),
+    ...(measures.length ? { measures } : {}),
+    ...(grain ? { grain } : {}),
     ...(credentialRef ? { credentialRef } : {}),
     ...(configRef ? { configRef } : {}),
     ...(refreshRef ? { refreshRef } : {}),
@@ -1319,6 +1328,9 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       item.dataLink.primaryKey?.length ? `primary key: ${item.dataLink.primaryKey.join(", ")}` : "",
       item.dataLink.partitionBy?.length ? `partition by: ${item.dataLink.partitionBy.join(", ")}` : "",
       item.dataLink.sortBy?.length ? `sort by: ${item.dataLink.sortBy.map((sort) => sort.direction ? `${sort.field}:${sort.direction}` : sort.field).join(", ")}` : "",
+      item.dataLink.dimensions?.length ? `dimensions: ${item.dataLink.dimensions.join(", ")}` : "",
+      item.dataLink.measures?.length ? `measures: ${item.dataLink.measures.join(", ")}` : "",
+      item.dataLink.grain ? `grain: ${item.dataLink.grain}` : "",
       item.dataLink.credentialRef ? `credential: ${item.dataLink.credentialRef}` : "",
       item.dataLink.configRef ? `config: ${item.dataLink.configRef}` : "",
       item.dataLink.refreshRef ? `refresh ref: ${item.dataLink.refreshRef}` : "",
