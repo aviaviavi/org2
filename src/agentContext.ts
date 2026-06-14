@@ -117,6 +117,7 @@ type AgentRelatedDataLink = {
   file: string;
   sourceRange: { startLine: number; endLine: number };
   citation: string;
+  claimState: AgentClaimState;
   dataLink: AgentDataLinkMetadata;
   matchingAttachments?: AgentContextAttachment[];
 };
@@ -875,6 +876,7 @@ function relatedDataLinksFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
       file: candidate.file,
       sourceRange: candidate.sourceRange,
       citation: citationFor(candidate),
+      claimState: claimStateFor(candidate),
       dataLink,
       ...(matchingAttachments.length ? { matchingAttachments } : {}),
     });
@@ -979,6 +981,7 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       file: node.file,
       sourceRange: node.sourceRange,
       citation: node.citation,
+      claimState: node.claimState,
       dataLink: node.dataLink,
     }));
   const relatedDataLinks = Array.from(
@@ -1120,6 +1123,8 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
     const details = [
       `kind: ${item.kind}`,
       item.id ? `id: ${item.id}` : "",
+      item.claimState.reviewStatus !== "unknown" ? `review: ${item.claimState.reviewStatus}` : "",
+      item.claimState.freshness !== "unknown" ? `claim freshness: ${item.claimState.freshness}` : "",
       item.dataLink.system ? `system: ${item.dataLink.system}` : "",
       item.dataLink.engine ? `engine: ${item.dataLink.engine}` : "",
       item.dataLink.credentialRef ? `credential: ${item.dataLink.credentialRef}` : "",
