@@ -78,6 +78,12 @@ type AgentRelatedThread = {
 
 type AgentDataLinkKind = "data-link" | "warehouse-query" | "dataset" | "sql-view" | "event-stream" | "timeline-link";
 
+type AgentDataSourceHash = {
+  kind: "id" | "file" | "query" | "run" | "url" | "note" | "artifact";
+  value: string;
+  sha256: string;
+};
+
 type AgentDataLinkMetadata = {
   kind: AgentDataLinkKind;
   system?: string;
@@ -107,6 +113,8 @@ type AgentDataLinkMetadata = {
   lastRun?: string;
   freshness?: string;
   materialized?: string;
+  provenance?: AgentContextAttachment[];
+  sourceHashes?: AgentDataSourceHash[];
 };
 
 type AgentRelatedDataLink = {
@@ -658,7 +666,21 @@ function safeConfigRef(raw: string | undefined): string | undefined {
   return /^(?:config|profile|env|file):[A-Za-z0-9_./:-]+$/.test(value) ? value : undefined;
 }
 
-function dataLinkMetadataFor(node: CompiledCorpusNode): AgentDataLinkMetadata | undefined {
+function parseDataSourceHashes(raw: string | undefined): AgentDataSourceHash[] {
+  if (!raw) return [];
+  return String(raw)
+    .split(/[,;]+/)
+    .map((entry) => {
+      const match = /^([A-Za-z][A-Za-z0-9_-]*):(\S.+)=sha256:([a-fA-F0-9]{64})$/.exec(entry.trim());
+      if (!match) return null;
+      const kind = String(match[1] || "").toLowerCase();
+      if (kind !== "id" && kind !== "file" && kind !== "query" && kind !== "run" && kind !== "url" && kind !== "note" && kind !== "artifact") return null;
+      return { kind, value: String(match[2] || "").trim(), sha256: String(match[3] || "").toLowerCase() } satisfies AgentDataSourceHash;
+    })
+    .filter((entry): entry is AgentDataSourceHash => !!entry);
+}
+
+function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): AgentDataLinkMetadata | undefined {
   const kind = dataLinkKindFor(node);
   if (!kind) return undefined;
   const props = node.effectiveProperties || node.properties || {};
@@ -687,6 +709,10 @@ function dataLinkMetadataFor(node: CompiledCorpusNode): AgentDataLinkMetadata | 
   const lastRun = stringDataProperty(props, ["LAST_RUN", "RAN_AT", "UPDATED_AT", "ORG2_LAST_RUN"]);
   const freshness = stringDataProperty(props, ["FRESHNESS", "STATUS"]);
   const materialized = stringDataProperty(props, ["MATERIALIZED", "MATERIALIZATION"]);
+  const provenance = resolveAttachmentTargets(corpus, mergeAttachments([
+    ...parseContextAttachmentList(stringDataProperty(props, ["ORG2_PROVENANCE", "PROVENANCE"])),
+  ]));
+  const sourceHashes = parseDataSourceHashes(stringDataProperty(props, ["ORG2_SOURCE_HASHES", "SOURCE_HASHES"]));
   return {
     kind,
     ...(system ? { system } : {}),
@@ -715,6 +741,8 @@ function dataLinkMetadataFor(node: CompiledCorpusNode): AgentDataLinkMetadata | 
     ...(lastRun ? { lastRun } : {}),
     ...(freshness ? { freshness } : {}),
     ...(materialized ? { materialized } : {}),
+    ...(provenance.length ? { provenance } : {}),
+    ...(sourceHashes.length ? { sourceHashes } : {}),
   };
 }
 
@@ -866,7 +894,7 @@ function relatedDataLinksFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
     const descendant = isDescendantDataLink(corpus, node, candidate);
     const matchingAttachments = descendant ? [] : dataLinkAttachmentsFor(corpus, candidate).filter((attachment) => attachmentMatchesNode(node, attachment));
     if (!descendant && matchingAttachments.length === 0) continue;
-    const dataLink = dataLinkMetadataFor(candidate);
+    const dataLink = dataLinkMetadataFor(corpus, candidate);
     if (!dataLink) continue;
     out.set(candidate.key, {
       key: candidate.key,
@@ -888,7 +916,7 @@ function toAgentNode(corpus: CompiledCorpus, node: CompiledCorpusNode, include: 
   const source = { file: node.file, sourceRange: node.sourceRange, citation: citationFor(node) };
   const thread = agentThreadMetadataFor(corpus, node);
   const relatedThreads = relatedThreadsFor(corpus, node);
-  const dataLink = dataLinkMetadataFor(node);
+  const dataLink = dataLinkMetadataFor(corpus, node);
   const relatedDataLinks = relatedDataLinksFor(corpus, node);
   const collaboration = collaborationStateFor(corpus, node);
   return {
@@ -1145,6 +1173,8 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       item.dataLink.rowCount !== undefined ? `rows: ${item.dataLink.rowCount}` : "",
       item.dataLink.lastRun ? `last run: ${item.dataLink.lastRun}` : "",
       item.dataLink.freshness ? `freshness: ${item.dataLink.freshness}` : "",
+      item.dataLink.provenance?.length ? `provenance: ${item.dataLink.provenance.map((ref) => ref.ref).join(", ")}` : "",
+      item.dataLink.sourceHashes?.length ? `source hashes: ${item.dataLink.sourceHashes.map((hash) => `${hash.kind}:${hash.value}=sha256:${hash.sha256.slice(0, 12)}`).join(", ")}` : "",
     ].filter(Boolean);
     const attachments = uniqueSorted((item.matchingAttachments || []).map((attachment) => attachment.ref));
     lines.push(`- ${item.title} (${item.citation})${details.length ? `; ${details.join("; ")}` : ""}`);
