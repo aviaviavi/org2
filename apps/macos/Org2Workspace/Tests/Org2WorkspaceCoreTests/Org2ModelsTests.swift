@@ -415,6 +415,104 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testOpenClawChatTranscriptPersistsRealSendsLocally() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-send-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let suiteName = "org2-workspace-chat-send-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      openClawSendHandler: { _, _, _, _ in "Hello from restart-safe storage" }
+    )
+    store.openClawDraft = "Hello OpenClaw"
+    await store.sendOpenClawMessage()
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+
+    XCTAssertEqual(restored.openClawMessages.map(\.content), ["Hello OpenClaw", "Hello from restart-safe storage"])
+  }
+
+  @MainActor
+  func testOpenClawChatTranscriptPersistsInCorpusStorageAcrossBootstrap() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-corpus-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let suiteName = "org2-workspace-chat-corpus-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+    store.setCorpusRoot(root)
+    store.openClawMessages = [
+      OpenClawChatMessage(role: .user, content: "Remember this corpus chat"),
+      OpenClawChatMessage(role: .assistant, content: "Stored with the corpus")
+    ]
+
+    let corpusTranscript = root
+      .appendingPathComponent(".org2", isDirectory: true)
+      .appendingPathComponent("openclaw-chat.json")
+    XCTAssertTrue(FileManager.default.fileExists(atPath: corpusTranscript.path))
+
+    let restored = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+    await restored.bootstrap()
+
+    XCTAssertEqual(restored.openClawMessages.map(\.content), ["Remember this corpus chat", "Stored with the corpus"])
+  }
+
+  @MainActor
+  func testOpenClawChatTranscriptMigratesLegacyAppSupportStorageOnBootstrap() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-migration-\(UUID().uuidString)", isDirectory: true)
+    let appSupport = root.appendingPathComponent("app-support", isDirectory: true)
+    try FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
+    let legacyTranscript = appSupport.appendingPathComponent("openclaw-chat.json")
+    let legacyID = UUID()
+    let createdAt = Date().timeIntervalSinceReferenceDate
+    try """
+    {
+      "messages": [
+        {
+          "content": "Legacy app-support chat",
+          "createdAt": \(createdAt),
+          "id": "\(legacyID.uuidString)",
+          "role": "user"
+        }
+      ],
+      "version": 1
+    }
+    """.write(to: legacyTranscript, atomically: true, encoding: .utf8)
+
+    let suiteName = "org2-workspace-chat-migration-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.set(root.path, forKey: "Org2Workspace.corpusRoot")
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawFallbackTranscriptURL: legacyTranscript
+    )
+    await restored.bootstrap()
+
+    let corpusTranscript = root
+      .appendingPathComponent(".org2", isDirectory: true)
+      .appendingPathComponent("openclaw-chat.json")
+    XCTAssertEqual(restored.openClawMessages.map(\.content), ["Legacy app-support chat"])
+    XCTAssertTrue(FileManager.default.fileExists(atPath: corpusTranscript.path))
+    XCTAssertTrue(try String(contentsOf: corpusTranscript, encoding: .utf8).contains("Legacy app-support chat"))
+  }
+
+  @MainActor
   func testAgendaModeDefaultsToFocus() throws {
     let suiteName = "org2-workspace-agenda-mode-default-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!

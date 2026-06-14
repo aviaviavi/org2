@@ -281,7 +281,9 @@ public final class WorkspaceStore: ObservableObject {
   private static let canonicalParserLineLimit = 2_000
   private static let renderedBlocksCacheLimit = 12
   private static let detailNavigationHistoryLimit = 100
-  private let openClawTranscriptURL: URL
+  private var openClawTranscriptURL: URL
+  private let appOpenClawTranscriptURL: URL
+  private let usesFixedOpenClawTranscriptURL: Bool
   private let openClawSendHandler: (@Sendable ([OpenClawChatMessage], String, String, OpenClawWorkspaceContext?) async throws -> String)?
   private var openClawSessionKey = WorkspaceStore.makeOpenClawSessionKey()
   private var shouldPersistOpenClawMessages = false
@@ -323,10 +325,14 @@ public final class WorkspaceStore: ObservableObject {
     cli: Org2CLI? = nil,
     defaults: UserDefaults = .standard,
     openClawTranscriptURL: URL? = nil,
+    openClawFallbackTranscriptURL: URL? = nil,
     openClawSendHandler: (@Sendable ([OpenClawChatMessage], String, String, OpenClawWorkspaceContext?) async throws -> String)? = nil
   ) {
     self.defaults = defaults
-    self.openClawTranscriptURL = openClawTranscriptURL ?? Self.defaultOpenClawTranscriptURL()
+    let fallbackTranscriptURL = openClawFallbackTranscriptURL ?? Self.defaultOpenClawTranscriptURL()
+    usesFixedOpenClawTranscriptURL = openClawTranscriptURL != nil
+    appOpenClawTranscriptURL = fallbackTranscriptURL
+    self.openClawTranscriptURL = openClawTranscriptURL ?? fallbackTranscriptURL
     self.openClawSendHandler = openClawSendHandler
     self.cli = cli ?? (try? Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())) ?? Org2CLI(repoRoot: URL(fileURLWithPath: "/Users/avi/dev/org2"))
     agendaMode = Self.restoreAgendaMode(from: defaults, key: agendaModeKey)
@@ -344,7 +350,7 @@ public final class WorkspaceStore: ObservableObject {
       defaults.set(true, forKey: orgCryptUseDefaultGpgKeyMigrationKey)
     }
     orgCryptGpgProgram = defaults.string(forKey: orgCryptGpgProgramKey) ?? "gpg"
-    openClawMessages = Self.loadOpenClawMessages(from: self.openClawTranscriptURL)
+    openClawMessages = usesFixedOpenClawTranscriptURL ? Self.loadOpenClawMessages(from: self.openClawTranscriptURL) : []
     shouldPersistOpenClawMessages = true
     openClawHasStoredToken = OpenClawKeychain.containsToken()
     orgCryptHasStoredPassphrase = OrgCryptKeychain.containsPassphrase()
@@ -354,6 +360,9 @@ public final class WorkspaceStore: ObservableObject {
   public func bootstrap() async {
     if corpusRoot == nil {
       corpusRoot = restoreCorpusRoot()
+      if let corpusRoot {
+        switchOpenClawTranscript(to: Self.openClawTranscriptURL(corpusRoot: corpusRoot), migrationSource: appOpenClawTranscriptURL)
+      }
     }
 
     if corpusRoot != nil {
@@ -385,6 +394,7 @@ public final class WorkspaceStore: ObservableObject {
     let standardized = url.standardizedFileURL
     corpusRoot = standardized
     defaults.set(standardized.path, forKey: corpusKey)
+    switchOpenClawTranscript(to: Self.openClawTranscriptURL(corpusRoot: standardized))
     agenda = nil
     corpusFiles = []
     orgRoamLinkResolver = .empty
@@ -4683,6 +4693,49 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  private func switchOpenClawTranscript(to url: URL, migrationSource: URL? = nil) {
+    guard !usesFixedOpenClawTranscriptURL else { return }
+    let targetURL = url.standardizedFileURL
+    let previousURL = openClawTranscriptURL.standardizedFileURL
+    guard targetURL.path != previousURL.path else { return }
+
+    let messages: [OpenClawChatMessage]
+    let shouldPersistMigratedMessages: Bool
+    if FileManager.default.fileExists(atPath: targetURL.path) {
+      messages = Self.loadOpenClawMessages(from: targetURL)
+      shouldPersistMigratedMessages = false
+    } else if let migrationSource,
+              migrationSource.standardizedFileURL.path != targetURL.path {
+      messages = Self.loadOpenClawMessages(from: migrationSource.standardizedFileURL)
+      shouldPersistMigratedMessages = !messages.isEmpty
+    } else if previousURL.path == appOpenClawTranscriptURL.standardizedFileURL.path,
+              !openClawMessages.isEmpty {
+      messages = openClawMessages
+      shouldPersistMigratedMessages = true
+    } else {
+      messages = []
+      shouldPersistMigratedMessages = false
+    }
+
+    openClawTranscriptURL = targetURL
+    openClawSessionKey = Self.makeOpenClawSessionKey()
+    openClawPendingUserMessageIDs.removeAll()
+    isDrainingOpenClawQueue = false
+    isSendingOpenClawMessage = false
+    openClawRequestStartedAt = nil
+    replaceOpenClawMessages(messages, shouldPersist: shouldPersistMigratedMessages)
+  }
+
+  private func replaceOpenClawMessages(_ messages: [OpenClawChatMessage], shouldPersist: Bool) {
+    let previousPersistence = shouldPersistOpenClawMessages
+    shouldPersistOpenClawMessages = false
+    openClawMessages = messages
+    shouldPersistOpenClawMessages = previousPersistence
+    if shouldPersist {
+      persistOpenClawMessages()
+    }
+  }
+
   private func renderEntrySource(_ source: EntrySource, generation: Int) {
     isRenderingEntrySource = true
     let modifiedAt = Self.modificationDate(for: URL(fileURLWithPath: source.file).standardizedFileURL)
@@ -5094,6 +5147,12 @@ public final class WorkspaceStore: ObservableObject {
       ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support", isDirectory: true)
     return base
       .appendingPathComponent("Org2Workspace", isDirectory: true)
+      .appendingPathComponent("openclaw-chat.json")
+  }
+
+  nonisolated private static func openClawTranscriptURL(corpusRoot: URL) -> URL {
+    corpusRoot.standardizedFileURL
+      .appendingPathComponent(".org2", isDirectory: true)
       .appendingPathComponent("openclaw-chat.json")
   }
 
