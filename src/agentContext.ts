@@ -698,6 +698,14 @@ function parseDataParams(raw: string | undefined): Pick<AgentDataLinkMetadata, "
   }
 }
 
+function formatDataParams(dataLink: AgentDataLinkMetadata): string | null {
+  if (dataLink.params !== undefined) {
+    const formatted = JSON.stringify(dataLink.params);
+    return formatted === undefined ? null : formatted;
+  }
+  return dataLink.paramsRaw || null;
+}
+
 function numericDataProperty(props: Record<string, string>, names: string[]): number | undefined {
   for (const name of names) {
     const raw = props[name];
@@ -1380,6 +1388,7 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
   lines.push(`${h2} Related data links`);
   if (relatedDataLinks.length === 0) lines.push("- None found");
   for (const item of relatedDataLinks) {
+    const formattedParams = formatDataParams(item.dataLink);
     const details = [
       `kind: ${item.kind}`,
       item.id ? `id: ${item.id}` : "",
@@ -1442,6 +1451,7 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       item.dataLink.path ? `path: ${item.dataLink.path}` : "",
       item.dataLink.queryId ? `query: ${item.dataLink.queryId}` : "",
       item.dataLink.queryHash ? `query hash: ${item.dataLink.queryHash}` : "",
+      formattedParams ? `params: ${formattedParams}` : "",
       item.dataLink.artifact ? `artifact: ${item.dataLink.artifact}` : "",
       item.dataLink.result ? `result: ${item.dataLink.result}` : "",
       item.dataLink.rowCount !== undefined ? `rows: ${item.dataLink.rowCount}` : "",
