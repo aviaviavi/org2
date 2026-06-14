@@ -47,6 +47,8 @@ See [[id:decision-1][decision note]].
 :ARTIFACT: reports/support-ticket-volume.csv
 :ROW_COUNT: 42
 :FRESHNESS: daily
+:ORG2_PROVENANCE: query:support.ticket_volume.v1, artifact:reports/support-ticket-volume.csv
+:ORG2_SOURCE_HASHES: query:support.ticket_volume.v1=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 :ORG2_REVIEW_STATUS: reviewed
 :ORG2_VALID_AS_OF: 2026-05-15
 :ORG2_STALE_AFTER: 2099-01-01
@@ -102,6 +104,8 @@ External catalog entry for [[id:scarf-support-1][Scarf support triage]].
 :CAPTURED_AT: 2026-05-15T09:31:00-07:00
 :SOURCE_CURSOR: linear:SUP-42:9
 :CHANGE_ID: change-42
+:ORG2_PROVENANCE: run:linear-support-sync, url:https://linear.example/SUP-42
+:ORG2_SOURCE_HASHES: artifact:reports/support-state-changes.json=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 :CONTEXT: id:scarf-support-1
 :END:
 Timeline projection for [[id:scarf-support-1][Scarf support triage]].
@@ -150,6 +154,8 @@ assert.match(selected, /review: reviewed/);
 assert.match(selected, /claim freshness: fresh/);
 assert.match(selected, /query: support\.ticket_volume\.v1/);
 assert.match(selected, /artifact: reports\/support-ticket-volume\.csv/);
+assert.match(selected, /provenance: artifact:reports\/support-ticket-volume\.csv, query:support\.ticket_volume\.v1/);
+assert.match(selected, /source hashes: query:support\.ticket_volume\.v1=sha256:aaaaaaaaaaaa/);
 assert.match(selected, /Data catalog: support satisfaction score/);
 assert.match(selected, /review: review-required/);
 assert.match(selected, /claim freshness: stale/);
@@ -161,6 +167,7 @@ assert.match(selected, /timeline: support\.ticket\.lifecycle/);
 assert.match(selected, /event: status_changed/);
 assert.match(selected, /entity: ticket:SUP-42/);
 assert.match(selected, /occurred: 2026-05-15T09:30:00-07:00/);
+assert.match(selected, /provenance: run:linear-support-sync, url:https:\/\/linear\.example\/SUP-42/);
 assert.match(selected, /Matching attachments: id:scarf-support-1/);
 
 const selectedDataLink = run("context", "--id", "support-ticket-volume", "--dir", tmp, "--format", "markdown");
@@ -213,6 +220,8 @@ assert.ok(selectedJson.results[0].collaboration.handoff.links.some((attachment) 
 assert.equal(selectedJson.results[0].relatedThreads[0].id, "thread-scarf-triage");
 assert.equal(selectedJson.results[0].relatedDataLinks[0].id, "support-ticket-volume");
 assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.rowCount, 42);
+assert.ok(selectedJson.results[0].relatedDataLinks[0].dataLink.provenance.some((ref) => ref.ref === "query:support.ticket_volume.v1"));
+assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.sourceHashes[0].sha256, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 assert.equal(selectedJson.results[0].relatedDataLinks[0].claimState.reviewStatus, "reviewed");
 assert.equal(selectedJson.results[0].relatedDataLinks[0].claimState.freshness, "fresh");
 assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-satisfaction-score" && item.claimState.reviewStatus === "review-required" && item.claimState.freshness === "stale"));
