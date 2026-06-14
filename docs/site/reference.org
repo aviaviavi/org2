@@ -15,6 +15,7 @@ Org2 reference is split into two detailed sections:
   - roam workflows (IDs/backlinks/node creation/link insertion)
   - export/publish/LSP workflows
 - [[file:editors.org][Editor integrations]]
+  - macOS Workspace app
   - VS Code installation
   - complete default keyboard shortcut map
   - Vim/Emacs status placeholders
