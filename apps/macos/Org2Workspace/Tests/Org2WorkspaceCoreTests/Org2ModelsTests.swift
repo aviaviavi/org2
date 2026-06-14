@@ -2416,6 +2416,97 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testAgendaShiftArrowsExtendBulkSelection() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-agenda-shift-bulk-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("agenda-shift-bulk.org2")
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd EEE"
+    let today = formatter.string(from: Date())
+
+    try """
+    * TODO First task
+    SCHEDULED: <\(today)>
+
+    * TODO Second task
+    SCHEDULED: <\(today)>
+
+    * TODO Third task
+    SCHEDULED: <\(today)>
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.refreshAgenda()
+
+    let first = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "First task" })
+    let second = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Second task" })
+    let third = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Third task" })
+    store.selectAgendaItem(second)
+
+    XCTAssertTrue(store.handleAgendaKeyDown(keyDown(keyCode: 125, modifiers: [.shift])))
+    XCTAssertTrue(store.isAgendaItemBulkSelected(second))
+    XCTAssertTrue(store.isAgendaItemBulkSelected(third))
+    XCTAssertFalse(store.isAgendaItemBulkSelected(first))
+    XCTAssertEqual(store.selectedAgendaItemID, third.id)
+    XCTAssertEqual(store.bulkAgendaSelectionCount, 2)
+
+    store.clearAgendaBulkSelection()
+    store.selectAgendaItem(second)
+
+    XCTAssertTrue(store.handleAgendaKeyDown(keyDown(keyCode: 126, modifiers: [.shift])))
+    XCTAssertTrue(store.isAgendaItemBulkSelected(first))
+    XCTAssertTrue(store.isAgendaItemBulkSelected(second))
+    XCTAssertFalse(store.isAgendaItemBulkSelected(third))
+    XCTAssertEqual(store.selectedAgendaItemID, first.id)
+    XCTAssertEqual(store.bulkAgendaSelectionCount, 2)
+    try await waitForCondition {
+      store.selectedEntrySource?.file == note.path && !store.isLoadingEntrySource && !store.isLoadingBacklinks
+    }
+  }
+
+  @MainActor
+  func testAgendaCommandClickTogglesBulkSelectionForRow() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-agenda-command-click-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("agenda-command-click.org2")
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd EEE"
+    let today = formatter.string(from: Date())
+
+    try """
+    * TODO First task
+    SCHEDULED: <\(today)>
+
+    * TODO Second task
+    SCHEDULED: <\(today)>
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.refreshAgenda()
+
+    let second = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Second task" })
+    store.handleAgendaItemClick(second, modifiers: [.command])
+
+    XCTAssertTrue(store.isAgendaItemBulkSelected(second))
+    XCTAssertEqual(store.selectedAgendaItemID, second.id)
+    XCTAssertEqual(store.bulkAgendaSelectionCount, 1)
+
+    store.handleAgendaItemClick(second, modifiers: [.command])
+    XCTAssertFalse(store.isAgendaItemBulkSelected(second))
+    XCTAssertEqual(store.selectedAgendaItemID, second.id)
+    XCTAssertEqual(store.bulkAgendaSelectionCount, 0)
+    try await waitForCondition {
+      store.selectedEntrySource?.file == note.path && !store.isLoadingEntrySource && !store.isLoadingBacklinks
+    }
+  }
+
+  @MainActor
   func testBulkAgentHandoffMarksCheckedItemsReadyForAgent() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-agenda-bulk-agent-\(UUID().uuidString)", isDirectory: true)

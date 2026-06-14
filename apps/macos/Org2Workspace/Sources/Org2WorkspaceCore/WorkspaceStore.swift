@@ -3689,8 +3689,7 @@ public final class WorkspaceStore: ObservableObject {
       ids.insert(item.id)
     }
     bulkSelectedAgendaItemIDs = ids
-    let count = bulkAgendaSelectionCount
-    statusText = count == 1 ? "1 agenda item selected" : "\(count) agenda items selected"
+    updateAgendaBulkSelectionStatusText()
   }
 
   public func selectAllVisibleAgendaItemsForBulkAction() {
@@ -3707,6 +3706,40 @@ public final class WorkspaceStore: ObservableObject {
     guard !bulkSelectedAgendaItemIDs.isEmpty else { return }
     bulkSelectedAgendaItemIDs = []
     statusText = "Agenda selection cleared"
+  }
+
+  public func handleAgendaItemClick(_ item: AgendaItem, modifiers: NSEvent.ModifierFlags = []) {
+    if modifiers.intersection([.command]).contains(.command) {
+      toggleAgendaItemBulkSelection(item)
+      selectAgendaItem(item)
+    } else {
+      selectAgendaItem(item)
+    }
+  }
+
+  public func extendAgendaBulkSelection(by delta: Int) {
+    let items = visibleAgendaItems
+    guard !items.isEmpty else {
+      statusText = "No visible agenda items"
+      return
+    }
+
+    let currentIndex = selectedAgendaItemID.flatMap { id in items.firstIndex(where: { $0.id == id }) }
+    let nextIndex: Int
+    if let currentIndex {
+      nextIndex = max(0, min(items.count - 1, currentIndex + delta))
+    } else {
+      nextIndex = delta < 0 ? items.count - 1 : 0
+    }
+
+    var ids = bulkSelectedAgendaItemIDs
+    if let currentIndex {
+      ids.insert(items[currentIndex].id)
+    }
+    ids.insert(items[nextIndex].id)
+    bulkSelectedAgendaItemIDs = ids
+    selectAgendaItem(items[nextIndex])
+    updateAgendaBulkSelectionStatusText()
   }
 
   public func selectAgendaItem(_ item: AgendaItem) {
@@ -4337,6 +4370,16 @@ public final class WorkspaceStore: ObservableObject {
     if modifiers == [.command, .shift], keyIgnoringModifiers.lowercased() == "a" {
       clearAgendaBulkSelection()
       return true
+    }
+    if modifiers == [.shift] {
+      if event.keyCode == 125 {
+        extendAgendaBulkSelection(by: 1)
+        return true
+      }
+      if event.keyCode == 126 {
+        extendAgendaBulkSelection(by: -1)
+        return true
+      }
     }
 
     let disallowedModifiers = event.modifierFlags.intersection([.command, .option])
@@ -5330,6 +5373,11 @@ public final class WorkspaceStore: ObservableObject {
     if prunedIDs != bulkSelectedAgendaItemIDs {
       bulkSelectedAgendaItemIDs = prunedIDs
     }
+  }
+
+  private func updateAgendaBulkSelectionStatusText() {
+    let count = bulkAgendaSelectionCount
+    statusText = count == 1 ? "1 agenda item selected" : "\(count) agenda items selected"
   }
 
   private func selectedAgendaItemsForBulkMutation() -> [AgendaItem] {

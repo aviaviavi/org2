@@ -427,6 +427,7 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "o / Return", action: "Open item"),
             ShortcutHelpItem(keys: "e", action: "Edit item source"),
             ShortcutHelpItem(keys: "⌘A / ⌘⇧A", action: "Select visible / clear bulk selection"),
+            ShortcutHelpItem(keys: "⇧↑ / ⇧↓", action: "Bulk select previous / next"),
             ShortcutHelpItem(keys: "t i d x", action: "TODO / in-progress / done / canceled"),
             ShortcutHelpItem(keys: "A", action: "Assign to agent"),
             ShortcutHelpItem(keys: "p", action: "Priority mode"),
@@ -646,7 +647,7 @@ private struct AgendaListView: View {
                 .tag(item.id)
                 .contentShape(Rectangle())
                 .onTapGesture {
-                  store.selectAgendaItem(item)
+                  store.handleAgendaItemClick(item, modifiers: NSApp.currentEvent?.modifierFlags ?? [])
                 }
               }
           }
