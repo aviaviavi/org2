@@ -160,6 +160,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var detailScrollRequest: DetailScrollRequest?
   @Published public var quickOpenQuery = ""
   @Published public var selectedQuickOpenFileID: String?
+  @Published public var searchMode: WorkspaceSearchMode = .text
   @Published public var searchQuery = ""
   @Published public var searchFocusToken = 0
   @Published public var searchResults: [SearchResult] = []
@@ -2441,6 +2442,25 @@ public final class WorkspaceStore: ObservableObject {
     searchFocusToken += 1
   }
 
+  public var searchNodes: [OrgRoamNodeReference] {
+    filterSearchNodes(searchQuery, limit: 100)
+  }
+
+  public func selectSearchNode(_ node: OrgRoamNodeReference) {
+    let thread = OpenClawThread(
+      title: node.title,
+      file: node.file,
+      line: node.line,
+      zone: "node",
+      modifiedAt: nil,
+      idValue: node.idValue
+    )
+    selectedSurface = .search
+    activateDetailLocation(.openClaw(thread), mode: .entry, recordsHistory: true)
+    selectedOpenClawThreadID = nil
+    statusText = "Opened \(relativePath(node.file)):\(node.line)"
+  }
+
   public var filteredCorpusFiles: [CorpusFile] {
     filterFiles(corpusFileFilter, limit: 500)
   }
@@ -2503,6 +2523,44 @@ public final class WorkspaceStore: ObservableObject {
       }
       .prefix(limit)
       .map(\.0)
+  }
+
+  private func filterSearchNodes(_ rawQuery: String, limit: Int) -> [OrgRoamNodeReference] {
+    let nodes = orgRoamLinkResolver.nodes
+    let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty else {
+      return Array(nodes.sorted(by: compareSearchNodes).prefix(limit))
+    }
+
+    return nodes
+      .compactMap { node -> (OrgRoamNodeReference, Int)? in
+        let candidates = [
+          node.title,
+          node.aliases.joined(separator: " "),
+          node.idValue ?? "",
+          relativePath(node.file)
+        ]
+        let bestScore = candidates.compactMap { Self.fuzzyScore(query: query, candidate: $0) }.max()
+        guard let bestScore else { return nil }
+        let normalizedQuery = query.lowercased()
+        let exactBoost = ([node.title] + node.aliases)
+          .contains { $0.lowercased().contains(normalizedQuery) } ? 50 : 0
+        return (node, bestScore + exactBoost)
+      }
+      .sorted { lhs, rhs in
+        if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
+        return compareSearchNodes(lhs.0, rhs.0)
+      }
+      .prefix(limit)
+      .map(\.0)
+  }
+
+  private func compareSearchNodes(_ lhs: OrgRoamNodeReference, _ rhs: OrgRoamNodeReference) -> Bool {
+    let titleOrder = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
+    if titleOrder != .orderedSame { return titleOrder == .orderedAscending }
+    let pathOrder = relativePath(lhs.file).localizedStandardCompare(relativePath(rhs.file))
+    if pathOrder != .orderedSame { return pathOrder == .orderedAscending }
+    return lhs.line < rhs.line
   }
 
   private func selectedLocationMatches(_ location: WorkspaceLocation) -> Bool {
@@ -8023,6 +8081,43 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .meetings: "⌘4"
     case .openClaw: "⌘5"
     case .agentSpace: "⌘6"
+    }
+  }
+}
+
+public enum WorkspaceSearchMode: String, CaseIterable, Identifiable, Sendable {
+  case text
+  case nodes
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .text: "Text"
+    case .nodes: "Nodes"
+    }
+  }
+
+  public var subtitle: String {
+    switch self {
+    case .text: "Full-text corpus search"
+    case .nodes: "Node title, alias, ID, and path search"
+    }
+  }
+
+  public var placeholder: String {
+    switch self {
+    case .text: "Search all org text"
+    case .nodes: "Search nodes by title, alias, ID, or path"
+    }
+  }
+
+  public var helpText: String {
+    switch self {
+    case .text:
+      "Literal, case-insensitive search across .org and .org2 files under the selected corpus."
+    case .nodes:
+      "Live search over the local node index, including titles, aliases, IDs, and file paths."
     }
   }
 }
