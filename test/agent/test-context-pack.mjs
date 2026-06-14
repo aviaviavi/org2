@@ -59,6 +59,7 @@ See [[id:decision-1][decision note]].
 :TIMEZONE: America/Los_Angeles
 :SOURCE: s3://support/ticket-volume/
 :QUERY_ID: support.ticket_volume.v1
+:SQL: SELECT date, ticket_count FROM support.ticket_volume_daily WHERE status IN ('open', 'pending')
 :QUERY_HASH: sha256:supportquery123
 :PARAMS: {"team":"support","statuses":["open","pending"]}
 :ARTIFACT: reports/support-ticket-volume.csv
@@ -226,6 +227,7 @@ assert.match(selected, /time column: date/);
 assert.match(selected, /timezone: America\/Los_Angeles/);
 assert.match(selected, /source: s3:\/\/support\/ticket-volume\//);
 assert.match(selected, /query: support\.ticket_volume\.v1/);
+assert.match(selected, /query text: SELECT date, ticket_count FROM support\.ticket_volume_daily WHERE status IN \('open', 'pending'\)/);
 assert.match(selected, /query hash: sha256:supportquery123/);
 assert.match(selected, /params: \{"team":"support","statuses":\["open","pending"\]\}/);
 assert.match(selected, /artifact: reports\/support-ticket-volume\.csv/);
@@ -294,6 +296,7 @@ assert.match(selectedDataLink, /kind: warehouse-query/);
 assert.match(selectedDataLink, /review: reviewed/);
 assert.match(selectedDataLink, /claim freshness: fresh/);
 assert.match(selectedDataLink, /query: support\.ticket_volume\.v1/);
+assert.match(selectedDataLink, /query text: SELECT date, ticket_count FROM support\.ticket_volume_daily WHERE status IN \('open', 'pending'\)/);
 assert.match(selectedDataLink, /rows: 42/);
 
 const selectedThread = run("context", "--id", "thread-scarf-triage", "--dir", tmp, "--format", "markdown");
@@ -339,6 +342,7 @@ const supportTicketVolume = selectedJson.results[0].relatedDataLinks.find((item)
 assert.ok(supportTicketVolume);
 assert.equal(supportTicketVolume.dataLink.rowCount, 42);
 assert.equal(supportTicketVolume.dataLink.source, "s3://support/ticket-volume/");
+assert.equal(supportTicketVolume.dataLink.query, "SELECT date, ticket_count FROM support.ticket_volume_daily WHERE status IN ('open', 'pending')");
 assert.equal(supportTicketVolume.dataLink.queryHash, "sha256:supportquery123");
 assert.deepEqual(supportTicketVolume.dataLink.params, { team: "support", statuses: ["open", "pending"] });
 assert.equal(supportTicketVolume.dataLink.materialized, "table");
