@@ -3,6 +3,11 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
+public enum WorkspaceKeyboardShortcutScope: Equatable, Sendable {
+  case all
+  case globalOnly
+}
+
 private struct CanonicalDocumentCacheEntry {
   let modifiedAt: Date?
   let document: Org2CanonicalDocument
@@ -3942,9 +3947,15 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public func handleWorkspaceKeyDown(_ event: NSEvent) -> Bool {
+  public func handleWorkspaceKeyDown(
+    _ event: NSEvent,
+    scope: WorkspaceKeyboardShortcutScope = .all
+  ) -> Bool {
     if handleGlobalKeyDown(event) {
       return true
+    }
+    guard scope == .all else {
+      return false
     }
     if handleDocumentKeyDown(event) {
       return true
@@ -3985,6 +3996,12 @@ public final class WorkspaceStore: ObservableObject {
         focusSearchSurface()
       case "k", "p":
         presentQuickOpen()
+      case "r":
+        guard corpusRoot != nil else { return false }
+        Task { await refreshWorkspace() }
+      case "s":
+        guard canSaveCurrentFile else { return false }
+        Task { await saveActiveEdit() }
       case "/":
         isKeyboardShortcutsPresented = true
       case "z":
@@ -3997,6 +4014,17 @@ public final class WorkspaceStore: ObservableObject {
 
     if modifiers == [.command, .shift] {
       switch key {
+      case "m":
+        guard corpusRoot != nil, !isProcessingMeeting else { return false }
+        if isRecordingMeeting {
+          Task { await stopMeetingRecording() }
+        } else {
+          promptAndStartMeetingRecording()
+        }
+        return true
+      case "o":
+        chooseCorpus()
+        return true
       case "z":
         performRedoCommand()
         return true
