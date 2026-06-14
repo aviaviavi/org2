@@ -108,6 +108,12 @@ type AgentDataLinkMetadata = {
   refreshStatus?: string;
   refreshAfter?: string;
   nextRefresh?: string;
+  validationStatus?: string;
+  validationAt?: string;
+  validationBy?: string;
+  validationNote?: string;
+  confidence?: string;
+  validationRefs?: AgentContextAttachment[];
   eventStream?: string;
   timeline?: string;
   eventType?: string;
@@ -744,6 +750,14 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
   const refreshStatus = stringDataProperty(props, ["REFRESH_STATUS", "REFRESH_STATE", "ORG2_REFRESH_STATUS"]);
   const refreshAfter = stringDataProperty(props, ["REFRESH_AFTER", "REFRESH_TTL", "ORG2_REFRESH_AFTER"]);
   const nextRefresh = stringDataProperty(props, ["NEXT_REFRESH", "REFRESH_DUE", "ORG2_NEXT_REFRESH"]);
+  const validationStatus = stringDataProperty(props, ["VALIDATION_STATUS", "VALIDATION_STATE", "ORG2_VALIDATION_STATUS"]);
+  const validationAt = stringDataProperty(props, ["VALIDATION_AT", "VALIDATED_AT", "ORG2_VALIDATION_AT"]);
+  const validationBy = stringDataProperty(props, ["VALIDATION_BY", "VALIDATED_BY", "ORG2_VALIDATION_BY"]);
+  const validationNote = stringDataProperty(props, ["VALIDATION_NOTE", "VALIDATION_NOTES", "ORG2_VALIDATION_NOTE"]);
+  const confidence = stringDataProperty(props, ["CONFIDENCE", "CONFIDENCE_SCORE", "ORG2_CONFIDENCE"]);
+  const validationRefs = resolveAttachmentTargets(corpus, mergeAttachments([
+    ...parseContextAttachmentList(stringDataProperty(props, ["VALIDATION_REF", "VALIDATION_REFS", "ORG2_VALIDATION_REFS"])),
+  ]));
   const eventStream = stringDataProperty(props, ["EVENT_STREAM", "STREAM", "STREAM_ID"]);
   const timeline = stringDataProperty(props, ["TIMELINE", "TIMELINE_ID"]);
   const eventType = stringDataProperty(props, ["EVENT_TYPE", "EVENT_KIND"]);
@@ -785,6 +799,12 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
     ...(refreshStatus ? { refreshStatus } : {}),
     ...(refreshAfter ? { refreshAfter } : {}),
     ...(nextRefresh ? { nextRefresh } : {}),
+    ...(validationStatus ? { validationStatus } : {}),
+    ...(validationAt ? { validationAt } : {}),
+    ...(validationBy ? { validationBy } : {}),
+    ...(validationNote ? { validationNote } : {}),
+    ...(confidence ? { confidence } : {}),
+    ...(validationRefs.length ? { validationRefs } : {}),
     ...(eventStream ? { eventStream } : {}),
     ...(timeline ? { timeline } : {}),
     ...(eventType ? { eventType } : {}),
@@ -1232,6 +1252,12 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       item.dataLink.refreshStatus ? `refresh status: ${item.dataLink.refreshStatus}` : "",
       item.dataLink.refreshAfter ? `refresh after: ${item.dataLink.refreshAfter}` : "",
       item.dataLink.nextRefresh ? `next refresh: ${item.dataLink.nextRefresh}` : "",
+      item.dataLink.validationStatus ? `validation: ${item.dataLink.validationStatus}` : "",
+      item.dataLink.validationAt ? `validated at: ${item.dataLink.validationAt}` : "",
+      item.dataLink.validationBy ? `validated by: ${item.dataLink.validationBy}` : "",
+      item.dataLink.confidence ? `confidence: ${item.dataLink.confidence}` : "",
+      item.dataLink.validationNote ? `validation note: ${item.dataLink.validationNote}` : "",
+      item.dataLink.validationRefs?.length ? `validation refs: ${item.dataLink.validationRefs.map((ref) => ref.ref).join(", ")}` : "",
       item.dataLink.eventStream ? `stream: ${item.dataLink.eventStream}` : "",
       item.dataLink.timeline ? `timeline: ${item.dataLink.timeline}` : "",
       item.dataLink.eventType ? `event: ${item.dataLink.eventType}` : "",
