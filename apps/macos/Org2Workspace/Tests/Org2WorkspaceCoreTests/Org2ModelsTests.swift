@@ -2272,6 +2272,92 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testBulkAgendaDoneMarksCheckedItems() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-agenda-bulk-done-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("agenda-bulk.org2")
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd EEE"
+    let today = formatter.string(from: Date())
+
+    try """
+    * TODO First task
+    SCHEDULED: <\(today)>
+
+    * TODO Second task
+    SCHEDULED: <\(today)>
+
+    * TODO Third task
+    SCHEDULED: <\(today)>
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.refreshAgenda()
+
+    XCTAssertTrue(store.handleAgendaKeyDown(keyDown(characters: "a", keyCode: 0, modifiers: [.command])))
+    XCTAssertEqual(store.bulkAgendaSelectionCount, 3)
+    XCTAssertTrue(store.handleAgendaKeyDown(keyDown(characters: "a", keyCode: 0, modifiers: [.command, .shift])))
+    XCTAssertEqual(store.bulkAgendaSelectionCount, 0)
+
+    let first = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "First task" })
+    let second = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Second task" })
+    store.toggleAgendaItemBulkSelection(first)
+    store.toggleAgendaItemBulkSelection(second)
+    XCTAssertEqual(store.bulkAgendaSelectionCount, 2)
+
+    await store.applyTodoShortcut(.done)
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* DONE First task"))
+    XCTAssertTrue(updated.contains("* DONE Second task"))
+    XCTAssertTrue(updated.contains("* TODO Third task"))
+    XCTAssertEqual(store.bulkAgendaSelectionCount, 0)
+  }
+
+  @MainActor
+  func testBulkAgentHandoffMarksCheckedItemsReadyForAgent() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-agenda-bulk-agent-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("agenda-bulk-agent.org2")
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd EEE"
+    let today = formatter.string(from: Date())
+
+    try """
+    * TODO First agent task
+    SCHEDULED: <\(today)>
+    Body
+
+    * TODO Second agent task
+    SCHEDULED: <\(today)>
+    Body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.refreshAgenda()
+
+    let first = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "First agent task" })
+    let second = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "Second agent task" })
+    store.toggleAgendaItemBulkSelection(first)
+    store.toggleAgendaItemBulkSelection(second)
+
+    await store.applyAgentHandoffShortcut()
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* DONE First agent task"))
+    XCTAssertTrue(updated.contains("* DONE Second agent task"))
+    XCTAssertEqual(updated.components(separatedBy: ":STATUS: ready-for-agent").count - 1, 2)
+    XCTAssertEqual(updated.components(separatedBy: ":ORG2_AGENT_HANDOFF_AT: <").count - 1, 2)
+    XCTAssertEqual(store.bulkAgendaSelectionCount, 0)
+  }
+
+  @MainActor
   func testOpenDailyNoteCreatesAndSelectsConfiguredDailyFile() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-daily-open-\(UUID().uuidString)", isDirectory: true)
