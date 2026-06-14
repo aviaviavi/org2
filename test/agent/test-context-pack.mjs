@@ -63,6 +63,12 @@ See [[id:decision-1][decision note]].
 :VALIDATION_NOTE: Compared against Zendesk dashboard totals.
 :CONFIDENCE: medium
 :VALIDATION_REFS: id:decision-1
+:DATA_OWNER: Support Ops
+:DATA_STEWARD: Casey
+:SENSITIVITY: customer-private
+:VISIBILITY: internal
+:ACCESS_POLICY: support-approved
+:RETENTION: 30d
 :ORG2_PROVENANCE: query:support.ticket_volume.v1, artifact:reports/support-ticket-volume.csv
 :ORG2_SOURCE_HASHES: query:support.ticket_volume.v1=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 :ORG2_REVIEW_STATUS: reviewed
@@ -188,6 +194,12 @@ assert.match(selected, /validated by: Casey/);
 assert.match(selected, /confidence: medium/);
 assert.match(selected, /validation note: Compared against Zendesk dashboard totals\./);
 assert.match(selected, /validation refs: id:decision-1/);
+assert.match(selected, /data owner: Support Ops/);
+assert.match(selected, /data steward: Casey/);
+assert.match(selected, /sensitivity: customer-private/);
+assert.match(selected, /visibility: internal/);
+assert.match(selected, /access: support-approved/);
+assert.match(selected, /retention: 30d/);
 assert.match(selected, /provenance: artifact:reports\/support-ticket-volume\.csv, query:support\.ticket_volume\.v1/);
 assert.match(selected, /source hashes: query:support\.ticket_volume\.v1=sha256:aaaaaaaaaaaa/);
 assert.match(selected, /Data catalog: support satisfaction score/);
@@ -276,6 +288,12 @@ assert.equal(supportTicketVolume.dataLink.validationBy, "Casey");
 assert.equal(supportTicketVolume.dataLink.validationNote, "Compared against Zendesk dashboard totals.");
 assert.equal(supportTicketVolume.dataLink.confidence, "medium");
 assert.ok(supportTicketVolume.dataLink.validationRefs.some((ref) => ref.ref === "id:decision-1" && ref.target.id === "decision-1"));
+assert.equal(supportTicketVolume.dataLink.dataOwner, "Support Ops");
+assert.equal(supportTicketVolume.dataLink.dataSteward, "Casey");
+assert.equal(supportTicketVolume.dataLink.sensitivity, "customer-private");
+assert.equal(supportTicketVolume.dataLink.visibility, "internal");
+assert.equal(supportTicketVolume.dataLink.accessPolicy, "support-approved");
+assert.equal(supportTicketVolume.dataLink.retention, "30d");
 assert.ok(supportTicketVolume.dataLink.provenance.some((ref) => ref.ref === "query:support.ticket_volume.v1"));
 assert.equal(supportTicketVolume.dataLink.sourceHashes[0].sha256, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 assert.equal(supportTicketVolume.claimState.reviewStatus, "reviewed");
