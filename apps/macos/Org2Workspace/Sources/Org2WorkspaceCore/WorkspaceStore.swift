@@ -522,6 +522,7 @@ public final class WorkspaceStore: ObservableObject {
       let payload: SearchPayload = try await cli.runJSON([
         "search", query,
         "--dir", corpusRoot.path,
+        "--recursive",
         "--limit", "50",
         "--context", "1",
         "--format", "json"

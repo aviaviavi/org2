@@ -61,7 +61,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <ul>
 <li><p><strong>Agenda</strong> :: review scheduled/deadline work across the selected corpus, filter items, switch agenda modes, mutate TODO/planning state, and open the selected item in the detail pane.</p></li>
 <li><p><strong>Files</strong> :: scan <code>.org2</code>, <code>.org</code>, and Markdown files, filter them, and quick-open a file with keyboard shortcuts.</p></li>
-<li><p><strong>Search</strong> :: run corpus search through the shared Org2 tooling and open results with source context.</p></li>
+<li><p><strong>Search</strong> :: run literal, case-insensitive full-text search across <code>.org2</code> and <code>.org</code> files under the selected corpus, then open results with source context.</p></li>
 <li><p><strong>Meetings</strong> :: record or import local audio, create meeting/transcript artifacts under the corpus, and keep transcription provenance in Org2 files.</p></li>
 <li><p><strong>OpenClaw Chat</strong> :: send selected workspace context to a configured OpenClaw endpoint while keeping the conversation state local to the app.</p></li>
 <li><p><strong>Agent Space</strong> :: browse durable OpenClaw/agent thread records and reopen their source context.</p></li>
@@ -102,8 +102,9 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>The app includes configuration and run actions for GPG-backed <code>:crypt:</code> subtrees. It can encrypt plaintext <code>:crypt:</code> subtrees on save, decrypt selected encrypted subtrees for review, manage recipient lists, and use the macOS keychain for the optional passphrase workflow.</p>
 </section>
 <section class="org2-headline level-1">
-<h1 id="knowledge-creation">Knowledge creation</h1>
-<p>The Search surface includes a <code>New Node</code> action for creating an ID-backed Org2 note in the configured roam/index directory. This belongs with search and backlinks because node creation is part of navigating and extending the knowledge graph, not a separate planning surface.</p>
+<h1 id="search-and-knowledge-creation">Search and knowledge creation</h1>
+<p>The Search surface calls <code>org2 search</code> with the selected corpus root, recursive scanning, a 50-result limit, one line of context, and JSON output. It is a literal text lookup, not semantic/vector search: it matches case-insensitive text in normal <code>.org2</code> and <code>.org</code> files and returns cited file/line snippets with nearest-heading metadata. Archive files and directories stay excluded.</p>
+<p>The same surface includes a <code>New Node</code> action for creating an ID-backed Org2 note in the configured roam/index directory. This belongs with search and backlinks because node creation is part of navigating and extending the knowledge graph, not a separate planning surface.</p>
 <p>The next knowledge-browser work should make this more useful by adding graph-neighborhood views, link insertion, backlink-driven navigation, and broken-link repair.</p>
 </section>
 <section class="org2-headline level-1">

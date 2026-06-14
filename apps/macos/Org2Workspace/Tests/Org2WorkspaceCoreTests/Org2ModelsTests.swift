@@ -1978,6 +1978,32 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testWorkspaceSearchScansCorpusRecursively() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-recursive-search-\(UUID().uuidString)", isDirectory: true)
+    let nested = root.appendingPathComponent("projects", isDirectory: true)
+    try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+    let note = nested.appendingPathComponent("launch.org2")
+    try """
+    #+TITLE: Launch
+
+    * TODO Launch checklist
+    The recursive workspace search should find this nested full text phrase.
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.searchQuery = "nested full text"
+
+    await store.runSearch()
+
+    XCTAssertEqual(store.searchResults.count, 1)
+    XCTAssertEqual(store.searchResults.first?.file, note.path)
+    XCTAssertEqual(store.searchResults.first?.heading, "Launch checklist")
+    XCTAssertEqual(store.selectedSurface, .search)
+  }
+
+  @MainActor
   func testCorpusFileBrowserScansFiltersAndOpensFiles() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-files-\(UUID().uuidString)", isDirectory: true)
