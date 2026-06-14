@@ -378,6 +378,10 @@ External data catalog entry for [[id:report-fetches][package fetch report]].
 :OCCURRED_AT: 2026-06-12T11:45:00-07:00
 :CAPTURED_AT: 2026-06-12T11:46:10-07:00
 :SOURCE_CURSOR: ch:customer_events:92017
+:STREAM_POSITION: 92017
+:PARTITION_KEY: package:firebolt/foo
+:CORRELATION_ID: sync-run-20260612
+:CAUSATION_ID: ingest-batch-17
 :CHANGE_ID: evt_123
 :CHANGE_HASH: sha256:abc123
 :ORG2_PROVENANCE: run:ingest-package-events, url:https://warehouse.example/events/evt_123
@@ -488,6 +492,10 @@ assert.equal(eventStream.results[0].dataLink.actor, "ingest:scarf");
 assert.equal(eventStream.results[0].dataLink.occurredAt, "2026-06-12T11:45:00-07:00");
 assert.equal(eventStream.results[0].dataLink.capturedAt, "2026-06-12T11:46:10-07:00");
 assert.equal(eventStream.results[0].dataLink.sourceCursor, "ch:customer_events:92017");
+assert.equal(eventStream.results[0].dataLink.streamPosition, "92017");
+assert.equal(eventStream.results[0].dataLink.partitionKey, "package:firebolt/foo");
+assert.equal(eventStream.results[0].dataLink.correlationId, "sync-run-20260612");
+assert.equal(eventStream.results[0].dataLink.causationId, "ingest-batch-17");
 assert.equal(eventStream.results[0].dataLink.changeId, "evt_123");
 assert.equal(eventStream.results[0].dataLink.changeHash, "sha256:abc123");
 assert.ok(eventStream.results[0].dataLink.provenance.some((ref) => ref.ref === "run:ingest-package-events"));
@@ -546,4 +554,8 @@ assert.equal(externalEventStream.kind, "event-stream");
 assert.equal(externalEventStream.dataLink.eventStream, "scarf.package_customer_events");
 assert.equal(externalEventStream.dataLink.eventType, "package_fetch_spike");
 assert.equal(externalEventStream.dataLink.occurredAt, "2026-06-12T11:45:00-07:00");
+assert.equal(externalEventStream.dataLink.streamPosition, "92017");
+assert.equal(externalEventStream.dataLink.partitionKey, "package:firebolt/foo");
+assert.equal(externalEventStream.dataLink.correlationId, "sync-run-20260612");
+assert.equal(externalEventStream.dataLink.causationId, "ingest-batch-17");
 assert.ok(externalEventStream.matchingAttachments.some((attachment) => attachment.ref === "id:report-fetches" && attachment.target.id === "report-fetches"));

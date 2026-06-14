@@ -265,10 +265,14 @@ npm run org2 -- lint --dir ~/notes --recursive --format json &gt; views/corpus-h
 :OCCURRED_AT: 2026-05-15T09:30:00-07:00
 :CAPTURED_AT: 2026-05-15T09:31:00-07:00
 :SOURCE_CURSOR: linear:SUP-42:9
+:STREAM_POSITION: 9
+:PARTITION_KEY: ticket:SUP-42
+:CORRELATION_ID: support-sync-42
+:CAUSATION_ID: webhook-delivery-42
 :CHANGE_ID: change-42
 :CONTEXT: id:support-followup-1
 :END:</code></pre>
-<p><code>org2 agent fetch</code> exposes event/timeline metadata as <code>eventStream</code>, <code>timeline</code>, <code>eventType</code>, <code>entity</code>, <code>actor</code>, <code>occurredAt</code>, <code>capturedAt</code>, <code>sourceCursor</code>, <code>changeId</code>, and <code>changeHash</code> when present. This lets Workspace and OpenClaw clients answer &quot;what changed and why?&quot; with cited pointers into a durable event ledger while keeping high-volume event bodies in the source system.</p>
+<p><code>org2 agent fetch</code> exposes event/timeline metadata as <code>eventStream</code>, <code>timeline</code>, <code>eventType</code>, <code>entity</code>, <code>actor</code>, <code>occurredAt</code>, <code>capturedAt</code>, <code>sourceCursor</code>, <code>streamPosition</code>, <code>partitionKey</code>, <code>correlationId</code>, <code>causationId</code>, <code>changeId</code>, and <code>changeHash</code> when present. This lets Workspace and OpenClaw clients answer &quot;what changed and why?&quot;, replay or order durable activity, and group related changes with cited pointers into an event ledger while keeping high-volume event bodies in the source system.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="what-to-save-back">What to save back</h1>

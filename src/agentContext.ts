@@ -149,6 +149,10 @@ type AgentDataLinkMetadata = {
   occurredAt?: string;
   capturedAt?: string;
   sourceCursor?: string;
+  streamPosition?: string;
+  partitionKey?: string;
+  correlationId?: string;
+  causationId?: string;
   changeId?: string;
   changeHash?: string;
   queryId?: string;
@@ -874,6 +878,10 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
   const occurredAt = stringDataProperty(props, ["OCCURRED_AT", "EVENT_AT", "OBSERVED_AT"]);
   const capturedAt = stringDataProperty(props, ["CAPTURED_AT", "INGESTED_AT", "CREATED_AT"]);
   const sourceCursor = stringDataProperty(props, ["SOURCE_CURSOR", "CURSOR", "OFFSET"]);
+  const streamPosition = stringDataProperty(props, ["STREAM_POSITION", "EVENT_SEQUENCE", "SEQUENCE", "SEQ"]);
+  const partitionKey = stringDataProperty(props, ["PARTITION_KEY", "EVENT_PARTITION", "PARTITION"]);
+  const correlationId = stringDataProperty(props, ["CORRELATION_ID", "TRACE_ID"]);
+  const causationId = stringDataProperty(props, ["CAUSATION_ID", "CAUSE_ID", "PARENT_EVENT_ID"]);
   const changeId = stringDataProperty(props, ["CHANGE_ID", "EVENT_ID", "SOURCE_EVENT_ID"]);
   const changeHash = stringDataProperty(props, ["CHANGE_HASH", "EVENT_HASH"]);
   const queryId = stringDataProperty(props, ["QUERY_ID", "SQL_ID", "VIEW_ID"]);
@@ -956,6 +964,10 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
     ...(occurredAt ? { occurredAt } : {}),
     ...(capturedAt ? { capturedAt } : {}),
     ...(sourceCursor ? { sourceCursor } : {}),
+    ...(streamPosition ? { streamPosition } : {}),
+    ...(partitionKey ? { partitionKey } : {}),
+    ...(correlationId ? { correlationId } : {}),
+    ...(causationId ? { causationId } : {}),
     ...(changeId ? { changeId } : {}),
     ...(changeHash ? { changeHash } : {}),
     ...(queryId ? { queryId } : {}),
@@ -1444,8 +1456,12 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       item.dataLink.actor ? `actor: ${item.dataLink.actor}` : "",
       item.dataLink.occurredAt ? `occurred: ${item.dataLink.occurredAt}` : "",
       item.dataLink.capturedAt ? `captured: ${item.dataLink.capturedAt}` : "",
-      item.dataLink.changeId ? `change: ${item.dataLink.changeId}` : "",
       item.dataLink.sourceCursor ? `cursor: ${item.dataLink.sourceCursor}` : "",
+      item.dataLink.streamPosition ? `position: ${item.dataLink.streamPosition}` : "",
+      item.dataLink.partitionKey ? `partition: ${item.dataLink.partitionKey}` : "",
+      item.dataLink.correlationId ? `correlation: ${item.dataLink.correlationId}` : "",
+      item.dataLink.causationId ? `causation: ${item.dataLink.causationId}` : "",
+      item.dataLink.changeId ? `change: ${item.dataLink.changeId}` : "",
       item.dataLink.changeHash ? `hash: ${item.dataLink.changeHash}` : "",
       item.dataLink.source ? `source: ${item.dataLink.source}` : "",
       item.dataLink.path ? `path: ${item.dataLink.path}` : "",

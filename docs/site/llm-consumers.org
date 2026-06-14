@@ -246,12 +246,16 @@ Event-backed records use the same =dataLink= envelope, but emphasize timeline pr
 :OCCURRED_AT: 2026-05-15T09:30:00-07:00
 :CAPTURED_AT: 2026-05-15T09:31:00-07:00
 :SOURCE_CURSOR: linear:SUP-42:9
+:STREAM_POSITION: 9
+:PARTITION_KEY: ticket:SUP-42
+:CORRELATION_ID: support-sync-42
+:CAUSATION_ID: webhook-delivery-42
 :CHANGE_ID: change-42
 :CONTEXT: id:support-followup-1
 :END:
 #+end_src
 
-=org2 agent fetch= exposes event/timeline metadata as =eventStream=, =timeline=, =eventType=, =entity=, =actor=, =occurredAt=, =capturedAt=, =sourceCursor=, =changeId=, and =changeHash= when present. This lets Workspace and OpenClaw clients answer "what changed and why?" with cited pointers into a durable event ledger while keeping high-volume event bodies in the source system.
+=org2 agent fetch= exposes event/timeline metadata as =eventStream=, =timeline=, =eventType=, =entity=, =actor=, =occurredAt=, =capturedAt=, =sourceCursor=, =streamPosition=, =partitionKey=, =correlationId=, =causationId=, =changeId=, and =changeHash= when present. This lets Workspace and OpenClaw clients answer "what changed and why?", replay or order durable activity, and group related changes with cited pointers into an event ledger while keeping high-volume event bodies in the source system.
 
 * What to save back
 

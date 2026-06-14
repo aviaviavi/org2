@@ -162,6 +162,10 @@ External catalog entry for [[id:scarf-support-1][Scarf support triage]].
 :OCCURRED_AT: 2026-05-15T09:30:00-07:00
 :CAPTURED_AT: 2026-05-15T09:31:00-07:00
 :SOURCE_CURSOR: linear:SUP-42:9
+:STREAM_POSITION: 9
+:PARTITION_KEY: ticket:SUP-42
+:CORRELATION_ID: support-sync-42
+:CAUSATION_ID: webhook-delivery-42
 :CHANGE_ID: change-42
 :ORG2_PROVENANCE: run:linear-support-sync, url:https://linear.example/SUP-42
 :ORG2_SOURCE_HASHES: artifact:reports/support-state-changes.json=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -286,6 +290,12 @@ assert.match(selected, /timeline: support\.ticket\.lifecycle/);
 assert.match(selected, /event: status_changed/);
 assert.match(selected, /entity: ticket:SUP-42/);
 assert.match(selected, /occurred: 2026-05-15T09:30:00-07:00/);
+assert.match(selected, /captured: 2026-05-15T09:31:00-07:00/);
+assert.match(selected, /cursor: linear:SUP-42:9/);
+assert.match(selected, /position: 9/);
+assert.match(selected, /partition: ticket:SUP-42/);
+assert.match(selected, /correlation: support-sync-42/);
+assert.match(selected, /causation: webhook-delivery-42/);
 assert.match(selected, /provenance: run:linear-support-sync, url:https:\/\/linear\.example\/SUP-42/);
 assert.match(selected, /Matching attachments: id:scarf-support-1/);
 
@@ -409,3 +419,7 @@ assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "s
 assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-satisfaction-score" && item.matchingAttachments.some((attachment) => attachment.ref === "id:scarf-support-1")));
 assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-state-changes" && item.dataLink.timeline === "support.ticket.lifecycle"));
 assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-state-changes" && item.dataLink.changeId === "change-42"));
+assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-state-changes" && item.dataLink.streamPosition === "9"));
+assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-state-changes" && item.dataLink.partitionKey === "ticket:SUP-42"));
+assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-state-changes" && item.dataLink.correlationId === "support-sync-42"));
+assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-state-changes" && item.dataLink.causationId === "webhook-delivery-42"));
