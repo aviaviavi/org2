@@ -189,6 +189,8 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var isTranscribingOpenClawVoiceNote = false
   @Published public var openClawVoiceAverageLevel = 0.0
   @Published public var openClawVoicePeakLevel = 0.0
+  @Published public var openClawVoiceTranscriptionProgress = 0.0
+  @Published public var openClawVoiceTranscriptionElapsedText = ""
   @Published public var openClawVoiceStatusText = "Dictate with local transcription."
   @Published public var isOrgCryptConfigurationPresented = false
   @Published public var orgCryptEncryptOnSave = true {
@@ -313,6 +315,9 @@ public final class WorkspaceStore: ObservableObject {
   private var activeOpenClawVoiceNoteURL: URL?
   private var meetingMeterTask: Task<Void, Never>?
   private var openClawVoiceMeterTask: Task<Void, Never>?
+  private var openClawVoiceTranscriptionProgressTask: Task<Void, Never>?
+  private var openClawVoiceTranscriptionStartedAt: Date?
+  private var openClawVoiceTranscriptionEstimatedDuration: TimeInterval = 8
   private var pendingG = false
   private var orgRoamLinkResolverGeneration = 0
   private var entrySourceLoadGeneration = 0
@@ -3184,12 +3189,14 @@ public final class WorkspaceStore: ObservableObject {
       isTranscribingOpenClawVoiceNote = true
       openClawVoiceStatusText = "Transcribing OpenClaw dictation locally..."
       openClawStatusText = openClawVoiceStatusText
+      startOpenClawVoiceTranscriptionProgress(audioDuration: duration)
       defer {
         try? FileManager.default.removeItem(at: audioURL)
       }
 
       let transcript = await transcribeAudioForOpenClawVoiceNote(audioURL)
       isTranscribingOpenClawVoiceNote = false
+      stopOpenClawVoiceTranscriptionProgress()
       let dictatedText = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard transcript.status == .complete, !dictatedText.isEmpty else {
         let suffix = transcript.errorMessage.map { ": \($0)" } ?? ""
@@ -3207,6 +3214,7 @@ public final class WorkspaceStore: ObservableObject {
       isRecordingOpenClawVoiceNote = false
       isTranscribingOpenClawVoiceNote = false
       stopOpenClawVoiceMetering()
+      stopOpenClawVoiceTranscriptionProgress()
       try? FileManager.default.removeItem(at: audioURL)
       errorText = error.localizedDescription
       openClawVoiceStatusText = "Dictation stop failed: \(error.localizedDescription)"
@@ -6350,6 +6358,65 @@ public final class WorkspaceStore: ObservableObject {
     let snapshot = openClawVoiceRecorder.inputMeterSnapshot
     openClawVoiceAverageLevel = snapshot.averageLevel
     openClawVoicePeakLevel = snapshot.peakLevel
+  }
+
+  private func startOpenClawVoiceTranscriptionProgress(audioDuration: TimeInterval) {
+    openClawVoiceTranscriptionProgressTask?.cancel()
+    openClawVoiceTranscriptionStartedAt = Date()
+    openClawVoiceTranscriptionEstimatedDuration = Self.estimatedOpenClawVoiceTranscriptionDuration(for: audioDuration)
+    updateOpenClawVoiceTranscriptionProgress()
+    openClawVoiceTranscriptionProgressTask = Task { [weak self] in
+      while !Task.isCancelled {
+        let shouldContinue = await MainActor.run { () -> Bool in
+          guard let self, self.isTranscribingOpenClawVoiceNote else { return false }
+          self.updateOpenClawVoiceTranscriptionProgress()
+          return true
+        }
+        guard shouldContinue else { return }
+        try? await Task.sleep(nanoseconds: 200_000_000)
+      }
+    }
+  }
+
+  private func stopOpenClawVoiceTranscriptionProgress() {
+    openClawVoiceTranscriptionProgressTask?.cancel()
+    openClawVoiceTranscriptionProgressTask = nil
+    openClawVoiceTranscriptionStartedAt = nil
+    openClawVoiceTranscriptionEstimatedDuration = 8
+    openClawVoiceTranscriptionProgress = 0
+    openClawVoiceTranscriptionElapsedText = ""
+  }
+
+  private func updateOpenClawVoiceTranscriptionProgress() {
+    let elapsed = openClawVoiceTranscriptionStartedAt.map { Date().timeIntervalSince($0) } ?? 0
+    let progress = Self.openClawVoiceTranscriptionProgress(
+      elapsed: elapsed,
+      estimatedDuration: openClawVoiceTranscriptionEstimatedDuration
+    )
+    openClawVoiceTranscriptionProgress = progress
+    openClawVoiceTranscriptionElapsedText = Self.openClawVoiceTranscriptionElapsedText(elapsed: elapsed)
+    openClawVoiceStatusText = "Transcribing OpenClaw dictation locally... \(Int(progress * 100))%"
+    openClawStatusText = openClawVoiceStatusText
+  }
+
+  nonisolated static func estimatedOpenClawVoiceTranscriptionDuration(for audioDuration: TimeInterval) -> TimeInterval {
+    min(180, max(8, audioDuration * 4))
+  }
+
+  nonisolated static func openClawVoiceTranscriptionProgress(
+    elapsed: TimeInterval,
+    estimatedDuration: TimeInterval
+  ) -> Double {
+    guard estimatedDuration > 0 else { return 0 }
+    return min(0.95, max(0.02, elapsed / estimatedDuration))
+  }
+
+  nonisolated static func openClawVoiceTranscriptionElapsedText(elapsed: TimeInterval) -> String {
+    let seconds = max(0, Int(elapsed.rounded(.down)))
+    if seconds < 60 {
+      return "\(seconds)s"
+    }
+    return "\(seconds / 60)m \(seconds % 60)s"
   }
 
   private func transcribeRecordedMeetingAudio(
