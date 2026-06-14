@@ -2031,8 +2031,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "6", keyCode: 22, modifiers: [.command])))
     XCTAssertEqual(store.selectedSurface, .agentSpace)
 
-    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "7", keyCode: 26, modifiers: [.command, .shift])))
-    XCTAssertEqual(store.selectedSurface, .workstreams)
+    XCTAssertFalse(store.handleGlobalKeyDown(keyDown(characters: "7", keyCode: 26, modifiers: [.command, .shift])))
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "0", keyCode: 29, modifiers: [.command])))
     XCTAssertTrue(store.isOpenClawAssistantPresented)
@@ -2069,20 +2068,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(WorkspaceSurface.meetings.commandShortcutTitle, "⌘4")
     XCTAssertEqual(WorkspaceSurface.openClaw.commandShortcutTitle, "⌘5")
     XCTAssertEqual(WorkspaceSurface.agentSpace.commandShortcutTitle, "⌘6")
-    XCTAssertEqual(WorkspaceSurface.workstreams.commandShortcutTitle, "⌘⇧7")
-  }
-
-  func testWorkspaceWorkstreamsExposeParallelSlices() {
-    XCTAssertEqual(WorkspaceWorkstream.allCases, [
-      .captureTriage,
-      .meetingActions,
-      .knowledgeBrowser,
-      .packagingFirstRun
-    ])
-    XCTAssertEqual(WorkspaceWorkstream.captureTriage.nextActionTitle, "Start Capture Loop")
-    XCTAssertEqual(WorkspaceWorkstream.meetingActions.nextActionTitle, "Start Meeting Loop")
-    XCTAssertEqual(WorkspaceWorkstream.knowledgeBrowser.nextActionTitle, "Open Link Context")
-    XCTAssertEqual(WorkspaceWorkstream.packagingFirstRun.nextActionTitle, "Run Health Check")
+    XCTAssertEqual(WorkspaceSurface.sidebarCases, WorkspaceSurface.allCases)
   }
 
   func testWorkspaceHealthChecksReportRepoBuildAndCorpusReadiness() throws {
@@ -2102,7 +2088,6 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(checks.first { $0.id == "node-build" }?.status, .ready)
     XCTAssertEqual(checks.first { $0.id == "corpus-root" }?.status, .ready)
     XCTAssertEqual(checks.first { $0.id == "corpus-config" }?.status, .warning)
-    XCTAssertEqual(checks.first { $0.id == "loop-directory" }?.status, .warning)
     XCTAssertNotNil(checks.first { $0.id == "node-modules" }?.remediationTitle)
   }
 
@@ -5101,62 +5086,6 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testStartCaptureLoopCreatesAutonomousLoopArtifact() async throws {
-    let root = FileManager.default.temporaryDirectory
-      .appendingPathComponent("org2-workspace-capture-loop-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-
-    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
-    store.setCorpusRoot(root)
-    await store.startCaptureLoop()
-
-    let loop = root
-      .appendingPathComponent("loops", isDirectory: true)
-      .appendingPathComponent("capture-loop.org2")
-    let text = try String(contentsOf: loop, encoding: .utf8)
-    XCTAssertTrue(text.contains(":ORG2_WORKSTREAM: captureTriage"))
-    XCTAssertTrue(text.contains(":ORG2_LOOP_STATUS: active"))
-    XCTAssertTrue(text.contains("promotes durable knowledge"))
-
-    await store.refreshLoopArtifacts()
-    XCTAssertEqual(store.loopArtifacts.first?.workstream, .captureTriage)
-  }
-
-  @MainActor
-  func testStartMeetingActionLoopReferencesSelectedMeetingArtifact() async throws {
-    let root = FileManager.default.temporaryDirectory
-      .appendingPathComponent("org2-workspace-meeting-loop-\(UUID().uuidString)", isDirectory: true)
-    let meetings = root.appendingPathComponent("meetings", isDirectory: true)
-    try FileManager.default.createDirectory(at: meetings, withIntermediateDirectories: true)
-    let meeting = meetings.appendingPathComponent("scarf-sync.org2")
-    try """
-    #+TITLE: Meeting: Scarf sync
-    #+ORG2_KIND: meeting
-    :PROPERTIES:
-    :ID: 11111111-1111-1111-1111-111111111111
-    :kind: meeting
-    :transcript_artifact: meetings/scarf-sync.transcript.org2
-    :END:
-
-    Notes
-    """.write(to: meeting, atomically: true, encoding: .utf8)
-
-    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
-    store.setCorpusRoot(root)
-    await store.refreshMeetings()
-    store.selectedMeetingID = store.meetings.first?.id
-    await store.startMeetingActionLoopForSelectedMeeting()
-
-    let loop = root
-      .appendingPathComponent("loops", isDirectory: true)
-      .appendingPathComponent("meeting-scarf-sync-loop.org2")
-    let text = try String(contentsOf: loop, encoding: .utf8)
-    XCTAssertTrue(text.contains(":ORG2_WORKSTREAM: meetingActions"))
-    XCTAssertTrue(text.contains(":ORG2_MEETING_FILE: meetings/scarf-sync.org2"))
-    XCTAssertTrue(text.contains("Extract decisions with source citations"))
-  }
-
-  @MainActor
   func testCreateKnowledgeNodeUsesConfiguredIndexDir() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-knowledge-node-\(UUID().uuidString)", isDirectory: true)
@@ -5166,14 +5095,13 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
-    await store.createKnowledgeNode(title: "Autonomous Loops")
+    await store.createKnowledgeNode(title: "Project Notes")
 
     let node = root
       .appendingPathComponent("knowledge", isDirectory: true)
-      .appendingPathComponent("autonomous-loops.org2")
+      .appendingPathComponent("project-notes.org2")
     let text = try String(contentsOf: node, encoding: .utf8)
-    XCTAssertTrue(text.contains("#+TITLE: Autonomous Loops"))
-    XCTAssertTrue(text.contains(":ORG2_WORKSTREAM: knowledgeBrowser"))
+    XCTAssertTrue(text.contains("#+TITLE: Project Notes"))
     XCTAssertTrue(text.contains(":ID: "))
   }
 

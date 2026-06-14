@@ -24,8 +24,6 @@ public struct ContentView: View {
         OpenClawChatView()
       case .agentSpace:
         OpenClawThreadsView()
-      case .workstreams:
-        WorkstreamsView()
       }
     } detail: {
       WorkspaceDetailArea()
@@ -101,7 +99,7 @@ private struct SidebarView: View {
   var body: some View {
     List(selection: $store.selectedSurface) {
       Section("Workspace") {
-        ForEach(WorkspaceSurface.allCases) { surface in
+        ForEach(WorkspaceSurface.sidebarCases) { surface in
           HStack(spacing: 8) {
             Label(surface.title, systemImage: surface.systemImage)
               .font(.callout.weight(.medium))
@@ -408,7 +406,6 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "⌘4", action: "Meetings"),
             ShortcutHelpItem(keys: "⌘5", action: "OpenClaw Chat"),
             ShortcutHelpItem(keys: "⌘6", action: "Agent Space"),
-            ShortcutHelpItem(keys: "⌘⇧7", action: "Workstreams"),
             ShortcutHelpItem(keys: "⌘P / ⌘K", action: "Quick Open"),
             ShortcutHelpItem(keys: "⌘0", action: "Toggle OpenClaw side panel"),
             ShortcutHelpItem(keys: "⌘? / ⌘/", action: "Show shortcuts")
@@ -715,6 +712,12 @@ private struct SearchView: View {
         if store.isSearching {
           ProgressView()
             .controlSize(.small)
+        }
+
+        Button {
+          store.promptAndCreateKnowledgeNode()
+        } label: {
+          Label("New Node", systemImage: "plus.circle")
         }
       }
 
@@ -1776,303 +1779,6 @@ private struct OpenClawThreadRow: View {
   }
 }
 
-private struct WorkstreamsView: View {
-  @EnvironmentObject private var store: WorkspaceStore
-
-  var body: some View {
-    VStack(spacing: 0) {
-      HeaderBar(title: "Workstreams", subtitle: "Parallel app slices") {
-        if store.isCheckingWorkspaceHealth || store.isLoadingLoopArtifacts {
-          ProgressView()
-            .controlSize(.small)
-        }
-
-        Button {
-          store.refreshWorkspaceHealth()
-        } label: {
-          Label("Health", systemImage: "stethoscope")
-        }
-      }
-
-      ScrollView {
-        LazyVStack(alignment: .leading, spacing: 14) {
-          LazyVGrid(columns: [
-            GridItem(.flexible(), spacing: 12),
-            GridItem(.flexible(), spacing: 12)
-          ], alignment: .leading, spacing: 12) {
-            ForEach(WorkspaceWorkstream.allCases) { workstream in
-              WorkstreamCard(workstream: workstream)
-            }
-          }
-
-          LoopArtifactsPanel()
-          WorkspaceHealthPanel()
-        }
-        .padding(WorkspaceDesign.contentInset)
-      }
-    }
-    .onAppear {
-      if store.workspaceHealthChecks.isEmpty {
-        store.refreshWorkspaceHealth()
-      }
-      if store.loopArtifacts.isEmpty {
-        Task { await store.refreshLoopArtifacts() }
-      }
-    }
-  }
-}
-
-private struct WorkstreamCard: View {
-  @EnvironmentObject private var store: WorkspaceStore
-  let workstream: WorkspaceWorkstream
-
-  var body: some View {
-    let status = store.workstreamStatuses[workstream]
-    VStack(alignment: .leading, spacing: 10) {
-      HStack(alignment: .top, spacing: 8) {
-        WorkspaceIconBadge(systemImage: workstream.systemImage, tint: .accentColor, fill: Color.accentColor.opacity(0.12))
-        VStack(alignment: .leading, spacing: 4) {
-          HStack(spacing: 8) {
-            Text(workstream.title)
-              .font(.headline)
-            if let status {
-              WorkstreamStatePill(state: status.state)
-            }
-          }
-          Text(workstream.summary)
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-          if let status {
-            Text(status.detail)
-              .font(.caption)
-              .foregroundStyle(.tertiary)
-              .fixedSize(horizontal: false, vertical: true)
-          }
-        }
-      }
-
-      Spacer(minLength: 0)
-
-      HStack(spacing: 8) {
-        Button {
-          Task { await store.kickOffWorkstream(workstream) }
-        } label: {
-          Label(workstream.nextActionTitle, systemImage: "arrow.right.circle")
-        }
-        .buttonStyle(WorkspaceActionButtonStyle())
-
-        if workstream == .knowledgeBrowser {
-          Button {
-            store.promptAndCreateKnowledgeNode()
-          } label: {
-            Label("New Node", systemImage: "plus.circle")
-          }
-          .buttonStyle(WorkspaceActionButtonStyle())
-        }
-      }
-    }
-    .padding(12)
-    .frame(maxWidth: .infinity, minHeight: 190, alignment: .topLeading)
-    .background(WorkspaceDesign.surfaceBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-    .overlay(
-      RoundedRectangle(cornerRadius: 8, style: .continuous)
-        .stroke(WorkspaceDesign.hairline)
-    )
-  }
-}
-
-private struct WorkstreamStatePill: View {
-  let state: WorkstreamStatus.State
-
-  var body: some View {
-    Text(state.title.uppercased())
-      .font(.caption2.weight(.semibold))
-      .foregroundStyle(color)
-      .padding(.horizontal, 7)
-      .padding(.vertical, 3)
-      .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-  }
-
-  private var color: Color {
-    switch state {
-    case .ready:
-      return .green
-    case .needsInput:
-      return .orange
-    case .blocked:
-      return .red
-    }
-  }
-}
-
-private struct LoopArtifactsPanel: View {
-  @EnvironmentObject private var store: WorkspaceStore
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      HStack {
-        Label("Autonomous loops", systemImage: "arrow.triangle.2.circlepath")
-          .font(.headline)
-        Spacer(minLength: 0)
-        Button {
-          Task { await store.refreshLoopArtifacts() }
-        } label: {
-          Label("Refresh", systemImage: "arrow.clockwise")
-        }
-      }
-
-      if store.loopArtifacts.isEmpty {
-        Text("No loop artifacts yet.")
-          .font(.callout)
-          .foregroundStyle(.secondary)
-      } else {
-        VStack(spacing: 0) {
-          ForEach(store.loopArtifacts) { artifact in
-            LoopArtifactRow(artifact: artifact)
-            if artifact.id != store.loopArtifacts.last?.id {
-              Divider()
-            }
-          }
-        }
-        .background(Color.secondary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-          RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .stroke(WorkspaceDesign.hairline)
-        )
-      }
-    }
-  }
-}
-
-private struct LoopArtifactRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
-  let artifact: WorkspaceLoopArtifact
-
-  var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 10) {
-      WorkspaceIconBadge(systemImage: artifact.workstream.systemImage)
-      VStack(alignment: .leading, spacing: 3) {
-        Text(artifact.title)
-          .font(.callout.weight(.medium))
-          .lineLimit(1)
-        Text("\(artifact.workstream.title) · \(store.relativePath(artifact.file)):\(artifact.lineForEditor)")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.middle)
-      }
-      Spacer(minLength: 0)
-      if let status = artifact.status {
-        StatusPill(text: status.uppercased())
-      }
-      Button {
-        store.openLoopArtifact(artifact)
-      } label: {
-        Label("Open", systemImage: "arrow.up.forward.square")
-      }
-      .labelStyle(.iconOnly)
-      .buttonStyle(.borderless)
-      .help("Open loop artifact")
-    }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 9)
-  }
-}
-
-private struct WorkspaceHealthPanel: View {
-  @EnvironmentObject private var store: WorkspaceStore
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      HStack {
-        Label("First-run health", systemImage: "stethoscope")
-          .font(.headline)
-        Spacer(minLength: 0)
-        Button {
-          store.refreshWorkspaceHealth()
-        } label: {
-          Label("Refresh", systemImage: "arrow.clockwise")
-        }
-      }
-
-      if store.workspaceHealthChecks.isEmpty {
-        Text("Run a health check to inspect repo, build, and corpus readiness.")
-          .font(.callout)
-          .foregroundStyle(.secondary)
-      } else {
-        VStack(spacing: 0) {
-          ForEach(store.workspaceHealthChecks) { check in
-            WorkspaceHealthRow(check: check)
-            if check.id != store.workspaceHealthChecks.last?.id {
-              Divider()
-            }
-          }
-        }
-        .background(Color.secondary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-          RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .stroke(WorkspaceDesign.hairline)
-        )
-      }
-    }
-  }
-}
-
-private struct WorkspaceHealthRow: View {
-  let check: WorkspaceHealthCheck
-
-  var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 10) {
-      HealthStatusPill(status: check.status)
-      VStack(alignment: .leading, spacing: 3) {
-        Text(check.title)
-          .font(.callout.weight(.medium))
-        Text(check.detail)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .lineLimit(2)
-          .truncationMode(.middle)
-      }
-      Spacer(minLength: 0)
-      if let remediation = check.remediationTitle {
-        Text(remediation)
-          .font(.caption.weight(.medium))
-          .foregroundStyle(.secondary)
-          .padding(.horizontal, 7)
-          .padding(.vertical, 3)
-          .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-      }
-    }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 9)
-  }
-}
-
-private struct HealthStatusPill: View {
-  let status: WorkspaceHealthCheck.Status
-
-  var body: some View {
-    Text(status.title.uppercased())
-      .font(.caption2.weight(.semibold))
-      .foregroundStyle(color)
-      .padding(.horizontal, 7)
-      .padding(.vertical, 3)
-      .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-  }
-
-  private var color: Color {
-    switch status {
-    case .ready:
-      return .green
-    case .warning:
-      return .orange
-    case .blocking:
-      return .red
-    }
-  }
-}
-
 private struct DetailView: View {
   @EnvironmentObject private var store: WorkspaceStore
 
@@ -2257,12 +1963,6 @@ private struct DetailHeader: View {
         }
 
         if case .meeting = location {
-          Button {
-            Task { await store.startMeetingActionLoopForSelectedMeeting() }
-          } label: {
-            Label("Loop", systemImage: "arrow.triangle.2.circlepath")
-          }
-
           Button {
             store.askOpenClawAboutSelectedMeeting()
           } label: {
