@@ -355,10 +355,7 @@ public enum OrgCrypt {
 
   private static func replaceLineRanges(in text: String, replacements: [LineReplacement]) -> String {
     let hadTrailingNewline = text.hasSuffix("\n")
-    var lines = text.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-    if hadTrailingNewline && lines.last == "" {
-      lines.removeLast()
-    }
+    var lines = normalizedLines(text)
 
     for replacement in replacements.sorted(by: { $0.startLine > $1.startLine }) {
       var newLines = replacement.text
@@ -372,7 +369,8 @@ public enum OrgCrypt {
       lines.replaceSubrange(replacement.startLine..<replacement.endLine, with: newLines)
     }
 
-    return lines.joined(separator: "\n") + (hadTrailingNewline ? "\n" : "")
+    let joined = lines.joined(separator: "\n")
+    return hadTrailingNewline && !joined.hasSuffix("\n") ? joined + "\n" : joined
   }
 
   private static func cryptProperties(
@@ -491,15 +489,29 @@ public enum OrgCryptError: LocalizedError, Equatable {
   public var errorDescription: String? {
     switch self {
     case .missingEncryptionConfiguration:
-      "Org crypt needs a passphrase, the default GPG key option, configured recipients, recipient files, or CRYPT_RECIPIENT properties."
+      "Encryption needs a passphrase, the default GPG key option, configured recipients, recipient files, or CRYPT_RECIPIENT properties."
     case .gpgFailed(let message):
-      "Org crypt encryption failed: \(message)"
+      "Encryption failed: \(message)"
     case .gpgTimedOut(let timeout, let message):
       if let message, !message.isEmpty {
-        "Org crypt encryption timed out after \(Int(timeout)) seconds: \(message)"
+        "Encryption timed out after \(Int(timeout)) seconds: \(message)"
       } else {
-        "Org crypt encryption timed out after \(Int(timeout)) seconds."
+        "Encryption timed out after \(Int(timeout)) seconds."
       }
+    }
+  }
+}
+
+public enum OrgCryptPublicKeyImportError: LocalizedError, Equatable {
+  case missingCorpusRoot
+  case invalidSource
+
+  public var errorDescription: String? {
+    switch self {
+    case .missingCorpusRoot:
+      "Choose a corpus before adding an agent public key."
+    case .invalidSource:
+      "Choose a public key file to add."
     }
   }
 }
@@ -581,7 +593,7 @@ public enum OrgCryptKeychainError: LocalizedError, Equatable {
   public var errorDescription: String? {
     switch self {
     case .status(let status):
-      "Org crypt keychain operation failed with status \(status)."
+      "Encryption keychain operation failed with status \(status)."
     }
   }
 }

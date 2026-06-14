@@ -129,7 +129,7 @@ struct OpenClawComposerView: View {
           HStack(spacing: 6) {
             ProgressView()
               .controlSize(.small)
-            Text("Sending")
+            Text(store.openClawQueuedMessageCount > 1 ? "\(store.openClawQueuedMessageCount - 1) queued" : "Sending")
               .font(.caption.weight(.medium))
               .foregroundStyle(.secondary)
           }
@@ -148,7 +148,6 @@ struct OpenClawComposerView: View {
 
   private var canSend: Bool {
     !store.openClawDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      && !store.isSendingOpenClawMessage
   }
 
   private func sendIfPossible() -> Bool {
