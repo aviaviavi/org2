@@ -57,6 +57,20 @@ assert.ok(issues.some((issue) => issue.rule === 'artifact-review-status-invalid'
 assert.ok(issues.some((issue) => issue.rule === 'artifact-claim-state-invalid'));
 assert.ok(issues.some((issue) => issue.rule === 'artifact-freshness-date-invalid'));
 
+const impossibleDates = `:PROPERTIES:
+:ID: impossible-date-dashboard
+:ORG2_ARTIFACT_ROLE: report
+:ORG2_PROVENANCE: id:project-alpha
+:ORG2_GENERATOR: org2 query --format org
+:ORG2_GENERATED_AT: 2026-02-30
+:ORG2_CLAIM_STATE: source-backed
+:ORG2_VALID_AS_OF: 2026-02-30T00:00:00Z
+:END:
+`;
+const impossibleDateIssues = lintArtifactMetadataInText(impossibleDates, 'views/impossible-date.org2');
+assert.ok(impossibleDateIssues.some((issue) => issue.rule === 'artifact-generated-at-invalid'));
+assert.ok(impossibleDateIssues.some((issue) => issue.rule === 'artifact-freshness-date-invalid' && issue.message.includes('ORG2_VALID_AS_OF')));
+
 const missingFreshness = `:PROPERTIES:
 :ID: generated-no-freshness
 :ORG2_ARTIFACT_ROLE: view

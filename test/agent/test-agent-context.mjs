@@ -156,10 +156,40 @@ fs.writeFileSync(path.join(staleDir, "fresh.org2"), `#+title: Fresh
 :END:
 pricing policy copper
 `, "utf8");
-const freshnessSearch = runJson("agent", "search", "--query", "pricing policy copper", "--dir", staleDir, "--limit", "2");
-assert.equal(freshnessSearch.results[0].id, "fresh-memory");
-assert.equal(freshnessSearch.results[0].claimState.freshness, "fresh");
-assert.equal(freshnessSearch.results[1].claimState.freshness, "stale");
+fs.writeFileSync(path.join(staleDir, "malformed.org2"), `#+title: Malformed Freshness
+
+* Invalid stale date
+:PROPERTIES:
+:ID: invalid-stale-date
+:ORG2_REVIEW_STATUS: reviewed
+:ORG2_VALID_AS_OF: 2026-05-20
+:ORG2_STALE_AFTER: 2020-02-30
+:END:
+pricing policy copper
+
+* Invalid expiry date
+:PROPERTIES:
+:ID: invalid-expiry-date
+:ORG2_REVIEW_STATUS: reviewed
+:ORG2_VALID_AS_OF: 2026-05-20
+:ORG2_EXPIRES_AT: 2020-02-30T00:00:00Z
+:END:
+pricing policy copper
+`, "utf8");
+const freshnessSearch = runJson("agent", "search", "--query", "pricing policy copper", "--dir", staleDir, "--limit", "4");
+const freshMemoryIndex = freshnessSearch.results.findIndex((result) => result.id === "fresh-memory");
+const oldMemoryIndex = freshnessSearch.results.findIndex((result) => result.id === "old-memory");
+assert.ok(freshMemoryIndex >= 0);
+assert.ok(oldMemoryIndex >= 0);
+assert.ok(freshMemoryIndex < oldMemoryIndex);
+assert.equal(freshnessSearch.results[freshMemoryIndex].claimState.freshness, "fresh");
+assert.equal(freshnessSearch.results.find((result) => result.id === "old-memory").claimState.freshness, "stale");
+const invalidStaleDate = runJson("agent", "fetch", "--id", "invalid-stale-date", "--dir", staleDir);
+assert.equal(invalidStaleDate.results[0].claimState.staleAfter, "2020-02-30");
+assert.equal(invalidStaleDate.results[0].claimState.freshness, "fresh");
+const invalidExpiryDate = runJson("agent", "fetch", "--id", "invalid-expiry-date", "--dir", staleDir);
+assert.equal(invalidExpiryDate.results[0].claimState.expiresAt, "2020-02-30T00:00:00Z");
+assert.equal(invalidExpiryDate.results[0].claimState.freshness, "fresh");
 
 const rankingDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-agent-ranking-test-"));
 fs.writeFileSync(path.join(rankingDir, "ranking.org2"), `#+title: Ranking
