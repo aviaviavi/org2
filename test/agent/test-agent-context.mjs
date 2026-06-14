@@ -272,6 +272,8 @@ Business question for package fetch activity.
 :TABLE: package_fetches_by_company
 :COLUMNS: company_id:string, package:string, fetches:int
 :PRIMARY_KEY: company_id, package
+:PARTITION_BY: package
+:SORT_BY: -fetches, company_id:asc
 :SOURCE: s3://analytics/package_fetches_by_company/
 :QUERY_ID: scarf.package_fetches_by_company.v1
 :QUERY_HASH: sha256:queryabc123
@@ -378,6 +380,11 @@ assert.deepEqual(dataLink.results[0].dataLink.columns, [
   { name: "fetches", type: "int" },
 ]);
 assert.deepEqual(dataLink.results[0].dataLink.primaryKey, ["company_id", "package"]);
+assert.deepEqual(dataLink.results[0].dataLink.partitionBy, ["package"]);
+assert.deepEqual(dataLink.results[0].dataLink.sortBy, [
+  { field: "fetches", direction: "desc" },
+  { field: "company_id", direction: "asc" },
+]);
 assert.equal(dataLink.results[0].dataLink.source, "s3://analytics/package_fetches_by_company/");
 assert.equal(dataLink.results[0].dataLink.queryId, "scarf.package_fetches_by_company.v1");
 assert.equal(dataLink.results[0].dataLink.queryHash, "sha256:queryabc123");
@@ -455,6 +462,11 @@ assert.equal(descendantQuery.dataLink.source, "s3://analytics/package_fetches_by
 assert.equal(descendantQuery.dataLink.queryHash, "sha256:queryabc123");
 assert.equal(descendantQuery.dataLink.artifact, "customer-reports/firebolt/package_fetches_by_company.csv");
 assert.equal(descendantQuery.dataLink.materialized, "true");
+assert.deepEqual(descendantQuery.dataLink.partitionBy, ["package"]);
+assert.deepEqual(descendantQuery.dataLink.sortBy, [
+  { field: "fetches", direction: "desc" },
+  { field: "company_id", direction: "asc" },
+]);
 assert.equal(descendantQuery.dataLink.resultLimit, 500);
 assert.equal(descendantQuery.dataLink.samplingMethod, "stratified");
 assert.equal(descendantQuery.dataLink.refreshStatus, "ready");
