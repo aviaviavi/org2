@@ -387,8 +387,8 @@ function numericProperty(node: CompiledCorpusNode, names: string[]): number | nu
   const raw = propertyValue(node, names);
   if (!raw) return null;
   if (/^(true|yes|pinned|important)$/i.test(raw)) return 1;
-  const parsed = Number.parseFloat(raw);
-  return Number.isFinite(parsed) ? parsed : null;
+  const parsed = parseStrictNumericValue(raw);
+  return parsed ?? null;
 }
 
 function recencyScoreFor(node: CompiledCorpusNode, nowMs = Date.now()): { score: number; reason: string | null } {
@@ -710,14 +710,19 @@ function formatDataParams(dataLink: AgentDataLinkMetadata): string | null {
   return dataLink.paramsRaw || null;
 }
 
+function parseStrictNumericValue(raw: string): number | null {
+  const normalized = String(raw).replace(/,/g, "").trim();
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) return null;
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function numericDataProperty(props: Record<string, string>, names: string[]): number | undefined {
   for (const name of names) {
     const raw = props[name];
     if (!raw) continue;
-    const normalized = String(raw).replace(/,/g, "").trim();
-    if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) continue;
-    const parsed = Number.parseFloat(normalized);
-    if (Number.isFinite(parsed)) return parsed;
+    const parsed = parseStrictNumericValue(raw);
+    if (parsed !== null) return parsed;
   }
   return undefined;
 }
