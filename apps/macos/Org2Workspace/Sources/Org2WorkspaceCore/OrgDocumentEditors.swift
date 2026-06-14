@@ -1413,6 +1413,11 @@ private struct ParagraphBlockEditor: View {
       selectedRange: selectedRange,
       showsInlineDetails: showsInlineDetails
     )
+    let embeddedMedia = ParagraphEditorInlineMediaPreview.embedded(
+      raw: presentationText,
+      sourceFile: store.selectedEntrySource?.file,
+      corpusRoot: store.corpusRoot
+    )
     return ZStack(alignment: .topTrailing) {
       VStack(alignment: .leading, spacing: 5) {
         OrgSyntaxTextEditor(
@@ -1429,6 +1434,12 @@ private struct ParagraphBlockEditor: View {
         )
         .frame(minHeight: editorHeight, maxHeight: editorHeight)
         .padding(.trailing, InlineEditorChrome.controlsTrailingPadding())
+
+        if let embeddedMedia {
+          RenderedParagraphMediaView(embedded: embeddedMedia, showsDisplayText: false)
+            .padding(.top, 2)
+            .padding(.trailing, InlineEditorChrome.controlsTrailingPadding())
+        }
 
         if showsInlineDetails {
           VStack(alignment: .leading, spacing: 6) {
@@ -1630,6 +1641,16 @@ private struct ParagraphBlockEditor: View {
       guard !Task.isCancelled else { return }
       await store.autosaveEditedBlock(block, replacement: replacement)
     }
+  }
+}
+
+enum ParagraphEditorInlineMediaPreview {
+  static func embedded(
+    raw: String,
+    sourceFile: String?,
+    corpusRoot: URL?
+  ) -> OrgMediaAttachment.EmbeddedGroup? {
+    RenderedInlineMediaPresentation.embedded(raw: raw, sourceFile: sourceFile, corpusRoot: corpusRoot)
   }
 }
 
