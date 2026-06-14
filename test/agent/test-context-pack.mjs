@@ -84,6 +84,13 @@ See [[id:decision-1][decision note]].
 :VISIBILITY: internal
 :ACCESS_POLICY: support-approved
 :RETENTION: 30d
+:LINEAGE_REFS: id:decision-1, query:support.raw_ticket_volume.v1
+:DATA_CONTRACT: contract:support-ticket-volume-v2
+:SCHEMA_VERSION: v2
+:QUALITY_STATUS: passed
+:QUALITY_SCORE: 0.97
+:QUALITY_CHECKS: row-count-reconciled, ticket-id-not-null
+:QUALITY_NOTE: Zendesk export and warehouse aggregate matched.
 :ORG2_PROVENANCE: query:support.ticket_volume.v1, artifact:reports/support-ticket-volume.csv
 :ORG2_SOURCE_HASHES: query:support.ticket_volume.v1=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 :ORG2_REVIEW_STATUS: reviewed
@@ -224,6 +231,13 @@ assert.match(selected, /sensitivity: customer-private/);
 assert.match(selected, /visibility: internal/);
 assert.match(selected, /access: support-approved/);
 assert.match(selected, /retention: 30d/);
+assert.match(selected, /lineage: id:decision-1, query:support\.raw_ticket_volume\.v1/);
+assert.match(selected, /contract: contract:support-ticket-volume-v2/);
+assert.match(selected, /schema version: v2/);
+assert.match(selected, /quality: passed/);
+assert.match(selected, /quality score: 0\.97/);
+assert.match(selected, /quality checks: row-count-reconciled, ticket-id-not-null/);
+assert.match(selected, /quality note: Zendesk export and warehouse aggregate matched\./);
 assert.match(selected, /provenance: artifact:reports\/support-ticket-volume\.csv, query:support\.ticket_volume\.v1/);
 assert.match(selected, /source hashes: query:support\.ticket_volume\.v1=sha256:aaaaaaaaaaaa/);
 assert.match(selected, /limit: 100/);
@@ -342,6 +356,14 @@ assert.equal(supportTicketVolume.dataLink.sensitivity, "customer-private");
 assert.equal(supportTicketVolume.dataLink.visibility, "internal");
 assert.equal(supportTicketVolume.dataLink.accessPolicy, "support-approved");
 assert.equal(supportTicketVolume.dataLink.retention, "30d");
+assert.ok(supportTicketVolume.dataLink.lineageRefs.some((ref) => ref.ref === "id:decision-1" && ref.target.id === "decision-1"));
+assert.ok(supportTicketVolume.dataLink.lineageRefs.some((ref) => ref.ref === "query:support.raw_ticket_volume.v1"));
+assert.equal(supportTicketVolume.dataLink.dataContract, "contract:support-ticket-volume-v2");
+assert.equal(supportTicketVolume.dataLink.schemaVersion, "v2");
+assert.equal(supportTicketVolume.dataLink.qualityStatus, "passed");
+assert.equal(supportTicketVolume.dataLink.qualityScore, 0.97);
+assert.deepEqual(supportTicketVolume.dataLink.qualityChecks, ["row-count-reconciled", "ticket-id-not-null"]);
+assert.equal(supportTicketVolume.dataLink.qualityNote, "Zendesk export and warehouse aggregate matched.");
 assert.ok(supportTicketVolume.dataLink.provenance.some((ref) => ref.ref === "query:support.ticket_volume.v1"));
 assert.equal(supportTicketVolume.dataLink.sourceHashes[0].sha256, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 assert.equal(supportTicketVolume.claimState.reviewStatus, "reviewed");
