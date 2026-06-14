@@ -9,6 +9,10 @@ struct OrgRoamLinkResolverKey: EnvironmentKey {
   static let defaultValue = OrgRoamLinkResolver.empty
 }
 
+struct OrgInlineSearchHighlightQueryKey: EnvironmentKey {
+  static let defaultValue: String? = nil
+}
+
 extension EnvironmentValues {
   var openOrgFileReference: @MainActor @Sendable (OpenClawFileReference) -> Void {
     get { self[OpenOrgFileReferenceActionKey.self] }
@@ -19,11 +23,17 @@ extension EnvironmentValues {
     get { self[OrgRoamLinkResolverKey.self] }
     set { self[OrgRoamLinkResolverKey.self] = newValue }
   }
+
+  var orgInlineSearchHighlightQuery: String? {
+    get { self[OrgInlineSearchHighlightQueryKey.self] }
+    set { self[OrgInlineSearchHighlightQueryKey.self] = newValue }
+  }
 }
 
 struct OrgInlineText: View {
   @Environment(\.openOrgFileReference) private var openOrgFileReference
   @Environment(\.orgRoamLinkResolver) private var orgRoamLinkResolver
+  @Environment(\.orgInlineSearchHighlightQuery) private var searchHighlightQuery
   let raw: String
   let font: Font
   let lineSpacing: CGFloat
@@ -61,7 +71,16 @@ struct OrgInlineText: View {
 
   @ViewBuilder
   private var renderedText: some View {
-    if Self.usesAttributedRendering(raw) {
+    if let searchHighlightQuery,
+       !searchHighlightQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      let attributedString = Self.usesAttributedRendering(raw)
+        ? OrgInlineAttributedString.cached(raw: raw, baseFont: font, linkResolver: orgRoamLinkResolver)
+        : OrgInlineAttributedString.plain(raw, baseFont: font)
+      Text(OrgInlineAttributedString.highlightingSearchMatches(
+        in: attributedString,
+        query: searchHighlightQuery
+      ))
+    } else if Self.usesAttributedRendering(raw) {
       Text(OrgInlineAttributedString.cached(raw: raw, baseFont: font, linkResolver: orgRoamLinkResolver))
     } else {
       Text(raw)
@@ -223,6 +242,43 @@ enum OrgInlineAttributedString {
     return output
   }
 
+  static func plain(_ raw: String, baseFont: Font = .body) -> AttributedString {
+    styledText(raw, font: baseFont)
+  }
+
+  static func highlightingSearchMatches(
+    in attributedString: AttributedString,
+    query rawQuery: String
+  ) -> AttributedString {
+    let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty else { return attributedString }
+
+    var output = attributedString
+    let displayText = String(output.characters)
+    var searchStart = displayText.startIndex
+    var highlightedAny = false
+
+    while searchStart < displayText.endIndex,
+          let range = displayText.range(
+            of: query,
+            options: [.caseInsensitive, .diacriticInsensitive],
+            range: searchStart..<displayText.endIndex
+          ) {
+      guard let lowerBound = AttributedString.Index(range.lowerBound, within: output),
+            let upperBound = AttributedString.Index(range.upperBound, within: output)
+      else {
+        break
+      }
+
+      output[lowerBound..<upperBound].backgroundColor = searchHighlightColor
+      output[lowerBound..<upperBound].foregroundColor = .primary
+      highlightedAny = true
+      searchStart = range.upperBound
+    }
+
+    return highlightedAny ? output : attributedString
+  }
+
   private static func chunk(for span: OrgInlineSpan, baseFont: Font) -> AttributedString {
     switch span {
     case .text(let text):
@@ -270,4 +326,6 @@ enum OrgInlineAttributedString {
     }
     return chunk
   }
+
+  private static let searchHighlightColor = Color.yellow.opacity(0.45)
 }

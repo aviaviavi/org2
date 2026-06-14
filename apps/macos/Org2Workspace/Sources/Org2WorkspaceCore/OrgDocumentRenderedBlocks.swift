@@ -9,6 +9,7 @@ struct RenderedBlockView: View, Equatable {
   let editableBlock: OrgEditableBlock?
   let sourceFile: String?
   let corpusRoot: URL?
+  let searchHighlightQuery: String?
   let inlineActions: RenderedBlockInlineActions
 
   init(
@@ -17,6 +18,7 @@ struct RenderedBlockView: View, Equatable {
     editableBlock: OrgEditableBlock? = nil,
     sourceFile: String? = nil,
     corpusRoot: URL? = nil,
+    searchHighlightQuery: String? = nil,
     inlineActions: RenderedBlockInlineActions = .readOnly
   ) {
     self.block = block
@@ -24,6 +26,7 @@ struct RenderedBlockView: View, Equatable {
     self.editableBlock = editableBlock
     self.sourceFile = sourceFile
     self.corpusRoot = corpusRoot
+    self.searchHighlightQuery = searchHighlightQuery
     self.inlineActions = inlineActions
   }
 
@@ -33,6 +36,7 @@ struct RenderedBlockView: View, Equatable {
       return lhsEditableBlock.renderIdentity == rhsEditableBlock.renderIdentity
         && lhs.sourceFile == rhs.sourceFile
         && lhs.corpusRoot == rhs.corpusRoot
+        && lhs.searchHighlightQuery == rhs.searchHighlightQuery
         && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
         && lhs.inlineActions.sourceBlockRunRenderSignature == rhs.inlineActions.sourceBlockRunRenderSignature
     }
@@ -42,6 +46,7 @@ struct RenderedBlockView: View, Equatable {
       && lhs.editableBlock == rhs.editableBlock
       && lhs.sourceFile == rhs.sourceFile
       && lhs.corpusRoot == rhs.corpusRoot
+      && lhs.searchHighlightQuery == rhs.searchHighlightQuery
       && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
       && lhs.inlineActions.sourceBlockRunRenderSignature == rhs.inlineActions.sourceBlockRunRenderSignature
   }
