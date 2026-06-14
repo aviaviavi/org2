@@ -138,6 +138,14 @@ type AgentDataLinkMetadata = {
   artifact?: string;
   result?: string;
   rowCount?: number;
+  resultLimit?: number;
+  resultOffset?: number;
+  sampleSize?: number;
+  sampleRate?: string;
+  samplingMethod?: string;
+  coverage?: string;
+  windowStart?: string;
+  windowEnd?: string;
   lastRun?: string;
   freshness?: string;
   materialized?: string;
@@ -785,6 +793,14 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
   const queryHash = stringDataProperty(props, ["QUERY_HASH", "HASH", "SOURCE_HASH"]);
   const artifact = stringDataProperty(props, ["ARTIFACT", "RESULT_ARTIFACT", "OUTPUT"]);
   const result = stringDataProperty(props, ["RESULT", "RESULTS", "MATERIALIZED_RESULT"]);
+  const resultLimit = numericDataProperty(props, ["RESULT_LIMIT", "LIMIT", "ROW_LIMIT", "ORG2_RESULT_LIMIT"]);
+  const resultOffset = numericDataProperty(props, ["RESULT_OFFSET", "OFFSET", "ROW_OFFSET", "ORG2_RESULT_OFFSET"]);
+  const sampleSize = numericDataProperty(props, ["SAMPLE_SIZE", "SAMPLED_ROWS", "ORG2_SAMPLE_SIZE"]);
+  const sampleRate = stringDataProperty(props, ["SAMPLE_RATE", "SAMPLE_PERCENT", "ORG2_SAMPLE_RATE"]);
+  const samplingMethod = stringDataProperty(props, ["SAMPLING_METHOD", "SAMPLE_METHOD", "ORG2_SAMPLING_METHOD"]);
+  const coverage = stringDataProperty(props, ["COVERAGE", "DATA_COVERAGE", "ORG2_COVERAGE"]);
+  const windowStart = stringDataProperty(props, ["WINDOW_START", "START_AT", "FROM", "ORG2_WINDOW_START"]);
+  const windowEnd = stringDataProperty(props, ["WINDOW_END", "END_AT", "THROUGH", "TO", "ORG2_WINDOW_END"]);
   const lastRun = stringDataProperty(props, ["LAST_RUN", "RAN_AT", "UPDATED_AT", "ORG2_LAST_RUN"]);
   const freshness = stringDataProperty(props, ["FRESHNESS", "STATUS"]);
   const materialized = stringDataProperty(props, ["MATERIALIZED", "MATERIALIZATION"]);
@@ -840,6 +856,14 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
     ...(artifact ? { artifact } : {}),
     ...(result ? { result } : {}),
     ...(rowCount !== undefined ? { rowCount } : {}),
+    ...(resultLimit !== undefined ? { resultLimit } : {}),
+    ...(resultOffset !== undefined ? { resultOffset } : {}),
+    ...(sampleSize !== undefined ? { sampleSize } : {}),
+    ...(sampleRate ? { sampleRate } : {}),
+    ...(samplingMethod ? { samplingMethod } : {}),
+    ...(coverage ? { coverage } : {}),
+    ...(windowStart ? { windowStart } : {}),
+    ...(windowEnd ? { windowEnd } : {}),
     ...(lastRun ? { lastRun } : {}),
     ...(freshness ? { freshness } : {}),
     ...(materialized ? { materialized } : {}),
@@ -1296,6 +1320,14 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       item.dataLink.artifact ? `artifact: ${item.dataLink.artifact}` : "",
       item.dataLink.result ? `result: ${item.dataLink.result}` : "",
       item.dataLink.rowCount !== undefined ? `rows: ${item.dataLink.rowCount}` : "",
+      item.dataLink.resultLimit !== undefined ? `limit: ${item.dataLink.resultLimit}` : "",
+      item.dataLink.resultOffset !== undefined ? `offset: ${item.dataLink.resultOffset}` : "",
+      item.dataLink.sampleSize !== undefined ? `sample size: ${item.dataLink.sampleSize}` : "",
+      item.dataLink.sampleRate ? `sample rate: ${item.dataLink.sampleRate}` : "",
+      item.dataLink.samplingMethod ? `sampling: ${item.dataLink.samplingMethod}` : "",
+      item.dataLink.coverage ? `coverage: ${item.dataLink.coverage}` : "",
+      item.dataLink.windowStart ? `window start: ${item.dataLink.windowStart}` : "",
+      item.dataLink.windowEnd ? `window end: ${item.dataLink.windowEnd}` : "",
       item.dataLink.lastRun ? `last run: ${item.dataLink.lastRun}` : "",
       item.dataLink.freshness ? `freshness: ${item.dataLink.freshness}` : "",
       item.dataLink.provenance?.length ? `provenance: ${item.dataLink.provenance.map((ref) => ref.ref).join(", ")}` : "",
