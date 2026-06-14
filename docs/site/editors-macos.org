@@ -45,7 +45,9 @@ The app includes two OpenClaw-oriented surfaces:
 - a chat panel/full-page chat for sending messages with current workspace context,
 - an Agent Space browser for durable agent-thread records in the corpus.
 
-This is deliberately a handoff boundary. The corpus stores selected context, thread references, transcript references, and durable outputs; the external agent can act on that context without the Mac app becoming the only source of truth.
+The chat composer sends with =Return= and inserts a newline with =Cmd-Return=. The =Dictate= control records a short local microphone note, transcribes it with the same local Whisper resolution path used by meeting capture, and sends the transcript as a normal OpenClaw message.
+
+This is deliberately a handoff boundary. The corpus stores selected context, thread references, transcript references, and durable outputs; the external agent can act on that context without the Mac app becoming the only source of truth. OpenClaw receives prompt context that points handoff requests toward durable =KIND: agent-thread= records in the configured Agent Space directories rather than transient chat-only state.
 
 * Org-crypt
 

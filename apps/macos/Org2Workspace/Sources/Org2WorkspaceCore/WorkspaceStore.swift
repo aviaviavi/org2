@@ -170,6 +170,11 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var openClawRemoteCorpusPath = ""
   @Published public var openClawHasStoredToken = false
   @Published public var openClawStatusText = WorkspaceStore.defaultOpenClawStatusText()
+  @Published public var isRecordingOpenClawVoiceNote = false
+  @Published public var isTranscribingOpenClawVoiceNote = false
+  @Published public var openClawVoiceAverageLevel = 0.0
+  @Published public var openClawVoicePeakLevel = 0.0
+  @Published public var openClawVoiceStatusText = "Dictate with local transcription."
   @Published public var isOrgCryptConfigurationPresented = false
   @Published public var orgCryptEncryptOnSave = true {
     didSet {
@@ -253,6 +258,7 @@ public final class WorkspaceStore: ObservableObject {
   public let cli: Org2CLI
   private let defaults: UserDefaults
   private let meetingRecorder = MeetingAudioRecorder()
+  private let openClawVoiceRecorder = MeetingAudioRecorder()
   private let meetingSystemAudioRecorder = MeetingSystemAudioRecorder()
   private let corpusKey = "Org2Workspace.corpusRoot"
   private let agendaModeKey = "Org2Workspace.agendaMode"
@@ -281,7 +287,9 @@ public final class WorkspaceStore: ObservableObject {
   }
   private var isDrainingOpenClawQueue = false
   private var activeMeetingRecording: PendingMeetingRecording?
+  private var activeOpenClawVoiceNoteURL: URL?
   private var meetingMeterTask: Task<Void, Never>?
+  private var openClawVoiceMeterTask: Task<Void, Never>?
   private var pendingG = false
   private var orgRoamLinkResolverGeneration = 0
   private var entrySourceLoadGeneration = 0
@@ -3075,6 +3083,104 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public var canStartOpenClawVoiceNoteRecording: Bool {
+    !isRecordingOpenClawVoiceNote
+      && !isTranscribingOpenClawVoiceNote
+      && !isRecordingMeeting
+      && !isProcessingMeeting
+  }
+
+  public func toggleOpenClawVoiceNoteRecording() async {
+    if isRecordingOpenClawVoiceNote {
+      await stopOpenClawVoiceNoteRecording()
+    } else {
+      await startOpenClawVoiceNoteRecording()
+    }
+  }
+
+  public func startOpenClawVoiceNoteRecording() async {
+    guard !isRecordingOpenClawVoiceNote else { return }
+    guard !isTranscribingOpenClawVoiceNote else {
+      openClawVoiceStatusText = "Finish transcribing the current dictation first."
+      openClawStatusText = openClawVoiceStatusText
+      return
+    }
+    guard !isRecordingMeeting && !isProcessingMeeting else {
+      openClawVoiceStatusText = "Finish the current meeting recording first."
+      openClawStatusText = openClawVoiceStatusText
+      return
+    }
+
+    let audioURL = Self.openClawVoiceNoteURL()
+    do {
+      try await openClawVoiceRecorder.startRecording(to: audioURL)
+      activeOpenClawVoiceNoteURL = audioURL
+      isRecordingOpenClawVoiceNote = true
+      openClawVoiceStatusText = "Recording OpenClaw dictation..."
+      openClawStatusText = openClawVoiceStatusText
+      startOpenClawVoiceMetering()
+    } catch {
+      activeOpenClawVoiceNoteURL = nil
+      isRecordingOpenClawVoiceNote = false
+      stopOpenClawVoiceMetering()
+      errorText = error.localizedDescription
+      openClawVoiceStatusText = "Dictation failed: \(error.localizedDescription)"
+      openClawStatusText = openClawVoiceStatusText
+    }
+  }
+
+  public func stopOpenClawVoiceNoteRecording() async {
+    guard let audioURL = activeOpenClawVoiceNoteURL else {
+      openClawVoiceStatusText = "No active OpenClaw dictation recording."
+      openClawStatusText = openClawVoiceStatusText
+      return
+    }
+
+    do {
+      let duration = try openClawVoiceRecorder.stopRecording()
+      activeOpenClawVoiceNoteURL = nil
+      isRecordingOpenClawVoiceNote = false
+      stopOpenClawVoiceMetering()
+      guard duration >= 0.2 else {
+        try? FileManager.default.removeItem(at: audioURL)
+        openClawVoiceStatusText = "Dictation was too short."
+        openClawStatusText = openClawVoiceStatusText
+        return
+      }
+
+      isTranscribingOpenClawVoiceNote = true
+      openClawVoiceStatusText = "Transcribing OpenClaw dictation locally..."
+      openClawStatusText = openClawVoiceStatusText
+      defer {
+        try? FileManager.default.removeItem(at: audioURL)
+      }
+
+      let transcript = await transcribeAudioForOpenClawVoiceNote(audioURL)
+      isTranscribingOpenClawVoiceNote = false
+      let dictatedText = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard transcript.status == .complete, !dictatedText.isEmpty else {
+        let suffix = transcript.errorMessage.map { ": \($0)" } ?? ""
+        openClawVoiceStatusText = "Dictation transcription \(transcript.status.label)\(suffix)"
+        openClawStatusText = openClawVoiceStatusText
+        return
+      }
+
+      openClawDraft = Self.openClawDraftByAppendingDictation(existing: openClawDraft, dictatedText: dictatedText)
+      openClawVoiceStatusText = "Sending dictated note to OpenClaw..."
+      openClawStatusText = openClawVoiceStatusText
+      await sendOpenClawMessage()
+    } catch {
+      activeOpenClawVoiceNoteURL = nil
+      isRecordingOpenClawVoiceNote = false
+      isTranscribingOpenClawVoiceNote = false
+      stopOpenClawVoiceMetering()
+      try? FileManager.default.removeItem(at: audioURL)
+      errorText = error.localizedDescription
+      openClawVoiceStatusText = "Dictation stop failed: \(error.localizedDescription)"
+      openClawStatusText = openClawVoiceStatusText
+    }
+  }
+
   public func sendOpenClawMessage() async {
     let text = openClawDraft.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
@@ -4734,8 +4840,15 @@ public final class WorkspaceStore: ObservableObject {
       backlinks: backlinks,
       agenda: agenda,
       searchQuery: searchQuery,
-      searchResults: searchResults
+      searchResults: searchResults,
+      agentThreadDirectories: currentOpenClawAgentThreadDirectories()
     )
+  }
+
+  private func currentOpenClawAgentThreadDirectories() -> [String] {
+    guard let corpusRoot else { return [] }
+    return Self.openClawThreadDirectories(corpusRoot: corpusRoot)
+      .map { mappedPathForOpenClaw($0.path) }
   }
 
   private func effectiveOpenClawRemoteCorpusPath() -> String? {
@@ -4808,6 +4921,20 @@ public final class WorkspaceStore: ObservableObject {
 
   private static func makeOpenClawSessionKey() -> String {
     "org2-workspace:\(UUID().uuidString)"
+  }
+
+  nonisolated private static func openClawVoiceNoteURL() -> URL {
+    FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-openclaw-voice", isDirectory: true)
+      .appendingPathComponent("\(UUID().uuidString).wav")
+  }
+
+  nonisolated static func openClawDraftByAppendingDictation(existing: String, dictatedText: String) -> String {
+    let existing = existing.trimmingCharacters(in: .whitespacesAndNewlines)
+    let dictatedText = dictatedText.trimmingCharacters(in: .whitespacesAndNewlines)
+    if existing.isEmpty { return dictatedText }
+    if dictatedText.isEmpty { return existing }
+    return "\(existing)\n\n\(dictatedText)"
   }
 
   nonisolated private static func defaultOpenClawTranscriptURL() -> URL {
@@ -5840,6 +5967,35 @@ public final class WorkspaceStore: ObservableObject {
     meetingSystemAudioPeakLevel = systemSnapshot.peakLevel
   }
 
+  private func startOpenClawVoiceMetering() {
+    openClawVoiceMeterTask?.cancel()
+    updateOpenClawVoiceMeter()
+    openClawVoiceMeterTask = Task { [weak self] in
+      while !Task.isCancelled {
+        let shouldContinue = await MainActor.run { () -> Bool in
+          guard let self, self.isRecordingOpenClawVoiceNote else { return false }
+          self.updateOpenClawVoiceMeter()
+          return true
+        }
+        guard shouldContinue else { return }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+      }
+    }
+  }
+
+  private func stopOpenClawVoiceMetering() {
+    openClawVoiceMeterTask?.cancel()
+    openClawVoiceMeterTask = nil
+    openClawVoiceAverageLevel = 0
+    openClawVoicePeakLevel = 0
+  }
+
+  private func updateOpenClawVoiceMeter() {
+    let snapshot = openClawVoiceRecorder.inputMeterSnapshot
+    openClawVoiceAverageLevel = snapshot.averageLevel
+    openClawVoicePeakLevel = snapshot.peakLevel
+  }
+
   private func transcribeRecordedMeetingAudio(
     microphoneAudioURL: URL,
     systemAudioURL: URL?,
@@ -5878,6 +6034,10 @@ public final class WorkspaceStore: ObservableObject {
         errorMessage: error.localizedDescription
       )
     }
+  }
+
+  private func transcribeAudioForOpenClawVoiceNote(_ audioURL: URL) async -> MeetingTranscriptResult {
+    await transcribeAudioForMeeting(audioURL)
   }
 
   private func refreshAfterMeetingWrite(selecting item: MeetingWorkspaceItem) async {

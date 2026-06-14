@@ -209,6 +209,7 @@ public struct OpenClawWorkspaceContext: Sendable {
   public let agenda: AgendaPayload?
   public let searchQuery: String
   public let searchResults: [SearchResult]
+  public let agentThreadDirectories: [String]
 
   public init(
     localCorpusRoot: String?,
@@ -219,10 +220,13 @@ public struct OpenClawWorkspaceContext: Sendable {
     backlinks: BacklinksPayload?,
     agenda: AgendaPayload?,
     searchQuery: String,
-    searchResults: [SearchResult]
+    searchResults: [SearchResult],
+    agentThreadDirectories: [String] = []
   ) {
-    self.localCorpusRoot = Self.cleanRoot(localCorpusRoot)
-    self.remoteCorpusRoot = Self.cleanRoot(remoteCorpusRoot)
+    let localCorpusRoot = Self.cleanRoot(localCorpusRoot)
+    let remoteCorpusRoot = Self.cleanRoot(remoteCorpusRoot)
+    self.localCorpusRoot = localCorpusRoot
+    self.remoteCorpusRoot = remoteCorpusRoot
     self.selectedSurface = selectedSurface
     self.selectedLocation = selectedLocation
     self.selectedEntrySource = selectedEntrySource
@@ -230,6 +234,10 @@ public struct OpenClawWorkspaceContext: Sendable {
     self.agenda = agenda
     self.searchQuery = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
     self.searchResults = searchResults
+    self.agentThreadDirectories = agentThreadDirectories
+      .map(Self.cleanRoot)
+      .compactMap { $0 }
+      .map { Self.mappedPath($0, localCorpusRoot: localCorpusRoot, remoteCorpusRoot: remoteCorpusRoot) }
   }
 
   public func systemPrompt() -> String {
@@ -239,6 +247,7 @@ public struct OpenClawWorkspaceContext: Sendable {
 
     Remote org2 root for OpenClaw: \(remoteCorpusRoot ?? "NOT CONFIGURED")
     Local app corpus root: \(localCorpusRoot ?? "not selected")
+    Agent-thread directories: \(agentThreadDirectories.isEmpty ? "agents/ under the org2 root" : agentThreadDirectories.joined(separator: ", "))
 
     If a remote org2 root is configured, use that path for shell/filesystem work. If it is not configured and you need to read or edit files, ask the user to configure the remote org2 root before making filesystem assumptions.
     """)
@@ -255,6 +264,16 @@ public struct OpenClawWorkspaceContext: Sendable {
     - org2 roam, org2 query, org2 todo, org2 capture for graph, lookup, mutation, and capture workflows
 
     Do not write generated Backlinks sections into note files. Treat backlinks as computed views. Preserve the org2 plaintext format and cite file paths plus line numbers for concrete claims.
+    """)
+
+    sections.append("""
+    OpenClaw handoff rules
+
+    When the user asks you to hand off, continue, spawn, or send the selected entry/page/meeting to OpenClaw or to yourself, use the selected UI context in this prompt as the source context. Create or update a durable Org2 =KIND: agent-thread= record rather than relying only on transient chat state.
+
+    Put new thread records in the first appropriate agent-thread directory listed above, preferring =agents/= for general handoffs. A thread record should include a heading, :PROPERTIES: drawer, :ID:, :KIND: agent-thread, :AGENT: openclaw, :SESSION: when known, :STATUS: active, and :CONTEXT: with typed refs such as id:, file:, ticket:, report:, entity:, artifact:, or url:. Add readable links under a "Context attachments" child heading. Keep generated outputs or TODOs under a separate child heading so humans can review them.
+
+    For canonical note/task edits, make the smallest useful plain-text change, preserve provenance with ORG2_SOURCE or context refs, and avoid rewriting unrelated content. If the request needs filesystem writes and the remote org2 root is not configured, ask for configuration instead of guessing paths.
     """)
 
     if let selectedLocation {
@@ -360,10 +379,12 @@ public struct OpenClawWorkspaceContext: Sendable {
   }
 
   private func mappedPath(_ path: String) -> String {
+    Self.mappedPath(path, localCorpusRoot: localCorpusRoot, remoteCorpusRoot: remoteCorpusRoot)
+  }
+
+  private static func mappedPath(_ path: String, localCorpusRoot: String?, remoteCorpusRoot: String?) -> String {
     guard let localCorpusRoot, let remoteCorpusRoot else { return path }
-    if path == localCorpusRoot {
-      return remoteCorpusRoot
-    }
+    if path == localCorpusRoot { return remoteCorpusRoot }
     if path.hasPrefix(localCorpusRoot + "/") {
       let relative = String(path.dropFirst(localCorpusRoot.count + 1))
       return remoteCorpusRoot + "/" + relative
