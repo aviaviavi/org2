@@ -36,6 +36,18 @@ struct Org2WorkspaceApp: App {
         }
     }
     .commands {
+      CommandGroup(replacing: .undoRedo) {
+        Button("Undo") {
+          store.performUndoCommand()
+        }
+        .keyboardShortcut("z", modifiers: [.command])
+
+        Button("Redo") {
+          store.performRedoCommand()
+        }
+        .keyboardShortcut("z", modifiers: [.command, .shift])
+      }
+
       CommandGroup(after: .newItem) {
         Button("Open Corpus...") {
           store.chooseCorpus()
@@ -167,7 +179,7 @@ struct Org2WorkspaceApp: App {
         .disabled(!store.hasSelectedBlock)
       }
 
-      CommandMenu("Org Crypt") {
+      CommandMenu("Encryption") {
         Button("Decrypt Subtree") {
           Task { await store.runOrgCrypt(.decrypt) }
         }
@@ -185,7 +197,7 @@ struct Org2WorkspaceApp: App {
 
         Divider()
 
-        Button("Configure Org Crypt...") {
+        Button("Encryption Settings...") {
           store.presentOrgCryptConfiguration()
         }
       }
