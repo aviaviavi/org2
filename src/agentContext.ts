@@ -89,6 +89,11 @@ type AgentDataColumn = {
   type?: string;
 };
 
+type AgentDataSortKey = {
+  field: string;
+  direction?: "asc" | "desc";
+};
+
 type AgentDataLinkMetadata = {
   kind: AgentDataLinkKind;
   system?: string;
@@ -101,6 +106,8 @@ type AgentDataLinkMetadata = {
   view?: string;
   columns?: AgentDataColumn[];
   primaryKey?: string[];
+  partitionBy?: string[];
+  sortBy?: AgentDataSortKey[];
   credentialRef?: string;
   configRef?: string;
   refreshRef?: string;
@@ -728,6 +735,25 @@ function parseDataNameList(raw: string | undefined): string[] {
     .filter((entry) => /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(entry));
 }
 
+function parseDataSortList(raw: string | undefined): AgentDataSortKey[] {
+  if (!raw) return [];
+  return String(raw)
+    .split(/[,;]+/)
+    .map((entry) => {
+      const value = entry.trim();
+      if (!value) return null;
+      const match = /^([+-]?)([A-Za-z_][A-Za-z0-9_.-]*)(?:(?::|\s+)(asc|desc))?$/i.exec(value);
+      if (!match) return null;
+      const prefix = match[1] || "";
+      const direction = String(match[3] || "").toLowerCase();
+      return {
+        field: String(match[2] || "").trim(),
+        ...(direction === "asc" || direction === "desc" ? { direction } : prefix === "+" ? { direction: "asc" as const } : prefix === "-" ? { direction: "desc" as const } : {}),
+      } satisfies AgentDataSortKey;
+    })
+    .filter((entry): entry is AgentDataSortKey => !!entry);
+}
+
 function parseDataSourceHashes(raw: string | undefined): AgentDataSourceHash[] {
   if (!raw) return [];
   return String(raw)
@@ -757,6 +783,8 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
   const view = stringDataProperty(props, ["VIEW", "VIEW_NAME", "SQL_VIEW", "ORG2_VIEW"]);
   const columns = parseDataColumns(stringDataProperty(props, ["COLUMNS", "FIELDS", "ORG2_COLUMNS"]));
   const primaryKey = parseDataNameList(stringDataProperty(props, ["PRIMARY_KEY", "PRIMARY_KEYS", "PK", "KEY_COLUMNS", "ORG2_PRIMARY_KEY"]));
+  const partitionBy = parseDataNameList(stringDataProperty(props, ["PARTITION_BY", "PARTITION_KEYS", "PARTITIONS", "ORG2_PARTITION_BY"]));
+  const sortBy = parseDataSortList(stringDataProperty(props, ["SORT_BY", "ORDER_BY", "ORG2_SORT_BY"]));
   const credentialRef = safeCredentialRef(stringDataProperty(props, ["CREDENTIAL_REF", "CREDENTIAL", "CREDENTIALS", "AUTH_REF", "AUTH"]));
   const configRef = safeConfigRef(stringDataProperty(props, ["CONFIG_REF", "CONFIG", "PROFILE"]));
   const refreshRef = stringDataProperty(props, ["REFRESH_REF", "REFRESH_ID", "REFRESH_JOB", "ORG2_REFRESH_REF"]);
@@ -820,6 +848,8 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
     ...(view ? { view } : {}),
     ...(columns.length ? { columns } : {}),
     ...(primaryKey.length ? { primaryKey } : {}),
+    ...(partitionBy.length ? { partitionBy } : {}),
+    ...(sortBy.length ? { sortBy } : {}),
     ...(credentialRef ? { credentialRef } : {}),
     ...(configRef ? { configRef } : {}),
     ...(refreshRef ? { refreshRef } : {}),
@@ -1287,6 +1317,8 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       item.dataLink.view ? `view: ${item.dataLink.view}` : "",
       item.dataLink.columns?.length ? `columns: ${item.dataLink.columns.map((column) => column.type ? `${column.name}:${column.type}` : column.name).join(", ")}` : "",
       item.dataLink.primaryKey?.length ? `primary key: ${item.dataLink.primaryKey.join(", ")}` : "",
+      item.dataLink.partitionBy?.length ? `partition by: ${item.dataLink.partitionBy.join(", ")}` : "",
+      item.dataLink.sortBy?.length ? `sort by: ${item.dataLink.sortBy.map((sort) => sort.direction ? `${sort.field}:${sort.direction}` : sort.field).join(", ")}` : "",
       item.dataLink.credentialRef ? `credential: ${item.dataLink.credentialRef}` : "",
       item.dataLink.configRef ? `config: ${item.dataLink.configRef}` : "",
       item.dataLink.refreshRef ? `refresh ref: ${item.dataLink.refreshRef}` : "",
