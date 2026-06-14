@@ -1997,6 +1997,15 @@ private struct DetailHeader: View {
         .disabled(!store.canAskOpenClawAboutCurrentSelection || store.isLoadingEntrySource)
         .help("Ask OpenClaw about this page or entry")
 
+        if store.hasRenderedSearchHighlight {
+          Button {
+            store.clearRenderedSearchHighlight()
+          } label: {
+            Label("Clear Highlight", systemImage: "xmark.circle")
+          }
+          .help("Clear search match highlights")
+        }
+
         Picker("Scope", selection: $store.selectedEntrySourceMode) {
           ForEach(EntrySourceMode.allCases) { mode in
             Text(mode.title).tag(mode)
@@ -2154,7 +2163,8 @@ private struct EntryBodyView: View {
             editingBlockID: store.editingBlockID,
             foldedBlockIDs: store.foldedRenderedBlockIDs,
             sourceBlockRunsRenderSignature: store.sourceBlockRunsRenderSignature,
-            sourceBlockRuns: store.sourceBlockRuns
+            sourceBlockRuns: store.sourceBlockRuns,
+            searchHighlightQuery: store.renderedSearchHighlightQuery
           )
           .equatable()
         }

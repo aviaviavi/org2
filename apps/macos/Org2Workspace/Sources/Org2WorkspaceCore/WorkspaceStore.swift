@@ -163,6 +163,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var searchQuery = ""
   @Published public var searchFocusToken = 0
   @Published public var searchResults: [SearchResult] = []
+  @Published public var renderedSearchHighlightQuery: String?
   @Published public var meetings: [MeetingWorkspaceItem] = []
   @Published public var selectedMeetingID: String?
   @Published public var meetingTitleDraft = ""
@@ -871,7 +872,20 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func select(_ location: WorkspaceLocation) {
+    if case .search = location {
+      renderedSearchHighlightQuery = Self.normalizedRenderedSearchHighlightQuery(searchQuery)
+    } else {
+      renderedSearchHighlightQuery = nil
+    }
     activateDetailLocation(location, mode: nil, recordsHistory: true)
+  }
+
+  public var hasRenderedSearchHighlight: Bool {
+    renderedSearchHighlightQuery?.isEmpty == false
+  }
+
+  public func clearRenderedSearchHighlight() {
+    renderedSearchHighlightQuery = nil
   }
 
   public func navigateBackInDetail() {
@@ -894,6 +908,13 @@ public final class WorkspaceStore: ObservableObject {
       if detailNavigationBackStack.count > Self.detailNavigationHistoryLimit {
         detailNavigationBackStack.removeFirst(detailNavigationBackStack.count - Self.detailNavigationHistoryLimit)
       }
+    }
+
+    switch location {
+    case .search:
+      break
+    default:
+      renderedSearchHighlightQuery = nil
     }
 
     if case .agenda(let item) = location {
@@ -7206,6 +7227,22 @@ public final class WorkspaceStore: ObservableObject {
     raw
       .replacingOccurrences(of: "\r\n", with: "\n")
       .replacingOccurrences(of: "\r", with: "\n")
+  }
+
+  nonisolated static func normalizedRenderedSearchHighlightQuery(_ raw: String) -> String? {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+    let scopedPrefixes = ["id:", "file:", "tag:", "todo:"]
+    let lowercased = trimmed.lowercased()
+    for prefix in scopedPrefixes where lowercased.hasPrefix(prefix) {
+      let value = String(trimmed.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+      return value.isEmpty ? nil : value
+    }
+    if trimmed.hasPrefix("\""), trimmed.hasSuffix("\""), trimmed.count > 1 {
+      let unquoted = String(trimmed.dropFirst().dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
+      return unquoted.isEmpty ? nil : unquoted
+    }
+    return trimmed
   }
 
   nonisolated public static func slug(_ raw: String) -> String {

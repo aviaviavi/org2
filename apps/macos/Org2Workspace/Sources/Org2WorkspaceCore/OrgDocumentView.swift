@@ -32,6 +32,7 @@ struct OrgRenderedEntryView: View, Equatable {
   let foldedBlockIDs: Set<OrgEditableBlock.ID>
   let sourceBlockRunsRenderSignature: String
   let sourceBlockRuns: [String: SourceBlockRunState]
+  let searchHighlightQuery: String?
   @State private var renderedBlockWindow: Range<Int>?
   @State private var renderWindowResetKey = ""
   @State private var moveAvailability = OrgRenderedEntryMoveAvailability.empty
@@ -46,7 +47,8 @@ struct OrgRenderedEntryView: View, Equatable {
     editingBlockID: OrgEditableBlock.ID?,
     foldedBlockIDs: Set<OrgEditableBlock.ID> = [],
     sourceBlockRunsRenderSignature: String,
-    sourceBlockRuns: [String: SourceBlockRunState]
+    sourceBlockRuns: [String: SourceBlockRunState],
+    searchHighlightQuery: String? = nil
   ) {
     self.blocks = blocks
     self.blocksRenderSignature = blocksRenderSignature
@@ -58,6 +60,7 @@ struct OrgRenderedEntryView: View, Equatable {
     self.foldedBlockIDs = foldedBlockIDs
     self.sourceBlockRunsRenderSignature = sourceBlockRunsRenderSignature
     self.sourceBlockRuns = sourceBlockRuns
+    self.searchHighlightQuery = searchHighlightQuery
   }
 
   nonisolated static func == (lhs: OrgRenderedEntryView, rhs: OrgRenderedEntryView) -> Bool {
@@ -69,6 +72,7 @@ struct OrgRenderedEntryView: View, Equatable {
       && lhs.editingBlockID == rhs.editingBlockID
       && lhs.foldedBlockIDs == rhs.foldedBlockIDs
       && lhs.sourceBlockRunsRenderSignature == rhs.sourceBlockRunsRenderSignature
+      && lhs.searchHighlightQuery == rhs.searchHighlightQuery
   }
 
   var body: some View {
@@ -118,6 +122,7 @@ struct OrgRenderedEntryView: View, Equatable {
           sourceFile: sourceFile,
           corpusRoot: corpusRoot,
           allowsHoverChrome: allowsHoverChrome,
+          searchHighlightQuery: searchHighlightQuery,
           actions: actions(for: block),
           inlineActions: inlineActions(for: block, isSourceEditable: isSourceEditable)
         )
@@ -135,6 +140,7 @@ struct OrgRenderedEntryView: View, Equatable {
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+    .environment(\.orgInlineSearchHighlightQuery, searchHighlightQuery)
     .onAppear {
       resetRenderedBlockLimitIfNeeded(resetKey: resetKey)
       refreshMoveAvailabilityIfNeeded(signature: moveAvailabilitySignature, source: source, visibleRange: visibleRange)
@@ -561,6 +567,7 @@ private struct OrgRenderedEntryRow: View, Equatable {
   let sourceFile: String?
   let corpusRoot: URL?
   let allowsHoverChrome: Bool
+  let searchHighlightQuery: String?
   let actions: RenderedBlockActions
   let inlineActions: RenderedBlockInlineActions
 
@@ -575,6 +582,7 @@ private struct OrgRenderedEntryRow: View, Equatable {
         && lhs.sourceFile == rhs.sourceFile
         && lhs.corpusRoot == rhs.corpusRoot
         && lhs.allowsHoverChrome == rhs.allowsHoverChrome
+        && lhs.searchHighlightQuery == rhs.searchHighlightQuery
         && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
         && lhs.inlineActions.sourceBlockRunRenderSignature == rhs.inlineActions.sourceBlockRunRenderSignature
     }
@@ -589,6 +597,7 @@ private struct OrgRenderedEntryRow: View, Equatable {
       && lhs.sourceFile == rhs.sourceFile
       && lhs.corpusRoot == rhs.corpusRoot
       && lhs.allowsHoverChrome == rhs.allowsHoverChrome
+      && lhs.searchHighlightQuery == rhs.searchHighlightQuery
       && lhs.inlineActions.isSourceEditable == rhs.inlineActions.isSourceEditable
       && lhs.inlineActions.sourceBlockRunRenderSignature == rhs.inlineActions.sourceBlockRunRenderSignature
   }
@@ -614,6 +623,7 @@ private struct OrgRenderedEntryRow: View, Equatable {
           editableBlock: block,
           sourceFile: sourceFile,
           corpusRoot: corpusRoot,
+          searchHighlightQuery: searchHighlightQuery,
           inlineActions: inlineActions
         )
         .equatable()

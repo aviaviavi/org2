@@ -906,6 +906,47 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(WorkspaceStore.openClawVoiceTranscriptionElapsedText(elapsed: 75.9), "1m 15s")
   }
 
+  func testRenderedSearchHighlightQueryNormalizesSearchText() {
+    XCTAssertEqual(WorkspaceStore.normalizedRenderedSearchHighlightQuery("  Alpha  "), "Alpha")
+    XCTAssertEqual(WorkspaceStore.normalizedRenderedSearchHighlightQuery("\"exact phrase\""), "exact phrase")
+    XCTAssertEqual(WorkspaceStore.normalizedRenderedSearchHighlightQuery("id:abc-123"), "abc-123")
+    XCTAssertNil(WorkspaceStore.normalizedRenderedSearchHighlightQuery("   "))
+  }
+
+  @MainActor
+  func testSelectingSearchResultActivatesAndClearsRenderedHighlight() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let result = try JSONDecoder().decode(SearchResult.self, from: Data("""
+    {
+      "file": "/tmp/search.org",
+      "line": 3,
+      "tags": [],
+      "snippet": "Body with Needle",
+      "heading": "Search hit"
+    }
+    """.utf8))
+
+    store.searchQuery = "needle"
+    store.select(.search(result))
+
+    XCTAssertEqual(store.renderedSearchHighlightQuery, "needle")
+    XCTAssertTrue(store.hasRenderedSearchHighlight)
+
+    store.clearRenderedSearchHighlight()
+    XCTAssertNil(store.renderedSearchHighlightQuery)
+
+    store.renderedSearchHighlightQuery = "needle"
+    store.select(.openClaw(OpenClawThread(
+      title: "Other",
+      file: "/tmp/other.org",
+      line: 1,
+      zone: "corpus",
+      modifiedAt: nil,
+      idValue: nil
+    )))
+    XCTAssertNil(store.renderedSearchHighlightQuery)
+  }
+
   @MainActor
   func testOpenClawSendQueueSerializesConsecutiveMessages() async throws {
     let recorder = OpenClawQueuedSendRecorder()
@@ -1271,6 +1312,37 @@ final class Org2ModelsTests: XCTestCase {
     let matchingLongKey = OrgInlineAttributedString.CacheKey(raw: longRaw, baseFont: .body)
     XCTAssertEqual(longKey, matchingLongKey)
     XCTAssertEqual(longKey.hash, matchingLongKey.hash)
+  }
+
+  func testOrgInlineAttributedStringHighlightsSearchMatches() throws {
+    let raw = "First Alpha, second alpha."
+    let highlighted = OrgInlineAttributedString.highlightingSearchMatches(
+      in: OrgInlineAttributedString.plain(raw, baseFont: .body),
+      query: "alpha"
+    )
+    let display = String(highlighted.characters)
+    let firstRange = try XCTUnwrap(display.range(of: "Alpha"))
+    let secondRange = try XCTUnwrap(display.range(of: "alpha", options: [], range: firstRange.upperBound..<display.endIndex))
+    let firstLower = try XCTUnwrap(AttributedString.Index(firstRange.lowerBound, within: highlighted))
+    let firstUpper = try XCTUnwrap(AttributedString.Index(display.index(after: firstRange.lowerBound), within: highlighted))
+    let secondLower = try XCTUnwrap(AttributedString.Index(secondRange.lowerBound, within: highlighted))
+    let secondUpper = try XCTUnwrap(AttributedString.Index(display.index(after: secondRange.lowerBound), within: highlighted))
+
+    XCTAssertNotNil(highlighted[firstLower..<firstUpper].backgroundColor)
+    XCTAssertNotNil(highlighted[secondLower..<secondUpper].backgroundColor)
+  }
+
+  func testOrgInlineAttributedStringHighlightsRenderedLinkLabels() throws {
+    let raw = "See [Important Node](https://example.com)."
+    let attributed = OrgInlineAttributedString.make(OrgInlineParser.parse(raw), baseFont: .body)
+    let highlighted = OrgInlineAttributedString.highlightingSearchMatches(in: attributed, query: "important")
+    let display = String(highlighted.characters)
+    let range = try XCTUnwrap(display.range(of: "Important"))
+    let lower = try XCTUnwrap(AttributedString.Index(range.lowerBound, within: highlighted))
+    let upper = try XCTUnwrap(AttributedString.Index(display.index(after: range.lowerBound), within: highlighted))
+
+    XCTAssertNotNil(highlighted[lower..<upper].backgroundColor)
+    XCTAssertEqual(highlighted[lower..<upper].link, URL(string: "https://example.com"))
   }
 
   func testOrgSyntaxHighlighterFindsEditableDocumentTokens() {
