@@ -43,6 +43,11 @@ See [[id:decision-1][decision note]].
 :ID: support-ticket-volume
 :KIND: warehouse-query
 :SYSTEM: clickhouse
+:DATABASE: support_warehouse
+:SCHEMA: support
+:TABLE: ticket_volume_daily
+:COLUMNS: date:date, ticket_count:int
+:PRIMARY_KEY: date
 :QUERY_ID: support.ticket_volume.v1
 :ARTIFACT: reports/support-ticket-volume.csv
 :ROW_COUNT: 42
@@ -85,6 +90,8 @@ Working notes for support triage.
 :ID: support-satisfaction-score
 :KIND: dataset
 :PATH: reports/support-satisfaction.csv
+:TABLE: support_satisfaction
+:COLUMNS: account_id:string, satisfaction_score:double
 :CREDENTIAL_REF: secret:support-analytics
 :CONFIG_REF: profile:support-local
 :ROW_COUNT: 5
@@ -157,6 +164,11 @@ assert.match(selected, /## Related data links/);
 assert.match(selected, /Data link: ticket volume/);
 assert.match(selected, /review: reviewed/);
 assert.match(selected, /claim freshness: fresh/);
+assert.match(selected, /database: support_warehouse/);
+assert.match(selected, /schema: support/);
+assert.match(selected, /table: ticket_volume_daily/);
+assert.match(selected, /columns: date:date, ticket_count:int/);
+assert.match(selected, /primary key: date/);
 assert.match(selected, /query: support\.ticket_volume\.v1/);
 assert.match(selected, /artifact: reports\/support-ticket-volume\.csv/);
 assert.match(selected, /refresh ref: query-data:support-ticket-volume/);
@@ -171,6 +183,8 @@ assert.match(selected, /review: review-required/);
 assert.match(selected, /claim freshness: stale/);
 assert.match(selected, /credential: secret:support-analytics/);
 assert.match(selected, /config: profile:support-local/);
+assert.match(selected, /table: support_satisfaction/);
+assert.match(selected, /columns: account_id:string, satisfaction_score:double/);
 assert.match(selected, /Event stream: support state changes/);
 assert.match(selected, /kind: timeline-link/);
 assert.match(selected, /timeline: support\.ticket\.lifecycle/);
@@ -230,6 +244,14 @@ assert.ok(selectedJson.results[0].collaboration.handoff.links.some((attachment) 
 assert.equal(selectedJson.results[0].relatedThreads[0].id, "thread-scarf-triage");
 assert.equal(selectedJson.results[0].relatedDataLinks[0].id, "support-ticket-volume");
 assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.rowCount, 42);
+assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.database, "support_warehouse");
+assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.schema, "support");
+assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.table, "ticket_volume_daily");
+assert.deepEqual(selectedJson.results[0].relatedDataLinks[0].dataLink.columns, [
+  { name: "date", type: "date" },
+  { name: "ticket_count", type: "int" },
+]);
+assert.deepEqual(selectedJson.results[0].relatedDataLinks[0].dataLink.primaryKey, ["date"]);
 assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.refreshRef, "query-data:support-ticket-volume");
 assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.refreshCommand, "org2 query-data --file support.org2 --results support_ticket_volume --out views/support-ticket-volume.org2");
 assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.refreshStatus, "due");
