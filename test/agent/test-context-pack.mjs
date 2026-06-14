@@ -47,6 +47,9 @@ See [[id:decision-1][decision note]].
 :ARTIFACT: reports/support-ticket-volume.csv
 :ROW_COUNT: 42
 :FRESHNESS: daily
+:ORG2_REVIEW_STATUS: reviewed
+:ORG2_VALID_AS_OF: 2026-05-15
+:ORG2_STALE_AFTER: 2099-01-01
 :END:
 Daily materialized support ticket counts.
 
@@ -80,6 +83,9 @@ Working notes for support triage.
 :ROW_COUNT: 5
 :FRESHNESS: weekly
 :CONTEXT: id:scarf-support-1
+:ORG2_REVIEW_STATUS: review-required
+:ORG2_VALID_AS_OF: 2020-01-01
+:ORG2_STALE_AFTER: 2020-02-01
 :END:
 External catalog entry for [[id:scarf-support-1][Scarf support triage]].
 
@@ -140,9 +146,13 @@ assert.match(selected, /session: openclaw:session:triage-1/);
 assert.match(selected, /Matching attachments: id:scarf-support-1/);
 assert.match(selected, /## Related data links/);
 assert.match(selected, /Data link: ticket volume/);
+assert.match(selected, /review: reviewed/);
+assert.match(selected, /claim freshness: fresh/);
 assert.match(selected, /query: support\.ticket_volume\.v1/);
 assert.match(selected, /artifact: reports\/support-ticket-volume\.csv/);
 assert.match(selected, /Data catalog: support satisfaction score/);
+assert.match(selected, /review: review-required/);
+assert.match(selected, /claim freshness: stale/);
 assert.match(selected, /credential: secret:support-analytics/);
 assert.match(selected, /config: profile:support-local/);
 assert.match(selected, /Event stream: support state changes/);
@@ -157,6 +167,8 @@ const selectedDataLink = run("context", "--id", "support-ticket-volume", "--dir"
 assert.match(selectedDataLink, /## Related data links/);
 assert.match(selectedDataLink, /Data link: ticket volume/);
 assert.match(selectedDataLink, /kind: warehouse-query/);
+assert.match(selectedDataLink, /review: reviewed/);
+assert.match(selectedDataLink, /claim freshness: fresh/);
 assert.match(selectedDataLink, /query: support\.ticket_volume\.v1/);
 assert.match(selectedDataLink, /rows: 42/);
 
@@ -201,6 +213,9 @@ assert.ok(selectedJson.results[0].collaboration.handoff.links.some((attachment) 
 assert.equal(selectedJson.results[0].relatedThreads[0].id, "thread-scarf-triage");
 assert.equal(selectedJson.results[0].relatedDataLinks[0].id, "support-ticket-volume");
 assert.equal(selectedJson.results[0].relatedDataLinks[0].dataLink.rowCount, 42);
+assert.equal(selectedJson.results[0].relatedDataLinks[0].claimState.reviewStatus, "reviewed");
+assert.equal(selectedJson.results[0].relatedDataLinks[0].claimState.freshness, "fresh");
+assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-satisfaction-score" && item.claimState.reviewStatus === "review-required" && item.claimState.freshness === "stale"));
 assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-satisfaction-score" && item.matchingAttachments.some((attachment) => attachment.ref === "id:scarf-support-1")));
 assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-state-changes" && item.dataLink.timeline === "support.ticket.lifecycle"));
 assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-state-changes" && item.dataLink.changeId === "change-42"));
