@@ -4334,13 +4334,21 @@ final class Org2ModelsTests: XCTestCase {
     let note = root.appendingPathComponent("secrets.org2")
     let argsLog = root.appendingPathComponent("gpg-args.txt")
     let fakeGPG = root.appendingPathComponent("fake-gpg.sh")
+    let fakeGPGConf = root.appendingPathComponent("gpgconf")
     try """
     #!/bin/sh
     printf '%s\\n' "$@" > "\(argsLog.path)"
     cat >/dev/null
     printf '%s\\n' '-----BEGIN PGP MESSAGE-----' 'fake encrypted payload' '-----END PGP MESSAGE-----'
+    exit 0
     """.write(to: fakeGPG, atomically: true, encoding: .utf8)
+    try """
+    #!/bin/sh
+    printf '%s\\n' 'default-key:0:0:use NAME as default secret key:1:1:NAME:::"self-key'
+    exit 0
+    """.write(to: fakeGPGConf, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeGPG.path)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeGPGConf.path)
 
     let text = """
     * Secret :crypt:
@@ -4348,6 +4356,7 @@ final class Org2ModelsTests: XCTestCase {
     """
     let settings = OrgCryptSettings(
       gpgProgram: fakeGPG.path,
+      gpgTimeout: 2,
       useDefaultGpgKey: true
     )
 
@@ -4357,7 +4366,8 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(result.text.contains("fake encrypted payload"))
     let args = try String(contentsOf: argsLog, encoding: .utf8)
     XCTAssertTrue(args.contains("--encrypt\n"))
-    XCTAssertTrue(args.contains("--default-recipient-self\n"))
+    XCTAssertTrue(args.contains("--recipient\nself-key\n"))
+    XCTAssertFalse(args.contains("--default-recipient-self\n"))
   }
 
   func testCanonicalEditableRenderCoalescesSplitPGPArmorBlocks() throws {

@@ -237,15 +237,20 @@ public enum OrgCrypt {
     process.currentDirectoryURL = cwd
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
 
+    let defaultRecipient = settings.useDefaultGpgKey ? resolveDefaultGPGRecipient(gpgProgram: settings.gpgProgram) : nil
+    if settings.useDefaultGpgKey, defaultRecipient == nil {
+      throw OrgCryptError.gpgFailed("GPG default key is not configured as an encryption recipient.")
+    }
+
     var arguments = [settings.gpgProgram, "--batch", "--yes", "--pinentry-mode", "loopback", "--trust-model", "always"]
     if let passphrase = settings.passphrase {
       arguments += ["--passphrase", passphrase]
     }
 
-    if settings.useDefaultGpgKey || !settings.recipients.isEmpty || !settings.recipientFiles.isEmpty {
+    if defaultRecipient != nil || !settings.recipients.isEmpty || !settings.recipientFiles.isEmpty {
       arguments += ["--armor", "--encrypt"]
-      if settings.useDefaultGpgKey {
-        arguments += ["--default-recipient-self"]
+      if let defaultRecipient {
+        arguments += ["--recipient", defaultRecipient]
       }
       for recipient in settings.recipients {
         arguments += ["--recipient", recipient]
@@ -283,6 +288,64 @@ public enum OrgCrypt {
     }
 
     return (try? String(contentsOf: outputURL, encoding: .utf8)) ?? ""
+  }
+
+  private static func resolveDefaultGPGRecipient(gpgProgram: String) -> String? {
+    for candidate in gpgConfCandidates(gpgProgram: gpgProgram) {
+      guard let output = runGPGConf(candidate) else { continue }
+      for line in output.split(separator: "\n", omittingEmptySubsequences: false) {
+        guard line.hasPrefix("default-key:") else { continue }
+        let fields = line.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+        guard fields.count > 9 else { continue }
+        let value = fields[9]
+          .trimmingCharacters(in: CharacterSet(charactersIn: "\"").union(.whitespacesAndNewlines))
+        if !value.isEmpty {
+          return value
+        }
+      }
+    }
+    return nil
+  }
+
+  private static func gpgConfCandidates(gpgProgram: String) -> [String] {
+    var candidates: [String] = []
+    let trimmed = gpgProgram.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !trimmed.isEmpty, trimmed.contains("/") {
+      let url = URL(fileURLWithPath: trimmed)
+      candidates.append(url.deletingLastPathComponent().appendingPathComponent("gpgconf").path)
+    }
+    candidates.append(contentsOf: [
+      "/opt/homebrew/bin/gpgconf",
+      "/usr/local/bin/gpgconf",
+      "/usr/local/MacGPG2/bin/gpgconf",
+      "gpgconf"
+    ])
+    return unique(candidates)
+  }
+
+  private static func runGPGConf(_ candidate: String) -> String? {
+    let output = Pipe()
+    let error = Pipe()
+    let process = Process()
+    if candidate.contains("/") {
+      process.executableURL = URL(fileURLWithPath: candidate)
+      process.arguments = ["--list-options", "gpg"]
+    } else {
+      process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+      process.arguments = [candidate, "--list-options", "gpg"]
+    }
+    process.standardOutput = output
+    process.standardError = error
+
+    do {
+      try process.run()
+      process.waitUntilExit()
+    } catch {
+      return nil
+    }
+
+    guard process.terminationStatus == 0 else { return nil }
+    return String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)
   }
 
   private static func readTrimmedFile(_ url: URL) -> String? {
