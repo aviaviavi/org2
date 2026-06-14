@@ -24,7 +24,7 @@ The following rules ensure deterministic, round-trippable printing:
 
 #### Headline Printing
 - Level N headline: `*` repeated N times, followed by exactly one space, then the title
-- TODO keyword (if present): appears at start of title, followed by space
+- TODO keyword (if present): one of `TODO`, `IN_PROGRESS`, `DONE`, `CANCELED`, or `CANCELLED`; appears at start of title, followed by space
 - Tags (if present): appear at end of title, surrounded by colons (`:tag1:tag2:`)
 - Children are printed below the headline, respecting nesting depth
 
@@ -119,7 +119,7 @@ All of these types and their field schemas are covered by normative fixtures and
 
 The following are explicitly **out of scope** for v0 and MAY change in future versions without triggering a major version bump:
 
-1. **TODO workflow semantics** — `TODO` keyword syntax is parsed, but workflow state (DONE, done, etc.), workflow transitions, and todo inheritance are not specified.
+1. **TODO workflow semantics** — TODO keyword syntax is parsed, but workflow transitions, custom keyword sets, and todo inheritance are not specified.
 2. **Tag semantics** — tag syntax is parsed, but semantics (tag inheritance, special tags) are not defined.
 3. **Property semantics** — property drawer syntax is parsed, but property inheritance, special properties, and "computed" properties are not specified.
 4. **Agenda behavior** — agenda generation, scheduling semantics, and deadline evaluation are not covered.
