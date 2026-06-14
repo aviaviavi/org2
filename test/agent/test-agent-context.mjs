@@ -273,6 +273,11 @@ Business question for package fetch activity.
 :ARTIFACT: customer-reports/firebolt/package_fetches_by_company.csv
 :ROW_COUNT: 1,234
 :FRESHNESS: live
+:REFRESH_REF: query-data:fetches_by_company
+:REFRESH_COMMAND: org2 query-data --file reports.org2 --results fetches_by_company --out views/fetches.org2
+:REFRESH_STATUS: ready
+:REFRESH_AFTER: 24h
+:NEXT_REFRESH: 2026-06-13T12:30:00-07:00
 :ORG2_PROVENANCE: query:scarf.package_fetches_by_company.v1, artifact:customer-reports/firebolt/package_fetches_by_company.csv
 :ORG2_SOURCE_HASHES: query:scarf.package_fetches_by_company.v1=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 :END:
@@ -337,6 +342,11 @@ assert.equal(dataLink.results[0].dataLink.lastRun, "2026-06-12T12:30:00-07:00");
 assert.equal(dataLink.results[0].dataLink.artifact, "customer-reports/firebolt/package_fetches_by_company.csv");
 assert.equal(dataLink.results[0].dataLink.rowCount, 1234);
 assert.equal(dataLink.results[0].dataLink.freshness, "live");
+assert.equal(dataLink.results[0].dataLink.refreshRef, "query-data:fetches_by_company");
+assert.equal(dataLink.results[0].dataLink.refreshCommand, "org2 query-data --file reports.org2 --results fetches_by_company --out views/fetches.org2");
+assert.equal(dataLink.results[0].dataLink.refreshStatus, "ready");
+assert.equal(dataLink.results[0].dataLink.refreshAfter, "24h");
+assert.equal(dataLink.results[0].dataLink.nextRefresh, "2026-06-13T12:30:00-07:00");
 assert.ok(dataLink.results[0].dataLink.provenance.some((ref) => ref.ref === "query:scarf.package_fetches_by_company.v1"));
 assert.equal(dataLink.results[0].dataLink.sourceHashes[0].kind, "query");
 assert.equal(dataLink.results[0].dataLink.sourceHashes[0].value, "scarf.package_fetches_by_company.v1");
@@ -372,6 +382,7 @@ assert.equal(reportWithDataLinks.results[0].relatedDataLinks.length, 4);
 const descendantQuery = reportWithDataLinks.results[0].relatedDataLinks.find((item) => item.id === "query-fetches-by-company");
 assert.equal(descendantQuery.kind, "warehouse-query");
 assert.equal(descendantQuery.dataLink.artifact, "customer-reports/firebolt/package_fetches_by_company.csv");
+assert.equal(descendantQuery.dataLink.refreshStatus, "ready");
 const descendantDataset = reportWithDataLinks.results[0].relatedDataLinks.find((item) => item.id === "dataset-package-fetches");
 assert.equal(descendantDataset.kind, "dataset");
 const externalQuery = reportWithDataLinks.results[0].relatedDataLinks.find((item) => item.id === "query-fetch-error-rate");
