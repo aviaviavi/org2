@@ -283,6 +283,12 @@ Business question for package fetch activity.
 :REFRESH_STATUS: ready
 :REFRESH_AFTER: 24h
 :NEXT_REFRESH: 2026-06-13T12:30:00-07:00
+:VALIDATION_STATUS: sampled
+:VALIDATION_AT: 2026-06-12T13:00:00-07:00
+:VALIDATION_BY: Casey
+:VALIDATION_NOTE: Compared row counts against the dashboard export.
+:CONFIDENCE: high
+:VALIDATION_REFS: file:validation/package-fetches-check.md
 :ORG2_PROVENANCE: query:scarf.package_fetches_by_company.v1, artifact:customer-reports/firebolt/package_fetches_by_company.csv
 :ORG2_SOURCE_HASHES: query:scarf.package_fetches_by_company.v1=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 :END:
@@ -366,6 +372,12 @@ assert.equal(dataLink.results[0].dataLink.refreshCommand, "org2 query-data --fil
 assert.equal(dataLink.results[0].dataLink.refreshStatus, "ready");
 assert.equal(dataLink.results[0].dataLink.refreshAfter, "24h");
 assert.equal(dataLink.results[0].dataLink.nextRefresh, "2026-06-13T12:30:00-07:00");
+assert.equal(dataLink.results[0].dataLink.validationStatus, "sampled");
+assert.equal(dataLink.results[0].dataLink.validationAt, "2026-06-12T13:00:00-07:00");
+assert.equal(dataLink.results[0].dataLink.validationBy, "Casey");
+assert.equal(dataLink.results[0].dataLink.validationNote, "Compared row counts against the dashboard export.");
+assert.equal(dataLink.results[0].dataLink.confidence, "high");
+assert.ok(dataLink.results[0].dataLink.validationRefs.some((ref) => ref.ref === "file:validation/package-fetches-check.md"));
 assert.ok(dataLink.results[0].dataLink.provenance.some((ref) => ref.ref === "query:scarf.package_fetches_by_company.v1"));
 assert.equal(dataLink.results[0].dataLink.sourceHashes[0].kind, "query");
 assert.equal(dataLink.results[0].dataLink.sourceHashes[0].value, "scarf.package_fetches_by_company.v1");
@@ -407,6 +419,7 @@ const descendantQuery = reportWithDataLinks.results[0].relatedDataLinks.find((it
 assert.equal(descendantQuery.kind, "warehouse-query");
 assert.equal(descendantQuery.dataLink.artifact, "customer-reports/firebolt/package_fetches_by_company.csv");
 assert.equal(descendantQuery.dataLink.refreshStatus, "ready");
+assert.equal(descendantQuery.dataLink.validationStatus, "sampled");
 const descendantDataset = reportWithDataLinks.results[0].relatedDataLinks.find((item) => item.id === "dataset-package-fetches");
 assert.equal(descendantDataset.kind, "dataset");
 const externalQuery = reportWithDataLinks.results[0].relatedDataLinks.find((item) => item.id === "query-fetch-error-rate");
