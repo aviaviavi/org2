@@ -125,6 +125,10 @@ function renderBriefing(payload: ReturnType<typeof buildAgentContextPayload>, ti
   const lines: string[] = [];
   const reviewRequired = payload.results.some((node) => node.claimState.reviewStatus !== "reviewed" && node.claimState.reviewStatus !== "promoted");
   const cited = payload.results.slice(0, 8);
+  const glanceNodes = [
+    ...cited.filter((node) => !isTerminalBriefTodo(node.todo)),
+    ...cited.filter((node) => isTerminalBriefTodo(node.todo)),
+  ].slice(0, 5);
 
   lines.push(`${h1} ${title}`);
   lines.push("");
@@ -134,7 +138,7 @@ function renderBriefing(payload: ReturnType<typeof buildAgentContextPayload>, ti
   lines.push("");
   lines.push(`${h2} At a glance`);
   if (cited.length === 0) lines.push("- No matching notes found.");
-  for (const node of cited.slice(0, 5)) {
+  for (const node of glanceNodes) {
     const status = `${node.claimState.reviewStatus}/${node.claimState.freshness}`;
     lines.push(`- ${node.todo ? `${node.todo} ` : ""}${node.title} — ${status} [${node.citation}]`);
   }
@@ -153,8 +157,10 @@ function renderBriefing(payload: ReturnType<typeof buildAgentContextPayload>, ti
   if (cited.length === 0) lines.push("- [review-required] Broaden the query/scope or add source notes before drawing conclusions.");
   else {
     lines.push("- [review-required] Treat this briefing as a navigational summary, not canonical truth.");
-    const active = cited.filter((node) => node.todo).slice(0, 5);
+    const active = cited.filter((node) => isActiveBriefTodo(node.todo) && !isStaleOpenBriefTodo(node)).slice(0, 5);
     if (active.length) lines.push(`- [review-required] Active work surfaced: ${active.map((node) => `${node.todo} ${node.title} [${node.citation}]`).join("; ")}.`);
+    const staleOpen = cited.filter((node) => isStaleOpenBriefTodo(node)).slice(0, 5);
+    if (staleOpen.length) lines.push(`- [review-required] Possible stale open work: ${staleOpen.map((node) => `${node.todo} ${node.title} [${node.citation}]`).join("; ")}.`);
     const stale = cited.filter((node) => node.claimState.freshness === "stale" || node.claimState.freshness === "expired");
     if (stale.length) lines.push(`- [review-required] Refresh stale/expired sources before relying on: ${stale.map((node) => `${node.title} [${node.citation}]`).join("; ")}.`);
   }
@@ -164,6 +170,44 @@ function renderBriefing(payload: ReturnType<typeof buildAgentContextPayload>, ti
   for (const node of cited) lines.push(`- ${node.citation} — ${node.title}`);
   lines.push("");
   return lines.join("\n");
+}
+
+function isOperationalNodeBriefFile(file: string): boolean {
+  const normalized = file.replace(/\\/g, "/").toLowerCase();
+  return normalized.startsWith("agents/")
+    || normalized.startsWith("views/")
+    || normalized.includes("/agents/")
+    || normalized.includes("/views/")
+    || normalized.includes("sync-conflict")
+    || normalized.includes("generated")
+    || normalized.includes("brief");
+}
+
+function isActiveBriefTodo(raw: string | null | undefined): boolean {
+  return Boolean(raw) && !/^(DONE|CANCELLED|CANCELED)$/i.test(String(raw || ""));
+}
+
+function isTerminalBriefTodo(raw: string | null | undefined): boolean {
+  return /^(DONE|CANCELLED|CANCELED)$/i.test(String(raw || ""));
+}
+
+function dateStringForBriefNode(node: ReturnType<typeof buildAgentContextPayload>["results"][number]): string {
+  const explicit = String(node.properties.UPDATED || node.properties.DATE || node.properties.CREATED || node.properties.CLOSED || node.claimState.validAsOf || node.claimState.observedAt || "");
+  const explicitMatch = explicit.match(/\d{4}-\d{2}-\d{2}/);
+  if (explicitMatch) return explicitMatch[0] || "";
+  const fileMatch = String(node.file || node.citation || "").match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
+  if (fileMatch) return `${fileMatch[1]}-${fileMatch[2]}-${fileMatch[3]}`;
+  return "";
+}
+
+function isStaleOpenBriefTodo(node: ReturnType<typeof buildAgentContextPayload>["results"][number], nowMs = Date.now()): boolean {
+  if (!isActiveBriefTodo(node.todo)) return false;
+  const date = dateStringForBriefNode(node);
+  if (!date) return false;
+  const parsed = Date.parse(`${date}T00:00:00Z`);
+  if (!Number.isFinite(parsed)) return false;
+  const ageDays = Math.max(0, (nowMs - parsed) / (24 * 60 * 60 * 1000));
+  return ageDays > 365;
 }
 
 function renderNodeBriefing(payload: ReturnType<typeof buildAgentContextPayload>, title: string, format: "markdown" | "org" = "markdown"): string {
@@ -208,6 +252,16 @@ function renderNodeBriefing(payload: ReturnType<typeof buildAgentContextPayload>
       return groups;
     }, new Map<string, NonNullable<typeof node.backlinks>>()),
   ).sort((a, b) => (b[1].length - a[1].length) || a[0].localeCompare(b[0]));
+  const primaryBacklinkGroups = backlinkGroups.filter(([file]) => !isOperationalNodeBriefFile(file));
+  const operationalBacklinkGroups = backlinkGroups.filter(([file]) => isOperationalNodeBriefFile(file));
+  const renderBacklinkGroup = ([file, items]: [string, NonNullable<typeof node.backlinks>]) => {
+    lines.push(`${h3} ${file} (${items.length})`);
+    for (const backlink of items.slice(0, 5)) {
+      lines.push(`- ${backlink.sourceTitle} [${backlink.citation}]`);
+    }
+    if (items.length > 5) lines.push(`- ... ${items.length - 5} more reference${items.length - 5 === 1 ? "" : "s"} in this file`);
+    lines.push("");
+  };
 
   lines.push(`${h2} At a glance`);
   lines.push(`- Node: ${node.title} [${node.citation}]`);
@@ -225,18 +279,21 @@ function renderNodeBriefing(payload: ReturnType<typeof buildAgentContextPayload>
   lines.push("");
 
   lines.push(`${h2} Referencing files`);
-  if (backlinkGroups.length === 0) {
+  if (primaryBacklinkGroups.length === 0) {
     lines.push("- No backlinks found.");
   } else {
-    for (const [file, items] of backlinkGroups.slice(0, 24)) {
-      lines.push(`${h3} ${file} (${items.length})`);
-      for (const backlink of items.slice(0, 5)) {
-        lines.push(`- ${backlink.sourceTitle} [${backlink.citation}]`);
-      }
-      if (items.length > 5) lines.push(`- ... ${items.length - 5} more reference${items.length - 5 === 1 ? "" : "s"} in this file`);
-      lines.push("");
-    }
-    if (backlinkGroups.length > 24) lines.push(`- ... ${backlinkGroups.length - 24} more referencing file${backlinkGroups.length - 24 === 1 ? "" : "s"}.`);
+    for (const group of primaryBacklinkGroups.slice(0, 24)) renderBacklinkGroup(group);
+    if (primaryBacklinkGroups.length > 24) lines.push(`- ... ${primaryBacklinkGroups.length - 24} more primary referencing file${primaryBacklinkGroups.length - 24 === 1 ? "" : "s"}.`);
+  }
+
+  lines.push(`${h2} Operational and generated references`);
+  if (operationalBacklinkGroups.length === 0) {
+    lines.push("- None found.");
+  } else {
+    const count = operationalBacklinkGroups.reduce((sum, [, items]) => sum + items.length, 0);
+    lines.push(`- ${count} reference${count === 1 ? "" : "s"} across ${operationalBacklinkGroups.length} operational/generated file${operationalBacklinkGroups.length === 1 ? "" : "s"}.`);
+    for (const group of operationalBacklinkGroups.slice(0, 8)) renderBacklinkGroup(group);
+    if (operationalBacklinkGroups.length > 8) lines.push(`- ... ${operationalBacklinkGroups.length - 8} more operational/generated file${operationalBacklinkGroups.length - 8 === 1 ? "" : "s"}.`);
   }
 
   lines.push(`${h2} Related nodes`);

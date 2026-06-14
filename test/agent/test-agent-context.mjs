@@ -209,10 +209,19 @@ Copper launch retrieval note.
 :PINNED: true
 :END:
 Copper launch retrieval note.
+
+* High salience unrelated note
+:PROPERTIES:
+:ID: unrelated-important
+:ORG2_SALIENCE: 99
+:PINNED: true
+:END:
+This note is important but does not mention the query terms.
 `, "utf8");
 const salienceFirst = runJson("agent", "search", "--query", "Copper launch retrieval", "--dir", rankingDir, "--limit", "2", "--recency-weight", "0", "--salience-weight", "1");
 assert.equal(salienceFirst.ranking.salienceWeight, 1);
 assert.equal(salienceFirst.results[0].id, "old-important");
+assert.ok(!salienceFirst.results.some((result) => result.id === "unrelated-important"));
 assert.ok(salienceFirst.results[0].selectionReason.some((reason) => reason.includes("explicit salience")));
 assert.ok(salienceFirst.results[0].selectionReason.some((reason) => reason.includes("pinned")));
 
