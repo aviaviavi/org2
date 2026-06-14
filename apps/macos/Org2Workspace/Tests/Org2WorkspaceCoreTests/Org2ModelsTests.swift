@@ -932,10 +932,19 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.renderedSearchHighlightQuery, "needle")
     XCTAssertTrue(store.hasRenderedSearchHighlight)
 
+    XCTAssertTrue(store.focusPageSearch())
+    XCTAssertTrue(store.isPageSearchPresented)
+    XCTAssertEqual(store.pageSearchQuery, "needle")
+    store.pageSearchQuery = "other"
+    XCTAssertEqual(store.renderedSearchHighlightQuery, "other")
+
     store.clearRenderedSearchHighlight()
     XCTAssertNil(store.renderedSearchHighlightQuery)
+    XCTAssertFalse(store.isPageSearchPresented)
 
     store.renderedSearchHighlightQuery = "needle"
+    store.isPageSearchPresented = true
+    store.pageSearchQuery = "needle"
     store.select(.openClaw(OpenClawThread(
       title: "Other",
       file: "/tmp/other.org",
@@ -945,6 +954,8 @@ final class Org2ModelsTests: XCTestCase {
       idValue: nil
     )))
     XCTAssertNil(store.renderedSearchHighlightQuery)
+    XCTAssertFalse(store.isPageSearchPresented)
+    XCTAssertTrue(store.pageSearchQuery.isEmpty)
   }
 
   @MainActor
@@ -2312,9 +2323,23 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedSurface, .search)
     XCTAssertEqual(store.searchFocusToken, 1)
 
-    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "f", keyCode: 3, modifiers: [.command])))
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "F", keyCode: 3, modifiers: [.command, .shift])))
     XCTAssertEqual(store.selectedSurface, .search)
     XCTAssertEqual(store.searchFocusToken, 2)
+
+    store.select(.openClaw(OpenClawThread(
+      title: "Current page",
+      file: "/tmp/current.org",
+      line: 1,
+      zone: "corpus",
+      modifiedAt: nil,
+      idValue: nil
+    )))
+    let surfaceBeforePageFind = store.selectedSurface
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "f", keyCode: 3, modifiers: [.command])))
+    XCTAssertEqual(store.selectedSurface, surfaceBeforePageFind)
+    XCTAssertTrue(store.isPageSearchPresented)
+    XCTAssertEqual(store.pageSearchFocusToken, 1)
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "4", keyCode: 21, modifiers: [.command])))
     XCTAssertEqual(store.selectedSurface, .meetings)
