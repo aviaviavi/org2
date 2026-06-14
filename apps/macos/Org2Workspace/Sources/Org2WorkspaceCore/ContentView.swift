@@ -402,13 +402,18 @@ private struct KeyboardShortcutsView: View {
           ShortcutSection(title: "Navigate", shortcuts: [
             ShortcutHelpItem(keys: "⌘1", action: "Agenda"),
             ShortcutHelpItem(keys: "⌘2", action: "Files"),
-            ShortcutHelpItem(keys: "⌘3 / ⌘F", action: "Search"),
+            ShortcutHelpItem(keys: "⌘3 / ⌘⇧F", action: "Corpus search"),
             ShortcutHelpItem(keys: "⌘4", action: "Meetings"),
             ShortcutHelpItem(keys: "⌘5", action: "OpenClaw Chat"),
             ShortcutHelpItem(keys: "⌘6", action: "Agent Space"),
             ShortcutHelpItem(keys: "⌘P / ⌘K", action: "Quick Open"),
             ShortcutHelpItem(keys: "⌘0", action: "Toggle OpenClaw side panel"),
             ShortcutHelpItem(keys: "⌘? / ⌘/", action: "Show shortcuts")
+          ])
+
+          ShortcutSection(title: "Page", shortcuts: [
+            ShortcutHelpItem(keys: "⌘F", action: "Find in current page"),
+            ShortcutHelpItem(keys: "Esc", action: "Clear selected block")
           ])
 
           ShortcutSection(title: "Daily Notes", shortcuts: [
@@ -1946,6 +1951,7 @@ private struct DetailScrollCommandBridge: NSViewRepresentable {
 
 private struct DetailHeader: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @FocusState private var isPageSearchFocused: Bool
   let location: WorkspaceLocation
 
   var body: some View {
@@ -2079,9 +2085,38 @@ private struct DetailHeader: View {
           }
         }
       }
+
+      if store.isPageSearchPresented {
+        HStack(spacing: 8) {
+          Image(systemName: "magnifyingglass")
+            .foregroundStyle(.secondary)
+          TextField("Find in page", text: $store.pageSearchQuery)
+            .textFieldStyle(.roundedBorder)
+            .focused($isPageSearchFocused)
+            .onSubmit {
+              isPageSearchFocused = false
+            }
+          if !store.pageSearchQuery.isEmpty {
+            Button {
+              store.clearRenderedSearchHighlight()
+            } label: {
+              Label("Clear Page Search", systemImage: "xmark.circle.fill")
+            }
+            .labelStyle(.iconOnly)
+            .help("Clear page search")
+          }
+        }
+        .frame(maxWidth: 420)
+        .onAppear {
+          isPageSearchFocused = true
+        }
+      }
     }
     .padding(WorkspaceDesign.contentInset)
     .background(WorkspaceDesign.barBackground)
+    .onChange(of: store.pageSearchFocusToken) {
+      isPageSearchFocused = true
+    }
   }
 
   private var locationIcon: String {

@@ -164,6 +164,14 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var searchFocusToken = 0
   @Published public var searchResults: [SearchResult] = []
   @Published public var renderedSearchHighlightQuery: String?
+  @Published public var isPageSearchPresented = false
+  @Published public var pageSearchQuery = "" {
+    didSet {
+      guard isPageSearchPresented else { return }
+      renderedSearchHighlightQuery = Self.normalizedRenderedSearchHighlightQuery(pageSearchQuery)
+    }
+  }
+  @Published public var pageSearchFocusToken = 0
   @Published public var meetings: [MeetingWorkspaceItem] = []
   @Published public var selectedMeetingID: String?
   @Published public var meetingTitleDraft = ""
@@ -873,8 +881,12 @@ public final class WorkspaceStore: ObservableObject {
 
   public func select(_ location: WorkspaceLocation) {
     if case .search = location {
+      isPageSearchPresented = false
+      pageSearchQuery = ""
       renderedSearchHighlightQuery = Self.normalizedRenderedSearchHighlightQuery(searchQuery)
     } else {
+      isPageSearchPresented = false
+      pageSearchQuery = ""
       renderedSearchHighlightQuery = nil
     }
     activateDetailLocation(location, mode: nil, recordsHistory: true)
@@ -886,6 +898,18 @@ public final class WorkspaceStore: ObservableObject {
 
   public func clearRenderedSearchHighlight() {
     renderedSearchHighlightQuery = nil
+    pageSearchQuery = ""
+    isPageSearchPresented = false
+  }
+
+  @discardableResult
+  public func focusPageSearch() -> Bool {
+    guard selectedLocation != nil else { return false }
+    isPageSearchPresented = true
+    pageSearchQuery = renderedSearchHighlightQuery ?? ""
+    renderedSearchHighlightQuery = Self.normalizedRenderedSearchHighlightQuery(pageSearchQuery)
+    pageSearchFocusToken += 1
+    return true
   }
 
   public func navigateBackInDetail() {
@@ -914,6 +938,8 @@ public final class WorkspaceStore: ObservableObject {
     case .search:
       break
     default:
+      isPageSearchPresented = false
+      pageSearchQuery = ""
       renderedSearchHighlightQuery = nil
     }
 
@@ -4245,7 +4271,7 @@ public final class WorkspaceStore: ObservableObject {
       case "9":
         openDailyNote(.tomorrow)
       case "f":
-        focusSearchSurface()
+        guard focusPageSearch() else { return false }
       case "k", "p":
         presentQuickOpen()
       case "r":
@@ -4266,6 +4292,9 @@ public final class WorkspaceStore: ObservableObject {
 
     if modifiers == [.command, .shift] {
       switch key {
+      case "f":
+        focusSearchSurface()
+        return true
       case "m":
         guard corpusRoot != nil, !isProcessingMeeting else { return false }
         if isRecordingMeeting {
