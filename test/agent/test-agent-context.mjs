@@ -272,10 +272,13 @@ Business question for package fetch activity.
 :TABLE: package_fetches_by_company
 :COLUMNS: company_id:string, package:string, fetches:int
 :PRIMARY_KEY: company_id, package
+:SOURCE: s3://analytics/package_fetches_by_company/
 :QUERY_ID: scarf.package_fetches_by_company.v1
+:QUERY_HASH: sha256:queryabc123
 :PARAMS: {"packages":["firebolt/foo"],"from":"2026-01-01"}
 :LAST_RUN: 2026-06-12T12:30:00-07:00
 :ARTIFACT: customer-reports/firebolt/package_fetches_by_company.csv
+:MATERIALIZED: true
 :ROW_COUNT: 1,234
 :RESULT_LIMIT: 500
 :RESULT_OFFSET: 100
@@ -375,10 +378,13 @@ assert.deepEqual(dataLink.results[0].dataLink.columns, [
   { name: "fetches", type: "int" },
 ]);
 assert.deepEqual(dataLink.results[0].dataLink.primaryKey, ["company_id", "package"]);
+assert.equal(dataLink.results[0].dataLink.source, "s3://analytics/package_fetches_by_company/");
 assert.equal(dataLink.results[0].dataLink.queryId, "scarf.package_fetches_by_company.v1");
+assert.equal(dataLink.results[0].dataLink.queryHash, "sha256:queryabc123");
 assert.deepEqual(dataLink.results[0].dataLink.params, { packages: ["firebolt/foo"], from: "2026-01-01" });
 assert.equal(dataLink.results[0].dataLink.lastRun, "2026-06-12T12:30:00-07:00");
 assert.equal(dataLink.results[0].dataLink.artifact, "customer-reports/firebolt/package_fetches_by_company.csv");
+assert.equal(dataLink.results[0].dataLink.materialized, "true");
 assert.equal(dataLink.results[0].dataLink.rowCount, 1234);
 assert.equal(dataLink.results[0].dataLink.resultLimit, 500);
 assert.equal(dataLink.results[0].dataLink.resultOffset, 100);
@@ -445,7 +451,10 @@ assert.equal(reportWithDataLinks.results.length, 1);
 assert.equal(reportWithDataLinks.results[0].relatedDataLinks.length, 4);
 const descendantQuery = reportWithDataLinks.results[0].relatedDataLinks.find((item) => item.id === "query-fetches-by-company");
 assert.equal(descendantQuery.kind, "warehouse-query");
+assert.equal(descendantQuery.dataLink.source, "s3://analytics/package_fetches_by_company/");
+assert.equal(descendantQuery.dataLink.queryHash, "sha256:queryabc123");
 assert.equal(descendantQuery.dataLink.artifact, "customer-reports/firebolt/package_fetches_by_company.csv");
+assert.equal(descendantQuery.dataLink.materialized, "true");
 assert.equal(descendantQuery.dataLink.resultLimit, 500);
 assert.equal(descendantQuery.dataLink.samplingMethod, "stratified");
 assert.equal(descendantQuery.dataLink.refreshStatus, "ready");
@@ -454,6 +463,7 @@ assert.equal(descendantQuery.dataLink.sensitivity, "customer-private");
 assert.equal(descendantQuery.dataLink.accessPolicy, "approval-required");
 const descendantDataset = reportWithDataLinks.results[0].relatedDataLinks.find((item) => item.id === "dataset-package-fetches");
 assert.equal(descendantDataset.kind, "dataset");
+assert.equal(descendantDataset.dataLink.path, "data/package-fetches.csv");
 const externalQuery = reportWithDataLinks.results[0].relatedDataLinks.find((item) => item.id === "query-fetch-error-rate");
 assert.equal(externalQuery.kind, "warehouse-query");
 assert.equal(externalQuery.dataLink.system, "firebolt");

@@ -1316,7 +1316,10 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       item.dataLink.changeId ? `change: ${item.dataLink.changeId}` : "",
       item.dataLink.sourceCursor ? `cursor: ${item.dataLink.sourceCursor}` : "",
       item.dataLink.changeHash ? `hash: ${item.dataLink.changeHash}` : "",
+      item.dataLink.source ? `source: ${item.dataLink.source}` : "",
+      item.dataLink.path ? `path: ${item.dataLink.path}` : "",
       item.dataLink.queryId ? `query: ${item.dataLink.queryId}` : "",
+      item.dataLink.queryHash ? `query hash: ${item.dataLink.queryHash}` : "",
       item.dataLink.artifact ? `artifact: ${item.dataLink.artifact}` : "",
       item.dataLink.result ? `result: ${item.dataLink.result}` : "",
       item.dataLink.rowCount !== undefined ? `rows: ${item.dataLink.rowCount}` : "",
@@ -1330,6 +1333,7 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       item.dataLink.windowEnd ? `window end: ${item.dataLink.windowEnd}` : "",
       item.dataLink.lastRun ? `last run: ${item.dataLink.lastRun}` : "",
       item.dataLink.freshness ? `freshness: ${item.dataLink.freshness}` : "",
+      item.dataLink.materialized ? `materialized: ${item.dataLink.materialized}` : "",
       item.dataLink.provenance?.length ? `provenance: ${item.dataLink.provenance.map((ref) => ref.ref).join(", ")}` : "",
       item.dataLink.sourceHashes?.length ? `source hashes: ${item.dataLink.sourceHashes.map((hash) => `${hash.kind}:${hash.value}=sha256:${hash.sha256.slice(0, 12)}`).join(", ")}` : "",
     ].filter(Boolean);

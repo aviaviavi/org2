@@ -48,8 +48,11 @@ See [[id:decision-1][decision note]].
 :TABLE: ticket_volume_daily
 :COLUMNS: date:date, ticket_count:int
 :PRIMARY_KEY: date
+:SOURCE: s3://support/ticket-volume/
 :QUERY_ID: support.ticket_volume.v1
+:QUERY_HASH: sha256:supportquery123
 :ARTIFACT: reports/support-ticket-volume.csv
+:MATERIALIZED: table
 :ROW_COUNT: 42
 :RESULT_LIMIT: 100
 :SAMPLE_SIZE: 42
@@ -108,6 +111,7 @@ Working notes for support triage.
 :PROPERTIES:
 :ID: support-satisfaction-score
 :KIND: dataset
+:SOURCE: gs://support/satisfaction/
 :PATH: reports/support-satisfaction.csv
 :TABLE: support_satisfaction
 :COLUMNS: account_id:string, satisfaction_score:double
@@ -188,8 +192,11 @@ assert.match(selected, /schema: support/);
 assert.match(selected, /table: ticket_volume_daily/);
 assert.match(selected, /columns: date:date, ticket_count:int/);
 assert.match(selected, /primary key: date/);
+assert.match(selected, /source: s3:\/\/support\/ticket-volume\//);
 assert.match(selected, /query: support\.ticket_volume\.v1/);
+assert.match(selected, /query hash: sha256:supportquery123/);
 assert.match(selected, /artifact: reports\/support-ticket-volume\.csv/);
+assert.match(selected, /materialized: table/);
 assert.match(selected, /refresh ref: query-data:support-ticket-volume/);
 assert.match(selected, /refresh command: org2 query-data --file support\.org2 --results support_ticket_volume --out views\/support-ticket-volume\.org2/);
 assert.match(selected, /refresh status: due/);
@@ -221,6 +228,8 @@ assert.match(selected, /review: review-required/);
 assert.match(selected, /claim freshness: stale/);
 assert.match(selected, /credential: secret:support-analytics/);
 assert.match(selected, /config: profile:support-local/);
+assert.match(selected, /source: gs:\/\/support\/satisfaction\//);
+assert.match(selected, /path: reports\/support-satisfaction\.csv/);
 assert.match(selected, /table: support_satisfaction/);
 assert.match(selected, /columns: account_id:string, satisfaction_score:double/);
 assert.match(selected, /Event stream: support state changes/);
@@ -283,6 +292,9 @@ assert.equal(selectedJson.results[0].relatedThreads[0].id, "thread-scarf-triage"
 const supportTicketVolume = selectedJson.results[0].relatedDataLinks.find((item) => item.id === "support-ticket-volume");
 assert.ok(supportTicketVolume);
 assert.equal(supportTicketVolume.dataLink.rowCount, 42);
+assert.equal(supportTicketVolume.dataLink.source, "s3://support/ticket-volume/");
+assert.equal(supportTicketVolume.dataLink.queryHash, "sha256:supportquery123");
+assert.equal(supportTicketVolume.dataLink.materialized, "table");
 assert.equal(supportTicketVolume.dataLink.resultLimit, 100);
 assert.equal(supportTicketVolume.dataLink.sampleSize, 42);
 assert.equal(supportTicketVolume.dataLink.sampleRate, "25%");
@@ -320,6 +332,7 @@ assert.equal(supportTicketVolume.dataLink.sourceHashes[0].sha256, "aaaaaaaaaaaaa
 assert.equal(supportTicketVolume.claimState.reviewStatus, "reviewed");
 assert.equal(supportTicketVolume.claimState.freshness, "fresh");
 assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-satisfaction-score" && item.claimState.reviewStatus === "review-required" && item.claimState.freshness === "stale"));
+assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-satisfaction-score" && item.dataLink.source === "gs://support/satisfaction/" && item.dataLink.path === "reports/support-satisfaction.csv"));
 assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-satisfaction-score" && item.matchingAttachments.some((attachment) => attachment.ref === "id:scarf-support-1")));
 assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-state-changes" && item.dataLink.timeline === "support.ticket.lifecycle"));
 assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-state-changes" && item.dataLink.changeId === "change-42"));
