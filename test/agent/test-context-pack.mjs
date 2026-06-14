@@ -60,6 +60,7 @@ See [[id:decision-1][decision note]].
 :SOURCE: s3://support/ticket-volume/
 :QUERY_ID: support.ticket_volume.v1
 :QUERY_HASH: sha256:supportquery123
+:PARAMS: {"team":"support","statuses":["open","pending"]}
 :ARTIFACT: reports/support-ticket-volume.csv
 :MATERIALIZED: table
 :ROW_COUNT: 42
@@ -138,6 +139,7 @@ Working notes for support triage.
 :COLUMNS: account_id:string, satisfaction_score:double
 :CREDENTIAL_REF: secret:support-analytics
 :CONFIG_REF: profile:support-local
+:PARAMS: score>=0.7
 :ROW_COUNT: 5
 :FRESHNESS: weekly
 :CONTEXT: id:scarf-support-1
@@ -225,6 +227,7 @@ assert.match(selected, /timezone: America\/Los_Angeles/);
 assert.match(selected, /source: s3:\/\/support\/ticket-volume\//);
 assert.match(selected, /query: support\.ticket_volume\.v1/);
 assert.match(selected, /query hash: sha256:supportquery123/);
+assert.match(selected, /params: \{"team":"support","statuses":\["open","pending"\]\}/);
 assert.match(selected, /artifact: reports\/support-ticket-volume\.csv/);
 assert.match(selected, /materialized: table/);
 assert.match(selected, /refresh ref: query-data:support-ticket-volume/);
@@ -270,6 +273,7 @@ assert.match(selected, /review: review-required/);
 assert.match(selected, /claim freshness: stale/);
 assert.match(selected, /credential: secret:support-analytics/);
 assert.match(selected, /config: profile:support-local/);
+assert.match(selected, /params: score>=0\.7/);
 assert.match(selected, /source: gs:\/\/support\/satisfaction\//);
 assert.match(selected, /path: reports\/support-satisfaction\.csv/);
 assert.match(selected, /table: support_satisfaction/);
@@ -336,6 +340,7 @@ assert.ok(supportTicketVolume);
 assert.equal(supportTicketVolume.dataLink.rowCount, 42);
 assert.equal(supportTicketVolume.dataLink.source, "s3://support/ticket-volume/");
 assert.equal(supportTicketVolume.dataLink.queryHash, "sha256:supportquery123");
+assert.deepEqual(supportTicketVolume.dataLink.params, { team: "support", statuses: ["open", "pending"] });
 assert.equal(supportTicketVolume.dataLink.materialized, "table");
 assert.equal(supportTicketVolume.dataLink.resultLimit, 100);
 assert.equal(supportTicketVolume.dataLink.sampleSize, 42);
