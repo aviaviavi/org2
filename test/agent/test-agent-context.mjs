@@ -283,6 +283,7 @@ Business question for package fetch activity.
 :TIMEZONE: America/Los_Angeles
 :SOURCE: s3://analytics/package_fetches_by_company/
 :QUERY_ID: scarf.package_fetches_by_company.v1
+:QUERY: SELECT company_id, package, fetches FROM package_fetches_by_company WHERE package = {package}
 :QUERY_HASH: sha256:queryabc123
 :PARAMS: {"packages":["firebolt/foo"],"from":"2026-01-01"}
 :LAST_RUN: 2026-06-12T12:30:00-07:00
@@ -413,6 +414,7 @@ assert.equal(dataLink.results[0].dataLink.timeColumn, "fetched_at");
 assert.equal(dataLink.results[0].dataLink.timezone, "America/Los_Angeles");
 assert.equal(dataLink.results[0].dataLink.source, "s3://analytics/package_fetches_by_company/");
 assert.equal(dataLink.results[0].dataLink.queryId, "scarf.package_fetches_by_company.v1");
+assert.equal(dataLink.results[0].dataLink.query, "SELECT company_id, package, fetches FROM package_fetches_by_company WHERE package = {package}");
 assert.equal(dataLink.results[0].dataLink.queryHash, "sha256:queryabc123");
 assert.deepEqual(dataLink.results[0].dataLink.params, { packages: ["firebolt/foo"], from: "2026-01-01" });
 assert.equal(dataLink.results[0].dataLink.lastRun, "2026-06-12T12:30:00-07:00");
@@ -498,6 +500,7 @@ assert.equal(reportWithDataLinks.results[0].relatedDataLinks.length, 4);
 const descendantQuery = reportWithDataLinks.results[0].relatedDataLinks.find((item) => item.id === "query-fetches-by-company");
 assert.equal(descendantQuery.kind, "warehouse-query");
 assert.equal(descendantQuery.dataLink.source, "s3://analytics/package_fetches_by_company/");
+assert.equal(descendantQuery.dataLink.query, "SELECT company_id, package, fetches FROM package_fetches_by_company WHERE package = {package}");
 assert.equal(descendantQuery.dataLink.queryHash, "sha256:queryabc123");
 assert.equal(descendantQuery.dataLink.artifact, "customer-reports/firebolt/package_fetches_by_company.csv");
 assert.equal(descendantQuery.dataLink.materialized, "true");

@@ -1450,6 +1450,7 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       item.dataLink.source ? `source: ${item.dataLink.source}` : "",
       item.dataLink.path ? `path: ${item.dataLink.path}` : "",
       item.dataLink.queryId ? `query: ${item.dataLink.queryId}` : "",
+      item.dataLink.query ? `query text: ${item.dataLink.query}` : "",
       item.dataLink.queryHash ? `query hash: ${item.dataLink.queryHash}` : "",
       formattedParams ? `params: ${formattedParams}` : "",
       item.dataLink.artifact ? `artifact: ${item.dataLink.artifact}` : "",
