@@ -51,6 +51,13 @@ See [[id:decision-1][decision note]].
 :QUERY_ID: support.ticket_volume.v1
 :ARTIFACT: reports/support-ticket-volume.csv
 :ROW_COUNT: 42
+:RESULT_LIMIT: 100
+:SAMPLE_SIZE: 42
+:SAMPLE_RATE: 25%
+:SAMPLING_METHOD: latest-day
+:COVERAGE: open-support-tickets
+:WINDOW_START: 2026-05-01
+:WINDOW_END: 2026-05-15
 :FRESHNESS: daily
 :REFRESH_REF: query-data:support-ticket-volume
 :REFRESH_COMMAND: org2 query-data --file support.org2 --results support_ticket_volume --out views/support-ticket-volume.org2
@@ -202,6 +209,13 @@ assert.match(selected, /access: support-approved/);
 assert.match(selected, /retention: 30d/);
 assert.match(selected, /provenance: artifact:reports\/support-ticket-volume\.csv, query:support\.ticket_volume\.v1/);
 assert.match(selected, /source hashes: query:support\.ticket_volume\.v1=sha256:aaaaaaaaaaaa/);
+assert.match(selected, /limit: 100/);
+assert.match(selected, /sample size: 42/);
+assert.match(selected, /sample rate: 25%/);
+assert.match(selected, /sampling: latest-day/);
+assert.match(selected, /coverage: open-support-tickets/);
+assert.match(selected, /window start: 2026-05-01/);
+assert.match(selected, /window end: 2026-05-15/);
 assert.match(selected, /Data catalog: support satisfaction score/);
 assert.match(selected, /review: review-required/);
 assert.match(selected, /claim freshness: stale/);
@@ -269,6 +283,13 @@ assert.equal(selectedJson.results[0].relatedThreads[0].id, "thread-scarf-triage"
 const supportTicketVolume = selectedJson.results[0].relatedDataLinks.find((item) => item.id === "support-ticket-volume");
 assert.ok(supportTicketVolume);
 assert.equal(supportTicketVolume.dataLink.rowCount, 42);
+assert.equal(supportTicketVolume.dataLink.resultLimit, 100);
+assert.equal(supportTicketVolume.dataLink.sampleSize, 42);
+assert.equal(supportTicketVolume.dataLink.sampleRate, "25%");
+assert.equal(supportTicketVolume.dataLink.samplingMethod, "latest-day");
+assert.equal(supportTicketVolume.dataLink.coverage, "open-support-tickets");
+assert.equal(supportTicketVolume.dataLink.windowStart, "2026-05-01");
+assert.equal(supportTicketVolume.dataLink.windowEnd, "2026-05-15");
 assert.equal(supportTicketVolume.dataLink.database, "support_warehouse");
 assert.equal(supportTicketVolume.dataLink.schema, "support");
 assert.equal(supportTicketVolume.dataLink.table, "ticket_volume_daily");
