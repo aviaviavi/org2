@@ -2267,6 +2267,50 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testWorkspaceNodeSearchFiltersIndexedNodesAndOpensSelection() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-node-search-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("alpha.org2")
+    try """
+    #+TITLE: Alpha Project
+    #+ROAM_ALIASES: "Apollo"
+    :PROPERTIES:
+    :ID: alpha-id
+    :END:
+
+    * Beta Heading
+    :PROPERTIES:
+    :ID: beta-id
+    :END:
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.refreshCorpusFiles()
+
+    try await waitForCondition {
+      store.orgRoamLinkResolver.nodes.count == 2
+    }
+
+    store.searchMode = .nodes
+    store.searchQuery = "apollo"
+    XCTAssertEqual(store.searchNodes.first?.title, "Alpha Project")
+
+    store.searchQuery = "beta"
+    let beta = try XCTUnwrap(store.searchNodes.first)
+    XCTAssertEqual(beta.title, "Beta Heading")
+
+    store.selectSearchNode(beta)
+
+    XCTAssertEqual(store.selectedSurface, .search)
+    XCTAssertEqual(store.selectedLocation?.title, "Beta Heading")
+    XCTAssertEqual(store.selectedLocation?.file, note.path)
+    XCTAssertEqual(store.selectedLocation?.lineForEditor, 7)
+    XCTAssertNil(store.renderedSearchHighlightQuery)
+  }
+
+  @MainActor
   func testCorpusFileBrowserScansFiltersAndOpensFiles() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-files-\(UUID().uuidString)", isDirectory: true)

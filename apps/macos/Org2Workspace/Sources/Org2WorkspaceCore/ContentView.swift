@@ -798,7 +798,7 @@ private struct SearchView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      HeaderBar(title: "Search", subtitle: "Full-text corpus search") {
+      HeaderBar(title: "Search", subtitle: store.searchMode.subtitle) {
         if store.isSearching {
           ProgressView()
             .controlSize(.small)
@@ -812,23 +812,33 @@ private struct SearchView: View {
       }
 
       HStack(spacing: 8) {
-        TextField("Search all org text", text: $store.searchQuery)
+        Picker("Search mode", selection: $store.searchMode) {
+          ForEach(WorkspaceSearchMode.allCases) { mode in
+            Text(mode.title).tag(mode)
+          }
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 180)
+
+        TextField(store.searchMode.placeholder, text: $store.searchQuery)
           .textFieldStyle(.roundedBorder)
           .focused($isSearchFocused)
           .onSubmit {
-            Task { await store.runSearch() }
+            runSearchIfNeeded()
           }
 
-        Button {
-          Task { await store.runSearch() }
-        } label: {
-          Label("Search", systemImage: "magnifyingglass")
+        if store.searchMode == .text {
+          Button {
+            Task { await store.runSearch() }
+          } label: {
+            Label("Search", systemImage: "magnifyingglass")
+          }
+          .disabled(store.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isSearching)
         }
-        .disabled(store.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isSearching)
       }
       .padding(.horizontal, WorkspaceDesign.contentInset)
 
-      Text("Literal, case-insensitive search across .org and .org2 files under the selected corpus.")
+      Text(store.searchMode.helpText)
         .font(.caption)
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -836,6 +846,22 @@ private struct SearchView: View {
         .padding(.top, 4)
         .padding(.bottom, 12)
 
+      searchResultsBody
+    }
+    .onAppear {
+      if store.selectedSurface == .search {
+        isSearchFocused = true
+      }
+    }
+    .onChange(of: store.searchFocusToken) {
+      isSearchFocused = true
+    }
+  }
+
+  @ViewBuilder
+  private var searchResultsBody: some View {
+    switch store.searchMode {
+    case .text:
       if store.searchResults.isEmpty {
         if store.isSearching {
           Spacer()
@@ -856,14 +882,22 @@ private struct SearchView: View {
         }
         .listStyle(.inset)
       }
-    }
-    .onAppear {
-      if store.selectedSurface == .search {
-        isSearchFocused = true
+    case .nodes:
+      let nodes = store.searchNodes
+      if nodes.isEmpty {
+        EmptyStateView(title: "No Nodes", detail: nodeEmptyStateDetail, action: "Refresh Index") {
+          Task { await store.refreshCorpusFiles() }
+        }
+      } else {
+        List(nodes) { node in
+          NodeSearchRow(node: node)
+            .contentShape(Rectangle())
+            .onTapGesture {
+              store.selectSearchNode(node)
+            }
+        }
+        .listStyle(.inset)
       }
-    }
-    .onChange(of: store.searchFocusToken) {
-      isSearchFocused = true
     }
   }
 
@@ -873,6 +907,19 @@ private struct SearchView: View {
       return "Enter text to search the corpus."
     }
     return store.statusText
+  }
+
+  private var nodeEmptyStateDetail: String {
+    if store.corpusRoot == nil { return "Open a corpus to search node titles, aliases, and IDs." }
+    if store.orgRoamLinkResolver.nodes.isEmpty {
+      return "No nodes are indexed yet. Add org files with titles, IDs, aliases, or headings."
+    }
+    return "No indexed node matched this query."
+  }
+
+  private func runSearchIfNeeded() {
+    guard store.searchMode == .text else { return }
+    Task { await store.runSearch() }
   }
 }
 
@@ -909,6 +956,52 @@ private struct SearchRow: View {
     }
     .padding(.horizontal, WorkspaceDesign.contentInset)
     .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
+  }
+}
+
+private struct NodeSearchRow: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let node: OrgRoamNodeReference
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 8) {
+      WorkspaceIconBadge(systemImage: "link")
+      VStack(alignment: .leading, spacing: 5) {
+        HStack(spacing: 8) {
+          Text(Org2Display.cleanInline(node.title))
+            .font(.body.weight(.medium))
+            .lineLimit(1)
+          if node.idValue != nil {
+            Image(systemName: "number")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          Spacer(minLength: 0)
+        }
+
+        if !node.aliases.isEmpty {
+          Text(node.aliases.joined(separator: ", "))
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+
+        HStack(spacing: 8) {
+          Text(store.relativePath(node.file) + ":\(node.line)")
+          if let idValue = node.idValue {
+            Text(shortID(idValue))
+          }
+        }
+        .font(.caption)
+        .foregroundStyle(.tertiary)
+      }
+    }
+    .padding(.horizontal, WorkspaceDesign.contentInset)
+    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
+  }
+
+  private func shortID(_ idValue: String) -> String {
+    idValue.count > 12 ? String(idValue.prefix(12)) + "..." : idValue
   }
 }
 
