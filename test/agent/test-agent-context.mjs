@@ -277,6 +277,14 @@ Business question for package fetch activity.
 :LAST_RUN: 2026-06-12T12:30:00-07:00
 :ARTIFACT: customer-reports/firebolt/package_fetches_by_company.csv
 :ROW_COUNT: 1,234
+:RESULT_LIMIT: 500
+:RESULT_OFFSET: 100
+:SAMPLE_SIZE: 250
+:SAMPLE_RATE: 10%
+:SAMPLING_METHOD: stratified
+:COVERAGE: customers-with-package-fetches
+:WINDOW_START: 2026-01-01
+:WINDOW_END: 2026-06-12
 :FRESHNESS: live
 :REFRESH_REF: query-data:fetches_by_company
 :REFRESH_COMMAND: org2 query-data --file reports.org2 --results fetches_by_company --out views/fetches.org2
@@ -372,6 +380,14 @@ assert.deepEqual(dataLink.results[0].dataLink.params, { packages: ["firebolt/foo
 assert.equal(dataLink.results[0].dataLink.lastRun, "2026-06-12T12:30:00-07:00");
 assert.equal(dataLink.results[0].dataLink.artifact, "customer-reports/firebolt/package_fetches_by_company.csv");
 assert.equal(dataLink.results[0].dataLink.rowCount, 1234);
+assert.equal(dataLink.results[0].dataLink.resultLimit, 500);
+assert.equal(dataLink.results[0].dataLink.resultOffset, 100);
+assert.equal(dataLink.results[0].dataLink.sampleSize, 250);
+assert.equal(dataLink.results[0].dataLink.sampleRate, "10%");
+assert.equal(dataLink.results[0].dataLink.samplingMethod, "stratified");
+assert.equal(dataLink.results[0].dataLink.coverage, "customers-with-package-fetches");
+assert.equal(dataLink.results[0].dataLink.windowStart, "2026-01-01");
+assert.equal(dataLink.results[0].dataLink.windowEnd, "2026-06-12");
 assert.equal(dataLink.results[0].dataLink.freshness, "live");
 assert.equal(dataLink.results[0].dataLink.refreshRef, "query-data:fetches_by_company");
 assert.equal(dataLink.results[0].dataLink.refreshCommand, "org2 query-data --file reports.org2 --results fetches_by_company --out views/fetches.org2");
@@ -430,6 +446,8 @@ assert.equal(reportWithDataLinks.results[0].relatedDataLinks.length, 4);
 const descendantQuery = reportWithDataLinks.results[0].relatedDataLinks.find((item) => item.id === "query-fetches-by-company");
 assert.equal(descendantQuery.kind, "warehouse-query");
 assert.equal(descendantQuery.dataLink.artifact, "customer-reports/firebolt/package_fetches_by_company.csv");
+assert.equal(descendantQuery.dataLink.resultLimit, 500);
+assert.equal(descendantQuery.dataLink.samplingMethod, "stratified");
 assert.equal(descendantQuery.dataLink.refreshStatus, "ready");
 assert.equal(descendantQuery.dataLink.validationStatus, "sampled");
 assert.equal(descendantQuery.dataLink.sensitivity, "customer-private");
