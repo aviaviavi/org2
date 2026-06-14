@@ -493,12 +493,75 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
   public let role: Role
   public let content: String
   public let createdAt: Date
+  public let changeSummary: OpenClawCorpusChangeSummary?
 
-  public init(id: UUID = UUID(), role: Role, content: String, createdAt: Date = Date()) {
+  public init(
+    id: UUID = UUID(),
+    role: Role,
+    content: String,
+    createdAt: Date = Date(),
+    changeSummary: OpenClawCorpusChangeSummary? = nil
+  ) {
     self.id = id
     self.role = role
     self.content = content
     self.createdAt = createdAt
+    self.changeSummary = changeSummary
+  }
+}
+
+public struct OpenClawCorpusChangeSummary: Hashable, Codable, Sendable {
+  public let files: [OpenClawCorpusFileChange]
+
+  public init(files: [OpenClawCorpusFileChange]) {
+    self.files = files
+  }
+
+  public var changedFileCount: Int {
+    files.count
+  }
+
+  public var totalInsertions: Int {
+    files.reduce(0) { $0 + $1.insertions }
+  }
+
+  public var totalDeletions: Int {
+    files.reduce(0) { $0 + $1.deletions }
+  }
+
+  public var title: String {
+    let noun = changedFileCount == 1 ? "file" : "files"
+    if files.allSatisfy({ $0.status == .created }) {
+      return "Created \(changedFileCount) \(noun)"
+    }
+    if files.allSatisfy({ $0.status == .deleted }) {
+      return "Deleted \(changedFileCount) \(noun)"
+    }
+    return "Edited \(changedFileCount) \(noun)"
+  }
+}
+
+public struct OpenClawCorpusFileChange: Identifiable, Hashable, Codable, Sendable {
+  public enum Status: String, Hashable, Codable, Sendable {
+    case created
+    case modified
+    case deleted
+  }
+
+  public let relativePath: String
+  public let status: Status
+  public let insertions: Int
+  public let deletions: Int
+
+  public init(relativePath: String, status: Status, insertions: Int, deletions: Int) {
+    self.relativePath = relativePath
+    self.status = status
+    self.insertions = insertions
+    self.deletions = deletions
+  }
+
+  public var id: String {
+    relativePath
   }
 }
 

@@ -73,6 +73,15 @@ private struct OpenClawContextPointer: Equatable, Sendable {
   let displayReference: String
 }
 
+private struct OpenClawCorpusSnapshot: Sendable {
+  let rootPath: String
+  let files: [String: OpenClawSnapshotFile]
+}
+
+private struct OpenClawSnapshotFile: Sendable {
+  let text: String
+}
+
 private enum WorkspaceUndoAction: Equatable, Sendable {
   case openClawDraft(previous: String, next: String)
 }
@@ -281,6 +290,12 @@ public final class WorkspaceStore: ObservableObject {
   private static let canonicalParserLineLimit = 2_000
   private static let renderedBlocksCacheLimit = 12
   private static let detailNavigationHistoryLimit = 100
+  nonisolated private static let openClawChangeSnapshotMaxFileBytes = 2_000_000
+  nonisolated private static let openClawChangeSnapshotAllowedExtensions = Set([
+    "org", "org2", "md", "markdown", "txt",
+    "json", "jsonl", "yaml", "yml", "toml",
+    "csv", "tsv"
+  ])
   private var openClawTranscriptURL: URL
   private let appOpenClawTranscriptURL: URL
   private let usesFixedOpenClawTranscriptURL: Bool
@@ -3233,12 +3248,21 @@ public final class WorkspaceStore: ObservableObject {
       openClawStatusText = openClawQueuedStatusText()
 
       do {
+        let beforeSnapshot = await captureOpenClawCorpusSnapshot()
         let reply = try await sendOpenClawRequest(messages: requestMessages)
-        insertOpenClawReply(reply, after: userMessageID)
+        let changeSummary = await openClawChangeSummary(since: beforeSnapshot)
+        insertOpenClawReply(reply, after: userMessageID, changeSummary: changeSummary)
+        if let changeSummary {
+          await refreshAfterOpenClawChanges(changeSummary)
+        }
         openClawPendingUserMessageIDs.removeFirst()
-        openClawStatusText = openClawPendingUserMessageIDs.isEmpty
-          ? "OpenClaw replied"
-          : openClawQueuedStatusText()
+        if openClawPendingUserMessageIDs.isEmpty {
+          openClawStatusText = changeSummary.map {
+            "\($0.title): +\($0.totalInsertions) -\($0.totalDeletions)"
+          } ?? "OpenClaw replied"
+        } else {
+          openClawStatusText = openClawQueuedStatusText()
+        }
       } catch {
         openClawStatusText = error.localizedDescription
         openClawPendingUserMessageIDs.removeAll()
@@ -3269,13 +3293,56 @@ public final class WorkspaceStore: ObservableObject {
     return Array(openClawMessages[...index])
   }
 
-  private func insertOpenClawReply(_ reply: String, after userMessageID: UUID) {
-    let assistantMessage = OpenClawChatMessage(role: .assistant, content: reply)
+  private func insertOpenClawReply(
+    _ reply: String,
+    after userMessageID: UUID,
+    changeSummary: OpenClawCorpusChangeSummary?
+  ) {
+    let assistantMessage = OpenClawChatMessage(role: .assistant, content: reply, changeSummary: changeSummary)
     guard let index = openClawMessages.firstIndex(where: { $0.id == userMessageID }) else {
       openClawMessages.append(assistantMessage)
       return
     }
     openClawMessages.insert(assistantMessage, at: openClawMessages.index(after: index))
+  }
+
+  private func captureOpenClawCorpusSnapshot() async -> OpenClawCorpusSnapshot? {
+    guard let corpusRoot else { return nil }
+    let root = corpusRoot.standardizedFileURL
+    return try? await Task.detached(priority: .utility) {
+      try Self.openClawCorpusSnapshot(corpusRoot: root)
+    }.value
+  }
+
+  private func openClawChangeSummary(since snapshot: OpenClawCorpusSnapshot?) async -> OpenClawCorpusChangeSummary? {
+    guard let snapshot else { return nil }
+    let root = URL(fileURLWithPath: snapshot.rootPath).standardizedFileURL
+    guard let afterSnapshot = try? await Task.detached(priority: .utility, operation: {
+      try Self.openClawCorpusSnapshot(corpusRoot: root)
+    }).value else {
+      return nil
+    }
+    return Self.openClawChangeSummary(before: snapshot, after: afterSnapshot)
+  }
+
+  private func refreshAfterOpenClawChanges(_ summary: OpenClawCorpusChangeSummary) async {
+    guard let corpusRoot else { return }
+    let root = corpusRoot.standardizedFileURL
+    let changedFiles = summary.files.map { root.appendingPathComponent($0.relativePath).standardizedFileURL.path }
+    for file in changedFiles {
+      invalidateCanonicalDocumentCache(for: file)
+    }
+
+    if let selectedEntrySource,
+       changedFiles.contains(URL(fileURLWithPath: selectedEntrySource.file).standardizedFileURL.path),
+       let selectedLocation {
+      await loadEntrySource(for: selectedLocation)
+    }
+
+    await refreshCorpusFiles()
+    await refreshAgenda(preserveSelection: true, updatesStatus: false)
+    await refreshMeetings()
+    Task { await refreshOpenClawThreads() }
   }
 
   private func openClawQueuedStatusText() -> String {
@@ -6828,6 +6895,163 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated private static let roamTodoKeywords = Set([
     "TODO", "OPEN", "BACKLOG", "IN_PROGRESS", "PROG", "WAIT", "HOLD", "PAUSED", "DONE", "CANCELED", "CANCELLED"
   ])
+
+  nonisolated private static func openClawCorpusSnapshot(corpusRoot: URL) throws -> OpenClawCorpusSnapshot {
+    let root = corpusRoot.standardizedFileURL
+    let rootPath = root.path
+    let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .isDirectoryKey, .fileSizeKey]
+    let skippedDirectories = Set([".git", ".hg", ".svn", ".trash", "node_modules", "dist", "build", ".build", "DerivedData"])
+    guard let enumerator = FileManager.default.enumerator(
+      at: root,
+      includingPropertiesForKeys: Array(resourceKeys),
+      options: [.skipsHiddenFiles, .skipsPackageDescendants]
+    ) else {
+      return OpenClawCorpusSnapshot(rootPath: rootPath, files: [:])
+    }
+
+    var files: [String: OpenClawSnapshotFile] = [:]
+    for case let url as URL in enumerator {
+      guard let values = try? url.resourceValues(forKeys: resourceKeys) else {
+        continue
+      }
+      if values.isDirectory == true {
+        if skippedDirectories.contains(url.lastPathComponent) {
+          enumerator.skipDescendants()
+        }
+        continue
+      }
+
+      guard values.isRegularFile == true,
+            openClawChangeSnapshotAllowedExtensions.contains(url.pathExtension.lowercased()),
+            let byteCount = values.fileSize,
+            byteCount <= openClawChangeSnapshotMaxFileBytes,
+            let data = try? Data(contentsOf: url),
+            !data.contains(0),
+            let text = String(data: data, encoding: .utf8)
+      else {
+        continue
+      }
+
+      let path = url.standardizedFileURL.path
+      let relativePath = path.hasPrefix(rootPath + "/")
+        ? String(path.dropFirst(rootPath.count + 1))
+        : url.lastPathComponent
+      files[relativePath] = OpenClawSnapshotFile(text: text)
+    }
+
+    return OpenClawCorpusSnapshot(rootPath: rootPath, files: files)
+  }
+
+  nonisolated private static func openClawChangeSummary(
+    before: OpenClawCorpusSnapshot,
+    after: OpenClawCorpusSnapshot
+  ) -> OpenClawCorpusChangeSummary? {
+    let changedFiles = Set(before.files.keys)
+      .union(after.files.keys)
+      .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+      .compactMap { relativePath -> OpenClawCorpusFileChange? in
+        switch (before.files[relativePath], after.files[relativePath]) {
+        case let (oldFile?, newFile?):
+          guard oldFile.text != newFile.text else { return nil }
+          let counts = openClawLineChangeCounts(before: oldFile.text, after: newFile.text)
+          return OpenClawCorpusFileChange(
+            relativePath: relativePath,
+            status: .modified,
+            insertions: counts.insertions,
+            deletions: counts.deletions
+          )
+        case let (nil, newFile?):
+          return OpenClawCorpusFileChange(
+            relativePath: relativePath,
+            status: .created,
+            insertions: openClawTextLines(newFile.text).count,
+            deletions: 0
+          )
+        case let (oldFile?, nil):
+          return OpenClawCorpusFileChange(
+            relativePath: relativePath,
+            status: .deleted,
+            insertions: 0,
+            deletions: openClawTextLines(oldFile.text).count
+          )
+        case (nil, nil):
+          return nil
+        }
+      }
+
+    return changedFiles.isEmpty ? nil : OpenClawCorpusChangeSummary(files: changedFiles)
+  }
+
+  nonisolated private static func openClawLineChangeCounts(before oldText: String, after newText: String) -> (insertions: Int, deletions: Int) {
+    let oldLines = openClawTextLines(oldText)
+    let newLines = openClawTextLines(newText)
+    guard !oldLines.isEmpty || !newLines.isEmpty else {
+      return (0, 0)
+    }
+
+    let canRunExactDiff = oldLines.count <= 1_000_000 / max(1, newLines.count)
+    let commonLineCount = canRunExactDiff
+      ? openClawLongestCommonSubsequenceCount(oldLines, newLines)
+      : openClawPrefixSuffixCommonLineCount(oldLines, newLines)
+    return (
+      insertions: max(0, newLines.count - commonLineCount),
+      deletions: max(0, oldLines.count - commonLineCount)
+    )
+  }
+
+  nonisolated private static func openClawTextLines(_ text: String) -> [String] {
+    let normalized = normalizeLineEndings(text)
+    guard !normalized.isEmpty else { return [] }
+    var lines = normalized
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    if normalized.hasSuffix("\n") {
+      lines.removeLast()
+    }
+    return lines
+  }
+
+  nonisolated private static func openClawLongestCommonSubsequenceCount(_ oldLines: [String], _ newLines: [String]) -> Int {
+    guard !oldLines.isEmpty, !newLines.isEmpty else { return 0 }
+    var previous = Array(repeating: 0, count: newLines.count + 1)
+    var current = previous
+
+    for oldLine in oldLines {
+      current[0] = 0
+      for (newIndex, newLine) in newLines.enumerated() {
+        if oldLine == newLine {
+          current[newIndex + 1] = previous[newIndex] + 1
+        } else {
+          current[newIndex + 1] = max(previous[newIndex + 1], current[newIndex])
+        }
+      }
+      swap(&previous, &current)
+    }
+
+    return previous[newLines.count]
+  }
+
+  nonisolated private static func openClawPrefixSuffixCommonLineCount(_ oldLines: [String], _ newLines: [String]) -> Int {
+    var prefixCount = 0
+    while prefixCount < oldLines.count,
+          prefixCount < newLines.count,
+          oldLines[prefixCount] == newLines[prefixCount] {
+      prefixCount += 1
+    }
+
+    var oldEnd = oldLines.count
+    var newEnd = newLines.count
+    var suffixCount = 0
+    while oldEnd > prefixCount,
+          newEnd > prefixCount,
+          oldLines[oldEnd - 1] == newLines[newEnd - 1] {
+      oldEnd -= 1
+      newEnd -= 1
+      suffixCount += 1
+    }
+
+    return prefixCount + suffixCount
+  }
 
   nonisolated private static func scanCorpusFiles(corpusRoot: URL) throws -> [CorpusFile] {
     let root = corpusRoot.standardizedFileURL
