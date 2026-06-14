@@ -426,6 +426,7 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "/", action: "Filter agenda"),
             ShortcutHelpItem(keys: "o / Return", action: "Open item"),
             ShortcutHelpItem(keys: "e", action: "Edit item source"),
+            ShortcutHelpItem(keys: "⌘A / ⌘⇧A", action: "Select visible / clear bulk selection"),
             ShortcutHelpItem(keys: "t i d x", action: "TODO / in-progress / done / canceled"),
             ShortcutHelpItem(keys: "A", action: "Assign to agent"),
             ShortcutHelpItem(keys: "p", action: "Priority mode"),
@@ -632,33 +633,103 @@ private struct AgendaListView: View {
   @EnvironmentObject private var store: WorkspaceStore
 
   var body: some View {
-    List(selection: $store.selectedAgendaItemID) {
-      ForEach(store.agendaDisplaySections) { section in
-        Section(section.label) {
-          ForEach(section.items) { item in
-            AgendaRow(item: item)
-              .tag(item.id)
-              .contentShape(Rectangle())
-              .onTapGesture {
-                store.selectAgendaItem(item)
+    VStack(spacing: 0) {
+      if store.hasBulkAgendaSelection {
+        AgendaBulkActionBar()
+      }
+
+      List(selection: $store.selectedAgendaItemID) {
+        ForEach(store.agendaDisplaySections) { section in
+          Section(section.label) {
+            ForEach(section.items) { item in
+              AgendaRow(item: item)
+                .tag(item.id)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                  store.selectAgendaItem(item)
+                }
               }
           }
         }
-      }
 
-      if store.agendaDisplaySections.isEmpty {
-        Text("No agenda items")
-          .foregroundStyle(.secondary)
+        if store.agendaDisplaySections.isEmpty {
+          Text("No agenda items")
+            .foregroundStyle(.secondary)
+        }
+      }
+      .listStyle(.inset)
+      .onChange(of: store.selectedAgendaItemID) {
+        guard let id = store.selectedAgendaItemID,
+              let item = store.visibleAgendaItems.first(where: { $0.id == id })
+        else {
+          return
+        }
+        store.select(.agenda(item))
       }
     }
-    .listStyle(.inset)
-    .onChange(of: store.selectedAgendaItemID) {
-      guard let id = store.selectedAgendaItemID,
-            let item = store.visibleAgendaItems.first(where: { $0.id == id })
-      else {
-        return
+  }
+}
+
+private struct AgendaBulkActionBar: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Label("\(store.bulkAgendaSelectionCount) selected", systemImage: "checkmark.square")
+        .font(.callout.weight(.semibold))
+        .foregroundStyle(.primary)
+        .monospacedDigit()
+
+      Spacer(minLength: 0)
+
+      Button {
+        store.selectAllVisibleAgendaItemsForBulkAction()
+      } label: {
+        Label("Select Visible", systemImage: "checkmark.square")
       }
-      store.select(.agenda(item))
+      .disabled(store.visibleAgendaItemCount == 0)
+
+      Menu {
+        Button("TODO") {
+          Task { await store.applyTodoShortcut(.todo) }
+        }
+        Button("In Progress") {
+          Task { await store.applyTodoShortcut(.inProgress) }
+        }
+        Button("Done") {
+          Task { await store.applyTodoShortcut(.done) }
+        }
+        Button("Canceled") {
+          Task { await store.applyTodoShortcut(.canceled) }
+        }
+      } label: {
+        Label("Status", systemImage: "tag")
+      }
+
+      Button {
+        Task { await store.applyTodoShortcut(.done) }
+      } label: {
+        Label("Done", systemImage: "checkmark.circle")
+      }
+
+      Button {
+        Task { await store.applyAgentHandoffShortcut() }
+      } label: {
+        Label("Pass to Agent", systemImage: "paperplane")
+      }
+
+      Button {
+        store.clearAgendaBulkSelection()
+      } label: {
+        Label("Clear", systemImage: "xmark.circle")
+      }
+    }
+    .controlSize(.small)
+    .padding(.horizontal, WorkspaceDesign.contentInset)
+    .padding(.vertical, 8)
+    .background(WorkspaceDesign.subtleFill)
+    .overlay(alignment: .bottom) {
+      Divider()
     }
   }
 }
@@ -668,7 +739,20 @@ private struct AgendaRow: View {
   let item: AgendaItem
 
   var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 10) {
+    HStack(alignment: .top, spacing: 10) {
+      Button {
+        store.toggleAgendaItemBulkSelection(item)
+      } label: {
+        Image(systemName: store.isAgendaItemBulkSelected(item) ? "checkmark.square.fill" : "square")
+          .font(.body)
+          .foregroundStyle(store.isAgendaItemBulkSelected(item) ? Color.accentColor : Color.secondary)
+          .frame(width: 18, height: 18)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .help(store.isAgendaItemBulkSelected(item) ? "Remove from bulk selection" : "Add to bulk selection")
+      .padding(.top, 1)
+
       StatusPill(text: item.todo ?? "TASK")
       VStack(alignment: .leading, spacing: 4) {
         HStack(spacing: 6) {

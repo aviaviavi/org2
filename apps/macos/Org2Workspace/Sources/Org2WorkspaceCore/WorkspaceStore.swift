@@ -138,6 +138,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var agendaFilter = ""
   @Published public var agendaFilterFocusToken = 0
   @Published public var selectedAgendaItemID: String?
+  @Published public var bulkSelectedAgendaItemIDs: Set<String> = []
   @Published public var corpusRoot: URL?
   @Published public var agenda: AgendaPayload?
   @Published public var corpusFiles: [CorpusFile] = []
@@ -392,6 +393,7 @@ public final class WorkspaceStore: ObservableObject {
     corpusFileFilter = ""
     quickOpenQuery = ""
     searchResults = []
+    bulkSelectedAgendaItemIDs = []
     meetings = []
     selectedMeetingID = nil
     openClawThreads = []
@@ -3652,6 +3654,51 @@ public final class WorkspaceStore: ObservableObject {
     agendaDisplaySections.flatMap(\.items)
   }
 
+  public var visibleAgendaItemCount: Int {
+    visibleAgendaItems.count
+  }
+
+  public var bulkAgendaSelectionCount: Int {
+    let visibleIDs = Set(visibleAgendaItems.map(\.id))
+    return bulkSelectedAgendaItemIDs.intersection(visibleIDs).count
+  }
+
+  public var hasBulkAgendaSelection: Bool {
+    bulkAgendaSelectionCount > 0
+  }
+
+  public func isAgendaItemBulkSelected(_ item: AgendaItem) -> Bool {
+    bulkSelectedAgendaItemIDs.contains(item.id)
+  }
+
+  public func toggleAgendaItemBulkSelection(_ item: AgendaItem) {
+    var ids = bulkSelectedAgendaItemIDs
+    if ids.contains(item.id) {
+      ids.remove(item.id)
+    } else {
+      ids.insert(item.id)
+    }
+    bulkSelectedAgendaItemIDs = ids
+    let count = bulkAgendaSelectionCount
+    statusText = count == 1 ? "1 agenda item selected" : "\(count) agenda items selected"
+  }
+
+  public func selectAllVisibleAgendaItemsForBulkAction() {
+    let ids = Set(visibleAgendaItems.map(\.id))
+    bulkSelectedAgendaItemIDs = ids
+    if ids.isEmpty {
+      statusText = "No visible agenda items"
+    } else {
+      statusText = ids.count == 1 ? "1 agenda item selected" : "\(ids.count) agenda items selected"
+    }
+  }
+
+  public func clearAgendaBulkSelection() {
+    guard !bulkSelectedAgendaItemIDs.isEmpty else { return }
+    bulkSelectedAgendaItemIDs = []
+    statusText = "Agenda selection cleared"
+  }
+
   public func selectAgendaItem(_ item: AgendaItem) {
     selectedSurface = .agenda
     select(.agenda(item))
@@ -3679,6 +3726,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func selectFirstAgendaItem() {
+    pruneAgendaBulkSelection()
     if let first = visibleAgendaItems.first {
       selectAgendaItem(first)
     }
@@ -3709,6 +3757,12 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func applyTodoShortcut(_ status: TodoEditStatus?) async {
+    let bulkItems = selectedAgendaItemsForBulkMutation()
+    if !bulkItems.isEmpty {
+      await applyTodoShortcut(status, to: bulkItems)
+      return
+    }
+
     guard let item = selectedAgendaItemForMutation() else {
       statusText = "Select an agenda item first"
       return
@@ -3718,25 +3772,12 @@ public final class WorkspaceStore: ObservableObject {
 
     do {
       if let status {
-        let _: TodoMutationPayload = try await cli.runJSON([
-          "todo", "set",
-          "--file", item.file,
-          "--line", "\(item.lineForEditor)",
-          "--status", status.rawValue,
-          "--format", "json",
-          "--apply"
-        ])
+        try await setTodoStatus(status, for: item)
         statusText = "\(status.label) -> \(item.headline)"
       } else {
-        let payload: TodoMutationPayload = try await cli.runJSON([
-          "todo", "toggle",
-          "--file", item.file,
-          "--line", "\(item.lineForEditor)",
-          "--format", "json",
-          "--apply"
-        ])
-        statusText = "\(payload.newStatus) -> \(item.headline)"
-        shouldAdvanceSelection = Self.isTerminalTodoStatus(payload.newStatus)
+        let newStatus = try await toggleTodoStatus(for: item)
+        statusText = "\(newStatus) -> \(item.headline)"
+        shouldAdvanceSelection = Self.isTerminalTodoStatus(newStatus)
       }
       invalidateCanonicalDocumentCache(for: item.file)
       await refreshAgenda()
@@ -3747,6 +3788,55 @@ public final class WorkspaceStore: ObservableObject {
       errorText = error.localizedDescription
       statusText = "TODO update failed"
     }
+  }
+
+  private func applyTodoShortcut(_ status: TodoEditStatus?, to items: [AgendaItem]) async {
+    do {
+      var touchedFiles: Set<String> = []
+      for item in agendaMutationOrder(items) {
+        if let status {
+          try await setTodoStatus(status, for: item)
+        } else {
+          _ = try await toggleTodoStatus(for: item)
+        }
+        touchedFiles.insert(item.file)
+      }
+      for file in touchedFiles {
+        invalidateCanonicalDocumentCache(for: file)
+      }
+      bulkSelectedAgendaItemIDs = []
+      await refreshAgenda(updatesStatus: false)
+      if let status {
+        statusText = "\(status.label) -> \(items.count) items"
+      } else {
+        statusText = "TODO updated -> \(items.count) items"
+      }
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Bulk TODO update failed"
+    }
+  }
+
+  private func setTodoStatus(_ status: TodoEditStatus, for item: AgendaItem) async throws {
+    let _: TodoMutationPayload = try await cli.runJSON([
+      "todo", "set",
+      "--file", item.file,
+      "--line", "\(item.lineForEditor)",
+      "--status", status.rawValue,
+      "--format", "json",
+      "--apply"
+    ])
+  }
+
+  private func toggleTodoStatus(for item: AgendaItem) async throws -> String {
+    let payload: TodoMutationPayload = try await cli.runJSON([
+      "todo", "toggle",
+      "--file", item.file,
+      "--line", "\(item.lineForEditor)",
+      "--format", "json",
+      "--apply"
+    ])
+    return payload.newStatus
   }
 
   public func applyPlanningShortcut(kind: PlanningEditKind, target: PlanningDateTarget) async {
@@ -3776,28 +3866,19 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func applyAgentHandoffShortcut() async {
+    let bulkItems = selectedAgendaItemsForBulkMutation()
+    if !bulkItems.isEmpty {
+      await applyAgentHandoffShortcut(to: bulkItems)
+      return
+    }
+
     guard let item = selectedAgendaItemForMutation() else {
       statusText = "Select an agenda item first"
       return
     }
 
     do {
-      let _: TodoMutationPayload = try await cli.runJSON([
-        "todo", "set",
-        "--file", item.file,
-        "--line", "\(item.lineForEditor)",
-        "--status", TodoEditStatus.done.rawValue,
-        "--format", "json",
-        "--apply"
-      ])
-      try upsertHeadlineProperties(
-        file: item.file,
-        line: item.lineForEditor,
-        properties: [
-          "STATUS": "ready-for-agent",
-          "ORG2_AGENT_HANDOFF_AT": Self.orgTimestamp(Date())
-        ]
-      )
+      try await markReadyForAgent(item, timestamp: Self.orgTimestamp(Date()))
       statusText = "Ready for agent -> \(Org2Display.cleanInline(item.headline))"
       invalidateCanonicalDocumentCache(for: item.file)
       await refreshAgenda()
@@ -3805,6 +3886,38 @@ public final class WorkspaceStore: ObservableObject {
       errorText = error.localizedDescription
       statusText = "Agent handoff failed"
     }
+  }
+
+  private func applyAgentHandoffShortcut(to items: [AgendaItem]) async {
+    do {
+      let timestamp = Self.orgTimestamp(Date())
+      var touchedFiles: Set<String> = []
+      for item in agendaMutationOrder(items) {
+        try await markReadyForAgent(item, timestamp: timestamp)
+        touchedFiles.insert(item.file)
+      }
+      for file in touchedFiles {
+        invalidateCanonicalDocumentCache(for: file)
+      }
+      bulkSelectedAgendaItemIDs = []
+      await refreshAgenda(updatesStatus: false)
+      statusText = "Ready for agent -> \(items.count) items"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Bulk agent handoff failed"
+    }
+  }
+
+  private func markReadyForAgent(_ item: AgendaItem, timestamp: String) async throws {
+    try await setTodoStatus(.done, for: item)
+    try upsertHeadlineProperties(
+      file: item.file,
+      line: item.lineForEditor,
+      properties: [
+        "STATUS": "ready-for-agent",
+        "ORG2_AGENT_HANDOFF_AT": timestamp
+      ]
+    )
   }
 
   public func applyPriorityShortcut(_ priority: String?) async {
@@ -4204,6 +4317,18 @@ public final class WorkspaceStore: ObservableObject {
   public func handleAgendaKeyDown(_ event: NSEvent) -> Bool {
     guard selectedSurface == .agenda else { return false }
 
+    let key = event.characters ?? event.charactersIgnoringModifiers ?? ""
+    let keyIgnoringModifiers = event.charactersIgnoringModifiers ?? key
+    let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+    if modifiers == [.command], keyIgnoringModifiers.lowercased() == "a" {
+      selectAllVisibleAgendaItemsForBulkAction()
+      return true
+    }
+    if modifiers == [.command, .shift], keyIgnoringModifiers.lowercased() == "a" {
+      clearAgendaBulkSelection()
+      return true
+    }
+
     let disallowedModifiers = event.modifierFlags.intersection([.command, .option])
     guard disallowedModifiers.isEmpty else { return false }
 
@@ -4218,8 +4343,6 @@ public final class WorkspaceStore: ObservableObject {
       }
       return false
     }
-
-    let key = event.characters ?? event.charactersIgnoringModifiers ?? ""
 
     if priorityModeActive {
       if event.keyCode == 53 {
@@ -5111,6 +5234,7 @@ public final class WorkspaceStore: ObservableObject {
 
   private func syncAgendaSelectionAfterRefresh(preserveSelection: Bool = false) {
     let items = visibleAgendaItems
+    pruneAgendaBulkSelection(visibleItems: items)
     guard !items.isEmpty else {
       selectedAgendaItemID = nil
       if !preserveSelection, case .agenda = selectedLocation {
@@ -5140,6 +5264,23 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  private func pruneAgendaBulkSelection(visibleItems: [AgendaItem]? = nil) {
+    guard !bulkSelectedAgendaItemIDs.isEmpty else { return }
+    let visibleIDs = Set((visibleItems ?? visibleAgendaItems).map(\.id))
+    let prunedIDs = bulkSelectedAgendaItemIDs.intersection(visibleIDs)
+    if prunedIDs != bulkSelectedAgendaItemIDs {
+      bulkSelectedAgendaItemIDs = prunedIDs
+    }
+  }
+
+  private func selectedAgendaItemsForBulkMutation() -> [AgendaItem] {
+    guard !bulkSelectedAgendaItemIDs.isEmpty else { return [] }
+    let items = visibleAgendaItems
+    pruneAgendaBulkSelection(visibleItems: items)
+    guard !bulkSelectedAgendaItemIDs.isEmpty else { return [] }
+    return items.filter { bulkSelectedAgendaItemIDs.contains($0.id) }
+  }
+
   private func selectedAgendaItemForMutation() -> AgendaItem? {
     if case .agenda(let item) = selectedLocation {
       return item
@@ -5148,6 +5289,18 @@ public final class WorkspaceStore: ObservableObject {
       return visibleAgendaItems.first(where: { $0.id == selectedAgendaItemID })
     }
     return visibleAgendaItems.first
+  }
+
+  private func agendaMutationOrder(_ items: [AgendaItem]) -> [AgendaItem] {
+    items.sorted { lhs, rhs in
+      if lhs.file == rhs.file {
+        if lhs.lineForEditor == rhs.lineForEditor {
+          return lhs.id < rhs.id
+        }
+        return lhs.lineForEditor > rhs.lineForEditor
+      }
+      return lhs.file < rhs.file
+    }
   }
 
   private func selectNextActionableAgendaItem(afterMutating mutatedID: String, originalVisibleIndex: Int?) {
