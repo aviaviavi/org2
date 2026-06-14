@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -218,6 +218,14 @@ assert.ok(!malformedSalience.selectionReason.some((reason) => reason.includes("e
 const explainedContext = execFileSync("node", ["dist/cli.js", "context", "Copper launch retrieval", "--dir", rankingDir, "--limit", "1", "--recency-weight", "0", "--salience-weight", "1"], { encoding: "utf8" });
 assert.match(explainedContext, /Selected because:/);
 assert.match(explainedContext, /explicit salience/);
+
+const malformedRecencyWeight = spawnSync("node", ["dist/cli.js", "agent", "search", "--query", "Copper launch retrieval", "--dir", rankingDir, "--recency-weight", "2x"], { encoding: "utf8" });
+assert.equal(malformedRecencyWeight.status, 1);
+assert.equal(malformedRecencyWeight.stderr, "Error: --recency-weight requires a numeric value\n");
+
+const malformedSalienceWeight = spawnSync("node", ["dist/cli.js", "context", "Copper launch retrieval", "--dir", rankingDir, "--salience-weight", "1 high"], { encoding: "utf8" });
+assert.equal(malformedSalienceWeight.status, 1);
+assert.equal(malformedSalienceWeight.stderr, "Error: --salience-weight requires a numeric value\n");
 
 const threadDir = fs.mkdtempSync(path.join(os.tmpdir(), "org2-agent-thread-test-"));
 fs.writeFileSync(path.join(threadDir, "threads.org2"), `#+title: Agent Threads

@@ -9383,6 +9383,20 @@ function parseBudgetToChars(raw: string): number {
   return Math.max(200, Math.floor(n * multiplier));
 }
 
+function parseAgentRankingWeight(raw: string, flag: string): number {
+  const value = String(raw || "").trim();
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value)) {
+    console.error(`Error: ${flag} requires a numeric value`);
+    process.exit(1);
+  }
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) {
+    console.error(`Error: ${flag} requires a finite numeric value`);
+    process.exit(1);
+  }
+  return parsed;
+}
+
 function printGeneralUsage(exitCode: number): never {
   console.error(`org2 CLI
 
@@ -10084,7 +10098,9 @@ Flags:
     const query = agentQuery || (briefAction === "today" ? today : briefName);
     const scope = agentScope || (briefAction === "project" ? `project:${briefName}` : "");
     const corpus = compileCorpus(files, { rootDir });
-    const payload = buildAgentContextPayload(corpus, { action: "bundle", query, limit: Number.parseInt(agentLimitRaw, 10) || 10, maxChars: parseBudgetToChars(agentMaxCharsRaw), include, scope, since: agentSince, sourceType: agentSourceType, reviewStatus: agentReviewStatus, recencyWeight: Number.parseFloat(agentRecencyWeightRaw), salienceWeight: Number.parseFloat(agentSalienceWeightRaw) });
+    const recencyWeight = parseAgentRankingWeight(agentRecencyWeightRaw, "--recency-weight");
+    const salienceWeight = parseAgentRankingWeight(agentSalienceWeightRaw, "--salience-weight");
+    const payload = buildAgentContextPayload(corpus, { action: "bundle", query, limit: Number.parseInt(agentLimitRaw, 10) || 10, maxChars: parseBudgetToChars(agentMaxCharsRaw), include, scope, since: agentSince, sourceType: agentSourceType, reviewStatus: agentReviewStatus, recencyWeight, salienceWeight });
     const title = briefAction === "today" ? `Org2 Briefing: Today (${today})` : `Org2 Briefing: Project ${briefName}`;
     const rendered = contextFormat === "json" ? JSON.stringify(payload, null, 2) + "\n" : renderBriefing(payload, title, contextFormat) + "\n";
     if (briefOut) { fs.mkdirSync(path.dirname(path.resolve(briefOut)), { recursive: true }); fs.writeFileSync(briefOut, rendered, "utf8"); process.stdout.write(`Wrote briefing to ${briefOut}\n`); }
@@ -10114,7 +10130,9 @@ Flags:
     const rootDir = dir ? path.resolve(dir) : path.dirname(path.resolve(files[0]!));
     const include = Array.from(new Set(agentIncludeRaw.split(",").map((value) => value.trim().toLowerCase()).filter((value): value is AgentInclude => value === "sources" || value === "backlinks" || value === "neighbors")));
     const corpus = compileCorpus(files, { rootDir });
-    const payload = buildAgentContextPayload(corpus, { action: agentAction, query: agentQuery, id: agentId, limit: Number.parseInt(agentLimitRaw, 10) || 10, maxChars: parseBudgetToChars(agentMaxCharsRaw), include, scope: agentScope, since: agentSince, sourceType: agentSourceType, reviewStatus: agentReviewStatus, recencyWeight: Number.parseFloat(agentRecencyWeightRaw), salienceWeight: Number.parseFloat(agentSalienceWeightRaw) });
+    const recencyWeight = parseAgentRankingWeight(agentRecencyWeightRaw, "--recency-weight");
+    const salienceWeight = parseAgentRankingWeight(agentSalienceWeightRaw, "--salience-weight");
+    const payload = buildAgentContextPayload(corpus, { action: agentAction, query: agentQuery, id: agentId, limit: Number.parseInt(agentLimitRaw, 10) || 10, maxChars: parseBudgetToChars(agentMaxCharsRaw), include, scope: agentScope, since: agentSince, sourceType: agentSourceType, reviewStatus: agentReviewStatus, recencyWeight, salienceWeight });
     if (command === "context" && contextFormat !== "json") process.stdout.write(renderAgentContextPack(payload, contextFormat) + "\n");
     else process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
     return;
