@@ -70,6 +70,11 @@ See [[id:decision-1][decision note]].
 :COVERAGE: open-support-tickets
 :WINDOW_START: 2026-05-01
 :WINDOW_END: 2026-05-15
+:FRESHNESS_SLA: 4h
+:WATERMARK: 2026-05-15T09:45:00-07:00
+:DATA_LATENCY: 15m
+:AVAILABILITY: degraded
+:BACKFILL_STATUS: pending
 :FRESHNESS: daily
 :REFRESH_REF: query-data:support-ticket-volume
 :REFRESH_COMMAND: org2 query-data --file support.org2 --results support_ticket_volume --out views/support-ticket-volume.org2
@@ -255,6 +260,11 @@ assert.match(selected, /sampling: latest-day/);
 assert.match(selected, /coverage: open-support-tickets/);
 assert.match(selected, /window start: 2026-05-01/);
 assert.match(selected, /window end: 2026-05-15/);
+assert.match(selected, /freshness SLA: 4h/);
+assert.match(selected, /watermark: 2026-05-15T09:45:00-07:00/);
+assert.match(selected, /data latency: 15m/);
+assert.match(selected, /availability: degraded/);
+assert.match(selected, /backfill: pending/);
 assert.match(selected, /Data catalog: support satisfaction score/);
 assert.match(selected, /review: review-required/);
 assert.match(selected, /claim freshness: stale/);
@@ -334,6 +344,11 @@ assert.equal(supportTicketVolume.dataLink.samplingMethod, "latest-day");
 assert.equal(supportTicketVolume.dataLink.coverage, "open-support-tickets");
 assert.equal(supportTicketVolume.dataLink.windowStart, "2026-05-01");
 assert.equal(supportTicketVolume.dataLink.windowEnd, "2026-05-15");
+assert.equal(supportTicketVolume.dataLink.freshnessSla, "4h");
+assert.equal(supportTicketVolume.dataLink.watermark, "2026-05-15T09:45:00-07:00");
+assert.equal(supportTicketVolume.dataLink.dataLatency, "15m");
+assert.equal(supportTicketVolume.dataLink.availability, "degraded");
+assert.equal(supportTicketVolume.dataLink.backfillStatus, "pending");
 assert.equal(supportTicketVolume.dataLink.database, "support_warehouse");
 assert.equal(supportTicketVolume.dataLink.schema, "support");
 assert.equal(supportTicketVolume.dataLink.table, "ticket_volume_daily");
