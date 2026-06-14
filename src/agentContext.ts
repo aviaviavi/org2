@@ -130,6 +130,13 @@ type AgentDataLinkMetadata = {
   visibility?: string;
   accessPolicy?: string;
   retention?: string;
+  lineageRefs?: AgentContextAttachment[];
+  dataContract?: string;
+  schemaVersion?: string;
+  qualityStatus?: string;
+  qualityScore?: number;
+  qualityChecks?: string[];
+  qualityNote?: string;
   eventStream?: string;
   timeline?: string;
   eventType?: string;
@@ -686,7 +693,7 @@ function numericDataProperty(props: Record<string, string>, names: string[]): nu
   for (const name of names) {
     const raw = props[name];
     if (!raw) continue;
-    const parsed = Number.parseInt(String(raw).replace(/,/g, "").trim(), 10);
+    const parsed = Number.parseFloat(String(raw).replace(/,/g, "").trim());
     if (Number.isFinite(parsed)) return parsed;
   }
   return undefined;
@@ -736,6 +743,14 @@ function parseDataNameList(raw: string | undefined): string[] {
     .split(/[,;]+/)
     .map((entry) => entry.trim())
     .filter((entry) => /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(entry));
+}
+
+function parseDataLabelList(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return String(raw)
+    .split(/[,;]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }
 
 function parseDataSortList(raw: string | undefined): AgentDataSortKey[] {
@@ -812,6 +827,15 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
   const visibility = stringDataProperty(props, ["VISIBILITY", "DATA_VISIBILITY", "ORG2_VISIBILITY"]);
   const accessPolicy = stringDataProperty(props, ["ACCESS_POLICY", "ACCESS", "DATA_ACCESS", "ORG2_ACCESS_POLICY"]);
   const retention = stringDataProperty(props, ["RETENTION", "RETENTION_POLICY", "DATA_RETENTION", "ORG2_RETENTION"]);
+  const lineageRefs = resolveAttachmentTargets(corpus, mergeAttachments([
+    ...parseContextAttachmentList(stringDataProperty(props, ["LINEAGE_REF", "LINEAGE_REFS", "DATA_LINEAGE", "UPSTREAM_REF", "UPSTREAM_REFS", "DERIVED_FROM", "ORG2_LINEAGE_REFS"])),
+  ]));
+  const dataContract = stringDataProperty(props, ["DATA_CONTRACT", "CONTRACT", "CONTRACT_REF", "ORG2_DATA_CONTRACT"]);
+  const schemaVersion = stringDataProperty(props, ["SCHEMA_VERSION", "DATA_SCHEMA_VERSION", "ORG2_SCHEMA_VERSION"]);
+  const qualityStatus = stringDataProperty(props, ["QUALITY_STATUS", "QUALITY_STATE", "DATA_QUALITY", "ORG2_QUALITY_STATUS"]);
+  const qualityScore = numericDataProperty(props, ["QUALITY_SCORE", "DATA_QUALITY_SCORE", "ORG2_QUALITY_SCORE"]);
+  const qualityChecks = parseDataLabelList(stringDataProperty(props, ["QUALITY_CHECKS", "DATA_QUALITY_CHECKS", "ORG2_QUALITY_CHECKS"]));
+  const qualityNote = stringDataProperty(props, ["QUALITY_NOTE", "QUALITY_NOTES", "DATA_QUALITY_NOTE", "ORG2_QUALITY_NOTE"]);
   const eventStream = stringDataProperty(props, ["EVENT_STREAM", "STREAM", "STREAM_ID"]);
   const timeline = stringDataProperty(props, ["TIMELINE", "TIMELINE_ID"]);
   const eventType = stringDataProperty(props, ["EVENT_TYPE", "EVENT_KIND"]);
@@ -878,6 +902,13 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
     ...(visibility ? { visibility } : {}),
     ...(accessPolicy ? { accessPolicy } : {}),
     ...(retention ? { retention } : {}),
+    ...(lineageRefs.length ? { lineageRefs } : {}),
+    ...(dataContract ? { dataContract } : {}),
+    ...(schemaVersion ? { schemaVersion } : {}),
+    ...(qualityStatus ? { qualityStatus } : {}),
+    ...(qualityScore !== undefined ? { qualityScore } : {}),
+    ...(qualityChecks.length ? { qualityChecks } : {}),
+    ...(qualityNote ? { qualityNote } : {}),
     ...(eventStream ? { eventStream } : {}),
     ...(timeline ? { timeline } : {}),
     ...(eventType ? { eventType } : {}),
@@ -1350,6 +1381,13 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       item.dataLink.visibility ? `visibility: ${item.dataLink.visibility}` : "",
       item.dataLink.accessPolicy ? `access: ${item.dataLink.accessPolicy}` : "",
       item.dataLink.retention ? `retention: ${item.dataLink.retention}` : "",
+      item.dataLink.lineageRefs?.length ? `lineage: ${item.dataLink.lineageRefs.map((ref) => ref.ref).join(", ")}` : "",
+      item.dataLink.dataContract ? `contract: ${item.dataLink.dataContract}` : "",
+      item.dataLink.schemaVersion ? `schema version: ${item.dataLink.schemaVersion}` : "",
+      item.dataLink.qualityStatus ? `quality: ${item.dataLink.qualityStatus}` : "",
+      item.dataLink.qualityScore !== undefined ? `quality score: ${item.dataLink.qualityScore}` : "",
+      item.dataLink.qualityChecks?.length ? `quality checks: ${item.dataLink.qualityChecks.join(", ")}` : "",
+      item.dataLink.qualityNote ? `quality note: ${item.dataLink.qualityNote}` : "",
       item.dataLink.eventStream ? `stream: ${item.dataLink.eventStream}` : "",
       item.dataLink.timeline ? `timeline: ${item.dataLink.timeline}` : "",
       item.dataLink.eventType ? `event: ${item.dataLink.eventType}` : "",

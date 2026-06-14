@@ -311,6 +311,13 @@ Business question for package fetch activity.
 :VISIBILITY: internal
 :ACCESS_POLICY: approval-required
 :RETENTION: 90d
+:LINEAGE_REFS: id:dataset-package-fetches, query:raw.package_fetches.v1
+:DATA_CONTRACT: contract:package-fetches-v1
+:SCHEMA_VERSION: v3
+:QUALITY_STATUS: passed
+:QUALITY_SCORE: 0.98
+:QUALITY_CHECKS: row-count-reconciled, no-null-company-id
+:QUALITY_NOTE: Latest warehouse checks passed before materialization.
 :ORG2_PROVENANCE: query:scarf.package_fetches_by_company.v1, artifact:customer-reports/firebolt/package_fetches_by_company.csv
 :ORG2_SOURCE_HASHES: query:scarf.package_fetches_by_company.v1=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 :END:
@@ -425,6 +432,14 @@ assert.equal(dataLink.results[0].dataLink.sensitivity, "customer-private");
 assert.equal(dataLink.results[0].dataLink.visibility, "internal");
 assert.equal(dataLink.results[0].dataLink.accessPolicy, "approval-required");
 assert.equal(dataLink.results[0].dataLink.retention, "90d");
+assert.ok(dataLink.results[0].dataLink.lineageRefs.some((ref) => ref.ref === "id:dataset-package-fetches"));
+assert.ok(dataLink.results[0].dataLink.lineageRefs.some((ref) => ref.ref === "query:raw.package_fetches.v1"));
+assert.equal(dataLink.results[0].dataLink.dataContract, "contract:package-fetches-v1");
+assert.equal(dataLink.results[0].dataLink.schemaVersion, "v3");
+assert.equal(dataLink.results[0].dataLink.qualityStatus, "passed");
+assert.equal(dataLink.results[0].dataLink.qualityScore, 0.98);
+assert.deepEqual(dataLink.results[0].dataLink.qualityChecks, ["row-count-reconciled", "no-null-company-id"]);
+assert.equal(dataLink.results[0].dataLink.qualityNote, "Latest warehouse checks passed before materialization.");
 assert.ok(dataLink.results[0].dataLink.provenance.some((ref) => ref.ref === "query:scarf.package_fetches_by_company.v1"));
 assert.equal(dataLink.results[0].dataLink.sourceHashes[0].kind, "query");
 assert.equal(dataLink.results[0].dataLink.sourceHashes[0].value, "scarf.package_fetches_by_company.v1");
@@ -482,6 +497,8 @@ assert.equal(descendantQuery.dataLink.refreshStatus, "ready");
 assert.equal(descendantQuery.dataLink.validationStatus, "sampled");
 assert.equal(descendantQuery.dataLink.sensitivity, "customer-private");
 assert.equal(descendantQuery.dataLink.accessPolicy, "approval-required");
+assert.equal(descendantQuery.dataLink.qualityStatus, "passed");
+assert.ok(descendantQuery.dataLink.lineageRefs.some((ref) => ref.ref === "id:dataset-package-fetches"));
 const descendantDataset = reportWithDataLinks.results[0].relatedDataLinks.find((item) => item.id === "dataset-package-fetches");
 assert.equal(descendantDataset.kind, "dataset");
 assert.equal(descendantDataset.dataLink.path, "data/package-fetches.csv");
