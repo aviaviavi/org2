@@ -2305,12 +2305,156 @@ final class Org2ModelsTests: XCTestCase {
 
     await store.briefCurrentNodeInOpenClaw()
 
+    let artifactRelativePath = WorkspaceStore.nodeBriefArtifactRelativePath(
+      title: "Target Node",
+      id: targetID,
+      file: "target.org2",
+      line: 1
+    )
+
     XCTAssertEqual(store.selectedSurface, .openClaw)
     XCTAssertTrue(store.openClawDraft.contains("Give me the highlights of Target Node"))
+    XCTAssertTrue(store.openClawDraft.contains("Write the generated brief into the org2 corpus artifact below"))
+    XCTAssertTrue(store.openClawDraft.contains("Target artifact relative path: \(artifactRelativePath)"))
+    XCTAssertTrue(store.openClawDraft.contains(":ORG2_ARTIFACT_ROLE: view"))
+    XCTAssertTrue(store.openClawDraft.contains(":ORG2_REVIEW_STATUS: review-required"))
     XCTAssertTrue(store.openClawDraft.contains("Computed backlinks"))
     XCTAssertTrue(store.openClawDraft.contains("3 references across 2 files"))
     XCTAssertTrue(store.openClawDraft.contains("first.org2 (2)"))
     XCTAssertTrue(store.openClawDraft.contains("Deterministic org2 context pack"))
+  }
+
+  @MainActor
+  func testBriefCurrentNodeOpensCachedArtifact() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-node-brief-cache-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let targetID = "44444444-4444-4444-8444-444444444444"
+    let target = root.appendingPathComponent("target.org2")
+    try """
+    #+TITLE: Target Node
+    :PROPERTIES:
+    :ID: \(targetID)
+    :END:
+
+    Cached brief target.
+    """.write(to: target, atomically: true, encoding: .utf8)
+
+    let artifactRelativePath = WorkspaceStore.nodeBriefArtifactRelativePath(
+      title: "Target Node",
+      id: targetID,
+      file: "target.org2",
+      line: 1
+    )
+    let artifactURL = root.appendingPathComponent(artifactRelativePath)
+    try FileManager.default.createDirectory(
+      at: artifactURL.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try """
+    #+TITLE: Node brief: Target Node
+    :PROPERTIES:
+    :ORG2_ARTIFACT_SCHEMA: org2-artifact-metadata/v1
+    :ORG2_ARTIFACT_ROLE: view
+    :ORG2_REVIEW_STATUS: review-required
+    :END:
+
+    * Highlights
+    Cached result.
+    """.write(to: artifactURL, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.openClaw(OpenClawThread(
+      title: "Target Node",
+      file: target.path,
+      line: 1,
+      zone: "node",
+      modifiedAt: nil,
+      idValue: targetID
+    )))
+
+    await store.briefCurrentNodeInOpenClaw()
+
+    XCTAssertEqual(store.openClawDraft, "")
+    XCTAssertEqual(store.selectedSurface, .agentSpace)
+    guard case .openClaw(let selected)? = store.selectedLocation else {
+      XCTFail("Expected cached brief artifact to be selected")
+      return
+    }
+    XCTAssertEqual(selected.file, artifactURL.path)
+    XCTAssertEqual(selected.zone, "views/openclaw")
+    XCTAssertEqual(store.statusText, "Opened \(artifactRelativePath)")
+  }
+
+  @MainActor
+  func testBriefCurrentNodeAutoOpensArtifactAfterOpenClawWritesIt() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-node-brief-autoload-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let targetID = "55555555-5555-4555-8555-555555555555"
+    let target = root.appendingPathComponent("target.org2")
+    try """
+    #+TITLE: Target Node
+    :PROPERTIES:
+    :ID: \(targetID)
+    :END:
+
+    Auto-open brief target.
+    """.write(to: target, atomically: true, encoding: .utf8)
+
+    let artifactRelativePath = WorkspaceStore.nodeBriefArtifactRelativePath(
+      title: "Target Node",
+      id: targetID,
+      file: "target.org2",
+      line: 1
+    )
+    let artifactURL = root.appendingPathComponent(artifactRelativePath)
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawSendHandler: { messages, _, _, _ in
+        XCTAssertTrue(messages.last?.content.contains("Target artifact relative path: \(artifactRelativePath)") == true)
+        try FileManager.default.createDirectory(
+          at: artifactURL.deletingLastPathComponent(),
+          withIntermediateDirectories: true
+        )
+        try """
+        #+TITLE: Node brief: Target Node
+        :PROPERTIES:
+        :ORG2_ARTIFACT_SCHEMA: org2-artifact-metadata/v1
+        :ORG2_ARTIFACT_ROLE: view
+        :ORG2_REVIEW_STATUS: review-required
+        :END:
+
+        * Highlights
+        Generated result.
+        """.write(to: artifactURL, atomically: true, encoding: .utf8)
+        return "Wrote \(artifactRelativePath)"
+      }
+    )
+    store.setCorpusRoot(root)
+    store.select(.openClaw(OpenClawThread(
+      title: "Target Node",
+      file: target.path,
+      line: 1,
+      zone: "node",
+      modifiedAt: nil,
+      idValue: targetID
+    )))
+
+    await store.briefCurrentNodeInOpenClaw()
+    XCTAssertEqual(store.selectedSurface, .openClaw)
+    await store.sendOpenClawMessage()
+
+    guard case .openClaw(let selected)? = store.selectedLocation else {
+      XCTFail("Expected generated brief artifact to be selected")
+      return
+    }
+    XCTAssertEqual(selected.file, artifactURL.path)
+    XCTAssertEqual(selected.title, "Brief: Target Node")
+    XCTAssertEqual(store.selectedSurface, .agentSpace)
+    XCTAssertTrue(store.openClawMessages.last?.changeSummary?.files.contains(where: { $0.relativePath == artifactRelativePath }) == true)
   }
 
   @MainActor
