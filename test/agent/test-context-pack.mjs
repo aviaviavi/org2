@@ -50,6 +50,9 @@ See [[id:decision-1][decision note]].
 :PRIMARY_KEY: date
 :PARTITION_BY: date
 :SORT_BY: date:desc
+:DIMENSIONS: date
+:MEASURES: ticket_count
+:GRAIN: daily
 :SOURCE: s3://support/ticket-volume/
 :QUERY_ID: support.ticket_volume.v1
 :QUERY_HASH: sha256:supportquery123
@@ -196,6 +199,9 @@ assert.match(selected, /columns: date:date, ticket_count:int/);
 assert.match(selected, /primary key: date/);
 assert.match(selected, /partition by: date/);
 assert.match(selected, /sort by: date:desc/);
+assert.match(selected, /dimensions: date/);
+assert.match(selected, /measures: ticket_count/);
+assert.match(selected, /grain: daily/);
 assert.match(selected, /source: s3:\/\/support\/ticket-volume\//);
 assert.match(selected, /query: support\.ticket_volume\.v1/);
 assert.match(selected, /query hash: sha256:supportquery123/);
@@ -316,6 +322,9 @@ assert.deepEqual(supportTicketVolume.dataLink.columns, [
 assert.deepEqual(supportTicketVolume.dataLink.primaryKey, ["date"]);
 assert.deepEqual(supportTicketVolume.dataLink.partitionBy, ["date"]);
 assert.deepEqual(supportTicketVolume.dataLink.sortBy, [{ field: "date", direction: "desc" }]);
+assert.deepEqual(supportTicketVolume.dataLink.dimensions, ["date"]);
+assert.deepEqual(supportTicketVolume.dataLink.measures, ["ticket_count"]);
+assert.equal(supportTicketVolume.dataLink.grain, "daily");
 assert.equal(supportTicketVolume.dataLink.refreshRef, "query-data:support-ticket-volume");
 assert.equal(supportTicketVolume.dataLink.refreshCommand, "org2 query-data --file support.org2 --results support_ticket_volume --out views/support-ticket-volume.org2");
 assert.equal(supportTicketVolume.dataLink.refreshStatus, "due");
