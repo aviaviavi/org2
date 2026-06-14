@@ -277,6 +277,10 @@ Business question for package fetch activity.
 :DIMENSIONS: company_id, package
 :MEASURES: fetches
 :GRAIN: daily
+:FILTERS: package = 'firebolt/foo'; fetches > 0
+:GROUP_BY: company_id, package
+:TIME_COLUMN: fetched_at
+:TIMEZONE: America/Los_Angeles
 :SOURCE: s3://analytics/package_fetches_by_company/
 :QUERY_ID: scarf.package_fetches_by_company.v1
 :QUERY_HASH: sha256:queryabc123
@@ -398,6 +402,10 @@ assert.deepEqual(dataLink.results[0].dataLink.sortBy, [
 assert.deepEqual(dataLink.results[0].dataLink.dimensions, ["company_id", "package"]);
 assert.deepEqual(dataLink.results[0].dataLink.measures, ["fetches"]);
 assert.equal(dataLink.results[0].dataLink.grain, "daily");
+assert.deepEqual(dataLink.results[0].dataLink.filters, ["package = 'firebolt/foo'", "fetches > 0"]);
+assert.deepEqual(dataLink.results[0].dataLink.groupBy, ["company_id", "package"]);
+assert.equal(dataLink.results[0].dataLink.timeColumn, "fetched_at");
+assert.equal(dataLink.results[0].dataLink.timezone, "America/Los_Angeles");
 assert.equal(dataLink.results[0].dataLink.source, "s3://analytics/package_fetches_by_company/");
 assert.equal(dataLink.results[0].dataLink.queryId, "scarf.package_fetches_by_company.v1");
 assert.equal(dataLink.results[0].dataLink.queryHash, "sha256:queryabc123");
@@ -491,6 +499,10 @@ assert.deepEqual(descendantQuery.dataLink.sortBy, [
 assert.deepEqual(descendantQuery.dataLink.dimensions, ["company_id", "package"]);
 assert.deepEqual(descendantQuery.dataLink.measures, ["fetches"]);
 assert.equal(descendantQuery.dataLink.grain, "daily");
+assert.deepEqual(descendantQuery.dataLink.filters, ["package = 'firebolt/foo'", "fetches > 0"]);
+assert.deepEqual(descendantQuery.dataLink.groupBy, ["company_id", "package"]);
+assert.equal(descendantQuery.dataLink.timeColumn, "fetched_at");
+assert.equal(descendantQuery.dataLink.timezone, "America/Los_Angeles");
 assert.equal(descendantQuery.dataLink.resultLimit, 500);
 assert.equal(descendantQuery.dataLink.samplingMethod, "stratified");
 assert.equal(descendantQuery.dataLink.refreshStatus, "ready");
