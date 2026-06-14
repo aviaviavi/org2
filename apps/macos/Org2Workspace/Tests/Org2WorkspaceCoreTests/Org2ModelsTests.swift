@@ -2241,6 +2241,79 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testNodeContextGroupsBacklinksAndStagesBriefPrompt() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-node-context-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let target = root.appendingPathComponent("target.org2")
+    let firstSource = root.appendingPathComponent("first.org2")
+    let secondSource = root.appendingPathComponent("second.org2")
+    let targetID = "11111111-1111-4111-8111-111111111111"
+    try """
+    #+TITLE: Target Node
+    :PROPERTIES:
+    :ID: \(targetID)
+    :END:
+
+    Canonical target body.
+    """.write(to: target, atomically: true, encoding: .utf8)
+    try """
+    #+TITLE: First Source
+    :PROPERTIES:
+    :ID: 22222222-2222-4222-8222-222222222222
+    :END:
+
+    * First mention
+    Link to [[id:\(targetID)][Target Node]].
+    * Second mention
+    Another [[id:\(targetID)][Target Node]] reference.
+    """.write(to: firstSource, atomically: true, encoding: .utf8)
+    try """
+    #+TITLE: Second Source
+    :PROPERTIES:
+    :ID: 33333333-3333-4333-8333-333333333333
+    :END:
+
+    See [[id:\(targetID)][Target Node]].
+    """.write(to: secondSource, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.openClaw(OpenClawThread(
+      title: "Target Node",
+      file: target.path,
+      line: 1,
+      zone: "node",
+      modifiedAt: nil,
+      idValue: targetID
+    )))
+
+    try await waitForCondition {
+      store.backlinks?.backlinks.count == 3
+    }
+
+    XCTAssertEqual(store.backlinkReferenceCount, 3)
+    XCTAssertEqual(store.backlinkFileCount, 2)
+    XCTAssertEqual(store.backlinkFileGroups.first?.file, firstSource.path)
+    XCTAssertEqual(store.backlinkFileGroups.first?.count, 2)
+
+    let firstGroup = try XCTUnwrap(store.backlinkFileGroups.first)
+    store.toggleBacklinkFileGroup(firstGroup)
+    XCTAssertTrue(store.expandedBacklinkFileIDs.contains(firstGroup.id))
+    store.toggleBacklinkFileGroup(firstGroup)
+    XCTAssertFalse(store.expandedBacklinkFileIDs.contains(firstGroup.id))
+
+    await store.briefCurrentNodeInOpenClaw()
+
+    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertTrue(store.openClawDraft.contains("Give me the highlights of Target Node"))
+    XCTAssertTrue(store.openClawDraft.contains("Computed backlinks"))
+    XCTAssertTrue(store.openClawDraft.contains("3 references across 2 files"))
+    XCTAssertTrue(store.openClawDraft.contains("first.org2 (2)"))
+    XCTAssertTrue(store.openClawDraft.contains("Deterministic org2 context pack"))
+  }
+
+  @MainActor
   func testWorkspaceSearchScansCorpusRecursively() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-recursive-search-\(UUID().uuidString)", isDirectory: true)

@@ -21,6 +21,15 @@ Copper launch needs human-facing briefings generated from agent context.
 :END:
 Review terminal output and views storage for Copper launch.
 `, "utf8");
+fs.writeFileSync(path.join(tmp, "references.org2"), `* Team notes
+:PROPERTIES:
+:ID: team-notes
+:END:
+Review [[id:copper-1][Copper launch]] before the customer readout.
+
+* Another note
+Link again to [[id:copper-1][Copper launch]].
+`, "utf8");
 
 const projectBrief = execFileSync("node", ["dist/cli.js", "brief", "project", "copper", "--dir", tmp, "--recursive", "--limit", "5"], { encoding: "utf8" });
 assert.match(projectBrief, /# Org2 Briefing: Project copper/);
@@ -28,6 +37,13 @@ assert.match(projectBrief, /Source-backed notes/);
 assert.match(projectBrief, /notes\.org2:1-16/);
 assert.match(projectBrief, /review-required/i);
 assert.match(projectBrief, /Citations/);
+
+const nodeBrief = execFileSync("node", ["dist/cli.js", "brief", "node", "--id", "copper-1", "--dir", tmp, "--recursive"], { encoding: "utf8" });
+assert.match(nodeBrief, /# Org2 Briefing: Node Copper launch/);
+assert.match(nodeBrief, /Backlinks: 2 references across 1 file/);
+assert.match(nodeBrief, /## Referencing files/);
+assert.match(nodeBrief, /references\.org2 \(2\)/);
+assert.match(nodeBrief, /## Related nodes/);
 
 const out = path.join(tmp, "views", "copper-brief.org");
 const writeMsg = execFileSync("node", ["dist/cli.js", "brief", "project", "copper", "--dir", tmp, "--out", out, "--format", "org"], { encoding: "utf8" });

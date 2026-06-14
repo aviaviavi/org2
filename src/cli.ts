@@ -166,6 +166,98 @@ function renderBriefing(payload: ReturnType<typeof buildAgentContextPayload>, ti
   return lines.join("\n");
 }
 
+function renderNodeBriefing(payload: ReturnType<typeof buildAgentContextPayload>, title: string, format: "markdown" | "org" = "markdown"): string {
+  const isOrg = format === "org";
+  const h1 = isOrg ? "*" : "#";
+  const h2 = isOrg ? "**" : "##";
+  const h3 = isOrg ? "***" : "###";
+  const generatedAt = new Date().toISOString();
+  const node = payload.results[0];
+  const lines: string[] = [];
+
+  lines.push(`${h1} ${title}`);
+  lines.push("");
+  lines.push(`- Generated: ${generatedAt}`);
+  lines.push(`- Corpus: ${payload.corpus.rootDir}`);
+  lines.push("- Review: REVIEW REQUIRED for generated synthesis and any unreviewed/stale cited claims.");
+  if (payload.id) lines.push(`- ID: ${payload.id}`);
+  lines.push("");
+
+  if (!node) {
+    lines.push(`${h2} Node`);
+    lines.push("- No node found for the requested ID.");
+    if (payload.errors.length) {
+      lines.push("");
+      lines.push(`${h2} Errors`);
+      for (const err of payload.errors) lines.push(`- ${err}`);
+    }
+    lines.push("");
+    return lines.join("\n");
+  }
+
+  const backlinks = Array.from(
+    new Map((node.backlinks || []).map((backlink) => [`${backlink.file}:${backlink.line}`, backlink])).values(),
+  );
+  const neighbors = node.neighbors || [];
+  const backlinkFiles = new Set(backlinks.map((link) => link.file));
+  const backlinkGroups = Array.from(
+    backlinks.reduce((groups, backlink) => {
+      const existing = groups.get(backlink.file) || [];
+      existing.push(backlink);
+      groups.set(backlink.file, existing);
+      return groups;
+    }, new Map<string, NonNullable<typeof node.backlinks>>()),
+  ).sort((a, b) => (b[1].length - a[1].length) || a[0].localeCompare(b[0]));
+
+  lines.push(`${h2} At a glance`);
+  lines.push(`- Node: ${node.title} [${node.citation}]`);
+  if (node.todo) lines.push(`- TODO: ${node.todo}`);
+  if (node.tags.length) lines.push(`- Tags: ${node.tags.join(", ")}`);
+  lines.push(`- Backlinks: ${backlinks.length} reference${backlinks.length === 1 ? "" : "s"} across ${backlinkFiles.size} file${backlinkFiles.size === 1 ? "" : "s"}`);
+  lines.push(`- Neighbors: ${neighbors.length}`);
+  lines.push(`- Review/freshness: ${node.claimState.reviewStatus}/${node.claimState.freshness}`);
+  lines.push("");
+
+  lines.push(`${h2} Selected source`);
+  lines.push(`- Citation: ${node.citation}`);
+  const snippet = String(node.snippet || "").trim();
+  lines.push(snippet ? snippet : "- No snippet available.");
+  lines.push("");
+
+  lines.push(`${h2} Referencing files`);
+  if (backlinkGroups.length === 0) {
+    lines.push("- No backlinks found.");
+  } else {
+    for (const [file, items] of backlinkGroups.slice(0, 24)) {
+      lines.push(`${h3} ${file} (${items.length})`);
+      for (const backlink of items.slice(0, 5)) {
+        lines.push(`- ${backlink.sourceTitle} [${backlink.citation}]`);
+      }
+      if (items.length > 5) lines.push(`- ... ${items.length - 5} more reference${items.length - 5 === 1 ? "" : "s"} in this file`);
+      lines.push("");
+    }
+    if (backlinkGroups.length > 24) lines.push(`- ... ${backlinkGroups.length - 24} more referencing file${backlinkGroups.length - 24 === 1 ? "" : "s"}.`);
+  }
+
+  lines.push(`${h2} Related nodes`);
+  if (neighbors.length === 0) {
+    lines.push("- None found.");
+  } else {
+    for (const neighbor of neighbors.slice(0, 24)) {
+      lines.push(`- ${neighbor.direction}: ${neighbor.title} [${neighbor.citation}]`);
+    }
+    if (neighbors.length > 24) lines.push(`- ... ${neighbors.length - 24} more related node${neighbors.length - 24 === 1 ? "" : "s"}.`);
+  }
+  lines.push("");
+
+  lines.push(`${h2} Briefing prompt`);
+  lines.push("- [review-required] Summarize this node using the selected source, referencing files, and related nodes above.");
+  lines.push("- [review-required] Cite file:line provenance for concrete claims.");
+  lines.push("- [review-required] Treat backlinks as computed context; do not write generated backlinks sections into notes.");
+  lines.push("");
+  return lines.join("\n");
+}
+
 function hasExportMetadata(metadata: ExportMetadataPayload | null | undefined): boolean {
   if (!metadata) return false;
   return Boolean(
@@ -7895,7 +7987,7 @@ async function main(): Promise<void> {
   let agentRecencyWeightRaw = "1";
   let agentSalienceWeightRaw = "1";
   let contextFormat: "markdown" | "org" | "json" = "markdown";
-  let briefAction: "today" | "project" | "" = "";
+  let briefAction: "today" | "project" | "node" | "" = "";
   let briefName = "";
   let briefOut = "";
 
@@ -8091,7 +8183,7 @@ async function main(): Promise<void> {
       i++;
       if (i < args.length && !args[i]!.startsWith("--")) {
         const sub = args[i]!;
-        if (sub === "today" || sub === "project") { briefAction = sub; i++; }
+        if (sub === "today" || sub === "project" || sub === "node") { briefAction = sub; i++; }
       }
       if (i < args.length && !args[i]!.startsWith("--")) { briefName = args[i]!; i++; }
     } else if (arg === "entity") {
@@ -8974,7 +9066,7 @@ async function main(): Promise<void> {
           backlinksId = args[i]!;
         } else if (command === "query") {
           queryId = args[i]!;
-        } else if (command === "agent" || command === "context") {
+        } else if (command === "agent" || command === "context" || command === "brief") {
           agentId = args[i]!;
         } else if (command === "render-chart") {
           renderChartBlockId = args[i]!;
@@ -9432,6 +9524,7 @@ Roam / IDs:
   org2 context QUERY [--dir DIR] [--recursive] [--budget 8k] [--format markdown|org|json]
   org2 brief today [--dir DIR] [--recursive] [--out views/today.org]
   org2 brief project NAME [--dir DIR] [--recursive] [--out views/NAME.org]
+  org2 brief node --id ID [--dir DIR] [--recursive] [--out views/node.org]
   org2 ai validate-job --job FILE [--format text|json]
   org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
   org2 ai run --task summarize-meeting --file FILE [--out FILE] [--apply]
@@ -9808,6 +9901,7 @@ Output:
 Usage:
   org2 brief today [--dir DIR] [--recursive] [--limit N] [--out views/today.org] [--format markdown|org|json]
   org2 brief project NAME [--dir DIR] [--recursive] [--limit N] [--out views/NAME.org] [--format markdown|org|json]
+  org2 brief node --id ID [--dir DIR] [--recursive] [--out views/node.org] [--format markdown|org|json]
 
 Human-facing briefings from the agent context substrate. Output cites notes/raw sources and marks generated synthesis review-required.`;
   } else if (command === "agent") {
@@ -10082,8 +10176,9 @@ Flags:
   }
 
   if (command === "brief") {
-    if (!briefAction) { console.error("Error: org2 brief requires a subcommand (today or project)"); process.exit(1); }
+    if (!briefAction) { console.error("Error: org2 brief requires a subcommand (today, project, or node)"); process.exit(1); }
     if (briefAction === "project" && !briefName.trim()) { console.error("Error: org2 brief project requires a project name"); process.exit(1); }
+    if (briefAction === "node" && !agentId.trim()) { console.error("Error: org2 brief node requires --id ID"); process.exit(1); }
     if (!dir && files.length === 0) {
       const configPath = findConfigFile(process.cwd());
       if (configPath) {
@@ -10102,9 +10197,17 @@ Flags:
     const corpus = compileCorpus(files, { rootDir });
     const recencyWeight = parseAgentRankingWeight(agentRecencyWeightRaw, "--recency-weight");
     const salienceWeight = parseAgentRankingWeight(agentSalienceWeightRaw, "--salience-weight");
-    const payload = buildAgentContextPayload(corpus, { action: "bundle", query, limit: Number.parseInt(agentLimitRaw, 10) || 10, maxChars: parseBudgetToChars(agentMaxCharsRaw), include, scope, since: agentSince, sourceType: agentSourceType, reviewStatus: agentReviewStatus, recencyWeight, salienceWeight });
-    const title = briefAction === "today" ? `Org2 Briefing: Today (${today})` : `Org2 Briefing: Project ${briefName}`;
-    const rendered = contextFormat === "json" ? JSON.stringify(payload, null, 2) + "\n" : renderBriefing(payload, title, contextFormat) + "\n";
+    const payload = briefAction === "node"
+      ? buildAgentContextPayload(corpus, { action: "fetch", id: agentId, limit: 1, maxChars: parseBudgetToChars(agentMaxCharsRaw), include: ["sources", "backlinks", "neighbors"], recencyWeight, salienceWeight })
+      : buildAgentContextPayload(corpus, { action: "bundle", query, limit: Number.parseInt(agentLimitRaw, 10) || 10, maxChars: parseBudgetToChars(agentMaxCharsRaw), include, scope, since: agentSince, sourceType: agentSourceType, reviewStatus: agentReviewStatus, recencyWeight, salienceWeight });
+    const title = briefAction === "today"
+      ? `Org2 Briefing: Today (${today})`
+      : briefAction === "node"
+        ? `Org2 Briefing: Node ${payload.results[0]?.title || agentId}`
+        : `Org2 Briefing: Project ${briefName}`;
+    const rendered = contextFormat === "json"
+      ? JSON.stringify(payload, null, 2) + "\n"
+      : (briefAction === "node" ? renderNodeBriefing(payload, title, contextFormat) : renderBriefing(payload, title, contextFormat)) + "\n";
     if (briefOut) { fs.mkdirSync(path.dirname(path.resolve(briefOut)), { recursive: true }); fs.writeFileSync(briefOut, rendered, "utf8"); process.stdout.write(`Wrote briefing to ${briefOut}\n`); }
     else process.stdout.write(rendered);
     return;
