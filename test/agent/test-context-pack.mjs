@@ -141,7 +141,7 @@ Working notes for support triage.
 :CREDENTIAL_REF: secret:support-analytics
 :CONFIG_REF: profile:support-local
 :PARAMS: score>=0.7
-:ROW_COUNT: 5
+:ROW_COUNT: 5 rows
 :FRESHNESS: weekly
 :CONTEXT: id:scarf-support-1
 :ORG2_REVIEW_STATUS: review-required
@@ -414,9 +414,14 @@ assert.ok(supportTicketVolume.dataLink.provenance.some((ref) => ref.ref === "que
 assert.equal(supportTicketVolume.dataLink.sourceHashes[0].sha256, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 assert.equal(supportTicketVolume.claimState.reviewStatus, "reviewed");
 assert.equal(supportTicketVolume.claimState.freshness, "fresh");
-assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-satisfaction-score" && item.claimState.reviewStatus === "review-required" && item.claimState.freshness === "stale"));
-assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-satisfaction-score" && item.dataLink.source === "gs://support/satisfaction/" && item.dataLink.path === "reports/support-satisfaction.csv"));
-assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-satisfaction-score" && item.matchingAttachments.some((attachment) => attachment.ref === "id:scarf-support-1")));
+const supportSatisfactionScore = selectedJson.results[0].relatedDataLinks.find((item) => item.id === "support-satisfaction-score");
+assert.ok(supportSatisfactionScore);
+assert.equal(supportSatisfactionScore.claimState.reviewStatus, "review-required");
+assert.equal(supportSatisfactionScore.claimState.freshness, "stale");
+assert.equal(supportSatisfactionScore.dataLink.source, "gs://support/satisfaction/");
+assert.equal(supportSatisfactionScore.dataLink.path, "reports/support-satisfaction.csv");
+assert.equal(supportSatisfactionScore.dataLink.rowCount, undefined);
+assert.ok(supportSatisfactionScore.matchingAttachments.some((attachment) => attachment.ref === "id:scarf-support-1"));
 assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-state-changes" && item.dataLink.timeline === "support.ticket.lifecycle"));
 assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-state-changes" && item.dataLink.changeId === "change-42"));
 assert.ok(selectedJson.results[0].relatedDataLinks.some((item) => item.id === "support-state-changes" && item.dataLink.streamPosition === "9"));
