@@ -84,12 +84,23 @@ type AgentDataSourceHash = {
   sha256: string;
 };
 
+type AgentDataColumn = {
+  name: string;
+  type?: string;
+};
+
 type AgentDataLinkMetadata = {
   kind: AgentDataLinkKind;
   system?: string;
   engine?: string;
   source?: string;
   path?: string;
+  database?: string;
+  schema?: string;
+  table?: string;
+  view?: string;
+  columns?: AgentDataColumn[];
+  primaryKey?: string[];
   credentialRef?: string;
   configRef?: string;
   refreshRef?: string;
@@ -671,6 +682,32 @@ function safeConfigRef(raw: string | undefined): string | undefined {
   return /^(?:config|profile|env|file):[A-Za-z0-9_./:-]+$/.test(value) ? value : undefined;
 }
 
+function parseDataColumns(raw: string | undefined): AgentDataColumn[] {
+  if (!raw) return [];
+  return String(raw)
+    .split(/[,;]+/)
+    .map((entry) => {
+      const value = entry.trim();
+      if (!value) return null;
+      const match = /^([A-Za-z_][A-Za-z0-9_.-]*)(?::([A-Za-z][A-Za-z0-9_./()-]*))?$/.exec(value);
+      if (!match) return null;
+      const type = String(match[2] || "").trim();
+      return {
+        name: String(match[1] || "").trim(),
+        ...(type ? { type } : {}),
+      } satisfies AgentDataColumn;
+    })
+    .filter((entry): entry is AgentDataColumn => !!entry);
+}
+
+function parseDataNameList(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return String(raw)
+    .split(/[,;]+/)
+    .map((entry) => entry.trim())
+    .filter((entry) => /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(entry));
+}
+
 function parseDataSourceHashes(raw: string | undefined): AgentDataSourceHash[] {
   if (!raw) return [];
   return String(raw)
@@ -694,6 +731,12 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
   const engine = stringDataProperty(props, ["ENGINE", "ORG2_ENGINE"]);
   const source = stringDataProperty(props, ["SOURCE", "DATA_SOURCE", "URI", "URL"]);
   const sourcePath = stringDataProperty(props, ["PATH", "FILE"]);
+  const database = stringDataProperty(props, ["DATABASE", "DB", "CATALOG", "ORG2_DATABASE"]);
+  const schema = stringDataProperty(props, ["SCHEMA", "NAMESPACE", "ORG2_SCHEMA"]);
+  const table = stringDataProperty(props, ["TABLE", "TABLE_NAME", "RELATION", "ORG2_TABLE"]);
+  const view = stringDataProperty(props, ["VIEW", "VIEW_NAME", "SQL_VIEW", "ORG2_VIEW"]);
+  const columns = parseDataColumns(stringDataProperty(props, ["COLUMNS", "FIELDS", "ORG2_COLUMNS"]));
+  const primaryKey = parseDataNameList(stringDataProperty(props, ["PRIMARY_KEY", "PRIMARY_KEYS", "PK", "KEY_COLUMNS", "ORG2_PRIMARY_KEY"]));
   const credentialRef = safeCredentialRef(stringDataProperty(props, ["CREDENTIAL_REF", "CREDENTIAL", "CREDENTIALS", "AUTH_REF", "AUTH"]));
   const configRef = safeConfigRef(stringDataProperty(props, ["CONFIG_REF", "CONFIG", "PROFILE"]));
   const refreshRef = stringDataProperty(props, ["REFRESH_REF", "REFRESH_ID", "REFRESH_JOB", "ORG2_REFRESH_REF"]);
@@ -729,6 +772,12 @@ function dataLinkMetadataFor(corpus: CompiledCorpus, node: CompiledCorpusNode): 
     ...(engine ? { engine } : {}),
     ...(source ? { source } : {}),
     ...(sourcePath ? { path: sourcePath } : {}),
+    ...(database ? { database } : {}),
+    ...(schema ? { schema } : {}),
+    ...(table ? { table } : {}),
+    ...(view ? { view } : {}),
+    ...(columns.length ? { columns } : {}),
+    ...(primaryKey.length ? { primaryKey } : {}),
     ...(credentialRef ? { credentialRef } : {}),
     ...(configRef ? { configRef } : {}),
     ...(refreshRef ? { refreshRef } : {}),
@@ -1170,6 +1219,12 @@ export function renderAgentContextPack(payload: AgentPayload, format: "markdown"
       item.claimState.freshness !== "unknown" ? `claim freshness: ${item.claimState.freshness}` : "",
       item.dataLink.system ? `system: ${item.dataLink.system}` : "",
       item.dataLink.engine ? `engine: ${item.dataLink.engine}` : "",
+      item.dataLink.database ? `database: ${item.dataLink.database}` : "",
+      item.dataLink.schema ? `schema: ${item.dataLink.schema}` : "",
+      item.dataLink.table ? `table: ${item.dataLink.table}` : "",
+      item.dataLink.view ? `view: ${item.dataLink.view}` : "",
+      item.dataLink.columns?.length ? `columns: ${item.dataLink.columns.map((column) => column.type ? `${column.name}:${column.type}` : column.name).join(", ")}` : "",
+      item.dataLink.primaryKey?.length ? `primary key: ${item.dataLink.primaryKey.join(", ")}` : "",
       item.dataLink.credentialRef ? `credential: ${item.dataLink.credentialRef}` : "",
       item.dataLink.configRef ? `config: ${item.dataLink.configRef}` : "",
       item.dataLink.refreshRef ? `refresh ref: ${item.dataLink.refreshRef}` : "",
