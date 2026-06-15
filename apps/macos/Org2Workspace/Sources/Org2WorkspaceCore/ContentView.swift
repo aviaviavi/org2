@@ -316,11 +316,11 @@ private struct QuickOpenView: View {
           .stroke(Color.secondary.opacity(0.18))
       )
 
-      if store.isScanningCorpusFiles {
+      if store.isScanningCorpusFiles || store.isFilteringQuickOpenFiles {
         HStack(spacing: 8) {
           ProgressView()
             .controlSize(.small)
-          Text("Scanning files")
+          Text(store.isScanningCorpusFiles ? "Scanning files" : "Searching files")
             .foregroundStyle(.secondary)
         }
       }
@@ -343,9 +343,6 @@ private struct QuickOpenView: View {
     .modifier(QuickOpenKeyboardEventMonitor(handler: handleKeyDown))
     .onAppear {
       queryFocused = true
-      store.resetQuickOpenSelection()
-    }
-    .onChange(of: store.quickOpenQuery) {
       store.resetQuickOpenSelection()
     }
   }
