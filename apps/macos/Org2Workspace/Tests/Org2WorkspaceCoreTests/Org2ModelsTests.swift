@@ -2241,7 +2241,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testNodeContextGroupsBacklinksAndStagesBriefPrompt() async throws {
+  func testNodeContextGroupsBacklinksAndSendsBriefRequest() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-node-context-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -2277,7 +2277,28 @@ final class Org2ModelsTests: XCTestCase {
     See [[id:\(targetID)][Target Node]].
     """.write(to: secondSource, atomically: true, encoding: .utf8)
 
-    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let artifactRelativePath = WorkspaceStore.nodeBriefArtifactRelativePath(
+      title: "Target Node",
+      id: targetID,
+      file: "target.org2",
+      line: 1
+    )
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawSendHandler: { messages, _, _, context in
+        let prompt = try XCTUnwrap(messages.last?.content)
+        XCTAssertTrue(prompt.contains("Generate a source-cited brief for the selected org2 node \"Target Node\""))
+        XCTAssertTrue(prompt.contains("Target artifact relative path: \(artifactRelativePath)"))
+        XCTAssertTrue(prompt.contains(":ORG2_ARTIFACT_ROLE: view"))
+        XCTAssertTrue(prompt.contains(":ORG2_REVIEW_STATUS: review-required"))
+        XCTAssertTrue(prompt.contains("do not run org2 brief"))
+        XCTAssertFalse(prompt.contains("Deterministic org2 context pack"))
+        XCTAssertEqual(context?.backlinks?.backlinks.count, 3)
+        XCTAssertEqual(context?.backlinks?.id, targetID)
+        return "No artifact written"
+      }
+    )
     store.setCorpusRoot(root)
     store.select(.openClaw(OpenClawThread(
       title: "Target Node",
@@ -2305,23 +2326,10 @@ final class Org2ModelsTests: XCTestCase {
 
     await store.briefCurrentNodeInOpenClaw()
 
-    let artifactRelativePath = WorkspaceStore.nodeBriefArtifactRelativePath(
-      title: "Target Node",
-      id: targetID,
-      file: "target.org2",
-      line: 1
-    )
-
-    XCTAssertEqual(store.selectedSurface, .openClaw)
-    XCTAssertTrue(store.openClawDraft.contains("Give me the highlights of Target Node"))
-    XCTAssertTrue(store.openClawDraft.contains("Write the generated brief into the org2 corpus artifact below"))
-    XCTAssertTrue(store.openClawDraft.contains("Target artifact relative path: \(artifactRelativePath)"))
-    XCTAssertTrue(store.openClawDraft.contains(":ORG2_ARTIFACT_ROLE: view"))
-    XCTAssertTrue(store.openClawDraft.contains(":ORG2_REVIEW_STATUS: review-required"))
-    XCTAssertTrue(store.openClawDraft.contains("Computed backlinks"))
-    XCTAssertTrue(store.openClawDraft.contains("3 references across 2 files"))
-    XCTAssertTrue(store.openClawDraft.contains("first.org2 (2)"))
-    XCTAssertTrue(store.openClawDraft.contains("Deterministic org2 context pack"))
+    XCTAssertEqual(store.openClawDraft, "")
+    XCTAssertEqual(store.openClawMessages.count, 2)
+    XCTAssertEqual(store.openClawMessages.last?.content, "No artifact written")
+    XCTAssertEqual(store.statusText, "Node brief artifact was not written")
   }
 
   func testRelatedBacklinkNodesFilterGenericStructuralHeadingsAndKeepEvidence() {
@@ -2499,8 +2507,6 @@ final class Org2ModelsTests: XCTestCase {
     )))
 
     await store.briefCurrentNodeInOpenClaw()
-    XCTAssertEqual(store.selectedSurface, .openClaw)
-    await store.sendOpenClawMessage()
 
     guard case .openClaw(let selected)? = store.selectedLocation else {
       XCTFail("Expected generated brief artifact to be selected")

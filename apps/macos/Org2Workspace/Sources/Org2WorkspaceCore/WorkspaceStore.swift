@@ -890,7 +890,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public var canBriefCurrentNodeInOpenClaw: Bool {
-    selectedLocation != nil && corpusRoot != nil && !isBuildingNodeBrief
+    selectedLocation != nil && corpusRoot != nil && !isBuildingNodeBrief && !isSendingOpenClawMessage
   }
 
   public var canLinkifyCurrentFile: Bool {
@@ -943,8 +943,8 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     isBuildingNodeBrief = true
-    openClawStatusText = "Building node context..."
-    statusText = "Building node context..."
+    openClawStatusText = "Sending node brief request..."
+    statusText = "Sending node brief request..."
     defer { isBuildingNodeBrief = false }
 
     do {
@@ -961,27 +961,26 @@ public final class WorkspaceStore: ObservableObject {
         return
       }
 
-      let contextPack = try await nodeBriefContextPack(for: location, id: id, corpusRoot: corpusRoot)
       let prompt = Self.nodeBriefPrompt(
         title: location.title,
         reference: "\(relativePath(location.file)):\(location.lineForEditor)",
-        contextPack: contextPack,
         artifactRelativePath: artifactRelativePath,
         artifactLocalPath: artifactURL.path,
         artifactOpenClawPath: mappedPathForOpenClaw(artifactURL.path),
         sourceID: id
       )
-      let previousDraft = openClawDraft
-      openClawDraft = prompt
-      if openClawDraft != previousDraft {
-        recordWorkspaceUndo(.openClawDraft(previous: previousDraft, next: openClawDraft))
-      }
       pendingNodeBriefArtifactRelativePath = artifactRelativePath
       pendingNodeBriefTitle = location.title
-      selectedSurface = .openClaw
       isOpenClawAssistantPresented = true
-      openClawStatusText = "Node brief prompt ready for \(artifactRelativePath)"
-      statusText = "Node brief prompt ready"
+      await sendOpenClawMessage(prompt)
+      if Self.hasUsableNodeBriefArtifact(at: artifactURL) {
+        openNodeBriefArtifact(url: artifactURL, relativePath: artifactRelativePath, title: location.title)
+      } else if openClawStatusText == "OpenClaw replied" || openClawStatusText.hasPrefix("Edited ") {
+        pendingNodeBriefArtifactRelativePath = nil
+        pendingNodeBriefTitle = nil
+        openClawStatusText = "OpenClaw replied without writing the node brief artifact"
+        statusText = "Node brief artifact was not written"
+      }
     } catch {
       errorText = error.localizedDescription
       openClawStatusText = "Node brief failed"
@@ -3493,11 +3492,14 @@ public final class WorkspaceStore: ObservableObject {
   public func sendOpenClawMessage() async {
     let text = openClawDraft.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
+    openClawDraft = ""
+    await sendOpenClawMessage(text)
+  }
 
+  private func sendOpenClawMessage(_ text: String) async {
     let userMessage = OpenClawChatMessage(role: .user, content: text)
     openClawMessages.append(userMessage)
     openClawPendingUserMessageIDs.append(userMessage.id)
-    openClawDraft = ""
     if isDrainingOpenClawQueue {
       openClawStatusText = openClawQueuedStatusText()
       return
@@ -5153,40 +5155,6 @@ public final class WorkspaceStore: ObservableObject {
     select(.backlink(backlink))
   }
 
-  private func nodeBriefContextPack(for location: WorkspaceLocation, id: String?, corpusRoot: URL) async throws -> String {
-    var contextPack = ""
-    if let id, !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      let data = try await cli.run([
-        "brief",
-        "node",
-        "--id", id,
-        "--dir", corpusRoot.path,
-        "--recursive",
-        "--format", "markdown",
-        "--budget", "20000"
-      ])
-      contextPack = String(decoding: data, as: UTF8.self)
-    }
-
-    let backlinkSummary = Self.nodeBriefBacklinkSummary(
-      groups: backlinkFileGroups,
-      totalReferences: backlinkReferenceCount,
-      totalFiles: backlinkFileCount,
-      maxFiles: 24,
-      maxReferencesPerFile: 4
-    )
-    let selectedSource = selectedEntrySource.map(Self.nodeBriefSelectedSource) ?? ""
-    let header = """
-    Selected node
-    - Title: \(location.title)
-    - Source: \(relativePath(location.file)):\(location.lineForEditor)
-    \(id.map { "- ID: \($0)" } ?? "- ID: unavailable")
-    """
-    return [header, selectedSource, backlinkSummary, contextPack]
-      .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-      .joined(separator: "\n\n---\n\n")
-  }
-
   private func openNodeBriefArtifact(url: URL, relativePath: String, title: String) {
     let modifiedAt = Self.modificationDate(for: url)
     let thread = OpenClawThread(
@@ -5233,7 +5201,6 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated static func nodeBriefPrompt(
     title: String,
     reference: String,
-    contextPack: String,
     artifactRelativePath: String,
     artifactLocalPath: String,
     artifactOpenClawPath: String,
@@ -5245,18 +5212,17 @@ public final class WorkspaceStore: ObservableObject {
       "file:\(reference)"
     ].compactMap { $0 }.joined(separator: ", ")
     return """
-    Give me the highlights of \(title) from my org2 corpus.
-
-    Write the generated brief into the org2 corpus artifact below, then reply with a short confirmation and the file path. Do not leave the result only in chat.
+    Generate a source-cited brief for the selected org2 node "\(title)" and save it as an org2 view artifact.
 
     Target artifact relative path: \(artifactRelativePath)
     Target artifact path for OpenClaw: \(artifactOpenClawPath)
     Local artifact path: \(artifactLocalPath)
+    Selected node: \(reference)
+    \(sourceID.map { "Selected node ID: \($0)" } ?? "Selected node ID: unavailable")
 
-    If the parent directory does not exist, create it. Replace the file atomically if it already exists.
+    Use the selected-node source and computed backlink context provided in the org2 workspace context. You may run org2 backlinks/search/query for more source context if needed, but do not run org2 brief to generate this brief.
 
-    The artifact must be valid org2 and start with this metadata shape:
-
+    Create the parent directory if needed. Replace the artifact file atomically if it already exists. The file must be valid org2 and start with:
     #+TITLE: Node brief: \(title)
     :PROPERTIES:
     :ID: \(artifactID)
@@ -5271,7 +5237,7 @@ public final class WorkspaceStore: ObservableObject {
     :ORG2_PROMPT_TEMPLATE: node-brief@v1
     :END:
 
-    Required sections:
+    Then write these sections:
     * Review checklist
     - [ ] Verify every generated claim against the cited source lines.
     - [ ] Promote reviewed facts into canonical notes only after human review.
@@ -5281,70 +5247,8 @@ public final class WorkspaceStore: ObservableObject {
     * Stale, contradictory, or review-required context
     * Sources
 
-    Focus on:
-    - the most important facts and current state
-    - active work, decisions, and unresolved questions
-    - important files or clusters of references
-    - anything stale, contradictory, or review-required
-
-    Cite file paths and line numbers for every concrete claim. Do not edit canonical notes.
-
-    Selected node: \(reference)
-
-    Deterministic org2 context pack:
-
-    \(limitedNodeBriefContext(contextPack))
+    Cite file paths and line numbers for every concrete claim. Do not edit canonical notes. Reply in chat with only a short confirmation and the artifact path.
     """
-  }
-
-  nonisolated private static func limitedNodeBriefContext(_ context: String) -> String {
-    let maxCharacters = 28_000
-    guard context.count > maxCharacters else { return context }
-    let end = context.index(context.startIndex, offsetBy: maxCharacters)
-    return String(context[..<end]) + "\n\n[Context truncated by Org2Workspace.]"
-  }
-
-  nonisolated private static func nodeBriefSelectedSource(_ source: EntrySource) -> String {
-    """
-    Selected source
-    Source: \(source.file):\(source.displayRange)
-
-    ```org
-    \(source.text)
-    ```
-    """
-  }
-
-  nonisolated private static func nodeBriefBacklinkSummary(
-    groups: [BacklinkFileGroup],
-    totalReferences: Int,
-    totalFiles: Int,
-    maxFiles: Int,
-    maxReferencesPerFile: Int
-  ) -> String {
-    guard totalReferences > 0 else {
-      return "Computed backlinks\nNo backlinks found for this node."
-    }
-
-    var lines = [
-      "Computed backlinks",
-      "\(totalReferences) reference\(totalReferences == 1 ? "" : "s") across \(totalFiles) file\(totalFiles == 1 ? "" : "s")."
-    ]
-    for group in groups.prefix(maxFiles) {
-      lines.append("")
-      lines.append("- \(group.relativePath) (\(group.count))")
-      for backlink in group.backlinks.prefix(maxReferencesPerFile) {
-        lines.append("  - \(Org2Display.cleanInline(backlink.srcTitle)):\(backlink.lineForEditor) \(Org2Display.cleanInline(backlink.context))")
-      }
-      if group.backlinks.count > maxReferencesPerFile {
-        lines.append("  - ... \(group.backlinks.count - maxReferencesPerFile) more in this file")
-      }
-    }
-    if groups.count > maxFiles {
-      lines.append("")
-      lines.append("... \(groups.count - maxFiles) more files with backlinks omitted from prompt.")
-    }
-    return lines.joined(separator: "\n")
   }
 
   private func backlinkTargetID(for location: WorkspaceLocation) async throws -> String? {

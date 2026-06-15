@@ -2174,7 +2174,7 @@ private struct DetailHeader: View {
           }
         }
         .disabled(!store.canBriefCurrentNodeInOpenClaw)
-        .help("Open the cached node brief or prepare an OpenClaw prompt that writes it")
+        .help("Generate or open the cached node brief")
 
         if store.hasRenderedSearchHighlight {
           Button {
@@ -2675,7 +2675,7 @@ private struct NodeContextBrief: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text("Open the cached node brief when one exists, or stage an OpenClaw prompt that writes the generated brief into views/openclaw.")
+      Text("Generate a source-cited brief for this node, save it into views/openclaw, and open the cached artifact here.")
         .font(.callout)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
@@ -2692,7 +2692,7 @@ private struct NodeContextBrief: View {
       .buttonStyle(WorkspaceActionButtonStyle())
       .disabled(!store.canBriefCurrentNodeInOpenClaw)
 
-      Text("Generated briefs live as review-required org2 view artifacts. Re-running this action opens the cached artifact once OpenClaw has written it.")
+      Text("Generated briefs live as review-required org2 view artifacts. Re-running this action opens the cached artifact.")
         .font(.caption)
         .foregroundStyle(.tertiary)
         .fixedSize(horizontal: false, vertical: true)
