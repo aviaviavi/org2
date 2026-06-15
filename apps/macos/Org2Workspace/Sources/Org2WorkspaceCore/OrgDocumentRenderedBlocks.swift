@@ -58,6 +58,8 @@ struct RenderedBlockView: View, Equatable {
         heading: heading,
         rawText: rawText,
         editableBlock: editableBlock,
+        sourceFile: sourceFile,
+        corpusRoot: corpusRoot,
         inlineActions: inlineActions
       )
     case .planning(let planning):
@@ -302,6 +304,14 @@ enum RenderedInlineMediaPresentation {
     corpusRoot: URL?
   ) -> OrgMediaAttachment.EmbeddedGroup? {
     OrgMediaAttachment.embedded(in: raw, sourceFile: sourceFile, corpusRoot: corpusRoot)
+  }
+
+  nonisolated static func headingTitle(
+    rawTitle: String,
+    sourceFile: String?,
+    corpusRoot: URL?
+  ) -> OrgMediaAttachment.EmbeddedGroup? {
+    embedded(raw: rawTitle, sourceFile: sourceFile, corpusRoot: corpusRoot)
   }
 }
 
@@ -959,17 +969,19 @@ private struct RenderedHeadingView: View {
   let heading: OrgHeadingBlock
   let rawText: String?
   let editableBlock: OrgEditableBlock?
+  let sourceFile: String?
+  let corpusRoot: URL?
   let inlineActions: RenderedBlockInlineActions
 
   var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 7) {
+    HStack(alignment: headingAlignment, spacing: 7) {
       if let todo = heading.todo {
         RenderedHeadingTodoButton(todo: todo, inlineActions: inlineActions)
       }
       if let priority = heading.priority {
         RenderedHeadingPriorityMenu(priority: priority, inlineActions: inlineActions)
       }
-      OrgInlineText(rawTitle, font: font)
+      headingTitle
       if !heading.tags.isEmpty {
         RenderedHeadingTagsButton(tags: heading.tags, inlineActions: inlineActions)
       }
@@ -977,6 +989,37 @@ private struct RenderedHeadingView: View {
     }
     .padding(.top, topPadding)
     .padding(.leading, CGFloat(max(0, heading.level - 1)) * 10)
+  }
+
+  @ViewBuilder
+  private var headingTitle: some View {
+    if let embedded = RenderedInlineMediaPresentation.headingTitle(
+      rawTitle: rawTitle,
+      sourceFile: sourceFile,
+      corpusRoot: corpusRoot
+    ) {
+      VStack(alignment: .leading, spacing: 8) {
+        if !embedded.displayText.isEmpty {
+          OrgInlineText(embedded.displayText, font: font)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        ForEach(Array(embedded.attachments.enumerated()), id: \.offset) { _, attachment in
+          OrgMediaAttachmentView(attachment: attachment)
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    } else {
+      OrgInlineText(rawTitle, font: font)
+    }
+  }
+
+  private var headingAlignment: VerticalAlignment {
+    RenderedInlineMediaPresentation.headingTitle(
+      rawTitle: rawTitle,
+      sourceFile: sourceFile,
+      corpusRoot: corpusRoot
+    ) == nil ? .firstTextBaseline : .top
   }
 
   private var font: Font {
