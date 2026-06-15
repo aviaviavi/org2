@@ -18,6 +18,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:macos-app": "node tools/build-macos-app.mjs",
     "parse": "node dist/parse.js",
     "print": "node dist/print.js",
     "org2": "node dist/cli.js",

@@ -121,7 +121,7 @@ The native Mac app lives in =apps/macos/Org2Workspace=. It is early, but it is a
 - OpenClaw chat and Agent Space surfaces,
 - GPG-backed org-crypt configuration and encrypt/decrypt actions.
 
-The next major app slice should lead with *real capture and refiling*: system-wide capture or a global capture panel, fast TODO/note capture, refile into existing files/headings, and scheduling/deadline/priority/tag/effort controls that preserve clean Org2 source. Meeting-to-action, knowledge-browser, and packaging/first-run work can proceed in parallel, but they should land in their natural product surfaces rather than a separate planning page.
+The next major app milestone should lead with *real capture and refiling*: system-wide capture or a global capture panel, fast TODO/note capture, refile into existing files/headings, and scheduling/deadline/priority/tag/effort controls that preserve clean Org2 source. Meeting-to-action, knowledge-browser, and packaging/first-run work can proceed in parallel, but they should land in their natural product surfaces rather than a separate planning page.
 
 See [[file:editors-macos.org][macOS Workspace]] for the current app surface and build/run notes.
 

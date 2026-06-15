@@ -147,6 +147,51 @@ public struct AgendaItem: Decodable, Identifiable, Hashable, Sendable {
   }
 }
 
+public struct AssignedWorkItem: Identifiable, Hashable, Sendable {
+  public let file: String
+  public let line: Int
+  public let headline: String
+  public let todo: String?
+  public let assignee: String
+  public let status: String
+  public let assignedAt: String?
+  public let lastAgentUpdate: String?
+  public let tags: [String]
+  public let properties: [String: String]
+
+  public init(
+    file: String,
+    line: Int,
+    headline: String,
+    todo: String?,
+    assignee: String,
+    status: String,
+    assignedAt: String? = nil,
+    lastAgentUpdate: String? = nil,
+    tags: [String] = [],
+    properties: [String: String] = [:]
+  ) {
+    self.file = file
+    self.line = line
+    self.headline = headline
+    self.todo = todo
+    self.assignee = assignee
+    self.status = status
+    self.assignedAt = assignedAt
+    self.lastAgentUpdate = lastAgentUpdate
+    self.tags = tags
+    self.properties = properties
+  }
+
+  public var id: String {
+    "\(file):\(line):\(assignee):\(status):\(headline)"
+  }
+
+  public var lineForEditor: Int {
+    max(1, line)
+  }
+}
+
 public struct HabitAgendaState: Decodable, Hashable, Sendable {
   public let marker: String
   public let streak: Int
@@ -2818,6 +2863,7 @@ private extension Character {
 
 public enum WorkspaceLocation: Hashable, Sendable {
   case agenda(AgendaItem)
+  case assigned(AssignedWorkItem)
   case search(SearchResult)
   case backlink(BacklinkItem)
   case openClaw(OpenClawThread)
@@ -2826,6 +2872,7 @@ public enum WorkspaceLocation: Hashable, Sendable {
   public var title: String {
     switch self {
     case .agenda(let item): Org2Display.cleanInline(item.headline)
+    case .assigned(let item): Org2Display.cleanInline(item.headline)
     case .search(let result): Org2Display.cleanInline(result.title)
     case .backlink(let backlink): Org2Display.cleanInline(backlink.srcTitle)
     case .openClaw(let thread): Org2Display.cleanInline(thread.title)
@@ -2836,6 +2883,7 @@ public enum WorkspaceLocation: Hashable, Sendable {
   public var subtitle: String {
     switch self {
     case .agenda(let item): [item.todo, item.kind, item.time].compactMap { $0 }.joined(separator: " ")
+    case .assigned(let item): [item.todo, item.status, item.assignee].compactMap { $0 }.joined(separator: " ")
     case .search(let result): Org2Display.cleanInline(result.snippet)
     case .backlink(let backlink): Org2Display.cleanInline(backlink.context)
     case .openClaw(let thread): thread.zone
@@ -2847,6 +2895,7 @@ public enum WorkspaceLocation: Hashable, Sendable {
   public var file: String {
     switch self {
     case .agenda(let item): item.file
+    case .assigned(let item): item.file
     case .search(let result): result.file
     case .backlink(let backlink): backlink.file
     case .openClaw(let thread): thread.file
@@ -2857,6 +2906,7 @@ public enum WorkspaceLocation: Hashable, Sendable {
   public var lineForEditor: Int {
     switch self {
     case .agenda(let item): item.lineForEditor
+    case .assigned(let item): item.lineForEditor
     case .search(let result): result.lineForEditor
     case .backlink(let backlink): backlink.lineForEditor
     case .openClaw(let thread): thread.lineForEditor
@@ -2867,6 +2917,7 @@ public enum WorkspaceLocation: Hashable, Sendable {
   public var idValue: String? {
     switch self {
     case .agenda(let item): item.idValue
+    case .assigned: nil
     case .search(let result): result.idValue
     case .backlink(let backlink): backlink.srcId
     case .openClaw(let thread): thread.idValue
@@ -2989,6 +3040,18 @@ public struct OpenClawThreadSection: Identifiable, Sendable {
   }
 }
 
+public struct AssignedWorkSection: Identifiable, Sendable {
+  public let id: String
+  public let label: String
+  public let items: [AssignedWorkItem]
+
+  public init(id: String, label: String, items: [AssignedWorkItem]) {
+    self.id = id
+    self.label = label
+    self.items = items
+  }
+}
+
 public struct MeetingSection: Identifiable, Sendable {
   public let id: String
   public let label: String
@@ -3035,6 +3098,7 @@ public enum AgendaMode: String, CaseIterable, Identifiable, Sendable {
   case focus
   case today
   case range
+  case assigned
 
   public var id: String { rawValue }
 
@@ -3043,6 +3107,7 @@ public enum AgendaMode: String, CaseIterable, Identifiable, Sendable {
     case .focus: "Focus"
     case .today: "Today"
     case .range: "Range"
+    case .assigned: "Assigned"
     }
   }
 }
@@ -3080,13 +3145,22 @@ public enum DetailScrollDirection: Equatable, Sendable {
   case down
 }
 
+public enum DetailScrollTarget: Equatable, Sendable {
+  case page(DetailScrollDirection)
+  case block(String)
+}
+
 public struct DetailScrollRequest: Equatable, Sendable {
   public let id: Int
-  public let direction: DetailScrollDirection
+  public let target: DetailScrollTarget
+
+  public init(id: Int, target: DetailScrollTarget) {
+    self.id = id
+    self.target = target
+  }
 
   public init(id: Int, direction: DetailScrollDirection) {
-    self.id = id
-    self.direction = direction
+    self.init(id: id, target: .page(direction))
   }
 }
 
@@ -3119,6 +3193,16 @@ public struct TodoMutationPayload: Decodable, Sendable {
   public let headingLine: Int
   public let oldStatus: String
   public let newStatus: String
+  public let applied: Bool
+  public let changed: Bool
+}
+
+public struct TodoAssignmentPayload: Decodable, Sendable {
+  public let file: String
+  public let headingLine: Int
+  public let property: String
+  public let oldAssignee: String?
+  public let newAssignee: String
   public let applied: Bool
   public let changed: Bool
 }

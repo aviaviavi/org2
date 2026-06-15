@@ -18,7 +18,7 @@ You do not need every zone on day one. The value is that when a corpus adopts th
 | =raw/= | =raw= | source evidence | Inbox material, imports, captures, transcripts, clippings, and other minimally edited inputs. |
 | =notes/= | =canonical= | yes | Human-authored durable notes, tasks, decisions, IDs, links, and properties. This is the primary corpus. |
 | =compiled/= | =compiled= | generated | Normalized or aggregated machine outputs derived from raw/canonical inputs. |
-| =views/= | =view= | generated | Query results, indexes, dashboards, agenda snapshots, graph slices, or other read models. |
+| =views/= | =view= | generated | Query results, indexes, dashboards, agenda snapshots, graph views, or other read models. |
 | =publish/= | =report= | generated/public-facing | Exported reports, sites, feeds, handoff documents, or other presentation outputs. |
 
 Canonical authorship lives in =notes/=. Generated outputs may be useful and may be committed, but they should be reproducible from provenance whenever possible.

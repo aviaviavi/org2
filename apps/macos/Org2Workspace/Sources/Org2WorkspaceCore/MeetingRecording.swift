@@ -347,6 +347,17 @@ public enum MeetingArtifactWriter {
     return path
   }
 
+  public static func audioDuration(at url: URL) -> TimeInterval? {
+    guard let audioFile = try? AVAudioFile(forReading: url),
+          audioFile.processingFormat.sampleRate > 0
+    else {
+      return nil
+    }
+    let seconds = Double(audioFile.length) / audioFile.processingFormat.sampleRate
+    guard seconds.isFinite, seconds > 0 else { return nil }
+    return seconds
+  }
+
   public static func isoTimestamp(_ date: Date) -> String {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -410,10 +421,75 @@ public struct LocalWhisperConfiguration: Sendable {
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .nilIfEmpty
   }
+
+  public var requestedLanguage: String {
+    environment["ORG2_WORKSPACE_WHISPER_LANGUAGE"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .nilIfEmpty ?? "en"
+  }
+
+  public var requestedThreadCount: Int {
+    if let raw = environment["ORG2_WORKSPACE_WHISPER_THREADS"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines),
+      let parsed = Int(raw),
+      parsed > 0 {
+      return parsed
+    }
+    return max(1, ProcessInfo.processInfo.activeProcessorCount - 1)
+  }
+}
+
+public struct LocalWhisperInstallationStatus: Equatable, Sendable {
+  public let backendDescription: String
+  public let whisperCppExecutablePath: String?
+  public let whisperCppModelPath: String?
+  public let openAIWhisperExecutablePath: String?
+  public let overrideCommand: String?
+
+  public var isWhisperCppReady: Bool {
+    whisperCppExecutablePath != nil && whisperCppModelPath != nil
+  }
+
+  public var isAnyLocalTranscriberAvailable: Bool {
+    isWhisperCppReady || openAIWhisperExecutablePath != nil || overrideCommand != nil
+  }
+
+  public var statusLabel: String {
+    if isWhisperCppReady { return "Fast local transcription ready" }
+    if overrideCommand != nil { return "Custom transcriber configured" }
+    if openAIWhisperExecutablePath != nil { return "Python Whisper available; whisper.cpp recommended" }
+    if whisperCppExecutablePath != nil { return "whisper.cpp installed; model missing" }
+    return "No local transcriber found"
+  }
+
+  public var detailText: String {
+    if isWhisperCppReady {
+      return "Using whisper.cpp with \(whisperCppModelPath ?? "a GGML model")."
+    }
+    if whisperCppExecutablePath != nil {
+      return "Install a GGML model to enable the fast whisper.cpp path."
+    }
+    if openAIWhisperExecutablePath != nil {
+      return "Using Python Whisper. Install whisper.cpp for faster local transcription."
+    }
+    if let overrideCommand {
+      return "Using custom command: \(overrideCommand)"
+    }
+    return "Install whisper.cpp and a GGML model before recording meetings."
+  }
 }
 
 public struct LocalWhisperTranscriber: Sendable {
   public let configuration: LocalWhisperConfiguration
+  public static let defaultWhisperCppModelDownloadURL = URL(
+    string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin"
+  )!
+
+  public static var defaultWhisperCppModelURL: URL {
+    FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent("Library/Application Support/org2/whisper", isDirectory: true)
+      .appendingPathComponent("ggml-base.en.bin")
+  }
 
   public init(configuration: LocalWhisperConfiguration = LocalWhisperConfiguration()) {
     self.configuration = configuration
@@ -446,6 +522,22 @@ public struct LocalWhisperTranscriber: Sendable {
     return "local Whisper CLI not found"
   }
 
+  public static func installationStatus(
+    configuration: LocalWhisperConfiguration = LocalWhisperConfiguration()
+  ) -> LocalWhisperInstallationStatus {
+    let whisperCpp = resolveExecutable(named: "whisper-cli", environment: configuration.environment)
+      ?? resolveExecutable(named: "whisper-cpp", environment: configuration.environment)
+    let model = resolveWhisperCppModel(configuration: configuration)
+    let openAIWhisper = resolveExecutable(named: "whisper", environment: configuration.environment)
+    return LocalWhisperInstallationStatus(
+      backendDescription: resolvedBackendDescription(configuration: configuration),
+      whisperCppExecutablePath: whisperCpp?.path,
+      whisperCppModelPath: model,
+      openAIWhisperExecutablePath: openAIWhisper?.path,
+      overrideCommand: configuration.overrideCommand
+    )
+  }
+
   private static func transcribeSync(
     audioURL: URL,
     configuration: LocalWhisperConfiguration
@@ -458,12 +550,23 @@ public struct LocalWhisperTranscriber: Sendable {
     if let whisperCpp = resolveExecutable(named: "whisper-cli", environment: configuration.environment)
       ?? resolveExecutable(named: "whisper-cpp", environment: configuration.environment),
       let model = resolveWhisperCppModel(configuration: configuration) {
-      let result = try runWhisperCpp(executable: whisperCpp, model: model, audioURL: audioURL)
+      let result = try runWhisperCpp(
+        executable: whisperCpp,
+        model: model,
+        audioURL: audioURL,
+        language: configuration.requestedLanguage,
+        threadCount: configuration.requestedThreadCount
+      )
       return MeetingTranscriptResult(text: result, status: .complete, engine: "whisper.cpp")
     }
 
     if let whisper = resolveExecutable(named: "whisper", environment: configuration.environment) {
-      let result = try runOpenAIWhisper(executable: whisper, audioURL: audioURL, model: configuration.requestedModel)
+      let result = try runOpenAIWhisper(
+        executable: whisper,
+        audioURL: audioURL,
+        model: configuration.requestedModel,
+        language: configuration.requestedLanguage
+      )
       return MeetingTranscriptResult(text: result, status: .complete, engine: "openai-whisper")
     }
 
@@ -483,14 +586,29 @@ public struct LocalWhisperTranscriber: Sendable {
     return try transcriptText(stdout: result.stdout, stderr: result.stderr)
   }
 
-  private static func runWhisperCpp(executable: URL, model: String, audioURL: URL) throws -> String {
+  private static func runWhisperCpp(
+    executable: URL,
+    model: String,
+    audioURL: URL,
+    language: String,
+    threadCount: Int
+  ) throws -> String {
+    let whisperAudioURL = try whisperCppCompatibleAudioURL(for: audioURL)
+    defer {
+      if whisperAudioURL.standardizedFileURL.path != audioURL.standardizedFileURL.path {
+        try? FileManager.default.removeItem(at: whisperAudioURL)
+      }
+    }
     let outputPrefix = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-whisper-\(UUID().uuidString)")
     let result = try runProcess(
       executableURL: executable,
       arguments: [
         "-m", model,
-        "-f", audioURL.path,
+        "-f", whisperAudioURL.path,
+        "-l", language,
+        "-t", "\(threadCount)",
+        "-nt",
         "-otxt",
         "-of", outputPrefix.path
       ],
@@ -505,11 +623,62 @@ public struct LocalWhisperTranscriber: Sendable {
     return try transcriptText(stdout: result.stdout, stderr: result.stderr)
   }
 
-  private static func runOpenAIWhisper(executable: URL, audioURL: URL, model: String?) throws -> String {
+  private static func whisperCppCompatibleAudioURL(for audioURL: URL) throws -> URL {
+    guard audioURL.pathExtension.lowercased() != "wav" else { return audioURL }
+    let convertedURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-whisper-input-\(UUID().uuidString).wav")
+    do {
+      try convertAudioToWhisperWAV(sourceURL: audioURL, outputURL: convertedURL)
+      return convertedURL
+    } catch {
+      try? FileManager.default.removeItem(at: convertedURL)
+      throw LocalWhisperError.audioConversionFailed(audioURL.lastPathComponent, error.localizedDescription)
+    }
+  }
+
+  private static func convertAudioToWhisperWAV(sourceURL: URL, outputURL: URL) throws {
+    if FileManager.default.fileExists(atPath: outputURL.path) {
+      try FileManager.default.removeItem(at: outputURL)
+    }
+    let converterURL = URL(fileURLWithPath: "/usr/bin/afconvert")
+    guard FileManager.default.isExecutableFile(atPath: converterURL.path) else {
+      throw LocalWhisperError.audioConversionFailed(sourceURL.lastPathComponent, "afconvert is not available.")
+    }
+    let result = try runProcess(
+      executableURL: converterURL,
+      arguments: [
+        "-f", "WAVE",
+        "-d", "LEI16@16000",
+        "-c", "1",
+        sourceURL.path,
+        outputURL.path
+      ],
+      currentDirectoryURL: sourceURL.deletingLastPathComponent()
+    )
+    guard FileManager.default.fileExists(atPath: outputURL.path) else {
+      throw LocalWhisperError.audioConversionFailed(
+        sourceURL.lastPathComponent,
+        result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+      )
+    }
+  }
+
+  private static func runOpenAIWhisper(
+    executable: URL,
+    audioURL: URL,
+    model: String?,
+    language: String
+  ) throws -> String {
     let outputDirectory = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-openai-whisper-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
-    var arguments = [audioURL.path, "--output_format", "txt", "--output_dir", outputDirectory.path]
+    var arguments = [
+      audioURL.path,
+      "--language", language,
+      "--task", "transcribe",
+      "--output_format", "txt",
+      "--output_dir", outputDirectory.path
+    ]
     if let model {
       arguments += ["--model", model]
     }
@@ -529,17 +698,24 @@ public struct LocalWhisperTranscriber: Sendable {
 
   private static func resolveWhisperCppModel(configuration: LocalWhisperConfiguration) -> String? {
     if let requested = configuration.requestedModel {
-      return requested
+      return FileManager.default.fileExists(atPath: requested) ? requested : nil
     }
 
     let home = FileManager.default.homeDirectoryForCurrentUser.path
     let candidates = [
+      "\(home)/Library/Application Support/org2/whisper/ggml-tiny.en.bin",
       "\(home)/Library/Application Support/org2/whisper/ggml-base.en.bin",
+      "\(home)/.cache/whisper/ggml-tiny.en.bin",
       "\(home)/.cache/whisper/ggml-base.en.bin",
+      "\(home)/.cache/whisper.cpp/ggml-tiny.en.bin",
       "\(home)/.cache/whisper.cpp/ggml-base.en.bin",
+      "\(home)/dev/whisper.cpp/models/ggml-tiny.en.bin",
       "\(home)/dev/whisper.cpp/models/ggml-base.en.bin",
+      "\(home)/openclaw/models/ggml-tiny.en.bin",
       "\(home)/openclaw/models/ggml-base.en.bin",
+      "/opt/homebrew/share/whisper-cpp/models/ggml-tiny.en.bin",
       "/opt/homebrew/share/whisper-cpp/models/ggml-base.en.bin",
+      "/usr/local/share/whisper-cpp/models/ggml-tiny.en.bin",
       "/usr/local/share/whisper-cpp/models/ggml-base.en.bin"
     ]
 
@@ -550,7 +726,9 @@ public struct LocalWhisperTranscriber: Sendable {
     if name.hasPrefix("/") {
       return FileManager.default.isExecutableFile(atPath: name) ? URL(fileURLWithPath: name) : nil
     }
-    let path = environment["PATH"] ?? "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+    let defaultPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+    let path = environment["PATH"]?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+      .map { "\($0):\(defaultPath)" } ?? defaultPath
     for directory in path.split(separator: ":").map(String.init) {
       let candidate = URL(fileURLWithPath: directory).appendingPathComponent(name)
       if FileManager.default.isExecutableFile(atPath: candidate.path) {
@@ -641,6 +819,7 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
   private var lastPresentationTime: CMTime?
   private var sampleCount = 0
   private var latestSnapshot = MeetingInputMeterSnapshot.silent
+  private var isCaptureRunning = false
 
   public override init() {}
 
@@ -704,10 +883,14 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
       lastPresentationTime = nil
       sampleCount = 0
       latestSnapshot = .silent
+      isCaptureRunning = false
     }
 
     do {
       try await startCapture(stream)
+      stateLock.withLock {
+        isCaptureRunning = true
+      }
     } catch {
       resetState(cancelWriter: true)
       throw error
@@ -716,7 +899,7 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
 
   public func stopRecording() async throws -> TimeInterval? {
     let state = stateLock.withLock {
-      (stream: stream, writer: writer, writerInput: writerInput)
+      (stream: stream, writer: writer, writerInput: writerInput, isCaptureRunning: isCaptureRunning)
     }
 
     guard let stream = state.stream,
@@ -726,8 +909,38 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
       throw MeetingSystemAudioRecorderError.notRecording
     }
 
-    try await stopCapture(stream)
+    if state.isCaptureRunning {
+      try await stopCapture(stream)
+      stateLock.withLock {
+        isCaptureRunning = false
+      }
+    }
     return try await finishWriting(writer: writer, writerInput: writerInput)
+  }
+
+  public func pauseRecording() async throws {
+    let state = stateLock.withLock {
+      (stream: stream, isCaptureRunning: isCaptureRunning)
+    }
+    guard let stream = state.stream else { throw MeetingSystemAudioRecorderError.notRecording }
+    guard state.isCaptureRunning else { return }
+    try await stopCapture(stream)
+    stateLock.withLock {
+      isCaptureRunning = false
+      latestSnapshot = .silent
+    }
+  }
+
+  public func resumeRecording() async throws {
+    let state = stateLock.withLock {
+      (stream: stream, isCaptureRunning: isCaptureRunning)
+    }
+    guard let stream = state.stream else { throw MeetingSystemAudioRecorderError.notRecording }
+    guard !state.isCaptureRunning else { return }
+    try await startCapture(stream)
+    stateLock.withLock {
+      isCaptureRunning = true
+    }
   }
 
   public nonisolated func stream(
@@ -817,6 +1030,7 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
           self.lastPresentationTime = nil
           self.sampleCount = 0
           self.latestSnapshot = .silent
+          self.isCaptureRunning = false
           return state
         }
 
@@ -853,6 +1067,7 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
       lastPresentationTime = nil
       sampleCount = 0
       latestSnapshot = .silent
+      isCaptureRunning = false
       return writer
     }
 
@@ -1026,6 +1241,18 @@ public final class MeetingAudioRecorder {
     return duration
   }
 
+  public func pauseRecording() throws {
+    guard let recorder else { throw MeetingRecorderError.notRecording }
+    recorder.pause()
+  }
+
+  public func resumeRecording() throws {
+    guard let recorder else { throw MeetingRecorderError.notRecording }
+    guard recorder.record() else {
+      throw MeetingRecorderError.startFailed
+    }
+  }
+
   private func requestMicrophonePermission() async throws {
     switch Self.microphoneAuthorizationStatus() {
     case .authorized:
@@ -1058,6 +1285,7 @@ public enum LocalWhisperError: LocalizedError, Equatable {
   case notConfigured
   case commandFailed(String, Int, String)
   case emptyTranscript(String)
+  case audioConversionFailed(String, String)
 
   public var errorDescription: String? {
     switch self {
@@ -1067,6 +1295,8 @@ public enum LocalWhisperError: LocalizedError, Equatable {
       "\(command) exited with status \(status)\(stderr.isEmpty ? "" : ": \(stderr)")"
     case .emptyTranscript(let stderr):
       stderr.isEmpty ? "Local Whisper did not return a transcript." : "Local Whisper did not return a transcript: \(stderr)"
+    case .audioConversionFailed(let file, let message):
+      "Could not convert \(file) to WAV for whisper.cpp\(message.isEmpty ? "" : ": \(message)")"
     }
   }
 }

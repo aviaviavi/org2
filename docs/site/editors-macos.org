@@ -2,7 +2,7 @@
 
 Org2 Workspace is the native macOS client for working with an Org2 corpus. It is an alpha app in =apps/macos/Org2Workspace=, built as a Swift Package, and uses the same parser/CLI output as the rest of Org2 instead of maintaining a private database.
 
-The app is currently best understood as a local workspace shell for dogfooding the product direction: agenda review, file navigation, search, rendered block editing, meeting capture, OpenClaw handoff, knowledge-node creation, and crypt workflows over normal files.
+The app is currently best understood as a local workspace shell for dogfooding the product direction: global capture, agenda review, file navigation, search, rendered block editing, meeting capture, OpenClaw handoff, knowledge-node creation, and crypt workflows over normal files.
 
 * Current surfaces
 
@@ -14,6 +14,8 @@ The sidebar exposes the main workspace surfaces:
 - *Meetings* :: record or import local audio, create meeting/transcript artifacts under the corpus, and keep transcription provenance in Org2 files.
 - *OpenClaw Chat* :: send selected workspace context to a configured OpenClaw endpoint while keeping the conversation state local to the app.
 - *Agent Space* :: browse durable OpenClaw/agent thread records and reopen their source context.
+
+Global capture is available while the app is running. =Cmd-Ctrl-Return= opens a capture modal from anywhere on macOS, and the in-app =Capture= command uses the same path. Captures append to today's daily note, using =roam.dailiesDir= from =org2.json= when configured. The modal can write notes or TODOs, set TODO state, priority, tags, scheduled/deadline dates, and mark a capture ready for agent handoff. The paste control accepts text, URLs, local files, and pasted image data; local files and images are copied into =attachments/= and linked from the capture.
 
 The detail pane can render a selected file, agenda item, search result, backlink, meeting note, or agent thread. It supports both raw source editing and structured rendered-block editing.
 
@@ -70,6 +72,7 @@ High-value shortcuts include:
 - =Cmd-1= through =Cmd-5= for primary surfaces,
 - =Cmd-6= for Agent Space,
 - =Cmd-P= / =Cmd-K= for quick open,
+- =Cmd-Ctrl-Return= for system-wide capture while the app is running,
 - =Cmd-7=, =Cmd-8=, and =Cmd-9= for today/yesterday/tomorrow daily notes,
 - agenda-local =j= / =k= navigation, =/= filtering, and TODO/planning shortcuts,
 - document-local block navigation, editing, insertion, folding, duplication, movement, and deletion shortcuts.
@@ -93,16 +96,14 @@ The app expects =dist/cli.js= and =dist/parse.js= to exist. If the app cannot fi
 ORG2_REPO_ROOT=/path/to/org2 swift run Org2Workspace
 #+end_src
 
-* Next major slices
+* Next priorities
 
-The recommended lead slice remains *real capture and refiling*.
+The recommended lead priority remains *refiling and deeper capture routing*.
 
-The app still needs the actual daily-driver capture workflow:
+The app still needs the rest of the daily-driver capture workflow:
 
-- system-wide capture or a global capture panel,
-- fast TODO/note capture into a predictable capture target,
 - refile into existing files/headings,
-- scheduling/deadline/priority/tag/effort controls at capture time,
+- effort controls and richer templates at capture time,
 - an acceptance path where captured work appears in agenda and the resulting =.org2= text remains clean.
 
 Meeting promotion, knowledge browsing, and packaging can proceed in parallel as long as they preserve shared write semantics: meeting promotion should create ordinary TODOs/notes, the knowledge browser should reuse IDs/backlinks rather than private graph state, and packaging should verify the same CLI/parser artifacts the app actually calls.
