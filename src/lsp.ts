@@ -3887,6 +3887,14 @@ class LSPServer {
   }
 
   private isOrgFile(filePath: string): boolean {
+    const baseName = path.basename(filePath);
+    if (
+      baseName.startsWith(".syncthing.") ||
+      baseName.includes(".sync-conflict-") ||
+      baseName.endsWith(".tmp")
+    ) {
+      return false;
+    }
     return filePath.endsWith(".org") || filePath.endsWith(".org2") || filePath.endsWith(".org_archive");
   }
 

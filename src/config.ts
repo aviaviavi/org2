@@ -129,6 +129,15 @@ function matchesPattern(filePath: string, pattern: string): boolean {
 }
 
 function shouldIgnore(filePath: string, ignorePatterns: string[]): boolean {
+  const baseName = path.basename(filePath);
+  if (
+    baseName.startsWith(".syncthing.") ||
+    baseName.includes(".sync-conflict-") ||
+    baseName.endsWith(".tmp")
+  ) {
+    return true;
+  }
+
   for (const pattern of ignorePatterns) {
     if (matchesPattern(filePath, pattern)) {
       return true;
