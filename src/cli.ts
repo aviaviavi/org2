@@ -6770,7 +6770,13 @@ function isDefaultRoamLinkifyArchivedPath(filePath: string): boolean {
   return isDefaultArchivePath(filePath);
 }
 
+function isDefaultIgnoredSyncArtifactPath(filePath: string): boolean {
+  const base = path.basename(filePath);
+  return base.startsWith(".syncthing.") || base.includes(".sync-conflict-") || base.endsWith(".tmp");
+}
+
 function isOrgLikeFileName(fileName: string, includeArchives = false): boolean {
+  if (isDefaultIgnoredSyncArtifactPath(fileName)) return false;
   if (fileName.endsWith(".org") || fileName.endsWith(".org2")) return true;
   return includeArchives && isDefaultArchivePath(fileName);
 }
