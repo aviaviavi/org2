@@ -5043,6 +5043,33 @@ public final class WorkspaceStore: ObservableObject {
     backlinks?.backlinks.count ?? 0
   }
 
+  public var currentNodeBriefArtifact: NodeBriefArtifact? {
+    guard let location = selectedLocation,
+          let corpusRoot else { return nil }
+    let existingID = location.idValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let relativePath = Self.nodeBriefArtifactRelativePath(
+      title: location.title,
+      id: existingID?.isEmpty == false ? existingID : nil,
+      file: relativePath(location.file),
+      line: location.lineForEditor
+    )
+    let url = corpusRoot.appendingPathComponent(relativePath).standardizedFileURL
+    return Self.nodeBriefArtifact(at: url, relativePath: relativePath)
+  }
+
+  public func openCurrentNodeBriefArtifact() {
+    guard let location = selectedLocation,
+          let artifact = currentNodeBriefArtifact else {
+      statusText = "No cached node brief yet"
+      return
+    }
+    openNodeBriefArtifact(
+      url: URL(fileURLWithPath: artifact.file).standardizedFileURL,
+      relativePath: artifact.relativePath,
+      title: location.title
+    )
+  }
+
   public var relatedBacklinkNodes: [RelatedBacklinkNode] {
     Self.relatedBacklinkNodes(
       from: backlinks?.backlinks ?? [],
@@ -5196,6 +5223,67 @@ public final class WorkspaceStore: ObservableObject {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return false }
     return !trimmed.contains("ORG2_NODE_BRIEF_STATUS: pending")
+  }
+
+  nonisolated static func nodeBriefArtifact(at url: URL, relativePath: String) -> NodeBriefArtifact? {
+    guard hasUsableNodeBriefArtifact(at: url),
+          let raw = try? String(contentsOf: url, encoding: .utf8)
+    else {
+      return nil
+    }
+    return NodeBriefArtifact(
+      relativePath: relativePath,
+      file: url.standardizedFileURL.path,
+      title: nodeBriefArtifactTitle(raw),
+      body: nodeBriefArtifactBody(raw),
+      modifiedAt: modificationDate(for: url)
+    )
+  }
+
+  nonisolated static func nodeBriefArtifactTitle(_ raw: String) -> String {
+    for line in raw.split(separator: "\n", omittingEmptySubsequences: false) {
+      let text = String(line)
+      guard text.uppercased().hasPrefix("#+TITLE:") else { continue }
+      return text
+        .dropFirst("#+TITLE:".count)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    return "Node brief"
+  }
+
+  nonisolated static func nodeBriefArtifactBody(_ raw: String) -> String {
+    let lines = raw
+      .replacingOccurrences(of: "\r\n", with: "\n")
+      .replacingOccurrences(of: "\r", with: "\n")
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    var index = 0
+    while index < lines.count {
+      let trimmed = lines[index].trimmingCharacters(in: .whitespacesAndNewlines)
+      if trimmed.uppercased().hasPrefix("#+TITLE:") {
+        index += 1
+        continue
+      }
+      if trimmed == ":PROPERTIES:" {
+        index += 1
+        while index < lines.count,
+              lines[index].trimmingCharacters(in: .whitespacesAndNewlines) != ":END:" {
+          index += 1
+        }
+        if index < lines.count { index += 1 }
+        continue
+      }
+      if trimmed.isEmpty {
+        index += 1
+        continue
+      }
+      break
+    }
+    guard index < lines.count else { return "" }
+    let body = lines[index...].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard body.count > 20_000 else { return body }
+    let end = body.index(body.startIndex, offsetBy: 20_000)
+    return String(body[..<end]) + "\n\n[Brief truncated in context pane. Open the full artifact to continue.]"
   }
 
   nonisolated static func nodeBriefPrompt(
@@ -8784,5 +8872,22 @@ public struct RelatedBacklinkNode: Identifiable, Hashable, Sendable {
     self.fileCount = fileCount
     self.primaryPath = primaryPath
     self.examples = examples
+  }
+}
+
+public struct NodeBriefArtifact: Identifiable, Hashable, Sendable {
+  public var id: String { relativePath }
+  public let relativePath: String
+  public let file: String
+  public let title: String
+  public let body: String
+  public let modifiedAt: Date?
+
+  public init(relativePath: String, file: String, title: String, body: String, modifiedAt: Date?) {
+    self.relativePath = relativePath
+    self.file = file
+    self.title = title
+    self.body = body
+    self.modifiedAt = modifiedAt
   }
 }

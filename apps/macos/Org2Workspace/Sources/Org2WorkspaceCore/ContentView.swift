@@ -2678,27 +2678,59 @@ private struct NodeContextBrief: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text("Generate a source-cited brief for this node, save it into views/openclaw, and open the cached artifact here.")
-        .font(.callout)
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-
-      Button {
-        Task { await store.briefCurrentNodeInOpenClaw() }
-      } label: {
-        if store.isBuildingNodeBrief {
-          Label("Building Brief", systemImage: "hourglass")
-        } else {
-          Label("Brief This Node", systemImage: "text.bubble")
+      if let artifact = store.currentNodeBriefArtifact {
+        HStack(alignment: .top, spacing: 8) {
+          WorkspaceIconBadge(systemImage: "doc.text")
+          VStack(alignment: .leading, spacing: 3) {
+            Text(artifact.title)
+              .font(.headline)
+            Text(artifact.relativePath)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(2)
+              .truncationMode(.middle)
+              .textSelection(.enabled)
+          }
+          Spacer(minLength: 0)
         }
-      }
-      .buttonStyle(WorkspaceActionButtonStyle())
-      .disabled(!store.canBriefCurrentNodeInOpenClaw)
 
-      Text("Generated briefs live as review-required org2 view artifacts. Re-running this action opens the cached artifact.")
-        .font(.caption)
-        .foregroundStyle(.tertiary)
-        .fixedSize(horizontal: false, vertical: true)
+        Button {
+          store.openCurrentNodeBriefArtifact()
+        } label: {
+          Label("Open Full Brief", systemImage: "arrow.up.right.square")
+        }
+        .buttonStyle(WorkspaceActionButtonStyle())
+
+        Divider()
+
+        Text(artifact.body.isEmpty ? "Brief artifact is present but has no body after metadata." : artifact.body)
+          .font(.callout)
+          .lineSpacing(3)
+          .textSelection(.enabled)
+          .fixedSize(horizontal: false, vertical: true)
+      } else {
+        Text("Generate a source-cited brief for this node, save it into views/openclaw, and show it here.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+
+        Button {
+          Task { await store.briefCurrentNodeInOpenClaw() }
+        } label: {
+          if store.isBuildingNodeBrief {
+            Label("Building Brief", systemImage: "hourglass")
+          } else {
+            Label("Brief This Node", systemImage: "text.bubble")
+          }
+        }
+        .buttonStyle(WorkspaceActionButtonStyle())
+        .disabled(!store.canBriefCurrentNodeInOpenClaw)
+
+        Text("Generated briefs live as review-required org2 view artifacts.")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
     }
     .padding(WorkspaceDesign.contentInset)
   }
