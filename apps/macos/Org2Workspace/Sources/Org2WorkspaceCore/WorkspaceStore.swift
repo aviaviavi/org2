@@ -110,6 +110,14 @@ private struct OrgCryptCLIPayload: Decodable {
   let recipientFiles: [String]
 }
 
+private struct RoamLinkifyPayload: Decodable {
+  let changedFileCount: Int
+  let replacementCount: Int
+  let ambiguousSkipCount: Int
+  let representedSuggestionCount: Int
+  let applied: Bool
+}
+
 private struct SplitDraftSpec {
   let insertionLineOffset: Int
   let displayLineOffset: Int
@@ -132,6 +140,28 @@ struct SourceBlockExecutionResult: Equatable, Sendable {
   let stderr: String
   let timedOut: Bool
   let timeout: TimeInterval
+}
+
+public struct CreatedKnowledgeNode: Equatable, Sendable {
+  public let title: String
+  public let file: String
+  public let id: String
+
+  public init(title: String, file: String, id: String) {
+    self.title = title
+    self.file = file
+    self.id = id
+  }
+}
+
+public struct InlineSelectionReplacement: Equatable, Sendable {
+  public let text: String
+  public let selectedRange: NSRange
+
+  public init(text: String, selectedRange: NSRange) {
+    self.text = text
+    self.selectedRange = selectedRange
+  }
 }
 
 @MainActor
@@ -853,6 +883,10 @@ public final class WorkspaceStore: ObservableObject {
     selectedLocation != nil && corpusRoot != nil && !isBuildingNodeBrief
   }
 
+  public var canLinkifyCurrentFile: Bool {
+    corpusRoot != nil && (selectedEntrySource?.file != nil || selectedLocation?.file != nil)
+  }
+
   public func askOpenClawAboutCurrentSelection() {
     guard let pointer = openClawContextPointerForCurrentSelection() else {
       statusText = "Select a page or entry first"
@@ -1114,6 +1148,43 @@ public final class WorkspaceStore: ObservableObject {
     resetBlockState()
     guard let selectedLocation else { return }
     await loadEntrySource(for: selectedLocation)
+  }
+
+  public func linkifyCurrentFile() async {
+    guard let corpusRoot else {
+      statusText = "No corpus selected"
+      return
+    }
+    guard let file = selectedEntrySource?.file ?? selectedLocation?.file else {
+      statusText = "Open a file first"
+      return
+    }
+
+    do {
+      let payload: RoamLinkifyPayload = try await cli.runJSON([
+        "roam", "linkify",
+        "--dir", corpusRoot.path,
+        "--recursive",
+        "--file", file,
+        "--apply",
+        "--format", "json"
+      ])
+      invalidateCanonicalDocumentCache(for: file)
+      if let selectedLocation {
+        await loadEntrySource(for: selectedLocation)
+      }
+      await refreshCorpusFiles()
+      let relative = relativePath(file)
+      statusText = payload.replacementCount > 0
+        ? "Linkified \(relative): \(payload.replacementCount) link\(payload.replacementCount == 1 ? "" : "s")"
+        : "No linkify changes in \(relative)"
+      if payload.ambiguousSkipCount > 0 || payload.representedSuggestionCount > 0 {
+        statusText += " (\(payload.ambiguousSkipCount) ambiguous, \(payload.representedSuggestionCount) suggestions)"
+      }
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Linkify failed"
+    }
   }
 
   public func beginEditingSelectedEntry() {
@@ -7999,8 +8070,47 @@ public final class WorkspaceStore: ObservableObject {
     return base.appendingPathComponent("\(Self.slug(title)).org2")
   }
 
-  public func createKnowledgeNode(title: String) async {
+  private func ensureKnowledgeNode(title: String, sourceLocation: WorkspaceLocation?) throws -> CreatedKnowledgeNode {
     guard let corpusRoot else {
+      throw WorkspaceEditError.noCorpusRoot
+    }
+    let cleanTitle = Org2Display.cleanInline(title).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanTitle.isEmpty else {
+      throw WorkspaceEditError.emptyTitle
+    }
+
+    let target = knowledgeNodePath(corpusRoot: corpusRoot, title: cleanTitle)
+    try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let id: String
+    if FileManager.default.fileExists(atPath: target.path) {
+      let existing = try String(contentsOf: target, encoding: .utf8)
+      id = Self.firstOrgID(in: existing) ?? UUID().uuidString
+    } else {
+      id = UUID().uuidString
+      let sourceLink: String
+      if let sourceLocation {
+        sourceLink = "\nOrigin: [[file:\(relativePath(sourceLocation.file))][\(sourceLocation.title)]]"
+      } else {
+        sourceLink = ""
+      }
+      let text = """
+      #+TITLE: \(cleanTitle)
+
+      * \(cleanTitle)
+      :PROPERTIES:
+      :ID: \(id)
+      :ORG2_CREATED_AT: \(Self.orgDateTimestamp(Date()))
+      :END:
+      \(sourceLink)
+
+      """
+      try text.write(to: target, atomically: true, encoding: .utf8)
+    }
+    return CreatedKnowledgeNode(title: cleanTitle, file: target.path, id: id)
+  }
+
+  public func createKnowledgeNode(title: String) async {
+    guard corpusRoot != nil else {
       statusText = "No corpus selected"
       return
     }
@@ -8011,42 +8121,78 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     do {
-      let target = knowledgeNodePath(corpusRoot: corpusRoot, title: cleanTitle)
-      try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-      let id: String
-      if FileManager.default.fileExists(atPath: target.path) {
-        let existing = try String(contentsOf: target, encoding: .utf8)
-        id = Self.firstOrgID(in: existing) ?? UUID().uuidString
-      } else {
-        id = UUID().uuidString
-        let sourceLink: String
-        if let selectedLocation {
-          sourceLink = "\nOrigin: [[file:\(relativePath(selectedLocation.file))][\(selectedLocation.title)]]"
-        } else {
-          sourceLink = ""
-        }
-        let text = """
-        #+TITLE: \(cleanTitle)
-
-        * \(cleanTitle)
-        :PROPERTIES:
-        :ID: \(id)
-        :ORG2_CREATED_AT: \(Self.orgDateTimestamp(Date()))
-        :END:
-        \(sourceLink)
-
-        """
-        try text.write(to: target, atomically: true, encoding: .utf8)
-      }
-      statusText = "Knowledge node ready -> \(relativePath(target.path))"
-      invalidateCanonicalDocumentCache(for: target.path)
+      let node = try ensureKnowledgeNode(title: cleanTitle, sourceLocation: selectedLocation)
+      statusText = "Knowledge node ready -> \(relativePath(node.file))"
+      invalidateCanonicalDocumentCache(for: node.file)
       await refreshCorpusFiles()
-      searchQuery = "id:\(id)"
+      searchQuery = "id:\(node.id)"
       selectedSurface = .search
       await runSearch()
     } catch {
       errorText = error.localizedDescription
       statusText = "Knowledge node creation failed"
+    }
+  }
+
+  nonisolated public static func selectedText(in text: String, range: NSRange) -> String? {
+    guard range.length > 0,
+          let swiftRange = Range(range, in: text)
+    else {
+      return nil
+    }
+    let selected = String(text[swiftRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+    return selected.isEmpty ? nil : selected
+  }
+
+  nonisolated public static func replacingSelection(
+    in text: String,
+    range: NSRange,
+    with replacement: String
+  ) -> InlineSelectionReplacement? {
+    guard let swiftRange = Range(range, in: text) else { return nil }
+    var output = text
+    output.replaceSubrange(swiftRange, with: replacement)
+    return InlineSelectionReplacement(
+      text: output,
+      selectedRange: NSRange(location: range.location, length: (replacement as NSString).length)
+    )
+  }
+
+  nonisolated public static func backlinkReplacementForSelectedText(
+    in text: String,
+    range: NSRange
+  ) -> InlineSelectionReplacement? {
+    guard let selected = selectedText(in: text, range: range) else { return nil }
+    return replacingSelection(in: text, range: range, with: "[[\(selected)]]")
+  }
+
+  nonisolated public static func nodeLinkReplacementForSelectedText(
+    in text: String,
+    range: NSRange,
+    id: String,
+    title: String
+  ) -> InlineSelectionReplacement? {
+    let cleanTitle = Org2Display.cleanInline(title).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanTitle.isEmpty else { return nil }
+    return replacingSelection(in: text, range: range, with: "[[id:\(id)][\(cleanTitle)]]")
+  }
+
+  public func createKnowledgeNodeFromSelection(text: String, range: NSRange) async -> InlineSelectionReplacement? {
+    guard let title = Self.selectedText(in: text, range: range) else {
+      statusText = "Select text first"
+      return nil
+    }
+
+    do {
+      let node = try ensureKnowledgeNode(title: title, sourceLocation: selectedLocation)
+      invalidateCanonicalDocumentCache(for: node.file)
+      await refreshCorpusFiles()
+      statusText = "Created node \(relativePath(node.file))"
+      return Self.nodeLinkReplacementForSelectedText(in: text, range: range, id: node.id, title: node.title)
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Create node from selection failed"
+      return nil
     }
   }
 
@@ -8337,11 +8483,17 @@ private struct OpenClawTranscriptPayload: Codable {
 }
 
 private enum WorkspaceEditError: LocalizedError {
+  case noCorpusRoot
+  case emptyTitle
   case noHeadline(file: String, line: Int)
   case invalidRange(file: String, line: Int)
 
   var errorDescription: String? {
     switch self {
+    case .noCorpusRoot:
+      "No corpus selected"
+    case .emptyTitle:
+      "Title cannot be empty"
     case .noHeadline(let file, let line):
       "No headline found at \(file):\(line)"
     case .invalidRange(let file, let line):

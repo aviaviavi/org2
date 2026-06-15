@@ -5949,6 +5949,95 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(text.contains(":ID: "))
   }
 
+  func testInlineSelectionBacklinkReplacementWrapsSelectedText() {
+    let text = "Ask Docker about usage"
+    let range = (text as NSString).range(of: "Docker")
+    let edit = WorkspaceStore.backlinkReplacementForSelectedText(in: text, range: range)
+
+    XCTAssertEqual(edit?.text, "Ask [[Docker]] about usage")
+    XCTAssertEqual(edit?.selectedRange.location, range.location)
+    XCTAssertEqual(edit?.selectedRange.length, ("[[Docker]]" as NSString).length)
+  }
+
+  @MainActor
+  func testCreateKnowledgeNodeFromSelectionCreatesNodeAndIdLink() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-selection-node-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try #"{"roam":{"indexDir":"knowledge"}}"#
+      .write(to: root.appendingPathComponent("org2.json"), atomically: true, encoding: .utf8)
+    let source = root.appendingPathComponent("source.org2")
+    try """
+    #+TITLE: Source
+
+    * Source
+    Ask Docker about usage.
+    """.write(to: source, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.openClaw(OpenClawThread(
+      title: "Source",
+      file: source.path,
+      line: 3,
+      zone: "test",
+      modifiedAt: nil
+    )))
+
+    let text = "Ask Docker about usage."
+    let range = (text as NSString).range(of: "Docker")
+    let edit = await store.createKnowledgeNodeFromSelection(text: text, range: range)
+
+    let node = root
+      .appendingPathComponent("knowledge", isDirectory: true)
+      .appendingPathComponent("docker.org2")
+    let nodeText = try String(contentsOf: node, encoding: .utf8)
+    let idMatch = try XCTUnwrap(nodeText.range(of: #":ID:\s+([A-Fa-f0-9-]+)"#, options: .regularExpression))
+    let idLine = String(nodeText[idMatch])
+    let id = try XCTUnwrap(idLine.split(separator: " ").last.map(String.init))
+
+    XCTAssertEqual(edit?.text, "Ask [[id:\(id)][Docker]] about usage.")
+    XCTAssertTrue(nodeText.contains("#+TITLE: Docker"))
+    XCTAssertTrue(nodeText.contains("Origin: [[file:source.org2][Source]]"))
+  }
+
+  @MainActor
+  func testLinkifyCurrentFileRunsRoamLinkifyOnSelectedFile() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-linkify-file-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let node = root.appendingPathComponent("docker.org2")
+    let note = root.appendingPathComponent("note.org2")
+    try """
+    #+TITLE: Docker
+    :PROPERTIES:
+    :ID: docker-id
+    :END:
+    """.write(to: node, atomically: true, encoding: .utf8)
+    try """
+    #+TITLE: Note
+
+    * Note
+    Docker usage should become linked.
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.openClaw(OpenClawThread(
+      title: "Note",
+      file: note.path,
+      line: 3,
+      zone: "test",
+      modifiedAt: nil
+    )))
+
+    await store.linkifyCurrentFile()
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("[[id:docker-id][Docker]] usage should become linked."))
+    XCTAssertTrue(store.statusText.contains("Linkified note.org2"))
+  }
+
   @MainActor
   func testLoadsAndSavesSelectedEntrySource() async throws {
     let root = FileManager.default.temporaryDirectory

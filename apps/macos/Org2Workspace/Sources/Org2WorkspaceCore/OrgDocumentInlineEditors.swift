@@ -3,6 +3,20 @@ import SwiftUI
 struct ParagraphInlineFormatBar: View {
   @Binding var text: String
   @Binding var selectedRange: NSRange
+  let insertBacklink: () -> Void
+  let createNodeFromSelection: () -> Void
+
+  init(
+    text: Binding<String>,
+    selectedRange: Binding<NSRange>,
+    insertBacklink: @escaping () -> Void = {},
+    createNodeFromSelection: @escaping () -> Void = {}
+  ) {
+    _text = text
+    _selectedRange = selectedRange
+    self.insertBacklink = insertBacklink
+    self.createNodeFromSelection = createNodeFromSelection
+  }
 
   var body: some View {
     HStack(spacing: 4) {
@@ -18,6 +32,27 @@ struct ParagraphInlineFormatBar: View {
         .keyboardShortcut(shortcut.key, modifiers: shortcut.modifiers)
         .help("Format as \(kind.displayTitle) (\(shortcut.title))")
       }
+
+      Divider()
+        .frame(height: 16)
+
+      Button {
+        insertBacklink()
+      } label: {
+        Image(systemName: "link")
+          .frame(width: 18, height: 18)
+      }
+      .buttonStyle(.borderless)
+      .help("Insert backlink for selected text")
+
+      Button {
+        createNodeFromSelection()
+      } label: {
+        Image(systemName: "plus.square.on.square")
+          .frame(width: 18, height: 18)
+      }
+      .buttonStyle(.borderless)
+      .help("Create node from selected text")
     }
     .controlSize(.small)
     .padding(.horizontal, 6)
