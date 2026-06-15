@@ -2392,6 +2392,32 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(WorkspaceStore.isGenericRelatedBacklinkTitle("Pilot relaunch details"))
   }
 
+  func testNodeBriefArtifactBodyDropsOrgMetadata() {
+    let raw = """
+    #+TITLE: Node brief: Frances
+    :PROPERTIES:
+    :ID: node-brief-frances
+    :ORG2_ARTIFACT_ROLE: view
+    :END:
+
+    * Highlights
+    - Frances is our dog.
+    * Sources
+    - frances.org:1
+    """
+
+    XCTAssertEqual(WorkspaceStore.nodeBriefArtifactTitle(raw), "Node brief: Frances")
+    XCTAssertEqual(
+      WorkspaceStore.nodeBriefArtifactBody(raw),
+      """
+      * Highlights
+      - Frances is our dog.
+      * Sources
+      - frances.org:1
+      """
+    )
+  }
+
   @MainActor
   func testBriefCurrentNodeOpensCachedArtifact() async throws {
     let root = FileManager.default.temporaryDirectory
@@ -2453,6 +2479,44 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(selected.file, artifactURL.path)
     XCTAssertEqual(selected.zone, "views/openclaw")
     XCTAssertEqual(store.statusText, "Opened \(artifactRelativePath)")
+  }
+
+  func testNodeBriefArtifactLoadsCachedBody() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-node-brief-inline-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let targetID = "66666666-6666-4666-8666-666666666666"
+    let artifactRelativePath = WorkspaceStore.nodeBriefArtifactRelativePath(
+      title: "Target Node",
+      id: targetID,
+      file: "target.org2",
+      line: 1
+    )
+    let artifactURL = root.appendingPathComponent(artifactRelativePath)
+    try FileManager.default.createDirectory(
+      at: artifactURL.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try """
+    #+TITLE: Node brief: Target Node
+    :PROPERTIES:
+    :ORG2_ARTIFACT_SCHEMA: org2-artifact-metadata/v1
+    :ORG2_ARTIFACT_ROLE: view
+    :ORG2_REVIEW_STATUS: review-required
+    :END:
+
+    * Highlights
+    Cached inline result.
+    """.write(to: artifactURL, atomically: true, encoding: .utf8)
+
+    let artifact = try XCTUnwrap(WorkspaceStore.nodeBriefArtifact(
+      at: artifactURL,
+      relativePath: artifactRelativePath
+    ))
+    XCTAssertEqual(artifact.relativePath, artifactRelativePath)
+    XCTAssertEqual(artifact.file, artifactURL.path)
+    XCTAssertEqual(artifact.title, "Node brief: Target Node")
+    XCTAssertEqual(artifact.body, "* Highlights\nCached inline result.")
   }
 
   @MainActor
