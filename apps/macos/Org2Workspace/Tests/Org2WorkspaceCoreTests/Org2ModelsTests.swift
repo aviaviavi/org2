@@ -2611,6 +2611,19 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "6", keyCode: 22, modifiers: [.command])))
     XCTAssertEqual(store.selectedSurface, .agentSpace)
 
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "f", keyCode: 3, modifiers: [.command, .option])))
+    XCTAssertEqual(store.expandedWorkspaceSurface, .agentSpace)
+
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "f", keyCode: 3, modifiers: [.command, .option])))
+    XCTAssertNil(store.expandedWorkspaceSurface)
+
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "w", keyCode: 13, modifiers: [.command, .option])))
+    XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
+
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "p", keyCode: 35, modifiers: [.command, .option])))
+    XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
+    XCTAssertEqual(store.selectedSurface, .agentSpace)
+
     XCTAssertFalse(store.handleGlobalKeyDown(keyDown(characters: "7", keyCode: 26, modifiers: [.command, .shift])))
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "0", keyCode: 29, modifiers: [.command])))
@@ -2655,12 +2668,19 @@ final class Org2ModelsTests: XCTestCase {
       ),
       .globalOnly
     )
+    XCTAssertEqual(
+      WorkspaceKeyboardEventRouting.scope(
+        for: keyDown(characters: "f", keyCode: 3, modifiers: [.command, .option]),
+        textInputActive: true
+      ),
+      .globalOnly
+    )
     XCTAssertNil(WorkspaceKeyboardEventRouting.scope(
       for: keyDown(characters: "j", keyCode: 38),
       textInputActive: true
     ))
     XCTAssertNil(WorkspaceKeyboardEventRouting.scope(
-      for: keyDown(characters: "f", keyCode: 3, modifiers: [.command, .option]),
+      for: keyDown(characters: "f", keyCode: 3, modifiers: [.command, .control]),
       textInputActive: true
     ))
     XCTAssertEqual(
@@ -2695,6 +2715,36 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(WorkspaceSurface.openClaw.commandShortcutTitle, "⌘5")
     XCTAssertEqual(WorkspaceSurface.agentSpace.commandShortcutTitle, "⌘6")
     XCTAssertEqual(WorkspaceSurface.sidebarCases, WorkspaceSurface.allCases)
+  }
+
+  @MainActor
+  func testDetailPaneLayoutActionsCloseExpandAndReopenOnSelection() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let thread = OpenClawThread(
+      title: "Current page",
+      file: "/tmp/current.org2",
+      line: 1,
+      zone: "test",
+      modifiedAt: nil
+    )
+    store.select(.openClaw(thread))
+
+    store.closeDetailPane()
+    XCTAssertTrue(store.isWorkspaceDetailPaneClosed)
+    XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
+
+    store.toggleDetailPaneExpansion()
+    XCTAssertTrue(store.isWorkspaceDetailPaneExpanded)
+    XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
+    XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
+
+    store.makeDetailPanePrimary()
+    XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
+    XCTAssertFalse(store.isWorkspaceDetailPaneExpanded)
+
+    store.closeDetailPane()
+    store.select(.openClaw(thread))
+    XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
   }
 
   func testWorkspaceHealthChecksReportRepoBuildAndCorpusReadiness() throws {

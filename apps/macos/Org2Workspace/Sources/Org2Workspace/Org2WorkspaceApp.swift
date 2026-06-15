@@ -86,6 +86,23 @@ struct Org2WorkspaceApp: App {
         .disabled(!store.canSaveCurrentFile)
       }
 
+      CommandMenu("Pane") {
+        Button("Make Current Pane Primary") {
+          store.makeSelectedSurfacePrimary()
+        }
+        .keyboardShortcut("p", modifiers: [.command, .option])
+
+        Button(store.expandedWorkspaceSurface == store.selectedSurface ? "Restore Current Pane" : "Expand Current Pane") {
+          store.toggleSelectedSurfaceExpansion()
+        }
+        .keyboardShortcut("f", modifiers: [.command, .option])
+
+        Button("Close Current Pane") {
+          store.closeSelectedSurfacePane()
+        }
+        .keyboardShortcut("w", modifiers: [.command, .option])
+      }
+
       CommandMenu("Block") {
         Button("Select Previous Block") {
           store.selectAdjacentBlock(.up)
