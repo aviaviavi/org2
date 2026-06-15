@@ -2283,17 +2283,18 @@ public final class WorkspaceStore: ObservableObject {
     defer { isSavingBlock = false }
 
     do {
+      let deletionRange = try Self.deletionRange(for: block, in: source)
       let deletion = try Self.deletingSourceRangeCleaningAdjacentBlank(
         in: source,
-        startLine: block.startLine,
-        endLineExclusive: block.endLineExclusive
+        startLine: deletionRange.startLine,
+        endLineExclusive: deletionRange.endLineExclusive
       )
       let currentRenderedBlocks = selectedRenderedBlocks
       try await Task.detached(priority: .userInitiated) {
         try Self.deleteSourceRangeCleaningAdjacentBlank(
           file: source.file,
-          startLine: block.startLine,
-          endLineExclusive: block.endLineExclusive
+          startLine: deletionRange.startLine,
+          endLineExclusive: deletionRange.endLineExclusive
         )
       }.value
 
@@ -2316,8 +2317,14 @@ public final class WorkspaceStore: ObservableObject {
       selectedEntrySource = deletion.source
       let updatedVisibleBlocks = blocksWithTransientDraft(updatedBlocks, for: deletion.source)
       selectedRenderedBlocks = updatedVisibleBlocks
+      let selectionLine: Int
+      if case .heading = block.rendered {
+        selectionLine = deletion.startLine
+      } else {
+        selectionLine = block.startLine
+      }
       selectedBlockID = blockForSelectionLine(
-        block.startLine,
+        selectionLine,
         mode: .nextOrNearest,
         in: updatedVisibleBlocks
       )?.id
@@ -6380,6 +6387,32 @@ public final class WorkspaceStore: ObservableObject {
       ),
       startLine: range.startLine,
       endLineExclusive: range.endLineExclusive
+    )
+  }
+
+  nonisolated private static func deletionRange(
+    for block: OrgEditableBlock,
+    in source: EntrySource
+  ) throws -> (startLine: Int, endLineExclusive: Int) {
+    guard case .heading = block.rendered else {
+      return (block.startLine, block.endLineExclusive)
+    }
+
+    let lines = normalizeLineEndings(source.text)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    let headingIndex = block.startLine - source.startLine
+    guard headingIndex >= 0,
+          headingIndex < lines.count,
+          let level = headingLevel(lines[headingIndex])
+    else {
+      throw WorkspaceEditError.invalidRange(file: source.file, line: block.startLine)
+    }
+
+    let endIndex = subtreeEndIndex(lines: lines, headingIndex: headingIndex, level: level)
+    return (
+      startLine: block.startLine,
+      endLineExclusive: source.startLine + endIndex
     )
   }
 

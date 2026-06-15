@@ -8770,6 +8770,60 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testDeletingRenderedHeadingFromPageDeletesSubtree() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-page-heading-delete-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("page-heading-delete.org2")
+    try """
+    #+TITLE: Page Heading Delete Test
+
+    * TODO Parent
+    Parent body
+    ** TODO Child
+    Child body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 3,
+      "body": "Parent body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    store.selectedEntrySourceMode = .page
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let parent = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .heading(let heading) = $0.rendered { return heading.title == "Parent" }
+      return false
+    })
+    await store.deleteBlock(parent)
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertFalse(updated.contains("* TODO Parent"))
+    XCTAssertFalse(updated.contains("Parent body"))
+    XCTAssertFalse(updated.contains("** TODO Child"))
+    XCTAssertFalse(updated.contains("Child body"))
+    XCTAssertTrue(updated.contains("* Sibling\nSibling body"))
+    XCTAssertEqual(store.selectedBlock?.rawText, "* Sibling")
+  }
+
+  @MainActor
   func testLoadsAndRendersLargePageSource() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-large-page-\(UUID().uuidString)", isDirectory: true)
