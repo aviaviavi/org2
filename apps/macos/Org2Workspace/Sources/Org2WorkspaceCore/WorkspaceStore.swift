@@ -914,7 +914,7 @@ public final class WorkspaceStore: ObservableObject {
       recordWorkspaceUndo(.openClawDraft(previous: previousDraft, next: openClawDraft))
     }
 
-    isOpenClawAssistantPresented = true
+    setOpenClawAssistantPanelPresented(true)
     openClawStatusText = "Added \(pointer.displayReference) to OpenClaw"
     statusText = "Added \(pointer.displayReference) to OpenClaw"
   }
@@ -971,7 +971,7 @@ public final class WorkspaceStore: ObservableObject {
       )
       pendingNodeBriefArtifactRelativePath = artifactRelativePath
       pendingNodeBriefTitle = location.title
-      isOpenClawAssistantPresented = true
+      setOpenClawAssistantPanelPresented(true)
       await sendOpenClawMessage(prompt)
       if Self.hasUsableNodeBriefArtifact(at: artifactURL) {
         openNodeBriefArtifact(url: artifactURL, relativePath: artifactRelativePath, title: location.title)
@@ -1092,6 +1092,7 @@ public final class WorkspaceStore: ObservableObject {
     selectedEntrySource = nil
     selectedRenderedBlocks = []
     isRenderingEntrySource = false
+    enforceTwoPaneLimitForDetailSecondary()
     Task { await loadBacklinks(for: location) }
     scheduleEntrySourceLoad(for: location)
   }
@@ -4576,6 +4577,30 @@ public final class WorkspaceStore: ObservableObject {
     statusText = "Document closed"
   }
 
+  public func toggleOpenClawAssistantPanel() {
+    setOpenClawAssistantPanelPresented(!isOpenClawAssistantPresented)
+  }
+
+  public func setOpenClawAssistantPanelPresented(_ presented: Bool) {
+    isOpenClawAssistantPresented = presented
+    if presented {
+      enforceTwoPaneLimitForDetailSecondary()
+    }
+  }
+
+  private func enforceTwoPaneLimitForDetailSecondary() {
+    guard isNodeContextPanePresented || (isOpenClawAssistantPresented && selectedSurface != .openClaw) else { return }
+    guard selectedLocation != nil || selectedEntrySource != nil else { return }
+    guard !isWorkspaceDetailPaneClosed,
+          !isWorkspaceDetailPaneExpanded,
+          !isWorkspaceSurfacePaneClosed,
+          expandedWorkspaceSurface == nil
+    else {
+      return
+    }
+    isWorkspaceSurfacePaneClosed = true
+  }
+
   public func handleGlobalKeyDown(_ event: NSEvent) -> Bool {
     let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
     guard modifiers == [.command] || modifiers == [.command, .shift] || modifiers == [.command, .option] else {
@@ -4586,7 +4611,7 @@ public final class WorkspaceStore: ObservableObject {
     if modifiers == [.command] {
       switch key {
       case "0":
-        isOpenClawAssistantPresented.toggle()
+        toggleOpenClawAssistantPanel()
       case "1":
         selectedSurface = .agenda
       case "2":
@@ -5175,6 +5200,9 @@ public final class WorkspaceStore: ObservableObject {
 
   public func toggleNodeContextPane() {
     isNodeContextPanePresented.toggle()
+    if isNodeContextPanePresented {
+      enforceTwoPaneLimitForDetailSecondary()
+    }
   }
 
   public func toggleBacklinkFileGroup(_ group: BacklinkFileGroup) {

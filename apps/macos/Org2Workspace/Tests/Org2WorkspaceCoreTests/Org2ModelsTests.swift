@@ -2869,6 +2869,8 @@ final class Org2ModelsTests: XCTestCase {
       modifiedAt: nil
     )
     store.select(.openClaw(thread))
+    XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
+    XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
 
     store.closeDetailPane()
     XCTAssertTrue(store.isWorkspaceDetailPaneClosed)
@@ -2885,6 +2887,36 @@ final class Org2ModelsTests: XCTestCase {
 
     store.closeDetailPane()
     store.select(.openClaw(thread))
+    XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
+    XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
+  }
+
+  @MainActor
+  func testOpeningThirdContentPaneClosesSurfacePane() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let thread = OpenClawThread(
+      title: "Current page",
+      file: "/tmp/current.org2",
+      line: 1,
+      zone: "test",
+      modifiedAt: nil
+    )
+
+    store.isNodeContextPanePresented = false
+    store.select(.openClaw(thread))
+    XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
+    XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
+
+    store.toggleNodeContextPane()
+    XCTAssertTrue(store.isNodeContextPanePresented)
+    XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
+    XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
+
+    store.isWorkspaceSurfacePaneClosed = false
+    store.isNodeContextPanePresented = false
+    store.setOpenClawAssistantPanelPresented(true)
+    XCTAssertTrue(store.isOpenClawAssistantPresented)
+    XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
     XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
   }
 

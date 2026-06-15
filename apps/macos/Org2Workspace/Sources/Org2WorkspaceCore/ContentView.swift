@@ -16,7 +16,7 @@ public struct ContentView: View {
     .toolbar {
       ToolbarItemGroup {
         Button {
-          store.isOpenClawAssistantPresented.toggle()
+          store.toggleOpenClawAssistantPanel()
         } label: {
           Label(
             store.isOpenClawAssistantPresented ? "Hide OpenClaw" : "Show OpenClaw",
