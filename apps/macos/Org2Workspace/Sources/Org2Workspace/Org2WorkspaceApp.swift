@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import Org2WorkspaceCore
 import SwiftUI
 
@@ -6,6 +7,7 @@ import SwiftUI
 struct Org2WorkspaceApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   @StateObject private var store = WorkspaceStore()
+  private let globalCaptureHotKey = GlobalCaptureHotKey()
 
   init() {
     AppIconInstaller.install()
@@ -30,6 +32,13 @@ struct Org2WorkspaceApp: App {
           NSApplication.shared.setActivationPolicy(.regular)
           NSApplication.shared.activate(ignoringOtherApps: true)
           AppIconInstaller.install()
+          let status = globalCaptureHotKey.register {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            store.presentCapturePanel()
+          }
+          if status != noErr {
+            store.statusText = "Global capture shortcut unavailable (\(status))"
+          }
         }
         .task {
           await store.bootstrap()
@@ -63,6 +72,12 @@ struct Org2WorkspaceApp: App {
           store.presentQuickOpen()
         }
         .keyboardShortcut("p", modifiers: [.command])
+
+        Button("Capture...") {
+          store.presentCapturePanel()
+        }
+        .keyboardShortcut(.return, modifiers: [.command, .control])
+        .disabled(store.corpusRoot == nil)
 
         Button(store.isRecordingMeeting ? "Stop Meeting Recording" : "Record Meeting") {
           if store.isRecordingMeeting {
@@ -235,7 +250,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 private enum AppIconInstaller {
   @MainActor
   static func install() {
-    guard let url = Bundle.module.url(forResource: "AppIcon", withExtension: "png"),
+    let url = Bundle.module.url(forResource: "AppIcon", withExtension: "png")
+      ?? Bundle.main.url(forResource: "AppIcon", withExtension: "png")
+    guard let url,
           let image = NSImage(contentsOf: url)
     else {
       return

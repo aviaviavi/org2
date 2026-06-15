@@ -57,6 +57,14 @@ public struct ContentView: View {
       OrgCryptConfigurationSheet()
         .environmentObject(store)
     }
+    .sheet(isPresented: $store.isCapturePanelPresented) {
+      GlobalCaptureView()
+        .environmentObject(store)
+    }
+    .sheet(isPresented: $store.isSimilarTodoAssignmentPresented) {
+      SimilarTodoAssignmentView()
+        .environmentObject(store)
+    }
   }
 }
 
@@ -65,21 +73,84 @@ private struct WorkspaceMainArea: View {
 
   var body: some View {
     if let expanded = store.expandedWorkspaceSurface {
-      WorkspaceSurfaceView(surface: expanded)
+      WorkspaceSurfaceCacheView(selectedSurface: expanded)
     } else if store.isWorkspaceDetailPaneExpanded {
       WorkspaceDetailArea()
     } else if store.isWorkspaceSurfacePaneClosed {
       WorkspaceDetailArea()
     } else if store.isWorkspaceDetailPaneClosed {
-      WorkspaceSurfaceView(surface: store.selectedSurface)
+      WorkspaceSurfaceCacheView(selectedSurface: store.selectedSurface)
     } else {
       HSplitView {
-        WorkspaceSurfaceView(surface: store.selectedSurface)
+        WorkspaceSurfaceCacheView(selectedSurface: store.selectedSurface)
           .frame(minWidth: 300, idealWidth: 420)
 
         WorkspaceDetailArea()
           .frame(minWidth: 420)
       }
+    }
+  }
+}
+
+private struct WorkspaceSurfaceCacheView: NSViewRepresentable {
+  @EnvironmentObject private var store: WorkspaceStore
+  let selectedSurface: WorkspaceSurface
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator()
+  }
+
+  func makeNSView(context: Context) -> NSView {
+    let view = NSView(frame: .zero)
+    view.translatesAutoresizingMaskIntoConstraints = false
+    return view
+  }
+
+  func updateNSView(_ view: NSView, context: Context) {
+    context.coordinator.show(surface: selectedSurface, in: view, store: store)
+  }
+
+  @MainActor
+  final class Coordinator {
+    private var hosts: [WorkspaceSurface: NSHostingView<AnyView>] = [:]
+    private var activeSurface: WorkspaceSurface?
+    private var activeConstraints: [NSLayoutConstraint] = []
+
+    func show(surface: WorkspaceSurface, in container: NSView, store: WorkspaceStore) {
+      guard activeSurface != surface || hosts[surface]?.superview !== container else { return }
+
+      NSLayoutConstraint.deactivate(activeConstraints)
+      activeConstraints = []
+      if let activeSurface, let activeHost = hosts[activeSurface] {
+        activeHost.removeFromSuperview()
+      }
+
+      let host = hostView(for: surface, store: store)
+      if host.superview !== container {
+        container.addSubview(host)
+      }
+      activeConstraints = [
+        host.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+        host.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        host.topAnchor.constraint(equalTo: container.topAnchor),
+        host.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+      ]
+      NSLayoutConstraint.activate(activeConstraints)
+      activeSurface = surface
+    }
+
+    private func hostView(for surface: WorkspaceSurface, store: WorkspaceStore) -> NSHostingView<AnyView> {
+      if let host = hosts[surface] {
+        return host
+      }
+
+      let host = NSHostingView(rootView: AnyView(
+        WorkspaceSurfaceView(surface: surface)
+          .environmentObject(store)
+      ))
+      host.translatesAutoresizingMaskIntoConstraints = false
+      hosts[surface] = host
+      return host
     }
   }
 }
@@ -134,14 +205,16 @@ private struct SidebarView: View {
             Label(surface.title, systemImage: surface.systemImage)
               .font(.callout.weight(.medium))
             Spacer(minLength: 0)
-            KeyboardShortcutBadge(text: surface.commandShortcutTitle)
+            if !surface.commandShortcutTitle.isEmpty {
+              KeyboardShortcutBadge(text: surface.commandShortcutTitle)
+            }
           }
           .tag(surface)
           .contentShape(Rectangle())
           .onTapGesture {
             store.makeSurfacePrimary(surface)
           }
-          .help("\(surface.title) (\(surface.commandShortcutTitle))")
+          .help(surface.commandShortcutTitle.isEmpty ? surface.title : "\(surface.title) (\(surface.commandShortcutTitle))")
         }
       }
 
@@ -248,6 +321,9 @@ private struct FilesView: View {
           ForEach(store.filteredCorpusFiles) { file in
             CorpusFileRow(file: file)
               .tag(file.id)
+              .contextMenu {
+                CorpusFileContextMenu(file: file)
+              }
           }
         }
         .listStyle(.inset)
@@ -288,6 +364,204 @@ private struct CorpusFileRow: View {
       }
     }
     .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
+  }
+}
+
+private struct CorpusFileContextMenu: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let file: CorpusFile
+  var afterOpen: (() -> Void)? = nil
+
+  var body: some View {
+    Button {
+      store.selectCorpusFile(file)
+      afterOpen?()
+    } label: {
+      Label("Open", systemImage: "doc.text")
+    }
+
+    Button {
+      store.openFileInEditor(path: file.path)
+    } label: {
+      Label("Open in Editor", systemImage: "arrow.up.forward.app")
+    }
+
+    Button {
+      store.revealFile(path: file.path)
+    } label: {
+      Label("Reveal in Finder", systemImage: "folder")
+    }
+
+    Button {
+      store.copyFileReference(path: file.path)
+    } label: {
+      Label("Copy File Path", systemImage: "doc.on.doc")
+    }
+
+    Divider()
+
+    Button {
+      store.selectCorpusFile(file)
+      store.askOpenClawAboutCurrentSelection()
+      afterOpen?()
+    } label: {
+      Label("Ask OpenClaw", systemImage: "sparkles")
+    }
+
+    Button {
+      store.selectCorpusFile(file)
+      afterOpen?()
+      Task { await store.linkifyCurrentFile() }
+    } label: {
+      Label("Linkify File", systemImage: "link")
+    }
+  }
+}
+
+private struct WorkspaceLocationContextMenu<OpenLabel: View>: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let location: WorkspaceLocation
+  let select: () -> Void
+  let showsHeadingActions: Bool
+  @ViewBuilder let openLabel: () -> OpenLabel
+
+  init(
+    location: WorkspaceLocation,
+    showsHeadingActions: Bool = false,
+    select: @escaping () -> Void,
+    @ViewBuilder openLabel: @escaping () -> OpenLabel
+  ) {
+    self.location = location
+    self.showsHeadingActions = showsHeadingActions
+    self.select = select
+    self.openLabel = openLabel
+  }
+
+  var body: some View {
+    Button {
+      select()
+    } label: {
+      openLabel()
+    }
+
+    Button {
+      store.open(location)
+    } label: {
+      Label("Open in Editor", systemImage: "arrow.up.forward.app")
+    }
+
+    Button {
+      store.revealFile(path: location.file)
+    } label: {
+      Label("Reveal in Finder", systemImage: "folder")
+    }
+
+    Button {
+      store.copyFileReference(path: location.file, line: location.lineForEditor)
+    } label: {
+      Label("Copy Reference", systemImage: "doc.on.doc")
+    }
+
+    Divider()
+
+    Button {
+      select()
+      store.askOpenClawAboutCurrentSelection()
+    } label: {
+      Label("Ask OpenClaw", systemImage: "sparkles")
+    }
+
+    Button {
+      select()
+      Task { await store.linkifyCurrentFile() }
+    } label: {
+      Label("Linkify File", systemImage: "link")
+    }
+
+    if showsHeadingActions {
+      Divider()
+      HeadingActionsContextMenu(location: location, select: select)
+    }
+  }
+}
+
+private struct HeadingActionsContextMenu: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let location: WorkspaceLocation
+  let select: () -> Void
+
+  var body: some View {
+    Menu {
+      todoButton("TODO", status: .todo)
+      todoButton("In Progress", status: .inProgress)
+      todoButton("Done", status: .done)
+      todoButton("Canceled", status: .canceled)
+      Divider()
+      Button {
+        select()
+        Task { await store.applyTodoShortcut(nil, to: location) }
+      } label: {
+        Label("Toggle", systemImage: "arrow.triangle.2.circlepath")
+      }
+    } label: {
+      Label("Status", systemImage: "checkmark.circle")
+    }
+
+    Menu {
+      planningButton("Today", kind: .scheduled, target: .today)
+      planningButton("Tomorrow", kind: .scheduled, target: .tomorrow)
+      planningButton("Next Monday", kind: .scheduled, target: .upcomingMonday)
+      planningButton("Next Month", kind: .scheduled, target: .nextMonth)
+    } label: {
+      Label("Schedule", systemImage: "calendar")
+    }
+
+    Menu {
+      planningButton("Today", kind: .deadline, target: .today)
+      planningButton("Tomorrow", kind: .deadline, target: .tomorrow)
+      planningButton("Next Monday", kind: .deadline, target: .upcomingMonday)
+      planningButton("Next Month", kind: .deadline, target: .nextMonth)
+    } label: {
+      Label("Deadline", systemImage: "calendar.badge.clock")
+    }
+
+    Menu {
+      priorityButton("A", priority: "A")
+      priorityButton("B", priority: "B")
+      priorityButton("C", priority: "C")
+      Divider()
+      priorityButton("Clear", priority: nil)
+    } label: {
+      Label("Priority", systemImage: "flag")
+    }
+
+    Button {
+      select()
+      Task { await store.applyAgentHandoffShortcut(to: location) }
+    } label: {
+      Label("Pass to Agent", systemImage: "person.crop.circle.badge.checkmark")
+    }
+  }
+
+  private func todoButton(_ title: String, status: TodoEditStatus) -> some View {
+    Button(title) {
+      select()
+      Task { await store.applyTodoShortcut(status, to: location) }
+    }
+  }
+
+  private func planningButton(_ title: String, kind: PlanningEditKind, target: PlanningDateTarget) -> some View {
+    Button(title) {
+      select()
+      Task { await store.applyPlanningShortcut(kind: kind, target: target, to: location) }
+    }
+  }
+
+  private func priorityButton(_ title: String, priority: String?) -> some View {
+    Button(title) {
+      select()
+      Task { await store.applyPriorityShortcut(priority, to: location) }
+    }
   }
 }
 
@@ -332,6 +606,12 @@ private struct QuickOpenView: View {
             .contentShape(Rectangle())
             .onTapGesture {
               open(file)
+            }
+            .contextMenu {
+              CorpusFileContextMenu(file: file) {
+                store.isQuickOpenPresented = false
+                dismiss()
+              }
             }
         }
       }
@@ -379,6 +659,145 @@ private struct QuickOpenView: View {
     default:
       return false
     }
+  }
+}
+
+private struct SimilarTodoAssignmentView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(\.dismiss) private var dismiss
+  @FocusState private var assigneeFocused: Bool
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Assign Similar TODOs")
+            .font(.title2.weight(.semibold))
+          Text("\(store.selectedSimilarTodoCandidateIDs.count) of \(store.similarTodoCandidates.count) selected")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+        Spacer(minLength: 0)
+        Button {
+          store.isSimilarTodoAssignmentPresented = false
+          dismiss()
+        } label: {
+          Label("Close", systemImage: "xmark")
+        }
+        .labelStyle(.iconOnly)
+        .keyboardShortcut(.cancelAction)
+      }
+
+      Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 10) {
+        GridRow {
+          Text("Pattern")
+            .foregroundStyle(.secondary)
+          TextField("find valid contact for {{target}}", text: $store.similarTodoPattern)
+            .textFieldStyle(.roundedBorder)
+        }
+        GridRow {
+          Text("Assignee")
+            .foregroundStyle(.secondary)
+          TextField("contact-finder", text: $store.similarTodoAssignee)
+            .textFieldStyle(.roundedBorder)
+            .focused($assigneeFocused)
+        }
+        GridRow {
+          Text("Status")
+            .foregroundStyle(.secondary)
+          TextField("ready", text: $store.similarTodoStatus)
+            .textFieldStyle(.roundedBorder)
+        }
+      }
+
+      List {
+        ForEach(store.similarTodoCandidates) { candidate in
+          SimilarTodoCandidateRow(candidate: candidate)
+            .contentShape(Rectangle())
+            .onTapGesture {
+              store.toggleSimilarTodoCandidateSelection(candidate)
+            }
+        }
+      }
+      .listStyle(.inset)
+      .frame(minHeight: 300)
+
+      HStack(spacing: 8) {
+        Button {
+          store.selectedSimilarTodoCandidateIDs = Set(store.similarTodoCandidates.map(\.id))
+        } label: {
+          Label("All", systemImage: "checkmark.square")
+        }
+
+        Button {
+          store.selectedSimilarTodoCandidateIDs = []
+        } label: {
+          Label("None", systemImage: "square")
+        }
+
+        Spacer(minLength: 0)
+
+        Button {
+          Task { await store.assignSimilarTodos(askOpenClaw: false) }
+        } label: {
+          Label("Assign", systemImage: "person.crop.circle.badge.checkmark")
+        }
+        .disabled(store.selectedSimilarTodoCandidateIDs.isEmpty)
+
+        Button {
+          Task { await store.assignSimilarTodos(askOpenClaw: true) }
+        } label: {
+          Label("Assign & Ask OpenClaw", systemImage: "sparkles")
+        }
+        .keyboardShortcut(.defaultAction)
+        .disabled(store.selectedSimilarTodoCandidateIDs.isEmpty)
+      }
+    }
+    .padding(18)
+    .frame(width: 760, height: 560)
+    .onAppear {
+      assigneeFocused = store.similarTodoAssignee.isEmpty
+    }
+  }
+}
+
+private struct SimilarTodoCandidateRow: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let candidate: SimilarTodoCandidate
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 8) {
+      Image(systemName: store.selectedSimilarTodoCandidateIDs.contains(candidate.id) ? "checkmark.square.fill" : "square")
+        .foregroundStyle(store.selectedSimilarTodoCandidateIDs.contains(candidate.id) ? Color.accentColor : Color.secondary)
+        .frame(width: 18)
+      VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 6) {
+          if let todo = candidate.todo {
+            Text(todo)
+              .font(.caption.weight(.semibold))
+              .foregroundStyle(.secondary)
+          }
+          Text(Org2Display.cleanInline(candidate.headline))
+            .font(.body.weight(.medium))
+            .lineLimit(1)
+        }
+        HStack(spacing: 8) {
+          Text(store.relativePath(candidate.file) + ":\(candidate.line)")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+          Text("\(Int(candidate.score * 100))%")
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.tertiary)
+          if let assignee = candidate.properties["ASSIGNEE"], !assignee.isEmpty {
+            Text("assigned: \(assignee)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(.vertical, 4)
   }
 }
 
@@ -461,7 +880,7 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "k / ↑", action: "Previous item"),
             ShortcutHelpItem(keys: "J / K", action: "Scroll detail pane"),
             ShortcutHelpItem(keys: "gg / G", action: "First / last item"),
-            ShortcutHelpItem(keys: "1 2 3", action: "Agenda mode"),
+            ShortcutHelpItem(keys: "1 2 3 4", action: "Agenda mode"),
             ShortcutHelpItem(keys: "/", action: "Filter agenda"),
             ShortcutHelpItem(keys: "o / Return", action: "Open item"),
             ShortcutHelpItem(keys: "e", action: "Edit item source"),
@@ -551,8 +970,8 @@ private struct AgendaView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      HeaderBar(title: "Agenda", subtitle: store.agenda.map { "\($0.range.start) to \($0.range.end)" } ?? "Agenda", surface: .agenda) {
-        if store.isLoadingAgenda {
+      HeaderBar(title: "Agenda", subtitle: headerSubtitle, surface: .agenda) {
+        if store.agendaMode == .assigned ? store.isLoadingAssignedWork : store.isLoadingAgenda {
           ProgressView()
             .controlSize(.small)
         }
@@ -570,7 +989,7 @@ private struct AgendaView: View {
             }
           }
           .pickerStyle(.segmented)
-          .frame(width: 260)
+          .frame(width: 340)
 
           TextField("Filter agenda", text: $store.agendaFilter)
             .textFieldStyle(.roundedBorder)
@@ -597,7 +1016,11 @@ private struct AgendaView: View {
         .padding(.horizontal, WorkspaceDesign.contentInset)
         .padding(.bottom, 12)
 
-        AgendaSummaryView(agenda: agenda)
+        if store.agendaMode == .assigned {
+          AssignedAgendaSummaryView(count: store.visibleAssignedWorkItems.count)
+        } else {
+          AgendaSummaryView(agenda: agenda)
+        }
         Divider()
         AgendaListView()
       } else {
@@ -607,14 +1030,34 @@ private struct AgendaView: View {
       }
     }
     .onChange(of: store.agendaMode) {
-      store.selectFirstAgendaItem()
+      if store.agendaMode == .assigned {
+        Task {
+          await store.refreshAssignedWork()
+          store.syncAssignedAgendaSelectionAfterDisplayOptionsChange()
+        }
+      } else {
+        store.syncAgendaSelectionAfterDisplayOptionsChange()
+      }
     }
     .onChange(of: store.agendaFilter) {
-      store.selectFirstAgendaItem()
+      store.syncAgendaSelectionAfterDisplayOptionsChange()
     }
     .onChange(of: store.agendaFilterFocusToken) {
       agendaFilterFocused = true
     }
+    .onChange(of: agendaFilterFocused) {
+      store.isAgendaFilterFocused = agendaFilterFocused
+    }
+    .onDisappear {
+      store.isAgendaFilterFocused = false
+    }
+  }
+
+  private var headerSubtitle: String {
+    if store.agendaMode == .assigned {
+      return "\(store.visibleAssignedWorkItems.count) assigned item\(store.visibleAssignedWorkItems.count == 1 ? "" : "s")"
+    }
+    return store.agenda.map { "\($0.range.start) to \($0.range.end)" } ?? "Agenda"
   }
 }
 
@@ -642,6 +1085,19 @@ private struct AgendaSummaryView: View {
     if hours == 0 { return "\(remainder)m" }
     if remainder == 0 { return "\(hours)h" }
     return "\(hours)h \(remainder)m"
+  }
+}
+
+private struct AssignedAgendaSummaryView: View {
+  let count: Int
+
+  var body: some View {
+    HStack(spacing: 10) {
+      MetricView(title: "Assigned", value: "\(count)")
+      Spacer(minLength: 0)
+    }
+    .padding(.horizontal, WorkspaceDesign.contentInset)
+    .padding(.bottom, 12)
   }
 }
 
@@ -674,37 +1130,130 @@ private struct AgendaListView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      if store.hasBulkAgendaSelection {
+      if store.agendaMode != .assigned, store.hasBulkAgendaSelection {
         AgendaBulkActionBar()
       }
 
-      List(selection: $store.selectedAgendaItemID) {
-        ForEach(store.agendaDisplaySections) { section in
-          Section(section.label) {
-            ForEach(section.items) { item in
-              AgendaRow(item: item)
-                .tag(item.id)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                  store.handleAgendaItemClick(item, modifiers: NSApp.currentEvent?.modifierFlags ?? [])
+      if store.agendaMode == .assigned {
+        AssignedAgendaListView()
+      } else {
+        AgendaItemListView()
+      }
+    }
+  }
+}
+
+private struct AgendaItemListView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    List(selection: $store.selectedAgendaItemID) {
+      ForEach(store.agendaDisplaySections) { section in
+        Section(section.label) {
+          ForEach(section.items) { item in
+            AgendaRow(item: item)
+              .tag(item.id)
+              .contentShape(Rectangle())
+              .onTapGesture {
+                store.handleAgendaItemClick(item, modifiers: NSApp.currentEvent?.modifierFlags ?? [])
+              }
+              .contextMenu {
+                WorkspaceLocationContextMenu(
+                  location: .agenda(item),
+                  showsHeadingActions: true,
+                  select: { store.selectAgendaItem(item) }
+                ) {
+                  Label("Open", systemImage: "calendar")
+                }
+
+                Divider()
+
+                Button {
+                  store.toggleAgendaItemBulkSelection(item)
+                } label: {
+                  Label(
+                    store.isAgendaItemBulkSelected(item) ? "Remove from Bulk Selection" : "Add to Bulk Selection",
+                    systemImage: store.isAgendaItemBulkSelected(item) ? "minus.square" : "checkmark.square"
+                  )
                 }
               }
           }
         }
+      }
 
-        if store.agendaDisplaySections.isEmpty {
-          Text("No agenda items")
+      if store.agendaDisplaySections.isEmpty {
+        Text("No agenda items")
+          .foregroundStyle(.secondary)
+      }
+    }
+    .listStyle(.inset)
+    .onChange(of: store.selectedAgendaItemID) {
+      guard !store.consumeAgendaSelectionActivationSuppression() else {
+        return
+      }
+      guard let id = store.selectedAgendaItemID,
+            let item = store.visibleAgendaItems.first(where: { $0.id == id })
+      else {
+        return
+      }
+      store.select(.agenda(item))
+    }
+  }
+}
+
+private struct AssignedAgendaListView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    if store.isLoadingAssignedWork {
+      Spacer()
+      ProgressView()
+      Spacer()
+    } else {
+      List(selection: $store.selectedAssignedWorkItemID) {
+        ForEach(store.assignedWorkSections) { section in
+          Section(section.label) {
+            ForEach(section.items) { item in
+              AssignedWorkRow(item: item)
+                .tag(item.id)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                  store.selectAssignedWorkItem(item)
+                }
+                .contextMenu {
+                  WorkspaceLocationContextMenu(
+                    location: .assigned(item),
+                    showsHeadingActions: true,
+                    select: { store.selectAssignedWorkItem(item) }
+                  ) {
+                    Label("Open", systemImage: "person.crop.circle.badge.checkmark")
+                  }
+                }
+            }
+          }
+        }
+
+        if store.assignedWorkSections.isEmpty {
+          Text("No assigned agenda items")
             .foregroundStyle(.secondary)
         }
       }
       .listStyle(.inset)
-      .onChange(of: store.selectedAgendaItemID) {
-        guard let id = store.selectedAgendaItemID,
-              let item = store.visibleAgendaItems.first(where: { $0.id == id })
+      .onChange(of: store.selectedAssignedWorkItemID) {
+        guard let id = store.selectedAssignedWorkItemID,
+              let item = store.assignedWorkItems.first(where: { $0.id == id })
         else {
           return
         }
-        store.select(.agenda(item))
+        store.selectAssignedWorkItem(item)
+      }
+      .onAppear {
+        if store.assignedWorkItems.isEmpty {
+          Task {
+            await store.refreshAssignedWork()
+            store.syncAssignedAgendaSelectionAfterDisplayOptionsChange()
+          }
+        }
       }
     }
   }
@@ -813,6 +1362,7 @@ private struct AgendaRow: View {
         .foregroundStyle(.secondary)
       }
       Spacer(minLength: 0)
+      AgendaAssignmentIndicator(item: item)
       if let effort = item.effort {
         Text(effort)
           .font(.caption.monospacedDigit())
@@ -823,6 +1373,48 @@ private struct AgendaRow: View {
       }
     }
     .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
+  }
+}
+
+private struct AgendaAssignmentIndicator: View {
+  let item: AgendaItem
+
+  private var assignee: String? {
+    let trimmed = item.properties["ASSIGNEE"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed?.isEmpty == false ? trimmed : nil
+  }
+
+  private var isAgentAssigned: Bool {
+    assignee != nil
+  }
+
+  private var label: String {
+    isAgentAssigned ? "Agent" : "Me"
+  }
+
+  private var helpText: String {
+    if let assignee {
+      return "Assigned to agent: \(assignee)"
+    }
+    return "Assigned to me"
+  }
+
+  var body: some View {
+    HStack(spacing: 4) {
+      Image(systemName: isAgentAssigned ? "sparkles" : "person")
+        .font(.caption2.weight(.semibold))
+      Text(label)
+        .font(.caption2.weight(.semibold))
+    }
+    .foregroundStyle(isAgentAssigned ? Color.accentColor : Color.secondary)
+    .padding(.horizontal, 6)
+    .padding(.vertical, 3)
+    .background(
+      (isAgentAssigned ? Color.accentColor.opacity(0.12) : WorkspaceDesign.subtleFill),
+      in: Capsule()
+    )
+    .help(helpText)
   }
 }
 
@@ -913,6 +1505,15 @@ private struct SearchView: View {
             .onTapGesture {
               store.select(.search(result))
             }
+            .contextMenu {
+              WorkspaceLocationContextMenu(
+                location: .search(result),
+                showsHeadingActions: result.todo != nil,
+                select: { store.select(.search(result)) }
+              ) {
+                Label("Open", systemImage: "magnifyingglass")
+              }
+            }
         }
         .listStyle(.inset)
       }
@@ -928,6 +1529,9 @@ private struct SearchView: View {
             .contentShape(Rectangle())
             .onTapGesture {
               store.selectSearchNode(node)
+            }
+            .contextMenu {
+              NodeSearchContextMenu(node: node)
             }
         }
         .listStyle(.inset)
@@ -946,7 +1550,7 @@ private struct SearchView: View {
   private var nodeEmptyStateDetail: String {
     if store.corpusRoot == nil { return "Open a corpus to search node titles, aliases, and IDs." }
     if store.orgRoamLinkResolver.nodes.isEmpty {
-      return "No nodes are indexed yet. Add org files with titles, IDs, aliases, or headings."
+      return "No nodes are indexed yet. Add org files with file-level titles, IDs, or aliases."
     }
     return "No indexed node matched this query."
   }
@@ -1039,6 +1643,60 @@ private struct NodeSearchRow: View {
   }
 }
 
+private struct NodeSearchContextMenu: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let node: OrgRoamNodeReference
+
+  var body: some View {
+    Button {
+      store.selectSearchNode(node)
+    } label: {
+      Label("Open", systemImage: "link")
+    }
+
+    Button {
+      store.openFileInEditor(path: node.file, line: node.line)
+    } label: {
+      Label("Open in Editor", systemImage: "arrow.up.forward.app")
+    }
+
+    Button {
+      store.revealFile(path: node.file)
+    } label: {
+      Label("Reveal in Finder", systemImage: "folder")
+    }
+
+    Button {
+      store.copyFileReference(path: node.file, line: node.line)
+    } label: {
+      Label("Copy Reference", systemImage: "doc.on.doc")
+    }
+
+    Divider()
+
+    Button {
+      store.selectSearchNode(node)
+      store.askOpenClawAboutCurrentSelection()
+    } label: {
+      Label("Ask OpenClaw", systemImage: "sparkles")
+    }
+
+    Button {
+      store.selectSearchNode(node)
+      Task { await store.briefCurrentNodeInOpenClaw() }
+    } label: {
+      Label("Brief Node", systemImage: "doc.text.magnifyingglass")
+    }
+
+    Button {
+      store.selectSearchNode(node)
+      Task { await store.linkifyCurrentFile() }
+    } label: {
+      Label("Linkify File", systemImage: "link")
+    }
+  }
+}
+
 private struct MeetingsView: View {
   @EnvironmentObject private var store: WorkspaceStore
 
@@ -1052,6 +1710,21 @@ private struct MeetingsView: View {
 
         if store.isRecordingMeeting {
           Button {
+            Task {
+              if store.isMeetingRecordingPaused {
+                await store.resumeMeetingRecording()
+              } else {
+                await store.pauseMeetingRecording()
+              }
+            }
+          } label: {
+            Label(
+              store.isMeetingRecordingPaused ? "Resume" : "Pause",
+              systemImage: store.isMeetingRecordingPaused ? "play.fill" : "pause.fill"
+            )
+          }
+
+          Button {
             Task { await store.stopMeetingRecording() }
           } label: {
             Label("Stop", systemImage: "stop.fill")
@@ -1062,7 +1735,7 @@ private struct MeetingsView: View {
           } label: {
             Label("Record", systemImage: "record.circle")
           }
-          .disabled(store.corpusRoot == nil || store.isProcessingMeeting)
+          .disabled(store.corpusRoot == nil)
         }
 
         Button {
@@ -1083,7 +1756,7 @@ private struct MeetingsView: View {
       VStack(alignment: .leading, spacing: 8) {
         TextField("Meeting title", text: $store.meetingTitleDraft)
           .textFieldStyle(.roundedBorder)
-          .disabled(store.isRecordingMeeting || store.isProcessingMeeting)
+          .disabled(store.isRecordingMeeting)
 
         HStack(spacing: 10) {
           Text(store.meetingStatusText)
@@ -1096,6 +1769,7 @@ private struct MeetingsView: View {
 
           MeetingInputStatusView(
             isRecording: store.isRecordingMeeting,
+            isPaused: store.isMeetingRecordingPaused,
             averageLevel: store.meetingInputAverageLevel,
             peakLevel: store.meetingInputPeakLevel,
             systemAverageLevel: store.meetingSystemAudioAverageLevel,
@@ -1105,6 +1779,16 @@ private struct MeetingsView: View {
             sourceText: store.meetingCaptureSourceText
           )
         }
+
+        if store.isProcessingMeeting {
+          MeetingTranscriptionProgressView(
+            progress: store.meetingTranscriptionProgress,
+            elapsedText: store.meetingTranscriptionElapsedText,
+            backendText: LocalWhisperTranscriber.resolvedBackendDescription()
+          )
+        }
+
+        AudioSettingsSection()
       }
       .padding(.horizontal, WorkspaceDesign.contentInset)
       .padding(.bottom, 12)
@@ -1130,6 +1814,20 @@ private struct MeetingsView: View {
                   .onTapGesture {
                     store.selectMeeting(meeting)
                   }
+                  .contextMenu {
+                    WorkspaceLocationContextMenu(
+                      location: .meeting(meeting),
+                      select: { store.selectMeeting(meeting) }
+                    ) {
+                      Label("Open", systemImage: "waveform.and.mic")
+                    }
+                    Divider()
+                    Button(role: .destructive) {
+                      store.confirmAndDeleteMeeting(meeting)
+                    } label: {
+                      Label("Delete Meeting", systemImage: "trash")
+                    }
+                  }
               }
             }
           }
@@ -1153,8 +1851,124 @@ private struct MeetingsView: View {
   }
 }
 
+private struct AudioSettingsSection: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    DisclosureGroup(isExpanded: $store.isAudioSettingsExpanded) {
+      VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 8) {
+          Image(systemName: store.audioSettingsStatus.isWhisperCppReady ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+            .foregroundStyle(store.audioSettingsStatus.isWhisperCppReady ? Color.green : Color.orange)
+          Text(store.audioSettingsStatus.statusLabel)
+            .font(.callout.weight(.semibold))
+          Spacer(minLength: 0)
+          Button {
+            store.refreshAudioSettingsStatus()
+          } label: {
+            Label("Refresh", systemImage: "arrow.clockwise")
+          }
+          .controlSize(.small)
+
+          Button {
+            Task { await store.installFastMeetingTranscriber() }
+          } label: {
+            if store.isInstallingFastTranscriber {
+              Label("Installing", systemImage: "arrow.down.circle")
+            } else {
+              Label("Install Fast Transcriber", systemImage: "bolt.fill")
+            }
+          }
+          .controlSize(.small)
+          .disabled(store.isInstallingFastTranscriber || store.audioSettingsStatus.isWhisperCppReady)
+        }
+
+        Text(store.audioSettingsStatusText.isEmpty ? store.audioSettingsStatus.detailText : store.audioSettingsStatusText)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+
+        HStack(alignment: .top, spacing: 8) {
+          Image(systemName: store.workspaceRuntimeIdentity.isAppBundle ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
+            .foregroundStyle(store.workspaceRuntimeIdentity.isAppBundle ? Color.green : Color.orange)
+          VStack(alignment: .leading, spacing: 2) {
+            Text(store.workspaceRuntimeIdentity.audioPermissionStatusLabel)
+              .font(.caption.weight(.semibold))
+            Text(store.workspaceRuntimeIdentity.audioPermissionDetailText)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
+          audioSettingRow("Active", store.audioSettingsStatus.backendDescription)
+          audioSettingRow("App path", store.workspaceRuntimeIdentity.bundlePath)
+          audioSettingRow("whisper.cpp", store.audioSettingsStatus.whisperCppExecutablePath ?? "Not installed")
+          audioSettingRow("GGML model", store.audioSettingsStatus.whisperCppModelPath ?? "Missing")
+          if let openAIWhisper = store.audioSettingsStatus.openAIWhisperExecutablePath {
+            audioSettingRow("Python Whisper", openAIWhisper)
+          }
+          if let overrideCommand = store.audioSettingsStatus.overrideCommand {
+            audioSettingRow("Override", overrideCommand)
+          }
+        }
+        .font(.caption)
+      }
+      .padding(.top, 6)
+    } label: {
+      HStack(spacing: 8) {
+        Label("Audio Settings", systemImage: "waveform")
+        Text(store.audioSettingsStatus.statusLabel)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+      }
+    }
+  }
+
+  private func audioSettingRow(_ label: String, _ value: String) -> some View {
+    GridRow {
+      Text(label)
+        .foregroundStyle(.secondary)
+      Text(value)
+        .textSelection(.enabled)
+        .lineLimit(1)
+        .truncationMode(.middle)
+    }
+  }
+}
+
+private struct MeetingTranscriptionProgressView: View {
+  let progress: Double
+  let elapsedText: String
+  let backendText: String
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      ProgressView(value: progress)
+        .progressViewStyle(.linear)
+      HStack(spacing: 8) {
+        Text("\(Int(progress * 100))%")
+          .fontWeight(.semibold)
+        if !elapsedText.isEmpty {
+          Text("elapsed \(elapsedText)")
+        }
+        Text(backendText)
+          .lineLimit(1)
+          .truncationMode(.middle)
+      }
+      .font(.caption2)
+      .foregroundStyle(.secondary)
+    }
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("Meeting transcription progress")
+    .help("Estimated local transcription progress. The bar caps at 95% until the local transcriber finishes.")
+  }
+}
+
 private struct MeetingInputStatusView: View {
   let isRecording: Bool
+  let isPaused: Bool
   let averageLevel: Double
   let peakLevel: Double
   let systemAverageLevel: Double
@@ -1165,14 +1979,22 @@ private struct MeetingInputStatusView: View {
 
   var body: some View {
     HStack(spacing: 8) {
-      Image(systemName: isRecording ? "waveform" : "mic")
-        .foregroundStyle(isRecording ? .red : .secondary)
+      Image(systemName: isPaused ? "pause.fill" : (isRecording ? "waveform" : "mic"))
+        .foregroundStyle(isPaused ? .orange : (isRecording ? .red : .secondary))
 
       if isRecording {
         VStack(alignment: .leading, spacing: 4) {
-          MeetingInputMeterRow(label: "Mic", averageLevel: averageLevel, peakLevel: peakLevel)
+          MeetingInputMeterRow(
+            label: isPaused ? "Paused" : "Mic",
+            averageLevel: isPaused ? 0 : averageLevel,
+            peakLevel: isPaused ? 0 : peakLevel
+          )
           if isCapturingSystemAudio {
-            MeetingInputMeterRow(label: "System", averageLevel: systemAverageLevel, peakLevel: systemPeakLevel)
+            MeetingInputMeterRow(
+              label: "System",
+              averageLevel: isPaused ? 0 : systemAverageLevel,
+              peakLevel: isPaused ? 0 : systemPeakLevel
+            )
           } else {
             Text(systemAudioStatusText)
               .font(.caption2)
@@ -1190,7 +2012,7 @@ private struct MeetingInputStatusView: View {
       }
     }
     .accessibilityElement(children: .combine)
-    .accessibilityLabel(isRecording ? "Meeting audio input levels" : sourceText)
+    .accessibilityLabel(isRecording ? (isPaused ? "Meeting recording paused" : "Meeting audio input levels") : sourceText)
     .help(sourceText)
   }
 }
@@ -1205,7 +2027,7 @@ private struct MeetingInputMeterRow: View {
       Text(label)
         .font(.caption2)
         .foregroundStyle(.secondary)
-        .frame(width: 42, alignment: .trailing)
+        .frame(width: 48, alignment: .trailing)
 
       WorkspaceInputMeterView(averageLevel: averageLevel, peakLevel: peakLevel)
         .frame(width: 120, height: 7)
@@ -1404,12 +2226,19 @@ private struct OpenClawChatView: View {
   private var configurationStrip: some View {
     if presentation == .fullPage {
       HStack(spacing: 8) {
-        Label("Agent", systemImage: "cpu")
+        Label("Chat", systemImage: "cpu")
           .font(.caption.weight(.medium))
           .foregroundStyle(.secondary)
         TextField("main", text: $store.openClawAgentID)
           .textFieldStyle(.roundedBorder)
           .frame(width: 180)
+        Label("Handoff", systemImage: "person.crop.circle.badge.checkmark")
+          .font(.caption.weight(.medium))
+          .foregroundStyle(.secondary)
+        Text(store.agentHandoffAssignee)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
         Label("Org2", systemImage: "folder")
           .font(.caption.weight(.medium))
           .foregroundStyle(.secondary)
@@ -1429,7 +2258,7 @@ private struct OpenClawChatView: View {
       .padding(.bottom, 10)
     } else {
       HStack(spacing: 8) {
-        TextField("Agent", text: $store.openClawAgentID)
+        TextField("Chat Agent", text: $store.openClawAgentID)
           .textFieldStyle(.roundedBorder)
         Button {
           isShowingConfiguration = true
@@ -1465,9 +2294,9 @@ private struct OpenClawChatView: View {
         .padding(presentation == .assistantPanel ? 10 : 16)
       }
       .background(OpenClawChatScrollPositionBridge(
-        initialPosition: store.openClawChatScrollPosition,
+        initialPosition: store.openClawChatScrollPosition(isAssistantPanel: presentation == .assistantPanel),
         onPositionChange: { position in
-          store.recordOpenClawChatScrollPosition(position)
+          store.recordOpenClawChatScrollPosition(position, isAssistantPanel: presentation == .assistantPanel)
         }
       ))
       .onChange(of: store.openClawMessages.count) {
@@ -1506,6 +2335,7 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
   }
 
   static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+    coordinator.recordCurrentPosition()
     coordinator.stopObserving()
   }
 
@@ -1513,8 +2343,11 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
   final class Coordinator: NSObject {
     var parent: OpenClawChatScrollPositionBridge
     private weak var scrollView: NSScrollView?
+    private weak var observedClipView: NSClipView?
+    private weak var observedDocumentView: NSView?
     private var didRestore = false
     private var isRestoring = false
+    private var restoreAttempts = 0
 
     init(parent: OpenClawChatScrollPositionBridge) {
       self.parent = parent
@@ -1529,28 +2362,77 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
 
       DispatchQueue.main.async {
         DispatchQueue.main.async {
-          guard !self.didRestore,
-                let scrollView = view.enclosingScrollView
-          else {
-            self.startObservingIfPossible(from: view)
-            return
-          }
-          self.restore(scrollView, to: self.parent.initialPosition ?? 1)
-          self.didRestore = true
-          self.startObserving(scrollView)
+          self.attemptRestore(from: view)
         }
       }
     }
 
+    private func attemptRestore(from view: NSView) {
+      guard !didRestore else {
+        startObservingIfPossible(from: view)
+        return
+      }
+      guard let scrollView = view.enclosingScrollView else {
+        scheduleRestoreRetry(from: view)
+        return
+      }
+      startObserving(scrollView)
+      if restoreIfPossible(in: scrollView) {
+        didRestore = true
+      } else {
+        scheduleRestoreRetry(from: view)
+      }
+    }
+
+    private func scheduleRestoreRetry(from view: NSView) {
+      restoreAttempts += 1
+      guard restoreAttempts < 80 else {
+        if let scrollView = view.enclosingScrollView {
+          didRestore = true
+          startObserving(scrollView)
+        } else {
+          self.startObservingIfPossible(from: view)
+        }
+        return
+      }
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        self.attemptRestore(from: view)
+      }
+    }
+
+    func recordCurrentPosition() {
+      guard didRestore,
+            !isRestoring,
+            let scrollView
+      else {
+        return
+      }
+      parent.onPositionChange(Self.normalizedPosition(in: scrollView))
+    }
+
     func stopObserving() {
-      if let scrollView {
+      if let observedClipView {
         NotificationCenter.default.removeObserver(
           self,
           name: NSView.boundsDidChangeNotification,
-          object: scrollView.contentView
+          object: observedClipView
+        )
+        NotificationCenter.default.removeObserver(
+          self,
+          name: NSView.frameDidChangeNotification,
+          object: observedClipView
+        )
+      }
+      if let observedDocumentView {
+        NotificationCenter.default.removeObserver(
+          self,
+          name: NSView.frameDidChangeNotification,
+          object: observedDocumentView
         )
       }
       scrollView = nil
+      observedClipView = nil
+      observedDocumentView = nil
     }
 
     private func startObservingIfPossible(from view: NSView) {
@@ -1559,35 +2441,69 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
     }
 
     private func startObserving(_ scrollView: NSScrollView) {
-      guard self.scrollView !== scrollView else { return }
+      let documentView = scrollView.documentView
+      guard self.scrollView !== scrollView || observedDocumentView !== documentView else { return }
       stopObserving()
       self.scrollView = scrollView
-      scrollView.contentView.postsBoundsChangedNotifications = true
+      let clipView = scrollView.contentView
+      observedClipView = clipView
+      observedDocumentView = documentView
+      clipView.postsBoundsChangedNotifications = true
+      clipView.postsFrameChangedNotifications = true
+      documentView?.postsFrameChangedNotifications = true
       NotificationCenter.default.addObserver(
         self,
         selector: #selector(boundsDidChange(_:)),
         name: NSView.boundsDidChangeNotification,
-        object: scrollView.contentView
+        object: clipView
       )
+      NotificationCenter.default.addObserver(
+        self,
+        selector: #selector(layoutDidChange(_:)),
+        name: NSView.frameDidChangeNotification,
+        object: clipView
+      )
+      if let documentView {
+        NotificationCenter.default.addObserver(
+          self,
+          selector: #selector(layoutDidChange(_:)),
+          name: NSView.frameDidChangeNotification,
+          object: documentView
+        )
+      }
     }
 
     @objc private func boundsDidChange(_ notification: Notification) {
-      guard !isRestoring,
-            let scrollView
-      else {
+      guard !isRestoring, let scrollView else { return }
+      guard didRestore else {
+        if restoreIfPossible(in: scrollView) {
+          didRestore = true
+        }
         return
       }
       parent.onPositionChange(Self.normalizedPosition(in: scrollView))
     }
 
-    private func restore(_ scrollView: NSScrollView, to position: Double) {
-      guard let documentView = scrollView.documentView else { return }
-      let clipView = scrollView.contentView
-      let maxY = max(0, documentView.bounds.height - clipView.bounds.height)
-      guard maxY > 0 else {
-        parent.onPositionChange(1)
+    @objc private func layoutDidChange(_ notification: Notification) {
+      guard !didRestore,
+            !isRestoring,
+            let scrollView,
+            restoreIfPossible(in: scrollView)
+      else {
         return
       }
+      didRestore = true
+    }
+
+    private func restoreIfPossible(in scrollView: NSScrollView) -> Bool {
+      restore(scrollView, to: parent.initialPosition ?? 1)
+    }
+
+    private func restore(_ scrollView: NSScrollView, to position: Double) -> Bool {
+      guard let documentView = scrollView.documentView else { return false }
+      let clipView = scrollView.contentView
+      let maxY = max(0, documentView.bounds.height - clipView.bounds.height)
+      guard maxY > 0 else { return false }
 
       let clamped = min(1, max(0, position))
       var origin = clipView.bounds.origin
@@ -1597,6 +2513,7 @@ private struct OpenClawChatScrollPositionBridge: NSViewRepresentable {
       scrollView.reflectScrolledClipView(clipView)
       isRestoring = false
       parent.onPositionChange(clamped)
+      return true
     }
 
     private static func normalizedPosition(in scrollView: NSScrollView) -> Double {
@@ -1617,6 +2534,7 @@ private struct OpenClawConfigurationSheet: View {
   @Environment(\.dismiss) private var dismiss
   @State private var endpoint = ""
   @State private var agent = ""
+  @State private var handoffAssignee = ""
   @State private var remoteCorpusPath = ""
   @State private var token = ""
   @State private var clearToken = false
@@ -1642,10 +2560,19 @@ private struct OpenClawConfigurationSheet: View {
         }
 
         GridRow {
-          Text("Agent")
+          Text("Chat Agent")
             .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
           TextField("main", text: $agent)
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 220)
+        }
+
+        GridRow {
+          Text("Handoff Assignee")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+          TextField("OpenClaw", text: $handoffAssignee)
             .textFieldStyle(.roundedBorder)
             .frame(width: 220)
         }
@@ -1688,6 +2615,7 @@ private struct OpenClawConfigurationSheet: View {
           let saved = store.saveOpenClawConfiguration(
             endpoint: endpoint,
             agent: agent,
+            handoffAssignee: handoffAssignee,
             remoteCorpusPath: remoteCorpusPath,
             token: token,
             clearToken: clearToken
@@ -1704,6 +2632,7 @@ private struct OpenClawConfigurationSheet: View {
     .onAppear {
       endpoint = store.openClawEndpointText
       agent = store.openClawAgentID
+      handoffAssignee = store.agentHandoffAssignee
       remoteCorpusPath = store.openClawRemoteCorpusPath
       token = ""
       clearToken = false
@@ -1951,6 +2880,14 @@ private struct OpenClawThreadsView: View {
                   .onTapGesture {
                     store.selectOpenClawThread(thread)
                   }
+                  .contextMenu {
+                    WorkspaceLocationContextMenu(
+                      location: .openClaw(thread),
+                      select: { store.selectOpenClawThread(thread) }
+                    ) {
+                      Label("Open", systemImage: thread.idValue == nil ? "doc.text" : "link")
+                    }
+                  }
               }
             }
           }
@@ -1971,6 +2908,48 @@ private struct OpenClawThreadsView: View {
         Task { await store.refreshOpenClawThreads() }
       }
     }
+  }
+}
+
+private struct AssignedWorkRow: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let item: AssignedWorkItem
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 8) {
+      WorkspaceIconBadge(systemImage: "person.crop.circle.badge.checkmark")
+      VStack(alignment: .leading, spacing: 5) {
+        HStack(spacing: 6) {
+          if let todo = item.todo, !todo.isEmpty {
+            Text(todo)
+              .font(.caption.weight(.semibold))
+              .foregroundStyle(.secondary)
+          }
+          Text(Org2Display.cleanInline(item.headline))
+            .font(.body.weight(.medium))
+            .lineLimit(1)
+        }
+        HStack(spacing: 6) {
+          Text(item.status)
+            .font(.caption)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Color.secondary.opacity(0.12), in: Capsule())
+          Text(store.relativePath(item.file) + ":\(item.lineForEditor)")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+          if let last = item.lastAgentUpdate ?? item.assignedAt {
+            Text(last)
+              .font(.caption)
+              .foregroundStyle(.tertiary)
+              .lineLimit(1)
+          }
+        }
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(.horizontal, WorkspaceDesign.contentInset)
+    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
   }
 }
 
@@ -2027,9 +3006,14 @@ private struct DetailView: View {
         DetailHeader(location: location)
         Divider()
         HSplitView {
-          ScrollView {
-            EntryBodyView(location: location)
-              .background(DetailScrollCommandBridge(request: store.detailScrollRequest))
+          ScrollViewReader { proxy in
+            ScrollView {
+              EntryBodyView(location: location)
+                .background(DetailScrollCommandBridge(request: pageScrollRequest))
+            }
+            .onChange(of: store.detailScrollRequest) { _, request in
+              scrollToBlockTarget(request, proxy: proxy)
+            }
           }
           .frame(minWidth: 420)
 
@@ -2042,6 +3026,22 @@ private struct DetailView: View {
         EmptyStateView(title: "No Selection", detail: store.statusText, action: "Open Corpus") {
           store.chooseCorpus()
         }
+      }
+    }
+  }
+
+  private var pageScrollRequest: DetailScrollRequest? {
+    guard let request = store.detailScrollRequest,
+          case .page = request.target
+    else { return nil }
+    return request
+  }
+
+  private func scrollToBlockTarget(_ request: DetailScrollRequest?, proxy: ScrollViewProxy) {
+    guard case .block(let blockID) = request?.target else { return }
+    DispatchQueue.main.async {
+      withAnimation(.easeOut(duration: 0.12)) {
+        proxy.scrollTo(blockID, anchor: .center)
       }
     }
   }
@@ -2060,6 +3060,7 @@ private struct DetailScrollCommandBridge: NSViewRepresentable {
 
   func updateNSView(_ view: NSView, context: Context) {
     guard let request, context.coordinator.lastRequestID != request.id else { return }
+    guard case .page(let requestDirection) = request.target else { return }
     context.coordinator.lastRequestID = request.id
 
     DispatchQueue.main.async {
@@ -2072,7 +3073,7 @@ private struct DetailScrollCommandBridge: NSViewRepresentable {
       guard visibleHeight > 0 else { return }
 
       let distance = max(120, visibleHeight * 0.8)
-      let direction: CGFloat = request.direction == .down ? 1 : -1
+      let direction: CGFloat = requestDirection == .down ? 1 : -1
       let flippedMultiplier: CGFloat = documentView.isFlipped ? 1 : -1
       let maxY = max(0, documentView.bounds.height - visibleHeight)
       var origin = clipView.bounds.origin
@@ -2123,8 +3124,28 @@ private struct DetailHeader: View {
             .textFieldStyle(.roundedBorder)
             .focused($isPageSearchFocused)
             .onSubmit {
-              isPageSearchFocused = false
+              store.selectNextPageSearchOccurrence()
             }
+          Text(store.pageSearchOccurrenceSummary)
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(store.pageSearchOccurrenceCount == 0 ? .secondary : .primary)
+            .frame(minWidth: 72, alignment: .trailing)
+          Button {
+            store.selectPreviousPageSearchOccurrence()
+          } label: {
+            Label("Previous Occurrence", systemImage: "chevron.up")
+          }
+          .labelStyle(.iconOnly)
+          .help("Previous occurrence")
+          .disabled(!store.canNavigatePageSearchOccurrences)
+          Button {
+            store.selectNextPageSearchOccurrence()
+          } label: {
+            Label("Next Occurrence", systemImage: "chevron.down")
+          }
+          .labelStyle(.iconOnly)
+          .help("Next occurrence")
+          .disabled(!store.canNavigatePageSearchOccurrences)
           if !store.pageSearchQuery.isEmpty {
             Button {
               store.clearRenderedSearchHighlight()
@@ -2135,7 +3156,7 @@ private struct DetailHeader: View {
             .help("Clear page search")
           }
         }
-        .frame(maxWidth: 420)
+        .frame(maxWidth: 560)
         .onAppear {
           isPageSearchFocused = true
         }
@@ -2152,6 +3173,8 @@ private struct DetailHeader: View {
     switch location {
     case .agenda:
       return "calendar"
+    case .assigned:
+      return "person.crop.circle.badge.checkmark"
     case .search:
       return "magnifyingglass"
     case .backlink:
@@ -2226,6 +3249,7 @@ private struct DetailHeader: View {
     } label: {
       Label("Source", systemImage: "doc.text.magnifyingglass")
     }
+    .fixedSize(horizontal: true, vertical: false)
     .help("Open, reveal, or linkify this file")
   }
 
@@ -2277,6 +3301,7 @@ private struct DetailHeader: View {
     }
     .pickerStyle(.segmented)
     .frame(width: 136)
+    .fixedSize(horizontal: true, vertical: false)
     .onChange(of: store.selectedEntrySourceMode) {
       Task { await store.reloadSelectedEntrySource() }
     }
@@ -2312,41 +3337,95 @@ private struct DetailHeader: View {
 
   @ViewBuilder
   private var organizeMenu: some View {
-    if case .agenda = location {
+    Menu {
       Menu {
-        Button {
-          Task { await store.applyAgentHandoffShortcut() }
-        } label: {
-          Label("Pass to Agent", systemImage: "person.crop.circle.badge.checkmark")
+        Button("TODO") {
+          Task { await store.applyTodoShortcut(.todo) }
         }
-
-        Menu {
-          Button("A") {
-            Task { await store.applyPriorityShortcut("A") }
-          }
-          Button("B") {
-            Task { await store.applyPriorityShortcut("B") }
-          }
-          Button("C") {
-            Task { await store.applyPriorityShortcut("C") }
-          }
-          Divider()
-          Button("Clear") {
-            Task { await store.applyPriorityShortcut(nil) }
-          }
-        } label: {
-          Label("Priority", systemImage: "flag")
+        Button("In Progress") {
+          Task { await store.applyTodoShortcut(.inProgress) }
         }
-
+        Button("Done") {
+          Task { await store.applyTodoShortcut(.done) }
+        }
+        Button("Canceled") {
+          Task { await store.applyTodoShortcut(.canceled) }
+        }
+        Divider()
         Button {
-          store.promptAndApplyPropertyShortcut()
+          Task { await store.applyTodoShortcut(nil) }
         } label: {
-          Label("Set Property", systemImage: "tag")
+          Label("Toggle", systemImage: "arrow.triangle.2.circlepath")
         }
       } label: {
-        Label("Organize", systemImage: "ellipsis.circle")
+        Label("Status", systemImage: "checkmark.circle")
       }
-      .help("Agent handoff, priority, and properties")
+
+      Menu {
+        planningButton("Today", kind: .scheduled, target: .today)
+        planningButton("Tomorrow", kind: .scheduled, target: .tomorrow)
+        planningButton("Next Monday", kind: .scheduled, target: .upcomingMonday)
+        planningButton("Next Month", kind: .scheduled, target: .nextMonth)
+      } label: {
+        Label("Schedule", systemImage: "calendar")
+      }
+
+      Menu {
+        planningButton("Today", kind: .deadline, target: .today)
+        planningButton("Tomorrow", kind: .deadline, target: .tomorrow)
+        planningButton("Next Monday", kind: .deadline, target: .upcomingMonday)
+        planningButton("Next Month", kind: .deadline, target: .nextMonth)
+      } label: {
+        Label("Deadline", systemImage: "calendar.badge.exclamationmark")
+      }
+
+      Menu {
+        Button("A") {
+          Task { await store.applyPriorityShortcut("A") }
+        }
+        Button("B") {
+          Task { await store.applyPriorityShortcut("B") }
+        }
+        Button("C") {
+          Task { await store.applyPriorityShortcut("C") }
+        }
+        Divider()
+        Button("Clear") {
+          Task { await store.applyPriorityShortcut(nil) }
+        }
+      } label: {
+        Label("Priority", systemImage: "flag")
+      }
+
+      Divider()
+
+      Button {
+        store.presentSimilarTodoAssignment()
+      } label: {
+        Label("Find Similar TODOs...", systemImage: "rectangle.stack.badge.plus")
+      }
+
+      Button {
+        Task { await store.applyAgentHandoffShortcut() }
+      } label: {
+        Label("Pass to Agent", systemImage: "person.crop.circle.badge.checkmark")
+      }
+
+      Button {
+        store.promptAndApplyPropertyShortcut()
+      } label: {
+        Label("Set Property", systemImage: "tag")
+      }
+    } label: {
+      Label("Organize", systemImage: "ellipsis.circle")
+    }
+    .disabled(!store.canOrganizeCurrentHeadline)
+    .help("Status, schedule, deadline, priority, agent handoff, and properties")
+  }
+
+  private func planningButton(_ title: String, kind: PlanningEditKind, target: PlanningDateTarget) -> some View {
+    Button(title) {
+      Task { await store.applyPlanningShortcut(kind: kind, target: target) }
     }
   }
 }
@@ -2433,6 +3512,10 @@ private struct EntryBodyView: View {
       Text(Org2Display.cleanBlock(item.body ?? ""))
         .font(.body)
         .textSelection(.enabled)
+    case .assigned(let item):
+      Text(Org2Display.cleanInline(item.headline))
+        .font(.body)
+        .textSelection(.enabled)
     case .search(let result):
       Text(Org2Display.cleanInline(result.snippet))
         .font(.body)
@@ -2463,6 +3546,16 @@ private struct EntryBodyView: View {
         ("Effort", item.effort ?? ""),
         ("Tags", item.tags.joined(separator: ", ")),
         ("ID", item.idValue.map(Org2Display.shortID) ?? "")
+      ]
+      return nonEmptyRows(rows)
+    case .assigned(let item):
+      let rows: [(String, String)] = [
+        ("TODO", item.todo ?? ""),
+        ("Assignee", item.assignee),
+        ("Status", item.status),
+        ("Assigned", item.assignedAt ?? ""),
+        ("Last Update", item.lastAgentUpdate ?? ""),
+        ("Tags", item.tags.joined(separator: ", "))
       ]
       return nonEmptyRows(rows)
     case .search(let result):
@@ -2800,19 +3893,126 @@ private struct NodeBriefRenderedPreview: View {
     } else {
       LazyVStack(alignment: .leading, spacing: 5) {
         ForEach(blocks) { block in
-          RenderedBlockView(
-            block: block.rendered,
-            rawText: block.rawText,
-            editableBlock: block,
+          NodeBriefCompactBlockView(
+            block: block,
             sourceFile: artifact.file,
-            corpusRoot: corpusRoot,
-            inlineActions: .readOnly
+            corpusRoot: corpusRoot
           )
           .frame(maxWidth: .infinity, alignment: .leading)
         }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
     }
+  }
+}
+
+private struct NodeBriefCompactBlockView: View {
+  let block: OrgEditableBlock
+  let sourceFile: String
+  let corpusRoot: URL?
+
+  var body: some View {
+    switch block.rendered {
+    case .heading(let heading):
+      Text(Org2Display.cleanInline(heading.title))
+        .font(headingFont(level: heading.level))
+        .fontWeight(.semibold)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.top, heading.level <= 1 ? 8 : 5)
+    case .paragraph(let text):
+      compactInlineText(block.rawText.isEmpty ? text : block.rawText)
+        .font(.callout)
+        .padding(.vertical, 1)
+    case .listItem(let indent, let marker, let checkbox, let text):
+      HStack(alignment: .firstTextBaseline, spacing: 7) {
+        Text(listMarker(marker: marker, checkbox: checkbox))
+          .font(.caption.weight(.medium))
+          .foregroundStyle(.secondary)
+          .frame(width: 20, alignment: .trailing)
+        compactInlineText(text)
+          .font(.callout)
+      }
+      .padding(.leading, CGFloat(max(0, indent)) * 12)
+      .padding(.vertical, 2)
+    case .quote(let lines):
+      compactInlineText(lines.joined(separator: "\n"))
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .padding(.leading, 10)
+        .overlay(alignment: .leading) {
+          Rectangle()
+            .fill(Color.secondary.opacity(0.22))
+            .frame(width: 2)
+        }
+        .padding(.vertical, 4)
+    case .planning(let planning):
+      HStack(spacing: 6) {
+        Text(planning.kind.capitalized)
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.secondary)
+        Text(planning.value)
+          .font(.caption.monospacedDigit())
+          .foregroundStyle(.secondary)
+      }
+      .padding(.vertical, 1)
+    case .keyword(let key, let value):
+      if key.uppercased() != "TITLE" {
+        HStack(spacing: 6) {
+          Text(key.uppercased())
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.tertiary)
+          Text(value)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+    case .properties:
+      EmptyView()
+    case .horizontalRule:
+      Divider()
+        .padding(.vertical, 8)
+    case .blank:
+      Spacer()
+        .frame(height: 3)
+    case .source, .table:
+      RenderedBlockView(
+        block: block.rendered,
+        rawText: block.rawText,
+        editableBlock: nil,
+        sourceFile: sourceFile,
+        corpusRoot: corpusRoot,
+        inlineActions: .readOnly
+      )
+      .font(.callout)
+      .padding(.vertical, 4)
+    }
+  }
+
+  private func compactInlineText(_ raw: String) -> some View {
+    OrgInlineText(raw, font: .callout)
+      .fixedSize(horizontal: false, vertical: true)
+      .textSelection(.enabled)
+  }
+
+  private func headingFont(level: Int) -> Font {
+    switch level {
+    case ...1:
+      return .headline
+    case 2:
+      return .callout
+    default:
+      return .caption.weight(.semibold)
+    }
+  }
+
+  private func listMarker(marker: String, checkbox: OrgListCheckbox?) -> String {
+    if let checkbox {
+      return checkbox.rawMarker
+    }
+    if marker.range(of: #"^\d+[.)]$"#, options: .regularExpression) != nil {
+      return marker
+    }
+    return "-"
   }
 }
 
@@ -2919,6 +4119,14 @@ private struct BacklinkFileGroupRow: View {
             .contentShape(Rectangle())
             .onTapGesture {
               store.selectBacklink(backlink)
+            }
+            .contextMenu {
+              WorkspaceLocationContextMenu(
+                location: .backlink(backlink),
+                select: { store.selectBacklink(backlink) }
+              ) {
+                Label("Open", systemImage: "link")
+              }
             }
           Divider()
             .padding(.leading, WorkspaceDesign.contentInset * 2)

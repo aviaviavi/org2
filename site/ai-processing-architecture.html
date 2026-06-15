@@ -83,7 +83,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>The AI layer is optional orchestration around compiler outputs. It owns:</p>
 <ul>
 <li><p>loading an AI job manifest or command-line task</p></li>
-<li><p>selecting source files, headings, query results, graph nodes, or compiled corpus slices</p></li>
+<li><p>selecting source files, headings, query results, graph nodes, or compiled corpus outputs</p></li>
 <li><p>building structured prompt/context payloads with citations</p></li>
 <li><p>invoking a configured provider adapter by symbolic name</p></li>
 <li><p>validating model output shape when a workflow expects JSON or Org2 sections</p></li>
@@ -126,7 +126,7 @@ export interface AiGenerateResult {
 org2 ai run --job jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2
 org2 ai suggest-links --dir notes --recursive --out views/link-suggestions.org2
 org2 ai validate-job --job jobs/weekly-summary.org2-ai.json</code></pre>
-<p>Implemented slices so far are provider-free manifest validation, reviewable draft artifact writing/promotion, AI-assisted link/entity suggestion reports using the deterministic mock adapter, and the provider-agnostic adapter boundary; see <a href="ai-job-manifests.html">AI job manifests</a>, <a href="ai-draft-artifacts.html">AI draft artifacts</a>, <a href="ai-adapters.html">AI adapter interface</a>, <code>spec/v0/ai-job-manifest.schema.json</code>, and <code>src/aiAdapter.ts</code>.</p>
+<p>Implemented pieces so far are provider-free manifest validation, reviewable draft artifact writing/promotion, AI-assisted link/entity suggestion reports using the deterministic mock adapter, and the provider-agnostic adapter boundary; see <a href="ai-job-manifests.html">AI job manifests</a>, <a href="ai-draft-artifacts.html">AI draft artifacts</a>, <a href="ai-adapters.html">AI adapter interface</a>, <code>spec/v0/ai-job-manifest.schema.json</code>, and <code>src/aiAdapter.ts</code>.</p>
 <p>Command responsibilities:</p>
 <table>
 <thead>
@@ -204,7 +204,7 @@ npm run org2 -- lint --dir . --recursive</code></pre>
 <li><p>meeting/transcript summarization</p></li>
 <li><p>link/entity suggestion reports</p></li>
 </ul>
-<p>Each slice should remain useful without forcing every Org2 user to configure an AI provider.</p>
+<p>Each feature should remain useful without forcing every Org2 user to configure an AI provider.</p>
 </section>
 </main>
 </div>

@@ -54,7 +54,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <h1 class="org2-document-title">macOS Workspace</h1>
 </header>
 <p>Org2 Workspace is the native macOS client for working with an Org2 corpus. It is an alpha app in <code>apps/macos/Org2Workspace</code>, built as a Swift Package, and uses the same parser/CLI output as the rest of Org2 instead of maintaining a private database.</p>
-<p>The app is currently best understood as a local workspace shell for dogfooding the product direction: agenda review, file navigation, search, rendered block editing, meeting capture, OpenClaw handoff, knowledge-node creation, and crypt workflows over normal files.</p>
+<p>The app is currently best understood as a local workspace shell for dogfooding the product direction: global capture, agenda review, file navigation, search, rendered block editing, meeting capture, OpenClaw handoff, knowledge-node creation, and crypt workflows over normal files.</p>
 <section class="org2-headline level-1">
 <h1 id="current-surfaces">Current surfaces</h1>
 <p>The sidebar exposes the main workspace surfaces:</p>
@@ -66,6 +66,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><strong>OpenClaw Chat</strong> :: send selected workspace context to a configured OpenClaw endpoint while keeping the conversation state local to the app.</p></li>
 <li><p><strong>Agent Space</strong> :: browse durable OpenClaw/agent thread records and reopen their source context.</p></li>
 </ul>
+<p>Global capture is available while the app is running. <code>Cmd-Ctrl-Return</code> opens a capture modal from anywhere on macOS, and the in-app <code>Capture</code> command uses the same path. Captures append to today's daily note, using <code>roam.dailiesDir</code> from <code>org2.json</code> when configured. The modal can write notes or TODOs, set TODO state, priority, tags, scheduled/deadline dates, and mark a capture ready for agent handoff. The paste control accepts text, URLs, local files, and pasted image data; local files and images are copied into <code>attachments/</code> and linked from the capture.</p>
 <p>The detail pane can render a selected file, agenda item, search result, backlink, meeting note, or agent thread. It supports both raw source editing and structured rendered-block editing.</p>
 </section>
 <section class="org2-headline level-1">
@@ -115,6 +116,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><code>Cmd-1</code> through <code>Cmd-5</code> for primary surfaces,</p></li>
 <li><p><code>Cmd-6</code> for Agent Space,</p></li>
 <li><p><code>Cmd-P</code> / <code>Cmd-K</code> for quick open,</p></li>
+<li><p><code>Cmd-Ctrl-Return</code> for system-wide capture while the app is running,</p></li>
 <li><p><code>Cmd-7</code>, <code>Cmd-8</code>, and <code>Cmd-9</code> for today/yesterday/tomorrow daily notes,</p></li>
 <li><p>agenda-local <code>j</code> / <code>k</code> navigation, <code>/</code> filtering, and TODO/planning shortcuts,</p></li>
 <li><p>document-local block navigation, editing, insertion, folding, duplication, movement, and deletion shortcuts.</p></li>
@@ -132,14 +134,12 @@ swift run Org2Workspace</code></pre>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">ORG2_REPO_ROOT=/path/to/org2 swift run Org2Workspace</code></pre>
 </section>
 <section class="org2-headline level-1">
-<h1 id="next-major-slices">Next major slices</h1>
-<p>The recommended lead slice remains <strong>real capture and refiling</strong>.</p>
-<p>The app still needs the actual daily-driver capture workflow:</p>
+<h1 id="next-priorities">Next priorities</h1>
+<p>The recommended lead priority remains <strong>refiling and deeper capture routing</strong>.</p>
+<p>The app still needs the rest of the daily-driver capture workflow:</p>
 <ul>
-<li><p>system-wide capture or a global capture panel,</p></li>
-<li><p>fast TODO/note capture into a predictable capture target,</p></li>
 <li><p>refile into existing files/headings,</p></li>
-<li><p>scheduling/deadline/priority/tag/effort controls at capture time,</p></li>
+<li><p>effort controls and richer templates at capture time,</p></li>
 <li><p>an acceptance path where captured work appears in agenda and the resulting <code>.org2</code> text remains clean.</p></li>
 </ul>
 <p>Meeting promotion, knowledge browsing, and packaging can proceed in parallel as long as they preserve shared write semantics: meeting promotion should create ordinary TODOs/notes, the knowledge browser should reuse IDs/backlinks rather than private graph state, and packaging should verify the same CLI/parser artifacts the app actually calls.</p>

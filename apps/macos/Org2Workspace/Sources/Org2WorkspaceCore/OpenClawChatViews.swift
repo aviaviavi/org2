@@ -186,12 +186,14 @@ private struct OpenClawChangeDeltaView: View {
 
 struct OpenClawComposerView: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @State private var localDraft = ""
+  @State private var draftSyncTask: Task<Void, Never>?
   let focusOnAppear: Bool
   let compact: Bool
 
   var body: some View {
     VStack(alignment: .trailing, spacing: 8) {
-      let composerHeight = OpenClawComposerSizing.height(for: store.openClawDraft, compact: compact)
+      let composerHeight = OpenClawComposerSizing.height(for: localDraft, compact: compact)
       ZStack(alignment: .topLeading) {
         RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
           .fill(WorkspaceDesign.surfaceBackground)
@@ -200,7 +202,7 @@ struct OpenClawComposerView: View {
               .stroke(canSend ? Color.accentColor.opacity(0.26) : WorkspaceDesign.hairline)
           )
 
-        if store.openClawDraft.isEmpty {
+        if localDraft.isEmpty {
           Text("Message OpenClaw")
             .font(.body)
             .foregroundStyle(.tertiary)
@@ -209,7 +211,7 @@ struct OpenClawComposerView: View {
         }
 
         OpenClawComposerTextView(
-          text: $store.openClawDraft,
+          text: $localDraft,
           focusOnAppear: focusOnAppear,
           onReturn: handleReturn
         )
@@ -281,21 +283,58 @@ struct OpenClawComposerView: View {
         .disabled(!canSend)
       }
     }
+    .onAppear {
+      localDraft = store.openClawDraft
+    }
+    .onDisappear {
+      flushDraftToStore()
+    }
+    .onChange(of: localDraft) {
+      scheduleDraftSync()
+    }
+    .onChange(of: store.openClawDraft) { _, newValue in
+      guard newValue != localDraft else { return }
+      draftSyncTask?.cancel()
+      localDraft = newValue
+    }
   }
 
   private var canSend: Bool {
-    !store.openClawDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    !localDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
   private func sendIfPossible() -> Bool {
     guard canSend else { return false }
-    Task { await store.sendOpenClawMessage() }
+    let text = localDraft
+    draftSyncTask?.cancel()
+    localDraft = ""
+    store.openClawDraft = ""
+    Task { await store.sendOpenClawMessage(text: text) }
     return true
   }
 
   private func handleReturn() -> Bool {
     _ = sendIfPossible()
     return true
+  }
+
+  private func scheduleDraftSync() {
+    draftSyncTask?.cancel()
+    let draft = localDraft
+    draftSyncTask = Task { @MainActor in
+      try? await Task.sleep(nanoseconds: 180_000_000)
+      guard !Task.isCancelled else { return }
+      if store.openClawDraft != draft {
+        store.openClawDraft = draft
+      }
+    }
+  }
+
+  private func flushDraftToStore() {
+    draftSyncTask?.cancel()
+    if store.openClawDraft != localDraft {
+      store.openClawDraft = localDraft
+    }
   }
 }
 

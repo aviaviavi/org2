@@ -90,6 +90,7 @@ struct OrgRenderedEntryView: View, Equatable {
     )
     let visibleRange = visibleWindow.range
     let visibleBlocks = displayBlocks[visibleWindow.range]
+    let visibleRows = visibleBlocks.filter(OrgRenderedBlockDisplayPolicy.isVisible)
     let allowsHoverChrome = Self.allowsHoverChrome(blockCount: displayBlocks.count)
     let moveAvailabilitySignature = OrgRenderedEntryMoveAvailability.signature(
       blocksSignature: "\(blocksRenderSignature):folds:\(foldedBlockIDs.sorted().joined(separator: ","))",
@@ -109,24 +110,14 @@ struct OrgRenderedEntryView: View, Equatable {
         )
       }
 
-      ForEach(visibleBlocks.filter(OrgRenderedBlockDisplayPolicy.isVisible)) { block in
-        OrgRenderedEntryRow(
-          block: block,
-          isSourceEditable: isSourceEditable,
-          isSelected: selectedBlockID == block.id,
-          isEditing: editingBlockID == block.id,
-          isFoldable: OrgRenderedFoldTree.isFoldable(block, in: blocks),
-          isFolded: foldedBlockIDs.contains(block.id),
-          canMoveUp: moveAvailabilityValues[block.id]?.up == true,
-          canMoveDown: moveAvailabilityValues[block.id]?.down == true,
+      ForEach(visibleRows) { block in
+        renderedRow(
+          for: block,
           sourceFile: sourceFile,
-          corpusRoot: corpusRoot,
+          isSourceEditable: isSourceEditable,
           allowsHoverChrome: allowsHoverChrome,
-          searchHighlightQuery: searchHighlightQuery,
-          actions: actions(for: block),
-          inlineActions: inlineActions(for: block, isSourceEditable: isSourceEditable)
+          moveAvailabilityValues: moveAvailabilityValues
         )
-        .equatable()
       }
 
       if visibleWindow.hasNext {
@@ -158,6 +149,33 @@ struct OrgRenderedEntryView: View, Equatable {
     .onChange(of: moveAvailabilitySignature) { _, newSignature in
       refreshMoveAvailabilityIfNeeded(signature: newSignature, source: source, visibleRange: visibleRange)
     }
+  }
+
+  private func renderedRow(
+    for block: OrgEditableBlock,
+    sourceFile: String?,
+    isSourceEditable: Bool,
+    allowsHoverChrome: Bool,
+    moveAvailabilityValues: [OrgEditableBlock.ID: OrgRenderedEntryBlockMoveAvailability]
+  ) -> some View {
+    OrgRenderedEntryRow(
+      block: block,
+      isSourceEditable: isSourceEditable,
+      isSelected: selectedBlockID == block.id,
+      isEditing: editingBlockID == block.id,
+      isFoldable: OrgRenderedFoldTree.isFoldable(block, in: blocks),
+      isFolded: foldedBlockIDs.contains(block.id),
+      canMoveUp: moveAvailabilityValues[block.id]?.up == true,
+      canMoveDown: moveAvailabilityValues[block.id]?.down == true,
+      sourceFile: sourceFile,
+      corpusRoot: corpusRoot,
+      allowsHoverChrome: allowsHoverChrome,
+      searchHighlightQuery: searchHighlightQuery,
+      actions: actions(for: block),
+      inlineActions: inlineActions(for: block, isSourceEditable: isSourceEditable)
+    )
+    .equatable()
+    .id(block.id)
   }
 
   private func resetRenderedBlockLimitIfNeeded(resetKey: String) {
@@ -896,9 +914,9 @@ enum OrgRenderedBlockDisplayPolicy {
 
   static func showsRowChrome(for block: OrgEditableBlock) -> Bool {
     switch block.rendered {
-    case .blank, .properties:
+    case .blank:
       return false
-    case .heading, .planning, .quote, .source, .table, .horizontalRule, .listItem, .paragraph, .keyword:
+    case .heading, .planning, .properties, .quote, .source, .table, .horizontalRule, .listItem, .paragraph, .keyword:
       return true
     }
   }

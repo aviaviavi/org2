@@ -34,7 +34,7 @@ The compiler core must not require model credentials, provider SDKs, hosted serv
 The AI layer is optional orchestration around compiler outputs. It owns:
 
 - loading an AI job manifest or command-line task
-- selecting source files, headings, query results, graph nodes, or compiled corpus slices
+- selecting source files, headings, query results, graph nodes, or compiled corpus outputs
 - building structured prompt/context payloads with citations
 - invoking a configured provider adapter by symbolic name
 - validating model output shape when a workflow expects JSON or Org2 sections
@@ -85,7 +85,7 @@ org2 ai suggest-links --dir notes --recursive --out views/link-suggestions.org2
 org2 ai validate-job --job jobs/weekly-summary.org2-ai.json
 #+end_src
 
-Implemented slices so far are provider-free manifest validation, reviewable draft artifact writing/promotion, AI-assisted link/entity suggestion reports using the deterministic mock adapter, and the provider-agnostic adapter boundary; see [[file:ai-job-manifests.org][AI job manifests]], [[file:ai-draft-artifacts.org][AI draft artifacts]], [[file:ai-adapters.org][AI adapter interface]], =spec/v0/ai-job-manifest.schema.json=, and =src/aiAdapter.ts=.
+Implemented pieces so far are provider-free manifest validation, reviewable draft artifact writing/promotion, AI-assisted link/entity suggestion reports using the deterministic mock adapter, and the provider-agnostic adapter boundary; see [[file:ai-job-manifests.org][AI job manifests]], [[file:ai-draft-artifacts.org][AI draft artifacts]], [[file:ai-adapters.org][AI adapter interface]], =spec/v0/ai-job-manifest.schema.json=, and =src/aiAdapter.ts=.
 
 Command responsibilities:
 
@@ -162,4 +162,4 @@ This design sets the boundary. Follow-up issues can implement it incrementally:
 - meeting/transcript summarization
 - link/entity suggestion reports
 
-Each slice should remain useful without forcing every Org2 user to configure an AI provider.
+Each feature should remain useful without forcing every Org2 user to configure an AI provider.
