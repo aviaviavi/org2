@@ -2324,6 +2324,61 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.openClawDraft.contains("Deterministic org2 context pack"))
   }
 
+  func testRelatedBacklinkNodesFilterGenericStructuralHeadingsAndKeepEvidence() {
+    let backlinks = [
+      BacklinkItem(
+        srcId: "summary-id",
+        srcTitle: "Summary",
+        file: "/corpus/meetings/a.org2",
+        line: 2,
+        context: "Summary mentions [[id:scarf][Scarf]]."
+      ),
+      BacklinkItem(
+        srcId: "raw-id",
+        srcTitle: "Raw transcript",
+        file: "/corpus/meetings/a.org2",
+        line: 8,
+        context: "Raw transcript mentions Scarf."
+      ),
+      BacklinkItem(
+        srcId: "pilot-id",
+        srcTitle: "Pilot relaunch details",
+        file: "/corpus/projects/pilot.org2",
+        line: 10,
+        context: "Scarf pilot relaunch should include weekly usage notes."
+      ),
+      BacklinkItem(
+        srcId: "pilot-id",
+        srcTitle: "Pilot relaunch details",
+        file: "/corpus/meetings/b.org2",
+        line: 4,
+        context: "Discussed Scarf data infrastructure during relaunch planning."
+      ),
+      BacklinkItem(
+        srcId: "todo-id",
+        srcTitle: "TODO Make org2 answer relationship questions like Scarf advisors",
+        file: "/corpus/tasks.org2",
+        line: 20,
+        context: "Use Scarf advisors as a target workflow."
+      )
+    ]
+
+    let related = WorkspaceStore.relatedBacklinkNodes(from: backlinks) { file in
+      file.replacingOccurrences(of: "/corpus/", with: "")
+    }
+
+    XCTAssertEqual(related.map(\.title), [
+      "Pilot relaunch details",
+      "TODO Make org2 answer relationship questions like Scarf advisors"
+    ])
+    XCTAssertEqual(related.first?.referenceCount, 2)
+    XCTAssertEqual(related.first?.fileCount, 2)
+    XCTAssertEqual(related.first?.primaryPath, "meetings/b.org2:5")
+    XCTAssertEqual(related.first?.examples.count, 2)
+    XCTAssertTrue(WorkspaceStore.isGenericRelatedBacklinkTitle("Details"))
+    XCTAssertFalse(WorkspaceStore.isGenericRelatedBacklinkTitle("Pilot relaunch details"))
+  }
+
   @MainActor
   func testBriefCurrentNodeOpensCachedArtifact() async throws {
     let root = FileManager.default.temporaryDirectory
