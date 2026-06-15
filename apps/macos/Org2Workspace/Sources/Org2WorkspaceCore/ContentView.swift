@@ -2116,148 +2116,7 @@ private struct DetailHeader: View {
         }
       }
 
-      HStack(spacing: 8) {
-        Button {
-          store.navigateBackInDetail()
-        } label: {
-          Label("Back", systemImage: "chevron.left")
-        }
-        .disabled(!store.canNavigateBackInDetail)
-
-        DetailPaneControlGroup()
-
-        Divider()
-          .frame(height: 18)
-
-        Button {
-          store.open(location)
-        } label: {
-          Label("Open Source", systemImage: "arrow.up.forward.square")
-        }
-
-        Button {
-          store.revealSelectedLocation()
-        } label: {
-          Label("Reveal", systemImage: "folder")
-        }
-
-        Button {
-          Task { await store.linkifyCurrentFile() }
-        } label: {
-          Label("Linkify", systemImage: "link.badge.plus")
-        }
-        .disabled(!store.canLinkifyCurrentFile)
-        .help("Run org2 roam linkify on this file")
-
-        Button {
-          store.askOpenClawAboutCurrentSelection()
-        } label: {
-          Label("Ask AI", systemImage: "sparkles")
-        }
-        .disabled(!store.canAskOpenClawAboutCurrentSelection || store.isLoadingEntrySource)
-        .help("Ask OpenClaw about this page or entry")
-
-        Button {
-          store.toggleNodeContextPane()
-        } label: {
-          Label("Context", systemImage: "sidebar.right")
-        }
-        .help("Show or hide node context")
-
-        Button {
-          Task { await store.briefCurrentNodeInOpenClaw() }
-        } label: {
-          if store.isBuildingNodeBrief {
-            Label("Brief", systemImage: "hourglass")
-          } else {
-            Label("Brief", systemImage: "text.bubble")
-          }
-        }
-        .disabled(!store.canBriefCurrentNodeInOpenClaw)
-        .help("Generate or open the cached node brief")
-
-        if store.hasRenderedSearchHighlight {
-          Button {
-            store.clearRenderedSearchHighlight()
-          } label: {
-            Label("Clear Highlight", systemImage: "xmark.circle")
-          }
-          .help("Clear search match highlights")
-        }
-
-        Picker("Scope", selection: $store.selectedEntrySourceMode) {
-          ForEach(EntrySourceMode.allCases) { mode in
-            Text(mode.title).tag(mode)
-          }
-        }
-        .pickerStyle(.segmented)
-        .frame(width: 150)
-        .onChange(of: store.selectedEntrySourceMode) {
-          Task { await store.reloadSelectedEntrySource() }
-        }
-
-        if store.hasActiveEdit {
-          Button {
-            Task { await store.saveActiveEdit() }
-          } label: {
-            Label("Save", systemImage: "checkmark")
-          }
-          .disabled(!store.canSaveActiveEdit)
-
-          Button {
-            store.cancelActiveEdit()
-          } label: {
-            Label("Cancel", systemImage: "xmark")
-          }
-        } else {
-          Button {
-            store.beginEditingCurrentScope()
-          } label: {
-            Label("Edit", systemImage: "square.and.pencil")
-          }
-          .disabled(store.selectedEntrySource?.isEditable != true || store.isLoadingEntrySource)
-        }
-
-        if case .agenda = location {
-          Button {
-            Task { await store.applyAgentHandoffShortcut() }
-          } label: {
-            Label("Agent", systemImage: "person.crop.circle.badge.checkmark")
-          }
-
-          Menu {
-            Button("A") {
-              Task { await store.applyPriorityShortcut("A") }
-            }
-            Button("B") {
-              Task { await store.applyPriorityShortcut("B") }
-            }
-            Button("C") {
-              Task { await store.applyPriorityShortcut("C") }
-            }
-            Divider()
-            Button("Clear") {
-              Task { await store.applyPriorityShortcut(nil) }
-            }
-          } label: {
-            Label("Priority", systemImage: "flag")
-          }
-
-          Button {
-            store.promptAndApplyPropertyShortcut()
-          } label: {
-            Label("Property", systemImage: "tag")
-          }
-        }
-
-        if case .meeting = location {
-          Button {
-            store.askOpenClawAboutSelectedMeeting()
-          } label: {
-            Label("Ask", systemImage: "sparkles")
-          }
-        }
-      }
+      detailActionBar
 
       if store.isPageSearchPresented {
         HStack(spacing: 8) {
@@ -2304,6 +2163,193 @@ private struct DetailHeader: View {
       return "doc.text"
     case .meeting:
       return "waveform.and.mic"
+    }
+  }
+
+  private var detailActionBar: some View {
+    HStack(spacing: 7) {
+      Button {
+        store.navigateBackInDetail()
+      } label: {
+        Label("Back", systemImage: "chevron.left")
+      }
+      .labelStyle(.iconOnly)
+      .disabled(!store.canNavigateBackInDetail)
+      .help("Back")
+
+      DetailPaneControlGroup()
+
+      Divider()
+        .frame(height: 18)
+
+      sourceMenu
+      intelligenceControls
+
+      if store.hasRenderedSearchHighlight {
+        Button {
+          store.clearRenderedSearchHighlight()
+        } label: {
+          Label("Clear Highlight", systemImage: "xmark.circle")
+        }
+        .labelStyle(.iconOnly)
+        .help("Clear search match highlights")
+      }
+
+      Spacer(minLength: 8)
+
+      scopePicker
+      editControls
+      organizeMenu
+    }
+    .controlSize(.small)
+  }
+
+  private var sourceMenu: some View {
+    Menu {
+      Button {
+        store.open(location)
+      } label: {
+        Label("Open Source", systemImage: "arrow.up.forward.square")
+      }
+
+      Button {
+        store.revealSelectedLocation()
+      } label: {
+        Label("Reveal in Finder", systemImage: "folder")
+      }
+
+      Divider()
+
+      Button {
+        Task { await store.linkifyCurrentFile() }
+      } label: {
+        Label("Linkify File", systemImage: "link.badge.plus")
+      }
+      .disabled(!store.canLinkifyCurrentFile)
+    } label: {
+      Label("Source", systemImage: "doc.text.magnifyingglass")
+    }
+    .help("Open, reveal, or linkify this file")
+  }
+
+  private var intelligenceControls: some View {
+    HStack(spacing: 6) {
+      Button {
+        store.askOpenClawAboutCurrentSelection()
+      } label: {
+        Label("Ask AI", systemImage: "sparkles")
+      }
+      .disabled(!store.canAskOpenClawAboutCurrentSelection || store.isLoadingEntrySource)
+      .help("Ask OpenClaw about this page or entry")
+
+      Button {
+        store.toggleNodeContextPane()
+      } label: {
+        Label("Context", systemImage: "sidebar.right")
+      }
+      .help("Show or hide node context")
+
+      Button {
+        Task { await store.briefCurrentNodeInOpenClaw() }
+      } label: {
+        if store.isBuildingNodeBrief {
+          Label("Brief", systemImage: "hourglass")
+        } else {
+          Label("Brief", systemImage: "text.bubble")
+        }
+      }
+      .disabled(!store.canBriefCurrentNodeInOpenClaw)
+      .help("Generate or open the cached node brief")
+
+      if case .meeting = location {
+        Button {
+          store.askOpenClawAboutSelectedMeeting()
+        } label: {
+          Label("Meeting", systemImage: "waveform.and.mic")
+        }
+        .help("Ask OpenClaw about this meeting")
+      }
+    }
+  }
+
+  private var scopePicker: some View {
+    Picker("Scope", selection: $store.selectedEntrySourceMode) {
+      ForEach(EntrySourceMode.allCases) { mode in
+        Text(mode.title).tag(mode)
+      }
+    }
+    .pickerStyle(.segmented)
+    .frame(width: 136)
+    .onChange(of: store.selectedEntrySourceMode) {
+      Task { await store.reloadSelectedEntrySource() }
+    }
+    .help("Render entry or full page scope")
+  }
+
+  @ViewBuilder
+  private var editControls: some View {
+    if store.hasActiveEdit {
+      HStack(spacing: 6) {
+        Button {
+          Task { await store.saveActiveEdit() }
+        } label: {
+          Label("Save", systemImage: "checkmark")
+        }
+        .disabled(!store.canSaveActiveEdit)
+
+        Button {
+          store.cancelActiveEdit()
+        } label: {
+          Label("Cancel", systemImage: "xmark")
+        }
+      }
+    } else {
+      Button {
+        store.beginEditingCurrentScope()
+      } label: {
+        Label("Edit", systemImage: "square.and.pencil")
+      }
+      .disabled(store.selectedEntrySource?.isEditable != true || store.isLoadingEntrySource)
+    }
+  }
+
+  @ViewBuilder
+  private var organizeMenu: some View {
+    if case .agenda = location {
+      Menu {
+        Button {
+          Task { await store.applyAgentHandoffShortcut() }
+        } label: {
+          Label("Pass to Agent", systemImage: "person.crop.circle.badge.checkmark")
+        }
+
+        Menu {
+          Button("A") {
+            Task { await store.applyPriorityShortcut("A") }
+          }
+          Button("B") {
+            Task { await store.applyPriorityShortcut("B") }
+          }
+          Button("C") {
+            Task { await store.applyPriorityShortcut("C") }
+          }
+          Divider()
+          Button("Clear") {
+            Task { await store.applyPriorityShortcut(nil) }
+          }
+        } label: {
+          Label("Priority", systemImage: "flag")
+        }
+
+        Button {
+          store.promptAndApplyPropertyShortcut()
+        } label: {
+          Label("Set Property", systemImage: "tag")
+        }
+      } label: {
+        Label("Organize", systemImage: "ellipsis.circle")
+      }
+      .help("Agent handoff, priority, and properties")
     }
   }
 }
