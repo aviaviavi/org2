@@ -2093,6 +2093,14 @@ private struct DetailHeader: View {
         }
 
         Button {
+          Task { await store.linkifyCurrentFile() }
+        } label: {
+          Label("Linkify", systemImage: "link.badge.plus")
+        }
+        .disabled(!store.canLinkifyCurrentFile)
+        .help("Run org2 roam linkify on this file")
+
+        Button {
           store.askOpenClawAboutCurrentSelection()
         } label: {
           Label("Ask AI", systemImage: "sparkles")

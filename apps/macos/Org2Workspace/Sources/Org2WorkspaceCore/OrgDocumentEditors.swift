@@ -1464,7 +1464,12 @@ private struct ParagraphBlockEditor: View {
       }
 
       if hasSelection {
-        ParagraphInlineFormatBar(text: $draftText, selectedRange: $selectedRange)
+        ParagraphInlineFormatBar(
+          text: $draftText,
+          selectedRange: $selectedRange,
+          insertBacklink: insertBacklinkForSelection,
+          createNodeFromSelection: createNodeFromSelection
+        )
           .opacity(InlineEditorChrome.accessoryOpacity(hasSelection))
           .allowsHitTesting(InlineEditorChrome.allowsHitTesting(hasSelection))
           .accessibilityHidden(!hasSelection)
@@ -1618,6 +1623,37 @@ private struct ParagraphBlockEditor: View {
     autosaveTask = nil
     store.updateEditingBlockDraft(block, draft: currentParagraphText)
     Task { await store.convertEditingBlock(block, to: kind, draftText: currentParagraphText) }
+  }
+
+  private func insertBacklinkForSelection() {
+    guard let edit = WorkspaceStore.backlinkReplacementForSelectedText(in: currentParagraphText, range: selectedRange) else {
+      store.statusText = "Select text first"
+      return
+    }
+    draftText = edit.text
+    selectedRange = edit.selectedRange
+    liveText.update(edit.text)
+    presentationText = edit.text
+    reserveEditorLines(for: edit.text)
+    store.updateEditingBlockDraft(block, draft: edit.text)
+    scheduleParagraphAutosave()
+  }
+
+  private func createNodeFromSelection() {
+    let text = currentParagraphText
+    let range = selectedRange
+    Task {
+      guard let edit = await store.createKnowledgeNodeFromSelection(text: text, range: range) else {
+        return
+      }
+      draftText = edit.text
+      selectedRange = edit.selectedRange
+      liveText.update(edit.text)
+      presentationText = edit.text
+      reserveEditorLines(for: edit.text)
+      store.updateEditingBlockDraft(block, draft: edit.text)
+      scheduleParagraphAutosave()
+    }
   }
 
   private func scheduleParagraphAutosave() {
