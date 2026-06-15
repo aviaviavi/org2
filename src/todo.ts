@@ -187,6 +187,22 @@ export type UpdateTodoOptions = {
   logbook?: boolean;
 };
 
+export type AssignTodoResult = {
+  filePath: string;
+  headingLineNumber: number; // 1-based
+  property: "ASSIGNEE";
+  oldAssignee?: string;
+  newAssignee: string;
+  changed: boolean;
+  text: string;
+};
+
+export type AssignTodoOptions = {
+  filePath: string;
+  lineNumber: number; // 1-based cursor line
+  assignee: string;
+};
+
 export function computeToggleStatus(current: TodoStatus): TodoStatus {
   // Cycle: todo -> in_progress -> done -> todo
   if (current === "todo") return "in_progress";
@@ -303,6 +319,66 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
 export function updateTodoInFile(opts: UpdateTodoOptions & { apply: boolean }): UpdateTodoResult {
   const raw = fs.readFileSync(opts.filePath, "utf8");
   const res = updateTodoInText(raw, opts);
+  if (opts.apply) {
+    fs.writeFileSync(opts.filePath, res.text, "utf8");
+  }
+  return res;
+}
+
+function findHeadingAtOrAbove(lines: string[], lineNumber: number): number {
+  const cursorIndex = Math.max(0, Math.min(lines.length - 1, lineNumber - 1));
+  for (let i = cursorIndex; i >= 0; i--) {
+    if (isHeadlineLine(lines[i] ?? "")) return i;
+  }
+  throw new Error(`No headline found at or above line ${lineNumber}`);
+}
+
+function propertyValue(lines: string[], propsStart: number, propsEnd: number, key: string): string | undefined {
+  const keyPrefix = `:${key}:`;
+  for (let i = propsStart + 1; i < propsEnd; i++) {
+    const line = lines[i] ?? "";
+    if (!line.toUpperCase().startsWith(keyPrefix.toUpperCase())) continue;
+    return line.slice(keyPrefix.length).trim();
+  }
+  return undefined;
+}
+
+export function assignTodoInText(input: string, opts: AssignTodoOptions): AssignTodoResult {
+  const assignee = opts.assignee.trim();
+  if (!assignee) throw new Error("Assignee cannot be empty");
+
+  const lines = input.split("\n");
+  const headingIndex = findHeadingAtOrAbove(lines, opts.lineNumber);
+  let endExclusive = computeSubtreeRange(lines, headingIndex).endExclusive;
+  const afterPlanning = findPlanningBlockEnd(lines, headingIndex, endExclusive);
+
+  let props: { start: number; end: number; terminated: boolean } | null = findDrawer(lines, afterPlanning, endExclusive, "PROPERTIES");
+  if (!props || !props.terminated) {
+    const created = ensurePropertyDrawer(lines, afterPlanning);
+    props = { start: created.start, end: created.end, terminated: true };
+    endExclusive = computeSubtreeRange(lines, headingIndex).endExclusive;
+  }
+
+  const oldAssignee = propertyValue(lines, props.start, props.end, "ASSIGNEE");
+  const changed = oldAssignee !== assignee;
+  if (changed) {
+    upsertProperty(lines, props.start, props.end, "ASSIGNEE", assignee);
+  }
+
+  return {
+    filePath: opts.filePath,
+    headingLineNumber: headingIndex + 1,
+    property: "ASSIGNEE",
+    ...(oldAssignee ? { oldAssignee } : {}),
+    newAssignee: assignee,
+    changed,
+    text: lines.join("\n"),
+  };
+}
+
+export function assignTodoInFile(opts: AssignTodoOptions & { apply: boolean }): AssignTodoResult {
+  const raw = fs.readFileSync(opts.filePath, "utf8");
+  const res = assignTodoInText(raw, opts);
   if (opts.apply) {
     fs.writeFileSync(opts.filePath, res.text, "utf8");
   }

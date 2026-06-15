@@ -25,7 +25,7 @@ test('power keymap includes agenda status-filter, refile, and priority shortcuts
   assert.equal(hasPowerBinding(keybindings, 'ctrl+; a s', 'org2.pickAgendaStatusFilter'), true);
   assert.equal(hasPowerBinding(keybindings, 'ctrl+; x r', 'org2.refileSubtree'), true);
   assert.equal(hasPowerBinding(keybindings, 'ctrl+; t p', 'org2.setPriority'), true);
-  assert.equal(hasPowerBinding(keybindings, 'ctrl+; t a', 'org2.markDoneAndHandoff'), true);
+  assert.equal(hasPowerBinding(keybindings, 'ctrl+; t a', 'org2.assignTodoToAgent'), true);
 });
 
 test('power keymap includes formatter check/preview/apply current-file shortcuts', () => {
@@ -57,7 +57,7 @@ test('insert list item command is contributed and registered in extension runtim
   );
 });
 
-test('agent handoff command is contributed and registered in extension runtime', () => {
+test('agent handoff command assigns without closing todo', () => {
   const keybindings = loadPackageKeybindings();
   const packagePath = path.join(__dirname, '..', 'package.json');
   const extensionPath = path.join(__dirname, '..', 'extension.js');
@@ -65,21 +65,23 @@ test('agent handoff command is contributed and registered in extension runtime',
   const extensionSource = fs.readFileSync(extensionPath, 'utf8');
 
   assert.equal(
-    pkg.activationEvents?.includes('onCommand:org2.markDoneAndHandoff') ?? false,
+    pkg.activationEvents?.includes('onCommand:org2.assignTodoToAgent') ?? false,
     true
   );
   assert.equal(
-    pkg.contributes?.commands?.some((command) => command.command === 'org2.markDoneAndHandoff') ?? false,
+    pkg.contributes?.commands?.some((command) => command.command === 'org2.assignTodoToAgent') ?? false,
     true
   );
   assert.equal(
-    keybindings.some((binding) => binding.command === 'org2.markDoneAndHandoff'),
+    keybindings.some((binding) => binding.command === 'org2.assignTodoToAgent'),
     true
   );
   assert.equal(
-    extensionSource.includes("registerCommand('org2.markDoneAndHandoff'"),
+    extensionSource.includes("registerCommand('org2.assignTodoToAgent'"),
     true
   );
+  assert.equal(extensionSource.includes("runTodoCli('assign', 'OpenClaw'"), true);
+  assert.equal(extensionSource.includes("runTodoCli('set', 'done', target"), false);
   assert.equal(extensionSource.includes("STATUS: 'ready-for-agent'"), true);
   assert.equal(extensionSource.includes('ORG2_AGENT_HANDOFF:'), false);
   assert.equal(extensionSource.includes('ORG2_AGENT_HANDOFF_AT:'), true);
