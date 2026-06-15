@@ -168,7 +168,17 @@ public struct InlineSelectionReplacement: Equatable, Sendable {
 public final class WorkspaceStore: ObservableObject {
   nonisolated public static let meetingCaptureSourceSummary = "Captures microphone and system/call audio when Screen Recording permission is granted."
 
-  @Published public var selectedSurface: WorkspaceSurface = .agenda
+  @Published public var selectedSurface: WorkspaceSurface = .agenda {
+    didSet {
+      guard oldValue != selectedSurface else { return }
+      isWorkspaceSurfacePaneClosed = false
+      expandedWorkspaceSurface = nil
+    }
+  }
+  @Published public var expandedWorkspaceSurface: WorkspaceSurface?
+  @Published public var isWorkspaceSurfacePaneClosed = false
+  @Published public var isWorkspaceDetailPaneClosed = false
+  @Published public var isWorkspaceDetailPaneExpanded = false
   @Published public var agendaMode: AgendaMode = .focus {
     didSet {
       defaults.set(agendaMode.rawValue, forKey: agendaModeKey)
@@ -1038,6 +1048,8 @@ public final class WorkspaceStore: ObservableObject {
     mode: EntrySourceMode?,
     recordsHistory: Bool
   ) {
+    isWorkspaceDetailPaneClosed = false
+    isWorkspaceDetailPaneExpanded = false
     if recordsHistory, let selectedLocation, selectedLocation != location {
       detailNavigationBackStack.append(DetailNavigationSnapshot(
         location: selectedLocation,
@@ -4463,9 +4475,101 @@ public final class WorkspaceStore: ObservableObject {
     return handleAgendaKeyDown(event)
   }
 
+  public func makeSurfacePrimary(_ surface: WorkspaceSurface) {
+    selectedSurface = surface
+    expandedWorkspaceSurface = nil
+    isWorkspaceSurfacePaneClosed = false
+    if surface == .openClaw {
+      isOpenClawAssistantPresented = false
+    }
+    statusText = "\(surface.title) is primary"
+  }
+
+  public func makeSelectedSurfacePrimary() {
+    makeSurfacePrimary(selectedSurface)
+  }
+
+  public func expandSurface(_ surface: WorkspaceSurface) {
+    selectedSurface = surface
+    expandedWorkspaceSurface = surface
+    isWorkspaceSurfacePaneClosed = false
+    if surface == .openClaw {
+      isOpenClawAssistantPresented = false
+    }
+    statusText = "\(surface.title) expanded"
+  }
+
+  public func toggleExpandedSurface(_ surface: WorkspaceSurface) {
+    if expandedWorkspaceSurface == surface {
+      expandedWorkspaceSurface = nil
+      isWorkspaceSurfacePaneClosed = false
+      statusText = "\(surface.title) restored"
+    } else {
+      expandSurface(surface)
+    }
+  }
+
+  public func toggleSelectedSurfaceExpansion() {
+    toggleExpandedSurface(selectedSurface)
+  }
+
+  public func closeSurfacePane(_ surface: WorkspaceSurface) {
+    if expandedWorkspaceSurface == surface {
+      expandedWorkspaceSurface = nil
+    }
+    if selectedSurface == surface {
+      isWorkspaceSurfacePaneClosed = true
+    }
+    if surface == .openClaw {
+      isOpenClawAssistantPresented = false
+    }
+    statusText = "\(surface.title) closed"
+  }
+
+  public func closeSelectedSurfacePane() {
+    closeSurfacePane(selectedSurface)
+  }
+
+  public func makeDetailPanePrimary() {
+    guard selectedLocation != nil || selectedEntrySource != nil else {
+      statusText = "Open a file first"
+      return
+    }
+    expandedWorkspaceSurface = nil
+    isWorkspaceSurfacePaneClosed = true
+    isWorkspaceDetailPaneClosed = false
+    isWorkspaceDetailPaneExpanded = false
+    statusText = "Document is primary"
+  }
+
+  public func toggleDetailPaneExpansion() {
+    guard selectedLocation != nil || selectedEntrySource != nil else {
+      statusText = "Open a file first"
+      return
+    }
+    expandedWorkspaceSurface = nil
+    isWorkspaceDetailPaneClosed = false
+    if isWorkspaceDetailPaneExpanded || isWorkspaceSurfacePaneClosed {
+      isWorkspaceDetailPaneExpanded = false
+      isWorkspaceSurfacePaneClosed = false
+      statusText = "Document restored"
+    } else {
+      isWorkspaceDetailPaneExpanded = true
+      isWorkspaceSurfacePaneClosed = true
+      statusText = "Document expanded"
+    }
+  }
+
+  public func closeDetailPane() {
+    isWorkspaceDetailPaneClosed = true
+    isWorkspaceDetailPaneExpanded = false
+    isWorkspaceSurfacePaneClosed = false
+    statusText = "Document closed"
+  }
+
   public func handleGlobalKeyDown(_ event: NSEvent) -> Bool {
     let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
-    guard modifiers == [.command] || modifiers == [.command, .shift] else {
+    guard modifiers == [.command] || modifiers == [.command, .shift] || modifiers == [.command, .option] else {
       return false
     }
 
@@ -4506,6 +4610,20 @@ public final class WorkspaceStore: ObservableObject {
         isKeyboardShortcutsPresented = true
       case "z":
         performUndoCommand()
+      default:
+        return false
+      }
+      return true
+    }
+
+    if modifiers == [.command, .option] {
+      switch key {
+      case "f":
+        toggleSelectedSurfaceExpansion()
+      case "p":
+        makeSelectedSurfacePrimary()
+      case "w":
+        closeSelectedSurfacePane()
       default:
         return false
       }

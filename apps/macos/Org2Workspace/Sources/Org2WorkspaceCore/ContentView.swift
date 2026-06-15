@@ -10,23 +10,8 @@ public struct ContentView: View {
     NavigationSplitView {
       SidebarView()
         .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 260)
-    } content: {
-      switch store.selectedSurface {
-      case .agenda:
-        AgendaView()
-      case .files:
-        FilesView()
-      case .search:
-        SearchView()
-      case .meetings:
-        MeetingsView()
-      case .openClaw:
-        OpenClawChatView()
-      case .agentSpace:
-        OpenClawThreadsView()
-      }
     } detail: {
-      WorkspaceDetailArea()
+      WorkspaceMainArea()
     }
     .toolbar {
       ToolbarItemGroup {
@@ -75,6 +60,51 @@ public struct ContentView: View {
   }
 }
 
+private struct WorkspaceMainArea: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    if let expanded = store.expandedWorkspaceSurface {
+      WorkspaceSurfaceView(surface: expanded)
+    } else if store.isWorkspaceDetailPaneExpanded {
+      WorkspaceDetailArea()
+    } else if store.isWorkspaceSurfacePaneClosed {
+      WorkspaceDetailArea()
+    } else if store.isWorkspaceDetailPaneClosed {
+      WorkspaceSurfaceView(surface: store.selectedSurface)
+    } else {
+      HSplitView {
+        WorkspaceSurfaceView(surface: store.selectedSurface)
+          .frame(minWidth: 300, idealWidth: 420)
+
+        WorkspaceDetailArea()
+          .frame(minWidth: 420)
+      }
+    }
+  }
+}
+
+private struct WorkspaceSurfaceView: View {
+  let surface: WorkspaceSurface
+
+  var body: some View {
+    switch surface {
+    case .agenda:
+      AgendaView()
+    case .files:
+      FilesView()
+    case .search:
+      SearchView()
+    case .meetings:
+      MeetingsView()
+    case .openClaw:
+      OpenClawChatView()
+    case .agentSpace:
+      OpenClawThreadsView()
+    }
+  }
+}
+
 private struct WorkspaceDetailArea: View {
   @EnvironmentObject private var store: WorkspaceStore
 
@@ -107,6 +137,10 @@ private struct SidebarView: View {
             KeyboardShortcutBadge(text: surface.commandShortcutTitle)
           }
           .tag(surface)
+          .contentShape(Rectangle())
+          .onTapGesture {
+            store.makeSurfacePrimary(surface)
+          }
           .help("\(surface.title) (\(surface.commandShortcutTitle))")
         }
       }
@@ -162,7 +196,7 @@ private struct FilesView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      HeaderBar(title: "Files", subtitle: store.corpusRoot?.path ?? "Corpus files") {
+      HeaderBar(title: "Files", subtitle: store.corpusRoot?.path ?? "Corpus files", surface: .files) {
         if store.isScanningCorpusFiles {
           ProgressView()
             .controlSize(.small)
@@ -408,6 +442,9 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "⌘6", action: "Agent Space"),
             ShortcutHelpItem(keys: "⌘P / ⌘K", action: "Quick Open"),
             ShortcutHelpItem(keys: "⌘0", action: "Toggle OpenClaw side panel"),
+            ShortcutHelpItem(keys: "⌘⌥P", action: "Make current pane primary"),
+            ShortcutHelpItem(keys: "⌘⌥F", action: "Expand or restore current pane"),
+            ShortcutHelpItem(keys: "⌘⌥W", action: "Close current pane"),
             ShortcutHelpItem(keys: "⌘? / ⌘/", action: "Show shortcuts")
           ])
 
@@ -517,7 +554,7 @@ private struct AgendaView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      HeaderBar(title: "Agenda", subtitle: store.agenda.map { "\($0.range.start) to \($0.range.end)" } ?? "Agenda") {
+      HeaderBar(title: "Agenda", subtitle: store.agenda.map { "\($0.range.start) to \($0.range.end)" } ?? "Agenda", surface: .agenda) {
         if store.isLoadingAgenda {
           ProgressView()
             .controlSize(.small)
@@ -798,7 +835,7 @@ private struct SearchView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      HeaderBar(title: "Search", subtitle: store.searchMode.subtitle) {
+      HeaderBar(title: "Search", subtitle: store.searchMode.subtitle, surface: .search) {
         if store.isSearching {
           ProgressView()
             .controlSize(.small)
@@ -1010,7 +1047,7 @@ private struct MeetingsView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      HeaderBar(title: "Meetings", subtitle: "\(store.meetings.count) local meeting\(store.meetings.count == 1 ? "" : "s")") {
+      HeaderBar(title: "Meetings", subtitle: "\(store.meetings.count) local meeting\(store.meetings.count == 1 ? "" : "s")", surface: .meetings) {
         if store.isLoadingMeetings || store.isProcessingMeeting {
           ProgressView()
             .controlSize(.small)
@@ -1294,7 +1331,7 @@ private struct OpenClawChatView: View {
   private var header: some View {
     switch presentation {
     case .fullPage:
-      HeaderBar(title: "OpenClaw Chat", subtitle: store.openClawStatusText) {
+      HeaderBar(title: "OpenClaw Chat", subtitle: store.openClawStatusText, surface: .openClaw) {
         headerActions
       }
     case .assistantPanel:
@@ -1314,21 +1351,28 @@ private struct OpenClawChatView: View {
             .controlSize(.small)
         }
         Button {
-          store.selectedSurface = .openClaw
-          store.isOpenClawAssistantPresented = false
+          store.makeSurfacePrimary(.openClaw)
         } label: {
-          Label("Focus Chat", systemImage: "arrow.up.left.and.arrow.down.right")
+          Label("Make Primary", systemImage: "rectangle.split.2x1")
         }
         .labelStyle(.iconOnly)
-        .help("Focus OpenClaw Chat")
+        .help("Make OpenClaw Chat primary (⌘⌥P)")
 
         Button {
-          store.isOpenClawAssistantPresented = false
+          store.expandSurface(.openClaw)
+        } label: {
+          Label("Expand", systemImage: "arrow.up.left.and.arrow.down.right")
+        }
+        .labelStyle(.iconOnly)
+        .help("Expand OpenClaw Chat (⌘⌥F)")
+
+        Button {
+          store.closeSurfacePane(.openClaw)
         } label: {
           Label("Close", systemImage: "xmark")
         }
         .labelStyle(.iconOnly)
-        .help("Close OpenClaw panel")
+        .help("Close OpenClaw panel (⌘⌥W)")
       }
       .padding(.horizontal, 12)
       .padding(.vertical, 10)
@@ -1875,7 +1919,7 @@ private struct OpenClawThreadsView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      HeaderBar(title: "Agent Space", subtitle: "\(store.openClawThreads.count) local item\(store.openClawThreads.count == 1 ? "" : "s")") {
+      HeaderBar(title: "Agent Space", subtitle: "\(store.openClawThreads.count) local item\(store.openClawThreads.count == 1 ? "" : "s")", surface: .agentSpace) {
         if store.isLoadingOpenClawThreads {
           ProgressView()
             .controlSize(.small)
@@ -2079,6 +2123,11 @@ private struct DetailHeader: View {
           Label("Back", systemImage: "chevron.left")
         }
         .disabled(!store.canNavigateBackInDetail)
+
+        DetailPaneControlGroup()
+
+        Divider()
+          .frame(height: 18)
 
         Button {
           store.open(location)
@@ -2812,7 +2861,20 @@ private struct BacklinkRow: View {
 private struct HeaderBar<Trailing: View>: View {
   let title: String
   let subtitle: String
+  let surface: WorkspaceSurface?
   @ViewBuilder let trailing: Trailing
+
+  init(
+    title: String,
+    subtitle: String,
+    surface: WorkspaceSurface? = nil,
+    @ViewBuilder trailing: () -> Trailing
+  ) {
+    self.title = title
+    self.subtitle = subtitle
+    self.surface = surface
+    self.trailing = trailing()
+  }
 
   var body: some View {
     HStack(alignment: .center, spacing: 12) {
@@ -2827,15 +2889,97 @@ private struct HeaderBar<Trailing: View>: View {
       }
       Spacer(minLength: 0)
       trailing
-        .controlSize(.small)
-        .buttonStyle(WorkspaceActionButtonStyle())
+      if let surface {
+        Divider()
+          .frame(height: 18)
+        PaneControlGroup(surface: surface)
+      }
     }
+    .controlSize(.small)
+    .buttonStyle(WorkspaceActionButtonStyle())
     .padding(.horizontal, 18)
     .padding(.vertical, 14)
     .background(WorkspaceDesign.barBackground)
     .overlay(alignment: .bottom) {
       Divider()
     }
+  }
+}
+
+private struct PaneControlGroup: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let surface: WorkspaceSurface
+
+  var body: some View {
+    HStack(spacing: 6) {
+      Button {
+        store.makeSurfacePrimary(surface)
+      } label: {
+        Label("Make Primary", systemImage: "rectangle.split.2x1")
+      }
+      .labelStyle(.iconOnly)
+      .help("Make \(surface.title) primary (⌘⌥P)")
+
+      Button {
+        store.toggleExpandedSurface(surface)
+      } label: {
+        Label(
+          store.expandedWorkspaceSurface == surface ? "Restore" : "Expand",
+          systemImage: store.expandedWorkspaceSurface == surface
+            ? "arrow.down.right.and.arrow.up.left"
+            : "arrow.up.left.and.arrow.down.right"
+        )
+      }
+      .labelStyle(.iconOnly)
+      .help(store.expandedWorkspaceSurface == surface ? "Restore pane (⌘⌥F)" : "Expand pane (⌘⌥F)")
+
+      Button {
+        store.closeSurfacePane(surface)
+      } label: {
+        Label("Close", systemImage: "xmark")
+      }
+      .labelStyle(.iconOnly)
+      .help("Close \(surface.title) pane (⌘⌥W)")
+    }
+  }
+}
+
+private struct DetailPaneControlGroup: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    HStack(spacing: 6) {
+      Button {
+        store.makeDetailPanePrimary()
+      } label: {
+        Label("Make Document Primary", systemImage: "rectangle.split.2x1")
+      }
+      .labelStyle(.iconOnly)
+      .help("Make document primary")
+
+      Button {
+        store.toggleDetailPaneExpansion()
+      } label: {
+        Label(
+          store.isWorkspaceDetailPaneExpanded || store.isWorkspaceSurfacePaneClosed ? "Restore Document" : "Expand Document",
+          systemImage: store.isWorkspaceDetailPaneExpanded || store.isWorkspaceSurfacePaneClosed
+            ? "arrow.down.right.and.arrow.up.left"
+            : "arrow.up.left.and.arrow.down.right"
+        )
+      }
+      .labelStyle(.iconOnly)
+      .help(store.isWorkspaceDetailPaneExpanded || store.isWorkspaceSurfacePaneClosed ? "Restore document pane" : "Expand document pane")
+
+      Button {
+        store.closeDetailPane()
+      } label: {
+        Label("Close Document", systemImage: "xmark")
+      }
+      .labelStyle(.iconOnly)
+      .help("Close document pane")
+    }
+    .controlSize(.small)
+    .buttonStyle(WorkspaceActionButtonStyle())
   }
 }
 
@@ -2961,7 +3105,7 @@ enum WorkspaceKeyboardEventRouting {
 
   static func isCommandShortcut(_ event: NSEvent) -> Bool {
     let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
-    return modifiers == [.command] || modifiers == [.command, .shift]
+    return modifiers == [.command] || modifiers == [.command, .shift] || modifiers == [.command, .option]
   }
 }
 
