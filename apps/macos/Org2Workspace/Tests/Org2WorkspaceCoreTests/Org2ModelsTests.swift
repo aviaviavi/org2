@@ -5300,6 +5300,38 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(paragraphEmbedded.displayText, "inline images")
     XCTAssertEqual(paragraphEmbedded.attachments.first?.resolvedPath, image.standardizedFileURL.path)
 
+    let headingBlock = try XCTUnwrap(OrgEntryRenderer.parseEditable(
+      "** inline images [[file:assets/diagram.png][Image]]"
+    ).first)
+    guard case .heading(let heading) = headingBlock.rendered else {
+      return XCTFail("Expected heading")
+    }
+    let rawHeadingTitle = OrgRenderedLineDisplayCache.headingTitle(
+      rawText: headingBlock.rawText,
+      fallback: heading.title
+    )
+    let headingEmbedded = try XCTUnwrap(RenderedInlineMediaPresentation.headingTitle(
+      rawTitle: rawHeadingTitle,
+      sourceFile: note.path,
+      corpusRoot: root
+    ))
+    XCTAssertEqual(headingEmbedded.displayText, "inline images")
+    XCTAssertEqual(headingEmbedded.attachments.first?.displayName, "Image")
+    XCTAssertEqual(headingEmbedded.attachments.first?.resolvedPath, image.standardizedFileURL.path)
+
+    let remoteHeadingEmbedded = try XCTUnwrap(RenderedInlineMediaPresentation.headingTitle(
+      rawTitle: "inline images [[https://raw.githubusercontent.com/aviaviavi/org2/refs/heads/main/site/assets/favicon.png][Image]]",
+      sourceFile: note.path,
+      corpusRoot: root
+    ))
+    XCTAssertEqual(remoteHeadingEmbedded.displayText, "inline images")
+    XCTAssertEqual(remoteHeadingEmbedded.attachments.first?.kind, .image)
+    XCTAssertEqual(remoteHeadingEmbedded.attachments.first?.displayName, "Image")
+    XCTAssertEqual(
+      remoteHeadingEmbedded.attachments.first?.resolvedURL?.absoluteString,
+      "https://raw.githubusercontent.com/aviaviavi/org2/refs/heads/main/site/assets/favicon.png"
+    )
+
     let listBlock = try XCTUnwrap(OrgEntryRenderer.parseEditable(
       "- inline images [[file:assets/diagram.png][Image]]"
     ).first)
