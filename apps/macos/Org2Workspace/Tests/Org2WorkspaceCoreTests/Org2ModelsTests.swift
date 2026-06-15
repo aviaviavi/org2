@@ -2048,6 +2048,13 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNil(hiddenToken)
   }
 
+  func testParagraphInlineDetailsAvailabilityMatchesEditableInlineSyntax() {
+    XCTAssertFalse(ParagraphInlineDetailsAvailability.hasDetails(in: "Plain paragraph without inline fields."))
+    XCTAssertTrue(ParagraphInlineDetailsAvailability.hasDetails(in: "Review [[id:abc][Alice]]."))
+    XCTAssertTrue(ParagraphInlineDetailsAvailability.hasDetails(in: "Use `code` here."))
+    XCTAssertTrue(ParagraphInlineDetailsAvailability.hasDetails(in: "Meet on <2026-06-13 Sat>."))
+  }
+
   func testParagraphSlashCommandUsesBoundedPrefixScan() {
     XCTAssertEqual(ParagraphSlashCommand.query(in: "/todo"), "todo")
     XCTAssertEqual(ParagraphSlashCommand.query(in: " \n\t/source swift"), "source")
