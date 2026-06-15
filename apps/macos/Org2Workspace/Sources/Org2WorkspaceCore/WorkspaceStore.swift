@@ -5307,7 +5307,7 @@ public final class WorkspaceStore: ObservableObject {
       "file:\(reference)"
     ].compactMap { $0 }.joined(separator: ", ")
     return """
-    Generate a source-cited brief for the selected org2 node "\(title)" and save it as an org2 view artifact.
+    Generate a concise, source-cited briefing for the selected org2 node "\(title)" and save it as an org2 view artifact.
 
     Target artifact relative path: \(artifactRelativePath)
     Target artifact path for OpenClaw: \(artifactOpenClawPath)
@@ -5316,6 +5316,15 @@ public final class WorkspaceStore: ObservableObject {
     \(sourceID.map { "Selected node ID: \($0)" } ?? "Selected node ID: unavailable")
 
     Use the selected-node source and computed backlink context provided in the org2 workspace context. You may run org2 backlinks/search/query for more source context if needed, but do not run org2 brief to generate this brief.
+
+    Write for a human trying to quickly understand the node. Focus on what matters, not how org2 stores it. Do not present stable IDs, artifact metadata, file paths, provenance fields, review status, schema fields, or the mere existence of a title/ID as facts or highlights. Use file paths and line numbers only as citations after concrete claims. Mention metadata only in "Node health issues" when it is actually broken, missing, duplicated, stale, or confusing.
+
+    Keep the body concise:
+    - Most important facts: 3-6 bullets.
+    - Active related tasks: only TODO/open/actionable items, up to 5 bullets, or "None found."
+    - Recent related decisions: only decisions/commitments/outcomes, up to 5 bullets, or "None found."
+    - Open questions: unresolved questions/unknowns/risks, up to 5 bullets, or "None found."
+    - Node health issues: put this last; include only maintenance problems such as contradictory notes, stale generated context, broken links, missing IDs, duplicate IDs, bad citations, or confusing organization.
 
     Create the parent directory if needed. Replace the artifact file atomically if it already exists. The file must be valid org2 and start with:
     #+TITLE: Node brief: \(title)
@@ -5329,20 +5338,18 @@ public final class WorkspaceStore: ObservableObject {
     :ORG2_CLAIM_STATE: source-backed
     :ORG2_REVIEW_STATUS: review-required
     :ORG2_AI_TASK: node-brief
-    :ORG2_PROMPT_TEMPLATE: node-brief@v1
+    :ORG2_PROMPT_TEMPLATE: node-brief@v2
     :END:
 
     Then write these sections:
-    * Review checklist
-    - [ ] Verify every generated claim against the cited source lines.
-    - [ ] Promote reviewed facts into canonical notes only after human review.
-    * Highlights
-    * Active work and decisions
-    * Reference clusters
-    * Stale, contradictory, or review-required context
+    * Most important facts
+    * Active related tasks
+    * Recent related decisions
+    * Open questions
+    * Node health issues
     * Sources
 
-    Cite file paths and line numbers for every concrete claim. Do not edit canonical notes. Reply in chat with only a short confirmation and the artifact path.
+    Cite file paths and line numbers for every concrete claim. Prefer specific, user-meaningful facts over generic graph or storage details. Do not edit canonical notes. Reply in chat with only a short confirmation and the artifact path.
     """
   }
 
