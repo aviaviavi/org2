@@ -187,12 +187,6 @@ enum ParagraphFocusedInlinePanelLayout {
   }
 }
 
-enum ParagraphInlineFormatBarLayout {
-  static func verticalOffset(editorHeight: CGFloat) -> CGFloat {
-    max(34, editorHeight + 8)
-  }
-}
-
 struct InlineBlockEditorView: View {
   let block: OrgEditableBlock
 
@@ -1457,6 +1451,18 @@ private struct ParagraphBlockEditor: View {
             ParagraphInlineTimestampEditor(text: $draftText)
           }
         }
+
+        if hasSelection {
+          ParagraphInlineFormatBar(
+            text: $draftText,
+            selectedRange: $selectedRange,
+            insertBacklink: insertBacklinkForSelection,
+            createNodeFromSelection: createNodeFromSelection
+          )
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.top, 2)
+          .padding(.trailing, InlineEditorChrome.controlsTrailingPadding())
+        }
       }
 
       if InlineEditorChrome.rendersControls(showsControls) {
@@ -1470,21 +1476,6 @@ private struct ParagraphBlockEditor: View {
           .frame(maxWidth: .infinity, alignment: .leading)
           .offset(y: ParagraphSlashCommandPanelLayout.verticalOffset(editorHeight: editorHeight))
           .zIndex(2)
-      }
-
-      if hasSelection {
-        ParagraphInlineFormatBar(
-          text: $draftText,
-          selectedRange: $selectedRange,
-          insertBacklink: insertBacklinkForSelection,
-          createNodeFromSelection: createNodeFromSelection
-        )
-          .opacity(InlineEditorChrome.accessoryOpacity(hasSelection))
-          .allowsHitTesting(InlineEditorChrome.allowsHitTesting(hasSelection))
-          .accessibilityHidden(!hasSelection)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .offset(y: ParagraphInlineFormatBarLayout.verticalOffset(editorHeight: editorHeight))
-          .zIndex(3)
       }
 
       if let focusedInlineToken {
