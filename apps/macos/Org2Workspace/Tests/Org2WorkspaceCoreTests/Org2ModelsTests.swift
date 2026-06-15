@@ -2125,7 +2125,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testQuickOpenSelectionMovesThroughFilteredFiles() throws {
+  func testQuickOpenSelectionMovesThroughFilteredFiles() async throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.corpusFiles = [
       CorpusFile(path: "/tmp/alpha.org2", relativePath: "alpha.org2", modifiedAt: nil, byteCount: nil),
@@ -2151,6 +2151,9 @@ final class Org2ModelsTests: XCTestCase {
 
     store.quickOpenQuery = "bet"
     store.resetQuickOpenSelection()
+    try await waitForCondition {
+      store.quickOpenFiles.map(\.relativePath) == ["beta.org2"]
+    }
     XCTAssertEqual(store.selectedQuickOpenFile?.relativePath, "beta.org2")
   }
 
@@ -2697,6 +2700,9 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.corpusFiles.map(\.relativePath), ["notes/alice.org2", "scratch.md"])
 
     store.quickOpenQuery = "ali"
+    try await waitForCondition {
+      store.quickOpenFiles.first?.relativePath == "notes/alice.org2"
+    }
     XCTAssertEqual(store.quickOpenFiles.first?.relativePath, "notes/alice.org2")
 
     try await waitForCondition {

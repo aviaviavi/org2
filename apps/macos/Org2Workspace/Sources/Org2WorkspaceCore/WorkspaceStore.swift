@@ -91,6 +91,11 @@ public enum QuickOpenSelectionDirection: Equatable, Sendable {
   case down
 }
 
+private struct QuickOpenIndexedFile: Sendable {
+  let file: CorpusFile
+  let normalizedRelativePath: String
+}
+
 private struct OrgIDLookupPayload: Decodable {
   let id: String
   let kind: String
@@ -190,7 +195,12 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var bulkSelectedAgendaItemIDs: Set<String> = []
   @Published public var corpusRoot: URL?
   @Published public var agenda: AgendaPayload?
-  @Published public var corpusFiles: [CorpusFile] = []
+  @Published public var corpusFiles: [CorpusFile] = [] {
+    didSet {
+      rebuildQuickOpenIndex()
+      scheduleQuickOpenSearch(debounce: false)
+    }
+  }
   @Published public private(set) var orgRoamLinkResolver = OrgRoamLinkResolver.empty
   @Published public var selectedCorpusFileID: String?
   @Published public var corpusFileFilter = ""
@@ -198,8 +208,15 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var isQuickOpenPresented = false
   @Published public var isKeyboardShortcutsPresented = false
   @Published public var detailScrollRequest: DetailScrollRequest?
-  @Published public var quickOpenQuery = ""
+  @Published public var quickOpenQuery = "" {
+    didSet {
+      selectedQuickOpenFileID = nil
+      scheduleQuickOpenSearch()
+    }
+  }
   @Published public var selectedQuickOpenFileID: String?
+  @Published public private(set) var quickOpenFiles: [CorpusFile] = []
+  @Published public private(set) var isFilteringQuickOpenFiles = false
   @Published public var searchMode: WorkspaceSearchMode = .text
   @Published public var searchQuery = ""
   @Published public var searchFocusToken = 0
@@ -376,6 +393,9 @@ public final class WorkspaceStore: ObservableObject {
   private var pendingNodeBriefTitle: String?
   private var pendingG = false
   private var orgRoamLinkResolverGeneration = 0
+  private var quickOpenIndexedFiles: [QuickOpenIndexedFile] = []
+  private var quickOpenSearchTask: Task<Void, Never>?
+  private var quickOpenSearchGeneration = 0
   private var entrySourceLoadGeneration = 0
   private var backlinksLoadGeneration = 0
   private var detailNavigationBackStack: [DetailNavigationSnapshot] = [] {
@@ -2635,10 +2655,6 @@ public final class WorkspaceStore: ObservableObject {
     filterFiles(corpusFileFilter, limit: 500)
   }
 
-  public var quickOpenFiles: [CorpusFile] {
-    filterFiles(quickOpenQuery, limit: 80)
-  }
-
   public var selectedQuickOpenFile: CorpusFile? {
     let files = quickOpenFiles
     if let selectedQuickOpenFileID,
@@ -2676,6 +2692,55 @@ public final class WorkspaceStore: ObservableObject {
     selectedQuickOpenFileID = files[nextIndex].id
   }
 
+  private func rebuildQuickOpenIndex() {
+    quickOpenIndexedFiles = Self.indexQuickOpenFiles(corpusFiles)
+  }
+
+  private func scheduleQuickOpenSearch(debounce: Bool = true) {
+    quickOpenSearchGeneration += 1
+    let generation = quickOpenSearchGeneration
+    let query = quickOpenQuery
+    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    quickOpenSearchTask?.cancel()
+
+    guard !trimmedQuery.isEmpty else {
+      isFilteringQuickOpenFiles = false
+      quickOpenFiles = Array(corpusFiles.prefix(80))
+      pruneQuickOpenSelection()
+      return
+    }
+
+    let indexedFiles = quickOpenIndexedFiles
+    isFilteringQuickOpenFiles = true
+    quickOpenFiles = []
+    quickOpenSearchTask = Task { [indexedFiles, query, generation, debounce] in
+      if debounce {
+        try? await Task.sleep(nanoseconds: 80_000_000)
+      }
+      guard !Task.isCancelled else { return }
+
+      let matches = await Task.detached(priority: .userInitiated) {
+        Self.filterIndexedQuickOpenFiles(indexedFiles, query: query, limit: 80)
+      }.value
+      guard !Task.isCancelled else { return }
+
+      await MainActor.run { [weak self] in
+        guard let self, self.quickOpenSearchGeneration == generation else { return }
+        self.quickOpenFiles = matches
+        self.isFilteringQuickOpenFiles = false
+        self.pruneQuickOpenSelection()
+      }
+    }
+  }
+
+  private func pruneQuickOpenSelection() {
+    guard let selectedQuickOpenFileID else { return }
+    if !quickOpenFiles.contains(where: { $0.id == selectedQuickOpenFileID }) {
+      self.selectedQuickOpenFileID = nil
+    }
+  }
+
   private func filterFiles(_ rawQuery: String, limit: Int) -> [CorpusFile] {
     let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty else {
@@ -2693,6 +2758,40 @@ public final class WorkspaceStore: ObservableObject {
       }
       .prefix(limit)
       .map(\.0)
+  }
+
+  nonisolated private static func indexQuickOpenFiles(_ files: [CorpusFile]) -> [QuickOpenIndexedFile] {
+    files.map { file in
+      QuickOpenIndexedFile(
+        file: file,
+        normalizedRelativePath: normalizedQuickOpenCandidate(file.relativePath)
+      )
+    }
+  }
+
+  nonisolated private static func filterIndexedQuickOpenFiles(
+    _ files: [QuickOpenIndexedFile],
+    query rawQuery: String,
+    limit: Int
+  ) -> [CorpusFile] {
+    let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedQuery = normalizedQuickOpenQuery(query)
+    guard !normalizedQuery.isEmpty else {
+      return Array(files.prefix(limit).map(\.file))
+    }
+
+    return files
+      .compactMap { indexedFile -> (QuickOpenIndexedFile, Int)? in
+        guard let score = fuzzyScore(normalizedQuery: normalizedQuery, normalizedCandidate: indexedFile.normalizedRelativePath)
+        else { return nil }
+        return (indexedFile, score)
+      }
+      .sorted { lhs, rhs in
+        if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
+        return lhs.0.file.relativePath.localizedStandardCompare(rhs.0.file.relativePath) == .orderedAscending
+      }
+      .prefix(limit)
+      .map(\.0.file)
   }
 
   private func filterSearchNodes(_ rawQuery: String, limit: Int) -> [OrgRoamNodeReference] {
@@ -7951,10 +8050,23 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   nonisolated private static func fuzzyScore(query: String, candidate: String) -> Int? {
-    let query = query.lowercased().filter { !$0.isWhitespace }
+    fuzzyScore(
+      normalizedQuery: normalizedQuickOpenQuery(query),
+      normalizedCandidate: normalizedQuickOpenCandidate(candidate)
+    )
+  }
+
+  nonisolated private static func normalizedQuickOpenQuery(_ query: String) -> String {
+    query.lowercased().filter { !$0.isWhitespace }
+  }
+
+  nonisolated private static func normalizedQuickOpenCandidate(_ candidate: String) -> String {
+    candidate.lowercased()
+  }
+
+  nonisolated private static func fuzzyScore(normalizedQuery query: String, normalizedCandidate candidate: String) -> Int? {
     guard !query.isEmpty else { return 0 }
 
-    let candidate = candidate.lowercased()
     var score = 0
     var queryIndex = query.startIndex
     var previousMatch: String.Index?
