@@ -1371,6 +1371,14 @@ private struct PropertyDrawerBlockEditor: View {
   }
 }
 
+enum ParagraphInlineDetailsAvailability {
+  nonisolated static func hasDetails(in text: String) -> Bool {
+    !OrgEditableInlineMarkupSet(rawText: text).markups.isEmpty
+      || !OrgEditableInlineLinkSet(rawText: text).links.isEmpty
+      || !OrgEditableInlineTimestampSet(rawText: text).timestamps.isEmpty
+  }
+}
+
 private struct ParagraphBlockEditor: View {
   @EnvironmentObject private var store: WorkspaceStore
   let block: OrgEditableBlock
@@ -1413,6 +1421,7 @@ private struct ParagraphBlockEditor: View {
       selectedRange: selectedRange,
       showsInlineDetails: showsInlineDetails
     )
+    let hasInlineDetails = ParagraphInlineDetailsAvailability.hasDetails(in: presentationText)
     let embeddedMedia = ParagraphEditorInlineMediaPreview.embedded(
       raw: presentationText,
       sourceFile: store.selectedEntrySource?.file,
@@ -1441,7 +1450,7 @@ private struct ParagraphBlockEditor: View {
             .padding(.trailing, InlineEditorChrome.controlsTrailingPadding())
         }
 
-        if showsInlineDetails {
+        if showsInlineDetails && hasInlineDetails {
           VStack(alignment: .leading, spacing: 6) {
             ParagraphInlineMarkupEditor(text: $draftText)
             ParagraphInlineLinkEditor(text: $draftText)
@@ -1504,6 +1513,9 @@ private struct ParagraphBlockEditor: View {
       if presentationText != draftText {
         presentationText = draftText
       }
+      if showsInlineDetails && !ParagraphInlineDetailsAvailability.hasDetails(in: presentationText) {
+        showsInlineDetails = false
+      }
       reserveEditorLines(for: presentationText)
       scheduleParagraphAutosave()
     }
@@ -1544,6 +1556,9 @@ private struct ParagraphBlockEditor: View {
     if presentationText != text {
       presentationText = text
     }
+    if showsInlineDetails && !ParagraphInlineDetailsAvailability.hasDetails(in: text) {
+      showsInlineDetails = false
+    }
     reserveEditorLines(for: text)
   }
 
@@ -1551,13 +1566,15 @@ private struct ParagraphBlockEditor: View {
     HStack(spacing: 4) {
       InlineEditorSavingIndicator(isSaving: store.isSavingBlock)
 
-      Button {
-        showsInlineDetails.toggle()
-      } label: {
-        Image(systemName: showsInlineDetails ? "slider.horizontal.3" : "slider.horizontal.2.square")
+      if ParagraphInlineDetailsAvailability.hasDetails(in: presentationText) {
+        Button {
+          showsInlineDetails.toggle()
+        } label: {
+          Image(systemName: showsInlineDetails ? "slider.horizontal.3" : "slider.horizontal.2.square")
+        }
+        .buttonStyle(.borderless)
+        .help(showsInlineDetails ? "Hide inline fields" : "Show inline fields")
       }
-      .buttonStyle(.borderless)
-      .help(showsInlineDetails ? "Hide inline details" : "Show inline details")
 
       Button {
         saveParagraph()
