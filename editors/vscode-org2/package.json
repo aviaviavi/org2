@@ -38,6 +38,7 @@
     "onCommand:org2.setTodoDone",
     "onCommand:org2.setTodoCanceled",
     "onCommand:org2.markDoneAndHandoff",
+    "onCommand:org2.assignTodoToAgent",
     "onCommand:org2.setScheduled",
     "onCommand:org2.setScheduledToday",
     "onCommand:org2.setScheduledTomorrow",
@@ -303,7 +304,11 @@
       },
       {
         "command": "org2.markDoneAndHandoff",
-        "title": "Org2: Mark Done and Handoff to Agent"
+        "title": "Org2: Assign Todo to Agent"
+      },
+      {
+        "command": "org2.assignTodoToAgent",
+        "title": "Org2: Assign Todo to Agent"
       },
       {
         "command": "org2.setScheduled",
@@ -514,7 +519,7 @@
           "group": "navigation@14"
         },
         {
-          "command": "org2.markDoneAndHandoff",
+          "command": "org2.assignTodoToAgent",
           "when": "view == org2Agenda && viewItem == org2AgendaItem",
           "group": "navigation@14.05"
         },
@@ -586,7 +591,7 @@
           "group": "navigation@11"
         },
         {
-          "command": "org2.markDoneAndHandoff",
+          "command": "org2.assignTodoToAgent",
           "when": "editorTextFocus && (editorLangId == 'org2' || editorLangId == 'org')",
           "group": "navigation@11.05"
         },
@@ -1462,7 +1467,7 @@
       {
         "key": "ctrl+; t a",
         "mac": "cmd+; t a",
-        "command": "org2.markDoneAndHandoff",
+        "command": "org2.assignTodoToAgent",
         "when": "editorTextFocus && config.org2.keymap.power && (editorLangId == 'org2' || editorLangId == 'org')"
       },
       {

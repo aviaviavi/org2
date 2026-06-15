@@ -19,7 +19,7 @@ import {
   type Org2PublishProjectConfig,
 } from "./config.js";
 import { resolvePublishHeadIncludes } from "./publish-defaults.js";
-import { formatOrgTimestamp, TODO_KEYWORDS, updateTodoInText, type TodoStatus } from "./todo.js";
+import { assignTodoInText, formatOrgTimestamp, TODO_KEYWORDS, updateTodoInText, type TodoStatus } from "./todo.js";
 import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from "./planning.js";
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
@@ -7899,10 +7899,11 @@ async function main(): Promise<void> {
   let exportTitle = "";
 
   // Todo status editing
-  let todoAction: "set" | "toggle" = "toggle";
+  let todoAction: "set" | "toggle" | "assign" = "toggle";
   let todoFile = "";
   let todoLine = 0;
   let todoStatus: TodoStatus | "" = "";
+  let todoAssignee = "";
   let todoApply = false;
   let todoFormat: "text" | "json" | "diff" = "json";
   let todoNow = ""; // ISO string
@@ -8127,10 +8128,10 @@ async function main(): Promise<void> {
     } else if (arg === "todo") {
       command = "todo";
       i++;
-      // Optional subcommand: set|toggle (default toggle)
+      // Optional subcommand: set|toggle|assign (default toggle)
       if (i < args.length && !args[i]!.startsWith("--")) {
         const sub = args[i]!
-        if (sub === "set" || sub === "toggle") {
+        if (sub === "set" || sub === "toggle" || sub === "assign") {
           todoAction = sub;
           i++;
         }
@@ -8412,6 +8413,14 @@ async function main(): Promise<void> {
           if (raw === "reviewed" || raw === "rejected" || raw === "deferred") aiReviewStatus = raw;
         } else {
           todoStatus = parseTodoStatusArg(args[i] ?? "");
+        }
+        i++;
+      }
+    } else if (arg === "--assignee") {
+      i++;
+      if (i < args.length) {
+        if (command === "todo") {
+          todoAssignee = args[i]!;
         }
         i++;
       }
@@ -9554,7 +9563,7 @@ Usage:
 
 Core commands:
   org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
-  org2 todo <set|toggle> --file FILE (--line N | --pos LINE[:COL]) [--apply]
+  org2 todo <set|toggle|assign> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--default-recipient-self] [--gpg-program PATH] [--gpg-timeout SECONDS] [--apply]
   org2 capture --file FILE --title TITLE [--template note|task] [--apply]
@@ -9623,7 +9632,7 @@ function printScopedUsage(
   command: string,
   options: {
     exportAction: "html";
-    todoAction: "set" | "toggle";
+    todoAction: "set" | "toggle" | "assign";
     planAction: "set" | "today";
     cryptAction: "encrypt" | "decrypt" | "reencrypt";
     idAction: "get" | "ensure";
@@ -9657,13 +9666,14 @@ Flags:
     text = `org2 todo ${options.todoAction}
 
 Usage:
-  org2 todo <set|toggle> --file FILE (--line N | --pos LINE[:COL]) [--apply]
+  org2 todo <set|toggle|assign> --file FILE (--line N | --pos LINE[:COL]) [--apply]
 
 Flags:
   --file FILE         Target file
   --line N            Heading line number
   --pos LINE[:COL]    Heading position
   --to TODO           Target TODO keyword for 'set'
+  --assignee NAME     Assignee for 'assign'
   --apply             Write changes instead of previewing`;
   } else if (command === "plan") {
     text = `org2 plan ${options.planAction}
@@ -13125,6 +13135,10 @@ Flags:
         process.exit(1);
       }
     }
+    if (todoAction === "assign" && !todoAssignee.trim()) {
+      console.error("Error: todo assign requires --assignee NAME");
+      process.exit(1);
+    }
 
     let nowDate: Date | undefined;
     if (todoNow) {
@@ -13156,13 +13170,19 @@ Flags:
 
     const beforeRaw = fs.readFileSync(todoFile, "utf8").replace(/\r\n/g, "\n");
 
-    const res = updateTodoInText(beforeRaw, {
-      filePath: todoFile,
-      lineNumber: todoLine,
-      ...(todoAction === "toggle" ? { toggle: true } : { status: todoStatus as TodoStatus }),
-      ...(nowDate ? { now: nowDate } : {}),
-      ...(todoLogbookEffective ? { logbook: true } : {}),
-    });
+    const res = todoAction === "assign"
+      ? assignTodoInText(beforeRaw, {
+          filePath: todoFile,
+          lineNumber: todoLine,
+          assignee: todoAssignee,
+        })
+      : updateTodoInText(beforeRaw, {
+          filePath: todoFile,
+          lineNumber: todoLine,
+          ...(todoAction === "toggle" ? { toggle: true } : { status: todoStatus as TodoStatus }),
+          ...(nowDate ? { now: nowDate } : {}),
+          ...(todoLogbookEffective ? { logbook: true } : {}),
+        });
 
     if (todoApply) {
       fs.writeFileSync(todoFile, res.text, "utf8");
@@ -13201,9 +13221,17 @@ Flags:
           {
             file: res.filePath,
             headingLine: res.headingLineNumber,
-            oldStatus: res.oldStatus,
-            newStatus: res.newStatus,
-            ...(res.closedAt ? { closedAt: res.closedAt } : {}),
+            ...(todoAction === "assign"
+              ? {
+                  property: "ASSIGNEE",
+                  ...("oldAssignee" in res && res.oldAssignee ? { oldAssignee: res.oldAssignee } : {}),
+                  newAssignee: "newAssignee" in res ? res.newAssignee : todoAssignee,
+                }
+              : {
+                  oldStatus: "oldStatus" in res ? res.oldStatus : undefined,
+                  newStatus: "newStatus" in res ? res.newStatus : undefined,
+                  ...("closedAt" in res && res.closedAt ? { closedAt: res.closedAt } : {}),
+                }),
             applied: todoApply,
             changed: res.changed,
           },

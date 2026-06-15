@@ -3128,6 +3128,7 @@ function activate(context) {
 
     const args = ['todo', action, '--file', String(filePath), '--line', String(line), '--format', 'json', '--apply'];
     if (action === 'set' && status) args.push('--status', status);
+    if (action === 'assign' && status) args.push('--assignee', status);
     if (writeTodoLogbook) args.push('--logbook');
 
     const { cmd: finalCmd, args: finalArgs } = resolveOrg2Command(context, args);
@@ -3239,7 +3240,7 @@ function activate(context) {
     const resolvedTargets = targets.length ? targets : [item];
 
     for (const target of resolvedTargets) {
-      await runTodoCli('set', 'done', target, { skipAgendaReload: true });
+      await runTodoCli('assign', 'OpenClaw', target, { skipAgendaReload: true });
       await applyAgentHandoffProperties(target, { skipAgendaReload: true });
     }
 
@@ -5373,6 +5374,7 @@ function activate(context) {
   context.subscriptions.push(vscode.commands.registerCommand('org2.setTodoDone', async (item) => applySetTodoStatus('done', item)));
   context.subscriptions.push(vscode.commands.registerCommand('org2.setTodoCanceled', async (item) => applySetTodoStatus('canceled', item)));
   context.subscriptions.push(vscode.commands.registerCommand('org2.markDoneAndHandoff', async (item) => applyAgentHandoffCommand(item)));
+  context.subscriptions.push(vscode.commands.registerCommand('org2.assignTodoToAgent', async (item) => applyAgentHandoffCommand(item)));
 
   context.subscriptions.push(
     vscode.commands.registerCommand('org2.setScheduled', async (item) => {
