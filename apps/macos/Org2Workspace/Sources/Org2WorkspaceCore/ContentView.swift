@@ -2703,11 +2703,10 @@ private struct NodeContextBrief: View {
 
         Divider()
 
-        Text(artifact.body.isEmpty ? "Brief artifact is present but has no body after metadata." : artifact.body)
-          .font(.callout)
-          .lineSpacing(3)
-          .textSelection(.enabled)
-          .fixedSize(horizontal: false, vertical: true)
+        NodeBriefRenderedPreview(
+          artifact: artifact,
+          corpusRoot: store.corpusRoot
+        )
       } else {
         Text("Generate a source-cited brief for this node, save it into views/openclaw, and show it here.")
           .font(.callout)
@@ -2733,6 +2732,44 @@ private struct NodeContextBrief: View {
       }
     }
     .padding(WorkspaceDesign.contentInset)
+  }
+}
+
+private struct NodeBriefRenderedPreview: View {
+  let artifact: NodeBriefArtifact
+  let corpusRoot: URL?
+
+  private var blocks: [OrgEditableBlock] {
+    OrgEntryRenderer
+      .parseEditable(artifact.body)
+      .filter(OrgRenderedBlockDisplayPolicy.isVisible)
+  }
+
+  var body: some View {
+    if artifact.body.isEmpty {
+      Text("Brief artifact is present but has no body after metadata.")
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+    } else if blocks.isEmpty {
+      OrgInlineText(artifact.body, font: .callout)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    } else {
+      LazyVStack(alignment: .leading, spacing: 5) {
+        ForEach(blocks) { block in
+          RenderedBlockView(
+            block: block.rendered,
+            rawText: block.rawText,
+            editableBlock: block,
+            sourceFile: artifact.file,
+            corpusRoot: corpusRoot,
+            inlineActions: .readOnly
+          )
+          .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
   }
 }
 
