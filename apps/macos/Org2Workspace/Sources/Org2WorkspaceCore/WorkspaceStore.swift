@@ -5041,6 +5041,102 @@ public final class WorkspaceStore: ObservableObject {
     backlinks?.backlinks.count ?? 0
   }
 
+  public var relatedBacklinkNodes: [RelatedBacklinkNode] {
+    Self.relatedBacklinkNodes(
+      from: backlinks?.backlinks ?? [],
+      relativePathForFile: { [weak self] file in
+        self?.relativePath(file) ?? file
+      }
+    )
+  }
+
+  nonisolated public static func relatedBacklinkNodes(
+    from backlinks: [BacklinkItem],
+    relativePathForFile: (String) -> String
+  ) -> [RelatedBacklinkNode] {
+    let grouped = Dictionary(grouping: backlinks.compactMap { backlink -> BacklinkItem? in
+      guard backlink.srcId?.isEmpty == false else { return nil }
+      let title = Org2Display.cleanInline(backlink.srcTitle).trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !isGenericRelatedBacklinkTitle(title) else { return nil }
+      return backlink
+    }) { backlink in
+      backlink.srcId ?? backlink.srcTitle
+    }
+
+    return grouped.compactMap { key, items in
+      guard let first = items.first else { return nil }
+      let sortedItems = items.sorted {
+        if $0.file != $1.file {
+          return $0.file.localizedCaseInsensitiveCompare($1.file) == .orderedAscending
+        }
+        return $0.lineForEditor < $1.lineForEditor
+      }
+      let cleanTitle = Org2Display.cleanInline(first.srcTitle).trimmingCharacters(in: .whitespacesAndNewlines)
+      let files = Set(items.map(\.file))
+      let examples = sortedItems
+        .map { Org2Display.cleanInline($0.context).trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+        .reduce(into: [String]()) { unique, context in
+          guard unique.count < 2, !unique.contains(context) else { return }
+          unique.append(context)
+        }
+      return RelatedBacklinkNode(
+        id: key,
+        idValue: first.srcId,
+        title: cleanTitle,
+        referenceCount: items.count,
+        fileCount: files.count,
+        primaryPath: "\(relativePathForFile(sortedItems[0].file)):\(sortedItems[0].lineForEditor)",
+        examples: examples
+      )
+    }
+    .sorted { lhs, rhs in
+      let lhsScore = lhs.referenceCount + lhs.fileCount
+      let rhsScore = rhs.referenceCount + rhs.fileCount
+      if lhsScore != rhsScore { return lhsScore > rhsScore }
+      if lhs.referenceCount != rhs.referenceCount { return lhs.referenceCount > rhs.referenceCount }
+      return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+    }
+  }
+
+  nonisolated public static func isGenericRelatedBacklinkTitle(_ title: String) -> Bool {
+    let normalized = title
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+      .replacingOccurrences(of: #"[^a-z0-9]+"#, with: " ", options: .regularExpression)
+      .split(separator: " ")
+      .joined(separator: " ")
+    guard !normalized.isEmpty else { return true }
+    return Self.genericRelatedBacklinkTitles.contains(normalized)
+  }
+
+  private nonisolated static let genericRelatedBacklinkTitles: Set<String> = [
+    "abstract",
+    "action items",
+    "agenda",
+    "background",
+    "context",
+    "decision",
+    "decisions",
+    "detail",
+    "details",
+    "discussion",
+    "follow up",
+    "follow ups",
+    "highlights",
+    "notes",
+    "overview",
+    "raw transcript",
+    "recap",
+    "recurring themes",
+    "related",
+    "summary",
+    "takeaways",
+    "theme",
+    "themes",
+    "transcript"
+  ]
+
   public func toggleNodeContextPane() {
     isNodeContextPanePresented.toggle()
   }
@@ -8756,5 +8852,33 @@ public struct BacklinkFileGroup: Identifiable, Hashable, Sendable {
   public var count: Int { backlinks.count }
   public var displayTitle: String {
     URL(fileURLWithPath: relativePath).lastPathComponent
+  }
+}
+
+public struct RelatedBacklinkNode: Identifiable, Hashable, Sendable {
+  public let id: String
+  public let idValue: String?
+  public let title: String
+  public let referenceCount: Int
+  public let fileCount: Int
+  public let primaryPath: String
+  public let examples: [String]
+
+  public init(
+    id: String,
+    idValue: String?,
+    title: String,
+    referenceCount: Int,
+    fileCount: Int,
+    primaryPath: String,
+    examples: [String]
+  ) {
+    self.id = id
+    self.idValue = idValue
+    self.title = title
+    self.referenceCount = referenceCount
+    self.fileCount = fileCount
+    self.primaryPath = primaryPath
+    self.examples = examples
   }
 }

@@ -2617,9 +2617,9 @@ private struct NodeContextRelated: View {
   @EnvironmentObject private var store: WorkspaceStore
 
   var body: some View {
-    let items = relatedItems
+    let items = store.relatedBacklinkNodes
     if items.isEmpty {
-      Text("Related nodes appear here when backlinks include source IDs.")
+      Text("No high-signal related nodes yet. Generic sections like Summary, Details, and Raw transcript are hidden from this list.")
         .font(.callout)
         .foregroundStyle(.secondary)
         .padding(WorkspaceDesign.contentInset)
@@ -2627,13 +2627,32 @@ private struct NodeContextRelated: View {
       LazyVStack(alignment: .leading, spacing: 0) {
         ForEach(items) { item in
           VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
               WorkspaceIconBadge(systemImage: "link")
-              Text(item.title)
-                .font(.callout.weight(.medium))
-                .lineLimit(2)
+              VStack(alignment: .leading, spacing: 5) {
+                Text(item.title)
+                  .font(.callout.weight(.medium))
+                  .lineLimit(2)
+                Text(item.primaryPath)
+                  .font(.caption)
+                  .foregroundStyle(.tertiary)
+                  .lineLimit(1)
+                  .truncationMode(.middle)
+                ForEach(item.examples, id: \.self) { example in
+                  Text(example)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                }
+              }
               Spacer(minLength: 0)
-              CountPill(count: item.count)
+              VStack(alignment: .trailing, spacing: 4) {
+                CountPill(count: item.referenceCount)
+                Text(item.fileCount == 1 ? "1 file" : "\(item.fileCount) files")
+                  .font(.caption2)
+                  .foregroundStyle(.tertiary)
+                  .monospacedDigit()
+              }
             }
             if let idValue = item.idValue {
               Text(Org2Display.shortID(idValue))
@@ -2647,26 +2666,6 @@ private struct NodeContextRelated: View {
             .padding(.leading, WorkspaceDesign.contentInset)
         }
       }
-    }
-  }
-
-  private var relatedItems: [RelatedBacklinkNode] {
-    guard let backlinks = store.backlinks?.backlinks else { return [] }
-    let grouped = Dictionary(grouping: backlinks) { backlink in
-      backlink.srcId ?? backlink.srcTitle
-    }
-    return grouped.compactMap { key, items in
-      guard let first = items.first else { return nil }
-      return RelatedBacklinkNode(
-        id: key,
-        idValue: first.srcId,
-        title: Org2Display.cleanInline(first.srcTitle),
-        count: items.count
-      )
-    }
-    .sorted { lhs, rhs in
-      if lhs.count != rhs.count { return lhs.count > rhs.count }
-      return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
     }
   }
 }
@@ -2714,7 +2713,7 @@ private struct NodeContextStats: View {
   }
 
   private var relatedCount: Int {
-    Set(store.backlinks?.backlinks.compactMap(\.srcId) ?? []).count
+    store.relatedBacklinkNodes.count
   }
 }
 
@@ -2823,13 +2822,6 @@ private struct BacklinkFileGroupRow: View {
   private var isExpanded: Bool {
     store.expandedBacklinkFileIDs.contains(group.id)
   }
-}
-
-private struct RelatedBacklinkNode: Identifiable, Hashable {
-  let id: String
-  let idValue: String?
-  let title: String
-  let count: Int
 }
 
 private struct BacklinkRow: View {
