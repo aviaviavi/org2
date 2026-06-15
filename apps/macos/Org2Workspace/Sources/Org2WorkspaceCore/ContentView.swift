@@ -2877,23 +2877,9 @@ private struct HeaderBar<Trailing: View>: View {
   }
 
   var body: some View {
-    HStack(alignment: .center, spacing: 12) {
-      VStack(alignment: .leading, spacing: 2) {
-        Text(title)
-          .font(.title2.weight(.semibold))
-        Text(subtitle)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.middle)
-      }
-      Spacer(minLength: 0)
-      trailing
-      if let surface {
-        Divider()
-          .frame(height: 18)
-        PaneControlGroup(surface: surface)
-      }
+    ViewThatFits(in: .horizontal) {
+      headerContent(compact: false)
+      headerContent(compact: true)
     }
     .controlSize(.small)
     .buttonStyle(WorkspaceActionButtonStyle())
@@ -2904,14 +2890,54 @@ private struct HeaderBar<Trailing: View>: View {
       Divider()
     }
   }
+
+  private func headerContent(compact: Bool) -> some View {
+    HStack(alignment: .center, spacing: compact ? 8 : 12) {
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title)
+          .font(compact ? .headline.weight(.semibold) : .title2.weight(.semibold))
+          .lineLimit(1)
+          .truncationMode(.tail)
+          .allowsTightening(true)
+          .layoutPriority(1)
+        if !compact {
+          Text(subtitle)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+        }
+      }
+      .frame(minWidth: compact ? 56 : 92, alignment: .leading)
+
+      Spacer(minLength: compact ? 4 : 0)
+
+      if compact {
+        trailing
+          .labelStyle(.iconOnly)
+      } else {
+        trailing
+          .labelStyle(.titleAndIcon)
+      }
+
+      if let surface {
+        if !compact {
+          Divider()
+            .frame(height: 18)
+        }
+        PaneControlGroup(surface: surface, compact: compact)
+      }
+    }
+  }
 }
 
 private struct PaneControlGroup: View {
   @EnvironmentObject private var store: WorkspaceStore
   let surface: WorkspaceSurface
+  var compact = false
 
   var body: some View {
-    HStack(spacing: 6) {
+    HStack(spacing: compact ? 4 : 6) {
       Button {
         store.makeSurfacePrimary(surface)
       } label: {

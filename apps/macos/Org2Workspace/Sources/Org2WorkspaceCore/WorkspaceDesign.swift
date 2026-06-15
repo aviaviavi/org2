@@ -62,6 +62,9 @@ struct WorkspaceActionButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
       .font(.callout.weight(.medium))
+      .lineLimit(1)
+      .truncationMode(.tail)
+      .fixedSize(horizontal: false, vertical: true)
       .padding(.horizontal, 8)
       .padding(.vertical, 5)
       .background(
