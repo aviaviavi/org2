@@ -2038,7 +2038,7 @@ private struct DetailView: View {
 
           if store.isNodeContextPanePresented {
             NodeContextPane()
-              .frame(minWidth: 300, idealWidth: 380, maxWidth: 520)
+              .frame(minWidth: 320, idealWidth: 380, maxWidth: 520)
           }
         }
       } else {
@@ -2522,6 +2522,9 @@ private struct NodeContextPane: View {
         }
       }
       .pickerStyle(.segmented)
+      .labelsHidden()
+      .accessibilityLabel("Context view")
+      .frame(maxWidth: .infinity)
       .padding(.horizontal, WorkspaceDesign.contentInset)
       .padding(.bottom, 10)
 
