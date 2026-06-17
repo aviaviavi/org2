@@ -434,6 +434,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var searchQuery = ""
   @Published public var searchFocusToken = 0
   @Published public var searchResults: [SearchResult] = []
+  @Published public var openClawChatSearchResults: [OpenClawChatSearchResult] = []
   @Published public var renderedSearchHighlightQuery: String?
   @Published public var isPageSearchPresented = false
   @Published public var pageSearchQuery = "" {
@@ -1032,20 +1033,28 @@ public final class WorkspaceStore: ObservableObject {
     let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty else {
       searchResults = []
+      openClawChatSearchResults = []
       return
     }
-    guard let corpusRoot else {
-      statusText = "No corpus selected"
-      return
-    }
-
     isSearching = true
     errorText = nil
-    statusText = "Searching corpus..."
+    statusText = "Searching workspace..."
     defer { isSearching = false }
 
+    let started = Date()
+    let chatResults = Self.searchOpenClawChatThreads(openClawChatThreads, query: query, limit: 25)
+    guard let corpusRoot else {
+      searchResults = []
+      openClawChatSearchResults = chatResults
+      selectedSurface = .search
+      let elapsed = Date().timeIntervalSince(started)
+      statusText = chatResults.isEmpty
+        ? "No corpus selected"
+        : "\(chatResults.count) chat result\(chatResults.count == 1 ? "" : "s") in \(String(format: "%.1f", elapsed))s"
+      return
+    }
+
     do {
-      let started = Date()
       let payload: SearchPayload = try await cli.runJSON([
         "search", query,
         "--dir", corpusRoot.path,
@@ -1055,9 +1064,11 @@ public final class WorkspaceStore: ObservableObject {
         "--format", "json"
       ])
       searchResults = payload.results
+      openClawChatSearchResults = chatResults
       selectedSurface = .search
       let elapsed = Date().timeIntervalSince(started)
-      statusText = "\(payload.results.count) search result\(payload.results.count == 1 ? "" : "s") in \(String(format: "%.1f", elapsed))s"
+      let totalCount = payload.results.count + chatResults.count
+      statusText = "\(totalCount) search result\(totalCount == 1 ? "" : "s") in \(String(format: "%.1f", elapsed))s"
     } catch {
       errorText = error.localizedDescription
       statusText = "Search failed"
@@ -4912,6 +4923,12 @@ public final class WorkspaceStore: ObservableObject {
     selectOpenClawChatThread(id, persistsSelection: true)
   }
 
+  public func selectOpenClawChatSearchResult(_ result: OpenClawChatSearchResult) {
+    selectedSurface = .openClaw
+    selectOpenClawChatThread(result.threadID)
+    statusText = "Opened chat thread"
+  }
+
   private func selectOpenClawChatThread(_ id: UUID, persistsSelection: Bool) {
     guard !isSendingOpenClawMessage,
           let thread = openClawChatThreads.first(where: { $0.id == id })
@@ -4988,6 +5005,74 @@ public final class WorkspaceStore: ObservableObject {
       return clean
     }
     return String(clean.prefix(45)).trimmingCharacters(in: .whitespacesAndNewlines) + "..."
+  }
+
+  nonisolated static func searchOpenClawChatThreads(
+    _ threads: [OpenClawChatThread],
+    query rawQuery: String,
+    limit: Int
+  ) -> [OpenClawChatSearchResult] {
+    let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty else { return [] }
+
+    return threads
+      .compactMap { thread -> (OpenClawChatSearchResult, Int)? in
+        let titleScore = fuzzyScore(query: query, candidate: thread.title).map { $0 + 80 }
+        let messageMatches = thread.messages.compactMap { message -> (OpenClawChatMessage, Int)? in
+          guard let score = fuzzyScore(query: query, candidate: message.content) else { return nil }
+          return (message, score)
+        }
+        let bestMessage = messageMatches.max { lhs, rhs in lhs.1 < rhs.1 }
+        let bestScore = max(titleScore ?? 0, bestMessage?.1 ?? 0)
+        guard bestScore > 0 else { return nil }
+
+        let snippet: String
+        let messageID: UUID?
+        if let bestMessage {
+          snippet = chatSearchSnippet(message: bestMessage.0.content, query: query)
+          messageID = bestMessage.0.id
+        } else {
+          snippet = thread.messages.first?.content ?? thread.title
+          messageID = nil
+        }
+
+        return (
+          OpenClawChatSearchResult(
+            threadID: thread.id,
+            messageID: messageID,
+            title: thread.title,
+            snippet: snippet,
+            messageCount: thread.messageCount,
+            updatedAt: thread.updatedAt
+          ),
+          bestScore
+        )
+      }
+      .sorted { lhs, rhs in
+        if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
+        return lhs.0.updatedAt > rhs.0.updatedAt
+      }
+      .prefix(limit)
+      .map(\.0)
+  }
+
+  nonisolated private static func chatSearchSnippet(message: String, query: String) -> String {
+    let collapsed = message
+      .split(whereSeparator: { $0.isWhitespace })
+      .joined(separator: " ")
+    guard !collapsed.isEmpty else { return message }
+    guard let range = collapsed.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) else {
+      return String(collapsed.prefix(180))
+    }
+
+    let before = collapsed.distance(from: collapsed.startIndex, to: range.lowerBound)
+    let startOffset = max(0, before - 72)
+    let endOffset = min(collapsed.count, before + query.count + 108)
+    let start = collapsed.index(collapsed.startIndex, offsetBy: startOffset)
+    let end = collapsed.index(collapsed.startIndex, offsetBy: endOffset)
+    let prefix = startOffset > 0 ? "..." : ""
+    let suffix = endOffset < collapsed.count ? "..." : ""
+    return prefix + String(collapsed[start..<end]) + suffix
   }
 
   public func openClawChatScrollPosition(isAssistantPanel: Bool) -> Double? {

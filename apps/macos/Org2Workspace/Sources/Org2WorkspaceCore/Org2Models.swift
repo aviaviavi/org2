@@ -267,6 +267,35 @@ public struct SearchResult: Decodable, Identifiable, Hashable, Sendable {
   }
 }
 
+public struct OpenClawChatSearchResult: Identifiable, Hashable, Sendable {
+  public let threadID: UUID
+  public let messageID: UUID?
+  public let title: String
+  public let snippet: String
+  public let messageCount: Int
+  public let updatedAt: Date
+
+  public init(
+    threadID: UUID,
+    messageID: UUID?,
+    title: String,
+    snippet: String,
+    messageCount: Int,
+    updatedAt: Date
+  ) {
+    self.threadID = threadID
+    self.messageID = messageID
+    self.title = title
+    self.snippet = snippet
+    self.messageCount = messageCount
+    self.updatedAt = updatedAt
+  }
+
+  public var id: String {
+    "\(threadID.uuidString):\(messageID?.uuidString ?? "thread")"
+  }
+}
+
 public struct HeadingRef: Decodable, Hashable, Sendable {
   public let level: Int
   public let title: String

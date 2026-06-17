@@ -219,20 +219,27 @@ private struct SidebarView: View {
     List(selection: $store.selectedSurface) {
       Section("Workspace") {
         ForEach(WorkspaceSurface.sidebarCases) { surface in
-          HStack(spacing: 8) {
-            Label(surface.title, systemImage: surface.systemImage)
-              .font(.callout.weight(.medium))
-            Spacer(minLength: 0)
-            if !surface.commandShortcutTitle.isEmpty {
-              KeyboardShortcutBadge(text: surface.commandShortcutTitle)
+          if surface == .openClaw {
+            VStack(alignment: .leading, spacing: 6) {
+              SidebarSurfaceRow(surface: surface)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                  store.makeSurfacePrimary(surface)
+                }
+                .help(surface.commandShortcutTitle.isEmpty ? surface.title : "\(surface.title) (\(surface.commandShortcutTitle))")
+
+              OpenClawSidebarThreadList()
             }
+            .tag(surface)
+          } else {
+            SidebarSurfaceRow(surface: surface)
+              .tag(surface)
+              .contentShape(Rectangle())
+              .onTapGesture {
+                store.makeSurfacePrimary(surface)
+              }
+              .help(surface.commandShortcutTitle.isEmpty ? surface.title : "\(surface.title) (\(surface.commandShortcutTitle))")
           }
-          .tag(surface)
-          .contentShape(Rectangle())
-          .onTapGesture {
-            store.makeSurfacePrimary(surface)
-          }
-          .help(surface.commandShortcutTitle.isEmpty ? surface.title : "\(surface.title) (\(surface.commandShortcutTitle))")
         }
       }
 
@@ -285,6 +292,118 @@ private struct SidebarView: View {
       }
     }
     .listStyle(.sidebar)
+  }
+}
+
+private struct SidebarSurfaceRow: View {
+  let surface: WorkspaceSurface
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Label(surface.title, systemImage: surface.systemImage)
+        .font(.callout.weight(.medium))
+      Spacer(minLength: 0)
+      if !surface.commandShortcutTitle.isEmpty {
+        KeyboardShortcutBadge(text: surface.commandShortcutTitle)
+      }
+    }
+  }
+}
+
+private struct OpenClawSidebarThreadList: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  private let maxHeight: CGFloat = 220
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 5) {
+      HStack(spacing: 6) {
+        Text("Threads")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.secondary)
+        Spacer(minLength: 0)
+        Button {
+          store.createOpenClawChatThread()
+          store.makeSurfacePrimary(.openClaw)
+        } label: {
+          Label("New Thread", systemImage: "plus")
+        }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
+        .help("New chat thread")
+        .disabled(store.isSendingOpenClawMessage)
+      }
+      .padding(.leading, 24)
+      .padding(.trailing, 2)
+
+      if store.openClawChatThreads.isEmpty {
+        Text("No chat threads")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+          .padding(.leading, 24)
+          .padding(.vertical, 3)
+      } else {
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: 3) {
+            ForEach(store.openClawChatThreads) { thread in
+              OpenClawSidebarThreadRow(
+                thread: thread,
+                isSelected: store.selectedOpenClawChatThreadID == thread.id && store.selectedSurface == .openClaw
+              ) {
+                store.makeSurfacePrimary(.openClaw)
+                store.selectOpenClawChatThread(thread.id)
+              }
+            }
+          }
+          .padding(.vertical, 2)
+        }
+        .frame(maxHeight: maxHeight)
+        .scrollIndicators(.visible)
+      }
+    }
+    .padding(.top, 2)
+  }
+}
+
+private struct OpenClawSidebarThreadRow: View {
+  let thread: OpenClawChatThread
+  let isSelected: Bool
+  let select: () -> Void
+
+  var body: some View {
+    Button(action: select) {
+      VStack(alignment: .leading, spacing: 2) {
+        Text(thread.title)
+          .font(.caption.weight(.medium))
+          .foregroundStyle(.primary)
+          .lineLimit(2)
+          .truncationMode(.tail)
+        HStack(spacing: 5) {
+          Text("\(thread.messageCount)")
+          Text(Self.relativeDate(thread.updatedAt))
+        }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.leading, 24)
+      .padding(.trailing, 7)
+      .padding(.vertical, 5)
+      .background(
+        isSelected ? Color.accentColor.opacity(0.14) : Color.clear,
+        in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+      )
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .disabled(false)
+  }
+
+  private static func relativeDate(_ date: Date) -> String {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .short
+    return formatter.localizedString(for: date, relativeTo: Date())
   }
 }
 
@@ -1558,7 +1677,7 @@ private struct SearchView: View {
   private var searchResultsBody: some View {
     switch store.searchMode {
     case .text:
-      if store.searchResults.isEmpty {
+      if store.searchResults.isEmpty && store.openClawChatSearchResults.isEmpty {
         if store.isSearching {
           Spacer()
           ProgressView()
@@ -1569,21 +1688,39 @@ private struct SearchView: View {
           }
         }
       } else {
-        List(store.searchResults) { result in
-          SearchRow(result: result)
-            .contentShape(Rectangle())
-            .onTapGesture {
-              store.select(.search(result))
-            }
-            .contextMenu {
-              WorkspaceLocationContextMenu(
-                location: .search(result),
-                showsHeadingActions: result.todo != nil,
-                select: { store.select(.search(result)) }
-              ) {
-                Label("Open", systemImage: "magnifyingglass")
+        List {
+          if !store.openClawChatSearchResults.isEmpty {
+            Section("Chat Threads") {
+              ForEach(store.openClawChatSearchResults) { result in
+                ChatSearchRow(result: result)
+                  .contentShape(Rectangle())
+                  .onTapGesture {
+                    store.selectOpenClawChatSearchResult(result)
+                  }
               }
             }
+          }
+
+          if !store.searchResults.isEmpty {
+            Section("Corpus") {
+              ForEach(store.searchResults) { result in
+                SearchRow(result: result)
+                  .contentShape(Rectangle())
+                  .onTapGesture {
+                    store.select(.search(result))
+                  }
+                  .contextMenu {
+                    WorkspaceLocationContextMenu(
+                      location: .search(result),
+                      showsHeadingActions: result.todo != nil,
+                      select: { store.select(.search(result)) }
+                    ) {
+                      Label("Open", systemImage: "magnifyingglass")
+                    }
+                  }
+              }
+            }
+          }
         }
         .listStyle(.inset)
       }
@@ -1628,6 +1765,43 @@ private struct SearchView: View {
   private func runSearchIfNeeded() {
     guard store.searchMode == .text else { return }
     Task { await store.runSearch() }
+  }
+}
+
+private struct ChatSearchRow: View {
+  let result: OpenClawChatSearchResult
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 8) {
+      WorkspaceIconBadge(systemImage: "bubble.left.and.bubble.right", tint: .accentColor, fill: Color.accentColor.opacity(0.10))
+      VStack(alignment: .leading, spacing: 5) {
+        HStack(spacing: 8) {
+          Text(result.title)
+            .font(.body.weight(.medium))
+            .lineLimit(1)
+          Spacer(minLength: 0)
+          Text("\(result.messageCount) message\(result.messageCount == 1 ? "" : "s")")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+        Text(result.snippet)
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .lineLimit(2)
+        Text(Self.relativeDate(result.updatedAt))
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+          .lineLimit(1)
+      }
+    }
+    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
+  }
+
+  private static func relativeDate(_ date: Date) -> String {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .short
+    return formatter.localizedString(for: date, relativeTo: Date())
   }
 }
 
@@ -2241,18 +2415,7 @@ private struct OpenClawChatView: View {
 
       Divider()
 
-      switch presentation {
-      case .fullPage:
-        HSplitView {
-          OpenClawChatThreadListView()
-            .frame(minWidth: 190, idealWidth: 220, maxWidth: 280)
-
-          chatColumn
-            .frame(minWidth: 420)
-        }
-      case .assistantPanel:
-        chatColumn
-      }
+      chatColumn
     }
     .sheet(isPresented: $isShowingConfiguration) {
       OpenClawConfigurationSheet()
@@ -2457,95 +2620,6 @@ private struct OpenClawChatView: View {
         }
       }
     }
-  }
-}
-
-private struct OpenClawChatThreadListView: View {
-  @EnvironmentObject private var store: WorkspaceStore
-
-  var body: some View {
-    VStack(spacing: 0) {
-      HStack(spacing: 8) {
-        Text("Threads")
-          .font(.caption.weight(.semibold))
-          .foregroundStyle(.secondary)
-        Spacer(minLength: 0)
-        Button {
-          store.createOpenClawChatThread()
-        } label: {
-          Label("New Thread", systemImage: "plus")
-        }
-        .labelStyle(.iconOnly)
-        .help("New chat thread")
-        .disabled(store.isSendingOpenClawMessage)
-      }
-      .padding(.horizontal, 12)
-      .padding(.vertical, 8)
-
-      Divider()
-
-      if store.openClawChatThreads.isEmpty {
-        VStack(alignment: .leading, spacing: 8) {
-          WorkspaceIconBadge(systemImage: "bubble.left.and.bubble.right", tint: .secondary)
-          Text("No threads yet")
-            .font(.callout.weight(.medium))
-          Text("Send a message or start a new chat.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(12)
-      } else {
-        List(selection: selection) {
-          ForEach(store.openClawChatThreads) { thread in
-            OpenClawChatThreadRow(thread: thread)
-              .tag(thread.id)
-          }
-        }
-        .listStyle(.sidebar)
-        .disabled(store.isSendingOpenClawMessage)
-      }
-    }
-    .background(WorkspaceDesign.barBackground)
-  }
-
-  private var selection: Binding<UUID?> {
-    Binding(
-      get: { store.selectedOpenClawChatThreadID },
-      set: { id in
-        guard let id else { return }
-        store.selectOpenClawChatThread(id)
-      }
-    )
-  }
-}
-
-private struct OpenClawChatThreadRow: View {
-  let thread: OpenClawChatThread
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Text(thread.title)
-        .font(.callout.weight(.medium))
-        .lineLimit(2)
-        .truncationMode(.tail)
-
-      HStack(spacing: 6) {
-        Text("\(thread.messageCount) message\(thread.messageCount == 1 ? "" : "s")")
-        Text(Self.relativeDate(thread.updatedAt))
-      }
-      .font(.caption)
-      .foregroundStyle(.secondary)
-      .lineLimit(1)
-    }
-    .padding(.vertical, 5)
-  }
-
-  private static func relativeDate(_ date: Date) -> String {
-    let formatter = RelativeDateTimeFormatter()
-    formatter.unitsStyle = .short
-    return formatter.localizedString(for: date, relativeTo: Date())
   }
 }
 
