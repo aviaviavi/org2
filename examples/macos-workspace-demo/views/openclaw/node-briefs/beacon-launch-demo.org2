@@ -1,0 +1,22 @@
+#+TITLE: Node brief: Beacon Launch
+:PROPERTIES:
+:ORG2_ARTIFACT_SCHEMA: org2-artifact-metadata/v1
+:ORG2_ARTIFACT_ROLE: view
+:ORG2_PROVENANCE: id:11111111-1111-4111-8111-111111111111, file:meetings/2026-06-15-0900-beta-review.org2
+:ORG2_GENERATOR: OpenClaw demo brief
+:ORG2_GENERATED_AT: 2026-06-15T16:00:00Z
+:ORG2_REVIEW_STATUS: review-required
+:END:
+
+* Most important facts
+- Beacon is preparing a private beta of a local analytics workspace.
+- The current launch review centers on onboarding speed, offline sample-data import, and cited recommendations.
+- The beta review meeting produced two open follow-ups: summarize readiness and turn transcript decisions into agenda TODOs.
+- Design has approved the onboarding copy, so remaining risk is mostly workflow clarity and data-readiness validation.
+
+* Open questions
+- Does the sample dashboard show enough provenance for generated recommendations?
+- Who owns final review of the CSV import path?
+
+* Suggested next action
+- Ask OpenClaw to draft the launch readiness summary from the meeting note and the active TODOs, then review it before sending.

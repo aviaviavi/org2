@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { formatOrg2QueryContext } from './examples/external-llm-context.mjs';
+import { formatOrg2QueryContext } from '../examples/external-llm-context.mjs';
 
-const repo = path.dirname(fileURLToPath(import.meta.url));
+const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const payload = {
   query: 'hosted AI integration',
   results: [

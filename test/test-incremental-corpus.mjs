@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { compileCorpus, compileCorpusIncremental } from './dist/corpusCompile.js';
+import { compileCorpus, compileCorpusIncremental } from '../dist/corpusCompile.js';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'org2-incremental-'));
 const cache = path.join(tmp, '.org2', 'corpus-index-cache.json');

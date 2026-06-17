@@ -1,0 +1,17 @@
+{
+  "agendaFiles": [
+    "notes/**/*.org2",
+    "daily/**/*.org2"
+  ],
+  "recursive": true,
+  "roam": {
+    "dailiesDir": "daily"
+  },
+  "openClaw": {
+    "threadDirs": [
+      "agents",
+      "meetings",
+      "views/openclaw"
+    ]
+  }
+}

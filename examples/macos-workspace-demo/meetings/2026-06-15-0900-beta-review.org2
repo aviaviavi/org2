@@ -1,0 +1,28 @@
+#+TITLE: Meeting: Beta review
+#+ORG2_KIND: meeting
+
+* Beta review
+:PROPERTIES:
+:ID: 77777777-7777-4777-8777-777777777777
+:KIND: meeting
+:RECORDED_AT: 2026-06-15T09:00:00Z
+:AUDIO_ARTIFACT: meetings/2026-06-15-0900-beta-review.m4a
+:SYSTEM_AUDIO_ARTIFACT: meetings/2026-06-15-0900-beta-review.system.m4a
+:TRANSCRIPT_ARTIFACT: meetings/2026-06-15-0900-beta-review.transcript.org2
+:TRANSCRIPTION_STATUS: complete
+:END:
+
+Attendees: Maya Chen, Jordan Lee, Priya Shah
+
+** Summary
+- Onboarding copy is ready for the private beta.
+- The sample dashboard still needs a final offline import check.
+- OpenClaw should prepare a readiness summary with citations.
+
+** Decisions
+- Keep the first beta cohort to five customers.
+- Show local provenance by default in generated recommendations.
+
+** Action items
+- TODO Draft launch readiness summary
+- TODO Verify CSV import without network access

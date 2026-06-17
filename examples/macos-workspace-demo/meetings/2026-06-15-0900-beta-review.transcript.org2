@@ -1,0 +1,20 @@
+#+TITLE: Transcript: Beta review
+#+ORG2_KIND: meeting-transcript
+
+* Transcript
+:PROPERTIES:
+:KIND: meeting-transcript
+:RECORDED_AT: 2026-06-15T09:00:00Z
+:AUDIO_ARTIFACT: meetings/2026-06-15-0900-beta-review.m4a
+:TRANSCRIPTION_STATUS: complete
+:END:
+
+** Microphone
+Maya: The onboarding copy is ready, but I want the readiness summary to be short enough for a weekly review.
+
+Jordan: The dashboard works with the sample file. I still need to test the import path offline.
+
+Priya: Please make sure the generated recommendations cite the notes or meeting lines they came from.
+
+** System audio
+OpenClaw: I can prepare a cited launch brief from the Beacon node, the meeting note, and the active agenda items.

@@ -83,10 +83,10 @@ private struct WorkspaceMainArea: View {
     } else {
       HSplitView {
         WorkspaceSurfaceCacheView(selectedSurface: store.selectedSurface)
-          .frame(minWidth: 300, idealWidth: 420)
+          .frame(minWidth: 320, idealWidth: 460)
 
         WorkspaceDetailArea()
-          .frame(minWidth: 420)
+          .frame(minWidth: 520, idealWidth: 720)
       }
     }
   }
@@ -159,20 +159,38 @@ private struct WorkspaceSurfaceView: View {
   let surface: WorkspaceSurface
 
   var body: some View {
-    switch surface {
-    case .agenda:
-      AgendaView()
-    case .files:
-      FilesView()
-    case .search:
-      SearchView()
-    case .meetings:
-      MeetingsView()
-    case .openClaw:
-      OpenClawChatView()
-    case .agentSpace:
-      OpenClawThreadsView()
+    Group {
+      switch surface {
+      case .home:
+        HomeView()
+      case .agenda:
+        AgendaView()
+      case .files:
+        FilesView()
+      case .search:
+        SearchView()
+      case .meetings:
+        MeetingsView()
+      case .openClaw:
+        OpenClawChatView()
+      case .agentSpace:
+        OpenClawThreadsView()
+      }
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+  }
+}
+
+private struct HomeView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    OpenClawChatView(presentation: .fullPage, surface: .home)
+      .onAppear {
+        if store.selectedSurface == .home {
+          store.openHome()
+        }
+      }
   }
 }
 
@@ -183,10 +201,10 @@ private struct WorkspaceDetailArea: View {
     if store.isOpenClawAssistantPresented && store.selectedSurface != .openClaw {
       HSplitView {
         DetailView()
-          .frame(minWidth: 420)
+          .frame(minWidth: 520, idealWidth: 740)
 
         OpenClawChatView(presentation: .assistantPanel)
-          .frame(minWidth: 320, idealWidth: 380, maxWidth: 520)
+          .frame(minWidth: 340, idealWidth: 400, maxWidth: 520)
       }
     } else {
       DetailView()
@@ -221,10 +239,16 @@ private struct SidebarView: View {
       Section("Corpus") {
         if let root = store.corpusRoot {
           VStack(alignment: .leading, spacing: 5) {
-            Text(root.path)
-              .font(.caption)
+            Text(root.lastPathComponent)
+              .font(.caption.weight(.semibold))
               .foregroundStyle(.secondary)
-              .lineLimit(4)
+              .lineLimit(1)
+              .truncationMode(.tail)
+            Text(root.deletingLastPathComponent().path)
+              .font(.caption2)
+              .foregroundStyle(.tertiary)
+              .lineLimit(2)
+              .truncationMode(.middle)
               .textSelection(.enabled)
             HStack(spacing: 5) {
               Image(systemName: "doc.text")
@@ -541,6 +565,13 @@ private struct HeadingActionsContextMenu: View {
     } label: {
       Label("Pass to Agent", systemImage: "person.crop.circle.badge.checkmark")
     }
+
+    Button {
+      select()
+      Task { await store.applyApproveAndAgentHandoffShortcut(to: location) }
+    } label: {
+      Label("Approve & Hand Off", systemImage: "checkmark.seal")
+    }
   }
 
   private func todoButton(_ title: String, status: TodoEditStatus) -> some View {
@@ -850,12 +881,12 @@ private struct KeyboardShortcutsView: View {
           GridItem(.flexible(), spacing: 16)
         ], alignment: .leading, spacing: 18) {
           ShortcutSection(title: "Navigate", shortcuts: [
-            ShortcutHelpItem(keys: "⌘1", action: "Agenda"),
-            ShortcutHelpItem(keys: "⌘2", action: "Files"),
-            ShortcutHelpItem(keys: "⌘3 / ⌘⇧F", action: "Corpus search"),
-            ShortcutHelpItem(keys: "⌘4", action: "Meetings"),
-            ShortcutHelpItem(keys: "⌘5", action: "OpenClaw Chat"),
-            ShortcutHelpItem(keys: "⌘6", action: "Agent Space"),
+            ShortcutHelpItem(keys: "⌘1", action: "Home"),
+            ShortcutHelpItem(keys: "⌘2", action: "Agenda"),
+            ShortcutHelpItem(keys: "⌘3", action: "Files"),
+            ShortcutHelpItem(keys: "⌘4 / ⌘⇧F", action: "Corpus search"),
+            ShortcutHelpItem(keys: "⌘5", action: "Meetings"),
+            ShortcutHelpItem(keys: "⌘6", action: "OpenClaw Chat"),
             ShortcutHelpItem(keys: "⌘P / ⌘K", action: "Quick Open"),
             ShortcutHelpItem(keys: "⌘0", action: "Toggle OpenClaw side panel"),
             ShortcutHelpItem(keys: "⌘⌥P", action: "Make current pane primary"),
@@ -982,39 +1013,7 @@ private struct AgendaView: View {
           Task { await store.refreshAgenda() }
         }
       } else if let agenda = store.agenda {
-        HStack(spacing: 10) {
-          Picker("Mode", selection: $store.agendaMode) {
-            ForEach(AgendaMode.allCases) { mode in
-              Text(mode.title).tag(mode)
-            }
-          }
-          .pickerStyle(.segmented)
-          .frame(width: 340)
-
-          TextField("Filter agenda", text: $store.agendaFilter)
-            .textFieldStyle(.roundedBorder)
-            .focused($agendaFilterFocused)
-            .onSubmit {
-              agendaFilterFocused = false
-            }
-
-          Button {
-            store.promptAndCaptureTodoShortcut()
-          } label: {
-            Label("Capture", systemImage: "square.and.pencil")
-          }
-
-          if !store.agendaFilter.isEmpty {
-            Button {
-              store.clearAgendaFilter()
-            } label: {
-              Label("Clear", systemImage: "xmark.circle.fill")
-            }
-            .labelStyle(.iconOnly)
-          }
-        }
-        .padding(.horizontal, WorkspaceDesign.contentInset)
-        .padding(.bottom, 12)
+        AgendaControls(agendaFilterFocused: $agendaFilterFocused)
 
         if store.agendaMode == .assigned {
           AssignedAgendaSummaryView(count: store.visibleAssignedWorkItems.count)
@@ -1061,6 +1060,59 @@ private struct AgendaView: View {
   }
 }
 
+private struct AgendaControls: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  var agendaFilterFocused: FocusState<Bool>.Binding
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 10) {
+        Picker("Mode", selection: $store.agendaMode) {
+          ForEach(AgendaMode.allCases) { mode in
+            Text(mode.title).tag(mode)
+          }
+        }
+        .pickerStyle(.segmented)
+        .frame(maxWidth: 300)
+
+        Spacer(minLength: 0)
+
+        Button {
+          store.promptAndCaptureTodoShortcut()
+        } label: {
+          Label("Capture", systemImage: "square.and.pencil")
+        }
+        .buttonStyle(WorkspaceActionButtonStyle())
+      }
+
+      HStack(spacing: 8) {
+        Image(systemName: "line.3.horizontal.decrease.circle")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+        TextField("Filter agenda", text: $store.agendaFilter)
+          .textFieldStyle(.roundedBorder)
+          .focused(agendaFilterFocused)
+          .onSubmit {
+            agendaFilterFocused.wrappedValue = false
+          }
+
+        if !store.agendaFilter.isEmpty {
+          Button {
+            store.clearAgendaFilter()
+          } label: {
+            Label("Clear", systemImage: "xmark.circle.fill")
+          }
+          .labelStyle(.iconOnly)
+          .help("Clear agenda filter")
+        }
+      }
+    }
+    .controlSize(.small)
+    .padding(.horizontal, WorkspaceDesign.contentInset)
+    .padding(.bottom, 12)
+  }
+}
+
 private struct AgendaSummaryView: View {
   let agenda: AgendaPayload
 
@@ -1072,7 +1124,6 @@ private struct AgendaSummaryView: View {
       if let workload = agenda.workload {
         MetricView(title: "Effort", value: formatMinutes(workload.totalMinutes))
       }
-      Spacer(minLength: 0)
     }
     .padding(.horizontal, WorkspaceDesign.contentInset)
     .padding(.bottom, 12)
@@ -1110,11 +1161,14 @@ private struct MetricView: View {
       Text(value)
         .font(.title3.weight(.semibold))
         .monospacedDigit()
+        .lineLimit(1)
       Text(title)
         .font(.caption.weight(.medium))
         .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.82)
     }
-    .frame(width: 94, alignment: .leading)
+    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
     .padding(.horizontal, 10)
     .padding(.vertical, 8)
     .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous))
@@ -1308,6 +1362,12 @@ private struct AgendaBulkActionBar: View {
       }
 
       Button {
+        Task { await store.applyApproveAndAgentHandoffShortcut() }
+      } label: {
+        Label("Approve & Hand Off", systemImage: "checkmark.seal")
+      }
+
+      Button {
         store.clearAgendaBulkSelection()
       } label: {
         Label("Clear", systemImage: "xmark.circle")
@@ -1348,6 +1408,7 @@ private struct AgendaRow: View {
           Text(Org2Display.cleanInline(item.headline))
             .font(.body.weight(.medium))
             .lineLimit(1)
+            .truncationMode(.tail)
           if item.idValue != nil {
             Image(systemName: "link")
               .font(.caption)
@@ -1356,7 +1417,11 @@ private struct AgendaRow: View {
         }
         HStack(spacing: 8) {
           Text([item.kind, item.time].compactMap { $0 }.joined(separator: " "))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
           Text(store.relativePath(item.file) + ":\(item.lineForEditor)")
+            .lineLimit(1)
+            .truncationMode(.middle)
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -1367,6 +1432,7 @@ private struct AgendaRow: View {
         Text(effort)
           .font(.caption.monospacedDigit())
           .foregroundStyle(.secondary)
+          .lineLimit(1)
           .padding(.horizontal, 7)
           .padding(.vertical, 3)
           .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
@@ -1377,6 +1443,7 @@ private struct AgendaRow: View {
 }
 
 private struct AgendaAssignmentIndicator: View {
+  @EnvironmentObject private var store: WorkspaceStore
   let item: AgendaItem
 
   private var assignee: String? {
@@ -1386,7 +1453,7 @@ private struct AgendaAssignmentIndicator: View {
   }
 
   private var isAgentAssigned: Bool {
-    assignee != nil
+    !store.isPersonalAssignee(assignee)
   }
 
   private var label: String {
@@ -1394,8 +1461,11 @@ private struct AgendaAssignmentIndicator: View {
   }
 
   private var helpText: String {
-    if let assignee {
+    if isAgentAssigned, let assignee {
       return "Assigned to agent: \(assignee)"
+    }
+    if let assignee {
+      return "Assigned to me: \(assignee)"
     }
     return "Assigned to me"
   }
@@ -1587,9 +1657,11 @@ private struct SearchRow: View {
           .font(.callout)
           .foregroundStyle(.secondary)
           .lineLimit(2)
-        Text(store.relativePath(result.file) + ":\(result.lineForEditor)")
-          .font(.caption)
-          .foregroundStyle(.tertiary)
+          Text(store.relativePath(result.file) + ":\(result.lineForEditor)")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+            .truncationMode(.middle)
       }
     }
     .padding(.horizontal, WorkspaceDesign.contentInset)
@@ -1626,8 +1698,11 @@ private struct NodeSearchRow: View {
 
         HStack(spacing: 8) {
           Text(store.relativePath(node.file) + ":\(node.line)")
+            .lineLimit(1)
+            .truncationMode(.middle)
           if let idValue = node.idValue {
             Text(shortID(idValue))
+              .fixedSize(horizontal: true, vertical: false)
           }
         }
         .font(.caption)
@@ -1763,7 +1838,7 @@ private struct MeetingsView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             .lineLimit(1)
-            .truncationMode(.middle)
+            .truncationMode(.tail)
 
           Spacer(minLength: 0)
 
@@ -1857,35 +1932,13 @@ private struct AudioSettingsSection: View {
   var body: some View {
     DisclosureGroup(isExpanded: $store.isAudioSettingsExpanded) {
       VStack(alignment: .leading, spacing: 8) {
-        HStack(spacing: 8) {
-          Image(systemName: store.audioSettingsStatus.isWhisperCppReady ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-            .foregroundStyle(store.audioSettingsStatus.isWhisperCppReady ? Color.green : Color.orange)
-          Text(store.audioSettingsStatus.statusLabel)
-            .font(.callout.weight(.semibold))
-          Spacer(minLength: 0)
-          Button {
-            store.refreshAudioSettingsStatus()
-          } label: {
-            Label("Refresh", systemImage: "arrow.clockwise")
-          }
-          .controlSize(.small)
-
-          Button {
-            Task { await store.installFastMeetingTranscriber() }
-          } label: {
-            if store.isInstallingFastTranscriber {
-              Label("Installing", systemImage: "arrow.down.circle")
-            } else {
-              Label("Install Fast Transcriber", systemImage: "bolt.fill")
-            }
-          }
-          .controlSize(.small)
-          .disabled(store.isInstallingFastTranscriber || store.audioSettingsStatus.isWhisperCppReady)
-        }
+        audioSettingsHeader
 
         Text(store.audioSettingsStatusText.isEmpty ? store.audioSettingsStatus.detailText : store.audioSettingsStatusText)
           .font(.caption)
           .foregroundStyle(.secondary)
+          .lineLimit(2)
+          .fixedSize(horizontal: false, vertical: true)
 
         HStack(alignment: .top, spacing: 8) {
           Image(systemName: store.workspaceRuntimeIdentity.isAppBundle ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
@@ -1896,10 +1949,12 @@ private struct AudioSettingsSection: View {
             Text(store.workspaceRuntimeIdentity.audioPermissionDetailText)
               .font(.caption)
               .foregroundStyle(.secondary)
+              .lineLimit(2)
+              .fixedSize(horizontal: false, vertical: true)
           }
         }
 
-        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
+        VStack(alignment: .leading, spacing: 4) {
           audioSettingRow("Active", store.audioSettingsStatus.backendDescription)
           audioSettingRow("App path", store.workspaceRuntimeIdentity.bundlePath)
           audioSettingRow("whisper.cpp", store.audioSettingsStatus.whisperCppExecutablePath ?? "Not installed")
@@ -1912,8 +1967,10 @@ private struct AudioSettingsSection: View {
           }
         }
         .font(.caption)
+        .frame(maxWidth: .infinity, alignment: .leading)
       }
       .padding(.top, 6)
+      .frame(maxWidth: .infinity, alignment: .leading)
     } label: {
       HStack(spacing: 8) {
         Label("Audio Settings", systemImage: "waveform")
@@ -1926,15 +1983,67 @@ private struct AudioSettingsSection: View {
     }
   }
 
+  private var audioSettingsHeader: some View {
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: 8) {
+        audioSettingsStatusLabel
+        Spacer(minLength: 8)
+        audioSettingsActions
+      }
+
+      VStack(alignment: .leading, spacing: 8) {
+        audioSettingsStatusLabel
+        audioSettingsActions
+      }
+    }
+  }
+
+  private var audioSettingsStatusLabel: some View {
+    HStack(spacing: 8) {
+      Image(systemName: store.audioSettingsStatus.isWhisperCppReady ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+        .foregroundStyle(store.audioSettingsStatus.isWhisperCppReady ? Color.green : Color.orange)
+      Text(store.audioSettingsStatus.statusLabel)
+        .font(.callout.weight(.semibold))
+        .lineLimit(1)
+        .truncationMode(.tail)
+    }
+  }
+
+  private var audioSettingsActions: some View {
+    HStack(spacing: 8) {
+      Button {
+        store.refreshAudioSettingsStatus()
+      } label: {
+        Label("Refresh", systemImage: "arrow.clockwise")
+      }
+
+      Button {
+        Task { await store.installFastMeetingTranscriber() }
+      } label: {
+        if store.isInstallingFastTranscriber {
+          Label("Installing", systemImage: "arrow.down.circle")
+        } else {
+          Label("Install Fast Transcriber", systemImage: "bolt.fill")
+        }
+      }
+      .disabled(store.isInstallingFastTranscriber || store.audioSettingsStatus.isWhisperCppReady)
+    }
+    .controlSize(.small)
+    .buttonStyle(WorkspaceActionButtonStyle())
+  }
+
   private func audioSettingRow(_ label: String, _ value: String) -> some View {
-    GridRow {
+    HStack(alignment: .firstTextBaseline, spacing: 10) {
       Text(label)
         .foregroundStyle(.secondary)
+        .frame(width: 78, alignment: .leading)
       Text(value)
         .textSelection(.enabled)
         .lineLimit(1)
         .truncationMode(.middle)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
 
@@ -2008,7 +2117,7 @@ private struct MeetingInputStatusView: View {
           .font(.caption)
           .foregroundStyle(.secondary)
           .lineLimit(1)
-          .truncationMode(.middle)
+          .truncationMode(.tail)
       }
     }
     .accessibilityElement(children: .combine)
@@ -2117,9 +2226,11 @@ private struct OpenClawChatView: View {
   @EnvironmentObject private var store: WorkspaceStore
   @State private var isShowingConfiguration = false
   let presentation: OpenClawChatPresentation
+  let surface: WorkspaceSurface?
 
-  init(presentation: OpenClawChatPresentation = .fullPage) {
+  init(presentation: OpenClawChatPresentation = .fullPage, surface: WorkspaceSurface? = .openClaw) {
     self.presentation = presentation
+    self.surface = surface
   }
 
   var body: some View {
@@ -2150,7 +2261,7 @@ private struct OpenClawChatView: View {
   private var header: some View {
     switch presentation {
     case .fullPage:
-      HeaderBar(title: "OpenClaw Chat", subtitle: store.openClawStatusText, surface: .openClaw) {
+      HeaderBar(title: "OpenClaw Chat", subtitle: store.openClawStatusText, surface: surface) {
         headerActions
       }
     case .assistantPanel:
@@ -2225,34 +2336,28 @@ private struct OpenClawChatView: View {
   @ViewBuilder
   private var configurationStrip: some View {
     if presentation == .fullPage {
-      HStack(spacing: 8) {
-        Label("Chat", systemImage: "cpu")
-          .font(.caption.weight(.medium))
-          .foregroundStyle(.secondary)
-        TextField("main", text: $store.openClawAgentID)
-          .textFieldStyle(.roundedBorder)
-          .frame(width: 180)
-        Label("Handoff", systemImage: "person.crop.circle.badge.checkmark")
-          .font(.caption.weight(.medium))
-          .foregroundStyle(.secondary)
-        Text(store.agentHandoffAssignee)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-        Label("Org2", systemImage: "folder")
-          .font(.caption.weight(.medium))
-          .foregroundStyle(.secondary)
-        Text(store.openClawContextRootText)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.middle)
-        Text(store.openClawEndpointText)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.middle)
-        Spacer(minLength: 0)
+      VStack(alignment: .leading, spacing: 6) {
+        HStack(spacing: 8) {
+          Label("Chat", systemImage: "cpu")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: true, vertical: false)
+          TextField("main", text: $store.openClawAgentID)
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 160)
+          Spacer(minLength: 0)
+          Label(store.agentHandoffAssignee, systemImage: "person.crop.circle.badge.checkmark")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .help("Handoff assignee")
+        }
+
+        HStack(spacing: 10) {
+          configCaption(systemImage: "folder", text: store.openClawContextRootText)
+          configCaption(systemImage: "network", text: store.openClawEndpointText)
+        }
       }
       .padding(.horizontal, WorkspaceDesign.contentInset)
       .padding(.bottom, 10)
@@ -2271,6 +2376,19 @@ private struct OpenClawChatView: View {
       .padding(.horizontal, 10)
       .padding(.bottom, 10)
     }
+  }
+
+  private func configCaption(systemImage: String, text: String) -> some View {
+    HStack(spacing: 4) {
+      Image(systemName: systemImage)
+        .font(.caption2.weight(.semibold))
+      Text(text)
+        .lineLimit(1)
+        .truncationMode(.middle)
+    }
+    .font(.caption)
+    .foregroundStyle(.tertiary)
+    .help(text)
   }
 
   private var chatTranscript: some View {
@@ -2535,6 +2653,7 @@ private struct OpenClawConfigurationSheet: View {
   @State private var endpoint = ""
   @State private var agent = ""
   @State private var handoffAssignee = ""
+  @State private var personalAssigneeNames = ""
   @State private var remoteCorpusPath = ""
   @State private var token = ""
   @State private var clearToken = false
@@ -2578,6 +2697,20 @@ private struct OpenClawConfigurationSheet: View {
         }
 
         GridRow {
+          Text("My Assignee Names")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+          VStack(alignment: .leading, spacing: 3) {
+            TextField("Avi, avi@example.com", text: $personalAssigneeNames)
+              .textFieldStyle(.roundedBorder)
+              .frame(width: 430)
+            Text("Blank ASSIGNEE always counts as you. Separate aliases with commas, semicolons, or new lines.")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+        }
+
+        GridRow {
           Text("Remote Org2 Root")
             .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
@@ -2616,6 +2749,7 @@ private struct OpenClawConfigurationSheet: View {
             endpoint: endpoint,
             agent: agent,
             handoffAssignee: handoffAssignee,
+            personalAssigneeNames: personalAssigneeNames,
             remoteCorpusPath: remoteCorpusPath,
             token: token,
             clearToken: clearToken
@@ -2633,6 +2767,7 @@ private struct OpenClawConfigurationSheet: View {
       endpoint = store.openClawEndpointText
       agent = store.openClawAgentID
       handoffAssignee = store.agentHandoffAssignee
+      personalAssigneeNames = store.personalAssigneeNamesText
       remoteCorpusPath = store.openClawRemoteCorpusPath
       token = ""
       clearToken = false
@@ -2938,6 +3073,8 @@ private struct AssignedWorkRow: View {
           Text(store.relativePath(item.file) + ":\(item.lineForEditor)")
             .font(.caption)
             .foregroundStyle(.tertiary)
+            .lineLimit(1)
+            .truncationMode(.middle)
           if let last = item.lastAgentUpdate ?? item.assignedAt {
             Text(last)
               .font(.caption)
@@ -2985,6 +3122,7 @@ private struct OpenClawThreadRow: View {
           .font(.caption)
           .foregroundStyle(.tertiary)
           .lineLimit(1)
+          .truncationMode(.middle)
       }
     }
     .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
@@ -3015,11 +3153,11 @@ private struct DetailView: View {
               scrollToBlockTarget(request, proxy: proxy)
             }
           }
-          .frame(minWidth: 420)
+          .frame(minWidth: 420, idealWidth: 560)
 
           if store.isNodeContextPanePresented {
             NodeContextPane()
-              .frame(minWidth: 320, idealWidth: 380, maxWidth: 520)
+              .frame(minWidth: 280, idealWidth: 340, maxWidth: 440)
           }
         }
       } else {
@@ -3187,6 +3325,37 @@ private struct DetailHeader: View {
   }
 
   private var detailActionBar: some View {
+    ViewThatFits(in: .horizontal) {
+      fullDetailActionBar
+      compactDetailActionBar
+    }
+    .controlSize(.small)
+  }
+
+  private var fullDetailActionBar: some View {
+    HStack(spacing: 7) {
+      detailNavigationControls
+      Spacer(minLength: 8)
+      scopeAndEditControls
+    }
+    .fixedSize(horizontal: true, vertical: false)
+  }
+
+  private var compactDetailActionBar: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 7) {
+        detailNavigationControls
+        Spacer(minLength: 0)
+      }
+
+      HStack(spacing: 7) {
+        scopeAndEditControls
+        Spacer(minLength: 0)
+      }
+    }
+  }
+
+  private var detailNavigationControls: some View {
     HStack(spacing: 7) {
       Button {
         store.navigateBackInDetail()
@@ -3214,14 +3383,15 @@ private struct DetailHeader: View {
         .labelStyle(.iconOnly)
         .help("Clear search match highlights")
       }
+    }
+  }
 
-      Spacer(minLength: 8)
-
+  private var scopeAndEditControls: some View {
+    HStack(spacing: 7) {
       scopePicker
       editControls
       organizeMenu
     }
-    .controlSize(.small)
   }
 
   private var sourceMenu: some View {
@@ -3409,6 +3579,12 @@ private struct DetailHeader: View {
         Task { await store.applyAgentHandoffShortcut() }
       } label: {
         Label("Pass to Agent", systemImage: "person.crop.circle.badge.checkmark")
+      }
+
+      Button {
+        Task { await store.applyApproveAndAgentHandoffShortcut() }
+      } label: {
+        Label("Approve & Hand Off", systemImage: "checkmark.seal")
       }
 
       Button {

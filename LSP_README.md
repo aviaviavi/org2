@@ -162,14 +162,14 @@ This allows editors to provide a good user experience while editing files with s
 ### Run the Diagnostics Test
 
 ```bash
-node test-diagnostics.mjs        # Parser diagnostics
-node test-lsp-diagnostics.mjs    # Full LSP integration
+node test/test-diagnostics.mjs        # Parser diagnostics
+node test/test-lsp-diagnostics.mjs    # Full LSP integration
 ```
 
 ### Run the Feature Tests
 
 ```bash
-node test-lsp-features.mjs
+node test/test-lsp-features.mjs
 ```
 
 This test:
@@ -182,7 +182,7 @@ This test:
 ### Run the Quick Integration Test
 
 ```bash
-node test-lsp-integration.mjs
+node test/test-lsp-integration.mjs
 ```
 
 ### Manual Testing

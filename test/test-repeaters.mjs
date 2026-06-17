@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { parseOrgToCanonicalAst } from './dist/parser.js';
+import { parseOrgToCanonicalAst } from '../dist/parser.js';
 
 const ast = parseOrgToCanonicalAst(`* TODO Habit\nSCHEDULED: <2026-05-20 Wed ++1w> DEADLINE: <2026-05-21 Thu .+2d --1d>\n`);
 const [headline] = ast.children;

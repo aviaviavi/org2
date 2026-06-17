@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
-const repo = path.dirname(fileURLToPath(import.meta.url));
+const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cli = path.join(repo, 'dist', 'cli.js');
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'org2-effort-'));
 const file = path.join(tmpDir, 'work.org2');

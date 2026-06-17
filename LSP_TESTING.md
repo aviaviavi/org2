@@ -104,7 +104,7 @@ npm test
 
 Quick LSP functionality test:
 ```bash
-node test-lsp-quick.mjs
+node test/test-lsp-integration.mjs
 ```
 
 ## Future Enhancements

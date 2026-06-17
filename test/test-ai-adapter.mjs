@@ -5,7 +5,7 @@ import {
   MockAiAdapter,
   createAiAdapterRequest,
   normalizeAiAdapterResponse,
-} from "./dist/aiAdapter.js";
+} from "../dist/aiAdapter.js";
 
 const request = createAiAdapterRequest({
   jobId: "weekly-summary",

@@ -5,7 +5,7 @@
  * Tests parseOrgWithDiagnostics and the LSP diagnostic reporting
  */
 
-import { parseOrgWithDiagnostics } from './dist/parser.js';
+import { parseOrgWithDiagnostics } from '../dist/parser.js';
 import assert from 'assert';
 
 console.log('=== Testing parseOrgWithDiagnostics ===\n');
