@@ -312,15 +312,32 @@ private struct SidebarSurfaceRow: View {
 
 private struct OpenClawSidebarThreadList: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @State private var isExpanded = true
 
   private let maxHeight: CGFloat = 220
 
   var body: some View {
     VStack(alignment: .leading, spacing: 5) {
       HStack(spacing: 6) {
-        Text("Threads")
-          .font(.caption.weight(.semibold))
+        Button {
+          withAnimation(.easeInOut(duration: 0.16)) {
+            isExpanded.toggle()
+          }
+        } label: {
+          HStack(spacing: 4) {
+            Image(systemName: "chevron.right")
+              .font(.caption2.weight(.semibold))
+              .rotationEffect(.degrees(isExpanded ? 90 : 0))
+              .frame(width: 10, height: 10)
+            Text("Threads")
+              .font(.caption.weight(.semibold))
+          }
           .foregroundStyle(.secondary)
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(isExpanded ? "Hide chat threads" : "Show chat threads")
+
         Spacer(minLength: 0)
         Button {
           store.createOpenClawChatThread()
@@ -336,29 +353,31 @@ private struct OpenClawSidebarThreadList: View {
       .padding(.leading, 24)
       .padding(.trailing, 2)
 
-      if store.openClawChatThreads.isEmpty {
-        Text("No chat threads")
-          .font(.caption)
-          .foregroundStyle(.tertiary)
-          .padding(.leading, 24)
-          .padding(.vertical, 3)
-      } else {
-        ScrollView {
-          LazyVStack(alignment: .leading, spacing: 3) {
-            ForEach(store.openClawChatThreads) { thread in
-              OpenClawSidebarThreadRow(
-                thread: thread,
-                isSelected: store.selectedOpenClawChatThreadID == thread.id && store.selectedSurface == .openClaw
-              ) {
-                store.makeSurfacePrimary(.openClaw)
-                store.selectOpenClawChatThread(thread.id)
+      if isExpanded {
+        if store.openClawChatThreads.isEmpty {
+          Text("No chat threads")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .padding(.leading, 24)
+            .padding(.vertical, 3)
+        } else {
+          ScrollView {
+            LazyVStack(alignment: .leading, spacing: 3) {
+              ForEach(store.openClawChatThreads) { thread in
+                OpenClawSidebarThreadRow(
+                  thread: thread,
+                  isSelected: store.selectedOpenClawChatThreadID == thread.id && store.selectedSurface == .openClaw
+                ) {
+                  store.makeSurfacePrimary(.openClaw)
+                  store.selectOpenClawChatThread(thread.id)
+                }
               }
             }
+            .padding(.vertical, 2)
           }
-          .padding(.vertical, 2)
+          .frame(maxHeight: maxHeight)
+          .scrollIndicators(.visible)
         }
-        .frame(maxHeight: maxHeight)
-        .scrollIndicators(.visible)
       }
     }
     .padding(.top, 2)
