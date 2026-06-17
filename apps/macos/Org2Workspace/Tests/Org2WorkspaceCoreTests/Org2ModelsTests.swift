@@ -3375,6 +3375,30 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testWorkspaceSearchIncludesOpenClawChatThreads() async throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.openClawMessages = [
+      OpenClawChatMessage(role: .user, content: "How should we structure chat thread navigation?"),
+      OpenClawChatMessage(role: .assistant, content: "Nest threads under OpenClaw in the sidebar.")
+    ]
+    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.searchQuery = "sidebar"
+
+    await store.runSearch()
+
+    XCTAssertTrue(store.searchResults.isEmpty)
+    XCTAssertEqual(store.openClawChatSearchResults.count, 1)
+    XCTAssertEqual(store.openClawChatSearchResults.first?.threadID, threadID)
+    XCTAssertEqual(store.selectedSurface, .search)
+
+    let result = try XCTUnwrap(store.openClawChatSearchResults.first)
+    store.selectOpenClawChatSearchResult(result)
+
+    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, threadID)
+  }
+
+  @MainActor
   func testWorkspaceNodeSearchFiltersIndexedNodesAndOpensSelection() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-node-search-\(UUID().uuidString)", isDirectory: true)
