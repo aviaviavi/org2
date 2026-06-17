@@ -88,7 +88,137 @@ private struct InlineFormatShortcut {
   let title: String
 }
 
+struct ParagraphWikiLinkCompletionMatch: Equatable, Sendable {
+  let query: String
+  let replacementRange: NSRange
+}
+
+enum ParagraphWikiLinkCompletion {
+  static func match(in text: String, selectedRange: NSRange) -> ParagraphWikiLinkCompletionMatch? {
+    guard selectedRange.length == 0 else { return nil }
+    let ns = text as NSString
+    let cursor = min(max(0, selectedRange.location), ns.length)
+    guard cursor >= 2 else { return nil }
+    let prefix = ns.substring(with: NSRange(location: 0, length: cursor))
+    guard let openRange = prefix.range(of: "[[", options: .backwards) else { return nil }
+    let openLocation = prefix.distance(from: prefix.startIndex, to: openRange.lowerBound)
+    let bodyLocation = openLocation + 2
+    guard bodyLocation <= cursor else { return nil }
+    let body = ns.substring(with: NSRange(location: bodyLocation, length: cursor - bodyLocation))
+    guard !body.contains("]]"), !body.contains("]["), !body.contains("\n") else { return nil }
+    let query = body.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty,
+          OpenClawFileReference.fromLinkTarget(query) == nil,
+          !query.lowercased().hasPrefix("id:")
+    else {
+      return nil
+    }
+    return ParagraphWikiLinkCompletionMatch(
+      query: query,
+      replacementRange: NSRange(location: openLocation, length: cursor - openLocation)
+    )
+  }
+
+  static func replacement(
+    in text: String,
+    match: ParagraphWikiLinkCompletionMatch,
+    node: OrgRoamNodeReference
+  ) -> InlineSelectionReplacement? {
+    let replacement = formattedLink(target: node.preferredLinkTarget, label: node.title)
+    guard let swiftRange = Range(match.replacementRange, in: text) else { return nil }
+    var output = text
+    output.replaceSubrange(swiftRange, with: replacement)
+    return InlineSelectionReplacement(
+      text: output,
+      selectedRange: NSRange(location: match.replacementRange.location + (replacement as NSString).length, length: 0)
+    )
+  }
+
+  private static func formattedLink(target: String, label: String) -> String {
+    let cleanLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanLabel.isEmpty, cleanLabel != target else {
+      return "[[\(target)]]"
+    }
+    return "[[\(target)][\(cleanLabel)]]"
+  }
+}
+
+struct ParagraphWikiLinkCompletionPanel: View {
+  let query: String
+  let candidates: [OrgRoamNodeReference]
+  let choose: (OrgRoamNodeReference) -> Void
+  let create: () -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 5) {
+      Label("Link to node", systemImage: "link.badge.plus")
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+
+      ForEach(candidates.prefix(6)) { node in
+        Button {
+          choose(node)
+        } label: {
+          HStack(spacing: 7) {
+            Image(systemName: node.idValue == nil ? "doc.text" : "number")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+              .frame(width: 12)
+            VStack(alignment: .leading, spacing: 2) {
+              Text(node.title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+              Text(node.file)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            }
+            Spacer(minLength: 0)
+          }
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+      }
+
+      if !candidates.isEmpty {
+        Divider()
+      }
+
+      Button {
+        create()
+      } label: {
+        HStack(spacing: 7) {
+          Image(systemName: "plus")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .frame(width: 12)
+          Text("Create \"\(query)\"")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+          Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+    }
+    .padding(.horizontal, 9)
+    .padding(.vertical, 7)
+    .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 7, style: .continuous)
+        .stroke(Color.accentColor.opacity(0.20))
+    )
+    .shadow(color: .black.opacity(0.08), radius: 10, y: 4)
+    .frame(width: 280, alignment: .leading)
+    .help("Resolve [[\(query)]]")
+  }
+}
+
 struct ParagraphFocusedInlineEditor: View {
+  @Environment(\.orgRoamLinkResolver) private var orgRoamLinkResolver
   @Binding var text: String
   @Binding var selectedRange: NSRange
   let token: OrgEditableInlineToken
@@ -132,23 +262,118 @@ struct ParagraphFocusedInlineEditor: View {
   }
 
   private func focusedLinkEditor(_ link: OrgEditableInlineLink) -> some View {
-    HStack(spacing: 8) {
-      Label("Link", systemImage: linkIcon(for: link))
-        .font(.caption.weight(.medium))
-        .labelStyle(.titleAndIcon)
-        .foregroundStyle(.secondary)
-        .frame(width: 72, alignment: .leading)
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(spacing: 8) {
+        Label("Link", systemImage: linkIcon(for: link))
+          .font(.caption.weight(.medium))
+          .labelStyle(.titleAndIcon)
+          .foregroundStyle(.secondary)
+          .frame(width: 72, alignment: .leading)
 
-      TextField("label", text: focusedLinkLabelBinding(link))
-        .textFieldStyle(.roundedBorder)
-        .frame(minWidth: 120)
+        TextField("label", text: focusedLinkLabelBinding(link))
+          .textFieldStyle(.roundedBorder)
+          .frame(minWidth: 120)
 
-      TextField("target", text: focusedLinkTargetBinding(link))
-        .textFieldStyle(.roundedBorder)
-        .font(.caption.monospaced())
-        .frame(minWidth: 220)
+        TextField("target", text: focusedLinkTargetBinding(link))
+          .textFieldStyle(.roundedBorder)
+          .font(.caption.monospaced())
+          .frame(minWidth: 220)
+      }
+
+      linkResolutionPanel(for: currentLink(matching: link) ?? link)
     }
     .controlSize(.small)
+  }
+
+  @ViewBuilder
+  private func linkResolutionPanel(for link: OrgEditableInlineLink) -> some View {
+    if shouldShowNodeResolution(for: link) {
+      let exactCandidates = orgRoamLinkResolver.exactCandidates(for: link.target)
+      let suggestions = exactCandidates.isEmpty
+        ? orgRoamLinkResolver.searchCandidates(matching: link.target, limit: 5)
+        : exactCandidates
+      HStack(alignment: .top, spacing: 8) {
+        Image(systemName: exactCandidates.count == 1 ? "checkmark.circle" : "point.topleft.down.curvedto.point.bottomright.up")
+          .font(.caption)
+          .foregroundStyle(exactCandidates.count == 1 ? Color.green : Color.secondary)
+          .frame(width: 14)
+
+        VStack(alignment: .leading, spacing: 5) {
+          Text(linkResolutionTitle(exactCandidates: exactCandidates, suggestions: suggestions))
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+
+          if !suggestions.isEmpty {
+            ForEach(suggestions.prefix(5)) { node in
+              Button {
+                resolveInlineLink(link, to: node)
+              } label: {
+                HStack(spacing: 7) {
+                  Image(systemName: node.idValue == nil ? "doc.text" : "number")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 12)
+                  VStack(alignment: .leading, spacing: 2) {
+                    Text(node.title)
+                      .font(.caption.weight(.medium))
+                      .foregroundStyle(.primary)
+                      .lineLimit(1)
+                    Text(node.file)
+                      .font(.caption2)
+                      .foregroundStyle(.tertiary)
+                      .lineLimit(1)
+                      .truncationMode(.middle)
+                  }
+                  Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+              }
+              .buttonStyle(.plain)
+            }
+          }
+        }
+      }
+      .padding(.horizontal, 8)
+      .padding(.vertical, 6)
+      .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+          .stroke(Color.secondary.opacity(0.10))
+      )
+    }
+  }
+
+  private func shouldShowNodeResolution(for link: OrgEditableInlineLink) -> Bool {
+    switch link.kind {
+    case .orgBracket, .markdown:
+      let target = link.target.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !target.isEmpty else { return false }
+      if target.lowercased().hasPrefix("id:") { return false }
+      return OpenClawFileReference.fromLinkTarget(target) == nil
+    case .plainURL, .fileReference:
+      return false
+    }
+  }
+
+  private func linkResolutionTitle(
+    exactCandidates: [OrgRoamNodeReference],
+    suggestions: [OrgRoamNodeReference]
+  ) -> String {
+    if exactCandidates.count == 1 {
+      return "Resolved. Select to write a stable target."
+    }
+    if exactCandidates.count > 1 {
+      return "Ambiguous link. Choose a destination."
+    }
+    return suggestions.isEmpty ? "No matching node yet." : "Suggested destinations"
+  }
+
+  private func resolveInlineLink(_ link: OrgEditableInlineLink, to node: OrgRoamNodeReference) {
+    updateInlineLink(
+      link,
+      label: link.label.isEmpty || link.label == link.target ? node.title : link.label,
+      target: node.preferredLinkTarget
+    )
   }
 
   private func focusedTimestampEditor(_ timestamp: OrgEditableInlineTimestamp) -> some View {

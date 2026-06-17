@@ -1793,6 +1793,31 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  func testOrgInlineParserResolvesWikiLinksToFileStemNodes() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-roam-file-stem-links-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let sarah = root.appendingPathComponent("Sarah.org")
+    try "Notes about Sarah\n".write(to: sarah, atomically: true, encoding: .utf8)
+
+    let resolver = WorkspaceStore.buildOrgRoamLinkResolver(files: [
+      CorpusFile(path: sarah.path, relativePath: "Sarah.org", modifiedAt: nil, byteCount: nil)
+    ])
+
+    XCTAssertEqual(
+      OrgInlineParser.parse("Talk to [[Sarah]].", linkResolver: resolver),
+      [
+        .text("Talk to "),
+        .link(
+          label: "Sarah",
+          target: "Sarah",
+          fileReference: OpenClawFileReference(path: sarah.path, line: 1)
+        ),
+        .text(".")
+      ]
+    )
+  }
+
   func testOrgRoamLinkResolverDoesNotGuessAmbiguousWikiLinks() {
     let resolver = OrgRoamLinkResolver(nodes: [
       OrgRoamNodeReference(idValue: "one", title: "Shared", file: "/tmp/one.org2", line: 1),
@@ -1821,6 +1846,28 @@ final class Org2ModelsTests: XCTestCase {
         fileReference: OpenClawFileReference(path: "/tmp/project.org2", line: 12)
       )
     )
+  }
+
+  func testParagraphWikiLinkCompletionReplacesPartialLinkWithStableNodeLink() {
+    let text = "Talk to [[Sar"
+    let match = ParagraphWikiLinkCompletion.match(
+      in: text,
+      selectedRange: NSRange(location: (text as NSString).length, length: 0)
+    )
+    let node = OrgRoamNodeReference(
+      idValue: "sarah-123",
+      title: "Sarah",
+      file: "/tmp/Sarah.org",
+      line: 1
+    )
+
+    let edit = match.flatMap {
+      ParagraphWikiLinkCompletion.replacement(in: text, match: $0, node: node)
+    }
+
+    XCTAssertEqual(edit?.text, "Talk to [[id:sarah-123][Sarah]]")
+    XCTAssertEqual(edit?.selectedRange.location, ("Talk to [[id:sarah-123][Sarah]]" as NSString).length)
+    XCTAssertEqual(edit?.selectedRange.length, 0)
   }
 
   func testOrgInlineParserFastPathsPlainTextButKeepsRelativeFileReferences() {

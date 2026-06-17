@@ -1415,6 +1415,13 @@ private struct ParagraphBlockEditor: View {
       selectedRange: selectedRange,
       showsInlineDetails: showsInlineDetails
     )
+    let wikiLinkCompletionMatch = ParagraphWikiLinkCompletion.match(
+      in: presentationText,
+      selectedRange: selectedRange
+    )
+    let wikiLinkCompletionCandidates = wikiLinkCompletionMatch.map {
+      store.orgRoamLinkResolver.searchCandidates(matching: $0.query, limit: 6)
+    } ?? []
     let hasInlineDetails = ParagraphInlineDetailsAvailability.hasDetails(in: presentationText)
     let embeddedMedia = ParagraphEditorInlineMediaPreview.embedded(
       raw: presentationText,
@@ -1483,6 +1490,20 @@ private struct ParagraphBlockEditor: View {
           text: $draftText,
           selectedRange: $selectedRange,
           token: focusedInlineToken
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .offset(y: ParagraphFocusedInlinePanelLayout.verticalOffset(editorHeight: editorHeight))
+        .zIndex(1)
+      } else if let wikiLinkCompletionMatch {
+        ParagraphWikiLinkCompletionPanel(
+          query: wikiLinkCompletionMatch.query,
+          candidates: wikiLinkCompletionCandidates,
+          choose: { node in
+            resolveWikiLinkCompletion(wikiLinkCompletionMatch, to: node)
+          },
+          create: {
+            createNodeFromWikiLinkCompletion(wikiLinkCompletionMatch)
+          }
         )
         .frame(maxWidth: .infinity, alignment: .leading)
         .offset(y: ParagraphFocusedInlinePanelLayout.verticalOffset(editorHeight: editorHeight))
@@ -1645,6 +1666,39 @@ private struct ParagraphBlockEditor: View {
     reserveEditorLines(for: edit.text)
     store.updateEditingBlockDraft(block, draft: edit.text)
     scheduleParagraphAutosave()
+  }
+
+  private func resolveWikiLinkCompletion(_ match: ParagraphWikiLinkCompletionMatch, to node: OrgRoamNodeReference) {
+    guard let edit = ParagraphWikiLinkCompletion.replacement(
+      in: currentParagraphText,
+      match: match,
+      node: node
+    ) else {
+      return
+    }
+    draftText = edit.text
+    selectedRange = edit.selectedRange
+    liveText.update(edit.text)
+    presentationText = edit.text
+    reserveEditorLines(for: edit.text)
+    store.updateEditingBlockDraft(block, draft: edit.text)
+    scheduleParagraphAutosave()
+  }
+
+  private func createNodeFromWikiLinkCompletion(_ match: ParagraphWikiLinkCompletionMatch) {
+    let text = currentParagraphText
+    Task {
+      guard let edit = await store.createKnowledgeNodeFromWikiLinkCompletion(text: text, match: match) else {
+        return
+      }
+      draftText = edit.text
+      selectedRange = edit.selectedRange
+      liveText.update(edit.text)
+      presentationText = edit.text
+      reserveEditorLines(for: edit.text)
+      store.updateEditingBlockDraft(block, draft: edit.text)
+      scheduleParagraphAutosave()
+    }
   }
 
   private func createNodeFromSelection() {
