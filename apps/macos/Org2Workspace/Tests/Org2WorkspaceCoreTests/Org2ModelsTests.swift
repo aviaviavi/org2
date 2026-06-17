@@ -498,6 +498,65 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testOpenClawReplyAttributesDiffToReferencedFilesWhenBackgroundJobsAlsoWrite() async throws {
+    let temp = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-attributed-changes-\(UUID().uuidString)", isDirectory: true)
+    let root = temp.appendingPathComponent("corpus", isDirectory: true)
+    let transcript = temp.appendingPathComponent("transcript", isDirectory: true)
+      .appendingPathComponent("openclaw-chat.json")
+    let agents = root.appendingPathComponent("agents", isDirectory: true)
+    try FileManager.default.createDirectory(at: agents, withIntermediateDirectories: true)
+
+    let target = agents.appendingPathComponent("scarf-revenue-scout.org2")
+    let background = agents.appendingPathComponent("MeetingBot.org2")
+    try "Target one\n".write(to: target, atomically: true, encoding: .utf8)
+    try "Background one\n".write(to: background, atomically: true, encoding: .utf8)
+
+    let suiteName = "org2-workspace-chat-attributed-changes-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let targetPath = target.path
+    let backgroundPath = background.path
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      openClawSendHandler: { _, _, _, _ in
+        try "Target one\nTarget two\n".write(toFile: targetPath, atomically: true, encoding: .utf8)
+        try "Background one\nBackground two\n".write(toFile: backgroundPath, atomically: true, encoding: .utf8)
+        return "Done. Added the scheduled review TODO in /srv/org2/agents/scarf-revenue-scout.org2."
+      }
+    )
+    store.setCorpusRoot(root)
+    XCTAssertTrue(store.saveOpenClawConfiguration(
+      endpoint: store.openClawEndpointText,
+      agent: store.openClawAgentID,
+      handoffAssignee: store.agentHandoffAssignee,
+      remoteCorpusPath: "/srv/org2",
+      token: "",
+      clearToken: false
+    ))
+    store.openClawDraft = "Create the TODO"
+
+    await store.sendOpenClawMessage()
+
+    let summary = try XCTUnwrap(store.openClawMessages.last?.changeSummary)
+    XCTAssertEqual(summary.changedFileCount, 1)
+    XCTAssertEqual(
+      summary.files,
+      [
+        OpenClawCorpusFileChange(
+          relativePath: "agents/scarf-revenue-scout.org2",
+          status: .modified,
+          insertions: 1,
+          deletions: 0
+        )
+      ]
+    )
+  }
+
+  @MainActor
   func testOpenClawReplyRetriesBrieflyForDelayedCorpusChanges() async throws {
     let temp = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-delayed-changes-\(UUID().uuidString)", isDirectory: true)
@@ -657,10 +716,12 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertEqual(store.openClawAgentID, "main")
     XCTAssertEqual(store.agentHandoffAssignee, "OpenClaw")
+    XCTAssertEqual(store.personalAssigneeNamesText, "")
     XCTAssertTrue(store.saveOpenClawConfiguration(
       endpoint: store.openClawEndpointText,
       agent: "research-agent",
       handoffAssignee: "OpenClaw",
+      personalAssigneeNames: "Avi, avi@example.com",
       remoteCorpusPath: "/srv/org2",
       token: "",
       clearToken: false
@@ -670,6 +731,34 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertEqual(restored.openClawAgentID, "research-agent")
     XCTAssertEqual(restored.agentHandoffAssignee, "OpenClaw")
+    XCTAssertEqual(restored.personalAssigneeNamesText, "Avi, avi@example.com")
+  }
+
+  @MainActor
+  func testPersonalAssigneeNamesClassifyAgendaOwnership() throws {
+    let suiteName = "org2-workspace-personal-assignee-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+
+    XCTAssertTrue(store.isPersonalAssignee(nil))
+    XCTAssertTrue(store.isPersonalAssignee(""))
+    XCTAssertFalse(store.isPersonalAssignee("Avi"))
+    XCTAssertTrue(store.saveOpenClawConfiguration(
+      endpoint: store.openClawEndpointText,
+      agent: store.openClawAgentID,
+      handoffAssignee: store.agentHandoffAssignee,
+      personalAssigneeNames: "Avi; avi@example.com\nAvi Press",
+      remoteCorpusPath: store.openClawRemoteCorpusPath,
+      token: "",
+      clearToken: false
+    ))
+
+    XCTAssertTrue(store.isPersonalAssignee("Avi"))
+    XCTAssertTrue(store.isPersonalAssignee(" avi@example.com "))
+    XCTAssertTrue(store.isPersonalAssignee("avi   press"))
+    XCTAssertFalse(store.isPersonalAssignee("OpenClaw"))
   }
 
   @MainActor
@@ -686,6 +775,7 @@ final class Org2ModelsTests: XCTestCase {
     legacyDefaults.set("https://example.invalid/v1/chat/completions", forKey: "Org2Workspace.openClawEndpoint")
     legacyDefaults.set("openclaw/org2", forKey: "Org2Workspace.openClawAgent")
     legacyDefaults.set("OpenClaw", forKey: "Org2Workspace.agentHandoffAssignee")
+    legacyDefaults.set("Avi", forKey: "Org2Workspace.personalAssigneeNames")
     legacyDefaults.set("~/avi.org2", forKey: "Org2Workspace.openClawRemoteCorpusPath")
 
     let store = try WorkspaceStore(
@@ -697,6 +787,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.openClawEndpointText, "https://example.invalid/v1/chat/completions")
     XCTAssertEqual(store.openClawAgentID, "openclaw/org2")
     XCTAssertEqual(store.agentHandoffAssignee, "OpenClaw")
+    XCTAssertEqual(store.personalAssigneeNamesText, "Avi")
     XCTAssertEqual(store.openClawRemoteCorpusPath, "~/avi.org2")
     XCTAssertTrue(currentDefaults.bool(forKey: "Org2Workspace.legacyDefaultsMigrated.v1"))
   }
@@ -3251,12 +3342,15 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "1", keyCode: 18, modifiers: [.command])))
-    XCTAssertEqual(store.selectedSurface, .agenda)
+    XCTAssertEqual(store.selectedSurface, .home)
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "2", keyCode: 19, modifiers: [.command])))
-    XCTAssertEqual(store.selectedSurface, .files)
+    XCTAssertEqual(store.selectedSurface, .agenda)
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "3", keyCode: 20, modifiers: [.command])))
+    XCTAssertEqual(store.selectedSurface, .files)
+
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "4", keyCode: 21, modifiers: [.command])))
     XCTAssertEqual(store.selectedSurface, .search)
     XCTAssertEqual(store.searchFocusToken, 1)
 
@@ -3278,17 +3372,14 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.isPageSearchPresented)
     XCTAssertEqual(store.pageSearchFocusToken, 1)
 
-    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "4", keyCode: 21, modifiers: [.command])))
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "5", keyCode: 23, modifiers: [.command])))
     XCTAssertEqual(store.selectedSurface, .meetings)
 
-    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "5", keyCode: 23, modifiers: [.command])))
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "6", keyCode: 22, modifiers: [.command])))
     XCTAssertEqual(store.selectedSurface, .openClaw)
 
-    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "6", keyCode: 22, modifiers: [.command])))
-    XCTAssertEqual(store.selectedSurface, .agentSpace)
-
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "f", keyCode: 3, modifiers: [.command, .option])))
-    XCTAssertEqual(store.expandedWorkspaceSurface, .agentSpace)
+    XCTAssertEqual(store.expandedWorkspaceSurface, .openClaw)
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "f", keyCode: 3, modifiers: [.command, .option])))
     XCTAssertNil(store.expandedWorkspaceSurface)
@@ -3298,7 +3389,7 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "p", keyCode: 35, modifiers: [.command, .option])))
     XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
-    XCTAssertEqual(store.selectedSurface, .agentSpace)
+    XCTAssertEqual(store.selectedSurface, .openClaw)
 
     XCTAssertFalse(store.handleGlobalKeyDown(keyDown(characters: "7", keyCode: 26, modifiers: [.command, .shift])))
 
@@ -3384,12 +3475,13 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   func testWorkspaceSurfaceShortcutTitlesMatchCommandNavigation() {
-    XCTAssertEqual(WorkspaceSurface.agenda.commandShortcutTitle, "⌘1")
-    XCTAssertEqual(WorkspaceSurface.files.commandShortcutTitle, "⌘2")
-    XCTAssertEqual(WorkspaceSurface.search.commandShortcutTitle, "⌘3")
-    XCTAssertEqual(WorkspaceSurface.meetings.commandShortcutTitle, "⌘4")
-    XCTAssertEqual(WorkspaceSurface.openClaw.commandShortcutTitle, "⌘5")
-    XCTAssertEqual(WorkspaceSurface.agentSpace.commandShortcutTitle, "⌘6")
+    XCTAssertEqual(WorkspaceSurface.home.commandShortcutTitle, "⌘1")
+    XCTAssertEqual(WorkspaceSurface.agenda.commandShortcutTitle, "⌘2")
+    XCTAssertEqual(WorkspaceSurface.files.commandShortcutTitle, "⌘3")
+    XCTAssertEqual(WorkspaceSurface.search.commandShortcutTitle, "⌘4")
+    XCTAssertEqual(WorkspaceSurface.meetings.commandShortcutTitle, "⌘5")
+    XCTAssertEqual(WorkspaceSurface.openClaw.commandShortcutTitle, "⌘6")
+    XCTAssertEqual(WorkspaceSurface.agentSpace.commandShortcutTitle, "")
     XCTAssertEqual(WorkspaceSurface.sidebarCases, WorkspaceSurface.allCases)
   }
 
@@ -3565,6 +3657,7 @@ final class Org2ModelsTests: XCTestCase {
   @MainActor
   func testAgendaUppercaseJKScrollDetailPaneWithoutMovingSelection() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.selectedSurface = .agenda
     store.selectedAgendaItemID = "selected-agenda-item"
 
     XCTAssertTrue(store.handleAgendaKeyDown(keyDown(characters: "J", keyCode: 38, modifiers: [.shift])))
@@ -3769,6 +3862,7 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
     await store.refreshAgenda()
+    store.selectedSurface = .agenda
 
     XCTAssertTrue(store.handleAgendaKeyDown(keyDown(characters: "a", keyCode: 0, modifiers: [.command])))
     XCTAssertEqual(store.bulkAgendaSelectionCount, 3)
@@ -3950,6 +4044,37 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedCorpusFileID, daily.path)
     XCTAssertEqual(store.selectedEntrySourceMode, .page)
     XCTAssertEqual(store.selectedLocation?.file, daily.path)
+    XCTAssertEqual(store.corpusFiles.map(\.relativePath), ["dailies/\(fileName)"])
+  }
+
+  @MainActor
+  func testOpenHomeCreatesTodayDailyNoteAsOpenClawDetail() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-home-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try #"{"roam":{"dailiesDir":"dailies"}}"#
+      .write(to: root.appendingPathComponent("org2.json"), atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.openHome()
+
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    let fileName = "\(formatter.string(from: Date())).org2"
+    let daily = root
+      .appendingPathComponent("dailies", isDirectory: true)
+      .appendingPathComponent(fileName)
+      .standardizedFileURL
+
+    XCTAssertTrue(FileManager.default.fileExists(atPath: daily.path))
+    XCTAssertEqual(store.selectedSurface, .home)
+    XCTAssertEqual(store.selectedCorpusFileID, daily.path)
+    XCTAssertEqual(store.selectedOpenClawThreadID, daily.path)
+    XCTAssertEqual(store.selectedEntrySourceMode, .page)
+    XCTAssertEqual(store.selectedLocation?.file, daily.path)
+    XCTAssertEqual(store.selectedLocation?.lineForEditor, 1)
     XCTAssertEqual(store.corpusFiles.map(\.relativePath), ["dailies/\(fileName)"])
   }
 
@@ -4860,7 +4985,7 @@ final class Org2ModelsTests: XCTestCase {
     }
   }
 
-  func testRenderedBlockEditingPolicyLeavesStructuralBlocksSelectableOnly() {
+  func testRenderedBlockEditingPolicyStartsInlineEditingForStructuralBlocks() {
     let divider = OrgEditableBlock(
       id: "divider",
       startLine: 1,
@@ -4875,7 +5000,7 @@ final class Org2ModelsTests: XCTestCase {
       rawText: "",
       rendered: .blank
     )
-    XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: divider, isSourceEditable: true))
+    XCTAssertTrue(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: divider, isSourceEditable: true))
     XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: blank, isSourceEditable: true))
     let properties = OrgEditableBlock(
       id: "properties",
@@ -4884,10 +5009,10 @@ final class Org2ModelsTests: XCTestCase {
       rawText: ":PROPERTIES:\n:Owner: Avi\n:END:",
       rendered: .properties([OrgPropertyRow(key: "Owner", value: "Avi")])
     )
-    XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: properties, isSourceEditable: true))
+    XCTAssertTrue(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: properties, isSourceEditable: true))
   }
 
-  func testRenderedBlockEditingPolicyLeavesMediaParagraphsPreviewableOnSingleClick() throws {
+  func testRenderedBlockEditingPolicyStartsInlineEditingForMediaParagraphs() throws {
     let embedded = try XCTUnwrap(OrgEntryRenderer.parseEditable(
       "inline images [[file:images/image.png][Image]]"
     ).first)
@@ -4895,8 +5020,8 @@ final class Org2ModelsTests: XCTestCase {
       "[[file:images/image.png][Image]]"
     ).first)
 
-    XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: embedded, isSourceEditable: true))
-    XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: standalone, isSourceEditable: true))
+    XCTAssertTrue(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: embedded, isSourceEditable: true))
+    XCTAssertTrue(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: standalone, isSourceEditable: true))
   }
 
   func testRenderedBlockDisplayPolicyCollapsesBlankButKeepsProperties() {
@@ -6001,6 +6126,7 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
     store.select(.agenda(item))
+    store.selectedSurface = .agenda
     await store.loadEntrySource(for: .agenda(item))
     try await waitForEntryRender(store)
 
@@ -6839,6 +6965,120 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testApproveAndAgentHandoffCompletesApprovalAndCreatesSendTodo() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-approve-handoff-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("approve-handoff.org2")
+    try """
+    * TODO Approve reply to Maya / Oracle supplier onboarding details
+    SCHEDULED: <2026-06-16 Tue>
+    :PROPERTIES:
+    :ASSIGNEE: Avi
+    :STATUS: draft-needs-review
+    :END:
+
+    Draft body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Approve reply to Maya / Oracle supplier onboarding details",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 1,
+      "body": "Draft body",
+      "level": 1,
+      "tags": [],
+      "properties": {
+        "ASSIGNEE": "Avi",
+        "STATUS": "draft-needs-review"
+      }
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+
+    await store.applyApproveAndAgentHandoffShortcut()
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertNil(store.errorText, store.statusText)
+    XCTAssertTrue(updated.contains("* DONE Approve reply to Maya / Oracle supplier onboarding details"))
+    XCTAssertTrue(updated.contains(":STATUS: approved"))
+    XCTAssertTrue(updated.contains(":APPROVED_AT: <"))
+    XCTAssertTrue(updated.contains(":PAIRED_SEND_TODO: Send approved reply to Maya / Oracle supplier onboarding details"))
+    XCTAssertTrue(updated.contains("* TODO Send approved reply to Maya / Oracle supplier onboarding details"))
+    XCTAssertTrue(updated.contains(":ASSIGNEE: OpenClaw"))
+    XCTAssertTrue(updated.contains(":STATUS: approved-to-send"))
+    XCTAssertTrue(updated.contains(":APPROVAL_TODO: Approve reply to Maya / Oracle supplier onboarding details"))
+  }
+
+  @MainActor
+  func testApproveAndAgentHandoffActivatesExistingPairedSendTodo() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-approve-existing-handoff-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("approve-existing-handoff.org2")
+    try """
+    * TODO Approve reply to Maya / Oracle supplier onboarding details
+    SCHEDULED: <2026-06-16 Tue>
+    :PROPERTIES:
+    :ASSIGNEE: Avi
+    :PAIRED_SEND_TODO: Send approved reply to Maya / Oracle supplier onboarding details
+    :STATUS: draft-needs-review
+    :END:
+
+    Draft body
+
+    * TODO Send approved reply to Maya / Oracle supplier onboarding details
+    :PROPERTIES:
+    :ASSIGNEE: Avi
+    :STATUS: blocked
+    :END:
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Approve reply to Maya / Oracle supplier onboarding details",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 1,
+      "body": "Draft body",
+      "level": 1,
+      "tags": [],
+      "properties": {
+        "ASSIGNEE": "Avi",
+        "PAIRED_SEND_TODO": "Send approved reply to Maya / Oracle supplier onboarding details",
+        "STATUS": "draft-needs-review"
+      }
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+
+    await store.applyApproveAndAgentHandoffShortcut()
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertNil(store.errorText, store.statusText)
+    XCTAssertTrue(updated.contains("* DONE Approve reply to Maya / Oracle supplier onboarding details"))
+    XCTAssertEqual(
+      updated.components(separatedBy: "* TODO Send approved reply to Maya / Oracle supplier onboarding details").count - 1,
+      1
+    )
+    XCTAssertTrue(updated.contains(":ASSIGNEE: OpenClaw"))
+    XCTAssertTrue(updated.contains(":STATUS: approved-to-send"))
+    XCTAssertTrue(updated.contains(":APPROVAL_TODO: Approve reply to Maya / Oracle supplier onboarding details"))
+  }
+
+  @MainActor
   func testPriorityAndPropertyShortcutsUpdateTempNote() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-priority-\(UUID().uuidString)", isDirectory: true)
@@ -7464,6 +7704,82 @@ final class Org2ModelsTests: XCTestCase {
       }
       return false
     })
+  }
+
+  @MainActor
+  func testBlankPageClickStartsParagraphDraftAtEndOfDailyNote() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-page-blank-click-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("2026-06-16.org2")
+    try """
+    #+TITLE: 2026-06-16
+
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    let location = try XCTUnwrap(store.selectedLocation)
+    await store.loadEntrySource(for: location)
+    try await waitForEntryRender(store)
+
+    await store.beginAppendingSectionAtEnd()
+
+    XCTAssertFalse(store.isEditingEntry)
+    XCTAssertNotNil(store.editingBlockID)
+    XCTAssertEqual(store.editableBlockText, "")
+    store.editableBlockText = "Meeting notes"
+    await store.saveActiveEdit()
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Meeting notes"))
+    XCTAssertFalse(store.hasActiveEdit)
+  }
+
+  @MainActor
+  func testBlankPageParagraphDraftCommitsWhenReturnStartsNextDraft() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-page-blank-return-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("2026-06-16.org2")
+    try """
+    #+TITLE: 2026-06-16
+
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    let location = try XCTUnwrap(store.selectedLocation)
+    await store.loadEntrySource(for: location)
+    try await waitForEntryRender(store)
+
+    await store.beginAppendingSectionAtEnd()
+    let draft = try XCTUnwrap(store.selectedBlock)
+    store.editableBlockText = "Meeting notes"
+
+    await store.splitEditingBlock(draft, atUTF16Offset: ("Meeting notes" as NSString).length)
+    try await waitForCondition {
+      (try? String(contentsOf: note, encoding: .utf8).contains("Meeting notes")) == true
+        && store.hasActiveEdit
+    }
+
+    await store.saveActiveEdit()
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Meeting notes"))
+    XCTAssertFalse(store.hasActiveEdit)
   }
 
   @MainActor
@@ -9692,6 +10008,7 @@ final class Org2ModelsTests: XCTestCase {
 
     store.selectBlock(paragraph)
     XCTAssertFalse(store.isEditingEntry)
+    store.selectedSurface = .agenda
     XCTAssertTrue(store.handleAgendaKeyDown(keyDown(characters: "e", keyCode: 14)))
     XCTAssertEqual(store.editingBlockID, paragraph.id)
     XCTAssertEqual(store.editableBlockText, "Body")

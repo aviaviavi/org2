@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ingestDemoSource } from "./dist/ingestionPipeline.js";
+import { ingestDemoSource } from "../dist/ingestionPipeline.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "org2-ingest-"));
 const rawDir = path.join(root, "raw", "demo");

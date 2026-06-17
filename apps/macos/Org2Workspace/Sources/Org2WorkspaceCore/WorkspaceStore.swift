@@ -324,6 +324,13 @@ private struct HeadlineMutationTarget {
   }
 }
 
+private struct ApprovedAgentActionResult {
+  let title: String
+  let file: String
+  let line: Int
+  let created: Bool
+}
+
 struct RecoverableMeetingRecording: Sendable {
   let paths: MeetingArtifactPaths
   let duration: TimeInterval?
@@ -366,7 +373,7 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated public static let meetingCaptureSourceSummary = "Captures microphone and system/call audio. System audio uses macOS ScreenCaptureKit permission; Org2 records audio only."
   nonisolated public static let defaultAgentHandoffAssignee = "OpenClaw"
 
-  @Published public var selectedSurface: WorkspaceSurface = .agenda {
+  @Published public var selectedSurface: WorkspaceSurface = .home {
     didSet {
       guard oldValue != selectedSurface else { return }
       isWorkspaceSurfacePaneClosed = false
@@ -467,6 +474,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var openClawAgentID = "main"
   @Published public var openClawEndpointText = ""
   @Published public var agentHandoffAssignee = WorkspaceStore.defaultAgentHandoffAssignee
+  @Published public var personalAssigneeNamesText = ""
   @Published public var openClawRemoteCorpusPath = ""
   @Published public var openClawHasStoredToken = false
   @Published public var openClawStatusText = WorkspaceStore.defaultOpenClawStatusText()
@@ -579,6 +587,7 @@ public final class WorkspaceStore: ObservableObject {
   private let openClawEndpointKey = "Org2Workspace.openClawEndpoint"
   private let openClawAgentKey = "Org2Workspace.openClawAgent"
   private let agentHandoffAssigneeKey = "Org2Workspace.agentHandoffAssignee"
+  private let personalAssigneeNamesKey = "Org2Workspace.personalAssigneeNames"
   private let openClawRemoteCorpusPathKey = "Org2Workspace.openClawRemoteCorpusPath"
   private let orgCryptEncryptOnSaveKey = "Org2Workspace.orgCrypt.encryptOnSave"
   private let orgCryptRecipientsKey = "Org2Workspace.orgCrypt.recipients"
@@ -704,6 +713,7 @@ public final class WorkspaceStore: ObservableObject {
     openClawEndpointText = defaults.string(forKey: openClawEndpointKey) ?? settings.endpoint.absoluteString
     openClawAgentID = defaults.string(forKey: openClawAgentKey) ?? "main"
     agentHandoffAssignee = defaults.string(forKey: agentHandoffAssigneeKey) ?? Self.defaultAgentHandoffAssignee
+    personalAssigneeNamesText = defaults.string(forKey: personalAssigneeNamesKey) ?? ""
     openClawRemoteCorpusPath = defaults.string(forKey: openClawRemoteCorpusPathKey) ?? ""
     orgCryptEncryptOnSave = defaults.object(forKey: orgCryptEncryptOnSaveKey) as? Bool ?? true
     orgCryptRecipientsText = OrgCryptSettings.listText(defaults.stringArray(forKey: orgCryptRecipientsKey) ?? [])
@@ -726,9 +736,13 @@ public final class WorkspaceStore: ObservableObject {
   public func bootstrap() async {
     refreshAudioSettingsStatus()
     if corpusRoot == nil {
-      corpusRoot = restoreCorpusRoot()
-      if let corpusRoot {
-        switchOpenClawTranscript(to: Self.openClawTranscriptURL(corpusRoot: corpusRoot), migrationSource: appOpenClawTranscriptURL)
+      if let screenshotCorpusRoot = screenshotCorpusRootFromEnvironment() {
+        setCorpusRoot(screenshotCorpusRoot, persistsDefault: false)
+      } else {
+        corpusRoot = restoreCorpusRoot()
+        if let corpusRoot {
+          switchOpenClawTranscript(to: Self.openClawTranscriptURL(corpusRoot: corpusRoot), migrationSource: appOpenClawTranscriptURL)
+        }
       }
     }
 
@@ -738,9 +752,95 @@ public final class WorkspaceStore: ObservableObject {
       await refreshCorpusFiles()
       await refreshAssignedWork()
       refreshOrgCryptManagedRecipientFiles()
-      Task { await refreshOpenClawThreads() }
+      if selectedSurface == .home {
+        openHome()
+      }
+      if screenshotModeFromEnvironment() == nil {
+        Task { await refreshOpenClawThreads() }
+      } else {
+        await refreshOpenClawThreads()
+        await applyScreenshotModeFromEnvironment()
+      }
     } else {
       statusText = "No corpus selected"
+    }
+  }
+
+  private func screenshotCorpusRootFromEnvironment() -> URL? {
+    guard let raw = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_CORPUS"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines),
+      !raw.isEmpty
+    else {
+      return nil
+    }
+    let url = URL(fileURLWithPath: raw).standardizedFileURL
+    return isDirectory(url.path) ? url : nil
+  }
+
+  private func screenshotModeFromEnvironment() -> String? {
+    let raw = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_MODE"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+    return raw?.isEmpty == false ? raw : nil
+  }
+
+  private func applyScreenshotModeFromEnvironment() async {
+    guard let mode = screenshotModeFromEnvironment() else { return }
+    let target = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_TARGET"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+
+    switch mode {
+    case "home":
+      openHome()
+    case "agenda":
+      selectedSurface = .agenda
+      agendaMode = .focus
+      if let item = visibleAgendaItems.first(where: { item in
+        guard let target, !target.isEmpty else { return false }
+        return item.headline.lowercased().contains(target)
+      }) ?? visibleAgendaItems.first {
+        selectAgendaItem(item)
+      }
+    case "openclaw", "chat":
+      selectedSurface = .openClaw
+      openClawDraft = "Summarize the current launch plan and call out open risks."
+    case "agent-space", "agents", "brief":
+      selectedSurface = .agentSpace
+      if let thread = openClawThreads.first(where: { thread in
+        guard let target, !target.isEmpty else {
+          return thread.title.lowercased().contains("brief")
+        }
+        return thread.title.lowercased().contains(target)
+      }) ?? openClawThreads.first {
+        selectOpenClawThread(thread)
+        if mode == "brief" {
+          selectedEntrySourceMode = .page
+        }
+      }
+    case "meetings":
+      selectedSurface = .meetings
+      if let meeting = meetings.first(where: { meeting in
+        guard let target, !target.isEmpty else { return true }
+        return meeting.title.lowercased().contains(target)
+      }) {
+        selectMeeting(meeting)
+      }
+    case "files":
+      selectedSurface = .files
+      if let file = filteredCorpusFiles.first(where: { file in
+        guard let target, !target.isEmpty else { return true }
+        return file.relativePath.lowercased().contains(target)
+          || file.name.lowercased().contains(target)
+      }) {
+        selectCorpusFile(file)
+      }
+    default:
+      openHome()
+    }
+
+    if let selectedLocation {
+      await loadEntrySource(for: selectedLocation)
     }
   }
 
@@ -758,10 +858,12 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public func setCorpusRoot(_ url: URL) {
+  public func setCorpusRoot(_ url: URL, persistsDefault: Bool = true) {
     let standardized = url.standardizedFileURL
     corpusRoot = standardized
-    defaults.set(standardized.path, forKey: corpusKey)
+    if persistsDefault {
+      defaults.set(standardized.path, forKey: corpusKey)
+    }
     switchOpenClawTranscript(to: Self.openClawTranscriptURL(corpusRoot: standardized))
     agenda = nil
     corpusFiles = []
@@ -2158,6 +2260,35 @@ public final class WorkspaceStore: ObservableObject {
     await insertBlock(after: selectedBlock, kind: kind, initialText: initialText)
   }
 
+  public func beginAppendingSectionAtEnd() async {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "No editable source loaded"
+      return
+    }
+
+    if let lastBlock = selectedRenderedBlocks
+      .filter({ block in
+        block.startLine >= source.startLine
+          && block.endLineExclusive <= source.endLineExclusive
+      })
+      .max(by: { lhs, rhs in
+        if lhs.endLineExclusive != rhs.endLineExclusive {
+          return lhs.endLineExclusive < rhs.endLineExclusive
+        }
+        return lhs.startLine < rhs.startLine
+      }) {
+      await insertBlock(after: lastBlock, kind: .paragraph)
+      return
+    }
+
+    let draft = appendDraftBlock(kind: .paragraph, in: source)
+    transientDraftBlock = draft
+    pendingBlockSelection = nil
+    isEditingEntry = false
+    activateTransientDraft(draft)
+    statusText = "Started paragraph draft in \(relativePath(source.file))"
+  }
+
   public func canMoveSelectedBlock(_ direction: OrgBlockMoveDirection) -> Bool {
     guard let selectedBlock else { return false }
     return canMoveBlock(selectedBlock, direction: direction)
@@ -2166,6 +2297,11 @@ public final class WorkspaceStore: ObservableObject {
   public func saveActiveEdit() async {
     if isEditingEntry {
       await saveEditedEntry()
+      return
+    }
+
+    if let draft = transientDraftBlock, editingBlockID == draft.block.id {
+      await saveTransientDraftBlock(draft)
       return
     }
 
@@ -3997,6 +4133,97 @@ public final class WorkspaceStore: ObservableObject {
     )
   }
 
+  private func appendDraftBlock(
+    kind: OrgInsertBlockKind,
+    in source: EntrySource
+  ) -> TransientDraftBlock {
+    let rawText = appendDraftRawText(for: kind)
+    let insertionLine = max(source.startLine, source.endLineExclusive)
+    let isSourceEmpty = source.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    let replacementPrefix = isSourceEmpty ? "" : "\n"
+    let selectionLineOffset = replacementPrefix.isEmpty ? 0 : 1
+    return TransientDraftBlock(
+      file: source.file,
+      insertionLine: insertionLine,
+      replacementEndLineExclusive: insertionLine,
+      replacementPrefix: replacementPrefix,
+      replacementSuffix: "",
+      selectionLineOffset: selectionLineOffset,
+      block: OrgEditableBlock(
+        startLine: insertionLine,
+        endLineExclusive: insertionLine,
+        rawText: rawText,
+        rendered: appendDraftRenderedBlock(for: kind, rawText: rawText)
+      ),
+      coveredBlocks: []
+    )
+  }
+
+  private func appendDraftRawText(for kind: OrgInsertBlockKind) -> String {
+    switch kind {
+    case .paragraph:
+      return ""
+    case .heading:
+      return "* "
+    case .todo:
+      return "* TODO "
+    case .table:
+      return """
+      | Name | Value |
+      |------+-------|
+      |      |       |
+      """
+    case .divider:
+      return "-----"
+    case .image:
+      return mediaDraftRawText(kind: .image, content: "")
+    case .video:
+      return mediaDraftRawText(kind: .video, content: "")
+    case .properties:
+      return """
+      :PROPERTIES:
+      :KEY:
+      :END:
+      """
+    case .quote:
+      return """
+      #+begin_quote
+
+      #+end_quote
+      """
+    case .source:
+      return """
+      #+begin_src sh
+
+      #+end_src
+      """
+    }
+  }
+
+  private func appendDraftRenderedBlock(for kind: OrgInsertBlockKind, rawText: String) -> OrgRenderedBlock {
+    switch kind {
+    case .paragraph:
+      return .paragraph("")
+    case .heading:
+      return .heading(OrgHeadingBlock(level: 1, todo: nil, priority: nil, title: "", tags: []))
+    case .todo:
+      return .heading(OrgHeadingBlock(level: 1, todo: "TODO", priority: nil, title: "", tags: []))
+    case .table:
+      return .table(OrgEditableTable(rawText: rawText).renderedBlock)
+    case .divider:
+      return .horizontalRule
+    case .image, .video:
+      return .paragraph(rawText)
+    case .properties:
+      return .properties(OrgEditablePropertyDrawer(rawText: rawText).renderedRows)
+    case .quote:
+      return .quote([])
+    case .source:
+      let source = OrgEditableSourceBlock(rawText: rawText)
+      return .source(language: source.renderedLanguage, lines: source.renderedLines)
+    }
+  }
+
   private func insertionDraftRawText(
     for kind: OrgInsertBlockKind,
     after block: OrgEditableBlock,
@@ -4271,6 +4498,43 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func openHome() {
+    selectedSurface = .home
+    expandedWorkspaceSurface = nil
+    isWorkspaceSurfacePaneClosed = false
+    isWorkspaceDetailPaneClosed = false
+    isWorkspaceDetailPaneExpanded = false
+
+    guard let corpusRoot else {
+      statusText = "No corpus selected"
+      return
+    }
+
+    let url = dailyNotePath(corpusRoot: corpusRoot, date: Date())
+    do {
+      if !FileManager.default.fileExists(atPath: url.path) {
+        try createDailyNote(at: url)
+      }
+      let file = corpusFile(for: url, corpusRoot: corpusRoot)
+      upsertCorpusFile(file)
+      selectedCorpusFileID = file.id
+      selectedOpenClawThreadID = nil
+      let thread = OpenClawThread(
+        title: file.name,
+        file: file.path,
+        line: 1,
+        zone: file.directory.isEmpty ? "daily" : file.directory,
+        modifiedAt: file.modifiedAt,
+        idValue: nil
+      )
+      activateDetailLocation(.openClaw(thread), mode: .page, recordsHistory: false)
+      statusText = "Home"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Could not open \(url.lastPathComponent)"
+    }
+  }
+
   public var canStartOpenClawVoiceNoteRecording: Bool {
     !isRecordingOpenClawVoiceNote
       && !isTranscribingOpenClawVoiceNote
@@ -4418,7 +4682,7 @@ public final class WorkspaceStore: ObservableObject {
       do {
         let beforeSnapshot = await captureOpenClawCorpusSnapshot()
         let reply = try await sendOpenClawRequest(messages: requestMessages)
-        let changeSummary = await openClawChangeSummary(since: beforeSnapshot)
+        let changeSummary = await openClawChangeSummary(since: beforeSnapshot, referencedIn: reply)
         insertOpenClawReply(reply, after: userMessageID, changeSummary: changeSummary)
         if let changeSummary {
           await refreshAfterOpenClawChanges(changeSummary)
@@ -4482,7 +4746,10 @@ public final class WorkspaceStore: ObservableObject {
     }.value
   }
 
-  private func openClawChangeSummary(since snapshot: OpenClawCorpusSnapshot?) async -> OpenClawCorpusChangeSummary? {
+  private func openClawChangeSummary(
+    since snapshot: OpenClawCorpusSnapshot?,
+    referencedIn reply: String
+  ) async -> OpenClawCorpusChangeSummary? {
     guard let snapshot else { return nil }
     let root = URL(fileURLWithPath: snapshot.rootPath).standardizedFileURL
     for delay in Self.openClawChangeSnapshotRetryDelays {
@@ -4495,7 +4762,69 @@ public final class WorkspaceStore: ObservableObject {
         continue
       }
       if let summary = Self.openClawChangeSummary(before: snapshot, after: afterSnapshot) {
-        return summary
+        return attributedOpenClawChangeSummary(summary, referencedIn: reply)
+      }
+    }
+    return nil
+  }
+
+  private func attributedOpenClawChangeSummary(
+    _ summary: OpenClawCorpusChangeSummary,
+    referencedIn reply: String
+  ) -> OpenClawCorpusChangeSummary {
+    let referencedPaths = openClawReferencedChangeRelativePaths(in: reply)
+    guard !referencedPaths.isEmpty else { return summary }
+    let filteredFiles = summary.files.filter { referencedPaths.contains($0.relativePath) }
+    return filteredFiles.isEmpty ? summary : OpenClawCorpusChangeSummary(files: filteredFiles)
+  }
+
+  private func openClawReferencedChangeRelativePaths(in reply: String) -> Set<String> {
+    guard let corpusRoot else { return [] }
+    let rootPath = Self.trimTrailingSlashes(corpusRoot.standardizedFileURL.path)
+    var paths = Set<String>()
+
+    for reference in OpenClawFileReference.extract(from: reply, limit: 24) {
+      if let relativePath = openClawRelativePathForReference(reference.path, corpusRootPath: rootPath) {
+        paths.insert(relativePath)
+      }
+    }
+
+    return paths
+  }
+
+  private func openClawRelativePathForReference(_ rawPath: String, corpusRootPath rootPath: String) -> String? {
+    let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !path.isEmpty else { return nil }
+
+    var candidates: [String] = []
+    if let localPath = localPathForOpenClawReference(path) {
+      candidates.append(localPath)
+    }
+
+    if let remoteRoot = effectiveOpenClawRemoteCorpusPath().map(Self.trimTrailingSlashes) {
+      let normalizedPath = Self.trimTrailingSlashes(path)
+      if normalizedPath == remoteRoot {
+        candidates.append(rootPath)
+      } else if normalizedPath.hasPrefix(remoteRoot + "/") {
+        candidates.append(rootPath + "/" + String(normalizedPath.dropFirst(remoteRoot.count + 1)))
+      }
+    }
+
+    if path.hasPrefix("~/") {
+      candidates.append(NSHomeDirectory() + "/" + String(path.dropFirst(2)))
+    } else if NSString(string: path).isAbsolutePath {
+      candidates.append(path)
+    } else {
+      candidates.append(rootPath + "/" + path)
+    }
+
+    for candidate in candidates {
+      let normalized = Self.trimTrailingSlashes(URL(fileURLWithPath: candidate).standardizedFileURL.path)
+      if normalized == rootPath {
+        return ""
+      }
+      if normalized.hasPrefix(rootPath + "/") {
+        return String(normalized.dropFirst(rootPath.count + 1))
       }
     }
     return nil
@@ -4586,10 +4915,21 @@ public final class WorkspaceStore: ObservableObject {
     statusText = "Opened \(relativePath(file))"
   }
 
+  public func isPersonalAssignee(_ rawAssignee: String?) -> Bool {
+    guard let assignee = rawAssignee?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !assignee.isEmpty
+    else {
+      return true
+    }
+    return Self.personalAssigneeNames(from: personalAssigneeNamesText)
+      .contains(Self.normalizedAssigneeIdentity(assignee))
+  }
+
   public func saveOpenClawConfiguration(
     endpoint: String,
     agent: String,
     handoffAssignee: String,
+    personalAssigneeNames: String? = nil,
     remoteCorpusPath: String,
     token: String,
     clearToken: Bool
@@ -4604,6 +4944,8 @@ public final class WorkspaceStore: ObservableObject {
     let agent = rawAgent.isEmpty ? "main" : rawAgent
     let rawHandoffAssignee = handoffAssignee.trimmingCharacters(in: .whitespacesAndNewlines)
     let handoffAssignee = rawHandoffAssignee.isEmpty ? Self.defaultAgentHandoffAssignee : rawHandoffAssignee
+    let personalAssigneeNames = (personalAssigneeNames ?? personalAssigneeNamesText)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
     let remoteCorpusPath = remoteCorpusPath.trimmingCharacters(in: .whitespacesAndNewlines)
     let normalizedToken = OpenClawGatewaySettings.normalizedBearerToken(token)
 
@@ -4611,10 +4953,12 @@ public final class WorkspaceStore: ObservableObject {
       defaults.set(normalizedEndpoint, forKey: openClawEndpointKey)
       defaults.set(agent, forKey: openClawAgentKey)
       defaults.set(handoffAssignee, forKey: agentHandoffAssigneeKey)
+      defaults.set(personalAssigneeNames, forKey: personalAssigneeNamesKey)
       defaults.set(remoteCorpusPath, forKey: openClawRemoteCorpusPathKey)
       openClawEndpointText = normalizedEndpoint
       openClawAgentID = agent
       agentHandoffAssignee = handoffAssignee
+      personalAssigneeNamesText = personalAssigneeNames
       openClawRemoteCorpusPath = remoteCorpusPath
 
       if clearToken {
@@ -5649,6 +5993,138 @@ public final class WorkspaceStore: ObservableObject {
     )
   }
 
+  public func applyApproveAndAgentHandoffShortcut() async {
+    guard let target = selectedHeadlineMutationTarget else {
+      statusText = "Select an approval TODO first"
+      return
+    }
+    await approveAndAgentHandoff(target)
+  }
+
+  public func applyApproveAndAgentHandoffShortcut(to location: WorkspaceLocation) async {
+    guard let target = headlineMutationTarget(for: location) else {
+      statusText = "Select an approval TODO first"
+      return
+    }
+    await approveAndAgentHandoff(target)
+  }
+
+  private func approveAndAgentHandoff(_ target: HeadlineMutationTarget) async {
+    let originalVisibleIndex = target.agendaItemID.flatMap { id in
+      visibleAgendaItems.firstIndex(where: { $0.id == id })
+    }
+    let timestamp = Self.orgTimestamp(Date())
+
+    do {
+      try await setTodoStatus(.done, for: target)
+      let result = try await activateApprovedAgentAction(for: target, timestamp: timestamp)
+      try upsertHeadlineProperties(
+        file: target.file,
+        line: target.line,
+        properties: [
+          "STATUS": "approved",
+          "APPROVED_AT": timestamp,
+          "PAIRED_SEND_TODO": result.title
+        ]
+      )
+      invalidateCanonicalDocumentCache(for: result.file)
+      await refreshAfterHeadlineMutation(target)
+      preserveAgendaSelectionAfterTodoMutation(
+        target: target,
+        originalVisibleIndex: originalVisibleIndex,
+        shouldAdvanceSelection: true
+      )
+      statusText = result.created
+        ? "Approved and created agent action -> \(result.title)"
+        : "Approved and activated agent action -> \(result.title)"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Approve handoff failed"
+    }
+  }
+
+  private func activateApprovedAgentAction(
+    for target: HeadlineMutationTarget,
+    timestamp: String
+  ) async throws -> ApprovedAgentActionResult {
+    let url = URL(fileURLWithPath: target.file)
+    let raw = try String(contentsOf: url, encoding: .utf8)
+    let lines = Self.normalizeLineEndings(raw)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    let targetIndex = max(0, min(lines.count - 1, target.line - 1))
+    guard let headingIndex = Self.headingIndex(in: lines, atOrBefore: targetIndex),
+          let headingLevel = Self.headingLevel(lines[headingIndex])
+    else {
+      throw WorkspaceEditError.noHeadline(file: target.file, line: target.line)
+    }
+
+    let properties = Self.scanPropertyDrawer(lines: lines, afterHeadingIndex: headingIndex)
+    var candidateTitles = Self.pairedApprovalActionTitleCandidates(properties: properties)
+    let generatedTitle = Self.approvedAgentActionTitle(for: target.title)
+    candidateTitles.append(generatedTitle)
+
+    if let existing = Self.findExistingApprovedAgentAction(
+      lines: lines,
+      file: target.file,
+      excludingHeadingIndex: headingIndex,
+      candidateTitles: candidateTitles
+    ) {
+      try await setTodoStatus(.todo, for: existing)
+      try await setTodoAssignee(resolvedAgentHandoffAssignee(), for: existing)
+      try upsertHeadlineProperties(
+        file: existing.file,
+        line: existing.line,
+        properties: [
+          "STATUS": "approved-to-send",
+          "APPROVED_AT": timestamp,
+          "APPROVAL_TODO": target.title
+        ]
+      )
+      return ApprovedAgentActionResult(
+        title: existing.title,
+        file: existing.file,
+        line: existing.line,
+        created: false
+      )
+    }
+
+    let insertIndex = Self.subtreeEndIndex(lines: lines, headingIndex: headingIndex, level: headingLevel)
+    let insertLine = insertIndex + 1
+    var insertionLines: [String] = []
+    if insertIndex > 0,
+       !lines[insertIndex - 1].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      insertionLines.append("")
+    }
+    let headingLineOffset = insertionLines.count
+    let stars = String(repeating: "*", count: headingLevel)
+    insertionLines += [
+      "\(stars) TODO \(generatedTitle)",
+      "SCHEDULED: \(Self.orgDateTimestamp(Date()))",
+      ":PROPERTIES:",
+      ":APPROVAL_TODO: \(target.title)",
+      ":APPROVED_AT: \(timestamp)",
+      ":ASSIGNEE: \(resolvedAgentHandoffAssignee())",
+      ":STATUS: approved-to-send",
+      ":END:",
+      ""
+    ]
+
+    try Self.replaceSourceRange(
+      file: target.file,
+      startLine: insertLine,
+      endLineExclusive: insertLine,
+      replacement: insertionLines.joined(separator: "\n")
+    )
+
+    return ApprovedAgentActionResult(
+      title: generatedTitle,
+      file: target.file,
+      line: insertLine + headingLineOffset,
+      created: true
+    )
+  }
+
   private func resolvedAgentHandoffAssignee() -> String {
     let assignee = agentHandoffAssignee.trimmingCharacters(in: .whitespacesAndNewlines)
     return assignee.isEmpty ? Self.defaultAgentHandoffAssignee : assignee
@@ -5855,6 +6331,10 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func makeSurfacePrimary(_ surface: WorkspaceSurface) {
+    if surface == .home {
+      openHome()
+      return
+    }
     selectedSurface = surface
     expandedWorkspaceSurface = nil
     isWorkspaceSurfacePaneClosed = false
@@ -5869,6 +6349,9 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func expandSurface(_ surface: WorkspaceSurface) {
+    if surface == .home {
+      openHome()
+    }
     selectedSurface = surface
     expandedWorkspaceSurface = surface
     isWorkspaceSurfacePaneClosed = false
@@ -5966,17 +6449,17 @@ public final class WorkspaceStore: ObservableObject {
       case "0":
         toggleOpenClawAssistantPanel()
       case "1":
-        selectedSurface = .agenda
+        openHome()
       case "2":
-        selectedSurface = .files
+        selectedSurface = .agenda
       case "3":
-        focusSearchSurface()
+        selectedSurface = .files
       case "4":
-        selectedSurface = .meetings
+        focusSearchSurface()
       case "5":
-        selectedSurface = .openClaw
+        selectedSurface = .meetings
       case "6":
-        selectedSurface = .agentSpace
+        selectedSurface = .openClaw
       case "7":
         openDailyNote(.today)
       case "8":
@@ -6901,6 +7384,7 @@ public final class WorkspaceStore: ObservableObject {
       openClawEndpointKey,
       openClawAgentKey,
       agentHandoffAssigneeKey,
+      personalAssigneeNamesKey,
       openClawRemoteCorpusPathKey,
       orgCryptEncryptOnSaveKey,
       orgCryptRecipientsKey,
@@ -6913,6 +7397,7 @@ public final class WorkspaceStore: ObservableObject {
       openClawEndpointKey: defaultOpenClawEndpoint,
       openClawAgentKey: "main",
       agentHandoffAssigneeKey: Self.defaultAgentHandoffAssignee,
+      personalAssigneeNamesKey: "",
       openClawRemoteCorpusPathKey: "",
       orgCryptGpgProgramKey: "gpg"
     ]
@@ -7451,6 +7936,23 @@ public final class WorkspaceStore: ObservableObject {
       value.removeLast()
     }
     return value
+  }
+
+  nonisolated static func normalizedAssigneeIdentity(_ raw: String) -> String {
+    raw
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .split(whereSeparator: { $0.isWhitespace })
+      .joined(separator: " ")
+      .lowercased()
+  }
+
+  nonisolated static func personalAssigneeNames(from text: String) -> Set<String> {
+    Set(text
+      .split(whereSeparator: { character in
+        character == "," || character == ";" || character.isNewline
+      })
+      .map { normalizedAssigneeIdentity(String($0)) }
+      .filter { !$0.isEmpty })
   }
 
   private static func defaultOpenClawStatusText() -> String {
@@ -9220,6 +9722,63 @@ public final class WorkspaceStore: ObservableObject {
     return (todo, title, tags)
   }
 
+  nonisolated private static func pairedApprovalActionTitleCandidates(properties: [String: String]) -> [String] {
+    [
+      "PAIRED_SEND_TODO",
+      "PAIRED_AGENT_TODO",
+      "PAIRED_TODO",
+      "NEXT_AGENT_TODO",
+      "SEND_TODO"
+    ]
+    .compactMap { key in
+      let title = properties[key]?.trimmingCharacters(in: .whitespacesAndNewlines)
+      return title?.isEmpty == false ? title : nil
+    }
+  }
+
+  nonisolated private static func approvedAgentActionTitle(for title: String) -> String {
+    let clean = Org2Display.cleanInline(title)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+    guard !clean.isEmpty else { return "Continue approved task" }
+
+    for prefix in ["Approve "] {
+      if clean.range(of: prefix, options: [.caseInsensitive, .anchored]) != nil {
+        let rest = String(clean.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return rest.isEmpty ? "Continue approved task" : "Send approved \(rest)"
+      }
+    }
+    return "Continue approved \(clean)"
+  }
+
+  nonisolated private static func findExistingApprovedAgentAction(
+    lines: [String],
+    file: String,
+    excludingHeadingIndex excludedIndex: Int,
+    candidateTitles: [String]
+  ) -> HeadlineMutationTarget? {
+    let normalizedCandidates = Set(candidateTitles
+      .map(normalizedApprovalActionTitle)
+      .filter { !$0.isEmpty })
+    guard !normalizedCandidates.isEmpty else { return nil }
+
+    for (index, line) in lines.enumerated() where index != excludedIndex {
+      guard let heading = parseTodoHeading(line) else { continue }
+      let normalizedTitle = normalizedApprovalActionTitle(heading.title)
+      guard normalizedCandidates.contains(normalizedTitle) else { continue }
+      return HeadlineMutationTarget(file: file, line: index + 1, title: heading.title)
+    }
+    return nil
+  }
+
+  nonisolated private static func normalizedApprovalActionTitle(_ title: String) -> String {
+    Org2Display.cleanInline(title)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .split(whereSeparator: { $0.isWhitespace })
+      .joined(separator: " ")
+      .lowercased()
+  }
+
   nonisolated private static func scanPropertyDrawer(lines: [String], afterHeadingIndex headingIndex: Int) -> [String: String] {
     var index = headingIndex + 1
     while index < lines.count {
@@ -10173,9 +10732,10 @@ public final class WorkspaceStore: ObservableObject {
     let url = URL(fileURLWithPath: file)
     let raw = try String(contentsOf: url, encoding: .utf8).replacingOccurrences(of: "\r\n", with: "\n")
     var lines = raw.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-    let headingIndex = max(0, min(lines.count - 1, line - 1))
-
-    guard headingIndex < lines.count, lines[headingIndex].range(of: #"^\*+\s+"#, options: .regularExpression) != nil else {
+    let targetIndex = max(0, min(lines.count - 1, line - 1))
+    guard let headingIndex = Self.headingIndex(in: lines, atOrBefore: targetIndex),
+          lines[headingIndex].range(of: #"^\*+\s+"#, options: .regularExpression) != nil
+    else {
       throw WorkspaceEditError.noHeadline(file: file, line: line)
     }
 
@@ -11199,6 +11759,7 @@ private final class SourceRunOutputCollector: @unchecked Sendable {
 }
 
 public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
+  case home
   case agenda
   case files
   case search
@@ -11214,6 +11775,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
 
   public var title: String {
     switch self {
+    case .home: "Home"
     case .agenda: "Agenda"
     case .files: "Files"
     case .search: "Search"
@@ -11225,6 +11787,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
 
   public var systemImage: String {
     switch self {
+    case .home: "house"
     case .agenda: "calendar"
     case .files: "doc.text"
     case .search: "magnifyingglass"
@@ -11236,12 +11799,13 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
 
   public var commandShortcutTitle: String {
     switch self {
-    case .agenda: "⌘1"
-    case .files: "⌘2"
-    case .search: "⌘3"
-    case .meetings: "⌘4"
-    case .openClaw: "⌘5"
-    case .agentSpace: "⌘6"
+    case .home: "⌘1"
+    case .agenda: "⌘2"
+    case .files: "⌘3"
+    case .search: "⌘4"
+    case .meetings: "⌘5"
+    case .openClaw: "⌘6"
+    case .agentSpace: ""
     }
   }
 }

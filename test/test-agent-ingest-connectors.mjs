@@ -11,7 +11,7 @@ import {
   previewConnectorIngest,
   renderIngestReviewArtifact,
   validateConnectorManifest,
-} from './dist/agentIngestConnectors.js';
+} from '../dist/agentIngestConnectors.js';
 
 const slack = new SlackFixtureConnector();
 const slackRecords = slack.ingest({ messages: [

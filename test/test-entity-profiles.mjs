@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { compileCorpus } from './dist/corpusCompile.js';
+import { compileCorpus } from '../dist/corpusCompile.js';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'org2-entities-'));
 const companyId = '11111111-1111-1111-1111-111111111111';

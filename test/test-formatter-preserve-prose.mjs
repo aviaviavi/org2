@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { parseOrgToCanonicalAst } from "./dist/parser.js";
-import { printCanonicalAstToOrg } from "./dist/printer.js";
+import { parseOrgToCanonicalAst } from "../dist/parser.js";
+import { printCanonicalAstToOrg } from "../dist/printer.js";
 
 const input = `* Blog post
 

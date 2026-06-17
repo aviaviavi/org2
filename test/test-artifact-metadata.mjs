@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { lintArtifactMetadataInText } from './dist/artifactLint.js';
+import { lintArtifactMetadataInText } from '../dist/artifactLint.js';
 import {
   buildGeneratedArtifactMetadata,
   formatOrg2ArtifactPropertyDrawer,
   formatSourceHashEntry,
-} from './dist/artifactMetadata.js';
+} from '../dist/artifactMetadata.js';
 
 const sourceHash = {
   kind: 'file',

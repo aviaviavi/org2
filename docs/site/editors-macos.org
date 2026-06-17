@@ -4,6 +4,19 @@ Org2 Workspace is the native macOS client for working with an Org2 corpus. It is
 
 The app is currently best understood as a local workspace shell for dogfooding the product direction: global capture, agenda review, file navigation, search, rendered block editing, meeting capture, OpenClaw handoff, knowledge-node creation, and crypt workflows over normal files.
 
+* Screenshots
+
+These screenshots are captured from the synthetic corpus in =examples/macos-workspace-demo= so public docs never depend on private notes.
+
+#+begin_export html
+<div class="org2-shot-grid">
+  <figure><img src="assets/screenshots/macos-workspace-agenda.png" alt="Org2 Workspace agenda showing scheduled demo tasks and a selected entry" loading="lazy" /><figcaption>Agenda: review scheduled work, ownership, TODO state, and entry context from local files.</figcaption></figure>
+  <figure><img src="assets/screenshots/macos-workspace-brief.png" alt="Org2 Workspace Agent Space showing a generated node brief" loading="lazy" /><figcaption>Node briefs: generated context stays in reviewable Org2 artifacts with citations and provenance.</figcaption></figure>
+  <figure><img src="assets/screenshots/macos-workspace-openclaw.png" alt="Org2 Workspace OpenClaw chat showing a local chat transcript and change summary" loading="lazy" /><figcaption>OpenClaw chat: hand off selected workspace context while keeping transcript state local.</figcaption></figure>
+  <figure><img src="assets/screenshots/macos-workspace-meetings.png" alt="Org2 Workspace meetings view showing a recorded meeting and transcript artifact" loading="lazy" /><figcaption>Meetings: record or import audio, keep transcripts in the corpus, and review meeting notes beside the list.</figcaption></figure>
+</div>
+#+end_export
+
 * Current surfaces
 
 The sidebar exposes the main workspace surfaces:
@@ -94,6 +107,12 @@ The app expects =dist/cli.js= and =dist/parse.js= to exist. If the app cannot fi
 
 #+begin_src sh
 ORG2_REPO_ROOT=/path/to/org2 swift run Org2Workspace
+#+end_src
+
+To refresh the public macOS screenshots from the synthetic demo corpus:
+
+#+begin_src sh
+npm run screenshots:macos
 #+end_src
 
 * Next priorities

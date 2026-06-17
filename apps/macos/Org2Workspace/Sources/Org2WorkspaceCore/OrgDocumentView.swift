@@ -129,6 +129,12 @@ struct OrgRenderedEntryView: View, Equatable {
           loadMore: expandRenderedBlocks
         )
       }
+
+      if isSourceEditable && !visibleWindow.hasNext {
+        RenderedPageBlankWritingArea {
+          Task { await store.beginAppendingSectionAtEnd() }
+        }
+      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .environment(\.orgInlineSearchHighlightQuery, searchHighlightQuery)
@@ -866,20 +872,13 @@ enum RenderedRowChrome {
 enum RenderedBlockEditingPolicy {
   static func startsEditingOnSingleClick(block: OrgEditableBlock, isSourceEditable: Bool) -> Bool {
     guard isSourceEditable, block.isEditable else { return false }
+    guard OrgCrypt.armorSummary(block.rawText) == nil else { return false }
     switch block.rendered {
-    case .blank, .horizontalRule, .properties:
+    case .blank:
       return false
-    case .paragraph:
-      return OrgCrypt.armorSummary(block.rawText) == nil
-        && !paragraphContainsRenderableMedia(block.rawText)
-    case .heading, .planning, .quote, .source, .table, .listItem, .keyword:
+    case .heading, .horizontalRule, .keyword, .listItem, .paragraph, .planning, .properties, .quote, .source, .table:
       return true
     }
-  }
-
-  private static func paragraphContainsRenderableMedia(_ rawText: String) -> Bool {
-    OrgMediaAttachment.standalone(raw: rawText) != nil
-      || OrgMediaAttachment.embedded(in: rawText) != nil
   }
 }
 
@@ -1157,6 +1156,28 @@ private struct EditableRenderedBlockView<Content: View>: View {
 
   private var usesRowTapGestures: Bool {
     RenderedBlockInteractionPolicy.usesRowTapGestures(block: block, isSourceEditable: isSourceEditable)
+  }
+}
+
+private struct RenderedPageBlankWritingArea: View {
+  let beginAppendingSection: () -> Void
+  @State private var isHovered = false
+
+  var body: some View {
+    Rectangle()
+      .fill(Color.clear)
+      .frame(maxWidth: .infinity, minHeight: 420)
+      .contentShape(Rectangle())
+      .background(
+        RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
+          .fill(isHovered ? WorkspaceDesign.subtleFill.opacity(0.45) : Color.clear)
+      )
+      .onHover { hovering in
+        isHovered = hovering
+      }
+      .onTapGesture {
+        beginAppendingSection()
+      }
   }
 }
 
