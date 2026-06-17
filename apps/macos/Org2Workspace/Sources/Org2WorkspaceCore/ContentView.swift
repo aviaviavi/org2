@@ -2241,6 +2241,27 @@ private struct OpenClawChatView: View {
 
       Divider()
 
+      switch presentation {
+      case .fullPage:
+        HSplitView {
+          OpenClawChatThreadListView()
+            .frame(minWidth: 190, idealWidth: 220, maxWidth: 280)
+
+          chatColumn
+            .frame(minWidth: 420)
+        }
+      case .assistantPanel:
+        chatColumn
+      }
+    }
+    .sheet(isPresented: $isShowingConfiguration) {
+      OpenClawConfigurationSheet()
+        .environmentObject(store)
+    }
+  }
+
+  private var chatColumn: some View {
+    VStack(spacing: 0) {
       chatTranscript
 
       Divider()
@@ -2250,10 +2271,6 @@ private struct OpenClawChatView: View {
         compact: presentation == .assistantPanel
       )
       .padding(presentation == .assistantPanel ? 10 : 16)
-    }
-    .sheet(isPresented: $isShowingConfiguration) {
-      OpenClawConfigurationSheet()
-        .environmentObject(store)
     }
   }
 
@@ -2321,10 +2338,18 @@ private struct OpenClawChatView: View {
     }
 
     Button {
-      store.resetOpenClawChat()
+      store.createOpenClawChatThread()
     } label: {
       Label("New", systemImage: "plus")
     }
+    .disabled(store.isSendingOpenClawMessage)
+
+    Button {
+      store.resetOpenClawChat()
+    } label: {
+      Label("Clear", systemImage: "trash")
+    }
+    .disabled(store.isSendingOpenClawMessage || store.openClawMessages.isEmpty)
 
     Button {
       isShowingConfiguration = true
@@ -2432,6 +2457,95 @@ private struct OpenClawChatView: View {
         }
       }
     }
+  }
+}
+
+private struct OpenClawChatThreadListView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HStack(spacing: 8) {
+        Text("Threads")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.secondary)
+        Spacer(minLength: 0)
+        Button {
+          store.createOpenClawChatThread()
+        } label: {
+          Label("New Thread", systemImage: "plus")
+        }
+        .labelStyle(.iconOnly)
+        .help("New chat thread")
+        .disabled(store.isSendingOpenClawMessage)
+      }
+      .padding(.horizontal, 12)
+      .padding(.vertical, 8)
+
+      Divider()
+
+      if store.openClawChatThreads.isEmpty {
+        VStack(alignment: .leading, spacing: 8) {
+          WorkspaceIconBadge(systemImage: "bubble.left.and.bubble.right", tint: .secondary)
+          Text("No threads yet")
+            .font(.callout.weight(.medium))
+          Text("Send a message or start a new chat.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(12)
+      } else {
+        List(selection: selection) {
+          ForEach(store.openClawChatThreads) { thread in
+            OpenClawChatThreadRow(thread: thread)
+              .tag(thread.id)
+          }
+        }
+        .listStyle(.sidebar)
+        .disabled(store.isSendingOpenClawMessage)
+      }
+    }
+    .background(WorkspaceDesign.barBackground)
+  }
+
+  private var selection: Binding<UUID?> {
+    Binding(
+      get: { store.selectedOpenClawChatThreadID },
+      set: { id in
+        guard let id else { return }
+        store.selectOpenClawChatThread(id)
+      }
+    )
+  }
+}
+
+private struct OpenClawChatThreadRow: View {
+  let thread: OpenClawChatThread
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(thread.title)
+        .font(.callout.weight(.medium))
+        .lineLimit(2)
+        .truncationMode(.tail)
+
+      HStack(spacing: 6) {
+        Text("\(thread.messageCount) message\(thread.messageCount == 1 ? "" : "s")")
+        Text(Self.relativeDate(thread.updatedAt))
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .lineLimit(1)
+    }
+    .padding(.vertical, 5)
+  }
+
+  private static func relativeDate(_ date: Date) -> String {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .short
+    return formatter.localizedString(for: date, relativeTo: Date())
   }
 }
 

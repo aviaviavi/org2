@@ -416,6 +416,87 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testOpenClawChatThreadsPersistAndSwitchLocally() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-threads-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let suiteName = "org2-workspace-chat-threads-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+    store.openClawMessages = [
+      OpenClawChatMessage(role: .user, content: "First thread question"),
+      OpenClawChatMessage(role: .assistant, content: "First thread reply")
+    ]
+    let firstThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+
+    store.createOpenClawChatThread()
+    let secondThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    XCTAssertNotEqual(firstThreadID, secondThreadID)
+    XCTAssertTrue(store.openClawMessages.isEmpty)
+
+    store.openClawMessages = [
+      OpenClawChatMessage(role: .user, content: "Second thread question")
+    ]
+
+    store.selectOpenClawChatThread(firstThreadID)
+    XCTAssertEqual(store.openClawMessages.map(\.content), ["First thread question", "First thread reply"])
+
+    store.selectOpenClawChatThread(secondThreadID)
+    XCTAssertEqual(store.openClawMessages.map(\.content), ["Second thread question"])
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+    XCTAssertEqual(restored.openClawChatThreads.count, 2)
+    XCTAssertEqual(restored.selectedOpenClawChatThreadID, secondThreadID)
+    XCTAssertEqual(restored.openClawMessages.map(\.content), ["Second thread question"])
+  }
+
+  @MainActor
+  func testOpenClawChatThreadsMigrateLegacySingleTranscriptPayload() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-legacy-threads-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let suiteName = "org2-workspace-chat-legacy-threads-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let payload: [String: Any] = [
+      "version": 1,
+      "messages": [
+        [
+          "id": UUID().uuidString,
+          "role": "user",
+          "content": "Legacy single chat",
+          "createdAt": Date(timeIntervalSince1970: 1_700_000_000).timeIntervalSinceReferenceDate
+        ]
+      ]
+    ]
+    let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
+    try data.write(to: transcript)
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+
+    XCTAssertEqual(store.openClawChatThreads.count, 1)
+    XCTAssertEqual(store.openClawChatThreads.first?.title, "Legacy single chat")
+    XCTAssertEqual(store.openClawMessages.map(\.content), ["Legacy single chat"])
+  }
+
+  @MainActor
   func testOpenClawChatTranscriptPersistsRealSendsLocally() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-send-\(UUID().uuidString)", isDirectory: true)

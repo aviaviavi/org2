@@ -555,6 +555,35 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
   }
 }
 
+public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
+  public let id: UUID
+  public let title: String
+  public let createdAt: Date
+  public let updatedAt: Date
+  public let sessionKey: String
+  public let messages: [OpenClawChatMessage]
+
+  public init(
+    id: UUID = UUID(),
+    title: String,
+    createdAt: Date = Date(),
+    updatedAt: Date = Date(),
+    sessionKey: String,
+    messages: [OpenClawChatMessage] = []
+  ) {
+    self.id = id
+    self.title = title
+    self.createdAt = createdAt
+    self.updatedAt = updatedAt
+    self.sessionKey = sessionKey
+    self.messages = messages
+  }
+
+  public var messageCount: Int {
+    messages.count
+  }
+}
+
 public struct OpenClawCorpusChangeSummary: Hashable, Codable, Sendable {
   public let files: [OpenClawCorpusFileChange]
 
