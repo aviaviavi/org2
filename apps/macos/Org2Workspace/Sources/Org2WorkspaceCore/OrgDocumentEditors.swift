@@ -304,6 +304,11 @@ private struct HeadingBlockEditor: View {
   }
 
   var body: some View {
+    let wikiLinkCompletionMatch = titleWikiLinkCompletionMatch
+    let wikiLinkCompletionCandidates = wikiLinkCompletionMatch.map {
+      store.orgRoamLinkResolver.searchCandidates(matching: $0.query, limit: 6)
+    } ?? []
+
     ZStack(alignment: .topTrailing) {
       VStack(alignment: .leading, spacing: 5) {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -388,6 +393,23 @@ private struct HeadingBlockEditor: View {
           .padding(.leading, metadataIndent)
           .padding(.trailing, InlineEditorChrome.controlsTrailingPadding())
         }
+
+        if let wikiLinkCompletionMatch {
+          ParagraphWikiLinkCompletionPanel(
+            query: wikiLinkCompletionMatch.query,
+            candidates: wikiLinkCompletionCandidates,
+            choose: { node in
+              resolveWikiLinkCompletion(wikiLinkCompletionMatch, to: node)
+            },
+            create: {
+              createNodeFromWikiLinkCompletion(wikiLinkCompletionMatch)
+            }
+          )
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.leading, metadataIndent)
+          .padding(.trailing, InlineEditorChrome.controlsTrailingPadding())
+          .zIndex(1)
+        }
       }
       .padding(.leading, editorIndent)
 
@@ -458,6 +480,15 @@ private struct HeadingBlockEditor: View {
     isHovered || showsDetails || store.isSavingBlock
   }
 
+  private var titleWikiLinkCompletionMatch: ParagraphWikiLinkCompletionMatch? {
+    guard titleFocused else { return nil }
+    let location = (title as NSString).length
+    return ParagraphWikiLinkCompletion.match(
+      in: title,
+      selectedRange: NSRange(location: location, length: 0)
+    )
+  }
+
   private var headingControls: some View {
     HStack(spacing: 4) {
       InlineEditorSavingIndicator(isSaving: store.isSavingBlock)
@@ -501,6 +532,33 @@ private struct HeadingBlockEditor: View {
     autosaveTask = nil
     store.updateEditingBlockDraft(block, draft: rawHeading)
     Task { await store.saveEditedBlock(block) }
+  }
+
+  private func resolveWikiLinkCompletion(_ match: ParagraphWikiLinkCompletionMatch, to node: OrgRoamNodeReference) {
+    guard let edit = ParagraphWikiLinkCompletion.replacement(
+      in: title,
+      match: match,
+      node: node
+    ) else {
+      return
+    }
+    applyWikiLinkCompletion(edit)
+  }
+
+  private func createNodeFromWikiLinkCompletion(_ match: ParagraphWikiLinkCompletionMatch) {
+    let currentTitle = title
+    Task {
+      guard let edit = await store.createKnowledgeNodeFromWikiLinkCompletion(text: currentTitle, match: match) else {
+        return
+      }
+      applyWikiLinkCompletion(edit)
+    }
+  }
+
+  private func applyWikiLinkCompletion(_ edit: InlineSelectionReplacement) {
+    title = edit.text
+    titleFocused = true
+    scheduleHeadingAutosave()
   }
 
   private func scheduleHeadingAutosave() {
