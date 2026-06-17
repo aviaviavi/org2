@@ -10329,18 +10329,23 @@ public final class WorkspaceStore: ObservableObject {
       }
     }
 
-    let fallbackFileTitle = URL(fileURLWithPath: file.path).deletingPathExtension().lastPathComponent
+    let fallbackFileTitle = Self.titleFromFileStem(URL(fileURLWithPath: file.path).deletingPathExtension().lastPathComponent)
     let resolvedFileTitle = fileTitle?.value ?? fallbackFileTitle
-    if fileTitle != nil || fileID != nil || !fileAliases.isEmpty {
-      return OrgRoamNodeReference(
-        idValue: fileID,
-        title: resolvedFileTitle,
-        aliases: fileAliases,
-        file: file.path,
-        line: fileTitle?.line ?? 1
-      )
-    }
-    return nil
+    return OrgRoamNodeReference(
+      idValue: fileID,
+      title: resolvedFileTitle,
+      aliases: fileAliases,
+      file: file.path,
+      line: fileTitle?.line ?? 1
+    )
+  }
+
+  nonisolated private static func titleFromFileStem(_ stem: String) -> String {
+    stem
+      .replacingOccurrences(of: "_", with: " ")
+      .replacingOccurrences(of: "-", with: " ")
+      .split(whereSeparator: { $0.isWhitespace })
+      .joined(separator: " ")
   }
 
   private struct RoamHeadingDraft {
@@ -11219,6 +11224,38 @@ public final class WorkspaceStore: ObservableObject {
     } catch {
       errorText = error.localizedDescription
       statusText = "Create node from selection failed"
+      return nil
+    }
+  }
+
+  func createKnowledgeNodeFromWikiLinkCompletion(
+    text: String,
+    match: ParagraphWikiLinkCompletionMatch
+  ) async -> InlineSelectionReplacement? {
+    let title = match.query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty else {
+      statusText = "Type a link title first"
+      return nil
+    }
+
+    do {
+      let node = try ensureKnowledgeNode(title: title, sourceLocation: selectedLocation)
+      invalidateCanonicalDocumentCache(for: node.file)
+      await refreshCorpusFiles()
+      statusText = "Created node \(relativePath(node.file))"
+      return ParagraphWikiLinkCompletion.replacement(
+        in: text,
+        match: match,
+        node: OrgRoamNodeReference(
+          idValue: node.id,
+          title: node.title,
+          file: node.file,
+          line: 1
+        )
+      )
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Create node from link failed"
       return nil
     }
   }

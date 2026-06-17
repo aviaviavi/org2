@@ -791,6 +791,13 @@ public struct OrgRoamNodeReference: Identifiable, Hashable, Sendable {
   public var fileReference: OpenClawFileReference {
     OpenClawFileReference(path: file, line: line)
   }
+
+  public var preferredLinkTarget: String {
+    if let idValue {
+      return "id:\(idValue)"
+    }
+    return file
+  }
 }
 
 public struct OrgRoamResolvedLink: Equatable, Sendable {
@@ -810,6 +817,7 @@ public struct OrgRoamLinkResolver: Equatable, Sendable {
   public let signature: String
   private let nodesByID: [String: OrgRoamNodeReference]
   private let nodesByTitle: [String: OrgRoamNodeReference]
+  private let nodeCandidatesByTitle: [String: [OrgRoamNodeReference]]
 
   public init(nodes: [OrgRoamNodeReference]) {
     self.nodes = nodes
@@ -824,7 +832,9 @@ public struct OrgRoamLinkResolver: Equatable, Sendable {
       for title in [node.title] + node.aliases {
         let key = Self.normalizedTitle(title)
         guard !key.isEmpty else { continue }
-        titleCandidates[key, default: []].append(node)
+        if titleCandidates[key]?.contains(node) != true {
+          titleCandidates[key, default: []].append(node)
+        }
       }
     }
 
@@ -834,6 +844,7 @@ public struct OrgRoamLinkResolver: Equatable, Sendable {
     nodesByTitle = titleCandidates.compactMapValues { candidates in
       candidates.count == 1 ? candidates[0] : nil
     }
+    nodeCandidatesByTitle = titleCandidates
     signature = Self.makeSignature(nodes)
   }
 
@@ -851,6 +862,46 @@ public struct OrgRoamLinkResolver: Equatable, Sendable {
 
     guard let node else { return nil }
     return OrgRoamResolvedLink(title: node.title, fileReference: node.fileReference)
+  }
+
+  public func exactCandidates(for rawTarget: String) -> [OrgRoamNodeReference] {
+    let target = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !target.isEmpty else { return [] }
+    if target.lowercased().hasPrefix("id:") {
+      return nodesByID[Self.normalizedID(String(target.dropFirst(3)))].map { [$0] } ?? []
+    }
+    return nodeCandidatesByTitle[Self.normalizedTitle(target)] ?? []
+  }
+
+  public func searchCandidates(matching rawQuery: String, limit: Int = 6) -> [OrgRoamNodeReference] {
+    let query = Self.normalizedTitle(rawQuery)
+    guard !query.isEmpty else { return [] }
+    let scored = nodes.compactMap { node -> (OrgRoamNodeReference, Int)? in
+      let labels = [node.title] + node.aliases
+      var bestScore: Int?
+      for label in labels {
+        let normalized = Self.normalizedTitle(label)
+        if normalized == query {
+          bestScore = min(bestScore ?? 0, 0)
+        } else if normalized.hasPrefix(query) {
+          bestScore = min(bestScore ?? 1, 1)
+        } else if normalized.contains(query) {
+          bestScore = min(bestScore ?? 2, 2)
+        }
+      }
+      return bestScore.map { (node, $0) }
+    }
+    return scored
+      .sorted {
+        if $0.1 != $1.1 { return $0.1 < $1.1 }
+        if $0.0.title.localizedCaseInsensitiveCompare($1.0.title) != .orderedSame {
+          return $0.0.title.localizedCaseInsensitiveCompare($1.0.title) == .orderedAscending
+        }
+        return $0.0.file < $1.0.file
+      }
+      .map(\.0)
+      .prefix(limit)
+      .map { $0 }
   }
 
   public static func normalizedTitle(_ raw: String) -> String {
