@@ -466,10 +466,14 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var meetingSystemAudioStatusText = "System audio not recording"
   @Published public var openClawMessages: [OpenClawChatMessage] = [] {
     didSet {
+      guard !isApplyingOpenClawThreadMessages else { return }
+      updateSelectedOpenClawChatThread(messages: openClawMessages)
       guard shouldPersistOpenClawMessages else { return }
-      persistOpenClawMessages()
+      persistOpenClawTranscript()
     }
   }
+  @Published public private(set) var openClawChatThreads: [OpenClawChatThread] = []
+  @Published public private(set) var selectedOpenClawChatThreadID: UUID?
   @Published public var openClawDraft = ""
   @Published public var openClawAgentID = "main"
   @Published public var openClawEndpointText = ""
@@ -628,6 +632,7 @@ public final class WorkspaceStore: ObservableObject {
   private let openClawSendHandler: (@Sendable ([OpenClawChatMessage], String, String, OpenClawWorkspaceContext?) async throws -> String)?
   private var openClawSessionKey = WorkspaceStore.makeOpenClawSessionKey()
   private var shouldPersistOpenClawMessages = false
+  private var isApplyingOpenClawThreadMessages = false
   private var openClawBearerToken: String?
   private var openClawPendingUserMessageIDs: [UUID] = [] {
     didSet {
@@ -725,7 +730,9 @@ public final class WorkspaceStore: ObservableObject {
       defaults.set(true, forKey: orgCryptUseDefaultGpgKeyMigrationKey)
     }
     orgCryptGpgProgram = defaults.string(forKey: orgCryptGpgProgramKey) ?? "gpg"
-    openClawMessages = usesFixedOpenClawTranscriptURL ? Self.loadOpenClawMessages(from: self.openClawTranscriptURL) : []
+    if usesFixedOpenClawTranscriptURL {
+      applyOpenClawTranscript(Self.loadOpenClawTranscript(from: self.openClawTranscriptURL), shouldPersist: false)
+    }
     shouldPersistOpenClawMessages = true
     openClawHasStoredToken = OpenClawKeychain.containsToken()
     orgCryptHasStoredPassphrase = OrgCryptKeychain.containsPassphrase()
@@ -4651,6 +4658,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func sendOpenClawMessage(_ text: String) async {
+    ensureOpenClawChatThread()
     let userMessage = OpenClawChatMessage(role: .user, content: text)
     openClawMessages.append(userMessage)
     openClawPendingUserMessageIDs.append(userMessage.id)
@@ -4871,7 +4879,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func resetOpenClawChat() {
-    openClawSessionKey = Self.makeOpenClawSessionKey()
+    ensureOpenClawChatThread()
     openClawMessages = []
     openClawDraft = ""
     openClawPendingUserMessageIDs.removeAll()
@@ -4881,6 +4889,105 @@ public final class WorkspaceStore: ObservableObject {
     openClawChatScrollPosition = nil
     openClawAssistantChatScrollPosition = nil
     openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
+  }
+
+  public var selectedOpenClawChatThread: OpenClawChatThread? {
+    guard let selectedOpenClawChatThreadID else { return nil }
+    return openClawChatThreads.first(where: { $0.id == selectedOpenClawChatThreadID })
+  }
+
+  public func createOpenClawChatThread() {
+    guard !isSendingOpenClawMessage else { return }
+    let thread = OpenClawChatThread(
+      title: "New Chat",
+      sessionKey: Self.makeOpenClawSessionKey()
+    )
+    openClawChatThreads.insert(thread, at: 0)
+    selectOpenClawChatThread(thread.id, persistsSelection: false)
+    persistOpenClawTranscript()
+    openClawStatusText = "New OpenClaw chat"
+  }
+
+  public func selectOpenClawChatThread(_ id: UUID) {
+    selectOpenClawChatThread(id, persistsSelection: true)
+  }
+
+  private func selectOpenClawChatThread(_ id: UUID, persistsSelection: Bool) {
+    guard !isSendingOpenClawMessage,
+          let thread = openClawChatThreads.first(where: { $0.id == id })
+    else {
+      return
+    }
+    selectedOpenClawChatThreadID = thread.id
+    openClawSessionKey = thread.sessionKey
+    openClawDraft = ""
+    openClawPendingUserMessageIDs.removeAll()
+    isDrainingOpenClawQueue = false
+    isSendingOpenClawMessage = false
+    openClawRequestStartedAt = nil
+    openClawChatScrollPosition = nil
+    openClawAssistantChatScrollPosition = nil
+    replaceOpenClawMessages(thread.messages, shouldPersist: false)
+    if persistsSelection {
+      persistOpenClawTranscript()
+    }
+  }
+
+  private func ensureOpenClawChatThread() {
+    if let selectedOpenClawChatThreadID,
+       openClawChatThreads.contains(where: { $0.id == selectedOpenClawChatThreadID }) {
+      return
+    }
+    let thread = OpenClawChatThread(
+      title: Self.openClawThreadTitle(from: openClawMessages),
+      sessionKey: openClawSessionKey,
+      messages: openClawMessages
+    )
+    openClawChatThreads.insert(thread, at: 0)
+    selectedOpenClawChatThreadID = thread.id
+  }
+
+  private func updateSelectedOpenClawChatThread(messages: [OpenClawChatMessage]) {
+    ensureOpenClawChatThread()
+    guard let selectedOpenClawChatThreadID,
+          let index = openClawChatThreads.firstIndex(where: { $0.id == selectedOpenClawChatThreadID })
+    else {
+      return
+    }
+
+    let current = openClawChatThreads[index]
+    let updated = OpenClawChatThread(
+      id: current.id,
+      title: Self.openClawThreadTitle(from: messages, fallback: current.title),
+      createdAt: current.createdAt,
+      updatedAt: messages.last?.createdAt ?? Date(),
+      sessionKey: current.sessionKey,
+      messages: messages
+    )
+    openClawChatThreads[index] = updated
+    openClawChatThreads.sort { lhs, rhs in
+      if lhs.id == selectedOpenClawChatThreadID { return true }
+      if rhs.id == selectedOpenClawChatThreadID { return false }
+      return lhs.updatedAt > rhs.updatedAt
+    }
+  }
+
+  nonisolated private static func openClawThreadTitle(
+    from messages: [OpenClawChatMessage],
+    fallback: String = "New Chat"
+  ) -> String {
+    guard let firstUserMessage = messages.first(where: { $0.role == .user }) else {
+      return fallback
+    }
+    let clean = firstUserMessage.content
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .split(whereSeparator: { $0.isWhitespace })
+      .joined(separator: " ")
+    guard !clean.isEmpty else { return fallback }
+    if clean.count <= 48 {
+      return clean
+    }
+    return String(clean.prefix(45)).trimmingCharacters(in: .whitespacesAndNewlines) + "..."
   }
 
   public func openClawChatScrollPosition(isAssistantPanel: Bool) -> Double? {
@@ -7507,9 +7614,15 @@ public final class WorkspaceStore: ObservableObject {
     }.value
   }
 
-  private func persistOpenClawMessages() {
+  private func persistOpenClawTranscript() {
     do {
-      try Self.saveOpenClawMessages(openClawMessages, to: openClawTranscriptURL)
+      try Self.saveOpenClawTranscript(
+        OpenClawTranscriptState(
+          threads: openClawChatThreads,
+          selectedThreadID: selectedOpenClawChatThreadID
+        ),
+        to: openClawTranscriptURL
+      )
     } catch {
       errorText = "OpenClaw transcript save failed: \(error.localizedDescription)"
     }
@@ -7521,21 +7634,21 @@ public final class WorkspaceStore: ObservableObject {
     let previousURL = openClawTranscriptURL.standardizedFileURL
     guard targetURL.path != previousURL.path else { return }
 
-    let messages: [OpenClawChatMessage]
+    let transcript: OpenClawTranscriptState
     let shouldPersistMigratedMessages: Bool
     if FileManager.default.fileExists(atPath: targetURL.path) {
-      messages = Self.loadOpenClawMessages(from: targetURL)
+      transcript = Self.loadOpenClawTranscript(from: targetURL)
       shouldPersistMigratedMessages = false
     } else if let migrationSource,
               migrationSource.standardizedFileURL.path != targetURL.path {
-      messages = Self.loadOpenClawMessages(from: migrationSource.standardizedFileURL)
-      shouldPersistMigratedMessages = !messages.isEmpty
+      transcript = Self.loadOpenClawTranscript(from: migrationSource.standardizedFileURL)
+      shouldPersistMigratedMessages = !transcript.threads.isEmpty
     } else if previousURL.path == appOpenClawTranscriptURL.standardizedFileURL.path,
               !openClawMessages.isEmpty {
-      messages = openClawMessages
+      transcript = Self.openClawTranscriptState(fromLegacyMessages: openClawMessages)
       shouldPersistMigratedMessages = true
     } else {
-      messages = []
+      transcript = OpenClawTranscriptState(threads: [], selectedThreadID: nil)
       shouldPersistMigratedMessages = false
     }
 
@@ -7545,16 +7658,35 @@ public final class WorkspaceStore: ObservableObject {
     isDrainingOpenClawQueue = false
     isSendingOpenClawMessage = false
     openClawRequestStartedAt = nil
-    replaceOpenClawMessages(messages, shouldPersist: shouldPersistMigratedMessages)
+    applyOpenClawTranscript(transcript, shouldPersist: shouldPersistMigratedMessages)
   }
 
   private func replaceOpenClawMessages(_ messages: [OpenClawChatMessage], shouldPersist: Bool) {
     let previousPersistence = shouldPersistOpenClawMessages
     shouldPersistOpenClawMessages = false
+    isApplyingOpenClawThreadMessages = true
     openClawMessages = messages
+    isApplyingOpenClawThreadMessages = false
     shouldPersistOpenClawMessages = previousPersistence
     if shouldPersist {
-      persistOpenClawMessages()
+      updateSelectedOpenClawChatThread(messages: messages)
+      persistOpenClawTranscript()
+    }
+  }
+
+  private func applyOpenClawTranscript(_ transcript: OpenClawTranscriptState, shouldPersist: Bool) {
+    let threads = transcript.threads
+      .sorted { lhs, rhs in lhs.updatedAt > rhs.updatedAt }
+    openClawChatThreads = threads
+    let selectedID = transcript.selectedThreadID
+      .flatMap { id in threads.contains(where: { $0.id == id }) ? id : nil }
+      ?? threads.first?.id
+    selectedOpenClawChatThreadID = selectedID
+    let selectedThread = selectedID.flatMap { id in threads.first(where: { $0.id == id }) }
+    openClawSessionKey = selectedThread?.sessionKey ?? Self.makeOpenClawSessionKey()
+    replaceOpenClawMessages(selectedThread?.messages ?? [], shouldPersist: false)
+    if shouldPersist {
+      persistOpenClawTranscript()
     }
   }
 
@@ -7963,7 +8095,7 @@ public final class WorkspaceStore: ObservableObject {
     "Local transcription: \(LocalWhisperTranscriber.resolvedBackendDescription())"
   }
 
-  private static func makeOpenClawSessionKey() -> String {
+  nonisolated private static func makeOpenClawSessionKey() -> String {
     "org2-workspace:\(UUID().uuidString)"
   }
 
@@ -7996,22 +8128,62 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   nonisolated private static func loadOpenClawMessages(from url: URL) -> [OpenClawChatMessage] {
-    guard let data = try? Data(contentsOf: url),
-          let payload = try? JSONDecoder().decode(OpenClawTranscriptPayload.self, from: data)
-    else {
-      return []
-    }
-    return payload.messages
+    let transcript = loadOpenClawTranscript(from: url)
+    let selectedID = transcript.selectedThreadID
+    return selectedID
+      .flatMap { id in transcript.threads.first(where: { $0.id == id })?.messages }
+      ?? transcript.threads.first?.messages
+      ?? []
   }
 
   nonisolated private static func saveOpenClawMessages(_ messages: [OpenClawChatMessage], to url: URL) throws {
+    try saveOpenClawTranscript(openClawTranscriptState(fromLegacyMessages: messages), to: url)
+  }
+
+  nonisolated private static func loadOpenClawTranscript(from url: URL) -> OpenClawTranscriptState {
+    guard let data = try? Data(contentsOf: url),
+          let payload = try? JSONDecoder().decode(OpenClawTranscriptPayload.self, from: data)
+    else {
+      return OpenClawTranscriptState(threads: [], selectedThreadID: nil)
+    }
+    if let threads = payload.threads {
+      return OpenClawTranscriptState(
+        threads: threads,
+        selectedThreadID: payload.selectedThreadID
+      )
+    }
+    return openClawTranscriptState(fromLegacyMessages: payload.messages ?? [])
+  }
+
+  nonisolated private static func saveOpenClawTranscript(_ transcript: OpenClawTranscriptState, to url: URL) throws {
     try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    let payload = OpenClawTranscriptPayload(version: 1, messages: messages)
+    let payload = OpenClawTranscriptPayload(
+      version: 2,
+      messages: nil,
+      threads: transcript.threads,
+      selectedThreadID: transcript.selectedThreadID
+    )
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     let data = try encoder.encode(payload)
     try data.write(to: url, options: [.atomic])
     try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+  }
+
+  nonisolated private static func openClawTranscriptState(fromLegacyMessages messages: [OpenClawChatMessage]) -> OpenClawTranscriptState {
+    guard !messages.isEmpty else {
+      return OpenClawTranscriptState(threads: [], selectedThreadID: nil)
+    }
+    let createdAt = messages.first?.createdAt ?? Date()
+    let updatedAt = messages.last?.createdAt ?? createdAt
+    let thread = OpenClawChatThread(
+      title: openClawThreadTitle(from: messages),
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      sessionKey: makeOpenClawSessionKey(),
+      messages: messages
+    )
+    return OpenClawTranscriptState(threads: [thread], selectedThreadID: thread.id)
   }
 
   nonisolated private static func modificationDate(for url: URL) -> Date? {
@@ -11715,9 +11887,16 @@ private struct WorkspaceOrg2Config: Decodable {
   }
 }
 
+private struct OpenClawTranscriptState {
+  let threads: [OpenClawChatThread]
+  let selectedThreadID: UUID?
+}
+
 private struct OpenClawTranscriptPayload: Codable {
   let version: Int
-  let messages: [OpenClawChatMessage]
+  let messages: [OpenClawChatMessage]?
+  let threads: [OpenClawChatThread]?
+  let selectedThreadID: UUID?
 }
 
 private enum WorkspaceEditError: LocalizedError {
