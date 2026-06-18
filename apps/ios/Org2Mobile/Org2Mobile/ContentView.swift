@@ -188,7 +188,7 @@ private struct ApprovalsView: View {
         .buttonStyle(.plain)
         .swipeActions(edge: .leading) {
           Button {
-            Task { await store.sendToOpenClaw(.approve, approval: item) }
+            Task { await store.approve(item) }
           } label: {
             Label("Approve", systemImage: "checkmark")
           }
@@ -311,11 +311,11 @@ private struct ApprovalDetailView: View {
         Section {
           Button {
             Task {
-              await store.sendToOpenClaw(.approve, approval: item, message: message)
+              await store.approve(item)
               dismiss()
             }
           } label: {
-            Label("Approve via OpenClaw", systemImage: "checkmark.seal")
+            Label("Approve", systemImage: "checkmark.seal")
               .frame(maxWidth: .infinity)
           }
           .buttonStyle(.borderedProminent)
@@ -351,7 +351,7 @@ private struct ApprovalDetailView: View {
       }
       .onAppear {
         if message.isEmpty {
-          message = "Please review this approval item with me before taking action."
+          message = "I need to discuss this approval item before deciding."
         }
       }
     }
