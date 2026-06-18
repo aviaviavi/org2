@@ -28,6 +28,17 @@ import { extractClockReport } from "./clock.js";
 import { buildAgentContextPayload, renderAgentContextPack, type AgentInclude } from "./agentContext.js";
 import { renderOrgChart } from "./chartRender.js";
 import { runOrg2DataQuery } from "./dataQuery.js";
+import {
+  buildSearchIndex,
+  loadFreshSearchIndex,
+  searchFilesByScan,
+  searchIndexedCorpus,
+  searchPayload,
+  writeSearchIndex,
+  type Org2SearchHit,
+  type Org2SearchOptions,
+  type Org2SearchResultPayload,
+} from "./searchIndex.js";
 import { loadAiJobManifest, validateAiJobManifest } from "./aiJobManifest.js";
 import { createAiAdapterRequest, MockAiAdapter, type AiAdapterContextItem, type AiAdapterResponse } from "./aiAdapter.js";
 import { buildGeneratedArtifactMetadata, formatOrg2ArtifactPropertyDrawer, sha256Hex } from "./artifactMetadata.js";
@@ -8000,8 +8011,12 @@ async function main(): Promise<void> {
   let searchSort = "scan";
   let searchDateFrom = "";
   let searchDateTo = "";
+  let searchIndexMode: "auto" | "never" | "rebuild" = "auto";
   let querySubtree = false;
   let queryAnswerContext = false;
+
+  // Rebuildable local indexes
+  let indexFormat: "text" | "json" = "text";
 
   // Lint / corpus health
   let lintFormat: "text" | "json" = "text";
@@ -8180,6 +8195,9 @@ async function main(): Promise<void> {
       }
     } else if (arg === "backlinks") {
       command = "backlinks";
+      i++;
+    } else if (arg === "index") {
+      command = "index";
       i++;
     } else if (arg === "search") {
       command = "search";
@@ -9184,6 +9202,7 @@ async function main(): Promise<void> {
       else if (command === "fmt") fmtFormat = "json";
       else if (command === "id") idFormat = "json";
       else if (command === "backlinks") backlinksFormat = "json";
+      else if (command === "index") indexFormat = "json";
       else if (command === "query") { queryFormat = "json"; searchFormat = "json"; }
       else if (command === "search") searchFormat = "json";
       else if (command === "entity") entityFormat = "json";
@@ -9226,6 +9245,8 @@ async function main(): Promise<void> {
           idFormat = v;
         } else if (command === "backlinks" && (v === "text" || v === "json")) {
           backlinksFormat = v;
+        } else if (command === "index" && (v === "text" || v === "json")) {
+          indexFormat = v;
         } else if (command === "query" && (v === "text" || v === "json")) {
           queryFormat = v;
           searchFormat = v;
@@ -9264,6 +9285,22 @@ async function main(): Promise<void> {
       i++;
       if (i < args.length) {
         if (command === "search" || command === "query") searchContextRaw = args[i]!;
+        i++;
+      }
+    } else if (arg === "--index") {
+      i++;
+      if (i < args.length) {
+        if (command === "export") {
+          exportIndex = args[i]!;
+        } else if (command === "search" || command === "query") {
+          const value = String(args[i] || "").trim().toLowerCase();
+          if (value === "auto" || value === "never" || value === "rebuild") {
+            searchIndexMode = value;
+          } else {
+            console.error("Error: --index must be one of auto, never, or rebuild");
+            process.exit(1);
+          }
+        }
         i++;
       }
     } else if (arg === "--heading") {
@@ -9585,6 +9622,7 @@ Export / publish:
 Roam / IDs:
   org2 id <get|ensure> --file FILE [--line N|--pos LINE[:COL]] [--apply]
   org2 backlinks --id UUID [--dir DIR] [--recursive]
+  org2 index --dir DIR [--recursive] [--include-archives] [--format text|json]
   org2 search QUERY [--dir DIR] [--recursive] [--include-archives] [--format text|json]
   org2 query QUERY [--dir DIR] [--recursive] [--include-archives] [--format text|json]
   org2 query (--id UUID|--text TEXT) [--dir DIR] [--recursive] [--include-archives]
@@ -9612,6 +9650,7 @@ Roam / IDs:
   org2 graph audit --dir DIR [--recursive] [--format report|json]
 
 Maintenance / health:
+  org2 index [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
   org2 compile corpus [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl] [--incremental] [--cache FILE]
   org2 ai validate-job --job FILE [--format text|json]
   org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
@@ -9821,6 +9860,21 @@ Flags:
   --file FILE       Single target file
   --files FILE      One or more target files
   --format text|json Output format`;
+  } else if (command === "index") {
+    text = `org2 index
+
+Usage:
+  org2 index [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
+
+Builds a rebuildable exact-text search index at DIR/.org2/index/search-v1.json. Org files remain canonical; the index is disposable derived storage.
+
+Flags:
+  --dir DIR          Root directory to scan
+  --recursive        Recurse into subdirectories
+  --include-archives Include archive files/directories in index scans
+  --file FILE        Single target file
+  --files FILE       One or more target files
+  --format text|json Output format`;
   } else if (command === "search") {
     text = `org2 search
 
@@ -9840,6 +9894,7 @@ Flags:
   --heading TEXT     Require nearest heading title text
   --limit N          Maximum matches (default 50)
   --context N        Context lines around each match (default 1)
+  --index auto|never|rebuild Use a fresh derived index when available, never use it, or rebuild before searching
   --subtree          Return one cited heading/subtree per matching section
   --answer-context   Include subtree text for downstream answer prompts (JSON)
   --date-from DATE   Filter by file/heading date (YYYY-MM-DD)
@@ -10145,7 +10200,7 @@ Flags:
     printGeneralUsage(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "search" && command !== "query" && command !== "clock" && command !== "compile" && command !== "render-chart" && command !== "query-data" && command !== "entity" && command !== "agent" && command !== "context" && command !== "brief" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "index" && command !== "search" && command !== "query" && command !== "clock" && command !== "compile" && command !== "render-chart" && command !== "query-data" && command !== "entity" && command !== "agent" && command !== "context" && command !== "brief" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
     printGeneralUsage(1);
   }
 
@@ -12112,6 +12167,74 @@ Flags:
     return;
   }
 
+  if (command === "index") {
+    let rootDir = dir ? path.resolve(dir) : "";
+    if (!dir && files.length === 0) {
+      const configPath = findConfigFile(process.cwd());
+      if (configPath) {
+        try {
+          const config = loadConfig(configPath);
+          rootDir = path.dirname(configPath);
+          files = resolveFilesFromConfig(config, rootDir);
+          if (files.length === 0) {
+            console.error(
+              `Error: config found at ${configPath} but no matching files for patterns: ${config.agendaFiles?.join(", ") || "*.org"}`,
+            );
+            process.exit(1);
+          }
+        } catch (err) {
+          console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`);
+          process.exit(1);
+        }
+      } else {
+        console.error("Error: provide either --dir, --files, or org2.json config");
+        process.exit(1);
+      }
+    }
+
+    if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive, includeArchives);
+    if (!rootDir) rootDir = files.length ? path.dirname(path.resolve(files[0]!)) : process.cwd();
+
+    const result = buildSearchIndex({
+      rootDir,
+      files,
+      recursive,
+      includeArchives,
+    });
+    writeSearchIndex(result);
+
+    if (indexFormat === "json") {
+      process.stdout.write(
+        JSON.stringify(
+          {
+            $schema: "org2:index:v1",
+            kind: "search",
+            path: result.path,
+            rootDir: result.index.rootDir,
+            recursive: result.index.recursive,
+            includeArchives: result.index.includeArchives,
+            builtAt: result.index.builtAt,
+            fileCount: result.fileCount,
+            lineCount: result.lineCount,
+            byteCount: result.byteCount,
+            skippedFiles: result.skippedFiles,
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+      return;
+    }
+
+    process.stdout.write(
+      `Indexed ${result.fileCount} file${result.fileCount === 1 ? "" : "s"} (${result.lineCount} lines) -> ${result.path}\n`,
+    );
+    if (result.skippedFiles > 0) {
+      process.stderr.write(`Skipped ${result.skippedFiles} file${result.skippedFiles === 1 ? "" : "s"}.\n`);
+    }
+    return;
+  }
+
   if (command === "backlinks") {
     if (!backlinksId) {
       console.error("Error: backlinks requires --id UUID");
@@ -12311,12 +12434,14 @@ Flags:
       process.exit(1);
     }
 
+    let searchRootDir = dir ? path.resolve(dir) : "";
     if (!dir && files.length === 0) {
       const configPath = findConfigFile(process.cwd());
       if (configPath) {
         try {
           const config = loadConfig(configPath);
-          files = resolveFilesFromConfig(config, path.dirname(configPath));
+          searchRootDir = path.dirname(configPath);
+          files = resolveFilesFromConfig(config, searchRootDir);
           if (files.length === 0) {
             console.error(
               `Error: config found at ${configPath} but no matching files for patterns: ${config.agendaFiles?.join(", ") || "*.org"}`,
@@ -12334,10 +12459,10 @@ Flags:
     }
 
     if (dir && files.length === 0) files = listOrgLikeFiles(dir, recursive, includeArchives);
+    if (!searchRootDir && files.length > 0) searchRootDir = path.dirname(path.resolve(files[0]!));
 
     const context = Math.max(0, Number.parseInt(searchContextRaw, 10) || 0);
     const limit = Math.max(1, Number.parseInt(searchLimitRaw, 10) || 50);
-    const needle = searchTerm.toLowerCase();
     const todoFilters = new Set(searchTodoFiltersRaw.map((t) => t.toUpperCase()));
     const tagFilters = new Set(searchTagFiltersRaw.map((t) => t.replace(/^:/, "").replace(/:$/, "").toLowerCase()));
     const fileZoneFilters = searchFileZoneFiltersRaw.map((t) => t.toLowerCase()).filter(Boolean);
@@ -12358,160 +12483,47 @@ Flags:
       process.exit(1);
     }
 
-    type SearchHeading = { line: number; level: number; title: string; todo?: string; tags: string[]; id?: string };
-    type SearchHeadingRef = { level: number; title: string; line: number; lineNumber: number };
-    type SearchHit = {
-      file: string;
-      line: number;
-      lineEnd: number;
-      heading?: string;
-      headingLine?: number;
-      headingLevel?: number;
-      headingAncestry: SearchHeadingRef[];
-      id?: string;
-      todo?: string;
-      tags: string[];
-      snippet: string;
-      context: { startLine: number; endLine: number; lines: string[] };
-      sourceRange: { startLine: number; endLine: number };
-      matchedLines: { line: number; snippet: string }[];
-      date?: string;
-      sortDate?: string;
-      answerContext?: string;
+    const searchOptions: Org2SearchOptions = {
+      query: searchTerm,
+      context,
+      limit,
+      todoFilters,
+      tagFilters,
+      fileZoneFilters,
+      headingNeedle,
+      sort: searchSort,
+      dateFrom,
+      dateTo,
+      subtree: querySubtree,
+      answerContext: queryAnswerContext,
     };
 
-    const parseHeading = (line: string): Omit<SearchHeading, "line"> | null => {
-      const m = /^(\*+)\s+(.*)$/.exec(line);
-      if (!m) return null;
-      let rest = (m[2] || "").trim();
-      const tagMatch = /\s+:([A-Za-z0-9_@#%:.-]+):\s*$/.exec(rest);
-      const tags = tagMatch ? (tagMatch[1] || "").split(":").filter(Boolean) : [];
-      if (tagMatch) rest = rest.slice(0, tagMatch.index).trim();
-      const parts = rest.split(/\s+/);
-      const maybeTodo = parts[0]?.toUpperCase();
-      const todo = maybeTodo && (TODO_KEYWORDS as string[]).includes(maybeTodo) ? maybeTodo : undefined;
-      if (todo) rest = parts.slice(1).join(" ").trim();
-      return { level: (m[1] || "").length, title: parseHeadlineTitleForRoam(`${m[1]} ${rest}`), todo, tags };
-    };
-
-    const dateKeyFromFile = (file: string): string => {
-      const base = path.basename(file);
-      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(base) || /^(\d{4})(\d{2})(\d{2})/.exec(base);
-      return m ? `${m[1]}-${m[2]}-${m[3]}` : "";
-    };
-
-    const dateKeyFromLines = (lines: string[], start: number, end: number): string => {
-      for (let j = Math.max(0, start); j <= Math.min(lines.length - 1, end); j += 1) {
-        const found = extractDateFromTimestamp(lines[j] || "");
-        if (found) return found;
-      }
-      return "";
-    };
-
-    const subtreeEndLine = (lines: string[], heading: SearchHeading | undefined, matchLine: number): number => {
-      if (!heading) return matchLine;
-      for (let j = heading.line + 1; j < lines.length; j += 1) {
-        const parsed = parseHeading(lines[j] || "");
-        if (parsed && parsed.level <= heading.level) return Math.max(heading.line, j - 1);
-      }
-      return Math.max(heading.line, lines.length - 1);
-    };
-
-    const inDateWindow = (date: string): boolean => {
-      if (!dateFrom && !dateTo) return true;
-      if (!date) return false;
-      if (dateFrom && date < dateFrom) return false;
-      if (dateTo && date > dateTo) return false;
-      return true;
-    };
-
-    const hits: SearchHit[] = [];
-    const subtreeHits = new Map<string, SearchHit>();
     let skippedFileCount = 0;
+    let indexStatus: Org2SearchResultPayload["index"] | undefined;
+    let hits: Org2SearchHit[] = [];
+    const canUseIndex = Boolean(searchRootDir) && !querySubtree;
 
-    for (const filePath of files) {
-      try {
-        const normalizedFile = filePath.toLowerCase();
-        if (fileZoneFilters.length && !fileZoneFilters.some((zone) => normalizedFile.includes(zone))) continue;
-
-        const raw = fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
-        const lines = raw.split("\n");
-        const stack: SearchHeading[] = [];
-        for (let j = 0; j < lines.length; j += 1) {
-          const line = lines[j] || "";
-          const parsed = parseHeading(line);
-          if (parsed) {
-            while (stack.length && stack[stack.length - 1]!.level >= parsed.level) stack.pop();
-            stack.push({ line: j, ...parsed });
-          }
-          const current = stack[stack.length - 1];
-          const idMatch = /^:ID:\s*(\S+)\s*$/.exec(line.trim());
-          if (idMatch && current) current.id = idMatch[1];
-          if (!line.toLowerCase().includes(needle)) continue;
-          if (todoFilters.size && (!current?.todo || !todoFilters.has(current.todo.toUpperCase()))) continue;
-          if (tagFilters.size && !Array.from(tagFilters).every((tag) => current?.tags.map((t) => t.toLowerCase()).includes(tag))) continue;
-          if (headingNeedle && !(current?.title || "").toLowerCase().includes(headingNeedle)) continue;
-
-          const fileDate = dateKeyFromFile(filePath);
-          const headingEnd = subtreeEndLine(lines, current, j);
-          const headingDate = current ? dateKeyFromLines(lines, current.line, headingEnd) : dateKeyFromLines(lines, j, j);
-          const sortDate = headingDate || fileDate;
-          if (!inDateWindow(sortDate)) continue;
-
-          const headingAncestry: SearchHeadingRef[] = stack.map((h) => ({
-            level: h.level,
-            title: h.title,
-            line: h.line,
-            lineNumber: h.line + 1,
-          }));
-
-          const sourceStart = querySubtree && current ? current.line : j;
-          const sourceEnd = querySubtree && current ? headingEnd : j;
-          const start = querySubtree ? sourceStart : Math.max(0, j - context);
-          const end = querySubtree ? sourceEnd : Math.min(lines.length - 1, j + context);
-          const key = `${filePath}:${sourceStart + 1}:${sourceEnd + 1}`;
-          const match = { line: j + 1, snippet: line.trim() };
-
-          if (querySubtree) {
-            const existing = subtreeHits.get(key);
-            if (existing) {
-              existing.matchedLines.push(match);
-              if (!existing.snippet && match.snippet) existing.snippet = match.snippet;
-              continue;
-            }
-          }
-
-          const hit: SearchHit = {
-            file: filePath,
-            line: querySubtree ? sourceStart + 1 : j + 1,
-            lineEnd: querySubtree ? sourceEnd + 1 : j + 1,
-            heading: current?.title,
-            headingLine: current ? current.line + 1 : undefined,
-            headingLevel: current?.level,
-            headingAncestry,
-            id: current?.id,
-            todo: current?.todo,
-            tags: current?.tags || [],
-            snippet: line.trim(),
-            context: { startLine: start + 1, endLine: end + 1, lines: lines.slice(start, end + 1) },
-            sourceRange: { startLine: sourceStart + 1, endLine: sourceEnd + 1 },
-            matchedLines: [match],
-            date: sortDate || undefined,
-            sortDate: sortDate || undefined,
-            ...(queryAnswerContext ? { answerContext: lines.slice(start, end + 1).join("\n") } : {}),
-          };
-
-          if (querySubtree) subtreeHits.set(key, hit);
-          hits.push(hit);
-        }
-      } catch (err) {
-        skippedFileCount += 1;
-        if (verboseErrors) console.error(`Error processing ${filePath}:`, err instanceof Error ? err.message : err);
+    if (canUseIndex && searchIndexMode === "rebuild") {
+      const result = buildSearchIndex({ rootDir: searchRootDir, files, recursive, includeArchives });
+      writeSearchIndex(result);
+      hits = searchIndexedCorpus(result.index, searchOptions);
+      indexStatus = { mode: searchIndexMode, used: true, path: result.path, builtAt: result.index.builtAt };
+    } else if (canUseIndex && searchIndexMode === "auto") {
+      const loaded = loadFreshSearchIndex({ rootDir: searchRootDir, files, recursive, includeArchives });
+      if (loaded) {
+        hits = searchIndexedCorpus(loaded.index, searchOptions);
+        indexStatus = { mode: searchIndexMode, used: true, path: loaded.path, builtAt: loaded.index.builtAt };
+      } else {
+        const scanned = searchFilesByScan(files, searchOptions);
+        hits = scanned.hits;
+        skippedFileCount = scanned.skippedFileCount;
+        indexStatus = { mode: searchIndexMode, used: false, stale: true };
       }
-    }
-
-    if (querySubtree) {
-      hits.splice(0, hits.length, ...Array.from(subtreeHits.values()));
+    } else {
+      const scanned = searchFilesByScan(files, searchOptions);
+      hits = scanned.hits;
+      skippedFileCount = scanned.skippedFileCount;
+      indexStatus = canUseIndex ? { mode: searchIndexMode, used: false } : undefined;
     }
 
     if (skippedFileCount > 0 && !verboseErrors) {
@@ -12519,29 +12531,20 @@ Flags:
     }
 
     const normalizedSort = String(searchSort || "scan").toLowerCase();
-    if (["date-desc", "newest", "recent"].includes(normalizedSort)) {
-      hits.sort((a, b) => (b.sortDate || "").localeCompare(a.sortDate || "") || a.file.localeCompare(b.file) || a.line - b.line);
-    } else if (["date-asc", "oldest"].includes(normalizedSort)) {
-      hits.sort((a, b) => (a.sortDate || "").localeCompare(b.sortDate || "") || a.file.localeCompare(b.file) || a.line - b.line);
-    }
-    const limitedHits = hits.slice(0, limit);
+    const limitedHits = hits;
 
     if (searchFormat === "json") {
       process.stdout.write(
-        JSON.stringify(
-          {
-            $schema: "org2:search:v1",
-            query: searchTerm,
-            mode: querySubtree ? "subtree" : "line",
-            sort: normalizedSort,
-            ...(dateFrom ? { dateFrom } : {}),
-            ...(dateTo ? { dateTo } : {}),
-            ...(fileZoneFilters.length ? { fileZones: searchFileZoneFiltersRaw } : {}),
-            results: limitedHits,
-          },
-          null,
-          2,
-        ) + "\n",
+        JSON.stringify(searchPayload({
+          query: searchTerm,
+          subtree: querySubtree,
+          sort: normalizedSort,
+          dateFrom,
+          dateTo,
+          fileZones: searchFileZoneFiltersRaw,
+          index: indexStatus,
+          results: limitedHits,
+        }), null, 2) + "\n",
       );
       return;
     }
