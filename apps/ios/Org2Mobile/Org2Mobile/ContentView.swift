@@ -188,7 +188,7 @@ private struct ApprovalsView: View {
         .buttonStyle(.plain)
         .swipeActions(edge: .leading) {
           Button {
-            Task { await store.queue(.approve, approval: item) }
+            Task { await store.sendToOpenClaw(.approve, approval: item) }
           } label: {
             Label("Approve", systemImage: "checkmark")
           }
@@ -205,9 +205,9 @@ private struct ApprovalsView: View {
           .tint(.teal)
 
           Button {
-            Task { await store.queue(.discuss, approval: item) }
+            Task { await store.sendToOpenClaw(.discuss, approval: item) }
           } label: {
-            Label("Queue", systemImage: "paperplane")
+            Label("Discuss", systemImage: "paperplane")
           }
           .tint(.blue)
         }
@@ -311,7 +311,7 @@ private struct ApprovalDetailView: View {
         Section {
           Button {
             Task {
-              await store.queue(.approve, approval: item, message: message)
+              await store.sendToOpenClaw(.approve, approval: item, message: message)
               dismiss()
             }
           } label: {
@@ -331,7 +331,7 @@ private struct ApprovalDetailView: View {
 
           Button {
             Task {
-              await store.queue(.discuss, approval: item, message: message)
+              await store.sendToOpenClaw(.discuss, approval: item, message: message)
               dismiss()
             }
           } label: {
@@ -444,25 +444,6 @@ private struct NewNoteView: View {
           Text("Appends this note directly to today's daily note in the selected corpus.")
             .font(.caption)
             .foregroundStyle(.secondary)
-        }
-
-        Section("Queued") {
-          ForEach(store.outbox) { entry in
-            VStack(alignment: .leading, spacing: 6) {
-              HStack {
-                StatusPill(entry.action.isEmpty ? "queued" : entry.action)
-                Text(entry.title.prettyPrintedOrgLinks())
-                  .font(.body.weight(.medium))
-                  .lineLimit(1)
-              }
-              Text([entry.createdAt, entry.source].filter { !$0.isEmpty }.joined(separator: " - "))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            }
-            .padding(.vertical, 4)
-          }
         }
       }
       .navigationTitle("New Note")
