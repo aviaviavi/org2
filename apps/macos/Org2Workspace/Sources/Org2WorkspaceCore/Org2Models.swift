@@ -566,6 +566,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
   public let id: UUID
   public let role: Role
   public let content: String
+  public let attachments: [OpenClawChatAttachment]
   public let createdAt: Date
   public let changeSummary: OpenClawCorpusChangeSummary?
 
@@ -573,14 +574,62 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     id: UUID = UUID(),
     role: Role,
     content: String,
+    attachments: [OpenClawChatAttachment] = [],
     createdAt: Date = Date(),
     changeSummary: OpenClawCorpusChangeSummary? = nil
   ) {
     self.id = id
     self.role = role
     self.content = content
+    self.attachments = attachments
     self.createdAt = createdAt
     self.changeSummary = changeSummary
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case role
+    case content
+    case attachments
+    case createdAt
+    case changeSummary
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(UUID.self, forKey: .id)
+    role = try container.decode(Role.self, forKey: .role)
+    content = try container.decode(String.self, forKey: .content)
+    attachments = try container.decodeIfPresent([OpenClawChatAttachment].self, forKey: .attachments) ?? []
+    createdAt = try container.decode(Date.self, forKey: .createdAt)
+    changeSummary = try container.decodeIfPresent(OpenClawCorpusChangeSummary.self, forKey: .changeSummary)
+  }
+}
+
+public struct OpenClawChatAttachment: Identifiable, Hashable, Codable, Sendable {
+  public let id: UUID
+  public let fileName: String
+  public let mimeType: String
+  public let data: Data
+
+  public init(
+    id: UUID = UUID(),
+    fileName: String,
+    mimeType: String,
+    data: Data
+  ) {
+    self.id = id
+    self.fileName = fileName
+    self.mimeType = mimeType
+    self.data = data
+  }
+
+  public var byteCount: Int {
+    data.count
+  }
+
+  public var dataURLString: String {
+    "data:\(mimeType);base64,\(data.base64EncodedString())"
   }
 }
 

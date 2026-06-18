@@ -35,8 +35,13 @@ struct ChatBubbleView: View {
               .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
           }
         }
-        OrgInlineText(message.content)
-          .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
+        if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          OrgInlineText(message.content)
+            .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
+        }
+        if !message.attachments.isEmpty {
+          OpenClawMessageAttachmentsView(attachments: message.attachments, compact: compact)
+        }
         if message.role == .assistant, let changeSummary = message.changeSummary {
           Divider()
             .padding(.vertical, 2)
@@ -92,6 +97,69 @@ struct ChatBubbleView: View {
     case .system:
       return .orange
     }
+  }
+}
+
+private struct OpenClawMessageAttachmentsView: View {
+  let attachments: [OpenClawChatAttachment]
+  let compact: Bool
+
+  private var imageSize: CGFloat {
+    compact ? 76 : 104
+  }
+
+  var body: some View {
+    LazyVGrid(
+      columns: [GridItem(.adaptive(minimum: imageSize, maximum: imageSize), spacing: 8)],
+      alignment: .leading,
+      spacing: 8
+    ) {
+      ForEach(attachments) { attachment in
+        OpenClawAttachmentThumbnail(attachment: attachment, size: imageSize)
+      }
+    }
+    .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
+    .padding(.top, 2)
+  }
+}
+
+private struct OpenClawAttachmentThumbnail: View {
+  let attachment: OpenClawChatAttachment
+  let size: CGFloat
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Group {
+        if let image = NSImage(data: attachment.data) {
+          Image(nsImage: image)
+            .resizable()
+            .scaledToFill()
+        } else {
+          Image(systemName: "photo")
+            .font(.title3)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+      }
+      .frame(width: size, height: size)
+      .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+          .stroke(WorkspaceDesign.hairline)
+      )
+
+      Text(attachment.fileName)
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .truncationMode(.middle)
+        .frame(width: size, alignment: .leading)
+    }
+    .help("\(attachment.fileName) · \(Self.byteCountText(attachment.byteCount))")
+  }
+
+  private static func byteCountText(_ count: Int) -> String {
+    ByteCountFormatter.string(fromByteCount: Int64(count), countStyle: .file)
   }
 }
 
@@ -220,6 +288,10 @@ struct OpenClawComposerView: View {
       .frame(minHeight: composerHeight, idealHeight: composerHeight, maxHeight: composerHeight)
       .animation(.easeOut(duration: 0.12), value: composerHeight)
 
+      if !store.openClawPendingAttachments.isEmpty {
+        OpenClawPendingAttachmentsView(compact: compact)
+      }
+
       HStack(spacing: 8) {
         if store.isSendingOpenClawMessage {
           HStack(spacing: 6) {
@@ -263,6 +335,16 @@ struct OpenClawComposerView: View {
         }
         Spacer(minLength: 0)
         Button {
+          store.chooseOpenClawImageAttachments()
+        } label: {
+          Label("Attach Image", systemImage: "photo.badge.plus")
+        }
+        .labelStyle(.iconOnly)
+        .buttonStyle(WorkspaceActionButtonStyle())
+        .disabled(store.isSendingOpenClawMessage)
+        .help("Attach image")
+
+        Button {
           Task { await store.toggleOpenClawVoiceNoteRecording() }
         } label: {
           Label(
@@ -301,6 +383,7 @@ struct OpenClawComposerView: View {
 
   private var canSend: Bool {
     !localDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      || !store.openClawPendingAttachments.isEmpty
   }
 
   private func sendIfPossible() -> Bool {
@@ -309,7 +392,7 @@ struct OpenClawComposerView: View {
     draftSyncTask?.cancel()
     localDraft = ""
     store.openClawDraft = ""
-    Task { await store.sendOpenClawMessage(text: text) }
+    Task { await store.sendComposedOpenClawMessage(text: text) }
     return true
   }
 
@@ -335,6 +418,74 @@ struct OpenClawComposerView: View {
     if store.openClawDraft != localDraft {
       store.openClawDraft = localDraft
     }
+  }
+}
+
+private struct OpenClawPendingAttachmentsView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let compact: Bool
+
+  var body: some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: 8) {
+        ForEach(store.openClawPendingAttachments) { attachment in
+          OpenClawPendingAttachmentChip(attachment: attachment)
+        }
+      }
+      .padding(.vertical, 1)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+private struct OpenClawPendingAttachmentChip: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let attachment: OpenClawChatAttachment
+
+  var body: some View {
+    HStack(spacing: 7) {
+      if let image = NSImage(data: attachment.data) {
+        Image(nsImage: image)
+          .resizable()
+          .scaledToFill()
+          .frame(width: 30, height: 30)
+          .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+      } else {
+        Image(systemName: "photo")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.secondary)
+          .frame(width: 30, height: 30)
+          .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+      }
+
+      VStack(alignment: .leading, spacing: 1) {
+        Text(attachment.fileName)
+          .font(.caption.weight(.medium))
+          .lineLimit(1)
+          .truncationMode(.middle)
+        Text(ByteCountFormatter.string(fromByteCount: Int64(attachment.byteCount), countStyle: .file))
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+      }
+      .frame(maxWidth: 150, alignment: .leading)
+
+      Button {
+        store.removeOpenClawPendingAttachment(attachment)
+      } label: {
+        Image(systemName: "xmark.circle.fill")
+      }
+      .buttonStyle(.plain)
+      .foregroundStyle(.secondary)
+      .help("Remove attachment")
+    }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 6)
+    .background(WorkspaceDesign.surfaceBackground, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 7, style: .continuous)
+        .stroke(WorkspaceDesign.hairline)
+    )
+    .help("\(attachment.fileName) · \(ByteCountFormatter.string(fromByteCount: Int64(attachment.byteCount), countStyle: .file))")
   }
 }
 

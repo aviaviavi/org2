@@ -177,16 +177,16 @@ public struct OpenClawChatClient: Sendable {
     var output = [
       OpenAIChatMessage(
         role: "system",
-        content: "You are OpenClaw working with the user's org2 workspace. Use the provided org2 workspace context, configured remote paths, and existing org2 tooling. Keep answers grounded in the corpus and cite source files/lines when acting on workspace facts."
+        content: .text("You are OpenClaw working with the user's org2 workspace. Use the provided org2 workspace context, configured remote paths, and existing org2 tooling. Keep answers grounded in the corpus and cite source files/lines when acting on workspace facts.")
       )
     ]
 
     if let workspaceContext {
-      output.append(OpenAIChatMessage(role: "system", content: workspaceContext.systemPrompt()))
+      output.append(OpenAIChatMessage(role: "system", content: .text(workspaceContext.systemPrompt())))
     }
 
     output += messages.suffix(16).map { message in
-      OpenAIChatMessage(role: message.role.rawValue, content: message.content)
+      OpenAIChatMessage(role: message.role.rawValue, content: .from(message))
     }
     return output
   }
@@ -443,7 +443,65 @@ private struct OpenAIChatCompletionRequest: Encodable {
 
 private struct OpenAIChatMessage: Encodable {
   let role: String
-  let content: String
+  let content: OpenAIChatMessageContent
+}
+
+private enum OpenAIChatMessageContent: Encodable {
+  case text(String)
+  case parts([OpenAIChatMessageContentPart])
+
+  static func from(_ message: OpenClawChatMessage) -> OpenAIChatMessageContent {
+    guard !message.attachments.isEmpty else {
+      return .text(message.content)
+    }
+
+    var parts: [OpenAIChatMessageContentPart] = []
+    let text = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !text.isEmpty {
+      parts.append(.text(text))
+    }
+    parts += message.attachments.map { .imageURL($0.dataURLString) }
+    return .parts(parts)
+  }
+
+  func encode(to encoder: Encoder) throws {
+    switch self {
+    case .text(let text):
+      var container = encoder.singleValueContainer()
+      try container.encode(text)
+    case .parts(let parts):
+      var container = encoder.singleValueContainer()
+      try container.encode(parts)
+    }
+  }
+}
+
+private enum OpenAIChatMessageContentPart: Encodable {
+  case text(String)
+  case imageURL(String)
+
+  enum CodingKeys: String, CodingKey {
+    case type
+    case text
+    case imageURL = "image_url"
+  }
+
+  enum ImageURLCodingKeys: String, CodingKey {
+    case url
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    switch self {
+    case .text(let text):
+      try container.encode("text", forKey: .type)
+      try container.encode(text, forKey: .text)
+    case .imageURL(let url):
+      try container.encode("image_url", forKey: .type)
+      var image = container.nestedContainer(keyedBy: ImageURLCodingKeys.self, forKey: .imageURL)
+      try image.encode(url, forKey: .url)
+    }
+  }
 }
 
 private struct OpenAIErrorPayload: Decodable {

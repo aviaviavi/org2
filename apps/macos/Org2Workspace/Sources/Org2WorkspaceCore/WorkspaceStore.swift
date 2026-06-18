@@ -476,6 +476,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var openClawChatThreads: [OpenClawChatThread] = []
   @Published public private(set) var selectedOpenClawChatThreadID: UUID?
   @Published public var openClawDraft = ""
+  @Published public var openClawPendingAttachments: [OpenClawChatAttachment] = []
   @Published public var openClawAgentID = "main"
   @Published public var openClawEndpointText = ""
   @Published public var agentHandoffAssignee = WorkspaceStore.defaultAgentHandoffAssignee
@@ -1655,7 +1656,7 @@ public final class WorkspaceStore: ObservableObject {
       pendingNodeBriefArtifactRelativePath = artifactRelativePath
       pendingNodeBriefTitle = location.title
       setOpenClawAssistantPanelPresented(true)
-      await sendOpenClawMessage(prompt)
+      await sendOpenClawMessage(text: prompt)
       if await openNodeBriefArtifactWhenAvailable(url: artifactURL, relativePath: artifactRelativePath, title: location.title) {
         return
       }
@@ -4654,23 +4655,74 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func chooseOpenClawImageAttachments() {
+    let panel = NSOpenPanel()
+    panel.allowsMultipleSelection = true
+    panel.canChooseDirectories = false
+    panel.canChooseFiles = true
+    panel.allowedContentTypes = [.image]
+    panel.prompt = "Attach"
+    if panel.runModal() == .OK {
+      attachOpenClawImages(urls: panel.urls)
+    }
+  }
+
+  public func attachOpenClawImages(urls: [URL]) {
+    var attachments = openClawPendingAttachments
+    for url in urls {
+      do {
+        let attachment = try Self.openClawImageAttachment(from: url)
+        guard !attachments.contains(where: { $0.data == attachment.data && $0.fileName == attachment.fileName }) else {
+          continue
+        }
+        attachments.append(attachment)
+      } catch {
+        errorText = error.localizedDescription
+        openClawStatusText = "Could not attach \(url.lastPathComponent)"
+      }
+    }
+    openClawPendingAttachments = attachments
+    if !attachments.isEmpty {
+      openClawStatusText = "\(attachments.count) image attachment\(attachments.count == 1 ? "" : "s") ready"
+    }
+  }
+
+  public func removeOpenClawPendingAttachment(_ attachment: OpenClawChatAttachment) {
+    openClawPendingAttachments.removeAll { $0.id == attachment.id }
+  }
+
+  public func clearOpenClawPendingAttachments() {
+    openClawPendingAttachments = []
+  }
+
   public func sendOpenClawMessage() async {
     let text = openClawDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty else { return }
+    let attachments = openClawPendingAttachments
+    guard !text.isEmpty || !attachments.isEmpty else { return }
     openClawDraft = ""
-    await sendOpenClawMessage(text)
+    openClawPendingAttachments = []
+    await sendOpenClawMessage(text, attachments: attachments)
   }
 
   public func sendOpenClawMessage(text rawText: String) async {
     let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
     openClawDraft = ""
-    await sendOpenClawMessage(text)
+    await sendOpenClawMessage(text, attachments: [])
   }
 
-  private func sendOpenClawMessage(_ text: String) async {
+  public func sendComposedOpenClawMessage(text rawText: String) async {
+    let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let attachments = openClawPendingAttachments
+    guard !text.isEmpty || !attachments.isEmpty else { return }
+    openClawDraft = ""
+    openClawPendingAttachments = []
+    await sendOpenClawMessage(text, attachments: attachments)
+  }
+
+  private func sendOpenClawMessage(_ text: String, attachments: [OpenClawChatAttachment]) async {
     ensureOpenClawChatThread()
-    let userMessage = OpenClawChatMessage(role: .user, content: text)
+    let userMessage = OpenClawChatMessage(role: .user, content: text, attachments: attachments)
     openClawMessages.append(userMessage)
     openClawPendingUserMessageIDs.append(userMessage.id)
     if isDrainingOpenClawQueue {
@@ -4893,6 +4945,7 @@ public final class WorkspaceStore: ObservableObject {
     ensureOpenClawChatThread()
     openClawMessages = []
     openClawDraft = ""
+    openClawPendingAttachments = []
     openClawPendingUserMessageIDs.removeAll()
     isDrainingOpenClawQueue = false
     isSendingOpenClawMessage = false
@@ -4938,6 +4991,7 @@ public final class WorkspaceStore: ObservableObject {
     selectedOpenClawChatThreadID = thread.id
     openClawSessionKey = thread.sessionKey
     openClawDraft = ""
+    openClawPendingAttachments = []
     openClawPendingUserMessageIDs.removeAll()
     isDrainingOpenClawQueue = false
     isSendingOpenClawMessage = false
@@ -5948,7 +6002,7 @@ public final class WorkspaceStore: ObservableObject {
     )
     selectedSurface = .openClaw
     setOpenClawAssistantPanelPresented(true)
-    await sendOpenClawMessage(prompt)
+    await sendOpenClawMessage(text: prompt)
   }
 
   public func applyTodoShortcut(_ status: TodoEditStatus?) async {
@@ -8189,6 +8243,28 @@ public final class WorkspaceStore: ObservableObject {
       .appendingPathComponent("org2-openclaw-voice", isDirectory: true)
       .appendingPathComponent("\(UUID().uuidString).wav")
   }
+
+  nonisolated static func openClawImageAttachment(from url: URL) throws -> OpenClawChatAttachment {
+    let standardized = url.standardizedFileURL
+    let data = try Data(contentsOf: standardized)
+    guard data.count <= openClawImageAttachmentMaxBytes else {
+      throw OpenClawAttachmentError.imageTooLarge(
+        standardized.lastPathComponent,
+        maxMegabytes: openClawImageAttachmentMaxBytes / 1_000_000
+      )
+    }
+    let type = UTType(filenameExtension: standardized.pathExtension)
+    guard type?.conforms(to: .image) == true else {
+      throw OpenClawAttachmentError.unsupportedImage(standardized.lastPathComponent)
+    }
+    return OpenClawChatAttachment(
+      fileName: standardized.lastPathComponent,
+      mimeType: type?.preferredMIMEType ?? "image/png",
+      data: data
+    )
+  }
+
+  nonisolated private static let openClawImageAttachmentMaxBytes = 20_000_000
 
   nonisolated static func openClawDraftByAppendingDictation(existing: String, dictatedText: String) -> String {
     let existing = existing.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -11978,6 +12054,20 @@ private enum AudioSettingsError: LocalizedError {
       output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         ? "Audio transcription install failed."
         : "Audio transcription install failed: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
+    }
+  }
+}
+
+private enum OpenClawAttachmentError: LocalizedError {
+  case unsupportedImage(String)
+  case imageTooLarge(String, maxMegabytes: Int)
+
+  var errorDescription: String? {
+    switch self {
+    case .unsupportedImage(let name):
+      return "\(name) is not a supported image attachment."
+    case .imageTooLarge(let name, let maxMegabytes):
+      return "\(name) is larger than the \(maxMegabytes) MB OpenClaw image attachment limit."
     }
   }
 }

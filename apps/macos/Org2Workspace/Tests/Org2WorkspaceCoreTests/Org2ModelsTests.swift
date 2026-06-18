@@ -18,6 +18,19 @@ private actor OpenClawQueuedSendRecorder {
   }
 }
 
+private actor OpenClawMessageSendRecorder {
+  private var calls: [[OpenClawChatMessage]] = []
+
+  func send(messages: [OpenClawChatMessage]) async throws -> String {
+    calls.append(messages)
+    return "reply \(calls.count)"
+  }
+
+  func recordedCalls() -> [[OpenClawChatMessage]] {
+    calls
+  }
+}
+
 final class Org2ModelsTests: XCTestCase {
   func testDecodesAgendaPayload() throws {
     let json = """
@@ -416,6 +429,40 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testOpenClawChatTranscriptPersistsImageAttachments() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-image-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let suiteName = "org2-workspace-chat-image-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let attachment = OpenClawChatAttachment(
+      fileName: "diagram.png",
+      mimeType: "image/png",
+      data: Data([0x89, 0x50, 0x4e, 0x47])
+    )
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+    store.openClawMessages = [
+      OpenClawChatMessage(role: .user, content: "What is in this?", attachments: [attachment])
+    ]
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+
+    XCTAssertEqual(restored.openClawMessages.first?.attachments, [attachment])
+    XCTAssertTrue(attachment.dataURLString.hasPrefix("data:image/png;base64,"))
+  }
+
+  @MainActor
   func testOpenClawChatThreadsPersistAndSwitchLocally() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-threads-\(UUID().uuidString)", isDirectory: true)
@@ -522,6 +569,34 @@ final class Org2ModelsTests: XCTestCase {
     )
 
     XCTAssertEqual(restored.openClawMessages.map(\.content), ["Hello OpenClaw", "Hello from restart-safe storage"])
+  }
+
+  @MainActor
+  func testOpenClawComposerSendsPendingImageAttachments() async throws {
+    let recorder = OpenClawMessageSendRecorder()
+    let temp = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-openclaw-image-send-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+    let imageURL = temp.appendingPathComponent("sketch.png")
+    try Data([0x89, 0x50, 0x4e, 0x47]).write(to: imageURL)
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: temp.appendingPathComponent("openclaw-chat.json"),
+      openClawSendHandler: { messages, _, _, _ in
+        try await recorder.send(messages: messages)
+      }
+    )
+    store.attachOpenClawImages(urls: [imageURL])
+
+    XCTAssertEqual(store.openClawPendingAttachments.count, 1)
+
+    await store.sendOpenClawMessage()
+
+    XCTAssertTrue(store.openClawPendingAttachments.isEmpty)
+    XCTAssertEqual(store.openClawMessages.first?.attachments.first?.fileName, "sketch.png")
+    let calls = await recorder.recordedCalls()
+    XCTAssertEqual(calls.first?.last?.attachments.first?.mimeType, "image/png")
   }
 
   @MainActor
