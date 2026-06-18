@@ -7,7 +7,6 @@ final class CorpusStore: ObservableObject {
   @Published private(set) var documents: [OrgDocument] = []
   @Published private(set) var agenda: [AgendaEntry] = []
   @Published private(set) var approvals: [ApprovalEntry] = []
-  @Published private(set) var outbox: [OutboxEntry] = []
   @Published var isLoading = false
   @Published var errorMessage: String?
   @Published var statusMessage: String?
@@ -81,7 +80,6 @@ final class CorpusStore: ObservableObject {
       var skipped: [String] = []
 
       if urls.isEmpty && !documents.isEmpty {
-        outbox = outboxEntries(for: rootURL)
         statusMessage = "Keeping \(documents.count) cached files; corpus provider returned 0 files"
         return
       }
@@ -97,7 +95,6 @@ final class CorpusStore: ObservableObject {
       documents = parsed
       agenda = OrgParser.agendaEntries(from: parsed)
       approvals = OrgParser.approvalEntries(from: parsed)
-      outbox = outboxEntries(for: rootURL)
       let fileStatus = parsed.count == 1 ? "1 file" : "\(parsed.count) files"
       statusMessage = skipped.isEmpty ? fileStatus : "\(fileStatus), \(skipped.count) skipped"
       if parsed.isEmpty && !skipped.isEmpty {
@@ -108,14 +105,13 @@ final class CorpusStore: ObservableObject {
     }
   }
 
-  func queue(_ action: MobileQueueAction, approval: ApprovalEntry, message: String? = nil) async {
-    guard let rootURL else { return }
+  func sendToOpenClaw(_ action: OpenClawAction, approval: ApprovalEntry, message: String? = nil) async {
+    guard rootURL != nil else { return }
     do {
       let text = message?.trimmingCharacters(in: .whitespacesAndNewlines)
       let prompt = text?.isEmpty == false ? text! : defaultMessage(for: action, approval: approval)
-      try writeOutboxNote(action: action, title: approval.title, sourceFile: approval.file, sourceLine: approval.line, body: prompt)
-      outbox = outboxEntries(for: rootURL)
-      statusMessage = "Appended \(action.title.lowercased()) to corpus mobile-inbox.org2"
+      try appendOpenClawRequest(action: action, title: approval.title, sourceFile: approval.file, sourceLine: approval.line, body: prompt)
+      statusMessage = "Added \(action.title.lowercased()) request to corpus mobile-inbox.org2"
     } catch {
       errorMessage = "Could not write to corpus mobile-inbox.org2. Re-select the synced corpus folder and try again."
     }
@@ -159,8 +155,8 @@ final class CorpusStore: ObservableObject {
     return urls.sorted { $0.path < $1.path }
   }
 
-  private func writeOutboxNote(
-    action: MobileQueueAction,
+  private func appendOpenClawRequest(
+    action: OpenClawAction,
     title: String,
     sourceFile: String,
     sourceLine: Int?,
@@ -201,7 +197,7 @@ final class CorpusStore: ObservableObject {
     :PROPERTIES:
     :ID: mobile-\(entryID)
     :KIND: mobile-openclaw-request
-    :STATUS: queued
+    :STATUS: pending
     :ACTION: \(action.rawValue)
     :CREATED_AT: \(createdAt)
     :SOURCE_FILE: \(sanitizeProperty(sourceFile))
@@ -217,12 +213,7 @@ final class CorpusStore: ObservableObject {
     - Line: \(sourceLineText.isEmpty ? "none" : sourceLineText)
     """
 
-    try appendMobileInbox(content, attachments: attachments, entryID: entryID, baseURL: try preferredOutboxBaseURL(for: rootURL))
-  }
-
-  private func outboxEntries(for rootURL: URL) -> [OutboxEntry] {
-    guard let baseURL = try? preferredOutboxBaseURL(for: rootURL) else { return [] }
-    return mobileInboxEntries(in: baseURL)
+    try appendMobileInbox(content, attachments: attachments, entryID: entryID, baseURL: try preferredCorpusBaseURL(for: rootURL))
   }
 
   private func appendMobileInbox(
@@ -256,30 +247,6 @@ final class CorpusStore: ObservableObject {
     if let data = content.data(using: .utf8) {
       try handle.write(contentsOf: data)
     }
-  }
-
-  private func mobileInboxEntries(in baseURL: URL) -> [OutboxEntry] {
-    let inboxURL = baseURL.appending(path: mobileInboxFilename)
-    guard let document = try? OrgParser.parseDocument(at: inboxURL, rootURL: baseURL) else {
-      return []
-    }
-
-    return document.nodes
-      .filter {
-        $0.properties["KIND"] == "mobile-openclaw-request"
-          && ($0.properties["STATUS"] ?? "").lowercased() == "queued"
-      }
-      .map { node in
-        OutboxEntry(
-          id: node.properties["ID"] ?? "\(mobileInboxFilename):\(node.line)",
-          url: inboxURL,
-          title: node.title,
-          createdAt: node.properties["CREATED_AT"] ?? "",
-          action: node.properties["ACTION"] ?? "",
-          source: node.properties["SOURCE_FILE"] ?? ""
-        )
-      }
-      .sorted { lhs, rhs in lhs.createdAt > rhs.createdAt }
   }
 
   private func appendDailyNote(title: String, body: String, attachments: [NoteAttachment]) throws -> URL {
@@ -380,7 +347,7 @@ final class CorpusStore: ObservableObject {
     try isRegularFile(rootURL) ? rootURL.deletingLastPathComponent() : rootURL
   }
 
-  private func preferredOutboxBaseURL(for rootURL: URL) throws -> URL {
+  private func preferredCorpusBaseURL(for rootURL: URL) throws -> URL {
     try isRegularFile(rootURL) ? rootURL.deletingLastPathComponent() : rootURL
   }
 
@@ -394,7 +361,7 @@ final class CorpusStore: ObservableObject {
     UserDefaults.standard.set(data, forKey: bookmarkKey)
   }
 
-  private func defaultMessage(for action: MobileQueueAction, approval: ApprovalEntry) -> String {
+  private func defaultMessage(for action: OpenClawAction, approval: ApprovalEntry) -> String {
     switch action {
     case .approve:
       """
@@ -408,8 +375,6 @@ final class CorpusStore: ObservableObject {
 
       \(approval.whatsappText)
       """
-    case .message:
-      approval.whatsappText
     }
   }
 

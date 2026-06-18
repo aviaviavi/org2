@@ -110,25 +110,15 @@ struct ApprovalEntry: Identifiable, Hashable {
   }
 }
 
-struct OutboxEntry: Identifiable, Hashable {
-  let id: String
-  let url: URL
-  let title: String
-  let createdAt: String
-  let action: String
-  let source: String
-}
-
 struct NoteAttachment: Identifiable, Hashable {
   let id = UUID()
   let filename: String
   let data: Data
 }
 
-enum MobileQueueAction: String {
+enum OpenClawAction: String {
   case approve
   case discuss
-  case message
 
   var title: String {
     switch self {
@@ -136,8 +126,6 @@ enum MobileQueueAction: String {
       "Approve"
     case .discuss:
       "Discuss"
-    case .message:
-      "Message"
     }
   }
 }
