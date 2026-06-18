@@ -425,19 +425,23 @@ private struct NewNoteView: View {
 
           Button {
             Task {
-              await store.queueMessage(title: title.isEmpty ? "Phone note" : title, body: bodyText, attachments: attachments)
+              await store.saveDailyNote(title: title, body: bodyText, attachments: attachments)
               title = ""
               bodyText = ""
               attachments = []
             }
           } label: {
-            Label("Save to Outbox", systemImage: "paperplane")
+            Label("Save Note", systemImage: "square.and.arrow.down")
               .frame(maxWidth: .infinity)
           }
           .buttonStyle(.borderedProminent)
-          .disabled(bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty)
+          .disabled(
+            title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              && bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              && attachments.isEmpty
+          )
 
-          Text("Appends an org2 request to mobile-inbox.org2 in the selected corpus. OpenClaw is not contacted directly from this app.")
+          Text("Appends this note directly to today's daily note in the selected corpus.")
             .font(.caption)
             .foregroundStyle(.secondary)
         }
