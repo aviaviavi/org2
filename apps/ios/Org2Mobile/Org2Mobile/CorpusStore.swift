@@ -16,6 +16,7 @@ final class CorpusStore: ObservableObject {
   private let bookmarkKey = "org2.mobile.corpusBookmark"
   private let mobileInboxFilename = "mobile-inbox.org2"
   private let mobileInboxAssetsDirectory = "mobile-inbox-assets"
+  private let mobileAttachmentDirectory = "mobile-attachments"
 
   var corpusName: String {
     rootURL?.lastPathComponent ?? "No corpus"
@@ -120,14 +121,13 @@ final class CorpusStore: ObservableObject {
     }
   }
 
-  func queueMessage(title: String, body: String, attachments: [NoteAttachment] = []) async {
-    guard let rootURL else { return }
+  func saveDailyNote(title: String, body: String, attachments: [NoteAttachment] = []) async {
+    guard rootURL != nil else { return }
     do {
-      try writeOutboxNote(action: .message, title: title, sourceFile: "", sourceLine: nil, body: body, attachments: attachments)
-      outbox = outboxEntries(for: rootURL)
-      statusMessage = "Appended note to corpus mobile-inbox.org2"
+      let dailyNoteURL = try appendDailyNote(title: title, body: body, attachments: attachments)
+      statusMessage = "Saved note to \(dailyNoteURL.lastPathComponent)"
     } catch {
-      errorMessage = "Could not write to corpus mobile-inbox.org2. Re-select the synced corpus folder and try again."
+      errorMessage = "Could not write to today's daily note. Re-select the synced corpus folder and try again."
     }
   }
 
@@ -280,6 +280,100 @@ final class CorpusStore: ObservableObject {
         )
       }
       .sorted { lhs, rhs in lhs.createdAt > rhs.createdAt }
+  }
+
+  private func appendDailyNote(title: String, body: String, attachments: [NoteAttachment]) throws -> URL {
+    guard let rootURL else {
+      throw CocoaError(.fileNoSuchFile)
+    }
+
+    let hasSecurityAccess = rootURL.startAccessingSecurityScopedResource()
+    defer {
+      if hasSecurityAccess {
+        rootURL.stopAccessingSecurityScopedResource()
+      }
+    }
+
+    let baseURL = try corpusBaseURL(for: rootURL)
+    let today = Date.org2TodayString
+    let dailyNoteURL = dailyNoteURL(for: today, baseURL: baseURL)
+    let createdAt = ISO8601DateFormatter().string(from: Date())
+    let fileStamp = createdAt
+      .replacingOccurrences(of: ":", with: "")
+      .replacingOccurrences(of: "-", with: "")
+      .replacingOccurrences(of: ".", with: "")
+    let entryID = "\(fileStamp)-note-\(UUID().uuidString.prefix(8))"
+    let sanitizedTitle = sanitizeProperty(title)
+    let noteTitle = sanitizedTitle.isEmpty ? "Phone note" : sanitizedTitle
+    let bodyText = body.trimmingCharacters(in: .whitespacesAndNewlines)
+    let attachmentLinks = try writeDailyNoteAttachments(attachments, entryID: entryID, baseURL: baseURL)
+    let bodySection = bodyText.isEmpty ? "" : """
+
+    \(bodyText)
+    """
+    let attachmentsSection = attachmentLinks.isEmpty ? "" : """
+
+    Attachments:
+    \(attachmentLinks.joined(separator: "\n"))
+    """
+
+    let entry = """
+
+    * \(noteTitle)
+    :PROPERTIES:
+    :ID: mobile-\(entryID)
+    :CREATED_AT: \(createdAt)
+    :SOURCE: org2-mobile
+    :END:
+    \(bodySection)\(attachmentsSection)
+    """
+
+    if !FileManager.default.fileExists(atPath: dailyNoteURL.path) {
+      let header = """
+      #+TITLE: \(today)
+
+      """
+      try header.write(to: dailyNoteURL, atomically: true, encoding: .utf8)
+    }
+
+    try append(entry, to: dailyNoteURL)
+    return dailyNoteURL
+  }
+
+  private func writeDailyNoteAttachments(_ attachments: [NoteAttachment], entryID: String, baseURL: URL) throws -> [String] {
+    guard !attachments.isEmpty else { return [] }
+
+    let assetsURL = baseURL.appending(path: "\(mobileAttachmentDirectory)/\(entryID)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: assetsURL, withIntermediateDirectories: true)
+    return try attachments.map { attachment in
+      try attachment.data.write(to: assetsURL.appending(path: attachment.filename), options: .atomic)
+      return "- [[file:\(mobileAttachmentDirectory)/\(entryID)/\(attachment.filename)][\(attachment.filename)]]"
+    }
+  }
+
+  private func dailyNoteURL(for today: String, baseURL: URL) -> URL {
+    let org2URL = baseURL.appending(path: "\(today).org2")
+    if FileManager.default.fileExists(atPath: org2URL.path) {
+      return org2URL
+    }
+
+    let orgURL = baseURL.appending(path: "\(today).org")
+    if FileManager.default.fileExists(atPath: orgURL.path) {
+      return orgURL
+    }
+
+    return org2URL
+  }
+
+  private func append(_ content: String, to url: URL) throws {
+    let handle = try FileHandle(forWritingTo: url)
+    defer {
+      try? handle.close()
+    }
+    try handle.seekToEnd()
+    if let data = content.data(using: .utf8) {
+      try handle.write(contentsOf: data)
+    }
   }
 
   private func corpusBaseURL(for rootURL: URL) throws -> URL {
