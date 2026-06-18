@@ -38,6 +38,28 @@ assert.equal(payload.results[0].heading, "Alpha archive");
 assert.equal(payload.results[0].todo, "DONE");
 assert.deepEqual(payload.results[0].tags, ["work"]);
 
+const indexBuild = JSON.parse(run("index", "--dir", tmp, "--recursive", "--format", "json"));
+assert.equal(indexBuild.$schema, "org2:index:v1");
+assert.equal(indexBuild.kind, "search");
+assert.ok(fs.existsSync(indexBuild.path));
+assert.ok(indexBuild.fileCount >= 1);
+
+const indexedSearch = JSON.parse(run("search", "cited", "--dir", tmp, "--recursive", "--index", "auto", "--format", "json"));
+assert.equal(indexedSearch.$schema, "org2:search:v1");
+assert.equal(indexedSearch.index.used, true);
+assert.equal(indexedSearch.results[0].heading, "Alpha plan");
+
+fs.appendFileSync(file, "\nIndexed freshness marker.\n", "utf8");
+const staleIndexSearch = JSON.parse(run("search", "freshness marker", "--dir", tmp, "--recursive", "--index", "auto", "--format", "json"));
+assert.equal(staleIndexSearch.index.used, false);
+assert.equal(staleIndexSearch.index.stale, true);
+assert.equal(staleIndexSearch.results.length, 1);
+assert.match(staleIndexSearch.results[0].snippet, /Indexed freshness marker/);
+
+const rebuiltIndexSearch = JSON.parse(run("search", "freshness marker", "--dir", tmp, "--recursive", "--index", "rebuild", "--format", "json"));
+assert.equal(rebuiltIndexSearch.index.used, true);
+assert.equal(rebuiltIndexSearch.results.length, 1);
+
 const queryAlias = run("query", "waiting", "--file", file, "--format", "json");
 const aliasPayload = JSON.parse(queryAlias);
 assert.equal(aliasPayload.$schema, "org2:search:v1");
