@@ -16,6 +16,7 @@ final class CorpusStore: ObservableObject {
   private let mobileInboxFilename = "mobile-inbox.org2"
   private let mobileInboxAssetsDirectory = "mobile-inbox-assets"
   private let mobileAttachmentDirectory = "mobile-attachments"
+  private let headingTodoKeywords = Set(OrgTodoStatus.allCases.map(\.rawValue))
 
   var corpusName: String {
     rootURL?.lastPathComponent ?? "No corpus"
@@ -117,6 +118,17 @@ final class CorpusStore: ObservableObject {
     }
   }
 
+  func approve(_ approval: ApprovalEntry) async {
+    guard rootURL != nil else { return }
+    do {
+      let url = try approveInCorpus(approval)
+      statusMessage = "Approved \(url.lastPathComponent)"
+      await refresh()
+    } catch {
+      errorMessage = "Could not approve this item in the corpus. Re-select the synced corpus folder and try again."
+    }
+  }
+
   func saveDailyNote(title: String, body: String, attachments: [NoteAttachment] = []) async {
     guard rootURL != nil else { return }
     do {
@@ -214,6 +226,36 @@ final class CorpusStore: ObservableObject {
     """
 
     try appendMobileInbox(content, attachments: attachments, entryID: entryID, baseURL: try preferredCorpusBaseURL(for: rootURL))
+  }
+
+  private func approveInCorpus(_ approval: ApprovalEntry) throws -> URL {
+    guard let rootURL else {
+      throw CocoaError(.fileNoSuchFile)
+    }
+
+    let hasSecurityAccess = rootURL.startAccessingSecurityScopedResource()
+    defer {
+      if hasSecurityAccess {
+        rootURL.stopAccessingSecurityScopedResource()
+      }
+    }
+
+    let url = try corpusFileURL(for: approval.file, rootURL: rootURL)
+    let raw = try String(contentsOf: url, encoding: .utf8)
+    var lines = raw.components(separatedBy: .newlines)
+    guard let headingIndex = headingIndex(in: lines, matching: approval) else {
+      throw CocoaError(.fileNoSuchFile)
+    }
+
+    lines[headingIndex] = headingLine(lines[headingIndex], settingTodo: OrgTodoStatus.done.rawValue)
+    upsertApprovalProperties(in: &lines, headingIndex: headingIndex, approval: approval)
+
+    var output = lines.joined(separator: "\n")
+    if raw.hasSuffix("\n"), !output.hasSuffix("\n") {
+      output += "\n"
+    }
+    try output.write(to: url, atomically: true, encoding: .utf8)
+    return url
   }
 
   private func appendMobileInbox(
@@ -351,6 +393,13 @@ final class CorpusStore: ObservableObject {
     try isRegularFile(rootURL) ? rootURL.deletingLastPathComponent() : rootURL
   }
 
+  private func corpusFileURL(for relativePath: String, rootURL: URL) throws -> URL {
+    if try isRegularFile(rootURL) {
+      return rootURL
+    }
+    return try corpusBaseURL(for: rootURL).appending(path: relativePath)
+  }
+
   private func isRegularFile(_ url: URL) throws -> Bool {
     let values = try url.resourceValues(forKeys: [.isRegularFileKey])
     return values.isRegularFile == true
@@ -363,12 +412,6 @@ final class CorpusStore: ObservableObject {
 
   private func defaultMessage(for action: OpenClawAction, approval: ApprovalEntry) -> String {
     switch action {
-    case .approve:
-      """
-      I approve this item. Please mark the source as reviewed and continue with the next appropriate step.
-
-      \(approval.whatsappText)
-      """
     case .discuss:
       """
       I need to discuss this approval item before deciding.
@@ -390,5 +433,193 @@ final class CorpusStore: ObservableObject {
       .components(separatedBy: .newlines)
       .map { $0.isEmpty ? "" : "  \($0)" }
       .joined(separator: "\n")
+  }
+
+  private func headingIndex(in lines: [String], matching approval: ApprovalEntry) -> Int? {
+    if let line = approval.line {
+      let index = line - 1
+      if lines.indices.contains(index), isHeading(lines[index]), headingMatchesApproval(lines: lines, index: index, approval: approval) {
+        return index
+      }
+    }
+
+    if let sourceID = approval.sourceID?.trimmingCharacters(in: .whitespacesAndNewlines), !sourceID.isEmpty {
+      for index in lines.indices where isHeading(lines[index]) {
+        let properties = propertyDrawerValues(in: lines, headingIndex: index)
+        if properties["ID"] == sourceID {
+          return index
+        }
+      }
+    }
+
+    let normalizedTitle = normalizedOrgTitle(approval.title)
+    return lines.indices.first { index in
+      isHeading(lines[index]) && normalizedOrgTitle(headingTitle(lines[index])) == normalizedTitle
+    }
+  }
+
+  private func headingMatchesApproval(lines: [String], index: Int, approval: ApprovalEntry) -> Bool {
+    if let sourceID = approval.sourceID?.trimmingCharacters(in: .whitespacesAndNewlines), !sourceID.isEmpty {
+      return propertyDrawerValues(in: lines, headingIndex: index)["ID"] == sourceID
+    }
+    return normalizedOrgTitle(headingTitle(lines[index])) == normalizedOrgTitle(approval.title)
+  }
+
+  private func upsertApprovalProperties(in lines: inout [String], headingIndex: Int, approval: ApprovalEntry) {
+    var properties: [String: String] = [
+      "STATUS": "approved",
+      "APPROVED_AT": orgTimestamp(Date()),
+    ]
+
+    for key in [
+      "ORG2_REVIEW_STATUS",
+      "REVIEW_STATUS",
+      "REVIEW",
+      "FOLLOWUP_STATUS",
+      "REPLY_STATUS",
+      "ACCESS_POLICY",
+      "REVIEW_POLICY",
+    ] where approval.properties[key] != nil {
+      properties[key] = "approved"
+    }
+
+    for key in [
+      "WAITING_ON",
+      "BLOCKED_BY",
+      "ORG2_WAITING_ON",
+      "NEXT_ACTION",
+      "ACTION_REQUIRED",
+      "ORG2_NEXT_ACTION",
+      "HANDOFF_SUMMARY",
+      "ORG2_HANDOFF_SUMMARY",
+    ] {
+      guard let value = approval.properties[key]?.lowercased() else { continue }
+      if value.contains("approval") || value.contains("approve") || value.contains("review") || value.contains("avi") {
+        properties[key] = "approved"
+      }
+    }
+
+    upsertProperties(properties, in: &lines, headingIndex: headingIndex)
+  }
+
+  private func upsertProperties(_ properties: [String: String], in lines: inout [String], headingIndex: Int) {
+    guard let drawer = propertyDrawerRange(in: lines, headingIndex: headingIndex) else {
+      let inserted = [":PROPERTIES:"]
+        + properties.sorted { $0.key < $1.key }.map { ":\($0.key): \($0.value)" }
+        + [":END:"]
+      lines.insert(contentsOf: inserted, at: min(headingIndex + 1, lines.count))
+      return
+    }
+
+    var pending = properties
+    var index = drawer.start + 1
+    while index < drawer.end {
+      let key = propertyKey(in: lines[index])
+      if let key, let value = pending[key] {
+        lines[index] = ":\(key): \(value)"
+        pending.removeValue(forKey: key)
+      }
+      index += 1
+    }
+
+    if !pending.isEmpty {
+      let inserted = pending.sorted { $0.key < $1.key }.map { ":\($0.key): \($0.value)" }
+      lines.insert(contentsOf: inserted, at: drawer.end)
+    }
+  }
+
+  private func propertyDrawerValues(in lines: [String], headingIndex: Int) -> [String: String] {
+    guard let drawer = propertyDrawerRange(in: lines, headingIndex: headingIndex) else { return [:] }
+    var properties: [String: String] = [:]
+    for index in (drawer.start + 1)..<drawer.end {
+      guard let key = propertyKey(in: lines[index]) else { continue }
+      let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+      guard let secondColon = trimmed.dropFirst().firstIndex(of: ":") else { continue }
+      let valueStart = trimmed.index(after: secondColon)
+      properties[key] = String(trimmed[valueStart...]).trimmingCharacters(in: .whitespaces)
+    }
+    return properties
+  }
+
+  private func propertyDrawerRange(in lines: [String], headingIndex: Int) -> (start: Int, end: Int)? {
+    var index = headingIndex + 1
+    while index < lines.count {
+      if isHeading(lines[index]) { return nil }
+      if lines[index].trimmingCharacters(in: .whitespaces).uppercased() == ":PROPERTIES:" {
+        var end = index + 1
+        while end < lines.count {
+          if isHeading(lines[end]) { return nil }
+          if lines[end].trimmingCharacters(in: .whitespaces).uppercased() == ":END:" {
+            return (index, end)
+          }
+          end += 1
+        }
+        return nil
+      }
+      index += 1
+    }
+    return nil
+  }
+
+  private func propertyKey(in line: String) -> String? {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    guard trimmed.hasPrefix(":"),
+          let secondColon = trimmed.dropFirst().firstIndex(of: ":")
+    else {
+      return nil
+    }
+    let keyStart = trimmed.index(after: trimmed.startIndex)
+    let key = String(trimmed[keyStart..<secondColon]).uppercased()
+    return key.isEmpty ? nil : key
+  }
+
+  private func headingLine(_ line: String, settingTodo todo: String) -> String {
+    let stars = line.prefix { $0 == "*" }
+    guard !stars.isEmpty else { return line }
+    var rest = line.dropFirst(stars.count).trimmingCharacters(in: .whitespaces)
+    if let first = rest.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true).first,
+       headingTodoKeywords.contains(String(first).uppercased()) {
+      rest = rest.dropFirst(first.count).trimmingCharacters(in: .whitespaces)
+    }
+    return "\(stars) \(todo) \(rest)"
+  }
+
+  private func isHeading(_ line: String) -> Bool {
+    let stars = line.prefix { $0 == "*" }
+    guard !stars.isEmpty else { return false }
+    return line.dropFirst(stars.count).first?.isWhitespace == true
+  }
+
+  private func headingTitle(_ line: String) -> String {
+    let stars = line.prefix { $0 == "*" }
+    guard !stars.isEmpty else { return line }
+    var rest = line.dropFirst(stars.count).trimmingCharacters(in: .whitespaces)
+    if let first = rest.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true).first,
+       headingTodoKeywords.contains(String(first).uppercased()) {
+      rest = rest.dropFirst(first.count).trimmingCharacters(in: .whitespaces)
+    }
+    if rest.hasPrefix("[#"), let close = rest.firstIndex(of: "]") {
+      rest = rest[rest.index(after: close)...].trimmingCharacters(in: .whitespaces)
+    }
+    if let tagRange = rest.range(of: #"\s+(:[A-Za-z0-9_@#%.-]+(?::[A-Za-z0-9_@#%.-]+)*:)\s*$"#, options: .regularExpression) {
+      rest.removeSubrange(tagRange)
+    }
+    return String(rest).trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private func normalizedOrgTitle(_ title: String) -> String {
+    title.prettyPrintedOrgLinks()
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+      .lowercased()
+  }
+
+  private func orgTimestamp(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone.current
+    formatter.dateFormat = "yyyy-MM-dd EEE HH:mm"
+    return "<\(formatter.string(from: date))>"
   }
 }

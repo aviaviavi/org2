@@ -117,13 +117,10 @@ struct NoteAttachment: Identifiable, Hashable {
 }
 
 enum OpenClawAction: String {
-  case approve
   case discuss
 
   var title: String {
     switch self {
-    case .approve:
-      "Approve"
     case .discuss:
       "Discuss"
     }
