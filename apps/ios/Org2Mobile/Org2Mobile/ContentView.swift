@@ -414,6 +414,7 @@ private struct NewNoteView: View {
   @State private var attachments: [NoteAttachment] = []
   @State private var selectedPhotoItem: PhotosPickerItem?
   @State private var isCameraPresented = false
+  @FocusState private var focusedField: NewNoteFocusedField?
 
   var body: some View {
     NavigationStack {
@@ -442,8 +443,10 @@ private struct NewNoteView: View {
 
         Section("New Note") {
           TextField("Title", text: $title)
+            .focused($focusedField, equals: .title)
           TextEditor(text: $bodyText)
             .frame(minHeight: 120)
+            .focused($focusedField, equals: .body)
 
           if !attachments.isEmpty {
             ForEach(attachments) { attachment in
@@ -484,6 +487,7 @@ private struct NewNoteView: View {
               title = ""
               bodyText = ""
               attachments = []
+              focusedField = nil
             }
           } label: {
             Label("Save Note", systemImage: "square.and.arrow.down")
@@ -505,6 +509,12 @@ private struct NewNoteView: View {
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
           RefreshButton()
+        }
+        ToolbarItemGroup(placement: .keyboard) {
+          Spacer()
+          Button("Done") {
+            focusedField = nil
+          }
         }
       }
       .refreshable {
@@ -538,6 +548,11 @@ private struct NewNoteView: View {
     let filename = "photo-\(UUID().uuidString.prefix(8)).jpg"
     attachments.append(NoteAttachment(filename: filename, data: imageData))
   }
+}
+
+private enum NewNoteFocusedField: Hashable {
+  case title
+  case body
 }
 
 private struct RefreshButton: View {
