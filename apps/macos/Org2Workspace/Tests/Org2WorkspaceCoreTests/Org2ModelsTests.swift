@@ -2044,6 +2044,33 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  func testOrgRoamLinkResolverRanksPagesBeforeEntryNodes() {
+    let page = OrgRoamNodeReference(
+      idValue: nil,
+      title: "Sarah",
+      file: "/tmp/Sarah.org",
+      line: 1,
+      isPageNode: true
+    )
+    let olderEntry = OrgRoamNodeReference(
+      idValue: "older-sarah",
+      title: "Sarah",
+      file: "/tmp/2023-08-31.org",
+      line: 12
+    )
+    let personalEntry = OrgRoamNodeReference(
+      idValue: "personal-sarah",
+      title: "Sarah",
+      file: "/tmp/personal.org",
+      line: 44
+    )
+
+    let resolver = OrgRoamLinkResolver(nodes: [olderEntry, personalEntry, page])
+
+    XCTAssertEqual(resolver.searchCandidates(matching: "sarah", limit: 3).first, page)
+    XCTAssertEqual(resolver.exactCandidates(for: "Sarah").first, page)
+  }
+
   func testParagraphWikiLinkCompletionReplacesPartialLinkWithStableNodeLink() {
     let text = "Talk to [[Sar"
     let match = ParagraphWikiLinkCompletion.match(
