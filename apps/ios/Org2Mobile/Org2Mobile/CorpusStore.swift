@@ -16,18 +16,32 @@ final class CorpusStore: ObservableObject {
   private let mobileInboxFilename = "mobile-inbox.org2"
   private let mobileInboxAssetsDirectory = "mobile-inbox-assets"
   private let mobileAttachmentDirectory = "mobile-attachments"
+  private let cacheFilename = "org2-mobile-corpus-cache.json"
   private let headingTodoKeywords = Set(OrgTodoStatus.allCases.map(\.rawValue))
+  private var cachedFileCount: Int?
+  private var refreshGeneration = 0
 
   var corpusName: String {
     rootURL?.lastPathComponent ?? "No corpus"
+  }
+
+  private var hasDisplayedCorpus: Bool {
+    !documents.isEmpty || !agenda.isEmpty || !approvals.isEmpty
+  }
+
+  private var cacheURL: URL {
+    FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+      .appending(path: cacheFilename)
   }
 
   func restoreCorpus() async {
     #if DEBUG
     if let debugCorpusPath = ProcessInfo.processInfo.environment["ORG2_DEBUG_CORPUS_PATH"],
        !debugCorpusPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      rootURL = URL(fileURLWithPath: debugCorpusPath, isDirectory: true)
-      await refresh()
+      let url = URL(fileURLWithPath: debugCorpusPath, isDirectory: true)
+      rootURL = url
+      restoreCachedCorpus(for: url)
+      startBackgroundRefresh()
       return
     }
     #endif
@@ -44,10 +58,12 @@ final class CorpusStore: ObservableObject {
         }
       }
       rootURL = url
-      await refresh()
+      restoreCachedCorpus(for: url)
+      startBackgroundRefresh()
     } catch {
       UserDefaults.standard.removeObject(forKey: bookmarkKey)
       rootURL = nil
+      clearCorpusViews()
       errorMessage = "Could not reopen the corpus folder. Please select it again once to refresh Org2's saved access."
     }
   }
@@ -56,6 +72,7 @@ final class CorpusStore: ObservableObject {
     do {
       try saveBookmark(for: url)
       rootURL = url
+      restoreCachedCorpus(for: url)
       await refresh()
     } catch {
       errorMessage = "Could not save access to the selected folder."
@@ -64,45 +81,43 @@ final class CorpusStore: ObservableObject {
 
   func refresh() async {
     guard let rootURL else { return }
+    refreshGeneration += 1
+    let generation = refreshGeneration
     isLoading = true
     errorMessage = nil
-    defer { isLoading = false }
-
-    let hasSecurityAccess = rootURL.startAccessingSecurityScopedResource()
     defer {
-      if hasSecurityAccess {
-        rootURL.stopAccessingSecurityScopedResource()
+      if refreshGeneration == generation {
+        isLoading = false
       }
     }
 
     do {
-      let baseURL = try corpusBaseURL(for: rootURL)
-      let urls = try corpusFileURLs(in: rootURL)
-      var parsed: [OrgDocument] = []
-      var skipped: [String] = []
+      let snapshot = try await Task.detached(priority: .utility) {
+        try Self.buildSnapshot(rootURL: rootURL)
+      }.value
 
-      if urls.isEmpty && !documents.isEmpty {
-        statusMessage = "Keeping \(documents.count) cached files; corpus provider returned 0 files"
+      guard self.rootURL == rootURL, refreshGeneration == generation else { return }
+
+      if snapshot.discoveredFileCount == 0 && hasDisplayedCorpus {
+        let cachedCount = cachedFileCount ?? documents.count
+        let fileText = cachedCount == 1 ? "1 cached file" : "\(cachedCount) cached files"
+        statusMessage = "Keeping \(fileText); corpus provider returned 0 files"
         return
       }
 
-      for url in urls {
-        do {
-          parsed.append(try OrgParser.parseDocument(at: url, rootURL: baseURL))
-        } catch {
-          skipped.append("\(url.lastPathComponent): \(error.localizedDescription)")
-        }
-      }
+      documents = snapshot.documents
+      agenda = snapshot.agenda
+      approvals = snapshot.approvals
+      cachedFileCount = snapshot.documents.count
+      saveCachedCorpus(snapshot, for: rootURL)
 
-      documents = parsed
-      agenda = OrgParser.agendaEntries(from: parsed)
-      approvals = OrgParser.approvalEntries(from: parsed)
-      let fileStatus = parsed.count == 1 ? "1 file" : "\(parsed.count) files"
-      statusMessage = skipped.isEmpty ? fileStatus : "\(fileStatus), \(skipped.count) skipped"
-      if parsed.isEmpty && !skipped.isEmpty {
-        errorMessage = "No readable org files. First skipped file: \(skipped[0])"
+      let fileStatus = snapshot.documents.count == 1 ? "1 file" : "\(snapshot.documents.count) files"
+      statusMessage = snapshot.skipped.isEmpty ? fileStatus : "\(fileStatus), \(snapshot.skipped.count) skipped"
+      if snapshot.documents.isEmpty && !snapshot.skipped.isEmpty {
+        errorMessage = "No readable org files. First skipped file: \(snapshot.skipped[0])"
       }
     } catch {
+      guard self.rootURL == rootURL, refreshGeneration == generation else { return }
       errorMessage = error.localizedDescription
     }
   }
@@ -151,7 +166,99 @@ final class CorpusStore: ObservableObject {
     }
   }
 
-  private func corpusFileURLs(in rootURL: URL) throws -> [URL] {
+  private func startBackgroundRefresh() {
+    Task {
+      await refresh()
+    }
+  }
+
+  private func restoreCachedCorpus(for rootURL: URL) {
+    guard let snapshot = loadCachedCorpus(),
+          snapshot.version == CorpusCacheSnapshot.currentVersion,
+          snapshot.rootPath == Self.cacheRootPath(for: rootURL)
+    else {
+      clearCorpusViews()
+      return
+    }
+
+    documents = []
+    agenda = snapshot.agenda
+    approvals = snapshot.approvals
+    cachedFileCount = snapshot.fileCount
+    let fileText = snapshot.fileCount == 1 ? "1 cached file" : "\(snapshot.fileCount) cached files"
+    statusMessage = "Loaded \(fileText)"
+  }
+
+  private func clearCorpusViews() {
+    documents = []
+    agenda = []
+    approvals = []
+    cachedFileCount = nil
+    statusMessage = nil
+  }
+
+  private func loadCachedCorpus() -> CorpusCacheSnapshot? {
+    guard let data = try? Data(contentsOf: cacheURL) else { return nil }
+    return try? JSONDecoder().decode(CorpusCacheSnapshot.self, from: data)
+  }
+
+  private func saveCachedCorpus(_ refreshSnapshot: CorpusRefreshSnapshot, for rootURL: URL) {
+    let cacheSnapshot = CorpusCacheSnapshot(
+      version: CorpusCacheSnapshot.currentVersion,
+      rootPath: Self.cacheRootPath(for: rootURL),
+      cachedAt: Date(),
+      fileCount: refreshSnapshot.documents.count,
+      agenda: refreshSnapshot.agenda,
+      approvals: refreshSnapshot.approvals
+    )
+
+    do {
+      try FileManager.default.createDirectory(
+        at: cacheURL.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+      )
+      let data = try JSONEncoder().encode(cacheSnapshot)
+      try data.write(to: cacheURL, options: .atomic)
+    } catch {
+      // Cache writes should never block the live corpus view.
+    }
+  }
+
+  nonisolated private static func cacheRootPath(for rootURL: URL) -> String {
+    rootURL.standardizedFileURL.path
+  }
+
+  nonisolated private static func buildSnapshot(rootURL: URL) throws -> CorpusRefreshSnapshot {
+    let hasSecurityAccess = rootURL.startAccessingSecurityScopedResource()
+    defer {
+      if hasSecurityAccess {
+        rootURL.stopAccessingSecurityScopedResource()
+      }
+    }
+
+    let baseURL = try corpusBaseURL(for: rootURL)
+    let urls = try corpusFileURLs(in: rootURL)
+    var parsed: [OrgDocument] = []
+    var skipped: [String] = []
+
+    for url in urls {
+      do {
+        parsed.append(try OrgParser.parseDocument(at: url, rootURL: baseURL))
+      } catch {
+        skipped.append("\(url.lastPathComponent): \(error.localizedDescription)")
+      }
+    }
+
+    return CorpusRefreshSnapshot(
+      documents: parsed,
+      agenda: OrgParser.agendaEntries(from: parsed),
+      approvals: OrgParser.approvalEntries(from: parsed),
+      skipped: skipped,
+      discoveredFileCount: urls.count
+    )
+  }
+
+  nonisolated private static func corpusFileURLs(in rootURL: URL) throws -> [URL] {
     if try isRegularFile(rootURL) {
       return OrgParser.isCorpusFile(rootURL) ? [rootURL] : []
     }
@@ -177,7 +284,7 @@ final class CorpusStore: ObservableObject {
         enumerator.skipDescendants()
         continue
       }
-      guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey]) else { continue }
+      guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey]) else { continue }
       if values.isDirectory == true, !recursive {
         enumerator.skipDescendants()
         continue
@@ -194,13 +301,13 @@ final class CorpusStore: ObservableObject {
     return urls.sorted { $0.path < $1.path }
   }
 
-  private func mobileOrg2Config(in baseURL: URL) -> MobileOrg2Config? {
+  nonisolated private static func mobileOrg2Config(in baseURL: URL) -> MobileOrg2Config? {
     let configURL = baseURL.appendingPathComponent("org2.json")
     guard let data = try? Data(contentsOf: configURL) else { return nil }
     return try? JSONDecoder().decode(MobileOrg2Config.self, from: data)
   }
 
-  private func shouldSkipCorpusPath(_ relativePath: String, url: URL, ignorePatterns: [String]) -> Bool {
+  nonisolated private static func shouldSkipCorpusPath(_ relativePath: String, url: URL, ignorePatterns: [String]) -> Bool {
     let name = url.lastPathComponent
     if name == ".git" || name == "node_modules" || name.hasPrefix(".#") {
       return true
@@ -211,12 +318,12 @@ final class CorpusStore: ObservableObject {
     return ignorePatterns.contains { corpusPath(relativePath, matches: $0) }
   }
 
-  private func isDefaultAgendaFile(_ url: URL) -> Bool {
+  nonisolated private static func isDefaultAgendaFile(_ url: URL) -> Bool {
     let extensionName = url.pathExtension.lowercased()
     return extensionName == "org" || extensionName == "org2"
   }
 
-  private func corpusPath(_ path: String, matches pattern: String) -> Bool {
+  nonisolated private static func corpusPath(_ path: String, matches pattern: String) -> Bool {
     let normalizedPath = normalizedCorpusPath(path)
     let normalizedPattern = normalizedCorpusPath(pattern)
     if normalizedPattern.contains("*") {
@@ -227,7 +334,7 @@ final class CorpusStore: ObservableObject {
     return normalizedPath == normalizedPattern || normalizedPath.hasPrefix("\(normalizedPattern)/")
   }
 
-  private func matchCorpusSegments(
+  nonisolated private static func matchCorpusSegments(
     _ pathSegments: [String],
     _ patternSegments: [String],
     pathIndex: Int = 0,
@@ -262,14 +369,14 @@ final class CorpusStore: ObservableObject {
     )
   }
 
-  private func corpusSegment(_ segment: String, matches pattern: String) -> Bool {
+  nonisolated private static func corpusSegment(_ segment: String, matches pattern: String) -> Bool {
     let escaped = NSRegularExpression.escapedPattern(for: pattern)
       .replacingOccurrences(of: "\\*", with: ".*")
     let regex = "^\(escaped)$"
     return segment.range(of: regex, options: .regularExpression) != nil
   }
 
-  private func normalizedCorpusPath(_ path: String) -> String {
+  nonisolated private static func normalizedCorpusPath(_ path: String) -> String {
     path.replacingOccurrences(of: "\\", with: "/")
       .split(separator: "/", omittingEmptySubsequences: true)
       .joined(separator: "/")
@@ -440,7 +547,7 @@ final class CorpusStore: ObservableObject {
       }
     }
 
-    let baseURL = try corpusBaseURL(for: rootURL)
+    let baseURL = try Self.corpusBaseURL(for: rootURL)
     let today = Date.org2TodayString
     let dailyNoteURL = dailyNoteURL(for: today, baseURL: baseURL)
     let createdAt = ISO8601DateFormatter().string(from: Date())
@@ -522,22 +629,22 @@ final class CorpusStore: ObservableObject {
     }
   }
 
-  private func corpusBaseURL(for rootURL: URL) throws -> URL {
+  nonisolated private static func corpusBaseURL(for rootURL: URL) throws -> URL {
     try isRegularFile(rootURL) ? rootURL.deletingLastPathComponent() : rootURL
   }
 
   private func preferredCorpusBaseURL(for rootURL: URL) throws -> URL {
-    try isRegularFile(rootURL) ? rootURL.deletingLastPathComponent() : rootURL
+    try Self.isRegularFile(rootURL) ? rootURL.deletingLastPathComponent() : rootURL
   }
 
   private func corpusFileURL(for relativePath: String, rootURL: URL) throws -> URL {
-    if try isRegularFile(rootURL) {
+    if try Self.isRegularFile(rootURL) {
       return rootURL
     }
-    return try corpusBaseURL(for: rootURL).appending(path: relativePath)
+    return try Self.corpusBaseURL(for: rootURL).appending(path: relativePath)
   }
 
-  private func isRegularFile(_ url: URL) throws -> Bool {
+  nonisolated private static func isRegularFile(_ url: URL) throws -> Bool {
     let values = try url.resourceValues(forKeys: [.isRegularFileKey])
     return values.isRegularFile == true
   }
@@ -810,4 +917,23 @@ private struct MobileOrg2Config: Decodable {
   let agendaFiles: [String]?
   let recursive: Bool?
   let ignorePatterns: [String]?
+}
+
+private struct CorpusRefreshSnapshot {
+  let documents: [OrgDocument]
+  let agenda: [AgendaEntry]
+  let approvals: [ApprovalEntry]
+  let skipped: [String]
+  let discoveredFileCount: Int
+}
+
+private struct CorpusCacheSnapshot: Codable {
+  static let currentVersion = 1
+
+  let version: Int
+  let rootPath: String
+  let cachedAt: Date
+  let fileCount: Int
+  let agenda: [AgendaEntry]
+  let approvals: [ApprovalEntry]
 }
