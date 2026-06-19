@@ -24,8 +24,8 @@ Org2 is an early OSS project for turning folders of notes, transcripts, tasks, f
     <aside class="org2-sample-callouts org2-sample-callouts-left" aria-label="Document structure notes">
       <div style="--callout-top: 1.1rem"><strong>Metadata</strong><span>Title, file tags, and stable IDs make the file queryable.</span></div>
       <div style="--callout-top: 7.8rem"><strong>Agenda</strong><span>TODO state, schedule, deadline, effort, and tags feed planning views.</span></div>
-      <div style="--callout-top: 36.5rem"><strong>Data</strong><span>Query and dataset records keep evidence close without embedding secrets.</span></div>
-      <div style="--callout-top: 50.6rem"><strong>Assigned Work</strong><span>ASSIGNEE and STATUS turn normal TODOs into an agent-readable work queue.</span></div>
+      <div style="--callout-top: 36.5rem"><strong>Data</strong><span>Dataset blocks name the local source, engine, result, and freshness policy.</span></div>
+      <div style="--callout-top: 56.4rem"><strong>Assigned Work</strong><span>ASSIGNEE and STATUS turn normal TODOs into an agent-readable work queue.</span></div>
     </aside>
     <figure class="org2-sample-file">
       <figcaption>notes/product-launch.org2</figcaption>
@@ -56,16 +56,23 @@ Org2 is an early OSS project for turning folders of notes, transcripts, tasks, f
   npm run org2 -- query --tag launch --format json
   <span class="org2-syntax-block">```</span>
 
-<span class="org2-syntax-heading">**</span> Launch metrics query <span class="org2-syntax-tag">:evidence:</span>
+<span class="org2-syntax-heading">**</span> Launch readiness data <span class="org2-syntax-tag">:evidence:</span>
   <span class="org2-syntax-drawer">:PROPERTIES:</span>
-  <span class="org2-syntax-prop">:ID:</span> launch-metrics-query
-  <span class="org2-syntax-prop">:KIND:</span> warehouse-query
-  <span class="org2-syntax-prop">:QUERY_ID:</span> launch-readiness-v1
+  <span class="org2-syntax-prop">:ID:</span> launch-readiness-data
+  <span class="org2-syntax-prop">:KIND:</span> dataset
   <span class="org2-syntax-prop">:FRESHNESS_SLA:</span> 24h
   <span class="org2-syntax-drawer">:END:</span>
 
-  <span class="org2-syntax-block">``` sql</span>
-  select week, activated_users from launch_readiness
+  <span class="org2-syntax-block">```dataset launch_readiness</span>
+  type: csv
+  path: data/launch-readiness.csv
+  engine: duckdb
+  <span class="org2-syntax-block">```</span>
+
+  <span class="org2-syntax-block">```sql results=launch_readiness_summary artifact=views/launch-readiness.org freshness=24h</span>
+  SELECT week, activated_users, blocker_count
+  FROM launch_readiness
+  ORDER BY week DESC
   <span class="org2-syntax-block">```</span>
 
 <span class="org2-syntax-heading">**</span> <span class="org2-syntax-todo">TODO</span> Summarize launch blockers
@@ -73,7 +80,7 @@ Org2 is an early OSS project for turning folders of notes, transcripts, tasks, f
   <span class="org2-syntax-prop">:ID:</span> launch-blocker-summary
   <span class="org2-syntax-prop">:ASSIGNEE:</span> codex
   <span class="org2-syntax-prop">:STATUS:</span> ready
-  <span class="org2-syntax-prop">:CONTEXT:</span> id:launch-beta-checklist, id:launch-metrics-query
+  <span class="org2-syntax-prop">:CONTEXT:</span> id:launch-beta-checklist, id:launch-readiness-data
   <span class="org2-syntax-drawer">:END:</span>
 
   Summarize launch blockers with citations.
@@ -81,7 +88,7 @@ Org2 is an early OSS project for turning folders of notes, transcripts, tasks, f
 <span class="org2-syntax-heading">*</span> AI draft summary <span class="org2-syntax-tag">:draft:</span>
   <span class="org2-syntax-drawer">:PROPERTIES:</span>
   <span class="org2-syntax-prop">:ORG2_ARTIFACT_ROLE:</span> view
-  <span class="org2-syntax-prop">:ORG2_PROVENANCE:</span> file:raw/calls/beta-kickoff.org2, id:launch-metrics-query
+  <span class="org2-syntax-prop">:ORG2_PROVENANCE:</span> file:raw/calls/beta-kickoff.org2, id:launch-readiness-data
   <span class="org2-syntax-prop">:ORG2_CLAIM_STATE:</span> source-backed
   <span class="org2-syntax-prop">:ORG2_REVIEW_STATUS:</span> review-required
   <span class="org2-syntax-drawer">:END:</span>
