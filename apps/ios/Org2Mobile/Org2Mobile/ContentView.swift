@@ -124,7 +124,9 @@ private struct AgendaView: View {
         AgendaSection(title: "Upcoming", entries: upcoming)
       }
       .overlay {
-        if store.agenda.isEmpty && !store.isLoading {
+        if store.agenda.isEmpty && (store.isPreparingCorpus || store.isLoading) {
+          LoadingCorpusView()
+        } else if store.agenda.isEmpty {
           ContentUnavailableView("No Agenda Items", systemImage: "calendar")
         }
       }
@@ -258,7 +260,9 @@ private struct ApprovalsView: View {
         }
       }
       .overlay {
-        if store.approvals.isEmpty && !store.isLoading {
+        if store.approvals.isEmpty && (store.isPreparingCorpus || store.isLoading) {
+          LoadingCorpusView()
+        } else if store.approvals.isEmpty {
           ContentUnavailableView("No Approvals", systemImage: "checkmark.seal")
         }
       }
@@ -424,9 +428,15 @@ private struct NewNoteView: View {
           }
 
           if let status = store.statusMessage {
-            Text(status)
-              .font(.caption)
-              .foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+              if store.isPreparingCorpus || store.isLoading {
+                ProgressView()
+                  .controlSize(.small)
+              }
+              Text(status)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
           }
         }
 
@@ -537,9 +547,26 @@ private struct RefreshButton: View {
     Button {
       Task { await store.refresh() }
     } label: {
-      Image(systemName: "arrow.clockwise")
+      if store.isPreparingCorpus || store.isLoading {
+        ProgressView()
+          .controlSize(.small)
+      } else {
+        Image(systemName: "arrow.clockwise")
+      }
     }
-    .disabled(store.isLoading)
+    .disabled(store.isPreparingCorpus || store.isLoading)
+  }
+}
+
+private struct LoadingCorpusView: View {
+  var body: some View {
+    VStack(spacing: 10) {
+      ProgressView()
+      Text("Loading corpus")
+        .font(.callout)
+        .foregroundStyle(.secondary)
+    }
+    .padding()
   }
 }
 
