@@ -142,6 +142,7 @@ private struct AgendaView: View {
 }
 
 private struct AgendaSection: View {
+  @EnvironmentObject private var store: CorpusStore
   let title: String
   let entries: [AgendaEntry]
 
@@ -149,26 +150,70 @@ private struct AgendaSection: View {
     if !entries.isEmpty {
       Section(title) {
         ForEach(entries) { entry in
-          VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-              StatusPill(entry.todo)
-              Text(entry.title.prettyPrintedOrgLinks())
-                .font(.body.weight(.medium))
-                .lineLimit(2)
+          AgendaRow(entry: entry)
+            .swipeActions(edge: .leading) {
+              Button {
+                Task { await store.setTodoStatus(.done, for: entry) }
+              } label: {
+                Label("Done", systemImage: "checkmark")
+              }
+              .tint(.green)
             }
-            HStack(spacing: 8) {
-              Label(entry.date, systemImage: entry.kind == .deadline ? "flag" : "calendar")
-              Text(entry.file)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            .swipeActions(edge: .trailing) {
+              Button {
+                Task { await store.setTodoStatus(.wait, for: entry) }
+              } label: {
+                Label("Wait", systemImage: "pause")
+              }
+              .tint(.yellow)
+
+              Button {
+                Task { await store.setTodoStatus(.todo, for: entry) }
+              } label: {
+                Label("TODO", systemImage: "circle")
+              }
+              .tint(.blue)
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          }
-          .padding(.vertical, 4)
         }
       }
     }
+  }
+}
+
+private struct AgendaRow: View {
+  @EnvironmentObject private var store: CorpusStore
+  let entry: AgendaEntry
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Menu {
+          ForEach(OrgTodoStatus.agendaChoices, id: \.rawValue) { status in
+            Button {
+              Task { await store.setTodoStatus(status, for: entry) }
+            } label: {
+              Label(status.rawValue, systemImage: status.rawValue == entry.todo ? "checkmark" : "circle")
+            }
+          }
+        } label: {
+          StatusPill(entry.todo)
+        }
+        .buttonStyle(.plain)
+
+        Text(entry.title.prettyPrintedOrgLinks())
+          .font(.body.weight(.medium))
+          .lineLimit(2)
+      }
+      HStack(spacing: 8) {
+        Label(entry.date, systemImage: entry.kind == .deadline ? "flag" : "calendar")
+        Text(entry.file)
+          .lineLimit(1)
+          .truncationMode(.middle)
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+    }
+    .padding(.vertical, 4)
   }
 }
 

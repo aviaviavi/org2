@@ -130,6 +130,17 @@ final class CorpusStore: ObservableObject {
     }
   }
 
+  func setTodoStatus(_ status: OrgTodoStatus, for entry: AgendaEntry) async {
+    guard rootURL != nil else { return }
+    do {
+      let url = try setTodoStatusInCorpus(status, for: entry)
+      statusMessage = "Set \(entry.title.prettyPrintedOrgLinks()) to \(status.rawValue) in \(url.lastPathComponent)"
+      await refresh()
+    } catch {
+      errorMessage = "Could not update this agenda item. Re-select the synced corpus folder and try again."
+    }
+  }
+
   func saveDailyNote(title: String, body: String, attachments: [NoteAttachment] = []) async {
     guard rootURL != nil else { return }
     do {
@@ -250,6 +261,35 @@ final class CorpusStore: ObservableObject {
 
     lines[headingIndex] = headingLine(lines[headingIndex], settingTodo: OrgTodoStatus.done.rawValue)
     upsertApprovalProperties(in: &lines, headingIndex: headingIndex, approval: approval)
+
+    var output = lines.joined(separator: "\n")
+    if raw.hasSuffix("\n"), !output.hasSuffix("\n") {
+      output += "\n"
+    }
+    try output.write(to: url, atomically: true, encoding: .utf8)
+    return url
+  }
+
+  private func setTodoStatusInCorpus(_ status: OrgTodoStatus, for entry: AgendaEntry) throws -> URL {
+    guard let rootURL else {
+      throw CocoaError(.fileNoSuchFile)
+    }
+
+    let hasSecurityAccess = rootURL.startAccessingSecurityScopedResource()
+    defer {
+      if hasSecurityAccess {
+        rootURL.stopAccessingSecurityScopedResource()
+      }
+    }
+
+    let url = try corpusFileURL(for: entry.file, rootURL: rootURL)
+    let raw = try String(contentsOf: url, encoding: .utf8)
+    var lines = raw.components(separatedBy: .newlines)
+    guard let headingIndex = headingIndex(in: lines, matching: entry) else {
+      throw CocoaError(.fileNoSuchFile)
+    }
+
+    lines[headingIndex] = headingLine(lines[headingIndex], settingTodo: status.rawValue)
 
     var output = lines.joined(separator: "\n")
     if raw.hasSuffix("\n"), !output.hasSuffix("\n") {
@@ -484,6 +524,24 @@ final class CorpusStore: ObservableObject {
     return lines.indices.first { index in
       isHeading(lines[index]) && normalizedOrgTitle(headingTitle(lines[index])) == normalizedTitle
     }
+  }
+
+  private func headingIndex(in lines: [String], matching entry: AgendaEntry) -> Int? {
+    let index = entry.line - 1
+    if lines.indices.contains(index),
+       isHeading(lines[index]),
+       headingMatchesAgendaEntry(lines[index], entry: entry) {
+      return index
+    }
+
+    let normalizedTitle = normalizedOrgTitle(entry.title)
+    return lines.indices.first { index in
+      isHeading(lines[index]) && normalizedOrgTitle(headingTitle(lines[index])) == normalizedTitle
+    }
+  }
+
+  private func headingMatchesAgendaEntry(_ line: String, entry: AgendaEntry) -> Bool {
+    normalizedOrgTitle(headingTitle(line)) == normalizedOrgTitle(entry.title)
   }
 
   private func headingMatchesApproval(lines: [String], index: Int, approval: ApprovalEntry) -> Bool {

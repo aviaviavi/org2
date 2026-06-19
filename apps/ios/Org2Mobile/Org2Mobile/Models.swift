@@ -24,6 +24,10 @@ enum OrgTodoStatus: String, CaseIterable {
       false
     }
   }
+
+  static var agendaChoices: [OrgTodoStatus] {
+    [.todo, .next, .inProgress, .wait, .hold, .review, .done, .canceled]
+  }
 }
 
 struct OrgDocument: Identifiable, Hashable {
