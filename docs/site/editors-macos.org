@@ -72,7 +72,7 @@ The app includes configuration and run actions for GPG-backed =:crypt:= subtrees
 
 The Search surface calls =org2 search= with the selected corpus root, recursive scanning, a 50-result limit, one line of context, and JSON output. It is a literal text lookup, not semantic/vector search: it matches case-insensitive text in normal =.org2= and =.org= files and returns cited file/line snippets with nearest-heading metadata. Archive files and directories stay excluded.
 
-The same surface includes a =New Node= action for creating an ID-backed Org2 note in the configured roam/index directory. This belongs with search and backlinks because node creation is part of navigating and extending the knowledge graph, not a separate planning surface.
+The same surface includes a =New Node= action for creating an ID-backed Org2 note in the configured roam/index directory. It belongs with search and backlinks because node creation is part of navigating and extending the knowledge graph.
 
 The next knowledge-browser work should make this more useful by adding graph-neighborhood views, link insertion, backlink-driven navigation, and broken-link repair.
 

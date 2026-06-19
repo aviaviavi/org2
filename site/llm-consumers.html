@@ -171,7 +171,7 @@ npm run org2 -- lint --dir ~/notes --recursive --format json &gt; views/corpus-h
 <li><p>handoff metadata: <code>HANDOFF_SUMMARY</code>, <code>HANDOFF_NEXT_ACTION</code>, <code>HANDOFF_LINKS</code></p></li>
 </ul>
 <p><code>org2 agent fetch --id support-followup-1 --format json</code> exposes these fields under <code>collaboration</code>. Policy gates are booleans, and source/handoff references use the same typed attachment shape as agent threads, resolving known <code>id:</code>, <code>file:</code>, <code>report:</code>, <code>entity:</code>, and related refs when possible. <code>org2 context --id support-followup-1</code> renders a <code>Collaboration state</code> section with owner, assignee, lifecycle, next action, waiting state, policy gates, run metadata, and handoff summary.</p>
-<p>These conventions are not a workflow engine. They are the minimum shared state needed for CLI, Workspace, OpenClaw, Codex, and future clients to render the same next action and avoid unsafe external sends or silent canonical edits.</p>
+<p>These conventions define the minimum shared state needed for CLI, Workspace, OpenClaw, Codex, and future clients to render the same next action and avoid unsafe external sends or silent canonical edits.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="data-and-query-records">Data and query records</h1>

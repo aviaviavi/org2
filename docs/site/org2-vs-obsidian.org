@@ -16,13 +16,13 @@ Use Org2 when you want your notes to behave more like source code for a local kn
 |---|---|---|
 | Best default use | Polished personal knowledge app | Portable knowledge compiler/runtime |
 | Storage model | Local Markdown vault | Local Org/Org2 corpus |
-| License/runtime | Proprietary app with plugin APIs | Apache-2.0 open source parser, CLI, LSP, compiler |
+| License/runtime | Proprietary app with plugin APIs | Apache-2.0 open source parser, CLI, compiler, optional LSP |
 | Product maturity | Strong desktop/mobile app, themes, sync, publish | Early but usable CLI + VS Code workflow |
 | Plugin ecosystem | Huge community plugin ecosystem | Early ecosystem, focused on shared semantic core |
 | Visual knowledge browsing | Strong graph, local graph, Canvas, previews | Graph reports and editor views, less visual-app focused today |
 | Planning semantics | Markdown tasks/properties/plugins/Bases | Core TODO, schedule, deadline, priority, effort, agenda model |
 | Database-like views | Bases and plugins | Compiler/query outputs and structured corpus artifacts |
-| Automation boundary | Mostly app/plugin runtime or Markdown conventions | CLI/LSP/JSON outputs below any editor |
+| Automation boundary | Mostly app/plugin runtime or Markdown conventions | CLI/JSON/compiler outputs below any editor |
 | AI/provenance workflows | Possible through plugins and conventions | Corpus-flow model for raw sources, drafts, citations, provenance |
 | Long-term forkability | Notes are portable; app is not OSS | Notes and runtime are forkable and auditable |
 
@@ -32,23 +32,23 @@ Use Org2 when you want your notes to behave more like source code for a local kn
 
 Obsidian is a mature daily-use application. It has a refined editor, graph surfaces, backlinks, search, Canvas, Publish, Sync, mobile apps, themes, and community plugins. For many people, that is the whole point: install one app and get a strong personal knowledge environment immediately.
 
-Org2 is earlier and more infrastructure-shaped. The best current path is CLI plus VS Code, with the compiler/LSP model underneath.
+Org2 is earlier and more infrastructure-shaped. The best current path is CLI plus VS Code, with the shared compiler model underneath.
 
 ** Plugin ecosystem
 
 Obsidian's plugin ecosystem is enormous. If your workflow depends on a very specific UI behavior, visualization, import path, dashboard, spaced-repetition setup, or custom Markdown extension, there is a real chance the Obsidian ecosystem already has something close.
 
-Org2's ecosystem bet is different: build a stable semantic core first so future integrations can share the same parser, compiler, LSP, and corpus model instead of re-implementing meaning per app.
+Org2's ecosystem bet is different: build a stable semantic core first so future integrations can share the same parser, compiler, and corpus model.
 
 ** Visual thinking
 
 Obsidian is strong for interactive knowledge browsing. Graph view, local graph, Canvas, page preview, backlinks, and plugin-driven visualizations are useful when you want to explore a vault directly.
 
-Org2 can produce graph reports and editor views, but it is not trying to beat Obsidian as a visual desktop thinking environment today.
+Org2 already produces graph reports and editor views. Its current strength is portable infrastructure for planning, publishing, corpus health, and agent workflows.
 
 * Where Org2 is the obvious choice
 
-** You want a standard, not an app runtime
+** You want a standard-shaped knowledge layer
 
 Obsidian stores Markdown files locally, which is excellent. But much of the richer behavior lives in Obsidian's interpretation of those files, its app configuration, and its plugin conventions.
 
@@ -62,29 +62,29 @@ Obsidian is local-first, but the app itself is not open-source software. Its off
 
 Org2 is Apache-2.0 open source. That matters if the tool becomes part of your long-term knowledge infrastructure. You can inspect the parser, fork the compiler, embed the runtime, build competing clients, audit behavior, and keep the project alive even if maintainership or product priorities change.
 
-Open source is not a magic guarantee of quality. But for a standard-shaped project whose goal is editor-independent knowledge tooling, it is a structural advantage.
+Open source is a structural advantage for a standard-shaped project whose goal is editor-independent knowledge tooling.
 
 ** Planning is first-class corpus data
 
 Obsidian can support tasks and project workflows through Markdown conventions, properties, Bases, and plugins. That can work well inside the app.
 
-Org2 makes planning part of the core data model: TODO state, scheduled dates, deadlines, repeaters, priority, effort, tags, and planning edits feed agenda queries and editor commands directly. The goal is not just "show me notes with a property." It is "compile this workspace into an actionable planning surface."
+Org2 makes planning part of the core data model: TODO state, scheduled dates, deadlines, repeaters, priority, effort, tags, and planning edits feed agenda queries and editor commands directly. The result is an actionable planning surface compiled from the workspace.
 
-** Automation should not scrape a UI
+** Automation needs a stable interface
 
 If your notes are going to drive scripts, agents, CI checks, publish previews, corpus-health reports, or external tools, you want a stable interface below the editor.
 
 Org2's CLI and compiler outputs are designed for that boundary. The same corpus can produce agenda JSON, graph/backlink reports, lint diagnostics, formatted source, published HTML, and source-cited query results.
 
-That makes Org2 a better fit when the knowledge base is not only something you read, but something other tools safely operate on.
+That makes Org2 a better fit when other tools need to safely operate on the knowledge base.
 
 ** AI makes explicit structure cheaper
 
 The strongest objection to Org-shaped text is verbosity. Obsidian keeps Markdown capture lightweight, and that is a real advantage.
 
-Org2's answer is that humans should not have to type every structured field by hand. A human can capture a brief note; editors, scripts, and agents can later add IDs, normalized dates, backlinks, source citations, artifact roles, and provenance when those details become useful.
+Org2 keeps capture lightweight. A human can write a brief note; editors, scripts, and agents can later add IDs, normalized dates, backlinks, source citations, artifact roles, and provenance when those details become useful.
 
-In that world, Org2's explicit structure becomes less like manual overhead and more like a durable target format for human-plus-agent workflows.
+In that world, Org2's explicit structure becomes a durable target format for human-plus-agent workflows.
 
 ** Generated work needs provenance
 
@@ -98,7 +98,7 @@ Obsidian is a great place to live in your notes.
 
 Org2 is a way to compile your notes.
 
-Those are not mutually exclusive ideas. A future Org2 ecosystem could learn from Obsidian's UI strengths, and Obsidian users already prove the demand for local-first linked knowledge. The difference is where each project puts the hard boundary:
+A future Org2 ecosystem could learn from Obsidian's UI strengths, and Obsidian users already prove the demand for local-first linked knowledge. The difference is where each project puts the hard boundary:
 
 - Obsidian centers the proprietary app experience over local Markdown files.
 - Org2 centers an open-source semantic corpus, with editors and apps as clients.

@@ -50,7 +50,7 @@ High-value workflows already available there:
 - formatter preview + apply flows
 - roam backlinks / IDs / dailies
 - HTML export
-- LSP-powered navigation and editing features
+- shared navigation and editing features
 
 See [[file:editors-vscode.org][VS Code]] for the current command/keybinding surface.
 
@@ -70,14 +70,14 @@ But =.org= remains a first-class input format for current workflows.
 
 The most useful commands to know first are:
 
-- =agenda= — inspect scheduled/deadline items across files; add =--tui= for the interactive terminal agenda
-- =todo= / =plan= — edit task state and planning metadata
-- =capture= — append quick entries
-- =archive= / =refile= — reorganize trees
-- =fmt= — canonical formatting
-- =roam ...= / =id= / =query= / =backlinks= — linked-note workflows
-- =export html= / =publish= — produce docs and sites
-- =lsp= — shared editor backend
+- =agenda=: inspect scheduled/deadline items across files; add =--tui= for the interactive terminal agenda
+- =todo= / =plan=: edit task state and planning metadata
+- =capture=: append quick entries
+- =archive= / =refile=: reorganize trees
+- =fmt=: canonical formatting
+- =roam ...= / =id= / =query= / =backlinks=: linked-note workflows
+- =export html= / =publish=: produce docs and sites
+- =lsp=: optional shared editor backend for clients that use the protocol
 
 * 6) Generate the docs site locally
 
@@ -96,7 +96,7 @@ npm run org2 -- publish docs-site --config org2.json
 - strong VS Code support
 - roam-style linked-note workflows
 - HTML export + publish pipeline
-- useful LSP support
+- useful editor backend support
 
 ** Still evolving
 

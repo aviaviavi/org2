@@ -475,6 +475,18 @@ blockquote {
   background: #0b1020;
 }
 
+.org2-shot-grid .org2-shot-phone {
+  background: #f3f4f6;
+}
+
+.org2-shot-grid .org2-shot-phone img {
+  width: auto;
+  max-width: 100%;
+  max-height: 42rem;
+  margin: 0 auto;
+  background: #f3f4f6;
+}
+
 .org2-shot-grid figcaption {
   padding: 0.75rem 0.9rem 0.9rem;
   color: var(--muted);

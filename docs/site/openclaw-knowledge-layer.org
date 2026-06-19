@@ -164,7 +164,7 @@ If the pre-write corpus is already dirty, record the existing diagnostics and en
 
 * Memory promotion lifecycle
 
-Memory promotion is a state machine, not a blind copy operation.
+Memory promotion is a reviewed state machine with explicit source boundaries.
 
 ** 1. Raw observation or transcript → candidate note
 
