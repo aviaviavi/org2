@@ -105,8 +105,9 @@ enum ParagraphWikiLinkCompletion {
     let bodyLocation = openLocation + 2
     guard bodyLocation <= cursor else { return nil }
     let body = ns.substring(with: NSRange(location: bodyLocation, length: cursor - bodyLocation))
-    guard !body.contains("]]"), !body.contains("]["), !body.contains("\n") else { return nil }
-    let query = body.trimmingCharacters(in: .whitespacesAndNewlines)
+    let activeBody = activeQueryBody(in: body)
+    guard !activeBody.text.contains("]]"), !activeBody.text.contains("]["), !activeBody.text.contains("\n") else { return nil }
+    let query = activeBody.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty,
           OpenClawFileReference.fromLinkTarget(query) == nil,
           !query.lowercased().hasPrefix("id:")
@@ -115,7 +116,7 @@ enum ParagraphWikiLinkCompletion {
     }
     return ParagraphWikiLinkCompletionMatch(
       query: query,
-      replacementRange: NSRange(location: openLocation, length: cursor - openLocation)
+      replacementRange: NSRange(location: openLocation, length: 2 + activeBody.utf16Length)
     )
   }
 
@@ -140,6 +141,15 @@ enum ParagraphWikiLinkCompletion {
       return "[[\(target)]]"
     }
     return "[[\(target)][\(cleanLabel)]]"
+  }
+
+  private static func activeQueryBody(in body: String) -> (text: String, utf16Length: Int) {
+    guard let delimiterRange = body.range(of: " : ") else {
+      return (body, (body as NSString).length)
+    }
+
+    let query = String(body[..<delimiterRange.lowerBound])
+    return (query, (query as NSString).length)
   }
 }
 
