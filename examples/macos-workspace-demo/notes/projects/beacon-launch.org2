@@ -23,10 +23,21 @@ Beacon is preparing a private beta of the local analytics workspace. The product
 :ID: 22222222-2222-4222-8222-222222222222
 :ASSIGNEE: Avi
 :STATUS: needs-review
+:WAITING_ON: approval
 :END:
 DEADLINE: <2026-06-15 Mon>
 
 Send a short pilot-status note after the transcript summary is reviewed.
+
+* REVIEW Approve generated launch summary
+:PROPERTIES:
+:ID: 55555555-5555-4555-8555-555555555555
+:ORG2_REVIEW_STATUS: review-required
+:ORG2_CLAIM_STATE: source-backed
+:ORG2_PROVENANCE: file:../../meetings/2026-06-15-0900-beta-review.transcript.org2, id:11111111-1111-4111-8111-111111111111
+:END:
+
+The generated summary says Beacon is ready for a narrow private beta once onboarding copy, sample data import, and launch risk notes are reviewed.
 
 * IN_PROGRESS Draft sample dashboard acceptance criteria
 :PROPERTIES:

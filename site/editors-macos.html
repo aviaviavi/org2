@@ -60,7 +60,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>These screenshots are captured from the synthetic corpus in <code>examples/macos-workspace-demo</code> so public docs never depend on private notes.</p>
 <div class="org2-shot-grid">
   <figure><img src="assets/screenshots/macos-workspace-agenda.png" alt="Org2 Workspace agenda showing scheduled demo tasks and a selected entry" loading="lazy" /><figcaption>Agenda: review scheduled work, ownership, TODO state, and entry context from local files.</figcaption></figure>
-  <figure><img src="assets/screenshots/macos-workspace-brief.png" alt="Org2 Workspace Agent Space showing a generated node brief" loading="lazy" /><figcaption>Node briefs: generated context stays in reviewable Org2 artifacts with citations and provenance.</figcaption></figure>
+  <figure><img src="assets/screenshots/macos-workspace-files.png" alt="Org2 Workspace files view showing a selected Beacon Launch note" loading="lazy" /><figcaption>Files: open ordinary corpus files, generated views, and source-backed artifacts in the same detail pane.</figcaption></figure>
   <figure><img src="assets/screenshots/macos-workspace-openclaw.png" alt="Org2 Workspace OpenClaw chat showing a local chat transcript and change summary" loading="lazy" /><figcaption>OpenClaw chat: hand off selected workspace context while keeping transcript state local.</figcaption></figure>
   <figure><img src="assets/screenshots/macos-workspace-meetings.png" alt="Org2 Workspace meetings view showing a recorded meeting and transcript artifact" loading="lazy" /><figcaption>Meetings: record or import audio, keep transcripts in the corpus, and review meeting notes beside the list.</figcaption></figure>
 </div>
@@ -74,7 +74,6 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><strong>Search</strong> :: run literal, case-insensitive full-text search across <code>.org2</code> and <code>.org</code> files under the selected corpus, then open results with source context.</p></li>
 <li><p><strong>Meetings</strong> :: record or import local audio, create meeting/transcript artifacts under the corpus, and keep transcription provenance in Org2 files.</p></li>
 <li><p><strong>OpenClaw Chat</strong> :: send selected workspace context to a configured OpenClaw endpoint while keeping the conversation state local to the app.</p></li>
-<li><p><strong>Agent Space</strong> :: browse durable OpenClaw/agent thread records and reopen their source context.</p></li>
 </ul>
 <p>Global capture is available while the app is running. <code>Cmd-Ctrl-Return</code> opens a capture modal from anywhere on macOS, and the in-app <code>Capture</code> command uses the same path. Captures append to today's daily note, using <code>roam.dailiesDir</code> from <code>org2.json</code> when configured. The modal can write notes or TODOs, set TODO state, priority, tags, scheduled/deadline dates, and mark a capture ready for agent handoff. The paste control accepts text, URLs, local files, and pasted image data; local files and images are copied into <code>attachments/</code> and linked from the capture.</p>
 <p>The detail pane can render a selected file, agenda item, search result, backlink, meeting note, or agent thread. It supports both raw source editing and structured rendered-block editing.</p>
@@ -100,13 +99,9 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 </section>
 <section class="org2-headline level-1">
 <h1 id="openclaw-and-agents">OpenClaw and agents</h1>
-<p>The app includes two OpenClaw-oriented surfaces:</p>
-<ul>
-<li><p>a chat panel/full-page chat for sending messages with current workspace context,</p></li>
-<li><p>an Agent Space browser for durable agent-thread records in the corpus.</p></li>
-</ul>
+<p>The app includes OpenClaw chat for sending messages with current workspace context.</p>
 <p>The chat composer sends with <code>Return</code> and inserts a newline with <code>Cmd-Return</code>. The <code>Dictate</code> control records a short local microphone note, transcribes it with the same local Whisper resolution path used by meeting capture, and sends the transcript as a normal OpenClaw message.</p>
-<p>This is deliberately a handoff boundary. The corpus stores selected context, thread references, transcript references, and durable outputs; the external agent can act on that context without the Mac app becoming the only source of truth. OpenClaw receives prompt context that points handoff requests toward durable <code>KIND: agent-thread</code> records in the configured Agent Space directories rather than transient chat-only state.</p>
+<p>This is deliberately a handoff boundary. The corpus stores selected context, transcript references, generated artifacts, and durable outputs; the external agent can act on that context without the Mac app becoming the only source of truth. Generated work stays in normal corpus zones such as <code>views/</code> or <code>compiled/</code> until a person reviews or promotes it.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="org-crypt">Org-crypt</h1>
@@ -124,7 +119,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>High-value shortcuts include:</p>
 <ul>
 <li><p><code>Cmd-1</code> through <code>Cmd-5</code> for primary surfaces,</p></li>
-<li><p><code>Cmd-6</code> for Agent Space,</p></li>
+<li><p><code>Cmd-6</code> for OpenClaw Chat,</p></li>
 <li><p><code>Cmd-P</code> / <code>Cmd-K</code> for quick open,</p></li>
 <li><p><code>Cmd-Ctrl-Return</code> for system-wide capture while the app is running,</p></li>
 <li><p><code>Cmd-7</code>, <code>Cmd-8</code>, and <code>Cmd-9</code> for today/yesterday/tomorrow daily notes,</p></li>

@@ -3359,7 +3359,7 @@ final class Org2ModelsTests: XCTestCase {
     await store.briefCurrentNodeInOpenClaw()
 
     XCTAssertEqual(store.openClawDraft, "")
-    XCTAssertEqual(store.selectedSurface, .agentSpace)
+    XCTAssertEqual(store.selectedSurface, .files)
     guard case .openClaw(let selected)? = store.selectedLocation else {
       XCTFail("Expected cached brief artifact to be selected")
       return
@@ -3471,7 +3471,7 @@ final class Org2ModelsTests: XCTestCase {
     }
     XCTAssertEqual(selected.file, artifactURL.path)
     XCTAssertEqual(selected.title, "Brief: Target Node")
-    XCTAssertEqual(store.selectedSurface, .agentSpace)
+    XCTAssertEqual(store.selectedSurface, .files)
     XCTAssertTrue(store.openClawMessages.last?.changeSummary?.files.contains(where: { $0.relativePath == artifactRelativePath }) == true)
   }
 
@@ -3854,7 +3854,6 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(WorkspaceSurface.search.commandShortcutTitle, "⌘4")
     XCTAssertEqual(WorkspaceSurface.meetings.commandShortcutTitle, "⌘5")
     XCTAssertEqual(WorkspaceSurface.openClaw.commandShortcutTitle, "⌘6")
-    XCTAssertEqual(WorkspaceSurface.agentSpace.commandShortcutTitle, "")
     XCTAssertEqual(WorkspaceSurface.sidebarCases, WorkspaceSurface.allCases)
   }
 
@@ -3894,6 +3893,7 @@ final class Org2ModelsTests: XCTestCase {
   @MainActor
   func testOpeningSecondaryPanesDoesNotAutomaticallyCloseSurfacePane() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    XCTAssertFalse(store.isNodeContextPanePresented)
     let thread = OpenClawThread(
       title: "Current page",
       file: "/tmp/current.org2",
@@ -3902,8 +3902,8 @@ final class Org2ModelsTests: XCTestCase {
       modifiedAt: nil
     )
 
-    store.isNodeContextPanePresented = false
     store.select(.openClaw(thread))
+    XCTAssertFalse(store.isNodeContextPanePresented)
     XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
     XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
 

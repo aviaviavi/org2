@@ -18,18 +18,20 @@ Org2 is an early OSS project for turning folders of notes, transcripts, tasks, f
 <section class="org2-sample" aria-labelledby="org2-sample-title">
   <div class="org2-sample-intro">
     <h2 id="org2-sample-title">What an Org2 file looks like</h2>
-    <p>One plain-text document can carry notes, tasks, dates, links, code, source provenance, and AI handoff boundaries while staying readable in any editor.</p>
+    <p>One plain-text document can carry notes, tasks, dates, links, data records, source provenance, and agent handoff boundaries while staying readable in any editor.</p>
   </div>
   <div class="org2-sample-layout">
     <aside class="org2-sample-callouts org2-sample-callouts-left" aria-label="Document structure notes">
       <div style="--callout-top: 1.1rem"><strong>Metadata</strong><span>Title, file tags, and stable IDs make the file queryable.</span></div>
       <div style="--callout-top: 7.8rem"><strong>Agenda</strong><span>TODO state, schedule, deadline, effort, and tags feed planning views.</span></div>
-      <div style="--callout-top: 40.4rem"><strong>Provenance</strong><span>Generated or imported work keeps a trail back to sources.</span></div>
+      <div style="--callout-top: 36.5rem"><strong>Data</strong><span>Query and dataset records keep evidence close without embedding secrets.</span></div>
+      <div style="--callout-top: 50.6rem"><strong>Agents</strong><span>Handoffs say what context is in scope and whether edits are allowed.</span></div>
     </aside>
     <figure class="org2-sample-file">
       <figcaption>notes/product-launch.org2</figcaption>
       <pre aria-label="Example Org2 document"><code><span class="org2-syntax-keyword">#+title:</span> Product launch workspace
 <span class="org2-syntax-keyword">#+filetags:</span> <span class="org2-syntax-tag">:launch:q3:</span>
+<span class="org2-syntax-keyword">#+roam_aliases:</span> beta launch rollout
 
 <span class="org2-syntax-heading">*</span> <span class="org2-syntax-todo">TODO</span> Ship beta checklist <span class="org2-syntax-tag">:product:</span>
   <span class="org2-syntax-planning">SCHEDULED:</span> <span class="org2-syntax-date">&lt;2026-06-01 Mon&gt;</span>
@@ -37,6 +39,7 @@ Org2 is an early OSS project for turning folders of notes, transcripts, tasks, f
   <span class="org2-syntax-drawer">:PROPERTIES:</span>
   <span class="org2-syntax-prop">:ID:</span> launch-beta-checklist
   <span class="org2-syntax-prop">:EFFORT:</span> 3h
+  <span class="org2-syntax-prop">:OWNER:</span> Product
   <span class="org2-syntax-drawer">:END:</span>
 
   - [X] Draft invite copy
@@ -53,10 +56,33 @@ Org2 is an early OSS project for turning folders of notes, transcripts, tasks, f
   npm run org2 -- query --tag launch --format json
   <span class="org2-syntax-block">```</span>
 
+<span class="org2-syntax-heading">**</span> Launch metrics query <span class="org2-syntax-tag">:evidence:</span>
+  <span class="org2-syntax-drawer">:PROPERTIES:</span>
+  <span class="org2-syntax-prop">:ID:</span> launch-metrics-query
+  <span class="org2-syntax-prop">:KIND:</span> warehouse-query
+  <span class="org2-syntax-prop">:QUERY_ID:</span> launch-readiness-v1
+  <span class="org2-syntax-prop">:FRESHNESS_SLA:</span> 24h
+  <span class="org2-syntax-drawer">:END:</span>
+
+  <span class="org2-syntax-block">``` sql</span>
+  select week, activated_users from launch_readiness
+  <span class="org2-syntax-block">```</span>
+
+<span class="org2-syntax-heading">**</span> Agent handoff <span class="org2-syntax-tag">:agent:</span>
+  <span class="org2-syntax-drawer">:PROPERTIES:</span>
+  <span class="org2-syntax-prop">:AGENT:</span> codex
+  <span class="org2-syntax-prop">:CONTEXT:</span> id:launch-beta-checklist, id:launch-metrics-query
+  <span class="org2-syntax-prop">:ALLOW_AGENT_EDIT:</span> false
+  <span class="org2-syntax-drawer">:END:</span>
+
+  Summarize launch blockers with citations.
+
 <span class="org2-syntax-heading">*</span> AI draft summary <span class="org2-syntax-tag">:draft:</span>
   <span class="org2-syntax-drawer">:PROPERTIES:</span>
-  <span class="org2-syntax-prop">:ORG2_ARTIFACT_ROLE:</span> draft
-  <span class="org2-syntax-prop">:ORG2_PROVENANCE:</span> raw/calls/beta-kickoff.org2
+  <span class="org2-syntax-prop">:ORG2_ARTIFACT_ROLE:</span> view
+  <span class="org2-syntax-prop">:ORG2_PROVENANCE:</span> file:raw/calls/beta-kickoff.org2, id:launch-metrics-query
+  <span class="org2-syntax-prop">:ORG2_CLAIM_STATE:</span> source-backed
+  <span class="org2-syntax-prop">:ORG2_REVIEW_STATUS:</span> review-required
   <span class="org2-syntax-drawer">:END:</span>
 
   The beta should emphasize local files, agenda workflows,
@@ -66,6 +92,7 @@ Org2 is an early OSS project for turning folders of notes, transcripts, tasks, f
       <div style="--callout-top: 11.8rem"><strong>Properties</strong><span>IDs, effort, and roles give tools stable fields.</span></div>
       <div style="--callout-top: 18.6rem"><strong>Links</strong><span>File links and ID links stay plain text but resolve through the corpus graph.</span></div>
       <div style="--callout-top: 30.9rem"><strong>Code</strong><span>Commands and examples live beside the notes they explain.</span></div>
+      <div style="--callout-top: 64.8rem"><strong>Review</strong><span>Generated work stays marked until a person accepts or promotes it.</span></div>
     </aside>
   </div>
 </section>
@@ -134,8 +161,8 @@ The goal is boring composability: plain files that are easy to inspect, easy to 
 <div class="org2-shot-grid">
   <figure><img src="assets/screenshots/macos-workspace-agenda.png" alt="Org2 Workspace agenda showing launch readiness tasks and linked context" loading="lazy" /><figcaption>Mac Workspace agenda: plan from tasks, deadlines, assignees, links, and source context in the same local corpus.</figcaption></figure>
   <figure><img src="assets/screenshots/macos-workspace-meetings.png" alt="Org2 Workspace meeting surface with a beta review transcript and summary" loading="lazy" /><figcaption>Meeting capture: recordings, transcripts, decisions, and follow-ups become ordinary Org2 files.</figcaption></figure>
-  <figure><img src="assets/screenshots/macos-workspace-brief.png" alt="Org2 Workspace Agent Space showing a generated Beacon Launch node brief with provenance" loading="lazy" /><figcaption>Agent Space: generated briefs, source refs, review state, and next actions stay inspectable before promotion.</figcaption></figure>
-  <figure class="org2-shot-phone"><img src="assets/screenshots/ios-mobile-agenda.png" alt="Org2 Mobile agenda on iPhone showing synced launch tasks" loading="lazy" /><figcaption>Mobile agenda: review and triage synced corpus tasks from the phone.</figcaption></figure>
+  <figure><img src="assets/screenshots/macos-workspace-files.png" alt="Org2 Workspace files view showing a selected Beacon Launch note" loading="lazy" /><figcaption>Files and detail: browse the corpus directly, inspect generated views, and keep source context visible.</figcaption></figure>
+  <figure class="org2-shot-phone"><img src="assets/screenshots/ios-mobile-approvals.png" alt="Org2 Mobile approvals list on iPhone showing review-required corpus items" loading="lazy" /><figcaption>Mobile approvals: review generated drafts and approval-gated work from the phone.</figcaption></figure>
 </div>
 #+END_EXPORT
 

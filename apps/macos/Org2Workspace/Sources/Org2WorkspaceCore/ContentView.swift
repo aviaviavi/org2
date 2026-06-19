@@ -173,8 +173,6 @@ private struct WorkspaceSurfaceView: View {
         MeetingsView()
       case .openClaw:
         OpenClawChatView()
-      case .agentSpace:
-        OpenClawThreadsView()
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -3386,77 +3384,6 @@ private struct EmptyChatView: View {
   }
 }
 
-private struct OpenClawThreadsView: View {
-  @EnvironmentObject private var store: WorkspaceStore
-
-  var body: some View {
-    VStack(spacing: 0) {
-      HeaderBar(title: "Agent Space", subtitle: "\(store.openClawThreads.count) local item\(store.openClawThreads.count == 1 ? "" : "s")", surface: .agentSpace) {
-        if store.isLoadingOpenClawThreads {
-          ProgressView()
-            .controlSize(.small)
-        }
-
-        Button {
-          Task { await store.refreshOpenClawThreads() }
-        } label: {
-          Label("Refresh", systemImage: "arrow.clockwise")
-        }
-        .disabled(store.corpusRoot == nil || store.isLoadingOpenClawThreads)
-      }
-
-      if store.openClawThreads.isEmpty {
-        if store.isLoadingOpenClawThreads {
-          Spacer()
-          ProgressView()
-          Spacer()
-        } else {
-          EmptyStateView(title: "No Agent Items", detail: store.statusText, action: "Refresh") {
-            Task { await store.refreshOpenClawThreads() }
-          }
-        }
-      } else {
-        List(selection: $store.selectedOpenClawThreadID) {
-          ForEach(store.openClawDisplaySections) { section in
-            Section(section.label) {
-              ForEach(section.threads) { thread in
-                OpenClawThreadRow(thread: thread)
-                  .tag(thread.id)
-                  .contentShape(Rectangle())
-                  .onTapGesture {
-                    store.selectOpenClawThread(thread)
-                  }
-                  .contextMenu {
-                    WorkspaceLocationContextMenu(
-                      location: .openClaw(thread),
-                      select: { store.selectOpenClawThread(thread) }
-                    ) {
-                      Label("Open", systemImage: thread.idValue == nil ? "doc.text" : "link")
-                    }
-                  }
-              }
-            }
-          }
-        }
-        .listStyle(.inset)
-        .onChange(of: store.selectedOpenClawThreadID) {
-          guard let id = store.selectedOpenClawThreadID,
-                let thread = store.openClawThreads.first(where: { $0.id == id })
-          else {
-            return
-          }
-          store.select(.openClaw(thread))
-        }
-      }
-    }
-    .onAppear {
-      if store.openClawThreads.isEmpty {
-        Task { await store.refreshOpenClawThreads() }
-      }
-    }
-  }
-}
-
 private struct AssignedWorkRow: View {
   @EnvironmentObject private var store: WorkspaceStore
   let item: AssignedWorkItem
@@ -3498,51 +3425,6 @@ private struct AssignedWorkRow: View {
     }
     .padding(.horizontal, WorkspaceDesign.contentInset)
     .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
-  }
-}
-
-private struct OpenClawThreadRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
-  let thread: OpenClawThread
-
-  var body: some View {
-    HStack(alignment: .top, spacing: 8) {
-      WorkspaceIconBadge(systemImage: thread.idValue == nil ? "doc.text" : "link")
-      VStack(alignment: .leading, spacing: 5) {
-        HStack(spacing: 8) {
-          Text(Org2Display.cleanInline(thread.title))
-            .font(.body.weight(.medium))
-            .lineLimit(1)
-          Spacer(minLength: 0)
-          if thread.idValue != nil {
-            Image(systemName: "link")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
-        }
-        HStack(spacing: 8) {
-          Text(thread.zone)
-          if let modifiedAt = thread.modifiedAt {
-            Text(Self.relativeDate(modifiedAt))
-          }
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-
-        Text(store.relativePath(thread.file) + ":\(thread.lineForEditor)")
-          .font(.caption)
-          .foregroundStyle(.tertiary)
-          .lineLimit(1)
-          .truncationMode(.middle)
-      }
-    }
-    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
-  }
-
-  private static func relativeDate(_ date: Date) -> String {
-    let formatter = RelativeDateTimeFormatter()
-    formatter.unitsStyle = .short
-    return formatter.localizedString(for: date, relativeTo: Date())
   }
 }
 

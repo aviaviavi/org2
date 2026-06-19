@@ -568,7 +568,7 @@ public final class WorkspaceStore: ObservableObject {
   }
   public private(set) var sourceBlockRunsRenderSignature = WorkspaceStore.sourceBlockRunsRenderSignature(for: [:])
   @Published public var backlinks: BacklinksPayload?
-  @Published public var isNodeContextPanePresented = true
+  @Published public var isNodeContextPanePresented = false
   @Published public var nodeContextTab: NodeContextTab = .overview
   @Published public var expandedBacklinkFileIDs: Set<String> = []
   @Published public var isBuildingNodeBrief = false
@@ -831,18 +831,15 @@ public final class WorkspaceStore: ObservableObject {
     case "openclaw", "chat":
       selectedSurface = .openClaw
       openClawDraft = "Summarize the current launch plan and call out open risks."
-    case "agent-space", "agents", "brief":
-      selectedSurface = .agentSpace
+    case "brief":
+      selectedSurface = .files
       if let thread = openClawThreads.first(where: { thread in
         guard let target, !target.isEmpty else {
           return thread.title.lowercased().contains("brief")
         }
         return thread.title.lowercased().contains(target)
       }) ?? openClawThreads.first {
-        selectOpenClawThread(thread)
-        if mode == "brief" {
-          selectedEntrySourceMode = .page
-        }
+        openOpenClawThread(thread, surface: .files, mode: .page)
       }
     case "meetings":
       selectedSurface = .meetings
@@ -3472,20 +3469,10 @@ public final class WorkspaceStore: ObservableObject {
         try Self.scanOpenClawThreads(corpusRoot: corpusRoot)
       }.value
       openClawThreads = threads
-      if selectedSurface == .agentSpace {
-        statusText = "\(openClawThreads.count) agent item\(openClawThreads.count == 1 ? "" : "s")"
-      }
       syncOpenClawSelectionAfterRefresh()
     } catch {
       errorText = error.localizedDescription
-      statusText = "Agent Space scan failed"
-    }
-  }
-
-  public var openClawDisplaySections: [OpenClawThreadSection] {
-    let grouped = Dictionary(grouping: openClawThreads, by: \.zone)
-    return grouped.keys.sorted().map { zone in
-      OpenClawThreadSection(id: zone, label: zone, threads: grouped[zone] ?? [])
+      statusText = "Agent records scan failed"
     }
   }
 
@@ -3594,8 +3581,14 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func selectOpenClawThread(_ thread: OpenClawThread) {
-    selectedSurface = .agentSpace
-    select(.openClaw(thread))
+    openOpenClawThread(thread, surface: .files)
+  }
+
+  private func openOpenClawThread(_ thread: OpenClawThread, surface: WorkspaceSurface? = nil, mode: EntrySourceMode? = nil) {
+    if let surface {
+      selectedSurface = surface
+    }
+    activateDetailLocation(.openClaw(thread), mode: mode, recordsHistory: true)
   }
 
   public func selectCorpusFile(_ file: CorpusFile) {
@@ -7779,7 +7772,7 @@ public final class WorkspaceStore: ObservableObject {
       modifiedAt: modifiedAt,
       idValue: nil
     )
-    selectedSurface = .agentSpace
+    selectedSurface = .files
     activateDetailLocation(.openClaw(thread), mode: .page, recordsHistory: true)
     selectedOpenClawThreadID = thread.id
     pendingNodeBriefArtifactRelativePath = nil
@@ -9119,13 +9112,15 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func syncOpenClawSelectionAfterRefresh() {
-    guard selectedSurface == .agentSpace, !openClawThreads.isEmpty else { return }
+    guard !openClawThreads.isEmpty,
+          case .openClaw = selectedLocation
+    else {
+      return
+    }
     if let selectedOpenClawThreadID,
        let thread = openClawThreads.first(where: { $0.id == selectedOpenClawThreadID }) {
       select(.openClaw(thread))
-      return
     }
-    selectOpenClawThread(openClawThreads[0])
   }
 
   nonisolated private static func entrySource(file: String, line: Int) throws -> EntrySource {
@@ -12622,7 +12617,6 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
   case search
   case meetings
   case openClaw
-  case agentSpace
 
   public var id: String { rawValue }
 
@@ -12638,7 +12632,6 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .search: "Search"
     case .meetings: "Meetings"
     case .openClaw: "OpenClaw Chat"
-    case .agentSpace: "Agent Space"
     }
   }
 
@@ -12650,7 +12643,6 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .search: "magnifyingglass"
     case .meetings: "mic"
     case .openClaw: "sparkles"
-    case .agentSpace: "bubble.left.and.bubble.right"
     }
   }
 
@@ -12662,7 +12654,6 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .search: "⌘4"
     case .meetings: "⌘5"
     case .openClaw: "⌘6"
-    case .agentSpace: ""
     }
   }
 }
