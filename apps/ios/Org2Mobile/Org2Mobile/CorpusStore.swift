@@ -23,6 +23,7 @@ final class CorpusStore: ObservableObject {
   private var cachedFileCount: Int?
   private var refreshGeneration = 0
   private var cacheHydrationGeneration = 0
+  private var hasOpenedCorpusViews = false
 
   var corpusName: String {
     rootURL?.lastPathComponent ?? "No corpus"
@@ -37,13 +38,19 @@ final class CorpusStore: ObservableObject {
       .appending(path: cacheFilename)
   }
 
+  func startRestoringCorpus() {
+    Task {
+      await Task.yield()
+      await restoreCorpus()
+    }
+  }
+
   func restoreCorpus() async {
     #if DEBUG
     if let debugCorpusPath = ProcessInfo.processInfo.environment["ORG2_DEBUG_CORPUS_PATH"],
        !debugCorpusPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       let url = URL(fileURLWithPath: debugCorpusPath, isDirectory: true)
       setRootURL(url)
-      startCacheHydration(matching: url)
       startBackgroundRefresh()
       return
     }
@@ -53,10 +60,7 @@ final class CorpusStore: ObservableObject {
        !cachedRootPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       let url = URL(fileURLWithPath: cachedRootPath, isDirectory: true)
       rootURL = url
-      statusMessage = "Loading cached corpus"
-      startCacheHydration(matching: url)
-    } else {
-      startCacheHydration(matching: nil)
+      statusMessage = "Corpus ready"
     }
 
     guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else { return }
@@ -83,9 +87,6 @@ final class CorpusStore: ObservableObject {
       }
 
       setRootURL(resolved.url)
-      if !hasDisplayedCorpus {
-        startCacheHydration(matching: resolved.url)
-      }
       startBackgroundRefresh()
     } catch {
       if !hasDisplayedCorpus {
@@ -101,21 +102,28 @@ final class CorpusStore: ObservableObject {
     do {
       try saveBookmark(for: url)
       setRootURL(url)
-      startCacheHydration(matching: url)
       await refresh()
     } catch {
       errorMessage = "Could not save access to the selected folder."
     }
   }
 
-  func refresh(priority: TaskPriority = .utility) async {
+  func prepareCorpusViews() {
+    hasOpenedCorpusViews = true
+    guard let rootURL else { return }
+    startCacheHydration(matching: rootURL)
+  }
+
+  func refresh(priority: TaskPriority = .utility, showsLoading: Bool = true) async {
     guard let rootURL else { return }
     refreshGeneration += 1
     let generation = refreshGeneration
-    isLoading = true
+    if showsLoading {
+      isLoading = true
+    }
     errorMessage = nil
     defer {
-      if refreshGeneration == generation {
+      if showsLoading, refreshGeneration == generation {
         isLoading = false
       }
     }
@@ -134,11 +142,13 @@ final class CorpusStore: ObservableObject {
         return
       }
 
-      documents = snapshot.documents
-      agenda = snapshot.agenda
-      approvals = snapshot.approvals
       cachedFileCount = snapshot.documents.count
       saveCachedCorpus(snapshot, for: rootURL)
+      if hasOpenedCorpusViews {
+        documents = snapshot.documents
+        agenda = snapshot.agenda
+        approvals = snapshot.approvals
+      }
 
       let fileStatus = snapshot.documents.count == 1 ? "1 file" : "\(snapshot.documents.count) files"
       statusMessage = snapshot.skipped.isEmpty ? fileStatus : "\(fileStatus), \(snapshot.skipped.count) skipped"
@@ -197,8 +207,8 @@ final class CorpusStore: ObservableObject {
 
   private func startBackgroundRefresh() {
     Task(priority: .background) {
-      try? await Task.sleep(nanoseconds: 1_000_000_000)
-      await refresh(priority: .background)
+      try? await Task.sleep(nanoseconds: 2_000_000_000)
+      await refresh(priority: .background, showsLoading: false)
     }
   }
 
