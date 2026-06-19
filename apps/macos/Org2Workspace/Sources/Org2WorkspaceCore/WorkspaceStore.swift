@@ -10958,7 +10958,8 @@ public final class WorkspaceStore: ObservableObject {
       title: resolvedFileTitle,
       aliases: fileAliases,
       file: file.path,
-      line: fileTitle?.line ?? 1
+      line: fileTitle?.line ?? 1,
+      isPageNode: true
     )
   }
 

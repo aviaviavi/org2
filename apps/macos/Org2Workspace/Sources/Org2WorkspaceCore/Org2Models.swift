@@ -980,8 +980,9 @@ public struct OrgRoamNodeReference: Identifiable, Hashable, Sendable {
   public let aliases: [String]
   public let file: String
   public let line: Int
+  public let isPageNode: Bool
 
-  public init(idValue: String?, title: String, aliases: [String] = [], file: String, line: Int) {
+  public init(idValue: String?, title: String, aliases: [String] = [], file: String, line: Int, isPageNode: Bool = false) {
     let trimmedID = idValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     self.idValue = trimmedID.isEmpty ? nil : trimmedID
     self.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -990,6 +991,7 @@ public struct OrgRoamNodeReference: Identifiable, Hashable, Sendable {
       .filter { !$0.isEmpty }
     self.file = file
     self.line = max(1, line)
+    self.isPageNode = isPageNode
   }
 
   public var id: String {
@@ -1052,7 +1054,7 @@ public struct OrgRoamLinkResolver: Equatable, Sendable {
     nodesByTitle = titleCandidates.compactMapValues { candidates in
       candidates.count == 1 ? candidates[0] : nil
     }
-    nodeCandidatesByTitle = titleCandidates
+    nodeCandidatesByTitle = titleCandidates.mapValues(Self.rankedCandidates)
     signature = Self.makeSignature(nodes)
   }
 
@@ -1102,10 +1104,7 @@ public struct OrgRoamLinkResolver: Equatable, Sendable {
     return scored
       .sorted {
         if $0.1 != $1.1 { return $0.1 < $1.1 }
-        if $0.0.title.localizedCaseInsensitiveCompare($1.0.title) != .orderedSame {
-          return $0.0.title.localizedCaseInsensitiveCompare($1.0.title) == .orderedAscending
-        }
-        return $0.0.file < $1.0.file
+        return Self.compareRankedCandidates($0.0, $1.0)
       }
       .map(\.0)
       .prefix(limit)
@@ -1133,8 +1132,28 @@ public struct OrgRoamLinkResolver: Equatable, Sendable {
       hasher.combine(node.aliases)
       hasher.combine(node.file)
       hasher.combine(node.line)
+      hasher.combine(node.isPageNode)
     }
     return "\(nodes.count):\(hasher.finalize())"
+  }
+
+  private static func rankedCandidates(_ candidates: [OrgRoamNodeReference]) -> [OrgRoamNodeReference] {
+    candidates.sorted(by: compareRankedCandidates)
+  }
+
+  private static func compareRankedCandidates(_ lhs: OrgRoamNodeReference, _ rhs: OrgRoamNodeReference) -> Bool {
+    if lhs.isPageNode != rhs.isPageNode {
+      return lhs.isPageNode
+    }
+    let titleOrder = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
+    if titleOrder != .orderedSame {
+      return titleOrder == .orderedAscending
+    }
+    let pathOrder = lhs.file.localizedStandardCompare(rhs.file)
+    if pathOrder != .orderedSame {
+      return pathOrder == .orderedAscending
+    }
+    return lhs.line < rhs.line
   }
 }
 
