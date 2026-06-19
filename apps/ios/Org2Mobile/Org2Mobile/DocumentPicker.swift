@@ -42,12 +42,13 @@ struct ActivitySheet: UIViewControllerRepresentable {
   func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
-struct CameraPicker: UIViewControllerRepresentable {
+struct ImagePicker: UIViewControllerRepresentable {
+  let sourceType: UIImagePickerController.SourceType
   let onPick: (UIImage) -> Void
 
   func makeUIViewController(context: Context) -> UIImagePickerController {
     let picker = UIImagePickerController()
-    picker.sourceType = .camera
+    picker.sourceType = sourceType
     picker.delegate = context.coordinator
     return picker
   }
