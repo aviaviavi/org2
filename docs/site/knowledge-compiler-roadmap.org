@@ -6,7 +6,7 @@ This page is the product/technical direction behind the current implementation w
 
 * Product frame
 
-Org2 should not compete by being a slightly nicer Markdown editor. Markdown is already good for plain prose.
+Org2 should compete on the things plain prose tools leave underspecified: planning semantics, graph health, provenance, publishing, and agent collaboration over local files.
 
 Org2 earns its complexity when it makes a personal knowledge base operational:
 
@@ -14,7 +14,7 @@ Org2 earns its complexity when it makes a personal knowledge base operational:
 - links, IDs, aliases, and properties become graph data
 - raw notes and captured material become curated notes
 - curated notes compile into views, reports, lint results, and published sites
-- provenance makes generated artifacts inspectable instead of mysterious
+- provenance gives generated artifacts clear origins
 
 * Compiler model
 
@@ -52,7 +52,7 @@ Good examples:
 - explicit provenance fields for generated outputs
 - query/search commands that include citations back to source files
 - safer roam/linkify passes that can preview changes and exclude generated or archived paths
-- publishing docs that explain the corpus model instead of only listing editor features
+- publishing docs that explain the corpus model and its user-facing workflows
 
 This keeps Org2 useful today while preventing the project from collapsing into editor-specific glue.
 

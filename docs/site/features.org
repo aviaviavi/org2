@@ -1,6 +1,6 @@
 #+TITLE: Features
 
-Org2 is a local-first context compiler rather than a parser demo or editor replacement: it turns raw plain-text notes, events, files, conversations, data records, and agent work into structured semantics, then derives views, checks, editor behavior, Workspace surfaces, and publishable artifacts from that shared model.
+Org2 is a local-first context compiler for plain-text workspaces. It turns notes, events, files, conversations, data records, and agent work into structured semantics, then derives views, checks, editor behavior, Workspace surfaces, and publishable artifacts from that shared model.
 
 * Compiler workflow
 
@@ -27,11 +27,11 @@ What already works well today:
 - Roam-style IDs, backlinks, dailies, node creation, linkify previews with semantic/alias-aware suggestions, AI-assisted review reports, and graph reports
 - Durable agent-thread and data-link metadata for Workspace clients and external agents
 - Org-crypt subtree encryption/decryption workflows, including per-subtree multi-recipient encryption for user/device/agent access without putting plaintext in a vendor database
-- LSP-backed editor features
+- Shared editor backend features, including LSP where an editor benefits from it
 
 * Workspace and context records
 
-Org2 Workspace is the product direction for focused clients over the same local corpus. The macOS app now exists as an alpha client for agenda review, file navigation, search, rendered block editing, meeting capture, OpenClaw handoff, agent-thread browsing, daily notes, knowledge-node creation, and org-crypt workflows. Entity pages, richer meeting memory, capture/refile workflows, and data-backed reports should continue to use parser/compiler output instead of private app state.
+Org2 Workspace is the product direction for focused clients over the same local corpus. The macOS app now exists as an alpha client for agenda review, file navigation, search, rendered block editing, meeting capture, OpenClaw handoff, agent-thread browsing, daily notes, knowledge-node creation, and org-crypt workflows. Entity pages, richer meeting memory, capture/refile workflows, and data-backed reports should continue to use parser/compiler output, so clients share a source of truth.
 
 The format already has the building blocks for that direction:
 
@@ -44,10 +44,24 @@ The format already has the building blocks for that direction:
 
 This keeps Org2 useful both as a personal knowledge base and as an organizational context layer over notes, meetings, tickets, repos, files, metrics, and agent work.
 
+* Agent collaboration
+
+Org2 is a good medium for collaborating with agents because the handoff state lives in the corpus. A task can carry selected context, source refs, transcript links, review status, policy gates, generated artifacts, and durable outputs in a form that humans can inspect and tools can fetch.
+
+The useful properties are concrete:
+
+- agents receive scoped context packs with file and line citations,
+- agent threads are durable headings with status and attachments,
+- generated drafts live under reviewable artifact metadata,
+- provenance links raw sources, drafts, promoted notes, and published output,
+- policy fields can mark work that needs approval before external side effects.
+
+That gives Codex, OpenClaw, local models, scripts, and future workspace clients a shared way to coordinate around the same notes.
+
 
 * Scoped encryption for agents
 
-Org2 can use GPG-backed =:crypt:= subtrees as a local access-control layer for agent workflows. Instead of giving an assistant an entire vault or copying secrets into a hosted chat, you can encrypt only selected entries to that agent's public key. Other encrypted entries remain unreadable unless their recipient list includes the same key.
+Org2 can use GPG-backed =:crypt:= subtrees as a local access-control layer for agent workflows. You can encrypt selected entries to an agent's public key while other encrypted entries remain readable only to their own recipients.
 
 This is especially useful for mixed personal/team/agent corpora:
 
@@ -56,7 +70,7 @@ This is especially useful for mixed personal/team/agent corpora:
 - sync the same encrypted files through ordinary file infrastructure,
 - revoke future access by removing the agent recipient and re-encrypting the subtree.
 
-The important bit is that the boundary is explicit in the note itself, not hidden in a SaaS permission screen.
+The boundary is explicit in the note itself and travels with the file.
 
 * Planning + agenda
 
@@ -105,7 +119,7 @@ A few concrete ways Org2 fits into a real workflow:
 - *Mac workspace*: open a corpus in the native macOS app, review agenda items, quick-open files, edit rendered blocks, record/import meetings, and hand selected context to OpenClaw without moving the source of truth out of plain files.
 - *Meeting pipeline*: store transcripts as raw evidence, curate summaries/TODOs/Linear candidates into notes, then run backlinking and lint to keep the result connected and auditable.
 - *Research corpus*: capture source material, assign IDs, strengthen weak references into links, query with file/line citations, and publish selected pages.
-- *Automation boundary*: let scripts and agents read compiled corpus artifacts instead of scraping editor state, while generated outputs remain reviewable under =views/= or =compiled/=.
+- *Automation boundary*: let scripts and agents read compiled corpus artifacts from stable outputs, while generated outputs remain reviewable under =views/= or =compiled/=.
 
 * macOS Workspace
 
@@ -121,7 +135,7 @@ The native Mac app lives in =apps/macos/Org2Workspace=. It is early, but it is a
 - OpenClaw chat and Agent Space surfaces,
 - GPG-backed org-crypt configuration and encrypt/decrypt actions.
 
-The next major app milestone should lead with *real capture and refiling*: system-wide capture or a global capture panel, fast TODO/note capture, refile into existing files/headings, and scheduling/deadline/priority/tag/effort controls that preserve clean Org2 source. Meeting-to-action, knowledge-browser, and packaging/first-run work can proceed in parallel, but they should land in their natural product surfaces rather than a separate planning page.
+The next major app milestone should lead with *real capture and refiling*: system-wide capture or a global capture panel, fast TODO/note capture, refile into existing files/headings, and scheduling/deadline/priority/tag/effort controls that preserve clean Org2 source. Meeting-to-action, knowledge-browser, and packaging/first-run work can proceed in parallel, landing in their natural product surfaces.
 
 See [[file:editors-macos.org][macOS Workspace]] for the current app surface and build/run notes.
 
@@ -143,9 +157,9 @@ That includes:
 
 If you want to *use* Org2 today instead of just admire the idea, this is the path.
 
-* LSP capabilities
+* Editor backend capabilities
 
-Org2's LSP surface is already broader than the docs site previously implied.
+Org2 exposes editor capabilities through shared parser and CLI surfaces, with LSP support where the protocol is a good fit.
 
 Current highlights include:
 
@@ -157,11 +171,11 @@ Current highlights include:
 - Semantic tokens, inlay hints, code lens, document colors
 - Call hierarchy for Org ID/file links
 
-That's real editor infrastructure, not a toy server.
+The strategic point is the shared backend: editor features should come from the corpus model, whether a client reaches it through LSP, direct CLI calls, or a native Workspace surface.
 
 * Publishing
 
-Publishing is already a first-class workflow, not an afterthought.
+Publishing is already a first-class workflow.
 
 - Single-file HTML export
 - Recursive workspace export
@@ -171,7 +185,7 @@ Publishing is already a first-class workflow, not an afterthought.
 
 * Positioning
 
-Org2 keeps the parts of Org-shaped plain text that matter, while aiming at a different target than “Org Mode somewhere else.” The bet is that a personal knowledge base should behave like a local compiler target:
+Org2 keeps the parts of Org-shaped plain text that matter and aims at a portable compiler/runtime for knowledge work. The bet is that a personal knowledge base should behave like a local compiler target:
 
 - keep raw notes portable and inspectable,
 - compile them into explicit semantics,

@@ -90,7 +90,7 @@ This makes AI output behave like a build artifact: useful, traceable, lintable, 
 
 The VS Code extension exposes the same safe path through command-palette actions:
 
-- =Org2: AI — Write Draft Artifact= picks a job manifest, previews =org2 ai run=, confirms, writes the draft, and opens it for review.
-- =Org2: AI — Promote Reviewed Draft= previews =org2 ai promote= for the active/selected draft, requires confirmation, and opens the canonical target after promotion.
+- =org2.aiRunDraft= picks a job manifest, previews =org2 ai run=, confirms, writes the draft, and opens it for review.
+- =org2.aiPromoteDraft= previews =org2 ai promote= for the active/selected draft, requires confirmation, and opens the canonical target after promotion.
 
 Both commands use the CLI; the editor does not bypass review status checks or write canonical notes without the explicit promote confirmation.

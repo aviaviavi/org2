@@ -73,7 +73,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <tr><td>Stable note identity</td><td>File paths and headings by convention</td><td>IDs, <code>id:</code> links, wiki links, backlinks, node creation</td></tr>
 <tr><td>Structured metadata</td><td>Front matter or app-specific extensions</td><td>Drawers, properties, tags, artifact roles, provenance</td></tr>
 <tr><td>Graph/link health</td><td>App-specific</td><td>Backlink, graph, lint, and ambiguity checks</td></tr>
-<tr><td>Editor independence</td><td>High for prose, weaker for app semantics</td><td>CLI/LSP/compiler model designed for many editors</td></tr>
+<tr><td>Editor independence</td><td>High for prose, weaker for app semantics</td><td>CLI/compiler model designed for many editors</td></tr>
 <tr><td>Automation boundary</td><td>Usually parse Markdown or app conventions</td><td>Query, agenda, graph, lint, compile, and export outputs</td></tr>
 <tr><td>AI/provenance workflows</td><td>Possible, usually custom</td><td>Designed around raw sources, drafts, citations, and promotion</td></tr>
 <tr><td>Publishing</td><td>Excellent ecosystem</td><td>Built-in HTML export and multi-file publishing</td></tr>
@@ -90,11 +90,11 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <section class="org2-headline level-2">
 <h2 id="your-notes-need-stable-identity">Your notes need stable identity</h2>
 <p>Markdown links are great for pages. Knowledge work also needs durable nodes. Org2 supports stable IDs, <code>id:</code> links, wiki links, backlinks, node creation, graph reports, and health checks around broken or ambiguous references.</p>
-<p>That makes Org2 a better fit for long-lived research notes, project memory, meeting trails, and roam-style workflows where a heading can be a real addressable object, not just text inside a file.</p>
+<p>That makes Org2 a better fit for long-lived research notes, project memory, meeting trails, and roam-style workflows where a heading can be a real addressable object inside the corpus.</p>
 </section>
 <section class="org2-headline level-2">
 <h2 id="you-want-structure-without-leaving-plain-text">You want structure without leaving plain text</h2>
-<p>Markdown can grow extensions forever: front matter, task-list syntax, wiki links, callouts, custom attributes, app metadata, and fenced conventions. The problem is not that these are bad. The problem is that every app chooses a different subset.</p>
+<p>Markdown can grow extensions forever: front matter, task-list syntax, wiki links, callouts, custom attributes, app metadata, and fenced conventions. Each app then chooses a different subset, which makes shared semantics fragile.</p>
 <p>Org2 makes the important structure explicit in one syntax family:</p>
 <ul>
 <li><p>headlines and nested outlines</p></li>
@@ -104,7 +104,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p>tags, priorities, effort, and IDs</p></li>
 <li><p>blocks, tables, lists, links, and source ranges</p></li>
 </ul>
-<p>The payoff is that tools do not have to guess what the text means.</p>
+<p>The payoff is that tools can read the text with a shared model.</p>
 </section>
 <section class="org2-headline level-2">
 <h2 id="ai-changes-the-verbosity-tradeoff">AI changes the verbosity tradeoff</h2>
@@ -112,7 +112,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>Humans should still be able to write terse notes:</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">* TODO Follow up with design by Friday</code></pre>
 <p>Then tools and agents can enrich the note when the extra structure is useful: assign an ID, normalize the date, connect it to a project, cite the source transcript, add provenance, or prepare a reviewable draft. The human keeps the capture surface small; the corpus gains the audit trail and machine-readable context when it matters.</p>
-<p>That makes Org2's explicitness less like clerical overhead and more like a target format for collaboration between humans, editors, scripts, and agents.</p>
+<p>That makes Org2's explicitness a durable target format for collaboration between humans, editors, scripts, and agents.</p>
 </section>
 <section class="org2-headline level-2">
 <h2 id="you-want-one-corpus-to-produce-many-views">You want one corpus to produce many views</h2>
@@ -125,19 +125,19 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p>formatter output</p></li>
 <li><p>cited search/query results</p></li>
 <li><p>HTML export and published sites</p></li>
-<li><p>editor features through the shared LSP backend</p></li>
+<li><p>editor features through shared parser, CLI, and optional LSP surfaces</p></li>
 </ul>
-<p>That is the core pitch: Org2 is not only a markup language. It is a compiler/runtime for personal and team knowledge.</p>
+<p>That is the core pitch: Org2 is a compiler/runtime for personal and team knowledge.</p>
 </section>
 <section class="org2-headline level-2">
 <h2 id="you-expect-editors-clis-and-agents-to-share-the-same-model">You expect editors, CLIs, and agents to share the same model</h2>
 <p>Markdown workflows often depend on one app's interpretation of your files. Org2 puts the semantic model underneath the editor. VS Code, the CLI, publishing, graph tools, JSON output, linting, and future integrations can all read the same corpus model.</p>
-<p>That matters for automation. A script or agent should not have to scrape a rendered page or reverse-engineer an editor extension. It should be able to ask the corpus for tasks, links, sources, provenance, generated artifacts, and publishable output.</p>
+<p>That matters for automation. A script or agent should be able to ask the corpus for tasks, links, sources, provenance, generated artifacts, and publishable output through stable commands and JSON output.</p>
 </section>
 <section class="org2-headline level-2">
 <h2 id="you-need-ai-workflows-with-a-trail">You need AI workflows with a trail</h2>
 <p>AI makes the Markdown-vs-Org2 distinction sharper. If generated summaries, extracted tasks, source transcripts, and reviewed notes all live as loose prose, the trail gets fuzzy fast.</p>
-<p>Org2 gives those workflows natural boundaries: raw source material, reviewed notes, compiled semantics, derived views, generated drafts, and published output. Properties such as artifact role and provenance let generated work stay inspectable instead of quietly blending into durable knowledge.</p>
+<p>Org2 gives those workflows natural boundaries: raw source material, reviewed notes, compiled semantics, derived views, generated drafts, and published output. Properties such as artifact role and provenance keep generated work inspectable before it becomes durable knowledge.</p>
 </section>
 </section>
 <section class="org2-headline level-1">

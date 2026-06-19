@@ -21,7 +21,7 @@ Use Org2 when you want a local plain-text corpus that you can write in, plan fro
 | Stable note identity | File paths and headings by convention | IDs, =id:= links, wiki links, backlinks, node creation |
 | Structured metadata | Front matter or app-specific extensions | Drawers, properties, tags, artifact roles, provenance |
 | Graph/link health | App-specific | Backlink, graph, lint, and ambiguity checks |
-| Editor independence | High for prose, weaker for app semantics | CLI/LSP/compiler model designed for many editors |
+| Editor independence | High for prose, weaker for app semantics | CLI/compiler model designed for many editors |
 | Automation boundary | Usually parse Markdown or app conventions | Query, agenda, graph, lint, compile, and export outputs |
 | AI/provenance workflows | Possible, usually custom | Designed around raw sources, drafts, citations, and promotion |
 | Publishing | Excellent ecosystem | Built-in HTML export and multi-file publishing |
@@ -38,11 +38,11 @@ That difference matters when you stop asking "what did I write?" and start askin
 
 Markdown links are great for pages. Knowledge work also needs durable nodes. Org2 supports stable IDs, =id:= links, wiki links, backlinks, node creation, graph reports, and health checks around broken or ambiguous references.
 
-That makes Org2 a better fit for long-lived research notes, project memory, meeting trails, and roam-style workflows where a heading can be a real addressable object, not just text inside a file.
+That makes Org2 a better fit for long-lived research notes, project memory, meeting trails, and roam-style workflows where a heading can be a real addressable object inside the corpus.
 
 ** You want structure without leaving plain text
 
-Markdown can grow extensions forever: front matter, task-list syntax, wiki links, callouts, custom attributes, app metadata, and fenced conventions. The problem is not that these are bad. The problem is that every app chooses a different subset.
+Markdown can grow extensions forever: front matter, task-list syntax, wiki links, callouts, custom attributes, app metadata, and fenced conventions. Each app then chooses a different subset, which makes shared semantics fragile.
 
 Org2 makes the important structure explicit in one syntax family:
 
@@ -53,7 +53,7 @@ Org2 makes the important structure explicit in one syntax family:
 - tags, priorities, effort, and IDs
 - blocks, tables, lists, links, and source ranges
 
-The payoff is that tools do not have to guess what the text means.
+The payoff is that tools can read the text with a shared model.
 
 ** AI changes the verbosity tradeoff
 
@@ -67,7 +67,7 @@ Humans should still be able to write terse notes:
 
 Then tools and agents can enrich the note when the extra structure is useful: assign an ID, normalize the date, connect it to a project, cite the source transcript, add provenance, or prepare a reviewable draft. The human keeps the capture surface small; the corpus gains the audit trail and machine-readable context when it matters.
 
-That makes Org2's explicitness less like clerical overhead and more like a target format for collaboration between humans, editors, scripts, and agents.
+That makes Org2's explicitness a durable target format for collaboration between humans, editors, scripts, and agents.
 
 ** You want one corpus to produce many views
 
@@ -80,21 +80,21 @@ Markdown's strongest default output is rendered prose. Org2 treats prose as one 
 - formatter output
 - cited search/query results
 - HTML export and published sites
-- editor features through the shared LSP backend
+- editor features through shared parser, CLI, and optional LSP surfaces
 
-That is the core pitch: Org2 is not only a markup language. It is a compiler/runtime for personal and team knowledge.
+That is the core pitch: Org2 is a compiler/runtime for personal and team knowledge.
 
 ** You expect editors, CLIs, and agents to share the same model
 
 Markdown workflows often depend on one app's interpretation of your files. Org2 puts the semantic model underneath the editor. VS Code, the CLI, publishing, graph tools, JSON output, linting, and future integrations can all read the same corpus model.
 
-That matters for automation. A script or agent should not have to scrape a rendered page or reverse-engineer an editor extension. It should be able to ask the corpus for tasks, links, sources, provenance, generated artifacts, and publishable output.
+That matters for automation. A script or agent should be able to ask the corpus for tasks, links, sources, provenance, generated artifacts, and publishable output through stable commands and JSON output.
 
 ** You need AI workflows with a trail
 
 AI makes the Markdown-vs-Org2 distinction sharper. If generated summaries, extracted tasks, source transcripts, and reviewed notes all live as loose prose, the trail gets fuzzy fast.
 
-Org2 gives those workflows natural boundaries: raw source material, reviewed notes, compiled semantics, derived views, generated drafts, and published output. Properties such as artifact role and provenance let generated work stay inspectable instead of quietly blending into durable knowledge.
+Org2 gives those workflows natural boundaries: raw source material, reviewed notes, compiled semantics, derived views, generated drafts, and published output. Properties such as artifact role and provenance keep generated work inspectable before it becomes durable knowledge.
 
 * A concrete difference
 

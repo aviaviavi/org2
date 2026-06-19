@@ -141,7 +141,7 @@ The first stable convention is property-backed and intentionally small:
 
 =org2 agent fetch --id support-followup-1 --format json= exposes these fields under =collaboration=. Policy gates are booleans, and source/handoff references use the same typed attachment shape as agent threads, resolving known =id:=, =file:=, =report:=, =entity:=, and related refs when possible. =org2 context --id support-followup-1= renders a =Collaboration state= section with owner, assignee, lifecycle, next action, waiting state, policy gates, run metadata, and handoff summary.
 
-These conventions are not a workflow engine. They are the minimum shared state needed for CLI, Workspace, OpenClaw, Codex, and future clients to render the same next action and avoid unsafe external sends or silent canonical edits.
+These conventions define the minimum shared state needed for CLI, Workspace, OpenClaw, Codex, and future clients to render the same next action and avoid unsafe external sends or silent canonical edits.
 
 * Data and query records
 

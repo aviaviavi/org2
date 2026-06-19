@@ -61,14 +61,14 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <tr><td>Capability</td><td>Org Mode</td><td>Org2</td></tr>
 <tr><td>---</td><td>---</td><td>---</td></tr>
 <tr><td>Best default use</td><td>Deep Org workflows inside Emacs</td><td>Portable Org-shaped corpus across editors/tools</td></tr>
-<tr><td>Runtime center</td><td>Emacs Lisp and Emacs buffers</td><td>Standalone parser, CLI, LSP, compiler</td></tr>
+<tr><td>Runtime center</td><td>Emacs Lisp and Emacs buffers</td><td>Standalone parser, CLI, compiler, optional LSP</td></tr>
 <tr><td>Editor experience</td><td>Best-in-class inside Emacs</td><td>Strongest today in VS Code; designed for more editors</td></tr>
 <tr><td>Existing ecosystem</td><td>Mature, broad, battle-tested</td><td>Early, focused on portable shared infrastructure</td></tr>
 <tr><td>File compatibility</td><td>Native <code>.org</code></td><td>Reads <code>.org</code>; recommends <code>.org2</code> for new files</td></tr>
-<tr><td>Compatibility goal</td><td>Defines the historical behavior</td><td>Practical compatibility, not bug-for-bug cloning</td></tr>
+<tr><td>Compatibility goal</td><td>Defines the historical behavior</td><td>Practical compatibility with clearer modern semantics</td></tr>
 <tr><td>Planning/agenda</td><td>Deep, mature, highly configurable</td><td>Core TODO/planning/agenda model with rich filters</td></tr>
 <tr><td>Publishing</td><td>Mature Org export ecosystem</td><td>Built-in HTML export and project publishing</td></tr>
-<tr><td>Automation boundary</td><td>Usually Emacs runtime or exported data</td><td>CLI/JSON/LSP/compiler outputs usable outside an editor</td></tr>
+<tr><td>Automation boundary</td><td>Usually Emacs runtime or exported data</td><td>CLI/JSON/compiler outputs usable outside an editor</td></tr>
 <tr><td>AI/provenance workflows</td><td>Possible through user configuration</td><td>Explicit corpus-flow, artifact metadata, and source-citation direction</td></tr>
 <tr><td>Portability</td><td>Files are portable; runtime strongest in Emacs</td><td>Runtime designed to be portable from day one</td></tr>
 </tbody>
@@ -81,7 +81,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p><strong>Runtime model</strong></p>
 <ul>
 <li><p>Org Mode: deeply integrated with Emacs runtime.</p></li>
-<li><p>Org2: standalone parser/CLI/LSP/compiler model, editor integrations on top.</p></li>
+<li><p>Org2: standalone parser/CLI/compiler model, with editor integrations on top.</p></li>
 </ul>
 </li>
 </ul>
@@ -90,7 +90,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p><strong>Workflow center</strong></p>
 <ul>
 <li><p>Org Mode: Emacs commands and buffers first.</p></li>
-<li><p>Org2: editor integrations first, powered by a shared CLI/LSP backend.</p></li>
+<li><p>Org2: editor integrations, workspace clients, publishing, and agents share one backend.</p></li>
 </ul>
 </li>
 </ul>
@@ -110,7 +110,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p>Existing <code>.org</code> files are supported as an everyday workflow.</p></li>
 <li><p>New files are recommended as <code>.org2</code>.</p></li>
 <li><p>Org Mode compatibility is valuable, especially for migration and shared plain-text habits.</p></li>
-<li><p>Org2 is not constrained to be a drop-in clone; 100% feature-for-feature parity with GNU Org is not the goal.</p></li>
+<li><p>Org2 favors clear portable behavior over feature-for-feature cloning.</p></li>
 </ul>
 </section>
 <section class="org2-headline level-1">
@@ -124,7 +124,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 </ul>
 </section>
 <section class="org2-headline level-1">
-<h1 id="what-org2-does-not-have-yet">What Org2 does not have yet</h1>
+<h1 id="current-gaps">Current gaps</h1>
 <ul>
 <li><p>Full Org Mode feature parity.</p></li>
 <li><p>Mature habits/clocking/recurrence ecosystem.</p></li>
@@ -140,7 +140,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p>Drop accumulated cruft that slows down portability and adoption.</p></li>
 <li><p>Support more editors natively, while also supporting Emacs well.</p></li>
 <li><p>Keep portability as the non-negotiable center.</p></li>
-<li><p>Treat CLI capabilities as shared infrastructure for editor integrations, publishing, health checks, and automation, not as the primary end-user UX.</p></li>
+<li><p>Treat CLI capabilities as shared infrastructure for editor integrations, publishing, health checks, and automation.</p></li>
 </ul>
 </section>
 </main>
