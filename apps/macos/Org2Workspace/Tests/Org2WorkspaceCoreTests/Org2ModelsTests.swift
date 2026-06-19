@@ -2066,6 +2066,29 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(edit?.selectedRange.length, 0)
   }
 
+  func testParagraphWikiLinkCompletionPreservesTrailingHeadingText() {
+    let text = "Wallet rec from [[sarah : Secrid"
+    let match = ParagraphWikiLinkCompletion.match(
+      in: text,
+      selectedRange: NSRange(location: (text as NSString).length, length: 0)
+    )
+    let node = OrgRoamNodeReference(
+      idValue: "sarah-123",
+      title: "Sarah",
+      file: "/tmp/Sarah.org",
+      line: 1
+    )
+
+    let edit = match.flatMap {
+      ParagraphWikiLinkCompletion.replacement(in: text, match: $0, node: node)
+    }
+
+    XCTAssertEqual(match?.query, "sarah")
+    XCTAssertEqual(edit?.text, "Wallet rec from [[id:sarah-123][Sarah]] : Secrid")
+    XCTAssertEqual(edit?.selectedRange.location, ("Wallet rec from [[id:sarah-123][Sarah]]" as NSString).length)
+    XCTAssertEqual(edit?.selectedRange.length, 0)
+  }
+
   func testOrgInlineParserFastPathsPlainTextButKeepsRelativeFileReferences() {
     XCTAssertFalse(OrgInlineParser.hasInlineSyntaxCandidate("Plain sentence with no org syntax here."))
     XCTAssertFalse(OrgInlineText.usesAttributedRendering("Plain sentence with no org syntax here."))
