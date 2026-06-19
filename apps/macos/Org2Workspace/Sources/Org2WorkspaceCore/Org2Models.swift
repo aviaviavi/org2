@@ -3316,18 +3316,6 @@ public struct AgendaDisplaySection: Identifiable, Sendable {
   }
 }
 
-public struct OpenClawThreadSection: Identifiable, Sendable {
-  public let id: String
-  public let label: String
-  public let threads: [OpenClawThread]
-
-  public init(id: String, label: String, threads: [OpenClawThread]) {
-    self.id = id
-    self.label = label
-    self.threads = threads
-  }
-}
-
 public struct AssignedWorkSection: Identifiable, Sendable {
   public let id: String
   public let label: String

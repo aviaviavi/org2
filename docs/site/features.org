@@ -132,7 +132,7 @@ The native Mac app lives in =apps/macos/Org2Workspace=. It is early, but it is a
 - ID-backed knowledge-node creation from Search,
 - rendered document view with structured block editors,
 - meeting recording/import with local-first transcription artifacts,
-- OpenClaw chat and Agent Space surfaces,
+- OpenClaw chat with selected workspace context,
 - GPG-backed org-crypt configuration and encrypt/decrypt actions.
 
 The next major app milestone should lead with *real capture and refiling*: system-wide capture or a global capture panel, fast TODO/note capture, refile into existing files/headings, and scheduling/deadline/priority/tag/effort controls that preserve clean Org2 source. Meeting-to-action, knowledge-browser, and packaging/first-run work can proceed in parallel, landing in their natural product surfaces.

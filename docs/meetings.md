@@ -86,4 +86,4 @@ If no local transcriber is found, the app still writes the audio, meeting note, 
 
 ## OpenClaw ingestion
 
-Meetings live in normal corpus files under `meetings/`. Org2 Workspace also includes `meetings/` in the default Agent Space scan, so the selected meeting note can be passed to OpenClaw Chat as workspace context. OpenClaw can be configured separately to search, ingest, summarize, extract actions, or attach meeting outputs to daily notes, projects, entities, and agent threads.
+Meetings live in normal corpus files under `meetings/`. The selected meeting note can be passed to OpenClaw Chat as workspace context, and OpenClaw can be configured separately to search, ingest, summarize, extract actions, or attach meeting outputs to daily notes, projects, entities, and agent threads.

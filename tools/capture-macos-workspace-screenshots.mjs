@@ -18,9 +18,9 @@ const scenarios = [
     fileName: "macos-workspace-agenda.png",
   },
   {
-    mode: "brief",
-    target: "node brief",
-    fileName: "macos-workspace-brief.png",
+    mode: "files",
+    target: "notes/projects/beacon-launch",
+    fileName: "macos-workspace-files.png",
   },
   {
     mode: "openclaw",
