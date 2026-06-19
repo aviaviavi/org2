@@ -1568,7 +1568,8 @@ private struct ParagraphBlockEditor: View {
         .zIndex(1)
       }
     }
-    .padding(.horizontal, 6)
+    .padding(.leading, 0)
+    .padding(.trailing, 6)
     .padding(.vertical, 3)
     .background(
       Color.accentColor.opacity(InlineEditorChrome.backgroundOpacity(isHovered: isHovered, isFocused: isTextFocused)),

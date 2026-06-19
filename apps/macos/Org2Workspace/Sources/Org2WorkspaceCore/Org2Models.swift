@@ -86,6 +86,38 @@ public struct AgendaItem: Decodable, Identifiable, Hashable, Sendable {
     case habit
   }
 
+  public init(
+    todo: String?,
+    headline: String,
+    kind: String,
+    file: String,
+    line: Int,
+    body: String?,
+    level: Int?,
+    tags: [String],
+    properties: [String: String],
+    priority: String?,
+    time: String?,
+    effort: String?,
+    idValue: String?,
+    habit: HabitAgendaState?
+  ) {
+    self.todo = todo
+    self.headline = headline
+    self.kind = kind
+    self.file = file
+    self.line = line
+    self.body = body
+    self.level = level
+    self.tags = tags
+    self.properties = properties
+    self.priority = priority
+    self.time = time
+    self.effort = effort
+    self.idValue = idValue
+    self.habit = habit
+  }
+
   public init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     todo = try container.decodeIfPresent(String.self, forKey: .todo)
@@ -115,6 +147,25 @@ public struct AgendaItem: Decodable, Identifiable, Hashable, Sendable {
   public var isActionable: Bool {
     let normalized = (todo ?? "").uppercased()
     return normalized != "DONE" && normalized != "CANCELED" && normalized != "CANCELLED"
+  }
+
+  public func replacing(todo: String?) -> AgendaItem {
+    AgendaItem(
+      todo: todo,
+      headline: headline,
+      kind: kind,
+      file: file,
+      line: line,
+      body: body,
+      level: level,
+      tags: tags,
+      properties: properties,
+      priority: priority,
+      time: time,
+      effort: effort,
+      idValue: idValue,
+      habit: habit
+    )
   }
 
   public func matchesAgendaFilter(_ query: String) -> Bool {
@@ -264,6 +315,40 @@ public struct SearchResult: Decodable, Identifiable, Hashable, Sendable {
 
   public var lineForEditor: Int {
     max(1, line)
+  }
+
+  public var isActiveTodo: Bool {
+    guard let todo else { return false }
+    return !Self.isTerminalTodoStatus(todo)
+  }
+
+  public var isTerminalTodo: Bool {
+    guard let todo else { return false }
+    return Self.isTerminalTodoStatus(todo)
+  }
+
+  private static func isTerminalTodoStatus(_ status: String) -> Bool {
+    let normalized = status.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    return normalized == "DONE" || normalized == "CANCELED" || normalized == "CANCELLED"
+  }
+}
+
+public struct SearchResultGroup: Identifiable, Hashable, Sendable {
+  public let file: String
+  public let representative: SearchResult
+  public let results: [SearchResult]
+
+  public init?(file: String, results: [SearchResult]) {
+    guard let representative = results.first else { return nil }
+    self.file = file
+    self.representative = representative
+    self.results = results
+  }
+
+  public var id: String { file }
+
+  public var additionalCount: Int {
+    max(0, results.count - 1)
   }
 }
 
@@ -640,6 +725,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   public let updatedAt: Date
   public let sessionKey: String
   public let messages: [OpenClawChatMessage]
+  public let isPinned: Bool
+  public let isArchived: Bool
 
   public init(
     id: UUID = UUID(),
@@ -647,7 +734,9 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     createdAt: Date = Date(),
     updatedAt: Date = Date(),
     sessionKey: String,
-    messages: [OpenClawChatMessage] = []
+    messages: [OpenClawChatMessage] = [],
+    isPinned: Bool = false,
+    isArchived: Bool = false
   ) {
     self.id = id
     self.title = title
@@ -655,10 +744,51 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     self.updatedAt = updatedAt
     self.sessionKey = sessionKey
     self.messages = messages
+    self.isPinned = isPinned
+    self.isArchived = isArchived
   }
 
   public var messageCount: Int {
     messages.count
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case title
+    case createdAt
+    case updatedAt
+    case sessionKey
+    case messages
+    case isPinned
+    case isArchived
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(UUID.self, forKey: .id)
+    title = try container.decode(String.self, forKey: .title)
+    createdAt = try container.decode(Date.self, forKey: .createdAt)
+    updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+    sessionKey = try container.decode(String.self, forKey: .sessionKey)
+    messages = try container.decode([OpenClawChatMessage].self, forKey: .messages)
+    isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+    isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
+  }
+
+  public func replacingOpenClawChatMetadata(
+    isPinned nextIsPinned: Bool? = nil,
+    isArchived nextIsArchived: Bool? = nil
+  ) -> OpenClawChatThread {
+    OpenClawChatThread(
+      id: id,
+      title: title,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      sessionKey: sessionKey,
+      messages: messages,
+      isPinned: nextIsPinned ?? isPinned,
+      isArchived: nextIsArchived ?? isArchived
+    )
   }
 }
 

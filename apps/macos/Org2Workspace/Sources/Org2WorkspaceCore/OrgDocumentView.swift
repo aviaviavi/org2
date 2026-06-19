@@ -932,6 +932,15 @@ enum OrgRenderedBlockDisplayPolicy {
       return 3
     }
   }
+
+  static func leadingPadding(for block: OrgEditableBlock) -> CGFloat {
+    switch block.rendered {
+    case .paragraph:
+      return 0
+    case .blank, .heading, .planning, .properties, .quote, .source, .table, .horizontalRule, .listItem, .keyword:
+      return 6
+    }
+  }
 }
 
 private struct EditableRenderedBlockView<Content: View>: View {
@@ -963,7 +972,8 @@ private struct EditableRenderedBlockView<Content: View>: View {
   @ViewBuilder
   private var rowContent: some View {
     let content = rowInnerContent
-      .padding(.horizontal, 6)
+      .padding(.leading, OrgRenderedBlockDisplayPolicy.leadingPadding(for: block))
+      .padding(.trailing, 6)
       .padding(.vertical, OrgRenderedBlockDisplayPolicy.verticalPadding(for: block))
       .background(backgroundColor, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous))
       .overlay(
