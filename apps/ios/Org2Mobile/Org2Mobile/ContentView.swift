@@ -551,7 +551,7 @@ private struct StatusPill: View {
   }
 
   var body: some View {
-    Text(text.uppercased())
+    Text(displayText.uppercased())
       .font(.caption2.weight(.bold))
       .padding(.horizontal, 7)
       .padding(.vertical, 3)
@@ -559,6 +559,21 @@ private struct StatusPill: View {
       .background(color.opacity(0.12), in: Capsule())
       .lineLimit(1)
       .minimumScaleFactor(0.75)
+  }
+
+  private var displayText: String {
+    let normalized = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    if normalized == "review-required"
+      || normalized == "requires-review"
+      || normalized == "approval-required"
+      || normalized == "needs-approval"
+      || normalized == "pending-approval"
+      || normalized == "approval"
+      || normalized.contains("approval")
+      || normalized.contains("review") {
+      return "Needs Review"
+    }
+    return text
   }
 
   private var color: Color {
