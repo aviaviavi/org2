@@ -35,19 +35,20 @@ final class CorpusStore: ObservableObject {
     guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else { return }
     do {
       var stale = false
-      let url = try URL(
-        resolvingBookmarkData: data,
-        options: [],
-        relativeTo: nil,
-        bookmarkDataIsStale: &stale
-      )
-      if stale {
+      let url = try resolveCorpusBookmark(data, bookmarkDataIsStale: &stale)
+      do {
         try saveBookmark(for: url)
+      } catch {
+        if stale {
+          throw error
+        }
       }
       rootURL = url
       await refresh()
     } catch {
-      errorMessage = "Could not reopen the corpus folder."
+      UserDefaults.standard.removeObject(forKey: bookmarkKey)
+      rootURL = nil
+      errorMessage = "Could not reopen the corpus folder. Please select it again once to refresh Org2's saved access."
     }
   }
 
@@ -406,8 +407,35 @@ final class CorpusStore: ObservableObject {
   }
 
   private func saveBookmark(for url: URL) throws {
-    let data = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+    let hasSecurityAccess = url.startAccessingSecurityScopedResource()
+    defer {
+      if hasSecurityAccess {
+        url.stopAccessingSecurityScopedResource()
+      }
+    }
+
+    let data = try url.bookmarkData(options: [.minimalBookmark], includingResourceValuesForKeys: nil, relativeTo: nil)
     UserDefaults.standard.set(data, forKey: bookmarkKey)
+    UserDefaults.standard.synchronize()
+  }
+
+  private func resolveCorpusBookmark(_ data: Data, bookmarkDataIsStale stale: inout Bool) throws -> URL {
+    do {
+      return try URL(
+        resolvingBookmarkData: data,
+        options: [.withoutUI],
+        relativeTo: nil,
+        bookmarkDataIsStale: &stale
+      )
+    } catch {
+      stale = true
+      return try URL(
+        resolvingBookmarkData: data,
+        options: [],
+        relativeTo: nil,
+        bookmarkDataIsStale: &stale
+      )
+    }
   }
 
   private func defaultMessage(for action: OpenClawAction, approval: ApprovalEntry) -> String {
