@@ -123,6 +123,12 @@ private struct RoamLinkifyPayload: Decodable {
   let applied: Bool
 }
 
+private struct SearchIndexBuildPayload: Decodable {
+  let fileCount: Int
+  let lineCount: Int
+  let skippedFiles: Int
+}
+
 private struct SplitDraftSpec {
   let insertionLineOffset: Int
   let displayLineOffset: Int
@@ -301,7 +307,7 @@ private struct WorkspaceCapturePasteboardContent {
   var attachments: [WorkspaceCaptureAttachmentDraft] = []
 }
 
-private struct HeadlineMutationTarget {
+private struct HeadlineMutationTarget: Sendable {
   let file: String
   let line: Int
   let title: String
@@ -322,6 +328,11 @@ private struct HeadlineMutationTarget {
       agendaItemID: item.id
     )
   }
+}
+
+private struct AgendaTodoShortcutMutation: Sendable {
+  let status: TodoEditStatus
+  let target: HeadlineMutationTarget
 }
 
 private struct ApprovedAgentActionResult {
@@ -563,6 +574,8 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var isBuildingNodeBrief = false
   @Published public var isLoadingAgenda = false
   @Published public var isSearching = false
+  @Published public private(set) var isBuildingSearchIndex = false
+  @Published public private(set) var searchIndexStatusText = ""
   @Published public var isLoadingMeetings = false
   @Published public var isRecordingMeeting = false
   @Published public var isMeetingRecordingPaused = false
@@ -667,6 +680,8 @@ public final class WorkspaceStore: ObservableObject {
   private var quickOpenIndexedFiles: [QuickOpenIndexedFile] = []
   private var quickOpenSearchTask: Task<Void, Never>?
   private var quickOpenSearchGeneration = 0
+  private var searchIndexTask: Task<Void, Never>?
+  private var searchIndexGeneration = 0
   private var entrySourceLoadGeneration = 0
   private var backlinksLoadGeneration = 0
   private var detailNavigationBackStack: [DetailNavigationSnapshot] = [] {
@@ -686,6 +701,8 @@ public final class WorkspaceStore: ObservableObject {
   private var deferredStableAutosaves: [OrgEditableBlock.ID: DeferredStableAutosave] = [:]
   private var preservesSelectedRenderedBlocksMetadataForNextAssignment = false
   private var scheduledAgendaRefreshTask: Task<Void, Never>?
+  private var agendaTodoShortcutMutationTask: Task<Void, Never>?
+  private var pendingAgendaTodoShortcutMutations: [AgendaTodoShortcutMutation] = []
   private var pendingAgendaRefreshAfterBlockEditing = false
 
   public init(
@@ -902,6 +919,14 @@ public final class WorkspaceStore: ObservableObject {
     renderedBlocksCacheOrder = []
     scheduledAgendaRefreshTask?.cancel()
     scheduledAgendaRefreshTask = nil
+    agendaTodoShortcutMutationTask?.cancel()
+    agendaTodoShortcutMutationTask = nil
+    pendingAgendaTodoShortcutMutations = []
+    searchIndexTask?.cancel()
+    searchIndexTask = nil
+    searchIndexGeneration += 1
+    isBuildingSearchIndex = false
+    searchIndexStatusText = ""
     resetBlockState()
     isEditingEntry = false
     isRenderingEntrySource = false
@@ -970,6 +995,11 @@ public final class WorkspaceStore: ObservableObject {
       corpusFiles = []
       orgRoamLinkResolver = .empty
       orgRoamLinkResolverGeneration += 1
+      searchIndexTask?.cancel()
+      searchIndexTask = nil
+      searchIndexGeneration += 1
+      isBuildingSearchIndex = false
+      searchIndexStatusText = ""
       return
     }
 
@@ -982,6 +1012,7 @@ public final class WorkspaceStore: ObservableObject {
       }.value
       corpusFiles = files
       refreshOrgRoamLinkResolver(files: files)
+      scheduleSearchIndexBuild(corpusRoot: corpusRoot)
       if selectedSurface == .files {
         statusText = "\(files.count) corpus file\(files.count == 1 ? "" : "s")"
       }
@@ -1030,6 +1061,39 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  private func scheduleSearchIndexBuild(corpusRoot: URL) {
+    searchIndexGeneration += 1
+    let generation = searchIndexGeneration
+    searchIndexTask?.cancel()
+    isBuildingSearchIndex = true
+    searchIndexStatusText = "Indexing search..."
+
+    searchIndexTask = Task { [cli] in
+      do {
+        let payload: SearchIndexBuildPayload = try await cli.runJSON([
+          "index",
+          "--dir", corpusRoot.path,
+          "--recursive",
+          "--format", "json"
+        ])
+        guard !Task.isCancelled else { return }
+        await MainActor.run {
+          guard self.searchIndexGeneration == generation else { return }
+          self.isBuildingSearchIndex = false
+          let skipped = payload.skippedFiles > 0 ? ", \(payload.skippedFiles) skipped" : ""
+          self.searchIndexStatusText = "\(payload.fileCount) files, \(payload.lineCount) lines indexed\(skipped)"
+        }
+      } catch {
+        guard !Task.isCancelled else { return }
+        await MainActor.run {
+          guard self.searchIndexGeneration == generation else { return }
+          self.isBuildingSearchIndex = false
+          self.searchIndexStatusText = "Search index unavailable"
+        }
+      }
+    }
+  }
+
   public func runSearch() async {
     let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty else {
@@ -1062,9 +1126,10 @@ public final class WorkspaceStore: ObservableObject {
         "--recursive",
         "--limit", "50",
         "--context", "1",
+        "--index", "auto",
         "--format", "json"
       ])
-      searchResults = payload.results
+      searchResults = Self.prioritizedSearchResultsForDisplay(payload.results)
       openClawChatSearchResults = chatResults
       selectedSurface = .search
       let elapsed = Date().timeIntervalSince(started)
@@ -1833,6 +1898,13 @@ public final class WorkspaceStore: ObservableObject {
     mode: EntrySourceMode?,
     recordsHistory: Bool
   ) {
+    let nextMode = resolvedEntrySourceMode(for: location, requestedMode: mode)
+    if canReuseActiveDetail(for: location, mode: nextMode) {
+      applyDetailSelectionMetadata(for: location)
+      selectedLocation = location
+      return
+    }
+
     isWorkspaceDetailPaneClosed = false
     isWorkspaceDetailPaneExpanded = false
     if recordsHistory, let selectedLocation, selectedLocation != location {
@@ -1856,6 +1928,43 @@ public final class WorkspaceStore: ObservableObject {
       resetPageSearchMatches()
     }
 
+    applyDetailSelectionMetadata(for: location)
+    selectedLocation = location
+    isEditingEntry = false
+    editableEntryText = ""
+    resetBlockState()
+    selectedEntrySourceMode = nextMode
+    selectedEntrySource = nil
+    selectedRenderedBlocks = []
+    isRenderingEntrySource = false
+    Task { await loadBacklinks(for: location) }
+    scheduleEntrySourceLoad(for: location)
+  }
+
+  private func resolvedEntrySourceMode(
+    for location: WorkspaceLocation,
+    requestedMode: EntrySourceMode?
+  ) -> EntrySourceMode {
+    if let requestedMode {
+      return requestedMode
+    }
+    if case .meeting = location {
+      return .page
+    }
+    return .entry
+  }
+
+  private func canReuseActiveDetail(for location: WorkspaceLocation, mode: EntrySourceMode) -> Bool {
+    guard let selectedLocation,
+          Self.selectionIdentity(for: selectedLocation) == Self.selectionIdentity(for: location),
+          selectedEntrySourceMode == mode
+    else {
+      return false
+    }
+    return selectedEntrySource != nil || isLoadingEntrySource || isRenderingEntrySource
+  }
+
+  private func applyDetailSelectionMetadata(for location: WorkspaceLocation) {
     if case .agenda(let item) = location {
       selectedAgendaItemID = item.id
     }
@@ -1868,22 +1977,6 @@ public final class WorkspaceStore: ObservableObject {
     if case .meeting(let meeting) = location {
       selectedMeetingID = meeting.id
     }
-    selectedLocation = location
-    isEditingEntry = false
-    editableEntryText = ""
-    resetBlockState()
-    if let mode {
-      selectedEntrySourceMode = mode
-    } else if case .meeting = location {
-      selectedEntrySourceMode = .page
-    } else {
-      selectedEntrySourceMode = .entry
-    }
-    selectedEntrySource = nil
-    selectedRenderedBlocks = []
-    isRenderingEntrySource = false
-    Task { await loadBacklinks(for: location) }
-    scheduleEntrySourceLoad(for: location)
   }
 
   public func loadEntrySource(for location: WorkspaceLocation) async {
@@ -3562,6 +3655,44 @@ public final class WorkspaceStore: ObservableObject {
     filterFiles(corpusFileFilter, limit: 500)
   }
 
+  public var corpusSearchResultGroups: [SearchResultGroup] {
+    Self.groupedSearchResultsForDisplay(searchResults)
+  }
+
+  nonisolated static func prioritizedSearchResultsForDisplay(_ results: [SearchResult]) -> [SearchResult] {
+    results.enumerated()
+      .sorted { lhs, rhs in
+        let lhsRank = searchResultDisplayRank(lhs.element)
+        let rhsRank = searchResultDisplayRank(rhs.element)
+        if lhsRank != rhsRank { return lhsRank < rhsRank }
+        return lhs.offset < rhs.offset
+      }
+      .map(\.element)
+  }
+
+  nonisolated static func groupedSearchResultsForDisplay(_ results: [SearchResult]) -> [SearchResultGroup] {
+    var grouped: [String: [SearchResult]] = [:]
+    var fileOrder: [String] = []
+
+    for result in results {
+      if grouped[result.file] == nil {
+        fileOrder.append(result.file)
+        grouped[result.file] = []
+      }
+      grouped[result.file]?.append(result)
+    }
+
+    return fileOrder.compactMap { file in
+      SearchResultGroup(file: file, results: grouped[file] ?? [])
+    }
+  }
+
+  nonisolated private static func searchResultDisplayRank(_ result: SearchResult) -> Int {
+    if result.isActiveTodo { return 0 }
+    if result.isTerminalTodo { return 2 }
+    return 1
+  }
+
   public var selectedQuickOpenFile: CorpusFile? {
     let files = quickOpenFiles
     if let selectedQuickOpenFileID,
@@ -4960,6 +5091,14 @@ public final class WorkspaceStore: ObservableObject {
     return openClawChatThreads.first(where: { $0.id == selectedOpenClawChatThreadID })
   }
 
+  public var visibleOpenClawChatThreads: [OpenClawChatThread] {
+    Self.sortedOpenClawChatThreadsForDisplay(openClawChatThreads.filter { !$0.isArchived })
+  }
+
+  public var archivedOpenClawChatThreads: [OpenClawChatThread] {
+    Self.sortedOpenClawChatThreadsForDisplay(openClawChatThreads.filter(\.isArchived))
+  }
+
   public func createOpenClawChatThread() {
     guard !isSendingOpenClawMessage else { return }
     let thread = OpenClawChatThread(
@@ -4980,6 +5119,38 @@ public final class WorkspaceStore: ObservableObject {
     selectedSurface = .openClaw
     selectOpenClawChatThread(result.threadID)
     statusText = "Opened chat thread"
+  }
+
+  public func toggleOpenClawChatThreadPin(_ id: UUID) {
+    guard let index = openClawChatThreads.firstIndex(where: { $0.id == id }) else { return }
+    let thread = openClawChatThreads[index]
+    openClawChatThreads[index] = thread.replacingOpenClawChatMetadata(isPinned: !thread.isPinned)
+    sortOpenClawChatThreadsForDisplay()
+    persistOpenClawTranscript()
+  }
+
+  public func archiveOpenClawChatThread(_ id: UUID) {
+    guard let index = openClawChatThreads.firstIndex(where: { $0.id == id }) else { return }
+    let thread = openClawChatThreads[index]
+    openClawChatThreads[index] = thread.replacingOpenClawChatMetadata(isArchived: true)
+    sortOpenClawChatThreadsForDisplay()
+    persistOpenClawTranscript()
+
+    if selectedOpenClawChatThreadID == id {
+      if let next = visibleOpenClawChatThreads.first {
+        selectOpenClawChatThread(next.id, persistsSelection: true)
+      } else {
+        createOpenClawChatThread()
+      }
+    }
+  }
+
+  public func restoreOpenClawChatThread(_ id: UUID) {
+    guard let index = openClawChatThreads.firstIndex(where: { $0.id == id }) else { return }
+    let thread = openClawChatThreads[index]
+    openClawChatThreads[index] = thread.replacingOpenClawChatMetadata(isArchived: false)
+    sortOpenClawChatThreadsForDisplay()
+    persistOpenClawTranscript()
   }
 
   private func selectOpenClawChatThread(_ id: UUID, persistsSelection: Bool) {
@@ -5033,33 +5204,150 @@ public final class WorkspaceStore: ObservableObject {
       createdAt: current.createdAt,
       updatedAt: messages.last?.createdAt ?? Date(),
       sessionKey: current.sessionKey,
-      messages: messages
+      messages: messages,
+      isPinned: current.isPinned,
+      isArchived: current.isArchived
     )
     openClawChatThreads[index] = updated
-    openClawChatThreads.sort { lhs, rhs in
-      if lhs.id == selectedOpenClawChatThreadID { return true }
-      if rhs.id == selectedOpenClawChatThreadID { return false }
+    sortOpenClawChatThreadsForDisplay()
+  }
+
+  private func sortOpenClawChatThreadsForDisplay() {
+    openClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(openClawChatThreads)
+  }
+
+  nonisolated private static func sortedOpenClawChatThreadsForDisplay(
+    _ threads: [OpenClawChatThread]
+  ) -> [OpenClawChatThread] {
+    threads.sorted { lhs, rhs in
+      if lhs.isArchived != rhs.isArchived { return !lhs.isArchived }
+      if lhs.isPinned != rhs.isPinned { return lhs.isPinned }
       return lhs.updatedAt > rhs.updatedAt
     }
   }
 
-  nonisolated private static func openClawThreadTitle(
+  nonisolated static func openClawThreadTitle(
     from messages: [OpenClawChatMessage],
     fallback: String = "New Chat"
   ) -> String {
     guard let firstUserMessage = messages.first(where: { $0.role == .user }) else {
       return fallback
     }
-    let clean = firstUserMessage.content
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-      .split(whereSeparator: { $0.isWhitespace })
-      .joined(separator: " ")
-    guard !clean.isEmpty else { return fallback }
-    if clean.count <= 48 {
-      return clean
-    }
-    return String(clean.prefix(45)).trimmingCharacters(in: .whitespacesAndNewlines) + "..."
+    let title = heuristicOpenClawThreadTitle(from: firstUserMessage.content)
+    return title.isEmpty ? fallback : title
   }
+
+  nonisolated private static func heuristicOpenClawThreadTitle(from content: String) -> String {
+    let normalized = normalizedOpenClawTitleSource(content)
+    guard !normalized.isEmpty else { return "" }
+
+    let candidates = normalized
+      .split(whereSeparator: { ".!?\n".contains($0) })
+      .map { cleanedOpenClawTitleCandidate(String($0)) }
+      .filter { !$0.isEmpty && !isOpenClawTitleFiller($0) }
+
+    guard let candidate = candidates.first ?? normalized.split(separator: "\n").first.map(String.init) else {
+      return ""
+    }
+
+    let words = candidate
+      .split(whereSeparator: { $0.isWhitespace })
+      .map { titleWord(from: String($0)) }
+      .filter { !$0.isEmpty && !openClawTitleStopWords.contains($0.lowercased()) }
+
+    let selectedWords = Array(words.prefix(6))
+    let rawTitle = (selectedWords.isEmpty ? candidate : selectedWords.joined(separator: " "))
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let limitedTitle = rawTitle.count <= 56
+      ? rawTitle
+      : String(rawTitle.prefix(53)).trimmingCharacters(in: .whitespacesAndNewlines) + "..."
+    return sentenceCaseOpenClawTitle(limitedTitle)
+  }
+
+  nonisolated private static func normalizedOpenClawTitleSource(_ content: String) -> String {
+    content
+      .replacingOccurrences(of: #"https?://\S+"#, with: " ", options: .regularExpression)
+      .replacingOccurrences(of: #"\[[^\]]+\]\([^)]+\)"#, with: " ", options: .regularExpression)
+      .replacingOccurrences(of: #"<image[^>]*>"#, with: " ", options: .regularExpression)
+      .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  nonisolated private static func cleanedOpenClawTitleCandidate(_ candidate: String) -> String {
+    var clean = candidate
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .trimmingCharacters(in: CharacterSet(charactersIn: "#*-_`\"' "))
+
+    let leadingPatterns = [
+      #"(?i)^sure\s+let'?s\s+do\s+that\s+to\s+start\b"#,
+      #"(?i)^while\s+you'?re\s+doing\s+that\b"#,
+      #"(?i)^also\b"#,
+      #"(?i)^can\s+you\b"#,
+      #"(?i)^could\s+you\b"#,
+      #"(?i)^would\s+you\b"#,
+      #"(?i)^please\b"#,
+      #"(?i)^i\s+think\b"#,
+      #"(?i)^it\s+would\s+be\s+good\s+to\b"#,
+      #"(?i)^it\s+would\s+be\s+great\s+to\b"#,
+      #"(?i)^let'?s\b"#,
+      #"(?i)^we\s+should\b"#,
+      #"(?i)^our\b"#
+    ]
+
+    var changed = true
+    while changed {
+      changed = false
+      for pattern in leadingPatterns {
+        let next = clean
+          .replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+        if next != clean {
+          clean = next
+          changed = true
+        }
+      }
+    }
+    return clean
+  }
+
+  nonisolated private static func isOpenClawTitleFiller(_ candidate: String) -> Bool {
+    let normalized = candidate
+      .lowercased()
+      .trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+    return openClawTitleFillerPhrases.contains(normalized)
+  }
+
+  nonisolated private static func titleWord(from raw: String) -> String {
+    raw.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+  }
+
+  nonisolated private static func sentenceCaseOpenClawTitle(_ title: String) -> String {
+    guard let first = title.first else { return title }
+    return String(first).uppercased() + String(title.dropFirst())
+  }
+
+  nonisolated private static let openClawTitleFillerPhrases = Set([
+    "sure",
+    "ok",
+    "okay",
+    "yes",
+    "yeah",
+    "thanks",
+    "thank you",
+    "sounds good",
+    "that seems good",
+    "lets do that",
+    "let's do that",
+    "sure lets do that to start",
+    "sure let's do that to start"
+  ])
+
+  nonisolated private static let openClawTitleStopWords = Set([
+    "a", "able", "an", "and", "are", "as", "at", "be", "can", "could", "do", "does", "doing",
+    "for", "from", "how", "i", "in", "is", "it", "just", "me", "my", "of", "on",
+    "or", "our", "please", "should", "start", "that", "the", "this", "to", "we",
+    "well", "what", "while", "with", "would", "you", "you're", "youre", "your"
+  ])
 
   nonisolated static func searchOpenClawChatThreads(
     _ threads: [OpenClawChatThread],
@@ -5169,6 +5457,22 @@ public final class WorkspaceStore: ObservableObject {
     }
     return Self.personalAssigneeNames(from: personalAssigneeNamesText)
       .contains(Self.normalizedAssigneeIdentity(assignee))
+  }
+
+  public func isAgentAssignee(_ rawAssignee: String?) -> Bool {
+    guard let assignee = rawAssignee?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !assignee.isEmpty
+    else {
+      return false
+    }
+    let normalized = Self.normalizedAssigneeIdentity(assignee)
+    let agentNames = [
+      agentHandoffAssignee,
+      Self.defaultAgentHandoffAssignee
+    ]
+      .map(Self.normalizedAssigneeIdentity)
+      .filter { !$0.isEmpty }
+    return Set(agentNames).contains(normalized)
   }
 
   public func saveOpenClawConfiguration(
@@ -5875,17 +6179,70 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func refreshAfterHeadlineMutation(_ target: HeadlineMutationTarget) async {
+  private func refreshAfterHeadlineMutation(
+    _ target: HeadlineMutationTarget,
+    selectMutatedBlock: Bool = true
+  ) async {
     invalidateCanonicalDocumentCache(for: target.file)
     if selectedEntrySource?.file == target.file, let selectedLocation {
-      pendingBlockSelection = PendingBlockSelection(
-        file: target.file,
-        line: target.line,
-        mode: .containingOrNearest
-      )
-      await loadEntrySource(for: selectedLocation)
+      if selectMutatedBlock {
+        pendingBlockSelection = PendingBlockSelection(
+          file: target.file,
+          line: target.line,
+          mode: .containingOrNearest
+        )
+      }
+      scheduleEntrySourceLoad(for: selectedLocation)
     }
-    await refreshAgenda(preserveSelection: true, updatesStatus: false)
+    scheduleAgendaRefresh(preserveSelection: true)
+  }
+
+  private func optimisticallyUpdateAgendaItem(id agendaItemID: AgendaItem.ID?, todo: String) {
+    guard let agendaItemID,
+          let agenda
+    else {
+      return
+    }
+
+    var updatedSelectedItem: AgendaItem?
+    let transformItems: ([AgendaItem]) -> [AgendaItem] = { items in
+      items.map { item in
+        guard item.id == agendaItemID else { return item }
+        let updated = item.replacing(todo: todo)
+        updatedSelectedItem = updated
+        return updated
+      }
+    }
+    let transformGroups: ([AgendaGroup]?) -> [AgendaGroup]? = { groups in
+      groups?.map { group in
+        AgendaGroup(label: group.label, items: transformItems(group.items))
+      }
+    }
+    let transformDays: ([AgendaDay]) -> [AgendaDay] = { days in
+      days.map { day in
+        AgendaDay(
+          date: day.date,
+          weekday: day.weekday,
+          items: transformItems(day.items),
+          groups: transformGroups(day.groups)
+        )
+      }
+    }
+
+    self.agenda = AgendaPayload(
+      schema: agenda.schema,
+      range: agenda.range,
+      overdue: transformDays(agenda.overdue),
+      days: transformDays(agenda.days),
+      skippedFiles: agenda.skippedFiles,
+      workload: agenda.workload
+    )
+
+    if let updatedSelectedItem,
+       case .agenda(let currentItem) = selectedLocation,
+       currentItem.id == agendaItemID {
+      selectedLocation = .agenda(updatedSelectedItem)
+    }
   }
 
   public func presentSimilarTodoAssignment() {
@@ -6022,14 +6379,16 @@ public final class WorkspaceStore: ObservableObject {
     var shouldAdvanceSelection = status.map { Self.isTerminalTodoStatus($0.rawValue) } ?? false
 
     do {
+      let newStatus: String
       if let status {
-        try await setTodoStatus(status, for: target)
+        newStatus = try await setTodoStatus(status, for: target)
         statusText = "\(status.label) -> \(target.title)"
       } else {
-        let newStatus = try await toggleTodoStatus(for: target)
+        newStatus = try await toggleTodoStatus(for: target)
         statusText = "\(newStatus) -> \(target.title)"
         shouldAdvanceSelection = Self.isTerminalTodoStatus(newStatus)
       }
+      optimisticallyUpdateAgendaItem(id: target.agendaItemID, todo: newStatus)
       await refreshAfterHeadlineMutation(target)
       preserveAgendaSelectionAfterTodoMutation(
         target: target,
@@ -6039,6 +6398,99 @@ public final class WorkspaceStore: ObservableObject {
     } catch {
       errorText = error.localizedDescription
       statusText = "TODO update failed"
+    }
+  }
+
+  private func applyAgendaTodoShortcut(_ status: TodoEditStatus) {
+    let bulkItems = selectedAgendaItemsForBulkMutation()
+    if !bulkItems.isEmpty {
+      Task { await applyTodoShortcut(status, to: bulkItems) }
+      return
+    }
+
+    guard selectedSurface == .agenda,
+          let item = selectedAgendaItemForMutation()
+    else {
+      Task { await applyTodoShortcut(status) }
+      return
+    }
+
+    let target = HeadlineMutationTarget(item: item)
+    let visibleItemsBeforeMutation = visibleAgendaItems
+    let originalVisibleIndex = visibleItemsBeforeMutation.firstIndex(where: { $0.id == item.id })
+    let shouldAdvanceSelection = Self.isTerminalTodoStatus(status.rawValue)
+    let nextSelection = shouldAdvanceSelection
+      ? Self.nextActionableAgendaItem(
+        afterMutating: item.id,
+        originalVisibleIndex: originalVisibleIndex,
+        in: visibleItemsBeforeMutation
+      )
+      : nil
+
+    statusText = "\(status.label) -> \(target.title)"
+    optimisticallyUpdateAgendaItem(id: target.agendaItemID, todo: status.label)
+    if let nextSelection {
+      preserveAgendaItemSelectionWithoutActivatingEntry(nextSelection)
+    } else {
+      preserveAgendaSelectionAfterTodoMutation(
+        target: target,
+        originalVisibleIndex: originalVisibleIndex,
+        shouldAdvanceSelection: shouldAdvanceSelection
+      )
+    }
+
+    enqueueAgendaTodoShortcutMutation(status: status, target: target)
+  }
+
+  private func enqueueAgendaTodoShortcutMutation(status: TodoEditStatus, target: HeadlineMutationTarget) {
+    pendingAgendaTodoShortcutMutations.append(AgendaTodoShortcutMutation(status: status, target: target))
+    guard agendaTodoShortcutMutationTask == nil else { return }
+
+    agendaTodoShortcutMutationTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(nanoseconds: 80_000_000)
+      guard !Task.isCancelled else { return }
+      await self?.drainAgendaTodoShortcutMutations()
+    }
+  }
+
+  private func drainAgendaTodoShortcutMutations() async {
+    while !Task.isCancelled {
+      guard !pendingAgendaTodoShortcutMutations.isEmpty else {
+        agendaTodoShortcutMutationTask = nil
+        return
+      }
+
+      let batch = Self.orderedAgendaTodoShortcutMutations(pendingAgendaTodoShortcutMutations)
+      pendingAgendaTodoShortcutMutations = []
+
+      for mutation in batch {
+        guard !Task.isCancelled else { return }
+        do {
+          let newStatus = try await setTodoStatus(mutation.status, for: mutation.target)
+          if newStatus != mutation.status.label {
+            optimisticallyUpdateAgendaItem(id: mutation.target.agendaItemID, todo: newStatus)
+          }
+          await refreshAfterHeadlineMutation(mutation.target, selectMutatedBlock: false)
+        } catch {
+          errorText = error.localizedDescription
+          statusText = "TODO update failed"
+          await refreshAgenda(preserveSelection: true, updatesStatus: false)
+        }
+      }
+    }
+  }
+
+  nonisolated private static func orderedAgendaTodoShortcutMutations(
+    _ mutations: [AgendaTodoShortcutMutation]
+  ) -> [AgendaTodoShortcutMutation] {
+    mutations.sorted { lhs, rhs in
+      if lhs.target.file == rhs.target.file {
+        if lhs.target.line == rhs.target.line {
+          return (lhs.target.agendaItemID ?? "") < (rhs.target.agendaItemID ?? "")
+        }
+        return lhs.target.line > rhs.target.line
+      }
+      return lhs.target.file < rhs.target.file
     }
   }
 
@@ -6053,14 +6505,16 @@ public final class WorkspaceStore: ObservableObject {
     var shouldAdvanceSelection = status.map { Self.isTerminalTodoStatus($0.rawValue) } ?? false
 
     do {
+      let newStatus: String
       if let status {
-        try await setTodoStatus(status, for: target)
+        newStatus = try await setTodoStatus(status, for: target)
         statusText = "\(status.label) -> \(target.title)"
       } else {
-        let newStatus = try await toggleTodoStatus(for: target)
+        newStatus = try await toggleTodoStatus(for: target)
         statusText = "\(newStatus) -> \(target.title)"
         shouldAdvanceSelection = Self.isTerminalTodoStatus(newStatus)
       }
+      optimisticallyUpdateAgendaItem(id: target.agendaItemID, todo: newStatus)
       await refreshAfterHeadlineMutation(target)
       preserveAgendaSelectionAfterTodoMutation(
         target: target,
@@ -6100,8 +6554,9 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func setTodoStatus(_ status: TodoEditStatus, for target: HeadlineMutationTarget) async throws {
-    let _: TodoMutationPayload = try await cli.runJSON([
+  @discardableResult
+  private func setTodoStatus(_ status: TodoEditStatus, for target: HeadlineMutationTarget) async throws -> String {
+    let payload: TodoMutationPayload = try await cli.runJSON([
       "todo", "set",
       "--file", target.file,
       "--line", "\(target.line)",
@@ -6109,6 +6564,7 @@ public final class WorkspaceStore: ObservableObject {
       "--format", "json",
       "--apply"
     ])
+    return payload.newStatus
   }
 
   private func toggleTodoStatus(for target: HeadlineMutationTarget) async throws -> String {
@@ -6569,6 +7025,9 @@ public final class WorkspaceStore: ObservableObject {
     }
     guard scope == .all else {
       return false
+    }
+    if selectedSurface == .agenda {
+      return handleAgendaKeyDown(event)
     }
     if handleDocumentKeyDown(event) {
       return true
@@ -7071,13 +7530,13 @@ public final class WorkspaceStore: ObservableObject {
     case "c":
       promptAndCaptureTodoShortcut()
     case "t":
-      Task { await applyTodoShortcut(.todo) }
+      applyAgendaTodoShortcut(.todo)
     case "i":
-      Task { await applyTodoShortcut(.inProgress) }
+      applyAgendaTodoShortcut(.inProgress)
     case "d":
-      Task { await applyTodoShortcut(.done) }
+      applyAgendaTodoShortcut(.done)
     case "x":
-      Task { await applyTodoShortcut(.canceled) }
+      applyAgendaTodoShortcut(.canceled)
     case "A":
       Task { await applyAgentHandoffShortcut() }
     case "s":
@@ -7814,8 +8273,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func applyOpenClawTranscript(_ transcript: OpenClawTranscriptState, shouldPersist: Bool) {
-    let threads = transcript.threads
-      .sorted { lhs, rhs in lhs.updatedAt > rhs.updatedAt }
+    let threads = Self.sortedOpenClawChatThreadsForDisplay(transcript.threads)
     openClawChatThreads = threads
     let selectedID = transcript.selectedThreadID
       .flatMap { id in threads.contains(where: { $0.id == id }) ? id : nil }
@@ -8627,24 +9085,32 @@ public final class WorkspaceStore: ObservableObject {
 
   @discardableResult
   private func selectNextActionableAgendaItem(afterMutating mutatedID: String, originalVisibleIndex: Int?) -> Bool {
-    let items = visibleAgendaItems
-    guard !items.isEmpty else { return false }
+    guard let item = Self.nextActionableAgendaItem(
+      afterMutating: mutatedID,
+      originalVisibleIndex: originalVisibleIndex,
+      in: visibleAgendaItems
+    ) else {
+      return false
+    }
+    selectAgendaItemWithoutActivatingEntry(item)
+    return true
+  }
 
-    let actionableItems = items.enumerated().filter { offset, item in
+  nonisolated private static func nextActionableAgendaItem(
+    afterMutating mutatedID: String,
+    originalVisibleIndex: Int?,
+    in items: [AgendaItem]
+  ) -> AgendaItem? {
+    guard !items.isEmpty else { return nil }
+    let actionableItems = items.enumerated().filter { _, item in
       item.id != mutatedID && item.isActionable
     }
-    guard !actionableItems.isEmpty else { return false }
+    guard !actionableItems.isEmpty else { return nil }
 
     let anchor = originalVisibleIndex ?? 0
-    let selection = actionableItems.first { offset, _ in
+    return (actionableItems.first { offset, _ in
       offset >= anchor
-    } ?? actionableItems.last
-
-    if let item = selection?.element {
-      selectAgendaItemWithoutActivatingEntry(item)
-      return true
-    }
-    return false
+    } ?? actionableItems.last)?.element
   }
 
   nonisolated private static func isTerminalTodoStatus(_ status: String) -> Bool {

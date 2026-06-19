@@ -32,6 +32,31 @@ private actor OpenClawMessageSendRecorder {
 }
 
 final class Org2ModelsTests: XCTestCase {
+  private func searchResult(
+    file: String,
+    line: Int,
+    heading: String,
+    todo: String?,
+    snippet: String = "Matched text"
+  ) -> SearchResult {
+    SearchResult(
+      file: file,
+      line: line,
+      lineEnd: nil,
+      heading: heading,
+      headingLine: line,
+      headingLevel: 1,
+      headingAncestry: nil,
+      idValue: nil,
+      todo: todo,
+      tags: [],
+      snippet: snippet,
+      sourceRange: nil,
+      matchedLines: nil,
+      date: nil
+    )
+  }
+
   func testDecodesAgendaPayload() throws {
     let json = """
     {
@@ -508,6 +533,75 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(restored.openClawMessages.map(\.content), ["Second thread question"])
   }
 
+  func testOpenClawThreadTitleUsesMeaningfulFirstMessageWords() {
+    let title = WorkspaceStore.openClawThreadTitle(from: [
+      OpenClawChatMessage(
+        role: .user,
+        content: "can you fix the alignment of the cursor with the tag above it"
+      )
+    ])
+
+    XCTAssertEqual(title, "Fix alignment cursor tag above")
+  }
+
+  func testOpenClawThreadTitleSkipsFillerOpenings() {
+    let title = WorkspaceStore.openClawThreadTitle(from: [
+      OpenClawChatMessage(
+        role: .user,
+        content: "sure let's do that to start. also while you're doing that. our thread nav is still a bit clunky."
+      )
+    ])
+
+    XCTAssertEqual(title, "Thread nav still bit clunky")
+  }
+
+  @MainActor
+  func testOpenClawChatThreadsPinAndArchivePersistLocally() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-thread-metadata-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let suiteName = "org2-workspace-chat-thread-metadata-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+    store.openClawMessages = [
+      OpenClawChatMessage(role: .user, content: "First pinned thread")
+    ]
+    let firstThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+
+    store.createOpenClawChatThread()
+    store.openClawMessages = [
+      OpenClawChatMessage(role: .user, content: "Second regular thread")
+    ]
+    let secondThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+
+    store.toggleOpenClawChatThreadPin(firstThreadID)
+    XCTAssertEqual(Array(store.visibleOpenClawChatThreads.map(\.id).prefix(2)), [firstThreadID, secondThreadID])
+
+    store.archiveOpenClawChatThread(firstThreadID)
+    XCTAssertFalse(store.visibleOpenClawChatThreads.contains(where: { $0.id == firstThreadID }))
+    XCTAssertEqual(store.archivedOpenClawChatThreads.first?.id, firstThreadID)
+
+    store.restoreOpenClawChatThread(firstThreadID)
+    XCTAssertEqual(store.visibleOpenClawChatThreads.first?.id, firstThreadID)
+    XCTAssertEqual(store.visibleOpenClawChatThreads.first?.isPinned, true)
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+    XCTAssertEqual(restored.visibleOpenClawChatThreads.first?.id, firstThreadID)
+    XCTAssertEqual(restored.visibleOpenClawChatThreads.first?.isPinned, true)
+    XCTAssertTrue(restored.archivedOpenClawChatThreads.isEmpty)
+  }
+
   @MainActor
   func testOpenClawChatThreadsMigrateLegacySingleTranscriptPayload() throws {
     let root = FileManager.default.temporaryDirectory
@@ -915,6 +1009,33 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.isPersonalAssignee(" avi@example.com "))
     XCTAssertTrue(store.isPersonalAssignee("avi   press"))
     XCTAssertFalse(store.isPersonalAssignee("OpenClaw"))
+  }
+
+  @MainActor
+  func testAgentAssigneeClassificationUsesConfiguredHandoffAssigneeOnly() throws {
+    let suiteName = "org2-workspace-agent-assignee-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+
+    XCTAssertFalse(store.isAgentAssignee(nil))
+    XCTAssertFalse(store.isAgentAssignee(""))
+    XCTAssertTrue(store.isAgentAssignee("OpenClaw"))
+    XCTAssertFalse(store.isAgentAssignee("Avi"))
+    XCTAssertTrue(store.saveOpenClawConfiguration(
+      endpoint: store.openClawEndpointText,
+      agent: store.openClawAgentID,
+      handoffAssignee: "OpenClaw Worker",
+      personalAssigneeNames: "Avi",
+      remoteCorpusPath: store.openClawRemoteCorpusPath,
+      token: "",
+      clearToken: false
+    ))
+
+    XCTAssertTrue(store.isAgentAssignee("openclaw worker"))
+    XCTAssertTrue(store.isAgentAssignee("OpenClaw"))
+    XCTAssertFalse(store.isAgentAssignee("Avi"))
   }
 
   @MainActor
@@ -3449,6 +3570,31 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedSurface, .search)
   }
 
+  func testWorkspaceSearchPrioritizesActiveTodosForDisplay() {
+    let done = searchResult(file: "/tmp/archive.org2", line: 2, heading: "Done item", todo: "DONE")
+    let plain = searchResult(file: "/tmp/note.org2", line: 3, heading: "Plain note", todo: nil)
+    let active = searchResult(file: "/tmp/action.org2", line: 4, heading: "Active item", todo: "TODO")
+
+    let displayResults = WorkspaceStore.prioritizedSearchResultsForDisplay([done, plain, active])
+
+    XCTAssertEqual(displayResults.map(\.heading), ["Active item", "Plain note", "Done item"])
+  }
+
+  func testWorkspaceSearchGroupsRepeatedFileResultsForDisplay() {
+    let done = searchResult(file: "/tmp/accounts.org2", line: 12, heading: "Done account note", todo: "DONE")
+    let active = searchResult(file: "/tmp/accounts.org2", line: 4, heading: "Active account todo", todo: "WAIT")
+    let other = searchResult(file: "/tmp/meeting.org2", line: 2, heading: "Meeting note", todo: nil)
+    let displayResults = WorkspaceStore.prioritizedSearchResultsForDisplay([done, other, active])
+
+    let groups = WorkspaceStore.groupedSearchResultsForDisplay(displayResults)
+
+    XCTAssertEqual(groups.count, 2)
+    XCTAssertEqual(groups.first?.file, "/tmp/accounts.org2")
+    XCTAssertEqual(groups.first?.representative.heading, "Active account todo")
+    XCTAssertEqual(groups.first?.additionalCount, 1)
+    XCTAssertEqual(groups.last?.file, "/tmp/meeting.org2")
+  }
+
   @MainActor
   func testWorkspaceSearchIncludesOpenClawChatThreads() async throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
@@ -3939,6 +4085,67 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testRepeatedAgendaDoneKeysAdvanceRowsInsteadOfEditingSelectedHeading() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-agenda-repeated-done-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("agenda-repeated-done.org2")
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd EEE"
+    let today = formatter.string(from: Date())
+
+    try """
+    * TODO First task
+    SCHEDULED: <\(today)>
+
+    * TODO Second task
+    SCHEDULED: <\(today)>
+
+    * TODO Third task
+    SCHEDULED: <\(today)>
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.refreshAgenda()
+
+    let first = try XCTUnwrap(store.visibleAgendaItems.first { $0.headline == "First task" })
+    store.selectAgendaItem(first)
+    try await waitForCondition {
+      store.selectedEntrySource?.file == note.path
+        && !store.isLoadingEntrySource
+        && !store.isRenderingEntrySource
+        && !store.selectedRenderedBlocks.isEmpty
+    }
+
+    let heading = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .heading(let heading) = $0.rendered {
+        return heading.title == "First task"
+      }
+      return false
+    })
+    store.selectBlock(heading)
+
+    XCTAssertTrue(store.handleWorkspaceKeyDown(keyDown(characters: "d", keyCode: 2)))
+    XCTAssertTrue(store.handleWorkspaceKeyDown(keyDown(characters: "d", keyCode: 2)))
+    XCTAssertTrue(store.handleWorkspaceKeyDown(keyDown(characters: "d", keyCode: 2)))
+    XCTAssertNil(store.editingBlockID)
+
+    try await waitForCondition(timeout: 10) {
+      ((try? String(contentsOf: note, encoding: .utf8)) ?? "")
+        .components(separatedBy: "* DONE ")
+        .count == 4
+    }
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* DONE First task"))
+    XCTAssertTrue(updated.contains("* DONE Second task"))
+    XCTAssertTrue(updated.contains("* DONE Third task"))
+    XCTAssertFalse(updated.contains("ddd"))
+  }
+
+  @MainActor
   func testCancelingAgendaItemSelectsNextActionableAgendaRowWithoutActivatingEntry() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-agenda-canceled-selection-\(UUID().uuidString)", isDirectory: true)
@@ -4200,6 +4407,44 @@ final class Org2ModelsTests: XCTestCase {
     try await waitForCondition {
       store.selectedEntrySource?.file == note.path && !store.isLoadingEntrySource && !store.isLoadingBacklinks
     }
+  }
+
+  @MainActor
+  func testReselectingSameAgendaItemReusesRenderedDetail() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-agenda-reselect-detail-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("agenda-reselect.org2")
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd EEE"
+    let today = formatter.string(from: Date())
+
+    try """
+    * TODO First task
+    SCHEDULED: <\(today)>
+    Body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.refreshAgenda()
+
+    let item = try XCTUnwrap(store.visibleAgendaItems.first)
+    store.selectAgendaItem(item)
+    try await waitForCondition {
+      store.selectedEntrySource?.file == note.path
+        && !store.isLoadingEntrySource
+        && !store.isRenderingEntrySource
+        && !store.selectedRenderedBlocks.isEmpty
+    }
+
+    let renderedBlockIDs = store.selectedRenderedBlocks.map(\.id)
+    store.selectAgendaItem(item)
+
+    XCTAssertEqual(store.selectedRenderedBlocks.map(\.id), renderedBlockIDs)
+    XCTAssertFalse(store.isLoadingEntrySource)
+    XCTAssertFalse(store.isRenderingEntrySource)
   }
 
   @MainActor

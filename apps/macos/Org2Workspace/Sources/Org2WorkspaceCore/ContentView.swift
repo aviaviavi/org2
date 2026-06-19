@@ -220,17 +220,8 @@ private struct SidebarView: View {
       Section("Workspace") {
         ForEach(WorkspaceSurface.sidebarCases) { surface in
           if surface == .openClaw {
-            VStack(alignment: .leading, spacing: 6) {
-              SidebarSurfaceRow(surface: surface)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                  store.makeSurfacePrimary(surface)
-                }
-                .help(surface.commandShortcutTitle.isEmpty ? surface.title : "\(surface.title) (\(surface.commandShortcutTitle))")
-
-              OpenClawSidebarThreadList()
-            }
-            .tag(surface)
+            OpenClawSidebarSurfaceGroup()
+              .tag(surface)
           } else {
             SidebarSurfaceRow(surface: surface)
               .tag(surface)
@@ -263,6 +254,21 @@ private struct SidebarView: View {
             }
             .font(.caption2.weight(.medium))
             .foregroundStyle(.tertiary)
+            if store.isBuildingSearchIndex || !store.searchIndexStatusText.isEmpty {
+              HStack(spacing: 5) {
+                if store.isBuildingSearchIndex {
+                  ProgressView()
+                    .controlSize(.mini)
+                } else {
+                  Image(systemName: "magnifyingglass")
+                }
+                Text(store.searchIndexStatusText)
+                  .lineLimit(1)
+                  .truncationMode(.tail)
+              }
+              .font(.caption2.weight(.medium))
+              .foregroundStyle(.tertiary)
+            }
           }
         } else {
           Button {
@@ -310,60 +316,131 @@ private struct SidebarSurfaceRow: View {
   }
 }
 
-private struct OpenClawSidebarThreadList: View {
+private struct OpenClawSidebarSurfaceGroup: View {
   @EnvironmentObject private var store: WorkspaceStore
-  @State private var isExpanded = true
+  @State private var isThreadListExpanded = true
 
-  private let maxHeight: CGFloat = 220
+  private let surface = WorkspaceSurface.openClaw
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 5) {
+    VStack(alignment: .leading, spacing: 4) {
       HStack(spacing: 6) {
         Button {
-          withAnimation(.easeInOut(duration: 0.16)) {
-            isExpanded.toggle()
-          }
+          store.makeSurfacePrimary(surface)
         } label: {
-          HStack(spacing: 4) {
-            Image(systemName: "chevron.right")
-              .font(.caption2.weight(.semibold))
-              .rotationEffect(.degrees(isExpanded ? 90 : 0))
-              .frame(width: 10, height: 10)
-            Text("Threads")
-              .font(.caption.weight(.semibold))
-          }
-          .foregroundStyle(.secondary)
-          .contentShape(Rectangle())
+          Label(surface.title, systemImage: surface.systemImage)
+            .font(.callout.weight(.medium))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(isExpanded ? "Hide chat threads" : "Show chat threads")
+        .help(surface.commandShortcutTitle.isEmpty ? surface.title : "\(surface.title) (\(surface.commandShortcutTitle))")
 
-        Spacer(minLength: 0)
         Button {
           store.createOpenClawChatThread()
           store.makeSurfacePrimary(.openClaw)
+          isThreadListExpanded = true
         } label: {
-          Label("New Thread", systemImage: "plus")
+          Image(systemName: "plus")
+            .font(.caption.weight(.semibold))
+            .frame(width: 18, height: 18)
         }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
         .help("New chat thread")
         .disabled(store.isSendingOpenClawMessage)
-      }
-      .padding(.leading, 24)
-      .padding(.trailing, 2)
 
-      if isExpanded {
-        if store.openClawChatThreads.isEmpty {
-          Text("No chat threads")
-            .font(.caption)
-            .foregroundStyle(.tertiary)
-            .padding(.leading, 24)
-            .padding(.vertical, 3)
-        } else {
-          ScrollView {
-            LazyVStack(alignment: .leading, spacing: 3) {
-              ForEach(store.openClawChatThreads) { thread in
+        Button {
+          withAnimation(.easeInOut(duration: 0.16)) {
+            isThreadListExpanded.toggle()
+          }
+        } label: {
+          Image(systemName: "chevron.down")
+            .font(.caption2.weight(.semibold))
+            .rotationEffect(.degrees(isThreadListExpanded ? 0 : -90))
+            .frame(width: 16, height: 18)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help(isThreadListExpanded ? "Hide chat threads" : "Show chat threads")
+
+        if !surface.commandShortcutTitle.isEmpty {
+          KeyboardShortcutBadge(text: surface.commandShortcutTitle)
+        }
+      }
+
+      if isThreadListExpanded {
+        OpenClawSidebarThreadList()
+      }
+    }
+  }
+}
+
+private struct OpenClawSidebarThreadList: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  @State private var showsAllThreads = false
+  @State private var showsArchivedThreads = false
+
+  private let maxHeight: CGFloat = 220
+  private let initialLimit = 5
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 2) {
+      if store.visibleOpenClawChatThreads.isEmpty && store.archivedOpenClawChatThreads.isEmpty {
+        Text("No chat threads")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+          .padding(.leading, 42)
+          .padding(.vertical, 3)
+      } else {
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: 2) {
+            ForEach(visibleThreads) { thread in
+              OpenClawSidebarThreadRow(
+                thread: thread,
+                isSelected: store.selectedOpenClawChatThreadID == thread.id && store.selectedSurface == .openClaw
+              ) {
+                store.makeSurfacePrimary(.openClaw)
+                store.selectOpenClawChatThread(thread.id)
+              }
+            }
+
+            if store.visibleOpenClawChatThreads.count > initialLimit {
+              Button {
+                withAnimation(.easeInOut(duration: 0.16)) {
+                  showsAllThreads.toggle()
+                }
+              } label: {
+                Text(showsAllThreads ? "Show less" : "Show more")
+                  .font(.callout)
+                  .foregroundStyle(.secondary)
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .padding(.leading, 42)
+                  .padding(.vertical, 6)
+              }
+              .buttonStyle(.plain)
+              .help(showsAllThreads ? "Collapse chat threads" : "Show more chat threads")
+            }
+
+            if !store.archivedOpenClawChatThreads.isEmpty {
+              Button {
+                withAnimation(.easeInOut(duration: 0.16)) {
+                  showsArchivedThreads.toggle()
+                }
+              } label: {
+                Text(showsArchivedThreads ? "Hide archived" : "Show archived")
+                  .font(.callout)
+                  .foregroundStyle(.secondary)
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .padding(.leading, 42)
+                  .padding(.vertical, 6)
+              }
+              .buttonStyle(.plain)
+              .help(showsArchivedThreads ? "Hide archived chat threads" : "Show archived chat threads")
+            }
+
+            if showsArchivedThreads {
+              ForEach(store.archivedOpenClawChatThreads) { thread in
                 OpenClawSidebarThreadRow(
                   thread: thread,
                   isSelected: store.selectedOpenClawChatThreadID == thread.id && store.selectedSurface == .openClaw
@@ -373,56 +450,99 @@ private struct OpenClawSidebarThreadList: View {
                 }
               }
             }
-            .padding(.vertical, 2)
           }
-          .frame(maxHeight: maxHeight)
-          .scrollIndicators(.visible)
+          .padding(.vertical, 1)
         }
+        .frame(maxHeight: showsAllThreads || showsArchivedThreads ? maxHeight : nil)
+        .scrollIndicators(showsAllThreads || showsArchivedThreads ? .visible : .hidden)
       }
     }
     .padding(.top, 2)
   }
+
+  private var visibleThreads: [OpenClawChatThread] {
+    if showsAllThreads {
+      return store.visibleOpenClawChatThreads
+    }
+    return Array(store.visibleOpenClawChatThreads.prefix(initialLimit))
+  }
 }
 
 private struct OpenClawSidebarThreadRow: View {
+  @EnvironmentObject private var store: WorkspaceStore
   let thread: OpenClawChatThread
   let isSelected: Bool
   let select: () -> Void
 
   var body: some View {
     Button(action: select) {
-      VStack(alignment: .leading, spacing: 2) {
+      HStack(spacing: 8) {
         Text(thread.title)
-          .font(.caption.weight(.medium))
+          .font(.callout.weight(isSelected ? .medium : .regular))
           .foregroundStyle(.primary)
-          .lineLimit(2)
+          .lineLimit(1)
           .truncationMode(.tail)
-        HStack(spacing: 5) {
-          Text("\(thread.messageCount)")
-          Text(Self.relativeDate(thread.updatedAt))
+        Spacer(minLength: 8)
+        if thread.isPinned {
+          Image(systemName: "pin.fill")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
         }
-        .font(.caption2)
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
+        if thread.isArchived {
+          Image(systemName: "archivebox")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+        }
+        Text(Self.relativeDate(thread.updatedAt))
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .fixedSize(horizontal: true, vertical: false)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.leading, 24)
-      .padding(.trailing, 7)
-      .padding(.vertical, 5)
+      .padding(.leading, 42)
+      .padding(.trailing, 8)
+      .padding(.vertical, 7)
       .background(
-        isSelected ? Color.accentColor.opacity(0.14) : Color.clear,
-        in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+        isSelected ? Color.secondary.opacity(0.14) : Color.clear,
+        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
       )
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .disabled(false)
+    .contextMenu {
+      Button {
+        store.toggleOpenClawChatThreadPin(thread.id)
+      } label: {
+        Label(thread.isPinned ? "Unpin Thread" : "Pin Thread", systemImage: thread.isPinned ? "pin.slash" : "pin")
+      }
+
+      if thread.isArchived {
+        Button {
+          store.restoreOpenClawChatThread(thread.id)
+        } label: {
+          Label("Unarchive Thread", systemImage: "tray.and.arrow.up")
+        }
+      } else {
+        Button {
+          store.archiveOpenClawChatThread(thread.id)
+        } label: {
+          Label("Archive Thread", systemImage: "archivebox")
+        }
+      }
+    }
   }
 
   private static func relativeDate(_ date: Date) -> String {
-    let formatter = RelativeDateTimeFormatter()
-    formatter.unitsStyle = .short
-    return formatter.localizedString(for: date, relativeTo: Date())
+    let elapsed = max(0, Date().timeIntervalSince(date))
+    if elapsed < 60 { return "now" }
+    if elapsed < 3600 { return "\(Int(elapsed / 60))m" }
+    if elapsed < 86_400 { return "\(Int(elapsed / 3600))h" }
+    if elapsed < 604_800 { return "\(Int(elapsed / 86_400))d" }
+    let formatter = DateFormatter()
+    formatter.setLocalizedDateFormatFromTemplate("MMM d")
+    return formatter.string(from: date)
   }
 }
 
@@ -1200,6 +1320,7 @@ private struct AgendaView: View {
 
 private struct AgendaControls: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @State private var isShowingOpenClawConfiguration = false
   var agendaFilterFocused: FocusState<Bool>.Binding
 
   var body: some View {
@@ -1214,6 +1335,16 @@ private struct AgendaControls: View {
         .frame(maxWidth: 300)
 
         Spacer(minLength: 0)
+
+        if store.agendaMode == .assigned {
+          Button {
+            isShowingOpenClawConfiguration = true
+          } label: {
+            Label("Assignees", systemImage: "person.2")
+          }
+          .buttonStyle(WorkspaceActionButtonStyle())
+          .help("Configure which ASSIGNEE names count as you")
+        }
 
         Button {
           store.promptAndCaptureTodoShortcut()
@@ -1248,6 +1379,10 @@ private struct AgendaControls: View {
     .controlSize(.small)
     .padding(.horizontal, WorkspaceDesign.contentInset)
     .padding(.bottom, 12)
+    .sheet(isPresented: $isShowingOpenClawConfiguration) {
+      OpenClawConfigurationSheet()
+        .environmentObject(store)
+    }
   }
 }
 
@@ -1591,11 +1726,11 @@ private struct AgendaAssignmentIndicator: View {
   }
 
   private var isAgentAssigned: Bool {
-    !store.isPersonalAssignee(assignee)
+    store.isAgentAssignee(assignee)
   }
 
   private var label: String {
-    isAgentAssigned ? "Agent" : "Me"
+    assignee ?? "Me"
   }
 
   private var helpText: String {
@@ -1603,9 +1738,9 @@ private struct AgendaAssignmentIndicator: View {
       return "Assigned to agent: \(assignee)"
     }
     if let assignee {
-      return "Assigned to me: \(assignee)"
+      return store.isPersonalAssignee(assignee) ? "Assigned to you: \(assignee)" : "Assigned to \(assignee)"
     }
-    return "Assigned to me"
+    return "Assigned to you"
   }
 
   var body: some View {
@@ -1614,6 +1749,8 @@ private struct AgendaAssignmentIndicator: View {
         .font(.caption2.weight(.semibold))
       Text(label)
         .font(.caption2.weight(.semibold))
+        .lineLimit(1)
+        .truncationMode(.tail)
     }
     .foregroundStyle(isAgentAssigned ? Color.accentColor : Color.secondary)
     .padding(.horizontal, 6)
@@ -1629,6 +1766,7 @@ private struct AgendaAssignmentIndicator: View {
 private struct SearchView: View {
   @EnvironmentObject private var store: WorkspaceStore
   @FocusState private var isSearchFocused: Bool
+  @State private var expandedCorpusSearchFileIDs: Set<String> = []
 
   var body: some View {
     VStack(spacing: 0) {
@@ -1690,6 +1828,9 @@ private struct SearchView: View {
     .onChange(of: store.searchFocusToken) {
       isSearchFocused = true
     }
+    .onChange(of: store.searchResults.map(\.id)) {
+      expandedCorpusSearchFileIDs = []
+    }
   }
 
   @ViewBuilder
@@ -1722,21 +1863,48 @@ private struct SearchView: View {
 
           if !store.searchResults.isEmpty {
             Section("Corpus") {
-              ForEach(store.searchResults) { result in
-                SearchRow(result: result)
+              ForEach(store.corpusSearchResultGroups) { group in
+                let representative = group.representative
+                SearchRow(
+                  result: representative,
+                  matchCount: group.results.count > 1 ? group.results.count : nil,
+                  isExpanded: group.results.count > 1 ? expandedCorpusSearchFileIDs.contains(group.id) : nil,
+                  toggleExpansion: {
+                    toggleCorpusSearchGroup(group)
+                  }
+                )
                   .contentShape(Rectangle())
                   .onTapGesture {
-                    store.select(.search(result))
+                    store.select(.search(representative))
                   }
                   .contextMenu {
                     WorkspaceLocationContextMenu(
-                      location: .search(result),
-                      showsHeadingActions: result.todo != nil,
-                      select: { store.select(.search(result)) }
+                      location: .search(representative),
+                      showsHeadingActions: representative.todo != nil,
+                      select: { store.select(.search(representative)) }
                     ) {
                       Label("Open", systemImage: "magnifyingglass")
                     }
                   }
+
+                if expandedCorpusSearchFileIDs.contains(group.id) {
+                  ForEach(Array(group.results.dropFirst())) { result in
+                    SearchRow(result: result, isNested: true)
+                      .contentShape(Rectangle())
+                      .onTapGesture {
+                        store.select(.search(result))
+                      }
+                      .contextMenu {
+                        WorkspaceLocationContextMenu(
+                          location: .search(result),
+                          showsHeadingActions: result.todo != nil,
+                          select: { store.select(.search(result)) }
+                        ) {
+                          Label("Open", systemImage: "magnifyingglass")
+                        }
+                      }
+                  }
+                }
               }
             }
           }
@@ -1785,6 +1953,14 @@ private struct SearchView: View {
     guard store.searchMode == .text else { return }
     Task { await store.runSearch() }
   }
+
+  private func toggleCorpusSearchGroup(_ group: SearchResultGroup) {
+    if expandedCorpusSearchFileIDs.contains(group.id) {
+      expandedCorpusSearchFileIDs.remove(group.id)
+    } else {
+      expandedCorpusSearchFileIDs.insert(group.id)
+    }
+  }
 }
 
 private struct ChatSearchRow: View {
@@ -1827,9 +2003,28 @@ private struct ChatSearchRow: View {
 private struct SearchRow: View {
   @EnvironmentObject private var store: WorkspaceStore
   let result: SearchResult
+  var isNested = false
+  var matchCount: Int?
+  var isExpanded: Bool?
+  var toggleExpansion: (() -> Void)?
 
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
+      if let isExpanded {
+        Button {
+          toggleExpansion?()
+        } label: {
+          Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+            .font(.caption.weight(.semibold))
+            .frame(width: 16, height: 24)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help(isExpanded ? "Collapse file matches" : "Show file matches")
+      } else if isNested {
+        Spacer()
+          .frame(width: 16)
+      }
       WorkspaceIconBadge(systemImage: "magnifyingglass")
       VStack(alignment: .leading, spacing: 5) {
         HStack(spacing: 8) {
@@ -1845,6 +2040,14 @@ private struct SearchRow: View {
               .font(.caption)
               .foregroundStyle(.secondary)
           }
+          if let matchCount {
+            Text("\(matchCount) matches")
+              .font(.caption.weight(.medium))
+              .foregroundStyle(.secondary)
+              .padding(.horizontal, 6)
+              .padding(.vertical, 2)
+              .background(WorkspaceDesign.subtleFill, in: Capsule())
+          }
         }
         Text(Org2Display.cleanInline(result.snippet))
           .font(.callout)
@@ -1857,7 +2060,8 @@ private struct SearchRow: View {
             .truncationMode(.middle)
       }
     }
-    .padding(.horizontal, WorkspaceDesign.contentInset)
+    .padding(.leading, WorkspaceDesign.contentInset + (isNested ? 24 : 0))
+    .padding(.trailing, WorkspaceDesign.contentInset)
     .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
   }
 }
@@ -3373,6 +3577,7 @@ private struct DetailView: View {
         }
       }
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
   }
 
   private var pageScrollRequest: DetailScrollRequest? {
@@ -3508,6 +3713,7 @@ private struct DetailHeader: View {
       }
     }
     .padding(WorkspaceDesign.contentInset)
+    .frame(maxWidth: .infinity, alignment: .leading)
     .background(WorkspaceDesign.barBackground)
     .onChange(of: store.pageSearchFocusToken) {
       isPageSearchFocused = true
