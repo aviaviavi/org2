@@ -8,11 +8,13 @@ final class CorpusStore: ObservableObject {
   @Published private(set) var agenda: [AgendaEntry] = []
   @Published private(set) var approvals: [ApprovalEntry] = []
   @Published var isLoading = false
+  @Published private(set) var isPreparingCorpus = false
   @Published var errorMessage: String?
   @Published var statusMessage: String?
   @Published var isDocumentPickerPresented = false
 
   private let bookmarkKey = "org2.mobile.corpusBookmark"
+  private let cachedRootPathKey = "org2.mobile.cachedRootPath"
   private let mobileInboxFilename = "mobile-inbox.org2"
   private let mobileInboxAssetsDirectory = "mobile-inbox-assets"
   private let mobileAttachmentDirectory = "mobile-attachments"
@@ -20,6 +22,7 @@ final class CorpusStore: ObservableObject {
   private let headingTodoKeywords = Set(OrgTodoStatus.allCases.map(\.rawValue))
   private var cachedFileCount: Int?
   private var refreshGeneration = 0
+  private var cacheHydrationGeneration = 0
 
   var corpusName: String {
     rootURL?.lastPathComponent ?? "No corpus"
@@ -39,16 +42,21 @@ final class CorpusStore: ObservableObject {
     if let debugCorpusPath = ProcessInfo.processInfo.environment["ORG2_DEBUG_CORPUS_PATH"],
        !debugCorpusPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       let url = URL(fileURLWithPath: debugCorpusPath, isDirectory: true)
-      rootURL = url
-      restoreCachedCorpus(for: url)
+      setRootURL(url)
+      startCacheHydration(matching: url)
       startBackgroundRefresh()
       return
     }
     #endif
 
-    if let snapshot = loadValidCachedCorpus() {
-      rootURL = URL(fileURLWithPath: snapshot.rootPath, isDirectory: true)
-      restoreCachedCorpus(snapshot)
+    if let cachedRootPath = UserDefaults.standard.string(forKey: cachedRootPathKey),
+       !cachedRootPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      let url = URL(fileURLWithPath: cachedRootPath, isDirectory: true)
+      rootURL = url
+      statusMessage = "Loading cached corpus"
+      startCacheHydration(matching: url)
+    } else {
+      startCacheHydration(matching: nil)
     }
 
     guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else { return }
@@ -74,9 +82,9 @@ final class CorpusStore: ObservableObject {
         UserDefaults.standard.synchronize()
       }
 
-      rootURL = resolved.url
+      setRootURL(resolved.url)
       if !hasDisplayedCorpus {
-        restoreCachedCorpus(for: resolved.url)
+        startCacheHydration(matching: resolved.url)
       }
       startBackgroundRefresh()
     } catch {
@@ -92,15 +100,15 @@ final class CorpusStore: ObservableObject {
   func selectCorpus(_ url: URL) async {
     do {
       try saveBookmark(for: url)
-      rootURL = url
-      restoreCachedCorpus(for: url)
+      setRootURL(url)
+      startCacheHydration(matching: url)
       await refresh()
     } catch {
       errorMessage = "Could not save access to the selected folder."
     }
   }
 
-  func refresh() async {
+  func refresh(priority: TaskPriority = .utility) async {
     guard let rootURL else { return }
     refreshGeneration += 1
     let generation = refreshGeneration
@@ -113,7 +121,7 @@ final class CorpusStore: ObservableObject {
     }
 
     do {
-      let snapshot = try await Task.detached(priority: .utility) {
+      let snapshot = try await Task.detached(priority: priority) {
         try Self.buildSnapshot(rootURL: rootURL)
       }.value
 
@@ -188,20 +196,50 @@ final class CorpusStore: ObservableObject {
   }
 
   private func startBackgroundRefresh() {
-    Task {
-      await refresh()
+    Task(priority: .background) {
+      try? await Task.sleep(nanoseconds: 1_000_000_000)
+      await refresh(priority: .background)
     }
   }
 
-  private func restoreCachedCorpus(for rootURL: URL) {
-    guard let snapshot = loadValidCachedCorpus(),
-          snapshot.rootPath == Self.cacheRootPath(for: rootURL)
-    else {
-      clearCorpusViews()
+  private func startCacheHydration(matching rootURL: URL?) {
+    cacheHydrationGeneration += 1
+    let generation = cacheHydrationGeneration
+    isPreparingCorpus = true
+    Task {
+      await hydrateCachedCorpus(matching: rootURL, generation: generation)
+    }
+  }
+
+  private func hydrateCachedCorpus(matching rootURL: URL?, generation: Int) async {
+    let cacheURL = cacheURL
+    defer {
+      if cacheHydrationGeneration == generation {
+        isPreparingCorpus = false
+      }
+    }
+
+    guard let snapshot = await Task.detached(priority: .utility, operation: {
+      Self.loadValidCachedCorpus(at: cacheURL)
+    }).value else {
       return
     }
 
+    guard cacheHydrationGeneration == generation else { return }
+
+    if let rootURL, snapshot.rootPath != Self.cacheRootPath(for: rootURL) {
+      return
+    }
+
+    if self.rootURL == nil {
+      self.rootURL = URL(fileURLWithPath: snapshot.rootPath, isDirectory: true)
+    }
     restoreCachedCorpus(snapshot)
+    UserDefaults.standard.set(snapshot.rootPath, forKey: cachedRootPathKey)
+  }
+
+  private func restoreCachedCorpus(for rootURL: URL) {
+    startCacheHydration(matching: rootURL)
   }
 
   private func restoreCachedCorpus(_ snapshot: CorpusCacheSnapshot) {
@@ -221,13 +259,13 @@ final class CorpusStore: ObservableObject {
     statusMessage = nil
   }
 
-  private func loadCachedCorpus() -> CorpusCacheSnapshot? {
+  nonisolated private static func loadCachedCorpus(at cacheURL: URL) -> CorpusCacheSnapshot? {
     guard let data = try? Data(contentsOf: cacheURL) else { return nil }
     return try? JSONDecoder().decode(CorpusCacheSnapshot.self, from: data)
   }
 
-  private func loadValidCachedCorpus() -> CorpusCacheSnapshot? {
-    guard let snapshot = loadCachedCorpus(),
+  nonisolated private static func loadValidCachedCorpus(at cacheURL: URL) -> CorpusCacheSnapshot? {
+    guard let snapshot = loadCachedCorpus(at: cacheURL),
           snapshot.version == CorpusCacheSnapshot.currentVersion
     else {
       return nil
@@ -252,9 +290,15 @@ final class CorpusStore: ObservableObject {
       )
       let data = try JSONEncoder().encode(cacheSnapshot)
       try data.write(to: cacheURL, options: .atomic)
+      UserDefaults.standard.set(cacheSnapshot.rootPath, forKey: cachedRootPathKey)
     } catch {
       // Cache writes should never block the live corpus view.
     }
+  }
+
+  private func setRootURL(_ url: URL) {
+    rootURL = url
+    UserDefaults.standard.set(Self.cacheRootPath(for: url), forKey: cachedRootPathKey)
   }
 
   nonisolated private static func cacheRootPath(for rootURL: URL) -> String {
