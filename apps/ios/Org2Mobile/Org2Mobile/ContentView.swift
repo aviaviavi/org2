@@ -1,4 +1,3 @@
-import PhotosUI
 import SwiftUI
 import UIKit
 
@@ -418,7 +417,7 @@ private struct NewNoteView: View {
   @State private var title = ""
   @State private var bodyText = ""
   @State private var attachments: [NoteAttachment] = []
-  @State private var selectedPhotoItem: PhotosPickerItem?
+  @State private var isPhotoLibraryPresented = false
   @State private var isCameraPresented = false
   @FocusState private var focusedField: NewNoteFocusedField?
 
@@ -473,7 +472,9 @@ private struct NewNoteView: View {
           }
 
           HStack {
-            PhotosPicker(selection: $selectedPhotoItem, matching: .images, photoLibrary: .shared()) {
+            Button {
+              isPhotoLibraryPresented = true
+            } label: {
               Label("Photo", systemImage: "photo")
             }
 
@@ -527,21 +528,16 @@ private struct NewNoteView: View {
         await store.refresh()
       }
       .sheet(isPresented: $isCameraPresented) {
-        CameraPicker { image in
+        ImagePicker(sourceType: .camera) { image in
           addImage(image)
         }
       }
-      .onChange(of: selectedPhotoItem) { _, item in
-        Task { await addPhoto(item) }
+      .sheet(isPresented: $isPhotoLibraryPresented) {
+        ImagePicker(sourceType: .photoLibrary) { image in
+          addImage(image)
+        }
       }
     }
-  }
-
-  @MainActor
-  private func addPhoto(_ item: PhotosPickerItem?) async {
-    guard let item, let data = try? await item.loadTransferable(type: Data.self) else { return }
-    addImageData(data)
-    selectedPhotoItem = nil
   }
 
   private func addImage(_ image: UIImage) {

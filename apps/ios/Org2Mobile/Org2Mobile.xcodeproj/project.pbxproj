@@ -14,6 +14,7 @@
 		0A1001052C20000000000001 /* CorpusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1002052C20000000000001 /* CorpusStore.swift */; };
 		0A1001062C20000000000001 /* DocumentPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1002062C20000000000001 /* DocumentPicker.swift */; };
 		0A1001072C20000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0A1002072C20000000000001 /* Assets.xcassets */; };
+		0A1001082C20000000000001 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 0A1002082C20000000000001 /* LaunchScreen.storyboard */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +26,7 @@
 		0A1002052C20000000000001 /* CorpusStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorpusStore.swift; sourceTree = "<group>"; };
 		0A1002062C20000000000001 /* DocumentPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentPicker.swift; sourceTree = "<group>"; };
 		0A1002072C20000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		0A1002082C20000000000001 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -63,6 +65,7 @@
 				0A1002042C20000000000001 /* OrgParser.swift */,
 				0A1002052C20000000000001 /* CorpusStore.swift */,
 				0A1002062C20000000000001 /* DocumentPicker.swift */,
+				0A1002082C20000000000001 /* LaunchScreen.storyboard */,
 				0A1002072C20000000000001 /* Assets.xcassets */,
 			);
 			path = Org2Mobile;
@@ -127,6 +130,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0A1001082C20000000000001 /* LaunchScreen.storyboard in Resources */,
 				0A1001072C20000000000001 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -280,9 +284,10 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Org2;
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Attach photos to Org2 notes.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Attach photos to Org2 notes.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportsDocumentBrowser = NO;
@@ -314,9 +319,10 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Org2;
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Attach photos to Org2 notes.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Attach photos to Org2 notes.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportsDocumentBrowser = NO;
