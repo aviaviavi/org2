@@ -8,8 +8,8 @@ struct Org2MobileApp: App {
     WindowGroup {
       ContentView()
         .environmentObject(store)
-        .task {
-          await store.restoreCorpus()
+        .onAppear {
+          store.startRestoringCorpus()
         }
     }
   }

@@ -139,6 +139,9 @@ private struct AgendaView: View {
       .refreshable {
         await store.refresh()
       }
+      .onAppear {
+        store.prepareCorpusViews()
+      }
     }
   }
 }
@@ -285,6 +288,9 @@ private struct ApprovalsView: View {
         set: { _ in shareText = nil }
       )) { payload in
         ActivitySheet(items: [payload.text])
+      }
+      .onAppear {
+        store.prepareCorpusViews()
       }
     }
   }
