@@ -156,9 +156,15 @@ final class CorpusStore: ObservableObject {
       return OrgParser.isCorpusFile(rootURL) ? [rootURL] : []
     }
 
+    let baseURL = try corpusBaseURL(for: rootURL)
+    let config = mobileOrg2Config(in: baseURL)
+    let configuredAgendaPatterns = config.map { $0.agendaFiles ?? ["*.org"] }
+    let ignorePatterns = config?.ignorePatterns ?? []
+    let recursive = config?.recursive ?? true
+
     guard let enumerator = FileManager.default.enumerator(
       at: rootURL,
-      includingPropertiesForKeys: [.isRegularFileKey],
+      includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey],
       options: [.skipsHiddenFiles, .skipsPackageDescendants]
     ) else {
       return []
@@ -166,17 +172,107 @@ final class CorpusStore: ObservableObject {
 
     var urls: [URL] = []
     for case let url as URL in enumerator {
-      if url.pathComponents.contains(".git") || url.pathComponents.contains("node_modules") {
+      let relativePath = OrgParser.relativePath(for: url, rootURL: baseURL)
+      if shouldSkipCorpusPath(relativePath, url: url, ignorePatterns: ignorePatterns) {
         enumerator.skipDescendants()
         continue
       }
-      guard OrgParser.isCorpusFile(url) else { continue }
       guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey]) else { continue }
+      if values.isDirectory == true, !recursive {
+        enumerator.skipDescendants()
+        continue
+      }
       if values.isRegularFile == true {
+        if let agendaPatterns = configuredAgendaPatterns {
+          guard agendaPatterns.contains(where: { corpusPath(relativePath, matches: $0) }) else { continue }
+        } else {
+          guard isDefaultAgendaFile(url) else { continue }
+        }
         urls.append(url)
       }
     }
     return urls.sorted { $0.path < $1.path }
+  }
+
+  private func mobileOrg2Config(in baseURL: URL) -> MobileOrg2Config? {
+    let configURL = baseURL.appendingPathComponent("org2.json")
+    guard let data = try? Data(contentsOf: configURL) else { return nil }
+    return try? JSONDecoder().decode(MobileOrg2Config.self, from: data)
+  }
+
+  private func shouldSkipCorpusPath(_ relativePath: String, url: URL, ignorePatterns: [String]) -> Bool {
+    let name = url.lastPathComponent
+    if name == ".git" || name == "node_modules" || name.hasPrefix(".#") {
+      return true
+    }
+    if name.hasPrefix(".syncthing.") || name.contains(".sync-conflict-") || name.hasSuffix(".tmp") {
+      return true
+    }
+    return ignorePatterns.contains { corpusPath(relativePath, matches: $0) }
+  }
+
+  private func isDefaultAgendaFile(_ url: URL) -> Bool {
+    let extensionName = url.pathExtension.lowercased()
+    return extensionName == "org" || extensionName == "org2"
+  }
+
+  private func corpusPath(_ path: String, matches pattern: String) -> Bool {
+    let normalizedPath = normalizedCorpusPath(path)
+    let normalizedPattern = normalizedCorpusPath(pattern)
+    if normalizedPattern.contains("*") {
+      let pathSegments = normalizedPath.split(separator: "/").map(String.init)
+      let patternSegments = normalizedPattern.split(separator: "/").map(String.init)
+      return matchCorpusSegments(pathSegments, patternSegments)
+    }
+    return normalizedPath == normalizedPattern || normalizedPath.hasPrefix("\(normalizedPattern)/")
+  }
+
+  private func matchCorpusSegments(
+    _ pathSegments: [String],
+    _ patternSegments: [String],
+    pathIndex: Int = 0,
+    patternIndex: Int = 0
+  ) -> Bool {
+    guard patternIndex < patternSegments.count else {
+      return pathIndex >= pathSegments.count
+    }
+
+    let pattern = patternSegments[patternIndex]
+    if pattern == "**" {
+      for nextPathIndex in pathIndex...pathSegments.count {
+        if matchCorpusSegments(
+          pathSegments,
+          patternSegments,
+          pathIndex: nextPathIndex,
+          patternIndex: patternIndex + 1
+        ) {
+          return true
+        }
+      }
+      return false
+    }
+
+    guard pathIndex < pathSegments.count else { return false }
+    guard corpusSegment(pathSegments[pathIndex], matches: pattern) else { return false }
+    return matchCorpusSegments(
+      pathSegments,
+      patternSegments,
+      pathIndex: pathIndex + 1,
+      patternIndex: patternIndex + 1
+    )
+  }
+
+  private func corpusSegment(_ segment: String, matches pattern: String) -> Bool {
+    let escaped = NSRegularExpression.escapedPattern(for: pattern)
+      .replacingOccurrences(of: "\\*", with: ".*")
+    let regex = "^\(escaped)$"
+    return segment.range(of: regex, options: .regularExpression) != nil
+  }
+
+  private func normalizedCorpusPath(_ path: String) -> String {
+    path.replacingOccurrences(of: "\\", with: "/")
+      .split(separator: "/", omittingEmptySubsequences: true)
+      .joined(separator: "/")
   }
 
   private func appendOpenClawRequest(
@@ -708,4 +804,10 @@ final class CorpusStore: ObservableObject {
     formatter.dateFormat = "yyyy-MM-dd EEE HH:mm"
     return "<\(formatter.string(from: date))>"
   }
+}
+
+private struct MobileOrg2Config: Decodable {
+  let agendaFiles: [String]?
+  let recursive: Bool?
+  let ignorePatterns: [String]?
 }
