@@ -46,24 +46,45 @@ final class CorpusStore: ObservableObject {
     }
     #endif
 
+    if let snapshot = loadValidCachedCorpus() {
+      rootURL = URL(fileURLWithPath: snapshot.rootPath, isDirectory: true)
+      restoreCachedCorpus(snapshot)
+    }
+
     guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else { return }
+    restoreBookmarkedCorpus(data)
+  }
+
+  private func restoreBookmarkedCorpus(_ data: Data) {
+    Task {
+      await resolveSavedCorpusBookmark(data)
+    }
+  }
+
+  private func resolveSavedCorpusBookmark(_ data: Data) async {
     do {
-      var stale = false
-      let url = try resolveCorpusBookmark(data, bookmarkDataIsStale: &stale)
-      do {
-        try saveBookmark(for: url)
-      } catch {
-        if stale {
-          throw error
-        }
+      let resolved = try await Task.detached(priority: .userInitiated) {
+        let resolved = try Self.resolveCorpusBookmark(data)
+        let refreshedBookmark = resolved.stale ? try? Self.bookmarkData(for: resolved.url) : nil
+        return CorpusBookmarkResolution(url: resolved.url, stale: resolved.stale, refreshedBookmark: refreshedBookmark)
+      }.value
+
+      if let refreshedBookmark = resolved.refreshedBookmark {
+        UserDefaults.standard.set(refreshedBookmark, forKey: bookmarkKey)
+        UserDefaults.standard.synchronize()
       }
-      rootURL = url
-      restoreCachedCorpus(for: url)
+
+      rootURL = resolved.url
+      if !hasDisplayedCorpus {
+        restoreCachedCorpus(for: resolved.url)
+      }
       startBackgroundRefresh()
     } catch {
-      UserDefaults.standard.removeObject(forKey: bookmarkKey)
-      rootURL = nil
-      clearCorpusViews()
+      if !hasDisplayedCorpus {
+        UserDefaults.standard.removeObject(forKey: bookmarkKey)
+        rootURL = nil
+        clearCorpusViews()
+      }
       errorMessage = "Could not reopen the corpus folder. Please select it again once to refresh Org2's saved access."
     }
   }
@@ -173,14 +194,17 @@ final class CorpusStore: ObservableObject {
   }
 
   private func restoreCachedCorpus(for rootURL: URL) {
-    guard let snapshot = loadCachedCorpus(),
-          snapshot.version == CorpusCacheSnapshot.currentVersion,
+    guard let snapshot = loadValidCachedCorpus(),
           snapshot.rootPath == Self.cacheRootPath(for: rootURL)
     else {
       clearCorpusViews()
       return
     }
 
+    restoreCachedCorpus(snapshot)
+  }
+
+  private func restoreCachedCorpus(_ snapshot: CorpusCacheSnapshot) {
     documents = []
     agenda = snapshot.agenda
     approvals = snapshot.approvals
@@ -200,6 +224,15 @@ final class CorpusStore: ObservableObject {
   private func loadCachedCorpus() -> CorpusCacheSnapshot? {
     guard let data = try? Data(contentsOf: cacheURL) else { return nil }
     return try? JSONDecoder().decode(CorpusCacheSnapshot.self, from: data)
+  }
+
+  private func loadValidCachedCorpus() -> CorpusCacheSnapshot? {
+    guard let snapshot = loadCachedCorpus(),
+          snapshot.version == CorpusCacheSnapshot.currentVersion
+    else {
+      return nil
+    }
+    return snapshot
   }
 
   private func saveCachedCorpus(_ refreshSnapshot: CorpusRefreshSnapshot, for rootURL: URL) {
@@ -650,6 +683,12 @@ final class CorpusStore: ObservableObject {
   }
 
   private func saveBookmark(for url: URL) throws {
+    let data = try Self.bookmarkData(for: url)
+    UserDefaults.standard.set(data, forKey: bookmarkKey)
+    UserDefaults.standard.synchronize()
+  }
+
+  nonisolated private static func bookmarkData(for url: URL) throws -> Data {
     let hasSecurityAccess = url.startAccessingSecurityScopedResource()
     defer {
       if hasSecurityAccess {
@@ -657,27 +696,28 @@ final class CorpusStore: ObservableObject {
       }
     }
 
-    let data = try url.bookmarkData(options: [.minimalBookmark], includingResourceValuesForKeys: nil, relativeTo: nil)
-    UserDefaults.standard.set(data, forKey: bookmarkKey)
-    UserDefaults.standard.synchronize()
+    return try url.bookmarkData(options: [.minimalBookmark], includingResourceValuesForKeys: nil, relativeTo: nil)
   }
 
-  private func resolveCorpusBookmark(_ data: Data, bookmarkDataIsStale stale: inout Bool) throws -> URL {
+  nonisolated private static func resolveCorpusBookmark(_ data: Data) throws -> CorpusBookmarkResolution {
+    var stale = false
     do {
-      return try URL(
+      let url = try URL(
         resolvingBookmarkData: data,
         options: [.withoutUI],
         relativeTo: nil,
         bookmarkDataIsStale: &stale
       )
+      return CorpusBookmarkResolution(url: url, stale: stale)
     } catch {
       stale = true
-      return try URL(
+      let url = try URL(
         resolvingBookmarkData: data,
         options: [],
         relativeTo: nil,
         bookmarkDataIsStale: &stale
       )
+      return CorpusBookmarkResolution(url: url, stale: stale)
     }
   }
 
@@ -936,4 +976,10 @@ private struct CorpusCacheSnapshot: Codable {
   let fileCount: Int
   let agenda: [AgendaEntry]
   let approvals: [ApprovalEntry]
+}
+
+private struct CorpusBookmarkResolution: Sendable {
+  let url: URL
+  let stale: Bool
+  var refreshedBookmark: Data?
 }
