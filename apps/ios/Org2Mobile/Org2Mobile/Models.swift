@@ -60,13 +60,13 @@ struct OrgPlanningDate: Identifiable, Hashable {
   var id: String { "\(kind.rawValue):\(date)" }
 }
 
-enum OrgPlanningKind: String, Hashable {
+enum OrgPlanningKind: String, Hashable, Codable {
   case scheduled = "Scheduled"
   case deadline = "Deadline"
   case timestamp = "Timestamp"
 }
 
-struct AgendaEntry: Identifiable, Hashable {
+struct AgendaEntry: Identifiable, Hashable, Codable {
   let id: String
   let title: String
   let todo: String
@@ -82,7 +82,7 @@ struct AgendaEntry: Identifiable, Hashable {
   }
 }
 
-struct ApprovalEntry: Identifiable, Hashable {
+struct ApprovalEntry: Identifiable, Hashable, Codable {
   let id: String
   let title: String
   let status: String
