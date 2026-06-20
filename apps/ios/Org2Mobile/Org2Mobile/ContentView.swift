@@ -349,8 +349,25 @@ private struct ApprovalDetailView: View {
           .padding(.vertical, 4)
         }
 
+        Section("Entry") {
+          ForEach(metadataRows) { row in
+            ApprovalMetadataRow(row: row)
+          }
+        }
+
+        Section("Properties") {
+          if sortedProperties.isEmpty {
+            Text("No properties")
+              .foregroundStyle(.secondary)
+          } else {
+            ForEach(sortedProperties, id: \.key) { property in
+              ApprovalPropertyRow(key: property.key, value: property.value)
+            }
+          }
+        }
+
         if !item.body.isEmpty {
-          Section("Draft") {
+          Section("Body") {
             Text(item.body.prettyPrintedOrgLinks())
               .font(.body)
               .textSelection(.enabled)
@@ -409,6 +426,79 @@ private struct ApprovalDetailView: View {
         }
       }
     }
+  }
+
+  private var metadataRows: [ApprovalMetadataRow.Model] {
+    [
+      ApprovalMetadataRow.Model(label: "Status", value: item.status),
+      ApprovalMetadataRow.Model(label: "TODO", value: item.todo),
+      ApprovalMetadataRow.Model(label: "Level", value: item.level.map(String.init)),
+      ApprovalMetadataRow.Model(label: "Source", value: item.sourceLabel, isMonospaced: true),
+      ApprovalMetadataRow.Model(label: "ID", value: item.sourceID, isMonospaced: true),
+      ApprovalMetadataRow.Model(label: "Tags", value: item.tags.isEmpty ? nil : item.tags.map { ":\($0):" }.joined(separator: " ")),
+    ].compactMap { $0 }
+  }
+
+  private var sortedProperties: [(key: String, value: String)] {
+    item.properties.sorted {
+      $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending
+    }
+  }
+}
+
+private struct ApprovalMetadataRow: View {
+  struct Model: Identifiable {
+    let label: String
+    let value: String
+    let isMonospaced: Bool
+
+    var id: String { label }
+
+    init?(label: String, value: String?, isMonospaced: Bool = false) {
+      guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+        return nil
+      }
+      self.label = label
+      self.value = value
+      self.isMonospaced = isMonospaced
+    }
+  }
+
+  let row: Model
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(row.label)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+      if row.isMonospaced {
+        Text(row.value.prettyPrintedOrgLinks())
+          .font(.caption.monospaced())
+          .textSelection(.enabled)
+      } else {
+        Text(row.value.prettyPrintedOrgLinks())
+          .font(.body)
+          .textSelection(.enabled)
+      }
+    }
+    .padding(.vertical, 2)
+  }
+}
+
+private struct ApprovalPropertyRow: View {
+  let key: String
+  let value: String
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 5) {
+      Text(key)
+        .font(.caption.weight(.semibold).monospaced())
+        .foregroundStyle(.secondary)
+      Text(value.prettyPrintedOrgLinks())
+        .font(.body)
+        .textSelection(.enabled)
+    }
+    .padding(.vertical, 3)
   }
 }
 
