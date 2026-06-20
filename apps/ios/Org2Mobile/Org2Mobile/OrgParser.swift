@@ -119,6 +119,8 @@ enum OrgParser {
               id: "\(document.relativePath):\(node.line)",
               title: node.title,
               status: status,
+              todo: todo,
+              level: node.level,
               file: document.relativePath,
               line: node.line,
               sourceID: node.properties["ID"],

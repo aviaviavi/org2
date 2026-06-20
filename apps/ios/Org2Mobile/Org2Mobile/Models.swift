@@ -86,6 +86,8 @@ struct ApprovalEntry: Identifiable, Hashable, Codable {
   let id: String
   let title: String
   let status: String
+  let todo: String?
+  let level: Int?
   let file: String
   let line: Int?
   let sourceID: String?
