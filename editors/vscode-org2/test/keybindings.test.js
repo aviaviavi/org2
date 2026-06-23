@@ -57,7 +57,7 @@ test('insert list item command is contributed and registered in extension runtim
   );
 });
 
-test('agent handoff command assigns without closing todo', () => {
+test('agent handoff command assigns normal tasks and closes nested approvals', () => {
   const keybindings = loadPackageKeybindings();
   const packagePath = path.join(__dirname, '..', 'package.json');
   const extensionPath = path.join(__dirname, '..', 'extension.js');
@@ -81,7 +81,9 @@ test('agent handoff command assigns without closing todo', () => {
     true
   );
   assert.equal(extensionSource.includes("runTodoCli('assign', 'OpenClaw'"), true);
-  assert.equal(extensionSource.includes("runTodoCli('set', 'done', target"), false);
+  assert.equal(extensionSource.includes("runTodoCli('set', 'done', target"), true);
+  assert.equal(extensionSource.includes("findParentSendHeading"), true);
+  assert.equal(extensionSource.includes("STATUS: 'approved-to-send'"), true);
   assert.equal(extensionSource.includes("STATUS: 'ready-for-agent'"), true);
   assert.equal(extensionSource.includes('ORG2_AGENT_HANDOFF:'), false);
   assert.equal(extensionSource.includes('ORG2_AGENT_HANDOFF_AT:'), true);

@@ -5532,9 +5532,120 @@ function applyAgendaTuiTodo(item: ScheduledItem, status: TodoStatus): ScheduledI
 }
 
 function applyAgendaTuiDoneAndAgentHandoff(item: ScheduledItem): ScheduledItem {
+  const timestamp = formatOrgTimestamp(new Date());
+  const parentSendItem = findAgendaTuiParentSendItem(item);
   const doneItem = applyAgendaTuiTodo(item, "done");
+  if (parentSendItem) {
+    const approvedItem = applyAgendaTuiProperty(doneItem, "STATUS", "approved");
+    let sendItem = applyAgendaTuiProperty(parentSendItem, "STATUS", "approved-to-send");
+    sendItem = applyAgendaTuiProperty(sendItem, "ASSIGNEE", "OpenClaw");
+    sendItem = applyAgendaTuiProperty(sendItem, "ORG2_AGENT_HANDOFF_AT", timestamp);
+    if (item.id) sendItem = applyAgendaTuiProperty(sendItem, "APPROVAL_ID", item.id);
+    return approvedItem;
+  }
   const readyItem = applyAgendaTuiProperty(doneItem, "STATUS", "ready-for-agent");
-  return applyAgendaTuiProperty(readyItem, "ORG2_AGENT_HANDOFF_AT", formatOrgTimestamp(new Date()));
+  return applyAgendaTuiProperty(readyItem, "ORG2_AGENT_HANDOFF_AT", timestamp);
+}
+
+function upsertHeadlinePropertyInLines(lines: string[], headingIndex: number, key: string, value: string): void {
+  let insertAt = headingIndex + 1;
+  while (insertAt < lines.length && /^(SCHEDULED|DEADLINE|CLOSED):/i.test((lines[insertAt] ?? "").trim())) {
+    insertAt += 1;
+  }
+
+  let drawerStart = -1;
+  let drawerEnd = -1;
+  if ((lines[insertAt] ?? "").trim().toUpperCase() === ":PROPERTIES:") {
+    drawerStart = insertAt;
+    for (let i = insertAt + 1; i < lines.length; i += 1) {
+      const trimmed = (lines[i] ?? "").trim().toUpperCase();
+      if (/^(\*+)\s+/.test(lines[i] ?? "")) break;
+      if (trimmed === ":END:") {
+        drawerEnd = i;
+        break;
+      }
+    }
+  }
+
+  if (drawerStart < 0 || drawerEnd < 0) {
+    lines.splice(insertAt, 0, ":PROPERTIES:", `:${key}: ${value}`, ":END:");
+    return;
+  }
+
+  const keyPrefix = `:${key}:`;
+  for (let i = drawerStart + 1; i < drawerEnd; i += 1) {
+    if ((lines[i] ?? "").toUpperCase().startsWith(keyPrefix.toUpperCase())) {
+      lines[i] = `${keyPrefix} ${value}`;
+      return;
+    }
+  }
+  lines.splice(drawerEnd, 0, `${keyPrefix} ${value}`);
+}
+
+function applyNestedApprovalHandoffInText(text: string, lineNumber: number, timestamp: string): { text: string; changed: boolean } {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  let childIndex = Math.max(0, Math.min(lines.length - 1, lineNumber - 1));
+  while (childIndex >= 0 && !parseHeadlineLine(lines[childIndex] ?? "")) childIndex -= 1;
+  if (childIndex < 0) return { text, changed: false };
+
+  const child = parseHeadlineLine(lines[childIndex] ?? "");
+  if (!child || child.level <= 1 || child.todo !== "DONE" || !/^Approve\b/i.test(child.title)) {
+    return { text, changed: false };
+  }
+
+  let parentIndex = -1;
+  let parent: ReturnType<typeof parseHeadlineLine> = null;
+  for (let i = childIndex - 1; i >= 0; i -= 1) {
+    const parsed = parseHeadlineLine(lines[i] ?? "");
+    if (!parsed) continue;
+    if (parsed.level >= child.level) continue;
+    if (!/^Send\b/i.test(parsed.title)) return { text, changed: false };
+    parentIndex = i;
+    parent = parsed;
+    break;
+  }
+  if (parentIndex < 0 || !parent) return { text, changed: false };
+
+  const childProperties = extractAgendaPropertiesNearHeadline(lines, childIndex);
+  const approvalId = agendaPrimaryIdFromProperties(childProperties);
+  upsertHeadlinePropertyInLines(lines, childIndex, "STATUS", "approved");
+  upsertHeadlinePropertyInLines(lines, parentIndex, "STATUS", "approved-to-send");
+  upsertHeadlinePropertyInLines(lines, parentIndex, "ASSIGNEE", "OpenClaw");
+  upsertHeadlinePropertyInLines(lines, parentIndex, "ORG2_AGENT_HANDOFF_AT", timestamp);
+  if (approvalId) upsertHeadlinePropertyInLines(lines, parentIndex, "APPROVAL_ID", approvalId);
+  return { text: lines.join("\n"), changed: true };
+}
+
+function findAgendaTuiParentSendItem(item: ScheduledItem): ScheduledItem | null {
+  if (item.level <= 1 || !/^Approve\b/i.test(item.headline)) return null;
+  const content = fs.readFileSync(item.filePath, "utf8").replace(/\r\n/g, "\n");
+  const lines = content.split("\n");
+  for (let i = item.lineNumber - 1; i >= 0; i -= 1) {
+    const parsed = parseHeadlineLine(lines[i] ?? "");
+    if (!parsed) continue;
+    if (parsed.level >= item.level) continue;
+    if (!/^Send\b/i.test(parsed.title)) return null;
+    const properties = extractAgendaPropertiesNearHeadline(lines, i);
+    const candidateId = agendaPrimaryIdFromProperties(properties);
+    return {
+      filePath: item.filePath,
+      lineNumber: i,
+      headline: parsed.title,
+      body: "",
+      todo: parsed.todo,
+      priority: parsed.priority,
+      effort: properties.EFFORT,
+      id: candidateId,
+      level: parsed.level,
+      date: item.date,
+      time: undefined,
+      kind: item.kind,
+      tags: parsed.tags,
+      properties,
+    };
+  }
+
+  return null;
 }
 
 function applyAgendaTuiPriority(item: ScheduledItem, priority: string | null): ScheduledItem {
@@ -13179,7 +13290,7 @@ Flags:
 
     const beforeRaw = fs.readFileSync(todoFile, "utf8").replace(/\r\n/g, "\n");
 
-    const res = todoAction === "assign"
+    let res = todoAction === "assign"
       ? assignTodoInText(beforeRaw, {
           filePath: todoFile,
           lineNumber: todoLine,
@@ -13192,6 +13303,13 @@ Flags:
           ...(nowDate ? { now: nowDate } : {}),
           ...(todoLogbookEffective ? { logbook: true } : {}),
         });
+
+    if (todoAction !== "assign" && "newStatus" in res && res.newStatus === "done") {
+      const handoff = applyNestedApprovalHandoffInText(res.text, res.headingLineNumber, formatOrgTimestamp(nowDate || new Date()));
+      if (handoff.changed) {
+        res = { ...res, changed: true, text: handoff.text };
+      }
+    }
 
     if (todoApply) {
       fs.writeFileSync(todoFile, res.text, "utf8");
