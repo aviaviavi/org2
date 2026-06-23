@@ -580,7 +580,7 @@ private struct NewNoteView: View {
 
           Button {
             Task {
-              await store.saveDailyNote(title: title, body: bodyText, attachments: attachments)
+              await store.saveMobileNote(title: title, body: bodyText, attachments: attachments)
               title = ""
               bodyText = ""
               attachments = []
@@ -597,7 +597,7 @@ private struct NewNoteView: View {
               && attachments.isEmpty
           )
 
-          Text("Appends this note directly to today's daily note in the selected corpus.")
+          Text("Queues this note in mobile-inbox.org2 so desktop sync can merge it safely.")
             .font(.caption)
             .foregroundStyle(.secondary)
         }

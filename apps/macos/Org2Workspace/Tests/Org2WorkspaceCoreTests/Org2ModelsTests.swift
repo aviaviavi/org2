@@ -8229,6 +8229,52 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testPageScopeEditRefusesStaleDailyNoteWhenSyncedContentTouchesLoadedRange() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-page-stale-save-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("2026-06-13.org2")
+    try """
+    #+TITLE: 2026-06-13
+
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    guard let location = store.selectedLocation else {
+      return XCTFail("Expected selected daily note")
+    }
+    await store.loadEntrySource(for: location)
+    try await waitForEntryRender(store)
+
+    store.beginEditingCurrentScope()
+    XCTAssertTrue(store.isEditingEntry)
+
+    try """
+    #+TITLE: 2026-06-13 synced
+
+    * Phone note
+    Synced from mobile.
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    store.editableEntryText += "\n* Mac note\nShould not overwrite phone note.\n"
+    await store.saveActiveEdit()
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("#+TITLE: 2026-06-13 synced"))
+    XCTAssertTrue(updated.contains("* Phone note\nSynced from mobile."))
+    XCTAssertFalse(updated.contains("* Mac note"))
+    XCTAssertEqual(store.statusText, "Save failed")
+    XCTAssertTrue(store.errorText?.contains("File changed on disk") == true)
+  }
+
+  @MainActor
   func testBlankPageClickStartsParagraphDraftAtEndOfDailyNote() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-page-blank-click-\(UUID().uuidString)", isDirectory: true)

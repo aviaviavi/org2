@@ -2544,7 +2544,8 @@ public final class WorkspaceStore: ObservableObject {
           file: source.file,
           startLine: block.startLine,
           endLineExclusive: block.endLineExclusive,
-          replacement: replacement
+          replacement: replacement,
+          expectedOriginal: block.rawText
         )
       }.value
       let encryptedCount = try await encryptOrgCryptSubtreesAfterExplicitSave(file: source.file)
@@ -2626,7 +2627,8 @@ public final class WorkspaceStore: ObservableObject {
           file: file,
           startLine: startLine,
           endLineExclusive: endLineExclusive,
-          replacement: normalizedReplacement
+          replacement: normalizedReplacement,
+          expectedOriginal: block.rawText
         )
       }.value
 
@@ -2780,7 +2782,8 @@ public final class WorkspaceStore: ObservableObject {
             file: source.file,
             startLine: block.startLine,
             endLineExclusive: block.endLineExclusive,
-            replacement: replacement
+            replacement: replacement,
+            expectedOriginal: block.rawText
           )
         }.value
         invalidateCanonicalDocumentCache(for: source.file)
@@ -4139,7 +4142,8 @@ public final class WorkspaceStore: ObservableObject {
         file: source.file,
         startLine: block.startLine,
         endLineExclusive: block.endLineExclusive,
-        replacement: normalizedReplacement
+        replacement: normalizedReplacement,
+        expectedOriginal: block.rawText
       )
     }.value
     let encryptedCount = try await encryptOrgCryptSubtreesAfterExplicitSave(file: source.file)
@@ -9189,7 +9193,8 @@ public final class WorkspaceStore: ObservableObject {
       file: source.file,
       startLine: source.startLine,
       endLineExclusive: source.endLineExclusive,
-      replacement: replacement
+      replacement: replacement,
+      expectedOriginal: source.text
     )
   }
 
@@ -9341,7 +9346,13 @@ public final class WorkspaceStore: ObservableObject {
     )
   }
 
-  nonisolated private static func replaceSourceRange(file: String, startLine: Int, endLineExclusive: Int, replacement: String) throws {
+  nonisolated private static func replaceSourceRange(
+    file: String,
+    startLine: Int,
+    endLineExclusive: Int,
+    replacement: String,
+    expectedOriginal: String? = nil
+  ) throws {
     let url = URL(fileURLWithPath: file)
     let raw = try String(contentsOf: url, encoding: .utf8)
     var lines = normalizeLineEndings(raw)
@@ -9352,6 +9363,13 @@ public final class WorkspaceStore: ObservableObject {
     let endIndex = endLineExclusive - 1
     guard startIndex >= 0, startIndex <= lines.count, endIndex >= startIndex, endIndex <= lines.count else {
       throw WorkspaceEditError.invalidRange(file: file, line: startLine)
+    }
+
+    if let expectedOriginal {
+      let currentOriginal = lines[startIndex..<endIndex].joined(separator: "\n")
+      guard currentOriginal == normalizeLineEndings(expectedOriginal) else {
+        throw WorkspaceEditError.fileChanged(file: file)
+      }
     }
 
     let normalizedReplacement = normalizeLineEndings(replacement)
@@ -11954,9 +11972,32 @@ public final class WorkspaceStore: ObservableObject {
   private func appendCapture(draft: WorkspaceCaptureDraft, to target: URL, corpusRoot: URL) throws {
     try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
     let entry = try captureEntryText(draft: draft, corpusRoot: corpusRoot)
-    let existing = (try? String(contentsOf: target, encoding: .utf8)) ?? ""
-    let prefix = existing.isEmpty || existing.hasSuffix("\n") ? existing : "\(existing)\n"
-    try "\(prefix)\(entry)".write(to: target, atomically: true, encoding: .utf8)
+    if !FileManager.default.fileExists(atPath: target.path) {
+      guard FileManager.default.createFile(atPath: target.path, contents: nil) else {
+        throw CocoaError(.fileWriteUnknown)
+      }
+    }
+    try Self.appendText(entry, to: target)
+  }
+
+  nonisolated private static func appendText(_ text: String, to target: URL) throws {
+    let handle = try FileHandle(forUpdating: target)
+    defer {
+      try? handle.close()
+    }
+
+    let byteCount = try handle.seekToEnd()
+    var prefix = ""
+    if byteCount > 0 {
+      try handle.seek(toOffset: byteCount - 1)
+      let lastByte = handle.readData(ofLength: 1)
+      if lastByte != Data([0x0A]) {
+        prefix = "\n"
+      }
+      try handle.seekToEnd()
+    }
+
+    try handle.write(contentsOf: Data("\(prefix)\(text)".utf8))
   }
 
   private func captureEntryText(draft: WorkspaceCaptureDraft, corpusRoot: URL) throws -> String {
@@ -12623,6 +12664,7 @@ private enum WorkspaceEditError: LocalizedError {
   case emptyTitle
   case noHeadline(file: String, line: Int)
   case invalidRange(file: String, line: Int)
+  case fileChanged(file: String)
 
   var errorDescription: String? {
     switch self {
@@ -12634,6 +12676,8 @@ private enum WorkspaceEditError: LocalizedError {
       "No headline found at \(file):\(line)"
     case .invalidRange(let file, let line):
       "Invalid edit range at \(file):\(line)"
+    case .fileChanged(let file):
+      "File changed on disk; reload \(file) before saving"
     }
   }
 }
