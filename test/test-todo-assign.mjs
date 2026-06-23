@@ -43,4 +43,40 @@ assert.match(replacedText, /^\* TODO Existing drawer/m);
 assert.match(replacedText, /:ASSIGNEE: OpenClaw/);
 assert.match(replacedText, /:STATUS: draft-needs-review/);
 
+fs.writeFileSync(note, `* TODO Send approved follow-up
+:PROPERTIES:
+:STATUS: waiting-on-approval
+:ASSIGNEE: OpenClaw
+:END:
+** TODO Approve follow-up
+:PROPERTIES:
+:ID: approval-1
+:STATUS: draft-needs-review
+:ASSIGNEE: Avi
+:END:
+`, "utf8");
+const approved = JSON.parse(cli([
+  "todo",
+  "set",
+  "--file",
+  note,
+  "--line",
+  "7",
+  "--status",
+  "done",
+  "--apply",
+  "--now",
+  "2026-06-22T17:00:00-07:00",
+]));
+assert.equal(approved.newStatus, "done");
+
+const approvedText = fs.readFileSync(note, "utf8");
+assert.match(approvedText, /^\* TODO Send approved follow-up/m);
+assert.match(approvedText, /:STATUS: approved-to-send/);
+assert.match(approvedText, /:ASSIGNEE: OpenClaw/);
+assert.match(approvedText, /:ORG2_AGENT_HANDOFF_AT: <2026-06-22 Mon 17:00>/);
+assert.match(approvedText, /:APPROVAL_ID: approval-1/);
+assert.match(approvedText, /^\*\* DONE Approve follow-up/m);
+assert.match(approvedText, /:STATUS: approved/);
+
 console.log("✓ todo assign");

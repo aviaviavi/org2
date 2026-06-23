@@ -6676,6 +6676,11 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func markReadyForAgent(_ target: HeadlineMutationTarget, timestamp: String) async throws {
+    if try nestedParentSendHeading(for: target) != nil {
+      try await setTodoStatus(.done, for: target)
+      return
+    }
+
     let assignee = resolvedAgentHandoffAssignee()
     try await setTodoAssignee(assignee, for: target)
     try upsertHeadlineProperties(
@@ -11604,6 +11609,46 @@ public final class WorkspaceStore: ObservableObject {
 
     let output = lines.joined(separator: "\n")
     try output.write(to: url, atomically: true, encoding: .utf8)
+  }
+
+  private func nestedParentSendHeading(for target: HeadlineMutationTarget) throws -> (line: Int, id: String?)? {
+    guard target.title.range(of: #"^Approve\b"#, options: [.regularExpression, .caseInsensitive]) != nil else {
+      return nil
+    }
+
+    let raw = try String(contentsOf: URL(fileURLWithPath: target.file), encoding: .utf8)
+      .replacingOccurrences(of: "\r\n", with: "\n")
+    let lines = raw.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    let targetIndex = max(0, min(lines.count - 1, target.line - 1))
+    guard let childIndex = Self.headingIndex(in: lines, atOrBefore: targetIndex),
+          let childLevel = Self.headingLevel(lines[childIndex]),
+          childLevel > 1
+    else { return nil }
+
+    for index in stride(from: childIndex - 1, through: 0, by: -1) {
+      guard let level = Self.headingLevel(lines[index]) else { continue }
+      if level >= childLevel { continue }
+      let properties = Self.scanPropertyDrawer(lines: lines, afterHeadingIndex: index)
+      let candidateID = (properties["ID"] ?? properties["CUSTOM_ID"] ?? "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      let title = Self.headingTitle(from: lines[index])
+      if title.range(of: #"^Send\b"#, options: [.regularExpression, .caseInsensitive]) == nil {
+        return nil
+      }
+      return (line: index + 1, id: candidateID.isEmpty ? nil : candidateID)
+    }
+
+    return nil
+  }
+
+  nonisolated private static func headingTitle(from line: String) -> String {
+    var rest = line.replacingOccurrences(of: #"^\*+\s+"#, with: "", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    rest = rest.replacingOccurrences(of: #"^[A-Z][A-Z0-9_-]*(\s+|$)"#, with: "", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    rest = rest.replacingOccurrences(of: #"\s+:[^\s:]+(:[^\s:]+)*:\s*$"#, with: "", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return Org2Display.cleanInline(rest)
   }
 
   private func updateHeadlinePriority(file: String, line: Int, priority: String?) throws {

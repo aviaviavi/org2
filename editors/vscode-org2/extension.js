@@ -184,7 +184,7 @@ class Org2AgendaSeparator {
 }
 
 class Org2AgendaItem {
-  constructor({ todo, headline, kind, file, line, date, time, urgency, priority, effort, habit }) {
+  constructor({ todo, headline, kind, file, line, date, time, urgency, priority, effort, habit, id, properties }) {
     this.todo = todo || '';
     this.headline = headline || '';
     this.kind = kind || '';
@@ -198,6 +198,8 @@ class Org2AgendaItem {
     this.priority = normalizeAgendaPriority(priority) || extractAgendaPriorityFromHeadline(this.headline);
     this.effort = typeof effort === 'string' ? effort.trim() : '';
     this.habit = habit && typeof habit === 'object' ? habit : undefined;
+    this.idValue = typeof id === 'string' ? id.trim() : '';
+    this.properties = properties && typeof properties === 'object' ? properties : {};
   }
 }
 
@@ -896,6 +898,58 @@ function upsertHeadlinePropertiesInText(text, line0, assignments) {
   }
 
   return { changed, text: lines.join('\n') };
+}
+
+function parsePropertyDrawerNearHeadline(lines, headingIndex) {
+  const properties = {};
+  if (!Array.isArray(lines) || headingIndex < 0 || headingIndex >= lines.length) return properties;
+
+  let insertAt = headingIndex + 1;
+  while (insertAt < lines.length && /^(SCHEDULED|DEADLINE|CLOSED):/i.test(String(lines[insertAt] || '').trim())) {
+    insertAt += 1;
+  }
+  if (!propertiesBeginRe.test(lines[insertAt] || '')) return properties;
+
+  for (let i = insertAt + 1; i < lines.length; i += 1) {
+    if (headingRe.test(lines[i] || '')) break;
+    if (drawerEndRe.test(lines[i] || '')) break;
+    const match = /^:([A-Za-z0-9_@#%+.-]+):\s*(.*?)\s*$/.exec(String(lines[i] || ''));
+    if (match && match[1]) properties[String(match[1]).toUpperCase()] = String(match[2] || '').trim();
+  }
+  return properties;
+}
+
+function headlineTitleFromLine(line) {
+  let rest = String(line || '').replace(/^\*+\s+/, '').trim();
+  rest = rest.replace(/^[A-Z][A-Z0-9_-]*(?:\s+|$)/, '').trim();
+  rest = rest.replace(/\s+:[^\s:]+(?::[^\s:]+)*:\s*$/, '').trim();
+  return parseHeadlineTitleForRoam(rest);
+}
+
+function findParentSendHeading(text, line0, childTitle) {
+  if (!/^Approve\b/i.test(String(childTitle || '').trim())) return null;
+  const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+  let childLevel = 0;
+  for (let i = Math.max(0, line0); i >= 0; i -= 1) {
+    const match = /^(\*+)\s+/.exec(lines[i] || '');
+    if (!match) continue;
+    childLevel = match[1].length;
+    break;
+  }
+  if (childLevel <= 1) return null;
+
+  for (let i = Math.max(0, line0 - 1); i >= 0; i -= 1) {
+    const match = /^(\*+)\s+/.exec(lines[i] || '');
+    if (!match) continue;
+    const level = match[1].length;
+    if (level >= childLevel) continue;
+    const title = headlineTitleFromLine(lines[i]);
+    if (!/^Send\b/i.test(title)) return null;
+    const properties = parsePropertyDrawerNearHeadline(lines, i);
+    const id = String(properties.ID || properties.CUSTOM_ID || '').trim();
+    return { line0: i, id, properties };
+  }
+  return null;
 }
 
 function randomUuid() {
@@ -3205,11 +3259,12 @@ function activate(context) {
       selectionBefore = editor.selection ? new vscode.Selection(editor.selection.start, editor.selection.end) : undefined;
     }
 
-    const before = fs.readFileSync(filePath, 'utf8');
-    const updated = upsertHeadlinePropertiesInText(before, line0, {
+    const assignments = options.properties || {
       STATUS: 'ready-for-agent',
       ORG2_AGENT_HANDOFF_AT: formatOrgTimestamp(new Date()),
-    });
+    };
+    const before = fs.readFileSync(filePath, 'utf8');
+    const updated = upsertHeadlinePropertiesInText(before, line0, assignments);
     if (!updated.changed) return true;
 
     fs.writeFileSync(filePath, updated.text, 'utf8');
@@ -3240,6 +3295,34 @@ function activate(context) {
     const resolvedTargets = targets.length ? targets : [item];
 
     for (const target of resolvedTargets) {
+      const filePath = target && target.file ? resolveAgendaItemPath(target) : undefined;
+      const line0 = target && typeof target.line === 'number' ? target.line : 0;
+
+      if (filePath) {
+        const before = fs.readFileSync(filePath, 'utf8');
+        const parentSend = findParentSendHeading(before, line0, target.headline || '');
+        if (parentSend) {
+          const timestamp = formatOrgTimestamp(new Date());
+          await runTodoCli('set', 'done', target, { skipAgendaReload: true });
+          await applyAgentHandoffProperties(target, {
+            skipAgendaReload: true,
+            properties: {
+              STATUS: 'approved',
+            },
+          });
+          await applyAgentHandoffProperties({ file: target.file, line: parentSend.line0 }, {
+            skipAgendaReload: true,
+            properties: {
+              STATUS: 'approved-to-send',
+              ASSIGNEE: 'OpenClaw',
+              ORG2_AGENT_HANDOFF_AT: timestamp,
+              ...(target.idValue ? { APPROVAL_ID: target.idValue } : {}),
+            },
+          });
+          continue;
+        }
+      }
+
       await runTodoCli('assign', 'OpenClaw', target, { skipAgendaReload: true });
       await applyAgentHandoffProperties(target, { skipAgendaReload: true });
     }
