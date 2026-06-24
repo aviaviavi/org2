@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .build/
+**/.org2/index/
+**/.org2/corpus-index-cache.json
 **/.org2/openclaw-chat.json
 **/xcuserdata/
 *.xcuserstate

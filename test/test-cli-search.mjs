@@ -6,6 +6,8 @@ import os from "node:os";
 import path from "node:path";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "org2-search-test-"));
+const indexHome = fs.mkdtempSync(path.join(os.tmpdir(), "org2-search-index-home-"));
+process.env.ORG2_INDEX_HOME = indexHome;
 const file = path.join(tmp, "notes.org2");
 fs.writeFileSync(file, `#+title: Search Fixture
 
@@ -41,6 +43,9 @@ assert.deepEqual(payload.results[0].tags, ["work"]);
 const indexBuild = JSON.parse(run("index", "--dir", tmp, "--recursive", "--format", "json"));
 assert.equal(indexBuild.$schema, "org2:index:v1");
 assert.equal(indexBuild.kind, "search");
+assert.ok(indexBuild.path.startsWith(indexHome + path.sep), `expected index under ${indexHome}, got ${indexBuild.path}`);
+assert.ok(!indexBuild.path.startsWith(tmp + path.sep), `index should not be written inside corpus root: ${indexBuild.path}`);
+assert.equal(fs.existsSync(path.join(tmp, ".org2", "index", "search-v1.json")), false);
 assert.ok(fs.existsSync(indexBuild.path));
 assert.ok(indexBuild.fileCount >= 1);
 

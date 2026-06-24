@@ -1,7 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
+import { defaultSearchIndexPath } from "./indexPaths.js";
 import { TODO_KEYWORDS } from "./todo.js";
+
+export { defaultSearchIndexPath };
 
 export type Org2SearchIndexFile = {
   path: string;
@@ -85,10 +88,6 @@ export type Org2SearchOptions = {
 
 type SearchHeading = { line: number; level: number; title: string; todo?: string; tags: string[]; id?: string };
 type SearchHeadingRef = { level: number; title: string; line: number; lineNumber: number };
-
-export function defaultSearchIndexPath(rootDir: string): string {
-  return path.join(path.resolve(rootDir), ".org2", "index", "search-v1.json");
-}
 
 export function buildSearchIndex(options: {
   rootDir: string;

@@ -42,6 +42,7 @@ import {
 import { loadAiJobManifest, validateAiJobManifest } from "./aiJobManifest.js";
 import { createAiAdapterRequest, MockAiAdapter, type AiAdapterContextItem, type AiAdapterResponse } from "./aiAdapter.js";
 import { buildGeneratedArtifactMetadata, formatOrg2ArtifactPropertyDrawer, sha256Hex } from "./artifactMetadata.js";
+import { defaultCorpusCachePath, org2IndexHome } from "./indexPaths.js";
 import { ingestDemoSource, type Org2RawCaptureInput } from "./ingestionPipeline.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import {
@@ -10010,7 +10011,7 @@ Flags:
 Usage:
   org2 index [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
 
-Builds a rebuildable exact-text search index at DIR/.org2/index/search-v1.json. Org files remain canonical; the index is disposable derived storage.
+Builds a rebuildable exact-text search index under ${org2IndexHome()}/<corpus-slug>-<hash>/search-v1.json. Org files remain canonical; the index is disposable machine-local derived storage.
 
 Flags:
   --dir DIR          Root directory to scan
@@ -13029,7 +13030,7 @@ Flags:
     }
 
     const rootDir = dir ? path.resolve(dir) : path.dirname(path.resolve(files[0]!));
-    const defaultCache = path.join(rootDir, ".org2", "corpus-index-cache.json");
+    const defaultCache = defaultCorpusCachePath(rootDir);
     const corpus = compileIncremental
       ? compileCorpusIncremental(files, { rootDir, cacheFile: compileCache || defaultCache })
       : compileCorpus(files, { rootDir });

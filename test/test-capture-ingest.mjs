@@ -7,7 +7,8 @@ import path from "node:path";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "org2-capture-ingest-test-"));
 const target = path.join(tmp, "inbox.org2");
-const run = (...args) => execFileSync("node", ["dist/cli.js", ...args], { encoding: "utf8" });
+const testEnv = { ...process.env, TZ: "UTC" };
+const run = (...args) => execFileSync("node", ["dist/cli.js", ...args], { encoding: "utf8", env: testEnv });
 
 const preview = run("capture", "--text", "Discuss routing model", "--to", target, "--title", "Meeting note", "--author", "Avi", "--now", "2026-05-26T12:00:00.000Z", "--format", "json");
 const payload = JSON.parse(preview);
@@ -36,7 +37,7 @@ assert.equal(fileCapture.source.type, "file");
 assert.equal(fileCapture.source.provenance, `file:${path.resolve(sourceFile)}`);
 assert.equal(fileCapture.body, "Transcript body");
 
-const stdinOut = execFileSync("node", ["dist/cli.js", "capture", "--stdin", "--to", target, "--format", "json"], { input: "from stdin\n", encoding: "utf8" });
+const stdinOut = execFileSync("node", ["dist/cli.js", "capture", "--stdin", "--to", target, "--format", "json"], { input: "from stdin\n", encoding: "utf8", env: testEnv });
 const stdinPayload = JSON.parse(stdinOut);
 assert.equal(stdinPayload.source.type, "stdin");
 assert.equal(stdinPayload.source.origin, "stdin");

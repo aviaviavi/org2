@@ -10,7 +10,11 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "org2-todo-assign-"));
 const note = path.join(tmp, "tasks.org2");
 
 function cli(args) {
-  return execFileSync("node", ["dist/cli.js", ...args], { cwd: repo, encoding: "utf8" });
+  return execFileSync("node", ["dist/cli.js", ...args], {
+    cwd: repo,
+    encoding: "utf8",
+    env: { ...process.env, TZ: "America/Los_Angeles" },
+  });
 }
 
 fs.writeFileSync(note, "* TODO Send approved follow-up\nSCHEDULED: <2026-06-14 Sun>\n\nBody\n", "utf8");
