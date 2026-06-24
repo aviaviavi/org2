@@ -603,6 +603,7 @@ final class CorpusStore: ObservableObject {
 
     lines[headingIndex] = headingLine(lines[headingIndex], settingTodo: OrgTodoStatus.done.rawValue)
     upsertApprovalProperties(in: &lines, headingIndex: headingIndex, approval: approval)
+    activatePairedSendForApproval(in: &lines, approvalHeadingIndex: headingIndex, approval: approval)
 
     var output = lines.joined(separator: "\n")
     if raw.hasSuffix("\n"), !output.hasSuffix("\n") {
@@ -843,6 +844,60 @@ final class CorpusStore: ObservableObject {
     upsertProperties(properties, in: &lines, headingIndex: headingIndex)
   }
 
+  private func activatePairedSendForApproval(in lines: inout [String], approvalHeadingIndex: Int, approval: ApprovalEntry) {
+    guard isApprovalTitle(headingTitle(lines[approvalHeadingIndex])),
+          let sendHeadingIndex = pairedSendHeadingIndex(in: lines, approvalHeadingIndex: approvalHeadingIndex, approval: approval)
+    else {
+      return
+    }
+
+    lines[sendHeadingIndex] = headingLine(lines[sendHeadingIndex], settingTodo: OrgTodoStatus.todo.rawValue)
+    upsertProperties(
+      [
+        "STATUS": "approved-to-send",
+        "ASSIGNEE": "OpenClaw",
+        "APPROVED_AT": orgTimestamp(Date()),
+        "APPROVAL_TODO": approval.title,
+      ],
+      in: &lines,
+      headingIndex: sendHeadingIndex
+    )
+
+    let sendTitle = headingTitle(lines[sendHeadingIndex])
+    upsertProperties(["PAIRED_SEND_TODO": sendTitle], in: &lines, headingIndex: approvalHeadingIndex)
+  }
+
+  private func pairedSendHeadingIndex(in lines: [String], approvalHeadingIndex: Int, approval: ApprovalEntry) -> Int? {
+    let approvalProperties = propertyDrawerValues(in: lines, headingIndex: approvalHeadingIndex)
+    if let pairedTitle = approvalProperties["PAIRED_SEND_TODO"], !pairedTitle.isEmpty {
+      let normalizedPairedTitle = normalizedOrgTitle(pairedTitle)
+      if let match = lines.indices.first(where: { index in
+        isHeading(lines[index]) && normalizedOrgTitle(headingTitle(lines[index])) == normalizedPairedTitle
+      }) {
+        return match
+      }
+    }
+
+    guard let approvalLevel = headingLevel(lines[approvalHeadingIndex]) else { return nil }
+    var index = approvalHeadingIndex - 1
+    while index >= 0 {
+      if isHeading(lines[index]), let level = headingLevel(lines[index]), level < approvalLevel {
+        return isSendApprovalTitle(headingTitle(lines[index])) ? index : nil
+      }
+      index -= 1
+    }
+
+    return nil
+  }
+
+  private func isApprovalTitle(_ title: String) -> Bool {
+    title.range(of: #"^Approve\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+  }
+
+  private func isSendApprovalTitle(_ title: String) -> Bool {
+    title.range(of: #"^Send approved\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+  }
+
   private func upsertProperties(_ properties: [String: String], in lines: inout [String], headingIndex: Int) {
     guard let drawer = propertyDrawerRange(in: lines, headingIndex: headingIndex) else {
       let inserted = [":PROPERTIES:"]
@@ -929,6 +984,12 @@ final class CorpusStore: ObservableObject {
     let stars = line.prefix { $0 == "*" }
     guard !stars.isEmpty else { return false }
     return line.dropFirst(stars.count).first?.isWhitespace == true
+  }
+
+  private func headingLevel(_ line: String) -> Int? {
+    let stars = line.prefix { $0 == "*" }
+    guard !stars.isEmpty, line.dropFirst(stars.count).first?.isWhitespace == true else { return nil }
+    return stars.count
   }
 
   private func headingTitle(_ line: String) -> String {
