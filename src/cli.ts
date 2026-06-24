@@ -5537,7 +5537,7 @@ function applyAgendaTuiDoneAndAgentHandoff(item: ScheduledItem): ScheduledItem {
   const doneItem = applyAgendaTuiTodo(item, "done");
   if (parentSendItem) {
     const approvedItem = applyAgendaTuiProperty(doneItem, "STATUS", "approved");
-    let sendItem = applyAgendaTuiProperty(parentSendItem, "STATUS", "approved-to-send");
+    let sendItem = applyAgendaTuiProperty(parentSendItem, "STATUS", agendaApprovedAgentActionStatus(parentSendItem.headline));
     sendItem = applyAgendaTuiProperty(sendItem, "ASSIGNEE", "OpenClaw");
     sendItem = applyAgendaTuiProperty(sendItem, "ORG2_AGENT_HANDOFF_AT", timestamp);
     if (item.id) sendItem = applyAgendaTuiProperty(sendItem, "APPROVAL_ID", item.id);
@@ -5582,6 +5582,35 @@ function upsertHeadlinePropertyInLines(lines: string[], headingIndex: number, ke
   lines.splice(drawerEnd, 0, `${keyPrefix} ${value}`);
 }
 
+function isAgendaApprovalTitle(title: string): boolean {
+  return /^Approve\b/i.test(title);
+}
+
+function isAgendaApprovedSendTitle(title: string): boolean {
+  return /^Send approved\b/i.test(title);
+}
+
+function isAgendaApprovedAgentActionTitle(title: string): boolean {
+  return /^(Send approved|Continue approved)\b/i.test(title);
+}
+
+function agendaApprovedAgentActionStatus(title: string): string {
+  return isAgendaApprovedSendTitle(title) ? "approved-to-send" : "ready-for-agent";
+}
+
+function agendaPairedActionTitleCandidates(properties: Record<string, string>): string[] {
+  return [
+    "PAIRED_SEND_TODO",
+    "PAIRED_AGENT_TODO",
+    "PAIRED_TODO",
+    "NEXT_AGENT_TODO",
+    "SEND_TODO",
+  ].flatMap((key) => {
+    const value = properties[key]?.trim();
+    return value ? [value] : [];
+  });
+}
+
 function applyNestedApprovalHandoffInText(text: string, lineNumber: number, timestamp: string): { text: string; changed: boolean } {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   let childIndex = Math.max(0, Math.min(lines.length - 1, lineNumber - 1));
@@ -5589,42 +5618,45 @@ function applyNestedApprovalHandoffInText(text: string, lineNumber: number, time
   if (childIndex < 0) return { text, changed: false };
 
   const child = parseHeadlineLine(lines[childIndex] ?? "");
-  if (!child || child.level <= 1 || child.todo !== "DONE" || !/^Approve\b/i.test(child.title)) {
+  if (!child || child.level <= 1 || child.todo !== "DONE" || !isAgendaApprovalTitle(child.title)) {
     return { text, changed: false };
   }
 
+  const childProperties = extractAgendaPropertiesNearHeadline(lines, childIndex);
+  const pairedTitles = new Set(agendaPairedActionTitleCandidates(childProperties).map(normalizeAgendaPropertyValue));
   let parentIndex = -1;
   let parent: ReturnType<typeof parseHeadlineLine> = null;
   for (let i = childIndex - 1; i >= 0; i -= 1) {
     const parsed = parseHeadlineLine(lines[i] ?? "");
     if (!parsed) continue;
     if (parsed.level >= child.level) continue;
-    if (!/^Send\b/i.test(parsed.title)) return { text, changed: false };
+    if (pairedTitles.size > 0 && !pairedTitles.has(normalizeAgendaPropertyValue(parsed.title))) return { text, changed: false };
+    if (pairedTitles.size === 0 && !isAgendaApprovedAgentActionTitle(parsed.title)) return { text, changed: false };
     parentIndex = i;
     parent = parsed;
     break;
   }
   if (parentIndex < 0 || !parent) return { text, changed: false };
 
-  const childProperties = extractAgendaPropertiesNearHeadline(lines, childIndex);
   const approvalId = agendaPrimaryIdFromProperties(childProperties);
   upsertHeadlinePropertyInLines(lines, childIndex, "STATUS", "approved");
-  upsertHeadlinePropertyInLines(lines, parentIndex, "STATUS", "approved-to-send");
+  upsertHeadlinePropertyInLines(lines, parentIndex, "STATUS", agendaApprovedAgentActionStatus(parent.title));
   upsertHeadlinePropertyInLines(lines, parentIndex, "ASSIGNEE", "OpenClaw");
   upsertHeadlinePropertyInLines(lines, parentIndex, "ORG2_AGENT_HANDOFF_AT", timestamp);
   if (approvalId) upsertHeadlinePropertyInLines(lines, parentIndex, "APPROVAL_ID", approvalId);
+  upsertHeadlinePropertyInLines(lines, childIndex, isAgendaApprovedSendTitle(parent.title) ? "PAIRED_SEND_TODO" : "PAIRED_AGENT_TODO", parent.title);
   return { text: lines.join("\n"), changed: true };
 }
 
 function findAgendaTuiParentSendItem(item: ScheduledItem): ScheduledItem | null {
-  if (item.level <= 1 || !/^Approve\b/i.test(item.headline)) return null;
+  if (item.level <= 1 || !isAgendaApprovalTitle(item.headline)) return null;
   const content = fs.readFileSync(item.filePath, "utf8").replace(/\r\n/g, "\n");
   const lines = content.split("\n");
   for (let i = item.lineNumber - 1; i >= 0; i -= 1) {
     const parsed = parseHeadlineLine(lines[i] ?? "");
     if (!parsed) continue;
     if (parsed.level >= item.level) continue;
-    if (!/^Send\b/i.test(parsed.title)) return null;
+    if (!isAgendaApprovedAgentActionTitle(parsed.title)) return null;
     const properties = extractAgendaPropertiesNearHeadline(lines, i);
     const candidateId = agendaPrimaryIdFromProperties(properties);
     return {
@@ -8027,7 +8059,7 @@ async function main(): Promise<void> {
   let exportTitle = "";
 
   // Todo status editing
-  let todoAction: "set" | "toggle" | "assign" = "toggle";
+  let todoAction: "set" | "toggle" | "assign" | "approve" = "toggle";
   let todoFile = "";
   let todoLine = 0;
   let todoStatus: TodoStatus | "" = "";
@@ -8260,10 +8292,10 @@ async function main(): Promise<void> {
     } else if (arg === "todo") {
       command = "todo";
       i++;
-      // Optional subcommand: set|toggle|assign (default toggle)
+      // Optional subcommand: set|toggle|assign|approve (default toggle)
       if (i < args.length && !args[i]!.startsWith("--")) {
         const sub = args[i]!
-        if (sub === "set" || sub === "toggle" || sub === "assign") {
+        if (sub === "set" || sub === "toggle" || sub === "assign" || sub === "approve") {
           todoAction = sub;
           i++;
         }
@@ -9717,7 +9749,7 @@ Usage:
 
 Core commands:
   org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
-  org2 todo <set|toggle|assign> --file FILE (--line N | --pos LINE[:COL]) [--apply]
+  org2 todo <set|toggle|assign|approve> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--default-recipient-self] [--gpg-program PATH] [--gpg-timeout SECONDS] [--apply]
   org2 capture --file FILE --title TITLE [--template note|task] [--apply]
@@ -9788,7 +9820,7 @@ function printScopedUsage(
   command: string,
   options: {
     exportAction: "html";
-    todoAction: "set" | "toggle" | "assign";
+    todoAction: "set" | "toggle" | "assign" | "approve";
     planAction: "set" | "today";
     cryptAction: "encrypt" | "decrypt" | "reencrypt";
     idAction: "get" | "ensure";
@@ -9822,7 +9854,7 @@ Flags:
     text = `org2 todo ${options.todoAction}
 
 Usage:
-  org2 todo <set|toggle|assign> --file FILE (--line N | --pos LINE[:COL]) [--apply]
+  org2 todo <set|toggle|assign|approve> --file FILE (--line N | --pos LINE[:COL]) [--apply]
 
 Flags:
   --file FILE         Target file
@@ -9830,6 +9862,7 @@ Flags:
   --pos LINE[:COL]    Heading position
   --to TODO           Target TODO keyword for 'set'
   --assignee NAME     Assignee for 'assign'
+  --now ISO           Override approval / closed timestamp
   --apply             Write changes instead of previewing`;
   } else if (command === "plan") {
     text = `org2 plan ${options.planAction}
@@ -13247,6 +13280,10 @@ Flags:
     if (!Number.isFinite(todoLine) || todoLine < 1) {
       console.error("Error: todo requires --line N (1-based) or --pos LINE[:COL]");
       process.exit(1);
+    }
+
+    if (todoAction === "approve") {
+      todoStatus = "done";
     }
 
     if (todoAction === "set") {
