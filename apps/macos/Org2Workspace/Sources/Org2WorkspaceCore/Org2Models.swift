@@ -175,6 +175,10 @@ public struct AgendaItem: Decodable, Identifiable, Hashable, Sendable {
       .split(whereSeparator: { $0.isWhitespace })
       .map(String.init)
 
+    return matchesAgendaFilterTerms(terms)
+  }
+
+  func matchesAgendaFilterTerms(_ terms: [String]) -> Bool {
     guard !terms.isEmpty else { return true }
 
     let haystack = [
@@ -3402,7 +3406,7 @@ public enum AgendaMode: String, CaseIterable, Identifiable, Sendable {
     case .focus: "Focus"
     case .today: "Today"
     case .range: "Range"
-    case .assigned: "Assigned"
+    case .assigned: "All Time"
     }
   }
 }
