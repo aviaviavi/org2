@@ -1310,7 +1310,7 @@ private struct AgendaView: View {
 
   private var headerSubtitle: String {
     if store.agendaMode == .assigned {
-      return "\(store.visibleAssignedWorkItems.count) assigned item\(store.visibleAssignedWorkItems.count == 1 ? "" : "s")"
+      return "\(store.visibleAssignedWorkItems.count) all-time item\(store.visibleAssignedWorkItems.count == 1 ? "" : "s")"
     }
     return store.agenda.map { "\($0.range.start) to \($0.range.end)" } ?? "Agenda"
   }
@@ -1415,7 +1415,7 @@ private struct AssignedAgendaSummaryView: View {
 
   var body: some View {
     HStack(spacing: 10) {
-      MetricView(title: "Assigned", value: "\(count)")
+      MetricView(title: "All Time", value: "\(count)")
       Spacer(minLength: 0)
     }
     .padding(.horizontal, WorkspaceDesign.contentInset)
@@ -1559,7 +1559,7 @@ private struct AssignedAgendaListView: View {
         }
 
         if store.assignedWorkSections.isEmpty {
-          Text("No assigned agenda items")
+          Text("No all-time agenda items")
             .foregroundStyle(.secondary)
         }
       }

@@ -96,6 +96,11 @@ private struct QuickOpenIndexedFile: Sendable {
   let normalizedRelativePath: String
 }
 
+private struct AssignedWorkSearchRow: Sendable {
+  let item: AssignedWorkItem
+  let searchText: String
+}
+
 private struct OrgIDLookupPayload: Decodable {
   let id: String
   let kind: String
@@ -398,16 +403,29 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var agendaMode: AgendaMode = .focus {
     didSet {
       defaults.set(agendaMode.rawValue, forKey: agendaModeKey)
+      rebuildAgendaDisplayCache()
     }
   }
-  @Published public var agendaFilter = ""
+  @Published public var agendaFilter = "" {
+    didSet {
+      guard oldValue != agendaFilter else { return }
+      rebuildAgendaDisplayCache()
+      rebuildAssignedWorkDisplayCache()
+    }
+  }
   @Published public var agendaFilterFocusToken = 0
   @Published public var isAgendaFilterFocused = false
   @Published public var selectedAgendaItemID: String?
   @Published public var bulkSelectedAgendaItemIDs: Set<String> = []
   private var suppressNextAgendaSelectionActivation = false
   @Published public var corpusRoot: URL?
-  @Published public var agenda: AgendaPayload?
+  @Published public var agenda: AgendaPayload? {
+    didSet {
+      rebuildAgendaDisplayCache()
+    }
+  }
+  public private(set) var agendaDisplaySections: [AgendaDisplaySection] = []
+  public private(set) var visibleAgendaItems: [AgendaItem] = []
   @Published public var corpusFiles: [CorpusFile] = [] {
     didSet {
       rebuildQuickOpenIndex()
@@ -428,7 +446,16 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var similarTodoPattern = ""
   @Published public var similarTodoAssignee = ""
   @Published public var similarTodoStatus = "ready"
-  @Published public var assignedWorkItems: [AssignedWorkItem] = []
+  @Published public var assignedWorkItems: [AssignedWorkItem] = [] {
+    didSet {
+      assignedWorkSearchRows = assignedWorkItems.map { item in
+        AssignedWorkSearchRow(item: item, searchText: Self.assignedWorkFilterText(for: item))
+      }
+      rebuildAssignedWorkDisplayCache()
+    }
+  }
+  public private(set) var visibleAssignedWorkItems: [AssignedWorkItem] = []
+  public private(set) var assignedWorkSections: [AssignedWorkSection] = []
   @Published public var selectedAssignedWorkItemID: AssignedWorkItem.ID?
   @Published public var isLoadingAssignedWork = false
   @Published public var detailScrollRequest: DetailScrollRequest?
@@ -704,6 +731,7 @@ public final class WorkspaceStore: ObservableObject {
   private var agendaTodoShortcutMutationTask: Task<Void, Never>?
   private var pendingAgendaTodoShortcutMutations: [AgendaTodoShortcutMutation] = []
   private var pendingAgendaRefreshAfterBlockEditing = false
+  private var assignedWorkSearchRows: [AssignedWorkSearchRow] = []
 
   public init(
     cli: Org2CLI? = nil,
@@ -3507,7 +3535,7 @@ public final class WorkspaceStore: ObservableObject {
         }
       }
       if selectedSurface == .agenda, agendaMode == .assigned {
-        statusText = "\(items.count) assigned item\(items.count == 1 ? "" : "s")"
+        statusText = "\(items.count) all-time item\(items.count == 1 ? "" : "s")"
       }
     } catch {
       errorText = error.localizedDescription
@@ -3515,8 +3543,17 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public var assignedWorkSections: [AssignedWorkSection] {
-    let grouped = Dictionary(grouping: visibleAssignedWorkItems) { item in
+  private func rebuildAssignedWorkDisplayCache() {
+    let terms = Self.filterTerms(from: agendaFilter)
+    visibleAssignedWorkItems = assignedWorkSearchRows.compactMap { row in
+      guard !terms.isEmpty else { return row.item }
+      return terms.allSatisfy { row.searchText.contains($0) } ? row.item : nil
+    }
+    assignedWorkSections = Self.groupAssignedWorkSections(visibleAssignedWorkItems)
+  }
+
+  private static func groupAssignedWorkSections(_ items: [AssignedWorkItem]) -> [AssignedWorkSection] {
+    let grouped = Dictionary(grouping: items) { item in
       "\(item.assignee)|\(Self.assignedWorkTodoGroupLabel(for: item))"
     }
     return grouped.keys.sorted { lhs, rhs in
@@ -3544,10 +3581,6 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public var visibleAssignedWorkItems: [AssignedWorkItem] {
-    assignedWorkItems.filter { Self.assignedWorkItem($0, matches: agendaFilter) }
-  }
-
   private static func assignedWorkTodoGroupLabel(for item: AssignedWorkItem) -> String {
     let todo = item.todo?
       .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3555,15 +3588,8 @@ public final class WorkspaceStore: ObservableObject {
     return todo?.isEmpty == false ? todo! : "TASK"
   }
 
-  private static func assignedWorkItem(_ item: AssignedWorkItem, matches query: String) -> Bool {
-    let terms = query
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-      .lowercased()
-      .split(whereSeparator: { $0.isWhitespace })
-      .map(String.init)
-    guard !terms.isEmpty else { return true }
-
-    let haystack = [
+  private static func assignedWorkFilterText(for item: AssignedWorkItem) -> String {
+    [
       item.todo,
       item.headline,
       item.assignee,
@@ -3574,7 +3600,6 @@ public final class WorkspaceStore: ObservableObject {
       item.tags.joined(separator: " "),
       item.properties.map { "\($0.key) \($0.value)" }.joined(separator: " ")
     ].compactMap { $0 }.joined(separator: " ").lowercased()
-    return terms.allSatisfy { haystack.contains($0) }
   }
 
   public func selectAssignedWorkItem(_ item: AssignedWorkItem) {
@@ -5789,21 +5814,27 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public var agendaDisplaySections: [AgendaDisplaySection] {
+  private func rebuildAgendaDisplayCache() {
+    agendaDisplaySections = Self.makeAgendaDisplaySections(agenda: agenda, mode: agendaMode, filter: agendaFilter)
+    visibleAgendaItems = agendaDisplaySections.flatMap(\.items)
+  }
+
+  private static func makeAgendaDisplaySections(agenda: AgendaPayload?, mode: AgendaMode, filter: String) -> [AgendaDisplaySection] {
     guard let agenda else { return [] }
-    let overdue = agenda.overdue.flatMap(\.items).filter { $0.matchesAgendaFilter(agendaFilter) }
-    let today = agenda.days.filter { $0.date == agenda.range.start }.flatMap(\.items).filter { $0.matchesAgendaFilter(agendaFilter) }
+    let terms = filterTerms(from: filter)
+    let overdue = agenda.overdue.flatMap(\.items).filter { $0.matchesAgendaFilterTerms(terms) }
+    let today = agenda.days.filter { $0.date == agenda.range.start }.flatMap(\.items).filter { $0.matchesAgendaFilterTerms(terms) }
     let next7End = Self.isoDate(Calendar(identifier: .gregorian).date(byAdding: .day, value: 7, to: Self.dateFromISO(agenda.range.start) ?? Date()) ?? Date())
     let next7 = agenda.days
       .filter { $0.date > agenda.range.start && $0.date <= next7End }
       .flatMap(\.items)
-      .filter { $0.matchesAgendaFilter(agendaFilter) }
+      .filter { $0.matchesAgendaFilterTerms(terms) }
     let later = agenda.days
       .filter { $0.date > next7End }
       .flatMap(\.items)
-      .filter { $0.matchesAgendaFilter(agendaFilter) }
+      .filter { $0.matchesAgendaFilterTerms(terms) }
 
-    switch agendaMode {
+    switch mode {
     case .focus:
       let todayActionable = today.filter(\.isActionable)
       let overdueActionable = overdue.filter(\.isActionable)
@@ -5830,8 +5861,12 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public var visibleAgendaItems: [AgendaItem] {
-    agendaDisplaySections.flatMap(\.items)
+  private static func filterTerms(from query: String) -> [String] {
+    query
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+      .split(whereSeparator: { $0.isWhitespace })
+      .map(String.init)
   }
 
   public var visibleAgendaItemCount: Int {
