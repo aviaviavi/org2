@@ -48,6 +48,16 @@ JSON output uses the `org2:search:v1` schema:
 - `--limit N` caps matches (default: 50).
 - `--context N` includes surrounding source lines in JSON and supports agent citation checks.
 
+## Local index storage
+
+`org2 index` and `org2 search --index rebuild` write disposable search indexes outside the corpus by default:
+
+```text
+~/.org2/index/<corpus-slug>-<hash>/search-v1.json
+```
+
+`org2 compile corpus --incremental` uses the same per-corpus local index directory for its incremental cache. This keeps derived data out of synced note folders and avoids cross-machine merge conflicts. Set `ORG2_INDEX_HOME=/path/to/index-root` to override the base directory.
+
 ## Recency and salience tuning
 
 `org2 agent search`, `org2 agent context`, and `org2 context` rank matched notes with configurable recency and salience signals in addition to keyword/title/tag matches. Defaults are `--recency-weight 1` and `--salience-weight 1`; set either weight to `0` to disable that signal.

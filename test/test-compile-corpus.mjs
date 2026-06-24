@@ -8,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cli = path.join(repo, 'dist', 'cli.js');
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'org2-compile-corpus-'));
+const indexHome = fs.mkdtempSync(path.join(os.tmpdir(), 'org2-compile-index-home-'));
 
 const projectId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const meetingId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
@@ -137,6 +138,16 @@ const agendaJson = JSON.parse(agendaByInheritedProperty);
 const agendaHeadlines = agendaJson.days.flatMap((day) => day.items.map((item) => item.headline));
 assert.ok(agendaHeadlines.includes('Alpha Work'), 'expected agenda --property to match inherited file property');
 assert.ok(agendaHeadlines.includes('Child Task'), 'expected agenda --property to match inherited ancestor/file properties');
+
+const incrementalJson = JSON.parse(execFileSync(
+  'node',
+  [cli, 'compile', 'corpus', '--dir', tmpDir, '--recursive', '--incremental'],
+  { encoding: 'utf8', env: { ...process.env, ORG2_INDEX_HOME: indexHome } }
+));
+assert.equal(incrementalJson.indexState.mode, 'incremental');
+assert.ok(incrementalJson.indexState.cacheFile.startsWith(indexHome + path.sep), `expected cache under ${indexHome}, got ${incrementalJson.indexState.cacheFile}`);
+assert.ok(!incrementalJson.indexState.cacheFile.startsWith(tmpDir + path.sep), `incremental cache should not be written inside corpus root: ${incrementalJson.indexState.cacheFile}`);
+assert.equal(fs.existsSync(path.join(tmpDir, '.org2', 'corpus-index-cache.json')), false);
 
 const out = path.join(tmpDir, 'compiled', 'corpus.jsonl');
 const stdout = execFileSync('node', [cli, 'compile', 'corpus', '--dir', tmpDir, '--recursive', '--format', 'jsonl', '--out', out], { encoding: 'utf8' });
