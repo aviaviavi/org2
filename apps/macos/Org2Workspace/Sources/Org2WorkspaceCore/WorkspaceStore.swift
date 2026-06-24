@@ -6815,7 +6815,7 @@ public final class WorkspaceStore: ObservableObject {
         file: existing.file,
         line: existing.line,
         properties: [
-          "STATUS": "approved-to-send",
+          "STATUS": Self.approvedAgentActionStatus(for: existing.title),
           "APPROVED_AT": timestamp,
           "APPROVAL_TODO": target.title
         ]
@@ -6844,7 +6844,7 @@ public final class WorkspaceStore: ObservableObject {
       ":APPROVAL_TODO: \(target.title)",
       ":APPROVED_AT: \(timestamp)",
       ":ASSIGNEE: \(resolvedAgentHandoffAssignee())",
-      ":STATUS: approved-to-send",
+      ":STATUS: \(Self.approvedAgentActionStatus(for: generatedTitle))",
       ":END:",
       ""
     ]
@@ -10601,6 +10601,12 @@ public final class WorkspaceStore: ObservableObject {
       }
     }
     return "Continue approved \(clean)"
+  }
+
+  nonisolated private static func approvedAgentActionStatus(for title: String) -> String {
+    normalizedApprovalActionTitle(title).hasPrefix("send approved ")
+      ? "approved-to-send"
+      : "ready-for-agent"
   }
 
   nonisolated private static func findExistingApprovedAgentAction(

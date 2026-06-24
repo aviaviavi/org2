@@ -78,5 +78,41 @@ assert.match(approvedText, /:ORG2_AGENT_HANDOFF_AT: <2026-06-22 Mon 17:00>/);
 assert.match(approvedText, /:APPROVAL_ID: approval-1/);
 assert.match(approvedText, /^\*\* DONE Approve follow-up/m);
 assert.match(approvedText, /:STATUS: approved/);
+assert.match(approvedText, /:PAIRED_SEND_TODO: Send approved follow-up/);
+
+fs.writeFileSync(note, `* TODO Continue approved Linear issue update
+:PROPERTIES:
+:STATUS: waiting-on-approval
+:ASSIGNEE: OpenClaw
+:END:
+** TODO Approve Linear issue update
+:PROPERTIES:
+:ID: approval-2
+:STATUS: draft-needs-review
+:ASSIGNEE: Avi
+:PAIRED_AGENT_TODO: Continue approved Linear issue update
+:END:
+`, "utf8");
+const agentApproved = JSON.parse(cli([
+  "todo",
+  "approve",
+  "--file",
+  note,
+  "--line",
+  "7",
+  "--apply",
+  "--now",
+  "2026-06-22T17:05:00-07:00",
+]));
+assert.equal(agentApproved.newStatus, "done");
+
+const agentApprovedText = fs.readFileSync(note, "utf8");
+assert.match(agentApprovedText, /^\* TODO Continue approved Linear issue update/m);
+assert.match(agentApprovedText, /:STATUS: ready-for-agent/);
+assert.match(agentApprovedText, /:ASSIGNEE: OpenClaw/);
+assert.match(agentApprovedText, /:ORG2_AGENT_HANDOFF_AT: <2026-06-22 Mon 17:05>/);
+assert.match(agentApprovedText, /:APPROVAL_ID: approval-2/);
+assert.match(agentApprovedText, /^\*\* DONE Approve Linear issue update/m);
+assert.match(agentApprovedText, /:STATUS: approved/);
 
 console.log("✓ todo assign");

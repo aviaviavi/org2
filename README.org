@@ -92,7 +92,7 @@ npm run org2 -- agenda --dir /path/to/org --recursive
 npm run org2 -- agenda --dir /path/to/org --recursive --tui
 #+end_src
 
-The TUI groups overdue, today, and the next 7 days into collapsible left-pane sections. Use =j/k= or arrow keys to move, =J/K= or =Ctrl-d/Ctrl-u= to scroll the right detail pane, =/= to filter todos by text anywhere in the block, =gg= / =G= to jump to the top or bottom, =h=/left to collapse the current section, =l=/right or =Enter= to expand it, =Space= to cycle TODO/IN_PROGRESS/DONE, =t/i/d/x= to set status, =A= to mark DONE and set =STATUS=ready-for-agent= with =ORG2_AGENT_HANDOFF_AT=, =r= to refresh, and =q= to quit.
+The TUI groups overdue, today, and the next 7 days into collapsible left-pane sections. Use =j/k= or arrow keys to move, =J/K= or =Ctrl-d/Ctrl-u= to scroll the right detail pane, =/= to filter todos by text anywhere in the block, =gg= / =G= to jump to the top or bottom, =h=/left to collapse the current section, =l=/right or =Enter= to expand it, =Space= to cycle TODO/IN_PROGRESS/DONE, =t/i/d/x= to set status, =A= to approve and hand off an action, =r= to refresh, and =q= to quit. The same approval handoff is available from scripts as =org2 todo approve --file FILE --line N --apply=: nested =Approve...= tasks become =DONE= with =STATUS=approved=, paired =Send approved...= tasks become =approved-to-send=, and paired =Continue approved...= tasks become =ready-for-agent=.
 
 Agenda on explicit files:
 
