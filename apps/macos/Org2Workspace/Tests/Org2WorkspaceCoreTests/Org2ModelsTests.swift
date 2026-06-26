@@ -31,6 +31,30 @@ private actor OpenClawMessageSendRecorder {
   }
 }
 
+private struct OpenClawTestSendError: LocalizedError, Sendable {
+  let message: String
+
+  var errorDescription: String? {
+    message
+  }
+}
+
+private actor OpenClawRetrySendRecorder {
+  private var attempts = 0
+
+  func send(messages: [OpenClawChatMessage]) async throws -> String {
+    attempts += 1
+    if attempts == 1 {
+      throw OpenClawTestSendError(message: "VPN disconnected")
+    }
+    return "reply after reconnect"
+  }
+
+  func attemptCount() -> Int {
+    attempts
+  }
+}
+
 final class Org2ModelsTests: XCTestCase {
   private func searchResult(
     file: String,
@@ -663,6 +687,55 @@ final class Org2ModelsTests: XCTestCase {
     )
 
     XCTAssertEqual(restored.openClawMessages.map(\.content), ["Hello OpenClaw", "Hello from restart-safe storage"])
+  }
+
+  @MainActor
+  func testOpenClawSendFailureIsVisiblePersistedAndRetryable() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-send-failure-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let suiteName = "org2-workspace-chat-send-failure-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let recorder = OpenClawRetrySendRecorder()
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      openClawSendHandler: { messages, _, _, _ in
+        try await recorder.send(messages: messages)
+      }
+    )
+    store.openClawDraft = "Are you reachable?"
+
+    await store.sendOpenClawMessage()
+
+    XCTAssertEqual(store.openClawMessages.map(\.content), ["Are you reachable?"])
+    let failedMessage = try XCTUnwrap(store.openClawMessages.first)
+    XCTAssertEqual(failedMessage.sendFailure, "VPN disconnected")
+    XCTAssertEqual(store.openClawStatusText, "VPN disconnected")
+    XCTAssertFalse(store.isSendingOpenClawMessage)
+    XCTAssertEqual(store.openClawQueuedMessageCount, 0)
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+    XCTAssertEqual(restored.openClawMessages.first?.sendFailure, "VPN disconnected")
+
+    await store.retryOpenClawMessage(failedMessage.id)
+
+    let attemptCount = await recorder.attemptCount()
+    XCTAssertEqual(attemptCount, 2)
+    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+      "user:Are you reachable?",
+      "assistant:reply after reconnect"
+    ])
+    XCTAssertNil(store.openClawMessages.first?.sendFailure)
+    XCTAssertEqual(store.openClawStatusText, "OpenClaw replied")
   }
 
   @MainActor
