@@ -101,7 +101,6 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <h1 id="openclaw-and-agents">OpenClaw and agents</h1>
 <p>The app includes OpenClaw chat for sending messages with current workspace context.</p>
 <p>The chat composer sends with <code>Return</code> and inserts a newline with <code>Cmd-Return</code>. The <code>Dictate</code> control records a short local microphone note, transcribes it with the same local Whisper resolution path used by meeting capture, and sends the transcript as a normal OpenClaw message.</p>
-<p>If the gateway cannot be reached, for example when a network/VPN route is missing, the failed user message stays visible in the transcript with the transport error and a retry action. That failure state is persisted with the local transcript so a dropped send does not silently disappear.</p>
 <p>This is deliberately a handoff boundary. The corpus stores selected context, transcript references, generated artifacts, and durable outputs; the external agent can act on that context without the Mac app becoming the only source of truth. Generated work stays in normal corpus zones such as <code>views/</code> or <code>compiled/</code> until a person reviews or promotes it.</p>
 </section>
 <section class="org2-headline level-1">

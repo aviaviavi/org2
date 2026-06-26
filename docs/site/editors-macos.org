@@ -58,8 +58,6 @@ The app includes OpenClaw chat for sending messages with current workspace conte
 
 The chat composer sends with =Return= and inserts a newline with =Cmd-Return=. The =Dictate= control records a short local microphone note, transcribes it with the same local Whisper resolution path used by meeting capture, and sends the transcript as a normal OpenClaw message.
 
-If the gateway cannot be reached, for example when a network/VPN route is missing, the failed user message stays visible in the transcript with the transport error and a retry action. That failure state is persisted with the local transcript so a dropped send does not silently disappear.
-
 This is deliberately a handoff boundary. The corpus stores selected context, transcript references, generated artifacts, and durable outputs; the external agent can act on that context without the Mac app becoming the only source of truth. Generated work stays in normal corpus zones such as =views/= or =compiled/= until a person reviews or promotes it.
 
 * Org-crypt
