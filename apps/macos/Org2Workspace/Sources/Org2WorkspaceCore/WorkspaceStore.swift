@@ -4904,6 +4904,7 @@ public final class WorkspaceStore: ObservableObject {
       openClawStatusText = openClawQueuedStatusText()
 
       do {
+        clearOpenClawSendFailure(for: userMessageID)
         let beforeSnapshot = await captureOpenClawCorpusSnapshot()
         let reply = try await sendOpenClawRequest(messages: requestMessages)
         let changeSummary = await openClawChangeSummary(since: beforeSnapshot, referencedIn: reply)
@@ -4920,7 +4921,9 @@ public final class WorkspaceStore: ObservableObject {
           openClawStatusText = openClawQueuedStatusText()
         }
       } catch {
-        openClawStatusText = error.localizedDescription
+        let failureText = Self.openClawSendFailureText(from: error)
+        openClawStatusText = failureText
+        markPendingOpenClawMessagesFailed(failureText)
         openClawPendingUserMessageIDs.removeAll()
         return
       }
@@ -4960,6 +4963,45 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
     openClawMessages.insert(assistantMessage, at: openClawMessages.index(after: index))
+  }
+
+  public func retryOpenClawMessage(_ messageID: UUID) async {
+    guard let message = openClawMessages.first(where: { $0.id == messageID }),
+          message.role == .user,
+          message.sendFailure != nil
+    else {
+      return
+    }
+    guard !openClawPendingUserMessageIDs.contains(messageID) else { return }
+    clearOpenClawSendFailure(for: messageID)
+    openClawPendingUserMessageIDs.append(messageID)
+    if isDrainingOpenClawQueue {
+      openClawStatusText = openClawQueuedStatusText()
+      return
+    }
+    await drainOpenClawSendQueue()
+  }
+
+  private func clearOpenClawSendFailure(for messageID: UUID) {
+    replaceOpenClawSendFailure(for: messageID, with: nil)
+  }
+
+  private func markPendingOpenClawMessagesFailed(_ failureText: String) {
+    for messageID in openClawPendingUserMessageIDs {
+      replaceOpenClawSendFailure(for: messageID, with: failureText)
+    }
+  }
+
+  private func replaceOpenClawSendFailure(for messageID: UUID, with failureText: String?) {
+    guard let index = openClawMessages.firstIndex(where: { $0.id == messageID }) else { return }
+    let message = openClawMessages[index]
+    guard message.sendFailure != failureText else { return }
+    openClawMessages[index] = message.replacingSendFailure(failureText)
+  }
+
+  nonisolated private static func openClawSendFailureText(from error: Error) -> String {
+    let message = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+    return message.isEmpty ? "OpenClaw message failed to send." : message
   }
 
   private func captureOpenClawCorpusSnapshot() async -> OpenClawCorpusSnapshot? {

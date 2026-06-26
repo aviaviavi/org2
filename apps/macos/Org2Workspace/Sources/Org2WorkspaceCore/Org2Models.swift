@@ -658,6 +658,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
   public let attachments: [OpenClawChatAttachment]
   public let createdAt: Date
   public let changeSummary: OpenClawCorpusChangeSummary?
+  public let sendFailure: String?
 
   public init(
     id: UUID = UUID(),
@@ -665,7 +666,8 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     content: String,
     attachments: [OpenClawChatAttachment] = [],
     createdAt: Date = Date(),
-    changeSummary: OpenClawCorpusChangeSummary? = nil
+    changeSummary: OpenClawCorpusChangeSummary? = nil,
+    sendFailure: String? = nil
   ) {
     self.id = id
     self.role = role
@@ -673,6 +675,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     self.attachments = attachments
     self.createdAt = createdAt
     self.changeSummary = changeSummary
+    self.sendFailure = sendFailure
   }
 
   enum CodingKeys: String, CodingKey {
@@ -682,6 +685,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     case attachments
     case createdAt
     case changeSummary
+    case sendFailure
   }
 
   public init(from decoder: Decoder) throws {
@@ -692,6 +696,19 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     attachments = try container.decodeIfPresent([OpenClawChatAttachment].self, forKey: .attachments) ?? []
     createdAt = try container.decode(Date.self, forKey: .createdAt)
     changeSummary = try container.decodeIfPresent(OpenClawCorpusChangeSummary.self, forKey: .changeSummary)
+    sendFailure = try container.decodeIfPresent(String.self, forKey: .sendFailure)
+  }
+
+  public func replacingSendFailure(_ nextSendFailure: String?) -> OpenClawChatMessage {
+    OpenClawChatMessage(
+      id: id,
+      role: role,
+      content: content,
+      attachments: attachments,
+      createdAt: createdAt,
+      changeSummary: changeSummary,
+      sendFailure: nextSendFailure
+    )
   }
 }
 

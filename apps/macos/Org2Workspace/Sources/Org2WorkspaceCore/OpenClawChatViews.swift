@@ -42,6 +42,13 @@ struct ChatBubbleView: View {
         if !message.attachments.isEmpty {
           OpenClawMessageAttachmentsView(attachments: message.attachments, compact: compact)
         }
+        if message.role == .user, let sendFailure = message.sendFailure {
+          OpenClawSendFailureView(
+            messageID: message.id,
+            failureText: sendFailure,
+            compact: compact
+          )
+        }
         if message.role == .assistant, let changeSummary = message.changeSummary {
           Divider()
             .padding(.vertical, 2)
@@ -97,6 +104,52 @@ struct ChatBubbleView: View {
     case .system:
       return .orange
     }
+  }
+}
+
+private struct OpenClawSendFailureView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let messageID: UUID
+  let failureText: String
+  let compact: Bool
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 8) {
+      Image(systemName: "exclamationmark.triangle.fill")
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.red)
+      VStack(alignment: .leading, spacing: 2) {
+        Text("Message failed to send")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.red)
+        Text(failureText)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(compact ? 2 : 3)
+          .truncationMode(.tail)
+      }
+      Spacer(minLength: 8)
+      Button {
+        Task { await store.retryOpenClawMessage(messageID) }
+      } label: {
+        if compact {
+          Image(systemName: "arrow.clockwise")
+        } else {
+          Label("Retry", systemImage: "arrow.clockwise")
+        }
+      }
+      .buttonStyle(WorkspaceActionButtonStyle())
+      .disabled(store.isSendingOpenClawMessage)
+      .help("Retry sending this message")
+    }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 7)
+    .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
+    .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .stroke(Color.red.opacity(0.22))
+    )
   }
 }
 
