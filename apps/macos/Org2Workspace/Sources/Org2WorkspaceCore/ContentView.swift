@@ -165,6 +165,8 @@ private struct WorkspaceSurfaceView: View {
         HomeView()
       case .agenda:
         AgendaView()
+      case .approvals:
+        ApprovalsView()
       case .files:
         FilesView()
       case .search:
@@ -1140,7 +1142,8 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "⌘1", action: "Home"),
             ShortcutHelpItem(keys: "⌘2", action: "Agenda"),
             ShortcutHelpItem(keys: "⌘3", action: "Files"),
-            ShortcutHelpItem(keys: "⌘4 / ⌘⇧F", action: "Corpus search"),
+            ShortcutHelpItem(keys: "⌘4", action: "Approvals"),
+            ShortcutHelpItem(keys: "⌘⇧F", action: "Corpus search"),
             ShortcutHelpItem(keys: "⌘5", action: "Meetings"),
             ShortcutHelpItem(keys: "⌘6", action: "OpenClaw Chat"),
             ShortcutHelpItem(keys: "⌘P / ⌘K", action: "Quick Open"),
@@ -1465,6 +1468,265 @@ private struct AgendaListView: View {
         AgendaItemListView()
       }
     }
+  }
+}
+
+private struct ApprovalsView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  @FocusState private var filterFocused: Bool
+  @State private var discussionItem: ApprovalItem?
+  @State private var discussionMessage = "I need to discuss this approval item before deciding."
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HeaderBar(title: "Approvals", subtitle: headerSubtitle, surface: .approvals) {
+        if store.isLoadingApprovals {
+          ProgressView()
+            .controlSize(.small)
+        }
+        Button {
+          Task { await store.refreshApprovals(updatesStatus: true) }
+        } label: {
+          Label("Refresh", systemImage: "arrow.clockwise")
+        }
+      }
+
+      ApprovalControls(filterFocused: $filterFocused)
+
+      HStack(spacing: 10) {
+        MetricView(title: "Visible", value: "\(store.visibleApprovalItems.count)")
+        MetricView(title: "Total", value: "\(store.approvalItems.count)")
+      }
+      .padding(.horizontal, WorkspaceDesign.contentInset)
+      .padding(.bottom, 12)
+
+      Divider()
+
+      approvalList
+    }
+    .sheet(item: $discussionItem) { item in
+      ApprovalDiscussionSheet(item: item, message: $discussionMessage)
+        .environmentObject(store)
+    }
+    .onAppear {
+      if store.approvalItems.isEmpty && !store.isLoadingApprovals {
+        Task { await store.refreshApprovals() }
+      }
+    }
+    .onChange(of: store.selectedApprovalItemID) {
+      guard let id = store.selectedApprovalItemID,
+            let item = store.visibleApprovalItems.first(where: { $0.id == id })
+      else {
+        return
+      }
+      store.selectApprovalItem(item)
+    }
+  }
+
+  private var headerSubtitle: String {
+    "\(store.visibleApprovalItems.count) pending approval\(store.visibleApprovalItems.count == 1 ? "" : "s")"
+  }
+
+  @ViewBuilder
+  private var approvalList: some View {
+    if let error = store.errorText, store.approvalItems.isEmpty {
+      EmptyStateView(title: "Approvals Failed", detail: error, action: "Refresh") {
+        Task { await store.refreshApprovals(updatesStatus: true) }
+      }
+    } else if store.isLoadingApprovals && store.approvalItems.isEmpty {
+      Spacer()
+      ProgressView()
+      Spacer()
+    } else if store.visibleApprovalItems.isEmpty {
+      EmptyStateView(title: "No Approvals", detail: "No pending approval candidates matched.", action: "Refresh") {
+        Task { await store.refreshApprovals(updatesStatus: true) }
+      }
+    } else {
+      List(selection: $store.selectedApprovalItemID) {
+        ForEach(store.visibleApprovalItems) { item in
+          ApprovalRow(item: item) {
+            discussionMessage = "I need to discuss this approval item before deciding."
+            discussionItem = item
+          }
+          .tag(item.id)
+          .contentShape(Rectangle())
+          .onTapGesture {
+            store.selectApprovalItem(item)
+          }
+          .contextMenu {
+            WorkspaceLocationContextMenu(
+              location: .agenda(item.agendaItem()),
+              showsHeadingActions: true,
+              select: { store.selectApprovalItem(item) }
+            ) {
+              Label("Open", systemImage: "checkmark.seal")
+            }
+            Divider()
+            Button {
+              Task { await store.approve(item) }
+            } label: {
+              Label("Approve", systemImage: "checkmark")
+            }
+            Button {
+              discussionMessage = "I need to discuss this approval item before deciding."
+              discussionItem = item
+            } label: {
+              Label("Discuss via OpenClaw", systemImage: "paperplane")
+            }
+            Button {
+              store.copyApprovalDiscussionText(item)
+            } label: {
+              Label("Copy Discussion Text", systemImage: "doc.on.doc")
+            }
+          }
+        }
+      }
+      .listStyle(.inset)
+    }
+  }
+}
+
+private struct ApprovalControls: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  var filterFocused: FocusState<Bool>.Binding
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Image(systemName: "line.3.horizontal.decrease.circle")
+        .font(.caption)
+        .foregroundStyle(.tertiary)
+      TextField("Filter approvals", text: $store.approvalFilter)
+        .textFieldStyle(.roundedBorder)
+        .focused(filterFocused)
+        .onSubmit {
+          filterFocused.wrappedValue = false
+        }
+      if !store.approvalFilter.isEmpty {
+        Button {
+          store.clearApprovalFilter()
+        } label: {
+          Label("Clear", systemImage: "xmark.circle.fill")
+        }
+        .labelStyle(.iconOnly)
+        .help("Clear approval filter")
+      }
+    }
+    .controlSize(.small)
+    .padding(.horizontal, WorkspaceDesign.contentInset)
+    .padding(.bottom, 12)
+  }
+}
+
+private struct ApprovalRow: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let item: ApprovalItem
+  let discuss: () -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        StatusPill(text: item.status)
+        Text(Org2Display.cleanInline(item.title))
+          .font(.body.weight(.semibold))
+          .lineLimit(2)
+      }
+
+      if !item.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        Text(Org2Display.cleanBlock(item.body).trimmedForDisplay(maxCharacters: 220))
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .lineLimit(3)
+      }
+
+      HStack(spacing: 8) {
+        if let todo = item.todo {
+          StatusPill(text: todo)
+        }
+        Label("\(store.relativePath(item.file)):\(item.line)", systemImage: "doc.text")
+          .lineLimit(1)
+          .truncationMode(.middle)
+        Spacer(minLength: 0)
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+
+      HStack(spacing: 6) {
+        Button {
+          Task { await store.approve(item) }
+        } label: {
+          Label("Approve", systemImage: "checkmark")
+        }
+        .buttonStyle(WorkspaceActionButtonStyle())
+
+        Button {
+          discuss()
+        } label: {
+          Label("Discuss", systemImage: "paperplane")
+        }
+        .buttonStyle(WorkspaceActionButtonStyle())
+
+        Button {
+          store.copyApprovalDiscussionText(item)
+        } label: {
+          Label("Copy", systemImage: "doc.on.doc")
+        }
+        .buttonStyle(WorkspaceActionButtonStyle())
+      }
+      .controlSize(.small)
+    }
+    .padding(.vertical, 6)
+  }
+}
+
+private struct ApprovalDiscussionSheet: View {
+  @Environment(\.dismiss) private var dismiss
+  @EnvironmentObject private var store: WorkspaceStore
+  let item: ApprovalItem
+  @Binding var message: String
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      VStack(alignment: .leading, spacing: 6) {
+        StatusPill(text: item.status)
+        Text(Org2Display.cleanInline(item.title))
+          .font(.headline)
+          .lineLimit(2)
+        Text("\(store.relativePath(item.file)):\(item.line)")
+          .font(.caption.monospaced())
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+      }
+
+      Text("Message to OpenClaw")
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+      TextEditor(text: $message)
+        .font(.body)
+        .frame(minHeight: 120)
+        .overlay(
+          RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .stroke(WorkspaceDesign.hairline)
+        )
+
+      HStack {
+        Spacer()
+        Button("Cancel") {
+          dismiss()
+        }
+        Button {
+          Task {
+            await store.discussApprovalInOpenClaw(item, message: message)
+            dismiss()
+          }
+        } label: {
+          Label("Discuss", systemImage: "paperplane")
+        }
+        .buttonStyle(.borderedProminent)
+      }
+    }
+    .padding(18)
+    .frame(width: 460)
   }
 }
 

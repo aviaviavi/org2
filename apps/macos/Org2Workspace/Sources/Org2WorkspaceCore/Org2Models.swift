@@ -247,6 +247,106 @@ public struct AssignedWorkItem: Identifiable, Hashable, Sendable {
   }
 }
 
+public struct ApprovalItem: Identifiable, Hashable, Sendable, Decodable {
+  public let title: String
+  public let status: String
+  public let todo: String?
+  public let level: Int?
+  public let file: String
+  public let line: Int
+  public let idValue: String?
+  public let properties: [String: String]
+  public let body: String
+  public let tags: [String]
+
+  public init(
+    title: String,
+    status: String,
+    todo: String?,
+    level: Int?,
+    file: String,
+    line: Int,
+    idValue: String?,
+    properties: [String: String],
+    body: String,
+    tags: [String]
+  ) {
+    self.title = title
+    self.status = status
+    self.todo = todo
+    self.level = level
+    self.file = file
+    self.line = max(1, line)
+    self.idValue = idValue
+    self.properties = properties
+    self.body = body
+    self.tags = tags
+  }
+
+  public var id: String {
+    "\(file):\(line):\(idValue ?? title)"
+  }
+
+  public var sourceLabel: String {
+    "\(file):\(line)"
+  }
+
+  public var discussionText: String {
+    """
+    OpenClaw approval thread:
+
+    \(Org2Display.cleanInline(title))
+    Source: \(sourceLabel)
+    Status: \(status)
+
+    \(Org2Display.cleanBlock(body).trimmedForDisplay(maxCharacters: 900))
+    """
+  }
+
+  public func agendaItem() -> AgendaItem {
+    AgendaItem(
+      todo: todo,
+      headline: title,
+      kind: "Approval",
+      file: file,
+      line: line - 1,
+      body: body,
+      level: level,
+      tags: tags,
+      properties: properties,
+      priority: nil,
+      time: nil,
+      effort: nil,
+      idValue: idValue,
+      habit: nil
+    )
+  }
+
+  public func matchesApprovalFilter(_ query: String) -> Bool {
+    let terms = query
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+      .split(whereSeparator: { $0.isWhitespace })
+      .map(String.init)
+    guard !terms.isEmpty else { return true }
+
+    let haystack = [
+      title,
+      status,
+      todo,
+      file,
+      idValue,
+      body,
+      tags.joined(separator: " "),
+      properties.map { "\($0.key) \($0.value)" }.joined(separator: "\n")
+    ]
+      .compactMap { $0 }
+      .joined(separator: "\n")
+      .lowercased()
+    return terms.allSatisfy { haystack.contains($0) }
+  }
+}
+
 public struct HabitAgendaState: Decodable, Hashable, Sendable {
   public let marker: String
   public let streak: Int
@@ -3323,6 +3423,20 @@ public enum Org2Display {
       output.replaceSubrange(range, with: transform(match))
     }
     return output
+  }
+}
+
+extension String {
+  var nilIfBlank: String? {
+    let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
+  }
+
+  func trimmedForDisplay(maxCharacters: Int) -> String {
+    let compact = trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+    guard compact.count > maxCharacters else { return compact }
+    return String(compact.prefix(maxCharacters)).trimmingCharacters(in: .whitespacesAndNewlines) + "..."
   }
 }
 

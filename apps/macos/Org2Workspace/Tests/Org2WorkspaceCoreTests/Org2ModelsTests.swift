@@ -273,6 +273,70 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(paragraph.sourceRange, Org2CanonicalSourceRange(startLine: 42, endLine: 42))
   }
 
+  func testApprovalItemsUseCanonicalParserSignals() async throws {
+    let cli = try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())
+    let text = """
+    * TODO Review and approve launch email
+    :PROPERTIES:
+    :ID: approval-1
+    :REVIEW_STATUS: review-required
+    :END:
+    Please review the response draft.
+
+    * TODO Follow up with vendor
+    :PROPERTIES:
+    :WAITING_ON: Avi approval
+    :END:
+    Needs a human decision.
+
+    * DONE Review and approve old note
+    :PROPERTIES:
+    :REVIEW_STATUS: review-required
+    :END:
+    Already done.
+    """
+    let document: Org2CanonicalDocument = try await cli.parseTextJSON(text, sourceRanges: true)
+
+    let approvals = WorkspaceStore.approvalItems(
+      in: document,
+      file: "/tmp/approvals.org2",
+      sourceText: text
+    )
+
+    XCTAssertEqual(approvals.map(\.title), [
+      "Follow up with vendor",
+      "Review and approve launch email"
+    ])
+    XCTAssertEqual(approvals[0].status, "Avi approval")
+    XCTAssertEqual(approvals[1].status, "review-required")
+    XCTAssertEqual(approvals[1].idValue, "approval-1")
+    XCTAssertTrue(approvals[1].body.contains("Please review"))
+  }
+
+  func testApprovalCandidatePrefilterSkipsIrrelevantFiles() {
+    XCTAssertFalse(WorkspaceStore.approvalCandidateTextMayContainItem("""
+    * TODO Write launch email
+    :PROPERTIES:
+    :STATUS: ready
+    :END:
+    This mentions review in prose, but it is not approval gated.
+    """))
+
+    XCTAssertTrue(WorkspaceStore.approvalCandidateTextMayContainItem("""
+    * TODO Review and approve launch email
+    :PROPERTIES:
+    :REVIEW_STATUS: review-required
+    :END:
+    """))
+
+    XCTAssertTrue(WorkspaceStore.approvalCandidateTextMayContainItem("""
+    * TODO Follow up with vendor
+    :PROPERTIES:
+    :WAITING_ON: Avi approval
+    :END:
+    """))
+  }
+
   func testCanonicalAstRendersEditableBlocksWithFallbackGaps() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-canonical-render-\(UUID().uuidString)", isDirectory: true)
@@ -736,6 +800,91 @@ final class Org2ModelsTests: XCTestCase {
     ])
     XCTAssertNil(store.openClawMessages.first?.sendFailure)
     XCTAssertEqual(store.openClawStatusText, "OpenClaw replied")
+  }
+
+  @MainActor
+  func testMacApprovalsRefreshDiscussAndApproveViaStore() async throws {
+    let recorder = OpenClawMessageSendRecorder()
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-approvals-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("approvals.org2")
+    try """
+    * TODO Send approved launch email
+    :PROPERTIES:
+    :STATUS: waiting
+    :END:
+
+    * TODO Review and approve launch email
+    :PROPERTIES:
+    :ID: approval-1
+    :REVIEW_STATUS: review-required
+    :PAIRED_SEND_TODO: Send approved launch email
+    :END:
+    Please review the launch email before sending it.
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      openClawSendHandler: { messages, _, _, _ in
+        try await recorder.send(messages: messages)
+      }
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+
+    await store.refreshApprovals(updatesStatus: true)
+
+    let approval = try XCTUnwrap(store.approvalItems.first)
+    XCTAssertEqual(approval.title, "Review and approve launch email")
+    XCTAssertEqual(approval.status, "review-required")
+    XCTAssertEqual(store.statusText, "1 approval")
+
+    await store.discussApprovalInOpenClaw(approval)
+
+    let calls = await recorder.recordedCalls()
+    let sentText = try XCTUnwrap(calls.first?.last?.content)
+    XCTAssertTrue(sentText.contains("OpenClaw approval thread"))
+    XCTAssertTrue(sentText.contains("Please review the launch email"))
+
+    await store.approve(approval)
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* TODO Send approved launch email"))
+    XCTAssertTrue(updated.contains(":STATUS: approved-to-send"))
+    XCTAssertTrue(updated.contains(":ASSIGNEE: OpenClaw"))
+    XCTAssertTrue(updated.contains("* DONE Review and approve launch email"))
+    XCTAssertTrue(updated.contains(":REVIEW_STATUS: approved"))
+    XCTAssertTrue(updated.contains(":STATUS: approved"))
+    XCTAssertTrue(store.approvalItems.isEmpty)
+  }
+
+  @MainActor
+  func testLocalCorpusApprovalsRefreshWhenConfigured() async throws {
+    let environment = ProcessInfo.processInfo.environment
+    guard let rawCorpus = environment["ORG2_WORKSPACE_LOCAL_CORPUS"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !rawCorpus.isEmpty
+    else {
+      throw XCTSkip("Set ORG2_WORKSPACE_LOCAL_CORPUS to smoke-test approvals against a local corpus.")
+    }
+
+    let root = URL(fileURLWithPath: rawCorpus).standardizedFileURL
+    let defaults = UserDefaults(suiteName: "org2-workspace-local-approvals-\(UUID().uuidString)") ?? .standard
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent(".org2/local-approval-smoke-openclaw.json")
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+
+    let start = Date()
+    await store.refreshApprovals(updatesStatus: true)
+    let elapsed = Date().timeIntervalSince(start)
+
+    XCTAssertNil(store.errorText)
+    XCTAssertFalse(store.isLoadingApprovals)
+    XCTAssertTrue(store.statusText.contains("approval"))
+    print("Local corpus approvals refresh: \(store.approvalItems.count) approvals in \(String(format: "%.3f", elapsed))s")
   }
 
   @MainActor
@@ -3847,12 +3996,12 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedSurface, .files)
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "4", keyCode: 21, modifiers: [.command])))
-    XCTAssertEqual(store.selectedSurface, .search)
-    XCTAssertEqual(store.searchFocusToken, 1)
+    XCTAssertEqual(store.selectedSurface, .approvals)
+    XCTAssertEqual(store.searchFocusToken, 0)
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "F", keyCode: 3, modifiers: [.command, .shift])))
     XCTAssertEqual(store.selectedSurface, .search)
-    XCTAssertEqual(store.searchFocusToken, 2)
+    XCTAssertEqual(store.searchFocusToken, 1)
 
     store.select(.openClaw(OpenClawThread(
       title: "Current page",
@@ -3973,11 +4122,12 @@ final class Org2ModelsTests: XCTestCase {
   func testWorkspaceSurfaceShortcutTitlesMatchCommandNavigation() {
     XCTAssertEqual(WorkspaceSurface.home.commandShortcutTitle, "⌘1")
     XCTAssertEqual(WorkspaceSurface.agenda.commandShortcutTitle, "⌘2")
+    XCTAssertEqual(WorkspaceSurface.approvals.commandShortcutTitle, "⌘4")
     XCTAssertEqual(WorkspaceSurface.files.commandShortcutTitle, "⌘3")
-    XCTAssertEqual(WorkspaceSurface.search.commandShortcutTitle, "⌘4")
+    XCTAssertEqual(WorkspaceSurface.search.commandShortcutTitle, "⌘⇧F")
     XCTAssertEqual(WorkspaceSurface.meetings.commandShortcutTitle, "⌘5")
     XCTAssertEqual(WorkspaceSurface.openClaw.commandShortcutTitle, "⌘6")
-    XCTAssertEqual(WorkspaceSurface.sidebarCases, WorkspaceSurface.allCases)
+    XCTAssertEqual(WorkspaceSurface.sidebarCases, [.home, .agenda, .files, .approvals, .search, .meetings, .openClaw])
   }
 
   @MainActor
