@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
@@ -132,6 +133,37 @@ private struct SearchIndexBuildPayload: Decodable {
   let fileCount: Int
   let lineCount: Int
   let skippedFiles: Int
+}
+
+private struct ApprovalPayload: Decodable {
+  let count: Int
+  let items: [ApprovalItem]
+}
+
+private struct WorkspaceSearchIndex: Decodable {
+  let schema: String
+  let version: Int
+  let rootDir: String
+  let recursive: Bool
+  let includeArchives: Bool
+  let files: [WorkspaceSearchIndexFile]
+
+  private enum CodingKeys: String, CodingKey {
+    case schema = "$schema"
+    case version
+    case rootDir
+    case recursive
+    case includeArchives
+    case files
+  }
+}
+
+private struct WorkspaceSearchIndexFile: Decodable {
+  let path: String
+  let relativePath: String
+  let modifiedMs: Int64
+  let byteCount: Int64
+  let lines: [String]
 }
 
 private struct SplitDraftSpec {
@@ -335,6 +367,18 @@ private struct HeadlineMutationTarget: Sendable {
   }
 }
 
+private struct ApprovalMutationIdentity: Sendable {
+  let title: String
+  let idValue: String?
+}
+
+private struct ApprovalCandidateSource: Sendable {
+  let file: CorpusFile
+  let sourceText: String
+  let parseText: String
+  let sourceLineOffset: Int
+}
+
 private struct AgendaTodoShortcutMutation: Sendable {
   let status: TodoEditStatus
   let target: HeadlineMutationTarget
@@ -426,6 +470,20 @@ public final class WorkspaceStore: ObservableObject {
   }
   public private(set) var agendaDisplaySections: [AgendaDisplaySection] = []
   public private(set) var visibleAgendaItems: [AgendaItem] = []
+  @Published public private(set) var approvalItems: [ApprovalItem] = [] {
+    didSet {
+      rebuildApprovalDisplayCache()
+    }
+  }
+  @Published public var approvalFilter = "" {
+    didSet {
+      guard oldValue != approvalFilter else { return }
+      rebuildApprovalDisplayCache()
+    }
+  }
+  public private(set) var visibleApprovalItems: [ApprovalItem] = []
+  @Published public var selectedApprovalItemID: ApprovalItem.ID?
+  @Published public var isLoadingApprovals = false
   @Published public var corpusFiles: [CorpusFile] = [] {
     didSet {
       rebuildQuickOpenIndex()
@@ -805,6 +863,7 @@ public final class WorkspaceStore: ObservableObject {
       await refreshMeetings()
       await refreshCorpusFiles()
       await refreshAssignedWork()
+      await refreshApprovals()
       refreshOrgCryptManagedRecipientFiles()
       if selectedSurface == .home {
         openHome()
@@ -855,6 +914,16 @@ public final class WorkspaceStore: ObservableObject {
         return item.headline.lowercased().contains(target)
       }) ?? visibleAgendaItems.first {
         selectAgendaItem(item)
+      }
+    case "approvals":
+      selectedSurface = .approvals
+      if let item = visibleApprovalItems.first(where: { item in
+        guard let target, !target.isEmpty else { return true }
+        return item.title.lowercased().contains(target)
+          || item.status.lowercased().contains(target)
+          || item.file.lowercased().contains(target)
+      }) ?? visibleApprovalItems.first {
+        selectApprovalItem(item)
       }
     case "openclaw", "chat":
       selectedSurface = .openClaw
@@ -917,6 +986,9 @@ public final class WorkspaceStore: ObservableObject {
     }
     switchOpenClawTranscript(to: Self.openClawTranscriptURL(corpusRoot: standardized))
     agenda = nil
+    approvalItems = []
+    selectedApprovalItemID = nil
+    approvalFilter = ""
     corpusFiles = []
     orgRoamLinkResolver = .empty
     orgRoamLinkResolverGeneration += 1
@@ -965,6 +1037,7 @@ public final class WorkspaceStore: ObservableObject {
     await refreshMeetings()
     await refreshCorpusFiles()
     await refreshAssignedWork()
+    await refreshApprovals()
     refreshWorkspaceHealth()
     refreshOrgCryptManagedRecipientFiles()
     Task { await refreshOpenClawThreads() }
@@ -1084,6 +1157,798 @@ public final class WorkspaceStore: ObservableObject {
         statusText = "Agenda failed"
       }
     }
+  }
+
+  public func refreshApprovals(updatesStatus: Bool = false) async {
+    guard !isLoadingApprovals else {
+      if updatesStatus {
+        statusText = "Approvals already refreshing"
+      }
+      return
+    }
+
+    guard let corpusRoot else {
+      if updatesStatus {
+        statusText = "No corpus selected"
+      }
+      return
+    }
+
+    isLoadingApprovals = true
+    errorText = nil
+    defer { isLoadingApprovals = false }
+    if updatesStatus {
+      statusText = "Scanning approvals..."
+    }
+
+    do {
+      do {
+        let payload: ApprovalPayload = try await cli.runJSON([
+          "approvals",
+          "--dir", corpusRoot.path,
+          "--recursive",
+          "--format", "json"
+        ])
+        approvalItems = Self.sortedApprovalItems(payload.items)
+        syncApprovalSelectionAfterRefresh()
+        if updatesStatus {
+          statusText = "\(payload.count) approval\(payload.count == 1 ? "" : "s")"
+        }
+        return
+      } catch {
+        if updatesStatus {
+          statusText = "Falling back to local approval scan..."
+        }
+      }
+
+      let candidateSources: [ApprovalCandidateSource]
+      if corpusFiles.isEmpty {
+        if let indexedCandidates = Self.approvalCandidateSourcesFromStoredIndex(corpusRoot: corpusRoot) {
+          candidateSources = indexedCandidates
+        } else {
+          if updatesStatus {
+            statusText = "Building search index for approvals..."
+          }
+          _ = try? await cli.runJSON([
+            "index",
+            "--dir", corpusRoot.path,
+            "--recursive",
+            "--format", "json"
+          ], as: SearchIndexBuildPayload.self)
+          if let indexedCandidates = Self.approvalCandidateSourcesFromStoredIndex(corpusRoot: corpusRoot) {
+            candidateSources = indexedCandidates
+          } else {
+            let files = try Self.scanCorpusFiles(corpusRoot: corpusRoot)
+            corpusFiles = files
+            candidateSources = await approvalCandidateSources(
+              files: files,
+              corpusRoot: corpusRoot,
+              updatesStatus: updatesStatus
+            )
+          }
+        }
+      } else {
+        candidateSources = await approvalCandidateSources(
+          files: corpusFiles,
+          corpusRoot: corpusRoot,
+          updatesStatus: updatesStatus
+        )
+      }
+      if updatesStatus {
+        statusText = candidateSources.isEmpty
+          ? "0 approval candidates"
+          : "Checking \(candidateSources.count) approval candidate file\(candidateSources.count == 1 ? "" : "s")"
+      }
+      var items: [ApprovalItem] = []
+      for candidate in candidateSources {
+        guard FileManager.default.fileExists(atPath: candidate.file.path) else {
+          continue
+        }
+        let document: Org2CanonicalDocument = try await cli.parseTextJSON(
+          candidate.parseText,
+          sourceRanges: true,
+          sourceLineOffset: candidate.sourceLineOffset
+        )
+        items.append(contentsOf: Self.approvalItems(
+          in: document,
+          file: candidate.file.path,
+          sourceText: candidate.sourceText
+        ))
+      }
+      approvalItems = Self.sortedApprovalItems(items)
+      syncApprovalSelectionAfterRefresh()
+      if updatesStatus {
+        statusText = "\(approvalItems.count) approval\(approvalItems.count == 1 ? "" : "s")"
+      }
+    } catch {
+      errorText = error.localizedDescription
+      if updatesStatus {
+        statusText = "Approvals failed"
+      }
+    }
+  }
+
+  private func approvalCandidateSources(
+    files: [CorpusFile],
+    corpusRoot: URL,
+    updatesStatus: Bool
+  ) async -> [ApprovalCandidateSource] {
+    if let indexedCandidates = Self.approvalCandidateSourcesFromFreshIndex(files: files, corpusRoot: corpusRoot) {
+      return indexedCandidates
+    }
+
+    if let searchIndexTask {
+      if updatesStatus {
+        statusText = "Waiting for search index..."
+      }
+      await searchIndexTask.value
+      if let indexedCandidates = Self.approvalCandidateSourcesFromFreshIndex(files: files, corpusRoot: corpusRoot) {
+        return indexedCandidates
+      }
+    }
+
+    if updatesStatus {
+      statusText = "Building search index for approvals..."
+    }
+    _ = try? await cli.runJSON([
+      "index",
+      "--dir", corpusRoot.path,
+      "--recursive",
+      "--format", "json"
+    ], as: SearchIndexBuildPayload.self)
+    if let indexedCandidates = Self.approvalCandidateSourcesFromFreshIndex(files: files, corpusRoot: corpusRoot) {
+      return indexedCandidates
+    }
+
+    return Self.approvalCandidateSourcesByScanningFiles(files: files)
+  }
+
+  nonisolated private static func approvalCandidateSourcesFromFreshIndex(
+    files: [CorpusFile],
+    corpusRoot: URL
+  ) -> [ApprovalCandidateSource]? {
+    guard let index = freshWorkspaceSearchIndex(files: files, corpusRoot: corpusRoot) else {
+      return nil
+    }
+    let filesByPath = Dictionary(uniqueKeysWithValues: files.map { ($0.path, $0) })
+    var candidates: [ApprovalCandidateSource] = []
+    for indexedFile in index.files {
+      guard let file = filesByPath[indexedFile.path],
+            isApprovalIndexableFile(file)
+      else {
+        continue
+      }
+      candidates.append(contentsOf: approvalCandidateSources(
+        file: file,
+        sourceLines: indexedFile.lines
+      ))
+    }
+    return candidates
+  }
+
+  nonisolated private static func approvalCandidateSourcesFromStoredIndex(corpusRoot: URL) -> [ApprovalCandidateSource]? {
+    guard let index = storedWorkspaceSearchIndex(corpusRoot: corpusRoot) else {
+      return nil
+    }
+    var candidates: [ApprovalCandidateSource] = []
+    for indexedFile in index.files {
+      let file = CorpusFile(
+        path: indexedFile.path,
+        relativePath: indexedFile.relativePath,
+        modifiedAt: Date(timeIntervalSince1970: Double(indexedFile.modifiedMs) / 1000),
+        byteCount: indexedFile.byteCount
+      )
+      guard isApprovalIndexableFile(file) else { continue }
+      candidates.append(contentsOf: approvalCandidateSources(
+        file: file,
+        sourceLines: indexedFile.lines
+      ))
+    }
+    return candidates
+  }
+
+  nonisolated private static func approvalCandidateSourcesByScanningFiles(files: [CorpusFile]) -> [ApprovalCandidateSource] {
+    var candidates: [ApprovalCandidateSource] = []
+    for file in files {
+      guard isApprovalIndexableFile(file),
+            let raw = try? String(contentsOfFile: file.path, encoding: .utf8)
+      else {
+        continue
+      }
+      let lines = normalizeLineEndings(raw)
+        .split(separator: "\n", omittingEmptySubsequences: false)
+        .map(String.init)
+      candidates.append(contentsOf: approvalCandidateSources(file: file, sourceLines: lines))
+    }
+    return candidates
+  }
+
+  nonisolated private static func approvalCandidateSources(
+    file: CorpusFile,
+    sourceLines: [String]
+  ) -> [ApprovalCandidateSource] {
+    let sourceText = sourceLines.joined(separator: "\n")
+    var ranges: [Range<Int>] = []
+    for index in sourceLines.indices {
+      guard let level = approvalHeadingLevel(sourceLines[index]) else { continue }
+
+      let directEnd = firstHeadingIndex(in: sourceLines, after: index) ?? sourceLines.count
+      let directText = sourceLines[index..<directEnd].joined(separator: "\n")
+      guard approvalCandidateTextMayContainItem(directText) else { continue }
+
+      let subtreeEnd = firstHeadingIndex(in: sourceLines, after: index, maxLevel: level) ?? sourceLines.count
+      ranges.append(index..<subtreeEnd)
+    }
+    guard !ranges.isEmpty else { return [] }
+
+    var parseLines = sourceLines.map { line in
+      approvalHeadingLevel(line) == nil ? "" : line
+    }
+    for range in mergedApprovalCandidateRanges(ranges) {
+      for index in range {
+        parseLines[index] = sourceLines[index]
+      }
+    }
+    return [
+      ApprovalCandidateSource(
+        file: file,
+        sourceText: sourceText,
+        parseText: parseLines.joined(separator: "\n"),
+        sourceLineOffset: 0
+      )
+    ]
+  }
+
+  nonisolated private static func mergedApprovalCandidateRanges(_ ranges: [Range<Int>]) -> [Range<Int>] {
+    let sorted = ranges.sorted { lhs, rhs in
+      lhs.lowerBound == rhs.lowerBound
+        ? lhs.upperBound < rhs.upperBound
+        : lhs.lowerBound < rhs.lowerBound
+    }
+    var merged: [Range<Int>] = []
+    for range in sorted {
+      guard let last = merged.last else {
+        merged.append(range)
+        continue
+      }
+      if range.lowerBound <= last.upperBound {
+        merged[merged.count - 1] = last.lowerBound..<max(last.upperBound, range.upperBound)
+      } else {
+        merged.append(range)
+      }
+    }
+    return merged
+  }
+
+  nonisolated private static func firstHeadingIndex(
+    in lines: [String],
+    after index: Int,
+    maxLevel: Int? = nil
+  ) -> Int? {
+    guard index + 1 < lines.count else { return nil }
+    for candidateIndex in (index + 1)..<lines.count {
+      guard let level = approvalHeadingLevel(lines[candidateIndex]) else { continue }
+      if let maxLevel {
+        if level <= maxLevel {
+          return candidateIndex
+        }
+      } else {
+        return candidateIndex
+      }
+    }
+    return nil
+  }
+
+  nonisolated private static func approvalHeadingLevel(_ line: String) -> Int? {
+    var count = 0
+    for character in line {
+      if character == "*" {
+        count += 1
+      } else {
+        break
+      }
+    }
+    guard count > 0,
+          line.dropFirst(count).first?.isWhitespace == true
+    else {
+      return nil
+    }
+    return count
+  }
+
+  nonisolated private static func freshWorkspaceSearchIndex(files: [CorpusFile], corpusRoot: URL) -> WorkspaceSearchIndex? {
+    let root = corpusRoot.standardizedFileURL
+    let indexableFiles = files.filter { isApprovalIndexableFile($0) }
+    let indexURL = searchIndexURL(corpusRoot: root)
+    guard let data = try? Data(contentsOf: indexURL),
+          let index = try? JSONDecoder().decode(WorkspaceSearchIndex.self, from: data),
+          index.schema == "org2:search-index:v1",
+          index.version == 1,
+          URL(fileURLWithPath: index.rootDir).standardizedFileURL.path == root.path,
+          index.recursive,
+          !index.includeArchives,
+          index.files.count == indexableFiles.count
+    else {
+      return nil
+    }
+
+    let expected = Dictionary(uniqueKeysWithValues: indexableFiles.map { ($0.path, $0) })
+    for indexedFile in index.files {
+      guard let file = expected[indexedFile.path],
+            freshSearchIndexMetadataMatches(file: file, indexedFile: indexedFile)
+      else {
+        return nil
+      }
+    }
+    return index
+  }
+
+  nonisolated private static func storedWorkspaceSearchIndex(corpusRoot: URL) -> WorkspaceSearchIndex? {
+    let root = corpusRoot.standardizedFileURL
+    let indexURL = searchIndexURL(corpusRoot: root)
+    guard let data = try? Data(contentsOf: indexURL),
+          let index = try? JSONDecoder().decode(WorkspaceSearchIndex.self, from: data),
+          index.schema == "org2:search-index:v1",
+          index.version == 1,
+          URL(fileURLWithPath: index.rootDir).standardizedFileURL.path == root.path,
+          index.recursive,
+          !index.includeArchives
+    else {
+      return nil
+    }
+    return index
+  }
+
+  nonisolated private static func isApprovalIndexableFile(_ file: CorpusFile) -> Bool {
+    guard !isDefaultIgnoredSyncArtifactPath(file.path) else { return false }
+    let pathExtension = URL(fileURLWithPath: file.path).pathExtension.lowercased()
+    return pathExtension == "org" || pathExtension == "org2"
+  }
+
+  nonisolated private static func freshSearchIndexMetadataMatches(
+    file: CorpusFile,
+    indexedFile: WorkspaceSearchIndexFile
+  ) -> Bool {
+    if let modifiedAt = file.modifiedAt,
+       let byteCount = file.byteCount {
+      return Int64(modifiedAt.timeIntervalSince1970 * 1000) == indexedFile.modifiedMs
+        && byteCount == indexedFile.byteCount
+    }
+
+    guard let values = try? URL(fileURLWithPath: file.path).resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]),
+          let modifiedAt = values.contentModificationDate,
+          let byteCount = values.fileSize
+    else {
+      return false
+    }
+    return Int64(modifiedAt.timeIntervalSince1970 * 1000) == indexedFile.modifiedMs
+      && Int64(byteCount) == indexedFile.byteCount
+  }
+
+  nonisolated private static func searchIndexURL(corpusRoot: URL) -> URL {
+    let configuredIndexHome = ProcessInfo.processInfo.environment["ORG2_INDEX_HOME"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let indexHome: URL
+    if let configuredIndexHome, !configuredIndexHome.isEmpty {
+      let expanded = expandHomePath(configuredIndexHome)
+      indexHome = URL(fileURLWithPath: expanded).standardizedFileURL
+    } else {
+      indexHome = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".org2", isDirectory: true)
+        .appendingPathComponent("index", isDirectory: true)
+    }
+
+    return indexHome
+      .appendingPathComponent(corpusIndexDirectoryName(corpusRoot: corpusRoot), isDirectory: true)
+      .appendingPathComponent("search-v1.json")
+  }
+
+  nonisolated private static func corpusIndexDirectoryName(corpusRoot: URL) -> String {
+    let resolvedPath = corpusRoot.standardizedFileURL.path
+    let base = corpusRoot.lastPathComponent
+    let slug = base
+      .lowercased()
+      .replacingOccurrences(of: #"[^a-z0-9._-]+"#, with: "-", options: .regularExpression)
+      .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    let digest = SHA256.hash(data: Data(resolvedPath.utf8))
+      .map { String(format: "%02x", $0) }
+      .joined()
+      .prefix(12)
+    return "\((slug.isEmpty ? "corpus" : slug))-\(digest)"
+  }
+
+  nonisolated private static func expandHomePath(_ path: String) -> String {
+    if path == "~" {
+      return FileManager.default.homeDirectoryForCurrentUser.path
+    }
+    if path.hasPrefix("~/") {
+      return FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(String(path.dropFirst(2)))
+        .path
+    }
+    return path
+  }
+
+  nonisolated static func approvalCandidateTextMayContainItem(_ raw: String) -> Bool {
+    let normalized = raw.lowercased()
+    guard normalized.contains(":") else { return false }
+
+    let hasHumanApprovalTitle = approvalTextHasHumanApprovalTitle(normalized)
+    let hasPendingStatus = approvalStatusNeedles.contains { normalized.contains($0) }
+    let hasSpecificReviewStatusKey = [
+      ":org2_review_status:",
+      ":review_status:",
+      ":review:",
+      ":followup_status:",
+      ":reply_status:"
+    ].contains { normalized.contains($0) }
+    if hasSpecificReviewStatusKey && hasPendingStatus && hasHumanApprovalTitle {
+      return true
+    }
+
+    if normalized.contains(":status:"),
+       hasPendingStatus,
+       hasHumanApprovalTitle {
+      return true
+    }
+
+    let hasGateKey = [
+      ":waiting_on:",
+      ":blocked_by:",
+      ":org2_waiting_on:",
+      ":next_action:",
+      ":action_required:",
+      ":org2_next_action:",
+      ":handoff_summary:",
+      ":org2_handoff_summary:"
+    ].contains { normalized.contains($0) }
+    if hasGateKey && containsApprovalSignal(normalized) {
+      return true
+    }
+
+    let hasAccessPolicyKey = [
+      ":access_policy:",
+      ":review_policy:"
+    ].contains { normalized.contains($0) }
+    return hasAccessPolicyKey && (hasPendingStatus || containsApprovalSignal(normalized))
+  }
+
+  nonisolated private static let approvalStatusNeedles = [
+    "review-required",
+    "requires-review",
+    "approval-required",
+    "needs-approval",
+    "need-approval",
+    "needs-review",
+    "need-review",
+    "pending-review",
+    "pending-approval",
+    "require-approval",
+    "waiting-on-approval",
+    "draft-needs-review",
+    "draft-needs-approval",
+    "reply-review",
+    "needs-avi",
+    "avi-approval",
+    "needs-human",
+    "human-review",
+    "generated",
+    "draft"
+  ]
+
+  nonisolated private static func approvalTextHasHumanApprovalTitle(_ normalizedText: String) -> Bool {
+    normalizedText.range(
+      of: #"(?m)^\*+\s+(?:(?:todo|in_progress|prog|wait|hold|paused)\s+)?(?:approve|review|review/|review-send|review and approve|review/approve)\b"#,
+      options: .regularExpression
+    ) != nil
+  }
+
+  public func clearApprovalFilter() {
+    approvalFilter = ""
+  }
+
+  public func selectApprovalItem(_ item: ApprovalItem) {
+    selectedApprovalItemID = item.id
+    select(.agenda(item.agendaItem()))
+    statusText = item.sourceLabel
+  }
+
+  public func approve(_ item: ApprovalItem) async {
+    await approveAndAgentHandoff(HeadlineMutationTarget(
+      file: item.file,
+      line: item.line,
+      title: Org2Display.cleanInline(item.title),
+      agendaItemID: nil
+    ))
+    await refreshApprovals(updatesStatus: false)
+  }
+
+  public func discussApprovalInOpenClaw(_ item: ApprovalItem, message: String? = nil) async {
+    let text = Self.openClawApprovalDiscussionPrompt(item: item, message: message)
+    selectedSurface = .openClaw
+    await sendOpenClawMessage(text: text)
+  }
+
+  public func copyApprovalDiscussionText(_ item: ApprovalItem) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(item.discussionText, forType: .string)
+    statusText = "Copied approval discussion text"
+  }
+
+  private func syncApprovalSelectionAfterRefresh() {
+    guard !visibleApprovalItems.isEmpty else {
+      selectedApprovalItemID = nil
+      return
+    }
+    if let selectedApprovalItemID,
+       visibleApprovalItems.contains(where: { $0.id == selectedApprovalItemID }) {
+      return
+    }
+    if selectedSurface == .approvals {
+      selectApprovalItem(visibleApprovalItems[0])
+    }
+  }
+
+  private func rebuildApprovalDisplayCache() {
+    visibleApprovalItems = approvalItems.filter { $0.matchesApprovalFilter(approvalFilter) }
+    if let selectedApprovalItemID,
+       !visibleApprovalItems.contains(where: { $0.id == selectedApprovalItemID }) {
+      self.selectedApprovalItemID = nil
+    }
+  }
+
+  nonisolated static func approvalItems(
+    in document: Org2CanonicalDocument,
+    file: String,
+    sourceText: String
+  ) -> [ApprovalItem] {
+    let lines = normalizeLineEndings(sourceText)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    var items: [ApprovalItem] = []
+    appendApprovalItems(from: document.children, file: file, sourceLines: lines, into: &items)
+    return sortedApprovalItems(items)
+  }
+
+  nonisolated private static func appendApprovalItems(
+    from nodes: [Org2CanonicalNode],
+    file: String,
+    sourceLines: [String],
+    into items: inout [ApprovalItem]
+  ) {
+    for node in nodes {
+      guard case .headline(let headline) = node else { continue }
+      appendApprovalItem(from: headline, file: file, sourceLines: sourceLines, into: &items)
+      appendApprovalItems(from: headline.children, file: file, sourceLines: sourceLines, into: &items)
+    }
+  }
+
+  nonisolated private static func appendApprovalItem(
+    from headline: Org2CanonicalHeadline,
+    file: String,
+    sourceLines: [String],
+    into items: inout [ApprovalItem]
+  ) {
+    let todo = headline.todo?.uppercased()
+    guard !isTerminalTodo(todo),
+          let sourceRange = headline.sourceRange
+    else {
+      return
+    }
+
+    let properties = canonicalHeadlineProperties(headline)
+    let title = canonicalInlineText(headline.title)
+    guard let status = approvalStatus(title: title, properties: properties) else { return }
+
+    items.append(ApprovalItem(
+      title: title,
+      status: status,
+      todo: todo,
+      level: headline.level,
+      file: file,
+      line: sourceRange.startLine,
+      idValue: properties["ID"],
+      properties: properties,
+      body: approvalBody(
+        sourceLines: sourceLines,
+        sourceRange: sourceRange,
+        children: headline.children
+      ),
+      tags: headline.tags ?? []
+    ))
+  }
+
+  nonisolated private static func canonicalHeadlineProperties(_ headline: Org2CanonicalHeadline) -> [String: String] {
+    for child in headline.children {
+      guard case .propertyDrawer(let drawer) = child else { continue }
+      return Dictionary(uniqueKeysWithValues: drawer.properties.map { ($0.key.uppercased(), $0.value) })
+    }
+    return [:]
+  }
+
+  nonisolated private static func approvalBody(
+    sourceLines: [String],
+    sourceRange: Org2CanonicalSourceRange,
+    children: [Org2CanonicalNode]
+  ) -> String {
+    let startLine = max(1, sourceRange.startLine + 1)
+    let endLine = max(startLine, sourceRange.endLine)
+    guard startLine <= endLine, !sourceLines.isEmpty else { return "" }
+
+    let hiddenRanges = children.compactMap { child -> ClosedRange<Int>? in
+      switch child {
+      case .propertyDrawer(let drawer):
+        guard let range = drawer.sourceRange else { return nil }
+        return range.startLine...range.endLine
+      case .planning(let planning):
+        guard let range = planning.sourceRange else { return nil }
+        return range.startLine...range.endLine
+      default:
+        return nil
+      }
+    }
+
+    var bodyLines: [String] = []
+    for lineNumber in startLine...endLine {
+      guard sourceLines.indices.contains(lineNumber - 1),
+            !hiddenRanges.contains(where: { $0.contains(lineNumber) })
+      else {
+        continue
+      }
+      bodyLines.append(sourceLines[lineNumber - 1])
+    }
+    return bodyLines
+      .joined(separator: "\n")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  nonisolated private static func approvalStatus(title: String, properties: [String: String]) -> String? {
+    let status = firstPropertyText(
+      in: properties,
+      keys: [
+        "ORG2_REVIEW_STATUS",
+        "REVIEW_STATUS",
+        "REVIEW",
+        "STATUS",
+        "FOLLOWUP_STATUS",
+        "REPLY_STATUS"
+      ]
+    )
+    if let status, isPendingApprovalStatus(status), titleNeedsHumanApproval(title) {
+      return status
+    }
+
+    let waitingOn = firstPropertyText(in: properties, keys: ["WAITING_ON", "BLOCKED_BY", "ORG2_WAITING_ON"]) ?? ""
+    if containsApprovalSignal(waitingOn) {
+      return waitingOn.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "approval-required" : waitingOn
+    }
+
+    let nextAction = firstPropertyText(in: properties, keys: ["NEXT_ACTION", "ACTION_REQUIRED", "ORG2_NEXT_ACTION"]) ?? ""
+    if containsApprovalSignal(nextAction) {
+      return "approval-required"
+    }
+
+    let handoff = firstPropertyText(in: properties, keys: ["HANDOFF_SUMMARY", "ORG2_HANDOFF_SUMMARY"]) ?? ""
+    if containsApprovalSignal(handoff) {
+      return "approval-required"
+    }
+
+    let accessPolicy = firstPropertyText(in: properties, keys: ["ACCESS_POLICY", "REVIEW_POLICY"]) ?? ""
+    if isPendingApprovalStatus(accessPolicy) || containsApprovalSignal(accessPolicy) {
+      return accessPolicy.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "approval-required" : accessPolicy
+    }
+
+    return nil
+  }
+
+  nonisolated private static func firstPropertyText(in properties: [String: String], keys: [String]) -> String? {
+    for key in keys {
+      let value = properties[key]?.trimmingCharacters(in: .whitespacesAndNewlines)
+      if value?.isEmpty == false {
+        return value
+      }
+    }
+    return nil
+  }
+
+  nonisolated private static func isPendingApprovalStatus(_ raw: String) -> Bool {
+    let normalized = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    if [
+      "review-required",
+      "requires-review",
+      "approval-required",
+      "needs-approval",
+      "needs-review",
+      "pending-review",
+      "pending-approval",
+      "require-approval",
+      "generated",
+      "draft"
+    ].contains(normalized) {
+      return true
+    }
+
+    return normalized.contains("needs-review")
+      || normalized.contains("need-review")
+      || normalized.contains("needs-approval")
+      || normalized.contains("need-approval")
+      || normalized.contains("waiting-on-approval")
+      || normalized.contains("pending-review")
+      || normalized.contains("pending-approval")
+      || normalized.contains("draft-needs-review")
+      || normalized.contains("draft-needs-approval")
+      || normalized.contains("reply-review")
+      || normalized.contains("needs-avi")
+      || normalized.contains("avi-approval")
+      || normalized.contains("needs-human")
+      || normalized.contains("human-review")
+  }
+
+  nonisolated private static func titleNeedsHumanApproval(_ title: String) -> Bool {
+    let normalized = Org2Display.cleanInline(title).lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    return normalized.hasPrefix("approve ")
+      || normalized.hasPrefix("review ")
+      || normalized.hasPrefix("review/")
+      || normalized.hasPrefix("review-send ")
+      || normalized.hasPrefix("review and approve ")
+      || normalized.hasPrefix("review/approve ")
+  }
+
+  nonisolated private static func containsApprovalSignal(_ raw: String) -> Bool {
+    let normalized = raw.lowercased()
+    return normalized.contains("approval")
+      || normalized.contains("approve")
+      || normalized.contains("review")
+      || normalized.contains("avi")
+  }
+
+  nonisolated private static func isTerminalTodo(_ todo: String?) -> Bool {
+    guard let todo else { return false }
+    return todo == "DONE" || todo == "CANCELED" || todo == "CANCELLED"
+  }
+
+  nonisolated private static func canonicalInlineText(_ inlines: [Org2CanonicalInline]) -> String {
+    inlines.map(canonicalInlineText).joined()
+  }
+
+  nonisolated private static func canonicalInlineText(_ inline: Org2CanonicalInline) -> String {
+    switch inline {
+    case .text(let text):
+      return text.value
+    case .timestamp(let timestamp):
+      return timestamp.raw
+    case .timestampRange(let range):
+      return "\(range.start.raw)\(range.separatorRaw)\(range.end.raw)"
+    case .emphasis(let emphasis):
+      return "\(emphasis.marker)\(emphasis.content)\(emphasis.marker)"
+    case .link(let link):
+      return link.descriptionRaw ?? link.targetRaw
+    case .progressCookie(let raw):
+      return raw
+    case .unsupported(let type):
+      return type
+    }
+  }
+
+  nonisolated private static func sortedApprovalItems(_ items: [ApprovalItem]) -> [ApprovalItem] {
+    items.sorted { lhs, rhs in
+      let statusOrder = lhs.status.localizedCaseInsensitiveCompare(rhs.status)
+      if statusOrder != .orderedSame { return statusOrder == .orderedAscending }
+      let titleOrder = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
+      if titleOrder != .orderedSame { return titleOrder == .orderedAscending }
+      if lhs.file != rhs.file { return lhs.file.localizedStandardCompare(rhs.file) == .orderedAscending }
+      return lhs.line < rhs.line
+    }
+  }
+
+  nonisolated private static func openClawApprovalDiscussionPrompt(item: ApprovalItem, message: String?) -> String {
+    let intro = message?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
+      ?? "I need to discuss this approval item before deciding."
+    return """
+    \(intro)
+
+    \(item.discussionText)
+    """
   }
 
   private func scheduleSearchIndexBuild(corpusRoot: URL) {
@@ -6797,16 +7662,23 @@ public final class WorkspaceStore: ObservableObject {
     let timestamp = Self.orgTimestamp(Date())
 
     do {
+      let approvalIdentity = try approvalMutationIdentity(for: target)
       try await setTodoStatus(.done, for: target)
       let result = try await activateApprovedAgentAction(for: target, timestamp: timestamp)
+      let currentTarget = try refreshedApprovalMutationTarget(
+        original: target,
+        identity: approvalIdentity
+      )
+      var approvalProperties = try currentApprovalProperties(for: currentTarget)
+      approvalProperties.merge(Self.approvedApprovalProperties(
+        existingProperties: approvalProperties,
+        timestamp: timestamp,
+        pairedTitle: result.title
+      )) { _, new in new }
       try upsertHeadlineProperties(
-        file: target.file,
-        line: target.line,
-        properties: [
-          "STATUS": "approved",
-          "APPROVED_AT": timestamp,
-          "PAIRED_SEND_TODO": result.title
-        ]
+        file: currentTarget.file,
+        line: currentTarget.line,
+        properties: approvalProperties
       )
       invalidateCanonicalDocumentCache(for: result.file)
       await refreshAfterHeadlineMutation(target)
@@ -6822,6 +7694,110 @@ public final class WorkspaceStore: ObservableObject {
       errorText = error.localizedDescription
       statusText = "Approve handoff failed"
     }
+  }
+
+  private func currentApprovalProperties(for target: HeadlineMutationTarget) throws -> [String: String] {
+    let url = URL(fileURLWithPath: target.file)
+    let raw = try String(contentsOf: url, encoding: .utf8)
+    let lines = Self.normalizeLineEndings(raw)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    let targetIndex = max(0, min(lines.count - 1, target.line - 1))
+    guard let headingIndex = Self.headingIndex(in: lines, atOrBefore: targetIndex) else {
+      return [:]
+    }
+    return Self.scanPropertyDrawer(lines: lines, afterHeadingIndex: headingIndex)
+  }
+
+  nonisolated private static func approvedApprovalProperties(
+    existingProperties: [String: String],
+    timestamp: String,
+    pairedTitle: String
+  ) -> [String: String] {
+    var properties: [String: String] = [
+      "STATUS": "approved",
+      "APPROVED_AT": timestamp,
+      "PAIRED_SEND_TODO": pairedTitle
+    ]
+
+    for key in [
+      "ORG2_REVIEW_STATUS",
+      "REVIEW_STATUS",
+      "REVIEW",
+      "FOLLOWUP_STATUS",
+      "REPLY_STATUS",
+      "ACCESS_POLICY",
+      "REVIEW_POLICY"
+    ] where existingProperties[key] != nil {
+      properties[key] = "approved"
+    }
+
+    for key in [
+      "WAITING_ON",
+      "BLOCKED_BY",
+      "ORG2_WAITING_ON",
+      "NEXT_ACTION",
+      "ACTION_REQUIRED",
+      "ORG2_NEXT_ACTION",
+      "HANDOFF_SUMMARY",
+      "ORG2_HANDOFF_SUMMARY"
+    ] {
+      guard let value = existingProperties[key]?.lowercased() else { continue }
+      if value.contains("approval") || value.contains("approve") || value.contains("review") || value.contains("avi") {
+        properties[key] = "approved"
+      }
+    }
+
+    return properties
+  }
+
+  private func approvalMutationIdentity(for target: HeadlineMutationTarget) throws -> ApprovalMutationIdentity {
+    let url = URL(fileURLWithPath: target.file)
+    let raw = try String(contentsOf: url, encoding: .utf8)
+    let lines = Self.normalizeLineEndings(raw)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    let targetIndex = max(0, min(lines.count - 1, target.line - 1))
+    guard let headingIndex = Self.headingIndex(in: lines, atOrBefore: targetIndex) else {
+      return ApprovalMutationIdentity(title: target.title, idValue: nil)
+    }
+    let properties = Self.scanPropertyDrawer(lines: lines, afterHeadingIndex: headingIndex)
+    return ApprovalMutationIdentity(
+      title: target.title,
+      idValue: properties["ID"]?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
+    )
+  }
+
+  private func refreshedApprovalMutationTarget(
+    original target: HeadlineMutationTarget,
+    identity: ApprovalMutationIdentity
+  ) throws -> HeadlineMutationTarget {
+    let url = URL(fileURLWithPath: target.file)
+    let raw = try String(contentsOf: url, encoding: .utf8)
+    let lines = Self.normalizeLineEndings(raw)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+
+    if let idValue = identity.idValue {
+      for index in lines.indices where Self.parseTodoHeading(lines[index]) != nil {
+        let properties = Self.scanPropertyDrawer(lines: lines, afterHeadingIndex: index)
+        if properties["ID"]?.trimmingCharacters(in: .whitespacesAndNewlines) == idValue {
+          return HeadlineMutationTarget(file: target.file, line: index + 1, title: identity.title, agendaItemID: target.agendaItemID)
+        }
+      }
+    }
+
+    let normalizedTitle = Self.normalizedApprovalActionTitle(identity.title)
+    if !normalizedTitle.isEmpty {
+      for index in lines.indices {
+        guard let heading = Self.parseTodoHeading(lines[index]) else { continue }
+        if Self.normalizedApprovalActionTitle(heading.title) == normalizedTitle {
+          return HeadlineMutationTarget(file: target.file, line: index + 1, title: heading.title, agendaItemID: target.agendaItemID)
+        }
+      }
+    }
+
+    return target
   }
 
   private func activateApprovedAgentAction(
@@ -7239,7 +8215,7 @@ public final class WorkspaceStore: ObservableObject {
       case "3":
         selectedSurface = .files
       case "4":
-        focusSearchSurface()
+        selectedSurface = .approvals
       case "5":
         selectedSurface = .meetings
       case "6":
@@ -11347,7 +12323,7 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated private static func scanCorpusFiles(corpusRoot: URL) throws -> [CorpusFile] {
     let root = corpusRoot.standardizedFileURL
     let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .isDirectoryKey, .contentModificationDateKey, .fileSizeKey]
-    let skippedDirectories = Set([".git", ".hg", ".svn", ".trash", "node_modules", "dist", "build", ".build", "DerivedData"])
+    let skippedDirectories = Set([".git", ".hg", ".svn", ".trash", ".org2", "node_modules", "dist", "build", ".build", "DerivedData", "sync-conflicts"])
     let allowedExtensions = Set(["org", "org2", "md"])
     guard let enumerator = FileManager.default.enumerator(
       at: root,
@@ -11368,7 +12344,8 @@ public final class WorkspaceStore: ObservableObject {
       }
 
       guard values.isRegularFile == true,
-            allowedExtensions.contains(url.pathExtension.lowercased())
+            allowedExtensions.contains(url.pathExtension.lowercased()),
+            !isDefaultIgnoredSyncArtifactPath(url.path)
       else {
         continue
       }
@@ -11388,6 +12365,13 @@ public final class WorkspaceStore: ObservableObject {
     return files.sorted {
       $0.relativePath.localizedStandardCompare($1.relativePath) == .orderedAscending
     }
+  }
+
+  nonisolated private static func isDefaultIgnoredSyncArtifactPath(_ path: String) -> Bool {
+    let name = URL(fileURLWithPath: path).lastPathComponent
+    return name.hasPrefix(".syncthing.")
+      || name.contains(".sync-conflict-")
+      || name.hasSuffix(".tmp")
   }
 
   nonisolated private static func fuzzyScore(query: String, candidate: String) -> Int? {
@@ -12786,6 +13770,7 @@ private final class SourceRunOutputCollector: @unchecked Sendable {
 public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
   case home
   case agenda
+  case approvals
   case files
   case search
   case meetings
@@ -12794,13 +13779,14 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
   public var id: String { rawValue }
 
   public static var sidebarCases: [WorkspaceSurface] {
-    allCases
+    [.home, .agenda, .files, .approvals, .search, .meetings, .openClaw]
   }
 
   public var title: String {
     switch self {
     case .home: "Home"
     case .agenda: "Agenda"
+    case .approvals: "Approvals"
     case .files: "Files"
     case .search: "Search"
     case .meetings: "Meetings"
@@ -12812,6 +13798,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     switch self {
     case .home: "house"
     case .agenda: "calendar"
+    case .approvals: "checkmark.seal"
     case .files: "doc.text"
     case .search: "magnifyingglass"
     case .meetings: "mic"
@@ -12823,8 +13810,9 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     switch self {
     case .home: "⌘1"
     case .agenda: "⌘2"
+    case .approvals: "⌘4"
     case .files: "⌘3"
-    case .search: "⌘4"
+    case .search: "⌘⇧F"
     case .meetings: "⌘5"
     case .openClaw: "⌘6"
     }

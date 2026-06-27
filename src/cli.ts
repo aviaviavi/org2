@@ -35,6 +35,8 @@ import {
   searchIndexedCorpus,
   searchPayload,
   writeSearchIndex,
+  type Org2SearchIndex,
+  type Org2SearchIndexFile,
   type Org2SearchHit,
   type Org2SearchOptions,
   type Org2SearchResultPayload,
@@ -55,8 +57,10 @@ import {
 import type {
   DocumentNode,
   HeadlineNode,
+  InlineNode,
   Node,
   PlanningNode,
+  PropertyDrawerNode,
   TimestampNode,
   TimestampRangeNode,
 } from "./ast.js";
@@ -781,6 +785,410 @@ type GraphAuditReport = {
   };
   findings: GraphAuditFinding[];
 };
+
+type ApprovalQueueItem = {
+  title: string;
+  status: string;
+  todo: string | null;
+  level: number | null;
+  file: string;
+  line: number;
+  idValue: string | null;
+  properties: Record<string, string>;
+  body: string;
+  tags: string[];
+};
+
+type ApprovalQueuePayload = {
+  $schema: "org2:approvals:v1";
+  count: number;
+  index?: {
+    mode: "auto" | "never" | "rebuild";
+    used: boolean;
+    path?: string;
+    builtAt?: string;
+    stale?: boolean;
+    rebuilt?: boolean;
+  };
+  skippedCandidates?: number;
+  items: ApprovalQueueItem[];
+};
+
+type SourceRange = { startLine: number; endLine: number };
+type SourceRangedHeadlineNode = HeadlineNode & { sourceRange?: SourceRange };
+type SourceRangedPropertyDrawerNode = PropertyDrawerNode & { sourceRange?: SourceRange };
+type SourceRangedPlanningNode = PlanningNode & { sourceRange?: SourceRange };
+
+type ApprovalCandidateSource = {
+  file: string;
+  sourceText: string;
+  parseText: string;
+  sourceLineOffset: number;
+};
+
+const APPROVAL_STATUS_NEEDLES = [
+  "review-required",
+  "requires-review",
+  "approval-required",
+  "needs-approval",
+  "need-approval",
+  "needs-review",
+  "need-review",
+  "pending-review",
+  "pending-approval",
+  "require-approval",
+  "waiting-on-approval",
+  "draft-needs-review",
+  "draft-needs-approval",
+  "reply-review",
+  "needs-avi",
+  "avi-approval",
+  "needs-human",
+  "human-review",
+  "generated",
+  "draft",
+] as const;
+
+function approvalHeadingLevel(line: string): number | null {
+  const match = /^(\*+)\s+/.exec(line);
+  return match ? match[1]!.length : null;
+}
+
+function firstApprovalHeadingIndex(lines: string[], afterIndex: number, maxLevel?: number): number | null {
+  for (let index = afterIndex + 1; index < lines.length; index += 1) {
+    const level = approvalHeadingLevel(lines[index] || "");
+    if (level === null) continue;
+    if (maxLevel === undefined || level <= maxLevel) return index;
+  }
+  return null;
+}
+
+function containsApprovalSignal(raw: string): boolean {
+  const normalized = raw.toLowerCase();
+  return normalized.includes("approval")
+    || normalized.includes("approve")
+    || normalized.includes("review")
+    || normalized.includes("avi");
+}
+
+function approvalTextHasHumanApprovalTitle(normalizedText: string): boolean {
+  return /(?:^|\n)\*+\s+(?:(?:todo|in_progress|prog|wait|hold|paused)\s+)?(?:approve|review|review\/|review-send|review and approve|review\/approve)\b/i.test(normalizedText);
+}
+
+function approvalCandidateTextMayContainItem(raw: string): boolean {
+  const normalized = raw.toLowerCase();
+  if (!normalized.includes(":")) return false;
+
+  const hasHumanApprovalTitle = approvalTextHasHumanApprovalTitle(normalized);
+  const hasPendingStatus = APPROVAL_STATUS_NEEDLES.some((needle) => normalized.includes(needle));
+  const hasSpecificReviewStatusKey = [
+    ":org2_review_status:",
+    ":review_status:",
+    ":review:",
+    ":followup_status:",
+    ":reply_status:",
+  ].some((needle) => normalized.includes(needle));
+  if (hasSpecificReviewStatusKey && hasPendingStatus && hasHumanApprovalTitle) return true;
+
+  if (normalized.includes(":status:") && hasPendingStatus && hasHumanApprovalTitle) return true;
+
+  const hasGateKey = [
+    ":waiting_on:",
+    ":blocked_by:",
+    ":org2_waiting_on:",
+    ":next_action:",
+    ":action_required:",
+    ":org2_next_action:",
+    ":handoff_summary:",
+    ":org2_handoff_summary:",
+  ].some((needle) => normalized.includes(needle));
+  if (hasGateKey && containsApprovalSignal(normalized)) return true;
+
+  const hasAccessPolicyKey = [
+    ":access_policy:",
+    ":review_policy:",
+  ].some((needle) => normalized.includes(needle));
+  return hasAccessPolicyKey && (hasPendingStatus || containsApprovalSignal(normalized));
+}
+
+function mergedApprovalCandidateRanges(ranges: Array<[number, number]>): Array<[number, number]> {
+  const sorted = [...ranges].sort((lhs, rhs) => (lhs[0] - rhs[0]) || (lhs[1] - rhs[1]));
+  const merged: Array<[number, number]> = [];
+  for (const range of sorted) {
+    const last = merged[merged.length - 1];
+    if (!last) {
+      merged.push(range);
+      continue;
+    }
+    if (range[0] <= last[1]) {
+      last[1] = Math.max(last[1], range[1]);
+    } else {
+      merged.push(range);
+    }
+  }
+  return merged;
+}
+
+function isApprovalIndexableFilePath(filePath: string, includeArchives = false): boolean {
+  return isOrgLikeFileName(path.basename(filePath), includeArchives)
+    && !isDefaultIgnoredSyncArtifactPath(filePath)
+    && (includeArchives || !isDefaultArchivePath(filePath));
+}
+
+function approvalCandidateSources(file: string, sourceLines: string[]): ApprovalCandidateSource[] {
+  const ranges: Array<[number, number]> = [];
+  for (let index = 0; index < sourceLines.length; index += 1) {
+    const level = approvalHeadingLevel(sourceLines[index] || "");
+    if (level === null) continue;
+
+    const directEnd = firstApprovalHeadingIndex(sourceLines, index) ?? sourceLines.length;
+    const directText = sourceLines.slice(index, directEnd).join("\n");
+    if (!approvalCandidateTextMayContainItem(directText)) continue;
+
+    const subtreeEnd = firstApprovalHeadingIndex(sourceLines, index, level) ?? sourceLines.length;
+    ranges.push([index, subtreeEnd]);
+  }
+  if (ranges.length === 0) return [];
+
+  const parseLines = sourceLines.map((line) => approvalHeadingLevel(line) === null ? "" : line);
+  for (const [start, end] of mergedApprovalCandidateRanges(ranges)) {
+    for (let index = start; index < end; index += 1) {
+      parseLines[index] = sourceLines[index] || "";
+    }
+  }
+
+  return [{
+    file,
+    sourceText: sourceLines.join("\n"),
+    parseText: parseLines.join("\n"),
+    sourceLineOffset: 0,
+  }];
+}
+
+function isPendingApprovalStatus(raw: string): boolean {
+  const normalized = raw.toLowerCase().trim();
+  if ([
+    "review-required",
+    "requires-review",
+    "approval-required",
+    "needs-approval",
+    "needs-review",
+    "pending-review",
+    "pending-approval",
+    "require-approval",
+    "generated",
+    "draft",
+  ].includes(normalized)) {
+    return true;
+  }
+
+  return normalized.includes("needs-review")
+    || normalized.includes("need-review")
+    || normalized.includes("needs-approval")
+    || normalized.includes("need-approval")
+    || normalized.includes("waiting-on-approval")
+    || normalized.includes("pending-review")
+    || normalized.includes("pending-approval")
+    || normalized.includes("draft-needs-review")
+    || normalized.includes("draft-needs-approval")
+    || normalized.includes("reply-review")
+    || normalized.includes("needs-avi")
+    || normalized.includes("avi-approval")
+    || normalized.includes("needs-human")
+    || normalized.includes("human-review");
+}
+
+function titleNeedsHumanApproval(title: string): boolean {
+  const normalized = title.toLowerCase().trim();
+  return normalized.startsWith("approve ")
+    || normalized.startsWith("review ")
+    || normalized.startsWith("review/")
+    || normalized.startsWith("review-send ")
+    || normalized.startsWith("review and approve ")
+    || normalized.startsWith("review/approve ");
+}
+
+function firstApprovalPropertyText(properties: Record<string, string>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = String(properties[key] || "").trim();
+    if (value) return value;
+  }
+  return null;
+}
+
+function approvalStatus(title: string, properties: Record<string, string>): string | null {
+  const status = firstApprovalPropertyText(properties, [
+    "ORG2_REVIEW_STATUS",
+    "REVIEW_STATUS",
+    "REVIEW",
+    "STATUS",
+    "FOLLOWUP_STATUS",
+    "REPLY_STATUS",
+  ]);
+  if (status && isPendingApprovalStatus(status) && titleNeedsHumanApproval(title)) {
+    return status;
+  }
+
+  const waitingOn = firstApprovalPropertyText(properties, ["WAITING_ON", "BLOCKED_BY", "ORG2_WAITING_ON"]) || "";
+  if (containsApprovalSignal(waitingOn)) return waitingOn.trim() || "approval-required";
+
+  const nextAction = firstApprovalPropertyText(properties, ["NEXT_ACTION", "ACTION_REQUIRED", "ORG2_NEXT_ACTION"]) || "";
+  if (containsApprovalSignal(nextAction)) return "approval-required";
+
+  const handoff = firstApprovalPropertyText(properties, ["HANDOFF_SUMMARY", "ORG2_HANDOFF_SUMMARY"]) || "";
+  if (containsApprovalSignal(handoff)) return "approval-required";
+
+  const accessPolicy = firstApprovalPropertyText(properties, ["ACCESS_POLICY", "REVIEW_POLICY"]) || "";
+  if (isPendingApprovalStatus(accessPolicy) || containsApprovalSignal(accessPolicy)) {
+    return accessPolicy.trim() || "approval-required";
+  }
+
+  return null;
+}
+
+function inlineText(node: InlineNode): string {
+  switch (node.type) {
+    case "Text":
+      return node.value;
+    case "Timestamp":
+      return node.raw;
+    case "TimestampRange":
+      return `${node.start.raw}${node.separatorRaw}${node.end.raw}`;
+    case "Emphasis":
+      return `${node.marker}${node.content}${node.marker}`;
+    case "Link":
+      return node.descriptionRaw ?? node.targetRaw;
+    case "ProgressCookie":
+      return node.raw;
+  }
+}
+
+function headlineTitleText(headline: HeadlineNode): string {
+  return headline.title.map(inlineText).join("");
+}
+
+function approvalHeadlineProperties(headline: HeadlineNode): Record<string, string> {
+  for (const child of headline.children) {
+    if (child.type !== "PropertyDrawer") continue;
+    return Object.fromEntries(
+      child.properties.map((property) => [property.key.toUpperCase(), property.value]),
+    );
+  }
+  return {};
+}
+
+function isTerminalTodo(todo: string | null | undefined): boolean {
+  return todo === "DONE" || todo === "CANCELED" || todo === "CANCELLED";
+}
+
+function approvalBody(sourceLines: string[], sourceRange: SourceRange, children: Node[]): string {
+  const startLine = Math.max(1, sourceRange.startLine + 1);
+  const endLine = Math.max(startLine, sourceRange.endLine);
+  if (sourceLines.length === 0 || startLine > endLine) return "";
+
+  const hiddenRanges = children.flatMap((child): SourceRange[] => {
+    if (child.type === "PropertyDrawer") {
+      const range = (child as SourceRangedPropertyDrawerNode).sourceRange;
+      return range ? [range] : [];
+    }
+    if (child.type === "Planning") {
+      const range = (child as SourceRangedPlanningNode).sourceRange;
+      return range ? [range] : [];
+    }
+    return [];
+  });
+
+  const bodyLines: string[] = [];
+  for (let lineNumber = startLine; lineNumber <= endLine; lineNumber += 1) {
+    if (hiddenRanges.some((range) => lineNumber >= range.startLine && lineNumber <= range.endLine)) continue;
+    bodyLines.push(sourceLines[lineNumber - 1] || "");
+  }
+  return bodyLines.join("\n").trim();
+}
+
+function appendApprovalItemsFromNodes(nodes: Node[], file: string, sourceLines: string[], items: ApprovalQueueItem[]): void {
+  for (const node of nodes) {
+    if (node.type !== "Headline") continue;
+    appendApprovalItemFromHeadline(node, file, sourceLines, items);
+    appendApprovalItemsFromNodes(node.children, file, sourceLines, items);
+  }
+}
+
+function appendApprovalItemFromHeadline(
+  headline: HeadlineNode,
+  file: string,
+  sourceLines: string[],
+  items: ApprovalQueueItem[],
+): void {
+  const todo = headline.todo?.toUpperCase() ?? null;
+  if (isTerminalTodo(todo)) return;
+
+  const sourceRange = (headline as SourceRangedHeadlineNode).sourceRange;
+  if (!sourceRange) return;
+
+  const properties = approvalHeadlineProperties(headline);
+  const title = headlineTitleText(headline);
+  const status = approvalStatus(title, properties);
+  if (!status) return;
+
+  items.push({
+    title,
+    status,
+    todo,
+    level: headline.level,
+    file,
+    line: sourceRange.startLine,
+    idValue: properties.ID || null,
+    properties,
+    body: approvalBody(sourceLines, sourceRange, headline.children),
+    tags: headline.tags ?? [],
+  });
+}
+
+function approvalItemsInDocument(document: DocumentNode, file: string, sourceText: string): ApprovalQueueItem[] {
+  const sourceLines = sourceText.replace(/\r\n/g, "\n").split("\n");
+  const items: ApprovalQueueItem[] = [];
+  appendApprovalItemsFromNodes(document.children, file, sourceLines, items);
+  return sortedApprovalItems(items);
+}
+
+function sortedApprovalItems(items: ApprovalQueueItem[]): ApprovalQueueItem[] {
+  return [...items].sort((lhs, rhs) => {
+    const statusOrder = lhs.status.localeCompare(rhs.status, undefined, { sensitivity: "base" });
+    if (statusOrder !== 0) return statusOrder;
+    const titleOrder = lhs.title.localeCompare(rhs.title, undefined, { sensitivity: "base" });
+    if (titleOrder !== 0) return titleOrder;
+    const fileOrder = lhs.file.localeCompare(rhs.file);
+    if (fileOrder !== 0) return fileOrder;
+    return lhs.line - rhs.line;
+  });
+}
+
+function approvalCandidateSourcesByScanningFiles(files: string[], includeArchives: boolean): { candidates: ApprovalCandidateSource[]; skippedFiles: number } {
+  const candidates: ApprovalCandidateSource[] = [];
+  let skippedFiles = 0;
+
+  for (const file of files) {
+    if (!isApprovalIndexableFilePath(file, includeArchives)) continue;
+    try {
+      const lines = fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n").split("\n");
+      candidates.push(...approvalCandidateSources(path.resolve(file), lines));
+    } catch {
+      skippedFiles += 1;
+    }
+  }
+
+  return { candidates, skippedFiles };
+}
+
+function approvalCandidateSourcesFromIndex(index: Org2SearchIndex, includeArchives: boolean): ApprovalCandidateSource[] {
+  const candidates: ApprovalCandidateSource[] = [];
+  for (const file of index.files) {
+    if (!isApprovalIndexableFilePath(file.path, includeArchives)) continue;
+    candidates.push(...approvalCandidateSources(path.resolve(file.path), file.lines));
+  }
+  return candidates;
+}
 
 function findRoamLabelLineForLint(content: string, labelRaw: string): number {
   const target = normalizeRoamLinkLabel(labelRaw);
@@ -8159,6 +8567,9 @@ async function main(): Promise<void> {
   let querySubtree = false;
   let queryAnswerContext = false;
 
+  // Approval queue
+  let approvalsFormat: "text" | "json" = "text";
+
   // Rebuildable local indexes
   let indexFormat: "text" | "json" = "text";
 
@@ -8339,6 +8750,9 @@ async function main(): Promise<void> {
       }
     } else if (arg === "backlinks") {
       command = "backlinks";
+      i++;
+    } else if (arg === "approvals") {
+      command = "approvals";
       i++;
     } else if (arg === "index") {
       command = "index";
@@ -9346,6 +9760,7 @@ async function main(): Promise<void> {
       else if (command === "fmt") fmtFormat = "json";
       else if (command === "id") idFormat = "json";
       else if (command === "backlinks") backlinksFormat = "json";
+      else if (command === "approvals") approvalsFormat = "json";
       else if (command === "index") indexFormat = "json";
       else if (command === "query") { queryFormat = "json"; searchFormat = "json"; }
       else if (command === "search") searchFormat = "json";
@@ -9389,6 +9804,8 @@ async function main(): Promise<void> {
           idFormat = v;
         } else if (command === "backlinks" && (v === "text" || v === "json")) {
           backlinksFormat = v;
+        } else if (command === "approvals" && (v === "text" || v === "json")) {
+          approvalsFormat = v;
         } else if (command === "index" && (v === "text" || v === "json")) {
           indexFormat = v;
         } else if (command === "query" && (v === "text" || v === "json")) {
@@ -9436,7 +9853,7 @@ async function main(): Promise<void> {
       if (i < args.length) {
         if (command === "export") {
           exportIndex = args[i]!;
-        } else if (command === "search" || command === "query") {
+        } else if (command === "search" || command === "query" || command === "approvals") {
           const value = String(args[i] || "").trim().toLowerCase();
           if (value === "auto" || value === "never" || value === "rebuild") {
             searchIndexMode = value;
@@ -9751,6 +10168,7 @@ Usage:
 Core commands:
   org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
   org2 todo <set|toggle|assign|approve> --file FILE (--line N | --pos LINE[:COL]) [--apply]
+  org2 approvals --dir DIR [--recursive] [--include-archives] [--index auto|never|rebuild] [--format text|json]
   org2 plan <set|today> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 crypt <encrypt|decrypt|reencrypt> --file FILE (--line N | --pos LINE[:COL]) [--passphrase PASS] [--recipient USER]... [--recipient-file FILE]... [--default-recipient-self] [--gpg-program PATH] [--gpg-timeout SECONDS] [--apply]
   org2 capture --file FILE --title TITLE [--template note|task] [--apply]
@@ -9795,6 +10213,7 @@ Roam / IDs:
 
 Maintenance / health:
   org2 index [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--format text|json]
+  org2 approvals [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--index auto|never|rebuild] [--format text|json]
   org2 compile corpus [--dir DIR] [--recursive] [--file FILE|--files FILE ...] [--out FILE] [--format json|jsonl] [--incremental] [--cache FILE]
   org2 ai validate-job --job FILE [--format text|json]
   org2 ai run --job FILE [--out FILE] [--apply] [--format text|json]
@@ -9865,6 +10284,18 @@ Flags:
   --assignee NAME     Assignee for 'assign'
   --now ISO           Override approval / closed timestamp
   --apply             Write changes instead of previewing`;
+  } else if (command === "approvals") {
+    text = `org2 approvals
+
+Usage:
+  org2 approvals [--dir DIR] [--recursive] [--include-archives] [--file FILE|--files FILE ...] [--index auto|never|rebuild] [--format text|json]
+
+Flags:
+  --dir DIR           Root directory to scan
+  --recursive         Recurse into subdirectories
+  --include-archives  Include archive files/directories
+  --index MODE        auto (default), never, or rebuild. Auto uses a fresh search index or rebuilds it.
+  --format text|json  Output format`;
   } else if (command === "plan") {
     text = `org2 plan ${options.planAction}
 
@@ -10345,7 +10776,7 @@ Flags:
     printGeneralUsage(0);
   }
 
-  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "index" && command !== "search" && command !== "query" && command !== "clock" && command !== "compile" && command !== "render-chart" && command !== "query-data" && command !== "entity" && command !== "agent" && command !== "context" && command !== "brief" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
+  if (command !== "agenda" && command !== "archive" && command !== "refile" && command !== "export" && command !== "publish" && command !== "todo" && command !== "capture" && command !== "plan" && command !== "crypt" && command !== "fmt" && command !== "lsp" && command !== "id" && command !== "backlinks" && command !== "approvals" && command !== "index" && command !== "search" && command !== "query" && command !== "clock" && command !== "compile" && command !== "render-chart" && command !== "query-data" && command !== "entity" && command !== "agent" && command !== "context" && command !== "brief" && command !== "lint" && command !== "graph" && command !== "ai" && command !== "roam") {
     printGeneralUsage(1);
   }
 
@@ -12376,6 +12807,123 @@ Flags:
     );
     if (result.skippedFiles > 0) {
       process.stderr.write(`Skipped ${result.skippedFiles} file${result.skippedFiles === 1 ? "" : "s"}.\n`);
+    }
+    return;
+  }
+
+  if (command === "approvals") {
+    let rootDir = dir ? path.resolve(dir) : "";
+    if (!dir && files.length === 0) {
+      const configPath = findConfigFile(process.cwd());
+      if (configPath) {
+        try {
+          const config = loadConfig(configPath);
+          rootDir = path.dirname(configPath);
+          files = resolveFilesFromConfig(config, rootDir);
+          if (files.length === 0) {
+            console.error(
+              `Error: config found at ${configPath} but no matching files for patterns: ${config.agendaFiles?.join(", ") || "*.org"}`,
+            );
+            process.exit(1);
+          }
+        } catch (err) {
+          console.error(`Error loading config: ${err instanceof Error ? err.message : String(err)}`);
+          process.exit(1);
+        }
+      } else {
+        console.error("Error: provide either --dir, --files, or org2.json config");
+        process.exit(1);
+      }
+    }
+
+    if (dir && files.length === 0) files = listOrgLikeFiles(rootDir, recursive, includeArchives);
+    files = Array.from(
+      new Set(
+        files
+          .map((file) => path.resolve(file))
+          .filter((file) => isApprovalIndexableFilePath(file, includeArchives)),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+    if (!rootDir) rootDir = files.length ? path.dirname(files[0]!) : process.cwd();
+    if (files.length === 0) {
+      console.error("Error: no Org files found for org2 approvals");
+      process.exit(1);
+    }
+
+    let indexStatus: ApprovalQueuePayload["index"];
+    let candidates: ApprovalCandidateSource[] = [];
+    let skippedCandidates = 0;
+
+    if (searchIndexMode === "never") {
+      const scanned = approvalCandidateSourcesByScanningFiles(files, includeArchives);
+      candidates = scanned.candidates;
+      skippedCandidates += scanned.skippedFiles;
+      indexStatus = { mode: searchIndexMode, used: false };
+    } else if (searchIndexMode === "rebuild") {
+      const result = buildSearchIndex({ rootDir, files, recursive, includeArchives });
+      writeSearchIndex(result);
+      candidates = approvalCandidateSourcesFromIndex(result.index, includeArchives);
+      skippedCandidates += result.skippedFiles;
+      indexStatus = { mode: searchIndexMode, used: true, path: result.path, builtAt: result.index.builtAt };
+    } else {
+      const loaded = loadFreshSearchIndex({ rootDir, files, recursive, includeArchives });
+      if (loaded) {
+        candidates = approvalCandidateSourcesFromIndex(loaded.index, includeArchives);
+        indexStatus = { mode: searchIndexMode, used: true, path: loaded.path, builtAt: loaded.index.builtAt };
+      } else {
+        const result = buildSearchIndex({ rootDir, files, recursive, includeArchives });
+        writeSearchIndex(result);
+        candidates = approvalCandidateSourcesFromIndex(result.index, includeArchives);
+        skippedCandidates += result.skippedFiles;
+        indexStatus = {
+          mode: searchIndexMode,
+          used: true,
+          path: result.path,
+          builtAt: result.index.builtAt,
+          stale: true,
+          rebuilt: true,
+        };
+      }
+    }
+
+    const items: ApprovalQueueItem[] = [];
+    for (const candidate of candidates) {
+      try {
+        const document = parseOrgToCanonicalAst(candidate.parseText, {
+          sourceRanges: true,
+          sourceLineOffset: candidate.sourceLineOffset,
+        });
+        items.push(...approvalItemsInDocument(document, candidate.file, candidate.sourceText));
+      } catch (err) {
+        skippedCandidates += 1;
+        if (verboseErrors) {
+          console.error(`Error processing approval candidate ${candidate.file}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
+
+    const sortedItems = sortedApprovalItems(items);
+    const payload: ApprovalQueuePayload = {
+      $schema: "org2:approvals:v1",
+      count: sortedItems.length,
+      index: indexStatus,
+      ...(skippedCandidates > 0 ? { skippedCandidates } : {}),
+      items: sortedItems,
+    };
+
+    if (approvalsFormat === "json") {
+      process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+      return;
+    }
+
+    if (sortedItems.length === 0) {
+      process.stdout.write("No approvals found.\n");
+      return;
+    }
+
+    for (const item of sortedItems) {
+      const todo = item.todo ? `${item.todo} ` : "";
+      process.stdout.write(`${item.file}:${item.line} ${todo}${item.title} [${item.status}]\n`);
     }
     return;
   }

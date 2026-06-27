@@ -225,6 +225,7 @@ private struct ApprovalsView: View {
   @EnvironmentObject private var store: CorpusStore
   @State private var selected: ApprovalEntry?
   @State private var shareText: String?
+  @State private var approvingID: ApprovalEntry.ID?
 
   var body: some View {
     NavigationStack {
@@ -232,16 +233,17 @@ private struct ApprovalsView: View {
         Button {
           selected = item
         } label: {
-          ApprovalRow(item: item)
+          ApprovalRow(item: item, isApproving: approvingID == item.id)
         }
         .buttonStyle(.plain)
         .swipeActions(edge: .leading) {
           Button {
-            Task { await store.approve(item) }
+            Task { await approve(item) }
           } label: {
-            Label("Approve", systemImage: "checkmark")
+            Label(approvingID == item.id ? "Approving" : "Approve", systemImage: approvingID == item.id ? "hourglass" : "checkmark")
           }
           .tint(.green)
+          .disabled(approvingID != nil)
         }
         .swipeActions(edge: .trailing) {
           Button {
@@ -278,7 +280,11 @@ private struct ApprovalsView: View {
         await store.refresh()
       }
       .sheet(item: $selected) { item in
-        ApprovalDetailView(item: item) { text in
+        ApprovalDetailView(
+          item: item,
+          isApproving: approvingID == item.id,
+          approve: { await approve(item) }
+        ) { text in
           shareText = text
         }
       }
@@ -293,10 +299,21 @@ private struct ApprovalsView: View {
       }
     }
   }
+
+  @MainActor
+  private func approve(_ item: ApprovalEntry) async {
+    guard approvingID == nil else { return }
+    approvingID = item.id
+    await store.approve(item)
+    if approvingID == item.id {
+      approvingID = nil
+    }
+  }
 }
 
 private struct ApprovalRow: View {
   let item: ApprovalEntry
+  let isApproving: Bool
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -320,6 +337,16 @@ private struct ApprovalRow: View {
         .foregroundStyle(.secondary)
         .lineLimit(1)
         .truncationMode(.middle)
+
+      if isApproving {
+        HStack(spacing: 6) {
+          ProgressView()
+            .controlSize(.small)
+          Text("Approving...")
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.green)
+      }
     }
     .padding(.vertical, 6)
   }
@@ -329,6 +356,8 @@ private struct ApprovalDetailView: View {
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject private var store: CorpusStore
   let item: ApprovalEntry
+  let isApproving: Bool
+  let approve: () async -> Void
   let fallbackShare: (String) -> Void
   @State private var message: String = ""
 
@@ -382,14 +411,24 @@ private struct ApprovalDetailView: View {
         Section {
           Button {
             Task {
-              await store.approve(item)
+              await approve()
               dismiss()
             }
           } label: {
-            Label("Approve", systemImage: "checkmark.seal")
+            if isApproving {
+              HStack(spacing: 8) {
+                ProgressView()
+                  .controlSize(.small)
+                Text("Approving...")
+              }
               .frame(maxWidth: .infinity)
+            } else {
+              Label("Approve", systemImage: "checkmark.seal")
+                .frame(maxWidth: .infinity)
+            }
           }
           .buttonStyle(.borderedProminent)
+          .disabled(isApproving)
 
           Button {
             openWhatsApp(text: item.whatsappText) {
@@ -399,6 +438,7 @@ private struct ApprovalDetailView: View {
             Label("WhatsApp", systemImage: "message")
               .frame(maxWidth: .infinity)
           }
+          .disabled(isApproving)
 
           Button {
             Task {
@@ -409,6 +449,7 @@ private struct ApprovalDetailView: View {
             Label("Discuss via OpenClaw", systemImage: "paperplane")
               .frame(maxWidth: .infinity)
           }
+          .disabled(isApproving)
         }
       }
       .navigationTitle("Approval")
@@ -418,8 +459,10 @@ private struct ApprovalDetailView: View {
           Button("Done") {
             dismiss()
           }
+          .disabled(isApproving)
         }
       }
+      .interactiveDismissDisabled(isApproving)
       .onAppear {
         if message.isEmpty {
           message = "I need to discuss this approval item before deciding."
