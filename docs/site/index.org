@@ -53,7 +53,7 @@ Org2 is an early OSS project for turning folders of notes, transcripts, tasks, f
 
 <span class="org2-syntax-heading">**</span> Source query for docs
   <span class="org2-syntax-block">``` sh</span>
-  npm run org2 -- query --tag launch --format json
+  org2 query --tag launch --format json
   <span class="org2-syntax-block">```</span>
 
 <span class="org2-syntax-heading">**</span> Launch readiness data <span class="org2-syntax-tag">:evidence:</span>

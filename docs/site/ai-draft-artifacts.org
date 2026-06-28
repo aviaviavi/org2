@@ -6,8 +6,8 @@ AI commands write into generated zones first. The goal is to make model output u
 =org2 ai run= currently provides a provider-free draft writer for manifest-selected source files. It reads local Org2 source files, records source hashes, stamps artifact metadata, and writes a review-required draft under =views/= or =compiled/=.
 
 #+begin_src sh
-npm run org2 -- ai run --job jobs/team-sync.org2-ai.json --apply
-npm run org2 -- ai run --job jobs/team-sync.org2-ai.json --out views/team-sync-summary.org2 --apply
+org2 ai run --job jobs/team-sync.org2-ai.json --apply
+org2 ai run --job jobs/team-sync.org2-ai.json --out views/team-sync-summary.org2 --apply
 #+end_src
 
 Without =--apply=, the command prints a safe preview and writes nothing.
@@ -17,12 +17,12 @@ Without =--apply=, the command prints a safe preview and writes nothing.
 =summarize-meeting= is the first concrete AI workflow. A manifest such as =examples/jobs/meeting-summary.org2-ai.json= turns raw meeting or transcript material into a reviewable Org2 artifact:
 
 #+begin_src sh
-npm run org2 -- ai run \
+org2 ai run \
   --task summarize-meeting \
   --file raw/meeting.org2 \
   --out views/meeting-summary.org2
 
-npm run org2 -- ai run \
+org2 ai run \
   --job examples/jobs/meeting-summary.org2-ai.json \
   --out views/meeting-summary.org2
 #+end_src
@@ -72,7 +72,7 @@ Promotion is explicit:
 4. Run =org2 ai promote= with =--apply= to append the reviewed body to a canonical note file.
 
 #+begin_src sh
-npm run org2 -- ai promote \
+org2 ai promote \
   --file views/team-sync-summary.org2 \
   --to-file notes/team-sync.org2 \
   --apply

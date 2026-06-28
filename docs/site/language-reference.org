@@ -2,14 +2,14 @@
 
 This is the practical language reference for Org2 v0.
 
-For the normative draft spec, see [[file:../../spec/v0/SPEC.org][spec/v0/SPEC.org]].
+For the normative draft spec, see [[https://github.com/aviaviavi/org2/blob/main/spec/v0/SPEC.org][spec/v0/SPEC.org]].
 
 * Spec map
 
 Use this mapping when deciding where behavior is defined:
 
-- Core syntax and canonical AST: [[file:../../spec/v0/SPEC.org][spec/v0/SPEC.org]]
-- Roam semantics (IDs, links, backlinks model): [[file:../../spec/v0/ROAM.org][spec/v0/ROAM.org]]
+- Core syntax and canonical AST: [[https://github.com/aviaviavi/org2/blob/main/spec/v0/SPEC.org][spec/v0/SPEC.org]]
+- Roam semantics (IDs, links, backlinks model): [[https://github.com/aviaviavi/org2/blob/main/spec/v0/ROAM.org][spec/v0/ROAM.org]]
 - CLI/editor workflow behavior: [[file:tooling-reference.org][Tooling reference]]
 
 * Headings
@@ -260,7 +260,7 @@ The current renderer supports =bar=, =line=, and bucketed =histogram= charts ove
 The CLI can render chart-affiliated tables directly:
 
 #+begin_src sh
-npm run org2 -- render-chart --file report.org2 --block-id quarterly_revenue --format svg
+org2 render-chart --file report.org2 --block-id quarterly_revenue --format svg
 #+end_src
 
 * Local datasets and SQL views
@@ -291,10 +291,10 @@ y: fetches
 =org2 query-data= reads these blocks, creates DuckDB views for =csv=, =parquet=, =json=, URL-backed sources, or named org2 table datasets, creates any declared SQL views, runs a selected SQL result block through the local DuckDB CLI, and materializes the returned rows as a named org table or JSON envelope. Materialized org tables include a =#+query-data:= provenance line with the result id, row count, optional freshness token, selected SQL hash, full DuckDB script hash, and =ran_at= timestamp:
 
 #+begin_src sh
-npm run org2 -- query-data --file report.org2 --results fetches_by_state --out report.fetches.org
-npm run org2 -- query-data --file report.org2 --line 42 --format json
-npm run org2 -- query-data --file report.org2 --inspect --include-script
-cat report.org2 | npm run org2 -- query-data --stdin --results fetches_by_state --format json
+org2 query-data --file report.org2 --results fetches_by_state --out report.fetches.org
+org2 query-data --file report.org2 --line 42 --format json
+org2 query-data --file report.org2 --inspect --include-script
+cat report.org2 | org2 query-data --stdin --results fetches_by_state --format json
 #+end_src
 
 Use =--stdin= when an editor, agent, or notebook-style client wants to run the current buffer without saving it first. Use =--line N= to select the SQL result block containing or after the cursor line. JSON output includes =resultBlocks= with each available SQL result id and source range so clients can populate result pickers or recover from duplicate-id diagnostics without reparsing the file. Use =--inspect= to return parsed datasets, SQL views, result block metadata, structural diagnostics, and selected-query provenance without running DuckDB; =--include-script= also returns the generated DuckDB SQL for the selected result. Relative file dataset paths are resolved from the current working directory for stdin input. SQL result ids must be unique within the note so materialized tables and provenance stay deterministic. Dataset ids and SQL view ids must also be distinct because they become DuckDB relation names during execution. Dataset blocks may include metadata-only =credential:= or =auth:= references such as =env:SCARF_API_TOKEN=, =secret:analytics-token=, or =profile:product-analytics= and =config:= or =profile:= references such as =config:dashboard-local=; these are exposed as JSON metadata for clients and agents, but are not inserted into the generated DuckDB SQL. Inline bearer tokens, passwords, and other literal secrets are rejected. SQL result blocks can include =artifact=PATH= to record the intended materialized output in JSON provenance and the =#+query-data:= line; =--out FILE= stamps the actual written artifact path. Executed JSON provenance also includes =ranAt=, and materialized org tables stamp =ran_at=, so editor, agent, and dashboard clients can compare declared freshness with the actual query run time. Result blocks can also include =freshness=24h=, =ttl=24h=, or =max-age=24h= so clients can decide when materialized rows should be refreshed.

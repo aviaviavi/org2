@@ -9,7 +9,25 @@ VS Code extension for Org2 workflows.
 
 ## Quick start (60 seconds)
 
-1. Install and build Org2:
+1. Install the Org2 CLI:
+
+```sh
+npm install -g @aviaviavi/org2
+org2 --help
+```
+
+2. Install the extension from the VS Code Marketplace:
+
+```sh
+code --install-extension AviPress.org2-vscode
+```
+
+3. Open your notes folder.
+4. Run `Org2: Open Agenda` from the command palette.
+
+## Source checkout setup
+
+Use this path for extension development or unreleased builds:
 
 ```sh
 git clone https://github.com/aviaviavi/org2.git
@@ -18,9 +36,7 @@ npm ci
 npm run build
 ```
 
-2. Install this VS Code extension and open your notes folder.
-3. Ensure `org2` is on your `PATH` (or use the repo fallback).
-4. Run `Org2: Open Agenda` from command palette.
+Then install/run the extension from `editors/vscode-org2` with the Extension Development Host, or package a VSIX and install it manually. Ensure `org2` is on your `PATH` or use the repo fallback.
 
 ## What you get
 

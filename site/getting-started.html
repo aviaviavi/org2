@@ -56,22 +56,30 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>This guide is about getting to a <strong>useful</strong> Org2 setup quickly: point the compiler at notes you already own, then start deriving agendas, graph views, editor features, and published artifacts from the same corpus.</p>
 <section class="org2-headline level-1">
 <h1 id="1-install-org2">1) Install Org2</h1>
+<p>For normal CLI use, install the published package:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm install -g @aviaviavi/org2
+org2 --help
+org2 agenda --help</code></pre>
+<p>You can also try it without a global install:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npx @aviaviavi/org2 --help</code></pre>
+<p>For source builds and contribution work, use the repository:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">git clone https://github.com/aviaviavi/org2.git
 cd org2
 npm ci
 npm run build</code></pre>
-<p>Sanity check:</p>
+<p>Sanity check the source-built CLI:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- --help
 npm run org2 -- agenda --help</code></pre>
+<p>The examples below use <code>org2</code>. If you are running from a checkout instead of a global install, replace <code>org2</code> with <code>npm run org2 --</code>.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="2-start-with-your-existing-org-files-as-compiler-input">2) Start with your existing Org files as compiler input</h1>
 <p>You do <strong>not</strong> need to convert everything first.</p>
 <p>Org2 is designed to work with existing <code>.org</code> files right away.</p>
 <p>Example:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- agenda --dir /path/to/your/notes --recursive</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 agenda --dir /path/to/your/notes --recursive</code></pre>
 <p>For a keyboard-driven planning view, add the agenda TUI:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- agenda --dir /path/to/your/notes --recursive --tui</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 agenda --dir /path/to/your/notes --recursive --tui</code></pre>
 <p>That means you can start by pointing Org2 at your current notes directory and treating it as input to the compiler pipeline: raw files → structured notes → compiled semantics → views and published outputs. Adopt <code>.org2</code> for new files when you want to.</p>
 </section>
 <section class="org2-headline level-1">
@@ -117,7 +125,7 @@ npm run org2 -- agenda --help</code></pre>
 <section class="org2-headline level-1">
 <h1 id="6-generate-the-docs-site-locally">6) Generate the docs site locally</h1>
 <p>The repository includes a docs site authored in Org files under <code>docs/site/</code> and published with Org2 itself.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- publish docs-site --config org2.json</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 publish docs-site --config org2.json</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="7-what-to-expect-right-now">7) What to expect right now</h1>

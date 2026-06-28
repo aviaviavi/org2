@@ -133,7 +133,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <section class="org2-headline level-1">
 <h1 id="lint-workflow">Lint workflow</h1>
 <p>Run lint over the corpus root:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- lint --dir /path/to/corpus --recursive</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 lint --dir /path/to/corpus --recursive</code></pre>
 <p>When files live under the conventional directories, lint checks that their declared <code>ORG2_ARTIFACT_ROLE</code> matches the path. It also checks generated artifacts for provenance, generator metadata, generated timestamps, source-hash syntax, review-status values, duplicate IDs, and unresolved provenance references.</p>
 <p>A minimal corpus can start like this:</p>
 <pre class="org2-src language-text" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-text">corpus/

@@ -4,6 +4,22 @@ This guide is about getting to a *useful* Org2 setup quickly: point the compiler
 
 * 1) Install Org2
 
+For normal CLI use, install the published package:
+
+#+begin_src sh
+npm install -g @aviaviavi/org2
+org2 --help
+org2 agenda --help
+#+end_src
+
+You can also try it without a global install:
+
+#+begin_src sh
+npx @aviaviavi/org2 --help
+#+end_src
+
+For source builds and contribution work, use the repository:
+
 #+begin_src sh
 git clone https://github.com/aviaviavi/org2.git
 cd org2
@@ -11,12 +27,14 @@ npm ci
 npm run build
 #+end_src
 
-Sanity check:
+Sanity check the source-built CLI:
 
 #+begin_src sh
 npm run org2 -- --help
 npm run org2 -- agenda --help
 #+end_src
+
+The examples below use =org2=. If you are running from a checkout instead of a global install, replace =org2= with =npm run org2 --=.
 
 * 2) Start with your existing Org files as compiler input
 
@@ -27,13 +45,13 @@ Org2 is designed to work with existing =.org= files right away.
 Example:
 
 #+begin_src sh
-npm run org2 -- agenda --dir /path/to/your/notes --recursive
+org2 agenda --dir /path/to/your/notes --recursive
 #+end_src
 
 For a keyboard-driven planning view, add the agenda TUI:
 
 #+begin_src sh
-npm run org2 -- agenda --dir /path/to/your/notes --recursive --tui
+org2 agenda --dir /path/to/your/notes --recursive --tui
 #+end_src
 
 That means you can start by pointing Org2 at your current notes directory and treating it as input to the compiler pipeline: raw files → structured notes → compiled semantics → views and published outputs. Adopt =.org2= for new files when you want to.
@@ -84,7 +102,7 @@ The most useful commands to know first are:
 The repository includes a docs site authored in Org files under =docs/site/= and published with Org2 itself.
 
 #+begin_src sh
-npm run org2 -- publish docs-site --config org2.json
+org2 publish docs-site --config org2.json
 #+end_src
 
 * 7) What to expect right now

@@ -6,8 +6,8 @@ AI job manifests describe what an optional AI workflow should do without embeddi
 The v1 manifest format is documented by =spec/v0/ai-job-manifest.schema.json=. The manifest's =adapter.name= maps to the provider boundary documented in [[file:ai-adapters.org][AI adapter interface]]. Org2 currently ships provider-free validation:
 
 #+begin_src sh
-npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
-npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json --format json
+org2 ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
+org2 ai validate-job --job examples/jobs/weekly-summary.org2-ai.json --format json
 #+end_src
 
 Validation checks the manifest shape, corpus selection, task type, symbolic adapter name, output target, provenance requirements, review policy, and common accidental secret leaks. It does not call a model.
@@ -104,7 +104,7 @@ AI output should be reviewable before it becomes canonical. Prefer =views/= or =
 Text output is short and script-friendly:
 
 #+begin_src sh
-$ npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
+$ org2 ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
 AI job manifest OK: examples/jobs/weekly-summary.org2-ai.json
 #+end_src
 

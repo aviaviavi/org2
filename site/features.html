@@ -133,7 +133,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p>Practical handling of real-world TODO vocabularies (for example WAIT/HOLD/PAUSED normalize into in-progress-style buckets)</p></li>
 </ul>
 <p>The agenda work goes beyond “show me tasks due today.” It is becoming a real backend for keyboard-driven planning, including an interactive terminal agenda:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- agenda --dir ~/notes --recursive --tui</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 agenda --dir ~/notes --recursive --tui</code></pre>
 <p>Use the TUI when you want a live, scannable planning surface without leaving the terminal; use <code>--format json</code> when another tool should consume the same agenda model.</p>
 </section>
 <section class="org2-headline level-1">

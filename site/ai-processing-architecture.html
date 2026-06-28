@@ -157,7 +157,7 @@ org2 ai validate-job --job jobs/weekly-summary.org2-ai.json</code></pre>
 <section class="org2-headline level-1">
 <h1 id="end-to-end-example">End-to-end example</h1>
 <p>Meeting summary flow:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- query &quot;team sync&quot; \
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 query &quot;team sync&quot; \
   --dir raw \
   --recursive \
   --subtree \
@@ -166,13 +166,13 @@ org2 ai validate-job --job jobs/weekly-summary.org2-ai.json</code></pre>
   &gt; compiled/team-sync-context.json
 
 # Proposed future command: consumes the cited context and configured provider alias.
-npm run org2 -- ai run \
+org2 ai run \
   --task summarize-meeting \
   --context compiled/team-sync-context.json \
   --provider work-summary \
   --out views/team-sync-summary.org2
 
-npm run org2 -- lint --dir . --recursive</code></pre>
+org2 lint --dir . --recursive</code></pre>
 <p>The generated summary should include:</p>
 <ul>
 <li><p>a short summary</p></li>

@@ -18,7 +18,7 @@ Org2 reference is split into two detailed sections:
   - macOS Workspace app
   - VS Code installation
   - complete default keyboard shortcut map
-  - Vim/Emacs status placeholders
+  - Vim/Neovim filetype support and Emacs coexistence notes
 - [[file:maintenance-workflows.org][Maintenance and health workflows]]
   - compiler-style lint, health, and repair passes
   - trust boundaries for generated artifacts
@@ -35,4 +35,4 @@ Org2 reference is split into two detailed sections:
 - [[file:org2-vs-org-mode.org][Org2 vs Org Mode]]
 - [[file:org2-vs-markdown.org][Org2 vs Markdown]]
 
-For normative behavior and fixtures, see [[file:../../spec/v0/SPEC.org][spec/v0/SPEC.org]].
+For normative behavior and fixtures, see [[https://github.com/aviaviavi/org2/blob/main/spec/v0/SPEC.org][spec/v0/SPEC.org]].

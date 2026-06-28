@@ -57,8 +57,8 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 </header>
 <p>AI job manifests describe what an optional AI workflow should do without embedding provider credentials or making Org2's compiler core depend on an LLM. They are JSON files that can be checked into a repo, reviewed in code review, validated locally, and rerun against cited Org2 corpus/query outputs.</p>
 <p>The v1 manifest format is documented by <code>spec/v0/ai-job-manifest.schema.json</code>. The manifest's <code>adapter.name</code> maps to the provider boundary documented in <a href="ai-adapters.html">AI adapter interface</a>. Org2 currently ships provider-free validation:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
-npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json --format json</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
+org2 ai validate-job --job examples/jobs/weekly-summary.org2-ai.json --format json</code></pre>
 <p>Validation checks the manifest shape, corpus selection, task type, symbolic adapter name, output target, provenance requirements, review policy, and common accidental secret leaks. It does not call a model.</p>
 <section class="org2-headline level-1">
 <h1 id="example-manifest">Example manifest</h1>
@@ -151,7 +151,7 @@ npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json 
 <section class="org2-headline level-1">
 <h1 id="validation-output">Validation output</h1>
 <p>Text output is short and script-friendly:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">$ npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">$ org2 ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
 AI job manifest OK: examples/jobs/weekly-summary.org2-ai.json</code></pre>
 <p>JSON output can feed CI or editor integrations:</p>
 <pre class="org2-src language-json" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-json">{

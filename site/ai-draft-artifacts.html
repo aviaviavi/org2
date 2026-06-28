@@ -57,18 +57,18 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 </header>
 <p>AI commands write into generated zones first. The goal is to make model output useful without letting it silently become canonical truth.</p>
 <p><code>org2 ai run</code> currently provides a provider-free draft writer for manifest-selected source files. It reads local Org2 source files, records source hashes, stamps artifact metadata, and writes a review-required draft under <code>views/</code> or <code>compiled/</code>.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- ai run --job jobs/team-sync.org2-ai.json --apply
-npm run org2 -- ai run --job jobs/team-sync.org2-ai.json --out views/team-sync-summary.org2 --apply</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 ai run --job jobs/team-sync.org2-ai.json --apply
+org2 ai run --job jobs/team-sync.org2-ai.json --out views/team-sync-summary.org2 --apply</code></pre>
 <p>Without <code>--apply</code>, the command prints a safe preview and writes nothing.</p>
 <section class="org2-headline level-1">
 <h1 id="meetingtranscript-summarization">Meeting/transcript summarization</h1>
 <p><code>summarize-meeting</code> is the first concrete AI workflow. A manifest such as <code>examples/jobs/meeting-summary.org2-ai.json</code> turns raw meeting or transcript material into a reviewable Org2 artifact:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- ai run \
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 ai run \
   --task summarize-meeting \
   --file raw/meeting.org2 \
   --out views/meeting-summary.org2
 
-npm run org2 -- ai run \
+org2 ai run \
   --job examples/jobs/meeting-summary.org2-ai.json \
   --out views/meeting-summary.org2</code></pre>
 <p>The generated draft is safe-by-default: preview-only unless <code>--apply</code> is passed, stored as a generated <code>view</code> artifact, and marked <code>ORG2_REVIEW_STATUS: review-required</code>. The body includes:</p>
@@ -111,7 +111,7 @@ npm run org2 -- ai run \
 <li><p>Change <code>ORG2_REVIEW_STATUS</code> from <code>review-required</code> to <code>reviewed</code>.</p></li>
 <li><p>Run <code>org2 ai promote</code> with <code>--apply</code> to append the reviewed body to a canonical note file.</p></li>
 </ol>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- ai promote \
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 ai promote \
   --file views/team-sync-summary.org2 \
   --to-file notes/team-sync.org2 \
   --apply</code></pre>
