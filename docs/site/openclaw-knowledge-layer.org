@@ -130,9 +130,9 @@ The team deferred billing launch until the migration checklist is complete.
 Prefer deterministic previews before mutating notes:
 
 #+begin_src sh
-npm run org2 -- roam linkify --dir notes --recursive --dry-run
-npm run org2 -- roam linkify --dir notes --recursive --apply
-npm run org2 -- lint --dir . --recursive
+org2 roam linkify --dir notes --recursive --dry-run
+org2 roam linkify --dir notes --recursive --apply
+org2 lint --dir . --recursive
 #+end_src
 
 Generated link suggestions from AI should be written to =views/link-suggestions.org2= with citations and =review-required= status. Apply only reviewed links to =notes/=.
@@ -155,9 +155,9 @@ Run =org2 lint= after writes so duplicate IDs, stale provenance, invalid artifac
 For automated write flows, use this shape:
 
 #+begin_src sh
-npm run org2 -- lint --dir . --recursive
+org2 lint --dir . --recursive
 # perform one focused write
-npm run org2 -- lint --dir . --recursive
+org2 lint --dir . --recursive
 #+end_src
 
 If the pre-write corpus is already dirty, record the existing diagnostics and ensure the integration does not introduce new ones.
@@ -277,7 +277,7 @@ mkdir -p raw/meetings views/meeting-summaries notes/meetings compiled
 cp ~/Downloads/team-sync.txt raw/meetings/2026-05-20-team-sync.transcript.org2
 
 # 2. Build cited local context deterministically.
-npm run org2 -- query "team sync" \
+org2 query "team sync" \
   --dir raw/meetings \
   --recursive \
   --subtree \
@@ -286,23 +286,23 @@ npm run org2 -- query "team sync" \
   > compiled/2026-05-20-team-sync-context.json
 
 # 3. Ask AI to write a reviewable draft, not canonical memory.
-npm run org2 -- ai run \
+org2 ai run \
   --task summarize-meeting \
   --context compiled/2026-05-20-team-sync-context.json \
   --out views/meeting-summaries/2026-05-20-team-sync.org2 \
   --apply
 
 # 4. Check generated artifact metadata and graph health.
-npm run org2 -- lint --dir . --recursive
+org2 lint --dir . --recursive
 
 # 5. After review, promote accepted content.
-npm run org2 -- ai promote \
+org2 ai promote \
   --file views/meeting-summaries/2026-05-20-team-sync.org2 \
   --to-file notes/meetings/team-sync.org2 \
   --apply
 
 # 6. Re-check canonical corpus.
-npm run org2 -- lint --dir . --recursive
+org2 lint --dir . --recursive
 #+end_src
 
 Before promotion, the draft is a =view= artifact with =review-required= status. After promotion, the accepted note in =notes/meetings/team-sync.org2= carries source/provenance properties and the draft can be marked =promoted=.

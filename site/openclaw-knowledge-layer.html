@@ -163,9 +163,9 @@ The team deferred billing launch until the migration checklist is complete.
 <section class="org2-headline level-2">
 <h2 id="add-backlinks-and-linkify-output">Add backlinks and linkify output</h2>
 <p>Prefer deterministic previews before mutating notes:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- roam linkify --dir notes --recursive --dry-run
-npm run org2 -- roam linkify --dir notes --recursive --apply
-npm run org2 -- lint --dir . --recursive</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 roam linkify --dir notes --recursive --dry-run
+org2 roam linkify --dir notes --recursive --apply
+org2 lint --dir . --recursive</code></pre>
 <p>Generated link suggestions from AI should be written to <code>views/link-suggestions.org2</code> with citations and <code>review-required</code> status. Apply only reviewed links to <code>notes/</code>.</p>
 </section>
 <section class="org2-headline level-2">
@@ -180,9 +180,9 @@ view-2026-05-20-team-sync-summary</code></pre>
 <section class="org2-headline level-2">
 <h2 id="lint-before-and-after-writes">Lint before and after writes</h2>
 <p>For automated write flows, use this shape:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- lint --dir . --recursive
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 lint --dir . --recursive
 # perform one focused write
-npm run org2 -- lint --dir . --recursive</code></pre>
+org2 lint --dir . --recursive</code></pre>
 <p>If the pre-write corpus is already dirty, record the existing diagnostics and ensure the integration does not introduce new ones.</p>
 </section>
 </section>
@@ -287,7 +287,7 @@ mkdir -p raw/meetings views/meeting-summaries notes/meetings compiled
 cp ~/Downloads/team-sync.txt raw/meetings/2026-05-20-team-sync.transcript.org2
 
 # 2. Build cited local context deterministically.
-npm run org2 -- query &quot;team sync&quot; \
+org2 query &quot;team sync&quot; \
   --dir raw/meetings \
   --recursive \
   --subtree \
@@ -296,23 +296,23 @@ npm run org2 -- query &quot;team sync&quot; \
   &gt; compiled/2026-05-20-team-sync-context.json
 
 # 3. Ask AI to write a reviewable draft, not canonical memory.
-npm run org2 -- ai run \
+org2 ai run \
   --task summarize-meeting \
   --context compiled/2026-05-20-team-sync-context.json \
   --out views/meeting-summaries/2026-05-20-team-sync.org2 \
   --apply
 
 # 4. Check generated artifact metadata and graph health.
-npm run org2 -- lint --dir . --recursive
+org2 lint --dir . --recursive
 
 # 5. After review, promote accepted content.
-npm run org2 -- ai promote \
+org2 ai promote \
   --file views/meeting-summaries/2026-05-20-team-sync.org2 \
   --to-file notes/meetings/team-sync.org2 \
   --apply
 
 # 6. Re-check canonical corpus.
-npm run org2 -- lint --dir . --recursive</code></pre>
+org2 lint --dir . --recursive</code></pre>
 <p>Before promotion, the draft is a <code>view</code> artifact with <code>review-required</code> status. After promotion, the accepted note in <code>notes/meetings/team-sync.org2</code> carries source/provenance properties and the draft can be marked <code>promoted</code>.</p>
 </section>
 <section class="org2-headline level-1">

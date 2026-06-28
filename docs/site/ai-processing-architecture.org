@@ -115,7 +115,7 @@ A job runner should record each transformation with enough data to review and re
 Meeting summary flow:
 
 #+begin_src sh
-npm run org2 -- query "team sync" \
+org2 query "team sync" \
   --dir raw \
   --recursive \
   --subtree \
@@ -124,13 +124,13 @@ npm run org2 -- query "team sync" \
   > compiled/team-sync-context.json
 
 # Proposed future command: consumes the cited context and configured provider alias.
-npm run org2 -- ai run \
+org2 ai run \
   --task summarize-meeting \
   --context compiled/team-sync-context.json \
   --provider work-summary \
   --out views/team-sync-summary.org2
 
-npm run org2 -- lint --dir . --recursive
+org2 lint --dir . --recursive
 #+end_src
 
 The generated summary should include:

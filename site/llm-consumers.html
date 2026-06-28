@@ -78,7 +78,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <section class="org2-headline level-1">
 <h1 id="query-to-context-workflow">Query-to-context workflow</h1>
 <p>Use <code>org2 query</code> to fetch grounded context before asking an LLM to answer a question.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- query &quot;What did we decide about Project Alpha?&quot; \
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 query &quot;What did we decide about Project Alpha?&quot; \
   --dir ~/notes \
   --recursive \
   --subtree \
@@ -109,8 +109,8 @@ Question: What did we decide about Project Alpha?</code></pre>
 <section class="org2-headline level-1">
 <h1 id="compiled-corpus-workflow">Compiled-corpus workflow</h1>
 <p>For larger agents, compile a corpus artifact and let the external orchestration layer decide retrieval, ranking, and model calls.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- compile corpus --dir ~/notes --recursive --out compiled/corpus.json
-npm run org2 -- lint --dir ~/notes --recursive --format json &gt; views/corpus-health.json</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 compile corpus --dir ~/notes --recursive --out compiled/corpus.json
+org2 lint --dir ~/notes --recursive --format json &gt; views/corpus-health.json</code></pre>
 <p>The compiled artifact supplies file hashes, heading nodes, IDs, aliases, links, backlinks, planning data, properties, snippets, and source ranges. Keep provider credentials and model configuration outside the corpus artifact. If an agent saves a report or summary, stamp it with generated-artifact metadata described in <a href="corpus-flow.html">Corpus flow</a>.</p>
 </section>
 <section class="org2-headline level-1">

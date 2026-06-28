@@ -57,7 +57,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>The CLI is the shared backend for editor integrations and automation. You can use it directly or through VS Code commands.</p>
 <section class="org2-headline level-1">
 <h1 id="core-command-families">Core command families</h1>
-<p>Run <code>npm run org2 -- --help</code> for current top-level usage. AI architecture, job design, draft artifacts, and provider boundaries are documented separately in <a href="ai-processing-architecture.html">AI processing architecture</a>, <a href="ai-job-manifests.html">AI job manifests</a>, <a href="ai-draft-artifacts.html">AI draft artifacts</a>, and <a href="ai-adapters.html">AI adapter interface</a> so the deterministic CLI surface stays clear.</p>
+<p>Run <code>org2 --help</code> for current top-level usage. AI architecture, job design, draft artifacts, and provider boundaries are documented separately in <a href="ai-processing-architecture.html">AI processing architecture</a>, <a href="ai-job-manifests.html">AI job manifests</a>, <a href="ai-draft-artifacts.html">AI draft artifacts</a>, and <a href="ai-adapters.html">AI adapter interface</a> so the deterministic CLI surface stays clear.</p>
 <p>Main workflows:</p>
 <ul>
 <li><p><code>agenda</code></p></li>
@@ -87,15 +87,15 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p>Text/report output is human-facing and may evolve; JSON output is the integration surface.</p></li>
 </ul>
 <p>Examples:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- agenda --dir ~/notes --recursive --json
-npm run org2 -- lint --dir ~/notes --recursive --format json
-npm run org2 -- roam node new --dir ~/notes --title &quot;Acme Corp&quot; --apply --json</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 agenda --dir ~/notes --recursive --json
+org2 lint --dir ~/notes --recursive --format json
+org2 roam node new --dir ~/notes --title &quot;Acme Corp&quot; --apply --json</code></pre>
 </section>
 </section>
 <section class="org2-headline level-1">
 <h1 id="agenda">Agenda</h1>
 <p>Purpose: query scheduled/deadline items across Org files.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- agenda --dir ~/notes --recursive --from 2026-03-01 --to 2026-03-31</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 agenda --dir ~/notes --recursive --from 2026-03-01 --to 2026-03-31</code></pre>
 <p>Important behavior:</p>
 <ul>
 <li><p>Includes both <code>SCHEDULED:</code> and <code>DEADLINE:</code> rows in-range.</p></li>
@@ -105,28 +105,28 @@ npm run org2 -- roam node new --dir ~/notes --title &quot;Acme Corp&quot; --appl
 </section>
 <section class="org2-headline level-1">
 <h1 id="planning-edits"><span class="org2-todo">TODO</span> + planning edits</h1>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- todo toggle --file notes.org2 --line 42 --apply
-npm run org2 -- todo set --file notes.org2 --line 42 --status in_progress --apply
-npm run org2 -- plan set --file notes.org2 --line 42 --kind scheduled --date 2026-03-25 --apply</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 todo toggle --file notes.org2 --line 42 --apply
+org2 todo set --file notes.org2 --line 42 --status in_progress --apply
+org2 plan set --file notes.org2 --line 42 --kind scheduled --date 2026-03-25 --apply</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="capture-archive-refile">Capture / archive / refile</h1>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- capture --file inbox.org2 --title &quot;Quick note&quot; --template note --apply
-npm run org2 -- archive --file notes.org2 --pos 120:0 --apply
-npm run org2 -- refile --file notes.org2 --pos 120:0 --to-file projects.org2 --to-pos 40:0 --apply</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 capture --file inbox.org2 --title &quot;Quick note&quot; --template note --apply
+org2 archive --file notes.org2 --pos 120:0 --apply
+org2 refile --file notes.org2 --pos 120:0 --to-file projects.org2 --to-pos 40:0 --apply</code></pre>
 <p>Archiving moves the selected subtree to a companion archive file (by default <code>FILE_archive</code> for <code>.org</code> and <code>.org2</code> files, otherwise <code>FILE.archive</code>). Archived subtrees receive a property drawer with <code>ARCHIVED_AT</code>, <code>ARCHIVE_SOURCE</code>, <code>ARCHIVE_SOURCE_LINE</code>, <code>ARCHIVE_HEADING_PATH</code>, and <code>ARCHIVE_ORIGINAL_ID</code> when the original subtree had an <code>ID</code>. Use <code>--format diff</code> to preview the exact removal/append operation, or <code>--format json</code> for editor/agent integrations.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="formatter">Formatter</h1>
 <p>Canonical formatting for Org2 files.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- fmt --dir ~/notes --recursive --check
-npm run org2 -- fmt --dir ~/notes --recursive --apply</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 fmt --dir ~/notes --recursive --check
+org2 fmt --dir ~/notes --recursive --apply</code></pre>
 </section>
 <section class="org2-headline level-1">
 <h1 id="chart-rendering">Chart rendering</h1>
 <p><code>org2 render-chart</code> renders an SVG artifact from <code>#+chart:</code> / <code>#+plot:</code> metadata or an adjacent fenced <code>```chart</code> block attached to an org2 table. This gives editor clients a shared backend instead of making each extension reimplement table parsing and chart semantics.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- render-chart --file report.org2 --block-id quarterly_revenue --out /tmp/quarterly-revenue.svg
-npm run org2 -- render-chart --file report.org2 --line 42 --format json</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 render-chart --file report.org2 --block-id quarterly_revenue --out /tmp/quarterly-revenue.svg
+org2 render-chart --file report.org2 --line 42 --format json</code></pre>
 <p>The first renderer supports deterministic <code>bar</code>, <code>line</code>, and bucketed <code>histogram</code> charts with <code>x</code> and <code>y</code> column mappings. New hand-written examples should prefer fenced chart blocks when they are easier to scan:</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">| bucket | fetches |
 |--------+---------|
@@ -212,17 +212,17 @@ engine: duckdb
 SELECT sum(fetches) AS fetches
 FROM fetches
 ```</code></pre>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- query-data --file report.org2 --results fetches_by_state
-npm run org2 -- query-data --file report.org2 --line 42 --format json
-npm run org2 -- query-data --file report.org2 --inspect --include-script
-npm run org2 -- query-data --file report.org2 --results fetches_by_state --out views/fetches_by_state.org
-cat report.org2 | npm run org2 -- query-data --stdin --results fetches_by_state</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 query-data --file report.org2 --results fetches_by_state
+org2 query-data --file report.org2 --line 42 --format json
+org2 query-data --file report.org2 --inspect --include-script
+org2 query-data --file report.org2 --results fetches_by_state --out views/fetches_by_state.org
+cat report.org2 | org2 query-data --stdin --results fetches_by_state</code></pre>
 <p>The default output is a named org table with <code>#+name: fetches_by_state</code> so it can be pasted or written into the note and consumed by <code>render-chart</code> via <code>source: fetches_by_state</code>. Materialized tables also include a compact <code>#+query-data:</code> provenance line with the result id, row count, optional artifact reference, optional freshness token, selected SQL hash, full DuckDB script hash, and <code>ran_at</code> timestamp so refreshed results can be compared without embedding the full script in the note. Add <code>artifact=PATH</code> to a SQL result block to record the intended materialized output; when <code>--out FILE</code> is used, the actual written artifact path is stamped instead. Add <code>freshness=24h</code>, <code>ttl=24h</code>, or <code>max-age=24h</code> to a SQL result block when editor, agent, or dashboard clients should know how long a materialized result can be treated as fresh. SQL result ids must be unique within the note; duplicate result ids are reported as diagnostics instead of selecting an arbitrary block. Dataset ids and SQL view ids also share DuckDB's relation namespace, so a SQL view cannot reuse a dataset name. URL and table datasets may also include metadata-only <code>credential:</code> or <code>auth:</code> references and <code>config:</code> or <code>profile:</code> references such as <code>env:SCARF_API_TOKEN</code> or <code>profile:product-analytics</code>; inline bearer tokens and passwords are rejected, and these references are not injected into the generated DuckDB SQL. JSON output includes diagnostics, dataset metadata, SQL view metadata, available SQL result block metadata, provenance hashes/artifact/freshness/run timestamp, rows, and the generated org table; <code>--include-script</code> also includes the DuckDB setup SQL for debugging. Use <code>--inspect</code> to emit parsed JSON metadata, structural diagnostics, and selected-query provenance without running DuckDB; add <code>--include-script</code> to preview the generated DuckDB SQL for the selected result in the same dry run. Editor and agent clients can pass an unsaved buffer with <code>--stdin</code> and select the SQL result block containing or after the cursor with <code>--line N</code>; file-backed dataset paths are then resolved relative to the current working directory, while URL datasets are passed through as declared. The command expects a local DuckDB CLI on <code>PATH</code> for execution, or a custom path via <code>--duckdb</code>.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="corpus-lint">Corpus lint</h1>
 <p>Lint is the first compiler-style health pass for artifact metadata and corpus structure. It belongs to the broader <a href="maintenance-workflows.html">maintenance and health workflow</a> alongside formatter checks, graph queries, publish previews, and ID/index repair passes.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- lint --dir ~/notes --recursive</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 lint --dir ~/notes --recursive</code></pre>
 <p>Current checks include:</p>
 <ul>
 <li><p>invalid or missing <code>ORG2_ARTIFACT_ROLE</code> on generated outputs</p></li>
@@ -237,24 +237,24 @@ cat report.org2 | npm run org2 -- query-data --stdin --results fetches_by_state<
 <section class="org2-headline level-1">
 <h1 id="ai-job-manifest-validation">AI job manifest validation</h1>
 <p><code>org2 ai validate-job</code> validates repeatable AI workflow manifests without calling a provider or loading secrets.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
-npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json --format json</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
+org2 ai validate-job --job examples/jobs/weekly-summary.org2-ai.json --format json</code></pre>
 <p>Use this in CI or editor workflows before a future AI runner consumes a job. The validator checks corpus input selection, task type, symbolic adapter names, generated output targets, provenance/review requirements, and common accidental secret leaks. See <a href="ai-job-manifests.html">AI job manifests</a> for the schema and examples.</p>
 <p><code>org2 ai run</code> writes a reviewable generated draft artifact from a validated job. The current implementation is provider-free and uses manifest <code>input.files</code> as deterministic source material, including simple glob patterns. It stamps <code>ORG2_PROVENANCE</code>, <code>ORG2_SOURCE_HASHES</code>, prompt/template, adapter/model, generated-at, and <code>ORG2_REVIEW_STATUS</code> metadata. Without <code>--apply</code> it previews the draft.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2
-npm run org2 -- ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2 --apply</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2
+org2 ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2 --apply</code></pre>
 <p><code>org2 ai suggest-links</code> ranks compiler-provided roam/linkify candidates with the deterministic mock adapter. It scans the graph, aliases, exact linkify matches, represented-node semantic suggestions, and title-case entity mentions, then emits review-only suggestions with confidence, reasons, source context, and citations. It never edits canonical notes directly; <code>--apply</code> only writes the suggestion report when <code>--out</code> is provided.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- ai suggest-links --dir ~/notes --recursive --format json
-npm run org2 -- ai suggest-links --dir ~/notes --recursive --out views/link-suggestions.org2 --apply</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 ai suggest-links --dir ~/notes --recursive --format json
+org2 ai suggest-links --dir ~/notes --recursive --out views/link-suggestions.org2 --apply</code></pre>
 <p><code>org2 ai promote</code> is the safe acceptance path. It refuses drafts until <code>ORG2_REVIEW_STATUS</code> is <code>reviewed</code>, then appends the reviewed body to a canonical note only when <code>--apply</code> is present and marks the draft <code>promoted</code>.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- ai promote --file views/weekly-summary.org2 --to-file notes/weekly-summary.org2 --apply</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 ai promote --file views/weekly-summary.org2 --to-file notes/weekly-summary.org2 --apply</code></pre>
 <p>See <a href="ai-draft-artifacts.html">AI draft artifacts</a> for the full format, review checklist, and VS Code command-palette entry points.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="compiled-corpus-artifacts">Compiled corpus artifacts</h1>
 <p><code>org2 compile corpus</code> emits a stable, schema-versioned knowledge artifact that LLM tools, search indexes, and other automation can consume. Org2 only compiles local plain-text notes into structured data; it does not call an LLM or require any hosted AI service.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- compile corpus --dir ~/notes --recursive --out compiled/corpus.json
-npm run org2 -- compile corpus --dir ~/notes --recursive --format jsonl --out compiled/corpus.jsonl</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 compile corpus --dir ~/notes --recursive --out compiled/corpus.json
+org2 compile corpus --dir ~/notes --recursive --format jsonl --out compiled/corpus.jsonl</code></pre>
 <p>The JSON form includes:</p>
 <ul>
 <li><p>standardized <code>artifact</code> metadata: role, generator, generated-at timestamp, source provenance, source hashes, and review status</p></li>
@@ -269,9 +269,9 @@ npm run org2 -- compile corpus --dir ~/notes --recursive --format jsonl --out co
 <section class="org2-headline level-1">
 <h1 id="search-cited-query">Search + cited query</h1>
 <p>Use <code>search</code> for literal, case-insensitive full-text lookup over <code>.org</code> and <code>.org2</code> files, and <code>query</code> when you want cited context suitable for answering factual questions from notes. Directory scans are non-recursive unless <code>--recursive</code> is set. The <a href="llm-consumers.html">External LLM consumer pattern</a> page shows how provider-agnostic agents can turn this JSON into cited model context without adding LLM calls to Org2 core.</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- search &quot;Chris Martin&quot; --dir ~/notes --recursive --context 3 --sort date-desc
-npm run org2 -- query &quot;Chris Martin&quot; --dir ~/notes --recursive --subtree --sort date-desc --format json
-npm run org2 -- query &quot;Sentra&quot; --dir ~/notes --recursive --format json</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 search &quot;Chris Martin&quot; --dir ~/notes --recursive --context 3 --sort date-desc
+org2 query &quot;Chris Martin&quot; --dir ~/notes --recursive --subtree --sort date-desc --format json
+org2 query &quot;Sentra&quot; --dir ~/notes --recursive --format json</code></pre>
 <p>Useful flags:</p>
 <ul>
 <li><p><code>--context N</code> includes surrounding source lines.</p></li>
@@ -285,29 +285,29 @@ npm run org2 -- query &quot;Sentra&quot; --dir ~/notes --recursive --format json
 </section>
 <section class="org2-headline level-1">
 <h1 id="roam-workflows">Roam workflows</h1>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- roam db-sync --dir ~/notes --recursive --apply
-npm run org2 -- roam node new --dir ~/notes --title &quot;Acme Corp&quot; --apply
-npm run org2 -- roam backlinks --id 123e4567-e89b-12d3-a456-426614174000 --dir ~/notes --recursive --format json
-npm run org2 -- roam linkify --dir ~/notes --recursive
-npm run org2 -- roam graph --dir ~/notes --recursive --format report
-npm run org2 -- roam graph --dir ~/notes --recursive --format json</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 roam db-sync --dir ~/notes --recursive --apply
+org2 roam node new --dir ~/notes --title &quot;Acme Corp&quot; --apply
+org2 roam backlinks --id 123e4567-e89b-12d3-a456-426614174000 --dir ~/notes --recursive --format json
+org2 roam linkify --dir ~/notes --recursive
+org2 roam graph --dir ~/notes --recursive --format report
+org2 roam graph --dir ~/notes --recursive --format json</code></pre>
 <p>Org2 supports both title-based wiki links and explicit <code>id:</code> links, with backlinks across both forms. Linkify and graph reports are intended as compiler-style maintenance passes: preview references, strengthen links deliberately, and inspect corpus connectivity without leaving plain files. <code>org2 roam linkify --format json</code> reports exact title/alias replacements plus review-only represented-node suggestions with confidence, evidence tokens, and source ranges for headings or multi-line paragraphs; <code>--apply</code> only writes exact safe replacements, never semantic suggestions. <code>org2 roam graph --format report</code> emits a human-readable maintenance view with graph summary, orphan/high-degree nodes, alias/title collisions, unresolved or ambiguous links with file/line citations, and linkify suggestions; <code>--format json</code> includes the same <code>maintenance</code> payload for scripts and CI.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="org-crypt">Org-crypt</h1>
 <p>Org2 keeps the existing Org-style <code>:crypt:</code> convention and encrypts at the subtree boundary. A subtree can be encrypted symmetrically with a passphrase, or to multiple public-key recipients so the same private note can be opened by your user key, another device key, and an agent key without sharing one password around.</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh"># Passphrase/symmetric mode
-npm run org2 -- crypt decrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply
-npm run org2 -- crypt encrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply
+org2 crypt decrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply
+org2 crypt encrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply
 
 # Multi-recipient public-key mode
-npm run org2 -- crypt encrypt --file secrets.org2 --line 42 \
+org2 crypt encrypt --file secrets.org2 --line 42 \
   --recipient user@example.com \
   --recipient agent@example.com \
   --apply
 
 # Public-key recipient files are useful for keys that are not in your keyring
-npm run org2 -- crypt encrypt --file secrets.org2 --line 42 \
+org2 crypt encrypt --file secrets.org2 --line 42 \
   --recipient-file keys/agent-public.asc \
   --apply
 
@@ -320,7 +320,7 @@ npm run org2 -- crypt encrypt --file secrets.org2 --line 42 \
 Only the entries with this property are encrypted to that agent.
 
 # Migration: decrypt an existing block, then re-encrypt it for the new recipients
-npm run org2 -- crypt reencrypt --file secrets.org2 --line 42 \
+org2 crypt reencrypt --file secrets.org2 --line 42 \
   --passphrase 'old-passphrase-if-needed' \
   --recipient user@example.com \
   --recipient agent@example.com \
@@ -329,15 +329,15 @@ npm run org2 -- crypt reencrypt --file secrets.org2 --line 42 \
 </section>
 <section class="org2-headline level-1">
 <h1 id="export-publish">Export + publish</h1>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- export html --file README.org --out README.html --apply
-npm run org2 -- export html --dir docs/site --recursive --out-dir site --apply
-npm run org2 -- publish docs-site --config org2.json</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 export html --file README.org --out README.html --apply
+org2 export html --dir docs/site --recursive --out-dir site --apply
+org2 publish docs-site --config org2.json</code></pre>
 <p>Useful export options include TOC, heading numbering, stylesheet injection, and Org-file-link rewrite to HTML targets.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="lsp">LSP</h1>
 <p>Start language server:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- lsp</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 lsp</code></pre>
 <p>Current implemented capabilities include:</p>
 <ul>
 <li><p>definitions/references/hover/completion/signature help</p></li>

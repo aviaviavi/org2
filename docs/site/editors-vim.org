@@ -1,10 +1,57 @@
 #+TITLE: Vim / Neovim
 
-Coming soon.
+Org2 has a small Vim runtime plugin today. It is intentionally modest: filetype detection, syntax highlighting, heading/list/property folding, and a =<Tab>= fold toggle for the current item.
 
-Planned scope:
+* Install
 
-- install instructions
-- keymaps and motions
-- agenda/roam workflows
-- known limitations and compatibility notes
+The plugin lives in this repository at =editors/vim-org2/=.
+
+For Vim 8+ native packages:
+
+#+begin_src sh
+git clone https://github.com/aviaviavi/org2.git ~/.vim/pack/plugins/start/org2
+#+end_src
+
+Add the plugin runtime directory to your Vim config:
+
+#+begin_src vim
+set runtimepath^=~/.vim/pack/plugins/start/org2/editors/vim-org2
+filetype plugin indent on
+syntax enable
+#+end_src
+
+For Neovim, use the equivalent package path, for example =~/.local/share/nvim/site/pack/plugins/start/org2=, and point =runtimepath= at its =editors/vim-org2= directory.
+
+Generate help tags after installing:
+
+#+begin_src vim
+:helptags ~/.vim/pack/plugins/start/org2/editors/vim-org2/doc
+#+end_src
+
+Then read =:help org2=.
+
+* Current features
+
+- =*.org2= filetype detection
+- syntax highlighting for headings, TODO states, planning lines, drawers, links, blocks, tables, and comments
+- folding by heading level
+- list/property folding helpers
+- =<Tab>= fold toggle
+
+* CLI pairing
+
+The Vim plugin does not yet wrap the Org2 CLI. Use the CLI directly for agenda, roam, formatting, lint, export, and publishing workflows:
+
+#+begin_src sh
+org2 agenda --dir /path/to/notes --recursive
+org2 fmt --dir /path/to/notes --recursive --check
+org2 roam graph --dir /path/to/notes --recursive
+#+end_src
+
+* Limitations
+
+- no dedicated agenda pane in Vim yet
+- no built-in keymap for TODO/planning edits yet
+- no LSP wiring is bundled with the Vim plugin yet
+
+For the most complete editor workflow today, use [[file:editors-vscode.org][VS Code]] or the [[file:editors-macos.org][macOS Workspace]].

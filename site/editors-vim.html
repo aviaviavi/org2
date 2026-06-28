@@ -53,14 +53,47 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <header class="org2-document-header">
 <h1 class="org2-document-title">Vim / Neovim</h1>
 </header>
-<p>Coming soon.</p>
-<p>Planned scope:</p>
+<p>Org2 has a small Vim runtime plugin today. It is intentionally modest: filetype detection, syntax highlighting, heading/list/property folding, and a <code>&lt;Tab&gt;</code> fold toggle for the current item.</p>
+<section class="org2-headline level-1">
+<h1 id="install">Install</h1>
+<p>The plugin lives in this repository at <code>editors/vim-org2/</code>.</p>
+<p>For Vim 8+ native packages:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">git clone https://github.com/aviaviavi/org2.git ~/.vim/pack/plugins/start/org2</code></pre>
+<p>Add the plugin runtime directory to your Vim config:</p>
+<pre class="org2-src language-vim" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-vim">set runtimepath^=~/.vim/pack/plugins/start/org2/editors/vim-org2
+filetype plugin indent on
+syntax enable</code></pre>
+<p>For Neovim, use the equivalent package path, for example <code>~/.local/share/nvim/site/pack/plugins/start/org2</code>, and point <code>runtimepath</code> at its <code>editors/vim-org2</code> directory.</p>
+<p>Generate help tags after installing:</p>
+<pre class="org2-src language-vim" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-vim">:helptags ~/.vim/pack/plugins/start/org2/editors/vim-org2/doc</code></pre>
+<p>Then read <code>:help org2</code>.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="current-features">Current features</h1>
 <ul>
-<li><p>install instructions</p></li>
-<li><p>keymaps and motions</p></li>
-<li><p>agenda/roam workflows</p></li>
-<li><p>known limitations and compatibility notes</p></li>
+<li><p><code>*.org2</code> filetype detection</p></li>
+<li><p>syntax highlighting for headings, TODO states, planning lines, drawers, links, blocks, tables, and comments</p></li>
+<li><p>folding by heading level</p></li>
+<li><p>list/property folding helpers</p></li>
+<li><p><code>&lt;Tab&gt;</code> fold toggle</p></li>
 </ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="cli-pairing">CLI pairing</h1>
+<p>The Vim plugin does not yet wrap the Org2 CLI. Use the CLI directly for agenda, roam, formatting, lint, export, and publishing workflows:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 agenda --dir /path/to/notes --recursive
+org2 fmt --dir /path/to/notes --recursive --check
+org2 roam graph --dir /path/to/notes --recursive</code></pre>
+</section>
+<section class="org2-headline level-1">
+<h1 id="limitations">Limitations</h1>
+<ul>
+<li><p>no dedicated agenda pane in Vim yet</p></li>
+<li><p>no built-in keymap for TODO/planning edits yet</p></li>
+<li><p>no LSP wiring is bundled with the Vim plugin yet</p></li>
+</ul>
+<p>For the most complete editor workflow today, use <a href="editors-vscode.html">VS Code</a> or the <a href="editors-macos.html">macOS Workspace</a>.</p>
+</section>
 </main>
 </div>
 <footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>

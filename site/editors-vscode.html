@@ -56,7 +56,16 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>Org2's most complete editor integration today is VS Code.</p>
 <section class="org2-headline level-1">
 <h1 id="install-instructions">Install instructions</h1>
-<p>The extension currently lives in this repository at <code>editors/vscode-org2/</code>.</p>
+<p>Install the CLI first:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm install -g @aviaviavi/org2
+org2 --help</code></pre>
+<p>Then install the VS Code extension from the Marketplace:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">code --install-extension AviPress.org2-vscode</code></pre>
+<p>Marketplace page: <a href="https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode">Org2 for VS Code</a></p>
+<p>Open your notes folder and run <code>Org2: Open Agenda</code> from the command palette.</p>
+<section class="org2-headline level-2">
+<h2 id="source-install">Source install</h2>
+<p>For extension development or unreleased builds, use the repository copy at <code>editors/vscode-org2/</code>.</p>
 <ol>
 <li><p>Build Org2 CLI and repository artifacts:</p></li>
 </ol>
@@ -84,6 +93,7 @@ npm ci</code></pre>
 <li><p>Provide <code>org2</code> on your <code>PATH</code>.</p></li>
 </ul>
 <p>For settings and command behavior details, see <code>editors/vscode-org2/README.md</code> and <a href="tooling-reference.html">Tooling reference</a>.</p>
+</section>
 </section>
 <section class="org2-headline level-1">
 <h1 id="keyboard-shortcuts">Keyboard shortcuts</h1>

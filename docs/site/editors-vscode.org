@@ -4,7 +4,26 @@ Org2's most complete editor integration today is VS Code.
 
 * Install instructions
 
-The extension currently lives in this repository at =editors/vscode-org2/=.
+Install the CLI first:
+
+#+begin_src sh
+npm install -g @aviaviavi/org2
+org2 --help
+#+end_src
+
+Then install the VS Code extension from the Marketplace:
+
+#+begin_src sh
+code --install-extension AviPress.org2-vscode
+#+end_src
+
+Marketplace page: [[https://marketplace.visualstudio.com/items?itemName=AviPress.org2-vscode][Org2 for VS Code]]
+
+Open your notes folder and run =Org2: Open Agenda= from the command palette.
+
+** Source install
+
+For extension development or unreleased builds, use the repository copy at =editors/vscode-org2/=.
 
 1. Build Org2 CLI and repository artifacts:
 

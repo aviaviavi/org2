@@ -53,13 +53,35 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <header class="org2-document-header">
 <h1 class="org2-document-title">Emacs</h1>
 </header>
-<p>Coming soon.</p>
-<p>Planned scope:</p>
+<p>Org2 files are plain Org-shaped text, so Emacs can edit them today. There is not yet a dedicated Org2 Emacs package in this repository.</p>
+<section class="org2-headline level-1">
+<h1 id="use-org-mode-for-editing">Use org-mode for editing</h1>
+<p>For basic editing, associate <code>.org2</code> files with <code>org-mode</code>:</p>
+<pre class="org2-src language-emacs-lisp" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-emacs-lisp">(add-to-list 'auto-mode-alist '(&quot;\\.org2\\'&quot; . org-mode))</code></pre>
+<p>That gives you mature Org editing, outline navigation, folding, timestamps, TODO keywords, and tables while Org2 continues to own the standalone parser, CLI, publishing, and compiler semantics.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="use-the-cli-beside-emacs">Use the CLI beside Emacs</h1>
+<p>Run Org2 commands from a shell, <code>compile</code>, <code>async-shell-command</code>, or your own Emacs wrapper:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 agenda --dir ~/notes --recursive
+org2 fmt --dir ~/notes --recursive --check
+org2 lint --dir ~/notes --recursive
+org2 publish docs-site --config org2.json</code></pre>
+<p>Mutating commands preview by default and require <code>--apply</code> to write files, which makes them reasonable to wire into custom Emacs commands once you are comfortable with the output.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="coexistence-notes">Coexistence notes</h1>
 <ul>
-<li><p>Org2 usage alongside org-mode</p></li>
-<li><p>migration and coexistence patterns</p></li>
-<li><p>command mapping and workflow notes</p></li>
+<li><p>Existing <code>.org</code> files can remain in place; Org2 can scan <code>.org</code> and <code>.org2</code> files.</p></li>
+<li><p>Org2 is not a bug-for-bug Org Mode clone. It keeps common Org-shaped constructs but chooses clearer behavior where portability needs it.</p></li>
+<li><p>Org Mode may treat newer Org2 conventions, such as fenced source-block sugar or compiler/provenance properties, as ordinary text. Org2 tools still parse them.</p></li>
+<li><p>If you rely on advanced Org Mode packages, keep using them; Org2 can act as a parallel compiler/runtime over the same text where the semantics overlap.</p></li>
 </ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="current-status">Current status</h1>
+<p>Dedicated Emacs integration is still open work. Useful future pieces would include CLI command wrappers, LSP setup, agenda buffers backed by <code>org2 agenda --format json</code>, and helpers for roam IDs/backlinks.</p>
+</section>
 </main>
 </div>
 <footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>

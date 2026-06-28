@@ -5,11 +5,11 @@ This page is the compact contract for what is stable in Org2 today, what is impl
 * Normative now
 
 - Parser behavior for supported syntax is normative in v0:
-  - [[file:../../spec/v0/SPEC.org][spec/v0/SPEC.org]]
+  - [[https://github.com/aviaviavi/org2/blob/main/spec/v0/SPEC.org][spec/v0/SPEC.org]]
 - Roam data model and link forms are normative for v0 roam:
-  - [[file:../../spec/v0/ROAM.org][spec/v0/ROAM.org]]
+  - [[https://github.com/aviaviavi/org2/blob/main/spec/v0/ROAM.org][spec/v0/ROAM.org]]
 - Normative parser fixtures and conformance rules:
-  - [[file:../../spec/v0/CONFORMANCE.md][spec/v0/CONFORMANCE.md]]
+  - [[https://github.com/aviaviavi/org2/blob/main/spec/v0/CONFORMANCE.md][spec/v0/CONFORMANCE.md]]
 
 * Stable implementation behavior (documented, but not yet fully spec-locked)
 

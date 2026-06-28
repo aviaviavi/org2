@@ -87,7 +87,7 @@ Highlights:
 The agenda work goes beyond “show me tasks due today.” It is becoming a real backend for keyboard-driven planning, including an interactive terminal agenda:
 
 #+begin_src sh
-npm run org2 -- agenda --dir ~/notes --recursive --tui
+org2 agenda --dir ~/notes --recursive --tui
 #+end_src
 
 Use the TUI when you want a live, scannable planning surface without leaving the terminal; use =--format json= when another tool should consume the same agenda model.

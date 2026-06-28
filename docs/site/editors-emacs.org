@@ -1,9 +1,37 @@
 #+TITLE: Emacs
 
-Coming soon.
+Org2 files are plain Org-shaped text, so Emacs can edit them today. There is not yet a dedicated Org2 Emacs package in this repository.
 
-Planned scope:
+* Use org-mode for editing
 
-- Org2 usage alongside org-mode
-- migration and coexistence patterns
-- command mapping and workflow notes
+For basic editing, associate =.org2= files with =org-mode=:
+
+#+begin_src emacs-lisp
+(add-to-list 'auto-mode-alist '("\\.org2\\'" . org-mode))
+#+end_src
+
+That gives you mature Org editing, outline navigation, folding, timestamps, TODO keywords, and tables while Org2 continues to own the standalone parser, CLI, publishing, and compiler semantics.
+
+* Use the CLI beside Emacs
+
+Run Org2 commands from a shell, =compile=, =async-shell-command=, or your own Emacs wrapper:
+
+#+begin_src sh
+org2 agenda --dir ~/notes --recursive
+org2 fmt --dir ~/notes --recursive --check
+org2 lint --dir ~/notes --recursive
+org2 publish docs-site --config org2.json
+#+end_src
+
+Mutating commands preview by default and require =--apply= to write files, which makes them reasonable to wire into custom Emacs commands once you are comfortable with the output.
+
+* Coexistence notes
+
+- Existing =.org= files can remain in place; Org2 can scan =.org= and =.org2= files.
+- Org2 is not a bug-for-bug Org Mode clone. It keeps common Org-shaped constructs but chooses clearer behavior where portability needs it.
+- Org Mode may treat newer Org2 conventions, such as fenced source-block sugar or compiler/provenance properties, as ordinary text. Org2 tools still parse them.
+- If you rely on advanced Org Mode packages, keep using them; Org2 can act as a parallel compiler/runtime over the same text where the semantics overlap.
+
+* Current status
+
+Dedicated Emacs integration is still open work. Useful future pieces would include CLI command wrappers, LSP setup, agenda buffers backed by =org2 agenda --format json=, and helpers for roam IDs/backlinks.

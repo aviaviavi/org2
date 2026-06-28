@@ -6,7 +6,7 @@ The CLI is the shared backend for editor integrations and automation. You can us
 
 * Core command families
 
-Run =npm run org2 -- --help= for current top-level usage. AI architecture, job design, draft artifacts, and provider boundaries are documented separately in [[file:ai-processing-architecture.org][AI processing architecture]], [[file:ai-job-manifests.org][AI job manifests]], [[file:ai-draft-artifacts.org][AI draft artifacts]], and [[file:ai-adapters.org][AI adapter interface]] so the deterministic CLI surface stays clear.
+Run =org2 --help= for current top-level usage. AI architecture, job design, draft artifacts, and provider boundaries are documented separately in [[file:ai-processing-architecture.org][AI processing architecture]], [[file:ai-job-manifests.org][AI job manifests]], [[file:ai-draft-artifacts.org][AI draft artifacts]], and [[file:ai-adapters.org][AI adapter interface]] so the deterministic CLI surface stays clear.
 
 Main workflows:
 
@@ -40,9 +40,9 @@ Conventions:
 Examples:
 
 #+begin_src sh
-npm run org2 -- agenda --dir ~/notes --recursive --json
-npm run org2 -- lint --dir ~/notes --recursive --format json
-npm run org2 -- roam node new --dir ~/notes --title "Acme Corp" --apply --json
+org2 agenda --dir ~/notes --recursive --json
+org2 lint --dir ~/notes --recursive --format json
+org2 roam node new --dir ~/notes --title "Acme Corp" --apply --json
 #+end_src
 
 * Agenda
@@ -50,7 +50,7 @@ npm run org2 -- roam node new --dir ~/notes --title "Acme Corp" --apply --json
 Purpose: query scheduled/deadline items across Org files.
 
 #+begin_src sh
-npm run org2 -- agenda --dir ~/notes --recursive --from 2026-03-01 --to 2026-03-31
+org2 agenda --dir ~/notes --recursive --from 2026-03-01 --to 2026-03-31
 #+end_src
 
 Important behavior:
@@ -62,17 +62,17 @@ Important behavior:
 * TODO + planning edits
 
 #+begin_src sh
-npm run org2 -- todo toggle --file notes.org2 --line 42 --apply
-npm run org2 -- todo set --file notes.org2 --line 42 --status in_progress --apply
-npm run org2 -- plan set --file notes.org2 --line 42 --kind scheduled --date 2026-03-25 --apply
+org2 todo toggle --file notes.org2 --line 42 --apply
+org2 todo set --file notes.org2 --line 42 --status in_progress --apply
+org2 plan set --file notes.org2 --line 42 --kind scheduled --date 2026-03-25 --apply
 #+end_src
 
 * Capture / archive / refile
 
 #+begin_src sh
-npm run org2 -- capture --file inbox.org2 --title "Quick note" --template note --apply
-npm run org2 -- archive --file notes.org2 --pos 120:0 --apply
-npm run org2 -- refile --file notes.org2 --pos 120:0 --to-file projects.org2 --to-pos 40:0 --apply
+org2 capture --file inbox.org2 --title "Quick note" --template note --apply
+org2 archive --file notes.org2 --pos 120:0 --apply
+org2 refile --file notes.org2 --pos 120:0 --to-file projects.org2 --to-pos 40:0 --apply
 #+end_src
 
 Archiving moves the selected subtree to a companion archive file (by default =FILE_archive= for =.org= and =.org2= files, otherwise =FILE.archive=). Archived subtrees receive a property drawer with =ARCHIVED_AT=, =ARCHIVE_SOURCE=, =ARCHIVE_SOURCE_LINE=, =ARCHIVE_HEADING_PATH=, and =ARCHIVE_ORIGINAL_ID= when the original subtree had an =ID=. Use =--format diff= to preview the exact removal/append operation, or =--format json= for editor/agent integrations.
@@ -82,8 +82,8 @@ Archiving moves the selected subtree to a companion archive file (by default =FI
 Canonical formatting for Org2 files.
 
 #+begin_src sh
-npm run org2 -- fmt --dir ~/notes --recursive --check
-npm run org2 -- fmt --dir ~/notes --recursive --apply
+org2 fmt --dir ~/notes --recursive --check
+org2 fmt --dir ~/notes --recursive --apply
 #+end_src
 
 * Chart rendering
@@ -91,8 +91,8 @@ npm run org2 -- fmt --dir ~/notes --recursive --apply
 =org2 render-chart= renders an SVG artifact from =#+chart:= / =#+plot:= metadata or an adjacent fenced =```chart= block attached to an org2 table. This gives editor clients a shared backend instead of making each extension reimplement table parsing and chart semantics.
 
 #+begin_src sh
-npm run org2 -- render-chart --file report.org2 --block-id quarterly_revenue --out /tmp/quarterly-revenue.svg
-npm run org2 -- render-chart --file report.org2 --line 42 --format json
+org2 render-chart --file report.org2 --block-id quarterly_revenue --out /tmp/quarterly-revenue.svg
+org2 render-chart --file report.org2 --line 42 --format json
 #+end_src
 
 The first renderer supports deterministic =bar=, =line=, and bucketed =histogram= charts with =x= and =y= column mappings. New hand-written examples should prefer fenced chart blocks when they are easier to scan:
@@ -205,11 +205,11 @@ FROM fetches
 #+end_src
 
 #+begin_src sh
-npm run org2 -- query-data --file report.org2 --results fetches_by_state
-npm run org2 -- query-data --file report.org2 --line 42 --format json
-npm run org2 -- query-data --file report.org2 --inspect --include-script
-npm run org2 -- query-data --file report.org2 --results fetches_by_state --out views/fetches_by_state.org
-cat report.org2 | npm run org2 -- query-data --stdin --results fetches_by_state
+org2 query-data --file report.org2 --results fetches_by_state
+org2 query-data --file report.org2 --line 42 --format json
+org2 query-data --file report.org2 --inspect --include-script
+org2 query-data --file report.org2 --results fetches_by_state --out views/fetches_by_state.org
+cat report.org2 | org2 query-data --stdin --results fetches_by_state
 #+end_src
 
 The default output is a named org table with =#+name: fetches_by_state= so it can be pasted or written into the note and consumed by =render-chart= via =source: fetches_by_state=. Materialized tables also include a compact =#+query-data:= provenance line with the result id, row count, optional artifact reference, optional freshness token, selected SQL hash, full DuckDB script hash, and =ran_at= timestamp so refreshed results can be compared without embedding the full script in the note. Add =artifact=PATH= to a SQL result block to record the intended materialized output; when =--out FILE= is used, the actual written artifact path is stamped instead. Add =freshness=24h=, =ttl=24h=, or =max-age=24h= to a SQL result block when editor, agent, or dashboard clients should know how long a materialized result can be treated as fresh. SQL result ids must be unique within the note; duplicate result ids are reported as diagnostics instead of selecting an arbitrary block. Dataset ids and SQL view ids also share DuckDB's relation namespace, so a SQL view cannot reuse a dataset name. URL and table datasets may also include metadata-only =credential:= or =auth:= references and =config:= or =profile:= references such as =env:SCARF_API_TOKEN= or =profile:product-analytics=; inline bearer tokens and passwords are rejected, and these references are not injected into the generated DuckDB SQL. JSON output includes diagnostics, dataset metadata, SQL view metadata, available SQL result block metadata, provenance hashes/artifact/freshness/run timestamp, rows, and the generated org table; =--include-script= also includes the DuckDB setup SQL for debugging. Use =--inspect= to emit parsed JSON metadata, structural diagnostics, and selected-query provenance without running DuckDB; add =--include-script= to preview the generated DuckDB SQL for the selected result in the same dry run. Editor and agent clients can pass an unsaved buffer with =--stdin= and select the SQL result block containing or after the cursor with =--line N=; file-backed dataset paths are then resolved relative to the current working directory, while URL datasets are passed through as declared. The command expects a local DuckDB CLI on =PATH= for execution, or a custom path via =--duckdb=.
@@ -219,7 +219,7 @@ The default output is a named org table with =#+name: fetches_by_state= so it ca
 Lint is the first compiler-style health pass for artifact metadata and corpus structure. It belongs to the broader [[file:maintenance-workflows.org][maintenance and health workflow]] alongside formatter checks, graph queries, publish previews, and ID/index repair passes.
 
 #+begin_src sh
-npm run org2 -- lint --dir ~/notes --recursive
+org2 lint --dir ~/notes --recursive
 #+end_src
 
 Current checks include:
@@ -238,8 +238,8 @@ See [[file:corpus-flow.org][Corpus flow]] for the canonical zone model, artifact
 =org2 ai validate-job= validates repeatable AI workflow manifests without calling a provider or loading secrets.
 
 #+begin_src sh
-npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
-npm run org2 -- ai validate-job --job examples/jobs/weekly-summary.org2-ai.json --format json
+org2 ai validate-job --job examples/jobs/weekly-summary.org2-ai.json
+org2 ai validate-job --job examples/jobs/weekly-summary.org2-ai.json --format json
 #+end_src
 
 Use this in CI or editor workflows before a future AI runner consumes a job. The validator checks corpus input selection, task type, symbolic adapter names, generated output targets, provenance/review requirements, and common accidental secret leaks. See [[file:ai-job-manifests.org][AI job manifests]] for the schema and examples.
@@ -247,21 +247,21 @@ Use this in CI or editor workflows before a future AI runner consumes a job. The
 =org2 ai run= writes a reviewable generated draft artifact from a validated job. The current implementation is provider-free and uses manifest =input.files= as deterministic source material, including simple glob patterns. It stamps =ORG2_PROVENANCE=, =ORG2_SOURCE_HASHES=, prompt/template, adapter/model, generated-at, and =ORG2_REVIEW_STATUS= metadata. Without =--apply= it previews the draft.
 
 #+begin_src sh
-npm run org2 -- ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2
-npm run org2 -- ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2 --apply
+org2 ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2
+org2 ai run --job examples/jobs/weekly-summary.org2-ai.json --out views/weekly-summary.org2 --apply
 #+end_src
 
 =org2 ai suggest-links= ranks compiler-provided roam/linkify candidates with the deterministic mock adapter. It scans the graph, aliases, exact linkify matches, represented-node semantic suggestions, and title-case entity mentions, then emits review-only suggestions with confidence, reasons, source context, and citations. It never edits canonical notes directly; =--apply= only writes the suggestion report when =--out= is provided.
 
 #+begin_src sh
-npm run org2 -- ai suggest-links --dir ~/notes --recursive --format json
-npm run org2 -- ai suggest-links --dir ~/notes --recursive --out views/link-suggestions.org2 --apply
+org2 ai suggest-links --dir ~/notes --recursive --format json
+org2 ai suggest-links --dir ~/notes --recursive --out views/link-suggestions.org2 --apply
 #+end_src
 
 =org2 ai promote= is the safe acceptance path. It refuses drafts until =ORG2_REVIEW_STATUS= is =reviewed=, then appends the reviewed body to a canonical note only when =--apply= is present and marks the draft =promoted=.
 
 #+begin_src sh
-npm run org2 -- ai promote --file views/weekly-summary.org2 --to-file notes/weekly-summary.org2 --apply
+org2 ai promote --file views/weekly-summary.org2 --to-file notes/weekly-summary.org2 --apply
 #+end_src
 
 See [[file:ai-draft-artifacts.org][AI draft artifacts]] for the full format, review checklist, and VS Code command-palette entry points.
@@ -271,8 +271,8 @@ See [[file:ai-draft-artifacts.org][AI draft artifacts]] for the full format, rev
 =org2 compile corpus= emits a stable, schema-versioned knowledge artifact that LLM tools, search indexes, and other automation can consume. Org2 only compiles local plain-text notes into structured data; it does not call an LLM or require any hosted AI service.
 
 #+begin_src sh
-npm run org2 -- compile corpus --dir ~/notes --recursive --out compiled/corpus.json
-npm run org2 -- compile corpus --dir ~/notes --recursive --format jsonl --out compiled/corpus.jsonl
+org2 compile corpus --dir ~/notes --recursive --out compiled/corpus.json
+org2 compile corpus --dir ~/notes --recursive --format jsonl --out compiled/corpus.jsonl
 #+end_src
 
 The JSON form includes:
@@ -291,9 +291,9 @@ Use JSONL for larger corpora when downstream tools prefer one record per line; t
 Use =search= for literal, case-insensitive full-text lookup over =.org= and =.org2= files, and =query= when you want cited context suitable for answering factual questions from notes. Directory scans are non-recursive unless =--recursive= is set. The [[file:llm-consumers.org][External LLM consumer pattern]] page shows how provider-agnostic agents can turn this JSON into cited model context without adding LLM calls to Org2 core.
 
 #+begin_src sh
-npm run org2 -- search "Chris Martin" --dir ~/notes --recursive --context 3 --sort date-desc
-npm run org2 -- query "Chris Martin" --dir ~/notes --recursive --subtree --sort date-desc --format json
-npm run org2 -- query "Sentra" --dir ~/notes --recursive --format json
+org2 search "Chris Martin" --dir ~/notes --recursive --context 3 --sort date-desc
+org2 query "Chris Martin" --dir ~/notes --recursive --subtree --sort date-desc --format json
+org2 query "Sentra" --dir ~/notes --recursive --format json
 #+end_src
 
 Useful flags:
@@ -309,12 +309,12 @@ Useful flags:
 * Roam workflows
 
 #+begin_src sh
-npm run org2 -- roam db-sync --dir ~/notes --recursive --apply
-npm run org2 -- roam node new --dir ~/notes --title "Acme Corp" --apply
-npm run org2 -- roam backlinks --id 123e4567-e89b-12d3-a456-426614174000 --dir ~/notes --recursive --format json
-npm run org2 -- roam linkify --dir ~/notes --recursive
-npm run org2 -- roam graph --dir ~/notes --recursive --format report
-npm run org2 -- roam graph --dir ~/notes --recursive --format json
+org2 roam db-sync --dir ~/notes --recursive --apply
+org2 roam node new --dir ~/notes --title "Acme Corp" --apply
+org2 roam backlinks --id 123e4567-e89b-12d3-a456-426614174000 --dir ~/notes --recursive --format json
+org2 roam linkify --dir ~/notes --recursive
+org2 roam graph --dir ~/notes --recursive --format report
+org2 roam graph --dir ~/notes --recursive --format json
 #+end_src
 
 Org2 supports both title-based wiki links and explicit =id:= links, with backlinks across both forms. Linkify and graph reports are intended as compiler-style maintenance passes: preview references, strengthen links deliberately, and inspect corpus connectivity without leaving plain files. =org2 roam linkify --format json= reports exact title/alias replacements plus review-only represented-node suggestions with confidence, evidence tokens, and source ranges for headings or multi-line paragraphs; =--apply= only writes exact safe replacements, never semantic suggestions. =org2 roam graph --format report= emits a human-readable maintenance view with graph summary, orphan/high-degree nodes, alias/title collisions, unresolved or ambiguous links with file/line citations, and linkify suggestions; =--format json= includes the same =maintenance= payload for scripts and CI.
@@ -325,17 +325,17 @@ Org2 keeps the existing Org-style =:crypt:= convention and encrypts at the subtr
 
 #+begin_src sh
 # Passphrase/symmetric mode
-npm run org2 -- crypt decrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply
-npm run org2 -- crypt encrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply
+org2 crypt decrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply
+org2 crypt encrypt --file secrets.org2 --line 42 --passphrase 'your-passphrase' --apply
 
 # Multi-recipient public-key mode
-npm run org2 -- crypt encrypt --file secrets.org2 --line 42 \
+org2 crypt encrypt --file secrets.org2 --line 42 \
   --recipient user@example.com \
   --recipient agent@example.com \
   --apply
 
 # Public-key recipient files are useful for keys that are not in your keyring
-npm run org2 -- crypt encrypt --file secrets.org2 --line 42 \
+org2 crypt encrypt --file secrets.org2 --line 42 \
   --recipient-file keys/agent-public.asc \
   --apply
 
@@ -348,7 +348,7 @@ npm run org2 -- crypt encrypt --file secrets.org2 --line 42 \
 Only the entries with this property are encrypted to that agent.
 
 # Migration: decrypt an existing block, then re-encrypt it for the new recipients
-npm run org2 -- crypt reencrypt --file secrets.org2 --line 42 \
+org2 crypt reencrypt --file secrets.org2 --line 42 \
   --passphrase 'old-passphrase-if-needed' \
   --recipient user@example.com \
   --recipient agent@example.com \
@@ -360,9 +360,9 @@ Per-entry recipient properties let one corpus mix private-only and shared-with-a
 * Export + publish
 
 #+begin_src sh
-npm run org2 -- export html --file README.org --out README.html --apply
-npm run org2 -- export html --dir docs/site --recursive --out-dir site --apply
-npm run org2 -- publish docs-site --config org2.json
+org2 export html --file README.org --out README.html --apply
+org2 export html --dir docs/site --recursive --out-dir site --apply
+org2 publish docs-site --config org2.json
 #+end_src
 
 Useful export options include TOC, heading numbering, stylesheet injection, and Org-file-link rewrite to HTML targets.
@@ -372,7 +372,7 @@ Useful export options include TOC, heading numbering, stylesheet injection, and 
 Start language server:
 
 #+begin_src sh
-npm run org2 -- lsp
+org2 lsp
 #+end_src
 
 Current implemented capabilities include:

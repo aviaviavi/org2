@@ -91,7 +91,7 @@ The conventional directory mapping is:
 Run lint over the corpus root:
 
 #+begin_src sh
-npm run org2 -- lint --dir /path/to/corpus --recursive
+org2 lint --dir /path/to/corpus --recursive
 #+end_src
 
 When files live under the conventional directories, lint checks that their declared =ORG2_ARTIFACT_ROLE= matches the path. It also checks generated artifacts for provenance, generator metadata, generated timestamps, source-hash syntax, review-status values, duplicate IDs, and unresolved provenance references.

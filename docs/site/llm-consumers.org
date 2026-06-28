@@ -28,7 +28,7 @@ Generated text should remain reviewable. Write it to =views/=, =compiled/=, or a
 Use =org2 query= to fetch grounded context before asking an LLM to answer a question.
 
 #+begin_src sh
-npm run org2 -- query "What did we decide about Project Alpha?" \
+org2 query "What did we decide about Project Alpha?" \
   --dir ~/notes \
   --recursive \
   --subtree \
@@ -65,8 +65,8 @@ Question: What did we decide about Project Alpha?
 For larger agents, compile a corpus artifact and let the external orchestration layer decide retrieval, ranking, and model calls.
 
 #+begin_src sh
-npm run org2 -- compile corpus --dir ~/notes --recursive --out compiled/corpus.json
-npm run org2 -- lint --dir ~/notes --recursive --format json > views/corpus-health.json
+org2 compile corpus --dir ~/notes --recursive --out compiled/corpus.json
+org2 lint --dir ~/notes --recursive --format json > views/corpus-health.json
 #+end_src
 
 The compiled artifact supplies file hashes, heading nodes, IDs, aliases, links, backlinks, planning data, properties, snippets, and source ranges. Keep provider credentials and model configuration outside the corpus artifact. If an agent saves a report or summary, stamp it with generated-artifact metadata described in [[file:corpus-flow.org][Corpus flow]].

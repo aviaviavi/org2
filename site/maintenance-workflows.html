@@ -69,12 +69,12 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <section class="org2-headline level-1">
 <h1 id="recommended-maintenance-loop">Recommended maintenance loop</h1>
 <p>Run a lightweight check before committing note changes:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- fmt --dir ~/notes --recursive --check
-npm run org2 -- lint --dir ~/notes --recursive</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 fmt --dir ~/notes --recursive --check
+org2 lint --dir ~/notes --recursive</code></pre>
 <p>Run the repair-style passes intentionally, review their diffs, then commit the result:</p>
-<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- fmt --dir ~/notes --recursive --apply
-npm run org2 -- roam db-sync --dir ~/notes --recursive --apply
-npm run org2 -- publish docs-site --config org2.json --preview</code></pre>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 fmt --dir ~/notes --recursive --apply
+org2 roam db-sync --dir ~/notes --recursive --apply
+org2 publish docs-site --config org2.json --preview</code></pre>
 <p>Use <code>org2 roam graph --format report</code> for an inspectable local maintenance view, including orphan/high-degree nodes, alias collisions, unresolved/ambiguous links, and linkify suggestions with source locations. Use <code>--format json</code> on lint, backlink, query, graph, and roam workflows when wiring these checks into scripts or CI; graph JSON carries the same maintenance payload under <code>maintenance</code>.</p>
 </section>
 <section class="org2-headline level-1">

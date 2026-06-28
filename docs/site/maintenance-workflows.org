@@ -19,16 +19,16 @@ The maintenance story groups existing and planned checks into a few explicit pas
 Run a lightweight check before committing note changes:
 
 #+begin_src sh
-npm run org2 -- fmt --dir ~/notes --recursive --check
-npm run org2 -- lint --dir ~/notes --recursive
+org2 fmt --dir ~/notes --recursive --check
+org2 lint --dir ~/notes --recursive
 #+end_src
 
 Run the repair-style passes intentionally, review their diffs, then commit the result:
 
 #+begin_src sh
-npm run org2 -- fmt --dir ~/notes --recursive --apply
-npm run org2 -- roam db-sync --dir ~/notes --recursive --apply
-npm run org2 -- publish docs-site --config org2.json --preview
+org2 fmt --dir ~/notes --recursive --apply
+org2 roam db-sync --dir ~/notes --recursive --apply
+org2 publish docs-site --config org2.json --preview
 #+end_src
 
 Use =org2 roam graph --format report= for an inspectable local maintenance view, including orphan/high-degree nodes, alias collisions, unresolved/ambiguous links, and linkify suggestions with source locations. Use =--format json= on lint, backlink, query, graph, and roam workflows when wiring these checks into scripts or CI; graph JSON carries the same maintenance payload under =maintenance=.
