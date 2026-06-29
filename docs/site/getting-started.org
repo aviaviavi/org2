@@ -4,7 +4,9 @@ This guide is about getting to a *useful* Org2 setup quickly: point the compiler
 
 * 1) Install Org2
 
-For normal CLI use, install the published package:
+** CLI
+
+For normal command-line use, install the published package:
 
 #+begin_src sh
 npm install -g @aviaviavi/org2
@@ -35,6 +37,41 @@ npm run org2 -- agenda --help
 #+end_src
 
 The examples below use =org2=. If you are running from a checkout instead of a global install, replace =org2= with =npm run org2 --=.
+
+** macOS app
+
+Org2 Workspace is the native macOS app. The easiest install path is the downloadable disk image from GitHub Releases:
+
+1. Download the latest =Org2Workspace.dmg= from [[https://github.com/aviaviavi/org2/releases][GitHub Releases]].
+2. Open the disk image and drag =Org2Workspace.app= into =Applications=.
+3. Open the app from =Applications= and choose the folder that contains your Org2 or Org corpus.
+
+The initial downloadable disk image is built for Apple Silicon Macs. Current release builds are developer-signed, not notarized. If macOS blocks the first launch, open *System Settings → Privacy & Security* and allow Org2Workspace, or right-click the app in Finder and choose *Open*.
+
+For source builds and local dogfooding, build the app from the repository:
+
+#+begin_src sh
+npm ci
+npm run build
+npm run build:macos-app
+open ~/Applications/Org2Workspace.app
+#+end_src
+
+See [[file:editors-macos.org][macOS Workspace]] for the current app surface.
+
+** iOS app
+
+Org2 Mobile is currently distributed as source, not through the App Store or TestFlight.
+
+To install it on a simulator or your own device:
+
+1. Open =apps/ios/Org2Mobile/Org2Mobile.xcodeproj= in Xcode.
+2. Select the =Org2Mobile= app target and choose your Apple development team.
+3. For device builds, enable the =group.org.org2.mobile= App Group for both the app and share extension in the Apple developer portal.
+4. Build and run from Xcode.
+5. In the app, select an iOS Files-visible corpus folder, usually one synced with Syncthing-compatible tooling such as Möbius Sync.
+
+See =apps/ios/Org2Mobile/README.md= for the current sync shape and share-extension notes.
 
 * 2) Start with your existing Org files as compiler input
 

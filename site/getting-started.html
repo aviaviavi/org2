@@ -56,7 +56,9 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>This guide is about getting to a <strong>useful</strong> Org2 setup quickly: point the compiler at notes you already own, then start deriving agendas, graph views, editor features, and published artifacts from the same corpus.</p>
 <section class="org2-headline level-1">
 <h1 id="1-install-org2">1) Install Org2</h1>
-<p>For normal CLI use, install the published package:</p>
+<section class="org2-headline level-2">
+<h2 id="cli">CLI</h2>
+<p>For normal command-line use, install the published package:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm install -g @aviaviavi/org2
 org2 --help
 org2 agenda --help</code></pre>
@@ -71,6 +73,36 @@ npm run build</code></pre>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm run org2 -- --help
 npm run org2 -- agenda --help</code></pre>
 <p>The examples below use <code>org2</code>. If you are running from a checkout instead of a global install, replace <code>org2</code> with <code>npm run org2 --</code>.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="macos-app">macOS app</h2>
+<p>Org2 Workspace is the native macOS app. The easiest install path is the downloadable disk image from GitHub Releases:</p>
+<ol>
+<li><p>Download the latest <code>Org2Workspace.dmg</code> from <a href="https://github.com/aviaviavi/org2/releases">GitHub Releases</a>.</p></li>
+<li><p>Open the disk image and drag <code>Org2Workspace.app</code> into <code>Applications</code>.</p></li>
+<li><p>Open the app from <code>Applications</code> and choose the folder that contains your Org2 or Org corpus.</p></li>
+</ol>
+<p>The initial downloadable disk image is built for Apple Silicon Macs. Current release builds are developer-signed, not notarized. If macOS blocks the first launch, open <strong>System Settings → Privacy &amp; Security</strong> and allow Org2Workspace, or right-click the app in Finder and choose <strong>Open</strong>.</p>
+<p>For source builds and local dogfooding, build the app from the repository:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm ci
+npm run build
+npm run build:macos-app
+open ~/Applications/Org2Workspace.app</code></pre>
+<p>See <a href="editors-macos.html">macOS Workspace</a> for the current app surface.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="ios-app">iOS app</h2>
+<p>Org2 Mobile is currently distributed as source, not through the App Store or TestFlight.</p>
+<p>To install it on a simulator or your own device:</p>
+<ol>
+<li><p>Open <code>apps/ios/Org2Mobile/Org2Mobile.xcodeproj</code> in Xcode.</p></li>
+<li><p>Select the <code>Org2Mobile</code> app target and choose your Apple development team.</p></li>
+<li><p>For device builds, enable the <code>group.org.org2.mobile</code> App Group for both the app and share extension in the Apple developer portal.</p></li>
+<li><p>Build and run from Xcode.</p></li>
+<li><p>In the app, select an iOS Files-visible corpus folder, usually one synced with Syncthing-compatible tooling such as Möbius Sync.</p></li>
+</ol>
+<p>See <code>apps/ios/Org2Mobile/README.md</code> for the current sync shape and share-extension notes.</p>
+</section>
 </section>
 <section class="org2-headline level-1">
 <h1 id="2-start-with-your-existing-org-files-as-compiler-input">2) Start with your existing Org files as compiler input</h1>
