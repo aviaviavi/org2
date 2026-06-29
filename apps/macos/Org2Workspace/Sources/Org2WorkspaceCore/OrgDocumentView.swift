@@ -870,15 +870,8 @@ enum RenderedRowChrome {
 }
 
 enum RenderedBlockEditingPolicy {
-  static func startsEditingOnSingleClick(block: OrgEditableBlock, isSourceEditable: Bool) -> Bool {
-    guard isSourceEditable, block.isEditable else { return false }
-    guard OrgCrypt.armorSummary(block.rawText) == nil else { return false }
-    switch block.rendered {
-    case .blank:
-      return false
-    case .heading, .horizontalRule, .keyword, .listItem, .paragraph, .planning, .properties, .quote, .source, .table:
-      return true
-    }
+  static func startsEditingOnSingleClick(block _: OrgEditableBlock, isSourceEditable _: Bool) -> Bool {
+    false
   }
 }
 
@@ -984,14 +977,9 @@ private struct EditableRenderedBlockView<Content: View>: View {
     if usesRowTapGestures {
       content
         .contentShape(Rectangle())
-        .onTapGesture(count: 1) {
+        .onTapGesture {
           actions.select()
-          if startsEditingOnSingleClick {
-            actions.beginEditing()
-          }
-        }
-        .onTapGesture(count: 2) {
-          if block.isEditable {
+          if RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: block, isSourceEditable: isSourceEditable) {
             actions.beginEditing()
           }
         }
@@ -1158,10 +1146,6 @@ private struct EditableRenderedBlockView<Content: View>: View {
     }
     .fixedSize()
     .frame(width: RenderedRowChrome.controlsReserveWidth, alignment: .trailing)
-  }
-
-  private var startsEditingOnSingleClick: Bool {
-    RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: block, isSourceEditable: isSourceEditable)
   }
 
   private var usesRowTapGestures: Bool {

@@ -549,6 +549,8 @@ private struct NewNoteView: View {
   @EnvironmentObject private var store: CorpusStore
   @State private var title = ""
   @State private var bodyText = ""
+  @State private var schedule: MobileNoteSchedule = .none
+  @State private var customScheduledDate = Date()
   @State private var attachments: [NoteAttachment] = []
   @State private var isPhotoLibraryPresented = false
   @State private var isCameraPresented = false
@@ -585,6 +587,40 @@ private struct NewNoteView: View {
           TextEditor(text: $bodyText)
             .frame(minHeight: 120)
             .focused($focusedField, equals: .body)
+
+          VStack(alignment: .leading, spacing: 10) {
+            Text("Schedule TODO")
+              .font(.caption.weight(.semibold))
+              .foregroundStyle(.secondary)
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 8)], alignment: .leading, spacing: 8) {
+              ForEach(MobileNoteSchedule.allCases) { option in
+                Button {
+                  schedule = option
+                } label: {
+                  Label(option.title, systemImage: option.systemImage)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(schedule == option ? .accentColor : .secondary)
+              }
+            }
+
+            if schedule == .custom {
+              DatePicker(
+                "Date",
+                selection: $customScheduledDate,
+                displayedComponents: .date
+              )
+            } else if let date = scheduledDate {
+              Label(MobileCaptureWriter.orgDayTimestamp(date), systemImage: "calendar")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
+          .padding(.vertical, 4)
 
           if !attachments.isEmpty {
             ForEach(attachments) { attachment in
@@ -623,9 +659,16 @@ private struct NewNoteView: View {
 
           Button {
             Task {
-              await store.saveMobileNote(title: title, body: bodyText, attachments: attachments)
+              await store.saveMobileNote(
+                title: title,
+                body: bodyText,
+                attachments: attachments,
+                scheduledDate: scheduledDate
+              )
               title = ""
               bodyText = ""
+              schedule = .none
+              customScheduledDate = Date()
               attachments = []
               focusedField = nil
             }
@@ -682,6 +725,10 @@ private struct NewNoteView: View {
     let imageData = UIImage(data: data)?.jpegData(compressionQuality: 0.86) ?? data
     let filename = "photo-\(UUID().uuidString.prefix(8)).jpg"
     attachments.append(NoteAttachment(filename: filename, data: imageData))
+  }
+
+  private var scheduledDate: Date? {
+    schedule.scheduledDate(customDate: customScheduledDate)
   }
 }
 

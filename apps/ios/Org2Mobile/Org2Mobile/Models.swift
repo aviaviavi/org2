@@ -116,12 +116,6 @@ struct ApprovalEntry: Identifiable, Hashable, Codable {
   }
 }
 
-struct NoteAttachment: Identifiable, Hashable {
-  let id = UUID()
-  let filename: String
-  let data: Data
-}
-
 enum OpenClawAction: String {
   case discuss
 
@@ -181,7 +175,7 @@ extension String {
 
 extension Date {
   static var org2TodayString: String {
-    org2DayFormatter.string(from: Date())
+    MobileCaptureWriter.orgDayString(Date())
   }
 
   static let org2DayFormatter: DateFormatter = {
