@@ -13,10 +13,10 @@ final class CorpusStore: ObservableObject {
   @Published var statusMessage: String?
   @Published var isDocumentPickerPresented = false
 
-  private let bookmarkKey = "org2.mobile.corpusBookmark"
-  private let cachedRootPathKey = "org2.mobile.cachedRootPath"
-  private let mobileInboxFilename = "mobile-inbox.org2"
-  private let mobileInboxAssetsDirectory = "mobile-inbox-assets"
+  private let bookmarkKey = MobileCaptureWriter.bookmarkKey
+  private let cachedRootPathKey = MobileCaptureWriter.cachedRootPathKey
+  private let mobileInboxFilename = MobileCaptureWriter.mobileInboxFilename
+  private let mobileInboxAssetsDirectory = MobileCaptureWriter.mobileInboxAssetsDirectory
   private let cacheFilename = "org2-mobile-corpus-cache.json"
   private let headingTodoKeywords = Set(OrgTodoStatus.allCases.map(\.rawValue))
   private var cachedFileCount: Int?
@@ -62,7 +62,7 @@ final class CorpusStore: ObservableObject {
       statusMessage = "Corpus ready"
     }
 
-    guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else { return }
+    guard let data = UserDefaults.standard.data(forKey: bookmarkKey) ?? MobileCaptureWriter.sharedDefaults.data(forKey: bookmarkKey) else { return }
     restoreBookmarkedCorpus(data)
   }
 
@@ -197,10 +197,10 @@ final class CorpusStore: ObservableObject {
     }
   }
 
-  func saveMobileNote(title: String, body: String, attachments: [NoteAttachment] = []) async {
+  func saveMobileNote(title: String, body: String, attachments: [NoteAttachment] = [], scheduledDate: Date? = nil) async {
     guard rootURL != nil else { return }
     do {
-      let inboxURL = try appendMobileNote(title: title, body: body, attachments: attachments)
+      let inboxURL = try appendMobileNote(title: title, body: body, attachments: attachments, scheduledDate: scheduledDate)
       statusMessage = "Queued note in \(inboxURL.lastPathComponent)"
     } catch {
       errorMessage = "Could not write to corpus mobile-inbox.org2. Re-select the synced corpus folder and try again."
@@ -303,6 +303,7 @@ final class CorpusStore: ObservableObject {
       let data = try JSONEncoder().encode(cacheSnapshot)
       try data.write(to: cacheURL, options: .atomic)
       UserDefaults.standard.set(cacheSnapshot.rootPath, forKey: cachedRootPathKey)
+      MobileCaptureWriter.sharedDefaults.set(cacheSnapshot.rootPath, forKey: cachedRootPathKey)
     } catch {
       // Cache writes should never block the live corpus view.
     }
@@ -311,6 +312,7 @@ final class CorpusStore: ObservableObject {
   private func setRootURL(_ url: URL) {
     rootURL = url
     UserDefaults.standard.set(Self.cacheRootPath(for: url), forKey: cachedRootPathKey)
+    MobileCaptureWriter.sharedDefaults.set(Self.cacheRootPath(for: url), forKey: cachedRootPathKey)
   }
 
   nonisolated private static func cacheRootPath(for rootURL: URL) -> String {
@@ -532,57 +534,17 @@ final class CorpusStore: ObservableObject {
     try appendMobileInbox(content, attachments: attachments, entryID: entryID, baseURL: try preferredCorpusBaseURL(for: rootURL))
   }
 
-  private func appendMobileNote(title: String, body: String, attachments: [NoteAttachment]) throws -> URL {
+  private func appendMobileNote(title: String, body: String, attachments: [NoteAttachment], scheduledDate: Date?) throws -> URL {
     guard let rootURL else {
       throw CocoaError(.fileNoSuchFile)
     }
-
-    let hasSecurityAccess = rootURL.startAccessingSecurityScopedResource()
-    defer {
-      if hasSecurityAccess {
-        rootURL.stopAccessingSecurityScopedResource()
-      }
-    }
-
-    let baseURL = try preferredCorpusBaseURL(for: rootURL)
-    let createdAt = ISO8601DateFormatter().string(from: Date())
-    let fileStamp = createdAt
-      .replacingOccurrences(of: ":", with: "")
-      .replacingOccurrences(of: "-", with: "")
-      .replacingOccurrences(of: ".", with: "")
-    let entryID = "\(fileStamp)-note-\(UUID().uuidString.prefix(8))"
-    let sanitizedTitle = sanitizeProperty(title)
-    let noteTitle = sanitizedTitle.isEmpty ? "Phone note" : sanitizedTitle
-    let bodyText = body.trimmingCharacters(in: .whitespacesAndNewlines)
-    let attachmentLinks = attachments
-      .map { "- [[file:\(mobileInboxAssetsDirectory)/\(entryID)/\($0.filename)][\($0.filename)]]" }
-      .joined(separator: "\n")
-    let bodySection = bodyText.isEmpty ? "" : """
-
-    \(bodyText)
-    """
-    let attachmentsSection = attachmentLinks.isEmpty ? "" : """
-
-    Attachments:
-    \(attachmentLinks)
-    """
-
-    let content = """
-
-    * \(noteTitle)
-    :PROPERTIES:
-    :ID: mobile-\(entryID)
-    :KIND: mobile-note
-    :STATUS: pending
-    :DAILY_DATE: \(Date.org2TodayString)
-    :CREATED_AT: \(createdAt)
-    :SOURCE: org2-mobile
-    :END:
-    \(bodySection)\(attachmentsSection)
-    """
-
-    try appendMobileInbox(content, attachments: attachments, entryID: entryID, baseURL: baseURL)
-    return baseURL.appending(path: mobileInboxFilename)
+    return try MobileCaptureWriter.appendMobileNote(
+      rootURL: rootURL,
+      title: title,
+      body: body,
+      attachments: attachments,
+      scheduledDate: scheduledDate
+    )
   }
 
   private func approveInCorpus(_ approval: ApprovalEntry) throws -> URL {
@@ -714,6 +676,7 @@ final class CorpusStore: ObservableObject {
   private func saveBookmark(for url: URL) throws {
     let data = try Self.bookmarkData(for: url)
     UserDefaults.standard.set(data, forKey: bookmarkKey)
+    MobileCaptureWriter.saveSharedCorpusAccess(bookmark: data, rootURL: url)
     UserDefaults.standard.synchronize()
   }
 

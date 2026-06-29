@@ -1778,6 +1778,41 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(OpenClawComposerKeyCommand.isNewlineCommand(keyCode: 36, modifiers: [.command, .shift]))
   }
 
+  func testOpenClawComposerDraftSyncMergesExternalDraftChangesWithoutDroppingLocalTyping() {
+    XCTAssertEqual(
+      OpenClawComposerDraftSync.localDraftAfterStoreChange(
+        localDraft: "old",
+        previousStoreDraft: "old",
+        nextStoreDraft: "external"
+      ),
+      "external"
+    )
+    XCTAssertEqual(
+      OpenClawComposerDraftSync.localDraftAfterStoreChange(
+        localDraft: "local edit",
+        previousStoreDraft: "",
+        nextStoreDraft: "Use selected entry as context.\n\n"
+      ),
+      "Use selected entry as context.\n\nlocal edit"
+    )
+    XCTAssertEqual(
+      OpenClawComposerDraftSync.localDraftAfterStoreChange(
+        localDraft: "draft plus local edit",
+        previousStoreDraft: "draft",
+        nextStoreDraft: "Use selected entry as context.\n\ndraft"
+      ),
+      "Use selected entry as context.\n\ndraft plus local edit"
+    )
+    XCTAssertEqual(
+      OpenClawComposerDraftSync.localDraftAfterStoreChange(
+        localDraft: "local edit",
+        previousStoreDraft: "",
+        nextStoreDraft: ""
+      ),
+      ""
+    )
+  }
+
   func testOpenClawVoiceDictationAppendsToDraftBeforeSend() {
     XCTAssertEqual(
       WorkspaceStore.openClawDraftByAppendingDictation(existing: "Existing instruction", dictatedText: "Dictated note"),
@@ -5683,7 +5718,7 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
-  func testRenderedBlockEditingPolicyStartsInlineEditingForRichBlocks() {
+  func testRenderedBlockEditingPolicyDoesNotStartInlineEditingForRichBlocksOnSingleClick() {
     let editableBlocks = [
       OrgEditableBlock(
         id: "heading",
@@ -5719,7 +5754,7 @@ final class Org2ModelsTests: XCTestCase {
     ]
 
     for block in editableBlocks {
-      XCTAssertTrue(
+      XCTAssertFalse(
         RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: block, isSourceEditable: true),
         block.id
       )
@@ -5730,7 +5765,7 @@ final class Org2ModelsTests: XCTestCase {
     }
   }
 
-  func testRenderedBlockEditingPolicyStartsInlineEditingForStructuralBlocks() {
+  func testRenderedBlockEditingPolicyDoesNotStartInlineEditingForStructuralBlocksOnSingleClick() {
     let divider = OrgEditableBlock(
       id: "divider",
       startLine: 1,
@@ -5745,7 +5780,7 @@ final class Org2ModelsTests: XCTestCase {
       rawText: "",
       rendered: .blank
     )
-    XCTAssertTrue(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: divider, isSourceEditable: true))
+    XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: divider, isSourceEditable: true))
     XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: blank, isSourceEditable: true))
     let properties = OrgEditableBlock(
       id: "properties",
@@ -5754,10 +5789,10 @@ final class Org2ModelsTests: XCTestCase {
       rawText: ":PROPERTIES:\n:Owner: Avi\n:END:",
       rendered: .properties([OrgPropertyRow(key: "Owner", value: "Avi")])
     )
-    XCTAssertTrue(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: properties, isSourceEditable: true))
+    XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: properties, isSourceEditable: true))
   }
 
-  func testRenderedBlockEditingPolicyStartsInlineEditingForMediaParagraphs() throws {
+  func testRenderedBlockEditingPolicyDoesNotStartInlineEditingForMediaParagraphsOnSingleClick() throws {
     let embedded = try XCTUnwrap(OrgEntryRenderer.parseEditable(
       "inline images [[file:images/image.png][Image]]"
     ).first)
@@ -5765,8 +5800,8 @@ final class Org2ModelsTests: XCTestCase {
       "[[file:images/image.png][Image]]"
     ).first)
 
-    XCTAssertTrue(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: embedded, isSourceEditable: true))
-    XCTAssertTrue(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: standalone, isSourceEditable: true))
+    XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: embedded, isSourceEditable: true))
+    XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: standalone, isSourceEditable: true))
   }
 
   func testRenderedBlockDisplayPolicyCollapsesBlankButKeepsProperties() {

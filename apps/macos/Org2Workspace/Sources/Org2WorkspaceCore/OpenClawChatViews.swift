@@ -308,7 +308,7 @@ private struct OpenClawChangeDeltaView: View {
 struct OpenClawComposerView: View {
   @EnvironmentObject private var store: WorkspaceStore
   @State private var localDraft = ""
-  @State private var draftSyncTask: Task<Void, Never>?
+  @State private var lastStoreDraft = ""
   let focusOnAppear: Bool
   let compact: Bool
 
@@ -398,6 +398,7 @@ struct OpenClawComposerView: View {
         .help("Attach image")
 
         Button {
+          flushDraftToStore()
           Task { await store.toggleOpenClawVoiceNoteRecording() }
         } label: {
           Label(
@@ -420,17 +421,20 @@ struct OpenClawComposerView: View {
     }
     .onAppear {
       localDraft = store.openClawDraft
+      lastStoreDraft = store.openClawDraft
     }
     .onDisappear {
       flushDraftToStore()
     }
-    .onChange(of: localDraft) {
-      scheduleDraftSync()
-    }
     .onChange(of: store.openClawDraft) { _, newValue in
-      guard newValue != localDraft else { return }
-      draftSyncTask?.cancel()
-      localDraft = newValue
+      let mergedDraft = OpenClawComposerDraftSync.localDraftAfterStoreChange(
+        localDraft: localDraft,
+        previousStoreDraft: lastStoreDraft,
+        nextStoreDraft: newValue
+      )
+      lastStoreDraft = newValue
+      guard mergedDraft != localDraft else { return }
+      localDraft = mergedDraft
     }
   }
 
@@ -442,8 +446,8 @@ struct OpenClawComposerView: View {
   private func sendIfPossible() -> Bool {
     guard canSend else { return false }
     let text = localDraft
-    draftSyncTask?.cancel()
     localDraft = ""
+    lastStoreDraft = ""
     store.openClawDraft = ""
     Task { await store.sendComposedOpenClawMessage(text: text) }
     return true
@@ -454,23 +458,39 @@ struct OpenClawComposerView: View {
     return true
   }
 
-  private func scheduleDraftSync() {
-    draftSyncTask?.cancel()
-    let draft = localDraft
-    draftSyncTask = Task { @MainActor in
-      try? await Task.sleep(nanoseconds: 180_000_000)
-      guard !Task.isCancelled else { return }
-      if store.openClawDraft != draft {
-        store.openClawDraft = draft
-      }
+  private func flushDraftToStore() {
+    if store.openClawDraft != localDraft {
+      lastStoreDraft = localDraft
+      store.openClawDraft = localDraft
+    } else {
+      lastStoreDraft = store.openClawDraft
     }
   }
+}
 
-  private func flushDraftToStore() {
-    draftSyncTask?.cancel()
-    if store.openClawDraft != localDraft {
-      store.openClawDraft = localDraft
+enum OpenClawComposerDraftSync {
+  static func localDraftAfterStoreChange(
+    localDraft: String,
+    previousStoreDraft: String,
+    nextStoreDraft: String
+  ) -> String {
+    guard nextStoreDraft != localDraft else { return localDraft }
+    guard localDraft != previousStoreDraft else { return nextStoreDraft }
+    guard !nextStoreDraft.isEmpty else { return "" }
+    guard !localDraft.isEmpty else { return nextStoreDraft }
+
+    if nextStoreDraft.contains(localDraft) {
+      return nextStoreDraft
     }
+
+    if !previousStoreDraft.isEmpty,
+       let range = nextStoreDraft.range(of: previousStoreDraft) {
+      var merged = nextStoreDraft
+      merged.replaceSubrange(range, with: localDraft)
+      return merged
+    }
+
+    return nextStoreDraft + localDraft
   }
 }
 
