@@ -830,6 +830,13 @@ private struct HeadingActionsContextMenu: View {
     } label: {
       Label("Approve & Hand Off", systemImage: "checkmark.seal")
     }
+
+    Button {
+      select()
+      store.promptAndApplyRejectApprovalShortcut(to: location)
+    } label: {
+      Label("Reject", systemImage: "xmark.octagon")
+    }
   }
 
   private func todoButton(_ title: String, status: TodoEditStatus) -> some View {
@@ -1898,6 +1905,12 @@ private struct AgendaBulkActionBar: View {
         Task { await store.applyApproveAndAgentHandoffShortcut() }
       } label: {
         Label("Approve & Hand Off", systemImage: "checkmark.seal")
+      }
+
+      Button {
+        store.promptAndApplyRejectApprovalShortcut()
+      } label: {
+        Label("Reject", systemImage: "xmark.octagon")
       }
 
       Button {
@@ -4142,6 +4155,12 @@ private struct DetailHeader: View {
         Task { await store.applyApproveAndAgentHandoffShortcut() }
       } label: {
         Label("Approve & Hand Off", systemImage: "checkmark.seal")
+      }
+
+      Button {
+        store.promptAndApplyRejectApprovalShortcut()
+      } label: {
+        Label("Reject", systemImage: "xmark.octagon")
       }
 
       Button {

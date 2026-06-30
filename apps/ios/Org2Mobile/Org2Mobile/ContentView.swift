@@ -226,6 +226,7 @@ private struct ApprovalsView: View {
   @State private var selected: ApprovalEntry?
   @State private var shareText: String?
   @State private var approvingID: ApprovalEntry.ID?
+  @State private var rejection: ApprovalEntry?
 
   var body: some View {
     NavigationStack {
@@ -243,6 +244,13 @@ private struct ApprovalsView: View {
             Label(approvingID == item.id ? "Approving" : "Approve", systemImage: approvingID == item.id ? "hourglass" : "checkmark")
           }
           .tint(.green)
+          .disabled(approvingID != nil)
+
+          Button(role: .destructive) {
+            rejection = item
+          } label: {
+            Label("Reject", systemImage: "xmark")
+          }
           .disabled(approvingID != nil)
         }
         .swipeActions(edge: .trailing) {
@@ -283,10 +291,14 @@ private struct ApprovalsView: View {
         ApprovalDetailView(
           item: item,
           isApproving: approvingID == item.id,
-          approve: { await approve(item) }
+          approve: { await approve(item) },
+          onReject: { rejection = item }
         ) { text in
           shareText = text
         }
+      }
+      .sheet(item: $rejection) { item in
+        RejectApprovalView(item: item)
       }
       .sheet(item: Binding(
         get: { shareText.map(SharePayload.init(text:)) },
@@ -358,6 +370,7 @@ private struct ApprovalDetailView: View {
   let item: ApprovalEntry
   let isApproving: Bool
   let approve: () async -> Void
+  let onReject: () -> Void
   let fallbackShare: (String) -> Void
   @State private var message: String = ""
 
@@ -430,6 +443,14 @@ private struct ApprovalDetailView: View {
           .buttonStyle(.borderedProminent)
           .disabled(isApproving)
 
+          Button(role: .destructive) {
+            dismiss()
+            onReject()
+          } label: {
+            Label("Reject", systemImage: "xmark.octagon")
+              .frame(maxWidth: .infinity)
+          }
+
           Button {
             openWhatsApp(text: item.whatsappText) {
               fallbackShare(item.whatsappText)
@@ -485,6 +506,65 @@ private struct ApprovalDetailView: View {
   private var sortedProperties: [(key: String, value: String)] {
     item.properties.sorted {
       $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending
+    }
+  }
+}
+
+private struct RejectApprovalView: View {
+  @Environment(\.dismiss) private var dismiss
+  @EnvironmentObject private var store: CorpusStore
+  let item: ApprovalEntry
+  @State private var endStatus: OrgTodoStatus = .canceled
+  @State private var reason = ""
+
+  var body: some View {
+    NavigationStack {
+      Form {
+        Section {
+          Text(item.title.prettyPrintedOrgLinks())
+            .font(.headline)
+          Text(item.sourceLabel)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+        }
+
+        Section("End Status") {
+          Picker("End Status", selection: $endStatus) {
+            Text("Canceled").tag(OrgTodoStatus.canceled)
+            Text("Done").tag(OrgTodoStatus.done)
+          }
+          .pickerStyle(.segmented)
+        }
+
+        Section("Reason") {
+          TextEditor(text: $reason)
+            .frame(minHeight: 120)
+        }
+
+        Section {
+          Button(role: .destructive) {
+            Task {
+              await store.reject(item, endStatus: endStatus, reason: reason)
+              dismiss()
+            }
+          } label: {
+            Label("Reject", systemImage: "xmark.octagon")
+              .frame(maxWidth: .infinity)
+          }
+          .disabled(reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+      }
+      .navigationTitle("Reject Approval")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") {
+            dismiss()
+          }
+        }
+      }
     }
   }
 }

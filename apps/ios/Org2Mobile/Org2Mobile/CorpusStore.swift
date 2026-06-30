@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import UserNotifications
 
 @MainActor
 final class CorpusStore: ObservableObject {
@@ -148,6 +149,7 @@ final class CorpusStore: ObservableObject {
         agenda = snapshot.agenda
         approvals = snapshot.approvals
       }
+      scheduleDueTodayNotification(from: snapshot.agenda)
 
       let fileStatus = snapshot.documents.count == 1 ? "1 file" : "\(snapshot.documents.count) files"
       statusMessage = snapshot.skipped.isEmpty ? fileStatus : "\(fileStatus), \(snapshot.skipped.count) skipped"
@@ -183,6 +185,17 @@ final class CorpusStore: ObservableObject {
       await refresh(priority: .userInitiated, showsLoading: false)
     } catch {
       errorMessage = "Could not approve this item in the corpus. Re-select the synced corpus folder and try again."
+    }
+  }
+
+  func reject(_ approval: ApprovalEntry, endStatus: OrgTodoStatus, reason: String) async {
+    guard rootURL != nil else { return }
+    do {
+      let url = try rejectInCorpus(approval, endStatus: endStatus, reason: reason)
+      statusMessage = "Rejected \(url.lastPathComponent)"
+      await refresh()
+    } catch {
+      errorMessage = "Could not reject this item in the corpus. Re-select the synced corpus folder and try again."
     }
   }
 
@@ -591,6 +604,36 @@ final class CorpusStore: ObservableObject {
     return url
   }
 
+  private func rejectInCorpus(_ approval: ApprovalEntry, endStatus: OrgTodoStatus, reason: String) throws -> URL {
+    guard let rootURL else {
+      throw CocoaError(.fileNoSuchFile)
+    }
+
+    let hasSecurityAccess = rootURL.startAccessingSecurityScopedResource()
+    defer {
+      if hasSecurityAccess {
+        rootURL.stopAccessingSecurityScopedResource()
+      }
+    }
+
+    let url = try corpusFileURL(for: approval.file, rootURL: rootURL)
+    let raw = try String(contentsOf: url, encoding: .utf8)
+    var lines = raw.components(separatedBy: .newlines)
+    guard let headingIndex = headingIndex(in: lines, matching: approval) else {
+      throw CocoaError(.fileNoSuchFile)
+    }
+
+    lines[headingIndex] = headingLine(lines[headingIndex], settingTodo: endStatus.rawValue)
+    upsertRejectionProperties(in: &lines, headingIndex: headingIndex, approval: approval, endStatus: endStatus, reason: reason)
+
+    var output = lines.joined(separator: "\n")
+    if raw.hasSuffix("\n"), !output.hasSuffix("\n") {
+      output += "\n"
+    }
+    try output.write(to: url, atomically: true, encoding: .utf8)
+    return url
+  }
+
   private func setTodoStatusInCorpus(_ status: OrgTodoStatus, for entry: AgendaEntry) throws -> URL {
     guard let rootURL else {
       throw CocoaError(.fileNoSuchFile)
@@ -851,6 +894,71 @@ final class CorpusStore: ObservableObject {
       upsertProperties([pairedKey: pairedSendTitle], in: &replacementLines, headingIndex: 0)
     }
     return ScopedLineReplacement(range: range, lines: replacementLines)
+  }
+
+  private func upsertRejectionProperties(
+    in lines: inout [String],
+    headingIndex: Int,
+    approval: ApprovalEntry,
+    endStatus: OrgTodoStatus,
+    reason: String
+  ) {
+    var properties: [String: String] = [
+      "STATUS": "rejected",
+      "REJECTED_AT": orgTimestamp(Date()),
+      "REJECTION_END_STATUS": endStatus.rawValue,
+      "REJECTION_REASON": sanitizeProperty(reason),
+    ]
+
+    for key in [
+      "ORG2_REVIEW_STATUS",
+      "REVIEW_STATUS",
+      "REVIEW",
+      "FOLLOWUP_STATUS",
+      "REPLY_STATUS",
+      "ACCESS_POLICY",
+      "REVIEW_POLICY",
+    ] where approval.properties[key] != nil {
+      properties[key] = "rejected"
+    }
+
+    upsertProperties(properties, in: &lines, headingIndex: headingIndex)
+  }
+
+  private func scheduleDueTodayNotification(from agenda: [AgendaEntry]) {
+    let dueToday = agenda.filter { $0.date == Date.org2TodayString && !$0.todo.uppercased().hasPrefix("DONE") && !$0.todo.uppercased().hasPrefix("CANCEL") }
+    Task.detached {
+      let center = UNUserNotificationCenter.current()
+      let settings = await center.notificationSettings()
+      if settings.authorizationStatus == .notDetermined {
+        _ = try? await center.requestAuthorization(options: [.alert, .badge, .sound])
+      }
+      let refreshedSettings = await center.notificationSettings()
+      guard refreshedSettings.authorizationStatus == .authorized || refreshedSettings.authorizationStatus == .provisional else { return }
+
+      center.removePendingNotificationRequests(withIdentifiers: ["org2.due-today.daily"])
+      guard !dueToday.isEmpty else { return }
+
+      let content = UNMutableNotificationContent()
+      content.title = "Org2 due today"
+      content.body = Self.dueTodayNotificationBody(for: dueToday)
+      content.sound = .default
+      content.badge = NSNumber(value: dueToday.count)
+
+      var date = DateComponents()
+      date.hour = 8
+      date.minute = 0
+      let trigger = UNCalendarNotificationTrigger(dateMatching: date, repeats: true)
+      let request = UNNotificationRequest(identifier: "org2.due-today.daily", content: content, trigger: trigger)
+      try? await center.add(request)
+    }
+  }
+
+  nonisolated private static func dueTodayNotificationBody(for entries: [AgendaEntry]) -> String {
+    let titles = entries.prefix(3).map { $0.title.prettyPrintedOrgLinks() }
+    let remaining = entries.count - titles.count
+    let suffix = remaining > 0 ? " and \(remaining) more" : ""
+    return "\(entries.count) item\(entries.count == 1 ? "" : "s"): \(titles.joined(separator: ", "))\(suffix)"
   }
 
   private func pairedSendReplacement(

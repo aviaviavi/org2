@@ -7859,6 +7859,56 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testRejectApprovalRecordsEndStatusAndReason() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-reject-approval-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("reject-approval.org2")
+    try """
+    * TODO Approve reply to Maya / Oracle supplier onboarding details
+    SCHEDULED: <2026-06-16 Tue>
+    :PROPERTIES:
+    :ASSIGNEE: Avi
+    :STATUS: draft-needs-review
+    :END:
+
+    Draft body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Approve reply to Maya / Oracle supplier onboarding details",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 1,
+      "body": "Draft body",
+      "level": 1,
+      "tags": [],
+      "properties": {
+        "ASSIGNEE": "Avi",
+        "STATUS": "draft-needs-review"
+      }
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+
+    await store.applyRejectApprovalShortcut(endStatus: .canceled, reason: "Not the right reply\nneeds a rewrite")
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertNil(store.errorText, store.statusText)
+    XCTAssertTrue(updated.contains("* CANCELED Approve reply to Maya / Oracle supplier onboarding details"))
+    XCTAssertTrue(updated.contains(":STATUS: rejected"))
+    XCTAssertTrue(updated.contains(":REJECTED_AT: <"))
+    XCTAssertTrue(updated.contains(":REJECTION_END_STATUS: CANCELED"))
+    XCTAssertTrue(updated.contains(":REJECTION_REASON: Not the right reply needs a rewrite"))
+  }
+
+  @MainActor
   func testPriorityAndPropertyShortcutsUpdateTempNote() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-priority-\(UUID().uuidString)", isDirectory: true)
