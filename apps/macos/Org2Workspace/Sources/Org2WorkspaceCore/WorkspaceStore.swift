@@ -391,6 +391,11 @@ private struct ApprovedAgentActionResult {
   let created: Bool
 }
 
+private struct ApprovalRejectionChoice {
+  let endStatus: TodoEditStatus
+  let reason: String
+}
+
 struct RecoverableMeetingRecording: Sendable {
   let paths: MeetingArtifactPaths
   let duration: TimeInterval?
@@ -7655,6 +7660,40 @@ public final class WorkspaceStore: ObservableObject {
     await approveAndAgentHandoff(target)
   }
 
+  public func applyRejectApprovalShortcut(endStatus: TodoEditStatus, reason: String) async {
+    guard let target = selectedHeadlineMutationTarget else {
+      statusText = "Select an approval TODO first"
+      return
+    }
+    await rejectApproval(target, endStatus: endStatus, reason: reason)
+  }
+
+  public func applyRejectApprovalShortcut(endStatus: TodoEditStatus, reason: String, to location: WorkspaceLocation) async {
+    guard let target = headlineMutationTarget(for: location) else {
+      statusText = "Select an approval TODO first"
+      return
+    }
+    await rejectApproval(target, endStatus: endStatus, reason: reason)
+  }
+
+  public func promptAndApplyRejectApprovalShortcut() {
+    guard selectedHeadlineMutationTarget != nil else {
+      statusText = "Select an approval TODO first"
+      return
+    }
+    guard let rejection = Self.promptForApprovalRejection() else { return }
+    Task { await applyRejectApprovalShortcut(endStatus: rejection.endStatus, reason: rejection.reason) }
+  }
+
+  public func promptAndApplyRejectApprovalShortcut(to location: WorkspaceLocation) {
+    guard headlineMutationTarget(for: location) != nil else {
+      statusText = "Select an approval TODO first"
+      return
+    }
+    guard let rejection = Self.promptForApprovalRejection() else { return }
+    Task { await applyRejectApprovalShortcut(endStatus: rejection.endStatus, reason: rejection.reason, to: location) }
+  }
+
   private func approveAndAgentHandoff(_ target: HeadlineMutationTarget) async {
     let originalVisibleIndex = target.agendaItemID.flatMap { id in
       visibleAgendaItems.firstIndex(where: { $0.id == id })
@@ -7798,6 +7837,42 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     return target
+  }
+
+  private func rejectApproval(_ target: HeadlineMutationTarget, endStatus: TodoEditStatus, reason: String) async {
+    let originalVisibleIndex = target.agendaItemID.flatMap { id in
+      visibleAgendaItems.firstIndex(where: { $0.id == id })
+    }
+    let timestamp = Self.orgTimestamp(Date())
+
+    do {
+      let approvalIdentity = try approvalMutationIdentity(for: target)
+      try await setTodoStatus(endStatus, for: target)
+      let currentTarget = try refreshedApprovalMutationTarget(
+        original: target,
+        identity: approvalIdentity
+      )
+      try upsertHeadlineProperties(
+        file: currentTarget.file,
+        line: currentTarget.line,
+        properties: [
+          "STATUS": "rejected",
+          "REJECTED_AT": timestamp,
+          "REJECTION_END_STATUS": endStatus.label,
+          "REJECTION_REASON": Self.sanitizeOrgPropertyValue(reason)
+        ]
+      )
+      await refreshAfterHeadlineMutation(target)
+      preserveAgendaSelectionAfterTodoMutation(
+        target: target,
+        originalVisibleIndex: originalVisibleIndex,
+        shouldAdvanceSelection: true
+      )
+      statusText = "Rejected -> \(target.title)"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Reject approval failed"
+    }
   }
 
   private func activateApprovedAgentAction(
@@ -11653,6 +11728,47 @@ public final class WorkspaceStore: ObservableObject {
       .split(whereSeparator: { $0.isWhitespace })
       .joined(separator: " ")
       .lowercased()
+  }
+
+  nonisolated private static func sanitizeOrgPropertyValue(_ value: String) -> String {
+    value
+      .replacingOccurrences(of: "\n", with: " ")
+      .replacingOccurrences(of: "\r", with: " ")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  @MainActor
+  private static func promptForApprovalRejection() -> ApprovalRejectionChoice? {
+    let alert = NSAlert()
+    alert.messageText = "Reject Approval"
+    alert.informativeText = "Choose the final TODO state and record why this approval was rejected."
+    alert.addButton(withTitle: "Reject")
+    alert.addButton(withTitle: "Cancel")
+
+    let stack = NSStackView()
+    stack.orientation = .vertical
+    stack.spacing = 8
+    stack.translatesAutoresizingMaskIntoConstraints = false
+
+    let statusPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    statusPopup.addItem(withTitle: "Canceled")
+    statusPopup.addItem(withTitle: "Done")
+
+    let reasonField = NSTextField()
+    reasonField.placeholderString = "Reason"
+    reasonField.lineBreakMode = .byWordWrapping
+    reasonField.maximumNumberOfLines = 4
+
+    stack.addArrangedSubview(statusPopup)
+    stack.addArrangedSubview(reasonField)
+    stack.widthAnchor.constraint(equalToConstant: 360).isActive = true
+    alert.accessoryView = stack
+
+    guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+    let reason = reasonField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !reason.isEmpty else { return nil }
+    let status: TodoEditStatus = statusPopup.indexOfSelectedItem == 1 ? .done : .canceled
+    return ApprovalRejectionChoice(endStatus: status, reason: reason)
   }
 
   nonisolated private static func scanPropertyDrawer(lines: [String], afterHeadingIndex headingIndex: Int) -> [String: String] {
