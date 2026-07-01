@@ -1044,6 +1044,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func refreshWorkspace() async {
+    refreshAudioSettingsStatus(preserveStatusText: true)
     await refreshAgenda()
     await refreshMeetings()
     await refreshCorpusFiles()
@@ -11797,24 +11798,44 @@ public final class WorkspaceStore: ObservableObject {
     alert.addButton(withTitle: "Reject")
     alert.addButton(withTitle: "Cancel")
 
+    let accessoryView = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 124))
+
     let stack = NSStackView()
     stack.orientation = .vertical
-    stack.spacing = 8
+    stack.alignment = .leading
+    stack.spacing = 10
     stack.translatesAutoresizingMaskIntoConstraints = false
+
+    let statusLabel = NSTextField(labelWithString: "Final TODO state")
+    statusLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+    statusLabel.textColor = .secondaryLabelColor
 
     let statusPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     statusPopup.addItem(withTitle: "Canceled")
     statusPopup.addItem(withTitle: "Done")
+    statusPopup.translatesAutoresizingMaskIntoConstraints = false
 
     let reasonField = NSTextField()
     reasonField.placeholderString = "Reason"
+    reasonField.translatesAutoresizingMaskIntoConstraints = false
     reasonField.lineBreakMode = .byWordWrapping
     reasonField.maximumNumberOfLines = 4
 
+    accessoryView.addSubview(stack)
+    stack.addArrangedSubview(statusLabel)
     stack.addArrangedSubview(statusPopup)
     stack.addArrangedSubview(reasonField)
-    stack.widthAnchor.constraint(equalToConstant: 360).isActive = true
-    alert.accessoryView = stack
+    NSLayoutConstraint.activate([
+      stack.leadingAnchor.constraint(equalTo: accessoryView.leadingAnchor),
+      stack.trailingAnchor.constraint(equalTo: accessoryView.trailingAnchor),
+      stack.topAnchor.constraint(equalTo: accessoryView.topAnchor),
+      stack.bottomAnchor.constraint(equalTo: accessoryView.bottomAnchor),
+      statusPopup.widthAnchor.constraint(equalTo: stack.widthAnchor),
+      statusPopup.heightAnchor.constraint(equalToConstant: 28),
+      reasonField.widthAnchor.constraint(equalTo: stack.widthAnchor),
+      reasonField.heightAnchor.constraint(equalToConstant: 50),
+    ])
+    alert.accessoryView = accessoryView
 
     guard alert.runModal() == .alertFirstButtonReturn else { return nil }
     let reason = reasonField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)

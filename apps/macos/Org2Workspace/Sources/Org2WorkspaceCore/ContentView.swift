@@ -571,13 +571,6 @@ private struct FilesView: View {
         } label: {
           Label("Quick Open", systemImage: "command")
         }
-
-        Button {
-          Task { await store.refreshCorpusFiles() }
-        } label: {
-          Label("Refresh", systemImage: "arrow.clockwise")
-        }
-        .disabled(store.corpusRoot == nil || store.isScanningCorpusFiles)
       }
 
       HStack(spacing: 8) {
@@ -1500,11 +1493,6 @@ private struct ApprovalsView: View {
           ProgressView()
             .controlSize(.small)
         }
-        Button {
-          Task { await store.refreshApprovals(updatesStatus: true) }
-        } label: {
-          Label("Refresh", systemImage: "arrow.clockwise")
-        }
       }
 
       ApprovalControls(filterFocused: $filterFocused)
@@ -1678,6 +1666,14 @@ private struct ApprovalRow: View {
           discuss()
         } label: {
           Label("Discuss", systemImage: "paperplane")
+        }
+        .buttonStyle(WorkspaceActionButtonStyle())
+
+        Button {
+          store.selectApprovalItem(item)
+          store.promptAndApplyRejectApprovalShortcut(to: .agenda(item.agendaItem()))
+        } label: {
+          Label("Reject", systemImage: "xmark.octagon")
         }
         .buttonStyle(WorkspaceActionButtonStyle())
 
@@ -2498,13 +2494,6 @@ private struct MeetingsView: View {
           Label("Import", systemImage: "tray.and.arrow.down")
         }
         .disabled(store.corpusRoot == nil || store.isRecordingMeeting || store.isProcessingMeeting)
-
-        Button {
-          Task { await store.refreshMeetings() }
-        } label: {
-          Label("Refresh", systemImage: "arrow.clockwise")
-        }
-        .disabled(store.corpusRoot == nil || store.isLoadingMeetings)
       }
 
       VStack(alignment: .leading, spacing: 8) {
@@ -2690,12 +2679,6 @@ private struct AudioSettingsSection: View {
 
   private var audioSettingsActions: some View {
     HStack(spacing: 8) {
-      Button {
-        store.refreshAudioSettingsStatus()
-      } label: {
-        Label("Refresh", systemImage: "arrow.clockwise")
-      }
-
       Button {
         Task { await store.installFastMeetingTranscriber() }
       } label: {
