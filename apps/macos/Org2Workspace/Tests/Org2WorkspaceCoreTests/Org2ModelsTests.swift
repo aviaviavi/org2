@@ -7474,6 +7474,43 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(args.contains("--default-recipient-self\n"))
   }
 
+  func testOrgCryptUsesExplicitRecipientWhenDefaultGPGKeyIsUnavailable() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-crypt-explicit-recipient-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("secrets.org2")
+    let argsLog = root.appendingPathComponent("gpg-args.txt")
+    let fakeGPG = root.appendingPathComponent("fake-gpg.sh")
+    try """
+    #!/bin/sh
+    printf '%s\\n' "$@" > "\(argsLog.path)"
+    cat >/dev/null
+    printf '%s\\n' '-----BEGIN PGP MESSAGE-----' 'fake encrypted payload' '-----END PGP MESSAGE-----'
+    exit 0
+    """.write(to: fakeGPG, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeGPG.path)
+
+    let text = """
+    * Secret :crypt:
+    plaintext
+    """
+    let settings = OrgCryptSettings(
+      recipients: ["person@example.com"],
+      gpgProgram: fakeGPG.path,
+      gpgTimeout: 2,
+      useDefaultGpgKey: true
+    )
+
+    let result = try OrgCrypt.encryptPlaintextCryptSubtrees(in: text, file: note.path, settings: settings)
+
+    XCTAssertEqual(result.encryptedCount, 1)
+    XCTAssertTrue(result.text.contains("fake encrypted payload"))
+    let args = try String(contentsOf: argsLog, encoding: .utf8)
+    XCTAssertTrue(args.contains("--encrypt\n"))
+    XCTAssertTrue(args.contains("--recipient\nperson@example.com\n"))
+    XCTAssertFalse(args.contains("--recipient\nself-key\n"))
+  }
+
   func testCanonicalEditableRenderCoalescesSplitPGPArmorBlocks() throws {
     let raw = """
     * Secret :crypt:

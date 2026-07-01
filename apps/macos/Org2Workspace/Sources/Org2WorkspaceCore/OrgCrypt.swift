@@ -238,7 +238,10 @@ public enum OrgCrypt {
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
 
     let defaultRecipient = settings.useDefaultGpgKey ? resolveDefaultGPGRecipient(gpgProgram: settings.gpgProgram) : nil
-    if settings.useDefaultGpgKey, defaultRecipient == nil {
+    if settings.useDefaultGpgKey,
+       defaultRecipient == nil,
+       settings.recipients.isEmpty,
+       settings.recipientFiles.isEmpty {
       throw OrgCryptError.gpgFailed("GPG default key is not configured as an encryption recipient.")
     }
 
