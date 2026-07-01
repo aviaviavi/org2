@@ -16,12 +16,9 @@ public struct ContentView: View {
     .toolbar {
       ToolbarItemGroup {
         Button {
-          store.toggleOpenClawAssistantPanel()
+          store.makeSurfacePrimary(.openClaw)
         } label: {
-          Label(
-            store.isOpenClawAssistantPresented ? "Hide OpenClaw" : "Show OpenClaw",
-            systemImage: store.isOpenClawAssistantPresented ? "sidebar.right" : "sidebar.trailing"
-          )
+          Label("Open OpenClaw", systemImage: "bubble.left.and.sparkles")
         }
 
         Button {
@@ -72,13 +69,9 @@ private struct WorkspaceMainArea: View {
   @EnvironmentObject private var store: WorkspaceStore
 
   var body: some View {
-    if let expanded = store.expandedWorkspaceSurface {
-      WorkspaceSurfaceCacheView(selectedSurface: expanded)
-    } else if store.isWorkspaceDetailPaneExpanded {
+    if store.isWorkspaceSurfacePaneClosed && store.hasWorkspaceDetailContent {
       WorkspaceDetailArea()
-    } else if store.isWorkspaceSurfacePaneClosed {
-      WorkspaceDetailArea()
-    } else if store.isWorkspaceDetailPaneClosed {
+    } else if store.isWorkspaceDetailPaneClosed || !store.hasWorkspaceDetailContent {
       WorkspaceSurfaceCacheView(selectedSurface: store.selectedSurface)
     } else {
       HSplitView {
@@ -195,20 +188,8 @@ private struct HomeView: View {
 }
 
 private struct WorkspaceDetailArea: View {
-  @EnvironmentObject private var store: WorkspaceStore
-
   var body: some View {
-    if store.isOpenClawAssistantPresented && store.selectedSurface != .openClaw {
-      HSplitView {
-        DetailView()
-          .frame(minWidth: 520, idealWidth: 740)
-
-        OpenClawChatView(presentation: .assistantPanel)
-          .frame(minWidth: 340, idealWidth: 400, maxWidth: 520)
-      }
-    } else {
-      DetailView()
-    }
+    DetailView()
   }
 }
 
@@ -1154,10 +1135,7 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "⌘5", action: "Meetings"),
             ShortcutHelpItem(keys: "⌘6", action: "OpenClaw Chat"),
             ShortcutHelpItem(keys: "⌘P / ⌘K", action: "Quick Open"),
-            ShortcutHelpItem(keys: "⌘0", action: "Toggle OpenClaw side panel"),
-            ShortcutHelpItem(keys: "⌘⌥P", action: "Make current pane primary"),
-            ShortcutHelpItem(keys: "⌘⌥F", action: "Expand or restore current pane"),
-            ShortcutHelpItem(keys: "⌘⌥W", action: "Close current pane"),
+            ShortcutHelpItem(keys: "⌘0", action: "Open OpenClaw Chat"),
             ShortcutHelpItem(keys: "⌘? / ⌘/", action: "Show shortcuts")
           ])
 
@@ -2962,7 +2940,7 @@ private struct OpenClawChatView: View {
           Label("Make Primary", systemImage: "rectangle.split.2x1")
         }
         .labelStyle(.iconOnly)
-        .help("Make OpenClaw Chat primary (⌘⌥P)")
+        .help("Open OpenClaw Chat")
 
         Button {
           store.expandSurface(.openClaw)
@@ -2970,7 +2948,7 @@ private struct OpenClawChatView: View {
           Label("Expand", systemImage: "arrow.up.left.and.arrow.down.right")
         }
         .labelStyle(.iconOnly)
-        .help("Expand OpenClaw Chat (⌘⌥F)")
+        .help("Show only OpenClaw Chat")
 
         Button {
           store.closeSurfacePane(.openClaw)
@@ -2978,7 +2956,7 @@ private struct OpenClawChatView: View {
           Label("Close", systemImage: "xmark")
         }
         .labelStyle(.iconOnly)
-        .help("Close OpenClaw panel (⌘⌥W)")
+        .help("Close OpenClaw Chat")
       }
       .padding(.horizontal, 12)
       .padding(.vertical, 10)
@@ -3711,7 +3689,7 @@ private struct DetailView: View {
       if let location = store.selectedLocation {
         DetailHeader(location: location)
         Divider()
-        HSplitView {
+        VStack(spacing: 0) {
           ScrollViewReader { proxy in
             ScrollView {
               EntryBodyView(location: location)
@@ -3721,11 +3699,12 @@ private struct DetailView: View {
               scrollToBlockTarget(request, proxy: proxy)
             }
           }
-          .frame(minWidth: 420, idealWidth: 560)
+          .frame(minWidth: 420, idealWidth: 560, maxHeight: .infinity)
 
           if store.isNodeContextPanePresented {
+            Divider()
             NodeContextPane()
-              .frame(minWidth: 280, idealWidth: 340, maxWidth: 440)
+              .frame(minWidth: 280, idealHeight: 260, maxHeight: 360)
           }
         }
       } else {
@@ -4987,52 +4966,6 @@ private struct HeaderBar<Trailing: View>: View {
           .labelStyle(.titleAndIcon)
       }
 
-      if let surface {
-        if !compact {
-          Divider()
-            .frame(height: 18)
-        }
-        PaneControlGroup(surface: surface, compact: compact)
-      }
-    }
-  }
-}
-
-private struct PaneControlGroup: View {
-  @EnvironmentObject private var store: WorkspaceStore
-  let surface: WorkspaceSurface
-  var compact = false
-
-  var body: some View {
-    HStack(spacing: compact ? 4 : 6) {
-      Button {
-        store.makeSurfacePrimary(surface)
-      } label: {
-        Label("Make Primary", systemImage: "rectangle.split.2x1")
-      }
-      .labelStyle(.iconOnly)
-      .help("Make \(surface.title) primary (⌘⌥P)")
-
-      Button {
-        store.toggleExpandedSurface(surface)
-      } label: {
-        Label(
-          store.expandedWorkspaceSurface == surface ? "Restore" : "Expand",
-          systemImage: store.expandedWorkspaceSurface == surface
-            ? "arrow.down.right.and.arrow.up.left"
-            : "arrow.up.left.and.arrow.down.right"
-        )
-      }
-      .labelStyle(.iconOnly)
-      .help(store.expandedWorkspaceSurface == surface ? "Restore pane (⌘⌥F)" : "Expand pane (⌘⌥F)")
-
-      Button {
-        store.closeSurfacePane(surface)
-      } label: {
-        Label("Close", systemImage: "xmark")
-      }
-      .labelStyle(.iconOnly)
-      .help("Close \(surface.title) pane (⌘⌥W)")
     }
   }
 }
@@ -5043,25 +4976,17 @@ private struct DetailPaneControlGroup: View {
   var body: some View {
     HStack(spacing: 6) {
       Button {
-        store.makeDetailPanePrimary()
-      } label: {
-        Label("Make Document Primary", systemImage: "rectangle.split.2x1")
-      }
-      .labelStyle(.iconOnly)
-      .help("Make document primary")
-
-      Button {
         store.toggleDetailPaneExpansion()
       } label: {
         Label(
-          store.isWorkspaceDetailPaneExpanded || store.isWorkspaceSurfacePaneClosed ? "Restore Document" : "Expand Document",
-          systemImage: store.isWorkspaceDetailPaneExpanded || store.isWorkspaceSurfacePaneClosed
+          store.isWorkspaceSurfacePaneClosed ? "Restore Document" : "Expand Document",
+          systemImage: store.isWorkspaceSurfacePaneClosed
             ? "arrow.down.right.and.arrow.up.left"
             : "arrow.up.left.and.arrow.down.right"
         )
       }
       .labelStyle(.iconOnly)
-      .help(store.isWorkspaceDetailPaneExpanded || store.isWorkspaceSurfacePaneClosed ? "Restore document pane" : "Expand document pane")
+      .help(store.isWorkspaceSurfacePaneClosed ? "Restore document pane" : "Expand document pane")
 
       Button {
         store.closeDetailPane()

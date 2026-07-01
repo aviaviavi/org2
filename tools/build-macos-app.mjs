@@ -21,6 +21,7 @@ const appPath = resolve(
   process.env.ORG2_WORKSPACE_APP_PATH ?? join(homedir(), "Applications", "Org2Workspace.app")
 );
 const bundleIdentifier = process.env.ORG2_WORKSPACE_BUNDLE_ID ?? "org.org2.workspace";
+const requestedSigningIdentity = process.env.ORG2_WORKSPACE_CODE_SIGN_IDENTITY?.trim();
 const executableName = "Org2Workspace";
 const swiftBuildArch = process.env.ORG2_WORKSPACE_SWIFT_ARCH ?? defaultSwiftBuildArch();
 
@@ -52,6 +53,46 @@ function defaultSwiftBuildArch() {
 
 function swiftBuildArgs(...args) {
   return swiftBuildArch ? [...args, "--arch", swiftBuildArch] : args;
+}
+
+function availableCodeSigningIdentities() {
+  if (process.platform !== "darwin") {
+    return [];
+  }
+  const result = spawnSync("security", ["find-identity", "-v", "-p", "codesigning"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  if (result.status !== 0) {
+    return [];
+  }
+  return result.stdout
+    .split(/\n/)
+    .map((line) => {
+      const match = line.match(/^\s*\d+\)\s+[A-Fa-f0-9]+\s+"([^"]+)"/);
+      return match?.[1];
+    })
+    .filter(Boolean);
+}
+
+function defaultCodeSigningIdentity() {
+  const identities = availableCodeSigningIdentities();
+  return (
+    identities.find((identity) => identity.startsWith("Apple Development:"))
+    ?? identities.find((identity) => identity.startsWith("Developer ID Application:"))
+    ?? identities[0]
+    ?? "-"
+  );
+}
+
+function codeSigningIdentity() {
+  if (!requestedSigningIdentity) {
+    return defaultCodeSigningIdentity();
+  }
+  if (requestedSigningIdentity === "adhoc" || requestedSigningIdentity === "ad-hoc") {
+    return "-";
+  }
+  return requestedSigningIdentity;
 }
 
 function xmlEscape(value) {
@@ -193,8 +234,15 @@ function main() {
   const iconPath = join(packageDir, "Sources", "Org2Workspace", "Resources", "AppIcon.png");
   writeIconSet(iconPath, resourcesDir);
 
-  console.log(`Signing ${appPath} as ${bundleIdentifier}...`);
-  run("codesign", ["--force", "--sign", "-", "--identifier", bundleIdentifier, appPath]);
+  const signingIdentity = codeSigningIdentity();
+  const signingLabel = signingIdentity === "-" ? "ad-hoc" : signingIdentity;
+  console.log(`Signing ${appPath} as ${bundleIdentifier} with ${signingLabel}...`);
+  run("codesign", ["--force", "--sign", signingIdentity, "--identifier", bundleIdentifier, appPath]);
+  if (signingIdentity === "-") {
+    console.warn(
+      "Warning: ad-hoc signing gives the app a cdhash-based TCC identity. macOS Screen/System Audio permission may reset after rebuilds. Set ORG2_WORKSPACE_CODE_SIGN_IDENTITY to a stable signing identity to avoid that."
+    );
+  }
 
   console.log(`Built ${appPath}`);
   console.log(`Open with: open ${appPath}`);

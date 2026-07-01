@@ -2113,7 +2113,8 @@ final class Org2ModelsTests: XCTestCase {
 
     store.askOpenClawAboutCurrentSelection()
 
-    XCTAssertTrue(store.isOpenClawAssistantPresented)
+    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertFalse(store.isOpenClawAssistantPresented)
     XCTAssertEqual(
       store.openClawDraft,
       "Use selected entry at /remote/org2/daily.org2:7 as context.\n\nWhat should I do next?"
@@ -4058,23 +4059,15 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "6", keyCode: 22, modifiers: [.command])))
     XCTAssertEqual(store.selectedSurface, .openClaw)
 
-    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "f", keyCode: 3, modifiers: [.command, .option])))
-    XCTAssertEqual(store.expandedWorkspaceSurface, .openClaw)
-
-    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "f", keyCode: 3, modifiers: [.command, .option])))
-    XCTAssertNil(store.expandedWorkspaceSurface)
-
-    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "w", keyCode: 13, modifiers: [.command, .option])))
-    XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
-
-    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "p", keyCode: 35, modifiers: [.command, .option])))
-    XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
-    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertFalse(store.handleGlobalKeyDown(keyDown(characters: "f", keyCode: 3, modifiers: [.command, .option])))
+    XCTAssertFalse(store.handleGlobalKeyDown(keyDown(characters: "w", keyCode: 13, modifiers: [.command, .option])))
+    XCTAssertFalse(store.handleGlobalKeyDown(keyDown(characters: "p", keyCode: 35, modifiers: [.command, .option])))
 
     XCTAssertFalse(store.handleGlobalKeyDown(keyDown(characters: "7", keyCode: 26, modifiers: [.command, .shift])))
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "0", keyCode: 29, modifiers: [.command])))
-    XCTAssertTrue(store.isOpenClawAssistantPresented)
+    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertFalse(store.isOpenClawAssistantPresented)
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "/", keyCode: 44, modifiers: [.command])))
     XCTAssertTrue(store.isKeyboardShortcutsPresented)
@@ -4184,9 +4177,13 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
 
     store.toggleDetailPaneExpansion()
-    XCTAssertTrue(store.isWorkspaceDetailPaneExpanded)
+    XCTAssertFalse(store.isWorkspaceDetailPaneExpanded)
     XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
     XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
+
+    store.toggleDetailPaneExpansion()
+    XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
+    XCTAssertFalse(store.isWorkspaceDetailPaneExpanded)
 
     store.makeDetailPanePrimary()
     XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
@@ -4199,7 +4196,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOpeningSecondaryPanesDoesNotAutomaticallyCloseSurfacePane() throws {
+  func testOpenClawAssistantRequestsUseWorkspaceSurface() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     XCTAssertFalse(store.isNodeContextPanePresented)
     let thread = OpenClawThread(
@@ -4220,10 +4217,12 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
     XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
 
+    store.selectedSurface = .agenda
     store.isWorkspaceSurfacePaneClosed = false
     store.isNodeContextPanePresented = false
     store.setOpenClawAssistantPanelPresented(true)
-    XCTAssertTrue(store.isOpenClawAssistantPresented)
+    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertFalse(store.isOpenClawAssistantPresented)
     XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
     XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
   }
@@ -4753,6 +4752,45 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedRenderedBlocks.map(\.id), renderedBlockIDs)
     XCTAssertFalse(store.isLoadingEntrySource)
     XCTAssertFalse(store.isRenderingEntrySource)
+  }
+
+  @MainActor
+  func testReselectingSameAgendaItemRetriesStuckSourceLoad() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-agenda-reselect-loading-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("agenda-reselect-loading.org2")
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd EEE"
+    let today = formatter.string(from: Date())
+
+    try """
+    * TODO First task
+    SCHEDULED: <\(today)>
+    Body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.refreshAgenda()
+
+    let item = try XCTUnwrap(store.visibleAgendaItems.first)
+    store.selectedLocation = .agenda(item)
+    store.selectedEntrySourceMode = .entry
+    store.selectedEntrySource = nil
+    store.selectedRenderedBlocks = []
+    store.isLoadingEntrySource = true
+    store.isRenderingEntrySource = false
+
+    store.selectAgendaItem(item)
+
+    try await waitForCondition {
+      store.selectedEntrySource?.file == note.path
+        && !store.isLoadingEntrySource
+        && !store.isRenderingEntrySource
+        && !store.selectedRenderedBlocks.isEmpty
+    }
   }
 
   @MainActor
@@ -9889,6 +9927,67 @@ final class Org2ModelsTests: XCTestCase {
 
     updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("Alpha beta\n\nNext paragraph\n* Sibling"))
+  }
+
+  @MainActor
+  func testSavesInsertedParagraphDraftPublishedFromEditor() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-paragraph-insert-draft-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("paragraph-insert-draft.org2")
+    try """
+    #+TITLE: Paragraph Insert Draft Test
+
+    * TODO Parent
+    https://x.com/sdhilip/status/2069140867466797200?s=46&t=8JLnk5l_ZQz2KJfqZ5W_jQ
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "https://x.com/sdhilip/status/2069140867466797200?s=46&t=8JLnk5l_ZQz2KJfqZ5W_jQ",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+    await store.insertBlock(after: paragraph, kind: .paragraph)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "" && store.editingBlockID == store.selectedBlock?.id
+    }
+
+    let draft = try XCTUnwrap(store.selectedBlock)
+    store.updateEditingBlockDraft(draft, draft: "https://altic.dev/fluid")
+    await store.saveEditedBlock(draft)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "https://altic.dev/fluid"
+    }
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("""
+    https://x.com/sdhilip/status/2069140867466797200?s=46&t=8JLnk5l_ZQz2KJfqZ5W_jQ
+
+    https://altic.dev/fluid
+    * Sibling
+    """))
   }
 
   @MainActor

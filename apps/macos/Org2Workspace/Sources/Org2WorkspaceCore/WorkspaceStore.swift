@@ -443,6 +443,7 @@ public final class WorkspaceStore: ObservableObject {
       guard oldValue != selectedSurface else { return }
       isWorkspaceSurfacePaneClosed = false
       expandedWorkspaceSurface = nil
+      isWorkspaceDetailPaneExpanded = false
     }
   }
   @Published public var expandedWorkspaceSurface: WorkspaceSurface?
@@ -1212,25 +1213,15 @@ public final class WorkspaceStore: ObservableObject {
           candidateSources = indexedCandidates
         } else {
           if updatesStatus {
-            statusText = "Building search index for approvals..."
+            statusText = "Scanning approval candidates..."
           }
-          _ = try? await cli.runJSON([
-            "index",
-            "--dir", corpusRoot.path,
-            "--recursive",
-            "--format", "json"
-          ], as: SearchIndexBuildPayload.self)
-          if let indexedCandidates = Self.approvalCandidateSourcesFromStoredIndex(corpusRoot: corpusRoot) {
-            candidateSources = indexedCandidates
-          } else {
-            let files = try Self.scanCorpusFiles(corpusRoot: corpusRoot)
-            corpusFiles = files
-            candidateSources = await approvalCandidateSources(
-              files: files,
-              corpusRoot: corpusRoot,
-              updatesStatus: updatesStatus
-            )
-          }
+          let files = try Self.scanCorpusFiles(corpusRoot: corpusRoot)
+          corpusFiles = files
+          candidateSources = await approvalCandidateSources(
+            files: files,
+            corpusRoot: corpusRoot,
+            updatesStatus: updatesStatus
+          )
         }
       } else {
         candidateSources = await approvalCandidateSources(
@@ -1282,27 +1273,15 @@ public final class WorkspaceStore: ObservableObject {
       return indexedCandidates
     }
 
-    if let searchIndexTask {
+    if searchIndexTask != nil {
       if updatesStatus {
-        statusText = "Waiting for search index..."
+        statusText = "Scanning approvals while search index updates..."
       }
-      await searchIndexTask.value
-      if let indexedCandidates = Self.approvalCandidateSourcesFromFreshIndex(files: files, corpusRoot: corpusRoot) {
-        return indexedCandidates
-      }
+      return Self.approvalCandidateSourcesByScanningFiles(files: files)
     }
 
     if updatesStatus {
-      statusText = "Building search index for approvals..."
-    }
-    _ = try? await cli.runJSON([
-      "index",
-      "--dir", corpusRoot.path,
-      "--recursive",
-      "--format", "json"
-    ], as: SearchIndexBuildPayload.self)
-    if let indexedCandidates = Self.approvalCandidateSourcesFromFreshIndex(files: files, corpusRoot: corpusRoot) {
-      return indexedCandidates
+      statusText = "Scanning approval candidates..."
     }
 
     return Self.approvalCandidateSourcesByScanningFiles(files: files)
@@ -2533,6 +2512,10 @@ public final class WorkspaceStore: ObservableObject {
     selectedEntrySource != nil || selectedLocation != nil
   }
 
+  public var hasWorkspaceDetailContent: Bool {
+    selectedLocation != nil || selectedEntrySource != nil
+  }
+
   public var canBriefCurrentNodeInOpenClaw: Bool {
     selectedLocation != nil && corpusRoot != nil && !isBuildingNodeBrief && !isSendingOpenClawMessage
   }
@@ -2856,7 +2839,7 @@ public final class WorkspaceStore: ObservableObject {
     else {
       return false
     }
-    return selectedEntrySource != nil || isLoadingEntrySource || isRenderingEntrySource
+    return selectedEntrySource != nil
   }
 
   private func applyDetailSelectionMetadata(for location: WorkspaceLocation) {
@@ -4972,7 +4955,7 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
-    guard let replacementBody = Self.normalizedTransientDraftText(editableBlockText, for: draft.block) else {
+    guard let replacementBody = Self.normalizedTransientDraftText(editingDraftText(for: draft.block), for: draft.block) else {
       discardTransientDraft(status: "Draft discarded")
       return
     }
@@ -8173,9 +8156,8 @@ public final class WorkspaceStore: ObservableObject {
     selectedSurface = surface
     expandedWorkspaceSurface = nil
     isWorkspaceSurfacePaneClosed = false
-    if surface == .openClaw {
-      isOpenClawAssistantPresented = false
-    }
+    isWorkspaceDetailPaneExpanded = false
+    isOpenClawAssistantPresented = false
     statusText = "\(surface.title) is primary"
   }
 
@@ -8186,19 +8168,19 @@ public final class WorkspaceStore: ObservableObject {
   public func expandSurface(_ surface: WorkspaceSurface) {
     if surface == .home {
       openHome()
+      return
     }
     selectedSurface = surface
-    expandedWorkspaceSurface = surface
+    expandedWorkspaceSurface = nil
     isWorkspaceSurfacePaneClosed = false
-    if surface == .openClaw {
-      isOpenClawAssistantPresented = false
-    }
+    isWorkspaceDetailPaneClosed = true
+    isWorkspaceDetailPaneExpanded = false
+    isOpenClawAssistantPresented = false
     statusText = "\(surface.title) expanded"
   }
 
   public func toggleExpandedSurface(_ surface: WorkspaceSurface) {
-    if expandedWorkspaceSurface == surface {
-      expandedWorkspaceSurface = nil
+    if selectedSurface == surface && isWorkspaceDetailPaneClosed && hasWorkspaceDetailContent {
       isWorkspaceSurfacePaneClosed = false
       statusText = "\(surface.title) restored"
     } else {
@@ -8211,15 +8193,13 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func closeSurfacePane(_ surface: WorkspaceSurface) {
-    if expandedWorkspaceSurface == surface {
-      expandedWorkspaceSurface = nil
-    }
-    if selectedSurface == surface {
+    expandedWorkspaceSurface = nil
+    isWorkspaceDetailPaneExpanded = false
+    if selectedSurface == surface, hasWorkspaceDetailContent {
       isWorkspaceSurfacePaneClosed = true
+      isWorkspaceDetailPaneClosed = false
     }
-    if surface == .openClaw {
-      isOpenClawAssistantPresented = false
-    }
+    isOpenClawAssistantPresented = false
     statusText = "\(surface.title) closed"
   }
 
@@ -8236,6 +8216,7 @@ public final class WorkspaceStore: ObservableObject {
     isWorkspaceSurfacePaneClosed = true
     isWorkspaceDetailPaneClosed = false
     isWorkspaceDetailPaneExpanded = false
+    isOpenClawAssistantPresented = false
     statusText = "Document is primary"
   }
 
@@ -8245,13 +8226,13 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
     expandedWorkspaceSurface = nil
+    isWorkspaceDetailPaneExpanded = false
     isWorkspaceDetailPaneClosed = false
-    if isWorkspaceDetailPaneExpanded || isWorkspaceSurfacePaneClosed {
-      isWorkspaceDetailPaneExpanded = false
+    isOpenClawAssistantPresented = false
+    if isWorkspaceSurfacePaneClosed {
       isWorkspaceSurfacePaneClosed = false
       statusText = "Document restored"
     } else {
-      isWorkspaceDetailPaneExpanded = true
       isWorkspaceSurfacePaneClosed = true
       statusText = "Document expanded"
     }
@@ -8261,15 +8242,19 @@ public final class WorkspaceStore: ObservableObject {
     isWorkspaceDetailPaneClosed = true
     isWorkspaceDetailPaneExpanded = false
     isWorkspaceSurfacePaneClosed = false
+    expandedWorkspaceSurface = nil
     statusText = "Document closed"
   }
 
   public func toggleOpenClawAssistantPanel() {
-    setOpenClawAssistantPanelPresented(!isOpenClawAssistantPresented)
+    makeSurfacePrimary(.openClaw)
   }
 
   public func setOpenClawAssistantPanelPresented(_ presented: Bool) {
-    isOpenClawAssistantPresented = presented
+    isOpenClawAssistantPresented = false
+    if presented {
+      makeSurfacePrimary(.openClaw)
+    }
   }
 
   public func handleGlobalKeyDown(_ event: NSEvent) -> Bool {
@@ -8282,19 +8267,19 @@ public final class WorkspaceStore: ObservableObject {
     if modifiers == [.command] {
       switch key {
       case "0":
-        toggleOpenClawAssistantPanel()
+        makeSurfacePrimary(.openClaw)
       case "1":
         openHome()
       case "2":
-        selectedSurface = .agenda
+        makeSurfacePrimary(.agenda)
       case "3":
-        selectedSurface = .files
+        makeSurfacePrimary(.files)
       case "4":
-        selectedSurface = .approvals
+        makeSurfacePrimary(.approvals)
       case "5":
-        selectedSurface = .meetings
+        makeSurfacePrimary(.meetings)
       case "6":
-        selectedSurface = .openClaw
+        makeSurfacePrimary(.openClaw)
       case "7":
         openDailyNote(.today)
       case "8":
@@ -8322,17 +8307,7 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     if modifiers == [.command, .option] {
-      switch key {
-      case "f":
-        toggleSelectedSurfaceExpansion()
-      case "p":
-        makeSelectedSurfacePrimary()
-      case "w":
-        closeSelectedSurfacePane()
-      default:
-        return false
-      }
-      return true
+      return false
     }
 
     if modifiers == [.command, .shift] {
