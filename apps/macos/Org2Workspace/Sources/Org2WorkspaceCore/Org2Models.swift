@@ -848,6 +848,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   public let messages: [OpenClawChatMessage]
   public let isPinned: Bool
   public let isArchived: Bool
+  public let unreadMessageCount: Int
 
   public init(
     id: UUID = UUID(),
@@ -857,7 +858,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     sessionKey: String,
     messages: [OpenClawChatMessage] = [],
     isPinned: Bool = false,
-    isArchived: Bool = false
+    isArchived: Bool = false,
+    unreadMessageCount: Int = 0
   ) {
     self.id = id
     self.title = title
@@ -867,6 +869,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     self.messages = messages
     self.isPinned = isPinned
     self.isArchived = isArchived
+    self.unreadMessageCount = max(0, unreadMessageCount)
   }
 
   public var messageCount: Int {
@@ -882,6 +885,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     case messages
     case isPinned
     case isArchived
+    case unreadMessageCount
   }
 
   public init(from decoder: Decoder) throws {
@@ -894,11 +898,13 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     messages = try container.decode([OpenClawChatMessage].self, forKey: .messages)
     isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
     isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
+    unreadMessageCount = max(0, try container.decodeIfPresent(Int.self, forKey: .unreadMessageCount) ?? 0)
   }
 
   public func replacingOpenClawChatMetadata(
     isPinned nextIsPinned: Bool? = nil,
-    isArchived nextIsArchived: Bool? = nil
+    isArchived nextIsArchived: Bool? = nil,
+    unreadMessageCount nextUnreadMessageCount: Int? = nil
   ) -> OpenClawChatThread {
     OpenClawChatThread(
       id: id,
@@ -908,7 +914,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       sessionKey: sessionKey,
       messages: messages,
       isPinned: nextIsPinned ?? isPinned,
-      isArchived: nextIsArchived ?? isArchived
+      isArchived: nextIsArchived ?? isArchived,
+      unreadMessageCount: nextUnreadMessageCount ?? unreadMessageCount
     )
   }
 }

@@ -309,10 +309,15 @@ private struct OpenClawSidebarSurfaceGroup: View {
         Button {
           store.makeSurfacePrimary(surface)
         } label: {
-          Label(surface.title, systemImage: surface.systemImage)
-            .font(.callout.weight(.medium))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+          HStack(spacing: 6) {
+            Label(surface.title, systemImage: surface.systemImage)
+              .font(.callout.weight(.medium))
+            if store.openClawUnreadMessageCount > 0 {
+              OpenClawUnreadBadge(count: store.openClawUnreadMessageCount, compact: true)
+            }
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(surface.commandShortcutTitle.isEmpty ? surface.title : "\(surface.title) (\(surface.commandShortcutTitle))")
@@ -474,6 +479,9 @@ private struct OpenClawSidebarThreadRow: View {
             .font(.caption2.weight(.semibold))
             .foregroundStyle(.secondary)
         }
+        if thread.unreadMessageCount > 0 {
+          OpenClawUnreadBadge(count: thread.unreadMessageCount)
+        }
         Text(Self.relativeDate(thread.updatedAt))
           .font(.callout)
           .foregroundStyle(.secondary)
@@ -524,6 +532,26 @@ private struct OpenClawSidebarThreadRow: View {
     let formatter = DateFormatter()
     formatter.setLocalizedDateFormatFromTemplate("MMM d")
     return formatter.string(from: date)
+  }
+}
+
+private struct OpenClawUnreadBadge: View {
+  let count: Int
+  var compact = false
+
+  var body: some View {
+    ZStack {
+      Circle()
+        .fill(Color.red)
+      if !compact {
+        Text(count > 9 ? "9+" : "\(count)")
+          .font(.system(size: 9, weight: .bold, design: .rounded))
+          .foregroundStyle(.white)
+          .minimumScaleFactor(0.75)
+      }
+    }
+    .frame(width: compact ? 8 : 16, height: compact ? 8 : 16)
+    .accessibilityLabel(count == 1 ? "1 unread message" : "\(count) unread messages")
   }
 }
 
@@ -1291,6 +1319,9 @@ private struct AgendaView: View {
     .onChange(of: agendaFilterFocused) {
       store.isAgendaFilterFocused = agendaFilterFocused
     }
+    .onChange(of: store.isAgendaFilterFocused) {
+      agendaFilterFocused = store.isAgendaFilterFocused
+    }
     .onDisappear {
       store.isAgendaFilterFocused = false
     }
@@ -1768,7 +1799,7 @@ private struct AgendaItemListView: View {
       else {
         return
       }
-      store.select(.agenda(item))
+      store.selectAgendaItem(item)
     }
   }
 }

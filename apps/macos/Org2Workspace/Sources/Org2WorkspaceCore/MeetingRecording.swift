@@ -817,9 +817,12 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
   private var writerInput: AVAssetWriterInput?
   private var firstPresentationTime: CMTime?
   private var lastPresentationTime: CMTime?
+  private var lastMeterSnapshotTime: CMTime?
   private var sampleCount = 0
   private var latestSnapshot = MeetingInputMeterSnapshot.silent
   private var isCaptureRunning = false
+
+  private static let meterSnapshotIntervalSeconds = 0.25
 
   public override init() {}
 
@@ -881,6 +884,7 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
       self.writerInput = writerInput
       firstPresentationTime = nil
       lastPresentationTime = nil
+      lastMeterSnapshotTime = nil
       sampleCount = 0
       latestSnapshot = .silent
       isCaptureRunning = false
@@ -971,14 +975,30 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
 
       if writer.status == .writing, writerInput.isReadyForMoreMediaData {
         if writerInput.append(sampleBuffer) {
+          let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
           sampleCount += 1
-          lastPresentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-          if let snapshot = Self.meterSnapshot(from: sampleBuffer) {
+          lastPresentationTime = presentationTime
+          if shouldUpdateMeterSnapshot(at: presentationTime),
+             let snapshot = Self.meterSnapshot(from: sampleBuffer) {
+            lastMeterSnapshotTime = presentationTime
             latestSnapshot = snapshot
           }
         }
       }
     }
+  }
+
+  private func shouldUpdateMeterSnapshot(at presentationTime: CMTime) -> Bool {
+    guard presentationTime.isValid, presentationTime.isNumeric else {
+      return true
+    }
+    guard let lastMeterSnapshotTime,
+          lastMeterSnapshotTime.isValid,
+          lastMeterSnapshotTime.isNumeric
+    else {
+      return true
+    }
+    return CMTimeGetSeconds(presentationTime - lastMeterSnapshotTime) >= Self.meterSnapshotIntervalSeconds
   }
 
   public nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
@@ -1028,6 +1048,7 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
           self.writerInput = nil
           self.firstPresentationTime = nil
           self.lastPresentationTime = nil
+          self.lastMeterSnapshotTime = nil
           self.sampleCount = 0
           self.latestSnapshot = .silent
           self.isCaptureRunning = false
@@ -1065,6 +1086,7 @@ public final class MeetingSystemAudioRecorder: NSObject, SCStreamOutput, SCStrea
       writerInput = nil
       firstPresentationTime = nil
       lastPresentationTime = nil
+      lastMeterSnapshotTime = nil
       sampleCount = 0
       latestSnapshot = .silent
       isCaptureRunning = false
