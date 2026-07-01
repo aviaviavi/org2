@@ -691,6 +691,87 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testOpenClawChatThreadsTrackUnreadBackgroundRepliesAndSound() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-thread-unread-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let suiteName = "org2-workspace-chat-thread-unread-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+    var soundCount = 0
+    store.openClawIncomingMessageSoundPlayer = {
+      soundCount += 1
+    }
+    store.selectedSurface = .agenda
+
+    store.openClawMessages = [
+      OpenClawChatMessage(role: .user, content: "Question while away")
+    ]
+    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    XCTAssertEqual(store.openClawChatThreads.first?.unreadMessageCount, 0)
+    XCTAssertEqual(soundCount, 0)
+
+    store.openClawMessages.append(OpenClawChatMessage(role: .assistant, content: "Background reply"))
+    XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 1)
+    XCTAssertEqual(store.openClawUnreadMessageCount, 1)
+    XCTAssertEqual(soundCount, 1)
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+    XCTAssertEqual(restored.openClawChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 1)
+
+    restored.makeSurfacePrimary(.openClaw)
+    XCTAssertEqual(restored.openClawChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 0)
+    XCTAssertEqual(restored.openClawUnreadMessageCount, 0)
+
+    let reopened = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+    XCTAssertEqual(reopened.openClawChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 0)
+  }
+
+  @MainActor
+  func testOpenClawChatThreadsDoNotMarkActiveRepliesUnread() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-thread-active-unread-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let suiteName = "org2-workspace-chat-thread-active-unread-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+    var soundCount = 0
+    store.openClawIncomingMessageSoundPlayer = {
+      soundCount += 1
+    }
+    store.makeSurfacePrimary(.openClaw)
+    store.openClawMessages = [
+      OpenClawChatMessage(role: .user, content: "Question in active chat"),
+      OpenClawChatMessage(role: .assistant, content: "Visible reply")
+    ]
+
+    XCTAssertEqual(store.openClawUnreadMessageCount, 0)
+    XCTAssertEqual(soundCount, 0)
+  }
+
+  @MainActor
   func testOpenClawChatThreadsMigrateLegacySingleTranscriptPayload() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-legacy-threads-\(UUID().uuidString)", isDirectory: true)
@@ -1499,6 +1580,13 @@ final class Org2ModelsTests: XCTestCase {
       0.5,
       accuracy: 0.001
     )
+  }
+
+  func testMeetingMeterPublishingSkipsSmallLevelChanges() {
+    XCTAssertFalse(WorkspaceStore.shouldPublishMeetingMeterLevelChange(current: 0.50, next: 0.51))
+    XCTAssertTrue(WorkspaceStore.shouldPublishMeetingMeterLevelChange(current: 0.50, next: 0.54))
+    XCTAssertTrue(WorkspaceStore.shouldPublishMeetingMeterLevelChange(current: 0, next: 0.01))
+    XCTAssertTrue(WorkspaceStore.shouldPublishMeetingMeterLevelChange(current: 0.94, next: 0.96))
   }
 
   func testMeetingCaptureSourceDisclosesSystemAudioPermission() {
@@ -4298,6 +4386,35 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertTrue(store.handleAgendaKeyDown(keyDown(characters: "\u{1b}", keyCode: 53)))
     XCTAssertFalse(store.isAgendaFilterFocused)
+  }
+
+  @MainActor
+  func testAgendaItemSelectionClearsFilterFocusForShortcuts() throws {
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Filtered task",
+      "kind": "SCHEDULED",
+      "file": "/tmp/filtered.org2",
+      "line": 1,
+      "body": "",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.selectedSurface = .agenda
+    store.agendaFilter = "filtered"
+    store.isAgendaFilterFocused = true
+
+    store.handleAgendaItemClick(item)
+
+    XCTAssertFalse(store.isAgendaFilterFocused)
+    XCTAssertEqual(store.selectedAgendaItemID, item.id)
+    XCTAssertTrue(store.handleAgendaKeyDown(keyDown(characters: "p", keyCode: 35)))
+    XCTAssertTrue(store.priorityModeActive)
   }
 
   @MainActor

@@ -577,6 +577,9 @@ public final class WorkspaceStore: ObservableObject {
   }
   @Published public private(set) var openClawChatThreads: [OpenClawChatThread] = []
   @Published public private(set) var selectedOpenClawChatThreadID: UUID?
+  public var openClawIncomingMessageSoundPlayer: @MainActor () -> Void = {
+    NSSound(named: NSSound.Name("Glass"))?.play()
+  }
   @Published public var openClawDraft = ""
   @Published public var openClawPendingAttachments: [OpenClawChatAttachment] = []
   @Published public var openClawAgentID = "main"
@@ -755,6 +758,8 @@ public final class WorkspaceStore: ObservableObject {
   private var activeMeetingProcessingTitles: Set<String> = []
   private var activeOpenClawVoiceNoteURL: URL?
   private var meetingMeterTask: Task<Void, Never>?
+  nonisolated static let meetingMeterPublishIntervalNanoseconds: UInt64 = 250_000_000
+  nonisolated static let meetingMeterPublishThreshold = 0.03
   private var meetingTranscriptionProgressTask: Task<Void, Never>?
   private var meetingTranscriptionProgressID: UUID?
   private var meetingTranscriptionProgressTitle = ""
@@ -4456,6 +4461,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func selectAssignedWorkItem(_ item: AssignedWorkItem) {
+    deactivateAgendaFilterFocus()
     selectedSurface = .agenda
     selectedAssignedWorkItemID = item.id
     select(.assigned(item))
@@ -6008,6 +6014,10 @@ public final class WorkspaceStore: ObservableObject {
     return openClawChatThreads.first(where: { $0.id == selectedOpenClawChatThreadID })
   }
 
+  public var openClawUnreadMessageCount: Int {
+    openClawChatThreads.reduce(0) { $0 + $1.unreadMessageCount }
+  }
+
   public var visibleOpenClawChatThreads: [OpenClawChatThread] {
     Self.sortedOpenClawChatThreadsForDisplay(openClawChatThreads.filter { !$0.isArchived })
   }
@@ -6078,6 +6088,7 @@ public final class WorkspaceStore: ObservableObject {
     }
     selectedOpenClawChatThreadID = thread.id
     openClawSessionKey = thread.sessionKey
+    markOpenClawChatThreadRead(thread.id, shouldPersist: false)
     openClawDraft = ""
     openClawPendingAttachments = []
     openClawPendingUserMessageIDs.removeAll()
@@ -6106,6 +6117,21 @@ public final class WorkspaceStore: ObservableObject {
     selectedOpenClawChatThreadID = thread.id
   }
 
+  public func markSelectedOpenClawChatThreadRead() {
+    guard let selectedOpenClawChatThreadID else { return }
+    markOpenClawChatThreadRead(selectedOpenClawChatThreadID, shouldPersist: true)
+  }
+
+  private func markOpenClawChatThreadRead(_ id: UUID, shouldPersist: Bool) {
+    guard let index = openClawChatThreads.firstIndex(where: { $0.id == id }) else { return }
+    let thread = openClawChatThreads[index]
+    guard thread.unreadMessageCount != 0 else { return }
+    openClawChatThreads[index] = thread.replacingOpenClawChatMetadata(unreadMessageCount: 0)
+    if shouldPersist {
+      persistOpenClawTranscript()
+    }
+  }
+
   private func updateSelectedOpenClawChatThread(messages: [OpenClawChatMessage]) {
     ensureOpenClawChatThread()
     guard let selectedOpenClawChatThreadID,
@@ -6115,6 +6141,14 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     let current = openClawChatThreads[index]
+    let newAssistantMessageCount = Self.newAssistantMessageCount(
+      previousMessages: current.messages,
+      currentMessages: messages
+    )
+    let isThreadOpen = selectedSurface == .openClaw && selectedOpenClawChatThreadID == current.id
+    let unreadMessageCount = isThreadOpen
+      ? 0
+      : current.unreadMessageCount + newAssistantMessageCount
     let updated = OpenClawChatThread(
       id: current.id,
       title: Self.openClawThreadTitle(from: messages, fallback: current.title),
@@ -6123,10 +6157,25 @@ public final class WorkspaceStore: ObservableObject {
       sessionKey: current.sessionKey,
       messages: messages,
       isPinned: current.isPinned,
-      isArchived: current.isArchived
+      isArchived: current.isArchived,
+      unreadMessageCount: unreadMessageCount
     )
     openClawChatThreads[index] = updated
     sortOpenClawChatThreadsForDisplay()
+    if newAssistantMessageCount > 0 && !isThreadOpen {
+      openClawIncomingMessageSoundPlayer()
+    }
+  }
+
+  nonisolated private static func newAssistantMessageCount(
+    previousMessages: [OpenClawChatMessage],
+    currentMessages: [OpenClawChatMessage]
+  ) -> Int {
+    guard currentMessages.count > previousMessages.count else { return 0 }
+    return currentMessages
+      .dropFirst(previousMessages.count)
+      .filter { $0.role == .assistant }
+      .count
   }
 
   private func sortOpenClawChatThreadsForDisplay() {
@@ -6843,6 +6892,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func selectAgendaItem(_ item: AgendaItem) {
+    deactivateAgendaFilterFocus()
     suppressNextAgendaSelectionActivation = false
     selectedSurface = .agenda
     select(.agenda(item))
@@ -6982,6 +7032,10 @@ public final class WorkspaceStore: ObservableObject {
     selectedSurface = .agenda
     agendaFilter = ""
     agendaFilterFocusToken += 1
+  }
+
+  public func deactivateAgendaFilterFocus() {
+    isAgendaFilterFocused = false
   }
 
   public func clearAgendaFilter() {
@@ -8158,6 +8212,9 @@ public final class WorkspaceStore: ObservableObject {
     isWorkspaceSurfacePaneClosed = false
     isWorkspaceDetailPaneExpanded = false
     isOpenClawAssistantPresented = false
+    if surface == .openClaw {
+      markSelectedOpenClawChatThreadRead()
+    }
     statusText = "\(surface.title) is primary"
   }
 
@@ -11055,7 +11112,7 @@ public final class WorkspaceStore: ObservableObject {
 
   private func startMeetingInputMetering() {
     meetingMeterTask?.cancel()
-    updateMeetingInputMeter()
+    updateMeetingInputMeter(force: true)
     meetingMeterTask = Task { [weak self] in
       while !Task.isCancelled {
         let shouldContinue = await MainActor.run { () -> Bool in
@@ -11064,7 +11121,7 @@ public final class WorkspaceStore: ObservableObject {
           return true
         }
         guard shouldContinue else { return }
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        try? await Task.sleep(nanoseconds: Self.meetingMeterPublishIntervalNanoseconds)
       }
     }
   }
@@ -11078,13 +11135,33 @@ public final class WorkspaceStore: ObservableObject {
     meetingSystemAudioPeakLevel = 0
   }
 
-  private func updateMeetingInputMeter() {
+  private func updateMeetingInputMeter(force: Bool = false) {
     let snapshot = meetingRecorder.inputMeterSnapshot
-    meetingInputAverageLevel = snapshot.averageLevel
-    meetingInputPeakLevel = snapshot.peakLevel
     let systemSnapshot = meetingSystemAudioRecorder.inputMeterSnapshot
-    meetingSystemAudioAverageLevel = systemSnapshot.averageLevel
-    meetingSystemAudioPeakLevel = systemSnapshot.peakLevel
+    publishMeetingMeterLevels(microphone: snapshot, systemAudio: systemSnapshot, force: force)
+  }
+
+  private func publishMeetingMeterLevels(
+    microphone: MeetingInputMeterSnapshot,
+    systemAudio: MeetingInputMeterSnapshot,
+    force: Bool
+  ) {
+    publishMeetingMeterLevel(current: &meetingInputAverageLevel, next: microphone.averageLevel, force: force)
+    publishMeetingMeterLevel(current: &meetingInputPeakLevel, next: microphone.peakLevel, force: force)
+    publishMeetingMeterLevel(current: &meetingSystemAudioAverageLevel, next: systemAudio.averageLevel, force: force)
+    publishMeetingMeterLevel(current: &meetingSystemAudioPeakLevel, next: systemAudio.peakLevel, force: force)
+  }
+
+  private func publishMeetingMeterLevel(current: inout Double, next: Double, force: Bool) {
+    guard force || Self.shouldPublishMeetingMeterLevelChange(current: current, next: next) else { return }
+    current = next
+  }
+
+  nonisolated static func shouldPublishMeetingMeterLevelChange(current: Double, next: Double) -> Bool {
+    if current == next { return false }
+    if current == 0 || next == 0 { return true }
+    if current >= 0.95 || next >= 0.95 { return true }
+    return abs(current - next) >= meetingMeterPublishThreshold
   }
 
   private func startOpenClawVoiceMetering() {
