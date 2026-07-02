@@ -2227,6 +2227,47 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.openClawStatusText, "Redid OpenClaw draft change")
   }
 
+  @MainActor
+  func testAskOpenClawAboutCurrentSelectionPrefersSelectedRenderedBlock() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-ai-block-context-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let file = root.appendingPathComponent("project.org2")
+    let source = EntrySource(
+      file: file.path,
+      startLine: 12,
+      endLineExclusive: 16,
+      text: """
+      * Project
+      First paragraph
+      Second paragraph
+      """,
+      isSubtree: true
+    )
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.corpusRoot = root
+    store.openClawRemoteCorpusPath = "/remote/org2"
+    store.selectedEntrySource = source
+    store.selectedRenderedBlocks = OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine)
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first { block in
+      if case .paragraph = block.rendered {
+        return block.rawText.contains("First paragraph")
+      }
+      return false
+    })
+    store.selectBlock(paragraph)
+
+    store.askOpenClawAboutCurrentSelection()
+
+    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertEqual(store.selectedBlockID, paragraph.id)
+    XCTAssertEqual(
+      store.openClawDraft,
+      "Use selected block at /remote/org2/project.org2:13-14 as context.\n\n"
+    )
+    XCTAssertEqual(store.openClawStatusText, "Added project.org2:13-14 to OpenClaw")
+  }
+
   func testOpenClawFileReferenceExtractsOrgPaths() {
     let refs = OpenClawFileReference.extract(from: """
     Check /srv/org2/notes/alice.org2:42 and notes/daily/2026-06-12.org.

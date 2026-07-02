@@ -74,6 +74,19 @@ private struct OpenClawContextPointer: Equatable, Sendable {
   let displayReference: String
 }
 
+private struct OpenClawBlockContextPointer: Equatable, Sendable {
+  let file: String
+  let startLine: Int
+  let endLineExclusive: Int
+
+  init?(source: EntrySource?, block: OrgEditableBlock) {
+    guard let source else { return nil }
+    file = source.file
+    startLine = block.startLine
+    endLineExclusive = block.endLineExclusive
+  }
+}
+
 private struct OpenClawCorpusSnapshot: Sendable {
   let rootPath: String
   let files: [String: OpenClawSnapshotFile]
@@ -2536,20 +2549,20 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
-    let injectedContext = "Use \(pointer.kind) at \(pointer.reference) as context.\n\n"
-    let previousDraft = openClawDraft
-    if openClawDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      openClawDraft = injectedContext
-    } else if !openClawDraft.contains(pointer.reference) {
-      openClawDraft = injectedContext + openClawDraft
-    }
-    if openClawDraft != previousDraft {
-      recordWorkspaceUndo(.openClawDraft(previous: previousDraft, next: openClawDraft))
+    addOpenClawContext(pointer)
+  }
+
+  public func askOpenClawAboutBlock(_ block: OrgEditableBlock) {
+    if selectedRenderedBlockIndexes[block.id] != nil {
+      selectedBlockID = block.id
     }
 
-    setOpenClawAssistantPanelPresented(true)
-    openClawStatusText = "Added \(pointer.displayReference) to OpenClaw"
-    statusText = "Added \(pointer.displayReference) to OpenClaw"
+    guard let pointer = openClawContextPointer(for: OpenClawBlockContextPointer(source: selectedEntrySource, block: block)) else {
+      askOpenClawAboutCurrentSelection()
+      return
+    }
+
+    addOpenClawContext(pointer)
   }
 
   public func briefCurrentNodeInOpenClaw() async {
@@ -9186,6 +9199,11 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func openClawContextPointerForCurrentSelection() -> OpenClawContextPointer? {
+    if let selectedBlock,
+       let pointer = openClawContextPointer(for: OpenClawBlockContextPointer(source: selectedEntrySource, block: selectedBlock)) {
+      return pointer
+    }
+
     if let source = selectedEntrySource {
       let kind = source.isSubtree ? "selected entry" : "selected page"
       return OpenClawContextPointer(
@@ -9204,6 +9222,45 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     return nil
+  }
+
+  private func openClawContextPointer(for block: OpenClawBlockContextPointer?) -> OpenClawContextPointer? {
+    guard let block else { return nil }
+    let startLine = max(1, block.startLine)
+    let endLineInclusive = max(startLine, block.endLineExclusive - 1)
+    let mappedFile = mappedPathForOpenClaw(block.file)
+    let displayFile = relativePath(block.file)
+    let reference: String
+    let displayReference: String
+    if endLineInclusive > startLine {
+      reference = "\(mappedFile):\(startLine)-\(endLineInclusive)"
+      displayReference = "\(displayFile):\(startLine)-\(endLineInclusive)"
+    } else {
+      reference = "\(mappedFile):\(startLine)"
+      displayReference = "\(displayFile):\(startLine)"
+    }
+    return OpenClawContextPointer(
+      kind: "selected block",
+      reference: reference,
+      displayReference: displayReference
+    )
+  }
+
+  private func addOpenClawContext(_ pointer: OpenClawContextPointer) {
+    let injectedContext = "Use \(pointer.kind) at \(pointer.reference) as context.\n\n"
+    let previousDraft = openClawDraft
+    if openClawDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      openClawDraft = injectedContext
+    } else if !openClawDraft.contains(pointer.reference) {
+      openClawDraft = injectedContext + openClawDraft
+    }
+    if openClawDraft != previousDraft {
+      recordWorkspaceUndo(.openClawDraft(previous: previousDraft, next: openClawDraft))
+    }
+
+    setOpenClawAssistantPanelPresented(true)
+    openClawStatusText = "Added \(pointer.displayReference) to OpenClaw"
+    statusText = "Added \(pointer.displayReference) to OpenClaw"
   }
 
   private func mappedPathForOpenClaw(_ path: String) -> String {

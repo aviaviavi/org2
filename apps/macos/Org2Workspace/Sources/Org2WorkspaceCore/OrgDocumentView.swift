@@ -233,6 +233,9 @@ struct OrgRenderedEntryView: View, Equatable {
       move: { direction in
         Task { await store.moveBlock(block, direction: direction) }
       },
+      askAI: {
+        store.askOpenClawAboutBlock(block)
+      },
       duplicate: {
         Task { await store.duplicateBlock(block) }
       },
@@ -870,8 +873,8 @@ enum RenderedRowChrome {
 }
 
 enum RenderedBlockEditingPolicy {
-  static func startsEditingOnSingleClick(block _: OrgEditableBlock, isSourceEditable _: Bool) -> Bool {
-    false
+  static func startsEditingOnSingleClick(block: OrgEditableBlock, isSourceEditable: Bool) -> Bool {
+    isSourceEditable && block.isEditable && OrgCrypt.armorSummary(block.rawText) == nil
   }
 }
 
@@ -983,8 +986,14 @@ private struct EditableRenderedBlockView<Content: View>: View {
             actions.beginEditing()
           }
         }
+        .contextMenu {
+          contextMenuContent
+        }
     } else {
       content
+        .contextMenu {
+          contextMenuContent
+        }
     }
   }
 
@@ -1148,6 +1157,69 @@ private struct EditableRenderedBlockView<Content: View>: View {
     .frame(width: RenderedRowChrome.controlsReserveWidth, alignment: .trailing)
   }
 
+  @ViewBuilder
+  private var contextMenuContent: some View {
+    Button {
+      actions.askAI()
+    } label: {
+      Label("Ask AI", systemImage: "sparkles")
+    }
+
+    if isSourceEditable {
+      Divider()
+
+      if block.isEditable {
+        Button {
+          actions.beginEditing()
+        } label: {
+          Label("Edit", systemImage: "pencil")
+        }
+      }
+
+      Menu {
+        ForEach(OrgInsertBlockKind.allCases) { kind in
+          Button {
+            actions.insert(kind)
+          } label: {
+            Label(kind.title, systemImage: kind.systemImage)
+          }
+        }
+      } label: {
+        Label("Insert After", systemImage: "plus")
+      }
+
+      if block.isEditable {
+        Divider()
+
+        Button {
+          actions.move(.up)
+        } label: {
+          Label("Move Up", systemImage: "arrow.up")
+        }
+        .disabled(!canMoveUp)
+
+        Button {
+          actions.move(.down)
+        } label: {
+          Label("Move Down", systemImage: "arrow.down")
+        }
+        .disabled(!canMoveDown)
+
+        Button {
+          actions.duplicate()
+        } label: {
+          Label("Duplicate", systemImage: "plus.square.on.square")
+        }
+
+        Button(role: .destructive) {
+          actions.delete()
+        } label: {
+          Label("Delete", systemImage: "trash")
+        }
+      }
+    }
+  }
+
   private var usesRowTapGestures: Bool {
     RenderedBlockInteractionPolicy.usesRowTapGestures(block: block, isSourceEditable: isSourceEditable)
   }
@@ -1180,6 +1252,7 @@ private struct RenderedBlockActions {
   let beginEditing: () -> Void
   let insert: (OrgInsertBlockKind) -> Void
   let move: (OrgBlockMoveDirection) -> Void
+  let askAI: () -> Void
   let duplicate: () -> Void
   let delete: () -> Void
   let toggleFold: () -> Void
