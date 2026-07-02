@@ -92,8 +92,57 @@ private struct OpenClawCorpusSnapshot: Sendable {
   let files: [String: OpenClawSnapshotFile]
 }
 
+private struct ResolvedOpenClawSettings: Sendable {
+  let settings: OpenClawGatewaySettings
+  let bearerToken: String?
+  let hasStoredToken: Bool
+}
+
+private struct PreparedDailyNote: Sendable {
+  let file: CorpusFile
+}
+
+private struct PreparedOpenClawAttachments: Sendable {
+  let attachments: [OpenClawChatAttachment]
+  let failureFileName: String?
+  let failureMessage: String?
+}
+
+private struct PreparedOpenClawSendRequest: Sendable {
+  let userMessageID: UUID
+  let userMessageIndex: Int
+  let messages: [OpenClawChatMessage]
+}
+
+private struct OpenClawThreadScanResult: Sendable {
+  let threads: [OpenClawThread]
+  let directories: [URL]
+}
+
+private struct WorkspaceSelectionIdentity: Equatable, Sendable {
+  let kind: String
+  let file: String
+  let line: Int
+  let title: String
+}
+
 private struct OpenClawSnapshotFile: Sendable {
   let text: String
+}
+
+private struct OpenClawTranscriptSwitchRequest: Sendable {
+  let targetURL: URL
+  let previousURL: URL
+  let migrationSource: URL?
+  let legacyMessages: [OpenClawChatMessage]
+  let canMigrateLegacyMessages: Bool
+  let switchGeneration: Int
+  let contentGeneration: Int
+}
+
+private struct OpenClawTranscriptSwitchResult: Sendable {
+  let transcript: OpenClawTranscriptState
+  let shouldPersist: Bool
 }
 
 private enum WorkspaceUndoAction: Equatable, Sendable {
@@ -110,9 +159,41 @@ private struct QuickOpenIndexedFile: Sendable {
   let normalizedRelativePath: String
 }
 
+private struct IndexedSearchNode: Sendable {
+  let node: OrgRoamNodeReference
+  let relativePath: String
+  let aliasesText: String
+}
+
+private struct CorpusFileDisplayState: Sendable {
+  let files: [CorpusFile]
+  let filesByID: [CorpusFile.ID: CorpusFile]
+  let indexedSearchNodes: [OrgRoamNodeReference]
+  let indexedSearchNodeRows: [IndexedSearchNode]
+  let searchNodeRelativePathsByFile: [String: String]
+  let quickOpenIndexedFiles: [QuickOpenIndexedFile]
+}
+
+private struct AgendaRefreshRequest: Equatable, Sendable {
+  let corpusRoot: URL
+  let startDate: String
+  let endDate: String
+  let preserveSelection: Bool
+  let updatesStatus: Bool
+}
+
 private struct AssignedWorkSearchRow: Sendable {
   let item: AssignedWorkItem
   let searchText: String
+}
+
+private struct AssignedWorkRefreshRequest: Equatable, Sendable {
+  let corpusRoot: URL
+  let filesSignature: String
+}
+
+private struct OpenClawThreadRefreshRequest: Equatable, Sendable {
+  let corpusRoot: URL
 }
 
 private struct OrgIDLookupPayload: Decodable {
@@ -199,6 +280,23 @@ private struct PageSearchRenderedMatch: Equatable, Sendable {
   let blockID: OrgEditableBlock.ID
   let blockIndex: Int
   let occurrenceOffsetInBlock: Int
+}
+
+private struct PageSearchMatchResult: Sendable {
+  let query: String
+  let sourceID: EntrySource.ID?
+  let matches: [PageSearchRenderedMatch]
+  let occurrenceCount: Int
+}
+
+private struct LoadedEntrySource: Sendable {
+  let source: EntrySource
+  let fullFileText: String
+}
+
+private struct PreparedRenderedEntrySource: Sendable {
+  let blocks: [OrgEditableBlock]
+  let canonicalDocument: Org2CanonicalDocument?
 }
 
 struct SourceBlockExecutionResult: Equatable, Sendable {
@@ -446,6 +544,55 @@ public struct WorkspaceRuntimeIdentity: Equatable, Sendable {
   }
 }
 
+public struct MeetingInputMeterLevels: Equatable, Sendable {
+  public let microphoneAverageLevel: Double
+  public let microphonePeakLevel: Double
+  public let systemAverageLevel: Double
+  public let systemPeakLevel: Double
+
+  public init(
+    microphoneAverageLevel: Double = 0,
+    microphonePeakLevel: Double = 0,
+    systemAverageLevel: Double = 0,
+    systemPeakLevel: Double = 0
+  ) {
+    self.microphoneAverageLevel = microphoneAverageLevel
+    self.microphonePeakLevel = microphonePeakLevel
+    self.systemAverageLevel = systemAverageLevel
+    self.systemPeakLevel = systemPeakLevel
+  }
+}
+
+public struct VoiceInputMeterLevels: Equatable, Sendable {
+  public let averageLevel: Double
+  public let peakLevel: Double
+
+  public init(averageLevel: Double = 0, peakLevel: Double = 0) {
+    self.averageLevel = averageLevel
+    self.peakLevel = peakLevel
+  }
+}
+
+public struct TranscriptionProgressState: Equatable, Sendable {
+  public let progress: Double
+  public let elapsedText: String
+
+  public init(progress: Double = 0, elapsedText: String = "") {
+    self.progress = progress
+    self.elapsedText = elapsedText
+  }
+}
+
+public struct OpenClawSendState: Equatable, Sendable {
+  public let isSending: Bool
+  public let startedAt: Date?
+
+  public init(isSending: Bool = false, startedAt: Date? = nil) {
+    self.isSending = isSending
+    self.startedAt = startedAt
+  }
+}
+
 @MainActor
 public final class WorkspaceStore: ObservableObject {
   nonisolated public static let meetingCaptureSourceSummary = "Captures microphone and system/call audio. System audio uses macOS ScreenCaptureKit permission; Org2 records audio only."
@@ -454,9 +601,9 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedSurface: WorkspaceSurface = .home {
     didSet {
       guard oldValue != selectedSurface else { return }
-      isWorkspaceSurfacePaneClosed = false
-      expandedWorkspaceSurface = nil
-      isWorkspaceDetailPaneExpanded = false
+      setIfChanged(\.isWorkspaceSurfacePaneClosed, false)
+      setIfChanged(\.expandedWorkspaceSurface, nil)
+      setIfChanged(\.isWorkspaceDetailPaneExpanded, false)
     }
   }
   @Published public var expandedWorkspaceSurface: WorkspaceSurface?
@@ -464,16 +611,17 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var isWorkspaceDetailPaneClosed = false
   @Published public var isWorkspaceDetailPaneExpanded = false
   @Published public var agendaMode: AgendaMode = .focus {
-    didSet {
-      defaults.set(agendaMode.rawValue, forKey: agendaModeKey)
-      rebuildAgendaDisplayCache()
+    willSet {
+      guard newValue != agendaMode else { return }
+      defaults.set(newValue.rawValue, forKey: agendaModeKey)
+      rebuildAgendaDisplayCache(mode: newValue)
     }
   }
   @Published public var agendaFilter = "" {
-    didSet {
-      guard oldValue != agendaFilter else { return }
-      rebuildAgendaDisplayCache()
-      rebuildAssignedWorkDisplayCache()
+    willSet {
+      guard newValue != agendaFilter else { return }
+      rebuildAgendaDisplayCache(filter: newValue)
+      rebuildAssignedWorkDisplayCache(filter: newValue)
     }
   }
   @Published public var agendaFilterFocusToken = 0
@@ -481,37 +629,89 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedAgendaItemID: String?
   @Published public var bulkSelectedAgendaItemIDs: Set<String> = []
   private var suppressNextAgendaSelectionActivation = false
-  @Published public var corpusRoot: URL?
-  @Published public var agenda: AgendaPayload? {
+  private var suppressNextApprovalSelectionActivation = false
+  private var suppressNextAssignedWorkSelectionActivation = false
+  private var suppressedCorpusFileSelectionActivation: CorpusFile?
+  private var suppressNextMeetingSelectionActivation = false
+  @Published public var corpusRoot: URL? {
     didSet {
+      guard oldValue?.standardizedFileURL.path != corpusRoot?.standardizedFileURL.path else { return }
+      relativePathCache = [:]
+      relativePathStandardRootPath = corpusRoot?.standardizedFileURL.path
+      relativePathResolvedRootPath = corpusRoot.map { Self.resolvedPath(for: $0) }
       rebuildAgendaDisplayCache()
+      rebuildApprovalDisplayCache()
+      rebuildAssignedWorkDisplayCache()
+      rebuildMeetingDisplaySections()
+      rebuildSearchResultDisplayCache()
+      rebuildSearchNodeDisplayCache()
+    }
+  }
+  private var corpusFileScanTask: Task<CorpusFileDisplayState, Error>?
+  private var corpusFileScanRoot: URL?
+  private var corpusFileScanGeneration = 0
+  private var cachedOpenClawAgentThreadDirectories: [String] = []
+  private var agendaRefreshTask: Task<AgendaPayload, Error>?
+  private var agendaRefreshRequest: AgendaRefreshRequest?
+  private var agendaRefreshGeneration = 0
+  @Published public var agenda: AgendaPayload? {
+    willSet {
+      rebuildAgendaDisplayCache(agenda: newValue)
     }
   }
   public private(set) var agendaDisplaySections: [AgendaDisplaySection] = []
   public private(set) var visibleAgendaItems: [AgendaItem] = []
+  private var visibleAgendaItemsByID: [AgendaItem.ID: AgendaItem] = [:]
+  private var visibleAgendaItemIndicesByID: [AgendaItem.ID: Int] = [:]
+  private var visibleAgendaItemIDs: Set<AgendaItem.ID> = []
   @Published public private(set) var approvalItems: [ApprovalItem] = [] {
-    didSet {
-      rebuildApprovalDisplayCache()
+    willSet {
+      rebuildApprovalDisplayCache(items: newValue)
     }
   }
   @Published public var approvalFilter = "" {
-    didSet {
-      guard oldValue != approvalFilter else { return }
-      rebuildApprovalDisplayCache()
+    willSet {
+      guard newValue != approvalFilter else { return }
+      rebuildApprovalDisplayCache(filter: newValue)
     }
   }
   public private(set) var visibleApprovalItems: [ApprovalItem] = []
+  public private(set) var approvalDisplayItems: [ApprovalDisplayItem] = []
+  private var visibleApprovalItemsByID: [ApprovalItem.ID: ApprovalItem] = [:]
   @Published public var selectedApprovalItemID: ApprovalItem.ID?
   @Published public var isLoadingApprovals = false
   @Published public var corpusFiles: [CorpusFile] = [] {
+    willSet {
+      let displayState: CorpusFileDisplayState
+      if let staged = stagedCorpusFileDisplayState, staged.files == newValue {
+        displayState = staged
+        stagedCorpusFileDisplayState = nil
+      } else {
+        displayState = Self.corpusFileDisplayState(files: newValue)
+      }
+      applyCorpusFileDisplayState(displayState)
+      rebuildFilteredCorpusFiles(files: newValue)
+      rebuildSearchNodeCacheIfNeeded(indexedNodes: indexedSearchNodes)
+    }
+
     didSet {
-      rebuildQuickOpenIndex()
       scheduleQuickOpenSearch(debounce: false)
     }
   }
-  @Published public private(set) var orgRoamLinkResolver = OrgRoamLinkResolver.empty
+  @Published public private(set) var orgRoamLinkResolver = OrgRoamLinkResolver.empty {
+    didSet {
+      rebuildSearchNodeCacheIfNeeded()
+    }
+  }
   @Published public var selectedCorpusFileID: String?
-  @Published public var corpusFileFilter = ""
+  @Published public var corpusFileFilter = "" {
+    willSet {
+      guard newValue != corpusFileFilter else { return }
+      rebuildFilteredCorpusFiles(query: newValue)
+    }
+  }
+  public private(set) var filteredCorpusFiles: [CorpusFile] = []
+  private var corpusFilesByID: [CorpusFile.ID: CorpusFile] = [:]
   @Published public var isScanningCorpusFiles = false
   @Published public var isQuickOpenPresented = false
   @Published public var isKeyboardShortcutsPresented = false
@@ -524,63 +724,127 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var similarTodoAssignee = ""
   @Published public var similarTodoStatus = "ready"
   @Published public var assignedWorkItems: [AssignedWorkItem] = [] {
-    didSet {
-      assignedWorkSearchRows = assignedWorkItems.map { item in
+    willSet {
+      assignedWorkItemsByID = Self.lookupByID(newValue)
+      let rows = newValue.map { item in
         AssignedWorkSearchRow(item: item, searchText: Self.assignedWorkFilterText(for: item))
       }
-      rebuildAssignedWorkDisplayCache()
+      assignedWorkSearchRows = rows
+      rebuildAssignedWorkDisplayCache(searchRows: rows)
     }
   }
+  private var assignedWorkRefreshTask: Task<[AssignedWorkItem], Error>?
+  private var assignedWorkRefreshRequest: AssignedWorkRefreshRequest?
+  private var assignedWorkRefreshGeneration = 0
   public private(set) var visibleAssignedWorkItems: [AssignedWorkItem] = []
+  private var assignedWorkItemsByID: [AssignedWorkItem.ID: AssignedWorkItem] = [:]
+  private var visibleAssignedWorkItemsByID: [AssignedWorkItem.ID: AssignedWorkItem] = [:]
+  private var displayedAssignedWorkItems: [AssignedWorkItem] = []
+  private var displayedAssignedWorkItemIndicesByID: [AssignedWorkItem.ID: Int] = [:]
   public private(set) var assignedWorkSections: [AssignedWorkSection] = []
   @Published public var selectedAssignedWorkItemID: AssignedWorkItem.ID?
   @Published public var isLoadingAssignedWork = false
   @Published public var detailScrollRequest: DetailScrollRequest?
   @Published public var quickOpenQuery = "" {
     didSet {
-      selectedQuickOpenFileID = nil
+      setIfChanged(\.selectedQuickOpenFileID, nil)
       scheduleQuickOpenSearch()
     }
   }
   @Published public var selectedQuickOpenFileID: String?
-  @Published public private(set) var quickOpenFiles: [CorpusFile] = []
+  @Published public private(set) var quickOpenFiles: [CorpusFile] = [] {
+    willSet {
+      rebuildQuickOpenDisplayLookup(files: newValue)
+    }
+  }
+  private var quickOpenFilesByID: [CorpusFile.ID: CorpusFile] = [:]
+  private var quickOpenFileIndicesByID: [CorpusFile.ID: Int] = [:]
   @Published public private(set) var isFilteringQuickOpenFiles = false
-  @Published public var searchMode: WorkspaceSearchMode = .text
-  @Published public var searchQuery = ""
+  @Published public var searchMode: WorkspaceSearchMode = .text {
+    willSet {
+      guard newValue != searchMode else { return }
+      scheduleSearchNodeFilter(mode: newValue, debounce: false)
+    }
+  }
+  @Published public var searchQuery = "" {
+    willSet {
+      guard newValue != searchQuery else { return }
+      scheduleSearchNodeFilter(query: newValue)
+    }
+  }
   @Published public var searchFocusToken = 0
-  @Published public var searchResults: [SearchResult] = []
+  @Published public var searchResults: [SearchResult] = [] {
+    willSet {
+      searchResultIDs = newValue.map(\.id)
+      corpusSearchResultGroups = Self.groupedSearchResultsForDisplay(newValue)
+      rebuildSearchResultDisplayCache(results: newValue)
+    }
+  }
+  public private(set) var searchResultIDs: [SearchResult.ID] = []
+  public private(set) var corpusSearchResultGroups: [SearchResultGroup] = []
+  public private(set) var corpusSearchResultDisplayGroups: [SearchResultDisplayGroup] = []
+  public private(set) var searchNodes: [OrgRoamNodeReference] = [] {
+    willSet {
+      rebuildSearchNodeDisplayCache(nodes: newValue)
+    }
+  }
+  public private(set) var searchNodeDisplayItems: [SearchNodeDisplayItem] = []
+  private var indexedSearchNodes: [OrgRoamNodeReference] = []
+  private var indexedSearchNodeRows: [IndexedSearchNode] = []
+  private var searchNodeRelativePathsByFile: [String: String] = [:]
+  private var searchNodeFilterTask: Task<Void, Never>?
+  private var searchNodeFilterGeneration = 0
   @Published public var openClawChatSearchResults: [OpenClawChatSearchResult] = []
   @Published public var renderedSearchHighlightQuery: String?
   @Published public var isPageSearchPresented = false
   @Published public var pageSearchQuery = "" {
     didSet {
       guard isPageSearchPresented else { return }
-      renderedSearchHighlightQuery = Self.normalizedRenderedSearchHighlightQuery(pageSearchQuery)
-      refreshPageSearchMatches(selectFirst: true)
+      schedulePageSearchMatches(selectFirst: true)
     }
   }
   @Published public var pageSearchFocusToken = 0
   @Published public private(set) var pageSearchOccurrenceCount = 0
   @Published public private(set) var pageSearchSelectedOccurrenceIndex: Int?
   private var pageSearchRenderedMatches: [PageSearchRenderedMatch] = []
-  @Published public var meetings: [MeetingWorkspaceItem] = []
+  private var pageSearchFullFileTextCache: (sourceID: EntrySource.ID, text: String)?
+  private var pageSearchMatchTask: Task<Void, Never>?
+  private var pageSearchMatchGeneration = 0
+  @Published public var meetings: [MeetingWorkspaceItem] = [] {
+    willSet {
+      meetingsByID = Self.lookupByID(newValue)
+      meetingDisplaySections = Self.makeMeetingDisplaySections(newValue, corpusRoot: corpusRoot)
+    }
+  }
+  private var meetingsByID: [MeetingWorkspaceItem.ID: MeetingWorkspaceItem] = [:]
+  public private(set) var meetingDisplaySections: [MeetingSection] = []
+  private var meetingScanTask: Task<[MeetingWorkspaceItem], Error>?
+  private var meetingScanRoot: URL?
+  private var meetingScanGeneration = 0
   @Published public var selectedMeetingID: String?
   @Published public var meetingTitleDraft = ""
   @Published public var meetingStatusText = WorkspaceStore.defaultMeetingStatusText()
-  @Published public var meetingInputAverageLevel = 0.0
-  @Published public var meetingInputPeakLevel = 0.0
-  @Published public var meetingSystemAudioAverageLevel = 0.0
-  @Published public var meetingSystemAudioPeakLevel = 0.0
-  @Published public var meetingTranscriptionProgress = 0.0
-  @Published public var meetingTranscriptionElapsedText = ""
-  @Published public var audioSettingsStatus = LocalWhisperTranscriber.installationStatus()
-  @Published public var isAudioSettingsExpanded = false
+  @Published public private(set) var meetingInputMeterLevels = MeetingInputMeterLevels()
+  public var meetingInputAverageLevel: Double { meetingInputMeterLevels.microphoneAverageLevel }
+  public var meetingInputPeakLevel: Double { meetingInputMeterLevels.microphonePeakLevel }
+  public var meetingSystemAudioAverageLevel: Double { meetingInputMeterLevels.systemAverageLevel }
+  public var meetingSystemAudioPeakLevel: Double { meetingInputMeterLevels.systemPeakLevel }
+  @Published public private(set) var meetingTranscriptionState = TranscriptionProgressState()
+  public var meetingTranscriptionProgress: Double { meetingTranscriptionState.progress }
+  public var meetingTranscriptionElapsedText: String { meetingTranscriptionState.elapsedText }
+  @Published public var audioSettingsStatus = LocalWhisperInstallationStatus.checking
+  public var isAudioSettingsExpanded = false
   @Published public var isInstallingFastTranscriber = false
   @Published public var audioSettingsStatusText = ""
+  @Published public private(set) var meetingTranscriptionBackendText = LocalWhisperTranscriber.resolvedBackendDescription()
   @Published public var workspaceRuntimeIdentity = WorkspaceRuntimeIdentity.current()
   @Published public var isCapturingSystemAudio = false
   @Published public var meetingSystemAudioStatusText = "System audio not recording"
-  @Published public var openClawMessages: [OpenClawChatMessage] = [] {
+  public var openClawMessages: [OpenClawChatMessage] = [] {
+    willSet {
+      setIfChanged(\.openClawMessageCount, newValue.count)
+      rebuildVisibleOpenClawMessages(messages: newValue)
+    }
     didSet {
       guard !isApplyingOpenClawThreadMessages else { return }
       updateSelectedOpenClawChatThread(messages: openClawMessages)
@@ -588,7 +852,25 @@ public final class WorkspaceStore: ObservableObject {
       persistOpenClawTranscript()
     }
   }
-  @Published public private(set) var openClawChatThreads: [OpenClawChatThread] = []
+  @Published public private(set) var openClawChatThreads: [OpenClawChatThread] = [] {
+    willSet {
+      rebuildOpenClawThreadDisplayCache(threads: newValue)
+    }
+  }
+  public private(set) var visibleOpenClawChatThreads: [OpenClawChatThreadDisplayItem] = []
+  public private(set) var archivedOpenClawChatThreads: [OpenClawChatThreadDisplayItem] = []
+  public private(set) var visibleOpenClawChatThreadsRenderSignature = WorkspaceStore.openClawThreadDisplayItemsRenderSignature(for: [])
+  public private(set) var archivedOpenClawChatThreadsRenderSignature = WorkspaceStore.openClawThreadDisplayItemsRenderSignature(for: [])
+  public private(set) var openClawUnreadMessageCount = 0
+  private var openClawChatThreadIndicesByID: [UUID: Int] = [:]
+  private var openClawMessagesByThreadID: [UUID: [OpenClawChatMessage]] = [:]
+  @Published public private(set) var visibleOpenClawMessages: [OpenClawChatMessage] = []
+  public private(set) var visibleOpenClawMessagesRenderSignature = WorkspaceStore.openClawMessagesRenderSignature(for: [])
+  @Published public private(set) var openClawMessageCount = 0
+  public var hiddenOpenClawMessageCount: Int {
+    max(0, openClawMessageCount - visibleOpenClawMessages.count)
+  }
+  public private(set) var openClawVisibleMessageLimit = WorkspaceStore.defaultOpenClawVisibleMessageLimit
   @Published public private(set) var selectedOpenClawChatThreadID: UUID?
   public var openClawIncomingMessageSoundPlayer: @MainActor () -> Void = {
     NSSound(named: NSSound.Name("Glass"))?.play()
@@ -604,10 +886,12 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var openClawStatusText = WorkspaceStore.defaultOpenClawStatusText()
   @Published public var isRecordingOpenClawVoiceNote = false
   @Published public var isTranscribingOpenClawVoiceNote = false
-  @Published public var openClawVoiceAverageLevel = 0.0
-  @Published public var openClawVoicePeakLevel = 0.0
-  @Published public var openClawVoiceTranscriptionProgress = 0.0
-  @Published public var openClawVoiceTranscriptionElapsedText = ""
+  @Published public private(set) var openClawVoiceMeterLevels = VoiceInputMeterLevels()
+  public var openClawVoiceAverageLevel: Double { openClawVoiceMeterLevels.averageLevel }
+  public var openClawVoicePeakLevel: Double { openClawVoiceMeterLevels.peakLevel }
+  @Published public private(set) var openClawVoiceTranscriptionState = TranscriptionProgressState()
+  public var openClawVoiceTranscriptionProgress: Double { openClawVoiceTranscriptionState.progress }
+  public var openClawVoiceTranscriptionElapsedText: String { openClawVoiceTranscriptionState.elapsedText }
   @Published public var openClawVoiceStatusText = "Dictate with local transcription."
   @Published public var isOrgCryptConfigurationPresented = false
   @Published public var orgCryptEncryptOnSave = true {
@@ -622,9 +906,10 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var orgCryptGpgProgram = "gpg"
   @Published public var orgCryptHasStoredPassphrase = false
   @Published public var orgCryptStatusText = "Encrypt :crypt: subtrees with GPG."
-  @Published public var isSendingOpenClawMessage = false
+  @Published public private(set) var openClawSendState = OpenClawSendState()
+  public var isSendingOpenClawMessage: Bool { openClawSendState.isSending }
   @Published public private(set) var openClawQueuedMessageCount = 0
-  @Published public var openClawRequestStartedAt: Date?
+  public var openClawRequestStartedAt: Date? { openClawSendState.startedAt }
   @Published public var isOpenClawAssistantPresented = false
   public private(set) var openClawChatScrollPosition: Double?
   public private(set) var openClawAssistantChatScrollPosition: Double?
@@ -633,29 +918,19 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var workspaceHealthChecks: [WorkspaceHealthCheck] = []
   @Published public var isCheckingWorkspaceHealth = false
   @Published public var selectedLocation: WorkspaceLocation?
-  @Published public var selectedEntrySource: EntrySource?
-  @Published public var selectedRenderedBlocks: [OrgEditableBlock] = [] {
+  @Published public var selectedEntrySource: EntrySource? {
     didSet {
-      defer {
-        foldedRenderedBlockIDs = OrgRenderedFoldTree.prunedFoldedIDs(
-          foldedRenderedBlockIDs,
-          blocks: selectedRenderedBlocks
-        )
-      }
-      if preservesSelectedRenderedBlocksMetadataForNextAssignment {
-        selectedRenderedBlocksRenderSignature = Self.renderedBlocksRenderSignature(for: selectedRenderedBlocks)
-        preservesSelectedRenderedBlocksMetadataForNextAssignment = false
-        if isPageSearchPresented {
-          refreshPageSearchMatches(selectFirst: false)
-        }
-        return
-      }
-      let metadata = Self.renderedBlocksMetadata(for: selectedRenderedBlocks)
-      selectedRenderedBlocksRenderSignature = metadata.renderSignature
-      selectedRenderedBlocksSignature = metadata.structureSignature
-      selectedRenderedBlockIndexes = metadata.indexes
+      pageSearchFullFileTextCache = nil
+    }
+  }
+  @Published public var selectedRenderedBlocks: [OrgEditableBlock] = [] {
+    willSet {
+      prepareSelectedRenderedBlocksDisplayState(for: newValue)
+    }
+
+    didSet {
       if isPageSearchPresented {
-        refreshPageSearchMatches(selectFirst: false)
+        schedulePageSearchMatches(selectFirst: false, debounce: false)
       }
     }
   }
@@ -669,12 +944,20 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var editingBlockID: OrgEditableBlock.ID?
   @Published public var editableBlockText = ""
   @Published public var sourceBlockRuns: [String: SourceBlockRunState] = [:] {
-    didSet {
-      sourceBlockRunsRenderSignature = Self.sourceBlockRunsRenderSignature(for: sourceBlockRuns)
+    willSet {
+      sourceBlockRunsRenderSignature = Self.sourceBlockRunsRenderSignature(for: newValue)
     }
   }
   public private(set) var sourceBlockRunsRenderSignature = WorkspaceStore.sourceBlockRunsRenderSignature(for: [:])
-  @Published public var backlinks: BacklinksPayload?
+  @Published public var backlinks: BacklinksPayload? {
+    willSet {
+      rebuildBacklinkDisplayCacheForAssignment(newValue)
+    }
+  }
+  public private(set) var backlinkFileGroups: [BacklinkFileGroup] = []
+  public private(set) var backlinkFileCount = 0
+  public private(set) var backlinkReferenceCount = 0
+  public private(set) var relatedBacklinkNodes: [RelatedBacklinkNode] = []
   @Published public var isNodeContextPanePresented = false
   @Published public var nodeContextTab: NodeContextTab = .overview
   @Published public var expandedBacklinkFileIDs: Set<String> = []
@@ -726,7 +1009,7 @@ public final class WorkspaceStore: ObservableObject {
     "Org2Workspace",
     "press.avi.org2.workspace"
   ]
-  private static let orgCryptPublicKeysDirectoryName = "public-keys"
+  nonisolated private static let orgCryptPublicKeysDirectoryName = "public-keys"
   private static let canonicalParserLineLimit = 2_000
   private static let renderedBlocksCacheLimit = 12
   private static let detailNavigationHistoryLimit = 100
@@ -755,23 +1038,103 @@ public final class WorkspaceStore: ObservableObject {
   private var openClawSessionKey = WorkspaceStore.makeOpenClawSessionKey()
   private var shouldPersistOpenClawMessages = false
   private var isApplyingOpenClawThreadMessages = false
+  private var openClawThreadRefreshTask: Task<OpenClawThreadScanResult, Error>?
+  private var openClawThreadRefreshRequest: OpenClawThreadRefreshRequest?
+  private var openClawThreadRefreshGeneration = 0
+  private var openClawTranscriptPersistenceTask: Task<Void, Never>?
+  private var openClawTranscriptSwitchTask: Task<Void, Never>?
+  private var openClawTranscriptSwitchGeneration = 0
+  private var openClawTranscriptContentGeneration = 0
+  private static let openClawTranscriptContentPersistenceDelay: UInt64 = 120_000_000
+  private static let openClawTranscriptSelectionPersistenceDelay: UInt64 = 750_000_000
   private var openClawBearerToken: String?
   private var openClawPendingUserMessageIDs: [UUID] = [] {
     didSet {
-      openClawQueuedMessageCount = openClawPendingUserMessageIDs.count
+      setIfChanged(\.openClawQueuedMessageCount, openClawPendingUserMessageIDs.count)
     }
   }
   private var isDrainingOpenClawQueue = false
   private var activeMeetingRecording: PendingMeetingRecording?
   private var activeMeetingProcessingCount = 0 {
     didSet {
-      isProcessingMeeting = activeMeetingProcessingCount > 0
+      setIfChanged(\.isProcessingMeeting, activeMeetingProcessingCount > 0)
     }
   }
   private var activeMeetingProcessingTitles: Set<String> = []
   private var activeOpenClawVoiceNoteURL: URL?
   private var meetingMeterTask: Task<Void, Never>?
   nonisolated static let meetingMeterPublishIntervalNanoseconds: UInt64 = 250_000_000
+  nonisolated static let scheduledBacklinkLoadDebounceNanoseconds: UInt64 = 80_000_000
+
+  private func setIfChanged<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<WorkspaceStore, Value>, _ value: Value) {
+    if self[keyPath: keyPath] != value {
+      self[keyPath: keyPath] = value
+    }
+  }
+
+  private func clearSelectedRenderedBlocks() {
+    guard !selectedRenderedBlocks.isEmpty else { return }
+    selectedRenderedBlocks = []
+  }
+
+  nonisolated private static func lookupByID<Item: Identifiable>(_ items: [Item]) -> [Item.ID: Item] where Item.ID: Hashable {
+    var lookup: [Item.ID: Item] = [:]
+    lookup.reserveCapacity(items.count)
+    for item in items {
+      lookup[item.id] = item
+    }
+    return lookup
+  }
+
+  private func assignCorpusFiles(_ displayState: CorpusFileDisplayState) {
+    stagedCorpusFileDisplayState = displayState
+    corpusFiles = displayState.files
+  }
+
+  private func applyCorpusFileDisplayState(_ displayState: CorpusFileDisplayState) {
+    corpusFilesByID = displayState.filesByID
+    indexedSearchNodes = displayState.indexedSearchNodes
+    indexedSearchNodeRows = displayState.indexedSearchNodeRows
+    searchNodeRelativePathsByFile = displayState.searchNodeRelativePathsByFile
+    quickOpenIndexedFiles = displayState.quickOpenIndexedFiles
+  }
+
+  private func currentOrScannedCorpusFiles() async throws -> [CorpusFile] {
+    if !corpusFiles.isEmpty {
+      return corpusFiles
+    }
+    guard let corpusRoot else { return [] }
+    let displayState = try await Task.detached(priority: .utility) {
+      try Self.scanCorpusFileDisplayState(corpusRoot: corpusRoot)
+    }.value
+    assignCorpusFiles(displayState)
+    return displayState.files
+  }
+
+  nonisolated private static func corpusFilesRefreshSignature(_ files: [CorpusFile]) -> String {
+    files.map { file in
+      [
+        file.id,
+        file.modifiedAt.map { String($0.timeIntervalSince1970) } ?? "",
+        file.byteCount.map(String.init) ?? ""
+      ].joined(separator: "\u{1F}")
+    }.joined(separator: "\u{1E}")
+  }
+
+  nonisolated private static func corpusFileDisplayState(files: [CorpusFile]) -> CorpusFileDisplayState {
+    let searchNodes = files.compactMap(scanRoamFileNode)
+    let relativePathsByFile = Dictionary(uniqueKeysWithValues: files.map { file in
+      (file.path, file.relativePath)
+    })
+    return CorpusFileDisplayState(
+      files: files,
+      filesByID: lookupByID(files),
+      indexedSearchNodes: searchNodes,
+      indexedSearchNodeRows: indexSearchNodes(searchNodes, relativePathsByFile: relativePathsByFile),
+      searchNodeRelativePathsByFile: relativePathsByFile,
+      quickOpenIndexedFiles: indexQuickOpenFiles(files)
+    )
+  }
   nonisolated static let meetingMeterPublishThreshold = 0.03
   private var meetingTranscriptionProgressTask: Task<Void, Never>?
   private var meetingTranscriptionProgressID: UUID?
@@ -782,25 +1145,40 @@ public final class WorkspaceStore: ObservableObject {
   private var openClawVoiceTranscriptionProgressTask: Task<Void, Never>?
   private var openClawVoiceTranscriptionStartedAt: Date?
   private var openClawVoiceTranscriptionEstimatedDuration: TimeInterval = 8
+  nonisolated static let defaultOpenClawVisibleMessageLimit = 80
+  nonisolated private static let openClawVisibleMessageLimitStep = 80
+  nonisolated private static let openClawThreadTitleSourceLimit = 2_000
+  nonisolated private static let openClawMessageRenderSignatureContentSampleLimit = 160
+  nonisolated static let openClawScrollPositionRecordEpsilon = 0.002
   private var pendingNodeBriefArtifactRelativePath: String?
   private var pendingNodeBriefTitle: String?
   private var pendingG = false
   private var orgRoamLinkResolverGeneration = 0
+  private var orgCryptManagedRecipientFilesRefreshGeneration = 0
+  private var audioSettingsStatusTask: Task<Void, Never>?
+  private var pendingAudioSettingsRefreshPreservesStatusText = false
+  private var audioSettingsStatusRefreshGeneration = 0
+  private var stagedCorpusFileDisplayState: CorpusFileDisplayState?
   private var quickOpenIndexedFiles: [QuickOpenIndexedFile] = []
   private var quickOpenSearchTask: Task<Void, Never>?
   private var quickOpenSearchGeneration = 0
   private var searchIndexTask: Task<Void, Never>?
   private var searchIndexGeneration = 0
+  private var entrySourceLoadTask: Task<Void, Never>?
   private var entrySourceLoadGeneration = 0
+  private var backlinksLoadTask: Task<Void, Never>?
   private var backlinksLoadGeneration = 0
   private var detailNavigationBackStack: [DetailNavigationSnapshot] = [] {
     didSet {
-      canNavigateBackInDetail = !detailNavigationBackStack.isEmpty
+      setIfChanged(\.canNavigateBackInDetail, !detailNavigationBackStack.isEmpty)
     }
   }
   private var workspaceUndoStack: [WorkspaceUndoAction] = []
   private var workspaceRedoStack: [WorkspaceUndoAction] = []
   private var canonicalDocumentCache: [String: CanonicalDocumentCacheEntry] = [:]
+  private var relativePathCache: [String: String] = [:]
+  private var relativePathStandardRootPath: String?
+  private var relativePathResolvedRootPath: String?
   private var renderedBlocksCache: [String: RenderedBlocksCacheEntry] = [:]
   private var renderedBlocksCacheOrder: [String] = []
   private var pendingBlockSelection: PendingBlockSelection?
@@ -869,6 +1247,40 @@ public final class WorkspaceStore: ObservableObject {
     refreshAudioSettingsStatus()
   }
 
+  private func cancelManagedTasks() {
+    openClawTranscriptPersistenceTask?.cancel()
+    openClawTranscriptPersistenceTask = nil
+    openClawTranscriptSwitchTask?.cancel()
+    openClawTranscriptSwitchTask = nil
+    meetingMeterTask?.cancel()
+    meetingMeterTask = nil
+    meetingTranscriptionProgressTask?.cancel()
+    meetingTranscriptionProgressTask = nil
+    openClawVoiceMeterTask?.cancel()
+    openClawVoiceMeterTask = nil
+    openClawVoiceTranscriptionProgressTask?.cancel()
+    openClawVoiceTranscriptionProgressTask = nil
+    audioSettingsStatusTask?.cancel()
+    audioSettingsStatusTask = nil
+    quickOpenSearchTask?.cancel()
+    quickOpenSearchTask = nil
+    searchNodeFilterTask?.cancel()
+    searchNodeFilterTask = nil
+    pageSearchMatchTask?.cancel()
+    pageSearchMatchTask = nil
+    pageSearchMatchGeneration += 1
+    searchIndexTask?.cancel()
+    searchIndexTask = nil
+    entrySourceLoadTask?.cancel()
+    entrySourceLoadTask = nil
+    backlinksLoadTask?.cancel()
+    backlinksLoadTask = nil
+    scheduledAgendaRefreshTask?.cancel()
+    scheduledAgendaRefreshTask = nil
+    agendaTodoShortcutMutationTask?.cancel()
+    agendaTodoShortcutMutationTask = nil
+  }
+
   public func bootstrap() async {
     refreshAudioSettingsStatus()
     if corpusRoot == nil {
@@ -877,7 +1289,11 @@ public final class WorkspaceStore: ObservableObject {
       } else {
         corpusRoot = restoreCorpusRoot()
         if let corpusRoot {
-          switchOpenClawTranscript(to: Self.openClawTranscriptURL(corpusRoot: corpusRoot), migrationSource: appOpenClawTranscriptURL)
+          refreshCachedOpenClawAgentThreadDirectories(corpusRoot: corpusRoot, directories: nil)
+          await switchOpenClawTranscript(
+            to: Self.openClawTranscriptURL(corpusRoot: corpusRoot),
+            migrationSource: appOpenClawTranscriptURL
+          )
         }
       }
     }
@@ -888,9 +1304,9 @@ public final class WorkspaceStore: ObservableObject {
       await refreshCorpusFiles()
       await refreshAssignedWork()
       await refreshApprovals()
-      refreshOrgCryptManagedRecipientFiles()
+      await refreshOrgCryptManagedRecipientFilesNow()
       if selectedSurface == .home {
-        openHome()
+        await openHomeNow()
       }
       if screenshotModeFromEnvironment() == nil {
         Task { await refreshOpenClawThreads() }
@@ -929,7 +1345,7 @@ public final class WorkspaceStore: ObservableObject {
 
     switch mode {
     case "home":
-      openHome()
+      await openHomeNow()
     case "agenda":
       selectedSurface = .agenda
       agendaMode = .focus
@@ -980,7 +1396,7 @@ public final class WorkspaceStore: ObservableObject {
         selectCorpusFile(file)
       }
     default:
-      openHome()
+      await openHomeNow()
     }
 
     if let selectedLocation {
@@ -1004,15 +1420,22 @@ public final class WorkspaceStore: ObservableObject {
 
   public func setCorpusRoot(_ url: URL, persistsDefault: Bool = true) {
     let standardized = url.standardizedFileURL
+    if corpusRoot?.standardizedFileURL.path == standardized.path {
+      if persistsDefault {
+        defaults.set(standardized.path, forKey: corpusKey)
+      }
+      return
+    }
     corpusRoot = standardized
+    refreshCachedOpenClawAgentThreadDirectories(corpusRoot: standardized, directories: nil)
     if persistsDefault {
       defaults.set(standardized.path, forKey: corpusKey)
     }
-    switchOpenClawTranscript(to: Self.openClawTranscriptURL(corpusRoot: standardized))
+    scheduleOpenClawTranscriptSwitch(to: Self.openClawTranscriptURL(corpusRoot: standardized))
     agenda = nil
     approvalItems = []
     selectedApprovalItemID = nil
-    approvalFilter = ""
+    setIfChanged(\.approvalFilter, "")
     corpusFiles = []
     orgRoamLinkResolver = .empty
     orgRoamLinkResolverGeneration += 1
@@ -1046,13 +1469,23 @@ public final class WorkspaceStore: ObservableObject {
     searchIndexTask?.cancel()
     searchIndexTask = nil
     searchIndexGeneration += 1
+    searchNodeFilterTask?.cancel()
+    searchNodeFilterTask = nil
+    searchNodeFilterGeneration += 1
+    pageSearchMatchTask?.cancel()
+    pageSearchMatchTask = nil
+    pageSearchMatchGeneration += 1
+    entrySourceLoadTask?.cancel()
+    entrySourceLoadTask = nil
+    backlinksLoadTask?.cancel()
+    backlinksLoadTask = nil
     isBuildingSearchIndex = false
     searchIndexStatusText = ""
     resetBlockState()
     isEditingEntry = false
     isRenderingEntrySource = false
     entrySourceLoadGeneration += 1
-    backlinks = nil
+    setIfChanged(\.backlinks, nil)
     errorText = nil
   }
 
@@ -1064,16 +1497,58 @@ public final class WorkspaceStore: ObservableObject {
     await refreshAssignedWork()
     await refreshApprovals()
     refreshWorkspaceHealth()
-    refreshOrgCryptManagedRecipientFiles()
+    await refreshOrgCryptManagedRecipientFilesNow()
     Task { await refreshOpenClawThreads() }
   }
 
   public func refreshAudioSettingsStatus(preserveStatusText: Bool = false) {
-    audioSettingsStatus = LocalWhisperTranscriber.installationStatus()
-    workspaceRuntimeIdentity = WorkspaceRuntimeIdentity.current()
-    if !preserveStatusText && (audioSettingsStatusText.isEmpty || !isInstallingFastTranscriber) {
-      audioSettingsStatusText = audioSettingsStatus.detailText
+    if audioSettingsStatusTask != nil {
+      pendingAudioSettingsRefreshPreservesStatusText =
+        pendingAudioSettingsRefreshPreservesStatusText && preserveStatusText
+      return
     }
+    pendingAudioSettingsRefreshPreservesStatusText = preserveStatusText
+    audioSettingsStatusRefreshGeneration += 1
+    let generation = audioSettingsStatusRefreshGeneration
+    audioSettingsStatusTask = Task { @MainActor [weak self] in
+      await self?.refreshAudioSettingsStatusNow(
+        preserveStatusText: self?.pendingAudioSettingsRefreshPreservesStatusText ?? preserveStatusText,
+        generation: generation
+      )
+      guard self?.audioSettingsStatusRefreshGeneration == generation else { return }
+      self?.audioSettingsStatusTask = nil
+    }
+  }
+
+  public func refreshAudioSettingsStatusNow(preserveStatusText: Bool = false) async {
+    audioSettingsStatusRefreshGeneration += 1
+    let generation = audioSettingsStatusRefreshGeneration
+    audioSettingsStatusTask?.cancel()
+    audioSettingsStatusTask = nil
+    pendingAudioSettingsRefreshPreservesStatusText = preserveStatusText
+    await refreshAudioSettingsStatusNow(preserveStatusText: preserveStatusText, generation: generation)
+  }
+
+  private func refreshAudioSettingsStatusNow(preserveStatusText: Bool, generation: Int) async {
+    let runtimeIdentity = WorkspaceRuntimeIdentity.current()
+    let status = await Task.detached(priority: .utility) {
+      LocalWhisperTranscriber.installationStatus()
+    }.value
+    guard !Task.isCancelled, generation == audioSettingsStatusRefreshGeneration else { return }
+    setIfChanged(\.audioSettingsStatus, status)
+    setIfChanged(\.meetingTranscriptionBackendText, status.backendDescription)
+    setIfChanged(\.workspaceRuntimeIdentity, runtimeIdentity)
+    if !preserveStatusText && (audioSettingsStatusText.isEmpty || !isInstallingFastTranscriber) {
+      setIfChanged(\.audioSettingsStatusText, status.detailText)
+    }
+  }
+
+  public func flushAudioSettingsStatusRefresh() async {
+    await audioSettingsStatusTask?.value
+  }
+
+  public func setAudioSettingsExpanded(_ expanded: Bool) {
+    isAudioSettingsExpanded = expanded
   }
 
   public func installFastMeetingTranscriber() async {
@@ -1116,24 +1591,51 @@ public final class WorkspaceStore: ObservableObject {
   public func refreshCorpusFiles() async {
     guard let corpusRoot else {
       corpusFiles = []
+      cachedOpenClawAgentThreadDirectories = []
       orgRoamLinkResolver = .empty
       orgRoamLinkResolverGeneration += 1
       searchIndexTask?.cancel()
       searchIndexTask = nil
       searchIndexGeneration += 1
+      searchNodeFilterTask?.cancel()
+      searchNodeFilterTask = nil
+      searchNodeFilterGeneration += 1
+      pageSearchMatchTask?.cancel()
+      pageSearchMatchTask = nil
+      pageSearchMatchGeneration += 1
       isBuildingSearchIndex = false
       searchIndexStatusText = ""
       return
     }
 
+    let scanRoot = corpusRoot.standardizedFileURL
+    if let corpusFileScanTask,
+       corpusFileScanRoot == scanRoot {
+      _ = try? await corpusFileScanTask.value
+      return
+    }
+
+    let scanTask = Task.detached(priority: .utility) {
+      try Self.scanCorpusFileDisplayState(corpusRoot: scanRoot)
+    }
+    corpusFileScanGeneration += 1
+    let scanGeneration = corpusFileScanGeneration
+    corpusFileScanTask = scanTask
+    corpusFileScanRoot = scanRoot
     isScanningCorpusFiles = true
-    defer { isScanningCorpusFiles = false }
+    defer {
+      if corpusFileScanGeneration == scanGeneration {
+        corpusFileScanTask = nil
+        corpusFileScanRoot = nil
+        isScanningCorpusFiles = false
+      }
+    }
 
     do {
-      let files = try await Task.detached(priority: .utility) {
-        try Self.scanCorpusFiles(corpusRoot: corpusRoot)
-      }.value
-      corpusFiles = files
+      let displayState = try await scanTask.value
+      guard self.corpusRoot?.standardizedFileURL == scanRoot else { return }
+      let files = displayState.files
+      assignCorpusFiles(displayState)
       refreshOrgRoamLinkResolver(files: files)
       scheduleSearchIndexBuild(corpusRoot: corpusRoot)
       if selectedSurface == .files {
@@ -1155,22 +1657,50 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
-    isLoadingAgenda = true
-    errorText = nil
-    defer { isLoadingAgenda = false }
+    let startDate = Self.formatDate(Date())
+    let endDate = Self.formatDate(Calendar(identifier: .gregorian).date(byAdding: .day, value: 6, to: Date()) ?? Date())
+    let request = AgendaRefreshRequest(
+      corpusRoot: corpusRoot.standardizedFileURL,
+      startDate: startDate,
+      endDate: endDate,
+      preserveSelection: preserveSelection,
+      updatesStatus: updatesStatus
+    )
+    if let agendaRefreshTask,
+       agendaRefreshRequest == request {
+      _ = try? await agendaRefreshTask.value
+      return
+    }
 
-    do {
-      let today = Self.formatDate(Date())
-      let end = Self.formatDate(Calendar(identifier: .gregorian).date(byAdding: .day, value: 6, to: Date()) ?? Date())
-      let payload: AgendaPayload = try await cli.runJSON([
+    let cli = cli
+    let task = Task {
+      try await cli.runJSON([
         "agenda",
-        "--dir", corpusRoot.path,
+        "--dir", request.corpusRoot.path,
         "--recursive",
-        "--from", today,
-        "--to", end,
+        "--from", request.startDate,
+        "--to", request.endDate,
         "--format", "json",
         "--workload"
-      ])
+      ]) as AgendaPayload
+    }
+    agendaRefreshGeneration += 1
+    let generation = agendaRefreshGeneration
+    agendaRefreshTask = task
+    agendaRefreshRequest = request
+    isLoadingAgenda = true
+    errorText = nil
+    defer {
+      if agendaRefreshGeneration == generation {
+        agendaRefreshTask = nil
+        agendaRefreshRequest = nil
+        isLoadingAgenda = false
+      }
+    }
+
+    do {
+      let payload = try await task.value
+      guard self.corpusRoot?.standardizedFileURL == request.corpusRoot else { return }
       agenda = payload
       syncAgendaSelectionAfterRefresh(preserveSelection: preserveSelection)
       if updatesStatus {
@@ -1234,8 +1764,11 @@ public final class WorkspaceStore: ObservableObject {
           if updatesStatus {
             statusText = "Scanning approval candidates..."
           }
-          let files = try Self.scanCorpusFiles(corpusRoot: corpusRoot)
-          corpusFiles = files
+          let displayState = try await Task.detached(priority: .utility) {
+            try Self.scanCorpusFileDisplayState(corpusRoot: corpusRoot)
+          }.value
+          let files = displayState.files
+          assignCorpusFiles(displayState)
           candidateSources = await approvalCandidateSources(
             files: files,
             corpusRoot: corpusRoot,
@@ -1647,13 +2180,25 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func clearApprovalFilter() {
-    approvalFilter = ""
+    setIfChanged(\.approvalFilter, "")
   }
 
   public func selectApprovalItem(_ item: ApprovalItem) {
-    selectedApprovalItemID = item.id
+    setIfChanged(\.selectedApprovalItemID, item.id)
     select(.agenda(item.agendaItem()))
-    statusText = item.sourceLabel
+    setIfChanged(\.statusText, item.sourceLabel)
+  }
+
+  public func activateApprovalItemFromRowTap(_ item: ApprovalItem) {
+    guard selectedApprovalItemID != item.id else { return }
+    selectApprovalItem(item)
+    suppressNextApprovalSelectionActivation = true
+  }
+
+  public func consumeApprovalSelectionActivationSuppression() -> Bool {
+    guard suppressNextApprovalSelectionActivation else { return false }
+    suppressNextApprovalSelectionActivation = false
+    return true
   }
 
   public func approve(_ item: ApprovalItem) async {
@@ -1668,23 +2213,23 @@ public final class WorkspaceStore: ObservableObject {
 
   public func discussApprovalInOpenClaw(_ item: ApprovalItem, message: String? = nil) async {
     let text = Self.openClawApprovalDiscussionPrompt(item: item, message: message)
-    selectedSurface = .openClaw
+    setIfChanged(\.selectedSurface, .openClaw)
     await sendOpenClawMessage(text: text)
   }
 
   public func copyApprovalDiscussionText(_ item: ApprovalItem) {
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(item.discussionText, forType: .string)
-    statusText = "Copied approval discussion text"
+    setIfChanged(\.statusText, "Copied approval discussion text")
   }
 
   private func syncApprovalSelectionAfterRefresh() {
     guard !visibleApprovalItems.isEmpty else {
-      selectedApprovalItemID = nil
+      setIfChanged(\.selectedApprovalItemID, nil)
       return
     }
     if let selectedApprovalItemID,
-       visibleApprovalItems.contains(where: { $0.id == selectedApprovalItemID }) {
+       visibleApprovalItemsByID[selectedApprovalItemID] != nil {
       return
     }
     if selectedSurface == .approvals {
@@ -1692,11 +2237,24 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func rebuildApprovalDisplayCache() {
-    visibleApprovalItems = approvalItems.filter { $0.matchesApprovalFilter(approvalFilter) }
+  private func rebuildApprovalDisplayCache(
+    items: [ApprovalItem]? = nil,
+    filter: String? = nil
+  ) {
+    let sourceItems = items ?? approvalItems
+    let sourceFilter = filter ?? approvalFilter
+    visibleApprovalItems = sourceItems.filter { $0.matchesApprovalFilter(sourceFilter) }
+    let standardizedRoot = corpusRoot?.standardizedFileURL
+    approvalDisplayItems = visibleApprovalItems.map { item in
+      ApprovalDisplayItem(
+        item: item,
+        relativePath: standardizedRoot.map { Self.relativePath(for: item.file, root: $0) } ?? item.file
+      )
+    }
+    visibleApprovalItemsByID = Self.lookupByID(visibleApprovalItems)
     if let selectedApprovalItemID,
-       !visibleApprovalItems.contains(where: { $0.id == selectedApprovalItemID }) {
-      self.selectedApprovalItemID = nil
+       visibleApprovalItemsByID[selectedApprovalItemID] == nil {
+      setIfChanged(\.selectedApprovalItemID, nil)
     }
   }
 
@@ -2000,11 +2558,15 @@ public final class WorkspaceStore: ObservableObject {
     defer { isSearching = false }
 
     let started = Date()
-    let chatResults = Self.searchOpenClawChatThreads(openClawChatThreads, query: query, limit: 25)
+    let chatResults = Self.searchOpenClawChatThreads(
+      openClawChatThreadsForCurrentMessages(),
+      query: query,
+      limit: 25
+    )
     guard let corpusRoot else {
       searchResults = []
       openClawChatSearchResults = chatResults
-      selectedSurface = .search
+      setIfChanged(\.selectedSurface, .search)
       let elapsed = Date().timeIntervalSince(started)
       statusText = chatResults.isEmpty
         ? "No corpus selected"
@@ -2024,7 +2586,7 @@ public final class WorkspaceStore: ObservableObject {
       ])
       searchResults = Self.prioritizedSearchResultsForDisplay(payload.results)
       openClawChatSearchResults = chatResults
-      selectedSurface = .search
+      setIfChanged(\.selectedSurface, .search)
       let elapsed = Date().timeIntervalSince(started)
       let totalCount = payload.results.count + chatResults.count
       statusText = "\(totalCount) search result\(totalCount == 1 ? "" : "s") in \(String(format: "%.1f", elapsed))s"
@@ -2040,13 +2602,32 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
+    let scanRoot = corpusRoot.standardizedFileURL
+    if let meetingScanTask,
+       meetingScanRoot == scanRoot {
+      _ = try? await meetingScanTask.value
+      return
+    }
+
+    let scanTask = Task.detached(priority: .utility) {
+      try Self.scanMeetingItems(corpusRoot: scanRoot)
+    }
+    meetingScanGeneration += 1
+    let scanGeneration = meetingScanGeneration
+    meetingScanTask = scanTask
+    meetingScanRoot = scanRoot
     isLoadingMeetings = true
-    defer { isLoadingMeetings = false }
+    defer {
+      if meetingScanGeneration == scanGeneration {
+        meetingScanTask = nil
+        meetingScanRoot = nil
+        isLoadingMeetings = false
+      }
+    }
 
     do {
-      let items = try await Task.detached(priority: .utility) {
-        try Self.scanMeetingItems(corpusRoot: corpusRoot)
-      }.value
+      let items = try await scanTask.value
+      guard self.corpusRoot?.standardizedFileURL == scanRoot else { return }
       meetings = items
       if selectedSurface == .meetings {
         statusText = "\(items.count) meeting\(items.count == 1 ? "" : "s")"
@@ -2122,7 +2703,7 @@ public final class WorkspaceStore: ObservableObject {
       isRecordingMeeting = true
       isMeetingRecordingPaused = false
       startMeetingInputMetering()
-      selectedSurface = .meetings
+      setIfChanged(\.selectedSurface, .meetings)
       meetingStatusText = "Recording \(paths.title)"
       statusText = meetingStatusText
     } catch {
@@ -2470,8 +3051,26 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func selectMeeting(_ meeting: MeetingWorkspaceItem) {
-    selectedSurface = .meetings
+    setIfChanged(\.selectedSurface, .meetings)
     select(.meeting(meeting))
+  }
+
+  public func activateMeetingFromRowTap(_ meeting: MeetingWorkspaceItem) {
+    guard !isActiveMeeting(meeting) else { return }
+    selectMeeting(meeting)
+    suppressNextMeetingSelectionActivation = true
+  }
+
+  public func consumeMeetingSelectionActivationSuppression() -> Bool {
+    guard suppressNextMeetingSelectionActivation else { return false }
+    suppressNextMeetingSelectionActivation = false
+    return true
+  }
+
+  private func isActiveMeeting(_ meeting: MeetingWorkspaceItem) -> Bool {
+    guard selectedMeetingID == meeting.id else { return false }
+    guard selectedLocationMatches(.meeting(meeting)) else { return false }
+    return selectedEntrySource != nil || isRenderingEntrySource || (isLoadingEntrySource && entrySourceLoadTask != nil)
   }
 
   public func askOpenClawAboutSelectedMeeting() {
@@ -2480,7 +3079,7 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
     openClawDraft = "Use the selected meeting note and transcript artifact as context. Summarize the meeting, extract decisions, list action items, and cite the org2 file paths you used."
-    selectedSurface = .openClaw
+    setIfChanged(\.selectedSurface, .openClaw)
   }
 
   public func confirmAndDeleteMeeting(_ meeting: MeetingWorkspaceItem) {
@@ -2554,7 +3153,7 @@ public final class WorkspaceStore: ObservableObject {
 
   public func askOpenClawAboutBlock(_ block: OrgEditableBlock) {
     if selectedRenderedBlockIndexes[block.id] != nil {
-      selectedBlockID = block.id
+      setIfChanged(\.selectedBlockID, block.id)
     }
 
     guard let pointer = openClawContextPointer(for: OpenClawBlockContextPointer(source: selectedEntrySource, block: block)) else {
@@ -2654,16 +3253,29 @@ public final class WorkspaceStore: ObservableObject {
     return false
   }
 
-  public var meetingDisplaySections: [MeetingSection] {
+  private func rebuildMeetingDisplaySections() {
+    meetingDisplaySections = Self.makeMeetingDisplaySections(meetings, corpusRoot: corpusRoot)
+  }
+
+  private static func makeMeetingDisplaySections(
+    _ meetings: [MeetingWorkspaceItem],
+    corpusRoot: URL?
+  ) -> [MeetingSection] {
     let grouped = Dictionary(grouping: meetings) { item -> String in
       guard let recordedAt = item.recordedAt, recordedAt.count >= 10 else {
         return "Unknown date"
       }
       return String(recordedAt.prefix(10))
     }
+    let standardizedRoot = corpusRoot?.standardizedFileURL
     return grouped.keys.sorted(by: >).map { key in
       let items = (grouped[key] ?? []).sorted {
         ($0.recordedAt ?? "") > ($1.recordedAt ?? "")
+      }.map { item in
+        MeetingDisplayItem(
+          meeting: item,
+          relativePath: standardizedRoot.map { Self.relativePath(for: item.file, root: $0) } ?? item.file
+        )
       }
       return MeetingSection(id: key, label: key, meetings: items)
     }
@@ -2671,14 +3283,14 @@ public final class WorkspaceStore: ObservableObject {
 
   public func select(_ location: WorkspaceLocation) {
     if case .search = location {
-      isPageSearchPresented = false
-      pageSearchQuery = ""
-      renderedSearchHighlightQuery = Self.normalizedRenderedSearchHighlightQuery(searchQuery)
+      setIfChanged(\.isPageSearchPresented, false)
+      setIfChanged(\.pageSearchQuery, "")
+      setIfChanged(\.renderedSearchHighlightQuery, Self.normalizedRenderedSearchHighlightQuery(searchQuery))
       resetPageSearchMatches()
     } else {
-      isPageSearchPresented = false
-      pageSearchQuery = ""
-      renderedSearchHighlightQuery = nil
+      setIfChanged(\.isPageSearchPresented, false)
+      setIfChanged(\.pageSearchQuery, "")
+      setIfChanged(\.renderedSearchHighlightQuery, nil)
       resetPageSearchMatches()
     }
     activateDetailLocation(location, mode: nil, recordsHistory: true)
@@ -2689,19 +3301,25 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func clearRenderedSearchHighlight() {
-    renderedSearchHighlightQuery = nil
-    pageSearchQuery = ""
-    isPageSearchPresented = false
+    setIfChanged(\.renderedSearchHighlightQuery, nil)
+    setIfChanged(\.pageSearchQuery, "")
+    setIfChanged(\.isPageSearchPresented, false)
     resetPageSearchMatches()
   }
 
   @discardableResult
   public func focusPageSearch() -> Bool {
     guard selectedLocation != nil else { return false }
-    isPageSearchPresented = true
-    pageSearchQuery = renderedSearchHighlightQuery ?? ""
-    renderedSearchHighlightQuery = Self.normalizedRenderedSearchHighlightQuery(pageSearchQuery)
-    refreshPageSearchMatches(selectFirst: true)
+    let wasPresented = isPageSearchPresented
+    let nextQuery = renderedSearchHighlightQuery ?? ""
+    let queryChanged = pageSearchQuery != nextQuery
+    setIfChanged(\.isPageSearchPresented, true)
+    if queryChanged {
+      pageSearchQuery = nextQuery
+    }
+    if !wasPresented || queryChanged {
+      schedulePageSearchMatches(selectFirst: true, debounce: false)
+    }
     pageSearchFocusToken += 1
     return true
   }
@@ -2729,29 +3347,72 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func selectAdjacentPageSearchOccurrence(delta: Int) {
-    refreshPageSearchMatches(selectFirst: false)
-    guard !pageSearchRenderedMatches.isEmpty else { return }
+    guard !pageSearchRenderedMatches.isEmpty else {
+      schedulePageSearchMatches(selectFirst: false, debounce: false)
+      return
+    }
     let current = pageSearchSelectedOccurrenceIndex ?? 0
     let count = pageSearchRenderedMatches.count
     let next = (current + delta + count) % count
     selectPageSearchOccurrence(at: next)
   }
 
-  private func refreshPageSearchMatches(selectFirst: Bool) {
-    guard let query = renderedSearchHighlightQuery else {
-      resetPageSearchMatches()
+  private func schedulePageSearchMatches(selectFirst: Bool, debounce: Bool = true) {
+    let query = Self.normalizedRenderedSearchHighlightQuery(pageSearchQuery)
+    setIfChanged(\.renderedSearchHighlightQuery, query)
+    pageSearchMatchGeneration += 1
+    let generation = pageSearchMatchGeneration
+    pageSearchMatchTask?.cancel()
+
+    guard let query else {
+      pageSearchMatchTask = nil
+      resetPageSearchMatches(cancelPending: false)
       return
     }
 
-    let matches = Self.renderedPageSearchMatches(in: selectedRenderedBlocks, query: query)
-    pageSearchRenderedMatches = matches
-    pageSearchOccurrenceCount = Self.countSearchOccurrences(
-      in: pageSearchFullFileText() ?? selectedEntrySource?.text ?? "",
-      query: query
-    )
+    let source = selectedEntrySource
+    let sourceID = source?.id
+    let fullText = pageSearchFullFileTextSnapshot(for: source)
+    let blocks = selectedRenderedBlocks
+    pageSearchMatchTask = Task { [blocks, debounce, fullText, generation, query, selectFirst, sourceID] in
+      if debounce {
+        try? await Task.sleep(nanoseconds: 60_000_000)
+      }
+      guard !Task.isCancelled else { return }
 
-    guard !matches.isEmpty else {
-      pageSearchSelectedOccurrenceIndex = nil
+      let result = await Task.detached(priority: .userInitiated) {
+        PageSearchMatchResult(
+          query: query,
+          sourceID: sourceID,
+          matches: Self.renderedPageSearchMatches(in: blocks, query: query),
+          occurrenceCount: Self.countSearchOccurrences(in: fullText, query: query)
+        )
+      }.value
+      guard !Task.isCancelled else { return }
+
+      await MainActor.run { [weak self] in
+        guard let self,
+              self.pageSearchMatchGeneration == generation,
+              self.renderedSearchHighlightQuery == result.query,
+              self.selectedEntrySource?.id == result.sourceID
+        else {
+          return
+        }
+        self.applyPageSearchMatches(result, selectFirst: selectFirst)
+      }
+    }
+  }
+
+  public func flushPageSearchMatches() async {
+    await pageSearchMatchTask?.value
+  }
+
+  private func applyPageSearchMatches(_ result: PageSearchMatchResult, selectFirst: Bool) {
+    pageSearchRenderedMatches = result.matches
+    setIfChanged(\.pageSearchOccurrenceCount, result.occurrenceCount)
+
+    guard !result.matches.isEmpty else {
+      setIfChanged(\.pageSearchSelectedOccurrenceIndex, nil)
       return
     }
 
@@ -2760,33 +3421,43 @@ public final class WorkspaceStore: ObservableObject {
     if selectFirst || selectedIndex == nil {
       nextIndex = 0
     } else {
-      nextIndex = min(selectedIndex ?? 0, matches.count - 1)
+      nextIndex = min(selectedIndex ?? 0, result.matches.count - 1)
     }
     selectPageSearchOccurrence(at: nextIndex)
   }
 
-  private func resetPageSearchMatches() {
-    pageSearchRenderedMatches = []
-    pageSearchOccurrenceCount = 0
-    pageSearchSelectedOccurrenceIndex = nil
+  private func resetPageSearchMatches(cancelPending: Bool = true) {
+    if cancelPending {
+      pageSearchMatchTask?.cancel()
+      pageSearchMatchTask = nil
+      pageSearchMatchGeneration += 1
+    }
+    if !pageSearchRenderedMatches.isEmpty {
+      pageSearchRenderedMatches = []
+    }
+    setIfChanged(\.pageSearchOccurrenceCount, 0)
+    setIfChanged(\.pageSearchSelectedOccurrenceIndex, nil)
   }
 
   private func selectPageSearchOccurrence(at index: Int) {
     guard pageSearchRenderedMatches.indices.contains(index) else { return }
     let match = pageSearchRenderedMatches[index]
-    pageSearchSelectedOccurrenceIndex = index
-    selectedBlockID = match.blockID
+    setIfChanged(\.pageSearchSelectedOccurrenceIndex, index)
+    setIfChanged(\.selectedBlockID, match.blockID)
     requestDetailScroll(toBlock: match.blockID)
   }
 
-  private func pageSearchFullFileText() -> String? {
-    guard let file = selectedEntrySource?.file else { return nil }
-    return try? String(contentsOf: URL(fileURLWithPath: file), encoding: .utf8)
+  private func pageSearchFullFileTextSnapshot(for source: EntrySource?) -> String {
+    guard let source else { return "" }
+    if let cache = pageSearchFullFileTextCache, cache.sourceID == source.id {
+      return cache.text
+    }
+    return source.text
   }
 
   public func navigateBackInDetail() {
     guard let snapshot = detailNavigationBackStack.popLast() else { return }
-    selectedSurface = snapshot.selectedSurface
+    setIfChanged(\.selectedSurface, snapshot.selectedSurface)
     activateDetailLocation(snapshot.location, mode: snapshot.selectedEntrySourceMode, recordsHistory: false)
   }
 
@@ -2798,12 +3469,12 @@ public final class WorkspaceStore: ObservableObject {
     let nextMode = resolvedEntrySourceMode(for: location, requestedMode: mode)
     if canReuseActiveDetail(for: location, mode: nextMode) {
       applyDetailSelectionMetadata(for: location)
-      selectedLocation = location
+      setIfChanged(\.selectedLocation, location)
       return
     }
 
-    isWorkspaceDetailPaneClosed = false
-    isWorkspaceDetailPaneExpanded = false
+    setIfChanged(\.isWorkspaceDetailPaneClosed, false)
+    setIfChanged(\.isWorkspaceDetailPaneExpanded, false)
     if recordsHistory, let selectedLocation, selectedLocation != location {
       detailNavigationBackStack.append(DetailNavigationSnapshot(
         location: selectedLocation,
@@ -2819,22 +3490,22 @@ public final class WorkspaceStore: ObservableObject {
     case .search:
       break
     default:
-      isPageSearchPresented = false
-      pageSearchQuery = ""
-      renderedSearchHighlightQuery = nil
+      setIfChanged(\.isPageSearchPresented, false)
+      setIfChanged(\.pageSearchQuery, "")
+      setIfChanged(\.renderedSearchHighlightQuery, nil)
       resetPageSearchMatches()
     }
 
     applyDetailSelectionMetadata(for: location)
-    selectedLocation = location
-    isEditingEntry = false
-    editableEntryText = ""
+    setIfChanged(\.selectedLocation, location)
+    setIfChanged(\.isEditingEntry, false)
+    setIfChanged(\.editableEntryText, "")
     resetBlockState()
-    selectedEntrySourceMode = nextMode
-    selectedEntrySource = nil
-    selectedRenderedBlocks = []
-    isRenderingEntrySource = false
-    Task { await loadBacklinks(for: location) }
+    setIfChanged(\.selectedEntrySourceMode, nextMode)
+    setIfChanged(\.selectedEntrySource, nil)
+    clearSelectedRenderedBlocks()
+    setIfChanged(\.isRenderingEntrySource, false)
+    scheduleBacklinksLoad(for: location)
     scheduleEntrySourceLoad(for: location)
   }
 
@@ -2858,25 +3529,27 @@ public final class WorkspaceStore: ObservableObject {
     else {
       return false
     }
-    return selectedEntrySource != nil
+    return selectedEntrySource != nil || isRenderingEntrySource || (isLoadingEntrySource && entrySourceLoadTask != nil)
   }
 
   private func applyDetailSelectionMetadata(for location: WorkspaceLocation) {
     if case .agenda(let item) = location {
-      selectedAgendaItemID = item.id
+      setIfChanged(\.selectedAgendaItemID, item.id)
     }
     if case .assigned(let item) = location {
-      selectedAssignedWorkItemID = item.id
+      setIfChanged(\.selectedAssignedWorkItemID, item.id)
     }
     if case .openClaw(let thread) = location {
-      selectedOpenClawThreadID = thread.id
+      setIfChanged(\.selectedOpenClawThreadID, thread.id)
     }
     if case .meeting(let meeting) = location {
-      selectedMeetingID = meeting.id
+      setIfChanged(\.selectedMeetingID, meeting.id)
     }
   }
 
   public func loadEntrySource(for location: WorkspaceLocation) async {
+    entrySourceLoadTask?.cancel()
+    entrySourceLoadTask = nil
     entrySourceLoadGeneration += 1
     let generation = entrySourceLoadGeneration
     await loadEntrySource(for: location, generation: generation)
@@ -2885,7 +3558,10 @@ public final class WorkspaceStore: ObservableObject {
   private func scheduleEntrySourceLoad(for location: WorkspaceLocation) {
     entrySourceLoadGeneration += 1
     let generation = entrySourceLoadGeneration
-    Task { await loadEntrySource(for: location, generation: generation) }
+    entrySourceLoadTask?.cancel()
+    entrySourceLoadTask = Task { @MainActor [weak self] in
+      await self?.loadEntrySource(for: location, generation: generation)
+    }
   }
 
   private func loadEntrySource(for location: WorkspaceLocation, generation: Int) async {
@@ -2901,20 +3577,17 @@ public final class WorkspaceStore: ObservableObject {
 
     do {
       let mode = selectedEntrySourceMode
-      let source = try await Task.detached(priority: .userInitiated) {
-        switch mode {
-        case .entry:
-          return try Self.entrySource(file: location.file, line: location.lineForEditor)
-        case .page:
-          return try Self.pageSource(file: location.file)
-        }
+      let loaded = try await Task.detached(priority: .userInitiated) {
+        try Self.loadedEntrySource(file: location.file, line: location.lineForEditor, mode: mode)
       }.value
       guard generation == entrySourceLoadGeneration,
             selectedLocationMatches(location)
       else {
         return
       }
+      let source = loaded.source
       selectedEntrySource = source
+      pageSearchFullFileTextCache = (source.id, loaded.fullFileText)
       if isEditingEntry {
         editableEntryText = source.text
       }
@@ -2926,7 +3599,7 @@ public final class WorkspaceStore: ObservableObject {
         return
       }
       selectedEntrySource = nil
-      selectedRenderedBlocks = []
+      clearSelectedRenderedBlocks()
       selectedBlockID = nil
       isRenderingEntrySource = false
       errorText = error.localizedDescription
@@ -3113,7 +3786,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func clearSelectedBlock() {
-    selectedBlockID = nil
+    setIfChanged(\.selectedBlockID, nil)
   }
 
   public func canSelectAdjacentBlock(_ direction: OrgBlockMoveDirection) -> Bool {
@@ -3130,12 +3803,12 @@ public final class WorkspaceStore: ObservableObject {
 
   public func selectAdjacentBlock(_ direction: OrgBlockMoveDirection) {
     guard let selectedBlock else {
-      statusText = "Select a block first"
+      setIfChanged(\.statusText, "Select a block first")
       return
     }
     let blocks = selectableBlocks
     guard let index = blocks.firstIndex(where: { $0.id == selectedBlock.id }) else {
-      selectedBlockID = nil
+      setIfChanged(\.selectedBlockID, nil)
       return
     }
 
@@ -3146,7 +3819,7 @@ public final class WorkspaceStore: ObservableObject {
     case .down:
       nextIndex = min(blocks.count - 1, index + 1)
     }
-    selectedBlockID = blocks[nextIndex].id
+    setIfChanged(\.selectedBlockID, blocks[nextIndex].id)
   }
 
   public func toggleRenderedBlockFold(_ block: OrgEditableBlock) {
@@ -3156,7 +3829,7 @@ public final class WorkspaceStore: ObservableObject {
   @discardableResult
   public func collapseSelectedRenderedBlock() -> Bool {
     guard let selectedBlock else {
-      statusText = "Select a block first"
+      setIfChanged(\.statusText, "Select a block first")
       return false
     }
     return setRenderedBlock(selectedBlock, folded: true)
@@ -3165,37 +3838,35 @@ public final class WorkspaceStore: ObservableObject {
   @discardableResult
   public func expandSelectedRenderedBlock() -> Bool {
     guard let selectedBlock else {
-      statusText = "Select a block first"
+      setIfChanged(\.statusText, "Select a block first")
       return false
     }
     return setRenderedBlock(selectedBlock, folded: false)
   }
 
   public func collapseAllRenderedBlocks() {
-    let foldableIDs = Set(selectedRenderedBlocks.filter {
-      OrgRenderedFoldTree.isFoldable($0, in: selectedRenderedBlocks)
-    }.map(\.id))
-    foldedRenderedBlockIDs = foldableIDs
+    let foldableIDs = OrgRenderedFoldTree.allFoldableIDs(in: selectedRenderedBlocks)
+    setIfChanged(\.foldedRenderedBlockIDs, foldableIDs)
     if let selectedBlockID,
        let ancestorID = OrgRenderedFoldTree.foldedAncestorID(
         hiding: selectedBlockID,
         foldedBlockIDs: foldableIDs,
         blocks: selectedRenderedBlocks
        ) {
-      self.selectedBlockID = ancestorID
+      setIfChanged(\.selectedBlockID, ancestorID)
     }
-    statusText = foldableIDs.isEmpty ? "Nothing to collapse" : "Collapsed rendered blocks"
+    setIfChanged(\.statusText, foldableIDs.isEmpty ? "Nothing to collapse" : "Collapsed rendered blocks")
   }
 
   public func expandAllRenderedBlocks() {
-    foldedRenderedBlockIDs = []
-    statusText = "Expanded rendered blocks"
+    setIfChanged(\.foldedRenderedBlockIDs, [])
+    setIfChanged(\.statusText, "Expanded rendered blocks")
   }
 
   @discardableResult
   private func setRenderedBlock(_ block: OrgEditableBlock, folded: Bool) -> Bool {
     guard OrgRenderedFoldTree.isFoldable(block, in: selectedRenderedBlocks) else {
-      statusText = "Selected block has nothing to \(folded ? "collapse" : "expand")"
+      setIfChanged(\.statusText, "Selected block has nothing to \(folded ? "collapse" : "expand")")
       return false
     }
 
@@ -3206,20 +3877,20 @@ public final class WorkspaceStore: ObservableObject {
          let range = OrgRenderedFoldTree.childrenRange(for: block, in: selectedRenderedBlocks),
          let selectedIndex = selectedRenderedBlocks.firstIndex(where: { $0.id == selectedBlockID }),
          range.contains(selectedIndex) {
-        self.selectedBlockID = block.id
+        setIfChanged(\.selectedBlockID, block.id)
       }
-      statusText = "Collapsed block"
+      setIfChanged(\.statusText, "Collapsed block")
     } else {
       nextFoldedIDs.remove(block.id)
-      statusText = "Expanded block"
+      setIfChanged(\.statusText, "Expanded block")
     }
-    foldedRenderedBlockIDs = nextFoldedIDs
+    setIfChanged(\.foldedRenderedBlockIDs, nextFoldedIDs)
     return true
   }
 
   public func beginEditingSelectedBlock() {
     guard let selectedBlock else {
-      statusText = "Select a block first"
+      setIfChanged(\.statusText, "Select a block first")
       return
     }
     beginEditingBlock(selectedBlock)
@@ -3227,7 +3898,7 @@ public final class WorkspaceStore: ObservableObject {
 
   public func beginEditingSelectedBlock(appending text: String) -> Bool {
     guard let selectedBlock else {
-      statusText = "Select a block first"
+      setIfChanged(\.statusText, "Select a block first")
       return false
     }
     guard let draft = Self.editingDraft(selectedBlock, appending: text) else {
@@ -3239,7 +3910,7 @@ public final class WorkspaceStore: ObservableObject {
 
   public func duplicateSelectedBlock() async {
     guard let selectedBlock else {
-      statusText = "Select a block first"
+      setIfChanged(\.statusText, "Select a block first")
       return
     }
     await duplicateBlock(selectedBlock)
@@ -3247,7 +3918,7 @@ public final class WorkspaceStore: ObservableObject {
 
   public func deleteSelectedBlock() async {
     guard let selectedBlock else {
-      statusText = "Select a block first"
+      setIfChanged(\.statusText, "Select a block first")
       return
     }
     await deleteBlock(selectedBlock)
@@ -3255,7 +3926,7 @@ public final class WorkspaceStore: ObservableObject {
 
   public func moveSelectedBlock(_ direction: OrgBlockMoveDirection) async {
     guard let selectedBlock else {
-      statusText = "Select a block first"
+      setIfChanged(\.statusText, "Select a block first")
       return
     }
     await moveBlock(selectedBlock, direction: direction)
@@ -3263,7 +3934,7 @@ public final class WorkspaceStore: ObservableObject {
 
   public func insertBlockAfterSelected(_ kind: OrgInsertBlockKind, initialText: String? = nil) async {
     guard let selectedBlock else {
-      statusText = "Select a block first"
+      setIfChanged(\.statusText, "Select a block first")
       return
     }
     await insertBlock(after: selectedBlock, kind: kind, initialText: initialText)
@@ -3609,7 +4280,24 @@ public final class WorkspaceStore: ObservableObject {
       preservesSelectedRenderedBlocksMetadataForNextAssignment = true
     }
     selectedRenderedBlocks = blocks
-    foldedRenderedBlockIDs = OrgRenderedFoldTree.prunedFoldedIDs(foldedRenderedBlockIDs, blocks: blocks)
+  }
+
+  private func prepareSelectedRenderedBlocksDisplayState(for blocks: [OrgEditableBlock]) {
+    let prunedFoldedBlockIDs = OrgRenderedFoldTree.prunedFoldedIDs(foldedRenderedBlockIDs, blocks: blocks)
+
+    if preservesSelectedRenderedBlocksMetadataForNextAssignment {
+      selectedRenderedBlocksRenderSignature = Self.renderedBlocksRenderSignature(for: blocks)
+      preservesSelectedRenderedBlocksMetadataForNextAssignment = false
+    } else {
+      let metadata = Self.renderedBlocksMetadata(for: blocks)
+      selectedRenderedBlocksRenderSignature = metadata.renderSignature
+      selectedRenderedBlocksSignature = metadata.structureSignature
+      selectedRenderedBlockIndexes = metadata.indexes
+    }
+
+    if prunedFoldedBlockIDs != foldedRenderedBlockIDs {
+      foldedRenderedBlockIDs = prunedFoldedBlockIDs
+    }
   }
 
   private func shouldPreserveRenderedBlockMetadata(
@@ -4361,17 +5049,39 @@ public final class WorkspaceStore: ObservableObject {
   public func refreshOpenClawThreads() async {
     guard let corpusRoot else {
       openClawThreads = []
+      cachedOpenClawAgentThreadDirectories = []
       return
     }
 
+    let refreshRoot = corpusRoot.standardizedFileURL
+    let request = OpenClawThreadRefreshRequest(corpusRoot: refreshRoot)
     isLoadingOpenClawThreads = true
-    defer { isLoadingOpenClawThreads = false }
+    if let openClawThreadRefreshTask,
+       openClawThreadRefreshRequest == request {
+      _ = try? await openClawThreadRefreshTask.value
+      return
+    }
+
+    let task = Task.detached(priority: .utility) {
+      try Self.scanOpenClawThreads(corpusRoot: refreshRoot)
+    }
+    openClawThreadRefreshGeneration += 1
+    let generation = openClawThreadRefreshGeneration
+    openClawThreadRefreshTask = task
+    openClawThreadRefreshRequest = request
+    defer {
+      if openClawThreadRefreshGeneration == generation {
+        openClawThreadRefreshTask = nil
+        openClawThreadRefreshRequest = nil
+        isLoadingOpenClawThreads = false
+      }
+    }
 
     do {
-      let threads = try await Task.detached(priority: .utility) {
-        try Self.scanOpenClawThreads(corpusRoot: corpusRoot)
-      }.value
-      openClawThreads = threads
+      let result = try await task.value
+      guard self.corpusRoot?.standardizedFileURL == refreshRoot else { return }
+      refreshCachedOpenClawAgentThreadDirectories(corpusRoot: refreshRoot, directories: result.directories)
+      openClawThreads = result.threads
       syncOpenClawSelectionAfterRefresh()
     } catch {
       errorText = error.localizedDescription
@@ -4385,17 +5095,46 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
+    let refreshRoot = corpusRoot.standardizedFileURL
     isLoadingAssignedWork = true
-    defer { isLoadingAssignedWork = false }
+    defer {
+      if assignedWorkRefreshTask == nil {
+        isLoadingAssignedWork = false
+      }
+    }
 
     do {
-      let files = corpusFiles.isEmpty ? try Self.scanCorpusFiles(corpusRoot: corpusRoot) : corpusFiles
-      let items = try await Task.detached(priority: .utility) {
+      let files = try await currentOrScannedCorpusFiles()
+      let request = AssignedWorkRefreshRequest(
+        corpusRoot: refreshRoot,
+        filesSignature: Self.corpusFilesRefreshSignature(files)
+      )
+      if let assignedWorkRefreshTask,
+         assignedWorkRefreshRequest == request {
+        _ = try? await assignedWorkRefreshTask.value
+        return
+      }
+
+      let task = Task.detached(priority: .utility) {
         try Self.scanAssignedWorkItems(files: files)
-      }.value
+      }
+      assignedWorkRefreshGeneration += 1
+      let generation = assignedWorkRefreshGeneration
+      assignedWorkRefreshTask = task
+      assignedWorkRefreshRequest = request
+      defer {
+        if assignedWorkRefreshGeneration == generation {
+          assignedWorkRefreshTask = nil
+          assignedWorkRefreshRequest = nil
+          isLoadingAssignedWork = false
+        }
+      }
+
+      let items = try await task.value
+      guard self.corpusRoot?.standardizedFileURL == refreshRoot else { return }
       assignedWorkItems = items
       if let selectedAssignedWorkItemID,
-         let item = items.first(where: { $0.id == selectedAssignedWorkItemID }) {
+         let item = assignedWorkItemsByID[selectedAssignedWorkItemID] {
         if case .assigned = selectedLocation {
           selectedLocation = .assigned(item)
         }
@@ -4403,7 +5142,7 @@ public final class WorkspaceStore: ObservableObject {
         self.selectedAssignedWorkItemID = nil
         if case .assigned = selectedLocation {
           selectedLocation = nil
-          backlinks = nil
+          setIfChanged(\.backlinks, nil)
         }
       }
       if selectedSurface == .agenda, agendaMode == .assigned {
@@ -4415,19 +5154,44 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func rebuildAssignedWorkDisplayCache() {
-    let terms = Self.filterTerms(from: agendaFilter)
-    visibleAssignedWorkItems = assignedWorkSearchRows.compactMap { row in
+  private func rebuildAssignedWorkDisplayCache(
+    searchRows: [AssignedWorkSearchRow]? = nil,
+    filter: String? = nil
+  ) {
+    let rows = searchRows ?? assignedWorkSearchRows
+    let terms = Self.filterTerms(from: filter ?? agendaFilter)
+    visibleAssignedWorkItems = rows.compactMap { row in
       guard !terms.isEmpty else { return row.item }
       return terms.allSatisfy { row.searchText.contains($0) } ? row.item : nil
     }
-    assignedWorkSections = Self.groupAssignedWorkSections(visibleAssignedWorkItems)
+    visibleAssignedWorkItemsByID = Self.lookupByID(visibleAssignedWorkItems)
+    assignedWorkSections = Self.groupAssignedWorkSections(visibleAssignedWorkItems, corpusRoot: corpusRoot)
+    displayedAssignedWorkItems = assignedWorkSections.flatMap(\.items).map(\.item)
+    var indicesByID: [AssignedWorkItem.ID: Int] = [:]
+    indicesByID.reserveCapacity(displayedAssignedWorkItems.count)
+    for (index, item) in displayedAssignedWorkItems.enumerated() {
+      indicesByID[item.id] = index
+    }
+    displayedAssignedWorkItemIndicesByID = indicesByID
   }
 
-  private static func groupAssignedWorkSections(_ items: [AssignedWorkItem]) -> [AssignedWorkSection] {
+  private static func groupAssignedWorkSections(
+    _ items: [AssignedWorkItem],
+    corpusRoot: URL?
+  ) -> [AssignedWorkSection] {
     let grouped = Dictionary(grouping: items) { item in
       "\(item.assignee)|\(Self.assignedWorkTodoGroupLabel(for: item))"
     }
+    let standardizedRoot = corpusRoot?.standardizedFileURL
+    func displayItems(_ items: [AssignedWorkItem]) -> [AssignedWorkDisplayItem] {
+      items.map { item in
+        AssignedWorkDisplayItem(
+          item: item,
+          relativePath: standardizedRoot.map { Self.relativePath(for: item.file, root: $0) } ?? item.file
+        )
+      }
+    }
+
     return grouped.keys.sorted { lhs, rhs in
       let left = lhs.split(separator: "|", maxSplits: 1).map(String.init)
       let right = rhs.split(separator: "|", maxSplits: 1).map(String.init)
@@ -4448,7 +5212,7 @@ public final class WorkspaceStore: ObservableObject {
       return AssignedWorkSection(
         id: key,
         label: "\(assignee) / \(todo)",
-        items: items
+        items: displayItems(items)
       )
     }
   }
@@ -4476,9 +5240,21 @@ public final class WorkspaceStore: ObservableObject {
 
   public func selectAssignedWorkItem(_ item: AssignedWorkItem) {
     deactivateAgendaFilterFocus()
-    selectedSurface = .agenda
-    selectedAssignedWorkItemID = item.id
+    setIfChanged(\.selectedSurface, .agenda)
+    setIfChanged(\.selectedAssignedWorkItemID, item.id)
     select(.assigned(item))
+  }
+
+  public func activateAssignedWorkItemFromRowTap(_ item: AssignedWorkItem) {
+    guard selectedAssignedWorkItemID != item.id else { return }
+    selectAssignedWorkItem(item)
+    suppressNextAssignedWorkSelectionActivation = true
+  }
+
+  public func consumeAssignedWorkSelectionActivationSuppression() -> Bool {
+    guard suppressNextAssignedWorkSelectionActivation else { return false }
+    suppressNextAssignedWorkSelectionActivation = false
+    return true
   }
 
   public func selectOpenClawThread(_ thread: OpenClawThread) {
@@ -4486,15 +5262,28 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func openOpenClawThread(_ thread: OpenClawThread, surface: WorkspaceSurface? = nil, mode: EntrySourceMode? = nil) {
+    guard !isActiveOpenClawThread(thread, mode: mode) else { return }
     if let surface {
-      selectedSurface = surface
+      setIfChanged(\.selectedSurface, surface)
     }
     activateDetailLocation(.openClaw(thread), mode: mode, recordsHistory: true)
   }
 
+  private func isActiveOpenClawThread(_ thread: OpenClawThread, mode: EntrySourceMode?) -> Bool {
+    let location = WorkspaceLocation.openClaw(thread)
+    let nextMode = resolvedEntrySourceMode(for: location, requestedMode: mode)
+    guard selectedLocation != nil,
+          selectedLocationMatches(location),
+          selectedEntrySourceMode == nextMode
+    else {
+      return false
+    }
+    return selectedEntrySource != nil || isLoadingEntrySource || isRenderingEntrySource
+  }
+
   public func selectCorpusFile(_ file: CorpusFile) {
-    selectedSurface = .files
-    selectedCorpusFileID = file.id
+    setIfChanged(\.selectedSurface, .files)
+    setIfChanged(\.selectedCorpusFileID, file.id)
     let thread = OpenClawThread(
       title: file.name,
       file: file.path,
@@ -4504,30 +5293,63 @@ public final class WorkspaceStore: ObservableObject {
       idValue: nil
     )
     activateDetailLocation(.openClaw(thread), mode: .page, recordsHistory: true)
-    selectedOpenClawThreadID = nil
-    statusText = "Opened \(file.relativePath)"
+    setIfChanged(\.selectedOpenClawThreadID, nil)
+    setIfChanged(\.statusText, "Opened \(file.relativePath)")
+  }
+
+  public func activateCorpusFileFromRowTap(_ file: CorpusFile) {
+    guard !isActiveCorpusFile(file) else { return }
+    suppressedCorpusFileSelectionActivation = file
+    selectCorpusFile(file)
+  }
+
+  public func consumeCorpusFileSelectionActivationSuppression(for id: CorpusFile.ID) -> Bool {
+    guard let file = suppressedCorpusFileSelectionActivation, file.id == id else {
+      suppressedCorpusFileSelectionActivation = nil
+      return false
+    }
+    defer {
+      suppressedCorpusFileSelectionActivation = nil
+    }
+    return selectedCorpusFileLocationMatches(file)
+  }
+
+  private func isActiveCorpusFile(_ file: CorpusFile) -> Bool {
+    guard selectedCorpusFileLocationMatches(file) else { return false }
+    return selectedEntrySource != nil || isLoadingEntrySource || isRenderingEntrySource
+  }
+
+  private func selectedCorpusFileLocationMatches(_ file: CorpusFile) -> Bool {
+    guard selectedCorpusFileID == file.id,
+          let selectedLocation
+    else {
+      return false
+    }
+    let selectedPath = URL(fileURLWithPath: selectedLocation.file).standardizedFileURL.path
+    let filePath = URL(fileURLWithPath: file.path).standardizedFileURL.path
+    return selectedPath == filePath
+  }
+
+  public func corpusFile(id: CorpusFile.ID) -> CorpusFile? {
+    corpusFilesByID[id]
   }
 
   public func presentQuickOpen() {
     guard corpusRoot != nil else {
-      statusText = "No corpus selected"
+      setIfChanged(\.statusText, "No corpus selected")
       return
     }
-    quickOpenQuery = ""
+    setIfChanged(\.quickOpenQuery, "")
     resetQuickOpenSelection()
-    isQuickOpenPresented = true
-    if corpusFiles.isEmpty {
+    setIfChanged(\.isQuickOpenPresented, true)
+    if corpusFiles.isEmpty, !isScanningCorpusFiles {
       Task { await refreshCorpusFiles() }
     }
   }
 
   public func focusSearchSurface() {
-    selectedSurface = .search
+    setIfChanged(\.selectedSurface, .search)
     searchFocusToken += 1
-  }
-
-  public var searchNodes: [OrgRoamNodeReference] {
-    filterSearchNodes(searchQuery, limit: 100)
   }
 
   public func selectSearchNode(_ node: OrgRoamNodeReference) {
@@ -4539,18 +5361,91 @@ public final class WorkspaceStore: ObservableObject {
       modifiedAt: nil,
       idValue: node.idValue
     )
-    selectedSurface = .search
+    setIfChanged(\.selectedSurface, .search)
     activateDetailLocation(.openClaw(thread), mode: .entry, recordsHistory: true)
-    selectedOpenClawThreadID = nil
-    statusText = "Opened \(relativePath(node.file)):\(node.line)"
+    setIfChanged(\.selectedOpenClawThreadID, nil)
+    setIfChanged(\.statusText, "Opened \(relativePath(node.file)):\(node.line)")
   }
 
-  public var filteredCorpusFiles: [CorpusFile] {
-    filterFiles(corpusFileFilter, limit: 500)
+  private func rebuildFilteredCorpusFiles(files: [CorpusFile]? = nil, query: String? = nil) {
+    filteredCorpusFiles = filterFiles(query ?? corpusFileFilter, in: files ?? corpusFiles, limit: 500)
   }
 
-  public var corpusSearchResultGroups: [SearchResultGroup] {
-    Self.groupedSearchResultsForDisplay(searchResults)
+  private func rebuildSearchNodeCacheIfNeeded(
+    mode: WorkspaceSearchMode? = nil,
+    query: String? = nil,
+    indexedNodes: [OrgRoamNodeReference]? = nil
+  ) {
+    let sourceNodes = indexedNodes ?? indexedSearchNodes
+    let relativePathsByFile = searchNodeRelativePathsByFile
+    let indexedRows = Self.indexSearchNodes(sourceNodes, relativePathsByFile: relativePathsByFile)
+    if indexedNodes != nil {
+      indexedSearchNodeRows = indexedRows
+    }
+    scheduleSearchNodeFilter(mode: mode, query: query, indexedRows: indexedRows, debounce: false)
+  }
+
+  private func scheduleSearchNodeFilter(
+    mode: WorkspaceSearchMode? = nil,
+    query: String? = nil,
+    indexedRows: [IndexedSearchNode]? = nil,
+    debounce: Bool = true
+  ) {
+    let resolvedMode = mode ?? searchMode
+    searchNodeFilterGeneration += 1
+    let generation = searchNodeFilterGeneration
+    searchNodeFilterTask?.cancel()
+
+    guard resolvedMode == .nodes else {
+      if !searchNodes.isEmpty {
+        searchNodes = []
+      }
+      searchNodeFilterTask = nil
+      return
+    }
+
+    let rows = indexedRows ?? indexedSearchNodeRows
+    let searchText = query ?? searchQuery
+    searchNodeFilterTask = Task { [rows, searchText, generation, debounce] in
+      if debounce {
+        try? await Task.sleep(nanoseconds: 80_000_000)
+      }
+      guard !Task.isCancelled else { return }
+
+      let filtered = await Task.detached(priority: .userInitiated) {
+        Self.filterIndexedSearchNodes(rows, query: searchText, limit: 100)
+      }.value
+      guard !Task.isCancelled else { return }
+
+      await MainActor.run { [weak self] in
+        guard let self, self.searchNodeFilterGeneration == generation else { return }
+        self.searchNodes = filtered
+      }
+    }
+  }
+
+  public func flushSearchNodeFilter() async {
+    await searchNodeFilterTask?.value
+  }
+
+  private func rebuildSearchResultDisplayCache(results newResults: [SearchResult]? = nil) {
+    corpusSearchResultDisplayGroups = Self.groupedSearchResultDisplayGroups(
+      newResults ?? searchResults,
+      corpusRoot: corpusRoot
+    )
+  }
+
+  private func rebuildSearchNodeDisplayCache(nodes newNodes: [OrgRoamNodeReference]? = nil) {
+    let nodes = newNodes ?? searchNodes
+    let standardizedRoot = corpusRoot?.standardizedFileURL
+    searchNodeDisplayItems = nodes.map { node in
+      SearchNodeDisplayItem(
+        node: node,
+        relativePath: standardizedRoot.map { Self.relativePath(for: node.file, root: $0) }
+          ?? searchNodeRelativePathsByFile[node.file]
+          ?? node.file
+      )
+    }
   }
 
   nonisolated static func prioritizedSearchResultsForDisplay(_ results: [SearchResult]) -> [SearchResult] {
@@ -4562,6 +5457,34 @@ public final class WorkspaceStore: ObservableObject {
         return lhs.offset < rhs.offset
       }
       .map(\.element)
+  }
+
+  nonisolated static func groupedSearchResultDisplayGroups(
+    _ results: [SearchResult],
+    corpusRoot: URL?
+  ) -> [SearchResultDisplayGroup] {
+    let standardizedRoot = corpusRoot?.standardizedFileURL
+    let displayItems = results.map { result in
+      SearchResultDisplayItem(
+        result: result,
+        relativePath: standardizedRoot.map { Self.relativePath(for: result.file, root: $0) } ?? result.file
+      )
+    }
+    var grouped: [String: [SearchResultDisplayItem]] = [:]
+    var fileOrder: [String] = []
+
+    for item in displayItems {
+      let file = item.result.file
+      if grouped[file] == nil {
+        fileOrder.append(file)
+        grouped[file] = []
+      }
+      grouped[file]?.append(item)
+    }
+
+    return fileOrder.compactMap { file in
+      SearchResultDisplayGroup(file: file, results: grouped[file] ?? [])
+    }
   }
 
   nonisolated static func groupedSearchResultsForDisplay(_ results: [SearchResult]) -> [SearchResultGroup] {
@@ -4588,28 +5511,25 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public var selectedQuickOpenFile: CorpusFile? {
-    let files = quickOpenFiles
     if let selectedQuickOpenFileID,
-       let selected = files.first(where: { $0.id == selectedQuickOpenFileID }) {
+       let selected = quickOpenFilesByID[selectedQuickOpenFileID] {
       return selected
     }
-    return files.first
+    return quickOpenFiles.first
   }
 
   public func resetQuickOpenSelection() {
-    selectedQuickOpenFileID = nil
+    setIfChanged(\.selectedQuickOpenFileID, nil)
   }
 
   public func moveQuickOpenSelection(_ direction: QuickOpenSelectionDirection) {
     let files = quickOpenFiles
     guard !files.isEmpty else {
-      selectedQuickOpenFileID = nil
+      setIfChanged(\.selectedQuickOpenFileID, nil)
       return
     }
 
-    let currentIndex = selectedQuickOpenFileID.flatMap { id in
-      files.firstIndex { $0.id == id }
-    }
+    let currentIndex = selectedQuickOpenFileID.flatMap { quickOpenFileIndicesByID[$0] }
     let nextIndex: Int
     switch (direction, currentIndex) {
     case (.down, nil):
@@ -4621,11 +5541,22 @@ public final class WorkspaceStore: ObservableObject {
     case (.up, let index?):
       nextIndex = index == files.startIndex ? files.index(before: files.endIndex) : files.index(before: index)
     }
-    selectedQuickOpenFileID = files[nextIndex].id
+    setIfChanged(\.selectedQuickOpenFileID, files[nextIndex].id)
   }
 
-  private func rebuildQuickOpenIndex() {
-    quickOpenIndexedFiles = Self.indexQuickOpenFiles(corpusFiles)
+  private func rebuildQuickOpenIndex(files: [CorpusFile]? = nil) {
+    quickOpenIndexedFiles = Self.indexQuickOpenFiles(files ?? corpusFiles)
+  }
+
+  private func rebuildQuickOpenDisplayLookup(files: [CorpusFile]? = nil) {
+    let sourceFiles = files ?? quickOpenFiles
+    quickOpenFilesByID = Self.lookupByID(sourceFiles)
+    var indicesByID: [CorpusFile.ID: Int] = [:]
+    indicesByID.reserveCapacity(sourceFiles.count)
+    for (index, file) in sourceFiles.enumerated() {
+      indicesByID[file.id] = index
+    }
+    quickOpenFileIndicesByID = indicesByID
   }
 
   private func scheduleQuickOpenSearch(debounce: Bool = true) {
@@ -4668,18 +5599,19 @@ public final class WorkspaceStore: ObservableObject {
 
   private func pruneQuickOpenSelection() {
     guard let selectedQuickOpenFileID else { return }
-    if !quickOpenFiles.contains(where: { $0.id == selectedQuickOpenFileID }) {
-      self.selectedQuickOpenFileID = nil
+    if quickOpenFilesByID[selectedQuickOpenFileID] == nil {
+      setIfChanged(\.selectedQuickOpenFileID, nil)
     }
   }
 
-  private func filterFiles(_ rawQuery: String, limit: Int) -> [CorpusFile] {
+  private func filterFiles(_ rawQuery: String, in files: [CorpusFile]? = nil, limit: Int) -> [CorpusFile] {
+    let sourceFiles = files ?? corpusFiles
     let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty else {
-      return Array(corpusFiles.prefix(limit))
+      return Array(sourceFiles.prefix(limit))
     }
 
-    return corpusFiles
+    return sourceFiles
       .compactMap { file -> (CorpusFile, Int)? in
         guard let score = Self.fuzzyScore(query: query, candidate: file.relativePath) else { return nil }
         return (file, score)
@@ -4726,42 +5658,58 @@ public final class WorkspaceStore: ObservableObject {
       .map(\.0.file)
   }
 
-  private func filterSearchNodes(_ rawQuery: String, limit: Int) -> [OrgRoamNodeReference] {
-    let nodes = corpusFiles.compactMap(Self.scanRoamFileNode)
+  nonisolated private static func indexSearchNodes(
+    _ nodes: [OrgRoamNodeReference],
+    relativePathsByFile: [String: String]
+  ) -> [IndexedSearchNode] {
+    nodes.map { node in
+      IndexedSearchNode(
+        node: node,
+        relativePath: relativePathsByFile[node.file] ?? node.file,
+        aliasesText: node.aliases.joined(separator: " ")
+      )
+    }
+  }
+
+  nonisolated private static func filterIndexedSearchNodes(
+    _ rows: [IndexedSearchNode],
+    query rawQuery: String,
+    limit: Int
+  ) -> [OrgRoamNodeReference] {
     let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty else {
-      return Array(nodes.sorted(by: compareSearchNodes).prefix(limit))
+      return Array(rows.sorted(by: compareIndexedSearchNodes).prefix(limit).map(\.node))
     }
 
-    return nodes
-      .compactMap { node -> (OrgRoamNodeReference, Int)? in
+    let normalizedQuery = query.lowercased()
+    return rows
+      .compactMap { row -> (IndexedSearchNode, Int)? in
         let candidates = [
-          node.title,
-          node.aliases.joined(separator: " "),
-          node.idValue ?? "",
-          relativePath(node.file)
+          row.node.title,
+          row.aliasesText,
+          row.node.idValue ?? "",
+          row.relativePath
         ]
         let bestScore = candidates.compactMap { Self.fuzzyScore(query: query, candidate: $0) }.max()
         guard let bestScore else { return nil }
-        let normalizedQuery = query.lowercased()
-        let exactBoost = ([node.title] + node.aliases)
+        let exactBoost = ([row.node.title] + row.node.aliases)
           .contains { $0.lowercased().contains(normalizedQuery) } ? 50 : 0
-        return (node, bestScore + exactBoost)
+        return (row, bestScore + exactBoost)
       }
       .sorted { lhs, rhs in
         if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
-        return compareSearchNodes(lhs.0, rhs.0)
+        return compareIndexedSearchNodes(lhs.0, rhs.0)
       }
       .prefix(limit)
-      .map(\.0)
+      .map(\.0.node)
   }
 
-  private func compareSearchNodes(_ lhs: OrgRoamNodeReference, _ rhs: OrgRoamNodeReference) -> Bool {
-    let titleOrder = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
+  nonisolated private static func compareIndexedSearchNodes(_ lhs: IndexedSearchNode, _ rhs: IndexedSearchNode) -> Bool {
+    let titleOrder = lhs.node.title.localizedCaseInsensitiveCompare(rhs.node.title)
     if titleOrder != .orderedSame { return titleOrder == .orderedAscending }
-    let pathOrder = relativePath(lhs.file).localizedStandardCompare(relativePath(rhs.file))
+    let pathOrder = lhs.relativePath.localizedStandardCompare(rhs.relativePath)
     if pathOrder != .orderedSame { return pathOrder == .orderedAscending }
-    return lhs.line < rhs.line
+    return lhs.node.line < rhs.node.line
   }
 
   private func selectedLocationMatches(_ location: WorkspaceLocation) -> Bool {
@@ -4769,7 +5717,7 @@ public final class WorkspaceStore: ObservableObject {
     return Self.selectionIdentity(for: selectedLocation) == Self.selectionIdentity(for: location)
   }
 
-  nonisolated private static func selectionIdentity(for location: WorkspaceLocation) -> String {
+  nonisolated private static func selectionIdentity(for location: WorkspaceLocation) -> WorkspaceSelectionIdentity {
     let kind: String
     switch location {
     case .agenda:
@@ -4785,20 +5733,37 @@ public final class WorkspaceStore: ObservableObject {
     case .meeting:
       kind = "meeting"
     }
-    return [
-      kind,
-      location.file,
-      "\(location.lineForEditor)",
-      location.title
-    ].joined(separator: "\u{1F}")
+    return WorkspaceSelectionIdentity(
+      kind: kind,
+      file: location.file,
+      line: location.lineForEditor,
+      title: selectionIdentityTitle(for: location)
+    )
+  }
+
+  nonisolated private static func selectionIdentityTitle(for location: WorkspaceLocation) -> String {
+    switch location {
+    case .agenda(let item):
+      item.headline
+    case .assigned(let item):
+      item.headline
+    case .search(let result):
+      result.title
+    case .backlink(let backlink):
+      backlink.srcTitle
+    case .openClaw(let thread):
+      thread.title
+    case .meeting(let meeting):
+      meeting.title
+    }
   }
 
   private func scheduleAgendaRefresh(preserveSelection: Bool = true, updatesStatus: Bool = false) {
     scheduledAgendaRefreshTask?.cancel()
-    scheduledAgendaRefreshTask = Task { @MainActor in
+    scheduledAgendaRefreshTask = Task { @MainActor [weak self] in
       try? await Task.sleep(nanoseconds: 150_000_000)
-      guard !Task.isCancelled else { return }
-      await refreshAgenda(preserveSelection: preserveSelection, updatesStatus: updatesStatus)
+      guard !Task.isCancelled, let self else { return }
+      await self.refreshAgenda(preserveSelection: preserveSelection, updatesStatus: updatesStatus)
     }
   }
 
@@ -4840,11 +5805,17 @@ public final class WorkspaceStore: ObservableObject {
 
   private func resetBlockEditing() {
     let wasEditingBlock = editingBlockID != nil
-    editingBlockID = nil
-    editableBlockText = ""
-    activeBlockDrafts.removeAll()
-    activeBlockOriginals.removeAll()
-    deferredStableAutosaves.removeAll()
+    setIfChanged(\.editingBlockID, nil)
+    setIfChanged(\.editableBlockText, "")
+    if !activeBlockDrafts.isEmpty {
+      activeBlockDrafts.removeAll()
+    }
+    if !activeBlockOriginals.isEmpty {
+      activeBlockOriginals.removeAll()
+    }
+    if !deferredStableAutosaves.isEmpty {
+      deferredStableAutosaves.removeAll()
+    }
     if wasEditingBlock, pendingAgendaRefreshAfterBlockEditing {
       pendingAgendaRefreshAfterBlockEditing = false
       scheduleAgendaRefresh(preserveSelection: true)
@@ -4852,9 +5823,13 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func resetBlockState() {
-    selectedBlockID = nil
-    pendingBlockSelection = nil
-    transientDraftBlock = nil
+    setIfChanged(\.selectedBlockID, nil)
+    if pendingBlockSelection != nil {
+      pendingBlockSelection = nil
+    }
+    if transientDraftBlock != nil {
+      transientDraftBlock = nil
+    }
     resetBlockEditing()
   }
 
@@ -5523,61 +6498,81 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func openDailyNote(_ target: DailyNoteTarget) {
+    Task { await openDailyNoteNow(target) }
+  }
+
+  public func openDailyNoteNow(_ target: DailyNoteTarget) async {
     guard let corpusRoot else {
       statusText = "No corpus selected"
       return
     }
 
-    let url = dailyNotePath(corpusRoot: corpusRoot, date: Self.date(for: target))
     do {
-      if !FileManager.default.fileExists(atPath: url.path) {
-        try createDailyNote(at: url)
-      }
-      let file = corpusFile(for: url, corpusRoot: corpusRoot)
-      upsertCorpusFile(file)
-      selectCorpusFile(file)
-      statusText = "Opened \(file.relativePath)"
+      let prepared = try await Task.detached(priority: .userInitiated) {
+        try Self.prepareDailyNote(corpusRoot: corpusRoot, date: Self.date(for: target))
+      }.value
+      openPreparedDailyNote(prepared, home: false)
+      statusText = "Opened \(prepared.file.relativePath)"
     } catch {
       errorText = error.localizedDescription
-      statusText = "Could not open \(url.lastPathComponent)"
+      statusText = "Could not open daily note"
     }
   }
 
   public func openHome() {
-    selectedSurface = .home
-    expandedWorkspaceSurface = nil
-    isWorkspaceSurfacePaneClosed = false
-    isWorkspaceDetailPaneClosed = false
-    isWorkspaceDetailPaneExpanded = false
+    Task { await openHomeNow() }
+  }
+
+  public func openHomeNow() async {
+    setIfChanged(\.selectedSurface, .home)
+    setIfChanged(\.expandedWorkspaceSurface, nil)
+    setIfChanged(\.isWorkspaceSurfacePaneClosed, false)
+    setIfChanged(\.isWorkspaceDetailPaneClosed, false)
+    setIfChanged(\.isWorkspaceDetailPaneExpanded, false)
 
     guard let corpusRoot else {
-      statusText = "No corpus selected"
+      setIfChanged(\.statusText, "No corpus selected")
       return
     }
 
-    let url = dailyNotePath(corpusRoot: corpusRoot, date: Date())
     do {
-      if !FileManager.default.fileExists(atPath: url.path) {
-        try createDailyNote(at: url)
-      }
-      let file = corpusFile(for: url, corpusRoot: corpusRoot)
-      upsertCorpusFile(file)
-      selectedCorpusFileID = file.id
-      selectedOpenClawThreadID = nil
-      let thread = OpenClawThread(
-        title: file.name,
-        file: file.path,
-        line: 1,
-        zone: file.directory.isEmpty ? "daily" : file.directory,
-        modifiedAt: file.modifiedAt,
-        idValue: nil
-      )
-      activateDetailLocation(.openClaw(thread), mode: .page, recordsHistory: false)
+      let prepared = try await Task.detached(priority: .userInitiated) {
+        try Self.prepareDailyNote(corpusRoot: corpusRoot, date: Date())
+      }.value
+      openPreparedDailyNote(prepared, home: true)
       statusText = "Home"
     } catch {
       errorText = error.localizedDescription
-      statusText = "Could not open \(url.lastPathComponent)"
+      statusText = "Could not open daily note"
     }
+  }
+
+  private func openPreparedDailyNote(_ prepared: PreparedDailyNote, home: Bool) {
+    let file = prepared.file
+    upsertCorpusFile(file)
+    if !home {
+      setIfChanged(\.selectedSurface, .files)
+    }
+    selectedCorpusFileID = file.id
+    selectedOpenClawThreadID = nil
+    let thread = OpenClawThread(
+      title: file.name,
+      file: file.path,
+      line: 1,
+      zone: file.directory.isEmpty ? (home ? "daily" : "corpus") : file.directory,
+      modifiedAt: file.modifiedAt,
+      idValue: nil
+    )
+    activateDetailLocation(.openClaw(thread), mode: .page, recordsHistory: !home)
+  }
+
+  nonisolated private static func prepareDailyNote(corpusRoot: URL, date: Date) throws -> PreparedDailyNote {
+    let root = corpusRoot.standardizedFileURL
+    let url = Self.dailyNotePath(corpusRoot: root, date: date)
+    if !FileManager.default.fileExists(atPath: url.path) {
+      try Self.createDailyNote(at: url)
+    }
+    return PreparedDailyNote(file: Self.corpusFile(for: url, corpusRoot: root))
   }
 
   public var canStartOpenClawVoiceNoteRecording: Bool {
@@ -5694,20 +6689,23 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func attachOpenClawImages(urls: [URL]) {
+    Task { await attachOpenClawImagesNow(urls: urls) }
+  }
+
+  public func attachOpenClawImagesNow(urls: [URL]) async {
+    let prepared = await Self.prepareOpenClawImageAttachments(from: urls)
     var attachments = openClawPendingAttachments
-    for url in urls {
-      do {
-        let attachment = try Self.openClawImageAttachment(from: url)
-        guard !attachments.contains(where: { $0.data == attachment.data && $0.fileName == attachment.fileName }) else {
-          continue
-        }
-        attachments.append(attachment)
-      } catch {
-        errorText = error.localizedDescription
-        openClawStatusText = "Could not attach \(url.lastPathComponent)"
+    for attachment in prepared.attachments {
+      guard !attachments.contains(where: { $0.data == attachment.data && $0.fileName == attachment.fileName }) else {
+        continue
       }
+      attachments.append(attachment)
     }
-    openClawPendingAttachments = attachments
+    setIfChanged(\.openClawPendingAttachments, attachments)
+    if let failureFileName = prepared.failureFileName {
+      errorText = prepared.failureMessage
+      openClawStatusText = "Could not attach \(failureFileName)"
+    }
     if !attachments.isEmpty {
       openClawStatusText = "\(attachments.count) image attachment\(attachments.count == 1 ? "" : "s") ready"
     }
@@ -5718,22 +6716,30 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func clearOpenClawPendingAttachments() {
-    openClawPendingAttachments = []
+    setIfChanged(\.openClawPendingAttachments, [])
+  }
+
+  public func setOpenClawDraft(_ draft: String) {
+    setIfChanged(\.openClawDraft, draft)
+  }
+
+  public func clearOpenClawDraft() {
+    setOpenClawDraft("")
   }
 
   public func sendOpenClawMessage() async {
     let text = openClawDraft.trimmingCharacters(in: .whitespacesAndNewlines)
     let attachments = openClawPendingAttachments
     guard !text.isEmpty || !attachments.isEmpty else { return }
-    openClawDraft = ""
-    openClawPendingAttachments = []
+    setIfChanged(\.openClawDraft, "")
+    setIfChanged(\.openClawPendingAttachments, [])
     await sendOpenClawMessage(text, attachments: attachments)
   }
 
   public func sendOpenClawMessage(text rawText: String) async {
     let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
-    openClawDraft = ""
+    setIfChanged(\.openClawDraft, "")
     await sendOpenClawMessage(text, attachments: [])
   }
 
@@ -5741,61 +6747,82 @@ public final class WorkspaceStore: ObservableObject {
     let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
     let attachments = openClawPendingAttachments
     guard !text.isEmpty || !attachments.isEmpty else { return }
-    openClawDraft = ""
-    openClawPendingAttachments = []
-    await sendOpenClawMessage(text, attachments: attachments)
+    setIfChanged(\.openClawDraft, "")
+    setIfChanged(\.openClawPendingAttachments, [])
+    enqueueOpenClawMessage(text, attachments: attachments)
+    guard !isDrainingOpenClawQueue else {
+      setIfChanged(\.openClawStatusText, openClawQueuedStatusText())
+      return
+    }
+    Task { @MainActor in
+      await self.drainOpenClawSendQueue()
+    }
   }
 
   private func sendOpenClawMessage(_ text: String, attachments: [OpenClawChatAttachment]) async {
-    ensureOpenClawChatThread()
-    let userMessage = OpenClawChatMessage(role: .user, content: text, attachments: attachments)
-    openClawMessages.append(userMessage)
-    openClawPendingUserMessageIDs.append(userMessage.id)
+    enqueueOpenClawMessage(text, attachments: attachments)
     if isDrainingOpenClawQueue {
-      openClawStatusText = openClawQueuedStatusText()
+      setIfChanged(\.openClawStatusText, openClawQueuedStatusText())
       return
     }
     await drainOpenClawSendQueue()
   }
 
+  private func enqueueOpenClawMessage(_ text: String, attachments: [OpenClawChatAttachment]) {
+    ensureOpenClawChatThread()
+    let userMessage = OpenClawChatMessage(role: .user, content: text, attachments: attachments)
+    openClawMessages.append(userMessage)
+    openClawPendingUserMessageIDs.append(userMessage.id)
+  }
+
+  private func setOpenClawSending(_ isSending: Bool) {
+    setIfChanged(
+      \.openClawSendState,
+      OpenClawSendState(isSending: isSending, startedAt: isSending ? Date() : nil)
+    )
+  }
+
   private func drainOpenClawSendQueue() async {
     guard !isDrainingOpenClawQueue else { return }
     isDrainingOpenClawQueue = true
-    isSendingOpenClawMessage = true
-    openClawRequestStartedAt = Date()
+    setOpenClawSending(true)
     defer {
-      isSendingOpenClawMessage = false
       isDrainingOpenClawQueue = false
-      openClawRequestStartedAt = nil
+      setOpenClawSending(false)
     }
 
     while let userMessageID = openClawPendingUserMessageIDs.first {
-      guard let requestMessages = openClawMessagesThrough(userMessageID) else {
+      guard let request = await prepareOpenClawSendRequest(for: userMessageID) else {
         openClawPendingUserMessageIDs.removeFirst()
         continue
       }
-      openClawStatusText = openClawQueuedStatusText()
+      setIfChanged(\.openClawStatusText, openClawQueuedStatusText())
 
       do {
-        clearOpenClawSendFailure(for: userMessageID)
+        clearOpenClawSendFailure(for: userMessageID, at: request.userMessageIndex)
         let beforeSnapshot = await captureOpenClawCorpusSnapshot()
-        let reply = try await sendOpenClawRequest(messages: requestMessages)
+        let reply = try await sendOpenClawRequest(messages: request.messages)
         let changeSummary = await openClawChangeSummary(since: beforeSnapshot, referencedIn: reply)
-        insertOpenClawReply(reply, after: userMessageID, changeSummary: changeSummary)
+        insertOpenClawReply(
+          reply,
+          after: userMessageID,
+          expectedIndex: request.userMessageIndex,
+          changeSummary: changeSummary
+        )
         if let changeSummary {
           await refreshAfterOpenClawChanges(changeSummary)
         }
         openClawPendingUserMessageIDs.removeFirst()
         if openClawPendingUserMessageIDs.isEmpty {
-          openClawStatusText = changeSummary.map {
+          setIfChanged(\.openClawStatusText, changeSummary.map {
             "\($0.title): +\($0.totalInsertions) -\($0.totalDeletions)"
-          } ?? "OpenClaw replied"
+          } ?? "OpenClaw replied")
         } else {
-          openClawStatusText = openClawQueuedStatusText()
+          setIfChanged(\.openClawStatusText, openClawQueuedStatusText())
         }
       } catch {
         let failureText = Self.openClawSendFailureText(from: error)
-        openClawStatusText = failureText
+        setIfChanged(\.openClawStatusText, failureText)
         markPendingOpenClawMessagesFailed(failureText)
         openClawPendingUserMessageIDs.removeAll()
         return
@@ -5809,7 +6836,20 @@ public final class WorkspaceStore: ObservableObject {
     if let openClawSendHandler {
       return try await openClawSendHandler(messages, agentID, openClawSessionKey, workspaceContext)
     }
-    let client = OpenClawChatClient(settings: currentOpenClawSettings(allowKeychainRead: true))
+    let userEndpoint = openClawEndpointText
+    let cachedBearerToken = openClawBearerToken
+    let hasStoredToken = openClawHasStoredToken
+    let resolved = await Task.detached(priority: .utility) {
+      Self.resolvedOpenClawSettings(
+        userEndpoint: userEndpoint,
+        cachedBearerToken: cachedBearerToken,
+        hasStoredToken: hasStoredToken,
+        allowKeychainRead: true
+      )
+    }.value
+    openClawBearerToken = resolved.bearerToken
+    setIfChanged(\.openClawHasStoredToken, resolved.hasStoredToken)
+    let client = OpenClawChatClient(settings: resolved.settings)
     return try await client.send(
       messages: messages,
       agentID: agentID,
@@ -5818,19 +6858,40 @@ public final class WorkspaceStore: ObservableObject {
     )
   }
 
-  private func openClawMessagesThrough(_ messageID: UUID) -> [OpenClawChatMessage]? {
-    guard let index = openClawMessages.firstIndex(where: { $0.id == messageID }) else {
+  private func prepareOpenClawSendRequest(for messageID: UUID) async -> PreparedOpenClawSendRequest? {
+    let messages = openClawMessages
+    return await Task.detached(priority: .userInitiated) {
+      Self.preparedOpenClawSendRequest(messages: messages, userMessageID: messageID)
+    }.value
+  }
+
+  nonisolated private static func preparedOpenClawSendRequest(
+    messages: [OpenClawChatMessage],
+    userMessageID: UUID
+  ) -> PreparedOpenClawSendRequest? {
+    guard let index = messages.firstIndex(where: { $0.id == userMessageID }) else {
       return nil
     }
-    return Array(openClawMessages[...index])
+    return PreparedOpenClawSendRequest(
+      userMessageID: userMessageID,
+      userMessageIndex: index,
+      messages: Array(messages[...index])
+    )
   }
 
   private func insertOpenClawReply(
     _ reply: String,
     after userMessageID: UUID,
+    expectedIndex: Int? = nil,
     changeSummary: OpenClawCorpusChangeSummary?
   ) {
     let assistantMessage = OpenClawChatMessage(role: .assistant, content: reply, changeSummary: changeSummary)
+    if let expectedIndex,
+       openClawMessages.indices.contains(expectedIndex),
+       openClawMessages[expectedIndex].id == userMessageID {
+      openClawMessages.insert(assistantMessage, at: openClawMessages.index(after: expectedIndex))
+      return
+    }
     guard let index = openClawMessages.firstIndex(where: { $0.id == userMessageID }) else {
       openClawMessages.append(assistantMessage)
       return
@@ -5849,7 +6910,7 @@ public final class WorkspaceStore: ObservableObject {
     clearOpenClawSendFailure(for: messageID)
     openClawPendingUserMessageIDs.append(messageID)
     if isDrainingOpenClawQueue {
-      openClawStatusText = openClawQueuedStatusText()
+      setIfChanged(\.openClawStatusText, openClawQueuedStatusText())
       return
     }
     await drainOpenClawSendQueue()
@@ -5859,13 +6920,29 @@ public final class WorkspaceStore: ObservableObject {
     replaceOpenClawSendFailure(for: messageID, with: nil)
   }
 
+  private func clearOpenClawSendFailure(for messageID: UUID, at expectedIndex: Int) {
+    replaceOpenClawSendFailure(for: messageID, expectedIndex: expectedIndex, with: nil)
+  }
+
   private func markPendingOpenClawMessagesFailed(_ failureText: String) {
     for messageID in openClawPendingUserMessageIDs {
       replaceOpenClawSendFailure(for: messageID, with: failureText)
     }
   }
 
-  private func replaceOpenClawSendFailure(for messageID: UUID, with failureText: String?) {
+  private func replaceOpenClawSendFailure(
+    for messageID: UUID,
+    expectedIndex: Int? = nil,
+    with failureText: String?
+  ) {
+    if let expectedIndex,
+       openClawMessages.indices.contains(expectedIndex),
+       openClawMessages[expectedIndex].id == messageID {
+      let message = openClawMessages[expectedIndex]
+      guard message.sendFailure != failureText else { return }
+      openClawMessages[expectedIndex] = message.replacingSendFailure(failureText)
+      return
+    }
     guard let index = openClawMessages.firstIndex(where: { $0.id == messageID }) else { return }
     let message = openClawMessages[index]
     guard message.sendFailure != failureText else { return }
@@ -6011,13 +7088,14 @@ public final class WorkspaceStore: ObservableObject {
 
   public func resetOpenClawChat() {
     ensureOpenClawChatThread()
-    openClawMessages = []
-    openClawDraft = ""
-    openClawPendingAttachments = []
-    openClawPendingUserMessageIDs.removeAll()
+    setIfChanged(\.openClawMessages, [])
+    setIfChanged(\.openClawDraft, "")
+    setIfChanged(\.openClawPendingAttachments, [])
+    if !openClawPendingUserMessageIDs.isEmpty {
+      openClawPendingUserMessageIDs.removeAll()
+    }
     isDrainingOpenClawQueue = false
-    isSendingOpenClawMessage = false
-    openClawRequestStartedAt = nil
+    setOpenClawSending(false)
     openClawChatScrollPosition = nil
     openClawAssistantChatScrollPosition = nil
     openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
@@ -6025,19 +7103,8 @@ public final class WorkspaceStore: ObservableObject {
 
   public var selectedOpenClawChatThread: OpenClawChatThread? {
     guard let selectedOpenClawChatThreadID else { return nil }
-    return openClawChatThreads.first(where: { $0.id == selectedOpenClawChatThreadID })
-  }
-
-  public var openClawUnreadMessageCount: Int {
-    openClawChatThreads.reduce(0) { $0 + $1.unreadMessageCount }
-  }
-
-  public var visibleOpenClawChatThreads: [OpenClawChatThread] {
-    Self.sortedOpenClawChatThreadsForDisplay(openClawChatThreads.filter { !$0.isArchived })
-  }
-
-  public var archivedOpenClawChatThreads: [OpenClawChatThread] {
-    Self.sortedOpenClawChatThreadsForDisplay(openClawChatThreads.filter(\.isArchived))
+    guard let thread = openClawChatThread(with: selectedOpenClawChatThreadID) else { return nil }
+    return openClawChatThreadForStorage(thread, messages: openClawMessages(for: thread))
   }
 
   public func createOpenClawChatThread() {
@@ -6057,24 +7124,30 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func selectOpenClawChatSearchResult(_ result: OpenClawChatSearchResult) {
-    selectedSurface = .openClaw
     selectOpenClawChatThread(result.threadID)
-    statusText = "Opened chat thread"
+    setIfChanged(\.selectedSurface, .openClaw)
+    setIfChanged(\.statusText, "Opened chat thread")
   }
 
   public func toggleOpenClawChatThreadPin(_ id: UUID) {
-    guard let index = openClawChatThreads.firstIndex(where: { $0.id == id }) else { return }
-    let thread = openClawChatThreads[index]
-    openClawChatThreads[index] = thread.replacingOpenClawChatMetadata(isPinned: !thread.isPinned)
-    sortOpenClawChatThreadsForDisplay()
+    guard let index = openClawChatThreadIndex(for: id) else { return }
+    var threads = openClawChatThreads
+    let thread = threads[index]
+    threads[index] = Self.openClawChatThreadWithoutMessages(
+      thread.replacingOpenClawChatMetadata(isPinned: !thread.isPinned)
+    )
+    openClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(threads)
     persistOpenClawTranscript()
   }
 
   public func archiveOpenClawChatThread(_ id: UUID) {
-    guard let index = openClawChatThreads.firstIndex(where: { $0.id == id }) else { return }
-    let thread = openClawChatThreads[index]
-    openClawChatThreads[index] = thread.replacingOpenClawChatMetadata(isArchived: true)
-    sortOpenClawChatThreadsForDisplay()
+    guard let index = openClawChatThreadIndex(for: id) else { return }
+    var threads = openClawChatThreads
+    let thread = threads[index]
+    threads[index] = Self.openClawChatThreadWithoutMessages(
+      thread.replacingOpenClawChatMetadata(isArchived: true)
+    )
+    openClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(threads)
     persistOpenClawTranscript()
 
     if selectedOpenClawChatThreadID == id {
@@ -6087,39 +7160,101 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func restoreOpenClawChatThread(_ id: UUID) {
-    guard let index = openClawChatThreads.firstIndex(where: { $0.id == id }) else { return }
-    let thread = openClawChatThreads[index]
-    openClawChatThreads[index] = thread.replacingOpenClawChatMetadata(isArchived: false)
-    sortOpenClawChatThreadsForDisplay()
+    guard let index = openClawChatThreadIndex(for: id) else { return }
+    var threads = openClawChatThreads
+    let thread = threads[index]
+    threads[index] = Self.openClawChatThreadWithoutMessages(
+      thread.replacingOpenClawChatMetadata(isArchived: false)
+    )
+    openClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(threads)
     persistOpenClawTranscript()
   }
 
   private func selectOpenClawChatThread(_ id: UUID, persistsSelection: Bool) {
     guard !isSendingOpenClawMessage,
-          let thread = openClawChatThreads.first(where: { $0.id == id })
+          let thread = openClawChatThread(with: id)
     else {
       return
     }
-    selectedOpenClawChatThreadID = thread.id
+    if selectedOpenClawChatThreadID == thread.id {
+      let markedRead = markOpenClawChatThreadRead(thread.id, shouldPersist: false)
+      if persistsSelection && markedRead {
+        persistOpenClawTranscript(delayNanoseconds: Self.openClawTranscriptSelectionPersistenceDelay)
+      }
+      return
+    }
+
+    storeSelectedOpenClawThreadMessagesForInactiveUse()
+    let selectedMessages = openClawMessages(for: thread)
+    setIfChanged(\.selectedOpenClawChatThreadID, thread.id)
     openClawSessionKey = thread.sessionKey
     markOpenClawChatThreadRead(thread.id, shouldPersist: false)
-    openClawDraft = ""
-    openClawPendingAttachments = []
-    openClawPendingUserMessageIDs.removeAll()
+    setIfChanged(\.openClawDraft, "")
+    setIfChanged(\.openClawPendingAttachments, [])
+    if !openClawPendingUserMessageIDs.isEmpty {
+      openClawPendingUserMessageIDs.removeAll()
+    }
     isDrainingOpenClawQueue = false
-    isSendingOpenClawMessage = false
-    openClawRequestStartedAt = nil
+    setOpenClawSending(false)
     openClawChatScrollPosition = nil
     openClawAssistantChatScrollPosition = nil
-    replaceOpenClawMessages(thread.messages, shouldPersist: false)
+    resetOpenClawVisibleMessageLimit(rebuildsVisibleMessages: false)
+    replaceOpenClawMessages(selectedMessages, shouldPersist: false)
+    detachSelectedOpenClawThreadMessagesForActiveUse()
     if persistsSelection {
-      persistOpenClawTranscript()
+      persistOpenClawTranscript(delayNanoseconds: Self.openClawTranscriptSelectionPersistenceDelay)
     }
+  }
+
+  public func showOlderOpenClawMessages() {
+    guard hiddenOpenClawMessageCount > 0 else { return }
+    setOpenClawVisibleMessageLimit(
+      min(openClawMessages.count, openClawVisibleMessageLimit + Self.openClawVisibleMessageLimitStep)
+    )
+  }
+
+  private func resetOpenClawVisibleMessageLimit(rebuildsVisibleMessages: Bool = true) {
+    setOpenClawVisibleMessageLimit(
+      Self.defaultOpenClawVisibleMessageLimit,
+      rebuildsVisibleMessages: rebuildsVisibleMessages
+    )
+  }
+
+  private func setOpenClawVisibleMessageLimit(
+    _ limit: Int,
+    rebuildsVisibleMessages: Bool = true
+  ) {
+    let nextLimit = max(0, limit)
+    guard openClawVisibleMessageLimit != nextLimit else { return }
+    openClawVisibleMessageLimit = nextLimit
+    if rebuildsVisibleMessages {
+      rebuildVisibleOpenClawMessages(limit: nextLimit)
+    }
+  }
+
+  private func rebuildVisibleOpenClawMessages(
+    messages: [OpenClawChatMessage]? = nil,
+    limit: Int? = nil
+  ) {
+    let sourceMessages = messages ?? openClawMessages
+    let messageLimit = max(0, limit ?? openClawVisibleMessageLimit)
+    guard sourceMessages.count > messageLimit else {
+      setVisibleOpenClawMessages(sourceMessages)
+      return
+    }
+    setVisibleOpenClawMessages(Array(sourceMessages.suffix(messageLimit)))
+  }
+
+  private func setVisibleOpenClawMessages(_ messages: [OpenClawChatMessage]) {
+    let signature = Self.openClawMessagesRenderSignature(for: messages)
+    guard visibleOpenClawMessagesRenderSignature != signature else { return }
+    visibleOpenClawMessagesRenderSignature = signature
+    visibleOpenClawMessages = messages
   }
 
   private func ensureOpenClawChatThread() {
     if let selectedOpenClawChatThreadID,
-       openClawChatThreads.contains(where: { $0.id == selectedOpenClawChatThreadID }) {
+       openClawChatThreadIndex(for: selectedOpenClawChatThreadID) != nil {
       return
     }
     let thread = OpenClawChatThread(
@@ -6127,8 +7262,9 @@ public final class WorkspaceStore: ObservableObject {
       sessionKey: openClawSessionKey,
       messages: openClawMessages
     )
-    openClawChatThreads.insert(thread, at: 0)
-    selectedOpenClawChatThreadID = thread.id
+    storeOpenClawMessages(openClawMessages, for: thread.id)
+    openClawChatThreads.insert(Self.openClawChatThreadWithoutMessages(thread), at: 0)
+    setIfChanged(\.selectedOpenClawChatThreadID, thread.id)
   }
 
   public func markSelectedOpenClawChatThreadRead() {
@@ -6136,49 +7272,184 @@ public final class WorkspaceStore: ObservableObject {
     markOpenClawChatThreadRead(selectedOpenClawChatThreadID, shouldPersist: true)
   }
 
-  private func markOpenClawChatThreadRead(_ id: UUID, shouldPersist: Bool) {
-    guard let index = openClawChatThreads.firstIndex(where: { $0.id == id }) else { return }
-    let thread = openClawChatThreads[index]
-    guard thread.unreadMessageCount != 0 else { return }
-    openClawChatThreads[index] = thread.replacingOpenClawChatMetadata(unreadMessageCount: 0)
+  @discardableResult
+  private func markOpenClawChatThreadRead(_ id: UUID, shouldPersist: Bool) -> Bool {
+    guard let index = openClawChatThreadIndex(for: id) else { return false }
+    var threads = openClawChatThreads
+    let thread = threads[index]
+    guard thread.unreadMessageCount != 0 else { return false }
+    threads[index] = Self.openClawChatThreadWithoutMessages(
+      thread.replacingOpenClawChatMetadata(unreadMessageCount: 0)
+    )
+    openClawChatThreads = threads
     if shouldPersist {
       persistOpenClawTranscript()
     }
+    return true
   }
 
   private func updateSelectedOpenClawChatThread(messages: [OpenClawChatMessage]) {
     ensureOpenClawChatThread()
     guard let selectedOpenClawChatThreadID,
-          let index = openClawChatThreads.firstIndex(where: { $0.id == selectedOpenClawChatThreadID })
+          let index = openClawChatThreadIndex(for: selectedOpenClawChatThreadID)
     else {
       return
     }
 
     let current = openClawChatThreads[index]
-    let newAssistantMessageCount = Self.newAssistantMessageCount(
-      previousMessages: current.messages,
-      currentMessages: messages
-    )
+    let previousMessages = openClawStoredMessages(for: current)
+    let previousSignature = Self.openClawMessageHistorySignature(for: previousMessages)
+    let currentSignature = Self.openClawMessageHistorySignature(for: messages)
+    guard previousSignature != currentSignature else { return }
+    storeOpenClawMessages(messages, for: current.id)
     let isThreadOpen = selectedSurface == .openClaw && selectedOpenClawChatThreadID == current.id
+    let newAssistantMessageCount = isThreadOpen
+      ? 0
+      : Self.newAssistantMessageCount(
+        previousMessages: previousMessages,
+        currentMessages: messages
+      )
     let unreadMessageCount = isThreadOpen
       ? 0
       : current.unreadMessageCount + newAssistantMessageCount
-    let updated = OpenClawChatThread(
-      id: current.id,
-      title: Self.openClawThreadTitle(from: messages, fallback: current.title),
-      createdAt: current.createdAt,
-      updatedAt: messages.last?.createdAt ?? Date(),
-      sessionKey: current.sessionKey,
-      messages: messages,
-      isPinned: current.isPinned,
-      isArchived: current.isArchived,
+    let updated = openClawChatThread(
+      current,
+      applyingMessages: messages,
+      storesMessages: false,
       unreadMessageCount: unreadMessageCount
     )
-    openClawChatThreads[index] = updated
-    sortOpenClawChatThreadsForDisplay()
+    relocateOpenClawChatThread(at: index, with: updated)
     if newAssistantMessageCount > 0 && !isThreadOpen {
       openClawIncomingMessageSoundPlayer()
     }
+  }
+
+  private func storeSelectedOpenClawThreadMessagesForInactiveUse() {
+    guard let selectedOpenClawChatThreadID,
+          let index = openClawChatThreadIndex(for: selectedOpenClawChatThreadID)
+    else {
+      return
+    }
+    let current = openClawChatThreads[index]
+    storeOpenClawMessages(openClawMessages, for: current.id)
+    let updated = openClawChatThreadForDisplayStorage(current, messages: openClawMessages)
+    relocateOpenClawChatThread(at: index, with: updated)
+  }
+
+  private func detachSelectedOpenClawThreadMessagesForActiveUse() {
+    guard let selectedOpenClawChatThreadID,
+          let index = openClawChatThreadIndex(for: selectedOpenClawChatThreadID)
+    else {
+      return
+    }
+    let current = openClawChatThreads[index]
+    guard !current.messages.isEmpty else { return }
+    storeOpenClawMessages(current.messages, for: current.id)
+    let detached = OpenClawChatThread(
+      id: current.id,
+      title: current.title,
+      createdAt: current.createdAt,
+      updatedAt: current.updatedAt,
+      sessionKey: current.sessionKey,
+      messages: [],
+      isPinned: current.isPinned,
+      isArchived: current.isArchived,
+      unreadMessageCount: current.unreadMessageCount
+    )
+    relocateOpenClawChatThread(at: index, with: detached)
+  }
+
+  private func openClawChatThreadsForCurrentMessages() -> [OpenClawChatThread] {
+    openClawChatThreads.map { thread in
+      openClawChatThreadForStorage(thread, messages: openClawMessages(for: thread))
+    }
+  }
+
+  private func openClawChatThread(
+    _ thread: OpenClawChatThread,
+    applyingMessages messages: [OpenClawChatMessage],
+    storesMessages: Bool,
+    unreadMessageCount: Int? = nil
+  ) -> OpenClawChatThread {
+    OpenClawChatThread(
+      id: thread.id,
+      title: Self.openClawThreadTitle(from: messages, fallback: thread.title),
+      createdAt: thread.createdAt,
+      updatedAt: messages.last?.createdAt ?? thread.updatedAt,
+      sessionKey: thread.sessionKey,
+      messages: storesMessages ? messages : [],
+      isPinned: thread.isPinned,
+      isArchived: thread.isArchived,
+      unreadMessageCount: unreadMessageCount ?? thread.unreadMessageCount
+    )
+  }
+
+  private func openClawChatThreadForStorage(
+    _ thread: OpenClawChatThread,
+    messages: [OpenClawChatMessage]
+  ) -> OpenClawChatThread {
+    OpenClawChatThread(
+      id: thread.id,
+      title: thread.title,
+      createdAt: thread.createdAt,
+      updatedAt: messages.last?.createdAt ?? thread.updatedAt,
+      sessionKey: thread.sessionKey,
+      messages: messages,
+      isPinned: thread.isPinned,
+      isArchived: thread.isArchived,
+      unreadMessageCount: thread.unreadMessageCount
+    )
+  }
+
+  private func openClawChatThreadForDisplayStorage(
+    _ thread: OpenClawChatThread,
+    messages: [OpenClawChatMessage]
+  ) -> OpenClawChatThread {
+    OpenClawChatThread(
+      id: thread.id,
+      title: thread.title,
+      createdAt: thread.createdAt,
+      updatedAt: messages.last?.createdAt ?? thread.updatedAt,
+      sessionKey: thread.sessionKey,
+      messages: [],
+      isPinned: thread.isPinned,
+      isArchived: thread.isArchived,
+      unreadMessageCount: thread.unreadMessageCount
+    )
+  }
+
+  private func openClawMessages(for thread: OpenClawChatThread) -> [OpenClawChatMessage] {
+    if selectedOpenClawChatThreadID == thread.id {
+      return openClawMessages
+    }
+    return openClawStoredMessages(for: thread)
+  }
+
+  private func openClawStoredMessages(for thread: OpenClawChatThread) -> [OpenClawChatMessage] {
+    openClawMessagesByThreadID[thread.id] ?? thread.messages
+  }
+
+  private func storeOpenClawMessages(_ messages: [OpenClawChatMessage], for threadID: UUID) {
+    if messages.isEmpty {
+      openClawMessagesByThreadID.removeValue(forKey: threadID)
+    } else {
+      openClawMessagesByThreadID[threadID] = messages
+    }
+  }
+
+  nonisolated private static func openClawChatThreadWithoutMessages(_ thread: OpenClawChatThread) -> OpenClawChatThread {
+    guard !thread.messages.isEmpty else { return thread }
+    return OpenClawChatThread(
+      id: thread.id,
+      title: thread.title,
+      createdAt: thread.createdAt,
+      updatedAt: thread.updatedAt,
+      sessionKey: thread.sessionKey,
+      messages: [],
+      isPinned: thread.isPinned,
+      isArchived: thread.isArchived,
+      unreadMessageCount: thread.unreadMessageCount
+    )
   }
 
   nonisolated private static func newAssistantMessageCount(
@@ -6192,18 +7463,110 @@ public final class WorkspaceStore: ObservableObject {
       .count
   }
 
-  private func sortOpenClawChatThreadsForDisplay() {
-    openClawChatThreads = Self.sortedOpenClawChatThreadsForDisplay(openClawChatThreads)
+  private func rebuildOpenClawThreadDisplayCache(threads: [OpenClawChatThread]? = nil) {
+    let sourceThreads = threads ?? openClawChatThreads
+    var visible: [OpenClawChatThreadDisplayItem] = []
+    var archived: [OpenClawChatThreadDisplayItem] = []
+    var indicesByID: [UUID: Int] = [:]
+    var unreadCount = 0
+    visible.reserveCapacity(sourceThreads.count)
+    indicesByID.reserveCapacity(sourceThreads.count)
+    for (index, thread) in sourceThreads.enumerated() {
+      indicesByID[thread.id] = index
+      unreadCount += thread.unreadMessageCount
+      let item = OpenClawChatThreadDisplayItem(thread: thread)
+      if thread.isArchived {
+        archived.append(item)
+      } else {
+        visible.append(item)
+      }
+    }
+    visibleOpenClawChatThreads = visible
+    archivedOpenClawChatThreads = archived
+    visibleOpenClawChatThreadsRenderSignature = Self.openClawThreadDisplayItemsRenderSignature(for: visible)
+    archivedOpenClawChatThreadsRenderSignature = Self.openClawThreadDisplayItemsRenderSignature(for: archived)
+    openClawChatThreadIndicesByID = indicesByID
+    openClawUnreadMessageCount = unreadCount
+  }
+
+  private func openClawChatThreadIndex(for id: UUID) -> Int? {
+    if let index = openClawChatThreadIndicesByID[id],
+       openClawChatThreads.indices.contains(index),
+       openClawChatThreads[index].id == id {
+      return index
+    }
+    return openClawChatThreads.firstIndex { $0.id == id }
+  }
+
+  private func openClawChatThread(with id: UUID) -> OpenClawChatThread? {
+    guard let index = openClawChatThreadIndex(for: id) else { return nil }
+    return openClawChatThreads[index]
+  }
+
+  private func relocateOpenClawChatThread(at index: Int, with updated: OpenClawChatThread) {
+    guard openClawChatThreads.indices.contains(index) else { return }
+    guard !Self.openClawChatThreadDisplayStorageMatches(openClawChatThreads[index], updated) else { return }
+    var threads = openClawChatThreads
+    threads.remove(at: index)
+    let insertionIndex = threads.firstIndex { candidate in
+      Self.openClawChatThread(updated, sortsBefore: candidate)
+    } ?? threads.endIndex
+    threads.insert(updated, at: insertionIndex)
+    openClawChatThreads = threads
   }
 
   nonisolated private static func sortedOpenClawChatThreadsForDisplay(
     _ threads: [OpenClawChatThread]
   ) -> [OpenClawChatThread] {
-    threads.sorted { lhs, rhs in
-      if lhs.isArchived != rhs.isArchived { return !lhs.isArchived }
-      if lhs.isPinned != rhs.isPinned { return lhs.isPinned }
-      return lhs.updatedAt > rhs.updatedAt
+    threads.sorted(by: openClawChatThread(_:sortsBefore:))
+  }
+
+  nonisolated private static func openClawChatThreadDisplayStorageMatches(
+    _ lhs: OpenClawChatThread,
+    _ rhs: OpenClawChatThread
+  ) -> Bool {
+    lhs.id == rhs.id
+      && lhs.title == rhs.title
+      && lhs.createdAt == rhs.createdAt
+      && lhs.updatedAt == rhs.updatedAt
+      && lhs.sessionKey == rhs.sessionKey
+      && lhs.isPinned == rhs.isPinned
+      && lhs.isArchived == rhs.isArchived
+      && lhs.unreadMessageCount == rhs.unreadMessageCount
+      && openClawMessageHistorySignature(for: lhs.messages) == openClawMessageHistorySignature(for: rhs.messages)
+  }
+
+  nonisolated static func openClawMessageHistorySignature(
+    _ messages: [OpenClawChatMessage]
+  ) -> String {
+    openClawMessageHistorySignature(for: messages)
+  }
+
+  nonisolated static func openClawMessageHistorySignature(
+    for messages: [OpenClawChatMessage]
+  ) -> String {
+    guard !messages.isEmpty else { return "empty" }
+    let first = messages.first
+    let last = messages.last
+    var hasher = Hasher()
+    hasher.combine(messages.count)
+    hasher.combine(first?.id)
+    hasher.combine(last?.id)
+    hasher.combine(last?.role)
+    if let content = last?.content {
+      combineBoundedOpenClawContentSignature(content, into: &hasher)
+    } else {
+      hasher.combine(0)
     }
+    hasher.combine(last?.sendFailure)
+    hasher.combine(last?.createdAt)
+    return "\(messages.count):\(hasher.finalize())"
+  }
+
+  nonisolated private static func openClawChatThread(_ lhs: OpenClawChatThread, sortsBefore rhs: OpenClawChatThread) -> Bool {
+    if lhs.isArchived != rhs.isArchived { return !lhs.isArchived }
+    if lhs.isPinned != rhs.isPinned { return lhs.isPinned }
+    return lhs.updatedAt > rhs.updatedAt
   }
 
   nonisolated static func openClawThreadTitle(
@@ -6245,7 +7608,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   nonisolated private static func normalizedOpenClawTitleSource(_ content: String) -> String {
-    content
+    String(content.prefix(openClawThreadTitleSourceLimit))
       .replacingOccurrences(of: #"https?://\S+"#, with: " ", options: .regularExpression)
       .replacingOccurrences(of: #"\[[^\]]+\]\([^)]+\)"#, with: " ", options: .regularExpression)
       .replacingOccurrences(of: #"<image[^>]*>"#, with: " ", options: .regularExpression)
@@ -6403,6 +7766,11 @@ public final class WorkspaceStore: ObservableObject {
 
   public func recordOpenClawChatScrollPosition(_ position: Double, isAssistantPanel: Bool = false) {
     let normalized = min(1, max(0, position))
+    let current = openClawChatScrollPosition(isAssistantPanel: isAssistantPanel)
+    if let current,
+       abs(current - normalized) < Self.openClawScrollPositionRecordEpsilon {
+      return
+    }
     if isAssistantPanel {
       openClawAssistantChatScrollPosition = normalized
     } else {
@@ -6412,21 +7780,36 @@ public final class WorkspaceStore: ObservableObject {
 
   public func openChatFileReference(_ reference: OpenClawFileReference) {
     guard let file = localPathForOpenClawReference(reference.path) else {
-      openClawStatusText = "Could not resolve file link: \(reference.path)"
+      setIfChanged(\.openClawStatusText, "Could not resolve file link: \(reference.path)")
       return
     }
+
+    let line = reference.line ?? 1
+    guard !isActiveOpenClawFileReference(file: file, line: line) else { return }
 
     let url = URL(fileURLWithPath: file)
     let thread = OpenClawThread(
       title: url.deletingPathExtension().lastPathComponent,
       file: file,
-      line: reference.line ?? 1,
+      line: line,
       zone: "chat link",
       modifiedAt: nil,
       idValue: nil
     )
     activateDetailLocation(.openClaw(thread), mode: .page, recordsHistory: true)
-    statusText = "Opened \(relativePath(file))"
+    setIfChanged(\.statusText, "Opened \(relativePath(file))")
+  }
+
+  private func isActiveOpenClawFileReference(file: String, line: Int) -> Bool {
+    guard case .openClaw(let thread)? = selectedLocation,
+          selectedEntrySourceMode == .page
+    else {
+      return false
+    }
+    let selectedPath = URL(fileURLWithPath: thread.file).standardizedFileURL.path
+    let filePath = URL(fileURLWithPath: file).standardizedFileURL.path
+    guard selectedPath == filePath, thread.lineForEditor == max(1, line) else { return false }
+    return selectedEntrySource != nil || isLoadingEntrySource || isRenderingEntrySource
   }
 
   public func isPersonalAssignee(_ rawAssignee: String?) -> Bool {
@@ -6564,19 +7947,35 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func refreshOrgCryptManagedRecipientFiles() {
+    Task { await refreshOrgCryptManagedRecipientFilesNow() }
+  }
+
+  public func refreshOrgCryptManagedRecipientFilesNow() async {
+    orgCryptManagedRecipientFilesRefreshGeneration += 1
+    let generation = orgCryptManagedRecipientFilesRefreshGeneration
     guard let corpusRoot else {
-      orgCryptManagedRecipientFiles = []
+      setIfChanged(\.orgCryptManagedRecipientFiles, [])
       return
     }
+    let root = corpusRoot.standardizedFileURL
     do {
-      orgCryptManagedRecipientFiles = try Self.scanOrgCryptManagedRecipientFiles(corpusRoot: corpusRoot)
+      let files = try await Task.detached(priority: .utility) {
+        try Self.scanOrgCryptManagedRecipientFiles(corpusRoot: root)
+      }.value
+      guard generation == orgCryptManagedRecipientFilesRefreshGeneration,
+            self.corpusRoot?.standardizedFileURL.path == root.path
+      else {
+        return
+      }
+      setIfChanged(\.orgCryptManagedRecipientFiles, files)
     } catch {
-      orgCryptManagedRecipientFiles = []
+      guard generation == orgCryptManagedRecipientFilesRefreshGeneration else { return }
+      setIfChanged(\.orgCryptManagedRecipientFiles, [])
       orgCryptStatusText = error.localizedDescription
     }
   }
 
-  public static func scanOrgCryptManagedRecipientFiles(corpusRoot: URL) throws -> [OrgCryptRecipientFile] {
+  nonisolated public static func scanOrgCryptManagedRecipientFiles(corpusRoot: URL) throws -> [OrgCryptRecipientFile] {
     let root = corpusRoot.standardizedFileURL
     let directory = root.appendingPathComponent(orgCryptPublicKeysDirectoryName, isDirectory: true)
     let fileManager = FileManager.default
@@ -6636,6 +8035,7 @@ public final class WorkspaceStore: ObservableObject {
       )
       orgCryptManagedRecipientFiles.append(file)
       orgCryptManagedRecipientFiles.sort { $0.relativePath.localizedStandardCompare($1.relativePath) == .orderedAscending }
+      orgCryptStatusText = "Added \(file.name) to public keys"
       return file
     }
     orgCryptStatusText = "Added \(imported.name) to public keys"
@@ -6772,12 +8172,41 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func rebuildAgendaDisplayCache() {
-    agendaDisplaySections = Self.makeAgendaDisplaySections(agenda: agenda, mode: agendaMode, filter: agendaFilter)
-    visibleAgendaItems = agendaDisplaySections.flatMap(\.items)
+  private func rebuildAgendaDisplayCache(
+    mode: AgendaMode? = nil,
+    filter: String? = nil
+  ) {
+    applyAgendaDisplayCache(agenda: agenda, mode: mode ?? agendaMode, filter: filter ?? agendaFilter)
   }
 
-  private static func makeAgendaDisplaySections(agenda: AgendaPayload?, mode: AgendaMode, filter: String) -> [AgendaDisplaySection] {
+  private func rebuildAgendaDisplayCache(agenda newAgenda: AgendaPayload?) {
+    applyAgendaDisplayCache(agenda: newAgenda, mode: agendaMode, filter: agendaFilter)
+  }
+
+  private func applyAgendaDisplayCache(agenda sourceAgenda: AgendaPayload?, mode: AgendaMode, filter: String) {
+    agendaDisplaySections = Self.makeAgendaDisplaySections(
+      agenda: sourceAgenda,
+      mode: mode,
+      filter: filter,
+      corpusRoot: corpusRoot
+    )
+    visibleAgendaItems = agendaDisplaySections.flatMap(\.items).map(\.item)
+    visibleAgendaItemsByID = Self.lookupByID(visibleAgendaItems)
+    var indicesByID: [AgendaItem.ID: Int] = [:]
+    indicesByID.reserveCapacity(visibleAgendaItems.count)
+    for (index, item) in visibleAgendaItems.enumerated() {
+      indicesByID[item.id] = index
+    }
+    visibleAgendaItemIndicesByID = indicesByID
+    visibleAgendaItemIDs = Set(visibleAgendaItems.map(\.id))
+  }
+
+  private static func makeAgendaDisplaySections(
+    agenda: AgendaPayload?,
+    mode: AgendaMode,
+    filter: String,
+    corpusRoot: URL?
+  ) -> [AgendaDisplaySection] {
     guard let agenda else { return [] }
     let terms = filterTerms(from: filter)
     let overdue = agenda.overdue.flatMap(\.items).filter { $0.matchesAgendaFilterTerms(terms) }
@@ -6791,6 +8220,15 @@ public final class WorkspaceStore: ObservableObject {
       .filter { $0.date > next7End }
       .flatMap(\.items)
       .filter { $0.matchesAgendaFilterTerms(terms) }
+    let standardizedRoot = corpusRoot?.standardizedFileURL
+    func displayItems(_ items: [AgendaItem]) -> [AgendaDisplayItem] {
+      items.map { item in
+        AgendaDisplayItem(
+          item: item,
+          relativePath: standardizedRoot.map { Self.relativePath(for: item.file, root: $0) } ?? item.file
+        )
+      }
+    }
 
     switch mode {
     case .focus:
@@ -6798,21 +8236,21 @@ public final class WorkspaceStore: ObservableObject {
       let overdueActionable = overdue.filter(\.isActionable)
       let doneToday = today.filter { !$0.isActionable }
       return [
-        AgendaDisplaySection(id: "focus-today", label: "Today", items: todayActionable, hint: "today"),
-        AgendaDisplaySection(id: "focus-overdue", label: "Overdue", items: overdueActionable, hint: "overdue"),
-        AgendaDisplaySection(id: "focus-closed", label: "Done or canceled", items: doneToday, hint: "today")
+        AgendaDisplaySection(id: "focus-today", label: "Today", items: displayItems(todayActionable), hint: "today"),
+        AgendaDisplaySection(id: "focus-overdue", label: "Overdue", items: displayItems(overdueActionable), hint: "overdue"),
+        AgendaDisplaySection(id: "focus-closed", label: "Done or canceled", items: displayItems(doneToday), hint: "today")
       ].filter { !$0.items.isEmpty }
     case .today:
       return [
-        AgendaDisplaySection(id: "today", label: "Today", items: today, hint: "today"),
-        AgendaDisplaySection(id: "overdue", label: "Overdue", items: overdue, hint: "overdue")
+        AgendaDisplaySection(id: "today", label: "Today", items: displayItems(today), hint: "today"),
+        AgendaDisplaySection(id: "overdue", label: "Overdue", items: displayItems(overdue), hint: "overdue")
       ].filter { !$0.items.isEmpty }
     case .range:
       return [
-        AgendaDisplaySection(id: "overdue", label: "Overdue", items: overdue, hint: "overdue"),
-        AgendaDisplaySection(id: "today", label: "Today", items: today, hint: "today"),
-        AgendaDisplaySection(id: "next-7-days", label: "Next 7 days", items: next7, hint: "upcoming"),
-        AgendaDisplaySection(id: "later", label: "Later", items: later, hint: "upcoming")
+        AgendaDisplaySection(id: "overdue", label: "Overdue", items: displayItems(overdue), hint: "overdue"),
+        AgendaDisplaySection(id: "today", label: "Today", items: displayItems(today), hint: "today"),
+        AgendaDisplaySection(id: "next-7-days", label: "Next 7 days", items: displayItems(next7), hint: "upcoming"),
+        AgendaDisplaySection(id: "later", label: "Later", items: displayItems(later), hint: "upcoming")
       ].filter { !$0.items.isEmpty }
     case .assigned:
       return []
@@ -6831,9 +8269,32 @@ public final class WorkspaceStore: ObservableObject {
     visibleAgendaItems.count
   }
 
+  public func visibleAgendaItem(id: AgendaItem.ID) -> AgendaItem? {
+    visibleAgendaItemsByID[id]
+  }
+
+  public func visibleAgendaItemIndex(id: AgendaItem.ID) -> Int? {
+    visibleAgendaItemIndicesByID[id]
+  }
+
+  public func visibleApprovalItem(id: ApprovalItem.ID) -> ApprovalItem? {
+    visibleApprovalItemsByID[id]
+  }
+
+  public func assignedWorkItem(id: AssignedWorkItem.ID) -> AssignedWorkItem? {
+    assignedWorkItemsByID[id]
+  }
+
+  public func visibleAssignedWorkItem(id: AssignedWorkItem.ID) -> AssignedWorkItem? {
+    visibleAssignedWorkItemsByID[id]
+  }
+
+  public func meeting(id: MeetingWorkspaceItem.ID) -> MeetingWorkspaceItem? {
+    meetingsByID[id]
+  }
+
   public var bulkAgendaSelectionCount: Int {
-    let visibleIDs = Set(visibleAgendaItems.map(\.id))
-    return bulkSelectedAgendaItemIDs.intersection(visibleIDs).count
+    bulkSelectedAgendaItemIDs.intersection(visibleAgendaItemIDs).count
   }
 
   public var hasBulkAgendaSelection: Bool {
@@ -6851,24 +8312,27 @@ public final class WorkspaceStore: ObservableObject {
     } else {
       ids.insert(item.id)
     }
-    bulkSelectedAgendaItemIDs = ids
+    setIfChanged(\.bulkSelectedAgendaItemIDs, ids)
     updateAgendaBulkSelectionStatusText()
   }
 
   public func selectAllVisibleAgendaItemsForBulkAction() {
-    let ids = Set(visibleAgendaItems.map(\.id))
-    bulkSelectedAgendaItemIDs = ids
+    let ids = visibleAgendaItemIDs
+    setIfChanged(\.bulkSelectedAgendaItemIDs, ids)
     if ids.isEmpty {
-      statusText = "No visible agenda items"
+      setIfChanged(\.statusText, "No visible agenda items")
     } else {
-      statusText = ids.count == 1 ? "1 agenda item selected" : "\(ids.count) agenda items selected"
+      setIfChanged(
+        \.statusText,
+        ids.count == 1 ? "1 agenda item selected" : "\(ids.count) agenda items selected"
+      )
     }
   }
 
   public func clearAgendaBulkSelection() {
     guard !bulkSelectedAgendaItemIDs.isEmpty else { return }
-    bulkSelectedAgendaItemIDs = []
-    statusText = "Agenda selection cleared"
+    setIfChanged(\.bulkSelectedAgendaItemIDs, Set<String>())
+    setIfChanged(\.statusText, "Agenda selection cleared")
   }
 
   public func handleAgendaItemClick(_ item: AgendaItem, modifiers: NSEvent.ModifierFlags = []) {
@@ -6880,6 +8344,13 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func activateAgendaItemFromRowTap(_ item: AgendaItem, modifiers: NSEvent.ModifierFlags = []) {
+    let previousID = selectedAgendaItemID
+    guard modifiers.intersection([.command]).contains(.command) || previousID != item.id else { return }
+    handleAgendaItemClick(item, modifiers: modifiers)
+    suppressNextAgendaSelectionActivation = previousID != selectedAgendaItemID
+  }
+
   public func extendAgendaBulkSelection(by delta: Int) {
     let items = visibleAgendaItems
     guard !items.isEmpty else {
@@ -6887,7 +8358,7 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
-    let currentIndex = selectedAgendaItemID.flatMap { id in items.firstIndex(where: { $0.id == id }) }
+    let currentIndex = selectedAgendaItemID.flatMap { visibleAgendaItemIndicesByID[$0] }
     let nextIndex: Int
     if let currentIndex {
       nextIndex = max(0, min(items.count - 1, currentIndex + delta))
@@ -6900,7 +8371,7 @@ public final class WorkspaceStore: ObservableObject {
       ids.insert(items[currentIndex].id)
     }
     ids.insert(items[nextIndex].id)
-    bulkSelectedAgendaItemIDs = ids
+    setIfChanged(\.bulkSelectedAgendaItemIDs, ids)
     selectAgendaItem(items[nextIndex])
     updateAgendaBulkSelectionStatusText()
   }
@@ -6908,14 +8379,14 @@ public final class WorkspaceStore: ObservableObject {
   public func selectAgendaItem(_ item: AgendaItem) {
     deactivateAgendaFilterFocus()
     suppressNextAgendaSelectionActivation = false
-    selectedSurface = .agenda
+    setIfChanged(\.selectedSurface, .agenda)
     select(.agenda(item))
   }
 
   private func selectAgendaItemWithoutActivatingEntry(_ item: AgendaItem) {
     suppressNextAgendaSelectionActivation = true
-    selectedSurface = .agenda
-    selectedAgendaItemID = item.id
+    setIfChanged(\.selectedSurface, .agenda)
+    setIfChanged(\.selectedAgendaItemID, item.id)
   }
 
   public func moveAgendaSelection(by delta: Int) {
@@ -6926,7 +8397,7 @@ public final class WorkspaceStore: ObservableObject {
     let items = visibleAgendaItems
     guard !items.isEmpty else { return }
 
-    let currentIndex = selectedAgendaItemID.flatMap { id in items.firstIndex(where: { $0.id == id }) }
+    let currentIndex = selectedAgendaItemID.flatMap { visibleAgendaItemIndicesByID[$0] }
     let nextIndex: Int
     if let currentIndex {
       nextIndex = max(0, min(items.count - 1, currentIndex + delta))
@@ -6973,33 +8444,33 @@ public final class WorkspaceStore: ObservableObject {
     guard !items.isEmpty else {
       guard selectedAgendaItemID != nil else { return }
       suppressNextAgendaSelectionActivation = true
-      selectedAgendaItemID = nil
+      setIfChanged(\.selectedAgendaItemID, nil)
       return
     }
 
-    if let selectedAgendaItemID, items.contains(where: { $0.id == selectedAgendaItemID }) {
+    if let selectedAgendaItemID, visibleAgendaItemIDs.contains(selectedAgendaItemID) {
       return
     }
 
     let nextID = items[0].id
     guard selectedAgendaItemID != nextID else { return }
     suppressNextAgendaSelectionActivation = true
-    selectedAgendaItemID = nextID
+    setIfChanged(\.selectedAgendaItemID, nextID)
   }
 
   public func syncAssignedAgendaSelectionAfterDisplayOptionsChange() {
     guard agendaMode == .assigned else { return }
-    selectedAgendaItemID = nil
+    setIfChanged(\.selectedAgendaItemID, nil)
     let items = visibleAssignedWorkItems
     guard !items.isEmpty else {
-      selectedAssignedWorkItemID = nil
+      setIfChanged(\.selectedAssignedWorkItemID, nil)
       return
     }
     if let selectedAssignedWorkItemID,
-       items.contains(where: { $0.id == selectedAssignedWorkItemID }) {
+       visibleAssignedWorkItemsByID[selectedAssignedWorkItemID] != nil {
       return
     }
-    selectedAssignedWorkItemID = items[0].id
+    setIfChanged(\.selectedAssignedWorkItemID, items[0].id)
   }
 
   public func consumeAgendaSelectionActivationSuppression() -> Bool {
@@ -7021,10 +8492,10 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func moveAssignedAgendaSelection(by delta: Int) {
-    let items = assignedWorkSections.flatMap(\.items)
+    let items = displayedAssignedWorkItems
     guard !items.isEmpty else { return }
 
-    let currentIndex = selectedAssignedWorkItemID.flatMap { id in items.firstIndex(where: { $0.id == id }) }
+    let currentIndex = selectedAssignedWorkItemID.flatMap { displayedAssignedWorkItemIndicesByID[$0] }
     let nextIndex: Int
     if let currentIndex {
       nextIndex = max(0, min(items.count - 1, currentIndex + delta))
@@ -7035,25 +8506,36 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func setAgendaModeFromKey(_ key: String) {
-    if key == "1" { agendaMode = .focus }
-    if key == "2" { agendaMode = .today }
-    if key == "3" { agendaMode = .range }
-    if key == "4" { agendaMode = .assigned }
+    let nextMode: AgendaMode?
+    switch key {
+    case "1":
+      nextMode = .focus
+    case "2":
+      nextMode = .today
+    case "3":
+      nextMode = .range
+    case "4":
+      nextMode = .assigned
+    default:
+      nextMode = nil
+    }
+    guard let nextMode, nextMode != agendaMode else { return }
+    setIfChanged(\.agendaMode, nextMode)
     syncAgendaSelectionAfterDisplayOptionsChange()
   }
 
   public func focusAgendaFilter() {
-    selectedSurface = .agenda
-    agendaFilter = ""
+    setIfChanged(\.selectedSurface, .agenda)
+    setIfChanged(\.agendaFilter, "")
     agendaFilterFocusToken += 1
   }
 
   public func deactivateAgendaFilterFocus() {
-    isAgendaFilterFocused = false
+    setIfChanged(\.isAgendaFilterFocused, false)
   }
 
   public func clearAgendaFilter() {
-    agendaFilter = ""
+    setIfChanged(\.agendaFilter, "")
     syncAgendaSelectionAfterDisplayOptionsChange()
   }
 
@@ -7241,18 +8723,25 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func presentSimilarTodoAssignment() {
+    Task { await prepareSimilarTodoAssignment() }
+  }
+
+  private func prepareSimilarTodoAssignment() async {
     guard let target = selectedHeadlineMutationTarget else {
       statusText = "Select a TODO heading first"
       return
     }
-    guard let corpusRoot else {
+    guard corpusRoot != nil else {
       statusText = "No corpus selected"
       return
     }
 
     do {
-      let files = corpusFiles.isEmpty ? try Self.scanCorpusFiles(corpusRoot: corpusRoot) : corpusFiles
-      let allCandidates = try Self.scanTodoHeadings(files: files)
+      statusText = "Finding similar TODOs..."
+      let files = try await currentOrScannedCorpusFiles()
+      let allCandidates = try await Task.detached(priority: .userInitiated) {
+        try Self.scanTodoHeadings(files: files)
+      }.value
       let matched = Self.similarTodoCandidates(to: target, from: allCandidates)
       similarTodoCandidates = matched
       selectedSimilarTodoCandidateIDs = Set(matched.map(\.id))
@@ -7303,7 +8792,7 @@ public final class WorkspaceStore: ObservableObject {
           title: Org2Display.cleanInline(candidate.headline)
         )
         try await setTodoAssignee(assignee, for: target)
-        try upsertHeadlineProperties(
+        try await Self.upsertHeadlinePropertiesOffMain(
           file: candidate.file,
           line: candidate.line,
           properties: [
@@ -7352,7 +8841,7 @@ public final class WorkspaceStore: ObservableObject {
       relativePath: { [weak self] file in self?.relativePath(file) ?? file },
       mappedPath: { [weak self] file in self?.mappedPathForOpenClaw(file) ?? file }
     )
-    selectedSurface = .openClaw
+    setIfChanged(\.selectedSurface, .openClaw)
     setOpenClawAssistantPanelPresented(true)
     await sendOpenClawMessage(text: prompt)
   }
@@ -7369,7 +8858,7 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
     let originalVisibleIndex = target.agendaItemID.flatMap { id in
-      visibleAgendaItems.firstIndex(where: { $0.id == id })
+      visibleAgendaItemIndicesByID[id]
     }
     var shouldAdvanceSelection = status.map { Self.isTerminalTodoStatus($0.rawValue) } ?? false
 
@@ -7495,7 +8984,7 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
     let originalVisibleIndex = target.agendaItemID.flatMap { id in
-      visibleAgendaItems.firstIndex(where: { $0.id == id })
+      visibleAgendaItemIndicesByID[id]
     }
     var shouldAdvanceSelection = status.map { Self.isTerminalTodoStatus($0.rawValue) } ?? false
 
@@ -7678,14 +9167,14 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func markReadyForAgent(_ target: HeadlineMutationTarget, timestamp: String) async throws {
-    if try nestedParentSendHeading(for: target) != nil {
+    if try await Self.nestedParentSendHeadingOffMain(for: target) != nil {
       try await setTodoStatus(.done, for: target)
       return
     }
 
     let assignee = resolvedAgentHandoffAssignee()
     try await setTodoAssignee(assignee, for: target)
-    try upsertHeadlineProperties(
+    try await Self.upsertHeadlinePropertiesOffMain(
       file: target.file,
       line: target.line,
       properties: [
@@ -7747,25 +9236,25 @@ public final class WorkspaceStore: ObservableObject {
 
   private func approveAndAgentHandoff(_ target: HeadlineMutationTarget) async {
     let originalVisibleIndex = target.agendaItemID.flatMap { id in
-      visibleAgendaItems.firstIndex(where: { $0.id == id })
+      visibleAgendaItemIndicesByID[id]
     }
     let timestamp = Self.orgTimestamp(Date())
 
     do {
-      let approvalIdentity = try approvalMutationIdentity(for: target)
+      let approvalIdentity = try await Self.approvalMutationIdentityOffMain(for: target)
       try await setTodoStatus(.done, for: target)
       let result = try await activateApprovedAgentAction(for: target, timestamp: timestamp)
-      let currentTarget = try refreshedApprovalMutationTarget(
+      let currentTarget = try await Self.refreshedApprovalMutationTargetOffMain(
         original: target,
         identity: approvalIdentity
       )
-      var approvalProperties = try currentApprovalProperties(for: currentTarget)
+      var approvalProperties = try await Self.currentApprovalPropertiesOffMain(for: currentTarget)
       approvalProperties.merge(Self.approvedApprovalProperties(
         existingProperties: approvalProperties,
         timestamp: timestamp,
         pairedTitle: result.title
       )) { _, new in new }
-      try upsertHeadlineProperties(
+      try await Self.upsertHeadlinePropertiesOffMain(
         file: currentTarget.file,
         line: currentTarget.line,
         properties: approvalProperties
@@ -7786,7 +9275,15 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func currentApprovalProperties(for target: HeadlineMutationTarget) throws -> [String: String] {
+  nonisolated private static func currentApprovalPropertiesOffMain(
+    for target: HeadlineMutationTarget
+  ) async throws -> [String: String] {
+    try await Task.detached(priority: .userInitiated) {
+      try currentApprovalProperties(for: target)
+    }.value
+  }
+
+  nonisolated private static func currentApprovalProperties(for target: HeadlineMutationTarget) throws -> [String: String] {
     let url = URL(fileURLWithPath: target.file)
     let raw = try String(contentsOf: url, encoding: .utf8)
     let lines = Self.normalizeLineEndings(raw)
@@ -7841,7 +9338,15 @@ public final class WorkspaceStore: ObservableObject {
     return properties
   }
 
-  private func approvalMutationIdentity(for target: HeadlineMutationTarget) throws -> ApprovalMutationIdentity {
+  nonisolated private static func approvalMutationIdentityOffMain(
+    for target: HeadlineMutationTarget
+  ) async throws -> ApprovalMutationIdentity {
+    try await Task.detached(priority: .userInitiated) {
+      try approvalMutationIdentity(for: target)
+    }.value
+  }
+
+  nonisolated private static func approvalMutationIdentity(for target: HeadlineMutationTarget) throws -> ApprovalMutationIdentity {
     let url = URL(fileURLWithPath: target.file)
     let raw = try String(contentsOf: url, encoding: .utf8)
     let lines = Self.normalizeLineEndings(raw)
@@ -7858,7 +9363,16 @@ public final class WorkspaceStore: ObservableObject {
     )
   }
 
-  private func refreshedApprovalMutationTarget(
+  nonisolated private static func refreshedApprovalMutationTargetOffMain(
+    original target: HeadlineMutationTarget,
+    identity: ApprovalMutationIdentity
+  ) async throws -> HeadlineMutationTarget {
+    try await Task.detached(priority: .userInitiated) {
+      try refreshedApprovalMutationTarget(original: target, identity: identity)
+    }.value
+  }
+
+  nonisolated private static func refreshedApprovalMutationTarget(
     original target: HeadlineMutationTarget,
     identity: ApprovalMutationIdentity
   ) throws -> HeadlineMutationTarget {
@@ -7892,18 +9406,18 @@ public final class WorkspaceStore: ObservableObject {
 
   private func rejectApproval(_ target: HeadlineMutationTarget, endStatus: TodoEditStatus, reason: String) async {
     let originalVisibleIndex = target.agendaItemID.flatMap { id in
-      visibleAgendaItems.firstIndex(where: { $0.id == id })
+      visibleAgendaItemIndicesByID[id]
     }
     let timestamp = Self.orgTimestamp(Date())
 
     do {
-      let approvalIdentity = try approvalMutationIdentity(for: target)
+      let approvalIdentity = try await Self.approvalMutationIdentityOffMain(for: target)
       try await setTodoStatus(endStatus, for: target)
-      let currentTarget = try refreshedApprovalMutationTarget(
+      let currentTarget = try await Self.refreshedApprovalMutationTargetOffMain(
         original: target,
         identity: approvalIdentity
       )
-      try upsertHeadlineProperties(
+      try await Self.upsertHeadlinePropertiesOffMain(
         file: currentTarget.file,
         line: currentTarget.line,
         properties: [
@@ -7955,7 +9469,7 @@ public final class WorkspaceStore: ObservableObject {
     ) {
       try await setTodoStatus(.todo, for: existing)
       try await setTodoAssignee(resolvedAgentHandoffAssignee(), for: existing)
-      try upsertHeadlineProperties(
+      try await Self.upsertHeadlinePropertiesOffMain(
         file: existing.file,
         line: existing.line,
         properties: [
@@ -7993,7 +9507,7 @@ public final class WorkspaceStore: ObservableObject {
       ""
     ]
 
-    try Self.replaceSourceRange(
+    try await Self.replaceSourceRangeOffMain(
       file: target.file,
       startLine: insertLine,
       endLineExclusive: insertLine,
@@ -8044,7 +9558,7 @@ public final class WorkspaceStore: ObservableObject {
 
   private func applyPriorityShortcut(_ priority: String?, to target: HeadlineMutationTarget) async {
     do {
-      try updateHeadlinePriority(file: target.file, line: target.line, priority: priority)
+      try await Self.updateHeadlinePriorityOffMain(file: target.file, line: target.line, priority: priority)
       statusText = priority.map { "Priority [#\($0)] -> \(target.title)" }
         ?? "Priority cleared -> \(target.title)"
       await refreshAfterHeadlineMutation(target)
@@ -8132,8 +9646,12 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     do {
-      let target = todayDailyNotePath(corpusRoot: corpusRoot)
-      try appendCapture(draft: draft, to: target, corpusRoot: corpusRoot)
+      let assignee = resolvedAgentHandoffAssignee()
+      let target = try await Self.appendCaptureOffMain(
+        draft: draft,
+        corpusRoot: corpusRoot,
+        assignee: assignee
+      )
       statusText = "Captured \(draft.kind.title.lowercased()) -> \(target.lastPathComponent)"
       isCapturePanelPresented = false
       invalidateCanonicalDocumentCache(for: target.path)
@@ -8159,21 +9677,20 @@ public final class WorkspaceStore: ObservableObject {
       return nil
     }()
     guard let meeting = selectedMeeting ?? meetings.first else {
-      selectedSurface = .meetings
+      setIfChanged(\.selectedSurface, .meetings)
       statusText = "Select or record a meeting first"
       return
     }
 
     do {
-      let target = todayDailyNotePath(corpusRoot: corpusRoot)
-      try appendCapture(
+      let target = try await Self.appendCaptureOffMain(
         draft: WorkspaceCaptureDraft(title: "Review meeting: \(Org2Display.cleanInline(meeting.title))"),
-        to: target,
-        corpusRoot: corpusRoot
+        corpusRoot: corpusRoot,
+        assignee: resolvedAgentHandoffAssignee()
       )
       statusText = "Captured meeting review TODO -> \(target.lastPathComponent)"
       invalidateCanonicalDocumentCache(for: target.path)
-      selectedSurface = .agenda
+      setIfChanged(\.selectedSurface, .agenda)
       await refreshAgenda()
     } catch {
       errorText = error.localizedDescription
@@ -8188,7 +9705,7 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     do {
-      try upsertHeadlineProperties(file: target.file, line: target.line, properties: [key: value])
+      try await Self.upsertHeadlinePropertiesOffMain(file: target.file, line: target.line, properties: [key: value])
       statusText = "\(key)=\(value) -> \(target.title)"
       await refreshAfterHeadlineMutation(target)
     } catch {
@@ -8221,15 +9738,15 @@ public final class WorkspaceStore: ObservableObject {
       openHome()
       return
     }
-    selectedSurface = surface
-    expandedWorkspaceSurface = nil
-    isWorkspaceSurfacePaneClosed = false
-    isWorkspaceDetailPaneExpanded = false
-    isOpenClawAssistantPresented = false
+    setIfChanged(\.selectedSurface, surface)
+    setIfChanged(\.expandedWorkspaceSurface, nil)
+    setIfChanged(\.isWorkspaceSurfacePaneClosed, false)
+    setIfChanged(\.isWorkspaceDetailPaneExpanded, false)
+    setIfChanged(\.isOpenClawAssistantPresented, false)
     if surface == .openClaw {
       markSelectedOpenClawChatThreadRead()
     }
-    statusText = "\(surface.title) is primary"
+    setIfChanged(\.statusText, "\(surface.title) is primary")
   }
 
   public func makeSelectedSurfacePrimary() {
@@ -8241,19 +9758,19 @@ public final class WorkspaceStore: ObservableObject {
       openHome()
       return
     }
-    selectedSurface = surface
-    expandedWorkspaceSurface = nil
-    isWorkspaceSurfacePaneClosed = false
-    isWorkspaceDetailPaneClosed = true
-    isWorkspaceDetailPaneExpanded = false
-    isOpenClawAssistantPresented = false
-    statusText = "\(surface.title) expanded"
+    setIfChanged(\.selectedSurface, surface)
+    setIfChanged(\.expandedWorkspaceSurface, nil)
+    setIfChanged(\.isWorkspaceSurfacePaneClosed, false)
+    setIfChanged(\.isWorkspaceDetailPaneClosed, true)
+    setIfChanged(\.isWorkspaceDetailPaneExpanded, false)
+    setIfChanged(\.isOpenClawAssistantPresented, false)
+    setIfChanged(\.statusText, "\(surface.title) expanded")
   }
 
   public func toggleExpandedSurface(_ surface: WorkspaceSurface) {
     if selectedSurface == surface && isWorkspaceDetailPaneClosed && hasWorkspaceDetailContent {
-      isWorkspaceSurfacePaneClosed = false
-      statusText = "\(surface.title) restored"
+      setIfChanged(\.isWorkspaceSurfacePaneClosed, false)
+      setIfChanged(\.statusText, "\(surface.title) restored")
     } else {
       expandSurface(surface)
     }
@@ -8264,14 +9781,14 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func closeSurfacePane(_ surface: WorkspaceSurface) {
-    expandedWorkspaceSurface = nil
-    isWorkspaceDetailPaneExpanded = false
+    setIfChanged(\.expandedWorkspaceSurface, nil)
+    setIfChanged(\.isWorkspaceDetailPaneExpanded, false)
     if selectedSurface == surface, hasWorkspaceDetailContent {
-      isWorkspaceSurfacePaneClosed = true
-      isWorkspaceDetailPaneClosed = false
+      setIfChanged(\.isWorkspaceSurfacePaneClosed, true)
+      setIfChanged(\.isWorkspaceDetailPaneClosed, false)
     }
-    isOpenClawAssistantPresented = false
-    statusText = "\(surface.title) closed"
+    setIfChanged(\.isOpenClawAssistantPresented, false)
+    setIfChanged(\.statusText, "\(surface.title) closed")
   }
 
   public func closeSelectedSurfacePane() {
@@ -8280,41 +9797,41 @@ public final class WorkspaceStore: ObservableObject {
 
   public func makeDetailPanePrimary() {
     guard selectedLocation != nil || selectedEntrySource != nil else {
-      statusText = "Open a file first"
+      setIfChanged(\.statusText, "Open a file first")
       return
     }
-    expandedWorkspaceSurface = nil
-    isWorkspaceSurfacePaneClosed = true
-    isWorkspaceDetailPaneClosed = false
-    isWorkspaceDetailPaneExpanded = false
-    isOpenClawAssistantPresented = false
-    statusText = "Document is primary"
+    setIfChanged(\.expandedWorkspaceSurface, nil)
+    setIfChanged(\.isWorkspaceSurfacePaneClosed, true)
+    setIfChanged(\.isWorkspaceDetailPaneClosed, false)
+    setIfChanged(\.isWorkspaceDetailPaneExpanded, false)
+    setIfChanged(\.isOpenClawAssistantPresented, false)
+    setIfChanged(\.statusText, "Document is primary")
   }
 
   public func toggleDetailPaneExpansion() {
     guard selectedLocation != nil || selectedEntrySource != nil else {
-      statusText = "Open a file first"
+      setIfChanged(\.statusText, "Open a file first")
       return
     }
-    expandedWorkspaceSurface = nil
-    isWorkspaceDetailPaneExpanded = false
-    isWorkspaceDetailPaneClosed = false
-    isOpenClawAssistantPresented = false
+    setIfChanged(\.expandedWorkspaceSurface, nil)
+    setIfChanged(\.isWorkspaceDetailPaneExpanded, false)
+    setIfChanged(\.isWorkspaceDetailPaneClosed, false)
+    setIfChanged(\.isOpenClawAssistantPresented, false)
     if isWorkspaceSurfacePaneClosed {
-      isWorkspaceSurfacePaneClosed = false
-      statusText = "Document restored"
+      setIfChanged(\.isWorkspaceSurfacePaneClosed, false)
+      setIfChanged(\.statusText, "Document restored")
     } else {
-      isWorkspaceSurfacePaneClosed = true
-      statusText = "Document expanded"
+      setIfChanged(\.isWorkspaceSurfacePaneClosed, true)
+      setIfChanged(\.statusText, "Document expanded")
     }
   }
 
   public func closeDetailPane() {
-    isWorkspaceDetailPaneClosed = true
-    isWorkspaceDetailPaneExpanded = false
-    isWorkspaceSurfacePaneClosed = false
-    expandedWorkspaceSurface = nil
-    statusText = "Document closed"
+    setIfChanged(\.isWorkspaceDetailPaneClosed, true)
+    setIfChanged(\.isWorkspaceDetailPaneExpanded, false)
+    setIfChanged(\.isWorkspaceSurfacePaneClosed, false)
+    setIfChanged(\.expandedWorkspaceSurface, nil)
+    setIfChanged(\.statusText, "Document closed")
   }
 
   public func toggleOpenClawAssistantPanel() {
@@ -8322,7 +9839,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func setOpenClawAssistantPanelPresented(_ presented: Bool) {
-    isOpenClawAssistantPresented = false
+    setIfChanged(\.isOpenClawAssistantPresented, false)
     if presented {
       makeSurfacePrimary(.openClaw)
     }
@@ -8740,25 +10257,27 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func loadBacklinks(for location: WorkspaceLocation) async {
+    backlinksLoadTask?.cancel()
+    backlinksLoadTask = nil
     backlinksLoadGeneration += 1
     let generation = backlinksLoadGeneration
 
     guard let corpusRoot else {
-      backlinks = nil
+      setIfChanged(\.backlinks, nil)
       return
     }
 
-    isLoadingBacklinks = true
+    setIfChanged(\.isLoadingBacklinks, true)
     defer {
       if generation == backlinksLoadGeneration {
-        isLoadingBacklinks = false
+        setIfChanged(\.isLoadingBacklinks, false)
       }
     }
 
     do {
       guard let id = try await backlinkTargetID(for: location), !id.isEmpty else {
         guard generation == backlinksLoadGeneration, selectedLocationMatches(location) else { return }
-        backlinks = nil
+        setIfChanged(\.backlinks, nil)
         return
       }
 
@@ -8770,18 +10289,77 @@ public final class WorkspaceStore: ObservableObject {
         "--format", "json"
       ])
       guard generation == backlinksLoadGeneration, selectedLocationMatches(location) else { return }
-      backlinks = payload
+      setIfChanged(\.backlinks, payload)
     } catch {
       guard generation == backlinksLoadGeneration, selectedLocationMatches(location) else { return }
-      backlinks = nil
+      setIfChanged(\.backlinks, nil)
       errorText = error.localizedDescription
     }
   }
 
-  public var backlinkFileGroups: [BacklinkFileGroup] {
-    guard let backlinks else { return [] }
+  private func scheduleBacklinksLoad(for location: WorkspaceLocation) {
+    backlinksLoadGeneration += 1
+    let generation = backlinksLoadGeneration
+    backlinksLoadTask?.cancel()
+    backlinksLoadTask = Task { @MainActor [weak self] in
+      do {
+        try await Task.sleep(nanoseconds: Self.scheduledBacklinkLoadDebounceNanoseconds)
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      await self?.loadBacklinks(for: location, generation: generation)
+    }
+  }
+
+  private func loadBacklinks(for location: WorkspaceLocation, generation: Int) async {
+    guard generation == backlinksLoadGeneration else { return }
+
+    guard let corpusRoot else {
+      setIfChanged(\.backlinks, nil)
+      return
+    }
+
+    setIfChanged(\.isLoadingBacklinks, true)
+    defer {
+      if generation == backlinksLoadGeneration {
+        setIfChanged(\.isLoadingBacklinks, false)
+      }
+    }
+
+    do {
+      guard let id = try await backlinkTargetID(for: location), !id.isEmpty else {
+        guard generation == backlinksLoadGeneration, selectedLocationMatches(location) else { return }
+        setIfChanged(\.backlinks, nil)
+        return
+      }
+
+      let payload: BacklinksPayload = try await cli.runJSON([
+        "backlinks",
+        "--id", id,
+        "--dir", corpusRoot.path,
+        "--recursive",
+        "--format", "json"
+      ])
+      guard generation == backlinksLoadGeneration, selectedLocationMatches(location) else { return }
+      setIfChanged(\.backlinks, payload)
+    } catch {
+      guard generation == backlinksLoadGeneration, selectedLocationMatches(location) else { return }
+      setIfChanged(\.backlinks, nil)
+      errorText = error.localizedDescription
+    }
+  }
+
+  private func rebuildBacklinkDisplayCache(backlinks sourceBacklinks: BacklinksPayload? = nil) {
+    guard let backlinks = sourceBacklinks ?? backlinks else {
+      backlinkFileGroups = []
+      backlinkFileCount = 0
+      backlinkReferenceCount = 0
+      relatedBacklinkNodes = []
+      return
+    }
     let grouped = Dictionary(grouping: backlinks.backlinks, by: \.file)
-    return grouped.map { file, items in
+    backlinkFileGroups = grouped.map { file, items in
       let sortedItems = items.sorted {
         if $0.line != $1.line { return $0.line < $1.line }
         return $0.srcTitle.localizedCaseInsensitiveCompare($1.srcTitle) == .orderedAscending
@@ -8796,14 +10374,25 @@ public final class WorkspaceStore: ObservableObject {
       if lhs.count != rhs.count { return lhs.count > rhs.count }
       return lhs.relativePath.localizedStandardCompare(rhs.relativePath) == .orderedAscending
     }
+    backlinkFileCount = backlinkFileGroups.count
+    backlinkReferenceCount = backlinks.backlinks.count
+    relatedBacklinkNodes = Self.relatedBacklinkNodes(
+      from: backlinks.backlinks,
+      relativePathForFile: { [weak self] file in
+        self?.relativePath(file) ?? file
+      }
+    )
   }
 
-  public var backlinkFileCount: Int {
-    backlinkFileGroups.count
-  }
-
-  public var backlinkReferenceCount: Int {
-    backlinks?.backlinks.count ?? 0
+  private func rebuildBacklinkDisplayCacheForAssignment(_ sourceBacklinks: BacklinksPayload?) {
+    guard let backlinks = sourceBacklinks else {
+      backlinkFileGroups = []
+      backlinkFileCount = 0
+      backlinkReferenceCount = 0
+      relatedBacklinkNodes = []
+      return
+    }
+    rebuildBacklinkDisplayCache(backlinks: backlinks)
   }
 
   public var currentNodeBriefArtifact: NodeBriefArtifact? {
@@ -8830,15 +10419,6 @@ public final class WorkspaceStore: ObservableObject {
       url: URL(fileURLWithPath: artifact.file).standardizedFileURL,
       relativePath: artifact.relativePath,
       title: location.title
-    )
-  }
-
-  public var relatedBacklinkNodes: [RelatedBacklinkNode] {
-    Self.relatedBacklinkNodes(
-      from: backlinks?.backlinks ?? [],
-      relativePathForFile: { [weak self] file in
-        self?.relativePath(file) ?? file
-      }
     )
   }
 
@@ -8955,9 +10535,9 @@ public final class WorkspaceStore: ObservableObject {
       modifiedAt: modifiedAt,
       idValue: nil
     )
-    selectedSurface = .files
+    setIfChanged(\.selectedSurface, .files)
     activateDetailLocation(.openClaw(thread), mode: .page, recordsHistory: true)
-    selectedOpenClawThreadID = thread.id
+    setIfChanged(\.selectedOpenClawThreadID, thread.id)
     pendingNodeBriefArtifactRelativePath = nil
     pendingNodeBriefTitle = nil
     openClawStatusText = "Opened cached node brief"
@@ -9151,7 +10731,7 @@ public final class WorkspaceStore: ObservableObject {
     if selectedLocation == nil,
        agendaMode == .assigned,
        let selectedAssignedWorkItemID,
-       let item = assignedWorkItems.first(where: { $0.id == selectedAssignedWorkItemID }) {
+       let item = assignedWorkItemsByID[selectedAssignedWorkItemID] {
       selectAssignedWorkItem(item)
     }
     guard let selectedLocation else { return }
@@ -9184,13 +10764,45 @@ public final class WorkspaceStore: ObservableObject {
 
   public func relativePath(_ path: String) -> String {
     guard let corpusRoot else { return path }
-    return Self.relativePath(for: path, root: corpusRoot)
+    if let cached = relativePathCache[path] {
+      return cached
+    }
+    let standardRootPath = relativePathStandardRootPath ?? corpusRoot.standardizedFileURL.path
+    let resolvedRootPath = relativePathResolvedRootPath ?? Self.resolvedPath(for: corpusRoot)
+    relativePathStandardRootPath = standardRootPath
+    relativePathResolvedRootPath = resolvedRootPath
+    let relativePath = Self.relativePath(
+      for: path,
+      standardizedRootPath: standardRootPath,
+      resolvedRootPath: resolvedRootPath
+    )
+    relativePathCache[path] = relativePath
+    return relativePath
   }
 
-  private static func relativePath(for path: String, root: URL) -> String {
+  nonisolated private static func relativePath(for path: String, root: URL) -> String {
+    relativePath(
+      for: path,
+      standardizedRootPath: root.standardizedFileURL.path,
+      resolvedRootPath: resolvedPath(for: root)
+    )
+  }
+
+  nonisolated private static func resolvedPath(for url: URL) -> String {
+    url.resolvingSymlinksInPath().standardizedFileURL.path
+  }
+
+  nonisolated private static func relativePath(
+    for path: String,
+    standardizedRootPath: String,
+    resolvedRootPath rootPath: String
+  ) -> String {
     let originalPath = URL(fileURLWithPath: path).standardizedFileURL.path
+    if originalPath == standardizedRootPath { return "." }
+    if originalPath.hasPrefix(standardizedRootPath + "/") {
+      return String(originalPath.dropFirst(standardizedRootPath.count + 1))
+    }
     let resolvedPath = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
-    let rootPath = root.resolvingSymlinksInPath().standardizedFileURL.path
     if resolvedPath == rootPath { return "." }
     if resolvedPath.hasPrefix(rootPath + "/") {
       return String(resolvedPath.dropFirst(rootPath.count + 1))
@@ -9258,9 +10870,15 @@ public final class WorkspaceStore: ObservableObject {
       recordWorkspaceUndo(.openClawDraft(previous: previousDraft, next: openClawDraft))
     }
 
-    setOpenClawAssistantPanelPresented(true)
-    openClawStatusText = "Added \(pointer.displayReference) to OpenClaw"
-    statusText = "Added \(pointer.displayReference) to OpenClaw"
+    if shouldPresentOpenClawForContextInsertion {
+      setOpenClawAssistantPanelPresented(true)
+    }
+    setIfChanged(\.openClawStatusText, "Added \(pointer.displayReference) to OpenClaw")
+    setIfChanged(\.statusText, "Added \(pointer.displayReference) to OpenClaw")
+  }
+
+  private var shouldPresentOpenClawForContextInsertion: Bool {
+    selectedSurface != .openClaw || isWorkspaceSurfacePaneClosed || isWorkspaceDetailPaneExpanded
   }
 
   private func mappedPathForOpenClaw(_ path: String) -> String {
@@ -9400,6 +11018,28 @@ public final class WorkspaceStore: ObservableObject {
     )
   }
 
+  nonisolated private static func resolvedOpenClawSettings(
+    userEndpoint: String,
+    cachedBearerToken: String?,
+    hasStoredToken: Bool,
+    allowKeychainRead: Bool
+  ) -> ResolvedOpenClawSettings {
+    var bearerToken = cachedBearerToken
+    var tokenExists = hasStoredToken
+    if allowKeychainRead, bearerToken == nil, hasStoredToken {
+      bearerToken = OpenClawKeychain.readToken(allowUserInteraction: true)
+      tokenExists = bearerToken != nil || OpenClawKeychain.containsToken()
+    }
+    return ResolvedOpenClawSettings(
+      settings: OpenClawGatewaySettings.resolve(
+        userEndpoint: userEndpoint,
+        userBearerToken: bearerToken
+      ),
+      bearerToken: bearerToken,
+      hasStoredToken: tokenExists
+    )
+  }
+
   private func currentOrgCryptSettings(allowKeychainRead: Bool = false) -> OrgCryptSettings {
     let passphrase = allowKeychainRead
       ? OrgCryptKeychain.readPassphrase(allowUserInteraction: true)
@@ -9432,51 +11072,139 @@ public final class WorkspaceStore: ObservableObject {
     }.value
   }
 
-  private func persistOpenClawTranscript() {
-    do {
-      try Self.saveOpenClawTranscript(
-        OpenClawTranscriptState(
-          threads: openClawChatThreads,
-          selectedThreadID: selectedOpenClawChatThreadID
-        ),
-        to: openClawTranscriptURL
-      )
-    } catch {
-      errorText = "OpenClaw transcript save failed: \(error.localizedDescription)"
+  private func persistOpenClawTranscript(
+    delayNanoseconds: UInt64 = WorkspaceStore.openClawTranscriptContentPersistenceDelay
+  ) {
+    openClawTranscriptContentGeneration += 1
+    let generation = openClawTranscriptContentGeneration
+    let url = openClawTranscriptURL
+    openClawTranscriptPersistenceTask?.cancel()
+    openClawTranscriptPersistenceTask = Task { [weak self] in
+      try? await Task.sleep(nanoseconds: delayNanoseconds)
+      guard !Task.isCancelled else { return }
+      do {
+        guard let transcript = await MainActor.run(body: { () -> OpenClawTranscriptState? in
+          guard let self,
+                self.openClawTranscriptContentGeneration == generation
+          else {
+            return nil
+          }
+          return OpenClawTranscriptState(
+            threads: self.openClawChatThreadsForCurrentMessages(),
+            selectedThreadID: self.selectedOpenClawChatThreadID
+          )
+        }) else {
+          return
+        }
+        guard !Task.isCancelled else { return }
+        try await Task.detached(priority: .utility) {
+          try Self.saveOpenClawTranscript(transcript, to: url)
+        }.value
+      } catch {
+        guard !Task.isCancelled else { return }
+        await MainActor.run {
+          self?.errorText = "OpenClaw transcript save failed: \(error.localizedDescription)"
+        }
+      }
     }
   }
 
-  private func switchOpenClawTranscript(to url: URL, migrationSource: URL? = nil) {
-    guard !usesFixedOpenClawTranscriptURL else { return }
+  public func flushOpenClawTranscriptPersistence() async {
+    await openClawTranscriptPersistenceTask?.value
+  }
+
+  public func flushOpenClawTranscriptSwitch() async {
+    await openClawTranscriptSwitchTask?.value
+  }
+
+  private func scheduleOpenClawTranscriptSwitch(to url: URL, migrationSource: URL? = nil) {
+    guard let request = beginOpenClawTranscriptSwitch(to: url, migrationSource: migrationSource) else { return }
+    openClawTranscriptSwitchTask?.cancel()
+    openClawTranscriptSwitchTask = Task { @MainActor [weak self] in
+      await self?.finishOpenClawTranscriptSwitch(request)
+    }
+  }
+
+  private func switchOpenClawTranscript(to url: URL, migrationSource: URL? = nil) async {
+    guard let request = beginOpenClawTranscriptSwitch(to: url, migrationSource: migrationSource) else { return }
+    openClawTranscriptSwitchTask?.cancel()
+    openClawTranscriptSwitchTask = nil
+    await finishOpenClawTranscriptSwitch(request)
+  }
+
+  private func beginOpenClawTranscriptSwitch(
+    to url: URL,
+    migrationSource: URL?
+  ) -> OpenClawTranscriptSwitchRequest? {
+    guard !usesFixedOpenClawTranscriptURL else { return nil }
     let targetURL = url.standardizedFileURL
     let previousURL = openClawTranscriptURL.standardizedFileURL
-    guard targetURL.path != previousURL.path else { return }
+    guard targetURL.path != previousURL.path else { return nil }
 
+    openClawTranscriptSwitchGeneration += 1
+    openClawTranscriptSwitchTask?.cancel()
+    openClawTranscriptPersistenceTask?.cancel()
+    openClawTranscriptPersistenceTask = nil
+    let request = OpenClawTranscriptSwitchRequest(
+      targetURL: targetURL,
+      previousURL: previousURL,
+      migrationSource: migrationSource?.standardizedFileURL,
+      legacyMessages: openClawMessages,
+      canMigrateLegacyMessages: previousURL.path == appOpenClawTranscriptURL.standardizedFileURL.path,
+      switchGeneration: openClawTranscriptSwitchGeneration,
+      contentGeneration: openClawTranscriptContentGeneration
+    )
+
+    openClawTranscriptURL = targetURL
+    openClawSessionKey = Self.makeOpenClawSessionKey()
+    openClawMessagesByThreadID = [:]
+    if !openClawPendingUserMessageIDs.isEmpty {
+      openClawPendingUserMessageIDs.removeAll()
+    }
+    isDrainingOpenClawQueue = false
+    setOpenClawSending(false)
+    openClawChatThreads = []
+    setIfChanged(\.selectedOpenClawChatThreadID, nil)
+    replaceOpenClawMessages([], shouldPersist: false)
+    return request
+  }
+
+  private func finishOpenClawTranscriptSwitch(_ request: OpenClawTranscriptSwitchRequest) async {
+    let result = await Task.detached(priority: .utility) {
+      Self.resolveOpenClawTranscriptSwitch(request)
+    }.value
+    guard request.switchGeneration == openClawTranscriptSwitchGeneration,
+          request.contentGeneration == openClawTranscriptContentGeneration
+    else {
+      return
+    }
+    applyOpenClawTranscript(result.transcript, shouldPersist: result.shouldPersist)
+  }
+
+  nonisolated private static func resolveOpenClawTranscriptSwitch(
+    _ request: OpenClawTranscriptSwitchRequest
+  ) -> OpenClawTranscriptSwitchResult {
     let transcript: OpenClawTranscriptState
     let shouldPersistMigratedMessages: Bool
-    if FileManager.default.fileExists(atPath: targetURL.path) {
-      transcript = Self.loadOpenClawTranscript(from: targetURL)
+    if FileManager.default.fileExists(atPath: request.targetURL.path) {
+      transcript = loadOpenClawTranscript(from: request.targetURL)
       shouldPersistMigratedMessages = false
-    } else if let migrationSource,
-              migrationSource.standardizedFileURL.path != targetURL.path {
-      transcript = Self.loadOpenClawTranscript(from: migrationSource.standardizedFileURL)
+    } else if let migrationSource = request.migrationSource,
+              migrationSource.path != request.targetURL.path {
+      transcript = loadOpenClawTranscript(from: migrationSource)
       shouldPersistMigratedMessages = !transcript.threads.isEmpty
-    } else if previousURL.path == appOpenClawTranscriptURL.standardizedFileURL.path,
-              !openClawMessages.isEmpty {
-      transcript = Self.openClawTranscriptState(fromLegacyMessages: openClawMessages)
+    } else if request.canMigrateLegacyMessages,
+              !request.legacyMessages.isEmpty {
+      transcript = openClawTranscriptState(fromLegacyMessages: request.legacyMessages)
       shouldPersistMigratedMessages = true
     } else {
       transcript = OpenClawTranscriptState(threads: [], selectedThreadID: nil)
       shouldPersistMigratedMessages = false
     }
-
-    openClawTranscriptURL = targetURL
-    openClawSessionKey = Self.makeOpenClawSessionKey()
-    openClawPendingUserMessageIDs.removeAll()
-    isDrainingOpenClawQueue = false
-    isSendingOpenClawMessage = false
-    openClawRequestStartedAt = nil
-    applyOpenClawTranscript(transcript, shouldPersist: shouldPersistMigratedMessages)
+    return OpenClawTranscriptSwitchResult(
+      transcript: transcript,
+      shouldPersist: shouldPersistMigratedMessages
+    )
   }
 
   private func replaceOpenClawMessages(_ messages: [OpenClawChatMessage], shouldPersist: Bool) {
@@ -9493,15 +11221,23 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func applyOpenClawTranscript(_ transcript: OpenClawTranscriptState, shouldPersist: Bool) {
-    let threads = Self.sortedOpenClawChatThreadsForDisplay(transcript.threads)
+    openClawMessagesByThreadID = Dictionary(
+      uniqueKeysWithValues: transcript.threads
+        .filter { !$0.messages.isEmpty }
+        .map { ($0.id, $0.messages) }
+    )
+    let threads = Self.sortedOpenClawChatThreadsForDisplay(
+      transcript.threads.map(Self.openClawChatThreadWithoutMessages)
+    )
     openClawChatThreads = threads
     let selectedID = transcript.selectedThreadID
       .flatMap { id in threads.contains(where: { $0.id == id }) ? id : nil }
       ?? threads.first?.id
-    selectedOpenClawChatThreadID = selectedID
+    setIfChanged(\.selectedOpenClawChatThreadID, selectedID)
     let selectedThread = selectedID.flatMap { id in threads.first(where: { $0.id == id }) }
     openClawSessionKey = selectedThread?.sessionKey ?? Self.makeOpenClawSessionKey()
-    replaceOpenClawMessages(selectedThread?.messages ?? [], shouldPersist: false)
+    replaceOpenClawMessages(selectedThread.map(openClawStoredMessages(for:)) ?? [], shouldPersist: false)
+    detachSelectedOpenClawThreadMessagesForActiveUse()
     if shouldPersist {
       persistOpenClawTranscript()
     }
@@ -9516,35 +11252,33 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
-    Task { @MainActor in
-      let blocks: [OrgEditableBlock]
-      if source.endLineExclusive - source.startLine > Self.canonicalParserLineLimit {
-        blocks = await Task.detached(priority: .userInitiated) {
-          OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine)
-        }.value
-      } else {
-        do {
-          let document = try await canonicalDocument(for: source)
-          blocks = await Task.detached(priority: .userInitiated) {
-            OrgEntryRenderer.parseEditable(
-              source.text,
-              baseLine: source.startLine,
-              canonicalDocument: document
-            )
-          }.value
-        } catch {
-          blocks = await Task.detached(priority: .userInitiated) {
-            OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine)
-          }.value
-        }
-      }
+    let cli = cli
+    let canonicalParserLineLimit = Self.canonicalParserLineLimit
+    Task { @MainActor [weak self] in
+      let prepared = await Task.detached(priority: .userInitiated) {
+        await Self.prepareRenderedEntrySource(
+          source,
+          cli: cli,
+          canonicalParserLineLimit: canonicalParserLineLimit
+        )
+      }.value
+      guard let self else { return }
       guard generation == self.entrySourceLoadGeneration,
             self.selectedEntrySource?.id == source.id
       else {
         return
       }
-      self.cacheRenderedBlocks(blocks, for: source, modifiedAt: modifiedAt)
-      self.applyRenderedBlocks(blocks, for: source)
+      if let canonicalDocument = prepared.canonicalDocument,
+         !source.isSubtree,
+         source.startLine == 1 {
+        let cacheKey = URL(fileURLWithPath: source.file).standardizedFileURL.path
+        self.canonicalDocumentCache[cacheKey] = CanonicalDocumentCacheEntry(
+          modifiedAt: modifiedAt,
+          document: canonicalDocument
+        )
+      }
+      self.cacheRenderedBlocks(prepared.blocks, for: source, modifiedAt: modifiedAt)
+      self.applyRenderedBlocks(prepared.blocks, for: source)
       self.isRenderingEntrySource = false
     }
   }
@@ -9607,6 +11341,51 @@ public final class WorkspaceStore: ObservableObject {
       document: document
     )
     return document
+  }
+
+  nonisolated private static func prepareRenderedEntrySource(
+    _ source: EntrySource,
+    cli: Org2CLI,
+    canonicalParserLineLimit: Int
+  ) async -> PreparedRenderedEntrySource {
+    guard source.endLineExclusive - source.startLine <= canonicalParserLineLimit else {
+      return PreparedRenderedEntrySource(
+        blocks: OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine),
+        canonicalDocument: nil
+      )
+    }
+
+    do {
+      let document = try await canonicalDocument(for: source, cli: cli)
+      return PreparedRenderedEntrySource(
+        blocks: OrgEntryRenderer.parseEditable(
+          source.text,
+          baseLine: source.startLine,
+          canonicalDocument: document
+        ),
+        canonicalDocument: document
+      )
+    } catch {
+      return PreparedRenderedEntrySource(
+        blocks: OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine),
+        canonicalDocument: nil
+      )
+    }
+  }
+
+  nonisolated private static func canonicalDocument(
+    for source: EntrySource,
+    cli: Org2CLI
+  ) async throws -> Org2CanonicalDocument {
+    if source.isSubtree || source.startLine != 1 {
+      return try await cli.parseTextJSON(
+        source.text,
+        sourceRanges: true,
+        sourceLineOffset: max(0, source.startLine - 1)
+      )
+    }
+
+    return try await cli.parseFileJSON(URL(fileURLWithPath: source.file).standardizedFileURL, sourceRanges: true)
   }
 
   private func invalidateCanonicalDocumentCache(for file: String) {
@@ -9722,6 +11501,84 @@ public final class WorkspaceStore: ObservableObject {
     return "\(blocks.count):\(hasher.finalize())"
   }
 
+  nonisolated static func openClawMessagesRenderSignature(for messages: [OpenClawChatMessage]) -> String {
+    guard !messages.isEmpty else { return "empty" }
+
+    var hasher = Hasher()
+    hasher.combine(messages.count)
+    for message in messages {
+      combineOpenClawMessageRenderSignature(message, into: &hasher)
+    }
+    return "\(messages.count):\(hasher.finalize())"
+  }
+
+  nonisolated static func openClawMessageRenderSignature(for message: OpenClawChatMessage) -> String {
+    var hasher = Hasher()
+    combineOpenClawMessageRenderSignature(message, into: &hasher)
+    return hasher.finalize().description
+  }
+
+  nonisolated static func openClawThreadDisplayItemsRenderSignature(
+    for items: [OpenClawChatThreadDisplayItem]
+  ) -> String {
+    guard !items.isEmpty else { return "empty" }
+
+    var hasher = Hasher()
+    hasher.combine(items.count)
+    for item in items {
+      hasher.combine(item.id)
+      hasher.combine(item.title)
+      hasher.combine(item.updatedAt)
+      hasher.combine(item.relativeUpdatedAtText)
+      hasher.combine(item.isPinned)
+      hasher.combine(item.isArchived)
+      hasher.combine(item.unreadMessageCount)
+    }
+    return "\(items.count):\(hasher.finalize())"
+  }
+
+  nonisolated private static func combineOpenClawMessageRenderSignature(
+    _ message: OpenClawChatMessage,
+    into hasher: inout Hasher
+  ) {
+    hasher.combine(message.id)
+    hasher.combine(message.role)
+    combineBoundedOpenClawContentSignature(message.content, into: &hasher)
+    hasher.combine(message.attachments.count)
+    for attachment in message.attachments {
+      hasher.combine(attachment.id)
+      hasher.combine(attachment.fileName)
+      hasher.combine(attachment.mimeType)
+      hasher.combine(attachment.byteCount)
+    }
+    hasher.combine(message.sendFailure)
+    if let summary = message.changeSummary {
+      hasher.combine(summary.files.count)
+      for file in summary.files {
+        hasher.combine(file.relativePath)
+        hasher.combine(file.status)
+        hasher.combine(file.insertions)
+        hasher.combine(file.deletions)
+      }
+    } else {
+      hasher.combine(0)
+    }
+  }
+
+  nonisolated private static func combineBoundedOpenClawContentSignature(
+    _ content: String,
+    into hasher: inout Hasher
+  ) {
+    hasher.combine(content.utf8.count)
+    let prefix = content.prefix(openClawMessageRenderSignatureContentSampleLimit)
+    hasher.combine(String(prefix))
+    let includesFullContent = prefix.endIndex == content.endIndex
+    hasher.combine(includesFullContent)
+    if !includesFullContent {
+      hasher.combine(String(content.suffix(openClawMessageRenderSignatureContentSampleLimit)))
+    }
+  }
+
   nonisolated static func sourceBlockRunsRenderSignature(for runs: [String: SourceBlockRunState]) -> String {
     guard !runs.isEmpty else { return "empty" }
 
@@ -9822,9 +11679,12 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func currentOpenClawAgentThreadDirectories() -> [String] {
-    guard let corpusRoot else { return [] }
-    return Self.openClawThreadDirectories(corpusRoot: corpusRoot)
-      .map { mappedPathForOpenClaw($0.path) }
+    cachedOpenClawAgentThreadDirectories
+  }
+
+  private func refreshCachedOpenClawAgentThreadDirectories(corpusRoot: URL, directories: [URL]?) {
+    let sourceDirectories = directories ?? Self.defaultOpenClawThreadDirectories(corpusRoot: corpusRoot)
+    cachedOpenClawAgentThreadDirectories = sourceDirectories.map { $0.standardizedFileURL.path }
   }
 
   private func effectiveOpenClawRemoteCorpusPath() -> String? {
@@ -9920,6 +11780,29 @@ public final class WorkspaceStore: ObservableObject {
     FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-openclaw-voice", isDirectory: true)
       .appendingPathComponent("\(UUID().uuidString).wav")
+  }
+
+  nonisolated private static func prepareOpenClawImageAttachments(from urls: [URL]) async -> PreparedOpenClawAttachments {
+    await Task.detached(priority: .userInitiated) {
+      var attachments: [OpenClawChatAttachment] = []
+      var failureFileName: String?
+      var failureMessage: String?
+
+      for url in urls {
+        do {
+          attachments.append(try openClawImageAttachment(from: url))
+        } catch {
+          failureFileName = url.lastPathComponent
+          failureMessage = error.localizedDescription
+        }
+      }
+
+      return PreparedOpenClawAttachments(
+        attachments: attachments,
+        failureFileName: failureFileName,
+        failureMessage: failureMessage
+      )
+    }.value
   }
 
   nonisolated static func openClawImageAttachment(from url: URL) throws -> OpenClawChatAttachment {
@@ -10206,10 +12089,10 @@ public final class WorkspaceStore: ObservableObject {
     let items = visibleAgendaItems
     pruneAgendaBulkSelection(visibleItems: items)
     guard !items.isEmpty else {
-      selectedAgendaItemID = nil
+      setIfChanged(\.selectedAgendaItemID, nil)
       if !preserveSelection, case .agenda = selectedLocation {
         selectedLocation = nil
-        backlinks = nil
+        setIfChanged(\.backlinks, nil)
       }
       return
     }
@@ -10236,7 +12119,7 @@ public final class WorkspaceStore: ObservableObject {
 
   private func pruneAgendaBulkSelection(visibleItems: [AgendaItem]? = nil) {
     guard !bulkSelectedAgendaItemIDs.isEmpty else { return }
-    let visibleIDs = Set((visibleItems ?? visibleAgendaItems).map(\.id))
+    let visibleIDs = visibleItems.map { Set($0.map(\.id)) } ?? visibleAgendaItemIDs
     let prunedIDs = bulkSelectedAgendaItemIDs.intersection(visibleIDs)
     if prunedIDs != bulkSelectedAgendaItemIDs {
       bulkSelectedAgendaItemIDs = prunedIDs
@@ -10245,7 +12128,7 @@ public final class WorkspaceStore: ObservableObject {
 
   private func updateAgendaBulkSelectionStatusText() {
     let count = bulkAgendaSelectionCount
-    statusText = count == 1 ? "1 agenda item selected" : "\(count) agenda items selected"
+    setIfChanged(\.statusText, count == 1 ? "1 agenda item selected" : "\(count) agenda items selected")
   }
 
   private func selectedAgendaItemsForBulkMutation() -> [AgendaItem] {
@@ -10258,7 +12141,7 @@ public final class WorkspaceStore: ObservableObject {
 
   private func selectedAgendaItemForMutation() -> AgendaItem? {
     if let selectedAgendaItemID {
-      return visibleAgendaItems.first(where: { $0.id == selectedAgendaItemID })
+      return visibleAgendaItemsByID[selectedAgendaItemID]
     }
     if case .agenda(let item) = selectedLocation {
       return item
@@ -10289,7 +12172,7 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
-    if let item = visibleAgendaItems.first(where: { $0.id == agendaItemID }) {
+    if let item = visibleAgendaItemsByID[agendaItemID] {
       preserveAgendaItemSelectionWithoutActivatingEntry(item)
     } else if selectedAgendaItemID == agendaItemID {
       selectedAgendaItemID = nil
@@ -10297,7 +12180,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func preserveAgendaItemSelectionWithoutActivatingEntry(_ item: AgendaItem) {
-    selectedSurface = .agenda
+    setIfChanged(\.selectedSurface, .agenda)
     if selectedAgendaItemID != item.id {
       selectAgendaItemWithoutActivatingEntry(item)
     }
@@ -10350,10 +12233,32 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  nonisolated private static func loadedEntrySource(
+    file: String,
+    line: Int,
+    mode: EntrySourceMode
+  ) throws -> LoadedEntrySource {
+    let url = URL(fileURLWithPath: file)
+    let raw = try String(contentsOf: url, encoding: .utf8)
+    let normalized = normalizeLineEndings(raw)
+    let source: EntrySource
+    switch mode {
+    case .entry:
+      source = entrySource(file: file, line: line, normalized: normalized)
+    case .page:
+      source = pageSource(file: file, normalized: normalized)
+    }
+    return LoadedEntrySource(source: source, fullFileText: normalized)
+  }
+
   nonisolated private static func entrySource(file: String, line: Int) throws -> EntrySource {
     let url = URL(fileURLWithPath: file)
     let raw = try String(contentsOf: url, encoding: .utf8)
     let normalized = normalizeLineEndings(raw)
+    return entrySource(file: file, line: line, normalized: normalized)
+  }
+
+  nonisolated private static func entrySource(file: String, line: Int, normalized: String) -> EntrySource {
     let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
     guard !lines.isEmpty else {
       return EntrySource(file: file, startLine: 1, endLineExclusive: 1, text: "", isSubtree: false, isEditable: false)
@@ -10388,6 +12293,10 @@ public final class WorkspaceStore: ObservableObject {
     let url = URL(fileURLWithPath: file)
     let raw = try String(contentsOf: url, encoding: .utf8)
     let normalized = normalizeLineEndings(raw)
+    return pageSource(file: file, normalized: normalized)
+  }
+
+  nonisolated private static func pageSource(file: String, normalized: String) -> EntrySource {
     let endLineExclusive = max(2, lineCount(in: normalized) + 1)
     return EntrySource(
       file: file,
@@ -10603,6 +12512,24 @@ public final class WorkspaceStore: ObservableObject {
       output += "\n"
     }
     try output.write(to: url, atomically: true, encoding: .utf8)
+  }
+
+  nonisolated private static func replaceSourceRangeOffMain(
+    file: String,
+    startLine: Int,
+    endLineExclusive: Int,
+    replacement: String,
+    expectedOriginal: String? = nil
+  ) async throws {
+    try await Task.detached(priority: .userInitiated) {
+      try replaceSourceRange(
+        file: file,
+        startLine: startLine,
+        endLineExclusive: endLineExclusive,
+        replacement: replacement,
+        expectedOriginal: expectedOriginal
+      )
+    }.value
   }
 
   nonisolated private static func splitBlockPlan(
@@ -11161,7 +13088,7 @@ public final class WorkspaceStore: ObservableObject {
   private func syncMeetingSelectionAfterRefresh() {
     guard selectedSurface == .meetings, !meetings.isEmpty else { return }
     if let selectedMeetingID,
-       let meeting = meetings.first(where: { $0.id == selectedMeetingID }) {
+       let meeting = meetingsByID[selectedMeetingID] {
       select(.meeting(meeting))
       return
     }
@@ -11187,10 +13114,7 @@ public final class WorkspaceStore: ObservableObject {
   private func stopMeetingInputMetering() {
     meetingMeterTask?.cancel()
     meetingMeterTask = nil
-    meetingInputAverageLevel = 0
-    meetingInputPeakLevel = 0
-    meetingSystemAudioAverageLevel = 0
-    meetingSystemAudioPeakLevel = 0
+    setIfChanged(\.meetingInputMeterLevels, MeetingInputMeterLevels())
   }
 
   private func updateMeetingInputMeter(force: Bool = false) {
@@ -11204,15 +13128,37 @@ public final class WorkspaceStore: ObservableObject {
     systemAudio: MeetingInputMeterSnapshot,
     force: Bool
   ) {
-    publishMeetingMeterLevel(current: &meetingInputAverageLevel, next: microphone.averageLevel, force: force)
-    publishMeetingMeterLevel(current: &meetingInputPeakLevel, next: microphone.peakLevel, force: force)
-    publishMeetingMeterLevel(current: &meetingSystemAudioAverageLevel, next: systemAudio.averageLevel, force: force)
-    publishMeetingMeterLevel(current: &meetingSystemAudioPeakLevel, next: systemAudio.peakLevel, force: force)
+    let current = meetingInputMeterLevels
+    let next = MeetingInputMeterLevels(
+      microphoneAverageLevel: publishedMeetingMeterLevel(
+        current: current.microphoneAverageLevel,
+        next: microphone.averageLevel,
+        force: force
+      ),
+      microphonePeakLevel: publishedMeetingMeterLevel(
+        current: current.microphonePeakLevel,
+        next: microphone.peakLevel,
+        force: force
+      ),
+      systemAverageLevel: publishedMeetingMeterLevel(
+        current: current.systemAverageLevel,
+        next: systemAudio.averageLevel,
+        force: force
+      ),
+      systemPeakLevel: publishedMeetingMeterLevel(
+        current: current.systemPeakLevel,
+        next: systemAudio.peakLevel,
+        force: force
+      )
+    )
+    setIfChanged(\.meetingInputMeterLevels, next)
   }
 
-  private func publishMeetingMeterLevel(current: inout Double, next: Double, force: Bool) {
-    guard force || Self.shouldPublishMeetingMeterLevelChange(current: current, next: next) else { return }
-    current = next
+  private func publishedMeetingMeterLevel(current: Double, next: Double, force: Bool) -> Double {
+    guard force || Self.shouldPublishMeetingMeterLevelChange(current: current, next: next) else {
+      return current
+    }
+    return next
   }
 
   nonisolated static func shouldPublishMeetingMeterLevelChange(current: Double, next: Double) -> Bool {
@@ -11241,14 +13187,25 @@ public final class WorkspaceStore: ObservableObject {
   private func stopOpenClawVoiceMetering() {
     openClawVoiceMeterTask?.cancel()
     openClawVoiceMeterTask = nil
-    openClawVoiceAverageLevel = 0
-    openClawVoicePeakLevel = 0
+    setIfChanged(\.openClawVoiceMeterLevels, VoiceInputMeterLevels())
   }
 
   private func updateOpenClawVoiceMeter() {
     let snapshot = openClawVoiceRecorder.inputMeterSnapshot
-    openClawVoiceAverageLevel = snapshot.averageLevel
-    openClawVoicePeakLevel = snapshot.peakLevel
+    let current = openClawVoiceMeterLevels
+    let next = VoiceInputMeterLevels(
+      averageLevel: publishedMeetingMeterLevel(
+        current: current.averageLevel,
+        next: snapshot.averageLevel,
+        force: false
+      ),
+      peakLevel: publishedMeetingMeterLevel(
+        current: current.peakLevel,
+        next: snapshot.peakLevel,
+        force: false
+      )
+    )
+    setIfChanged(\.openClawVoiceMeterLevels, next)
   }
 
   private func startMeetingTranscriptionProgress(title: String, audioDuration: TimeInterval?) -> UUID {
@@ -11286,8 +13243,7 @@ public final class WorkspaceStore: ObservableObject {
     meetingTranscriptionProgressTitle = ""
     meetingTranscriptionStartedAt = nil
     meetingTranscriptionEstimatedDuration = 120
-    meetingTranscriptionProgress = 0
-    meetingTranscriptionElapsedText = ""
+    setIfChanged(\.meetingTranscriptionState, TranscriptionProgressState())
   }
 
   private func updateMeetingTranscriptionProgress() {
@@ -11296,10 +13252,18 @@ public final class WorkspaceStore: ObservableObject {
       elapsed: elapsed,
       estimatedDuration: meetingTranscriptionEstimatedDuration
     )
-    meetingTranscriptionProgress = progress
-    meetingTranscriptionElapsedText = Self.openClawVoiceTranscriptionElapsedText(elapsed: elapsed)
+    setIfChanged(
+      \.meetingTranscriptionState,
+      TranscriptionProgressState(
+        progress: progress,
+        elapsedText: Self.openClawVoiceTranscriptionElapsedText(elapsed: elapsed)
+      )
+    )
     guard !meetingTranscriptionProgressTitle.isEmpty, !isRecordingMeeting else { return }
-    meetingStatusText = "Transcribing \(meetingTranscriptionProgressTitle) locally... \(Int(progress * 100))%"
+    setIfChanged(
+      \.meetingStatusText,
+      "Transcribing \(meetingTranscriptionProgressTitle) locally... \(Int(progress * 100))%"
+    )
   }
 
   nonisolated static func estimatedMeetingTranscriptionDuration(for audioDuration: TimeInterval?) -> TimeInterval {
@@ -11338,8 +13302,7 @@ public final class WorkspaceStore: ObservableObject {
     openClawVoiceTranscriptionProgressTask = nil
     openClawVoiceTranscriptionStartedAt = nil
     openClawVoiceTranscriptionEstimatedDuration = 8
-    openClawVoiceTranscriptionProgress = 0
-    openClawVoiceTranscriptionElapsedText = ""
+    setIfChanged(\.openClawVoiceTranscriptionState, TranscriptionProgressState())
   }
 
   private func updateOpenClawVoiceTranscriptionProgress() {
@@ -11348,10 +13311,16 @@ public final class WorkspaceStore: ObservableObject {
       elapsed: elapsed,
       estimatedDuration: openClawVoiceTranscriptionEstimatedDuration
     )
-    openClawVoiceTranscriptionProgress = progress
-    openClawVoiceTranscriptionElapsedText = Self.openClawVoiceTranscriptionElapsedText(elapsed: elapsed)
-    openClawVoiceStatusText = "Transcribing OpenClaw dictation locally... \(Int(progress * 100))%"
-    openClawStatusText = openClawVoiceStatusText
+    setIfChanged(
+      \.openClawVoiceTranscriptionState,
+      TranscriptionProgressState(
+        progress: progress,
+        elapsedText: Self.openClawVoiceTranscriptionElapsedText(elapsed: elapsed)
+      )
+    )
+    let statusText = "Transcribing OpenClaw dictation locally... \(Int(progress * 100))%"
+    setIfChanged(\.openClawVoiceStatusText, statusText)
+    setIfChanged(\.openClawStatusText, statusText)
   }
 
   nonisolated static func estimatedOpenClawVoiceTranscriptionDuration(for audioDuration: TimeInterval) -> TimeInterval {
@@ -11482,7 +13451,7 @@ public final class WorkspaceStore: ObservableObject {
   private func clearMeetingProcessingState() {
     activeMeetingProcessingTitles = []
     activeMeetingProcessingCount = 0
-    isProcessingMeeting = false
+    setIfChanged(\.isProcessingMeeting, false)
     stopMeetingTranscriptionProgress(id: nil)
   }
 
@@ -11930,7 +13899,7 @@ public final class WorkspaceStore: ObservableObject {
     return properties
   }
 
-  nonisolated private static func scanOpenClawThreads(corpusRoot: URL) throws -> [OpenClawThread] {
+  nonisolated private static func scanOpenClawThreads(corpusRoot: URL) throws -> OpenClawThreadScanResult {
     let fileManager = FileManager.default
     let directories = openClawThreadDirectories(corpusRoot: corpusRoot)
     var threads: [OpenClawThread] = []
@@ -11967,7 +13936,7 @@ public final class WorkspaceStore: ObservableObject {
       }
     }
 
-    return threads
+    let sortedThreads = threads
       .sorted {
         let left = $0.modifiedAt ?? .distantPast
         let right = $1.modifiedAt ?? .distantPast
@@ -11976,6 +13945,7 @@ public final class WorkspaceStore: ObservableObject {
       }
       .prefix(250)
       .map { $0 }
+    return OpenClawThreadScanResult(threads: sortedThreads, directories: directories)
   }
 
   nonisolated private static func scanMeetingItems(corpusRoot: URL) throws -> [MeetingWorkspaceItem] {
@@ -12412,23 +14382,59 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated private static func openClawCorpusSnapshot(corpusRoot: URL) throws -> OpenClawCorpusSnapshot {
     let root = corpusRoot.standardizedFileURL
     let rootPath = root.path
-    let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .isDirectoryKey, .fileSizeKey]
-    let skippedDirectories = Set([".git", ".hg", ".svn", ".trash", "node_modules", "dist", "build", ".build", "DerivedData"])
-    guard let enumerator = FileManager.default.enumerator(
-      at: root,
-      includingPropertiesForKeys: Array(resourceKeys),
-      options: [.skipsHiddenFiles, .skipsPackageDescendants]
-    ) else {
+    let snapshotRoots = openClawChangeSnapshotRoots(corpusRoot: root)
+    guard !snapshotRoots.isEmpty else {
       return OpenClawCorpusSnapshot(rootPath: rootPath, files: [:])
     }
 
     var files: [String: OpenClawSnapshotFile] = [:]
+    var scannedRoots = Set<String>()
+    for snapshotRoot in snapshotRoots {
+      let rootKey = snapshotRoot.url.path
+      guard scannedRoots.insert(rootKey).inserted else { continue }
+      scanOpenClawSnapshotFiles(
+        corpusRootPath: rootPath,
+        snapshotRoot: snapshotRoot.url,
+        recursive: snapshotRoot.recursive,
+        files: &files
+      )
+    }
+
+    return OpenClawCorpusSnapshot(rootPath: rootPath, files: files)
+  }
+
+  nonisolated private static func openClawChangeSnapshotRoots(
+    corpusRoot: URL
+  ) -> [(url: URL, recursive: Bool)] {
+    var roots: [(url: URL, recursive: Bool)] = [(corpusRoot.standardizedFileURL, false)]
+    for directory in openClawThreadDirectories(corpusRoot: corpusRoot) where isDirectoryURL(directory) {
+      roots.append((directory.standardizedFileURL, true))
+    }
+    return roots
+  }
+
+  nonisolated private static func scanOpenClawSnapshotFiles(
+    corpusRootPath rootPath: String,
+    snapshotRoot: URL,
+    recursive: Bool,
+    files: inout [String: OpenClawSnapshotFile]
+  ) {
+    let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .isDirectoryKey, .fileSizeKey]
+    let skippedDirectories = Set([".git", ".hg", ".svn", ".trash", "node_modules", "dist", "build", ".build", "DerivedData"])
+    guard let enumerator = FileManager.default.enumerator(
+      at: snapshotRoot,
+      includingPropertiesForKeys: Array(resourceKeys),
+      options: [.skipsHiddenFiles, .skipsPackageDescendants]
+    ) else {
+      return
+    }
+
     for case let url as URL in enumerator {
       guard let values = try? url.resourceValues(forKeys: resourceKeys) else {
         continue
       }
       if values.isDirectory == true {
-        if skippedDirectories.contains(url.lastPathComponent) {
+        if !recursive || skippedDirectories.contains(url.lastPathComponent) {
           enumerator.skipDescendants()
         }
         continue
@@ -12451,8 +14457,6 @@ public final class WorkspaceStore: ObservableObject {
         : url.lastPathComponent
       files[relativePath] = OpenClawSnapshotFile(text: text)
     }
-
-    return OpenClawCorpusSnapshot(rootPath: rootPath, files: files)
   }
 
   nonisolated private static func openClawChangeSummary(
@@ -12564,6 +14568,10 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     return prefixCount + suffixCount
+  }
+
+  nonisolated private static func scanCorpusFileDisplayState(corpusRoot: URL) throws -> CorpusFileDisplayState {
+    corpusFileDisplayState(files: try scanCorpusFiles(corpusRoot: corpusRoot))
   }
 
   nonisolated private static func scanCorpusFiles(corpusRoot: URL) throws -> [CorpusFile] {
@@ -12777,12 +14785,25 @@ public final class WorkspaceStore: ObservableObject {
       ? ["agents", "meetings", "notes/openclaw", "raw/openclaw", "views/openclaw"]
       : configured
 
+    return openClawThreadDirectories(corpusRoot: corpusRoot, rawDirectories: rawDirectories)
+  }
+
+  nonisolated private static func defaultOpenClawThreadDirectories(corpusRoot: URL) -> [URL] {
+    openClawThreadDirectories(
+      corpusRoot: corpusRoot,
+      rawDirectories: ["agents", "meetings", "notes/openclaw", "raw/openclaw", "views/openclaw"]
+    )
+  }
+
+  nonisolated private static func openClawThreadDirectories(corpusRoot: URL, rawDirectories: [String]) -> [URL] {
+    let root = corpusRoot.standardizedFileURL
+
     return rawDirectories.map { raw in
       let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
       if NSString(string: trimmed).isAbsolutePath {
         return URL(fileURLWithPath: trimmed).standardizedFileURL
       }
-      return corpusRoot.appendingPathComponent(trimmed, isDirectory: true).standardizedFileURL
+      return root.appendingPathComponent(trimmed, isDirectory: true).standardizedFileURL
     }
   }
 
@@ -12864,7 +14885,17 @@ public final class WorkspaceStore: ObservableObject {
     return value.isEmpty ? nil : value
   }
 
-  private func upsertHeadlineProperties(file: String, line: Int, properties: [String: String]) throws {
+  nonisolated private static func upsertHeadlinePropertiesOffMain(
+    file: String,
+    line: Int,
+    properties: [String: String]
+  ) async throws {
+    try await Task.detached(priority: .userInitiated) {
+      try upsertHeadlineProperties(file: file, line: line, properties: properties)
+    }.value
+  }
+
+  nonisolated private static func upsertHeadlineProperties(file: String, line: Int, properties: [String: String]) throws {
     let url = URL(fileURLWithPath: file)
     let raw = try String(contentsOf: url, encoding: .utf8).replacingOccurrences(of: "\r\n", with: "\n")
     var lines = raw.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
@@ -12942,7 +14973,15 @@ public final class WorkspaceStore: ObservableObject {
     try output.write(to: url, atomically: true, encoding: .utf8)
   }
 
-  private func nestedParentSendHeading(for target: HeadlineMutationTarget) throws -> (line: Int, id: String?)? {
+  nonisolated private static func nestedParentSendHeadingOffMain(
+    for target: HeadlineMutationTarget
+  ) async throws -> (line: Int, id: String?)? {
+    try await Task.detached(priority: .userInitiated) {
+      try nestedParentSendHeading(for: target)
+    }.value
+  }
+
+  nonisolated private static func nestedParentSendHeading(for target: HeadlineMutationTarget) throws -> (line: Int, id: String?)? {
     guard target.title.range(of: #"^Approve\b"#, options: [.regularExpression, .caseInsensitive]) != nil else {
       return nil
     }
@@ -12982,7 +15021,13 @@ public final class WorkspaceStore: ObservableObject {
     return Org2Display.cleanInline(rest)
   }
 
-  private func updateHeadlinePriority(file: String, line: Int, priority: String?) throws {
+  nonisolated private static func updateHeadlinePriorityOffMain(file: String, line: Int, priority: String?) async throws {
+    try await Task.detached(priority: .userInitiated) {
+      try updateHeadlinePriority(file: file, line: line, priority: priority)
+    }.value
+  }
+
+  nonisolated private static func updateHeadlinePriority(file: String, line: Int, priority: String?) throws {
     let url = URL(fileURLWithPath: file)
     let raw = try String(contentsOf: url, encoding: .utf8).replacingOccurrences(of: "\r\n", with: "\n")
     var lines = raw.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
@@ -13033,10 +15078,10 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func todayDailyNotePath(corpusRoot: URL) -> URL {
-    dailyNotePath(corpusRoot: corpusRoot, date: Date())
+    Self.dailyNotePath(corpusRoot: corpusRoot, date: Date())
   }
 
-  private func dailyNotePath(corpusRoot: URL, date: Date) -> URL {
+  nonisolated private static func dailyNotePath(corpusRoot: URL, date: Date) -> URL {
     let configURL = corpusRoot.appendingPathComponent("org2.json")
     let basePath: String
     if let data = try? Data(contentsOf: configURL),
@@ -13058,7 +15103,7 @@ public final class WorkspaceStore: ObservableObject {
     return URL(fileURLWithPath: basePath).appendingPathComponent("\(Self.formatDate(date)).org2")
   }
 
-  private func createDailyNote(at url: URL) throws {
+  nonisolated private static func createDailyNote(at url: URL) throws {
     try FileManager.default.createDirectory(
       at: url.deletingLastPathComponent(),
       withIntermediateDirectories: true
@@ -13067,9 +15112,9 @@ public final class WorkspaceStore: ObservableObject {
     try "#+TITLE: \(title)\n\n".write(to: url, atomically: true, encoding: .utf8)
   }
 
-  private func corpusFile(for url: URL, corpusRoot: URL) -> CorpusFile {
+  nonisolated private static func corpusFile(for url: URL, corpusRoot: URL) -> CorpusFile {
     let standardizedURL = url.standardizedFileURL
-    let relativePath = self.relativePath(standardizedURL.path)
+    let relativePath = Self.relativePath(for: standardizedURL.path, root: corpusRoot.standardizedFileURL)
     let values = try? standardizedURL.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
     return CorpusFile(
       path: standardizedURL.path,
@@ -13087,7 +15132,7 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func knowledgeNodePath(corpusRoot: URL, title: String) -> URL {
+  nonisolated private static func knowledgeNodePath(corpusRoot: URL, title: String) -> URL {
     let config = Self.workspaceConfig(corpusRoot: corpusRoot)
     let rawBase = config?.roam?.indexDir?.trimmingCharacters(in: .whitespacesAndNewlines)
     let base: URL
@@ -13101,10 +15146,11 @@ public final class WorkspaceStore: ObservableObject {
     return base.appendingPathComponent("\(Self.slug(title)).org2")
   }
 
-  private func ensureKnowledgeNode(title: String, sourceLocation: WorkspaceLocation?) throws -> CreatedKnowledgeNode {
-    guard let corpusRoot else {
-      throw WorkspaceEditError.noCorpusRoot
-    }
+  nonisolated private static func ensureKnowledgeNode(
+    corpusRoot: URL,
+    title: String,
+    sourceLocation: WorkspaceLocation?
+  ) throws -> CreatedKnowledgeNode {
     let cleanTitle = Org2Display.cleanInline(title).trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanTitle.isEmpty else {
       throw WorkspaceEditError.emptyTitle
@@ -13120,7 +15166,11 @@ public final class WorkspaceStore: ObservableObject {
       id = UUID().uuidString
       let sourceLink: String
       if let sourceLocation {
-        sourceLink = "\nOrigin: [[file:\(relativePath(sourceLocation.file))][\(sourceLocation.title)]]"
+        let relativeSourcePath = Self.relativePath(
+          for: sourceLocation.file,
+          root: corpusRoot.standardizedFileURL
+        )
+        sourceLink = "\nOrigin: [[file:\(relativeSourcePath)][\(sourceLocation.title)]]"
       } else {
         sourceLink = ""
       }
@@ -13140,8 +15190,18 @@ public final class WorkspaceStore: ObservableObject {
     return CreatedKnowledgeNode(title: cleanTitle, file: target.path, id: id)
   }
 
+  nonisolated private static func ensureKnowledgeNodeOffMain(
+    corpusRoot: URL,
+    title: String,
+    sourceLocation: WorkspaceLocation?
+  ) async throws -> CreatedKnowledgeNode {
+    try await Task.detached(priority: .userInitiated) {
+      try ensureKnowledgeNode(corpusRoot: corpusRoot, title: title, sourceLocation: sourceLocation)
+    }.value
+  }
+
   public func createKnowledgeNode(title: String) async {
-    guard corpusRoot != nil else {
+    guard let corpusRoot else {
       statusText = "No corpus selected"
       return
     }
@@ -13152,12 +15212,16 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     do {
-      let node = try ensureKnowledgeNode(title: cleanTitle, sourceLocation: selectedLocation)
+      let node = try await Self.ensureKnowledgeNodeOffMain(
+        corpusRoot: corpusRoot,
+        title: cleanTitle,
+        sourceLocation: selectedLocation
+      )
       statusText = "Knowledge node ready -> \(relativePath(node.file))"
       invalidateCanonicalDocumentCache(for: node.file)
       await refreshCorpusFiles()
       searchQuery = "id:\(node.id)"
-      selectedSurface = .search
+      setIfChanged(\.selectedSurface, .search)
       await runSearch()
     } catch {
       errorText = error.localizedDescription
@@ -13215,7 +15279,14 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     do {
-      let node = try ensureKnowledgeNode(title: title, sourceLocation: selectedLocation)
+      guard let corpusRoot else {
+        throw WorkspaceEditError.noCorpusRoot
+      }
+      let node = try await Self.ensureKnowledgeNodeOffMain(
+        corpusRoot: corpusRoot,
+        title: title,
+        sourceLocation: selectedLocation
+      )
       invalidateCanonicalDocumentCache(for: node.file)
       await refreshCorpusFiles()
       statusText = "Created node \(relativePath(node.file))"
@@ -13238,7 +15309,14 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     do {
-      let node = try ensureKnowledgeNode(title: title, sourceLocation: selectedLocation)
+      guard let corpusRoot else {
+        throw WorkspaceEditError.noCorpusRoot
+      }
+      let node = try await Self.ensureKnowledgeNodeOffMain(
+        corpusRoot: corpusRoot,
+        title: title,
+        sourceLocation: selectedLocation
+      )
       invalidateCanonicalDocumentCache(for: node.file)
       await refreshCorpusFiles()
       statusText = "Created node \(relativePath(node.file))"
@@ -13282,9 +15360,26 @@ public final class WorkspaceStore: ObservableObject {
     Task { await createKnowledgeNode(title: title.isEmpty ? field.placeholderString ?? "" : title) }
   }
 
-  private func appendCapture(draft: WorkspaceCaptureDraft, to target: URL, corpusRoot: URL) throws {
+  nonisolated private static func appendCaptureOffMain(
+    draft: WorkspaceCaptureDraft,
+    corpusRoot: URL,
+    assignee: String
+  ) async throws -> URL {
+    try await Task.detached(priority: .userInitiated) {
+      let target = dailyNotePath(corpusRoot: corpusRoot, date: Date())
+      try appendCapture(draft: draft, to: target, corpusRoot: corpusRoot, assignee: assignee)
+      return target
+    }.value
+  }
+
+  nonisolated private static func appendCapture(
+    draft: WorkspaceCaptureDraft,
+    to target: URL,
+    corpusRoot: URL,
+    assignee: String
+  ) throws {
     try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-    let entry = try captureEntryText(draft: draft, corpusRoot: corpusRoot)
+    let entry = try captureEntryText(draft: draft, corpusRoot: corpusRoot, assignee: assignee)
     if !FileManager.default.fileExists(atPath: target.path) {
       guard FileManager.default.createFile(atPath: target.path, contents: nil) else {
         throw CocoaError(.fileWriteUnknown)
@@ -13313,7 +15408,11 @@ public final class WorkspaceStore: ObservableObject {
     try handle.write(contentsOf: Data("\(prefix)\(text)".utf8))
   }
 
-  private func captureEntryText(draft: WorkspaceCaptureDraft, corpusRoot: URL) throws -> String {
+  nonisolated private static func captureEntryText(
+    draft: WorkspaceCaptureDraft,
+    corpusRoot: URL,
+    assignee: String
+  ) throws -> String {
     let safeTitle = draft.title
       .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
       .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -13341,7 +15440,7 @@ public final class WorkspaceStore: ObservableObject {
 
     var properties = ["CAPTURED_AT": Self.orgTimestamp(Date())]
     if draft.assignToAgent {
-      properties["ASSIGNEE"] = resolvedAgentHandoffAssignee()
+      properties["ASSIGNEE"] = assignee
       properties["STATUS"] = "ready"
       properties["ASSIGNED_AT"] = Self.orgTimestamp(Date())
     }
@@ -13370,7 +15469,7 @@ public final class WorkspaceStore: ObservableObject {
     return lines.joined(separator: "\n") + "\n"
   }
 
-  private func materializeCaptureAttachment(
+  nonisolated private static func materializeCaptureAttachment(
     _ attachment: WorkspaceCaptureAttachmentDraft,
     corpusRoot: URL
   ) throws -> String {
@@ -13403,7 +15502,7 @@ public final class WorkspaceStore: ObservableObject {
     return Self.orgLink(target: "file:\(relativePath)", label: label.isEmpty ? target.lastPathComponent : label)
   }
 
-  private static func captureTagsSuffix(_ raw: String) -> String {
+  nonisolated private static func captureTagsSuffix(_ raw: String) -> String {
     let tags = raw
       .split { $0 == "," || $0 == " " || $0 == "\n" || $0 == "\t" }
       .map { token in
@@ -13508,7 +15607,7 @@ public final class WorkspaceStore: ObservableObject {
     return .file
   }
 
-  private static func orgLink(target: String, label: String) -> String {
+  nonisolated private static func orgLink(target: String, label: String) -> String {
     let cleanTarget = target.replacingOccurrences(of: "]", with: "%5D")
     let cleanLabel = label
       .replacingOccurrences(of: "[", with: "(")
@@ -13517,14 +15616,14 @@ public final class WorkspaceStore: ObservableObject {
     return "[[\(cleanTarget)][\(cleanLabel.isEmpty ? cleanTarget : cleanLabel)]]"
   }
 
-  private static func captureAttachmentFileName(for attachment: WorkspaceCaptureAttachmentDraft) -> String {
+  nonisolated private static func captureAttachmentFileName(for attachment: WorkspaceCaptureAttachmentDraft) -> String {
     let ext = captureAttachmentExtension(for: attachment)
     let baseName = URL(fileURLWithPath: attachment.name).deletingPathExtension().lastPathComponent
     let slug = Self.slug(baseName.isEmpty ? attachment.kind.rawValue : baseName)
     return ext.isEmpty ? slug : "\(slug).\(ext)"
   }
 
-  private static func captureAttachmentExtension(for attachment: WorkspaceCaptureAttachmentDraft) -> String {
+  nonisolated private static func captureAttachmentExtension(for attachment: WorkspaceCaptureAttachmentDraft) -> String {
     let suggested = attachment.suggestedExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     if !suggested.isEmpty { return suggested }
     if let sourceURL = attachment.sourceURL {
@@ -13541,7 +15640,7 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private static func uniqueAttachmentURL(in directory: URL, fileName: String) -> URL {
+  nonisolated private static func uniqueAttachmentURL(in directory: URL, fileName: String) -> URL {
     let base = URL(fileURLWithPath: fileName).deletingPathExtension().lastPathComponent
     let ext = URL(fileURLWithPath: fileName).pathExtension
     let stamp = captureFileTimestamp(Date())
@@ -13555,7 +15654,7 @@ public final class WorkspaceStore: ObservableObject {
     return candidate
   }
 
-  private static func captureFileTimestamp(_ date: Date) -> String {
+  nonisolated private static func captureFileTimestamp(_ date: Date) -> String {
     let formatter = DateFormatter()
     formatter.calendar = Calendar(identifier: .gregorian)
     formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -13680,7 +15779,7 @@ public final class WorkspaceStore: ObservableObject {
     NSWorkspace.shared.open(fileURL)
   }
 
-  private static func formatDate(_ date: Date) -> String {
+  nonisolated private static func formatDate(_ date: Date) -> String {
     let formatter = DateFormatter()
     formatter.calendar = Calendar(identifier: .gregorian)
     formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -13724,7 +15823,7 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private static func date(for target: DailyNoteTarget) -> Date {
+  nonisolated private static func date(for target: DailyNoteTarget) -> Date {
     let calendar = Calendar(identifier: .gregorian)
     let today = Date()
     switch target {
@@ -13737,7 +15836,7 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private static func orgTimestamp(_ date: Date) -> String {
+  nonisolated private static func orgTimestamp(_ date: Date) -> String {
     let formatter = DateFormatter()
     formatter.calendar = Calendar(identifier: .gregorian)
     formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -13746,7 +15845,7 @@ public final class WorkspaceStore: ObservableObject {
     return "<\(formatter.string(from: date))>"
   }
 
-  private static func orgDateTimestamp(_ date: Date) -> String {
+  nonisolated private static func orgDateTimestamp(_ date: Date) -> String {
     let formatter = DateFormatter()
     formatter.calendar = Calendar(identifier: .gregorian)
     formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -13866,7 +15965,7 @@ public final class WorkspaceStore: ObservableObject {
     """
   }
 
-  private static func normalizePriority(_ raw: String) -> String? {
+  nonisolated private static func normalizePriority(_ raw: String) -> String? {
     let token = raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
     return token.range(of: #"^[A-Z0-9]$"#, options: .regularExpression) == nil ? nil : token
   }
@@ -13960,7 +16059,7 @@ private struct WorkspaceOrg2Config: Decodable {
   }
 }
 
-private struct OpenClawTranscriptState {
+private struct OpenClawTranscriptState: Sendable {
   let threads: [OpenClawChatThread]
   let selectedThreadID: UUID?
 }

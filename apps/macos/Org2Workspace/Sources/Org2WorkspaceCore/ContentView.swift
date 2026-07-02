@@ -65,10 +65,63 @@ public struct ContentView: View {
   }
 }
 
+@MainActor
+private enum WorkspaceDateFormatting {
+  static func shortRelativeDate(_ date: Date, relativeTo referenceDate: Date = Date()) -> String {
+    shortRelativeFormatter.localizedString(for: date, relativeTo: referenceDate)
+  }
+
+  static func shortMonthDay(_ date: Date) -> String {
+    monthDayFormatter.string(from: date)
+  }
+
+  static func mediumDateTime(_ date: Date) -> String {
+    mediumDateTimeFormatter.string(from: date)
+  }
+
+  private static let shortRelativeFormatter: RelativeDateTimeFormatter = {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .short
+    return formatter
+  }()
+
+  private static let monthDayFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.setLocalizedDateFormatFromTemplate("MMM d")
+    return formatter
+  }()
+
+  private static let mediumDateTimeFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateStyle = .medium
+    formatter.timeStyle = .short
+    return formatter
+  }()
+}
+
 private struct WorkspaceMainArea: View {
   @EnvironmentObject private var store: WorkspaceStore
 
   var body: some View {
+    GeometryReader { geometry in
+      content(isCompact: geometry.size.width < WorkspaceDesign.compactPaneWidth)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+  }
+
+  @ViewBuilder
+  private func content(isCompact: Bool) -> some View {
+    if isCompact, store.isWorkspaceSurfacePaneClosed, store.hasWorkspaceDetailContent {
+      WorkspaceDetailArea()
+    } else if isCompact {
+      WorkspaceSurfaceCacheView(selectedSurface: store.selectedSurface)
+    } else {
+      splitContent
+    }
+  }
+
+  @ViewBuilder
+  private var splitContent: some View {
     if store.isWorkspaceSurfacePaneClosed && store.hasWorkspaceDetailContent {
       WorkspaceDetailArea()
     } else if store.isWorkspaceDetailPaneClosed || !store.hasWorkspaceDetailContent {
@@ -76,10 +129,10 @@ private struct WorkspaceMainArea: View {
     } else {
       HSplitView {
         WorkspaceSurfaceCacheView(selectedSurface: store.selectedSurface)
-          .frame(minWidth: 320, idealWidth: 460)
+          .frame(minWidth: 300, idealWidth: 460)
 
         WorkspaceDetailArea()
-          .frame(minWidth: 520, idealWidth: 720)
+          .frame(minWidth: 440, idealWidth: 720)
       }
     }
   }
@@ -238,8 +291,7 @@ private struct SidebarView: View {
             if store.isBuildingSearchIndex || !store.searchIndexStatusText.isEmpty {
               HStack(spacing: 5) {
                 if store.isBuildingSearchIndex {
-                  ProgressView()
-                    .controlSize(.mini)
+                  WorkspaceActivityIndicator(compact: true)
                 } else {
                   Image(systemName: "magnifyingglass")
                 }
@@ -364,15 +416,60 @@ private struct OpenClawSidebarSurfaceGroup: View {
 
 private struct OpenClawSidebarThreadList: View {
   @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    OpenClawSidebarThreadListContent(
+      visibleThreads: store.visibleOpenClawChatThreads,
+      visibleThreadsRenderSignature: store.visibleOpenClawChatThreadsRenderSignature,
+      archivedThreads: store.archivedOpenClawChatThreads,
+      archivedThreadsRenderSignature: store.archivedOpenClawChatThreadsRenderSignature,
+      selectedThreadID: store.selectedOpenClawChatThreadID,
+      isOpenClawSurfaceSelected: store.selectedSurface == .openClaw,
+      select: { thread in
+        store.selectOpenClawChatThread(thread.id)
+        store.makeSurfacePrimary(.openClaw)
+      },
+      togglePin: { thread in
+        store.toggleOpenClawChatThreadPin(thread.id)
+      },
+      archive: { thread in
+        store.archiveOpenClawChatThread(thread.id)
+      },
+      restore: { thread in
+        store.restoreOpenClawChatThread(thread.id)
+      }
+    )
+    .equatable()
+  }
+}
+
+private struct OpenClawSidebarThreadListContent: View, Equatable {
+  let visibleThreads: [OpenClawChatThreadDisplayItem]
+  let visibleThreadsRenderSignature: String
+  let archivedThreads: [OpenClawChatThreadDisplayItem]
+  let archivedThreadsRenderSignature: String
+  let selectedThreadID: UUID?
+  let isOpenClawSurfaceSelected: Bool
+  let select: (OpenClawChatThreadDisplayItem) -> Void
+  let togglePin: (OpenClawChatThreadDisplayItem) -> Void
+  let archive: (OpenClawChatThreadDisplayItem) -> Void
+  let restore: (OpenClawChatThreadDisplayItem) -> Void
   @State private var showsAllThreads = false
   @State private var showsArchivedThreads = false
 
   private let maxHeight: CGFloat = 220
   private let initialLimit = 5
 
+  nonisolated static func == (lhs: OpenClawSidebarThreadListContent, rhs: OpenClawSidebarThreadListContent) -> Bool {
+    lhs.visibleThreadsRenderSignature == rhs.visibleThreadsRenderSignature
+      && lhs.archivedThreadsRenderSignature == rhs.archivedThreadsRenderSignature
+      && lhs.selectedThreadID == rhs.selectedThreadID
+      && lhs.isOpenClawSurfaceSelected == rhs.isOpenClawSurfaceSelected
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
-      if store.visibleOpenClawChatThreads.isEmpty && store.archivedOpenClawChatThreads.isEmpty {
+      if visibleThreads.isEmpty && archivedThreads.isEmpty {
         Text("No chat threads")
           .font(.caption)
           .foregroundStyle(.tertiary)
@@ -381,17 +478,25 @@ private struct OpenClawSidebarThreadList: View {
       } else {
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 2) {
-            ForEach(visibleThreads) { thread in
+            ForEach(displayedVisibleThreads(from: visibleThreads)) { thread in
               OpenClawSidebarThreadRow(
                 thread: thread,
-                isSelected: store.selectedOpenClawChatThreadID == thread.id && store.selectedSurface == .openClaw
+                isSelected: selectedThreadID == thread.id && isOpenClawSurfaceSelected,
+                togglePin: {
+                  togglePin(thread)
+                },
+                archive: {
+                  archive(thread)
+                },
+                restore: {
+                  restore(thread)
+                }
               ) {
-                store.makeSurfacePrimary(.openClaw)
-                store.selectOpenClawChatThread(thread.id)
+                select(thread)
               }
             }
 
-            if store.visibleOpenClawChatThreads.count > initialLimit {
+            if visibleThreads.count > initialLimit {
               Button {
                 withAnimation(.easeInOut(duration: 0.16)) {
                   showsAllThreads.toggle()
@@ -408,7 +513,7 @@ private struct OpenClawSidebarThreadList: View {
               .help(showsAllThreads ? "Collapse chat threads" : "Show more chat threads")
             }
 
-            if !store.archivedOpenClawChatThreads.isEmpty {
+            if !archivedThreads.isEmpty {
               Button {
                 withAnimation(.easeInOut(duration: 0.16)) {
                   showsArchivedThreads.toggle()
@@ -426,13 +531,21 @@ private struct OpenClawSidebarThreadList: View {
             }
 
             if showsArchivedThreads {
-              ForEach(store.archivedOpenClawChatThreads) { thread in
+              ForEach(archivedThreads) { thread in
                 OpenClawSidebarThreadRow(
                   thread: thread,
-                  isSelected: store.selectedOpenClawChatThreadID == thread.id && store.selectedSurface == .openClaw
+                  isSelected: selectedThreadID == thread.id && isOpenClawSurfaceSelected,
+                  togglePin: {
+                    togglePin(thread)
+                  },
+                  archive: {
+                    archive(thread)
+                  },
+                  restore: {
+                    restore(thread)
+                  }
                 ) {
-                  store.makeSurfacePrimary(.openClaw)
-                  store.selectOpenClawChatThread(thread.id)
+                  select(thread)
                 }
               }
             }
@@ -446,18 +559,20 @@ private struct OpenClawSidebarThreadList: View {
     .padding(.top, 2)
   }
 
-  private var visibleThreads: [OpenClawChatThread] {
+  private func displayedVisibleThreads(from threads: [OpenClawChatThreadDisplayItem]) -> ArraySlice<OpenClawChatThreadDisplayItem> {
     if showsAllThreads {
-      return store.visibleOpenClawChatThreads
+      return threads[...]
     }
-    return Array(store.visibleOpenClawChatThreads.prefix(initialLimit))
+    return threads.prefix(initialLimit)
   }
 }
 
 private struct OpenClawSidebarThreadRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
-  let thread: OpenClawChatThread
+  let thread: OpenClawChatThreadDisplayItem
   let isSelected: Bool
+  let togglePin: () -> Void
+  let archive: () -> Void
+  let restore: () -> Void
   let select: () -> Void
 
   var body: some View {
@@ -482,7 +597,7 @@ private struct OpenClawSidebarThreadRow: View {
         if thread.unreadMessageCount > 0 {
           OpenClawUnreadBadge(count: thread.unreadMessageCount)
         }
-        Text(Self.relativeDate(thread.updatedAt))
+        Text(thread.relativeUpdatedAtText)
           .font(.callout)
           .foregroundStyle(.secondary)
           .lineLimit(1)
@@ -494,7 +609,7 @@ private struct OpenClawSidebarThreadRow: View {
       .padding(.vertical, 7)
       .background(
         isSelected ? Color.secondary.opacity(0.14) : Color.clear,
-        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        in: RoundedRectangle(cornerRadius: WorkspaceDesign.controlRadius, style: .continuous)
       )
       .contentShape(Rectangle())
     }
@@ -502,20 +617,20 @@ private struct OpenClawSidebarThreadRow: View {
     .disabled(false)
     .contextMenu {
       Button {
-        store.toggleOpenClawChatThreadPin(thread.id)
+        togglePin()
       } label: {
         Label(thread.isPinned ? "Unpin Thread" : "Pin Thread", systemImage: thread.isPinned ? "pin.slash" : "pin")
       }
 
       if thread.isArchived {
         Button {
-          store.restoreOpenClawChatThread(thread.id)
+          restore()
         } label: {
           Label("Unarchive Thread", systemImage: "tray.and.arrow.up")
         }
       } else {
         Button {
-          store.archiveOpenClawChatThread(thread.id)
+          archive()
         } label: {
           Label("Archive Thread", systemImage: "archivebox")
         }
@@ -523,16 +638,6 @@ private struct OpenClawSidebarThreadRow: View {
     }
   }
 
-  private static func relativeDate(_ date: Date) -> String {
-    let elapsed = max(0, Date().timeIntervalSince(date))
-    if elapsed < 60 { return "now" }
-    if elapsed < 3600 { return "\(Int(elapsed / 60))m" }
-    if elapsed < 86_400 { return "\(Int(elapsed / 3600))h" }
-    if elapsed < 604_800 { return "\(Int(elapsed / 86_400))d" }
-    let formatter = DateFormatter()
-    formatter.setLocalizedDateFormatFromTemplate("MMM d")
-    return formatter.string(from: date)
-  }
 }
 
 private struct OpenClawUnreadBadge: View {
@@ -562,8 +667,7 @@ private struct FilesView: View {
     VStack(spacing: 0) {
       HeaderBar(title: "Files", subtitle: store.corpusRoot?.path ?? "Corpus files", surface: .files) {
         if store.isScanningCorpusFiles {
-          ProgressView()
-            .controlSize(.small)
+          WorkspaceActivityIndicator(compact: true)
         }
 
         Button {
@@ -594,7 +698,7 @@ private struct FilesView: View {
         }
       } else if store.corpusFiles.isEmpty && store.isScanningCorpusFiles {
         Spacer()
-        ProgressView()
+        WorkspaceActivityIndicator(label: "Scanning files")
         Spacer()
       } else if store.filteredCorpusFiles.isEmpty {
         EmptyStateView(title: "No Files", detail: "No org2, org, or markdown files matched.", action: "Refresh") {
@@ -604,7 +708,12 @@ private struct FilesView: View {
         List(selection: $store.selectedCorpusFileID) {
           ForEach(store.filteredCorpusFiles) { file in
             CorpusFileRow(file: file)
+              .equatable()
               .tag(file.id)
+              .contentShape(Rectangle())
+              .onTapGesture {
+                store.activateCorpusFileFromRowTap(file)
+              }
               .contextMenu {
                 CorpusFileContextMenu(file: file)
               }
@@ -613,10 +722,11 @@ private struct FilesView: View {
         .listStyle(.inset)
         .onChange(of: store.selectedCorpusFileID) {
           guard let id = store.selectedCorpusFileID,
-                let file = store.corpusFiles.first(where: { $0.id == id })
+                let file = store.corpusFile(id: id)
           else {
             return
           }
+          guard !store.consumeCorpusFileSelectionActivationSuppression(for: id) else { return }
           store.selectCorpusFile(file)
         }
       }
@@ -624,8 +734,12 @@ private struct FilesView: View {
   }
 }
 
-private struct CorpusFileRow: View {
+private struct CorpusFileRow: View, Equatable {
   let file: CorpusFile
+
+  nonisolated static func == (lhs: CorpusFileRow, rhs: CorpusFileRow) -> Bool {
+    lhs.file == rhs.file
+  }
 
   var body: some View {
     HStack(alignment: .center, spacing: 8) {
@@ -889,17 +1003,13 @@ private struct QuickOpenView: View {
       )
 
       if store.isScanningCorpusFiles || store.isFilteringQuickOpenFiles {
-        HStack(spacing: 8) {
-          ProgressView()
-            .controlSize(.small)
-          Text(store.isScanningCorpusFiles ? "Scanning files" : "Searching files")
-            .foregroundStyle(.secondary)
-        }
+        WorkspaceActivityIndicator(label: store.isScanningCorpusFiles ? "Scanning files" : "Searching files")
       }
 
       List(selection: $store.selectedQuickOpenFileID) {
         ForEach(store.quickOpenFiles) { file in
           CorpusFileRow(file: file)
+            .equatable()
             .tag(file.id)
             .contentShape(Rectangle())
             .onTapGesture {
@@ -1010,7 +1120,11 @@ private struct SimilarTodoAssignmentView: View {
 
       List {
         ForEach(store.similarTodoCandidates) { candidate in
-          SimilarTodoCandidateRow(candidate: candidate)
+          SimilarTodoCandidateRow(
+            candidate: candidate,
+            relativePath: store.relativePath(candidate.file),
+            isSelected: store.selectedSimilarTodoCandidateIDs.contains(candidate.id)
+          )
             .contentShape(Rectangle())
             .onTapGesture {
               store.toggleSimilarTodoCandidateSelection(candidate)
@@ -1060,13 +1174,14 @@ private struct SimilarTodoAssignmentView: View {
 }
 
 private struct SimilarTodoCandidateRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let candidate: SimilarTodoCandidate
+  let relativePath: String
+  let isSelected: Bool
 
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
-      Image(systemName: store.selectedSimilarTodoCandidateIDs.contains(candidate.id) ? "checkmark.square.fill" : "square")
-        .foregroundStyle(store.selectedSimilarTodoCandidateIDs.contains(candidate.id) ? Color.accentColor : Color.secondary)
+      Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
         .frame(width: 18)
       VStack(alignment: .leading, spacing: 4) {
         HStack(spacing: 6) {
@@ -1080,7 +1195,7 @@ private struct SimilarTodoCandidateRow: View {
             .lineLimit(1)
         }
         HStack(spacing: 8) {
-          Text(store.relativePath(candidate.file) + ":\(candidate.line)")
+          Text(relativePath + ":\(candidate.line)")
             .font(.caption)
             .foregroundStyle(.tertiary)
           Text("\(Int(candidate.score * 100))%")
@@ -1268,8 +1383,7 @@ private struct AgendaView: View {
     VStack(spacing: 0) {
       HeaderBar(title: "Agenda", subtitle: headerSubtitle, surface: .agenda) {
         if store.agendaMode == .assigned ? store.isLoadingAssignedWork : store.isLoadingAgenda {
-          ProgressView()
-            .controlSize(.small)
+          WorkspaceActivityIndicator(compact: true)
         }
       }
 
@@ -1490,8 +1604,7 @@ private struct ApprovalsView: View {
     VStack(spacing: 0) {
       HeaderBar(title: "Approvals", subtitle: headerSubtitle, surface: .approvals) {
         if store.isLoadingApprovals {
-          ProgressView()
-            .controlSize(.small)
+          WorkspaceActivityIndicator(compact: true)
         }
       }
 
@@ -1518,8 +1631,11 @@ private struct ApprovalsView: View {
       }
     }
     .onChange(of: store.selectedApprovalItemID) {
+      guard !store.consumeApprovalSelectionActivationSuppression() else {
+        return
+      }
       guard let id = store.selectedApprovalItemID,
-            let item = store.visibleApprovalItems.first(where: { $0.id == id })
+            let item = store.visibleApprovalItem(id: id)
       else {
         return
       }
@@ -1539,7 +1655,7 @@ private struct ApprovalsView: View {
       }
     } else if store.isLoadingApprovals && store.approvalItems.isEmpty {
       Spacer()
-      ProgressView()
+      WorkspaceActivityIndicator(label: "Loading approvals")
       Spacer()
     } else if store.visibleApprovalItems.isEmpty {
       EmptyStateView(title: "No Approvals", detail: "No pending approval candidates matched.", action: "Refresh") {
@@ -1547,38 +1663,52 @@ private struct ApprovalsView: View {
       }
     } else {
       List(selection: $store.selectedApprovalItemID) {
-        ForEach(store.visibleApprovalItems) { item in
-          ApprovalRow(item: item) {
+        ForEach(store.approvalDisplayItems) { displayItem in
+          ApprovalRow(
+            item: displayItem.item,
+            relativePath: displayItem.relativePath,
+            approve: {
+              Task { await store.approve(displayItem.item) }
+            },
+            reject: {
+              store.selectApprovalItem(displayItem.item)
+              store.promptAndApplyRejectApprovalShortcut(to: .agenda(displayItem.item.agendaItem()))
+            },
+            copy: {
+              store.copyApprovalDiscussionText(displayItem.item)
+            }
+          ) {
             discussionMessage = "I need to discuss this approval item before deciding."
-            discussionItem = item
+            discussionItem = displayItem.item
           }
-          .tag(item.id)
+          .equatable()
+          .tag(displayItem.id)
           .contentShape(Rectangle())
           .onTapGesture {
-            store.selectApprovalItem(item)
+            store.activateApprovalItemFromRowTap(displayItem.item)
           }
           .contextMenu {
             WorkspaceLocationContextMenu(
-              location: .agenda(item.agendaItem()),
+              location: .agenda(displayItem.item.agendaItem()),
               showsHeadingActions: true,
-              select: { store.selectApprovalItem(item) }
+              select: { store.selectApprovalItem(displayItem.item) }
             ) {
               Label("Open", systemImage: "checkmark.seal")
             }
             Divider()
             Button {
-              Task { await store.approve(item) }
+              Task { await store.approve(displayItem.item) }
             } label: {
               Label("Approve", systemImage: "checkmark")
             }
             Button {
               discussionMessage = "I need to discuss this approval item before deciding."
-              discussionItem = item
+              discussionItem = displayItem.item
             } label: {
               Label("Discuss via OpenClaw", systemImage: "paperplane")
             }
             Button {
-              store.copyApprovalDiscussionText(item)
+              store.copyApprovalDiscussionText(displayItem.item)
             } label: {
               Label("Copy Discussion Text", systemImage: "doc.on.doc")
             }
@@ -1621,10 +1751,23 @@ private struct ApprovalControls: View {
   }
 }
 
-private struct ApprovalRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
+private struct ApprovalRow: View, Equatable {
   let item: ApprovalItem
+  let relativePath: String
+  let approve: () -> Void
+  let reject: () -> Void
+  let copy: () -> Void
   let discuss: () -> Void
+
+  nonisolated static func == (lhs: ApprovalRow, rhs: ApprovalRow) -> Bool {
+    lhs.item.id == rhs.item.id
+      && lhs.item.title == rhs.item.title
+      && lhs.item.status == rhs.item.status
+      && lhs.item.todo == rhs.item.todo
+      && lhs.item.body == rhs.item.body
+      && lhs.item.line == rhs.item.line
+      && lhs.relativePath == rhs.relativePath
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -1646,7 +1789,7 @@ private struct ApprovalRow: View {
         if let todo = item.todo {
           StatusPill(text: todo)
         }
-        Label("\(store.relativePath(item.file)):\(item.line)", systemImage: "doc.text")
+        Label("\(relativePath):\(item.line)", systemImage: "doc.text")
           .lineLimit(1)
           .truncationMode(.middle)
         Spacer(minLength: 0)
@@ -1655,9 +1798,7 @@ private struct ApprovalRow: View {
       .foregroundStyle(.secondary)
 
       HStack(spacing: 6) {
-        Button {
-          Task { await store.approve(item) }
-        } label: {
+        Button(action: approve) {
           Label("Approve", systemImage: "checkmark")
         }
         .buttonStyle(WorkspaceActionButtonStyle())
@@ -1669,17 +1810,12 @@ private struct ApprovalRow: View {
         }
         .buttonStyle(WorkspaceActionButtonStyle())
 
-        Button {
-          store.selectApprovalItem(item)
-          store.promptAndApplyRejectApprovalShortcut(to: .agenda(item.agendaItem()))
-        } label: {
+        Button(action: reject) {
           Label("Reject", systemImage: "xmark.octagon")
         }
         .buttonStyle(WorkspaceActionButtonStyle())
 
-        Button {
-          store.copyApprovalDiscussionText(item)
-        } label: {
+        Button(action: copy) {
           Label("Copy", systemImage: "doc.on.doc")
         }
         .buttonStyle(WorkspaceActionButtonStyle())
@@ -1749,18 +1885,28 @@ private struct AgendaItemListView: View {
     List(selection: $store.selectedAgendaItemID) {
       ForEach(store.agendaDisplaySections) { section in
         Section(section.label) {
-          ForEach(section.items) { item in
-            AgendaRow(item: item)
-              .tag(item.id)
+          ForEach(section.items) { displayItem in
+            AgendaRow(
+              item: displayItem.item,
+              relativePath: displayItem.relativePath,
+              isBulkSelected: store.isAgendaItemBulkSelected(displayItem.item),
+              isAgentAssignee: store.isAgentAssignee(Self.assigneeValue(for: displayItem.item)),
+              isPersonalAssignee: store.isPersonalAssignee(Self.assigneeValue(for: displayItem.item)),
+              toggleBulkSelection: {
+                store.toggleAgendaItemBulkSelection(displayItem.item)
+              }
+            )
+              .equatable()
+              .tag(displayItem.id)
               .contentShape(Rectangle())
               .onTapGesture {
-                store.handleAgendaItemClick(item, modifiers: NSApp.currentEvent?.modifierFlags ?? [])
+                store.activateAgendaItemFromRowTap(displayItem.item, modifiers: NSApp.currentEvent?.modifierFlags ?? [])
               }
               .contextMenu {
                 WorkspaceLocationContextMenu(
-                  location: .agenda(item),
+                  location: .agenda(displayItem.item),
                   showsHeadingActions: true,
-                  select: { store.selectAgendaItem(item) }
+                  select: { store.selectAgendaItem(displayItem.item) }
                 ) {
                   Label("Open", systemImage: "calendar")
                 }
@@ -1768,11 +1914,11 @@ private struct AgendaItemListView: View {
                 Divider()
 
                 Button {
-                  store.toggleAgendaItemBulkSelection(item)
+                  store.toggleAgendaItemBulkSelection(displayItem.item)
                 } label: {
                   Label(
-                    store.isAgendaItemBulkSelected(item) ? "Remove from Bulk Selection" : "Add to Bulk Selection",
-                    systemImage: store.isAgendaItemBulkSelected(item) ? "minus.square" : "checkmark.square"
+                    store.isAgendaItemBulkSelected(displayItem.item) ? "Remove from Bulk Selection" : "Add to Bulk Selection",
+                    systemImage: store.isAgendaItemBulkSelected(displayItem.item) ? "minus.square" : "checkmark.square"
                   )
                 }
               }
@@ -1791,12 +1937,18 @@ private struct AgendaItemListView: View {
         return
       }
       guard let id = store.selectedAgendaItemID,
-            let item = store.visibleAgendaItems.first(where: { $0.id == id })
+            let item = store.visibleAgendaItem(id: id)
       else {
         return
       }
       store.selectAgendaItem(item)
     }
+  }
+
+  private static func assigneeValue(for item: AgendaItem) -> String? {
+    let trimmed = item.properties["ASSIGNEE"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed?.isEmpty == false ? trimmed : nil
   }
 }
 
@@ -1806,24 +1958,25 @@ private struct AssignedAgendaListView: View {
   var body: some View {
     if store.isLoadingAssignedWork {
       Spacer()
-      ProgressView()
+      WorkspaceActivityIndicator(label: "Loading assigned work")
       Spacer()
     } else {
       List(selection: $store.selectedAssignedWorkItemID) {
         ForEach(store.assignedWorkSections) { section in
           Section(section.label) {
-            ForEach(section.items) { item in
-              AssignedWorkRow(item: item)
-                .tag(item.id)
+            ForEach(section.items) { displayItem in
+              AssignedWorkRow(item: displayItem.item, relativePath: displayItem.relativePath)
+                .equatable()
+                .tag(displayItem.id)
                 .contentShape(Rectangle())
                 .onTapGesture {
-                  store.selectAssignedWorkItem(item)
+                  store.activateAssignedWorkItemFromRowTap(displayItem.item)
                 }
                 .contextMenu {
                   WorkspaceLocationContextMenu(
-                    location: .assigned(item),
+                    location: .assigned(displayItem.item),
                     showsHeadingActions: true,
-                    select: { store.selectAssignedWorkItem(item) }
+                    select: { store.selectAssignedWorkItem(displayItem.item) }
                   ) {
                     Label("Open", systemImage: "person.crop.circle.badge.checkmark")
                   }
@@ -1839,8 +1992,11 @@ private struct AssignedAgendaListView: View {
       }
       .listStyle(.inset)
       .onChange(of: store.selectedAssignedWorkItemID) {
+        guard !store.consumeAssignedWorkSelectionActivationSuppression() else {
+          return
+        }
         guard let id = store.selectedAssignedWorkItemID,
-              let item = store.assignedWorkItems.first(where: { $0.id == id })
+              let item = store.assignedWorkItem(id: id)
         else {
           return
         }
@@ -1934,23 +2090,33 @@ private struct AgendaBulkActionBar: View {
   }
 }
 
-private struct AgendaRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
+private struct AgendaRow: View, Equatable {
   let item: AgendaItem
+  let relativePath: String
+  let isBulkSelected: Bool
+  let isAgentAssignee: Bool
+  let isPersonalAssignee: Bool
+  let toggleBulkSelection: () -> Void
+
+  nonisolated static func == (lhs: AgendaRow, rhs: AgendaRow) -> Bool {
+    lhs.item == rhs.item
+      && lhs.relativePath == rhs.relativePath
+      && lhs.isBulkSelected == rhs.isBulkSelected
+      && lhs.isAgentAssignee == rhs.isAgentAssignee
+      && lhs.isPersonalAssignee == rhs.isPersonalAssignee
+  }
 
   var body: some View {
     HStack(alignment: .top, spacing: 10) {
-      Button {
-        store.toggleAgendaItemBulkSelection(item)
-      } label: {
-        Image(systemName: store.isAgendaItemBulkSelected(item) ? "checkmark.square.fill" : "square")
+      Button(action: toggleBulkSelection) {
+        Image(systemName: isBulkSelected ? "checkmark.square.fill" : "square")
           .font(.body)
-          .foregroundStyle(store.isAgendaItemBulkSelected(item) ? Color.accentColor : Color.secondary)
+          .foregroundStyle(isBulkSelected ? Color.accentColor : Color.secondary)
           .frame(width: 18, height: 18)
           .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
-      .help(store.isAgendaItemBulkSelected(item) ? "Remove from bulk selection" : "Add to bulk selection")
+      .help(isBulkSelected ? "Remove from bulk selection" : "Add to bulk selection")
       .padding(.top, 1)
 
       StatusPill(text: item.todo ?? "TASK")
@@ -1970,7 +2136,7 @@ private struct AgendaRow: View {
           Text([item.kind, item.time].compactMap { $0 }.joined(separator: " "))
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
-          Text(store.relativePath(item.file) + ":\(item.lineForEditor)")
+          Text(relativePath + ":\(item.lineForEditor)")
             .lineLimit(1)
             .truncationMode(.middle)
         }
@@ -1978,7 +2144,11 @@ private struct AgendaRow: View {
         .foregroundStyle(.secondary)
       }
       Spacer(minLength: 0)
-      AgendaAssignmentIndicator(item: item)
+      AgendaAssignmentIndicator(
+        assignee: Self.assigneeValue(for: item),
+        isAgentAssigned: isAgentAssignee,
+        isPersonalAssigned: isPersonalAssignee
+      )
       if let effort = item.effort {
         Text(effort)
           .font(.caption.monospacedDigit())
@@ -1991,21 +2161,18 @@ private struct AgendaRow: View {
     }
     .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
   }
-}
 
-private struct AgendaAssignmentIndicator: View {
-  @EnvironmentObject private var store: WorkspaceStore
-  let item: AgendaItem
-
-  private var assignee: String? {
+  private static func assigneeValue(for item: AgendaItem) -> String? {
     let trimmed = item.properties["ASSIGNEE"]?
       .trimmingCharacters(in: .whitespacesAndNewlines)
     return trimmed?.isEmpty == false ? trimmed : nil
   }
+}
 
-  private var isAgentAssigned: Bool {
-    store.isAgentAssignee(assignee)
-  }
+private struct AgendaAssignmentIndicator: View {
+  let assignee: String?
+  let isAgentAssigned: Bool
+  let isPersonalAssigned: Bool
 
   private var label: String {
     assignee ?? "Me"
@@ -2016,7 +2183,7 @@ private struct AgendaAssignmentIndicator: View {
       return "Assigned to agent: \(assignee)"
     }
     if let assignee {
-      return store.isPersonalAssignee(assignee) ? "Assigned to you: \(assignee)" : "Assigned to \(assignee)"
+      return isPersonalAssigned ? "Assigned to you: \(assignee)" : "Assigned to \(assignee)"
     }
     return "Assigned to you"
   }
@@ -2050,8 +2217,7 @@ private struct SearchView: View {
     VStack(spacing: 0) {
       HeaderBar(title: "Search", subtitle: store.searchMode.subtitle, surface: .search) {
         if store.isSearching {
-          ProgressView()
-            .controlSize(.small)
+          WorkspaceActivityIndicator(compact: true)
         }
 
         Button {
@@ -2106,7 +2272,7 @@ private struct SearchView: View {
     .onChange(of: store.searchFocusToken) {
       isSearchFocused = true
     }
-    .onChange(of: store.searchResults.map(\.id)) {
+    .onChange(of: store.searchResultIDs) {
       expandedCorpusSearchFileIDs = []
     }
   }
@@ -2118,7 +2284,7 @@ private struct SearchView: View {
       if store.searchResults.isEmpty && store.openClawChatSearchResults.isEmpty {
         if store.isSearching {
           Spacer()
-          ProgressView()
+          WorkspaceActivityIndicator(label: "Searching")
           Spacer()
         } else {
           EmptyStateView(title: "No Results", detail: searchEmptyStateDetail, action: "Search") {
@@ -2131,6 +2297,7 @@ private struct SearchView: View {
             Section("Chat Threads") {
               ForEach(store.openClawChatSearchResults) { result in
                 ChatSearchRow(result: result)
+                  .equatable()
                   .contentShape(Rectangle())
                   .onTapGesture {
                     store.selectOpenClawChatSearchResult(result)
@@ -2141,16 +2308,18 @@ private struct SearchView: View {
 
           if !store.searchResults.isEmpty {
             Section("Corpus") {
-              ForEach(store.corpusSearchResultGroups) { group in
-                let representative = group.representative
+              ForEach(store.corpusSearchResultDisplayGroups) { group in
+                let representative = group.representative.result
                 SearchRow(
                   result: representative,
+                  relativePath: group.representative.relativePath,
                   matchCount: group.results.count > 1 ? group.results.count : nil,
                   isExpanded: group.results.count > 1 ? expandedCorpusSearchFileIDs.contains(group.id) : nil,
                   toggleExpansion: {
                     toggleCorpusSearchGroup(group)
                   }
                 )
+                  .equatable()
                   .contentShape(Rectangle())
                   .onTapGesture {
                     store.select(.search(representative))
@@ -2167,16 +2336,17 @@ private struct SearchView: View {
 
                 if expandedCorpusSearchFileIDs.contains(group.id) {
                   ForEach(Array(group.results.dropFirst())) { result in
-                    SearchRow(result: result, isNested: true)
+                    SearchRow(result: result.result, relativePath: result.relativePath, isNested: true)
+                      .equatable()
                       .contentShape(Rectangle())
                       .onTapGesture {
-                        store.select(.search(result))
+                        store.select(.search(result.result))
                       }
                       .contextMenu {
                         WorkspaceLocationContextMenu(
-                          location: .search(result),
-                          showsHeadingActions: result.todo != nil,
-                          select: { store.select(.search(result)) }
+                          location: .search(result.result),
+                          showsHeadingActions: result.result.todo != nil,
+                          select: { store.select(.search(result.result)) }
                         ) {
                           Label("Open", systemImage: "magnifyingglass")
                         }
@@ -2190,20 +2360,21 @@ private struct SearchView: View {
         .listStyle(.inset)
       }
     case .nodes:
-      let nodes = store.searchNodes
+      let nodes = store.searchNodeDisplayItems
       if nodes.isEmpty {
         EmptyStateView(title: "No Nodes", detail: nodeEmptyStateDetail, action: "Refresh Index") {
           Task { await store.refreshCorpusFiles() }
         }
       } else {
-        List(nodes) { node in
-          NodeSearchRow(node: node)
+        List(nodes) { displayItem in
+          NodeSearchRow(node: displayItem.node, relativePath: displayItem.relativePath)
+            .equatable()
             .contentShape(Rectangle())
             .onTapGesture {
-              store.selectSearchNode(node)
+              store.selectSearchNode(displayItem.node)
             }
             .contextMenu {
-              NodeSearchContextMenu(node: node)
+              NodeSearchContextMenu(node: displayItem.node)
             }
         }
         .listStyle(.inset)
@@ -2232,7 +2403,7 @@ private struct SearchView: View {
     Task { await store.runSearch() }
   }
 
-  private func toggleCorpusSearchGroup(_ group: SearchResultGroup) {
+  private func toggleCorpusSearchGroup(_ group: SearchResultDisplayGroup) {
     if expandedCorpusSearchFileIDs.contains(group.id) {
       expandedCorpusSearchFileIDs.remove(group.id)
     } else {
@@ -2241,8 +2412,12 @@ private struct SearchView: View {
   }
 }
 
-private struct ChatSearchRow: View {
+private struct ChatSearchRow: View, Equatable {
   let result: OpenClawChatSearchResult
+
+  nonisolated static func == (lhs: ChatSearchRow, rhs: ChatSearchRow) -> Bool {
+    lhs.result == rhs.result
+  }
 
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
@@ -2272,19 +2447,30 @@ private struct ChatSearchRow: View {
   }
 
   private static func relativeDate(_ date: Date) -> String {
-    let formatter = RelativeDateTimeFormatter()
-    formatter.unitsStyle = .short
-    return formatter.localizedString(for: date, relativeTo: Date())
+    WorkspaceDateFormatting.shortRelativeDate(date)
   }
 }
 
-private struct SearchRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
+private struct SearchRow: View, Equatable {
   let result: SearchResult
+  let relativePath: String
   var isNested = false
   var matchCount: Int?
   var isExpanded: Bool?
   var toggleExpansion: (() -> Void)?
+
+  nonisolated static func == (lhs: SearchRow, rhs: SearchRow) -> Bool {
+    lhs.result.id == rhs.result.id
+      && lhs.result.title == rhs.result.title
+      && lhs.result.todo == rhs.result.todo
+      && lhs.result.idValue == rhs.result.idValue
+      && lhs.result.snippet == rhs.result.snippet
+      && lhs.result.lineForEditor == rhs.result.lineForEditor
+      && lhs.relativePath == rhs.relativePath
+      && lhs.isNested == rhs.isNested
+      && lhs.matchCount == rhs.matchCount
+      && lhs.isExpanded == rhs.isExpanded
+  }
 
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
@@ -2331,7 +2517,7 @@ private struct SearchRow: View {
           .font(.callout)
           .foregroundStyle(.secondary)
           .lineLimit(2)
-          Text(store.relativePath(result.file) + ":\(result.lineForEditor)")
+          Text(relativePath + ":\(result.lineForEditor)")
             .font(.caption)
             .foregroundStyle(.tertiary)
             .lineLimit(1)
@@ -2344,9 +2530,13 @@ private struct SearchRow: View {
   }
 }
 
-private struct NodeSearchRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
+private struct NodeSearchRow: View, Equatable {
   let node: OrgRoamNodeReference
+  let relativePath: String
+
+  nonisolated static func == (lhs: NodeSearchRow, rhs: NodeSearchRow) -> Bool {
+    lhs.node == rhs.node && lhs.relativePath == rhs.relativePath
+  }
 
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
@@ -2372,7 +2562,7 @@ private struct NodeSearchRow: View {
         }
 
         HStack(spacing: 8) {
-          Text(store.relativePath(node.file) + ":\(node.line)")
+          Text(relativePath + ":\(node.line)")
             .lineLimit(1)
             .truncationMode(.middle)
           if let idValue = node.idValue {
@@ -2451,11 +2641,12 @@ private struct MeetingsView: View {
   @EnvironmentObject private var store: WorkspaceStore
 
   var body: some View {
+    let meterLevels = store.meetingInputMeterLevels
+    let transcriptionState = store.meetingTranscriptionState
     VStack(spacing: 0) {
       HeaderBar(title: "Meetings", subtitle: "\(store.meetings.count) local meeting\(store.meetings.count == 1 ? "" : "s")", surface: .meetings) {
         if store.isLoadingMeetings || store.isProcessingMeeting {
-          ProgressView()
-            .controlSize(.small)
+          WorkspaceActivityIndicator(compact: true)
         }
 
         if store.isRecordingMeeting {
@@ -2513,25 +2704,40 @@ private struct MeetingsView: View {
           MeetingInputStatusView(
             isRecording: store.isRecordingMeeting,
             isPaused: store.isMeetingRecordingPaused,
-            averageLevel: store.meetingInputAverageLevel,
-            peakLevel: store.meetingInputPeakLevel,
-            systemAverageLevel: store.meetingSystemAudioAverageLevel,
-            systemPeakLevel: store.meetingSystemAudioPeakLevel,
+            averageLevel: meterLevels.microphoneAverageLevel,
+            peakLevel: meterLevels.microphonePeakLevel,
+            systemAverageLevel: meterLevels.systemAverageLevel,
+            systemPeakLevel: meterLevels.systemPeakLevel,
             isCapturingSystemAudio: store.isCapturingSystemAudio,
             systemAudioStatusText: store.meetingSystemAudioStatusText,
             sourceText: store.meetingCaptureSourceText
           )
+          .equatable()
         }
 
         if store.isProcessingMeeting {
           MeetingTranscriptionProgressView(
-            progress: store.meetingTranscriptionProgress,
-            elapsedText: store.meetingTranscriptionElapsedText,
-            backendText: LocalWhisperTranscriber.resolvedBackendDescription()
+            progress: transcriptionState.progress,
+            elapsedText: transcriptionState.elapsedText,
+            backendText: store.meetingTranscriptionBackendText
           )
+          .equatable()
         }
 
-        AudioSettingsSection()
+        AudioSettingsSection(
+          status: store.audioSettingsStatus,
+          statusText: store.audioSettingsStatusText,
+          runtimeIdentity: store.workspaceRuntimeIdentity,
+          isInitiallyExpanded: store.isAudioSettingsExpanded,
+          isInstalling: store.isInstallingFastTranscriber,
+          setExpanded: { expanded in
+            store.setAudioSettingsExpanded(expanded)
+          },
+          install: {
+            Task { await store.installFastMeetingTranscriber() }
+          }
+        )
+        .equatable()
       }
       .padding(.horizontal, WorkspaceDesign.contentInset)
       .padding(.bottom, 12)
@@ -2539,7 +2745,7 @@ private struct MeetingsView: View {
       if store.meetings.isEmpty {
         if store.isLoadingMeetings {
           Spacer()
-          ProgressView()
+          WorkspaceActivityIndicator(label: "Loading meetings")
           Spacer()
         } else {
           EmptyStateView(title: "No Meetings", detail: store.meetingStatusText, action: "Record") {
@@ -2550,23 +2756,24 @@ private struct MeetingsView: View {
         List(selection: $store.selectedMeetingID) {
           ForEach(store.meetingDisplaySections) { section in
             Section(section.label) {
-              ForEach(section.meetings) { meeting in
-                MeetingRow(meeting: meeting)
-                  .tag(meeting.id)
+              ForEach(section.meetings) { displayItem in
+                MeetingRow(meeting: displayItem.meeting, relativePath: displayItem.relativePath)
+                  .equatable()
+                  .tag(displayItem.id)
                   .contentShape(Rectangle())
                   .onTapGesture {
-                    store.selectMeeting(meeting)
+                    store.activateMeetingFromRowTap(displayItem.meeting)
                   }
                   .contextMenu {
                     WorkspaceLocationContextMenu(
-                      location: .meeting(meeting),
-                      select: { store.selectMeeting(meeting) }
+                      location: .meeting(displayItem.meeting),
+                      select: { store.selectMeeting(displayItem.meeting) }
                     ) {
                       Label("Open", systemImage: "waveform.and.mic")
                     }
                     Divider()
                     Button(role: .destructive) {
-                      store.confirmAndDeleteMeeting(meeting)
+                      store.confirmAndDeleteMeeting(displayItem.meeting)
                     } label: {
                       Label("Delete Meeting", systemImage: "trash")
                     }
@@ -2577,12 +2784,13 @@ private struct MeetingsView: View {
         }
         .listStyle(.inset)
         .onChange(of: store.selectedMeetingID) {
+          guard !store.consumeMeetingSelectionActivationSuppression() else { return }
           guard let id = store.selectedMeetingID,
-                let meeting = store.meetings.first(where: { $0.id == id })
+                let meeting = store.meeting(id: id)
           else {
             return
           }
-          store.select(.meeting(meeting))
+          store.selectMeeting(meeting)
         }
       }
     }
@@ -2594,61 +2802,102 @@ private struct MeetingsView: View {
   }
 }
 
-private struct AudioSettingsSection: View {
-  @EnvironmentObject private var store: WorkspaceStore
+private struct AudioSettingsSection: View, Equatable {
+  let status: LocalWhisperInstallationStatus
+  let statusText: String
+  let runtimeIdentity: WorkspaceRuntimeIdentity
+  let isInitiallyExpanded: Bool
+  let isInstalling: Bool
+  let setExpanded: (Bool) -> Void
+  let install: () -> Void
+  @State private var isExpanded = false
+
+  nonisolated static func == (lhs: AudioSettingsSection, rhs: AudioSettingsSection) -> Bool {
+    lhs.status == rhs.status
+      && lhs.statusText == rhs.statusText
+      && lhs.runtimeIdentity == rhs.runtimeIdentity
+      && lhs.isInitiallyExpanded == rhs.isInitiallyExpanded
+      && lhs.isInstalling == rhs.isInstalling
+  }
 
   var body: some View {
-    DisclosureGroup(isExpanded: $store.isAudioSettingsExpanded) {
-      VStack(alignment: .leading, spacing: 8) {
-        audioSettingsHeader
-
-        Text(store.audioSettingsStatusText.isEmpty ? store.audioSettingsStatus.detailText : store.audioSettingsStatusText)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .lineLimit(2)
-          .fixedSize(horizontal: false, vertical: true)
-
-        HStack(alignment: .top, spacing: 8) {
-          Image(systemName: store.workspaceRuntimeIdentity.isAppBundle ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
-            .foregroundStyle(store.workspaceRuntimeIdentity.isAppBundle ? Color.green : Color.orange)
-          VStack(alignment: .leading, spacing: 2) {
-            Text(store.workspaceRuntimeIdentity.audioPermissionStatusLabel)
-              .font(.caption.weight(.semibold))
-            Text(store.workspaceRuntimeIdentity.audioPermissionDetailText)
-              .font(.caption)
-              .foregroundStyle(.secondary)
-              .lineLimit(2)
-              .fixedSize(horizontal: false, vertical: true)
-          }
+    VStack(alignment: .leading, spacing: 8) {
+      Button {
+        withAnimation(.easeInOut(duration: 0.16)) {
+          isExpanded.toggle()
         }
-
-        VStack(alignment: .leading, spacing: 4) {
-          audioSettingRow("Active", store.audioSettingsStatus.backendDescription)
-          audioSettingRow("App path", store.workspaceRuntimeIdentity.bundlePath)
-          audioSettingRow("whisper.cpp", store.audioSettingsStatus.whisperCppExecutablePath ?? "Not installed")
-          audioSettingRow("GGML model", store.audioSettingsStatus.whisperCppModelPath ?? "Missing")
-          if let openAIWhisper = store.audioSettingsStatus.openAIWhisperExecutablePath {
-            audioSettingRow("Python Whisper", openAIWhisper)
-          }
-          if let overrideCommand = store.audioSettingsStatus.overrideCommand {
-            audioSettingRow("Override", overrideCommand)
-          }
+        setExpanded(isExpanded)
+      } label: {
+        HStack(spacing: 8) {
+          Image(systemName: "chevron.right")
+            .font(.caption.weight(.semibold))
+            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+            .frame(width: 12)
+          Label("Audio Settings", systemImage: "waveform")
+            .lineLimit(1)
+          Text(status.statusLabel)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+          Spacer(minLength: 0)
         }
-        .font(.caption)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
       }
-      .padding(.top, 6)
-      .frame(maxWidth: .infinity, alignment: .leading)
-    } label: {
-      HStack(spacing: 8) {
-        Label("Audio Settings", systemImage: "waveform")
-        Text(store.audioSettingsStatus.statusLabel)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.middle)
+      .buttonStyle(.plain)
+
+      if isExpanded {
+        audioSettingsContent
+          .transition(.opacity.combined(with: .move(edge: .top)))
       }
     }
+    .onAppear {
+      isExpanded = isInitiallyExpanded
+    }
+  }
+
+  private var audioSettingsContent: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      audioSettingsHeader
+
+      Text(statusText.isEmpty ? status.detailText : statusText)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(2)
+        .fixedSize(horizontal: false, vertical: true)
+
+      HStack(alignment: .top, spacing: 8) {
+        Image(systemName: runtimeIdentity.isAppBundle ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
+          .foregroundStyle(runtimeIdentity.isAppBundle ? Color.green : Color.orange)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(runtimeIdentity.audioPermissionStatusLabel)
+            .font(.caption.weight(.semibold))
+          Text(runtimeIdentity.audioPermissionDetailText)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+
+      VStack(alignment: .leading, spacing: 4) {
+        audioSettingRow("Active", status.backendDescription)
+        audioSettingRow("App path", runtimeIdentity.bundlePath)
+        audioSettingRow("whisper.cpp", status.whisperCppExecutablePath ?? "Not installed")
+        audioSettingRow("GGML model", status.whisperCppModelPath ?? "Missing")
+        if let openAIWhisper = status.openAIWhisperExecutablePath {
+          audioSettingRow("Python Whisper", openAIWhisper)
+        }
+        if let overrideCommand = status.overrideCommand {
+          audioSettingRow("Override", overrideCommand)
+        }
+      }
+      .font(.caption)
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .padding(.top, 2)
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   private var audioSettingsHeader: some View {
@@ -2668,9 +2917,9 @@ private struct AudioSettingsSection: View {
 
   private var audioSettingsStatusLabel: some View {
     HStack(spacing: 8) {
-      Image(systemName: store.audioSettingsStatus.isWhisperCppReady ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-        .foregroundStyle(store.audioSettingsStatus.isWhisperCppReady ? Color.green : Color.orange)
-      Text(store.audioSettingsStatus.statusLabel)
+      Image(systemName: status.isWhisperCppReady ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+        .foregroundStyle(status.isWhisperCppReady ? Color.green : Color.orange)
+      Text(status.statusLabel)
         .font(.callout.weight(.semibold))
         .lineLimit(1)
         .truncationMode(.tail)
@@ -2679,16 +2928,14 @@ private struct AudioSettingsSection: View {
 
   private var audioSettingsActions: some View {
     HStack(spacing: 8) {
-      Button {
-        Task { await store.installFastMeetingTranscriber() }
-      } label: {
-        if store.isInstallingFastTranscriber {
+      Button(action: install) {
+        if isInstalling {
           Label("Installing", systemImage: "arrow.down.circle")
         } else {
           Label("Install Fast Transcriber", systemImage: "bolt.fill")
         }
       }
-      .disabled(store.isInstallingFastTranscriber || store.audioSettingsStatus.isWhisperCppReady)
+      .disabled(isInstalling || status.isWhisperCppReady)
     }
     .controlSize(.small)
     .buttonStyle(WorkspaceActionButtonStyle())
@@ -2709,7 +2956,7 @@ private struct AudioSettingsSection: View {
   }
 }
 
-private struct MeetingTranscriptionProgressView: View {
+private struct MeetingTranscriptionProgressView: View, Equatable {
   let progress: Double
   let elapsedText: String
   let backendText: String
@@ -2737,7 +2984,7 @@ private struct MeetingTranscriptionProgressView: View {
   }
 }
 
-private struct MeetingInputStatusView: View {
+private struct MeetingInputStatusView: View, Equatable {
   let isRecording: Bool
   let isPaused: Bool
   let averageLevel: Double
@@ -2788,7 +3035,7 @@ private struct MeetingInputStatusView: View {
   }
 }
 
-private struct MeetingInputMeterRow: View {
+private struct MeetingInputMeterRow: View, Equatable {
   let label: String
   let averageLevel: Double
   let peakLevel: Double
@@ -2806,7 +3053,7 @@ private struct MeetingInputMeterRow: View {
   }
 }
 
-struct WorkspaceInputMeterView: View {
+struct WorkspaceInputMeterView: View, Equatable {
   let averageLevel: Double
   let peakLevel: Double
 
@@ -2834,9 +3081,9 @@ struct WorkspaceInputMeterView: View {
   }
 }
 
-private struct MeetingRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
+private struct MeetingRow: View, Equatable {
   let meeting: MeetingWorkspaceItem
+  let relativePath: String
 
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
@@ -2863,7 +3110,7 @@ private struct MeetingRow: View {
         .font(.caption)
         .foregroundStyle(.secondary)
 
-        Text(store.relativePath(meeting.file) + ":\(meeting.lineForEditor)")
+        Text(relativePath + ":\(meeting.lineForEditor)")
           .font(.caption)
           .foregroundStyle(.tertiary)
           .lineLimit(1)
@@ -2873,9 +3120,7 @@ private struct MeetingRow: View {
   }
 
   private static func relativeDate(_ date: Date) -> String {
-    let formatter = RelativeDateTimeFormatter()
-    formatter.unitsStyle = .short
-    return formatter.localizedString(for: date, relativeTo: Date())
+    WorkspaceDateFormatting.shortRelativeDate(date)
   }
 }
 
@@ -2945,8 +3190,7 @@ private struct OpenClawChatView: View {
         }
         Spacer(minLength: 0)
         if store.isSendingOpenClawMessage {
-          ProgressView()
-            .controlSize(.small)
+          WorkspaceActivityIndicator(compact: true)
         }
         Button {
           store.makeSurfacePrimary(.openClaw)
@@ -2974,7 +3218,7 @@ private struct OpenClawChatView: View {
       }
       .padding(.horizontal, 12)
       .padding(.vertical, 10)
-      .background(WorkspaceDesign.barBackground)
+      .background(WorkspaceDesign.barMaterial)
       .overlay(alignment: .bottom) {
         Divider()
       }
@@ -2984,8 +3228,7 @@ private struct OpenClawChatView: View {
   @ViewBuilder
   private var headerActions: some View {
     if store.isSendingOpenClawMessage {
-      ProgressView()
-        .controlSize(.small)
+      WorkspaceActivityIndicator(compact: true)
     }
 
     Button {
@@ -3000,7 +3243,7 @@ private struct OpenClawChatView: View {
     } label: {
       Label("Clear", systemImage: "trash")
     }
-    .disabled(store.isSendingOpenClawMessage || store.openClawMessages.isEmpty)
+    .disabled(store.isSendingOpenClawMessage || store.openClawMessageCount == 0)
 
     Button {
       isShowingConfiguration = true
@@ -3013,26 +3256,9 @@ private struct OpenClawChatView: View {
   private var configurationStrip: some View {
     if presentation == .fullPage {
       VStack(alignment: .leading, spacing: 6) {
-        HStack(spacing: 8) {
-          Label("Chat", systemImage: "cpu")
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: true, vertical: false)
-          TextField("main", text: $store.openClawAgentID)
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 160)
-          Spacer(minLength: 0)
-          Label(store.agentHandoffAssignee, systemImage: "person.crop.circle.badge.checkmark")
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .help("Handoff assignee")
-        }
-
-        HStack(spacing: 10) {
-          configCaption(systemImage: "folder", text: store.openClawContextRootText)
-          configCaption(systemImage: "network", text: store.openClawEndpointText)
+        ViewThatFits(in: .horizontal) {
+          openClawConfigRow(compact: false)
+          openClawConfigRow(compact: true)
         }
       }
       .padding(.horizontal, WorkspaceDesign.contentInset)
@@ -3054,6 +3280,39 @@ private struct OpenClawChatView: View {
     }
   }
 
+  private func openClawConfigRow(compact: Bool) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(spacing: 8) {
+        Label("Chat", systemImage: "cpu")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: true, vertical: false)
+        TextField("main", text: $store.openClawAgentID)
+          .textFieldStyle(.roundedBorder)
+          .frame(width: compact ? 120 : 160)
+        Spacer(minLength: 0)
+        Label(store.agentHandoffAssignee, systemImage: "person.crop.circle.badge.checkmark")
+          .font(.caption.weight(.medium))
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.tail)
+          .help("Handoff assignee")
+      }
+
+      if compact {
+        VStack(alignment: .leading, spacing: 3) {
+          configCaption(systemImage: "folder", text: store.openClawContextRootText)
+          configCaption(systemImage: "network", text: store.openClawEndpointText)
+        }
+      } else {
+        HStack(spacing: 10) {
+          configCaption(systemImage: "folder", text: store.openClawContextRootText)
+          configCaption(systemImage: "network", text: store.openClawEndpointText)
+        }
+      }
+    }
+  }
+
   private func configCaption(systemImage: String, text: String) -> some View {
     HStack(spacing: 4) {
       Image(systemName: systemImage)
@@ -3068,40 +3327,108 @@ private struct OpenClawChatView: View {
   }
 
   private var chatTranscript: some View {
+    OpenClawChatTranscriptView(
+      threadID: store.selectedOpenClawChatThreadID,
+      messages: store.visibleOpenClawMessages,
+      messagesRenderSignature: store.visibleOpenClawMessagesRenderSignature,
+      hiddenMessageCount: store.hiddenOpenClawMessageCount,
+      statusText: store.openClawStatusText,
+      isSendingMessage: store.isSendingOpenClawMessage,
+      requestStartedAt: store.openClawRequestStartedAt,
+      compact: presentation == .assistantPanel,
+      initialScrollPosition: store.openClawChatScrollPosition(isAssistantPanel: presentation == .assistantPanel),
+      recordScrollPosition: { position in
+        store.recordOpenClawChatScrollPosition(position, isAssistantPanel: presentation == .assistantPanel)
+      },
+      retryMessage: { messageID in
+        Task { await store.retryOpenClawMessage(messageID) }
+      },
+      showOlderMessages: {
+        store.showOlderOpenClawMessages()
+      }
+    )
+    .equatable()
+  }
+}
+
+private struct OpenClawChatTranscriptView: View, Equatable {
+  let threadID: UUID?
+  let messages: [OpenClawChatMessage]
+  let messagesRenderSignature: String
+  let hiddenMessageCount: Int
+  let statusText: String
+  let isSendingMessage: Bool
+  let requestStartedAt: Date?
+  let compact: Bool
+  let initialScrollPosition: Double?
+  let recordScrollPosition: (Double) -> Void
+  let retryMessage: (UUID) -> Void
+  let showOlderMessages: () -> Void
+
+  nonisolated static func == (lhs: OpenClawChatTranscriptView, rhs: OpenClawChatTranscriptView) -> Bool {
+    lhs.threadID == rhs.threadID
+      && lhs.messagesRenderSignature == rhs.messagesRenderSignature
+      && lhs.hiddenMessageCount == rhs.hiddenMessageCount
+      && lhs.statusText == rhs.statusText
+      && lhs.isSendingMessage == rhs.isSendingMessage
+      && lhs.requestStartedAt == rhs.requestStartedAt
+      && lhs.compact == rhs.compact
+  }
+
+  var body: some View {
+    let latestMessageID = messages.last?.id
     ScrollViewReader { proxy in
       ScrollView {
-        LazyVStack(alignment: .leading, spacing: presentation == .assistantPanel ? 8 : 10) {
-          if store.openClawMessages.isEmpty {
-            EmptyChatView(statusText: store.openClawStatusText)
-              .frame(maxWidth: .infinity, minHeight: presentation == .assistantPanel ? 140 : 220)
+        LazyVStack(alignment: .leading, spacing: compact ? 8 : 10) {
+          if messages.isEmpty {
+            EmptyChatView(statusText: statusText)
+              .frame(maxWidth: .infinity, minHeight: compact ? 140 : 220)
           } else {
-            ForEach(store.openClawMessages) { message in
-              ChatBubbleView(message: message, compact: presentation == .assistantPanel)
+            if hiddenMessageCount > 0 {
+              Button {
+                showOlderMessages()
+              } label: {
+                Label(
+                  "Show \(min(hiddenMessageCount, WorkspaceStore.defaultOpenClawVisibleMessageLimit)) older",
+                  systemImage: "clock.arrow.circlepath"
+                )
+              }
+              .buttonStyle(WorkspaceActionButtonStyle())
+              .frame(maxWidth: .infinity, alignment: .center)
+              .help("\(hiddenMessageCount) older message\(hiddenMessageCount == 1 ? "" : "s") hidden")
+            }
+
+            ForEach(messages) { message in
+              ChatBubbleView(
+                message: message,
+                compact: compact,
+                isRetryDisabled: isSendingMessage,
+                retryMessage: retryMessage
+              )
+              .equatable()
                 .id(message.id)
             }
-            if store.isSendingOpenClawMessage {
-              OpenClawTypingIndicatorView(startedAt: store.openClawRequestStartedAt)
+            if isSendingMessage {
+              OpenClawTypingIndicatorView(startedAt: requestStartedAt)
                 .id("openclaw-typing")
             }
           }
         }
-        .padding(presentation == .assistantPanel ? 10 : 16)
+        .padding(compact ? 10 : 16)
       }
       .background(OpenClawChatScrollPositionBridge(
-        initialPosition: store.openClawChatScrollPosition(isAssistantPanel: presentation == .assistantPanel),
-        onPositionChange: { position in
-          store.recordOpenClawChatScrollPosition(position, isAssistantPanel: presentation == .assistantPanel)
-        }
+        initialPosition: initialScrollPosition,
+        onPositionChange: recordScrollPosition
       ))
-      .onChange(of: store.openClawMessages.count) {
-        if let last = store.openClawMessages.last {
+      .onChange(of: latestMessageID) {
+        if let last = messages.last {
           withAnimation(.easeOut(duration: 0.18)) {
             proxy.scrollTo(last.id, anchor: .bottom)
           }
         }
       }
-      .onChange(of: store.isSendingOpenClawMessage) {
-        if store.isSendingOpenClawMessage {
+      .onChange(of: isSendingMessage) {
+        if isSendingMessage {
           withAnimation(.easeOut(duration: 0.18)) {
             proxy.scrollTo("openclaw-typing", anchor: .bottom)
           }
@@ -3651,9 +3978,14 @@ private struct EmptyChatView: View {
   }
 }
 
-private struct AssignedWorkRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
+private struct AssignedWorkRow: View, Equatable {
   let item: AssignedWorkItem
+  let relativePath: String
+
+  nonisolated static func == (lhs: AssignedWorkRow, rhs: AssignedWorkRow) -> Bool {
+    lhs.item == rhs.item
+      && lhs.relativePath == rhs.relativePath
+  }
 
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
@@ -3675,7 +4007,7 @@ private struct AssignedWorkRow: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(Color.secondary.opacity(0.12), in: Capsule())
-          Text(store.relativePath(item.file) + ":\(item.lineForEditor)")
+          Text(relativePath + ":\(item.lineForEditor)")
             .font(.caption)
             .foregroundStyle(.tertiary)
             .lineLimit(1)
@@ -4184,13 +4516,7 @@ private struct EntryBodyView: View {
       DetailMetadataGrid(rows: metadataRows(location))
 
       if store.isLoadingEntrySource && store.selectedEntrySource == nil {
-        HStack(spacing: 8) {
-          ProgressView()
-            .controlSize(.small)
-          Text("Loading source")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-        }
+        WorkspaceActivityIndicator(label: "Loading source")
       } else if let source = store.selectedEntrySource {
         VStack(alignment: .leading, spacing: 4) {
           HStack(spacing: 8) {
@@ -4220,13 +4546,7 @@ private struct EntryBodyView: View {
               .stroke(Color.secondary.opacity(0.16))
           )
         } else if store.isRenderingEntrySource && store.selectedRenderedBlocks.isEmpty {
-          HStack(spacing: 8) {
-            ProgressView()
-              .controlSize(.small)
-            Text("Rendering preview")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-          }
+          WorkspaceActivityIndicator(label: "Rendering preview")
         } else {
           OrgRenderedEntryView(
             blocks: store.selectedRenderedBlocks,
@@ -4350,10 +4670,7 @@ private struct EntryBodyView: View {
   }
 
   private static func dateLabel(_ date: Date) -> String {
-    let formatter = DateFormatter()
-    formatter.dateStyle = .medium
-    formatter.timeStyle = .short
-    return formatter.string(from: date)
+    WorkspaceDateFormatting.mediumDateTime(date)
   }
 }
 
@@ -4390,8 +4707,7 @@ private struct NodeContextPane: View {
           .font(.headline)
         Spacer()
         if store.isLoadingBacklinks {
-          ProgressView()
-            .controlSize(.small)
+          WorkspaceActivityIndicator(compact: true)
         }
         Button {
           store.toggleNodeContextPane()
@@ -4495,7 +4811,17 @@ private struct NodeContextReferences: View {
     } else {
       LazyVStack(alignment: .leading, spacing: 0) {
         ForEach(store.backlinkFileGroups) { group in
-          BacklinkFileGroupRow(group: group)
+          BacklinkFileGroupRow(
+            group: group,
+            isExpanded: store.expandedBacklinkFileIDs.contains(group.id),
+            toggle: {
+              store.toggleBacklinkFileGroup(group)
+            },
+            select: { backlink in
+              store.selectBacklink(backlink)
+            }
+          )
+          .equatable()
           Divider()
             .padding(.leading, WorkspaceDesign.contentInset)
         }
@@ -4518,42 +4844,8 @@ private struct NodeContextRelated: View {
     } else {
       LazyVStack(alignment: .leading, spacing: 0) {
         ForEach(items) { item in
-          VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .top, spacing: 8) {
-              WorkspaceIconBadge(systemImage: "link")
-              VStack(alignment: .leading, spacing: 5) {
-                Text(item.title)
-                  .font(.callout.weight(.medium))
-                  .lineLimit(2)
-                Text(item.primaryPath)
-                  .font(.caption)
-                  .foregroundStyle(.tertiary)
-                  .lineLimit(1)
-                  .truncationMode(.middle)
-                ForEach(item.examples, id: \.self) { example in
-                  Text(example)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                }
-              }
-              Spacer(minLength: 0)
-              VStack(alignment: .trailing, spacing: 4) {
-                CountPill(count: item.referenceCount)
-                Text(item.fileCount == 1 ? "1 file" : "\(item.fileCount) files")
-                  .font(.caption2)
-                  .foregroundStyle(.tertiary)
-                  .monospacedDigit()
-              }
-            }
-            if let idValue = item.idValue {
-              Text(Org2Display.shortID(idValue))
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-            }
-          }
-          .padding(.horizontal, WorkspaceDesign.contentInset)
-          .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
+          RelatedBacklinkNodeRow(item: item)
+            .equatable()
           Divider()
             .padding(.leading, WorkspaceDesign.contentInset)
         }
@@ -4596,6 +4888,7 @@ private struct NodeContextBrief: View {
           artifact: artifact,
           corpusRoot: store.corpusRoot
         )
+        .equatable()
       } else {
         Text("Generate a source-cited brief for this node, save it into views/openclaw, and show it here.")
           .font(.callout)
@@ -4624,14 +4917,23 @@ private struct NodeContextBrief: View {
   }
 }
 
-private struct NodeBriefRenderedPreview: View {
+private struct NodeBriefRenderedPreview: View, Equatable {
   let artifact: NodeBriefArtifact
   let corpusRoot: URL?
+  private let blocks: [OrgEditableBlock]
 
-  private var blocks: [OrgEditableBlock] {
-    OrgEntryRenderer
+  init(artifact: NodeBriefArtifact, corpusRoot: URL?) {
+    self.artifact = artifact
+    self.corpusRoot = corpusRoot
+    self.blocks = OrgEntryRenderer
       .parseEditable(artifact.body)
       .filter(OrgRenderedBlockDisplayPolicy.isVisible)
+  }
+
+  nonisolated static func == (lhs: NodeBriefRenderedPreview, rhs: NodeBriefRenderedPreview) -> Bool {
+    lhs.artifact == rhs.artifact
+      && lhs.corpusRoot == rhs.corpusRoot
+      && lhs.blocks == rhs.blocks
   }
 
   var body: some View {
@@ -4651,6 +4953,7 @@ private struct NodeBriefRenderedPreview: View {
             sourceFile: artifact.file,
             corpusRoot: corpusRoot
           )
+          .equatable()
           .frame(maxWidth: .infinity, alignment: .leading)
         }
       }
@@ -4659,7 +4962,7 @@ private struct NodeBriefRenderedPreview: View {
   }
 }
 
-private struct NodeBriefCompactBlockView: View {
+private struct NodeBriefCompactBlockView: View, Equatable {
   let block: OrgEditableBlock
   let sourceFile: String
   let corpusRoot: URL?
@@ -4834,15 +5137,20 @@ private struct NodeContextEmptyText: View {
   }
 }
 
-private struct BacklinkFileGroupRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
+private struct BacklinkFileGroupRow: View, Equatable {
   let group: BacklinkFileGroup
+  let isExpanded: Bool
+  let toggle: () -> Void
+  let select: (BacklinkItem) -> Void
+
+  nonisolated static func == (lhs: BacklinkFileGroupRow, rhs: BacklinkFileGroupRow) -> Bool {
+    lhs.group == rhs.group
+      && lhs.isExpanded == rhs.isExpanded
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      Button {
-        store.toggleBacklinkFileGroup(group)
-      } label: {
+      Button(action: toggle) {
         HStack(alignment: .center, spacing: 8) {
           Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
             .font(.caption.weight(.semibold))
@@ -4868,15 +5176,16 @@ private struct BacklinkFileGroupRow: View {
 
       if isExpanded {
         ForEach(group.backlinks) { backlink in
-          BacklinkRow(backlink: backlink, compact: true)
+          BacklinkRow(backlink: backlink, relativePath: group.relativePath, compact: true)
+            .equatable()
             .contentShape(Rectangle())
             .onTapGesture {
-              store.selectBacklink(backlink)
+              select(backlink)
             }
             .contextMenu {
               WorkspaceLocationContextMenu(
                 location: .backlink(backlink),
-                select: { store.selectBacklink(backlink) }
+                select: { select(backlink) }
               ) {
                 Label("Open", systemImage: "link")
               }
@@ -4894,16 +5203,65 @@ private struct BacklinkFileGroupRow: View {
       }
     }
   }
+}
 
-  private var isExpanded: Bool {
-    store.expandedBacklinkFileIDs.contains(group.id)
+private struct RelatedBacklinkNodeRow: View, Equatable {
+  let item: RelatedBacklinkNode
+
+  nonisolated static func == (lhs: RelatedBacklinkNodeRow, rhs: RelatedBacklinkNodeRow) -> Bool {
+    lhs.item == rhs.item
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(alignment: .top, spacing: 8) {
+        WorkspaceIconBadge(systemImage: "link")
+        VStack(alignment: .leading, spacing: 5) {
+          Text(item.title)
+            .font(.callout.weight(.medium))
+            .lineLimit(2)
+          Text(item.primaryPath)
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+          ForEach(item.examples, id: \.self) { example in
+            Text(example)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(2)
+          }
+        }
+        Spacer(minLength: 0)
+        VStack(alignment: .trailing, spacing: 4) {
+          CountPill(count: item.referenceCount)
+          Text(item.fileCount == 1 ? "1 file" : "\(item.fileCount) files")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .monospacedDigit()
+        }
+      }
+      if let idValue = item.idValue {
+        Text(Org2Display.shortID(idValue))
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+      }
+    }
+    .padding(.horizontal, WorkspaceDesign.contentInset)
+    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
   }
 }
 
-private struct BacklinkRow: View {
-  @EnvironmentObject private var store: WorkspaceStore
+private struct BacklinkRow: View, Equatable {
   let backlink: BacklinkItem
+  let relativePath: String
   var compact = false
+
+  nonisolated static func == (lhs: BacklinkRow, rhs: BacklinkRow) -> Bool {
+    lhs.backlink == rhs.backlink
+      && lhs.relativePath == rhs.relativePath
+      && lhs.compact == rhs.compact
+  }
 
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
@@ -4916,7 +5274,7 @@ private struct BacklinkRow: View {
           .font(.callout)
           .foregroundStyle(.secondary)
           .lineLimit(2)
-        Text(store.relativePath(backlink.file) + ":\(backlink.lineForEditor)")
+        Text(relativePath + ":\(backlink.lineForEditor)")
           .font(.caption)
           .foregroundStyle(.tertiary)
       }
@@ -4945,6 +5303,7 @@ private struct HeaderBar<Trailing: View>: View {
   }
 
   var body: some View {
+    let tint = WorkspaceDesign.tint(for: surface)
     ViewThatFits(in: .horizontal) {
       headerContent(compact: false)
       headerContent(compact: true)
@@ -4952,8 +5311,12 @@ private struct HeaderBar<Trailing: View>: View {
     .controlSize(.small)
     .buttonStyle(WorkspaceActionButtonStyle())
     .padding(.horizontal, 18)
-    .padding(.vertical, 14)
-    .background(WorkspaceDesign.barBackground)
+    .padding(.vertical, 13)
+    .background(WorkspaceDesign.barMaterial)
+    .overlay(alignment: .leading) {
+      tint.opacity(0.085)
+        .frame(width: 3)
+    }
     .overlay(alignment: .bottom) {
       Divider()
     }
@@ -4961,19 +5324,29 @@ private struct HeaderBar<Trailing: View>: View {
 
   private func headerContent(compact: Bool) -> some View {
     HStack(alignment: .center, spacing: compact ? 8 : 12) {
-      VStack(alignment: .leading, spacing: 2) {
-        Text(title)
-          .font(compact ? .headline.weight(.semibold) : .title2.weight(.semibold))
-          .lineLimit(1)
-          .truncationMode(.tail)
-          .allowsTightening(true)
-          .layoutPriority(1)
-        if !compact {
-          Text(subtitle)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+      HStack(spacing: 9) {
+        if let surface {
+          WorkspaceIconBadge(
+            systemImage: surface.systemImage,
+            tint: WorkspaceDesign.tint(for: surface),
+            fill: WorkspaceDesign.tint(for: surface).opacity(0.12)
+          )
+        }
+
+        VStack(alignment: .leading, spacing: 2) {
+          Text(title)
+            .font(compact ? .headline.weight(.semibold) : .title2.weight(.semibold))
             .lineLimit(1)
-            .truncationMode(.middle)
+            .truncationMode(.tail)
+            .allowsTightening(true)
+            .layoutPriority(1)
+          if !compact {
+            Text(subtitle)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+              .truncationMode(.middle)
+          }
         }
       }
       .frame(minWidth: compact ? 56 : 92, alignment: .leading)
@@ -5070,19 +5443,27 @@ private struct EmptyStateView: View {
   let perform: () -> Void
 
   var body: some View {
-    VStack(spacing: 12) {
+    VStack(spacing: 11) {
       Spacer()
-      WorkspaceIconBadge(systemImage: emptyStateIcon, tint: .secondary, fill: WorkspaceDesign.subtleFill)
-        .scaleEffect(1.25)
+      WorkspaceIconBadge(
+        systemImage: emptyStateIcon,
+        tint: .secondary,
+        fill: WorkspaceDesign.subtleFill
+      )
+      .scaleEffect(1.35)
+      .padding(.bottom, 2)
       Text(title)
-        .font(.headline)
+        .font(.headline.weight(.semibold))
+        .lineLimit(2)
+        .multilineTextAlignment(.center)
       if !detail.isEmpty {
         Text(detail)
           .font(.callout)
           .foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
           .textSelection(.enabled)
-          .padding(.horizontal, 24)
+          .fixedSize(horizontal: false, vertical: true)
+          .frame(maxWidth: 460)
       }
       Button(action) {
         perform()
@@ -5090,6 +5471,7 @@ private struct EmptyStateView: View {
       .buttonStyle(WorkspaceActionButtonStyle())
       Spacer()
     }
+    .padding(24)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 

@@ -456,6 +456,45 @@ public struct SearchResultGroup: Identifiable, Hashable, Sendable {
   }
 }
 
+public struct SearchResultDisplayItem: Identifiable, Equatable, Sendable {
+  public let result: SearchResult
+  public let relativePath: String
+
+  public var id: SearchResult.ID { result.id }
+
+  public init(result: SearchResult, relativePath: String) {
+    self.result = result
+    self.relativePath = relativePath
+  }
+}
+
+public struct SearchResultDisplayGroup: Identifiable, Equatable, Sendable {
+  public let file: String
+  public let representative: SearchResultDisplayItem
+  public let results: [SearchResultDisplayItem]
+
+  public init?(file: String, results: [SearchResultDisplayItem]) {
+    guard let representative = results.first else { return nil }
+    self.file = file
+    self.representative = representative
+    self.results = results
+  }
+
+  public var id: String { file }
+}
+
+public struct SearchNodeDisplayItem: Identifiable, Equatable, Sendable {
+  public let node: OrgRoamNodeReference
+  public let relativePath: String
+
+  public var id: OrgRoamNodeReference.ID { node.id }
+
+  public init(node: OrgRoamNodeReference, relativePath: String) {
+    self.node = node
+    self.relativePath = relativePath
+  }
+}
+
 public struct OpenClawChatSearchResult: Identifiable, Hashable, Sendable {
   public let threadID: UUID
   public let messageID: UUID?
@@ -502,7 +541,7 @@ public struct MatchedLine: Decodable, Hashable, Sendable {
   public let snippet: String
 }
 
-public struct BacklinksPayload: Decodable, Sendable {
+public struct BacklinksPayload: Decodable, Equatable, Sendable {
   public let schema: String?
   public let id: String
   public let backlinks: [BacklinkItem]
@@ -918,6 +957,72 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       unreadMessageCount: nextUnreadMessageCount ?? unreadMessageCount
     )
   }
+}
+
+public struct OpenClawChatThreadDisplayItem: Identifiable, Equatable, Sendable {
+  public let id: UUID
+  public let title: String
+  public let updatedAt: Date
+  public let relativeUpdatedAtText: String
+  public let isPinned: Bool
+  public let isArchived: Bool
+  public let unreadMessageCount: Int
+
+  public init(
+    id: UUID,
+    title: String,
+    updatedAt: Date,
+    relativeUpdatedAtText: String? = nil,
+    isPinned: Bool,
+    isArchived: Bool,
+    unreadMessageCount: Int
+  ) {
+    self.id = id
+    self.title = title
+    self.updatedAt = updatedAt
+    self.relativeUpdatedAtText = relativeUpdatedAtText ?? Self.shortRelativeUpdatedAtText(updatedAt)
+    self.isPinned = isPinned
+    self.isArchived = isArchived
+    self.unreadMessageCount = unreadMessageCount
+  }
+
+  public init(thread: OpenClawChatThread) {
+    self.init(
+      id: thread.id,
+      title: thread.title,
+      updatedAt: thread.updatedAt,
+      isPinned: thread.isPinned,
+      isArchived: thread.isArchived,
+      unreadMessageCount: thread.unreadMessageCount
+    )
+  }
+
+  static func shortRelativeUpdatedAtText(_ date: Date, relativeTo referenceDate: Date = Date()) -> String {
+    let elapsed = max(0, referenceDate.timeIntervalSince(date))
+    if elapsed < 60 { return "now" }
+    if elapsed < 3_600 { return "\(Int(elapsed / 60))m" }
+    if elapsed < 86_400 { return "\(Int(elapsed / 3_600))h" }
+    if elapsed < 604_800 { return "\(Int(elapsed / 86_400))d" }
+    return shortMonthDayText(date)
+  }
+
+  private static func shortMonthDayText(_ date: Date) -> String {
+    let components = Calendar.current.dateComponents([.month, .day], from: date)
+    guard
+      let month = components.month,
+      month >= 1,
+      month <= shortMonthSymbols.count,
+      let day = components.day
+    else {
+      return ""
+    }
+    return "\(shortMonthSymbols[month - 1]) \(day)"
+  }
+
+  private static let shortMonthSymbols = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+  ]
 }
 
 public struct OpenClawCorpusChangeSummary: Hashable, Codable, Sendable {
@@ -3466,10 +3571,10 @@ private extension NSTextCheckingResult {
 public struct AgendaDisplaySection: Identifiable, Sendable {
   public let id: String
   public let label: String
-  public let items: [AgendaItem]
+  public let items: [AgendaDisplayItem]
   public let hint: String?
 
-  public init(id: String, label: String, items: [AgendaItem], hint: String? = nil) {
+  public init(id: String, label: String, items: [AgendaDisplayItem], hint: String? = nil) {
     self.id = id
     self.label = label
     self.items = items
@@ -3477,27 +3582,75 @@ public struct AgendaDisplaySection: Identifiable, Sendable {
   }
 }
 
+public struct AgendaDisplayItem: Identifiable, Equatable, Sendable {
+  public let item: AgendaItem
+  public let relativePath: String
+
+  public var id: AgendaItem.ID { item.id }
+
+  public init(item: AgendaItem, relativePath: String) {
+    self.item = item
+    self.relativePath = relativePath
+  }
+}
+
+public struct ApprovalDisplayItem: Identifiable, Equatable, Sendable {
+  public let item: ApprovalItem
+  public let relativePath: String
+
+  public var id: ApprovalItem.ID { item.id }
+
+  public init(item: ApprovalItem, relativePath: String) {
+    self.item = item
+    self.relativePath = relativePath
+  }
+}
+
 public struct AssignedWorkSection: Identifiable, Sendable {
   public let id: String
   public let label: String
-  public let items: [AssignedWorkItem]
+  public let items: [AssignedWorkDisplayItem]
 
-  public init(id: String, label: String, items: [AssignedWorkItem]) {
+  public init(id: String, label: String, items: [AssignedWorkDisplayItem]) {
     self.id = id
     self.label = label
     self.items = items
   }
 }
 
+public struct AssignedWorkDisplayItem: Identifiable, Equatable, Sendable {
+  public let item: AssignedWorkItem
+  public let relativePath: String
+
+  public var id: AssignedWorkItem.ID { item.id }
+
+  public init(item: AssignedWorkItem, relativePath: String) {
+    self.item = item
+    self.relativePath = relativePath
+  }
+}
+
 public struct MeetingSection: Identifiable, Sendable {
   public let id: String
   public let label: String
-  public let meetings: [MeetingWorkspaceItem]
+  public let meetings: [MeetingDisplayItem]
 
-  public init(id: String, label: String, meetings: [MeetingWorkspaceItem]) {
+  public init(id: String, label: String, meetings: [MeetingDisplayItem]) {
     self.id = id
     self.label = label
     self.meetings = meetings
+  }
+}
+
+public struct MeetingDisplayItem: Identifiable, Equatable, Sendable {
+  public let meeting: MeetingWorkspaceItem
+  public let relativePath: String
+
+  public var id: MeetingWorkspaceItem.ID { meeting.id }
+
+  public init(meeting: MeetingWorkspaceItem, relativePath: String) {
+    self.meeting = meeting
+    self.relativePath = relativePath
   }
 }
 

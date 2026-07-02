@@ -106,10 +106,11 @@ public struct OpenClawChatClient: Sendable {
     workspaceContext: OpenClawWorkspaceContext? = nil
   ) async throws -> String {
     let agentHeaderValue = Self.openClawAgentHeaderValue(for: agentID)
-    let requestBody = OpenAIChatCompletionRequest(
-      model: Self.openClawModelName(for: agentID),
-      user: sessionKey,
-      messages: requestMessages(from: messages, workspaceContext: workspaceContext)
+    let requestBody = try await Self.encodedRequestBody(
+      messages: messages,
+      agentID: agentID,
+      sessionKey: sessionKey,
+      workspaceContext: workspaceContext
     )
 
     var request = URLRequest(url: settings.endpoint)
@@ -120,7 +121,7 @@ public struct OpenClawChatClient: Sendable {
     if let bearerToken = settings.bearerToken {
       request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
     }
-    request.httpBody = try JSONEncoder().encode(requestBody)
+    request.httpBody = requestBody
 
     do {
       let (data, response) = try await session.data(for: request)
@@ -170,7 +171,24 @@ public struct OpenClawChatClient: Sendable {
     return value.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
-  private func requestMessages(
+  static func encodedRequestBody(
+    messages: [OpenClawChatMessage],
+    agentID: String,
+    sessionKey: String,
+    workspaceContext: OpenClawWorkspaceContext?
+  ) async throws -> Data {
+    let model = openClawModelName(for: agentID)
+    return try await Task.detached(priority: .userInitiated) {
+      let requestBody = OpenAIChatCompletionRequest(
+        model: model,
+        user: sessionKey,
+        messages: requestMessages(from: messages, workspaceContext: workspaceContext)
+      )
+      return try JSONEncoder().encode(requestBody)
+    }.value
+  }
+
+  private static func requestMessages(
     from messages: [OpenClawChatMessage],
     workspaceContext: OpenClawWorkspaceContext?
   ) -> [OpenAIChatMessage] {

@@ -1,13 +1,30 @@
 import AppKit
 import SwiftUI
 
-struct ChatBubbleView: View {
+struct ChatBubbleView: View, Equatable {
   let message: OpenClawChatMessage
   let compact: Bool
+  let isRetryDisabled: Bool
+  let retryMessage: (UUID) -> Void
+  private let renderSignature: String
 
-  init(message: OpenClawChatMessage, compact: Bool = false) {
+  init(
+    message: OpenClawChatMessage,
+    compact: Bool = false,
+    isRetryDisabled: Bool = false,
+    retryMessage: @escaping (UUID) -> Void = { _ in }
+  ) {
     self.message = message
     self.compact = compact
+    self.isRetryDisabled = isRetryDisabled
+    self.retryMessage = retryMessage
+    renderSignature = WorkspaceStore.openClawMessageRenderSignature(for: message)
+  }
+
+  nonisolated static func == (lhs: ChatBubbleView, rhs: ChatBubbleView) -> Bool {
+    lhs.renderSignature == rhs.renderSignature
+      && lhs.compact == rhs.compact
+      && lhs.isRetryDisabled == rhs.isRetryDisabled
   }
 
   var body: some View {
@@ -46,7 +63,9 @@ struct ChatBubbleView: View {
           OpenClawSendFailureView(
             messageID: message.id,
             failureText: sendFailure,
-            compact: compact
+            compact: compact,
+            isRetryDisabled: isRetryDisabled,
+            retryMessage: retryMessage
           )
         }
         if message.role == .assistant, let changeSummary = message.changeSummary {
@@ -108,10 +127,11 @@ struct ChatBubbleView: View {
 }
 
 private struct OpenClawSendFailureView: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let messageID: UUID
   let failureText: String
   let compact: Bool
+  let isRetryDisabled: Bool
+  let retryMessage: (UUID) -> Void
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -130,7 +150,7 @@ private struct OpenClawSendFailureView: View {
       }
       Spacer(minLength: 8)
       Button {
-        Task { await store.retryOpenClawMessage(messageID) }
+        retryMessage(messageID)
       } label: {
         if compact {
           Image(systemName: "arrow.clockwise")
@@ -139,7 +159,7 @@ private struct OpenClawSendFailureView: View {
         }
       }
       .buttonStyle(WorkspaceActionButtonStyle())
-      .disabled(store.isSendingOpenClawMessage)
+      .disabled(isRetryDisabled)
       .help("Retry sending this message")
     }
     .padding(.horizontal, 8)
@@ -179,11 +199,20 @@ private struct OpenClawMessageAttachmentsView: View {
 private struct OpenClawAttachmentThumbnail: View {
   let attachment: OpenClawChatAttachment
   let size: CGFloat
+  @State private var image: NSImage?
+  @State private var byteCountText: String
+
+  init(attachment: OpenClawChatAttachment, size: CGFloat) {
+    self.attachment = attachment
+    self.size = size
+    _image = State(initialValue: NSImage(data: attachment.data))
+    _byteCountText = State(initialValue: Self.byteCountText(attachment.byteCount))
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
       Group {
-        if let image = NSImage(data: attachment.data) {
+        if let image {
           Image(nsImage: image)
             .resizable()
             .scaledToFill()
@@ -208,7 +237,7 @@ private struct OpenClawAttachmentThumbnail: View {
         .truncationMode(.middle)
         .frame(width: size, alignment: .leading)
     }
-    .help("\(attachment.fileName) · \(Self.byteCountText(attachment.byteCount))")
+    .help("\(attachment.fileName) · \(byteCountText)")
   }
 
   private static func byteCountText(_ count: Int) -> String {
@@ -313,6 +342,8 @@ struct OpenClawComposerView: View {
   let compact: Bool
 
   var body: some View {
+    let voiceMeterLevels = store.openClawVoiceMeterLevels
+    let voiceTranscriptionState = store.openClawVoiceTranscriptionState
     VStack(alignment: .trailing, spacing: 8) {
       let composerHeight = OpenClawComposerSizing.height(for: localDraft, compact: compact)
       ZStack(alignment: .topLeading) {
@@ -342,27 +373,32 @@ struct OpenClawComposerView: View {
       .animation(.easeOut(duration: 0.12), value: composerHeight)
 
       if !store.openClawPendingAttachments.isEmpty {
-        OpenClawPendingAttachmentsView(compact: compact)
+        OpenClawPendingAttachmentsView(
+          attachments: store.openClawPendingAttachments,
+          compact: compact,
+          remove: { attachment in
+            store.removeOpenClawPendingAttachment(attachment)
+          }
+        )
+        .equatable()
       }
 
       HStack(spacing: 8) {
         if store.isSendingOpenClawMessage {
-          HStack(spacing: 6) {
-            ProgressView()
-              .controlSize(.small)
-            Text(store.openClawQueuedMessageCount > 1 ? "\(store.openClawQueuedMessageCount - 1) queued" : "Sending")
-              .font(.caption.weight(.medium))
-              .foregroundStyle(.secondary)
-          }
+          WorkspaceActivityIndicator(
+            label: store.openClawQueuedMessageCount > 1 ? "\(store.openClawQueuedMessageCount - 1) queued" : "Sending",
+            compact: compact
+          )
         }
         if store.isRecordingOpenClawVoiceNote {
           HStack(spacing: 6) {
             Image(systemName: "waveform")
               .foregroundStyle(.red)
             WorkspaceInputMeterView(
-              averageLevel: store.openClawVoiceAverageLevel,
-              peakLevel: store.openClawVoicePeakLevel
+              averageLevel: voiceMeterLevels.averageLevel,
+              peakLevel: voiceMeterLevels.peakLevel
             )
+            .equatable()
             .frame(width: compact ? 72 : 110, height: 7)
           }
           .help("Recording OpenClaw dictation")
@@ -373,13 +409,13 @@ struct OpenClawComposerView: View {
                 Text("Transcribing")
                   .font(.caption.weight(.medium))
                   .foregroundStyle(.secondary)
-                if !store.openClawVoiceTranscriptionElapsedText.isEmpty {
-                  Text(store.openClawVoiceTranscriptionElapsedText)
+                if !voiceTranscriptionState.elapsedText.isEmpty {
+                  Text(voiceTranscriptionState.elapsedText)
                     .font(.caption2.monospacedDigit().weight(.medium))
                     .foregroundStyle(.tertiary)
                 }
               }
-              ProgressView(value: store.openClawVoiceTranscriptionProgress)
+              ProgressView(value: voiceTranscriptionState.progress)
                 .progressViewStyle(.linear)
                 .frame(width: compact ? 92 : 140)
             }
@@ -448,7 +484,7 @@ struct OpenClawComposerView: View {
     let text = localDraft
     localDraft = ""
     lastStoreDraft = ""
-    store.openClawDraft = ""
+    store.clearOpenClawDraft()
     Task { await store.sendComposedOpenClawMessage(text: text) }
     return true
   }
@@ -461,7 +497,7 @@ struct OpenClawComposerView: View {
   private func flushDraftToStore() {
     if store.openClawDraft != localDraft {
       lastStoreDraft = localDraft
-      store.openClawDraft = localDraft
+      store.setOpenClawDraft(localDraft)
     } else {
       lastStoreDraft = store.openClawDraft
     }
@@ -494,15 +530,48 @@ enum OpenClawComposerDraftSync {
   }
 }
 
-private struct OpenClawPendingAttachmentsView: View {
-  @EnvironmentObject private var store: WorkspaceStore
+private struct OpenClawPendingAttachmentsView: View, Equatable {
+  let attachments: [OpenClawChatAttachment]
   let compact: Bool
+  let remove: (OpenClawChatAttachment) -> Void
+  private let renderSignature: String
+
+  init(
+    attachments: [OpenClawChatAttachment],
+    compact: Bool,
+    remove: @escaping (OpenClawChatAttachment) -> Void
+  ) {
+    self.attachments = attachments
+    self.compact = compact
+    self.remove = remove
+    renderSignature = Self.renderSignature(for: attachments)
+  }
+
+  nonisolated static func == (lhs: OpenClawPendingAttachmentsView, rhs: OpenClawPendingAttachmentsView) -> Bool {
+    lhs.renderSignature == rhs.renderSignature
+      && lhs.compact == rhs.compact
+  }
+
+  nonisolated private static func renderSignature(for attachments: [OpenClawChatAttachment]) -> String {
+    guard !attachments.isEmpty else { return "empty" }
+    var hasher = Hasher()
+    hasher.combine(attachments.count)
+    for attachment in attachments {
+      hasher.combine(attachment.id)
+      hasher.combine(attachment.fileName)
+      hasher.combine(attachment.mimeType)
+      hasher.combine(attachment.byteCount)
+    }
+    return "\(attachments.count):\(hasher.finalize())"
+  }
 
   var body: some View {
     ScrollView(.horizontal, showsIndicators: false) {
       HStack(spacing: 8) {
-        ForEach(store.openClawPendingAttachments) { attachment in
-          OpenClawPendingAttachmentChip(attachment: attachment)
+        ForEach(attachments) { attachment in
+          OpenClawPendingAttachmentChip(attachment: attachment) {
+            remove(attachment)
+          }
         }
       }
       .padding(.vertical, 1)
@@ -512,12 +581,24 @@ private struct OpenClawPendingAttachmentsView: View {
 }
 
 private struct OpenClawPendingAttachmentChip: View {
-  @EnvironmentObject private var store: WorkspaceStore
   let attachment: OpenClawChatAttachment
+  let remove: () -> Void
+  @State private var image: NSImage?
+  @State private var byteCountText: String
+
+  init(attachment: OpenClawChatAttachment, remove: @escaping () -> Void) {
+    self.attachment = attachment
+    self.remove = remove
+    _image = State(initialValue: NSImage(data: attachment.data))
+    _byteCountText = State(initialValue: ByteCountFormatter.string(
+      fromByteCount: Int64(attachment.byteCount),
+      countStyle: .file
+    ))
+  }
 
   var body: some View {
     HStack(spacing: 7) {
-      if let image = NSImage(data: attachment.data) {
+      if let image {
         Image(nsImage: image)
           .resizable()
           .scaledToFill()
@@ -536,15 +617,13 @@ private struct OpenClawPendingAttachmentChip: View {
           .font(.caption.weight(.medium))
           .lineLimit(1)
           .truncationMode(.middle)
-        Text(ByteCountFormatter.string(fromByteCount: Int64(attachment.byteCount), countStyle: .file))
+        Text(byteCountText)
           .font(.caption2)
           .foregroundStyle(.secondary)
       }
       .frame(maxWidth: 150, alignment: .leading)
 
-      Button {
-        store.removeOpenClawPendingAttachment(attachment)
-      } label: {
+      Button(action: remove) {
         Image(systemName: "xmark.circle.fill")
       }
       .buttonStyle(.plain)
@@ -558,7 +637,7 @@ private struct OpenClawPendingAttachmentChip: View {
       RoundedRectangle(cornerRadius: 7, style: .continuous)
         .stroke(WorkspaceDesign.hairline)
     )
-    .help("\(attachment.fileName) · \(ByteCountFormatter.string(fromByteCount: Int64(attachment.byteCount), countStyle: .file))")
+    .help("\(attachment.fileName) · \(byteCountText)")
   }
 }
 
@@ -699,23 +778,23 @@ struct OpenClawTypingIndicatorView: View {
     HStack {
       VStack(alignment: .leading, spacing: 5) {
         HStack(spacing: 8) {
-          ProgressView()
-            .controlSize(.small)
+          WorkspaceActivityIndicator(compact: true)
           TimelineView(.periodic(from: startedAt ?? Date(), by: 1)) { context in
             Text("OpenClaw is thinking\(elapsedSuffix(now: context.date))")
               .font(.caption.weight(.medium))
               .foregroundStyle(.secondary)
           }
         }
-        Text("Waiting for the gateway response")
+        Text("Gathering context and preparing a local-file-aware response")
           .font(.caption)
           .foregroundStyle(.tertiary)
+          .lineLimit(2)
       }
       .padding(10)
-      .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+      .background(WorkspaceDesign.elevatedFill, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous))
       .overlay(
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .stroke(Color.secondary.opacity(0.16))
+        RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
+          .stroke(Color.accentColor.opacity(0.18))
       )
       Spacer(minLength: 48)
     }

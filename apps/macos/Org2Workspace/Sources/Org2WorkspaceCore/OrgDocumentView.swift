@@ -79,9 +79,12 @@ struct OrgRenderedEntryView: View, Equatable {
     let sourceFile = source?.file
     let isSourceEditable = source?.isEditable == true
     let displayBlocks = OrgRenderedFoldTree.visibleBlocks(blocks, foldedBlockIDs: foldedBlockIDs)
-    let selectedDisplayBlockIndex = selectedBlockID.flatMap { id in
-      displayBlocks.firstIndex { $0.id == id }
-    }
+    let selectedDisplayBlockIndex = Self.selectedDisplayBlockIndex(
+      blocks: displayBlocks,
+      foldedBlockIDs: foldedBlockIDs,
+      selectedBlockID: selectedBlockID,
+      selectedBlockIndex: selectedBlockIndex
+    )
     let resetKey = Self.renderWindowResetKey(for: source)
     let visibleWindow = Self.visibleWindow(
       requestedWindow: renderedBlockWindow,
@@ -91,6 +94,7 @@ struct OrgRenderedEntryView: View, Equatable {
     let visibleRange = visibleWindow.range
     let visibleBlocks = displayBlocks[visibleWindow.range]
     let visibleRows = visibleBlocks.filter(OrgRenderedBlockDisplayPolicy.isVisible)
+    let foldableBlockIDs = OrgRenderedFoldTree.foldableIDs(in: displayBlocks, range: visibleRange)
     let allowsHoverChrome = Self.allowsHoverChrome(blockCount: displayBlocks.count)
     let moveAvailabilitySignature = OrgRenderedEntryMoveAvailability.signature(
       blocksSignature: "\(blocksRenderSignature):folds:\(foldedBlockIDs.sorted().joined(separator: ","))",
@@ -116,6 +120,7 @@ struct OrgRenderedEntryView: View, Equatable {
           sourceFile: sourceFile,
           isSourceEditable: isSourceEditable,
           allowsHoverChrome: allowsHoverChrome,
+          foldableBlockIDs: foldableBlockIDs,
           moveAvailabilityValues: moveAvailabilityValues
         )
       }
@@ -162,6 +167,7 @@ struct OrgRenderedEntryView: View, Equatable {
     sourceFile: String?,
     isSourceEditable: Bool,
     allowsHoverChrome: Bool,
+    foldableBlockIDs: Set<OrgEditableBlock.ID>,
     moveAvailabilityValues: [OrgEditableBlock.ID: OrgRenderedEntryBlockMoveAvailability]
   ) -> some View {
     OrgRenderedEntryRow(
@@ -169,7 +175,7 @@ struct OrgRenderedEntryView: View, Equatable {
       isSourceEditable: isSourceEditable,
       isSelected: selectedBlockID == block.id,
       isEditing: editingBlockID == block.id,
-      isFoldable: OrgRenderedFoldTree.isFoldable(block, in: blocks),
+      isFoldable: foldableBlockIDs.contains(block.id),
       isFolded: foldedBlockIDs.contains(block.id),
       canMoveUp: moveAvailabilityValues[block.id]?.up == true,
       canMoveDown: moveAvailabilityValues[block.id]?.down == true,
@@ -205,12 +211,16 @@ struct OrgRenderedEntryView: View, Equatable {
   }
 
   private func expandRenderedBlocks(_ direction: OrgRenderedBlockWindowExpansionDirection) {
+    let displayBlocks = OrgRenderedFoldTree.visibleBlocks(blocks, foldedBlockIDs: foldedBlockIDs)
     let visibleWindow = Self.visibleWindow(
       requestedWindow: renderedBlockWindow,
-      blocks: OrgRenderedFoldTree.visibleBlocks(blocks, foldedBlockIDs: foldedBlockIDs),
-      selectedBlockIndex: selectedBlockID.flatMap { id in
-        OrgRenderedFoldTree.visibleBlocks(blocks, foldedBlockIDs: foldedBlockIDs).firstIndex { $0.id == id }
-      }
+      blocks: displayBlocks,
+      selectedBlockIndex: Self.selectedDisplayBlockIndex(
+        blocks: displayBlocks,
+        foldedBlockIDs: foldedBlockIDs,
+        selectedBlockID: selectedBlockID,
+        selectedBlockIndex: selectedBlockIndex
+      )
     )
     renderedBlockWindow = visibleWindow.expanding(
       direction,
@@ -350,6 +360,22 @@ struct OrgRenderedEntryView: View, Equatable {
     )
   }
 
+  nonisolated static func selectedDisplayBlockIndex(
+    blocks: [OrgEditableBlock],
+    foldedBlockIDs: Set<OrgEditableBlock.ID>,
+    selectedBlockID: OrgEditableBlock.ID?,
+    selectedBlockIndex: Int?
+  ) -> Int? {
+    guard let selectedBlockID else { return nil }
+    if foldedBlockIDs.isEmpty,
+       let selectedBlockIndex,
+       blocks.indices.contains(selectedBlockIndex),
+       blocks[selectedBlockIndex].id == selectedBlockID {
+      return selectedBlockIndex
+    }
+    return blocks.firstIndex { $0.id == selectedBlockID }
+  }
+
   nonisolated static func renderWindowResetKey(for source: EntrySource?) -> String {
     guard let source else { return "none" }
     return "\(source.file):\(source.startLine):\(source.isSubtree):\(source.isEditable)"
@@ -434,7 +460,31 @@ enum OrgRenderedCryptTarget {
 
 enum OrgRenderedFoldTree {
   static func isFoldable(_ block: OrgEditableBlock, in blocks: [OrgEditableBlock]) -> Bool {
-    childrenRange(for: block, in: blocks) != nil
+    guard let index = blocks.firstIndex(where: { $0.id == block.id }) else { return false }
+    return isFoldable(startingAt: index, in: blocks)
+  }
+
+  static func foldableIDs(in blocks: [OrgEditableBlock], range: Range<Int>) -> Set<OrgEditableBlock.ID> {
+    let lowerBound = max(blocks.startIndex, range.lowerBound)
+    let upperBound = min(blocks.endIndex, range.upperBound)
+    guard lowerBound < upperBound else { return [] }
+
+    var ids: Set<OrgEditableBlock.ID> = []
+    ids.reserveCapacity(upperBound - lowerBound)
+    for index in lowerBound..<upperBound where isFoldable(startingAt: index, in: blocks) {
+      ids.insert(blocks[index].id)
+    }
+    return ids
+  }
+
+  static func allFoldableIDs(in blocks: [OrgEditableBlock]) -> Set<OrgEditableBlock.ID> {
+    guard !blocks.isEmpty else { return [] }
+    var ids: Set<OrgEditableBlock.ID> = []
+    ids.reserveCapacity(blocks.count)
+    for index in blocks.indices where isFoldable(startingAt: index, in: blocks) {
+      ids.insert(blocks[index].id)
+    }
+    return ids
   }
 
   static func visibleBlocks(
@@ -465,7 +515,15 @@ enum OrgRenderedFoldTree {
     blocks: [OrgEditableBlock]
   ) -> Set<OrgEditableBlock.ID> {
     guard !foldedBlockIDs.isEmpty else { return [] }
-    return Set(blocks.filter { foldedBlockIDs.contains($0.id) && isFoldable($0, in: blocks) }.map(\.id))
+    var ids: Set<OrgEditableBlock.ID> = []
+    ids.reserveCapacity(foldedBlockIDs.count)
+    for index in blocks.indices {
+      let id = blocks[index].id
+      if foldedBlockIDs.contains(id), isFoldable(startingAt: index, in: blocks) {
+        ids.insert(id)
+      }
+    }
+    return ids
   }
 
   static func foldedAncestorID(
@@ -488,6 +546,25 @@ enum OrgRenderedFoldTree {
   static func childrenRange(for block: OrgEditableBlock, in blocks: [OrgEditableBlock]) -> Range<Int>? {
     guard let index = blocks.firstIndex(where: { $0.id == block.id }) else { return nil }
     return childrenRange(startingAt: index, in: blocks)
+  }
+
+  private static func isFoldable(startingAt index: Int, in blocks: [OrgEditableBlock]) -> Bool {
+    guard blocks.indices.contains(index), index + 1 < blocks.endIndex else { return false }
+    switch blocks[index].rendered {
+    case .heading(let heading):
+      if case .heading(let nextHeading) = blocks[index + 1].rendered,
+         nextHeading.level <= heading.level {
+        return false
+      }
+      return true
+    case .listItem(let indent, _, _, _):
+      guard case .listItem(let nextIndent, _, _, _) = blocks[index + 1].rendered else {
+        return false
+      }
+      return nextIndent > indent
+    default:
+      return false
+    }
   }
 
   private static func childrenRange(startingAt index: Int, in blocks: [OrgEditableBlock]) -> Range<Int>? {
@@ -874,7 +951,19 @@ enum RenderedRowChrome {
 
 enum RenderedBlockEditingPolicy {
   static func startsEditingOnSingleClick(block: OrgEditableBlock, isSourceEditable: Bool) -> Bool {
-    isSourceEditable && block.isEditable && OrgCrypt.armorSummary(block.rawText) == nil
+    guard isSourceEditable,
+          block.isEditable,
+          OrgCrypt.armorSummary(block.rawText) == nil else {
+      return false
+    }
+
+    switch block.rendered {
+    case .paragraph, .listItem:
+      return OrgMediaAttachment.standalone(raw: block.rawText) == nil
+        && OrgMediaAttachment.embedded(in: block.rawText) == nil
+    case .heading, .planning, .properties, .quote, .source, .table, .horizontalRule, .keyword, .blank:
+      return false
+    }
   }
 }
 

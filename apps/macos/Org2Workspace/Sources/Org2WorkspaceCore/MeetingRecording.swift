@@ -445,6 +445,16 @@ public struct LocalWhisperInstallationStatus: Equatable, Sendable {
   public let whisperCppModelPath: String?
   public let openAIWhisperExecutablePath: String?
   public let overrideCommand: String?
+  public let isChecking: Bool
+
+  public static let checking = LocalWhisperInstallationStatus(
+    backendDescription: "Checking local transcription",
+    whisperCppExecutablePath: nil,
+    whisperCppModelPath: nil,
+    openAIWhisperExecutablePath: nil,
+    overrideCommand: nil,
+    isChecking: true
+  )
 
   public var isWhisperCppReady: Bool {
     whisperCppExecutablePath != nil && whisperCppModelPath != nil
@@ -455,6 +465,7 @@ public struct LocalWhisperInstallationStatus: Equatable, Sendable {
   }
 
   public var statusLabel: String {
+    if isChecking { return "Checking local transcription" }
     if isWhisperCppReady { return "Fast local transcription ready" }
     if overrideCommand != nil { return "Custom transcriber configured" }
     if openAIWhisperExecutablePath != nil { return "Python Whisper available; whisper.cpp recommended" }
@@ -463,6 +474,9 @@ public struct LocalWhisperInstallationStatus: Equatable, Sendable {
   }
 
   public var detailText: String {
+    if isChecking {
+      return "Checking local transcription tools."
+    }
     if isWhisperCppReady {
       return "Using whisper.cpp with \(whisperCppModelPath ?? "a GGML model")."
     }
@@ -534,7 +548,8 @@ public struct LocalWhisperTranscriber: Sendable {
       whisperCppExecutablePath: whisperCpp?.path,
       whisperCppModelPath: model,
       openAIWhisperExecutablePath: openAIWhisper?.path,
-      overrideCommand: configuration.overrideCommand
+      overrideCommand: configuration.overrideCommand,
+      isChecking: false
     )
   }
 
