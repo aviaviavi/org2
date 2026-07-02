@@ -14,6 +14,7 @@ struct Org2MobileApp: App {
 
 private struct StartupHostView: View {
   @EnvironmentObject private var store: CorpusStore
+  @Environment(\.scenePhase) private var scenePhase
   @State private var isReady = false
   @State private var hasStartedRestore = false
 
@@ -32,6 +33,11 @@ private struct StartupHostView: View {
       DispatchQueue.main.async {
         store.startRestoringCorpus()
         isReady = true
+      }
+    }
+    .onChange(of: scenePhase) { _, phase in
+      if phase == .active {
+        store.clearNotificationBadge()
       }
     }
   }
