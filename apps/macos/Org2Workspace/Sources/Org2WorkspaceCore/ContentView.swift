@@ -4248,6 +4248,14 @@ private struct EntryBodyView: View {
       }
     }
     .padding(16)
+    .contextMenu {
+      Button {
+        store.askOpenClawAboutCurrentSelection()
+      } label: {
+        Label("Ask AI", systemImage: "sparkles")
+      }
+      .disabled(!store.canAskOpenClawAboutCurrentSelection || store.isLoadingEntrySource)
+    }
   }
 
   @ViewBuilder
