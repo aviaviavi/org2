@@ -409,6 +409,11 @@ private struct ApprovalRejectionChoice {
   let reason: String
 }
 
+private enum ApprovalActionKind {
+  case approve
+  case reject
+}
+
 struct RecoverableMeetingRecording: Sendable {
   let paths: MeetingArtifactPaths
   let duration: TimeInterval?
@@ -503,6 +508,8 @@ public final class WorkspaceStore: ObservableObject {
   public private(set) var visibleApprovalItems: [ApprovalItem] = []
   @Published public var selectedApprovalItemID: ApprovalItem.ID?
   @Published public var isLoadingApprovals = false
+  @Published public private(set) var approvingApprovalItemIDs: Set<ApprovalItem.ID> = []
+  @Published public private(set) var rejectingApprovalItemIDs: Set<ApprovalItem.ID> = []
   @Published public var corpusFiles: [CorpusFile] = [] {
     didSet {
       rebuildQuickOpenIndex()
@@ -564,6 +571,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var pageSearchSelectedOccurrenceIndex: Int?
   private var pageSearchRenderedMatches: [PageSearchRenderedMatch] = []
   @Published public var meetings: [MeetingWorkspaceItem] = []
+  @Published public private(set) var processingMeetings: [MeetingProcessingItem] = []
   @Published public var selectedMeetingID: String?
   @Published public var meetingTitleDraft = ""
   @Published public var meetingStatusText = WorkspaceStore.defaultMeetingStatusText()
@@ -756,6 +764,7 @@ public final class WorkspaceStore: ObservableObject {
   private var shouldPersistOpenClawMessages = false
   private var isApplyingOpenClawThreadMessages = false
   private var openClawBearerToken: String?
+  private var openClawDraftsByThreadID: [UUID: String] = [:]
   private var openClawPendingUserMessageIDs: [UUID] = [] {
     didSet {
       openClawQueuedMessageCount = openClawPendingUserMessageIDs.count
@@ -769,6 +778,7 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
   private var activeMeetingProcessingTitles: Set<String> = []
+  private var activeMeetingProcessingItems: [String: MeetingProcessingItem] = [:]
   private var activeOpenClawVoiceNoteURL: URL?
   private var meetingMeterTask: Task<Void, Never>?
   nonisolated static let meetingMeterPublishIntervalNanoseconds: UInt64 = 250_000_000
@@ -1657,13 +1667,66 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func approve(_ item: ApprovalItem) async {
+    guard !isApprovalActionInProgress(item) else { return }
+    let originalVisibleIndex = visibleApprovalItems.firstIndex(where: { $0.id == item.id })
+    beginApprovalAction(item, kind: .approve)
+    defer { endApprovalAction(item, kind: .approve) }
+
     await approveAndAgentHandoff(HeadlineMutationTarget(
       file: item.file,
       line: item.line,
       title: Org2Display.cleanInline(item.title),
       agendaItemID: nil
     ))
+    endApprovalAction(item, kind: .approve)
     await refreshApprovals(updatesStatus: false)
+    preserveApprovalSelectionAfterMutation(mutatedID: item.id, originalVisibleIndex: originalVisibleIndex)
+  }
+
+  public func promptAndRejectApproval(_ item: ApprovalItem) {
+    guard !isApprovalActionInProgress(item) else { return }
+    selectedApprovalItemID = item.id
+    guard let rejection = Self.promptForApprovalRejection() else { return }
+    Task {
+      await rejectApproval(
+        item,
+        endStatus: rejection.endStatus,
+        reason: rejection.reason
+      )
+    }
+  }
+
+  public func rejectApproval(_ item: ApprovalItem, endStatus: TodoEditStatus, reason: String) async {
+    guard !isApprovalActionInProgress(item) else { return }
+    let originalVisibleIndex = visibleApprovalItems.firstIndex(where: { $0.id == item.id })
+    beginApprovalAction(item, kind: .reject)
+    defer { endApprovalAction(item, kind: .reject) }
+
+    await rejectApproval(
+      HeadlineMutationTarget(
+        file: item.file,
+        line: item.line,
+        title: Org2Display.cleanInline(item.title),
+        agendaItemID: nil
+      ),
+      endStatus: endStatus,
+      reason: reason
+    )
+    endApprovalAction(item, kind: .reject)
+    await refreshApprovals(updatesStatus: false)
+    preserveApprovalSelectionAfterMutation(mutatedID: item.id, originalVisibleIndex: originalVisibleIndex)
+  }
+
+  public func isApprovingApproval(_ item: ApprovalItem) -> Bool {
+    approvingApprovalItemIDs.contains(item.id)
+  }
+
+  public func isRejectingApproval(_ item: ApprovalItem) -> Bool {
+    rejectingApprovalItemIDs.contains(item.id)
+  }
+
+  public func isApprovalActionInProgress(_ item: ApprovalItem) -> Bool {
+    isApprovingApproval(item) || isRejectingApproval(item)
   }
 
   public func discussApprovalInOpenClaw(_ item: ApprovalItem, message: String? = nil) async {
@@ -1698,6 +1761,67 @@ public final class WorkspaceStore: ObservableObject {
        !visibleApprovalItems.contains(where: { $0.id == selectedApprovalItemID }) {
       self.selectedApprovalItemID = nil
     }
+    pruneApprovalActionState()
+  }
+
+  private func beginApprovalAction(_ item: ApprovalItem, kind: ApprovalActionKind) {
+    switch kind {
+    case .approve:
+      var ids = approvingApprovalItemIDs
+      ids.insert(item.id)
+      approvingApprovalItemIDs = ids
+    case .reject:
+      var ids = rejectingApprovalItemIDs
+      ids.insert(item.id)
+      rejectingApprovalItemIDs = ids
+    }
+  }
+
+  private func endApprovalAction(_ item: ApprovalItem, kind: ApprovalActionKind) {
+    switch kind {
+    case .approve:
+      var ids = approvingApprovalItemIDs
+      ids.remove(item.id)
+      approvingApprovalItemIDs = ids
+    case .reject:
+      var ids = rejectingApprovalItemIDs
+      ids.remove(item.id)
+      rejectingApprovalItemIDs = ids
+    }
+  }
+
+  private func pruneApprovalActionState() {
+    let itemIDs = Set(approvalItems.map(\.id))
+    let nextApprovingIDs = approvingApprovalItemIDs.intersection(itemIDs)
+    if nextApprovingIDs != approvingApprovalItemIDs {
+      approvingApprovalItemIDs = nextApprovingIDs
+    }
+    let nextRejectingIDs = rejectingApprovalItemIDs.intersection(itemIDs)
+    if nextRejectingIDs != rejectingApprovalItemIDs {
+      rejectingApprovalItemIDs = nextRejectingIDs
+    }
+  }
+
+  private func preserveApprovalSelectionAfterMutation(mutatedID: ApprovalItem.ID, originalVisibleIndex: Int?) {
+    selectedSurface = .approvals
+
+    if let item = nextApprovalItem(afterMutating: mutatedID, originalVisibleIndex: originalVisibleIndex) {
+      selectApprovalItem(item)
+      selectedSurface = .approvals
+    } else {
+      selectedApprovalItemID = nil
+    }
+  }
+
+  private func nextApprovalItem(afterMutating mutatedID: ApprovalItem.ID, originalVisibleIndex: Int?) -> ApprovalItem? {
+    if let current = visibleApprovalItems.first(where: { $0.id == mutatedID }) {
+      return current
+    }
+
+    guard !visibleApprovalItems.isEmpty else { return nil }
+    let fallbackIndex = originalVisibleIndex ?? 0
+    let boundedIndex = min(max(fallbackIndex, 0), visibleApprovalItems.count - 1)
+    return visibleApprovalItems[boundedIndex]
   }
 
   nonisolated static func approvalItems(
@@ -2669,6 +2793,15 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public var pendingMeetingProcessingItems: [MeetingProcessingItem] {
+    let existingMeetingTitleKeys = Set(meetings.map { Self.normalizedMeetingProcessingTitle($0.title) })
+    return processingMeetings.filter { !existingMeetingTitleKeys.contains($0.id) }
+  }
+
+  public func isMeetingProcessing(_ meeting: MeetingWorkspaceItem) -> Bool {
+    activeMeetingProcessingTitles.contains(Self.normalizedMeetingProcessingTitle(meeting.title))
+  }
+
   public func select(_ location: WorkspaceLocation) {
     if case .search = location {
       isPageSearchPresented = false
@@ -2858,7 +2991,7 @@ public final class WorkspaceStore: ObservableObject {
     else {
       return false
     }
-    return selectedEntrySource != nil
+    return selectedEntrySource != nil || isLoadingEntrySource || isRenderingEntrySource
   }
 
   private func applyDetailSelectionMetadata(for location: WorkspaceLocation) {
@@ -5725,7 +5858,7 @@ public final class WorkspaceStore: ObservableObject {
     let text = openClawDraft.trimmingCharacters(in: .whitespacesAndNewlines)
     let attachments = openClawPendingAttachments
     guard !text.isEmpty || !attachments.isEmpty else { return }
-    openClawDraft = ""
+    clearOpenClawDraftForSelectedThread()
     openClawPendingAttachments = []
     await sendOpenClawMessage(text, attachments: attachments)
   }
@@ -5733,7 +5866,7 @@ public final class WorkspaceStore: ObservableObject {
   public func sendOpenClawMessage(text rawText: String) async {
     let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
-    openClawDraft = ""
+    clearOpenClawDraftForSelectedThread()
     await sendOpenClawMessage(text, attachments: [])
   }
 
@@ -5741,7 +5874,7 @@ public final class WorkspaceStore: ObservableObject {
     let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
     let attachments = openClawPendingAttachments
     guard !text.isEmpty || !attachments.isEmpty else { return }
-    openClawDraft = ""
+    clearOpenClawDraftForSelectedThread()
     openClawPendingAttachments = []
     await sendOpenClawMessage(text, attachments: attachments)
   }
@@ -6012,7 +6145,7 @@ public final class WorkspaceStore: ObservableObject {
   public func resetOpenClawChat() {
     ensureOpenClawChatThread()
     openClawMessages = []
-    openClawDraft = ""
+    clearOpenClawDraftForSelectedThread()
     openClawPendingAttachments = []
     openClawPendingUserMessageIDs.removeAll()
     isDrainingOpenClawQueue = false
@@ -6100,10 +6233,11 @@ public final class WorkspaceStore: ObservableObject {
     else {
       return
     }
+    saveOpenClawDraftForSelectedThread()
     selectedOpenClawChatThreadID = thread.id
     openClawSessionKey = thread.sessionKey
     markOpenClawChatThreadRead(thread.id, shouldPersist: false)
-    openClawDraft = ""
+    restoreOpenClawDraft(for: thread.id)
     openClawPendingAttachments = []
     openClawPendingUserMessageIDs.removeAll()
     isDrainingOpenClawQueue = false
@@ -6115,6 +6249,29 @@ public final class WorkspaceStore: ObservableObject {
     if persistsSelection {
       persistOpenClawTranscript()
     }
+  }
+
+  private func saveOpenClawDraftForSelectedThread() {
+    guard let selectedOpenClawChatThreadID else { return }
+    let draft = openClawDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      ? ""
+      : openClawDraft
+    if draft.isEmpty {
+      openClawDraftsByThreadID.removeValue(forKey: selectedOpenClawChatThreadID)
+    } else {
+      openClawDraftsByThreadID[selectedOpenClawChatThreadID] = draft
+    }
+  }
+
+  private func restoreOpenClawDraft(for threadID: UUID) {
+    openClawDraft = openClawDraftsByThreadID[threadID] ?? ""
+  }
+
+  private func clearOpenClawDraftForSelectedThread() {
+    if let selectedOpenClawChatThreadID {
+      openClawDraftsByThreadID.removeValue(forKey: selectedOpenClawChatThreadID)
+    }
+    openClawDraft = ""
   }
 
   private func ensureOpenClawChatThread() {
@@ -7903,6 +8060,7 @@ public final class WorkspaceStore: ObservableObject {
         original: target,
         identity: approvalIdentity
       )
+      let currentProperties = try currentApprovalProperties(for: currentTarget)
       try upsertHeadlineProperties(
         file: currentTarget.file,
         line: currentTarget.line,
@@ -7913,17 +8071,77 @@ public final class WorkspaceStore: ObservableObject {
           "REJECTION_REASON": Self.sanitizeOrgPropertyValue(reason)
         ]
       )
+      let pairedRejected = try await rejectPairedApprovedAgentAction(
+        for: currentTarget,
+        approvalProperties: currentProperties,
+        endStatus: endStatus,
+        reason: reason,
+        timestamp: timestamp
+      )
       await refreshAfterHeadlineMutation(target)
       preserveAgendaSelectionAfterTodoMutation(
         target: target,
         originalVisibleIndex: originalVisibleIndex,
         shouldAdvanceSelection: true
       )
-      statusText = "Rejected -> \(target.title)"
+      statusText = pairedRejected
+        ? "Rejected approval and paired send -> \(target.title)"
+        : "Rejected -> \(target.title)"
     } catch {
       errorText = error.localizedDescription
       statusText = "Reject approval failed"
     }
+  }
+
+  private func rejectPairedApprovedAgentAction(
+    for target: HeadlineMutationTarget,
+    approvalProperties: [String: String],
+    endStatus: TodoEditStatus,
+    reason: String,
+    timestamp: String
+  ) async throws -> Bool {
+    let url = URL(fileURLWithPath: target.file)
+    let raw = try String(contentsOf: url, encoding: .utf8)
+    let lines = Self.normalizeLineEndings(raw)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    let targetIndex = max(0, min(lines.count - 1, target.line - 1))
+    guard let approvalHeadingIndex = Self.headingIndex(in: lines, atOrBefore: targetIndex),
+          let paired = Self.pairedApprovedAgentActionTarget(
+            lines: lines,
+            file: target.file,
+            approvalHeadingIndex: approvalHeadingIndex,
+            approvalProperties: approvalProperties,
+            approvalTitle: target.title
+          )
+    else {
+      return false
+    }
+
+    let pairedIndex = paired.line - 1
+    guard lines.indices.contains(pairedIndex),
+          let heading = Self.parseTodoHeading(lines[pairedIndex]),
+          !Self.isTerminalTodoStatus(heading.todo)
+    else {
+      return false
+    }
+
+    let pairedProperties = Self.scanPropertyDrawer(lines: lines, afterHeadingIndex: pairedIndex)
+    guard !Self.hasSentEvidence(in: pairedProperties) else { return false }
+
+    try await setTodoStatus(endStatus, for: paired)
+    try upsertHeadlineProperties(
+      file: paired.file,
+      line: paired.line,
+      properties: [
+        "STATUS": "rejected",
+        "REJECTED_AT": timestamp,
+        "REJECTION_END_STATUS": endStatus.label,
+        "REJECTION_REASON": Self.sanitizeOrgPropertyValue(reason),
+        "REJECTED_APPROVAL_TODO": target.title
+      ]
+    )
+    return true
   }
 
   private func activateApprovedAgentAction(
@@ -9541,6 +9759,9 @@ public final class WorkspaceStore: ObservableObject {
       guard generation == self.entrySourceLoadGeneration,
             self.selectedEntrySource?.id == source.id
       else {
+        if generation == self.entrySourceLoadGeneration {
+          self.isRenderingEntrySource = false
+        }
         return
       }
       self.cacheRenderedBlocks(blocks, for: source, modifiedAt: modifiedAt)
@@ -11431,8 +11652,16 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func beginMeetingProcessing(title: String, status: String) {
-    activeMeetingProcessingTitles.insert(Self.normalizedMeetingProcessingTitle(title))
-    activeMeetingProcessingCount += 1
+    let titleKey = Self.normalizedMeetingProcessingTitle(title)
+    activeMeetingProcessingTitles.insert(titleKey)
+    activeMeetingProcessingItems[titleKey] = MeetingProcessingItem(
+      id: titleKey,
+      title: title,
+      status: status,
+      startedAt: Date()
+    )
+    activeMeetingProcessingCount = activeMeetingProcessingTitles.count
+    publishMeetingProcessingItems()
     if !isRecordingMeeting {
       meetingStatusText = status
     }
@@ -11440,8 +11669,11 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func endMeetingProcessing(title: String) {
-    activeMeetingProcessingTitles.remove(Self.normalizedMeetingProcessingTitle(title))
-    activeMeetingProcessingCount = max(0, activeMeetingProcessingCount - 1)
+    let titleKey = Self.normalizedMeetingProcessingTitle(title)
+    activeMeetingProcessingTitles.remove(titleKey)
+    activeMeetingProcessingItems.removeValue(forKey: titleKey)
+    activeMeetingProcessingCount = activeMeetingProcessingTitles.count
+    publishMeetingProcessingItems()
   }
 
   private func reconcileMeetingProcessingState(with items: [MeetingWorkspaceItem]) {
@@ -11455,7 +11687,12 @@ public final class WorkspaceStore: ObservableObject {
     })
 
     if !activeMeetingProcessingTitles.isEmpty {
-      activeMeetingProcessingTitles.subtract(completedTitles)
+      for completedTitle in completedTitles {
+        activeMeetingProcessingTitles.remove(completedTitle)
+        activeMeetingProcessingItems.removeValue(forKey: completedTitle)
+      }
+      activeMeetingProcessingCount = activeMeetingProcessingTitles.count
+      publishMeetingProcessingItems()
       if activeMeetingProcessingTitles.isEmpty {
         clearMeetingProcessingState()
       }
@@ -11481,9 +11718,18 @@ public final class WorkspaceStore: ObservableObject {
 
   private func clearMeetingProcessingState() {
     activeMeetingProcessingTitles = []
+    activeMeetingProcessingItems = [:]
     activeMeetingProcessingCount = 0
     isProcessingMeeting = false
+    processingMeetings = []
     stopMeetingTranscriptionProgress(id: nil)
+  }
+
+  private func publishMeetingProcessingItems() {
+    processingMeetings = activeMeetingProcessingItems.values.sorted {
+      if $0.startedAt != $1.startedAt { return $0.startedAt > $1.startedAt }
+      return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+    }
   }
 
   nonisolated private static func transcribingMeetingTitle(fromStatus status: String) -> String? {
@@ -11812,6 +12058,49 @@ public final class WorkspaceStore: ObservableObject {
       : "ready-for-agent"
   }
 
+  nonisolated private static func isApprovedAgentActionTitle(_ title: String) -> Bool {
+    let normalized = normalizedApprovalActionTitle(title)
+    return normalized.hasPrefix("send approved ") || normalized.hasPrefix("continue approved ")
+  }
+
+  nonisolated private static func pairedApprovedAgentActionTarget(
+    lines: [String],
+    file: String,
+    approvalHeadingIndex: Int,
+    approvalProperties: [String: String],
+    approvalTitle: String
+  ) -> HeadlineMutationTarget? {
+    var candidateTitles = pairedApprovalActionTitleCandidates(properties: approvalProperties)
+    candidateTitles.append(approvedAgentActionTitle(for: approvalTitle))
+    if let existing = findExistingApprovedAgentAction(
+      lines: lines,
+      file: file,
+      excludingHeadingIndex: approvalHeadingIndex,
+      candidateTitles: candidateTitles
+    ) {
+      return existing
+    }
+
+    guard let approvalLevel = headingLevel(lines[approvalHeadingIndex]), approvalLevel > 1 else {
+      return nil
+    }
+
+    var index = approvalHeadingIndex - 1
+    while index >= 0 {
+      guard let level = headingLevel(lines[index]) else {
+        index -= 1
+        continue
+      }
+      if level < approvalLevel {
+        let title = headingTitle(from: lines[index])
+        guard isApprovedAgentActionTitle(title) else { return nil }
+        return HeadlineMutationTarget(file: file, line: index + 1, title: title)
+      }
+      index -= 1
+    }
+    return nil
+  }
+
   nonisolated private static func findExistingApprovedAgentAction(
     lines: [String],
     file: String,
@@ -11830,6 +12119,19 @@ public final class WorkspaceStore: ObservableObject {
       return HeadlineMutationTarget(file: file, line: index + 1, title: heading.title)
     }
     return nil
+  }
+
+  nonisolated private static func hasSentEvidence(in properties: [String: String]) -> Bool {
+    for key in ["SENT_AT", "LAST_SENT_AT", "GMAIL_SENT_MESSAGE_ID", "FOLLOWUP_SENT_AT"] {
+      if properties[key]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+        return true
+      }
+    }
+    if let status = properties["STATUS"]?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+       ["sent", "bounced", "bounce", "contact-route", "contact-route-needed", "contact-route-missing"].contains(status) {
+      return true
+    }
+    return false
   }
 
   nonisolated private static func normalizedApprovalActionTitle(_ title: String) -> String {

@@ -30,7 +30,14 @@ public struct ContentView: View {
         Button {
           Task { await store.refreshWorkspace() }
         } label: {
-          Label("Refresh", systemImage: "arrow.clockwise")
+          if store.isLoadingAgenda {
+            HStack(spacing: 6) {
+              WorkspaceActivityIndicator(size: .small)
+              Text("Refresh")
+            }
+          } else {
+            Label("Refresh", systemImage: "arrow.clockwise")
+          }
         }
         .disabled(store.corpusRoot == nil || store.isLoadingAgenda)
       }
@@ -238,8 +245,7 @@ private struct SidebarView: View {
             if store.isBuildingSearchIndex || !store.searchIndexStatusText.isEmpty {
               HStack(spacing: 5) {
                 if store.isBuildingSearchIndex {
-                  ProgressView()
-                    .controlSize(.mini)
+                  WorkspaceActivityIndicator(size: .mini)
                 } else {
                   Image(systemName: "magnifyingglass")
                 }
@@ -562,8 +568,7 @@ private struct FilesView: View {
     VStack(spacing: 0) {
       HeaderBar(title: "Files", subtitle: store.corpusRoot?.path ?? "Corpus files", surface: .files) {
         if store.isScanningCorpusFiles {
-          ProgressView()
-            .controlSize(.small)
+          WorkspaceActivityIndicator(size: .small)
         }
 
         Button {
@@ -594,7 +599,7 @@ private struct FilesView: View {
         }
       } else if store.corpusFiles.isEmpty && store.isScanningCorpusFiles {
         Spacer()
-        ProgressView()
+        WorkspaceLoadingStateView("Scanning files")
         Spacer()
       } else if store.filteredCorpusFiles.isEmpty {
         EmptyStateView(title: "No Files", detail: "No org2, org, or markdown files matched.", action: "Refresh") {
@@ -890,10 +895,10 @@ private struct QuickOpenView: View {
 
       if store.isScanningCorpusFiles || store.isFilteringQuickOpenFiles {
         HStack(spacing: 8) {
-          ProgressView()
-            .controlSize(.small)
+          WorkspaceActivityIndicator(size: .small)
           Text(store.isScanningCorpusFiles ? "Scanning files" : "Searching files")
             .foregroundStyle(.secondary)
+            .workspaceShimmer()
         }
       }
 
@@ -1268,8 +1273,7 @@ private struct AgendaView: View {
     VStack(spacing: 0) {
       HeaderBar(title: "Agenda", subtitle: headerSubtitle, surface: .agenda) {
         if store.agendaMode == .assigned ? store.isLoadingAssignedWork : store.isLoadingAgenda {
-          ProgressView()
-            .controlSize(.small)
+          WorkspaceActivityIndicator(size: .small)
         }
       }
 
@@ -1490,8 +1494,7 @@ private struct ApprovalsView: View {
     VStack(spacing: 0) {
       HeaderBar(title: "Approvals", subtitle: headerSubtitle, surface: .approvals) {
         if store.isLoadingApprovals {
-          ProgressView()
-            .controlSize(.small)
+          WorkspaceActivityIndicator(size: .small)
         }
       }
 
@@ -1539,7 +1542,7 @@ private struct ApprovalsView: View {
       }
     } else if store.isLoadingApprovals && store.approvalItems.isEmpty {
       Spacer()
-      ProgressView()
+      WorkspaceLoadingStateView("Loading approvals")
       Spacer()
     } else if store.visibleApprovalItems.isEmpty {
       EmptyStateView(title: "No Approvals", detail: "No pending approval candidates matched.", action: "Refresh") {
@@ -1571,6 +1574,7 @@ private struct ApprovalsView: View {
             } label: {
               Label("Approve", systemImage: "checkmark")
             }
+            .disabled(store.isApprovalActionInProgress(item))
             Button {
               discussionMessage = "I need to discuss this approval item before deciding."
               discussionItem = item
@@ -1658,9 +1662,17 @@ private struct ApprovalRow: View {
         Button {
           Task { await store.approve(item) }
         } label: {
-          Label("Approve", systemImage: "checkmark")
+          if store.isApprovingApproval(item) {
+            HStack(spacing: 6) {
+              WorkspaceActivityIndicator(size: .mini)
+              Text("Approving")
+            }
+          } else {
+            Label("Approve", systemImage: "checkmark")
+          }
         }
         .buttonStyle(WorkspaceActionButtonStyle())
+        .disabled(store.isApprovalActionInProgress(item))
 
         Button {
           discuss()
@@ -1670,12 +1682,19 @@ private struct ApprovalRow: View {
         .buttonStyle(WorkspaceActionButtonStyle())
 
         Button {
-          store.selectApprovalItem(item)
-          store.promptAndApplyRejectApprovalShortcut(to: .agenda(item.agendaItem()))
+          store.promptAndRejectApproval(item)
         } label: {
-          Label("Reject", systemImage: "xmark.octagon")
+          if store.isRejectingApproval(item) {
+            HStack(spacing: 6) {
+              WorkspaceActivityIndicator(size: .mini)
+              Text("Rejecting")
+            }
+          } else {
+            Label("Reject", systemImage: "xmark.octagon")
+          }
         }
         .buttonStyle(WorkspaceActionButtonStyle())
+        .disabled(store.isApprovalActionInProgress(item))
 
         Button {
           store.copyApprovalDiscussionText(item)
@@ -1806,7 +1825,7 @@ private struct AssignedAgendaListView: View {
   var body: some View {
     if store.isLoadingAssignedWork {
       Spacer()
-      ProgressView()
+      WorkspaceLoadingStateView("Loading assigned work")
       Spacer()
     } else {
       List(selection: $store.selectedAssignedWorkItemID) {
@@ -2050,8 +2069,7 @@ private struct SearchView: View {
     VStack(spacing: 0) {
       HeaderBar(title: "Search", subtitle: store.searchMode.subtitle, surface: .search) {
         if store.isSearching {
-          ProgressView()
-            .controlSize(.small)
+          WorkspaceActivityIndicator(size: .small)
         }
 
         Button {
@@ -2118,7 +2136,7 @@ private struct SearchView: View {
       if store.searchResults.isEmpty && store.openClawChatSearchResults.isEmpty {
         if store.isSearching {
           Spacer()
-          ProgressView()
+          WorkspaceLoadingStateView("Searching")
           Spacer()
         } else {
           EmptyStateView(title: "No Results", detail: searchEmptyStateDetail, action: "Search") {
@@ -2454,8 +2472,7 @@ private struct MeetingsView: View {
     VStack(spacing: 0) {
       HeaderBar(title: "Meetings", subtitle: "\(store.meetings.count) local meeting\(store.meetings.count == 1 ? "" : "s")", surface: .meetings) {
         if store.isLoadingMeetings || store.isProcessingMeeting {
-          ProgressView()
-            .controlSize(.small)
+          WorkspaceActivityIndicator(size: .small)
         }
 
         if store.isRecordingMeeting {
@@ -2493,7 +2510,7 @@ private struct MeetingsView: View {
         } label: {
           Label("Import", systemImage: "tray.and.arrow.down")
         }
-        .disabled(store.corpusRoot == nil || store.isRecordingMeeting || store.isProcessingMeeting)
+        .disabled(store.corpusRoot == nil || store.isRecordingMeeting)
       }
 
       VStack(alignment: .leading, spacing: 8) {
@@ -2536,10 +2553,10 @@ private struct MeetingsView: View {
       .padding(.horizontal, WorkspaceDesign.contentInset)
       .padding(.bottom, 12)
 
-      if store.meetings.isEmpty {
+      if store.meetings.isEmpty && store.pendingMeetingProcessingItems.isEmpty {
         if store.isLoadingMeetings {
           Spacer()
-          ProgressView()
+          WorkspaceLoadingStateView("Loading meetings")
           Spacer()
         } else {
           EmptyStateView(title: "No Meetings", detail: store.meetingStatusText, action: "Record") {
@@ -2548,10 +2565,18 @@ private struct MeetingsView: View {
         }
       } else {
         List(selection: $store.selectedMeetingID) {
+          if !store.pendingMeetingProcessingItems.isEmpty {
+            Section("Processing") {
+              ForEach(store.pendingMeetingProcessingItems) { item in
+                MeetingProcessingRow(item: item)
+              }
+            }
+          }
+
           ForEach(store.meetingDisplaySections) { section in
             Section(section.label) {
               ForEach(section.meetings) { meeting in
-                MeetingRow(meeting: meeting)
+                MeetingRow(meeting: meeting, isProcessing: store.isMeetingProcessing(meeting))
                   .tag(meeting.id)
                   .contentShape(Rectangle())
                   .onTapGesture {
@@ -2837,6 +2862,7 @@ struct WorkspaceInputMeterView: View {
 private struct MeetingRow: View {
   @EnvironmentObject private var store: WorkspaceStore
   let meeting: MeetingWorkspaceItem
+  let isProcessing: Bool
 
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
@@ -2847,7 +2873,12 @@ private struct MeetingRow: View {
             .font(.body.weight(.medium))
             .lineLimit(1)
           Spacer(minLength: 0)
-          if let status = meeting.transcriptionStatus {
+          if isProcessing {
+            HStack(spacing: 5) {
+              WorkspaceActivityIndicator(size: .mini)
+              StatusPill(text: "PROCESSING")
+            }
+          } else if let status = meeting.transcriptionStatus {
             StatusPill(text: status.uppercased())
           }
         }
@@ -2876,6 +2907,37 @@ private struct MeetingRow: View {
     let formatter = RelativeDateTimeFormatter()
     formatter.unitsStyle = .short
     return formatter.localizedString(for: date, relativeTo: Date())
+  }
+}
+
+private struct MeetingProcessingRow: View {
+  let item: MeetingProcessingItem
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 8) {
+      WorkspaceIconBadge(systemImage: "waveform.and.mic", tint: .accentColor, fill: Color.accentColor.opacity(0.1))
+      VStack(alignment: .leading, spacing: 5) {
+        HStack(spacing: 8) {
+          Text(Org2Display.cleanInline(item.title))
+            .font(.body.weight(.medium))
+            .lineLimit(1)
+          Spacer(minLength: 0)
+          HStack(spacing: 5) {
+            WorkspaceActivityIndicator(size: .mini)
+            StatusPill(text: "PROCESSING")
+          }
+        }
+
+        Text(item.status)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.tail)
+      }
+    }
+    .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("Processing \(item.title)")
   }
 }
 
@@ -2945,8 +3007,7 @@ private struct OpenClawChatView: View {
         }
         Spacer(minLength: 0)
         if store.isSendingOpenClawMessage {
-          ProgressView()
-            .controlSize(.small)
+          WorkspaceActivityIndicator(size: .small)
         }
         Button {
           store.makeSurfacePrimary(.openClaw)
@@ -2984,8 +3045,7 @@ private struct OpenClawChatView: View {
   @ViewBuilder
   private var headerActions: some View {
     if store.isSendingOpenClawMessage {
-      ProgressView()
-        .controlSize(.small)
+      WorkspaceActivityIndicator(size: .small)
     }
 
     Button {
@@ -4185,11 +4245,11 @@ private struct EntryBodyView: View {
 
       if store.isLoadingEntrySource && store.selectedEntrySource == nil {
         HStack(spacing: 8) {
-          ProgressView()
-            .controlSize(.small)
+          WorkspaceActivityIndicator(size: .small)
           Text("Loading source")
             .font(.callout)
             .foregroundStyle(.secondary)
+            .workspaceShimmer()
         }
       } else if let source = store.selectedEntrySource {
         VStack(alignment: .leading, spacing: 4) {
@@ -4221,11 +4281,11 @@ private struct EntryBodyView: View {
           )
         } else if store.isRenderingEntrySource && store.selectedRenderedBlocks.isEmpty {
           HStack(spacing: 8) {
-            ProgressView()
-              .controlSize(.small)
+            WorkspaceActivityIndicator(size: .small)
             Text("Rendering preview")
             .font(.callout)
             .foregroundStyle(.secondary)
+            .workspaceShimmer()
           }
         } else {
           OrgRenderedEntryView(
@@ -4390,8 +4450,7 @@ private struct NodeContextPane: View {
           .font(.headline)
         Spacer()
         if store.isLoadingBacklinks {
-          ProgressView()
-            .controlSize(.small)
+          WorkspaceActivityIndicator(size: .small)
         }
         Button {
           store.toggleNodeContextPane()
