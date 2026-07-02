@@ -56,8 +56,7 @@ private struct InlineEditorSavingIndicator: View {
   var body: some View {
     ZStack {
       if InlineEditorChrome.rendersSavingIndicator(isSaving) {
-        ProgressView()
-          .controlSize(.small)
+        WorkspaceActivityIndicator(size: .small)
       }
     }
     .frame(width: InlineEditorChrome.savingIndicatorSize, height: InlineEditorChrome.savingIndicatorSize)

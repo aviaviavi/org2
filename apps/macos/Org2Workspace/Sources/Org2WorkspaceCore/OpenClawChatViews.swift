@@ -348,11 +348,11 @@ struct OpenClawComposerView: View {
       HStack(spacing: 8) {
         if store.isSendingOpenClawMessage {
           HStack(spacing: 6) {
-            ProgressView()
-              .controlSize(.small)
+            WorkspaceActivityIndicator(size: .small)
             Text(store.openClawQueuedMessageCount > 1 ? "\(store.openClawQueuedMessageCount - 1) queued" : "Sending")
               .font(.caption.weight(.medium))
               .foregroundStyle(.secondary)
+              .workspaceShimmer()
           }
         }
         if store.isRecordingOpenClawVoiceNote {
@@ -424,6 +424,9 @@ struct OpenClawComposerView: View {
       lastStoreDraft = store.openClawDraft
     }
     .onDisappear {
+      flushDraftToStore()
+    }
+    .onChange(of: localDraft) {
       flushDraftToStore()
     }
     .onChange(of: store.openClawDraft) { _, newValue in
@@ -699,12 +702,12 @@ struct OpenClawTypingIndicatorView: View {
     HStack {
       VStack(alignment: .leading, spacing: 5) {
         HStack(spacing: 8) {
-          ProgressView()
-            .controlSize(.small)
+          WorkspaceActivityIndicator(size: .small)
           TimelineView(.periodic(from: startedAt ?? Date(), by: 1)) { context in
             Text("OpenClaw is thinking\(elapsedSuffix(now: context.date))")
               .font(.caption.weight(.medium))
               .foregroundStyle(.secondary)
+              .workspaceShimmer()
           }
         }
         Text("Waiting for the gateway response")

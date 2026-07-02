@@ -625,17 +625,40 @@ final class CorpusStore: ObservableObject {
 
     let url = try corpusFileURL(for: approval.file, rootURL: rootURL)
     let raw = try String(contentsOf: url, encoding: .utf8)
-    var lines = raw.components(separatedBy: .newlines)
+    let sourceLines = sourceLines(in: raw)
+    let lines = sourceLines.map(\.text)
     guard let headingIndex = headingIndex(in: lines, matching: approval) else {
       throw CocoaError(.fileNoSuchFile)
     }
 
-    lines[headingIndex] = headingLine(lines[headingIndex], settingTodo: endStatus.rawValue)
-    upsertRejectionProperties(in: &lines, headingIndex: headingIndex, approval: approval, endStatus: endStatus, reason: reason)
+    let timestamp = orgTimestamp(Date())
+    let pairedSendIndex = pairedSendHeadingIndex(in: lines, approvalHeadingIndex: headingIndex)
+    var replacements: [ScopedLineReplacement] = []
+    if let pairedSendIndex,
+       let pairedReplacement = pairedSendRejectionReplacement(
+        in: lines,
+        headingIndex: pairedSendIndex,
+        approvalTitle: approval.title,
+        endStatus: endStatus,
+        reason: reason,
+        timestamp: timestamp
+       ) {
+      replacements.append(pairedReplacement)
+    }
+    replacements.append(
+      approvalRejectionReplacement(
+        in: lines,
+        headingIndex: headingIndex,
+        approval: approval,
+        endStatus: endStatus,
+        reason: reason,
+        timestamp: timestamp
+      )
+    )
 
-    var output = lines.joined(separator: "\n")
-    if raw.hasSuffix("\n"), !output.hasSuffix("\n") {
-      output += "\n"
+    let output = try applyingScopedLineReplacements(replacements, to: raw, sourceLines: sourceLines)
+    guard try String(contentsOf: url, encoding: .utf8) == raw else {
+      throw CorpusMutationError.fileChanged
     }
     try output.write(to: url, atomically: true, encoding: .utf8)
     return url
@@ -908,11 +931,12 @@ final class CorpusStore: ObservableObject {
     headingIndex: Int,
     approval: ApprovalEntry,
     endStatus: OrgTodoStatus,
-    reason: String
+    reason: String,
+    timestamp: String
   ) {
     var properties: [String: String] = [
       "STATUS": "rejected",
-      "REJECTED_AT": orgTimestamp(Date()),
+      "REJECTED_AT": timestamp,
       "REJECTION_END_STATUS": endStatus.rawValue,
       "REJECTION_REASON": sanitizeProperty(reason),
     ]
@@ -930,6 +954,28 @@ final class CorpusStore: ObservableObject {
     }
 
     upsertProperties(properties, in: &lines, headingIndex: headingIndex)
+  }
+
+  private func approvalRejectionReplacement(
+    in lines: [String],
+    headingIndex: Int,
+    approval: ApprovalEntry,
+    endStatus: OrgTodoStatus,
+    reason: String,
+    timestamp: String
+  ) -> ScopedLineReplacement {
+    let range = headingMetadataRange(in: lines, headingIndex: headingIndex)
+    var replacementLines = Array(lines[range])
+    replacementLines[0] = headingLine(replacementLines[0], settingTodo: endStatus.rawValue)
+    upsertRejectionProperties(
+      in: &replacementLines,
+      headingIndex: 0,
+      approval: approval,
+      endStatus: endStatus,
+      reason: reason,
+      timestamp: timestamp
+    )
+    return ScopedLineReplacement(range: range, lines: replacementLines)
   }
 
   private func scheduleDueTodayNotification(from agenda: [AgendaEntry]) {
@@ -1026,6 +1072,40 @@ final class CorpusStore: ObservableObject {
         "ASSIGNEE": "OpenClaw",
         "APPROVED_AT": timestamp,
         "APPROVAL_TODO": approvalTitle,
+      ],
+      in: &replacementLines,
+      headingIndex: 0
+    )
+    return ScopedLineReplacement(range: range, lines: replacementLines)
+  }
+
+  private func pairedSendRejectionReplacement(
+    in lines: [String],
+    headingIndex: Int,
+    approvalTitle: String,
+    endStatus: OrgTodoStatus,
+    reason: String,
+    timestamp: String
+  ) -> ScopedLineReplacement? {
+    let properties = propertyDrawerValues(in: lines, headingIndex: headingIndex)
+    if let todo = headingTodo(lines[headingIndex]),
+       OrgTodoStatus(rawValue: todo.uppercased())?.isTerminal == true {
+      return nil
+    }
+    if sentEvidence(in: properties) != nil {
+      return nil
+    }
+
+    let range = headingMetadataRange(in: lines, headingIndex: headingIndex)
+    var replacementLines = Array(lines[range])
+    replacementLines[0] = headingLine(replacementLines[0], settingTodo: endStatus.rawValue)
+    upsertProperties(
+      [
+        "STATUS": "rejected",
+        "REJECTED_AT": timestamp,
+        "REJECTION_END_STATUS": endStatus.rawValue,
+        "REJECTION_REASON": sanitizeProperty(reason),
+        "REJECTED_APPROVAL_TODO": approvalTitle,
       ],
       in: &replacementLines,
       headingIndex: 0

@@ -745,6 +745,20 @@ public struct MeetingWorkspaceItem: Identifiable, Hashable, Sendable {
   }
 }
 
+public struct MeetingProcessingItem: Identifiable, Hashable, Sendable {
+  public let id: String
+  public let title: String
+  public let status: String
+  public let startedAt: Date
+
+  public init(id: String, title: String, status: String, startedAt: Date) {
+    self.id = id
+    self.title = title
+    self.status = status
+    self.startedAt = startedAt
+  }
+}
+
 public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
   public enum Role: String, Codable, Sendable {
     case user
