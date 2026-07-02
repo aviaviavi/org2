@@ -1,6 +1,6 @@
 import Combine
 import Foundation
-import UserNotifications
+@preconcurrency import UserNotifications
 
 @MainActor
 final class CorpusStore: ObservableObject {
@@ -19,6 +19,7 @@ final class CorpusStore: ObservableObject {
   private let mobileInboxFilename = MobileCaptureWriter.mobileInboxFilename
   private let mobileInboxAssetsDirectory = MobileCaptureWriter.mobileInboxAssetsDirectory
   private let cacheFilename = "org2-mobile-corpus-cache.json"
+  private let dueTodayNotificationIdentifierPrefix = "org2.due-today.daily"
   private let headingTodoKeywords = Set(OrgTodoStatus.allCases.map(\.rawValue))
   private var cachedFileCount: Int?
   private var refreshGeneration = 0
@@ -217,6 +218,12 @@ final class CorpusStore: ObservableObject {
       statusMessage = "Queued note in \(inboxURL.lastPathComponent)"
     } catch {
       errorMessage = "Could not write to corpus mobile-inbox.org2. Re-select the synced corpus folder and try again."
+    }
+  }
+
+  func clearNotificationBadge() {
+    Task {
+      try? await UNUserNotificationCenter.current().setBadgeCount(0)
     }
   }
 
@@ -926,8 +933,9 @@ final class CorpusStore: ObservableObject {
   }
 
   private func scheduleDueTodayNotification(from agenda: [AgendaEntry]) {
-    let dueToday = agenda.filter { $0.date == Date.org2TodayString && !$0.todo.uppercased().hasPrefix("DONE") && !$0.todo.uppercased().hasPrefix("CANCEL") }
-    Task.detached {
+    let identifierPrefix = dueTodayNotificationIdentifierPrefix
+    let plans = Self.dueTodayNotificationPlans(from: agenda, identifierPrefix: identifierPrefix)
+    Task {
       let center = UNUserNotificationCenter.current()
       let settings = await center.notificationSettings()
       if settings.authorizationStatus == .notDetermined {
@@ -936,21 +944,59 @@ final class CorpusStore: ObservableObject {
       let refreshedSettings = await center.notificationSettings()
       guard refreshedSettings.authorizationStatus == .authorized || refreshedSettings.authorizationStatus == .provisional else { return }
 
-      center.removePendingNotificationRequests(withIdentifiers: ["org2.due-today.daily"])
-      guard !dueToday.isEmpty else { return }
+      let pendingIDs = await center.pendingNotificationRequests()
+        .map(\.identifier)
+        .filter { $0 == identifierPrefix || $0.hasPrefix("\(identifierPrefix).") }
+      if !pendingIDs.isEmpty {
+        center.removePendingNotificationRequests(withIdentifiers: pendingIDs)
+      }
 
-      let content = UNMutableNotificationContent()
-      content.title = "Org2 due today"
-      content.body = Self.dueTodayNotificationBody(for: dueToday)
-      content.sound = .default
-      content.badge = NSNumber(value: dueToday.count)
+      if plans.isEmpty {
+        try? await center.setBadgeCount(0)
+        return
+      }
 
-      var date = DateComponents()
-      date.hour = 8
-      date.minute = 0
-      let trigger = UNCalendarNotificationTrigger(dateMatching: date, repeats: true)
-      let request = UNNotificationRequest(identifier: "org2.due-today.daily", content: content, trigger: trigger)
-      try? await center.add(request)
+      for plan in plans {
+        let content = UNMutableNotificationContent()
+        content.title = "Org2 due today"
+        content.body = Self.dueTodayNotificationBody(for: plan.entries)
+        content.sound = .default
+        content.badge = NSNumber(value: plan.entries.count)
+
+        let trigger = UNCalendarNotificationTrigger(dateMatching: plan.dateComponents, repeats: false)
+        let request = UNNotificationRequest(identifier: plan.identifier, content: content, trigger: trigger)
+        try? await center.add(request)
+      }
+    }
+  }
+
+  private struct DueTodayNotificationPlan {
+    let identifier: String
+    let dateComponents: DateComponents
+    let entries: [AgendaEntry]
+  }
+
+  private static func dueTodayNotificationPlans(
+    from agenda: [AgendaEntry],
+    now: Date = Date(),
+    calendar: Calendar = .current,
+    identifierPrefix: String
+  ) -> [DueTodayNotificationPlan] {
+    let activeAgenda = agenda.filter {
+      !$0.todo.uppercased().hasPrefix("DONE") && !$0.todo.uppercased().hasPrefix("CANCEL")
+    }
+    let groupedByDate = Dictionary(grouping: activeAgenda, by: \.date)
+
+    return groupedByDate.keys.sorted().compactMap { day in
+      guard let dayDate = Date.org2DayFormatter.date(from: day) else { return nil }
+      let notificationDate = calendar.date(bySettingHour: 8, minute: 0, second: 0, of: dayDate) ?? dayDate
+      guard notificationDate > now, let entries = groupedByDate[day], !entries.isEmpty else { return nil }
+
+      return DueTodayNotificationPlan(
+        identifier: "\(identifierPrefix).\(day)",
+        dateComponents: calendar.dateComponents([.year, .month, .day, .hour, .minute], from: notificationDate),
+        entries: entries
+      )
     }
   }
 
