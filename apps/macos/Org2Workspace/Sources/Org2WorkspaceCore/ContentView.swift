@@ -3764,16 +3764,21 @@ private struct DetailView: View {
         DetailHeader(location: location)
         Divider()
         VStack(spacing: 0) {
-          ScrollViewReader { proxy in
-            ScrollView {
-              EntryBodyView(location: location)
-                .background(DetailScrollCommandBridge(request: pageScrollRequest))
+          if store.isLiveFileEditorSelected {
+            LiveFileEditorBody(location: location)
+              .frame(minWidth: 420, idealWidth: 560, maxHeight: .infinity)
+          } else {
+            ScrollViewReader { proxy in
+              ScrollView {
+                EntryBodyView(location: location)
+                  .background(DetailScrollCommandBridge(request: pageScrollRequest))
+              }
+              .onChange(of: store.detailScrollRequest) { _, request in
+                scrollToBlockTarget(request, proxy: proxy)
+              }
             }
-            .onChange(of: store.detailScrollRequest) { _, request in
-              scrollToBlockTarget(request, proxy: proxy)
-            }
+            .frame(minWidth: 420, idealWidth: 560, maxHeight: .infinity)
           }
-          .frame(minWidth: 420, idealWidth: 560, maxHeight: .infinity)
 
           if store.isNodeContextPanePresented {
             Divider()
@@ -4011,7 +4016,9 @@ private struct DetailHeader: View {
 
   private var scopeAndEditControls: some View {
     HStack(spacing: 7) {
-      scopePicker
+      if !store.isLiveFileEditorSelected {
+        scopePicker
+      }
       editControls
       organizeMenu
     }
@@ -4103,7 +4110,32 @@ private struct DetailHeader: View {
 
   @ViewBuilder
   private var editControls: some View {
-    if store.hasActiveEdit {
+    if store.isLiveFileEditorSelected {
+      HStack(spacing: 6) {
+        if store.isSavingEntry || store.isLiveFileEditorAutosaving {
+          WorkspaceActivityIndicator(size: .small)
+        }
+        if !store.liveFileEditorStatusText.isEmpty {
+          Text(store.liveFileEditorStatusText)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: true, vertical: false)
+        }
+        Button {
+          Task { await store.saveLiveFileEditor(explicit: true) }
+        } label: {
+          Label("Save", systemImage: "checkmark")
+        }
+        .disabled(!store.canSaveLiveFileEditor)
+
+        Button {
+          store.revertLiveFileEditor()
+        } label: {
+          Label("Revert", systemImage: "arrow.uturn.backward")
+        }
+        .disabled(!store.liveFileEditorHasUnsavedChanges || store.isSavingEntry || store.isLiveFileEditorAutosaving)
+      }
+    } else if store.hasActiveEdit {
       HStack(spacing: 6) {
         Button {
           Task { await store.saveActiveEdit() }
@@ -4231,6 +4263,44 @@ private struct DetailHeader: View {
   private func planningButton(_ title: String, kind: PlanningEditKind, target: PlanningDateTarget) -> some View {
     Button(title) {
       Task { await store.applyPlanningShortcut(kind: kind, target: target) }
+    }
+  }
+}
+
+private struct LiveFileEditorBody: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let location: WorkspaceLocation
+
+  var body: some View {
+    Group {
+      if store.isLoadingEntrySource && store.selectedEntrySource == nil {
+        HStack(spacing: 8) {
+          WorkspaceActivityIndicator(size: .small)
+          Text("Loading source")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .workspaceShimmer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+      } else if store.selectedEntrySource != nil {
+        OrgSyntaxTextEditor(
+          text: $store.editableEntryText,
+          monospaced: true,
+          showsScrollers: true,
+          textInset: NSSize(width: 22, height: 18),
+          focusOnAppear: true,
+          textPublishing: .immediate,
+          onLocalTextChange: { text in
+            store.noteLiveFileEditorTextChanged(text)
+          }
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .textBackgroundColor))
+      } else {
+        EmptyStateView(title: "Source Unavailable", detail: store.statusText, action: "Reveal File") {
+          store.revealFile(path: location.file)
+        }
+      }
     }
   }
 }
