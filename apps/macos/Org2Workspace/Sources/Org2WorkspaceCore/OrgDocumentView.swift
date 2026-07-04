@@ -874,7 +874,22 @@ enum RenderedRowChrome {
 
 enum RenderedBlockEditingPolicy {
   static func startsEditingOnSingleClick(block: OrgEditableBlock, isSourceEditable: Bool) -> Bool {
-    isSourceEditable && block.isEditable && OrgCrypt.armorSummary(block.rawText) == nil
+    guard isSourceEditable,
+          block.isEditable,
+          OrgCrypt.armorSummary(block.rawText) == nil
+    else {
+      return false
+    }
+
+    switch block.rendered {
+    case .paragraph:
+      return OrgMediaAttachment.standalone(raw: block.rawText) == nil
+        && OrgMediaAttachment.embedded(in: block.rawText) == nil
+    case .listItem:
+      return true
+    default:
+      return false
+    }
   }
 }
 

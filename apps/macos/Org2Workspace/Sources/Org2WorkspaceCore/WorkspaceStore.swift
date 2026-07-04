@@ -701,6 +701,8 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var isEditingEntry = false
   @Published public var isSavingEntry = false
   @Published public var isSavingBlock = false
+  @Published public private(set) var isLiveFileEditorAutosaving = false
+  @Published public private(set) var liveFileEditorStatusText = ""
   @Published public var isLoadingBacklinks = false
   @Published public var priorityModeActive = false
   @Published public var statusText = ""
@@ -738,6 +740,7 @@ public final class WorkspaceStore: ObservableObject {
   private static let canonicalParserLineLimit = 2_000
   private static let renderedBlocksCacheLimit = 12
   private static let detailNavigationHistoryLimit = 100
+  nonisolated private static let liveFileEditorAutosaveDelayNanoseconds: UInt64 = 850_000_000
   nonisolated private static let openClawChangeSnapshotMaxFileBytes = 2_000_000
   nonisolated private static let openClawChangeSnapshotAllowedExtensions = Set([
     "org", "org2", "md", "markdown", "txt",
@@ -802,6 +805,8 @@ public final class WorkspaceStore: ObservableObject {
   private var searchIndexTask: Task<Void, Never>?
   private var searchIndexGeneration = 0
   private var entrySourceLoadGeneration = 0
+  private var liveFileEditorAutosaveTask: Task<Void, Never>?
+  private var liveFileEditorAutosaveGeneration = 0
   private var backlinksLoadGeneration = 0
   private var detailNavigationBackStack: [DetailNavigationSnapshot] = [] {
     didSet {
@@ -2913,6 +2918,9 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func pageSearchFullFileText() -> String? {
+    if isLiveFileEditorSelected {
+      return editableEntryText
+    }
     guard let file = selectedEntrySource?.file else { return nil }
     return try? String(contentsOf: URL(fileURLWithPath: file), encoding: .utf8)
   }
@@ -2935,6 +2943,8 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
+    persistLiveFileEditorDraftBeforeNavigation()
+    cancelLiveFileEditorAutosave(resetStatus: false)
     isWorkspaceDetailPaneClosed = false
     isWorkspaceDetailPaneExpanded = false
     if recordsHistory, let selectedLocation, selectedLocation != location {
@@ -2991,7 +3001,7 @@ public final class WorkspaceStore: ObservableObject {
     else {
       return false
     }
-    return selectedEntrySource != nil || isLoadingEntrySource || isRenderingEntrySource
+    return selectedEntrySource != nil || isRenderingEntrySource
   }
 
   private func applyDetailSelectionMetadata(for location: WorkspaceLocation) {
@@ -3048,7 +3058,7 @@ public final class WorkspaceStore: ObservableObject {
         return
       }
       selectedEntrySource = source
-      if isEditingEntry {
+      if isEditingEntry || isLiveFileEditorSelected {
         editableEntryText = source.text
       }
       renderEntrySource(source, generation: generation)
@@ -3224,11 +3234,32 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public var canSaveCurrentFile: Bool {
-    canSaveActiveEdit || (orgCryptEncryptOnSave && selectedFileForOrgCryptSave != nil)
+    canSaveActiveEdit
+      || canSaveLiveFileEditor
+      || (orgCryptEncryptOnSave && selectedFileForOrgCryptSave != nil)
   }
 
   public var hasActiveEdit: Bool {
     isEditingEntry || editingBlockID != nil
+  }
+
+  public var isLiveFileEditorSelected: Bool {
+    selectedSurface == .files
+      && selectedEntrySourceMode == .page
+      && selectedLocation != nil
+  }
+
+  public var isLiveFileEditorAvailable: Bool {
+    isLiveFileEditorSelected && selectedEntrySource?.isEditable == true
+  }
+
+  public var canSaveLiveFileEditor: Bool {
+    isLiveFileEditorAvailable && !isSavingEntry
+  }
+
+  public var liveFileEditorHasUnsavedChanges: Bool {
+    guard let source = selectedEntrySource, isLiveFileEditorSelected else { return false }
+    return Self.normalizeLineEndings(editableEntryText) != Self.normalizeLineEndings(source.text)
   }
 
   public func cancelActiveEdit() {
@@ -3448,6 +3479,10 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     guard let block = activeEditingBlock else {
+      if isLiveFileEditorAvailable {
+        await saveLiveFileEditor(explicit: true)
+        return
+      }
       await encryptSelectedFileAfterSave()
       return
     }
@@ -3525,6 +3560,105 @@ public final class WorkspaceStore: ObservableObject {
     await finishSavedEntry(source: source)
   }
 
+  public func noteLiveFileEditorTextChanged(_ text: String) {
+    guard isLiveFileEditorSelected else { return }
+    if editableEntryText != text {
+      editableEntryText = text
+    }
+    liveFileEditorStatusText = liveFileEditorHasUnsavedChanges ? "Unsaved" : "Saved"
+    scheduleLiveFileEditorAutosave()
+  }
+
+  public func revertLiveFileEditor() {
+    cancelLiveFileEditorAutosave(resetStatus: true)
+    editableEntryText = selectedEntrySource?.text ?? ""
+    liveFileEditorStatusText = "Reverted"
+  }
+
+  public func saveLiveFileEditor(explicit: Bool) async {
+    if explicit {
+      cancelLiveFileEditorAutosave(resetStatus: false)
+    }
+
+    guard let source = selectedEntrySource, source.isEditable, isLiveFileEditorSelected else {
+      if explicit {
+        statusText = "No editable file loaded"
+      }
+      return
+    }
+
+    let replacement = editableEntryText
+    let hasTextChanges = Self.normalizeLineEndings(replacement) != Self.normalizeLineEndings(source.text)
+    guard hasTextChanges else {
+      liveFileEditorStatusText = "Saved"
+      if explicit {
+        await encryptSelectedFileAfterSave()
+      }
+      return
+    }
+
+    if explicit {
+      isSavingEntry = true
+    } else {
+      isLiveFileEditorAutosaving = true
+    }
+    defer {
+      if explicit {
+        isSavingEntry = false
+      } else {
+        isLiveFileEditorAutosaving = false
+      }
+    }
+
+    do {
+      try await Task.detached(priority: explicit ? .userInitiated : .utility) {
+        try Self.replaceEntrySource(source, with: replacement)
+      }.value
+    } catch {
+      errorText = error.localizedDescription
+      liveFileEditorStatusText = explicit ? "Save failed" : "Autosave failed"
+      if explicit {
+        statusText = "Save failed"
+      }
+      return
+    }
+
+    guard selectedEntrySource?.id == source.id else {
+      return
+    }
+
+    selectedEntrySource = Self.entrySource(source, replacingText: replacement)
+    invalidateCanonicalDocumentCache(for: source.file)
+    if let corpusRoot {
+      upsertCorpusFile(corpusFile(for: URL(fileURLWithPath: source.file), corpusRoot: corpusRoot))
+    }
+
+    if explicit {
+      let savedStatus: String
+      do {
+        let encryptedCount = try await encryptOrgCryptSubtreesAfterExplicitSave(file: source.file)
+        savedStatus = encryptedCount > 0
+          ? "Saved and encrypted \(encryptedCount) subtree\(encryptedCount == 1 ? "" : "s")"
+          : "Saved \(relativePath(source.file))"
+      } catch {
+        recordOrgCryptEncryptionFailure(error, savedPrefix: "Saved, but")
+        liveFileEditorStatusText = "Saved"
+        scheduleAgendaRefresh(preserveSelection: true)
+        return
+      }
+
+      statusText = savedStatus
+      liveFileEditorStatusText = "Saved"
+      if savedStatus.contains("encrypted"), let selectedLocation {
+        await loadEntrySource(for: selectedLocation)
+      }
+      scheduleAgendaRefresh(preserveSelection: true)
+    } else {
+      liveFileEditorStatusText = "Autosaved"
+      scheduleAgendaRefresh(preserveSelection: true)
+    }
+  }
+
   private func finishSavedEntry(source: EntrySource) async {
     invalidateCanonicalDocumentCache(for: source.file)
     isEditingEntry = false
@@ -3532,6 +3666,56 @@ public final class WorkspaceStore: ObservableObject {
       await loadEntrySource(for: selectedLocation)
     }
     scheduleAgendaRefresh(preserveSelection: true)
+  }
+
+  private func scheduleLiveFileEditorAutosave() {
+    guard isLiveFileEditorAvailable else { return }
+    guard liveFileEditorHasUnsavedChanges else {
+      cancelLiveFileEditorAutosave(resetStatus: false)
+      liveFileEditorStatusText = "Saved"
+      return
+    }
+
+    liveFileEditorAutosaveTask?.cancel()
+    liveFileEditorAutosaveGeneration += 1
+    let generation = liveFileEditorAutosaveGeneration
+    liveFileEditorAutosaveTask = Task { @MainActor [weak self] in
+      do {
+        try await Task.sleep(nanoseconds: Self.liveFileEditorAutosaveDelayNanoseconds)
+      } catch {
+        return
+      }
+      guard let self,
+            !Task.isCancelled,
+            self.liveFileEditorAutosaveGeneration == generation
+      else {
+        return
+      }
+      await self.saveLiveFileEditor(explicit: false)
+    }
+  }
+
+  private func cancelLiveFileEditorAutosave(resetStatus: Bool) {
+    liveFileEditorAutosaveTask?.cancel()
+    liveFileEditorAutosaveTask = nil
+    liveFileEditorAutosaveGeneration += 1
+    if resetStatus {
+      liveFileEditorStatusText = ""
+    }
+  }
+
+  private func persistLiveFileEditorDraftBeforeNavigation() {
+    guard isLiveFileEditorAvailable,
+          liveFileEditorHasUnsavedChanges,
+          let source = selectedEntrySource
+    else {
+      return
+    }
+
+    let replacement = editableEntryText
+    Task.detached(priority: .utility) {
+      try? Self.replaceEntrySource(source, with: replacement)
+    }
   }
 
   private func recordOrgCryptEncryptionFailure(_ error: Error, savedPrefix: String?) {
@@ -10015,7 +10199,7 @@ public final class WorkspaceStore: ObservableObject {
 
   private func currentOpenClawWorkspaceContext() -> OpenClawWorkspaceContext {
     let source: EntrySource?
-    if isEditingEntry, let selectedEntrySource {
+    if (isEditingEntry || isLiveFileEditorAvailable), let selectedEntrySource {
       source = EntrySource(
         file: selectedEntrySource.file,
         startLine: selectedEntrySource.startLine,
@@ -10634,6 +10818,18 @@ public final class WorkspaceStore: ObservableObject {
       endLineExclusive: source.endLineExclusive,
       replacement: replacement,
       expectedOriginal: source.text
+    )
+  }
+
+  nonisolated private static func entrySource(_ source: EntrySource, replacingText replacement: String) -> EntrySource {
+    let normalized = normalizeLineEndings(replacement)
+    return EntrySource(
+      file: source.file,
+      startLine: source.startLine,
+      endLineExclusive: source.startLine + max(1, lineCount(in: normalized)),
+      text: normalized,
+      isSubtree: source.isSubtree,
+      isEditable: source.isEditable
     )
   }
 

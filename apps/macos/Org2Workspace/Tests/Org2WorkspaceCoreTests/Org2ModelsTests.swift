@@ -8770,6 +8770,80 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testFileTabSelectionUsesLiveFileEditorBufferWithoutLegacyEditMode() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-live-file-editor-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("live.org2")
+    try """
+    #+TITLE: Live Editor
+
+    * First
+    Body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    guard let location = store.selectedLocation else {
+      return XCTFail("Expected selected note")
+    }
+    await store.loadEntrySource(for: location)
+    try await waitForEntryRender(store)
+
+    XCTAssertTrue(store.isLiveFileEditorSelected)
+    XCTAssertTrue(store.isLiveFileEditorAvailable)
+    XCTAssertFalse(store.isEditingEntry)
+    XCTAssertFalse(store.hasActiveEdit)
+    XCTAssertEqual(store.editableEntryText, store.selectedEntrySource?.text)
+    XCTAssertTrue(store.canSaveCurrentFile)
+  }
+
+  @MainActor
+  func testLiveFileEditorSaveKeepsLiveEditorAvailable() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-live-file-save-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("live-save.org2")
+    try """
+    #+TITLE: Live Save
+
+    * First
+    Body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    guard let location = store.selectedLocation else {
+      return XCTFail("Expected selected note")
+    }
+    await store.loadEntrySource(for: location)
+    try await waitForEntryRender(store)
+
+    store.editableEntryText = store.editableEntryText.replacingOccurrences(of: "Body", with: "Edited body")
+    await store.saveActiveEdit()
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Edited body"))
+    XCTAssertTrue(store.isLiveFileEditorAvailable)
+    XCTAssertFalse(store.isEditingEntry)
+    XCTAssertFalse(store.hasActiveEdit)
+    XCTAssertEqual(store.selectedEntrySource?.text, store.editableEntryText)
+    XCTAssertEqual(store.liveFileEditorStatusText, "Saved")
+  }
+
+  @MainActor
   func testPageScopeEditRefusesStaleDailyNoteWhenSyncedContentTouchesLoadedRange() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-page-stale-save-\(UUID().uuidString)", isDirectory: true)
