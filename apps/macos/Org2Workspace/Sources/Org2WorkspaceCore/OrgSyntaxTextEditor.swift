@@ -32,6 +32,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   let textPublishing: OrgSyntaxTextEditorTextPublishing
   let selection: Binding<NSRange>?
   let isFocused: Binding<Bool>?
+  let contentHeight: Binding<CGFloat>?
   let onLocalTextChange: ((String) -> Void)?
   let shouldPublishTextImmediately: ((String) -> Bool)?
   let onSubmit: (() -> Bool)?
@@ -46,6 +47,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     textPublishing: OrgSyntaxTextEditorTextPublishing = .immediate,
     selection: Binding<NSRange>? = nil,
     isFocused: Binding<Bool>? = nil,
+    contentHeight: Binding<CGFloat>? = nil,
     onLocalTextChange: ((String) -> Void)? = nil,
     shouldPublishTextImmediately: ((String) -> Bool)? = nil,
     onSubmit: (() -> Bool)? = nil,
@@ -59,6 +61,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     self.textPublishing = textPublishing
     self.selection = selection
     self.isFocused = isFocused
+    self.contentHeight = contentHeight
     self.onLocalTextChange = onLocalTextChange
     self.shouldPublishTextImmediately = shouldPublishTextImmediately
     self.onSubmit = onSubmit
@@ -101,6 +104,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     scrollView.documentView = textView
     context.coordinator.recordKnownText(text, utf16Length: textView.textStorage?.length)
     context.coordinator.applyHighlighting(to: textView)
+    context.coordinator.publishContentHeight(for: textView)
     if focusOnAppear {
       DispatchQueue.main.async {
         textView.window?.makeFirstResponder(textView)
@@ -157,6 +161,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     if appliedProgrammaticText || !context.coordinator.hasDeferredHighlighting(for: editorText) {
       context.coordinator.applyHighlightingIfNeeded(to: textView, currentText: editorText)
     }
+    context.coordinator.publishContentHeight(for: textView)
   }
 
   private static func clampedRange(_ range: NSRange, in text: String) -> NSRange {
@@ -226,6 +231,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       } else {
         cancelDeferredHighlighting()
       }
+      publishContentHeight(for: textView)
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
@@ -579,6 +585,32 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       textView.selectedRanges = selectedRanges
       Self.restoreVisibleOrigin(visibleOrigin, of: textView)
       recordHighlightedState(for: textView)
+      publishContentHeight(for: textView)
+    }
+
+    func publishContentHeight(for textView: NSTextView) {
+      guard let contentHeight = parent.contentHeight else { return }
+      let nextHeight = Self.measuredContentHeight(for: textView)
+      guard abs(contentHeight.wrappedValue - nextHeight) > 0.5 else { return }
+      DispatchQueue.main.async {
+        guard abs(contentHeight.wrappedValue - nextHeight) > 0.5 else { return }
+        contentHeight.wrappedValue = nextHeight
+      }
+    }
+
+    static func measuredContentHeight(for textView: NSTextView) -> CGFloat {
+      guard let layoutManager = textView.layoutManager,
+            let textContainer = textView.textContainer
+      else {
+        return 0
+      }
+      textContainer.containerSize = NSSize(
+        width: max(1, textView.enclosingScrollView?.contentSize.width ?? textView.bounds.width),
+        height: CGFloat.greatestFiniteMagnitude
+      )
+      layoutManager.ensureLayout(for: textContainer)
+      let usedRect = layoutManager.usedRect(for: textContainer)
+      return ceil(max(0, usedRect.height) + textView.textContainerInset.height * 2 + 2)
     }
 
     static func visibleOrigin(of textView: NSTextView) -> NSPoint? {

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct OrgRenderedEntrySourceContext: Equatable, Sendable {
@@ -226,6 +227,12 @@ struct OrgRenderedEntryView: View, Equatable {
       },
       beginEditing: {
         store.beginEditingBlock(block)
+      },
+      beginEditingAt: { selection in
+        store.beginEditingBlock(block, initialSelection: selection)
+      },
+      initialSelection: {
+        store.initialSelectionForEditingBlock(block)
       },
       insert: { kind in
         Task { await store.insertBlock(after: block, kind: kind) }
@@ -631,7 +638,10 @@ private struct OrgRenderedEntryRow: View, Equatable {
 
   var body: some View {
     if isEditing {
-      InlineBlockEditorView(block: block)
+      InlineBlockEditorView(
+        block: block,
+        initialSelection: actions.initialSelection()
+      )
     } else {
       EditableRenderedBlockView(
         block: block,
@@ -940,6 +950,8 @@ enum OrgRenderedBlockDisplayPolicy {
 }
 
 private struct EditableRenderedBlockView<Content: View>: View {
+  @Environment(\.openOrgFileReference) private var openOrgFileReference
+  @Environment(\.orgRoamLinkResolver) private var orgRoamLinkResolver
   let block: OrgEditableBlock
   let isSourceEditable: Bool
   let isSelected: Bool
@@ -1034,6 +1046,25 @@ private struct EditableRenderedBlockView<Content: View>: View {
       content
         .padding(.trailing, contentTrailingPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .topLeading) {
+          if let activation = rowTextActivation {
+            RenderedRowTextActivationOverlay(
+              text: activation.text,
+              font: activation.font,
+              linkResolver: orgRoamLinkResolver,
+              activateLink: openRenderedLink
+            ) { selection in
+              actions.select()
+              actions.beginEditingAt(selection)
+            }
+            .padding(.leading, activation.leadingOffset)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+          }
+        }
+        .environment(\.orgInlineTextSelectionEnabled, !usesRowTapGestures)
+        .environment(\.orgInlineTextActivation, inlineTextActivation)
+        .environment(\.orgInlineTextLinkActivation, linkActivation)
     }
   }
 
@@ -1223,6 +1254,171 @@ private struct EditableRenderedBlockView<Content: View>: View {
   private var usesRowTapGestures: Bool {
     RenderedBlockInteractionPolicy.usesRowTapGestures(block: block, isSourceEditable: isSourceEditable)
   }
+
+  private var inlineTextActivation: OrgInlineTextActivation? {
+    guard usesRowTapGestures,
+          supportsInlineTextActivation,
+          RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: block, isSourceEditable: isSourceEditable)
+    else {
+      return nil
+    }
+    return OrgInlineTextActivation { selection in
+      actions.select()
+      actions.beginEditingAt(selection)
+    }
+  }
+
+  private var linkActivation: OrgInlineTextLinkActivation {
+    OrgInlineTextLinkActivation { url in
+      openRenderedLink(url)
+    }
+  }
+
+  private func openRenderedLink(_ url: URL) {
+    if let reference = OpenClawFileReference.fromDeepLinkURL(url) {
+      openOrgFileReference(reference)
+      return
+    }
+
+    if url.isFileURL {
+      openOrgFileReference(OpenClawFileReference(path: url.path, line: nil))
+      return
+    }
+
+    if url.scheme?.lowercased() == "http" || url.scheme?.lowercased() == "https" {
+      NSWorkspace.shared.open(url)
+    }
+  }
+
+  private var supportsInlineTextActivation: Bool {
+    switch block.rendered {
+    case .heading, .keyword, .listItem, .paragraph:
+      return true
+    case .blank, .horizontalRule, .planning, .properties, .quote, .source, .table:
+      return false
+    }
+  }
+
+  private var rowTextActivation: RenderedRowTextActivation? {
+    guard usesRowTapGestures,
+          RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: block, isSourceEditable: isSourceEditable),
+          OrgCrypt.armorSummary(block.rawText) == nil
+    else {
+      return nil
+    }
+
+    switch block.rendered {
+    case .paragraph:
+      return RenderedRowTextActivation(text: block.rawText, font: .body, leadingOffset: 0)
+    case .heading(let heading):
+      return RenderedRowTextActivation(
+        text: OrgRenderedLineDisplayCache.headingTitle(rawText: block.rawText, fallback: heading.title),
+        font: Self.headingFont(for: heading.level),
+        leadingOffset: Self.headingTitleLeadingOffset(heading)
+      )
+    case .blank, .horizontalRule, .keyword, .listItem, .planning, .properties, .quote, .source, .table:
+      return nil
+    }
+  }
+
+  private static func headingFont(for level: Int) -> Font {
+    switch level {
+    case 1:
+      return .title3.weight(.semibold)
+    case 2:
+      return .headline.weight(.semibold)
+    case 3:
+      return .callout.weight(.semibold)
+    default:
+      return .body.weight(.semibold)
+    }
+  }
+
+  private static func headingTitleLeadingOffset(_ heading: OrgHeadingBlock) -> CGFloat {
+    var offset = CGFloat(max(0, heading.level - 1)) * 10
+    if heading.todo != nil {
+      offset += 48
+    }
+    if heading.priority != nil {
+      offset += 62
+    }
+    return offset
+  }
+}
+
+private struct RenderedRowTextActivation {
+  let text: String
+  let font: Font
+  let leadingOffset: CGFloat
+}
+
+private struct RenderedRowTextActivationOverlay: NSViewRepresentable {
+  let text: String
+  let font: Font
+  let linkResolver: OrgRoamLinkResolver
+  let activateLink: @MainActor (URL) -> Void
+  let activate: @MainActor (NSRange) -> Void
+
+  func makeNSView(context: Context) -> HitView {
+    let view = HitView()
+    view.text = text
+    view.font = font
+    view.linkResolver = linkResolver
+    view.activateLink = activateLink
+    view.activate = activate
+    return view
+  }
+
+  func updateNSView(_ view: HitView, context: Context) {
+    view.text = text
+    view.font = font
+    view.linkResolver = linkResolver
+    view.activateLink = activateLink
+    view.activate = activate
+  }
+
+  final class HitView: NSView {
+    var text = ""
+    var font = Font.body
+    var linkResolver = OrgRoamLinkResolver.empty
+    var activateLink: (@MainActor (URL) -> Void)?
+    var activate: (@MainActor (NSRange) -> Void)?
+
+    override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+
+    override func resetCursorRects() {
+      addCursorRect(bounds, cursor: .iBeam)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+      guard event.type == .leftMouseDown else {
+        super.mouseDown(with: event)
+        return
+      }
+      let point = convert(event.locationInWindow, from: nil)
+      if let activateLink,
+         let url = OrgInlineTextLinkHitTester.linkURL(
+          raw: text,
+          linkResolver: linkResolver,
+          font: font,
+          lineSpacing: 2,
+          bounds: bounds,
+          point: point
+         ) {
+        activateLink(url)
+        return
+      }
+      let range = OrgInlineTextSelectionMapper.selectionRange(
+        in: text,
+        font: font,
+        lineSpacing: 2,
+        bounds: bounds,
+        point: point
+      )
+      activate?(range)
+    }
+  }
 }
 
 private struct RenderedPageBlankWritingArea: View {
@@ -1250,6 +1446,8 @@ private struct RenderedPageBlankWritingArea: View {
 private struct RenderedBlockActions {
   let select: () -> Void
   let beginEditing: () -> Void
+  let beginEditingAt: (NSRange) -> Void
+  let initialSelection: () -> NSRange?
   let insert: (OrgInsertBlockKind) -> Void
   let move: (OrgBlockMoveDirection) -> Void
   let askAI: () -> Void

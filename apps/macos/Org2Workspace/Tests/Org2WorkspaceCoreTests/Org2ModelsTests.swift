@@ -2159,6 +2159,60 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testOpenClawCanSendInAnotherThreadWhileCurrentThreadIsProcessing() async throws {
+    let transcriptURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-openclaw-parallel-threads-\(UUID().uuidString).json")
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcriptURL,
+      openClawSendHandler: { messages, _, _, _ in
+        try await Task.sleep(nanoseconds: 200_000_000)
+        return "reply to \(messages.last?.content ?? "")"
+      }
+    )
+
+    store.openClawDraft = "first"
+    let firstSend = Task { await store.sendOpenClawMessage() }
+    try await waitForCondition {
+      store.isSendingOpenClawMessage
+    }
+    let firstThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    XCTAssertEqual(store.openClawSendingThreadIDs, [firstThreadID])
+
+    store.createOpenClawChatThread()
+
+    let secondThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    XCTAssertNotEqual(firstThreadID, secondThreadID)
+    XCTAssertFalse(store.isSendingOpenClawMessage)
+    XCTAssertEqual(store.openClawSendingThreadIDs, [firstThreadID])
+
+    store.openClawDraft = "second"
+    let secondSend = Task { await store.sendOpenClawMessage() }
+    try await waitForCondition {
+      store.isSendingOpenClawMessage
+    }
+    XCTAssertTrue(store.openClawSendingThreadIDs.contains(secondThreadID))
+
+    await firstSend.value
+    await secondSend.value
+
+    store.selectOpenClawChatThread(firstThreadID)
+    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+      "user:first",
+      "assistant:reply to first"
+    ])
+
+    store.selectOpenClawChatThread(secondThreadID)
+    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+      "user:second",
+      "assistant:reply to second"
+    ])
+    XCTAssertFalse(store.isSendingOpenClawMessage)
+    XCTAssertEqual(store.openClawQueuedMessageCount, 0)
+    XCTAssertTrue(store.openClawSendingThreadIDs.isEmpty)
+  }
+
+  @MainActor
   func testOpenClawChatScrollPositionPersistsAndResets() throws {
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
 
@@ -2399,6 +2453,35 @@ final class Org2ModelsTests: XCTestCase {
         .text(".")
       ]
     )
+  }
+
+  func testOrgInlineRenderedTextLinkMapUsesRenderedLabelsForHitRanges() throws {
+    let node = OrgRoamNodeReference(
+      idValue: "alpha-123",
+      title: "Alpha Node",
+      file: "/tmp/alpha.org2",
+      line: 7
+    )
+    let resolver = OrgRoamLinkResolver(nodes: [node])
+    let map = OrgInlineRenderedTextLinkMap.make(
+      raw: "See [[id:alpha-123]] and https://example.com/docs.",
+      linkResolver: resolver
+    )
+
+    XCTAssertEqual(map.displayText, "See Alpha Node and https://example.com/docs.")
+    XCTAssertEqual(map.links.map(\.label), ["Alpha Node", "https://example.com/docs"])
+    XCTAssertEqual(map.links.map(\.displayRange), [
+      NSRange(location: 4, length: 10),
+      NSRange(location: 19, length: 24)
+    ])
+
+    let firstURL = try XCTUnwrap(map.link(atDisplayUTF16Location: 4)?.url)
+    let firstReference = try XCTUnwrap(OpenClawFileReference.fromDeepLinkURL(firstURL))
+    XCTAssertEqual(firstReference, OpenClawFileReference(path: "/tmp/alpha.org2", line: 7))
+    XCTAssertEqual(map.link(atDisplayUTF16Location: 13)?.url, firstURL)
+    XCTAssertNil(map.link(atDisplayUTF16Location: 3))
+    XCTAssertNil(map.link(atDisplayUTF16Location: 43))
+    XCTAssertEqual(map.link(atDisplayUTF16Location: 19)?.url, URL(string: "https://example.com/docs"))
   }
 
   func testOrgRoamLinkResolverDoesNotGuessAmbiguousWikiLinks() {
