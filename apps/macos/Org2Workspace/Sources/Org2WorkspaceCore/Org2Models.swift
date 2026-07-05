@@ -766,6 +766,13 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     case system
   }
 
+  public enum DeliveryStatus: String, Codable, Sendable {
+    case sent
+    case sending
+    case failed
+    case interrupted
+  }
+
   public let id: UUID
   public let role: Role
   public let content: String
@@ -773,6 +780,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
   public let createdAt: Date
   public let changeSummary: OpenClawCorpusChangeSummary?
   public let sendFailure: String?
+  public let deliveryStatus: DeliveryStatus
 
   public init(
     id: UUID = UUID(),
@@ -781,7 +789,8 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     attachments: [OpenClawChatAttachment] = [],
     createdAt: Date = Date(),
     changeSummary: OpenClawCorpusChangeSummary? = nil,
-    sendFailure: String? = nil
+    sendFailure: String? = nil,
+    deliveryStatus: DeliveryStatus = .sent
   ) {
     self.id = id
     self.role = role
@@ -790,6 +799,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     self.createdAt = createdAt
     self.changeSummary = changeSummary
     self.sendFailure = sendFailure
+    self.deliveryStatus = role == .user ? deliveryStatus : .sent
   }
 
   enum CodingKeys: String, CodingKey {
@@ -800,6 +810,7 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     case createdAt
     case changeSummary
     case sendFailure
+    case deliveryStatus
   }
 
   public init(from decoder: Decoder) throws {
@@ -811,6 +822,9 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
     createdAt = try container.decode(Date.self, forKey: .createdAt)
     changeSummary = try container.decodeIfPresent(OpenClawCorpusChangeSummary.self, forKey: .changeSummary)
     sendFailure = try container.decodeIfPresent(String.self, forKey: .sendFailure)
+    deliveryStatus = role == .user
+      ? (try container.decodeIfPresent(DeliveryStatus.self, forKey: .deliveryStatus) ?? (sendFailure == nil ? .sent : .failed))
+      : .sent
   }
 
   public func replacingSendFailure(_ nextSendFailure: String?) -> OpenClawChatMessage {
@@ -821,7 +835,24 @@ public struct OpenClawChatMessage: Identifiable, Hashable, Codable, Sendable {
       attachments: attachments,
       createdAt: createdAt,
       changeSummary: changeSummary,
-      sendFailure: nextSendFailure
+      sendFailure: nextSendFailure,
+      deliveryStatus: nextSendFailure == nil ? .sent : .failed
+    )
+  }
+
+  public func replacingDeliveryStatus(
+    _ nextDeliveryStatus: DeliveryStatus,
+    sendFailure nextSendFailure: String? = nil
+  ) -> OpenClawChatMessage {
+    OpenClawChatMessage(
+      id: id,
+      role: role,
+      content: content,
+      attachments: attachments,
+      createdAt: createdAt,
+      changeSummary: changeSummary,
+      sendFailure: nextSendFailure,
+      deliveryStatus: nextDeliveryStatus
     )
   }
 }
@@ -930,6 +961,20 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       isPinned: nextIsPinned ?? isPinned,
       isArchived: nextIsArchived ?? isArchived,
       unreadMessageCount: nextUnreadMessageCount ?? unreadMessageCount
+    )
+  }
+
+  public func replacingMessages(_ nextMessages: [OpenClawChatMessage]) -> OpenClawChatThread {
+    OpenClawChatThread(
+      id: id,
+      title: title,
+      createdAt: createdAt,
+      updatedAt: nextMessages.last?.createdAt ?? updatedAt,
+      sessionKey: sessionKey,
+      messages: nextMessages,
+      isPinned: isPinned,
+      isArchived: isArchived,
+      unreadMessageCount: unreadMessageCount
     )
   }
 }
