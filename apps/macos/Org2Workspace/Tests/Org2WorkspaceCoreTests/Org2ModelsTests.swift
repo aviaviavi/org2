@@ -2676,6 +2676,7 @@ final class Org2ModelsTests: XCTestCase {
     let tokens = OrgSyntaxHighlighter.tokens(in: raw)
 
     assertToken(.headingStars, "*", in: raw, tokens: tokens)
+    assertToken(.headingTitle, "Review [[id:11111111-1111-4111-8111-111111111111][Alice]]", in: raw, tokens: tokens)
     assertToken(.todo, "TODO", in: raw, tokens: tokens)
     assertToken(.priority, "[#A]", in: raw, tokens: tokens)
     assertToken(.link, "[[id:11111111-1111-4111-8111-111111111111][Alice]]", in: raw, tokens: tokens)
@@ -2754,6 +2755,10 @@ final class Org2ModelsTests: XCTestCase {
     let tickColor = try XCTUnwrap(storage.attribute(.foregroundColor, at: tickIndex, effectiveRange: nil) as? NSColor)
     XCTAssertLessThan(bracketColor.alphaComponent, 0.18)
     XCTAssertLessThan(tickColor.alphaComponent, 0.18)
+    let bracketFont = try XCTUnwrap(storage.attribute(.font, at: bracketIndex, effectiveRange: nil) as? NSFont)
+    let tickFont = try XCTUnwrap(storage.attribute(.font, at: tickIndex, effectiveRange: nil) as? NSFont)
+    XCTAssertLessThan(bracketFont.pointSize, 1)
+    XCTAssertLessThan(tickFont.pointSize, 1)
 
     let labelColor = try XCTUnwrap(storage.attribute(.foregroundColor, at: linkLabelIndex, effectiveRange: nil) as? NSColor)
     XCTAssertEqual(labelColor, NSColor.controlAccentColor)
@@ -2764,6 +2769,10 @@ final class Org2ModelsTests: XCTestCase {
     let markdownTargetColor = try XCTUnwrap(storage.attribute(.foregroundColor, at: markdownTargetIndex, effectiveRange: nil) as? NSColor)
     XCTAssertLessThan(orgTargetColor.alphaComponent, 0.24)
     XCTAssertLessThan(markdownTargetColor.alphaComponent, 0.24)
+    let orgTargetFont = try XCTUnwrap(storage.attribute(.font, at: orgTargetIndex, effectiveRange: nil) as? NSFont)
+    let markdownTargetFont = try XCTUnwrap(storage.attribute(.font, at: markdownTargetIndex, effectiveRange: nil) as? NSFont)
+    XCTAssertLessThan(orgTargetFont.pointSize, 1)
+    XCTAssertLessThan(markdownTargetFont.pointSize, 1)
     let targetUnderline = storage.attribute(.underlineStyle, at: orgTargetIndex, effectiveRange: nil) as? Int
     XCTAssertEqual(targetUnderline, 0)
 
@@ -2911,6 +2920,19 @@ final class Org2ModelsTests: XCTestCase {
       farCaret,
       previousRange: NSRange(location: 8, length: 0),
       text: longLinkedText
+    ))
+  }
+
+  @MainActor
+  func testSyntaxEditorOnlyOffersBoundaryDeleteAtDocumentRowStart() {
+    XCTAssertTrue(OrgSyntaxTextEditor.Coordinator.shouldOfferDeleteBackwardCommand(
+      selectedRange: NSRange(location: 0, length: 0)
+    ))
+    XCTAssertFalse(OrgSyntaxTextEditor.Coordinator.shouldOfferDeleteBackwardCommand(
+      selectedRange: NSRange(location: 1, length: 0)
+    ))
+    XCTAssertFalse(OrgSyntaxTextEditor.Coordinator.shouldOfferDeleteBackwardCommand(
+      selectedRange: NSRange(location: 0, length: 1)
     ))
   }
 
@@ -3251,6 +3273,23 @@ final class Org2ModelsTests: XCTestCase {
         maximum: 15
       ),
       15
+    )
+
+    let longLine = "extension importer; CRM sync progress; backlink plan model upgrade evaluation"
+    let narrowHeight = InlineEditorSizing.wrappedTextEditorHeight(
+      in: longLine,
+      width: 160,
+      minimumLineCount: 1
+    )
+    let wideHeight = InlineEditorSizing.wrappedTextEditorHeight(
+      in: longLine,
+      width: 900,
+      minimumLineCount: 1
+    )
+    XCTAssertGreaterThan(narrowHeight, wideHeight)
+    XCTAssertGreaterThanOrEqual(
+      InlineEditorSizing.wrappedTextEditorHeight(in: "", width: 160, minimumLineCount: 2),
+      47
     )
   }
 
@@ -4202,10 +4241,10 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.isKeyboardShortcutsPresented)
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "z", keyCode: 6, modifiers: [.command])))
-    XCTAssertEqual(store.statusText, "Undo is available while editing text")
+    XCTAssertEqual(store.statusText, "Nothing to undo")
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "Z", keyCode: 6, modifiers: [.command, .shift])))
-    XCTAssertEqual(store.statusText, "Redo is available while editing text")
+    XCTAssertEqual(store.statusText, "Nothing to redo")
   }
 
   @MainActor
@@ -5914,7 +5953,7 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
-  func testRenderedBlockEditingPolicyDoesNotStartInlineEditingForRichBlocksOnSingleClick() {
+  func testRenderedBlockEditingPolicyStartsInlineEditingForRichBlocksOnSingleClick() {
     let editableBlocks = [
       OrgEditableBlock(
         id: "heading",
@@ -5950,7 +5989,7 @@ final class Org2ModelsTests: XCTestCase {
     ]
 
     for block in editableBlocks {
-      XCTAssertFalse(
+      XCTAssertTrue(
         RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: block, isSourceEditable: true),
         block.id
       )
@@ -5961,7 +6000,7 @@ final class Org2ModelsTests: XCTestCase {
     }
   }
 
-  func testRenderedBlockEditingPolicyDoesNotStartInlineEditingForStructuralBlocksOnSingleClick() {
+  func testRenderedBlockEditingPolicyStartsInlineEditingForStructuralBlocksOnSingleClick() {
     let divider = OrgEditableBlock(
       id: "divider",
       startLine: 1,
@@ -5976,7 +6015,7 @@ final class Org2ModelsTests: XCTestCase {
       rawText: "",
       rendered: .blank
     )
-    XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: divider, isSourceEditable: true))
+    XCTAssertTrue(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: divider, isSourceEditable: true))
     XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: blank, isSourceEditable: true))
     let properties = OrgEditableBlock(
       id: "properties",
@@ -5985,7 +6024,7 @@ final class Org2ModelsTests: XCTestCase {
       rawText: ":PROPERTIES:\n:Owner: Avi\n:END:",
       rendered: .properties([OrgPropertyRow(key: "Owner", value: "Avi")])
     )
-    XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: properties, isSourceEditable: true))
+    XCTAssertTrue(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: properties, isSourceEditable: true))
   }
 
   func testRenderedBlockEditingPolicyDoesNotStartInlineEditingForMediaParagraphsOnSingleClick() throws {
@@ -5998,6 +6037,19 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: embedded, isSourceEditable: true))
     XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: standalone, isSourceEditable: true))
+  }
+
+  func testLiveRenderedTextEditingPolicyUsesDirectEditorsForDocumentTextBlocks() throws {
+    let paragraph = try XCTUnwrap(OrgEntryRenderer.parseEditable("Body with [[id:abc][Alice]].").first)
+    let listItem = try XCTUnwrap(OrgEntryRenderer.parseEditable("- [ ] Task").first)
+    let heading = try XCTUnwrap(OrgEntryRenderer.parseEditable("* Heading").first)
+    let media = try XCTUnwrap(OrgEntryRenderer.parseEditable("[[file:images/image.png][Image]]").first)
+
+    XCTAssertTrue(LiveRenderedTextEditingPolicy.usesDirectEditor(block: paragraph, isSourceEditable: true))
+    XCTAssertTrue(LiveRenderedTextEditingPolicy.usesDirectEditor(block: listItem, isSourceEditable: true))
+    XCTAssertTrue(LiveRenderedTextEditingPolicy.usesDirectEditor(block: heading, isSourceEditable: true))
+    XCTAssertFalse(LiveRenderedTextEditingPolicy.usesDirectEditor(block: media, isSourceEditable: true))
+    XCTAssertFalse(LiveRenderedTextEditingPolicy.usesDirectEditor(block: paragraph, isSourceEditable: false))
   }
 
   func testRenderedBlockDisplayPolicyCollapsesBlankButKeepsProperties() {
@@ -9179,6 +9231,118 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testUndoRestoresLiveFileEditorAutosaveAndRedoReappliesIt() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-live-undo-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("live-undo.org2")
+    let original = """
+    #+TITLE: Live Undo
+
+    * Meetings
+    Original body
+    """
+    let updated = """
+    #+TITLE: Live Undo
+
+    * Meetings
+    Updated body
+    """
+    try original.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    let location = try XCTUnwrap(store.selectedLocation)
+    await store.loadEntrySource(for: location)
+    try await waitForEntryRender(store)
+    XCTAssertTrue(store.isLiveFileEditorSelected)
+
+    store.noteLiveFileEditorTextChanged(updated)
+    await store.saveLiveFileEditor(explicit: false)
+    XCTAssertEqual(try String(contentsOf: note, encoding: .utf8), updated)
+
+    store.performUndoCommand()
+    try await waitForCondition {
+      (try? String(contentsOf: note, encoding: .utf8)) == original
+        && store.selectedEntrySource?.text == original
+    }
+    XCTAssertEqual(store.statusText, "Undid edit in live-undo.org2")
+
+    store.performRedoCommand()
+    try await waitForCondition {
+      (try? String(contentsOf: note, encoding: .utf8)) == updated
+        && store.selectedEntrySource?.text == updated
+    }
+    XCTAssertEqual(store.statusText, "Redid edit in live-undo.org2")
+  }
+
+  @MainActor
+  func testUndoRestoresSavedRenderedBlockChange() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-block-undo-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("block-undo.org2")
+    let original = """
+    #+TITLE: Block Undo
+
+    * Parent
+    Original body
+    * Sibling
+    Sibling body
+    """
+    try original.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": null,
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 3,
+      "body": "Original body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    store.selectedEntrySourceMode = .page
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+    store.beginEditingBlock(paragraph)
+    store.updateEditingBlockDraft(paragraph, draft: "Updated body")
+    await store.saveActiveEdit()
+    XCTAssertTrue((try String(contentsOf: note, encoding: .utf8)).contains("Updated body"))
+
+    store.performUndoCommand()
+    try await waitForCondition {
+      (try? String(contentsOf: note, encoding: .utf8)) == original
+        && store.selectedRenderedBlocks.contains { block in
+          if case .paragraph(let text) = block.rendered {
+            return text == "Original body"
+          }
+          return false
+        }
+    }
+    XCTAssertEqual(store.statusText, "Undid edit in block-undo.org2")
+  }
+
+  @MainActor
   func testSavingRenderedBlockSchedulesAgendaRefreshWithoutBlocking() async throws {
     let workspace = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-nonblocking-save-\(UUID().uuidString)", isDirectory: true)
@@ -10199,6 +10363,56 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testReturnAfterTypingHeadingInEmptyDraftStartsEmptyDraftWithoutReusingEditorState() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-heading-return-draft-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("heading-return.org2")
+    try "".write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    let location = try XCTUnwrap(store.selectedLocation)
+    await store.loadEntrySource(for: location)
+    try await waitForEntryRender(store)
+
+    await store.beginAppendingSectionAtEnd()
+    let originalDraft = try XCTUnwrap(store.selectedBlock)
+    XCTAssertEqual(originalDraft.rawText, "")
+
+    let typedHeading = "* testing this 123"
+    store.updateEditingBlockDraft(originalDraft, draft: typedHeading)
+    await store.splitEditingBlock(
+      originalDraft,
+      atUTF16Offset: (typedHeading as NSString).length,
+      draftText: typedHeading
+    )
+
+    try await waitForCondition {
+      store.selectedBlock?.rawText == ""
+        && store.selectedBlock?.id != originalDraft.id
+        && store.selectedRenderedBlocks.filter { $0.rawText == typedHeading }.count == 1
+    }
+    let nextDraft = try XCTUnwrap(store.selectedBlock)
+    XCTAssertEqual(nextDraft.rawText, "")
+    XCTAssertNotEqual(nextDraft.id, originalDraft.id)
+    XCTAssertEqual(
+      store.selectedRenderedBlocks.filter { $0.rawText == typedHeading }.count,
+      1
+    )
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertEqual(updated.components(separatedBy: typedHeading).count - 1, 1)
+    XCTAssertTrue(updated.contains(typedHeading))
+  }
+
+  @MainActor
   func testSavesInsertedParagraphDraftPublishedFromEditor() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-paragraph-insert-draft-\(UUID().uuidString)", isDirectory: true)
@@ -10321,6 +10535,281 @@ final class Org2ModelsTests: XCTestCase {
 
     updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("- [X] Done task\n- [ ] Follow up\n* Sibling"))
+  }
+
+  @MainActor
+  func testDeleteBackwardAtStartMergesParagraphWithPreviousParagraph() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-paragraph-merge-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("paragraph-merge.org2")
+    try """
+    #+TITLE: Paragraph Merge Test
+
+    * TODO Parent
+    Alpha
+
+    beta
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 3,
+      "body": "Alpha\\n\\nbeta",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let beta = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph(let text) = $0.rendered { return text == "beta" }
+      return false
+    })
+    store.beginEditingBlock(beta)
+    store.updateEditingBlockDraft(beta, draft: "beta edited")
+
+    await store.deleteBackwardFromStartOfEditingBlock(beta, draftText: "beta edited")
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "Alpha beta edited" && store.editingBlockID == store.selectedBlock?.id
+    }
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Alpha beta edited\n* Sibling"))
+    XCTAssertFalse(updated.contains("Alpha\n\nbeta"))
+  }
+
+  @MainActor
+  func testDeleteBackwardAtStartMergesListItemWithPreviousListItem() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-list-merge-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("list-merge.org2")
+    try """
+    #+TITLE: List Merge Test
+
+    * TODO Parent
+    - [X] Done task
+    - [ ] Follow up
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 3,
+      "body": "- [X] Done task\\n- [ ] Follow up",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let followUp = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .listItem(_, _, .unchecked, let text) = $0.rendered { return text == "Follow up" }
+      return false
+    })
+    store.beginEditingBlock(followUp)
+    store.updateEditingBlockDraft(followUp, draft: "- [ ] Follow up edited")
+
+    await store.deleteBackwardFromStartOfEditingBlock(followUp, draftText: "- [ ] Follow up edited")
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "- [X] Done task Follow up edited"
+        && store.editingBlockID == store.selectedBlock?.id
+    }
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("- [X] Done task Follow up edited\n* Sibling"))
+    XCTAssertFalse(updated.contains("- [ ] Follow up"))
+  }
+
+  @MainActor
+  func testDeleteBackwardAtStartMergesHeadingTitleIntoPreviousTextBlock() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-heading-merge-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("heading-merge.org2")
+    try """
+    #+TITLE: Heading Merge Test
+
+    * TODO Parent
+    Intro paragraph
+    ** Child heading
+    Child body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 3,
+      "body": "Intro paragraph\\n** Child heading\\nChild body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let childHeading = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .heading(let heading) = $0.rendered { return heading.title == "Child heading" }
+      return false
+    })
+    store.beginEditingBlock(childHeading)
+
+    await store.deleteBackwardFromStartOfEditingBlock(childHeading, draftText: "** Child heading")
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "Intro paragraph Child heading\nChild body"
+        && store.editingBlockID == store.selectedBlock?.id
+    }
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Intro paragraph Child heading\nChild body\n* Sibling"))
+    XCTAssertFalse(updated.contains("** Child heading"))
+  }
+
+  @MainActor
+  func testDeleteBackwardAtStartMergesParagraphIntoPreviousHeading() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-heading-absorb-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("heading-absorb.org2")
+    try """
+    #+TITLE: Heading Absorb Test
+
+    * TODO Parent :work:
+    First body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 3,
+      "body": "First body",
+      "level": 1,
+      "tags": ["work"],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph(let text) = $0.rendered { return text == "First body" }
+      return false
+    })
+    store.beginEditingBlock(paragraph)
+
+    await store.deleteBackwardFromStartOfEditingBlock(paragraph, draftText: "First body")
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "* TODO Parent First body :work:"
+        && store.editingBlockID == store.selectedBlock?.id
+    }
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* TODO Parent First body :work:\n* Sibling"))
+    XCTAssertFalse(updated.contains("* TODO Parent :work:\nFirst body"))
+  }
+
+  @MainActor
+  func testDeleteBackwardAtStartDiscardsEmptyTransientParagraphDraft() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-empty-draft-delete-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("empty-draft-delete.org2")
+    try """
+    #+TITLE: Empty Draft Delete Test
+
+    * TODO Parent
+    Alpha beta
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 3,
+      "body": "Alpha beta",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph(let text) = $0.rendered { return text == "Alpha beta" }
+      return false
+    })
+    store.beginEditingBlock(paragraph)
+    await store.splitEditingBlock(paragraph, atUTF16Offset: (paragraph.rawText as NSString).length)
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "" && store.editingBlockID == store.selectedBlock?.id
+    }
+
+    let draft = try XCTUnwrap(store.selectedBlock)
+    await store.deleteBackwardFromStartOfEditingBlock(draft, draftText: "")
+    try await waitForCondition {
+      store.selectedBlock?.rawText == "Alpha beta" && store.editingBlockID == nil
+    }
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("Alpha beta\n* Sibling"))
+    XCTAssertFalse(updated.contains("Alpha beta\n\n* Sibling"))
   }
 
   @MainActor

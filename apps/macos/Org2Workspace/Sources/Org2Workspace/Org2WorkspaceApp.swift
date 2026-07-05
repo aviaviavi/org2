@@ -244,6 +244,18 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     AppIconInstaller.install()
+    NSApplication.shared.setActivationPolicy(.regular)
+    NSApplication.shared.activate(ignoringOtherApps: true)
+  }
+
+  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    guard !flag else { return true }
+    sender.setActivationPolicy(.regular)
+    sender.activate(ignoringOtherApps: true)
+    if !sender.sendAction(Selector(("newWindow:")), to: nil, from: nil) {
+      sender.sendAction(#selector(NSWindow.newWindowForTab(_:)), to: nil, from: nil)
+    }
+    return true
   }
 }
 

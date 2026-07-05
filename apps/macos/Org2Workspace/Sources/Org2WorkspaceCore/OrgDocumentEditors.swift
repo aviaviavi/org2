@@ -103,6 +103,39 @@ enum InlineEditorSizing {
     let currentCount = cappedLineCount(in: text, minimum: minimum, maximum: maximum)
     return currentCount > reservedLineCount ? currentCount : reservedLineCount
   }
+
+  static func wrappedTextEditorHeight(
+    in text: String,
+    width: CGFloat,
+    font: NSFont = NSFont.systemFont(ofSize: NSFont.systemFontSize),
+    textInset: NSSize = .zero,
+    minimumLineCount: Int,
+    fallbackLineHeight: CGFloat = 21,
+    extraVerticalPadding: CGFloat = 5
+  ) -> CGFloat {
+    let safeMinimumLineCount = max(1, minimumLineCount)
+    let minimumHeight = CGFloat(safeMinimumLineCount) * fallbackLineHeight
+      + textInset.height * 2
+      + extraVerticalPadding
+    guard width.isFinite, width > 1 else {
+      return minimumHeight
+    }
+
+    let measuredText = text.isEmpty ? " " : text
+    let textWidth = max(1, width - textInset.width * 2)
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.lineBreakMode = .byWordWrapping
+    paragraph.lineSpacing = 2
+    let rect = (measuredText as NSString).boundingRect(
+      with: NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude),
+      options: [.usesLineFragmentOrigin, .usesFontLeading],
+      attributes: [
+        .font: font,
+        .paragraphStyle: paragraph
+      ]
+    )
+    return max(minimumHeight, ceil(rect.height) + textInset.height * 2 + extraVerticalPadding)
+  }
 }
 
 enum ParagraphSlashCommand {
@@ -1497,7 +1530,10 @@ private struct ParagraphBlockEditor: View {
           isFocused: $isTextFocused,
           onLocalTextChange: handleLocalTextChange,
           shouldPublishTextImmediately: ParagraphEditorTextPublishingPolicy.shouldPublishImmediately,
-          onSubmitContext: submitParagraph
+          onSubmitContext: submitParagraph,
+          documentSelectionContext: documentSelectionContext,
+          onDeleteDocumentSelection: deleteDocumentSelection,
+          onReplaceDocumentSelection: replaceDocumentSelection
         )
         .frame(minHeight: editorHeight, maxHeight: editorHeight)
         .padding(.trailing, InlineEditorChrome.controlsTrailingPadding())
@@ -1626,10 +1662,38 @@ private struct ParagraphBlockEditor: View {
     if presentationText != text {
       presentationText = text
     }
+    store.updateEditingBlockDraft(block, draft: text)
     if showsInlineDetails && !ParagraphInlineDetailsAvailability.hasDetails(in: text) {
       showsInlineDetails = false
     }
     reserveEditorLines(for: text)
+    scheduleParagraphAutosave()
+  }
+
+  private var documentSelectionContext: OrgSyntaxTextSelectionContext {
+    OrgSyntaxTextSelectionContext(
+      blockID: block.id,
+      startLine: block.startLine,
+      endLineExclusive: block.endLineExclusive,
+      editorToSourceUTF16Offset: 0
+    )
+  }
+
+  private func deleteDocumentSelection(_ fragments: [OrgSyntaxTextSelectionDocumentFragment]) -> Bool {
+    autosaveTask?.cancel()
+    autosaveTask = nil
+    Task { await store.deleteRenderedTextSelection(fragments) }
+    return true
+  }
+
+  private func replaceDocumentSelection(
+    _ fragments: [OrgSyntaxTextSelectionDocumentFragment],
+    replacement: String
+  ) -> Bool {
+    autosaveTask?.cancel()
+    autosaveTask = nil
+    Task { await store.replaceRenderedTextSelection(fragments, replacementText: replacement) }
+    return true
   }
 
   private var paragraphControls: some View {
@@ -1796,6 +1860,573 @@ private struct ParagraphBlockEditor: View {
       }
       guard !Task.isCancelled else { return }
       await store.autosaveEditedBlock(block, replacement: replacement)
+    }
+  }
+}
+
+struct LiveRenderedTextBlockEditor: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let block: OrgEditableBlock
+  @State private var draftText: String
+  @State private var presentationText: String
+  @State private var selectedRange: NSRange
+  @State private var isTextFocused = false
+  @State private var autosaveTask: Task<Void, Never>?
+  @State private var liveText = OrgSyntaxTextEditorDraftBuffer()
+  @State private var reservedLineCount: Int
+  @State private var isFinishingWithStructuralEdit = false
+  @State private var availableEditorWidth: CGFloat = 0
+  @State private var appliedRenderIdentity: OrgEditableBlockRenderIdentity
+
+  init(block: OrgEditableBlock) {
+    self.block = block
+    let editableText = Self.editableText(for: block)
+    _draftText = State(initialValue: editableText)
+    _presentationText = State(initialValue: editableText)
+    _selectedRange = State(initialValue: InlineEditorSizing.endSelection(in: editableText))
+    _reservedLineCount = State(initialValue: InlineEditorSizing.cappedLineCount(
+      in: editableText,
+      minimum: Self.minimumLineCount(for: block),
+      maximum: Self.maximumLineCount(for: block)
+    ))
+    _appliedRenderIdentity = State(initialValue: block.renderIdentity)
+  }
+
+  var body: some View {
+    let slashCommandMatch = ParagraphSlashCommand.match(in: presentationText)
+    let focusedInlineToken = ParagraphFocusedInlineEditor.focusedToken(
+      text: presentationText,
+      selectedRange: selectedRange,
+      showsInlineDetails: false
+    )
+    let wikiLinkCompletionMatch = ParagraphWikiLinkCompletion.match(
+      in: presentationText,
+      selectedRange: selectedRange
+    )
+    let wikiLinkCompletionCandidates = wikiLinkCompletionMatch.map {
+      store.orgRoamLinkResolver.searchCandidates(matching: $0.query, limit: 6)
+    } ?? []
+
+    ZStack(alignment: .topLeading) {
+      HStack(alignment: .top, spacing: 6) {
+        if rendersListMarker {
+          listMarkerView
+            .frame(width: 18, height: 24, alignment: .center)
+        }
+
+        editorColumn
+      }
+
+      if ParagraphSlashCommandPanelLayout.isVisible(match: slashCommandMatch) {
+        ParagraphSlashCommandPanel(match: slashCommandMatch, convert: convertTextBlock)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .offset(y: ParagraphSlashCommandPanelLayout.verticalOffset(editorHeight: editorHeight))
+          .zIndex(2)
+      }
+
+      if let focusedInlineToken {
+        ParagraphFocusedInlineEditor(
+          text: $draftText,
+          selectedRange: $selectedRange,
+          token: focusedInlineToken
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .offset(y: ParagraphFocusedInlinePanelLayout.verticalOffset(editorHeight: editorHeight))
+        .zIndex(1)
+      } else if let wikiLinkCompletionMatch {
+        ParagraphWikiLinkCompletionPanel(
+          query: wikiLinkCompletionMatch.query,
+          candidates: wikiLinkCompletionCandidates,
+          choose: { node in
+            resolveWikiLinkCompletion(wikiLinkCompletionMatch, to: node)
+          },
+          create: {
+            createNodeFromWikiLinkCompletion(wikiLinkCompletionMatch)
+          }
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .offset(y: ParagraphFocusedInlinePanelLayout.verticalOffset(editorHeight: editorHeight))
+        .zIndex(1)
+      }
+    }
+    .onChange(of: draftText) {
+      guard isTextFocused || store.editingBlockID == block.id else { return }
+      if presentationText != draftText {
+        presentationText = draftText
+      }
+      reserveEditorLines(for: presentationText)
+      scheduleAutosave()
+    }
+    .onChange(of: isTextFocused) { _, focused in
+      if focused {
+        activateEditingContext()
+      } else {
+        flushPendingAutosave()
+      }
+    }
+    .onChange(of: block.renderIdentity) {
+      refreshFromBlockIfNeeded()
+    }
+    .onPreferenceChange(LiveRenderedTextEditorWidthKey.self) { width in
+      if abs(width - availableEditorWidth) > 0.5 {
+        availableEditorWidth = width
+      }
+    }
+    .onAppear {
+      liveText.update(draftText)
+      presentationText = draftText
+      reserveEditorLines(for: presentationText)
+    }
+    .onDisappear {
+      if isFinishingWithStructuralEdit {
+        autosaveTask?.cancel()
+        autosaveTask = nil
+      } else {
+        flushPendingAutosave()
+      }
+    }
+  }
+
+  private var editorHeight: CGFloat {
+    InlineEditorSizing.wrappedTextEditorHeight(
+      in: presentationText,
+      width: availableEditorWidth,
+      font: Self.editorFont(for: block),
+      textInset: Self.editorTextInset,
+      minimumLineCount: Self.minimumLineCount(for: block),
+      fallbackLineHeight: Self.editorLineHeight(for: block),
+      extraVerticalPadding: 1
+    )
+  }
+
+  private var hasSelection: Bool {
+    selectedRange.length > 0
+  }
+
+  private var currentText: String {
+    liveText.current(fallback: draftText)
+  }
+
+  private var documentSelectionContext: OrgSyntaxTextSelectionContext {
+    OrgSyntaxTextSelectionContext(
+      blockID: block.id,
+      startLine: block.startLine,
+      endLineExclusive: block.endLineExclusive,
+      editorToSourceUTF16Offset: Self.editorToSourceUTF16Offset(for: block)
+    )
+  }
+
+  private var currentSourceText: String {
+    Self.sourceText(for: block, editableText: currentText)
+  }
+
+  private var rendersListMarker: Bool {
+    if case .listItem = block.rendered { return true }
+    return false
+  }
+
+  private var editorColumn: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      OrgSyntaxTextEditor(
+        text: $draftText,
+        showsScrollers: false,
+        textInset: Self.editorTextInset,
+        focusOnAppear: store.editingBlockID == block.id,
+        textPublishing: .deferred(milliseconds: 90),
+        selection: $selectedRange,
+        isFocused: $isTextFocused,
+        onLocalTextChange: handleLocalTextChange,
+        shouldPublishTextImmediately: ParagraphEditorTextPublishingPolicy.shouldPublishImmediately,
+        onSubmitContext: submitTextBlock,
+        onDeleteBackwardContext: deleteBackwardFromStart,
+        documentSelectionContext: documentSelectionContext,
+        onDeleteDocumentSelection: deleteDocumentSelection,
+        onReplaceDocumentSelection: replaceDocumentSelection
+      )
+      .frame(minHeight: editorHeight, maxHeight: editorHeight)
+      .background(
+        GeometryReader { proxy in
+          Color.clear.preference(key: LiveRenderedTextEditorWidthKey.self, value: proxy.size.width)
+        }
+      )
+
+      if hasSelection {
+        ParagraphInlineFormatBar(
+          text: $draftText,
+          selectedRange: $selectedRange,
+          insertBacklink: insertBacklinkForSelection,
+          createNodeFromSelection: createNodeFromSelection
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var listMarkerView: some View {
+    if case .listItem(_, let marker, let checkbox, _) = block.rendered {
+      if let checkbox {
+        Button {
+          Task { await store.toggleListItemCheckbox(block) }
+        } label: {
+          Image(systemName: checkbox == .checked ? "checkmark.square.fill" : "square")
+            .font(.system(size: 13, weight: .medium))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(checkbox == .checked ? Color.accentColor : Color.secondary)
+        .help(checkbox == .checked ? "Mark incomplete" : "Mark complete")
+      } else {
+        Text(Self.displayListMarker(marker))
+          .font(.body)
+          .foregroundStyle(.secondary)
+      }
+    }
+  }
+
+  private func handleLocalTextChange(_ text: String) {
+    activateEditingContext()
+    liveText.update(text)
+    if presentationText != text {
+      presentationText = text
+    }
+    reserveEditorLines(for: text)
+    store.updateEditingBlockDraft(block, draft: Self.sourceText(for: block, editableText: text))
+    scheduleAutosave()
+  }
+
+  private func deleteDocumentSelection(_ fragments: [OrgSyntaxTextSelectionDocumentFragment]) -> Bool {
+    isFinishingWithStructuralEdit = true
+    autosaveTask?.cancel()
+    autosaveTask = nil
+    Task { await store.deleteRenderedTextSelection(fragments) }
+    return true
+  }
+
+  private func replaceDocumentSelection(
+    _ fragments: [OrgSyntaxTextSelectionDocumentFragment],
+    replacement: String
+  ) -> Bool {
+    isFinishingWithStructuralEdit = true
+    autosaveTask?.cancel()
+    autosaveTask = nil
+    Task { await store.replaceRenderedTextSelection(fragments, replacementText: replacement) }
+    return true
+  }
+
+  private func activateEditingContext() {
+    if store.editingBlockID == block.id {
+      return
+    }
+    store.selectBlock(block)
+    store.beginEditingBlock(block, initialDraft: currentSourceText)
+  }
+
+  private func reserveEditorLines(for text: String) {
+    let nextReservedLineCount = InlineEditorSizing.expandedReservedLineCount(
+      in: text,
+      reservedLineCount: reservedLineCount,
+      minimum: Self.minimumLineCount(for: block),
+      maximum: Self.maximumLineCount(for: block)
+    )
+    guard nextReservedLineCount != reservedLineCount else { return }
+    reservedLineCount = nextReservedLineCount
+  }
+
+  private func scheduleAutosave() {
+    let replacement = currentSourceText
+    store.updateEditingBlockDraft(block, draft: replacement)
+    autosaveTask?.cancel()
+
+    guard ParagraphSlashCommand.match(in: replacement).query == nil,
+          replacement != block.rawText
+    else {
+      return
+    }
+
+    autosaveTask = Task { [block] in
+      do {
+        try await Task.sleep(nanoseconds: 700_000_000)
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      await store.autosaveEditedBlock(block, replacement: replacement)
+    }
+  }
+
+  private func flushPendingAutosave() {
+    autosaveTask?.cancel()
+    autosaveTask = nil
+    let replacement = currentSourceText
+    guard ParagraphSlashCommand.match(in: replacement).query == nil,
+          replacement != block.rawText,
+          store.editingBlockID == block.id
+    else {
+      return
+    }
+    store.updateEditingBlockDraft(block, draft: replacement)
+    Task { await store.saveEditedBlock(block) }
+  }
+
+  private func submitTextBlock(_ context: OrgSyntaxTextEditorSubmitContext) -> Bool {
+    activateEditingContext()
+    autosaveTask?.cancel()
+    autosaveTask = nil
+    draftText = context.text
+    liveText.update(context.text)
+    presentationText = context.text
+    let sourceText = Self.sourceText(for: block, editableText: context.text)
+
+    if let kind = ParagraphSlashCommand.match(in: context.text).primaryKind {
+      convertTextBlock(to: kind)
+      return true
+    }
+
+    if case .listItem = block.rendered,
+       context.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      exitEmptyListItem()
+      return true
+    }
+
+    if case .heading = block.rendered {
+      startParagraphAfterHeading(sourceText)
+      return true
+    }
+
+    isFinishingWithStructuralEdit = true
+    store.updateEditingBlockDraft(block, draft: sourceText)
+    Task {
+      await store.splitEditingBlock(
+        block,
+        atUTF16Offset: Self.sourceUTF16Offset(for: block, editableOffset: context.selectedRange.location),
+        draftText: sourceText
+      )
+    }
+    return true
+  }
+
+  private func deleteBackwardFromStart(_ context: OrgSyntaxTextEditorSubmitContext) -> Bool {
+    guard context.selectedRange.location == 0,
+          context.selectedRange.length == 0
+    else {
+      return false
+    }
+
+    isFinishingWithStructuralEdit = true
+    autosaveTask?.cancel()
+    autosaveTask = nil
+    let sourceText = Self.sourceText(for: block, editableText: context.text)
+    store.updateEditingBlockDraft(block, draft: sourceText)
+    Task { await store.deleteBackwardFromStartOfEditingBlock(block, draftText: sourceText) }
+    return true
+  }
+
+  private func startParagraphAfterHeading(_ text: String) {
+    isFinishingWithStructuralEdit = true
+    store.updateEditingBlockDraft(block, draft: text)
+    Task {
+      await store.saveEditedBlock(block)
+      if let savedBlock = store.selectedBlock {
+        await store.insertBlock(after: savedBlock, kind: .paragraph)
+      }
+    }
+  }
+
+  private func exitEmptyListItem() {
+    isFinishingWithStructuralEdit = true
+    autosaveTask?.cancel()
+    autosaveTask = nil
+    store.updateEditingBlockDraft(block, draft: "")
+    Task { await store.convertEditingBlock(block, to: .paragraph, draftText: "") }
+  }
+
+  private func convertTextBlock(to kind: OrgInsertBlockKind) {
+    activateEditingContext()
+    isFinishingWithStructuralEdit = true
+    autosaveTask?.cancel()
+    autosaveTask = nil
+    store.updateEditingBlockDraft(block, draft: currentSourceText)
+    Task { await store.convertEditingBlock(block, to: kind, draftText: currentSourceText) }
+  }
+
+  private func insertBacklinkForSelection() {
+    guard let edit = WorkspaceStore.backlinkReplacementForSelectedText(in: currentText, range: selectedRange) else {
+      store.statusText = "Select text first"
+      return
+    }
+    applyInlineEdit(edit)
+  }
+
+  private func resolveWikiLinkCompletion(_ match: ParagraphWikiLinkCompletionMatch, to node: OrgRoamNodeReference) {
+    guard let edit = ParagraphWikiLinkCompletion.replacement(
+      in: currentText,
+      match: match,
+      node: node
+    ) else {
+      return
+    }
+    applyInlineEdit(edit)
+  }
+
+  private func createNodeFromWikiLinkCompletion(_ match: ParagraphWikiLinkCompletionMatch) {
+    let text = currentText
+    Task {
+      guard let edit = await store.createKnowledgeNodeFromWikiLinkCompletion(text: text, match: match) else {
+        return
+      }
+      applyInlineEdit(edit)
+    }
+  }
+
+  private func createNodeFromSelection() {
+    let text = currentText
+    let range = selectedRange
+    Task {
+      guard let edit = await store.createKnowledgeNodeFromSelection(text: text, range: range) else {
+        return
+      }
+      applyInlineEdit(edit)
+    }
+  }
+
+  private func applyInlineEdit(_ edit: InlineSelectionReplacement) {
+    activateEditingContext()
+    draftText = edit.text
+    selectedRange = edit.selectedRange
+    liveText.update(edit.text)
+    presentationText = edit.text
+    reserveEditorLines(for: edit.text)
+    store.updateEditingBlockDraft(block, draft: Self.sourceText(for: block, editableText: edit.text))
+    scheduleAutosave()
+  }
+
+  private func refreshFromBlockIfNeeded() {
+    let editableText = Self.editableText(for: block)
+    let identityChanged = appliedRenderIdentity != block.renderIdentity
+    guard identityChanged
+      || (!isTextFocused && store.editingBlockID != block.id && draftText != editableText)
+    else {
+      return
+    }
+    autosaveTask?.cancel()
+    autosaveTask = nil
+    appliedRenderIdentity = block.renderIdentity
+    draftText = editableText
+    presentationText = editableText
+    liveText.update(editableText)
+    selectedRange = InlineEditorSizing.endSelection(in: editableText)
+    reservedLineCount = InlineEditorSizing.cappedLineCount(
+      in: editableText,
+      minimum: Self.minimumLineCount(for: block),
+      maximum: Self.maximumLineCount(for: block)
+    )
+  }
+
+  private static func minimumLineCount(for block: OrgEditableBlock) -> Int {
+    switch block.rendered {
+    case .listItem:
+      return 1
+    case .paragraph:
+      return 1
+    default:
+      return 1
+    }
+  }
+
+  private static func maximumLineCount(for block: OrgEditableBlock) -> Int {
+    switch block.rendered {
+    case .listItem:
+      return 10
+    case .paragraph:
+      return 15
+    default:
+      return 12
+    }
+  }
+
+  private static let editorTextInset = NSSize(width: 0, height: 1)
+
+  private static func editorFont(for block: OrgEditableBlock) -> NSFont {
+    switch block.rendered {
+    case .heading:
+      return NSFont.systemFont(ofSize: NSFont.systemFontSize + 2, weight: .semibold)
+    default:
+      return OrgSyntaxHighlighter.baseFont(monospaced: false)
+    }
+  }
+
+  private static func editorLineHeight(for block: OrgEditableBlock) -> CGFloat {
+    ceil(editorFont(for: block).boundingRectForFont.height) + 3
+  }
+
+  private static func editableText(for block: OrgEditableBlock) -> String {
+    if case .listItem = block.rendered,
+       let prefix = listPrefix(in: block.rawText) {
+      return String(block.rawText.dropFirst(prefix.count))
+    }
+    return block.rawText
+  }
+
+  private static func sourceText(for block: OrgEditableBlock, editableText: String) -> String {
+    if case .listItem = block.rendered {
+      return (listPrefix(in: block.rawText) ?? fallbackListPrefix(for: block)) + editableText
+    }
+    return editableText
+  }
+
+  private static func sourceUTF16Offset(for block: OrgEditableBlock, editableOffset: Int) -> Int {
+    guard case .listItem = block.rendered else { return editableOffset }
+    let prefix = listPrefix(in: block.rawText) ?? fallbackListPrefix(for: block)
+    return (prefix as NSString).length + editableOffset
+  }
+
+  private static func editorToSourceUTF16Offset(for block: OrgEditableBlock) -> Int {
+    guard case .listItem = block.rendered else { return 0 }
+    let prefix = listPrefix(in: block.rawText) ?? fallbackListPrefix(for: block)
+    return (prefix as NSString).length
+  }
+
+  private static func listPrefix(in rawText: String) -> String? {
+    guard let line = rawText.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first else {
+      return nil
+    }
+    let rawLine = String(line)
+    guard let regex = try? NSRegularExpression(pattern: #"^(\s*(?:[-+*]|\d+[.)])\s+(?:\[[ Xx-]\]\s+)?)"#) else {
+      return nil
+    }
+    let nsLine = rawLine as NSString
+    let range = NSRange(location: 0, length: nsLine.length)
+    guard let match = regex.firstMatch(in: rawLine, range: range),
+          match.range(at: 1).location != NSNotFound
+    else {
+      return nil
+    }
+    return nsLine.substring(with: match.range(at: 1))
+  }
+
+  private static func fallbackListPrefix(for block: OrgEditableBlock) -> String {
+    guard case .listItem(let indent, let marker, let checkbox, _) = block.rendered else {
+      return ""
+    }
+    let checkboxPrefix = checkbox.map { "\($0.rawMarker) " } ?? ""
+    return String(repeating: " ", count: max(0, indent)) + marker + " " + checkboxPrefix
+  }
+
+  private static func displayListMarker(_ marker: String) -> String {
+    if marker.range(of: #"^\d+[.)]$"#, options: .regularExpression) != nil {
+      return marker
+    }
+    return "•"
+  }
+}
+
+private struct LiveRenderedTextEditorWidthKey: PreferenceKey {
+  static let defaultValue: CGFloat = 0
+
+  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+    let next = nextValue()
+    if next > 0 {
+      value = next
     }
   }
 }

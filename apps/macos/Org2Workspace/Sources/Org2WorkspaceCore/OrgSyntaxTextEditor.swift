@@ -23,6 +23,633 @@ final class OrgSyntaxTextEditorDraftBuffer {
   }
 }
 
+struct OrgSyntaxTextSelectionContext: Equatable {
+  let blockID: String
+  let startLine: Int
+  let endLineExclusive: Int
+  let editorToSourceUTF16Offset: Int
+}
+
+struct OrgSyntaxTextSelectionDocumentFragment: Equatable {
+  let context: OrgSyntaxTextSelectionContext
+  let editorRange: NSRange
+  let editorUTF16Length: Int
+  let editorText: String
+
+  var sourceRange: NSRange {
+    NSRange(
+      location: context.editorToSourceUTF16Offset + editorRange.location,
+      length: editorRange.length
+    )
+  }
+
+  var selectsEntireEditor: Bool {
+    editorRange.location == 0 && editorRange.length >= editorUTF16Length
+  }
+}
+
+fileprivate enum OrgSyntaxTextBoundaryDirection {
+  case previous
+  case next
+}
+
+fileprivate enum OrgSyntaxTextBoundaryCaretPlacement {
+  case start
+  case end
+}
+
+final class OrgSyntaxTextView: NSTextView {
+  var documentSelectionContext: OrgSyntaxTextSelectionContext?
+  var onDeleteDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment]) -> Bool)?
+  var onReplaceDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment], String) -> Bool)?
+  var isApplyingCrossEditorSelection = false
+  private var crossEditorHighlightedRange: NSRange?
+
+  override func mouseDown(with event: NSEvent) {
+    if event.clickCount == 1,
+       OrgSyntaxTextSelectionBridge.trackMouseSelection(from: self, event: event) {
+      return
+    }
+    super.mouseDown(with: event)
+  }
+
+  override func mouseDragged(with event: NSEvent) {
+    if OrgSyntaxTextSelectionBridge.updateSelection(from: self, event: event) {
+      return
+    }
+    super.mouseDragged(with: event)
+  }
+
+  override func mouseUp(with event: NSEvent) {
+    if OrgSyntaxTextSelectionBridge.endSelection(from: self) {
+      return
+    }
+    super.mouseUp(with: event)
+  }
+
+  override func keyDown(with event: NSEvent) {
+    if handlesCrossEditorCopyShortcut(event) {
+      copy(nil)
+      return
+    }
+    if handlesDocumentSelectAllShortcut(event),
+       OrgSyntaxTextSelectionBridge.selectAllDocumentText(containing: self) {
+      return
+    }
+    if handlesDocumentSelectionDelete(event),
+       performDocumentSelectionDelete() {
+      return
+    }
+    if let replacement = documentSelectionReplacementText(for: event),
+       performDocumentSelectionReplacement(with: replacement) {
+      return
+    }
+    OrgSyntaxTextSelectionBridge.clearCrossEditorSelection(containing: self, preserving: self)
+    super.keyDown(with: event)
+  }
+
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    if handlesCrossEditorCopyShortcut(event) {
+      copy(nil)
+      return true
+    }
+    if handlesDocumentSelectAllShortcut(event),
+       OrgSyntaxTextSelectionBridge.selectAllDocumentText(containing: self) {
+      return true
+    }
+    return super.performKeyEquivalent(with: event)
+  }
+
+  override func selectAll(_ sender: Any?) {
+    if OrgSyntaxTextSelectionBridge.selectAllDocumentText(containing: self) {
+      return
+    }
+    super.selectAll(sender)
+  }
+
+  override func deleteBackward(_ sender: Any?) {
+    if performDocumentSelectionDelete() {
+      return
+    }
+    super.deleteBackward(sender)
+  }
+
+  override func deleteForward(_ sender: Any?) {
+    if performDocumentSelectionDelete() {
+      return
+    }
+    super.deleteForward(sender)
+  }
+
+  override func paste(_ sender: Any?) {
+    if let pastedText = NSPasteboard.general.string(forType: .string),
+       performDocumentSelectionReplacement(with: pastedText) {
+      return
+    }
+    super.paste(sender)
+  }
+
+  override func copy(_ sender: Any?) {
+    guard let selectedText = OrgSyntaxTextSelectionBridge.selectedText(containing: self) else {
+      super.copy(sender)
+      return
+    }
+    let pasteboard = NSPasteboard.general
+    pasteboard.clearContents()
+    pasteboard.setString(selectedText, forType: .string)
+  }
+
+  override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+    if item.action == #selector(copy(_:)),
+       OrgSyntaxTextSelectionBridge.selectedText(containing: self) != nil {
+      return true
+    }
+    return super.validateUserInterfaceItem(item)
+  }
+
+  private func handlesCrossEditorCopyShortcut(_ event: NSEvent) -> Bool {
+    let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    return modifiers == .command
+      && event.charactersIgnoringModifiers?.lowercased() == "c"
+      && OrgSyntaxTextSelectionBridge.selectedText(containing: self) != nil
+  }
+
+  private func handlesDocumentSelectAllShortcut(_ event: NSEvent) -> Bool {
+    let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    return modifiers == .command
+      && event.charactersIgnoringModifiers?.lowercased() == "a"
+      && documentSelectionContext != nil
+  }
+
+  private func handlesDocumentSelectionDelete(_ event: NSEvent) -> Bool {
+    let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    guard modifiers.subtracting([.function]).isEmpty else { return false }
+    if event.keyCode == 51 || event.keyCode == 117 {
+      return true
+    }
+    return event.charactersIgnoringModifiers == "\u{7F}"
+      || event.charactersIgnoringModifiers == String(UnicodeScalar(NSDeleteCharacter)!)
+  }
+
+  private func documentSelectionReplacementText(for event: NSEvent) -> String? {
+    let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    guard !modifiers.contains(.command),
+          !modifiers.contains(.control),
+          !modifiers.contains(.option),
+          let characters = event.characters,
+          !characters.isEmpty,
+          characters.unicodeScalars.allSatisfy({ scalar in
+            !CharacterSet.controlCharacters.contains(scalar)
+              && !(0xF700...0xF8FF).contains(Int(scalar.value))
+          })
+    else {
+      return nil
+    }
+    return characters
+  }
+
+  private func performDocumentSelectionDelete() -> Bool {
+    if performDocumentSelectionReplacement(with: "") {
+      return true
+    }
+    guard let fragments = OrgSyntaxTextSelectionBridge.selectedDocumentFragments(containing: self),
+          !fragments.isEmpty,
+          onDeleteDocumentSelection?(fragments) == true
+    else {
+      return false
+    }
+    OrgSyntaxTextSelectionBridge.clearCrossEditorSelection(containing: self)
+    return true
+  }
+
+  private func performDocumentSelectionReplacement(with replacement: String) -> Bool {
+    guard let fragments = OrgSyntaxTextSelectionBridge.selectedDocumentFragments(containing: self),
+          !fragments.isEmpty,
+          onReplaceDocumentSelection?(fragments, replacement) == true
+    else {
+      return false
+    }
+    OrgSyntaxTextSelectionBridge.clearCrossEditorSelection(containing: self)
+    return true
+  }
+
+  func applyCrossEditorHighlight(_ range: NSRange) {
+    clearCrossEditorHighlight()
+    if range.length > 0 {
+      let clampedRange = OrgSyntaxTextEditor.clampedRange(
+        range,
+        utf16Length: (string as NSString).length
+      )
+      guard clampedRange.length > 0 else { return }
+      crossEditorHighlightedRange = clampedRange
+      layoutManager?.addTemporaryAttribute(
+        .backgroundColor,
+        value: NSColor.selectedTextBackgroundColor.withAlphaComponent(0.55),
+        forCharacterRange: clampedRange
+      )
+    }
+  }
+
+  func clearCrossEditorHighlight() {
+    guard let range = crossEditorHighlightedRange else { return }
+    layoutManager?.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
+    crossEditorHighlightedRange = nil
+  }
+}
+
+@MainActor
+enum OrgSyntaxTextSelectionBridge {
+  private struct ActiveSelection {
+    weak var anchorView: OrgSyntaxTextView?
+    let anchorLocation: Int
+    var crossedEditorBoundary: Bool
+  }
+
+  private struct SelectionFragment {
+    weak var view: OrgSyntaxTextView?
+    let range: NSRange
+  }
+
+  private static var activeSelection: ActiveSelection?
+  private static var selectedFragments: [SelectionFragment] = []
+
+  static func beginSelection(in textView: OrgSyntaxTextView, event: NSEvent) {
+    clearCrossEditorSelection(containing: textView)
+    activeSelection = ActiveSelection(
+      anchorView: textView,
+      anchorLocation: characterLocation(in: textView, event: event),
+      crossedEditorBoundary: false
+    )
+  }
+
+  static func trackMouseSelection(from textView: OrgSyntaxTextView, event: NSEvent) -> Bool {
+    guard let window = textView.window else { return false }
+    clearCrossEditorSelection(containing: textView)
+    window.makeFirstResponder(textView)
+
+    let anchorLocation = characterLocation(in: textView, event: event)
+    let initialPoint = event.locationInWindow
+    activeSelection = ActiveSelection(
+      anchorView: textView,
+      anchorLocation: anchorLocation,
+      crossedEditorBoundary: false
+    )
+
+    var didDrag = false
+    var handledCrossEditorSelection = false
+    while let nextEvent = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+      switch nextEvent.type {
+      case .leftMouseDragged:
+        let deltaX = nextEvent.locationInWindow.x - initialPoint.x
+        let deltaY = nextEvent.locationInWindow.y - initialPoint.y
+        if hypot(deltaX, deltaY) > 2 {
+          didDrag = true
+        }
+
+        guard didDrag else { continue }
+        let targetView = targetTextView(in: window, at: nextEvent.locationInWindow)
+        if let targetView,
+           targetView !== textView || handledCrossEditorSelection {
+          handledCrossEditorSelection = true
+          activeSelection?.crossedEditorBoundary = true
+          selectTextAcrossEditors(
+            anchorView: textView,
+            anchorLocation: anchorLocation,
+            targetView: targetView,
+            targetLocation: characterLocation(in: targetView, windowPoint: nextEvent.locationInWindow)
+          )
+        } else if !handledCrossEditorSelection {
+          let targetLocation = characterLocation(in: textView, windowPoint: nextEvent.locationInWindow)
+          let location = min(anchorLocation, targetLocation)
+          let length = abs(targetLocation - anchorLocation)
+          textView.setSelectedRange(NSRange(location: location, length: length))
+        }
+      case .leftMouseUp:
+        activeSelection = nil
+        if !didDrag {
+          textView.setSelectedRange(NSRange(location: anchorLocation, length: 0))
+        }
+        return true
+      default:
+        continue
+      }
+    }
+
+    activeSelection = nil
+    return true
+  }
+
+  static func updateSelection(from textView: OrgSyntaxTextView, event: NSEvent) -> Bool {
+    guard var activeSelection,
+          let anchorView = activeSelection.anchorView,
+          let targetView = targetTextView(in: anchorView.window, at: event.locationInWindow)
+    else {
+      return false
+    }
+
+    let crossedEditorBoundary = targetView !== anchorView || activeSelection.crossedEditorBoundary
+    guard crossedEditorBoundary else {
+      return false
+    }
+
+    activeSelection.crossedEditorBoundary = true
+    self.activeSelection = activeSelection
+    selectTextAcrossEditors(
+      anchorView: anchorView,
+      anchorLocation: activeSelection.anchorLocation,
+      targetView: targetView,
+      targetLocation: characterLocation(in: targetView, windowPoint: event.locationInWindow)
+    )
+    return true
+  }
+
+  static func endSelection(from textView: OrgSyntaxTextView) -> Bool {
+    let handled = activeSelection?.crossedEditorBoundary == true
+    activeSelection = nil
+    return handled
+  }
+
+  static func clearCrossEditorSelection(containing textView: OrgSyntaxTextView, preserving preservedView: OrgSyntaxTextView? = nil) {
+    for candidate in orderedTextViews(in: textView.window) {
+      candidate.clearCrossEditorHighlight()
+      guard candidate !== preservedView else { continue }
+      if candidate.selectedRange().length > 0 {
+        candidate.setSelectedRange(NSRange(location: 0, length: 0))
+      }
+    }
+    selectedFragments = []
+    activeSelection = nil
+  }
+
+  static func selectAllDocumentText(containing textView: OrgSyntaxTextView) -> Bool {
+    let textViews = orderedDocumentTextViews(in: textView.window)
+    guard !textViews.isEmpty else { return false }
+
+    var nextFragments: [SelectionFragment] = []
+    for view in textViews {
+      if view.selectedRange().length > 0 {
+        view.setSelectedRange(NSRange(location: 0, length: 0))
+      }
+      let length = (view.string as NSString).length
+      let range = NSRange(location: 0, length: length)
+      view.applyCrossEditorHighlight(range)
+      if length > 0 {
+        nextFragments.append(SelectionFragment(view: view, range: range))
+      }
+    }
+
+    selectedFragments = nextFragments
+    activeSelection = nil
+    textView.window?.makeFirstResponder(textView)
+    return !nextFragments.isEmpty
+  }
+
+  static func selectTextAcrossEditors(
+    anchorView: OrgSyntaxTextView,
+    anchorLocation: Int,
+    targetView: OrgSyntaxTextView,
+    targetLocation: Int
+  ) {
+    let textViews = orderedTextViews(in: anchorView.window)
+    guard let anchorIndex = textViews.firstIndex(where: { $0 === anchorView }),
+          let targetIndex = textViews.firstIndex(where: { $0 === targetView })
+    else {
+      return
+    }
+
+    let lowerIndex = min(anchorIndex, targetIndex)
+    let upperIndex = max(anchorIndex, targetIndex)
+    var nextFragments: [SelectionFragment] = []
+    for (index, view) in textViews.enumerated() {
+      if view.selectedRange().length > 0 {
+        view.setSelectedRange(NSRange(location: 0, length: 0))
+      }
+      guard lowerIndex...upperIndex ~= index else {
+        view.clearCrossEditorHighlight()
+        continue
+      }
+      let range = selectionRange(
+        for: view,
+        index: index,
+        anchorIndex: anchorIndex,
+        anchorLocation: anchorLocation,
+        targetIndex: targetIndex,
+        targetLocation: targetLocation
+      )
+      view.applyCrossEditorHighlight(range)
+      if range.length > 0 {
+        nextFragments.append(SelectionFragment(view: view, range: range))
+      }
+    }
+    selectedFragments = nextFragments
+  }
+
+  static func selectedText(containing textView: OrgSyntaxTextView) -> String? {
+    guard let liveFragments = liveSelectedFragments(containing: textView) else {
+      return nil
+    }
+    let selectedText = liveFragments.compactMap { view, range -> String? in
+      guard range.length > 0,
+            let swiftRange = Range(range, in: view.string)
+      else {
+        return nil
+      }
+      return String(view.string[swiftRange])
+    }
+    guard !selectedText.isEmpty else {
+      return nil
+    }
+    return selectedText.joined(separator: "\n")
+  }
+
+  static func selectedDocumentFragments(
+    containing textView: OrgSyntaxTextView
+  ) -> [OrgSyntaxTextSelectionDocumentFragment]? {
+    guard let liveFragments = liveSelectedFragments(containing: textView) else {
+      return nil
+    }
+
+    let documentFragments = liveFragments.compactMap { view, range -> OrgSyntaxTextSelectionDocumentFragment? in
+      guard let context = view.documentSelectionContext else { return nil }
+      return OrgSyntaxTextSelectionDocumentFragment(
+        context: context,
+        editorRange: range,
+        editorUTF16Length: (view.string as NSString).length,
+        editorText: view.string
+      )
+    }
+    guard documentFragments.count == liveFragments.count,
+          !documentFragments.isEmpty
+    else {
+      return nil
+    }
+    return documentFragments
+  }
+
+  fileprivate static func moveCaretAcrossDocumentEditors(
+    from textView: OrgSyntaxTextView,
+    direction: OrgSyntaxTextBoundaryDirection,
+    placement: OrgSyntaxTextBoundaryCaretPlacement
+  ) -> Bool {
+    guard textView.documentSelectionContext != nil else { return false }
+    let textViews = orderedDocumentTextViews(in: textView.window)
+    guard let currentIndex = textViews.firstIndex(where: { $0 === textView }) else {
+      return false
+    }
+
+    let targetIndex: Int
+    switch direction {
+    case .previous:
+      targetIndex = currentIndex - 1
+    case .next:
+      targetIndex = currentIndex + 1
+    }
+    guard textViews.indices.contains(targetIndex) else {
+      return false
+    }
+
+    let targetView = textViews[targetIndex]
+    clearCrossEditorSelection(containing: textView, preserving: targetView)
+    targetView.window?.makeFirstResponder(targetView)
+    let targetLength = (targetView.string as NSString).length
+    let targetLocation: Int
+    switch placement {
+    case .start:
+      targetLocation = 0
+    case .end:
+      targetLocation = targetLength
+    }
+    targetView.setSelectedRange(NSRange(location: targetLocation, length: 0))
+    targetView.scrollRangeToVisible(NSRange(location: targetLocation, length: 0))
+    return true
+  }
+
+  static func orderedTextViews(in window: NSWindow?) -> [OrgSyntaxTextView] {
+    guard let contentView = window?.contentView else { return [] }
+    var seen = Set<ObjectIdentifier>()
+    let textViews = collectTextViews(in: contentView, seen: &seen)
+      .filter { !$0.isHidden && $0.window === window && $0.isEditable }
+    return textViews.sorted { lhs, rhs in
+      let lhsFrame = lhs.convert(lhs.bounds, to: nil)
+      let rhsFrame = rhs.convert(rhs.bounds, to: nil)
+      if abs(lhsFrame.midY - rhsFrame.midY) > 0.5 {
+        return lhsFrame.midY > rhsFrame.midY
+      }
+      return lhsFrame.minX < rhsFrame.minX
+    }
+  }
+
+  private static func liveSelectedFragments(
+    containing textView: OrgSyntaxTextView
+  ) -> [(OrgSyntaxTextView, NSRange)]? {
+    guard let window = textView.window else { return nil }
+    let liveFragments = selectedFragments.compactMap { fragment -> (OrgSyntaxTextView, NSRange)? in
+      guard let view = fragment.view,
+            view.window === window
+      else {
+        return nil
+      }
+      return (view, fragment.range)
+    }
+    guard !liveFragments.isEmpty else { return nil }
+    if liveFragments.contains(where: { $0.0 === textView }) {
+      return liveFragments
+    }
+    guard textView.documentSelectionContext != nil,
+          orderedDocumentTextViews(in: window).contains(where: { $0 === textView })
+    else {
+      return nil
+    }
+    return liveFragments
+  }
+
+  private static func orderedDocumentTextViews(in window: NSWindow?) -> [OrgSyntaxTextView] {
+    orderedTextViews(in: window).filter { $0.documentSelectionContext != nil }
+  }
+
+  private static func collectTextViews(in view: NSView, seen: inout Set<ObjectIdentifier>) -> [OrgSyntaxTextView] {
+    var result: [OrgSyntaxTextView] = []
+    if let textView = view as? OrgSyntaxTextView {
+      let identifier = ObjectIdentifier(textView)
+      if !seen.contains(identifier) {
+        seen.insert(identifier)
+        result.append(textView)
+      }
+    }
+    if let scrollView = view as? NSScrollView,
+       let documentView = scrollView.documentView {
+      result.append(contentsOf: collectTextViews(in: documentView, seen: &seen))
+    }
+    for subview in view.subviews {
+      result.append(contentsOf: collectTextViews(in: subview, seen: &seen))
+    }
+    return result
+  }
+
+  private static func targetTextView(in window: NSWindow?, at windowPoint: NSPoint) -> OrgSyntaxTextView? {
+    let textViews = orderedTextViews(in: window)
+    if let containing = textViews.first(where: { view in
+      view.convert(view.bounds, to: nil).insetBy(dx: -12, dy: -6).contains(windowPoint)
+    }) {
+      return containing
+    }
+    return textViews.min { lhs, rhs in
+      distance(from: windowPoint, to: lhs.convert(lhs.bounds, to: nil))
+        < distance(from: windowPoint, to: rhs.convert(rhs.bounds, to: nil))
+    }
+  }
+
+  private static func distance(from point: NSPoint, to rect: NSRect) -> CGFloat {
+    let dx = max(rect.minX - point.x, 0, point.x - rect.maxX)
+    let dy = max(rect.minY - point.y, 0, point.y - rect.maxY)
+    return hypot(dx, dy)
+  }
+
+  private static func selectionRange(
+    for textView: OrgSyntaxTextView,
+    index: Int,
+    anchorIndex: Int,
+    anchorLocation: Int,
+    targetIndex: Int,
+    targetLocation: Int
+  ) -> NSRange {
+    let length = (textView.string as NSString).length
+    if anchorIndex == targetIndex {
+      let start = min(anchorLocation, targetLocation)
+      let end = max(anchorLocation, targetLocation)
+      return NSRange(location: start, length: end - start)
+    }
+
+    if anchorIndex < targetIndex {
+      if index == anchorIndex {
+        return NSRange(location: anchorLocation, length: max(0, length - anchorLocation))
+      }
+      if index == targetIndex {
+        return NSRange(location: 0, length: min(length, targetLocation))
+      }
+      return NSRange(location: 0, length: length)
+    }
+
+    if index == targetIndex {
+      return NSRange(location: targetLocation, length: max(0, length - targetLocation))
+    }
+    if index == anchorIndex {
+      return NSRange(location: 0, length: min(length, anchorLocation))
+    }
+    return NSRange(location: 0, length: length)
+  }
+
+  private static func characterLocation(in textView: OrgSyntaxTextView, event: NSEvent) -> Int {
+    characterLocation(in: textView, windowPoint: event.locationInWindow)
+  }
+
+  private static func characterLocation(in textView: OrgSyntaxTextView, windowPoint: NSPoint) -> Int {
+    let localPoint = textView.convert(windowPoint, from: nil)
+    let length = (textView.string as NSString).length
+    return min(max(0, textView.characterIndexForInsertion(at: localPoint)), length)
+  }
+}
+
 struct OrgSyntaxTextEditor: NSViewRepresentable {
   @Binding var text: String
   let monospaced: Bool
@@ -36,6 +663,10 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   let shouldPublishTextImmediately: ((String) -> Bool)?
   let onSubmit: (() -> Bool)?
   let onSubmitContext: ((OrgSyntaxTextEditorSubmitContext) -> Bool)?
+  let onDeleteBackwardContext: ((OrgSyntaxTextEditorSubmitContext) -> Bool)?
+  let documentSelectionContext: OrgSyntaxTextSelectionContext?
+  let onDeleteDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment]) -> Bool)?
+  let onReplaceDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment], String) -> Bool)?
 
   init(
     text: Binding<String>,
@@ -49,7 +680,11 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     onLocalTextChange: ((String) -> Void)? = nil,
     shouldPublishTextImmediately: ((String) -> Bool)? = nil,
     onSubmit: (() -> Bool)? = nil,
-    onSubmitContext: ((OrgSyntaxTextEditorSubmitContext) -> Bool)? = nil
+    onSubmitContext: ((OrgSyntaxTextEditorSubmitContext) -> Bool)? = nil,
+    onDeleteBackwardContext: ((OrgSyntaxTextEditorSubmitContext) -> Bool)? = nil,
+    documentSelectionContext: OrgSyntaxTextSelectionContext? = nil,
+    onDeleteDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment]) -> Bool)? = nil,
+    onReplaceDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment], String) -> Bool)? = nil
   ) {
     _text = text
     self.monospaced = monospaced
@@ -63,6 +698,10 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     self.shouldPublishTextImmediately = shouldPublishTextImmediately
     self.onSubmit = onSubmit
     self.onSubmitContext = onSubmitContext
+    self.onDeleteBackwardContext = onDeleteBackwardContext
+    self.documentSelectionContext = documentSelectionContext
+    self.onDeleteDocumentSelection = onDeleteDocumentSelection
+    self.onReplaceDocumentSelection = onReplaceDocumentSelection
   }
 
   func makeCoordinator() -> Coordinator {
@@ -77,8 +716,11 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     scrollView.autohidesScrollers = showsScrollers
     scrollView.borderType = .noBorder
 
-    let textView = NSTextView()
+    let textView = OrgSyntaxTextView()
     textView.delegate = context.coordinator
+    textView.documentSelectionContext = documentSelectionContext
+    textView.onDeleteDocumentSelection = onDeleteDocumentSelection
+    textView.onReplaceDocumentSelection = onReplaceDocumentSelection
     textView.string = text
     textView.drawsBackground = false
     textView.isRichText = false
@@ -89,8 +731,11 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     textView.isAutomaticTextReplacementEnabled = false
     textView.isAutomaticSpellingCorrectionEnabled = false
     textView.isContinuousSpellCheckingEnabled = false
+    textView.font = OrgSyntaxHighlighter.baseFont(monospaced: monospaced)
+    textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: monospaced)
     textView.textContainerInset = textInset
     textView.textContainer?.widthTracksTextView = true
+    textView.textContainer?.lineFragmentPadding = 0
     textView.textContainer?.containerSize = NSSize(width: scrollView.contentSize.width, height: CGFloat.greatestFiniteMagnitude)
     textView.minSize = NSSize(width: 0, height: 0)
     textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
@@ -101,17 +746,16 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     scrollView.documentView = textView
     context.coordinator.recordKnownText(text, utf16Length: textView.textStorage?.length)
     context.coordinator.applyHighlighting(to: textView)
-    if focusOnAppear {
-      DispatchQueue.main.async {
-        textView.window?.makeFirstResponder(textView)
-      }
-    }
+    context.coordinator.applyFocusRequestIfNeeded(to: textView, enabled: focusOnAppear)
     return scrollView
   }
 
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
     context.coordinator.parent = self
-    guard let textView = scrollView.documentView as? NSTextView else { return }
+    guard let textView = scrollView.documentView as? OrgSyntaxTextView else { return }
+    textView.documentSelectionContext = documentSelectionContext
+    textView.onDeleteDocumentSelection = onDeleteDocumentSelection
+    textView.onReplaceDocumentSelection = onReplaceDocumentSelection
 
     var currentUTF16Length = textView.textStorage?.length
     let cachedEditorText = context.coordinator.knownText(matchingUTF16Length: currentUTF16Length)
@@ -153,6 +797,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         textView.setSelectedRange(requestedSelection)
       }
     }
+    context.coordinator.applyFocusRequestIfNeeded(to: textView, enabled: focusOnAppear)
 
     if appliedProgrammaticText || !context.coordinator.hasDeferredHighlighting(for: editorText) {
       context.coordinator.applyHighlightingIfNeeded(to: textView, currentText: editorText)
@@ -194,9 +839,25 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     private var deferredTextPublishGeneration = 0
     private var lastKnownText: String?
     private var lastKnownTextUTF16Length: Int?
+    private var hasAppliedFocusRequest = false
 
     init(parent: OrgSyntaxTextEditor) {
       self.parent = parent
+    }
+
+    func applyFocusRequestIfNeeded(to textView: NSTextView, enabled: Bool) {
+      guard enabled else {
+        hasAppliedFocusRequest = false
+        return
+      }
+      guard !hasAppliedFocusRequest else { return }
+      hasAppliedFocusRequest = true
+      DispatchQueue.main.async { [weak textView] in
+        guard let textView else { return }
+        if textView.window?.firstResponder !== textView {
+          textView.window?.makeFirstResponder(textView)
+        }
+      }
     }
 
     func textDidChange(_ notification: Notification) {
@@ -230,6 +891,9 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
 
     func textViewDidChangeSelection(_ notification: Notification) {
       guard let textView = notification.object as? NSTextView else { return }
+      if (textView as? OrgSyntaxTextView)?.isApplyingCrossEditorSelection == true {
+        return
+      }
       let selectedRange = textView.selectedRange()
       guard shouldReadTextForSelectionPublishing(selectedRange) else { return }
       publishSelectionIfNeeded(selectedRange, in: textView.string)
@@ -247,6 +911,14 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+      if handleBoundaryArrowCommand(commandSelector, in: textView) {
+        return true
+      }
+
+      if commandSelector == #selector(NSResponder.deleteBackward(_:)) {
+        return handleDeleteBackwardCommand(in: textView)
+      }
+
       guard commandSelector == #selector(NSResponder.insertNewline(_:)) else {
         return false
       }
@@ -271,6 +943,70 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         return false
       }
       return onSubmit()
+    }
+
+    private func handleBoundaryArrowCommand(_ commandSelector: Selector, in textView: NSTextView) -> Bool {
+      guard let syntaxTextView = textView as? OrgSyntaxTextView,
+            syntaxTextView.documentSelectionContext != nil
+      else {
+        return false
+      }
+      let selectedRange = textView.selectedRange()
+      guard selectedRange.length == 0 else {
+        return false
+      }
+      let textLength = (textView.string as NSString).length
+      let clampedLocation = min(max(0, selectedRange.location), textLength)
+
+      switch commandSelector {
+      case #selector(NSResponder.moveUp(_:)):
+        guard clampedLocation == 0 else { return false }
+        return OrgSyntaxTextSelectionBridge.moveCaretAcrossDocumentEditors(
+          from: syntaxTextView,
+          direction: .previous,
+          placement: .end
+        )
+      case #selector(NSResponder.moveDown(_:)):
+        guard clampedLocation == textLength else { return false }
+        return OrgSyntaxTextSelectionBridge.moveCaretAcrossDocumentEditors(
+          from: syntaxTextView,
+          direction: .next,
+          placement: .end
+        )
+      case #selector(NSResponder.moveLeft(_:)):
+        guard clampedLocation == 0 else { return false }
+        return OrgSyntaxTextSelectionBridge.moveCaretAcrossDocumentEditors(
+          from: syntaxTextView,
+          direction: .previous,
+          placement: .end
+        )
+      case #selector(NSResponder.moveRight(_:)):
+        guard clampedLocation == textLength else { return false }
+        return OrgSyntaxTextSelectionBridge.moveCaretAcrossDocumentEditors(
+          from: syntaxTextView,
+          direction: .next,
+          placement: .start
+        )
+      default:
+        return false
+      }
+    }
+
+    private func handleDeleteBackwardCommand(in textView: NSTextView) -> Bool {
+      let selectedRange = textView.selectedRange()
+      guard Self.shouldOfferDeleteBackwardCommand(selectedRange: selectedRange) else {
+        return false
+      }
+
+      guard let onDeleteBackwardContext = parent.onDeleteBackwardContext else {
+        return false
+      }
+
+      flushTextPublishing(from: textView)
+      return onDeleteBackwardContext(OrgSyntaxTextEditorSubmitContext(
+        text: textView.string,
+        selectedRange: selectedRange
+      ))
     }
 
     func invalidateHighlighting() {
@@ -529,6 +1265,10 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       return requestedSelection.length > 0 || currentSelection.length > 0
     }
 
+    static func shouldOfferDeleteBackwardCommand(selectedRange: NSRange) -> Bool {
+      selectedRange.location == 0 && selectedRange.length == 0
+    }
+
     static func shouldScheduleDeferredHighlighting(
       text: String,
       previousHighlightedText: String?,
@@ -622,6 +1362,7 @@ struct OrgSyntaxHighlightToken: Equatable {
 
 enum OrgSyntaxHighlightKind: String {
   case headingStars
+  case headingTitle
   case keyword
   case planningKeyword
   case propertyKey
@@ -731,7 +1472,7 @@ enum OrgSyntaxHighlighter {
       && !shouldTokenizeLiveText(utf16Length: utf16Length)
   }
 
-  private static func baseFont(monospaced: Bool) -> NSFont {
+  static func baseFont(monospaced: Bool) -> NSFont {
     monospaced
       ? NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
       : NSFont.systemFont(ofSize: NSFont.systemFontSize)
@@ -798,12 +1539,25 @@ enum OrgSyntaxHighlighter {
     append(match.range(at: 2), kind: .todo, lineOffset: lineOffset, into: &tokens)
     append(match.range(at: 3), kind: .priority, lineOffset: lineOffset, into: &tokens)
 
-    collectLineRegex(
-      regex: headingTagRegex,
-      kind: .tag,
-      line: line,
+    let tagMatch = headingTagRegex.firstMatch(in: line, range: fullRange)
+    if let tagMatch {
+      append(tagMatch.range(at: 1), kind: .tag, lineOffset: lineOffset, into: &tokens)
+    }
+
+    var titleStart = match.range.location + match.range.length
+    while titleStart < ns.length,
+          CharacterSet.whitespaces.contains(UnicodeScalar(ns.character(at: titleStart)) ?? " ") {
+      titleStart += 1
+    }
+    var titleEnd = tagMatch?.range.location ?? ns.length
+    while titleEnd > titleStart,
+          CharacterSet.whitespaces.contains(UnicodeScalar(ns.character(at: titleEnd - 1)) ?? " ") {
+      titleEnd -= 1
+    }
+    append(
+      NSRange(location: titleStart, length: titleEnd - titleStart),
+      kind: .headingTitle,
       lineOffset: lineOffset,
-      capture: 1,
       into: &tokens
     )
   }
@@ -865,7 +1619,7 @@ enum OrgSyntaxHighlighter {
     switch kind {
     case .link, .code, .emphasis, .timestamp:
       return true
-    case .headingStars, .keyword, .planningKeyword, .propertyKey, .todo, .priority, .tag, .linkTarget, .syntaxDelimiter, .comment:
+    case .headingStars, .headingTitle, .keyword, .planningKeyword, .propertyKey, .todo, .priority, .tag, .linkTarget, .syntaxDelimiter, .comment:
       return false
     }
   }
@@ -1030,9 +1784,11 @@ enum OrgSyntaxHighlighter {
   private static func attributes(for kind: OrgSyntaxHighlightKind, baseFont: NSFont) -> [NSAttributedString.Key: Any] {
     switch kind {
     case .headingStars:
+      return hiddenSyntaxAttributes(baseFont: baseFont)
+    case .headingTitle:
       return [
-        .foregroundColor: NSColor.secondaryLabelColor,
-        .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .medium)
+        .foregroundColor: NSColor.labelColor,
+        .font: NSFont.systemFont(ofSize: baseFont.pointSize + 2, weight: .semibold)
       ]
     case .keyword:
       return [
@@ -1071,12 +1827,7 @@ enum OrgSyntaxHighlighter {
         .underlineStyle: NSUnderlineStyle.single.rawValue
       ]
     case .linkTarget:
-      return [
-        .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.18),
-        .backgroundColor: NSColor.clear,
-        .underlineStyle: 0,
-        .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular)
-      ]
+      return hiddenSyntaxAttributes(baseFont: baseFont)
     case .code:
       return [
         .foregroundColor: NSColor.labelColor,
@@ -1095,16 +1846,20 @@ enum OrgSyntaxHighlighter {
         .font: NSFont.monospacedDigitSystemFont(ofSize: baseFont.pointSize, weight: .regular)
       ]
     case .syntaxDelimiter:
-      return [
-        .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.12),
-        .backgroundColor: NSColor.clear,
-        .underlineStyle: 0,
-        .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular)
-      ]
+      return hiddenSyntaxAttributes(baseFont: baseFont)
     case .comment:
       return [
         .foregroundColor: NSColor.secondaryLabelColor
       ]
     }
+  }
+
+  private static func hiddenSyntaxAttributes(baseFont: NSFont) -> [NSAttributedString.Key: Any] {
+    [
+      .foregroundColor: NSColor.clear,
+      .backgroundColor: NSColor.clear,
+      .underlineStyle: 0,
+      .font: NSFont.monospacedSystemFont(ofSize: max(0.1, baseFont.pointSize * 0.01), weight: .regular)
+    ]
   }
 }

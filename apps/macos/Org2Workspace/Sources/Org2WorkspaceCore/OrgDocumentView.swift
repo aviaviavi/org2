@@ -630,7 +630,21 @@ private struct OrgRenderedEntryRow: View, Equatable {
   }
 
   var body: some View {
-    if isEditing {
+    if LiveRenderedTextEditingPolicy.usesDirectEditor(block: block, isSourceEditable: isSourceEditable) {
+      EditableRenderedBlockView(
+        block: block,
+        isSourceEditable: isSourceEditable,
+        isSelected: isSelected,
+        isFoldable: isFoldable,
+        isFolded: isFolded,
+        canMoveUp: canMoveUp,
+        canMoveDown: canMoveDown,
+        allowsHoverChrome: allowsHoverChrome,
+        actions: actions
+      ) {
+        LiveRenderedTextBlockEditor(block: block)
+      }
+    } else if isEditing {
       InlineBlockEditorView(block: block)
     } else {
       EditableRenderedBlockView(
@@ -885,9 +899,30 @@ enum RenderedBlockEditingPolicy {
     case .paragraph:
       return OrgMediaAttachment.standalone(raw: block.rawText) == nil
         && OrgMediaAttachment.embedded(in: block.rawText) == nil
-    case .listItem:
+    case .heading, .planning, .properties, .quote, .source, .table, .horizontalRule, .listItem, .keyword:
       return true
-    default:
+    case .blank:
+      return false
+    }
+  }
+}
+
+enum LiveRenderedTextEditingPolicy {
+  static func usesDirectEditor(block: OrgEditableBlock, isSourceEditable: Bool) -> Bool {
+    guard isSourceEditable,
+          block.isEditable,
+          OrgCrypt.armorSummary(block.rawText) == nil
+    else {
+      return false
+    }
+
+    switch block.rendered {
+    case .paragraph:
+      return OrgMediaAttachment.standalone(raw: block.rawText) == nil
+        && OrgMediaAttachment.embedded(in: block.rawText) == nil
+    case .heading, .listItem:
+      return true
+    case .blank, .planning, .properties, .quote, .source, .table, .horizontalRule, .keyword:
       return false
     }
   }
@@ -989,7 +1024,7 @@ private struct EditableRenderedBlockView<Content: View>: View {
       .background(backgroundColor, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous))
       .overlay(
         RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
-          .stroke(isSelected ? Color.accentColor.opacity(0.34) : Color.clear)
+          .stroke(selectionStrokeColor)
       )
 
     if usesRowTapGestures {
@@ -1054,6 +1089,7 @@ private struct EditableRenderedBlockView<Content: View>: View {
 
   private var backgroundColor: Color {
     guard isSourceEditable else { return .clear }
+    guard !usesDirectRenderedTextEditor else { return .clear }
     if isSelected {
       return WorkspaceDesign.selectedFill
     }
@@ -1061,6 +1097,11 @@ private struct EditableRenderedBlockView<Content: View>: View {
       return WorkspaceDesign.subtleFill
     }
     return .clear
+  }
+
+  private var selectionStrokeColor: Color {
+    guard isSelected, !usesDirectRenderedTextEditor else { return .clear }
+    return Color.accentColor.opacity(0.34)
   }
 
   private var showsControls: Bool {
@@ -1087,6 +1128,10 @@ private struct EditableRenderedBlockView<Content: View>: View {
 
   private var showsChrome: Bool {
     RenderedBlockInteractionPolicy.showsRowChrome(for: block)
+  }
+
+  private var usesDirectRenderedTextEditor: Bool {
+    LiveRenderedTextEditingPolicy.usesDirectEditor(block: block, isSourceEditable: isSourceEditable)
   }
 
   private var showsDisclosureSlot: Bool {

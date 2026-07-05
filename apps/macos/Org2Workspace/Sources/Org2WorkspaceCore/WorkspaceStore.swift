@@ -62,6 +62,11 @@ private struct DeferredStableAutosave {
   let block: OrgEditableBlock
 }
 
+private struct PendingFileUndoSnapshot {
+  let file: String
+  let previous: String
+}
+
 private struct DetailNavigationSnapshot {
   let location: WorkspaceLocation
   let selectedSurface: WorkspaceSurface
@@ -98,6 +103,7 @@ private struct OpenClawSnapshotFile: Sendable {
 
 private enum WorkspaceUndoAction: Equatable, Sendable {
   case openClawDraft(previous: String, next: String)
+  case fileSnapshot(file: String, previous: String, next: String)
 }
 
 public enum QuickOpenSelectionDirection: Equatable, Sendable {
@@ -740,6 +746,8 @@ public final class WorkspaceStore: ObservableObject {
   private static let canonicalParserLineLimit = 2_000
   private static let renderedBlocksCacheLimit = 12
   private static let detailNavigationHistoryLimit = 100
+  private static let workspaceUndoStackLimit = 100
+  private static let workspaceUndoSnapshotMaxBytes = 2_000_000
   nonisolated private static let liveFileEditorAutosaveDelayNanoseconds: UInt64 = 850_000_000
   nonisolated private static let openClawChangeSnapshotMaxFileBytes = 2_000_000
   nonisolated private static let openClawChangeSnapshotAllowedExtensions = Set([
@@ -820,6 +828,7 @@ public final class WorkspaceStore: ObservableObject {
   private var renderedBlocksCacheOrder: [String] = []
   private var pendingBlockSelection: PendingBlockSelection?
   private var transientDraftBlock: TransientDraftBlock?
+  private var transientDraftIDCounter = 0
   private var activeBlockDrafts: [OrgEditableBlock.ID: String] = [:]
   private var activeBlockOriginals: [OrgEditableBlock.ID: OrgEditableBlock] = [:]
   private var deferredStableAutosaves: [OrgEditableBlock.ID: DeferredStableAutosave] = [:]
@@ -3441,7 +3450,8 @@ public final class WorkspaceStore: ObservableObject {
 
     if let lastBlock = selectedRenderedBlocks
       .filter({ block in
-        block.startLine >= source.startLine
+        block.isEditable
+          && block.startLine >= source.startLine
           && block.endLineExclusive <= source.endLineExclusive
       })
       .max(by: { lhs, rhs in
@@ -3534,6 +3544,7 @@ public final class WorkspaceStore: ObservableObject {
     defer { isSavingEntry = false }
 
     let replacement = editableEntryText
+    let undoSnapshot = fileUndoSnapshot(for: source.file)
     do {
       try await Task.detached(priority: .userInitiated) {
         try Self.replaceEntrySource(source, with: replacement)
@@ -3552,10 +3563,12 @@ public final class WorkspaceStore: ObservableObject {
         : "Saved \(relativePath(source.file)):\(source.displayRange)"
     } catch {
       recordOrgCryptEncryptionFailure(error, savedPrefix: "Saved, but")
+      recordFileUndo(from: undoSnapshot)
       await finishSavedEntry(source: source)
       return
     }
 
+    recordFileUndo(from: undoSnapshot)
     statusText = savedStatus
     await finishSavedEntry(source: source)
   }
@@ -3597,6 +3610,7 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
+    let undoSnapshot = fileUndoSnapshot(for: source.file)
     if explicit {
       isSavingEntry = true
     } else {
@@ -3624,6 +3638,7 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     guard selectedEntrySource?.id == source.id else {
+      recordFileUndo(from: undoSnapshot)
       return
     }
 
@@ -3642,11 +3657,13 @@ public final class WorkspaceStore: ObservableObject {
           : "Saved \(relativePath(source.file))"
       } catch {
         recordOrgCryptEncryptionFailure(error, savedPrefix: "Saved, but")
+        recordFileUndo(from: undoSnapshot)
         liveFileEditorStatusText = "Saved"
         scheduleAgendaRefresh(preserveSelection: true)
         return
       }
 
+      recordFileUndo(from: undoSnapshot)
       statusText = savedStatus
       liveFileEditorStatusText = "Saved"
       if savedStatus.contains("encrypted"), let selectedLocation {
@@ -3654,6 +3671,7 @@ public final class WorkspaceStore: ObservableObject {
       }
       scheduleAgendaRefresh(preserveSelection: true)
     } else {
+      recordFileUndo(from: undoSnapshot)
       liveFileEditorStatusText = "Autosaved"
       scheduleAgendaRefresh(preserveSelection: true)
     }
@@ -3713,8 +3731,18 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     let replacement = editableEntryText
-    Task.detached(priority: .utility) {
-      try? Self.replaceEntrySource(source, with: replacement)
+    Task { @MainActor [weak self, source, replacement] in
+      guard let self else { return }
+      do {
+        let undoSnapshot = self.fileUndoSnapshot(for: source.file)
+        try await Task.detached(priority: .utility) {
+          try Self.replaceEntrySource(source, with: replacement)
+        }.value
+        self.recordFileUndo(from: undoSnapshot)
+      } catch {
+        self.errorText = error.localizedDescription
+        self.liveFileEditorStatusText = "Autosave failed"
+      }
     }
   }
 
@@ -3749,9 +3777,11 @@ public final class WorkspaceStore: ObservableObject {
     defer { isSavingBlock = false }
 
     do {
+      let undoSnapshot = fileUndoSnapshot(for: source.file)
       let replacement = Self.normalizeLineEndings(saveReplacementText(for: block))
+      let sourceBlock = activeBlockOriginals[block.id] ?? block
       let updatedSource = try Self.replacingSourceBlock(
-        block,
+        sourceBlock,
         in: source,
         with: replacement
       )
@@ -3759,15 +3789,16 @@ public final class WorkspaceStore: ObservableObject {
       try await Task.detached(priority: .userInitiated) {
         try Self.replaceSourceRange(
           file: source.file,
-          startLine: block.startLine,
-          endLineExclusive: block.endLineExclusive,
+          startLine: sourceBlock.startLine,
+          endLineExclusive: sourceBlock.endLineExclusive,
           replacement: replacement,
-          expectedOriginal: block.rawText
+          expectedOriginal: sourceBlock.rawText
         )
       }.value
       let encryptedCount = try await encryptOrgCryptSubtreesAfterExplicitSave(file: source.file)
 
       if encryptedCount > 0 {
+        recordFileUndo(from: undoSnapshot)
         guard selectedEntrySource?.id == source.id else { return }
         deferredStableAutosaves.removeValue(forKey: block.id)
         invalidateCanonicalDocumentCache(for: source.file)
@@ -3789,20 +3820,22 @@ public final class WorkspaceStore: ObservableObject {
       }.value
 
       guard selectedEntrySource?.id == source.id else {
+        recordFileUndo(from: undoSnapshot)
         return
       }
 
+      recordFileUndo(from: undoSnapshot)
       deferredStableAutosaves.removeValue(forKey: block.id)
       invalidateCanonicalDocumentCache(for: source.file)
       selectedEntrySource = updatedSource
       let updatedVisibleBlocks = blocksWithTransientDraft(updatedBlocks, for: updatedSource)
       selectedRenderedBlocks = updatedVisibleBlocks
       selectedBlockID = blockForSelectionLine(
-        block.startLine,
+        sourceBlock.startLine,
         mode: .containingOrNearest,
         in: updatedVisibleBlocks
       )?.id
-      statusText = "Saved block \(relativePath(source.file)):\(block.displayRange)"
+      statusText = "Saved block \(relativePath(source.file)):\(sourceBlock.displayRange)"
       resetBlockEditing()
       scheduleAgendaRefresh(preserveSelection: true)
     } catch {
@@ -3836,6 +3869,7 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     do {
+      let undoSnapshot = fileUndoSnapshot(for: source.file)
       let file = source.file
       let startLine = block.startLine
       let endLineExclusive = block.endLineExclusive
@@ -3849,6 +3883,7 @@ public final class WorkspaceStore: ObservableObject {
         )
       }.value
 
+      recordFileUndo(from: undoSnapshot)
       guard isCurrentAutosaveDraft(block, in: source, replacement: normalizedReplacement) else {
         return
       }
@@ -3976,9 +4011,11 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Block edit is no longer active"
       return
     }
+    let activeTransientDraft = transientDraftBlock?.block.id == block.id ? transientDraftBlock : nil
+    let sourceBlock = activeTransientDraft == nil ? activeBlockOriginals[block.id] ?? block : block
     guard block.isEditable,
-          block.startLine >= source.startLine,
-          block.endLineExclusive <= source.endLineExclusive
+          sourceBlock.startLine >= source.startLine,
+          sourceBlock.endLineExclusive <= source.endLineExclusive || activeTransientDraft != nil
     else {
       statusText = "Block cannot be split"
       return
@@ -3988,31 +4025,37 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Block cannot be split"
       return
     }
+    if let activeTransientDraft {
+      await splitTransientDraftBlock(activeTransientDraft, originalBlock: block, plan: plan)
+      return
+    }
 
     isSavingBlock = true
     defer { isSavingBlock = false }
 
     do {
+      let undoSnapshot = fileUndoSnapshot(for: source.file)
       if let replacement = plan.replacement {
         try await Task.detached(priority: .userInitiated) {
           try Self.replaceSourceRange(
             file: source.file,
-            startLine: block.startLine,
-            endLineExclusive: block.endLineExclusive,
+            startLine: sourceBlock.startLine,
+            endLineExclusive: sourceBlock.endLineExclusive,
             replacement: replacement,
-            expectedOriginal: block.rawText
+            expectedOriginal: sourceBlock.rawText
           )
         }.value
+        recordFileUndo(from: undoSnapshot)
         invalidateCanonicalDocumentCache(for: source.file)
       }
       isEditingEntry = false
 
       let draftToActivate: TransientDraftBlock?
       if let draftSpec = plan.draft {
-        let draft = Self.transientDraftBlock(
+        let draft = transientDraftBlock(
           from: draftSpec,
           sourceFile: source.file,
-          originalBlock: block
+          originalBlock: sourceBlock
         )
         transientDraftBlock = draft
         draftToActivate = draft
@@ -4023,7 +4066,7 @@ public final class WorkspaceStore: ObservableObject {
         resetBlockEditing()
         pendingBlockSelection = PendingBlockSelection(
           file: source.file,
-          line: block.startLine + newBlockLineOffset,
+          line: sourceBlock.startLine + newBlockLineOffset,
           mode: .containingOrNearest,
           beginEditing: true
         )
@@ -4044,6 +4087,193 @@ public final class WorkspaceStore: ObservableObject {
     } catch {
       errorText = error.localizedDescription
       statusText = "Split failed"
+    }
+  }
+
+  private func splitTransientDraftBlock(
+    _ activeDraft: TransientDraftBlock,
+    originalBlock block: OrgEditableBlock,
+    plan: SplitBlockPlan
+  ) async {
+    isSavingBlock = true
+    defer { isSavingBlock = false }
+
+    do {
+      let undoSnapshot = fileUndoSnapshot(for: activeDraft.file)
+      if let replacementBody = plan.replacement {
+        let replacement = "\(activeDraft.replacementPrefix)\(replacementBody)\(activeDraft.replacementSuffix)"
+        try await Task.detached(priority: .userInitiated) {
+          try Self.replaceSourceRange(
+            file: activeDraft.file,
+            startLine: activeDraft.insertionLine,
+            endLineExclusive: activeDraft.replacementEndLineExclusive,
+            replacement: replacement
+          )
+        }.value
+        recordFileUndo(from: undoSnapshot)
+        invalidateCanonicalDocumentCache(for: activeDraft.file)
+      }
+
+      selectedRenderedBlocks.removeAll { $0.id == activeDraft.block.id }
+      activeBlockDrafts.removeValue(forKey: activeDraft.block.id)
+      activeBlockOriginals.removeValue(forKey: activeDraft.block.id)
+      isEditingEntry = false
+      let bodyLineOffset = Self.lineBreakCount(in: activeDraft.replacementPrefix)
+
+      let draftToActivate: TransientDraftBlock?
+      if let draftSpec = plan.draft {
+        let draftBaseBlock = bodyLineOffset == 0
+          ? block
+          : Self.shiftedBlock(block, by: bodyLineOffset)
+        let nextDraft = transientDraftBlock(
+          from: draftSpec,
+          sourceFile: activeDraft.file,
+          originalBlock: draftBaseBlock
+        )
+        transientDraftBlock = nextDraft
+        draftToActivate = nextDraft
+        statusText = "Started draft in \(relativePath(activeDraft.file))"
+      } else if let newBlockLineOffset = plan.newBlockLineOffset {
+        draftToActivate = nil
+        transientDraftBlock = nil
+        resetBlockEditing()
+        pendingBlockSelection = PendingBlockSelection(
+          file: activeDraft.file,
+          line: block.startLine + bodyLineOffset + newBlockLineOffset,
+          mode: .containingOrNearest,
+          beginEditing: true
+        )
+        statusText = "Split block in \(relativePath(activeDraft.file))"
+      } else {
+        draftToActivate = nil
+        transientDraftBlock = nil
+        resetBlockEditing()
+      }
+
+      if plan.replacement != nil, let selectedLocation {
+        await loadEntrySource(for: selectedLocation)
+      }
+      if let draftToActivate {
+        activateTransientDraft(draftToActivate)
+      }
+      if plan.replacement != nil {
+        scheduleAgendaRefresh(preserveSelection: true)
+      }
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Split failed"
+    }
+  }
+
+  public func deleteBackwardFromStartOfEditingBlock(_ block: OrgEditableBlock, draftText: String? = nil) async {
+    let draft = Self.normalizeLineEndings(draftText ?? editingDraftText(for: block))
+    if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      if transientDraftBlock?.block.id == block.id {
+        let fallbackSelection = previousMergeTarget(before: block)
+        discardTransientDraft(status: "Draft discarded")
+        selectedBlockID = fallbackSelection?.id
+        return
+      }
+      await deleteBlock(block)
+      return
+    }
+
+    await mergeEditingBlockBackward(block, draftText: draft)
+  }
+
+  private func mergeEditingBlockBackward(_ block: OrgEditableBlock, draftText: String) async {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "No editable source loaded"
+      return
+    }
+    guard editingBlockID == block.id else {
+      statusText = "Block edit is no longer active"
+      return
+    }
+    guard block.isEditable,
+          block.startLine >= source.startLine,
+          block.endLineExclusive <= source.endLineExclusive
+            || transientDraftBlock?.block.id == block.id
+    else {
+      statusText = "Block cannot be merged"
+      return
+    }
+    guard let previous = previousMergeTarget(before: block) else {
+      statusText = "No previous text block"
+      return
+    }
+    guard let replacement = Self.mergedTextBlockRawText(
+      previous: previous,
+      current: block,
+      currentDraft: draftText
+    ) else {
+      statusText = "Blocks cannot be merged"
+      return
+    }
+
+    let isTransientMerge = transientDraftBlock?.block.id == block.id
+    let replacementStartLine = previous.startLine
+    let replacementEndLineExclusive = isTransientMerge ? previous.endLineExclusive : block.endLineExclusive
+
+    isSavingBlock = true
+    defer { isSavingBlock = false }
+
+    do {
+      let undoSnapshot = fileUndoSnapshot(for: source.file)
+      let expectedOriginal = try Self.sourceText(
+        in: source,
+        startLine: replacementStartLine,
+        endLineExclusive: replacementEndLineExclusive
+      )
+      let updatedSource = try Self.replacingSourceRange(
+        in: source,
+        startLine: replacementStartLine,
+        endLineExclusive: replacementEndLineExclusive,
+        replacement: replacement
+      )
+      try await Task.detached(priority: .userInitiated) {
+        try Self.replaceSourceRange(
+          file: source.file,
+          startLine: replacementStartLine,
+          endLineExclusive: replacementEndLineExclusive,
+          replacement: replacement,
+          expectedOriginal: expectedOriginal
+        )
+      }.value
+
+      let updatedBlocks = await Task.detached(priority: .userInitiated) {
+        OrgEntryRenderer.parseEditable(updatedSource.text, baseLine: updatedSource.startLine)
+      }.value
+
+      guard selectedEntrySource?.id == source.id else {
+        recordFileUndo(from: undoSnapshot)
+        return
+      }
+
+      recordFileUndo(from: undoSnapshot)
+      invalidateCanonicalDocumentCache(for: source.file)
+      transientDraftBlock = nil
+      resetBlockEditing()
+      isEditingEntry = false
+      selectedEntrySource = updatedSource
+      let updatedVisibleBlocks = blocksWithTransientDraft(updatedBlocks, for: updatedSource)
+      setSelectedRenderedBlocks(updatedVisibleBlocks, preservingMetadata: false)
+      if let mergedBlock = blockForSelectionLine(
+        previous.startLine,
+        mode: .containingOrNearest,
+        in: updatedVisibleBlocks
+      ) {
+        selectedBlockID = mergedBlock.id
+        editingBlockID = mergedBlock.id
+        editableBlockText = mergedBlock.rawText
+        activeBlockDrafts[mergedBlock.id] = mergedBlock.rawText
+        activeBlockOriginals[mergedBlock.id] = mergedBlock
+      }
+      statusText = "Merged block in \(relativePath(source.file))"
+      scheduleAgendaRefresh(preserveSelection: true)
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Merge failed"
     }
   }
 
@@ -4347,6 +4577,7 @@ public final class WorkspaceStore: ObservableObject {
     defer { isSavingBlock = false }
 
     do {
+      let undoSnapshot = fileUndoSnapshot(for: source.file)
       let replacement = "\n" + block.rawText
       let updatedSource = try Self.replacingSourceRange(
         in: source,
@@ -4373,9 +4604,11 @@ public final class WorkspaceStore: ObservableObject {
       }.value
 
       guard selectedEntrySource?.id == source.id else {
+        recordFileUndo(from: undoSnapshot)
         return
       }
 
+      recordFileUndo(from: undoSnapshot)
       invalidateCanonicalDocumentCache(for: source.file)
       transientDraftBlock = nil
       resetBlockEditing()
@@ -4417,6 +4650,7 @@ public final class WorkspaceStore: ObservableObject {
     defer { isSavingBlock = false }
 
     do {
+      let undoSnapshot = fileUndoSnapshot(for: source.file)
       let deletionRange = try Self.deletionRange(for: block, in: source)
       let deletion = try Self.deletingSourceRangeCleaningAdjacentBlank(
         in: source,
@@ -4441,9 +4675,11 @@ public final class WorkspaceStore: ObservableObject {
       }.value
 
       guard selectedEntrySource?.id == source.id else {
+        recordFileUndo(from: undoSnapshot)
         return
       }
 
+      recordFileUndo(from: undoSnapshot)
       invalidateCanonicalDocumentCache(for: source.file)
       transientDraftBlock = nil
       resetBlockEditing()
@@ -4467,6 +4703,82 @@ public final class WorkspaceStore: ObservableObject {
     } catch {
       errorText = error.localizedDescription
       statusText = "Delete failed"
+    }
+  }
+
+  func deleteRenderedTextSelection(_ fragments: [OrgSyntaxTextSelectionDocumentFragment]) async {
+    await replaceRenderedTextSelection(fragments, replacementText: "")
+  }
+
+  func replaceRenderedTextSelection(
+    _ fragments: [OrgSyntaxTextSelectionDocumentFragment],
+    replacementText: String
+  ) async {
+    guard let source = selectedEntrySource, source.isEditable else {
+      statusText = "No editable source loaded"
+      return
+    }
+
+    let currentBlocks = selectedRenderedBlocks
+    let selectionPairs = Self.renderedTextSelectionPairs(fragments, in: currentBlocks)
+    guard !selectionPairs.isEmpty else {
+      statusText = "No editable selection"
+      return
+    }
+
+    isSavingBlock = true
+    defer { isSavingBlock = false }
+
+    do {
+      let replacement = try Self.renderedTextSelectionReplacement(
+        pairs: selectionPairs,
+        allBlocks: currentBlocks,
+        in: source,
+        replacementText: replacementText
+      )
+      let undoSnapshot = fileUndoSnapshot(for: source.file)
+
+      try await Task.detached(priority: .userInitiated) {
+        try Self.replaceSourceRange(
+          file: source.file,
+          startLine: replacement.startLine,
+          endLineExclusive: replacement.endLineExclusive,
+          replacement: replacement.replacement,
+          expectedOriginal: replacement.expectedOriginal
+        )
+      }.value
+
+      guard selectedEntrySource?.file == source.file else {
+        recordFileUndo(from: undoSnapshot)
+        return
+      }
+
+      recordFileUndo(from: undoSnapshot)
+      invalidateCanonicalDocumentCache(for: source.file)
+      transientDraftBlock = nil
+      resetBlockEditing()
+      isEditingEntry = false
+      selectedEntrySource = replacement.updatedSource
+      pendingBlockSelection = PendingBlockSelection(
+        file: source.file,
+        line: replacement.startLine,
+        mode: .nextOrNearest
+      )
+      selectedBlockID = nil
+      if replacement.updatedSource.text.isEmpty {
+        selectedRenderedBlocks = []
+        pendingBlockSelection = nil
+        isRenderingEntrySource = false
+      } else {
+        renderEntrySource(replacement.updatedSource, generation: entrySourceLoadGeneration)
+      }
+      statusText = replacementText.isEmpty
+        ? "Deleted selection in \(relativePath(source.file))"
+        : "Replaced selection in \(relativePath(source.file))"
+      scheduleAgendaRefresh(preserveSelection: true)
+    } catch {
+      errorText = error.localizedDescription
+      statusText = replacementText.isEmpty ? "Delete selection failed" : "Replace selection failed"
     }
   }
 
@@ -4509,6 +4821,7 @@ public final class WorkspaceStore: ObservableObject {
     defer { isSavingBlock = false }
 
     do {
+      let undoSnapshot = fileUndoSnapshot(for: source.file)
       let sourceSwap: EntrySource
       switch direction {
       case .up:
@@ -4567,9 +4880,11 @@ public final class WorkspaceStore: ObservableObject {
       }.value
 
       guard selectedEntrySource?.id == source.id else {
+        recordFileUndo(from: undoSnapshot)
         return
       }
 
+      recordFileUndo(from: undoSnapshot)
       invalidateCanonicalDocumentCache(for: source.file)
       transientDraftBlock = nil
       resetBlockEditing()
@@ -5302,6 +5617,7 @@ public final class WorkspaceStore: ObservableObject {
 
     let replacement = "\(draft.replacementPrefix)\(replacementBody)\(draft.replacementSuffix)"
     do {
+      let undoSnapshot = fileUndoSnapshot(for: draft.file)
       try await Task.detached(priority: .userInitiated) {
         try Self.replaceSourceRange(
           file: draft.file,
@@ -5311,6 +5627,7 @@ public final class WorkspaceStore: ObservableObject {
         )
       }.value
       let encryptedCount = try await encryptOrgCryptSubtreesAfterExplicitSave(file: draft.file)
+      recordFileUndo(from: undoSnapshot)
       transientDraftBlock = nil
       selectedRenderedBlocks.removeAll { $0.id == draft.block.id }
       if selectedBlockID == draft.block.id {
@@ -5352,6 +5669,7 @@ public final class WorkspaceStore: ObservableObject {
       with: normalizedReplacement
     )
     let currentRenderedBlocks = selectedRenderedBlocks
+    let undoSnapshot = fileUndoSnapshot(for: source.file)
     try await Task.detached(priority: .userInitiated) {
       try Self.replaceSourceRange(
         file: source.file,
@@ -5364,6 +5682,7 @@ public final class WorkspaceStore: ObservableObject {
     let encryptedCount = try await encryptOrgCryptSubtreesAfterExplicitSave(file: source.file)
 
     if encryptedCount > 0 {
+      recordFileUndo(from: undoSnapshot)
       guard selectedEntrySource?.id == source.id else { return }
       invalidateCanonicalDocumentCache(for: source.file)
       transientDraftBlock = nil
@@ -5386,9 +5705,11 @@ public final class WorkspaceStore: ObservableObject {
     }.value
 
     guard selectedEntrySource?.id == source.id else {
+      recordFileUndo(from: undoSnapshot)
       return
     }
 
+    recordFileUndo(from: undoSnapshot)
     invalidateCanonicalDocumentCache(for: source.file)
     transientDraftBlock = nil
     resetBlockEditing()
@@ -5417,6 +5738,23 @@ public final class WorkspaceStore: ObservableObject {
         && block.startLine >= source.startLine
         && block.endLineExclusive <= source.endLineExclusive
     }
+  }
+
+  private func previousMergeTarget(before block: OrgEditableBlock) -> OrgEditableBlock? {
+    let sortedBlocks = Self.sortEditableBlocksForDisplay(selectedRenderedBlocks)
+    guard let currentIndex = sortedBlocks.firstIndex(where: { $0.id == block.id }) else {
+      return sortedBlocks.last { candidate in
+        candidate.endLineExclusive <= block.startLine
+          && Self.isMergeablePreviousTextBlock(candidate)
+      }
+    }
+
+    guard currentIndex > 0 else { return nil }
+    for candidate in sortedBlocks[..<currentIndex].reversed()
+      where Self.isMergeablePreviousTextBlock(candidate) {
+      return candidate
+    }
+    return nil
   }
 
   private func blockForSelectionLine(
@@ -5470,6 +5808,22 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  private func transientDraftEditableBlock(
+    startLine: Int,
+    endLineExclusive: Int,
+    rawText: String,
+    rendered: OrgRenderedBlock
+  ) -> OrgEditableBlock {
+    transientDraftIDCounter += 1
+    return OrgEditableBlock(
+      id: "transient-draft:\(transientDraftIDCounter):\(startLine):\(endLineExclusive)",
+      startLine: startLine,
+      endLineExclusive: endLineExclusive,
+      rawText: rawText,
+      rendered: rendered
+    )
+  }
+
   private func insertionDraftBlock(
     for kind: OrgInsertBlockKind,
     after previousBlock: OrgEditableBlock,
@@ -5485,7 +5839,7 @@ public final class WorkspaceStore: ObservableObject {
       replacementPrefix: "\n",
       replacementSuffix: "",
       selectionLineOffset: 1,
-      block: OrgEditableBlock(
+      block: transientDraftEditableBlock(
         startLine: insertionLine,
         endLineExclusive: insertionLine,
         rawText: rawText,
@@ -5500,18 +5854,21 @@ public final class WorkspaceStore: ObservableObject {
     in source: EntrySource
   ) -> TransientDraftBlock {
     let rawText = appendDraftRawText(for: kind)
-    let insertionLine = max(source.startLine, source.endLineExclusive)
     let isSourceEmpty = source.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    let insertionLine = isSourceEmpty ? source.startLine : max(source.startLine, source.endLineExclusive)
+    let replacementEndLineExclusive = isSourceEmpty
+      ? max(source.startLine, source.endLineExclusive)
+      : insertionLine
     let replacementPrefix = isSourceEmpty ? "" : "\n"
     let selectionLineOffset = replacementPrefix.isEmpty ? 0 : 1
     return TransientDraftBlock(
       file: source.file,
       insertionLine: insertionLine,
-      replacementEndLineExclusive: insertionLine,
+      replacementEndLineExclusive: replacementEndLineExclusive,
       replacementPrefix: replacementPrefix,
       replacementSuffix: "",
       selectionLineOffset: selectionLineOffset,
-      block: OrgEditableBlock(
+      block: transientDraftEditableBlock(
         startLine: insertionLine,
         endLineExclusive: insertionLine,
         rawText: rawText,
@@ -5677,7 +6034,7 @@ public final class WorkspaceStore: ObservableObject {
       replacementPrefix: "",
       replacementSuffix: "",
       selectionLineOffset: 0,
-      block: OrgEditableBlock(
+      block: transientDraftEditableBlock(
         startLine: block.startLine,
         endLineExclusive: block.endLineExclusive,
         rawText: rawText,
@@ -5775,6 +6132,10 @@ public final class WorkspaceStore: ObservableObject {
     fallbackBlock: OrgEditableBlock,
     in source: EntrySource
   ) -> OrgRenderedBlock {
+    if kind == .paragraph,
+       rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return .paragraph("")
+    }
     if let rendered = OrgEntryRenderer.parseEditable(rawText, baseLine: fallbackLine).first?.rendered {
       return rendered
     }
@@ -8818,51 +9179,186 @@ public final class WorkspaceStore: ObservableObject {
     if performTextUndo(redo: false) {
       return
     }
-    if let action = workspaceUndoStack.popLast() {
-      applyWorkspaceUndo(action)
-      workspaceRedoStack.append(action)
+    guard let action = workspaceUndoStack.popLast() else {
+      statusText = "Nothing to undo"
       return
     }
-    statusText = "Undo is available while editing text"
+    if applyImmediateWorkspaceUndo(action) {
+      return
+    }
+    Task { @MainActor [weak self] in
+      await self?.applyWorkspaceUndo(action)
+    }
   }
 
   public func performRedoCommand() {
     if performTextUndo(redo: true) {
       return
     }
-    if let action = workspaceRedoStack.popLast() {
-      applyWorkspaceRedo(action)
-      workspaceUndoStack.append(action)
+    guard let action = workspaceRedoStack.popLast() else {
+      statusText = "Nothing to redo"
       return
     }
-    statusText = "Redo is available while editing text"
+    if applyImmediateWorkspaceRedo(action) {
+      return
+    }
+    Task { @MainActor [weak self] in
+      await self?.applyWorkspaceRedo(action)
+    }
   }
 
   private func recordWorkspaceUndo(_ action: WorkspaceUndoAction) {
     guard workspaceUndoStack.last != action else { return }
     workspaceUndoStack.append(action)
-    if workspaceUndoStack.count > 100 {
-      workspaceUndoStack.removeFirst(workspaceUndoStack.count - 100)
+    if workspaceUndoStack.count > Self.workspaceUndoStackLimit {
+      workspaceUndoStack.removeFirst(workspaceUndoStack.count - Self.workspaceUndoStackLimit)
     }
     workspaceRedoStack.removeAll()
   }
 
-  private func applyWorkspaceUndo(_ action: WorkspaceUndoAction) {
+  private func fileUndoSnapshot(for file: String) -> PendingFileUndoSnapshot? {
+    let standardized = URL(fileURLWithPath: file).standardizedFileURL.path
+    guard let previous = try? Self.fileText(file: standardized),
+          previous.utf8.count <= Self.workspaceUndoSnapshotMaxBytes
+    else {
+      return nil
+    }
+    return PendingFileUndoSnapshot(file: standardized, previous: previous)
+  }
+
+  private func recordFileUndo(from snapshot: PendingFileUndoSnapshot?) {
+    guard let snapshot,
+          let next = try? Self.fileText(file: snapshot.file),
+          next.utf8.count <= Self.workspaceUndoSnapshotMaxBytes
+    else {
+      return
+    }
+    recordFileUndo(file: snapshot.file, previous: snapshot.previous, next: next)
+  }
+
+  private func recordFileUndo(file: String, previous: String, next: String) {
+    guard Self.normalizeLineEndings(previous) != Self.normalizeLineEndings(next) else {
+      return
+    }
+    recordWorkspaceUndo(.fileSnapshot(file: URL(fileURLWithPath: file).standardizedFileURL.path, previous: previous, next: next))
+  }
+
+  private func applyImmediateWorkspaceUndo(_ action: WorkspaceUndoAction) -> Bool {
     switch action {
     case .openClawDraft(let previous, _):
       openClawDraft = previous
       openClawStatusText = "Undid OpenClaw draft change"
       statusText = "Undid OpenClaw draft change"
+      workspaceRedoStack.append(action)
+      return true
+    case .fileSnapshot:
+      return false
     }
   }
 
-  private func applyWorkspaceRedo(_ action: WorkspaceUndoAction) {
+  private func applyImmediateWorkspaceRedo(_ action: WorkspaceUndoAction) -> Bool {
     switch action {
     case .openClawDraft(_, let next):
       openClawDraft = next
       openClawStatusText = "Redid OpenClaw draft change"
       statusText = "Redid OpenClaw draft change"
+      workspaceUndoStack.append(action)
+      return true
+    case .fileSnapshot:
+      return false
     }
+  }
+
+  private func applyWorkspaceUndo(_ action: WorkspaceUndoAction) async {
+    switch action {
+    case .openClawDraft:
+      _ = applyImmediateWorkspaceUndo(action)
+    case .fileSnapshot(let file, let previous, let next):
+      do {
+        try await restoreFileSnapshot(
+          file: file,
+          text: previous,
+          expectedCurrent: next,
+          direction: "Undid"
+        )
+        workspaceRedoStack.append(action)
+      } catch {
+        workspaceUndoStack.append(action)
+        errorText = error.localizedDescription
+        statusText = "Undo failed"
+      }
+    }
+  }
+
+  private func applyWorkspaceRedo(_ action: WorkspaceUndoAction) async {
+    switch action {
+    case .openClawDraft:
+      _ = applyImmediateWorkspaceRedo(action)
+    case .fileSnapshot(let file, let previous, let next):
+      do {
+        try await restoreFileSnapshot(
+          file: file,
+          text: next,
+          expectedCurrent: previous,
+          direction: "Redid"
+        )
+        workspaceUndoStack.append(action)
+      } catch {
+        workspaceRedoStack.append(action)
+        errorText = error.localizedDescription
+        statusText = "Redo failed"
+      }
+    }
+  }
+
+  private func restoreFileSnapshot(
+    file: String,
+    text: String,
+    expectedCurrent: String,
+    direction: String
+  ) async throws {
+    let standardized = URL(fileURLWithPath: file).standardizedFileURL.path
+    let selectedFile = selectedEntrySource?.file ?? selectedLocation?.file
+    let affectsSelectedFile = selectedFile.map {
+      URL(fileURLWithPath: $0).standardizedFileURL.path == standardized
+    } ?? false
+
+    if affectsSelectedFile {
+      cancelLiveFileEditorAutosave(resetStatus: false)
+    }
+
+    try await Task.detached(priority: .userInitiated) {
+      let current = try Self.fileText(file: standardized)
+      guard Self.normalizeLineEndings(current) == Self.normalizeLineEndings(expectedCurrent) else {
+        throw WorkspaceEditError.fileChanged(file: standardized)
+      }
+      try Self.writeFileText(text, to: standardized)
+    }.value
+
+    if affectsSelectedFile {
+      isEditingEntry = false
+      resetBlockState()
+      if isLiveFileEditorSelected, selectedEntrySourceMode == .page {
+        editableEntryText = text
+      }
+    }
+
+    invalidateCanonicalDocumentCache(for: standardized)
+    if let corpusRoot {
+      upsertCorpusFile(corpusFile(for: URL(fileURLWithPath: standardized), corpusRoot: corpusRoot))
+    }
+
+    if let selectedLocation,
+       URL(fileURLWithPath: selectedLocation.file).standardizedFileURL.path == standardized {
+      await loadEntrySource(for: selectedLocation)
+    }
+
+    let message = "\(direction) edit in \(relativePath(standardized))"
+    statusText = message
+    if affectsSelectedFile && isLiveFileEditorSelected {
+      liveFileEditorStatusText = direction
+    }
+    scheduleAgendaRefresh(preserveSelection: true)
   }
 
   @discardableResult
@@ -8874,10 +9370,10 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     if redo {
-      guard undoManager.canRedo else { return true }
+      guard undoManager.canRedo else { return false }
       undoManager.redo()
     } else {
-      guard undoManager.canUndo else { return true }
+      guard undoManager.canUndo else { return false }
       undoManager.undo()
     }
     return true
@@ -10811,6 +11307,12 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  nonisolated private static func lineBreakCount(in text: String) -> Int {
+    text.reduce(0) { count, character in
+      character == "\n" ? count + 1 : count
+    }
+  }
+
   nonisolated private static func replaceEntrySource(_ source: EntrySource, with replacement: String) throws {
     try replaceSourceRange(
       file: source.file,
@@ -10819,6 +11321,14 @@ public final class WorkspaceStore: ObservableObject {
       replacement: replacement,
       expectedOriginal: source.text
     )
+  }
+
+  nonisolated private static func fileText(file: String) throws -> String {
+    try String(contentsOf: URL(fileURLWithPath: file), encoding: .utf8)
+  }
+
+  nonisolated private static func writeFileText(_ text: String, to file: String) throws {
+    try text.write(to: URL(fileURLWithPath: file), atomically: true, encoding: .utf8)
   }
 
   nonisolated private static func entrySource(_ source: EntrySource, replacingText replacement: String) -> EntrySource {
@@ -10884,6 +11394,26 @@ public final class WorkspaceStore: ObservableObject {
     )
   }
 
+  nonisolated private static func sourceText(
+    in source: EntrySource,
+    startLine: Int,
+    endLineExclusive: Int
+  ) throws -> String {
+    let lines = normalizeLineEndings(source.text)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    let startIndex = startLine - source.startLine
+    let endIndex = endLineExclusive - source.startLine
+    guard startIndex >= 0,
+          startIndex <= lines.count,
+          endIndex >= startIndex,
+          endIndex <= lines.count
+    else {
+      throw WorkspaceEditError.invalidRange(file: source.file, line: startLine)
+    }
+    return lines[startIndex..<endIndex].joined(separator: "\n")
+  }
+
   nonisolated private static func deletingSourceRangeCleaningAdjacentBlank(
     in source: EntrySource,
     startLine: Int,
@@ -10940,6 +11470,175 @@ public final class WorkspaceStore: ObservableObject {
       startLine: block.startLine,
       endLineExclusive: source.startLine + endIndex
     )
+  }
+
+  nonisolated private static func renderedTextSelectionPairs(
+    _ fragments: [OrgSyntaxTextSelectionDocumentFragment],
+    in blocks: [OrgEditableBlock]
+  ) -> [(fragment: OrgSyntaxTextSelectionDocumentFragment, block: OrgEditableBlock)] {
+    var seenBlockIDs = Set<String>()
+    var pairs: [(fragment: OrgSyntaxTextSelectionDocumentFragment, block: OrgEditableBlock)] = []
+
+    for fragment in fragments {
+      guard let block = blocks.first(where: { $0.id == fragment.context.blockID })
+        ?? blocks.first(where: {
+          $0.startLine == fragment.context.startLine
+            && $0.endLineExclusive == fragment.context.endLineExclusive
+        })
+      else {
+        continue
+      }
+      guard seenBlockIDs.insert(block.id).inserted else { continue }
+      pairs.append((fragment, block))
+    }
+
+    return pairs.sorted { lhs, rhs in
+      if lhs.block.startLine != rhs.block.startLine {
+        return lhs.block.startLine < rhs.block.startLine
+      }
+      return lhs.fragment.sourceRange.location < rhs.fragment.sourceRange.location
+    }
+  }
+
+  nonisolated private static func renderedTextSelectionReplacement(
+    pairs: [(fragment: OrgSyntaxTextSelectionDocumentFragment, block: OrgEditableBlock)],
+    allBlocks: [OrgEditableBlock],
+    in source: EntrySource,
+    replacementText: String
+  ) throws -> (
+    startLine: Int,
+    endLineExclusive: Int,
+    replacement: String,
+    expectedOriginal: String,
+    updatedSource: EntrySource
+  ) {
+    let sortedPairs = pairs.sorted { lhs, rhs in
+      if lhs.block.startLine != rhs.block.startLine {
+        return lhs.block.startLine < rhs.block.startLine
+      }
+      return lhs.fragment.sourceRange.location < rhs.fragment.sourceRange.location
+    }
+    guard let firstPair = sortedPairs.first,
+          let lastPair = sortedPairs.last
+    else {
+      throw WorkspaceEditError.invalidRange(file: source.file, line: source.startLine)
+    }
+
+    let coversWholeDocument = selectionCoversWholeRenderedTextDocument(
+      pairs: sortedPairs,
+      allBlocks: allBlocks
+    )
+    let startLine = coversWholeDocument ? source.startLine : firstPair.block.startLine
+    let endLineExclusive = coversWholeDocument ? source.endLineExclusive : lastPair.block.endLineExclusive
+    let normalizedReplacementText = normalizeLineEndings(replacementText)
+    let replacement: String
+
+    if coversWholeDocument {
+      replacement = normalizedReplacementText
+    } else if sortedPairs.count == 1 {
+      replacement = replacingSelection(
+        in: sourceTextForSelectionFragment(firstPair.fragment, block: firstPair.block),
+        fragment: firstPair.fragment,
+        replacementText: normalizedReplacementText
+      )
+    } else {
+      let firstRawText = sourceTextForSelectionFragment(firstPair.fragment, block: firstPair.block)
+      let lastRawText = sourceTextForSelectionFragment(lastPair.fragment, block: lastPair.block)
+      let firstRange = clampedRange(firstPair.fragment.sourceRange, in: firstRawText)
+      let lastRange = clampedRange(lastPair.fragment.sourceRange, in: lastRawText)
+      let firstPrefix = firstPair.fragment.selectsEntireEditor
+        ? ""
+        : (firstRawText as NSString).substring(to: firstRange.location)
+      let lastSuffix = lastPair.fragment.selectsEntireEditor
+        ? ""
+        : (lastRawText as NSString).substring(from: NSMaxRange(lastRange))
+      let joined = firstPrefix + normalizedReplacementText + lastSuffix
+      replacement = joined.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : joined
+    }
+
+    let expectedOriginal = try sourceText(
+      in: source,
+      startLine: startLine,
+      endLineExclusive: endLineExclusive
+    )
+    let updatedSource = try replacingSourceRange(
+      in: source,
+      startLine: startLine,
+      endLineExclusive: endLineExclusive,
+      replacement: replacement
+    )
+    return (
+      startLine: startLine,
+      endLineExclusive: endLineExclusive,
+      replacement: replacement,
+      expectedOriginal: expectedOriginal,
+      updatedSource: updatedSource
+    )
+  }
+
+  nonisolated private static func selectionCoversWholeRenderedTextDocument(
+    pairs: [(fragment: OrgSyntaxTextSelectionDocumentFragment, block: OrgEditableBlock)],
+    allBlocks: [OrgEditableBlock]
+  ) -> Bool {
+    guard !pairs.isEmpty,
+          pairs.allSatisfy({ $0.fragment.selectsEntireEditor })
+    else {
+      return false
+    }
+
+    let nonBlankBlocks = allBlocks.filter { block in
+      if case .blank = block.rendered { return false }
+      return true
+    }
+    guard !nonBlankBlocks.isEmpty,
+          nonBlankBlocks.allSatisfy(isRenderedTextSelectionBlock)
+    else {
+      return false
+    }
+
+    let selectedBlockIDs = Set(pairs.map(\.block.id))
+    return nonBlankBlocks.allSatisfy { selectedBlockIDs.contains($0.id) }
+  }
+
+  nonisolated private static func isRenderedTextSelectionBlock(_ block: OrgEditableBlock) -> Bool {
+    switch block.rendered {
+    case .heading, .paragraph, .listItem:
+      return true
+    default:
+      return false
+    }
+  }
+
+  nonisolated private static func replacingSelection(
+    in rawText: String,
+    fragment: OrgSyntaxTextSelectionDocumentFragment,
+    replacementText: String
+  ) -> String {
+    if fragment.selectsEntireEditor {
+      return replacementText
+    }
+    let range = clampedRange(fragment.sourceRange, in: rawText)
+    let nsRawText = rawText as NSString
+    return nsRawText.replacingCharacters(in: range, with: replacementText)
+  }
+
+  nonisolated private static func sourceTextForSelectionFragment(
+    _ fragment: OrgSyntaxTextSelectionDocumentFragment,
+    block: OrgEditableBlock
+  ) -> String {
+    let editorText = normalizeLineEndings(fragment.editorText)
+    guard fragment.context.editorToSourceUTF16Offset > 0 else {
+      return editorText
+    }
+    let blockRawText = normalizeLineEndings(block.rawText)
+    let prefixLength = min(fragment.context.editorToSourceUTF16Offset, (blockRawText as NSString).length)
+    return (blockRawText as NSString).substring(to: prefixLength) + editorText
+  }
+
+  nonisolated private static func clampedRange(_ range: NSRange, in text: String) -> NSRange {
+    let length = (text as NSString).length
+    let location = min(max(0, range.location), length)
+    return NSRange(location: location, length: min(max(0, range.length), length - location))
   }
 
   nonisolated private static func swappingSourceRanges(
@@ -11016,7 +11715,7 @@ public final class WorkspaceStore: ObservableObject {
     lines.replaceSubrange(startIndex..<endIndex, with: replacementLines)
 
     var output = lines.joined(separator: "\n")
-    if raw.hasSuffix("\n"), !output.hasSuffix("\n") {
+    if raw.hasSuffix("\n"), !output.isEmpty, !output.hasSuffix("\n") {
       output += "\n"
     }
     try output.write(to: url, atomically: true, encoding: .utf8)
@@ -11034,13 +11733,41 @@ public final class WorkspaceStore: ObservableObject {
       let currentText = split.before.trimmingCharacters(in: .whitespacesAndNewlines)
       let nextText = split.after.trimmingCharacters(in: .whitespacesAndNewlines)
 
+      if nextText.isEmpty,
+         let parsedCurrent = OrgEntryRenderer.parseEditable(currentText).first,
+         case .listItem(let indent, let marker, let checkbox, _) = parsedCurrent.rendered {
+        let prefix = continuedListPrefix(
+          draft: currentText,
+          fallbackMarker: marker,
+          checkbox: checkbox
+        )
+        return SplitBlockPlan(
+          replacement: currentText,
+          newBlockLineOffset: nil,
+          draft: SplitDraftSpec(
+            insertionLineOffset: lineCount(in: currentText),
+            displayLineOffset: lineCount(in: currentText),
+            rawText: prefix,
+            rendered: .listItem(
+              indent: indent,
+              marker: marker,
+              checkbox: checkbox == nil ? nil : .unchecked,
+              text: ""
+            ),
+            replacementPrefix: "",
+            replacementSuffix: "",
+            selectionLineOffset: 0
+          )
+        )
+      }
+
       if nextText.isEmpty {
         return SplitBlockPlan(
           replacement: currentText.isEmpty ? nil : currentText,
           newBlockLineOffset: nil,
           draft: SplitDraftSpec(
-            insertionLineOffset: block.endLineExclusive - block.startLine,
-            displayLineOffset: block.endLineExclusive - block.startLine,
+            insertionLineOffset: currentText.isEmpty ? 0 : lineCount(in: currentText),
+            displayLineOffset: currentText.isEmpty ? 0 : lineCount(in: currentText),
             rawText: "",
             rendered: .paragraph(""),
             replacementPrefix: "\n",
@@ -11087,8 +11814,8 @@ public final class WorkspaceStore: ObservableObject {
           replacement: firstBlock.isEmpty ? nil : firstBlock,
           newBlockLineOffset: nil,
           draft: SplitDraftSpec(
-            insertionLineOffset: block.endLineExclusive - block.startLine,
-            displayLineOffset: block.endLineExclusive - block.startLine,
+            insertionLineOffset: firstBlock.isEmpty ? 0 : lineCount(in: firstBlock),
+            displayLineOffset: firstBlock.isEmpty ? 0 : lineCount(in: firstBlock),
             rawText: prefix,
             rendered: .listItem(
               indent: indent,
@@ -11134,7 +11861,7 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  nonisolated private static func transientDraftBlock(
+  private func transientDraftBlock(
     from spec: SplitDraftSpec,
     sourceFile: String,
     originalBlock: OrgEditableBlock
@@ -11148,7 +11875,7 @@ public final class WorkspaceStore: ObservableObject {
       replacementPrefix: spec.replacementPrefix,
       replacementSuffix: spec.replacementSuffix,
       selectionLineOffset: spec.selectionLineOffset,
-      block: OrgEditableBlock(
+      block: transientDraftEditableBlock(
         startLine: displayLine,
         endLineExclusive: displayLine,
         rawText: spec.rawText,
@@ -11409,6 +12136,110 @@ public final class WorkspaceStore: ObservableObject {
     let markerText = marker.isEmpty ? fallbackMarker : String(marker)
     let checkboxText = checkbox == nil ? "" : "[ ] "
     return "\(leadingWhitespace)\(markerText) \(checkboxText)"
+  }
+
+  nonisolated private static func isMergeablePreviousTextBlock(_ block: OrgEditableBlock) -> Bool {
+    switch block.rendered {
+    case .heading, .paragraph, .listItem:
+      return true
+    default:
+      return false
+    }
+  }
+
+  nonisolated private static func mergedTextBlockRawText(
+    previous: OrgEditableBlock,
+    current: OrgEditableBlock,
+    currentDraft: String
+  ) -> String? {
+    guard isMergeablePreviousTextBlock(previous),
+          let tail = mergeTailText(for: current, draft: currentDraft)
+    else {
+      return nil
+    }
+
+    let trimmedTail = tail.trimmingCharacters(in: .whitespacesAndNewlines)
+    if case .heading = previous.rendered {
+      return headingRawTextAppending(previous.rawText, tail: trimmedTail)
+    }
+
+    let head = normalizeLineEndings(previous.rawText).trimmingCharacters(in: .whitespacesAndNewlines)
+    if head.isEmpty { return trimmedTail }
+    if trimmedTail.isEmpty { return head }
+    return "\(head) \(trimmedTail)"
+  }
+
+  nonisolated private static func mergeTailText(for block: OrgEditableBlock, draft: String) -> String? {
+    let normalizedDraft = normalizeLineEndings(draft)
+    switch block.rendered {
+    case .heading:
+      let firstLine = normalizedDraft.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+        .first.map(String.init) ?? normalizedDraft
+      let title = headingTitle(from: firstLine)
+      return title.isEmpty ? normalizedDraft : title
+    case .paragraph:
+      return normalizedDraft
+    case .listItem:
+      return listItemBodyText(from: normalizedDraft)
+    default:
+      return nil
+    }
+  }
+
+  nonisolated private static func listItemBodyText(from rawText: String) -> String {
+    let firstLine = rawText.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? rawText
+    guard let regex = try? NSRegularExpression(pattern: #"^\s*(?:[-+*]|\d+[.)])\s+(?:\[[ Xx-]\]\s+)?"#) else {
+      return rawText
+    }
+    let nsFirstLine = firstLine as NSString
+    let fullRange = NSRange(location: 0, length: nsFirstLine.length)
+    guard let match = regex.firstMatch(in: firstLine, range: fullRange),
+          match.range.location == 0
+    else {
+      return rawText
+    }
+    let prefixLength = match.range.length
+    let nsRawText = rawText as NSString
+    guard prefixLength <= nsRawText.length else { return "" }
+    return nsRawText.substring(from: prefixLength)
+  }
+
+  nonisolated private static func headingRawTextAppending(_ rawText: String, tail: String) -> String? {
+    let trimmedTail = tail.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedTail.isEmpty else {
+      return normalizeLineEndings(rawText).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var lines = normalizeLineEndings(rawText)
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map(String.init)
+    guard let first = lines.first,
+          let regex = try? NSRegularExpression(pattern: #"^(\*+\s+)(.*)$"#)
+    else {
+      return nil
+    }
+
+    let nsFirst = first as NSString
+    let fullRange = NSRange(location: 0, length: nsFirst.length)
+    guard let match = regex.firstMatch(in: first, range: fullRange),
+          match.range.location == 0
+    else {
+      return nil
+    }
+
+    let prefix = nsFirst.substring(with: match.range(at: 1))
+    var body = nsFirst.substring(with: match.range(at: 2))
+      .trimmingCharacters(in: .whitespaces)
+    var tagsSuffix = ""
+    if let tagRange = body.range(of: #"\s+(:[A-Za-z0-9_@#%:.-]+:)\s*$"#, options: .regularExpression) {
+      tagsSuffix = String(body[tagRange]).trimmingCharacters(in: .whitespaces)
+      body.removeSubrange(tagRange)
+      body = body.trimmingCharacters(in: .whitespaces)
+    }
+
+    let mergedBody = body.isEmpty ? trimmedTail : "\(body) \(trimmedTail)"
+    lines[0] = "\(prefix)\(mergedBody)\(tagsSuffix.isEmpty ? "" : " \(tagsSuffix)")"
+    return lines.joined(separator: "\n")
   }
 
   nonisolated private static func splitText(_ text: String, atUTF16Offset offset: Int) -> (before: String, after: String) {

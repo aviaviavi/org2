@@ -37,7 +37,9 @@ struct ChatBubbleView: View {
         }
         if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
           OrgInlineText(message.content)
+            .lineLimit(nil)
             .frame(maxWidth: compact ? 360 : 640, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
         }
         if !message.attachments.isEmpty {
           OpenClawMessageAttachmentsView(attachments: message.attachments, compact: compact)
@@ -62,6 +64,7 @@ struct ChatBubbleView: View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
           .stroke(borderColor)
       )
+      .fixedSize(horizontal: false, vertical: true)
 
       if message.role != .user {
         Spacer(minLength: compact ? 24 : 48)
@@ -71,6 +74,7 @@ struct ChatBubbleView: View {
       }
     }
     .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+    .fixedSize(horizontal: false, vertical: true)
   }
 
   private var background: Color {
