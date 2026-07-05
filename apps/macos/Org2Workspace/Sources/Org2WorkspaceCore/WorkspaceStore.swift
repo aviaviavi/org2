@@ -781,6 +781,7 @@ public final class WorkspaceStore: ObservableObject {
   private var isApplyingOpenClawThreadMessages = false
   private var openClawBearerToken: String?
   private var openClawDraftsByThreadID: [UUID: String] = [:]
+  private var openClawComposerCachedThreadIDs: Set<UUID> = []
   private var openClawPendingUserMessageIDsByThreadID: [UUID: [UUID]] = [:]
   private var drainingOpenClawThreadIDs: Set<UUID> = []
   private var openClawRequestStartedAtByThreadID: [UUID: Date] = [:]
@@ -981,7 +982,7 @@ public final class WorkspaceStore: ObservableObject {
       }
     case "openclaw", "chat":
       selectedSurface = .openClaw
-      openClawDraft = "Summarize the current launch plan and call out open risks."
+      publishOpenClawComposerDraft("Summarize the current launch plan and call out open risks.")
     case "brief":
       selectedSurface = .files
       if let thread = openClawThreads.first(where: { thread in
@@ -2623,7 +2624,7 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Select a meeting first"
       return
     }
-    openClawDraft = "Use the selected meeting note and transcript artifact as context. Summarize the meeting, extract decisions, list action items, and cite the org2 file paths you used."
+    publishOpenClawComposerDraft("Use the selected meeting note and transcript artifact as context. Summarize the meeting, extract decisions, list action items, and cite the org2 file paths you used.")
     selectedSurface = .openClaw
   }
 
@@ -6387,7 +6388,7 @@ public final class WorkspaceStore: ObservableObject {
         return
       }
 
-      openClawDraft = Self.openClawDraftByAppendingDictation(existing: openClawDraft, dictatedText: dictatedText)
+      publishOpenClawComposerDraft(Self.openClawDraftByAppendingDictation(existing: openClawDraft, dictatedText: dictatedText))
       openClawVoiceStatusText = "Sending dictated note to OpenClaw..."
       openClawStatusText = openClawVoiceStatusText
       await sendOpenClawMessage()
@@ -6961,15 +6962,38 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func cacheOpenClawComposerDraft(_ draft: String) {
+    guard let selectedOpenClawChatThreadID else { return }
+    cacheOpenClawDraft(draft, for: selectedOpenClawChatThreadID)
+  }
+
+  public func publishOpenClawComposerDraft(_ draft: String) {
+    cacheOpenClawComposerDraft(draft)
+    guard openClawDraft != draft else { return }
+    openClawDraft = draft
+  }
+
   private func saveOpenClawDraftForSelectedThread() {
     guard let selectedOpenClawChatThreadID else { return }
-    let draft = openClawDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    guard !openClawComposerCachedThreadIDs.contains(selectedOpenClawChatThreadID) else { return }
+    cacheOpenClawDraft(openClawDraft, for: selectedOpenClawChatThreadID)
+  }
+
+  private func currentOpenClawDraftForSelectedThread() -> String {
+    guard let selectedOpenClawChatThreadID else { return openClawDraft }
+    guard openClawComposerCachedThreadIDs.contains(selectedOpenClawChatThreadID) else { return openClawDraft }
+    return openClawDraftsByThreadID[selectedOpenClawChatThreadID] ?? ""
+  }
+
+  private func cacheOpenClawDraft(_ draft: String, for threadID: UUID) {
+    openClawComposerCachedThreadIDs.insert(threadID)
+    let normalizedDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       ? ""
-      : openClawDraft
-    if draft.isEmpty {
-      openClawDraftsByThreadID.removeValue(forKey: selectedOpenClawChatThreadID)
+      : draft
+    if normalizedDraft.isEmpty {
+      openClawDraftsByThreadID.removeValue(forKey: threadID)
     } else {
-      openClawDraftsByThreadID[selectedOpenClawChatThreadID] = draft
+      openClawDraftsByThreadID[threadID] = normalizedDraft
     }
   }
 
@@ -6980,6 +7004,7 @@ public final class WorkspaceStore: ObservableObject {
   private func clearOpenClawDraftForSelectedThread() {
     if let selectedOpenClawChatThreadID {
       openClawDraftsByThreadID.removeValue(forKey: selectedOpenClawChatThreadID)
+      openClawComposerCachedThreadIDs.insert(selectedOpenClawChatThreadID)
     }
     openClawDraft = ""
   }
@@ -9430,7 +9455,7 @@ public final class WorkspaceStore: ObservableObject {
   private func applyImmediateWorkspaceUndo(_ action: WorkspaceUndoAction) -> Bool {
     switch action {
     case .openClawDraft(let previous, _):
-      openClawDraft = previous
+      publishOpenClawComposerDraft(previous)
       openClawStatusText = "Undid OpenClaw draft change"
       statusText = "Undid OpenClaw draft change"
       workspaceRedoStack.append(action)
@@ -9443,7 +9468,7 @@ public final class WorkspaceStore: ObservableObject {
   private func applyImmediateWorkspaceRedo(_ action: WorkspaceUndoAction) -> Bool {
     switch action {
     case .openClawDraft(_, let next):
-      openClawDraft = next
+      publishOpenClawComposerDraft(next)
       openClawStatusText = "Redid OpenClaw draft change"
       statusText = "Redid OpenClaw draft change"
       workspaceUndoStack.append(action)
@@ -10330,14 +10355,16 @@ public final class WorkspaceStore: ObservableObject {
 
   private func addOpenClawContext(_ pointer: OpenClawContextPointer) {
     let injectedContext = "Use \(pointer.kind) at \(pointer.reference) as context.\n\n"
-    let previousDraft = openClawDraft
-    if openClawDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      openClawDraft = injectedContext
-    } else if !openClawDraft.contains(pointer.reference) {
-      openClawDraft = injectedContext + openClawDraft
+    let previousDraft = currentOpenClawDraftForSelectedThread()
+    var nextDraft = previousDraft
+    if previousDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      nextDraft = injectedContext
+    } else if !previousDraft.contains(pointer.reference) {
+      nextDraft = injectedContext + previousDraft
     }
-    if openClawDraft != previousDraft {
-      recordWorkspaceUndo(.openClawDraft(previous: previousDraft, next: openClawDraft))
+    if nextDraft != previousDraft {
+      publishOpenClawComposerDraft(nextDraft)
+      recordWorkspaceUndo(.openClawDraft(previous: previousDraft, next: nextDraft))
     }
 
     setOpenClawAssistantPanelPresented(true)

@@ -1,5 +1,6 @@
 import AppKit
 @preconcurrency import AVFoundation
+import Combine
 import SwiftUI
 import XCTest
 @testable import Org2WorkspaceCore
@@ -1983,6 +1984,43 @@ final class Org2ModelsTests: XCTestCase {
       ),
       ""
     )
+  }
+
+  @MainActor
+  func testOpenClawComposerDraftCacheDoesNotPublishStoreChangesWhileTyping() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.createOpenClawChatThread()
+
+    var publishedChangeCount = 0
+    let cancellable = store.objectWillChange.sink {
+      publishedChangeCount += 1
+    }
+
+    store.cacheOpenClawComposerDraft("typing into a large chat")
+    store.cacheOpenClawComposerDraft("typing into a large chat thread")
+
+    XCTAssertEqual(store.openClawDraft, "")
+    XCTAssertEqual(publishedChangeCount, 0)
+    cancellable.cancel()
+  }
+
+  @MainActor
+  func testOpenClawComposerDraftCacheRestoresDraftsAcrossThreadSwitches() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.createOpenClawChatThread()
+    let firstThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.cacheOpenClawComposerDraft("first local draft")
+
+    store.createOpenClawChatThread()
+    let secondThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    XCTAssertEqual(store.openClawDraft, "")
+    store.cacheOpenClawComposerDraft("second local draft")
+
+    store.selectOpenClawChatThread(firstThreadID)
+    XCTAssertEqual(store.openClawDraft, "first local draft")
+
+    store.selectOpenClawChatThread(secondThreadID)
+    XCTAssertEqual(store.openClawDraft, "second local draft")
   }
 
   func testOpenClawVoiceDictationAppendsToDraftBeforeSend() {

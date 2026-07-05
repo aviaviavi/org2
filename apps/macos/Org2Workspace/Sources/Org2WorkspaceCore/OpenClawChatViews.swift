@@ -436,12 +436,13 @@ struct OpenClawComposerView: View {
     .onAppear {
       localDraft = store.openClawDraft
       lastStoreDraft = store.openClawDraft
+      cacheDraftLocally()
     }
     .onDisappear {
       flushDraftToStore()
     }
     .onChange(of: localDraft) {
-      flushDraftToStore()
+      cacheDraftLocally()
     }
     .onChange(of: store.openClawDraft) { _, newValue in
       let mergedDraft = OpenClawComposerDraftSync.localDraftAfterStoreChange(
@@ -465,7 +466,7 @@ struct OpenClawComposerView: View {
     let text = localDraft
     localDraft = ""
     lastStoreDraft = ""
-    store.openClawDraft = ""
+    store.cacheOpenClawComposerDraft("")
     Task { await store.sendComposedOpenClawMessage(text: text) }
     return true
   }
@@ -475,10 +476,14 @@ struct OpenClawComposerView: View {
     return true
   }
 
+  private func cacheDraftLocally() {
+    store.cacheOpenClawComposerDraft(localDraft)
+  }
+
   private func flushDraftToStore() {
     if store.openClawDraft != localDraft {
       lastStoreDraft = localDraft
-      store.openClawDraft = localDraft
+      store.publishOpenClawComposerDraft(localDraft)
     } else {
       lastStoreDraft = store.openClawDraft
     }
