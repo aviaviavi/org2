@@ -25,6 +25,10 @@ function run(command, args) {
   }
 }
 
+function runAllowFailure(command, args) {
+  spawnSync(command, args, { stdio: "ignore" });
+}
+
 mkdirSync(corpusRoot, { recursive: true });
 mkdirSync(join(corpusRoot, ".org2"), { recursive: true });
 mkdirSync(join(corpusRoot, "daily"), { recursive: true });
@@ -61,6 +65,22 @@ Use this corpus for Codex UI smoke tests instead of the real workspace.
 );
 
 if (process.platform === "darwin") {
+  for (const key of [
+    "Org2Workspace.legacyDefaultsMigrated.v1",
+    "Org2Workspace.openClawAgent",
+    "Org2Workspace.openClawEndpoint",
+    "Org2Workspace.openClawRemoteCorpusPath",
+    "Org2Workspace.agentHandoffAssignee",
+    "Org2Workspace.personalAssigneeNames",
+    "Org2Workspace.orgCrypt.encryptOnSave",
+    "Org2Workspace.orgCrypt.gpgProgram",
+    "Org2Workspace.orgCrypt.recipientFiles",
+    "Org2Workspace.orgCrypt.recipients",
+    "Org2Workspace.orgCrypt.useDefaultGpgKey",
+    "Org2Workspace.orgCrypt.useDefaultGpgKeyDefaulted.v2"
+  ]) {
+    runAllowFailure("defaults", ["delete", bundleIdentifier, key]);
+  }
   run("defaults", ["write", bundleIdentifier, "Org2Workspace.corpusRoot", corpusRoot]);
 }
 

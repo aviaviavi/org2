@@ -1372,6 +1372,12 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(currentDefaults.bool(forKey: "Org2Workspace.legacyDefaultsMigrated.v1"))
   }
 
+  func testLegacyDefaultsMigrationRunsOnlyForProductionBundleByDefault() {
+    XCTAssertTrue(WorkspaceStore.shouldMigrateLegacyDefaults(bundleIdentifier: nil))
+    XCTAssertTrue(WorkspaceStore.shouldMigrateLegacyDefaults(bundleIdentifier: "org.org2.workspace"))
+    XCTAssertFalse(WorkspaceStore.shouldMigrateLegacyDefaults(bundleIdentifier: "org.org2.workspace.codex"))
+  }
+
   @MainActor
   func testLegacyDefaultsMigrationDoesNotOverwriteCurrentOpenClawConfiguration() throws {
     let currentSuiteName = "org2-workspace-current-defaults-\(UUID().uuidString)"
