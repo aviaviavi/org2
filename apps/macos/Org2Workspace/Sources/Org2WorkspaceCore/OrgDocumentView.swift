@@ -1077,7 +1077,7 @@ private struct EditableRenderedBlockView<Content: View>: View {
   }
 
   private var renderedContent: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 4) {
+    HStack(alignment: .top, spacing: 4) {
       if showsDisclosureSlot {
         Button {
           actions.toggleFold()
@@ -1091,6 +1091,7 @@ private struct EditableRenderedBlockView<Content: View>: View {
         .opacity(isFoldable ? 1 : 0)
         .help(isFolded ? "Expand" : "Collapse")
         .disabled(!isFoldable)
+        .padding(.top, disclosureTopPadding)
       }
 
       content
@@ -1115,6 +1116,17 @@ private struct EditableRenderedBlockView<Content: View>: View {
         .environment(\.orgInlineTextSelectionEnabled, !usesRowTapGestures)
         .environment(\.orgInlineTextActivation, inlineTextActivation)
         .environment(\.orgInlineTextLinkActivation, linkActivation)
+    }
+  }
+
+  private var disclosureTopPadding: CGFloat {
+    switch block.rendered {
+    case .heading:
+      return 7
+    case .listItem:
+      return 4
+    case .blank, .horizontalRule, .keyword, .paragraph, .planning, .properties, .quote, .source, .table:
+      return 0
     }
   }
 
