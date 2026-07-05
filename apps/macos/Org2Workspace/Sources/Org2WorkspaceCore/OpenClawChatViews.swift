@@ -398,7 +398,6 @@ struct OpenClawComposerView: View {
         }
         .labelStyle(.iconOnly)
         .buttonStyle(WorkspaceActionButtonStyle())
-        .disabled(store.isSendingOpenClawMessage)
         .help("Attach image")
 
         Button {

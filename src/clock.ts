@@ -51,7 +51,17 @@ export function parseClockTimestamp(raw: string): Date | null {
   const minute = Number(match[5]);
   if (hour > 23 || minute > 59) return null;
   const date = new Date(Date.UTC(year, month - 1, day, hour, minute));
-  return Number.isNaN(date.getTime()) ? null : date;
+  if (Number.isNaN(date.getTime())) return null;
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day ||
+    date.getUTCHours() !== hour ||
+    date.getUTCMinutes() !== minute
+  ) {
+    return null;
+  }
+  return date;
 }
 
 export function parseClockLine(line: string): { start: Date; end: Date; rawRange: string } | null {
