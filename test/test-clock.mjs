@@ -7,6 +7,12 @@ import { execFileSync } from 'node:child_process';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cli = path.join(repo, 'dist', 'cli.js');
+const { parseClockTimestamp } = await import(path.join(repo, 'dist', 'clock.js'));
+
+assert.equal(parseClockTimestamp('[2026-02-30 Mon 12:00]'), null);
+assert.equal(parseClockTimestamp('[2026-13-01 Tue 12:00]'), null);
+assert.equal(parseClockTimestamp('[2026-05-26 Tue 24:00]'), null);
+
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'org2-clock-'));
 const file = path.join(tmpDir, 'work.org2');
 fs.writeFileSync(file, `#+TITLE: Work
@@ -16,6 +22,7 @@ fs.writeFileSync(file, `#+TITLE: Work
 CLOCK: [2026-05-26 Tue 09:00]--[2026-05-26 Tue 10:30] =>  1:30
 CLOCK: [2026-05-26 Tue 10:00]--[2026-05-26 Tue 11:00] =>  1:00
 CLOCK: [bad]
+CLOCK: [2026-02-30 Mon 12:00]--[2026-02-30 Mon 12:30] =>  0:30
 ** DONE Review :review:
 CLOCK: [2026-05-27 Wed 13:00]--[2026-05-27 Wed 13:30] =>  0:30
 `);
@@ -23,7 +30,7 @@ CLOCK: [2026-05-27 Wed 13:00]--[2026-05-27 Wed 13:30] =>  0:30
 const ast = JSON.parse(execFileSync('node', [path.join(repo, 'dist', 'parse.js'), file], { encoding: 'utf8' }));
 const project = ast.children.find((n) => n.type === 'Headline');
 const build = project.children.find((n) => n.type === 'Headline' && n.title.some((t) => t.value === 'Build parser'));
-assert.equal(build.children.filter((n) => n.type === 'Clock').length, 3);
+assert.equal(build.children.filter((n) => n.type === 'Clock').length, 4);
 
 const printed = execFileSync('node', [cli, 'fmt', '--file', file], { encoding: 'utf8' });
 assert.match(printed, /CLOCK: \[2026-05-26 Tue 09:00\]--\[2026-05-26 Tue 10:30\]/);
@@ -34,6 +41,7 @@ assert.equal(compiled.clockSummary.totalMinutes, 180);
 assert.equal(compiled.clockSummary.byDay['2026-05-26'], 150);
 assert.equal(compiled.clockSummary.byProject['Project Alpha'], 180);
 assert.ok(compiled.clockIssues.some((i) => i.type === 'malformed-clock' && i.line === 7));
+assert.ok(compiled.clockIssues.some((i) => i.type === 'malformed-clock' && i.line === 8));
 assert.ok(compiled.clockIssues.some((i) => i.type === 'overlapping-clock' && i.line === 6));
 const buildNode = compiled.nodes.find((n) => n.kind === 'heading' && n.title === 'Build parser');
 assert.equal(buildNode.clocks.length, 2);
