@@ -138,6 +138,45 @@ enum InlineEditorSizing {
   }
 }
 
+enum InlineEditorInitialSelection {
+  static func clamped(_ selection: NSRange?, in text: String) -> NSRange {
+    guard let selection else {
+      return InlineEditorSizing.endSelection(in: text)
+    }
+    return clamped(selection, utf16Length: (text as NSString).length)
+  }
+
+  static func applyToFocusedField(_ selection: NSRange?, text: String) {
+    guard let selection else { return }
+    let clampedSelection = clamped(selection, in: text)
+    DispatchQueue.main.async {
+      setFocusedFieldSelection(clampedSelection)
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(35)) {
+      setFocusedFieldSelection(clampedSelection)
+    }
+  }
+
+  @MainActor
+  private static func setFocusedFieldSelection(_ selection: NSRange) {
+    guard let textView = NSApp.keyWindow?.firstResponder as? NSTextView else {
+      return
+    }
+    textView.setSelectedRange(clamped(
+      selection,
+      utf16Length: (textView.string as NSString).length
+    ))
+  }
+
+  private static func clamped(_ range: NSRange, utf16Length length: Int) -> NSRange {
+    let location = min(max(0, range.location), length)
+    return NSRange(
+      location: location,
+      length: min(max(0, range.length), length - location)
+    )
+  }
+}
+
 enum ParagraphSlashCommand {
   static let leadingWhitespaceScanLimit = 128
   static let commandScanLimit = 64
@@ -221,25 +260,26 @@ enum ParagraphFocusedInlinePanelLayout {
 
 struct InlineBlockEditorView: View {
   let block: OrgEditableBlock
+  let initialSelection: NSRange?
 
   var body: some View {
     switch block.rendered {
     case .heading(let heading):
-      HeadingBlockEditor(block: block, heading: heading)
+      HeadingBlockEditor(block: block, heading: heading, initialSelection: initialSelection)
     case .planning(let planning):
-      PlanningBlockEditor(block: block, planning: planning)
+      PlanningBlockEditor(block: block, planning: planning, initialSelection: initialSelection)
     case .quote:
-      QuoteBlockEditor(block: block)
+      QuoteBlockEditor(block: block, initialSelection: initialSelection)
     case .listItem(let indent, let marker, let checkbox, let text):
-      ListItemBlockEditor(block: block, indent: indent, marker: marker, checkbox: checkbox, text: text)
+      ListItemBlockEditor(block: block, indent: indent, marker: marker, checkbox: checkbox, text: text, initialSelection: initialSelection)
     case .keyword(let key, let value):
-      KeywordBlockEditor(block: block, key: key, value: value)
+      KeywordBlockEditor(block: block, key: key, value: value, initialSelection: initialSelection)
     case .paragraph(let text):
-      ParagraphBlockEditor(block: block, text: text)
+      ParagraphBlockEditor(block: block, text: text, initialSelection: initialSelection)
     case .properties(let rows):
       PropertyDrawerBlockEditor(block: block, rows: rows)
     case .source(let language, let lines):
-      SourceBlockEditor(block: block, language: language, lines: lines)
+      SourceBlockEditor(block: block, language: language, lines: lines, initialSelection: initialSelection)
     case .table(let table):
       TableBlockEditor(block: block, table: table)
     case .horizontalRule:
@@ -315,6 +355,7 @@ private struct HorizontalRuleBlockEditor: View {
 private struct HeadingBlockEditor: View {
   @EnvironmentObject private var store: WorkspaceStore
   let block: OrgEditableBlock
+  let initialSelection: NSRange?
   private let level: Int
   @State private var todo: String
   @State private var priority: String
@@ -325,8 +366,9 @@ private struct HeadingBlockEditor: View {
   @State private var autosaveTask: Task<Void, Never>?
   @FocusState private var titleFocused: Bool
 
-  init(block: OrgEditableBlock, heading: OrgHeadingBlock) {
+  init(block: OrgEditableBlock, heading: OrgHeadingBlock, initialSelection: NSRange?) {
     self.block = block
+    self.initialSelection = initialSelection
     let raw = Self.rawHeadingParts(from: block.rawText, fallback: heading)
     self.level = raw.level
     _todo = State(initialValue: raw.todo)
@@ -480,6 +522,7 @@ private struct HeadingBlockEditor: View {
     }
     .onAppear {
       titleFocused = true
+      InlineEditorInitialSelection.applyToFocusedField(initialSelection, text: title)
     }
   }
 
@@ -694,14 +737,16 @@ private struct HeadingBlockEditor: View {
 private struct PlanningBlockEditor: View {
   @EnvironmentObject private var store: WorkspaceStore
   let block: OrgEditableBlock
+  let initialSelection: NSRange?
   @State private var kind: String
   @State private var value: String
   @State private var isHovered = false
   @State private var autosaveTask: Task<Void, Never>?
   @FocusState private var valueFocused: Bool
 
-  init(block: OrgEditableBlock, planning: OrgPlanningBlock) {
+  init(block: OrgEditableBlock, planning: OrgPlanningBlock, initialSelection: NSRange?) {
     self.block = block
+    self.initialSelection = initialSelection
     _kind = State(initialValue: planning.kind)
     _value = State(initialValue: planning.value)
   }
@@ -791,6 +836,7 @@ private struct PlanningBlockEditor: View {
     }
     .onAppear {
       valueFocused = true
+      InlineEditorInitialSelection.applyToFocusedField(initialSelection, text: value)
     }
   }
 
@@ -836,6 +882,7 @@ private struct ListItemBlockEditor: View {
   @EnvironmentObject private var store: WorkspaceStore
   let block: OrgEditableBlock
   let leadingWhitespace: String
+  let initialSelection: NSRange?
   @State private var marker: String
   @State private var checkbox: OrgListCheckbox?
   @State private var text: String
@@ -843,8 +890,9 @@ private struct ListItemBlockEditor: View {
   @State private var autosaveTask: Task<Void, Never>?
   @FocusState private var textFocused: Bool
 
-  init(block: OrgEditableBlock, indent: Int, marker: String, checkbox: OrgListCheckbox?, text: String) {
+  init(block: OrgEditableBlock, indent: Int, marker: String, checkbox: OrgListCheckbox?, text: String, initialSelection: NSRange?) {
     self.block = block
+    self.initialSelection = initialSelection
     let raw = Self.rawListItemParts(
       from: block.rawText,
       fallbackIndent: indent,
@@ -940,6 +988,7 @@ private struct ListItemBlockEditor: View {
     }
     .onAppear {
       textFocused = true
+      InlineEditorInitialSelection.applyToFocusedField(initialSelection, text: text)
     }
   }
 
@@ -1092,14 +1141,16 @@ private struct ListItemBlockEditor: View {
 private struct KeywordBlockEditor: View {
   @EnvironmentObject private var store: WorkspaceStore
   let block: OrgEditableBlock
+  let initialSelection: NSRange?
   @State private var key: String
   @State private var value: String
   @State private var isHovered = false
   @State private var autosaveTask: Task<Void, Never>?
   @FocusState private var valueFocused: Bool
 
-  init(block: OrgEditableBlock, key: String, value: String) {
+  init(block: OrgEditableBlock, key: String, value: String, initialSelection: NSRange?) {
     self.block = block
+    self.initialSelection = initialSelection
     let raw = Self.rawKeywordParts(from: block.rawText, fallbackKey: key, fallbackValue: value)
     _key = State(initialValue: raw.key)
     _value = State(initialValue: raw.value)
@@ -1187,6 +1238,7 @@ private struct KeywordBlockEditor: View {
     }
     .onAppear {
       valueFocused = true
+      InlineEditorInitialSelection.applyToFocusedField(initialSelection, text: value)
     }
   }
 
@@ -1476,13 +1528,14 @@ private struct ParagraphBlockEditor: View {
   @State private var autosaveTask: Task<Void, Never>?
   @State private var liveText = OrgSyntaxTextEditorDraftBuffer()
   @State private var reservedLineCount: Int
+  @State private var measuredEditorContentHeight: CGFloat = 0
 
-  init(block: OrgEditableBlock, text: String) {
+  init(block: OrgEditableBlock, text: String, initialSelection: NSRange?) {
     self.block = block
     self.text = text
     _draftText = State(initialValue: block.rawText)
     _presentationText = State(initialValue: block.rawText)
-    _selectedRange = State(initialValue: InlineEditorSizing.endSelection(in: block.rawText))
+    _selectedRange = State(initialValue: Self.clampedInitialSelection(initialSelection, in: block.rawText))
     _reservedLineCount = State(initialValue: InlineEditorSizing.cappedLineCount(
       in: block.rawText,
       minimum: 1,
@@ -1528,6 +1581,7 @@ private struct ParagraphBlockEditor: View {
           textPublishing: .deferred(milliseconds: 90),
           selection: $selectedRange,
           isFocused: $isTextFocused,
+          contentHeight: $measuredEditorContentHeight,
           onLocalTextChange: handleLocalTextChange,
           shouldPublishTextImmediately: ParagraphEditorTextPublishingPolicy.shouldPublishImmediately,
           onSubmitContext: submitParagraph,
@@ -1574,7 +1628,7 @@ private struct ParagraphBlockEditor: View {
       if ParagraphSlashCommandPanelLayout.isVisible(match: slashCommandMatch) {
         ParagraphSlashCommandPanel(match: slashCommandMatch, convert: convertParagraph)
           .frame(maxWidth: .infinity, alignment: .leading)
-          .offset(y: ParagraphSlashCommandPanelLayout.verticalOffset(editorHeight: editorHeight))
+          .offset(y: ParagraphSlashCommandPanelLayout.verticalOffset(editorHeight: editorPanelOffsetHeight))
           .zIndex(2)
       }
 
@@ -1585,7 +1639,7 @@ private struct ParagraphBlockEditor: View {
           token: focusedInlineToken
         )
         .frame(maxWidth: .infinity, alignment: .leading)
-        .offset(y: ParagraphFocusedInlinePanelLayout.verticalOffset(editorHeight: editorHeight))
+        .offset(y: ParagraphFocusedInlinePanelLayout.verticalOffset(editorHeight: editorPanelOffsetHeight))
         .zIndex(1)
       } else if let wikiLinkCompletionMatch {
         ParagraphWikiLinkCompletionPanel(
@@ -1599,7 +1653,7 @@ private struct ParagraphBlockEditor: View {
           }
         )
         .frame(maxWidth: .infinity, alignment: .leading)
-        .offset(y: ParagraphFocusedInlinePanelLayout.verticalOffset(editorHeight: editorHeight))
+        .offset(y: ParagraphFocusedInlinePanelLayout.verticalOffset(editorHeight: editorPanelOffsetHeight))
         .zIndex(1)
       }
     }
@@ -1643,7 +1697,19 @@ private struct ParagraphBlockEditor: View {
       minimum: 1,
       maximum: 15
     )
-    return min(320, max(30, CGFloat(lineCount) * 21 + 8))
+    let reservedHeight = max(30, CGFloat(lineCount) * 21 + 8)
+    return max(reservedHeight, measuredEditorContentHeight)
+  }
+
+  private var editorPanelOffsetHeight: CGFloat {
+    min(editorHeight, 320)
+  }
+
+  private static func clampedInitialSelection(_ selection: NSRange?, in text: String) -> NSRange {
+    guard let selection else {
+      return InlineEditorSizing.endSelection(in: text)
+    }
+    return OrgSyntaxTextEditor.clampedRange(selection, utf16Length: (text as NSString).length)
   }
 
   private func reserveEditorLines(for text: String) {
@@ -2741,7 +2807,7 @@ private struct QuoteBlockEditor: View {
   @State private var liveText = OrgSyntaxTextEditorDraftBuffer()
   @State private var reservedLineCount: Int
 
-  init(block: OrgEditableBlock) {
+  init(block: OrgEditableBlock, initialSelection: NSRange?) {
     self.block = block
     let lines = block.rawText.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
     self.beginLine = lines.first ?? "#+begin_quote"
@@ -2749,7 +2815,7 @@ private struct QuoteBlockEditor: View {
     let body = lines.count >= 2 ? Array(lines.dropFirst().dropLast()).joined(separator: "\n") : ""
     _quoteText = State(initialValue: body)
     _presentationText = State(initialValue: body)
-    _selectedRange = State(initialValue: InlineEditorSizing.endSelection(in: body))
+    _selectedRange = State(initialValue: Self.clampedInitialSelection(initialSelection, in: body))
     _reservedLineCount = State(initialValue: InlineEditorSizing.cappedLineCount(
       in: body,
       minimum: 2,
@@ -2816,6 +2882,13 @@ private struct QuoteBlockEditor: View {
 
   private var rawQuote: String {
     "\(beginLine)\n\(currentQuoteText)\n\(endLine)"
+  }
+
+  private static func clampedInitialSelection(_ selection: NSRange?, in text: String) -> NSRange {
+    guard let selection else {
+      return InlineEditorSizing.endSelection(in: text)
+    }
+    return OrgSyntaxTextEditor.clampedRange(selection, utf16Length: (text as NSString).length)
   }
 
   private var currentQuoteText: String {
@@ -2921,7 +2994,7 @@ private struct SourceBlockEditor: View {
   @State private var liveBody = OrgSyntaxTextEditorDraftBuffer()
   @State private var reservedLineCount: Int
 
-  init(block: OrgEditableBlock, language: String?, lines: [String]) {
+  init(block: OrgEditableBlock, language: String?, lines: [String], initialSelection: NSRange?) {
     self.block = block
     let source = OrgEditableSourceBlock(
       rawText: block.rawText,
@@ -2930,7 +3003,7 @@ private struct SourceBlockEditor: View {
     )
     _source = State(initialValue: source)
     _presentationBody = State(initialValue: source.body)
-    _selectedRange = State(initialValue: InlineEditorSizing.endSelection(in: source.body))
+    _selectedRange = State(initialValue: Self.clampedInitialSelection(initialSelection, in: source.body))
     _reservedLineCount = State(initialValue: InlineEditorSizing.cappedLineCount(
       in: source.body,
       minimum: 3,
@@ -3079,6 +3152,13 @@ private struct SourceBlockEditor: View {
       presentationBody = source.body
       reserveEditorLines(for: presentationBody)
     }
+  }
+
+  private static func clampedInitialSelection(_ selection: NSRange?, in text: String) -> NSRange {
+    guard let selection else {
+      return InlineEditorSizing.endSelection(in: text)
+    }
+    return OrgSyntaxTextEditor.clampedRange(selection, utf16Length: (text as NSString).length)
   }
 
   private var languageBinding: Binding<String> {

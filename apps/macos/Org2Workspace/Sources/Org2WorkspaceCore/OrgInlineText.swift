@@ -13,6 +13,26 @@ struct OrgInlineSearchHighlightQueryKey: EnvironmentKey {
   static let defaultValue: String? = nil
 }
 
+struct OrgInlineTextSelectionEnabledKey: EnvironmentKey {
+  static let defaultValue = true
+}
+
+struct OrgInlineTextActivation {
+  let activate: @MainActor (NSRange) -> Void
+}
+
+struct OrgInlineTextLinkActivation {
+  let activate: @MainActor (URL) -> Void
+}
+
+struct OrgInlineTextActivationKey: EnvironmentKey {
+  static let defaultValue: OrgInlineTextActivation? = nil
+}
+
+struct OrgInlineTextLinkActivationKey: EnvironmentKey {
+  static let defaultValue: OrgInlineTextLinkActivation? = nil
+}
+
 extension EnvironmentValues {
   var openOrgFileReference: @MainActor @Sendable (OpenClawFileReference) -> Void {
     get { self[OpenOrgFileReferenceActionKey.self] }
@@ -28,12 +48,30 @@ extension EnvironmentValues {
     get { self[OrgInlineSearchHighlightQueryKey.self] }
     set { self[OrgInlineSearchHighlightQueryKey.self] = newValue }
   }
+
+  var orgInlineTextSelectionEnabled: Bool {
+    get { self[OrgInlineTextSelectionEnabledKey.self] }
+    set { self[OrgInlineTextSelectionEnabledKey.self] = newValue }
+  }
+
+  var orgInlineTextActivation: OrgInlineTextActivation? {
+    get { self[OrgInlineTextActivationKey.self] }
+    set { self[OrgInlineTextActivationKey.self] = newValue }
+  }
+
+  var orgInlineTextLinkActivation: OrgInlineTextLinkActivation? {
+    get { self[OrgInlineTextLinkActivationKey.self] }
+    set { self[OrgInlineTextLinkActivationKey.self] = newValue }
+  }
 }
 
 struct OrgInlineText: View {
   @Environment(\.openOrgFileReference) private var openOrgFileReference
   @Environment(\.orgRoamLinkResolver) private var orgRoamLinkResolver
   @Environment(\.orgInlineSearchHighlightQuery) private var searchHighlightQuery
+  @Environment(\.orgInlineTextSelectionEnabled) private var textSelectionEnabled
+  @Environment(\.orgInlineTextActivation) private var textActivation
+  @Environment(\.orgInlineTextLinkActivation) private var linkActivation
   let raw: String
   let font: Font
   let lineSpacing: CGFloat
@@ -45,10 +83,33 @@ struct OrgInlineText: View {
   }
 
   var body: some View {
+    if textSelectionEnabled {
+      baseText
+        .textSelection(.enabled)
+    } else {
+      baseText
+        .textSelection(.disabled)
+        .overlay(alignment: .topLeading) {
+          if let textActivation {
+            OrgInlineTextActivationOverlay(
+              raw: raw,
+              font: font,
+              lineSpacing: lineSpacing,
+              linkResolver: orgRoamLinkResolver,
+              activateLink: linkActivation?.activate,
+              activate: textActivation.activate
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+          }
+        }
+    }
+  }
+
+  private var baseText: some View {
     renderedText
       .font(font)
       .lineSpacing(lineSpacing)
-      .textSelection(.enabled)
       .environment(\.openURL, OpenURLAction { url in
         if let reference = OpenClawFileReference.fromDeepLinkURL(url) {
           openOrgFileReference(reference)
@@ -89,6 +150,295 @@ struct OrgInlineText: View {
 
   nonisolated static func usesAttributedRendering(_ raw: String) -> Bool {
     OrgInlineSyntaxCandidateCache.containsSyntax(raw)
+  }
+}
+
+private struct OrgInlineTextActivationOverlay: NSViewRepresentable {
+  let raw: String
+  let font: Font
+  let lineSpacing: CGFloat
+  let linkResolver: OrgRoamLinkResolver
+  let activateLink: (@MainActor (URL) -> Void)?
+  let activate: @MainActor (NSRange) -> Void
+
+  func makeNSView(context: Context) -> HitView {
+    let view = HitView()
+    view.raw = raw
+    view.font = font
+    view.lineSpacing = lineSpacing
+    view.linkResolver = linkResolver
+    view.activateLink = activateLink
+    view.activate = activate
+    return view
+  }
+
+  func updateNSView(_ view: HitView, context: Context) {
+    view.raw = raw
+    view.font = font
+    view.lineSpacing = lineSpacing
+    view.linkResolver = linkResolver
+    view.activateLink = activateLink
+    view.activate = activate
+  }
+
+  final class HitView: NSView {
+    var raw = ""
+    var font = Font.body
+    var lineSpacing: CGFloat = 2
+    var linkResolver = OrgRoamLinkResolver.empty
+    var activateLink: (@MainActor (URL) -> Void)?
+    var activate: (@MainActor (NSRange) -> Void)?
+
+    override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+
+    override func resetCursorRects() {
+      addCursorRect(bounds, cursor: .iBeam)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+      guard event.type == .leftMouseDown else {
+        super.mouseDown(with: event)
+        return
+      }
+      let point = convert(event.locationInWindow, from: nil)
+      if let activateLink,
+         let url = OrgInlineTextLinkHitTester.linkURL(
+          raw: raw,
+          linkResolver: linkResolver,
+          font: font,
+          lineSpacing: lineSpacing,
+          bounds: bounds,
+          point: point
+         ) {
+        activateLink(url)
+        return
+      }
+      let range = OrgInlineTextSelectionMapper.selectionRange(
+        in: raw,
+        font: font,
+        lineSpacing: lineSpacing,
+        bounds: bounds,
+        point: point
+      )
+      activate?(range)
+    }
+  }
+}
+
+struct OrgInlineRenderedLink: Equatable {
+  let label: String
+  let target: String
+  let url: URL
+  let displayRange: NSRange
+}
+
+struct OrgInlineRenderedTextLinkMap: Equatable {
+  let displayText: String
+  let links: [OrgInlineRenderedLink]
+
+  static func make(raw: String, linkResolver: OrgRoamLinkResolver = .empty) -> OrgInlineRenderedTextLinkMap {
+    var displayText = ""
+    var links: [OrgInlineRenderedLink] = []
+
+    for span in OrgInlineParser.parse(raw, linkResolver: linkResolver) {
+      switch span {
+      case .text(let text),
+           .code(let text),
+           .bold(let text),
+           .italic(let text),
+           .underline(let text),
+           .strike(let text):
+        displayText += text
+      case .timestamp(let timestamp):
+        displayText += timestampDisplayText(timestamp)
+      case .link(let label, let target, let fileReference):
+        let start = (displayText as NSString).length
+        displayText += label
+        guard let url = linkURL(target: target, fileReference: fileReference) else {
+          continue
+        }
+        links.append(OrgInlineRenderedLink(
+          label: label,
+          target: target,
+          url: url,
+          displayRange: NSRange(location: start, length: (label as NSString).length)
+        ))
+      }
+    }
+
+    return OrgInlineRenderedTextLinkMap(displayText: displayText, links: links)
+  }
+
+  func link(atDisplayUTF16Location location: Int) -> OrgInlineRenderedLink? {
+    links.first { link in
+      let start = link.displayRange.location
+      let end = start + link.displayRange.length
+      if link.displayRange.length == 0 {
+        return location == start
+      }
+      return location >= start && location < end
+    }
+  }
+
+  private static func linkURL(target: String, fileReference: OpenClawFileReference?) -> URL? {
+    if let fileReference {
+      return fileReference.deepLinkURL
+    }
+    guard let url = URL(string: target),
+          url.scheme?.lowercased() == "http" || url.scheme?.lowercased() == "https"
+    else {
+      return nil
+    }
+    return url
+  }
+
+  private static func timestampDisplayText(_ timestamp: OrgInlineTimestamp) -> String {
+    if let timeLabel = timestamp.timeLabel {
+      return "\(timestamp.dateLabel) \(timeLabel)"
+    }
+    return timestamp.dateLabel
+  }
+}
+
+enum OrgInlineTextLinkHitTester {
+  static func linkURL(
+    raw: String,
+    linkResolver: OrgRoamLinkResolver,
+    font: Font,
+    lineSpacing: CGFloat,
+    bounds: CGRect,
+    point: CGPoint
+  ) -> URL? {
+    let linkMap = OrgInlineRenderedTextLinkMap.make(raw: raw, linkResolver: linkResolver)
+    guard !linkMap.links.isEmpty else { return nil }
+    let location = OrgInlineTextSelectionMapper.characterLocation(
+      in: linkMap.displayText,
+      font: font,
+      lineSpacing: lineSpacing,
+      bounds: bounds,
+      point: point
+    )
+    return linkMap.link(atDisplayUTF16Location: location)?.url
+  }
+}
+
+enum OrgInlineTextSelectionMapper {
+  static func selectionRange(
+    in text: String,
+    font: Font,
+    lineSpacing: CGFloat,
+    bounds: CGRect,
+    point: CGPoint
+  ) -> NSRange {
+    NSRange(
+      location: mappedUTF16Location(
+        in: text,
+        font: font,
+        lineSpacing: lineSpacing,
+        bounds: bounds,
+        point: point,
+        advancesPastHalfGlyph: true
+      ),
+      length: 0
+    )
+  }
+
+  static func characterLocation(
+    in text: String,
+    font: Font,
+    lineSpacing: CGFloat,
+    bounds: CGRect,
+    point: CGPoint
+  ) -> Int {
+    mappedUTF16Location(
+      in: text,
+      font: font,
+      lineSpacing: lineSpacing,
+      bounds: bounds,
+      point: point,
+      advancesPastHalfGlyph: false
+    )
+  }
+
+  private static func mappedUTF16Location(
+    in text: String,
+    font: Font,
+    lineSpacing: CGFloat,
+    bounds: CGRect,
+    point: CGPoint,
+    advancesPastHalfGlyph: Bool
+  ) -> Int {
+    let utf16Length = (text as NSString).length
+    guard utf16Length > 0 else {
+      return 0
+    }
+
+    let paragraphStyle = NSMutableParagraphStyle()
+    paragraphStyle.lineSpacing = lineSpacing
+    paragraphStyle.lineBreakMode = .byWordWrapping
+
+    let storage = NSTextStorage(
+      string: text,
+      attributes: [
+        .font: appKitFont(for: font),
+        .paragraphStyle: paragraphStyle
+      ]
+    )
+    let layoutManager = NSLayoutManager()
+    let container = NSTextContainer(size: NSSize(
+      width: max(1, bounds.width),
+      height: CGFloat.greatestFiniteMagnitude
+    ))
+    container.lineFragmentPadding = 0
+    container.lineBreakMode = .byWordWrapping
+    container.maximumNumberOfLines = 0
+
+    layoutManager.addTextContainer(container)
+    storage.addLayoutManager(layoutManager)
+    layoutManager.ensureLayout(for: container)
+
+    let glyphRange = layoutManager.glyphRange(for: container)
+    guard glyphRange.length > 0 else {
+      return utf16Length
+    }
+
+    let usedRect = layoutManager.usedRect(for: container)
+    let clampedX = min(max(0, point.x), max(0, bounds.width))
+    let clampedY = min(max(0, point.y), max(0, max(bounds.height, usedRect.maxY)))
+    if clampedY > usedRect.maxY {
+      return utf16Length
+    }
+
+    var fraction: CGFloat = 0
+    let glyphIndex = layoutManager.glyphIndex(
+      for: CGPoint(x: clampedX, y: clampedY),
+      in: container,
+      fractionOfDistanceThroughGlyph: &fraction
+    )
+    let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+    let adjustedIndex = characterIndex + (advancesPastHalfGlyph && fraction > 0.5 ? 1 : 0)
+    return min(utf16Length, max(0, adjustedIndex))
+  }
+
+  private static func appKitFont(for font: Font) -> NSFont {
+    let description = String(describing: font).lowercased()
+    if description.contains("title") {
+      return NSFont.systemFont(ofSize: 20, weight: .semibold)
+    }
+    if description.contains("headline") {
+      return NSFont.systemFont(ofSize: 13, weight: .semibold)
+    }
+    if description.contains("caption") {
+      return NSFont.systemFont(ofSize: 11, weight: .regular)
+    }
+    if description.contains("callout") {
+      return NSFont.systemFont(ofSize: 13, weight: .regular)
+    }
+    if description.contains("monospaced") {
+      return NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+    }
+    return NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .regular)
   }
 }
 

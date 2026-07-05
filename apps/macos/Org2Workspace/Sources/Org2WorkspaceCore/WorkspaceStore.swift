@@ -511,6 +511,7 @@ public final class WorkspaceStore: ObservableObject {
       rebuildApprovalDisplayCache()
     }
   }
+  @Published public var approvalFilterFocusToken = 0
   public private(set) var visibleApprovalItems: [ApprovalItem] = []
   @Published public var selectedApprovalItemID: ApprovalItem.ID?
   @Published public var isLoadingApprovals = false
@@ -525,6 +526,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public private(set) var orgRoamLinkResolver = OrgRoamLinkResolver.empty
   @Published public var selectedCorpusFileID: String?
   @Published public var corpusFileFilter = ""
+  @Published public var corpusFileFilterFocusToken = 0
   @Published public var isScanningCorpusFiles = false
   @Published public var isQuickOpenPresented = false
   @Published public var isKeyboardShortcutsPresented = false
@@ -638,6 +640,7 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var orgCryptStatusText = "Encrypt :crypt: subtrees with GPG."
   @Published public var isSendingOpenClawMessage = false
   @Published public private(set) var openClawQueuedMessageCount = 0
+  @Published public private(set) var openClawSendingThreadIDs: Set<UUID> = []
   @Published public var openClawRequestStartedAt: Date?
   @Published public var isOpenClawAssistantPresented = false
   public private(set) var openClawChatScrollPosition: Double?
@@ -776,12 +779,9 @@ public final class WorkspaceStore: ObservableObject {
   private var isApplyingOpenClawThreadMessages = false
   private var openClawBearerToken: String?
   private var openClawDraftsByThreadID: [UUID: String] = [:]
-  private var openClawPendingUserMessageIDs: [UUID] = [] {
-    didSet {
-      openClawQueuedMessageCount = openClawPendingUserMessageIDs.count
-    }
-  }
-  private var isDrainingOpenClawQueue = false
+  private var openClawPendingUserMessageIDsByThreadID: [UUID: [UUID]] = [:]
+  private var drainingOpenClawThreadIDs: Set<UUID> = []
+  private var openClawRequestStartedAtByThreadID: [UUID: Date] = [:]
   private var activeMeetingRecording: PendingMeetingRecording?
   private var activeMeetingProcessingCount = 0 {
     didSet {
@@ -831,6 +831,7 @@ public final class WorkspaceStore: ObservableObject {
   private var transientDraftIDCounter = 0
   private var activeBlockDrafts: [OrgEditableBlock.ID: String] = [:]
   private var activeBlockOriginals: [OrgEditableBlock.ID: OrgEditableBlock] = [:]
+  private var activeBlockInitialSelections: [OrgEditableBlock.ID: NSRange] = [:]
   private var deferredStableAutosaves: [OrgEditableBlock.ID: DeferredStableAutosave] = [:]
   private var preservesSelectedRenderedBlocksMetadataForNextAssignment = false
   private var scheduledAgendaRefreshTask: Task<Void, Never>?
@@ -3171,7 +3172,11 @@ public final class WorkspaceStore: ObservableObject {
     isEditingEntry = false
   }
 
-  public func beginEditingBlock(_ block: OrgEditableBlock, initialDraft: String? = nil) {
+  public func beginEditingBlock(
+    _ block: OrgEditableBlock,
+    initialDraft: String? = nil,
+    initialSelection: NSRange? = nil
+  ) {
     guard block.isEditable, selectedEntrySource?.isEditable == true else {
       statusText = "Block is read-only"
       return
@@ -3189,6 +3194,11 @@ public final class WorkspaceStore: ObservableObject {
     editableBlockText = draft
     activeBlockDrafts[block.id] = draft
     activeBlockOriginals[block.id] = block
+    if let initialSelection {
+      activeBlockInitialSelections[block.id] = initialSelection
+    } else {
+      activeBlockInitialSelections.removeValue(forKey: block.id)
+    }
     deferredStableAutosaves.removeValue(forKey: block.id)
     if draft != block.rawText {
       let updatedBlocks = Self.locallyUpdatingRenderedBlocks(
@@ -3204,6 +3214,11 @@ public final class WorkspaceStore: ObservableObject {
   public func updateEditingBlockDraft(_ block: OrgEditableBlock, draft: String) {
     guard editingBlockID == block.id else { return }
     activeBlockDrafts[block.id] = draft
+  }
+
+  public func initialSelectionForEditingBlock(_ block: OrgEditableBlock) -> NSRange? {
+    guard editingBlockID == block.id else { return nil }
+    return activeBlockInitialSelections[block.id]
   }
 
   public func cancelEditingBlock() {
@@ -5158,6 +5173,30 @@ public final class WorkspaceStore: ObservableObject {
     searchFocusToken += 1
   }
 
+  @discardableResult
+  public func focusCurrentSearchField() -> Bool {
+    if isWorkspaceSurfacePaneClosed {
+      return focusPageSearch()
+    }
+
+    switch selectedSurface {
+    case .agenda:
+      focusAgendaFilter(clearsFilter: false)
+    case .approvals:
+      focusApprovalFilter()
+    case .files:
+      focusCorpusFileFilter()
+    case .home, .meetings, .openClaw:
+      return focusPageSearch()
+    case .search:
+      if selectedLocation != nil {
+        return focusPageSearch()
+      }
+      focusSearchSurface()
+    }
+    return true
+  }
+
   public var searchNodes: [OrgRoamNodeReference] {
     filterSearchNodes(searchQuery, limit: 100)
   }
@@ -5476,6 +5515,7 @@ public final class WorkspaceStore: ObservableObject {
     editableBlockText = ""
     activeBlockDrafts.removeAll()
     activeBlockOriginals.removeAll()
+    activeBlockInitialSelections.removeAll()
     deferredStableAutosaves.removeAll()
     if wasEditingBlock, pendingAgendaRefreshAfterBlockEditing {
       pendingAgendaRefreshAfterBlockEditing = false
@@ -6426,45 +6466,49 @@ public final class WorkspaceStore: ObservableObject {
 
   private func sendOpenClawMessage(_ text: String, attachments: [OpenClawChatAttachment]) async {
     ensureOpenClawChatThread()
+    guard let threadID = selectedOpenClawChatThreadID else { return }
     let userMessage = OpenClawChatMessage(role: .user, content: text, attachments: attachments)
-    openClawMessages.append(userMessage)
-    openClawPendingUserMessageIDs.append(userMessage.id)
-    if isDrainingOpenClawQueue {
+    var messages = openClawMessages(for: threadID)
+    messages.append(userMessage)
+    replaceOpenClawMessages(messages, for: threadID, shouldPersist: true)
+    enqueueOpenClawUserMessage(userMessage.id, in: threadID)
+    if drainingOpenClawThreadIDs.contains(threadID) {
       openClawStatusText = openClawQueuedStatusText()
       return
     }
-    await drainOpenClawSendQueue()
+    await drainOpenClawSendQueue(for: threadID)
   }
 
-  private func drainOpenClawSendQueue() async {
-    guard !isDrainingOpenClawQueue else { return }
-    isDrainingOpenClawQueue = true
-    isSendingOpenClawMessage = true
-    openClawRequestStartedAt = Date()
+  private func drainOpenClawSendQueue(for threadID: UUID) async {
+    guard !drainingOpenClawThreadIDs.contains(threadID) else { return }
+    drainingOpenClawThreadIDs.insert(threadID)
+    openClawRequestStartedAtByThreadID[threadID] = Date()
+    syncSelectedOpenClawSendState()
     defer {
-      isSendingOpenClawMessage = false
-      isDrainingOpenClawQueue = false
-      openClawRequestStartedAt = nil
+      drainingOpenClawThreadIDs.remove(threadID)
+      openClawRequestStartedAtByThreadID.removeValue(forKey: threadID)
+      syncSelectedOpenClawSendState()
     }
 
-    while let userMessageID = openClawPendingUserMessageIDs.first {
-      guard let requestMessages = openClawMessagesThrough(userMessageID) else {
-        openClawPendingUserMessageIDs.removeFirst()
+    while let userMessageID = openClawPendingUserMessageIDs(for: threadID).first {
+      guard let requestMessages = openClawMessagesThrough(userMessageID, in: threadID) else {
+        removeFirstPendingOpenClawUserMessage(in: threadID)
         continue
       }
       openClawStatusText = openClawQueuedStatusText()
 
       do {
-        clearOpenClawSendFailure(for: userMessageID)
+        clearOpenClawSendFailure(for: userMessageID, in: threadID)
         let beforeSnapshot = await captureOpenClawCorpusSnapshot()
-        let reply = try await sendOpenClawRequest(messages: requestMessages)
+        let sessionKey = openClawSessionKey(for: threadID) ?? openClawSessionKey
+        let reply = try await sendOpenClawRequest(messages: requestMessages, sessionKey: sessionKey)
         let changeSummary = await openClawChangeSummary(since: beforeSnapshot, referencedIn: reply)
-        insertOpenClawReply(reply, after: userMessageID, changeSummary: changeSummary)
+        insertOpenClawReply(reply, after: userMessageID, in: threadID, changeSummary: changeSummary)
         if let changeSummary {
           await refreshAfterOpenClawChanges(changeSummary)
         }
-        openClawPendingUserMessageIDs.removeFirst()
-        if openClawPendingUserMessageIDs.isEmpty {
+        removeFirstPendingOpenClawUserMessage(in: threadID)
+        if openClawPendingUserMessageIDs(for: threadID).isEmpty {
           openClawStatusText = changeSummary.map {
             "\($0.title): +\($0.totalInsertions) -\($0.totalDeletions)"
           } ?? "OpenClaw replied"
@@ -6474,80 +6518,169 @@ public final class WorkspaceStore: ObservableObject {
       } catch {
         let failureText = Self.openClawSendFailureText(from: error)
         openClawStatusText = failureText
-        markPendingOpenClawMessagesFailed(failureText)
-        openClawPendingUserMessageIDs.removeAll()
+        markPendingOpenClawMessagesFailed(failureText, in: threadID)
+        removeAllPendingOpenClawUserMessages(in: threadID)
         return
       }
     }
   }
 
-  private func sendOpenClawRequest(messages: [OpenClawChatMessage]) async throws -> String {
+  private func sendOpenClawRequest(messages: [OpenClawChatMessage], sessionKey: String) async throws -> String {
     let agentID = openClawAgentID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "main" : openClawAgentID
     let workspaceContext = currentOpenClawWorkspaceContext()
     if let openClawSendHandler {
-      return try await openClawSendHandler(messages, agentID, openClawSessionKey, workspaceContext)
+      return try await openClawSendHandler(messages, agentID, sessionKey, workspaceContext)
     }
     let client = OpenClawChatClient(settings: currentOpenClawSettings(allowKeychainRead: true))
     return try await client.send(
       messages: messages,
       agentID: agentID,
-      sessionKey: openClawSessionKey,
+      sessionKey: sessionKey,
       workspaceContext: workspaceContext
     )
   }
 
-  private func openClawMessagesThrough(_ messageID: UUID) -> [OpenClawChatMessage]? {
-    guard let index = openClawMessages.firstIndex(where: { $0.id == messageID }) else {
+  private func openClawMessagesThrough(_ messageID: UUID, in threadID: UUID) -> [OpenClawChatMessage]? {
+    let messages = openClawMessages(for: threadID)
+    guard let index = messages.firstIndex(where: { $0.id == messageID }) else {
       return nil
     }
-    return Array(openClawMessages[...index])
+    return Array(messages[...index])
   }
 
   private func insertOpenClawReply(
     _ reply: String,
     after userMessageID: UUID,
+    in threadID: UUID,
     changeSummary: OpenClawCorpusChangeSummary?
   ) {
     let assistantMessage = OpenClawChatMessage(role: .assistant, content: reply, changeSummary: changeSummary)
-    guard let index = openClawMessages.firstIndex(where: { $0.id == userMessageID }) else {
-      openClawMessages.append(assistantMessage)
+    var messages = openClawMessages(for: threadID)
+    guard let index = messages.firstIndex(where: { $0.id == userMessageID }) else {
+      messages.append(assistantMessage)
+      replaceOpenClawMessages(messages, for: threadID, shouldPersist: true)
       return
     }
-    openClawMessages.insert(assistantMessage, at: openClawMessages.index(after: index))
+    messages.insert(assistantMessage, at: messages.index(after: index))
+    replaceOpenClawMessages(messages, for: threadID, shouldPersist: true)
   }
 
   public func retryOpenClawMessage(_ messageID: UUID) async {
-    guard let message = openClawMessages.first(where: { $0.id == messageID }),
+    guard let threadID = openClawThreadID(containing: messageID),
+          let message = openClawMessages(for: threadID).first(where: { $0.id == messageID }),
           message.role == .user,
           message.sendFailure != nil
     else {
       return
     }
-    guard !openClawPendingUserMessageIDs.contains(messageID) else { return }
-    clearOpenClawSendFailure(for: messageID)
-    openClawPendingUserMessageIDs.append(messageID)
-    if isDrainingOpenClawQueue {
+    guard !openClawPendingUserMessageIDs(for: threadID).contains(messageID) else { return }
+    clearOpenClawSendFailure(for: messageID, in: threadID)
+    enqueueOpenClawUserMessage(messageID, in: threadID)
+    if drainingOpenClawThreadIDs.contains(threadID) {
       openClawStatusText = openClawQueuedStatusText()
       return
     }
-    await drainOpenClawSendQueue()
+    await drainOpenClawSendQueue(for: threadID)
   }
 
-  private func clearOpenClawSendFailure(for messageID: UUID) {
-    replaceOpenClawSendFailure(for: messageID, with: nil)
+  private func clearOpenClawSendFailure(for messageID: UUID, in threadID: UUID) {
+    replaceOpenClawSendFailure(for: messageID, in: threadID, with: nil)
   }
 
-  private func markPendingOpenClawMessagesFailed(_ failureText: String) {
-    for messageID in openClawPendingUserMessageIDs {
-      replaceOpenClawSendFailure(for: messageID, with: failureText)
+  private func markPendingOpenClawMessagesFailed(_ failureText: String, in threadID: UUID) {
+    for messageID in openClawPendingUserMessageIDs(for: threadID) {
+      replaceOpenClawSendFailure(for: messageID, in: threadID, with: failureText)
     }
   }
 
-  private func replaceOpenClawSendFailure(for messageID: UUID, with failureText: String?) {
-    guard let index = openClawMessages.firstIndex(where: { $0.id == messageID }) else { return }
-    let message = openClawMessages[index]
+  private func replaceOpenClawSendFailure(for messageID: UUID, in threadID: UUID, with failureText: String?) {
+    var messages = openClawMessages(for: threadID)
+    guard let index = messages.firstIndex(where: { $0.id == messageID }) else { return }
+    let message = messages[index]
     guard message.sendFailure != failureText else { return }
-    openClawMessages[index] = message.replacingSendFailure(failureText)
+    messages[index] = message.replacingSendFailure(failureText)
+    replaceOpenClawMessages(messages, for: threadID, shouldPersist: true)
+  }
+
+  private func openClawMessages(for threadID: UUID) -> [OpenClawChatMessage] {
+    if selectedOpenClawChatThreadID == threadID {
+      return openClawMessages
+    }
+    return openClawChatThreads.first(where: { $0.id == threadID })?.messages ?? []
+  }
+
+  private func replaceOpenClawMessages(
+    _ messages: [OpenClawChatMessage],
+    for threadID: UUID,
+    shouldPersist: Bool
+  ) {
+    if selectedOpenClawChatThreadID == threadID {
+      replaceOpenClawMessages(messages, shouldPersist: false)
+    }
+    updateOpenClawChatThread(threadID, messages: messages)
+    if shouldPersist {
+      persistOpenClawTranscript()
+    }
+  }
+
+  private func openClawSessionKey(for threadID: UUID) -> String? {
+    openClawChatThreads.first(where: { $0.id == threadID })?.sessionKey
+  }
+
+  private func openClawThreadID(containing messageID: UUID) -> UUID? {
+    if let selectedOpenClawChatThreadID,
+       openClawMessages.contains(where: { $0.id == messageID }) {
+      return selectedOpenClawChatThreadID
+    }
+    return openClawChatThreads.first { thread in
+      thread.messages.contains(where: { $0.id == messageID })
+    }?.id
+  }
+
+  private func openClawPendingUserMessageIDs(for threadID: UUID) -> [UUID] {
+    openClawPendingUserMessageIDsByThreadID[threadID] ?? []
+  }
+
+  private func enqueueOpenClawUserMessage(_ messageID: UUID, in threadID: UUID) {
+    openClawPendingUserMessageIDsByThreadID[threadID, default: []].append(messageID)
+    syncSelectedOpenClawSendState()
+  }
+
+  private func removeFirstPendingOpenClawUserMessage(in threadID: UUID) {
+    guard var pending = openClawPendingUserMessageIDsByThreadID[threadID], !pending.isEmpty else {
+      syncSelectedOpenClawSendState()
+      return
+    }
+    pending.removeFirst()
+    if pending.isEmpty {
+      openClawPendingUserMessageIDsByThreadID.removeValue(forKey: threadID)
+    } else {
+      openClawPendingUserMessageIDsByThreadID[threadID] = pending
+    }
+    syncSelectedOpenClawSendState()
+  }
+
+  private func removeAllPendingOpenClawUserMessages(in threadID: UUID) {
+    openClawPendingUserMessageIDsByThreadID.removeValue(forKey: threadID)
+    syncSelectedOpenClawSendState()
+  }
+
+  private func removeAllPendingOpenClawUserMessages() {
+    openClawPendingUserMessageIDsByThreadID.removeAll()
+    syncSelectedOpenClawSendState()
+  }
+
+  private func syncSelectedOpenClawSendState() {
+    openClawSendingThreadIDs = drainingOpenClawThreadIDs
+    guard let selectedOpenClawChatThreadID else {
+      isSendingOpenClawMessage = false
+      openClawQueuedMessageCount = 0
+      openClawRequestStartedAt = nil
+      return
+    }
+    isSendingOpenClawMessage = drainingOpenClawThreadIDs.contains(selectedOpenClawChatThreadID)
+    openClawQueuedMessageCount = openClawPendingUserMessageIDs(for: selectedOpenClawChatThreadID).count
+    openClawRequestStartedAt = openClawRequestStartedAtByThreadID[selectedOpenClawChatThreadID]
   }
 
   nonisolated private static func openClawSendFailureText(from error: Error) -> String {
@@ -6681,21 +6814,24 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func openClawQueuedStatusText() -> String {
-    if openClawPendingUserMessageIDs.count > 1 {
-      return "Sending to OpenClaw... \(openClawPendingUserMessageIDs.count - 1) queued"
+    if openClawQueuedMessageCount > 1 {
+      return "Sending to OpenClaw... \(openClawQueuedMessageCount - 1) queued"
     }
     return "Sending to OpenClaw..."
   }
 
   public func resetOpenClawChat() {
     ensureOpenClawChatThread()
+    let threadID = selectedOpenClawChatThreadID
     openClawMessages = []
     clearOpenClawDraftForSelectedThread()
     openClawPendingAttachments = []
-    openClawPendingUserMessageIDs.removeAll()
-    isDrainingOpenClawQueue = false
-    isSendingOpenClawMessage = false
-    openClawRequestStartedAt = nil
+    if let threadID {
+      removeAllPendingOpenClawUserMessages(in: threadID)
+      drainingOpenClawThreadIDs.remove(threadID)
+      openClawRequestStartedAtByThreadID.removeValue(forKey: threadID)
+    }
+    syncSelectedOpenClawSendState()
     openClawChatScrollPosition = nil
     openClawAssistantChatScrollPosition = nil
     openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
@@ -6719,7 +6855,6 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func createOpenClawChatThread() {
-    guard !isSendingOpenClawMessage else { return }
     let thread = OpenClawChatThread(
       title: "New Chat",
       sessionKey: Self.makeOpenClawSessionKey()
@@ -6773,9 +6908,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func selectOpenClawChatThread(_ id: UUID, persistsSelection: Bool) {
-    guard !isSendingOpenClawMessage,
-          let thread = openClawChatThreads.first(where: { $0.id == id })
-    else {
+    guard let thread = openClawChatThreads.first(where: { $0.id == id }) else {
       return
     }
     saveOpenClawDraftForSelectedThread()
@@ -6784,10 +6917,7 @@ public final class WorkspaceStore: ObservableObject {
     markOpenClawChatThreadRead(thread.id, shouldPersist: false)
     restoreOpenClawDraft(for: thread.id)
     openClawPendingAttachments = []
-    openClawPendingUserMessageIDs.removeAll()
-    isDrainingOpenClawQueue = false
-    isSendingOpenClawMessage = false
-    openClawRequestStartedAt = nil
+    syncSelectedOpenClawSendState()
     openClawChatScrollPosition = nil
     openClawAssistantChatScrollPosition = nil
     replaceOpenClawMessages(thread.messages, shouldPersist: false)
@@ -6850,8 +6980,14 @@ public final class WorkspaceStore: ObservableObject {
 
   private func updateSelectedOpenClawChatThread(messages: [OpenClawChatMessage]) {
     ensureOpenClawChatThread()
-    guard let selectedOpenClawChatThreadID,
-          let index = openClawChatThreads.firstIndex(where: { $0.id == selectedOpenClawChatThreadID })
+    guard let selectedOpenClawChatThreadID else {
+      return
+    }
+    updateOpenClawChatThread(selectedOpenClawChatThreadID, messages: messages)
+  }
+
+  private func updateOpenClawChatThread(_ threadID: UUID, messages: [OpenClawChatMessage]) {
+    guard let index = openClawChatThreads.firstIndex(where: { $0.id == threadID })
     else {
       return
     }
@@ -7744,10 +7880,22 @@ public final class WorkspaceStore: ObservableObject {
     syncAgendaSelectionAfterDisplayOptionsChange()
   }
 
-  public func focusAgendaFilter() {
+  public func focusAgendaFilter(clearsFilter: Bool = true) {
     selectedSurface = .agenda
-    agendaFilter = ""
+    if clearsFilter {
+      agendaFilter = ""
+    }
     agendaFilterFocusToken += 1
+  }
+
+  public func focusApprovalFilter() {
+    selectedSurface = .approvals
+    approvalFilterFocusToken += 1
+  }
+
+  public func focusCorpusFileFilter() {
+    selectedSurface = .files
+    corpusFileFilterFocusToken += 1
   }
 
   public func deactivateAgendaFilterFocus() {
@@ -9121,7 +9269,7 @@ public final class WorkspaceStore: ObservableObject {
       case "9":
         openDailyNote(.tomorrow)
       case "f":
-        guard focusPageSearch() else { return false }
+        guard focusCurrentSearchField() else { return false }
       case "k", "p":
         presentQuickOpen()
       case "r":
@@ -10370,10 +10518,10 @@ public final class WorkspaceStore: ObservableObject {
 
     openClawTranscriptURL = targetURL
     openClawSessionKey = Self.makeOpenClawSessionKey()
-    openClawPendingUserMessageIDs.removeAll()
-    isDrainingOpenClawQueue = false
-    isSendingOpenClawMessage = false
-    openClawRequestStartedAt = nil
+    removeAllPendingOpenClawUserMessages()
+    drainingOpenClawThreadIDs.removeAll()
+    openClawRequestStartedAtByThreadID.removeAll()
+    syncSelectedOpenClawSendState()
     applyOpenClawTranscript(transcript, shouldPersist: shouldPersistMigratedMessages)
   }
 

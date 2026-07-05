@@ -340,7 +340,6 @@ private struct OpenClawSidebarSurfaceGroup: View {
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
         .help("New chat thread")
-        .disabled(store.isSendingOpenClawMessage)
 
         Button {
           withAnimation(.easeInOut(duration: 0.16)) {
@@ -474,6 +473,10 @@ private struct OpenClawSidebarThreadRow: View {
           .foregroundStyle(.primary)
           .lineLimit(1)
           .truncationMode(.tail)
+        if store.openClawSendingThreadIDs.contains(thread.id) {
+          WorkspaceActivityIndicator(size: .mini)
+            .help("OpenClaw is thinking")
+        }
         Spacer(minLength: 8)
         if thread.isPinned {
           Image(systemName: "pin.fill")
@@ -563,6 +566,7 @@ private struct OpenClawUnreadBadge: View {
 
 private struct FilesView: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @FocusState private var filterFocused: Bool
 
   var body: some View {
     VStack(spacing: 0) {
@@ -581,6 +585,7 @@ private struct FilesView: View {
       HStack(spacing: 8) {
         TextField("Filter files", text: $store.corpusFileFilter)
           .textFieldStyle(.roundedBorder)
+          .focused($filterFocused)
         if !store.corpusFileFilter.isEmpty {
           Button {
             store.corpusFileFilter = ""
@@ -625,6 +630,9 @@ private struct FilesView: View {
           store.selectCorpusFile(file)
         }
       }
+    }
+    .onChange(of: store.corpusFileFilterFocusToken) {
+      filterFocused = true
     }
   }
 }
@@ -1408,21 +1416,9 @@ private struct AgendaSummaryView: View {
       MetricView(title: "Overdue", value: "\(agenda.overdue.reduce(0) { $0 + $1.items.count })")
       MetricView(title: "Today", value: "\(agenda.todayItemCount)")
       MetricView(title: "Upcoming", value: "\(agenda.upcomingItemCount)")
-      if let workload = agenda.workload {
-        MetricView(title: "Effort", value: formatMinutes(workload.totalMinutes))
-      }
     }
     .padding(.horizontal, WorkspaceDesign.contentInset)
     .padding(.bottom, 12)
-  }
-
-  private func formatMinutes(_ minutes: Int) -> String {
-    guard minutes > 0 else { return "0m" }
-    let hours = minutes / 60
-    let remainder = minutes % 60
-    if hours == 0 { return "\(remainder)m" }
-    if remainder == 0 { return "\(hours)h" }
-    return "\(hours)h \(remainder)m"
   }
 }
 
@@ -1527,6 +1523,9 @@ private struct ApprovalsView: View {
         return
       }
       store.selectApprovalItem(item)
+    }
+    .onChange(of: store.approvalFilterFocusToken) {
+      filterFocused = true
     }
   }
 
@@ -1998,15 +1997,6 @@ private struct AgendaRow: View {
       }
       Spacer(minLength: 0)
       AgendaAssignmentIndicator(item: item)
-      if let effort = item.effort {
-        Text(effort)
-          .font(.caption.monospacedDigit())
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .padding(.horizontal, 7)
-          .padding(.vertical, 3)
-          .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-      }
     }
     .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
   }
@@ -3053,7 +3043,6 @@ private struct OpenClawChatView: View {
     } label: {
       Label("New", systemImage: "plus")
     }
-    .disabled(store.isSendingOpenClawMessage)
 
     Button {
       store.resetOpenClawChat()
@@ -4444,7 +4433,6 @@ private struct EntryBodyView: View {
         ("TODO", item.todo ?? ""),
         ("Planning", planning),
         ("Priority", item.priority.map { "[#\($0)]" } ?? ""),
-        ("Effort", item.effort ?? ""),
         ("Tags", item.tags.joined(separator: ", ")),
         ("ID", item.idValue.map(Org2Display.shortID) ?? "")
       ]
