@@ -21,6 +21,7 @@ const appPath = resolve(
   process.env.ORG2_WORKSPACE_APP_PATH ?? join(homedir(), "Applications", "Org2Workspace.app")
 );
 const bundleIdentifier = process.env.ORG2_WORKSPACE_BUNDLE_ID ?? "org.org2.workspace";
+const appName = process.env.ORG2_WORKSPACE_APP_NAME ?? "Org2Workspace";
 const requestedSigningIdentity = process.env.ORG2_WORKSPACE_CODE_SIGN_IDENTITY?.trim();
 const executableName = "Org2Workspace";
 const swiftBuildArch = process.env.ORG2_WORKSPACE_SWIFT_ARCH ?? defaultSwiftBuildArch();
@@ -127,7 +128,7 @@ function writeInfoPlist() {
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleDisplayName</key>
-  <string>Org2Workspace</string>
+  <string>${xmlEscape(appName)}</string>
   <key>CFBundleExecutable</key>
   <string>${xmlEscape(executableName)}</string>
   <key>CFBundleIdentifier</key>
@@ -137,7 +138,7 @@ function writeInfoPlist() {
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundleName</key>
-  <string>Org2Workspace</string>
+  <string>${xmlEscape(appName)}</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
