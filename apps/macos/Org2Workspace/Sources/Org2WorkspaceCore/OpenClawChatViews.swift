@@ -47,6 +47,7 @@ struct ChatBubbleView: View {
         if message.role == .user, let sendFailure = message.sendFailure {
           OpenClawSendFailureView(
             messageID: message.id,
+            deliveryStatus: message.deliveryStatus,
             failureText: sendFailure,
             compact: compact
           )
@@ -114,6 +115,7 @@ struct ChatBubbleView: View {
 private struct OpenClawSendFailureView: View {
   @EnvironmentObject private var store: WorkspaceStore
   let messageID: UUID
+  let deliveryStatus: OpenClawChatMessage.DeliveryStatus
   let failureText: String
   let compact: Bool
 
@@ -123,7 +125,7 @@ private struct OpenClawSendFailureView: View {
         .font(.caption.weight(.semibold))
         .foregroundStyle(.red)
       VStack(alignment: .leading, spacing: 2) {
-        Text("Message failed to send")
+        Text(title)
           .font(.caption.weight(.semibold))
           .foregroundStyle(.red)
         Text(failureText)
@@ -154,6 +156,15 @@ private struct OpenClawSendFailureView: View {
       RoundedRectangle(cornerRadius: 6, style: .continuous)
         .stroke(Color.red.opacity(0.22))
     )
+  }
+
+  private var title: String {
+    switch deliveryStatus {
+    case .interrupted:
+      return "Response interrupted"
+    case .sending, .sent, .failed:
+      return "Message failed to send"
+    }
   }
 }
 

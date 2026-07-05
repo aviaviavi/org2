@@ -770,6 +770,8 @@ public final class WorkspaceStore: ObservableObject {
     700_000_000,
     1_200_000_000
   ]
+  nonisolated private static let openClawInterruptedSendFailureText =
+    "Org2 Workspace restarted before this OpenClaw response was saved. The response may have completed outside the app, but this chat cannot recover it. Retry to send again."
   private var openClawTranscriptURL: URL
   private let appOpenClawTranscriptURL: URL
   private let usesFixedOpenClawTranscriptURL: Bool
@@ -893,6 +895,7 @@ public final class WorkspaceStore: ObservableObject {
     openClawHasStoredToken = OpenClawKeychain.containsToken()
     orgCryptHasStoredPassphrase = OrgCryptKeychain.containsPassphrase()
     openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
+    restoreInterruptedOpenClawSendStatusIfNeeded()
     refreshAudioSettingsStatus()
   }
 
@@ -6469,7 +6472,12 @@ public final class WorkspaceStore: ObservableObject {
   private func sendOpenClawMessage(_ text: String, attachments: [OpenClawChatAttachment]) async {
     ensureOpenClawChatThread()
     guard let threadID = selectedOpenClawChatThreadID else { return }
-    let userMessage = OpenClawChatMessage(role: .user, content: text, attachments: attachments)
+    let userMessage = OpenClawChatMessage(
+      role: .user,
+      content: text,
+      attachments: attachments,
+      deliveryStatus: .sending
+    )
     var messages = openClawMessages(for: threadID)
     messages.append(userMessage)
     replaceOpenClawMessages(messages, for: threadID, shouldPersist: true)
@@ -6505,6 +6513,7 @@ public final class WorkspaceStore: ObservableObject {
         let sessionKey = openClawSessionKey(for: threadID) ?? openClawSessionKey
         let reply = try await sendOpenClawRequest(messages: requestMessages, sessionKey: sessionKey)
         let changeSummary = await openClawChangeSummary(since: beforeSnapshot, referencedIn: reply)
+        markOpenClawMessageSent(userMessageID, in: threadID)
         insertOpenClawReply(reply, after: userMessageID, in: threadID, changeSummary: changeSummary)
         if let changeSummary {
           await refreshAfterOpenClawChanges(changeSummary)
@@ -6577,6 +6586,7 @@ public final class WorkspaceStore: ObservableObject {
     }
     guard !openClawPendingUserMessageIDs(for: threadID).contains(messageID) else { return }
     clearOpenClawSendFailure(for: messageID, in: threadID)
+    replaceOpenClawDeliveryStatus(for: messageID, in: threadID, with: .sending)
     enqueueOpenClawUserMessage(messageID, in: threadID)
     if drainingOpenClawThreadIDs.contains(threadID) {
       openClawStatusText = openClawQueuedStatusText()
@@ -6589,6 +6599,10 @@ public final class WorkspaceStore: ObservableObject {
     replaceOpenClawSendFailure(for: messageID, in: threadID, with: nil)
   }
 
+  private func markOpenClawMessageSent(_ messageID: UUID, in threadID: UUID) {
+    replaceOpenClawDeliveryStatus(for: messageID, in: threadID, with: .sent)
+  }
+
   private func markPendingOpenClawMessagesFailed(_ failureText: String, in threadID: UUID) {
     for messageID in openClawPendingUserMessageIDs(for: threadID) {
       replaceOpenClawSendFailure(for: messageID, in: threadID, with: failureText)
@@ -6599,8 +6613,27 @@ public final class WorkspaceStore: ObservableObject {
     var messages = openClawMessages(for: threadID)
     guard let index = messages.firstIndex(where: { $0.id == messageID }) else { return }
     let message = messages[index]
-    guard message.sendFailure != failureText else { return }
+    let nextStatus: OpenClawChatMessage.DeliveryStatus
+    if failureText == nil, message.deliveryStatus == .sending {
+      nextStatus = .sending
+    } else {
+      nextStatus = failureText == nil ? .sent : .failed
+    }
+    guard message.sendFailure != failureText || message.deliveryStatus != nextStatus else { return }
     messages[index] = message.replacingSendFailure(failureText)
+    replaceOpenClawMessages(messages, for: threadID, shouldPersist: true)
+  }
+
+  private func replaceOpenClawDeliveryStatus(
+    for messageID: UUID,
+    in threadID: UUID,
+    with deliveryStatus: OpenClawChatMessage.DeliveryStatus
+  ) {
+    var messages = openClawMessages(for: threadID)
+    guard let index = messages.firstIndex(where: { $0.id == messageID }) else { return }
+    let message = messages[index]
+    guard message.deliveryStatus != deliveryStatus || message.sendFailure != nil else { return }
+    messages[index] = message.replacingDeliveryStatus(deliveryStatus)
     replaceOpenClawMessages(messages, for: threadID, shouldPersist: true)
   }
 
@@ -10564,6 +10597,16 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  private func restoreInterruptedOpenClawSendStatusIfNeeded() {
+    let interruptedCount = openClawMessages.filter {
+      $0.role == .user && $0.deliveryStatus == .interrupted
+    }.count
+    guard interruptedCount > 0 else { return }
+    openClawStatusText = interruptedCount == 1
+      ? "OpenClaw response interrupted; retry the message"
+      : "\(interruptedCount) OpenClaw responses interrupted; retry the messages"
+  }
+
   private func renderEntrySource(_ source: EntrySource, generation: Int) {
     isRenderingEntrySource = true
     let modifiedAt = Self.modificationDate(for: URL(fileURLWithPath: source.file).standardizedFileURL)
@@ -11046,12 +11089,38 @@ public final class WorkspaceStore: ObservableObject {
       return OpenClawTranscriptState(threads: [], selectedThreadID: nil)
     }
     if let threads = payload.threads {
-      return OpenClawTranscriptState(
-        threads: threads,
-        selectedThreadID: payload.selectedThreadID
+      return openClawTranscriptStateByMarkingInterruptedSends(
+        OpenClawTranscriptState(
+          threads: threads,
+          selectedThreadID: payload.selectedThreadID
+        )
       )
     }
-    return openClawTranscriptState(fromLegacyMessages: payload.messages ?? [])
+    return openClawTranscriptStateByMarkingInterruptedSends(
+      openClawTranscriptState(fromLegacyMessages: payload.messages ?? [])
+    )
+  }
+
+  nonisolated private static func openClawTranscriptStateByMarkingInterruptedSends(
+    _ transcript: OpenClawTranscriptState
+  ) -> OpenClawTranscriptState {
+    OpenClawTranscriptState(
+      threads: transcript.threads.map { thread in
+        let messages = thread.messages.map { message in
+          guard message.role == .user,
+                message.deliveryStatus == .sending
+          else {
+            return message
+          }
+          return message.replacingDeliveryStatus(
+            .interrupted,
+            sendFailure: openClawInterruptedSendFailureText
+          )
+        }
+        return thread.replacingMessages(messages)
+      },
+      selectedThreadID: transcript.selectedThreadID
+    )
   }
 
   nonisolated private static func saveOpenClawTranscript(_ transcript: OpenClawTranscriptState, to url: URL) throws {

@@ -55,6 +55,27 @@ private actor OpenClawRetrySendRecorder {
   }
 }
 
+private actor OpenClawSuspendedSendRecorder {
+  private var started = false
+  private var continuation: CheckedContinuation<String, Never>?
+
+  func send(messages: [OpenClawChatMessage]) async throws -> String {
+    started = true
+    return await withCheckedContinuation { continuation in
+      self.continuation = continuation
+    }
+  }
+
+  func hasStarted() -> Bool {
+    started
+  }
+
+  func finish(reply: String) {
+    continuation?.resume(returning: reply)
+    continuation = nil
+  }
+}
+
 final class Org2ModelsTests: XCTestCase {
   private func searchResult(
     file: String,
@@ -860,6 +881,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.openClawMessages.map(\.content), ["Are you reachable?"])
     let failedMessage = try XCTUnwrap(store.openClawMessages.first)
     XCTAssertEqual(failedMessage.sendFailure, "VPN disconnected")
+    XCTAssertEqual(failedMessage.deliveryStatus, .failed)
     XCTAssertEqual(store.openClawStatusText, "VPN disconnected")
     XCTAssertFalse(store.isSendingOpenClawMessage)
     XCTAssertEqual(store.openClawQueuedMessageCount, 0)
@@ -870,6 +892,7 @@ final class Org2ModelsTests: XCTestCase {
       openClawTranscriptURL: transcript
     )
     XCTAssertEqual(restored.openClawMessages.first?.sendFailure, "VPN disconnected")
+    XCTAssertEqual(restored.openClawMessages.first?.deliveryStatus, .failed)
 
     await store.retryOpenClawMessage(failedMessage.id)
 
@@ -880,7 +903,62 @@ final class Org2ModelsTests: XCTestCase {
       "assistant:reply after reconnect"
     ])
     XCTAssertNil(store.openClawMessages.first?.sendFailure)
+    XCTAssertEqual(store.openClawMessages.first?.deliveryStatus, .sent)
     XCTAssertEqual(store.openClawStatusText, "OpenClaw replied")
+  }
+
+  @MainActor
+  func testOpenClawInFlightSendRestoresAsInterruptedAndRetryable() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-send-interrupted-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let suiteName = "org2-workspace-chat-send-interrupted-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let recorder = OpenClawSuspendedSendRecorder()
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      openClawSendHandler: { messages, _, _, _ in
+        try await recorder.send(messages: messages)
+      }
+    )
+    store.openClawDraft = "Please do this long running thing"
+
+    let sendTask = Task { await store.sendOpenClawMessage() }
+    let deadline = Date().addingTimeInterval(5)
+    while !(await recorder.hasStarted()) && Date() < deadline {
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    let didStart = await recorder.hasStarted()
+    XCTAssertTrue(didStart)
+    XCTAssertEqual(store.openClawMessages.first?.deliveryStatus, .sending)
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript,
+      openClawSendHandler: { _, _, _, _ in "reply after retry" }
+    )
+    let interrupted = try XCTUnwrap(restored.openClawMessages.first)
+    XCTAssertEqual(interrupted.content, "Please do this long running thing")
+    XCTAssertEqual(interrupted.deliveryStatus, .interrupted)
+    XCTAssertTrue(interrupted.sendFailure?.contains("restarted") == true)
+    XCTAssertEqual(restored.openClawStatusText, "OpenClaw response interrupted; retry the message")
+
+    await restored.retryOpenClawMessage(interrupted.id)
+    XCTAssertEqual(restored.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+      "user:Please do this long running thing",
+      "assistant:reply after retry"
+    ])
+    XCTAssertEqual(restored.openClawMessages.first?.deliveryStatus, .sent)
+    XCTAssertNil(restored.openClawMessages.first?.sendFailure)
+
+    await recorder.finish(reply: "late original reply")
+    await sendTask.value
   }
 
   @MainActor
