@@ -7058,10 +7058,11 @@ public final class WorkspaceStore: ObservableObject {
     previousMessages: [OpenClawChatMessage],
     currentMessages: [OpenClawChatMessage]
   ) -> Int {
-    guard currentMessages.count > previousMessages.count else { return 0 }
-    return currentMessages
-      .dropFirst(previousMessages.count)
+    let previousAssistantIDs = Set(previousMessages
       .filter { $0.role == .assistant }
+      .map(\.id))
+    return currentMessages
+      .filter { $0.role == .assistant && !previousAssistantIDs.contains($0.id) }
       .count
   }
 

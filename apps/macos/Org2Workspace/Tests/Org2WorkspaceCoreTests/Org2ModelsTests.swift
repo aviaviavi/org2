@@ -2243,6 +2243,48 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testOpenClawQueuedRepliesNotifyWhenInsertedBeforeLaterUserMessages() async throws {
+    let recorder = OpenClawQueuedSendRecorder()
+    let transcriptURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-openclaw-queue-unread-\(UUID().uuidString).json")
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcriptURL,
+      openClawSendHandler: { messages, _, _, _ in
+        try await recorder.send(messages: messages)
+      }
+    )
+    var soundCount = 0
+    store.openClawIncomingMessageSoundPlayer = {
+      soundCount += 1
+    }
+    store.selectedSurface = .agenda
+
+    store.openClawDraft = "first"
+    let firstSend = Task { await store.sendOpenClawMessage() }
+    try await waitForCondition {
+      store.isSendingOpenClawMessage
+    }
+    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+
+    store.openClawDraft = "second"
+    let secondSend = Task { await store.sendOpenClawMessage() }
+
+    await firstSend.value
+    await secondSend.value
+
+    XCTAssertEqual(store.openClawMessages.map { "\($0.role.rawValue):\($0.content)" }, [
+      "user:first",
+      "assistant:reply 1",
+      "user:second",
+      "assistant:reply 2"
+    ])
+    XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 2)
+    XCTAssertEqual(store.openClawUnreadMessageCount, 2)
+    XCTAssertEqual(soundCount, 2)
+  }
+
+  @MainActor
   func testOpenClawCanSendInAnotherThreadWhileCurrentThreadIsProcessing() async throws {
     let transcriptURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-openclaw-parallel-threads-\(UUID().uuidString).json")
