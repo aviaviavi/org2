@@ -2,9 +2,20 @@ import fs from "node:fs";
 
 export type TodoStatus = "todo" | "in_progress" | "done" | "canceled";
 
-export type TodoKeyword = "TODO" | "IN_PROGRESS" | "DONE" | "CANCELED" | "CANCELLED";
+export const TODO_KEYWORDS = ["TODO", "IN_PROGRESS", "DONE", "CANCELED", "CANCELLED"] as const;
 
-export const TODO_KEYWORDS: TodoKeyword[] = ["TODO", "IN_PROGRESS", "DONE", "CANCELED", "CANCELLED"];
+export type TodoKeyword = typeof TODO_KEYWORDS[number];
+
+const TODO_KEYWORD_SET = new Set<string>(TODO_KEYWORDS);
+
+export function isTodoKeyword(value: string | undefined): value is TodoKeyword {
+  return typeof value === "string" && TODO_KEYWORD_SET.has(value);
+}
+
+export function normalizeTodoKeyword(value: string | undefined): TodoKeyword | undefined {
+  const normalized = (value || "").trim().toUpperCase();
+  return isTodoKeyword(normalized) ? normalized : undefined;
+}
 
 export function keywordFromStatus(status: TodoStatus, opts?: { canceledKeyword?: "CANCELED" | "CANCELLED" }): TodoKeyword {
   if (status === "todo") return "TODO";
@@ -47,9 +58,7 @@ function parseHeadlineTodoKeyword(line: string): TodoKeyword | undefined {
   if (!m) return undefined;
   const rest = m[2];
   const first = rest.split(/\s+/)[0] || "";
-  const up = first.toUpperCase();
-  if ((TODO_KEYWORDS as string[]).includes(up)) return up as TodoKeyword;
-  return undefined;
+  return normalizeTodoKeyword(first);
 }
 
 function replaceOrInsertTodoKeyword(line: string, newKeyword: TodoKeyword): { line: string; oldKeyword?: TodoKeyword } {

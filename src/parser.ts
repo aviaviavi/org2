@@ -28,6 +28,7 @@ import type {
   TimestampRepeater,
   TimestampWarning,
 } from "./ast.js";
+import { TODO_KEYWORDS } from "./todo.js";
 
 export type ParseError = {
   message: string;
@@ -568,7 +569,7 @@ function parseHeadline(
   }
 
   // Todo keyword (Org2 supports a small set).
-  for (const kw of ["TODO", "IN_PROGRESS", "DONE", "CANCELED", "CANCELLED"] as const) {
+  for (const kw of TODO_KEYWORDS) {
     const prefix = `${kw} `;
     if (rest.startsWith(prefix)) {
       todo = kw;

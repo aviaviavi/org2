@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { normalizeTodoKeyword } from "./todo.js";
 
 export type OrgClockInterval = {
   file: string;
@@ -95,7 +96,7 @@ function parseHeading(line: string): { level: number; title: string; tags: strin
   const tags = tagMatch ? String(tagMatch[1]).split(":").filter(Boolean) : [];
   if (tagMatch) rest = rest.slice(0, tagMatch.index).trim();
   const first = rest.split(/\s+/)[0]?.toUpperCase() || "";
-  if (["TODO", "IN_PROGRESS", "DONE", "CANCELED", "CANCELLED"].includes(first)) rest = rest.slice(first.length).trim();
+  if (normalizeTodoKeyword(first)) rest = rest.slice(first.length).trim();
   return { level: match[1]!.length, title: rest, tags };
 }
 

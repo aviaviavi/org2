@@ -19,7 +19,7 @@ import {
   type Org2PublishProjectConfig,
 } from "./config.js";
 import { resolvePublishHeadIncludes } from "./publish-defaults.js";
-import { assignTodoInText, formatOrgTimestamp, TODO_KEYWORDS, updateTodoInText, type TodoStatus } from "./todo.js";
+import { assignTodoInText, formatOrgTimestamp, normalizeTodoKeyword, TODO_KEYWORDS, updateTodoInText, type TodoStatus } from "./todo.js";
 import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from "./planning.js";
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
@@ -12275,15 +12275,16 @@ Flags:
       process.exit(1);
     }
 
-    const normalizedTodoKeyword = captureTodoKeywordRaw.trim().toUpperCase();
-    if (
-      normalizedTemplate === "task" &&
-      !(TODO_KEYWORDS as readonly string[]).includes(normalizedTodoKeyword)
-    ) {
-      console.error(
-        `Error: invalid capture --todo value ${captureTodoKeywordRaw}. Allowed: ${TODO_KEYWORDS.join(", ")}`,
-      );
-      process.exit(1);
+    const normalizedTodoKeyword = normalizeTodoKeyword(captureTodoKeywordRaw);
+    let captureTodoKeyword: string | null = null;
+    if (normalizedTemplate === "task") {
+      if (!normalizedTodoKeyword) {
+        console.error(
+          `Error: invalid capture --todo value ${captureTodoKeywordRaw}. Allowed: ${TODO_KEYWORDS.join(", ")}`,
+        );
+        process.exit(1);
+      }
+      captureTodoKeyword = normalizedTodoKeyword;
     }
 
     let captureNowDate = new Date();
@@ -12341,7 +12342,7 @@ Flags:
 
     const headingLine =
       normalizedTemplate === "task"
-        ? `* ${normalizedTodoKeyword} ${normalizedTitle}`
+        ? `* ${captureTodoKeyword} ${normalizedTitle}`
         : `* ${normalizedTitle}`;
     const capturedAt = formatOrgTimestamp(captureNowDate);
     const propertyDrawer = source
@@ -12411,7 +12412,7 @@ Flags:
             file: targetFile,
             template: normalizedTemplate,
             title: normalizedTitle,
-            todoKeyword: normalizedTemplate === "task" ? normalizedTodoKeyword : null,
+            todoKeyword: captureTodoKeyword,
             body: normalizedBody || null,
             ...(source ? { source } : {}),
             capturedAt,
