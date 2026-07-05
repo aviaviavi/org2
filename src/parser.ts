@@ -702,52 +702,55 @@ function parseDrawer(lines: string[], startLineIndex: number): ParseDrawerResult
   };
 }
 
+function parseListItemContent(contentRaw: string): Pick<ParsedListItem, "content" | "checkbox" | "progressCookie"> | null {
+  let content = contentRaw;
+  if (content.length === 0) return null;
+
+  let checkbox: "unchecked" | "checked" | undefined;
+  const checkboxMatch = /^\[([ Xx])\]\s+(.*)$/.exec(content);
+  if (checkboxMatch) {
+    checkbox = checkboxMatch[1] === " " ? "unchecked" : "checked";
+    content = checkboxMatch[2] ?? "";
+  }
+
+  const progressCookie = parseProgressCookieAt(content, 0)?.node;
+  return { content, ...(checkbox ? { checkbox } : {}), ...(progressCookie ? { progressCookie } : {}) };
+}
+
 function parseListItemLine(line: string): ParsedListItem | null {
   const unordered = /^([+-])(\s+)(.*)$/.exec(line);
   if (unordered) {
     const ws = unordered[2];
     if (ws !== " ") return null;
-    let content = unordered[3];
-    if (content.length === 0) return null;
-
-    // Check for checkbox syntax: [ ] or [X] or [x]
-    let checkbox: "unchecked" | "checked" | undefined;
-    const checkboxMatch = /^\[([ Xx])\]\s+(.*)$/.exec(content);
-    if (checkboxMatch) {
-      checkbox = checkboxMatch[1] === " " ? "unchecked" : "checked";
-      content = checkboxMatch[2];
-    }
-    const progressCookie = parseProgressCookieAt(content, 0)?.node;
-
-    return { ordered: false, content, indentColumn: unordered[1].length + ws.length, checkbox, ...(progressCookie ? { progressCookie } : {}) };
+    const parsedContent = parseListItemContent(unordered[3] ?? "");
+    if (!parsedContent) return null;
+    return { ordered: false, indentColumn: unordered[1].length + ws.length, ...parsedContent };
   }
 
   const ordered = /^(\d+)([.)])(\s+)(.*)$/.exec(line);
   if (ordered) {
     const ws = ordered[3];
     if (ws !== " ") return null;
-    let content = ordered[4];
-    if (content.length === 0) return null;
-
-    // Check for checkbox syntax: [ ] or [X] or [x]
-    let checkbox: "unchecked" | "checked" | undefined;
-    const checkboxMatch = /^\[([ Xx])\]\s+(.*)$/.exec(content);
-    if (checkboxMatch) {
-      checkbox = checkboxMatch[1] === " " ? "unchecked" : "checked";
-      content = checkboxMatch[2];
-    }
-    const progressCookie = parseProgressCookieAt(content, 0)?.node;
+    const parsedContent = parseListItemContent(ordered[4] ?? "");
+    if (!parsedContent) return null;
 
     return {
       ordered: true,
-      content,
       indentColumn: ordered[1].length + ordered[2].length + ws.length,
-      checkbox,
-      ...(progressCookie ? { progressCookie } : {}),
+      ...parsedContent,
     };
   }
 
   return null;
+}
+
+function listItemNode(content: string, checkbox?: "unchecked" | "checked", progressCookie?: ProgressCookieNode): ListItemNode {
+  return {
+    type: "ListItem",
+    ...(checkbox ? { checkbox } : {}),
+    ...(progressCookie ? { progressCookie } : {}),
+    children: [paragraphFromText(content)],
+  };
 }
 
 type ParseSrcBlockResult = {
@@ -1102,12 +1105,7 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
 
   function addListItem(ordered: boolean, content: string, checkbox?: "unchecked" | "checked", itemProgressCookie?: ProgressCookieNode): ListItemNode {
     const list = ensureList(ordered);
-    const item: ListItemNode = {
-      type: "ListItem",
-      ...(checkbox && { checkbox }),
-      ...(itemProgressCookie ? { progressCookie: itemProgressCookie } : {}),
-      children: [paragraphFromText(content)],
-    };
+    const item = listItemNode(content, checkbox, itemProgressCookie);
     list.items.push(item);
     return item;
   }
@@ -1399,12 +1397,7 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
                   nestedItemParaLines = [];
                 }
                 
-                // Add nested item
-                const nestedListItem: ListItemNode = {
-                  type: "ListItem",
-                  ...(nestedItem.checkbox && { checkbox: nestedItem.checkbox }),
-                  children: [paragraphFromText(nestedItem.content)],
-                };
+                const nestedListItem = listItemNode(nestedItem.content, nestedItem.checkbox, nestedItem.progressCookie);
                 nestedList.items.push(nestedListItem);
                 i += 1;
                 
@@ -1463,10 +1456,7 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
                           if (deeperItemIndentColumn < nextNestedItemIndentColumn) break;
                           if (deeperList.ordered != deeperItem.ordered) break;
 
-                          const deeperListItem: ListItemNode = {
-                            type: "ListItem",
-                            children: [paragraphFromText(deeperItem.content)],
-                          };
+                          const deeperListItem = listItemNode(deeperItem.content, deeperItem.checkbox, deeperItem.progressCookie);
                           deeperList.items.push(deeperListItem);
                           i += 1;
                         }
@@ -1506,14 +1496,6 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
         }
 
         const directive = parseSrcBlockLine(contLine, contLineNumber);
-        if (directive && isBeginSrc(directive)) {
-          flushItemParagraph();
-          const { block, nextLineIndex } = parseSrcBlock(lines, i);
-          item.children.push(block);
-          i = nextLineIndex;
-          continue;
-        }
-
         if (directive) {
           if (isBeginSrc(directive)) {
             flushItemParagraph();
