@@ -19,6 +19,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "build:macos-app": "node tools/build-macos-app.mjs",
+    "build:macos-app:codex": "node tools/build-macos-app-codex.mjs",
+    "setup:macos-app:codex": "node tools/setup-macos-codex-workspace.mjs",
+    "open:macos-app:codex": "node tools/open-macos-app-codex.mjs",
     "screenshots:macos": "node tools/capture-macos-workspace-screenshots.mjs",
     "parse": "node dist/parse.js",
     "print": "node dist/print.js",
