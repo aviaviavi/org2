@@ -858,7 +858,9 @@ public final class WorkspaceStore: ObservableObject {
     let settings = OpenClawGatewaySettings.resolve()
     let migrationDomains = legacyDefaultsDomains
       ?? (
-        defaults === UserDefaults.standard && !Self.shouldIgnoreStandardDefaultsForTests(defaults)
+        defaults === UserDefaults.standard
+          && !Self.shouldIgnoreStandardDefaultsForTests(defaults)
+          && Self.shouldMigrateLegacyDefaultsForCurrentBundle()
           ? Self.legacyDefaultsDomains
           : []
       )
@@ -10413,6 +10415,15 @@ public final class WorkspaceStore: ObservableObject {
   private static func shouldIgnoreStandardDefaultsForTests(_ defaults: UserDefaults) -> Bool {
     NSClassFromString("XCTestCase") != nil
       && defaults === UserDefaults.standard
+  }
+
+  nonisolated static func shouldMigrateLegacyDefaults(bundleIdentifier: String?) -> Bool {
+    guard let bundleIdentifier, !bundleIdentifier.isEmpty else { return true }
+    return bundleIdentifier == "org.org2.workspace"
+  }
+
+  nonisolated private static func shouldMigrateLegacyDefaultsForCurrentBundle(bundle: Bundle = .main) -> Bool {
+    shouldMigrateLegacyDefaults(bundleIdentifier: bundle.bundleIdentifier)
   }
 
   private func restoreCorpusRoot() -> URL? {
