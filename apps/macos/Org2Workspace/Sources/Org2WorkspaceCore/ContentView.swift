@@ -3409,6 +3409,7 @@ private struct OpenClawConfigurationSheet: View {
   @State private var handoffAssignee = ""
   @State private var personalAssigneeNames = ""
   @State private var remoteCorpusPath = ""
+  @State private var briefsStartNewThread = true
   @State private var token = ""
   @State private var clearToken = false
 
@@ -3474,6 +3475,14 @@ private struct OpenClawConfigurationSheet: View {
         }
 
         GridRow {
+          Text("Briefs")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+          Toggle("Start node briefs in a new chat thread", isOn: $briefsStartNewThread)
+            .help("When enabled, Brief creates a fresh OpenClaw chat instead of adding the prompt to the current thread.")
+        }
+
+        GridRow {
           Text("Token")
             .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
@@ -3505,6 +3514,7 @@ private struct OpenClawConfigurationSheet: View {
             handoffAssignee: handoffAssignee,
             personalAssigneeNames: personalAssigneeNames,
             remoteCorpusPath: remoteCorpusPath,
+            briefsStartNewThread: briefsStartNewThread,
             token: token,
             clearToken: clearToken
           )
@@ -3523,6 +3533,7 @@ private struct OpenClawConfigurationSheet: View {
       handoffAssignee = store.agentHandoffAssignee
       personalAssigneeNames = store.personalAssigneeNamesText
       remoteCorpusPath = store.openClawRemoteCorpusPath
+      briefsStartNewThread = store.openClawBriefsStartNewThread
       token = ""
       clearToken = false
     }
@@ -4098,7 +4109,9 @@ private struct DetailHeader: View {
         }
       }
       .disabled(!store.canBriefCurrentNodeInOpenClaw)
-      .help("Generate or open the cached node brief")
+      .help(store.openClawBriefsStartNewThread
+        ? "Generate or open the cached node brief. New requests start a new OpenClaw chat thread."
+        : "Generate or open the cached node brief. New requests use the current OpenClaw chat thread.")
 
       if case .meeting = location {
         Button {
@@ -4621,6 +4634,9 @@ private struct NodeContextOverview: View {
       }
       .buttonStyle(WorkspaceActionButtonStyle())
       .disabled(!store.canBriefCurrentNodeInOpenClaw)
+      .help(store.openClawBriefsStartNewThread
+        ? "Generate the brief in a new OpenClaw chat thread."
+        : "Generate the brief in the current OpenClaw chat thread.")
 
       if store.backlinkFileGroups.isEmpty {
         NodeContextEmptyText()
@@ -4777,6 +4793,9 @@ private struct NodeContextBrief: View {
         }
         .buttonStyle(WorkspaceActionButtonStyle())
         .disabled(!store.canBriefCurrentNodeInOpenClaw)
+        .help(store.openClawBriefsStartNewThread
+          ? "Generate the brief in a new OpenClaw chat thread."
+          : "Generate the brief in the current OpenClaw chat thread.")
 
         Text("Generated briefs live as review-required org2 view artifacts.")
           .font(.caption)

@@ -1349,12 +1349,14 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.openClawAgentID, "main")
     XCTAssertEqual(store.agentHandoffAssignee, "OpenClaw")
     XCTAssertEqual(store.personalAssigneeNamesText, "")
+    XCTAssertTrue(store.openClawBriefsStartNewThread)
     XCTAssertTrue(store.saveOpenClawConfiguration(
       endpoint: store.openClawEndpointText,
       agent: "research-agent",
       handoffAssignee: "OpenClaw",
       personalAssigneeNames: "Avi, avi@example.com",
       remoteCorpusPath: "/srv/org2",
+      briefsStartNewThread: false,
       token: "",
       clearToken: false
     ))
@@ -1364,6 +1366,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(restored.openClawAgentID, "research-agent")
     XCTAssertEqual(restored.agentHandoffAssignee, "OpenClaw")
     XCTAssertEqual(restored.personalAssigneeNamesText, "Avi, avi@example.com")
+    XCTAssertFalse(restored.openClawBriefsStartNewThread)
   }
 
   @MainActor
@@ -3845,6 +3848,9 @@ final class Org2ModelsTests: XCTestCase {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-node-context-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let suiteName = "org2-workspace-node-context-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
     let target = root.appendingPathComponent("target.org2")
     let firstSource = root.appendingPathComponent("first.org2")
     let secondSource = root.appendingPathComponent("second.org2")
@@ -3886,6 +3892,8 @@ final class Org2ModelsTests: XCTestCase {
 
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
       openClawSendHandler: { messages, _, _, context in
         let prompt = try XCTUnwrap(messages.last?.content)
         XCTAssertTrue(prompt.contains("Generate a concise, source-cited briefing for the selected org2 node \"Target Node\""))
@@ -3940,12 +3948,81 @@ final class Org2ModelsTests: XCTestCase {
     store.toggleBacklinkFileGroup(firstGroup)
     XCTAssertFalse(store.expandedBacklinkFileIDs.contains(firstGroup.id))
 
+    store.createOpenClawChatThread()
+    let originalThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.openClawMessages = [
+      OpenClawChatMessage(role: .user, content: "Existing unrelated chat")
+    ]
+
     await store.briefCurrentNodeInOpenClaw()
 
     XCTAssertEqual(store.openClawDraft, "")
+    XCTAssertNotEqual(store.selectedOpenClawChatThreadID, originalThreadID)
+    XCTAssertEqual(store.openClawChatThreads.count, 2)
     XCTAssertEqual(store.openClawMessages.count, 2)
     XCTAssertEqual(store.openClawMessages.last?.content, "No artifact written")
+    XCTAssertEqual(
+      store.openClawChatThreads.first(where: { $0.id == originalThreadID })?.messages.map(\.content),
+      ["Existing unrelated chat"]
+    )
     XCTAssertEqual(store.statusText, "Node brief artifact was not written")
+  }
+
+  @MainActor
+  func testBriefCurrentNodeCanReuseSelectedOpenClawThreadWhenConfigured() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-node-context-current-chat-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let suiteName = "org2-workspace-node-context-current-chat-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let target = root.appendingPathComponent("target.org2")
+    let targetID = "44444444-4444-4444-8444-444444444444"
+    try """
+    #+TITLE: Target Node
+    :PROPERTIES:
+    :ID: \(targetID)
+    :END:
+
+    Canonical target body.
+    """.write(to: target, atomically: true, encoding: .utf8)
+
+    let recorder = OpenClawMessageSendRecorder()
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      openClawSendHandler: { messages, _, _, _ in
+        try await recorder.send(messages: messages)
+      }
+    )
+    store.setCorpusRoot(root)
+    store.openClawBriefsStartNewThread = false
+    store.createOpenClawChatThread()
+    let originalThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.openClawMessages = [
+      OpenClawChatMessage(role: .user, content: "Existing context")
+    ]
+    store.select(.openClaw(OpenClawThread(
+      title: "Target Node",
+      file: target.path,
+      line: 1,
+      zone: "node",
+      modifiedAt: nil,
+      idValue: targetID
+    )))
+
+    await store.briefCurrentNodeInOpenClaw()
+
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, originalThreadID)
+    XCTAssertEqual(store.openClawChatThreads.count, 1)
+    XCTAssertEqual(store.openClawMessages.count, 3)
+    XCTAssertEqual(store.openClawMessages.first?.content, "Existing context")
+    XCTAssertEqual(store.openClawMessages.last?.content, "reply 1")
+    let recordedCalls = await recorder.recordedCalls()
+    let requestMessages = try XCTUnwrap(recordedCalls.first)
+    XCTAssertEqual(requestMessages.first?.content, "Existing context")
+    XCTAssertTrue(requestMessages.last?.content.contains("Generate a concise, source-cited briefing for the selected org2 node \"Target Node\"") == true)
   }
 
   func testRelatedBacklinkNodesFilterGenericStructuralHeadingsAndKeepEvidence() {
