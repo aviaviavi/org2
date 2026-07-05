@@ -624,6 +624,11 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var agentHandoffAssignee = WorkspaceStore.defaultAgentHandoffAssignee
   @Published public var personalAssigneeNamesText = ""
   @Published public var openClawRemoteCorpusPath = ""
+  @Published public var openClawBriefsStartNewThread = true {
+    didSet {
+      defaults.set(openClawBriefsStartNewThread, forKey: openClawBriefsStartNewThreadKey)
+    }
+  }
   @Published public var openClawHasStoredToken = false
   @Published public var openClawStatusText = WorkspaceStore.defaultOpenClawStatusText()
   @Published public var isRecordingOpenClawVoiceNote = false
@@ -742,6 +747,7 @@ public final class WorkspaceStore: ObservableObject {
   private let agentHandoffAssigneeKey = "Org2Workspace.agentHandoffAssignee"
   private let personalAssigneeNamesKey = "Org2Workspace.personalAssigneeNames"
   private let openClawRemoteCorpusPathKey = "Org2Workspace.openClawRemoteCorpusPath"
+  private let openClawBriefsStartNewThreadKey = "Org2Workspace.openClawBriefsStartNewThread"
   private let orgCryptEncryptOnSaveKey = "Org2Workspace.orgCrypt.encryptOnSave"
   private let orgCryptRecipientsKey = "Org2Workspace.orgCrypt.recipients"
   private let orgCryptRecipientFilesKey = "Org2Workspace.orgCrypt.recipientFiles"
@@ -887,6 +893,7 @@ public final class WorkspaceStore: ObservableObject {
     agentHandoffAssignee = defaults.string(forKey: agentHandoffAssigneeKey) ?? Self.defaultAgentHandoffAssignee
     personalAssigneeNamesText = defaults.string(forKey: personalAssigneeNamesKey) ?? ""
     openClawRemoteCorpusPath = defaults.string(forKey: openClawRemoteCorpusPathKey) ?? ""
+    openClawBriefsStartNewThread = defaults.object(forKey: openClawBriefsStartNewThreadKey) as? Bool ?? true
     orgCryptEncryptOnSave = defaults.object(forKey: orgCryptEncryptOnSaveKey) as? Bool ?? true
     orgCryptRecipientsText = OrgCryptSettings.listText(defaults.stringArray(forKey: orgCryptRecipientsKey) ?? [])
     orgCryptRecipientFilesText = OrgCryptSettings.listText(defaults.stringArray(forKey: orgCryptRecipientFilesKey) ?? [])
@@ -2689,7 +2696,10 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public var canBriefCurrentNodeInOpenClaw: Bool {
-    selectedLocation != nil && corpusRoot != nil && !isBuildingNodeBrief && !isSendingOpenClawMessage
+    selectedLocation != nil
+      && corpusRoot != nil
+      && !isBuildingNodeBrief
+      && (openClawBriefsStartNewThread || !isSendingOpenClawMessage)
   }
 
   public var canLinkifyCurrentFile: Bool {
@@ -2771,6 +2781,7 @@ public final class WorkspaceStore: ObservableObject {
       pendingNodeBriefArtifactRelativePath = artifactRelativePath
       pendingNodeBriefTitle = location.title
       setOpenClawAssistantPanelPresented(true)
+      prepareOpenClawThreadForNodeBrief(title: location.title)
       await sendOpenClawMessage(text: prompt)
       if await openNodeBriefArtifactWhenAvailable(url: artifactURL, relativePath: artifactRelativePath, title: location.title) {
         return
@@ -6921,14 +6932,26 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func createOpenClawChatThread() {
+    createOpenClawChatThread(title: "New Chat", statusText: "New OpenClaw chat")
+  }
+
+  private func createOpenClawChatThread(title: String, statusText: String) {
     let thread = OpenClawChatThread(
-      title: "New Chat",
+      title: title,
       sessionKey: Self.makeOpenClawSessionKey()
     )
     openClawChatThreads.insert(thread, at: 0)
     selectOpenClawChatThread(thread.id, persistsSelection: false)
     persistOpenClawTranscript()
-    openClawStatusText = "New OpenClaw chat"
+    openClawStatusText = statusText
+  }
+
+  private func prepareOpenClawThreadForNodeBrief(title: String) {
+    guard openClawBriefsStartNewThread else { return }
+    createOpenClawChatThread(
+      title: "Brief: \(title)",
+      statusText: "New OpenClaw brief chat"
+    )
   }
 
   public func selectOpenClawChatThread(_ id: UUID) {
@@ -7390,6 +7413,7 @@ public final class WorkspaceStore: ObservableObject {
     handoffAssignee: String,
     personalAssigneeNames: String? = nil,
     remoteCorpusPath: String,
+    briefsStartNewThread: Bool? = nil,
     token: String,
     clearToken: Bool
   ) -> Bool {
@@ -7406,6 +7430,7 @@ public final class WorkspaceStore: ObservableObject {
     let personalAssigneeNames = (personalAssigneeNames ?? personalAssigneeNamesText)
       .trimmingCharacters(in: .whitespacesAndNewlines)
     let remoteCorpusPath = remoteCorpusPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    let briefsStartNewThread = briefsStartNewThread ?? openClawBriefsStartNewThread
     let normalizedToken = OpenClawGatewaySettings.normalizedBearerToken(token)
 
     do {
@@ -7419,6 +7444,7 @@ public final class WorkspaceStore: ObservableObject {
       agentHandoffAssignee = handoffAssignee
       personalAssigneeNamesText = personalAssigneeNames
       openClawRemoteCorpusPath = remoteCorpusPath
+      openClawBriefsStartNewThread = briefsStartNewThread
 
       if clearToken {
         try OpenClawKeychain.deleteToken()
@@ -10450,6 +10476,7 @@ public final class WorkspaceStore: ObservableObject {
       agentHandoffAssigneeKey,
       personalAssigneeNamesKey,
       openClawRemoteCorpusPathKey,
+      openClawBriefsStartNewThreadKey,
       orgCryptEncryptOnSaveKey,
       orgCryptRecipientsKey,
       orgCryptRecipientFilesKey,
@@ -10463,6 +10490,7 @@ public final class WorkspaceStore: ObservableObject {
       agentHandoffAssigneeKey: Self.defaultAgentHandoffAssignee,
       personalAssigneeNamesKey: "",
       openClawRemoteCorpusPathKey: "",
+      openClawBriefsStartNewThreadKey: true,
       orgCryptGpgProgramKey: "gpg"
     ]
 
