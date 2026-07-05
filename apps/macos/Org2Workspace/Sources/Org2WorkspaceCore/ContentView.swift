@@ -185,7 +185,7 @@ private struct HomeView: View {
   @EnvironmentObject private var store: WorkspaceStore
 
   var body: some View {
-    OpenClawChatView(presentation: .fullPage, surface: .home)
+    OpenClawChatView(presentation: .homePane, surface: .home)
       .onAppear {
         if store.selectedSurface == .home {
           store.openHome()
@@ -2934,6 +2934,11 @@ private struct MeetingProcessingRow: View {
 private enum OpenClawChatPresentation {
   case fullPage
   case assistantPanel
+  case homePane
+
+  var isCompact: Bool {
+    self != .fullPage
+  }
 }
 
 private struct OpenClawChatView: View {
@@ -2970,10 +2975,10 @@ private struct OpenClawChatView: View {
       Divider()
 
       OpenClawComposerView(
-        focusOnAppear: presentation == .fullPage,
-        compact: presentation == .assistantPanel
+        focusOnAppear: presentation != .assistantPanel,
+        compact: presentation.isCompact
       )
-      .padding(presentation == .assistantPanel ? 10 : 16)
+      .padding(presentation.isCompact ? 10 : 16)
     }
   }
 
@@ -2983,6 +2988,10 @@ private struct OpenClawChatView: View {
     case .fullPage:
       HeaderBar(title: "OpenClaw Chat", subtitle: store.openClawStatusText, surface: surface) {
         headerActions
+      }
+    case .homePane:
+      HeaderBar(title: "AI Chat", subtitle: store.openClawStatusText, surface: surface) {
+        homeHeaderActions
       }
     case .assistantPanel:
       HStack(spacing: 8) {
@@ -3059,6 +3068,26 @@ private struct OpenClawChatView: View {
   }
 
   @ViewBuilder
+  private var homeHeaderActions: some View {
+    if store.isSendingOpenClawMessage {
+      WorkspaceActivityIndicator(size: .small)
+    }
+
+    Button {
+      store.createOpenClawChatThread()
+    } label: {
+      Label("New", systemImage: "plus")
+    }
+
+    Button {
+      store.resetOpenClawChat()
+    } label: {
+      Label("Clear", systemImage: "trash")
+    }
+    .disabled(store.isSendingOpenClawMessage || store.openClawMessages.isEmpty)
+  }
+
+  @ViewBuilder
   private var configurationStrip: some View {
     if presentation == .fullPage {
       VStack(alignment: .leading, spacing: 6) {
@@ -3119,13 +3148,13 @@ private struct OpenClawChatView: View {
   private var chatTranscript: some View {
     ScrollViewReader { proxy in
       ScrollView {
-        LazyVStack(alignment: .leading, spacing: presentation == .assistantPanel ? 8 : 10) {
+        LazyVStack(alignment: .leading, spacing: presentation.isCompact ? 8 : 10) {
           if store.openClawMessages.isEmpty {
             EmptyChatView(statusText: store.openClawStatusText)
-              .frame(maxWidth: .infinity, minHeight: presentation == .assistantPanel ? 140 : 220)
+              .frame(maxWidth: .infinity, minHeight: presentation.isCompact ? 140 : 220)
           } else {
             ForEach(store.openClawMessages) { message in
-              ChatBubbleView(message: message, compact: presentation == .assistantPanel)
+              ChatBubbleView(message: message, compact: presentation.isCompact)
                 .id(message.id)
             }
             if store.isSendingOpenClawMessage {
@@ -3134,12 +3163,12 @@ private struct OpenClawChatView: View {
             }
           }
         }
-        .padding(presentation == .assistantPanel ? 10 : 16)
+        .padding(presentation.isCompact ? 10 : 16)
       }
       .background(OpenClawChatScrollPositionBridge(
-        initialPosition: store.openClawChatScrollPosition(isAssistantPanel: presentation == .assistantPanel),
+        initialPosition: store.openClawChatScrollPosition(isAssistantPanel: presentation.isCompact),
         onPositionChange: { position in
-          store.recordOpenClawChatScrollPosition(position, isAssistantPanel: presentation == .assistantPanel)
+          store.recordOpenClawChatScrollPosition(position, isAssistantPanel: presentation.isCompact)
         }
       ))
       .onChange(of: store.openClawMessages.count) {
