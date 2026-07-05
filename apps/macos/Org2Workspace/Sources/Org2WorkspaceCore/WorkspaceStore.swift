@@ -32,12 +32,20 @@ private struct PendingBlockSelection {
   let line: Int
   let mode: PendingBlockSelectionMode
   let beginEditing: Bool
+  let initialSourceUTF16Offset: Int?
 
-  init(file: String, line: Int, mode: PendingBlockSelectionMode, beginEditing: Bool = false) {
+  init(
+    file: String,
+    line: Int,
+    mode: PendingBlockSelectionMode,
+    beginEditing: Bool = false,
+    initialSourceUTF16Offset: Int? = nil
+  ) {
     self.file = file
     self.line = line
     self.mode = mode
     self.beginEditing = beginEditing
+    self.initialSourceUTF16Offset = initialSourceUTF16Offset
   }
 }
 
@@ -4759,16 +4767,6 @@ public final class WorkspaceStore: ObservableObject {
       )
       let undoSnapshot = fileUndoSnapshot(for: source.file)
 
-      try await Task.detached(priority: .userInitiated) {
-        try Self.replaceSourceRange(
-          file: source.file,
-          startLine: replacement.startLine,
-          endLineExclusive: replacement.endLineExclusive,
-          replacement: replacement.replacement,
-          expectedOriginal: replacement.expectedOriginal
-        )
-      }.value
-
       guard selectedEntrySource?.file == source.file else {
         recordFileUndo(from: undoSnapshot)
         return
@@ -4783,7 +4781,9 @@ public final class WorkspaceStore: ObservableObject {
       pendingBlockSelection = PendingBlockSelection(
         file: source.file,
         line: replacement.startLine,
-        mode: .nextOrNearest
+        mode: .nextOrNearest,
+        beginEditing: !replacementText.isEmpty,
+        initialSourceUTF16Offset: replacement.caretSourceUTF16Offset
       )
       selectedBlockID = nil
       if replacement.updatedSource.text.isEmpty {
@@ -4791,12 +4791,27 @@ public final class WorkspaceStore: ObservableObject {
         pendingBlockSelection = nil
         isRenderingEntrySource = false
       } else {
-        renderEntrySource(replacement.updatedSource, generation: entrySourceLoadGeneration)
+        let blocks = Self.sortEditableBlocksForDisplay(OrgEntryRenderer.parseEditable(
+          replacement.updatedSource.text,
+          baseLine: replacement.updatedSource.startLine
+        ))
+        applyRenderedBlocks(blocks, for: replacement.updatedSource)
+        isRenderingEntrySource = false
       }
       statusText = replacementText.isEmpty
         ? "Deleted selection in \(relativePath(source.file))"
         : "Replaced selection in \(relativePath(source.file))"
       scheduleAgendaRefresh(preserveSelection: true)
+
+      try await Task.detached(priority: .userInitiated) {
+        try Self.replaceSourceRange(
+          file: source.file,
+          startLine: replacement.startLine,
+          endLineExclusive: replacement.endLineExclusive,
+          replacement: replacement.replacement,
+          expectedOriginal: replacement.expectedOriginal
+        )
+      }.value
     } catch {
       errorText = error.localizedDescription
       statusText = replacementText.isEmpty ? "Delete selection failed" : "Replace selection failed"
@@ -10707,9 +10722,12 @@ public final class WorkspaceStore: ObservableObject {
          let pendingBlock,
          pendingBlock.isEditable,
          source.isEditable {
-        editingBlockID = pendingBlock.id
-        editableBlockText = pendingBlock.rawText
-        activeBlockDrafts[pendingBlock.id] = pendingBlock.rawText
+        beginEditingBlock(
+          pendingBlock,
+          initialSelection: pending.initialSourceUTF16Offset.map {
+            Self.editableSelection(for: pendingBlock, sourceUTF16Offset: $0)
+          }
+        )
       }
     } else if let selectedBlockID,
        !visibleBlocks.contains(where: { $0.id == selectedBlockID }) {
@@ -11781,7 +11799,8 @@ public final class WorkspaceStore: ObservableObject {
     endLineExclusive: Int,
     replacement: String,
     expectedOriginal: String,
-    updatedSource: EntrySource
+    updatedSource: EntrySource,
+    caretSourceUTF16Offset: Int
   ) {
     let sortedPairs = pairs.sorted { lhs, rhs in
       if lhs.block.startLine != rhs.block.startLine {
@@ -11802,16 +11821,24 @@ public final class WorkspaceStore: ObservableObject {
     let startLine = coversWholeDocument ? source.startLine : firstPair.block.startLine
     let endLineExclusive = coversWholeDocument ? source.endLineExclusive : lastPair.block.endLineExclusive
     let normalizedReplacementText = normalizeLineEndings(replacementText)
+    let replacementUTF16Length = (normalizedReplacementText as NSString).length
     let replacement: String
+    let caretSourceUTF16Offset: Int
 
     if coversWholeDocument {
       replacement = normalizedReplacementText
+      caretSourceUTF16Offset = replacementUTF16Length
     } else if sortedPairs.count == 1 {
+      let rawText = sourceTextForSelectionFragment(firstPair.fragment, block: firstPair.block)
+      let range = clampedRange(firstPair.fragment.sourceRange, in: rawText)
       replacement = replacingSelection(
-        in: sourceTextForSelectionFragment(firstPair.fragment, block: firstPair.block),
+        in: rawText,
         fragment: firstPair.fragment,
         replacementText: normalizedReplacementText
       )
+      caretSourceUTF16Offset = firstPair.fragment.selectsEntireEditor
+        ? replacementUTF16Length
+        : range.location + replacementUTF16Length
     } else {
       let firstRawText = sourceTextForSelectionFragment(firstPair.fragment, block: firstPair.block)
       let lastRawText = sourceTextForSelectionFragment(lastPair.fragment, block: lastPair.block)
@@ -11825,6 +11852,7 @@ public final class WorkspaceStore: ObservableObject {
         : (lastRawText as NSString).substring(from: NSMaxRange(lastRange))
       let joined = firstPrefix + normalizedReplacementText + lastSuffix
       replacement = joined.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : joined
+      caretSourceUTF16Offset = (firstPrefix as NSString).length + replacementUTF16Length
     }
 
     let expectedOriginal = try sourceText(
@@ -11843,8 +11871,40 @@ public final class WorkspaceStore: ObservableObject {
       endLineExclusive: endLineExclusive,
       replacement: replacement,
       expectedOriginal: expectedOriginal,
-      updatedSource: updatedSource
+      updatedSource: updatedSource,
+      caretSourceUTF16Offset: caretSourceUTF16Offset
     )
+  }
+
+  nonisolated private static func editableSelection(
+    for block: OrgEditableBlock,
+    sourceUTF16Offset: Int
+  ) -> NSRange {
+    let prefixLength = editorToSourceUTF16Offset(for: block)
+    let editableLength = max(0, (block.rawText as NSString).length - prefixLength)
+    let location = min(max(0, sourceUTF16Offset - prefixLength), editableLength)
+    return NSRange(location: location, length: 0)
+  }
+
+  nonisolated private static func editorToSourceUTF16Offset(for block: OrgEditableBlock) -> Int {
+    guard case .listItem = block.rendered else { return 0 }
+    return listPrefixUTF16Length(in: block.rawText)
+  }
+
+  nonisolated private static func listPrefixUTF16Length(in rawText: String) -> Int {
+    guard let regex = try? NSRegularExpression(
+      pattern: #"^\s*(?:[-+]|[0-9]+[.)])\s+(?:\[(?: |X|x|-)\]\s*)?"#
+    ) else {
+      return 0
+    }
+    let nsText = rawText as NSString
+    let match = regex.firstMatch(in: rawText, range: NSRange(location: 0, length: nsText.length))
+    guard let match,
+          match.range.location == 0
+    else {
+      return 0
+    }
+    return match.range.length
   }
 
   nonisolated private static func selectionCoversWholeRenderedTextDocument(
