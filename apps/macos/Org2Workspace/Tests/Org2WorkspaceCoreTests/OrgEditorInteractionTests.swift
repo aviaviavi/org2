@@ -41,6 +41,36 @@ final class OrgEditorInteractionTests: XCTestCase {
     XCTAssertEqual(source, "* testing\n\nbody")
   }
 
+  func testReturnOnCollapsedHeadingRevealsNewParagraphEditor() async throws {
+    let harness = try await makeHarness(initialText: """
+    * Current
+    Hidden body
+    """)
+
+    let headingBlock = try XCTUnwrap(harness.store.selectedRenderedBlocks.first {
+      if case .heading = $0.rendered { return true }
+      return false
+    })
+    harness.store.selectBlock(headingBlock)
+    XCTAssertTrue(harness.store.collapseSelectedRenderedBlock())
+
+    let headingEditor = try await harness.syntaxTextView(withExactText: "* Current")
+    try await harness.focus(
+      headingEditor,
+      selection: NSRange(location: ("* Current" as NSString).length, length: 0)
+    )
+    try await harness.pressReturnKey()
+    try await harness.waitForFocusedEditorText("")
+
+    let draftID = try XCTUnwrap(harness.store.selectedBlockID)
+    XCTAssertEqual(harness.store.editingBlockID, draftID)
+    XCTAssertFalse(harness.store.foldedRenderedBlockIDs.contains(headingBlock.id))
+    XCTAssertTrue(OrgRenderedFoldTree.visibleBlocks(
+      harness.store.selectedRenderedBlocks,
+      foldedBlockIDs: harness.store.foldedRenderedBlockIDs
+    ).contains { $0.id == draftID })
+  }
+
   func testTypingHeadingReturnAfterExistingParagraphKeepsHeadingAboveBlankEditor() async throws {
     let harness = try await makeHarness(initialText: "Existing paragraph")
 

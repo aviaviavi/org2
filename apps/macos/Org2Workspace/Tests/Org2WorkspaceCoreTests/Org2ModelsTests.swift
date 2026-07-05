@@ -12003,6 +12003,89 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testAppendingBelowCollapsedFinalHeadingRevealsDraftEditor() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-collapsed-append-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("collapsed-append.org2")
+    try """
+    * Current
+    Hidden body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    let location = try XCTUnwrap(store.selectedLocation)
+    await store.loadEntrySource(for: location)
+    try await waitForEntryRender(store)
+
+    let heading = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .heading = $0.rendered { return true }
+      return false
+    })
+    store.selectBlock(heading)
+    XCTAssertTrue(store.collapseSelectedRenderedBlock())
+    XCTAssertTrue(store.foldedRenderedBlockIDs.contains(heading.id))
+
+    await store.beginAppendingSectionAtEnd()
+
+    let draftID = try XCTUnwrap(store.selectedBlockID)
+    XCTAssertEqual(store.editingBlockID, draftID)
+    XCTAssertFalse(store.foldedRenderedBlockIDs.contains(heading.id))
+    XCTAssertTrue(OrgRenderedFoldTree.visibleBlocks(
+      store.selectedRenderedBlocks,
+      foldedBlockIDs: store.foldedRenderedBlockIDs
+    ).contains { $0.id == draftID })
+  }
+
+  @MainActor
+  func testInsertingAfterCollapsedHeadingRevealsDraftEditor() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-collapsed-insert-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("collapsed-insert.org2")
+    try """
+    * Current
+    Hidden body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    let location = try XCTUnwrap(store.selectedLocation)
+    await store.loadEntrySource(for: location)
+    try await waitForEntryRender(store)
+
+    let heading = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .heading = $0.rendered { return true }
+      return false
+    })
+    store.selectBlock(heading)
+    XCTAssertTrue(store.collapseSelectedRenderedBlock())
+
+    await store.insertBlock(after: heading, kind: .paragraph)
+
+    let draftID = try XCTUnwrap(store.selectedBlockID)
+    XCTAssertEqual(store.editingBlockID, draftID)
+    XCTAssertFalse(store.foldedRenderedBlockIDs.contains(heading.id))
+    XCTAssertTrue(OrgRenderedFoldTree.visibleBlocks(
+      store.selectedRenderedBlocks,
+      foldedBlockIDs: store.foldedRenderedBlockIDs
+    ).contains { $0.id == draftID })
+  }
+
+  @MainActor
   func testRepeatBeginEditingActiveBlockPreservesDraft() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-repeat-edit-\(UUID().uuidString)", isDirectory: true)

@@ -5645,6 +5645,21 @@ public final class WorkspaceStore: ObservableObject {
     editingBlockID = draft.block.id
     editableBlockText = draft.block.rawText
     activeBlockDrafts[draft.block.id] = draft.block.rawText
+    revealRenderedBlockIfHiddenByFold(draft.block.id)
+  }
+
+  private func revealRenderedBlockIfHiddenByFold(_ blockID: OrgEditableBlock.ID) {
+    var nextFoldedIDs = foldedRenderedBlockIDs
+    while let ancestorID = OrgRenderedFoldTree.foldedAncestorID(
+      hiding: blockID,
+      foldedBlockIDs: nextFoldedIDs,
+      blocks: selectedRenderedBlocks
+    ) {
+      nextFoldedIDs.remove(ancestorID)
+    }
+    if nextFoldedIDs != foldedRenderedBlockIDs {
+      foldedRenderedBlockIDs = nextFoldedIDs
+    }
   }
 
   private func saveTransientDraftBlock(_ draft: TransientDraftBlock) async {
