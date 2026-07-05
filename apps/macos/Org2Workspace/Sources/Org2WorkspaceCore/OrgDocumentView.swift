@@ -649,7 +649,7 @@ private struct OrgRenderedEntryRow: View, Equatable {
         allowsHoverChrome: allowsHoverChrome,
         actions: actions
       ) {
-        LiveRenderedTextBlockEditor(block: block)
+        LiveRenderedTextBlockEditor(block: block, initialSelection: actions.initialSelection())
       }
     } else if isEditing {
       InlineBlockEditorView(

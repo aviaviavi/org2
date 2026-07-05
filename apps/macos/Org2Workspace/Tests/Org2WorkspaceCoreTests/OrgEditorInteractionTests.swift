@@ -608,6 +608,39 @@ final class OrgEditorInteractionTests: XCTestCase {
     }
   }
 
+  func testTypingWordReplacesPartialCrossEntrySelectionAndKeepsEditing() async throws {
+    let harness = try await makeHarness(initialText: """
+    * Alpha entry
+    Alpha body
+    * Beta entry
+    Beta body
+    * Gamma entry
+    """)
+
+    let firstHeading = try await harness.syntaxTextView(withExactText: "* Alpha entry")
+    let secondHeading = try await harness.syntaxTextView(withExactText: "* Beta entry")
+    OrgSyntaxTextSelectionBridge.selectTextAcrossEditors(
+      anchorView: firstHeading,
+      anchorLocation: 5,
+      targetView: secondHeading,
+      targetLocation: 4
+    )
+
+    try await harness.focus(firstHeading, selection: NSRange(location: 0, length: 0))
+    try await harness.typeKeys("the")
+
+    try await waitForCondition {
+      (try? harness.fileText()) == """
+      * Alptheta entry
+      Beta body
+      * Gamma entry
+      """
+    }
+    let focused = try await harness.focusedEditor()
+    XCTAssertEqual(focused.string, "* Alptheta entry")
+    XCTAssertEqual(focused.selectedRange(), NSRange(location: ("* Alpthe" as NSString).length, length: 0))
+  }
+
   func testCrossEditorFullSelectionDeleteRemovesSelectedSourceRows() async throws {
     let harness = try await makeHarness(initialText: """
     * First heading

@@ -1933,6 +1933,7 @@ private struct ParagraphBlockEditor: View {
 struct LiveRenderedTextBlockEditor: View {
   @EnvironmentObject private var store: WorkspaceStore
   let block: OrgEditableBlock
+  let initialSelection: NSRange?
   @State private var draftText: String
   @State private var presentationText: String
   @State private var selectedRange: NSRange
@@ -1943,13 +1944,15 @@ struct LiveRenderedTextBlockEditor: View {
   @State private var isFinishingWithStructuralEdit = false
   @State private var availableEditorWidth: CGFloat = 0
   @State private var appliedRenderIdentity: OrgEditableBlockRenderIdentity
+  @State private var appliedInitialSelection: NSRange?
 
-  init(block: OrgEditableBlock) {
+  init(block: OrgEditableBlock, initialSelection: NSRange? = nil) {
     self.block = block
+    self.initialSelection = initialSelection
     let editableText = Self.editableText(for: block)
     _draftText = State(initialValue: editableText)
     _presentationText = State(initialValue: editableText)
-    _selectedRange = State(initialValue: InlineEditorSizing.endSelection(in: editableText))
+    _selectedRange = State(initialValue: Self.clampedInitialSelection(initialSelection, in: editableText))
     _reservedLineCount = State(initialValue: InlineEditorSizing.cappedLineCount(
       in: editableText,
       minimum: Self.minimumLineCount(for: block),
@@ -2033,12 +2036,16 @@ struct LiveRenderedTextBlockEditor: View {
     .onChange(of: block.renderIdentity) {
       refreshFromBlockIfNeeded()
     }
+    .onChange(of: initialSelection) {
+      applyInitialSelectionIfNeeded()
+    }
     .onPreferenceChange(LiveRenderedTextEditorWidthKey.self) { width in
       if abs(width - availableEditorWidth) > 0.5 {
         availableEditorWidth = width
       }
     }
     .onAppear {
+      applyInitialSelectionIfNeeded()
       liveText.update(draftText)
       presentationText = draftText
       reserveEditorLines(for: presentationText)
@@ -2377,15 +2384,27 @@ struct LiveRenderedTextBlockEditor: View {
     autosaveTask?.cancel()
     autosaveTask = nil
     appliedRenderIdentity = block.renderIdentity
+    appliedInitialSelection = nil
     draftText = editableText
     presentationText = editableText
     liveText.update(editableText)
-    selectedRange = InlineEditorSizing.endSelection(in: editableText)
+    selectedRange = Self.clampedInitialSelection(initialSelection, in: editableText)
+    appliedInitialSelection = initialSelection
     reservedLineCount = InlineEditorSizing.cappedLineCount(
       in: editableText,
       minimum: Self.minimumLineCount(for: block),
       maximum: Self.maximumLineCount(for: block)
     )
+  }
+
+  private func applyInitialSelectionIfNeeded() {
+    guard let initialSelection,
+          appliedInitialSelection != initialSelection
+    else {
+      return
+    }
+    selectedRange = Self.clampedInitialSelection(initialSelection, in: currentText)
+    appliedInitialSelection = initialSelection
   }
 
   private static func minimumLineCount(for block: OrgEditableBlock) -> Int {
@@ -2431,6 +2450,13 @@ struct LiveRenderedTextBlockEditor: View {
       return String(block.rawText.dropFirst(prefix.count))
     }
     return block.rawText
+  }
+
+  private static func clampedInitialSelection(_ selection: NSRange?, in text: String) -> NSRange {
+    guard let selection else {
+      return InlineEditorSizing.endSelection(in: text)
+    }
+    return OrgSyntaxTextEditor.clampedRange(selection, utf16Length: (text as NSString).length)
   }
 
   private static func sourceText(for block: OrgEditableBlock, editableText: String) -> String {
