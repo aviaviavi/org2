@@ -2260,17 +2260,19 @@ private struct RenderedTableView: View {
     )
     VStack(alignment: .leading, spacing: 6) {
       ScrollView(.horizontal) {
-        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 0, verticalSpacing: 0) {
+        Grid(alignment: .topLeading, horizontalSpacing: 0, verticalSpacing: 0) {
           ForEach(rowWindow.visibleRows) { visibleRow in
             switch visibleRow.row {
             case .cells(let cells):
               GridRow {
                 ForEach(columnWindow.visibleColumns, id: \.self) { columnIndex in
                   OrgInlineText(cellText(cells, at: columnIndex), font: cellFont(rowIndex: visibleRow.index))
-                    .lineLimit(table.headerRowIndex == visibleRow.index ? 2 : 4)
+                    .lineLimit(table.headerRowIndex == visibleRow.index ? 2 : 5)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 10)
                     .padding(.vertical, table.headerRowIndex == visibleRow.index ? 7 : 6)
-                    .frame(minWidth: 96, alignment: .leading)
+                    .frame(minWidth: 112, maxWidth: 260, alignment: .topLeading)
                     .background(cellBackground(rowIndex: visibleRow.index))
                     .overlay(alignment: .trailing) {
                       Divider()

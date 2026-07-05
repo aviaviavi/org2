@@ -1976,47 +1976,18 @@ struct LiveRenderedTextBlockEditor: View {
       store.orgRoamLinkResolver.searchCandidates(matching: $0.query, limit: 6)
     } ?? []
 
-    ZStack(alignment: .topLeading) {
-      HStack(alignment: .top, spacing: 6) {
-        if rendersListMarker {
-          listMarkerView
-            .frame(width: 18, height: 24, alignment: .center)
-        }
-
-        editorColumn
+    HStack(alignment: .top, spacing: 6) {
+      if rendersListMarker {
+        listMarkerView
+          .frame(width: 18, height: 24, alignment: .center)
       }
 
-      if ParagraphSlashCommandPanelLayout.isVisible(match: slashCommandMatch) {
-        ParagraphSlashCommandPanel(match: slashCommandMatch, convert: convertTextBlock)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .offset(y: ParagraphSlashCommandPanelLayout.verticalOffset(editorHeight: editorHeight))
-          .zIndex(2)
-      }
-
-      if let focusedInlineToken {
-        ParagraphFocusedInlineEditor(
-          text: $draftText,
-          selectedRange: $selectedRange,
-          token: focusedInlineToken
-        )
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .offset(y: ParagraphFocusedInlinePanelLayout.verticalOffset(editorHeight: editorHeight))
-        .zIndex(1)
-      } else if let wikiLinkCompletionMatch {
-        ParagraphWikiLinkCompletionPanel(
-          query: wikiLinkCompletionMatch.query,
-          candidates: wikiLinkCompletionCandidates,
-          choose: { node in
-            resolveWikiLinkCompletion(wikiLinkCompletionMatch, to: node)
-          },
-          create: {
-            createNodeFromWikiLinkCompletion(wikiLinkCompletionMatch)
-          }
-        )
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .offset(y: ParagraphFocusedInlinePanelLayout.verticalOffset(editorHeight: editorHeight))
-        .zIndex(1)
-      }
+      editorColumn(
+        slashCommandMatch: slashCommandMatch,
+        focusedInlineToken: focusedInlineToken,
+        wikiLinkCompletionMatch: wikiLinkCompletionMatch,
+        wikiLinkCompletionCandidates: wikiLinkCompletionCandidates
+      )
     }
     .onChange(of: draftText) {
       guard isTextFocused || store.editingBlockID == block.id else { return }
@@ -2098,7 +2069,12 @@ struct LiveRenderedTextBlockEditor: View {
     return false
   }
 
-  private var editorColumn: some View {
+  private func editorColumn(
+    slashCommandMatch: ParagraphSlashCommand.Match,
+    focusedInlineToken: OrgEditableInlineToken?,
+    wikiLinkCompletionMatch: ParagraphWikiLinkCompletionMatch?,
+    wikiLinkCompletionCandidates: [OrgRoamNodeReference]
+  ) -> some View {
     VStack(alignment: .leading, spacing: 4) {
       OrgSyntaxTextEditor(
         text: $draftText,
@@ -2131,6 +2107,35 @@ struct LiveRenderedTextBlockEditor: View {
           createNodeFromSelection: createNodeFromSelection
         )
         .frame(maxWidth: .infinity, alignment: .leading)
+      }
+
+      if ParagraphSlashCommandPanelLayout.isVisible(match: slashCommandMatch) {
+        ParagraphSlashCommandPanel(match: slashCommandMatch, convert: convertTextBlock)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.top, 2)
+      }
+
+      if let focusedInlineToken {
+        ParagraphFocusedInlineEditor(
+          text: $draftText,
+          selectedRange: $selectedRange,
+          token: focusedInlineToken
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 2)
+      } else if let wikiLinkCompletionMatch {
+        ParagraphWikiLinkCompletionPanel(
+          query: wikiLinkCompletionMatch.query,
+          candidates: wikiLinkCompletionCandidates,
+          choose: { node in
+            resolveWikiLinkCompletion(wikiLinkCompletionMatch, to: node)
+          },
+          create: {
+            createNodeFromWikiLinkCompletion(wikiLinkCompletionMatch)
+          }
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 2)
       }
     }
   }
@@ -3307,7 +3312,10 @@ private struct TableBlockEditor: View {
   }
 
   var body: some View {
-    ZStack(alignment: .topTrailing) {
+    VStack(alignment: .leading, spacing: 6) {
+      tableControls
+        .frame(maxWidth: .infinity, alignment: .trailing)
+
       ScrollView(.horizontal) {
         VStack(alignment: .leading, spacing: 0) {
           ForEach(Array(table.rows.enumerated()), id: \.offset) { rowIndex, row in
@@ -3320,60 +3328,6 @@ private struct TableBlockEditor: View {
           }
         }
       }
-
-      HStack(spacing: 4) {
-        Button {
-          table.addRow()
-        } label: {
-          Image(systemName: "plus")
-        }
-        .buttonStyle(.borderless)
-        .help("Add row")
-
-        Button {
-          table.addColumn()
-        } label: {
-          Image(systemName: "rectangle.split.3x1")
-        }
-        .buttonStyle(.borderless)
-        .help("Add column")
-
-        Button {
-          table.addSeparator()
-        } label: {
-          Image(systemName: "minus")
-        }
-        .buttonStyle(.borderless)
-        .help("Add separator")
-
-        InlineEditorSavingIndicator(isSaving: store.isSavingBlock)
-
-        Button {
-          saveTable()
-        } label: {
-          Image(systemName: "checkmark")
-        }
-        .buttonStyle(.borderless)
-        .keyboardShortcut("s", modifiers: [.command])
-        .disabled(store.isSavingBlock)
-        .help("Save")
-
-        Button {
-          store.cancelEditingBlock()
-        } label: {
-          Image(systemName: "xmark")
-        }
-        .buttonStyle(.borderless)
-        .keyboardShortcut(.cancelAction)
-        .disabled(store.isSavingBlock)
-        .help("Cancel")
-      }
-      .controlSize(.small)
-      .padding(.horizontal, 4)
-      .padding(.vertical, 2)
-      .background(.regularMaterial, in: Capsule())
-      .opacity(InlineEditorChrome.controlsOpacity(isHovered || focusedCell != nil || store.isSavingBlock))
-      .allowsHitTesting(InlineEditorChrome.allowsHitTesting(isHovered || focusedCell != nil || store.isSavingBlock))
     }
     .padding(.horizontal, 6)
     .padding(.vertical, 4)
@@ -3396,6 +3350,62 @@ private struct TableBlockEditor: View {
       autosaveTask?.cancel()
       autosaveTask = nil
     }
+  }
+
+  private var tableControls: some View {
+    HStack(spacing: 4) {
+      Button {
+        table.addRow()
+      } label: {
+        Image(systemName: "plus")
+      }
+      .buttonStyle(.borderless)
+      .help("Add row")
+
+      Button {
+        table.addColumn()
+      } label: {
+        Image(systemName: "rectangle.split.3x1")
+      }
+      .buttonStyle(.borderless)
+      .help("Add column")
+
+      Button {
+        table.addSeparator()
+      } label: {
+        Image(systemName: "minus")
+      }
+      .buttonStyle(.borderless)
+      .help("Add separator")
+
+      InlineEditorSavingIndicator(isSaving: store.isSavingBlock)
+
+      Button {
+        saveTable()
+      } label: {
+        Image(systemName: "checkmark")
+      }
+      .buttonStyle(.borderless)
+      .keyboardShortcut("s", modifiers: [.command])
+      .disabled(store.isSavingBlock)
+      .help("Save")
+
+      Button {
+        store.cancelEditingBlock()
+      } label: {
+        Image(systemName: "xmark")
+      }
+      .buttonStyle(.borderless)
+      .keyboardShortcut(.cancelAction)
+      .disabled(store.isSavingBlock)
+      .help("Cancel")
+    }
+    .controlSize(.small)
+    .padding(.horizontal, 4)
+    .padding(.vertical, 2)
+    .background(.regularMaterial, in: Capsule())
+    .opacity(InlineEditorChrome.controlsOpacity(isHovered || focusedCell != nil || store.isSavingBlock))
+    .allowsHitTesting(InlineEditorChrome.allowsHitTesting(isHovered || focusedCell != nil || store.isSavingBlock))
   }
 
   private func editableRow(rowIndex: Int) -> some View {
