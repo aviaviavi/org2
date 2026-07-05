@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import { defaultSearchIndexPath } from "./indexPaths.js";
-import { TODO_KEYWORDS } from "./todo.js";
+import { normalizeTodoKeyword } from "./todo.js";
 
 export { defaultSearchIndexPath };
 
@@ -346,8 +346,7 @@ function parseSearchHeading(line: string): Omit<SearchHeading, "line"> | null {
   const tags = tagMatch ? (tagMatch[1] || "").split(":").filter(Boolean) : [];
   if (tagMatch) rest = rest.slice(0, tagMatch.index).trim();
   const parts = rest.split(/\s+/);
-  const maybeTodo = parts[0]?.toUpperCase();
-  const todo = maybeTodo && (TODO_KEYWORDS as string[]).includes(maybeTodo) ? maybeTodo : undefined;
+  const todo = normalizeTodoKeyword(parts[0]);
   if (todo) rest = parts.slice(1).join(" ").trim();
   return { level: (m[1] || "").length, title: parseHeadlineTitleForRoam(`${m[1]} ${rest}`), todo, tags };
 }

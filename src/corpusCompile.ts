@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { buildGeneratedArtifactMetadata, sha256Hex, type Org2GeneratedArtifactMetadata } from "./artifactMetadata.js";
-import { TODO_KEYWORDS } from "./todo.js";
+import { normalizeTodoKeyword } from "./todo.js";
 import { extractClockReport, type OrgClockInterval, type OrgClockIssue } from "./clock.js";
 
 export type CompiledCorpusLink = {
@@ -317,8 +317,9 @@ function parseHeading(line: string): { level: number; title: string; todo?: stri
   rest = tagStripped.title;
   let todo: string | undefined;
   const first = rest.split(/\s+/)[0] || "";
-  if ((TODO_KEYWORDS as readonly string[]).includes(first.toUpperCase())) {
-    todo = first.toUpperCase();
+  const normalizedTodo = normalizeTodoKeyword(first);
+  if (normalizedTodo) {
+    todo = normalizedTodo;
     rest = rest.slice(first.length).trim();
   }
   const priorityStripped = stripPriority(rest);
