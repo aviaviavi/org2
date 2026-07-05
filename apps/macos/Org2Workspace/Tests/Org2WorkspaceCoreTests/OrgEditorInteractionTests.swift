@@ -80,6 +80,21 @@ final class OrgEditorInteractionTests: XCTestCase {
     XCTAssertEqual(focused.selectedRange(), NSRange(location: ("Alpha body" as NSString).length, length: 0))
   }
 
+  func testLiveRenderedEditorsDoNotInstallRenderedActivationOverlays() async throws {
+    let harness = try await makeHarness(initialText: """
+    * Clickable heading
+    Clickable paragraph text
+
+    - Clickable list item
+    """)
+
+    _ = try await harness.syntaxTextView(withExactText: "* Clickable heading")
+    _ = try await harness.syntaxTextView(withExactText: "Clickable paragraph text")
+    _ = try await harness.syntaxTextView(withExactText: "Clickable list item")
+
+    XCTAssertFalse(harness.hasViewType(containing: "RenderedRowTextActivationOverlay"))
+  }
+
   func testArrowDownAtEndMovesCaretToNextRenderedBlockAcrossEntries() async throws {
     let harness = try await makeHarness(initialText: """
     * Alpha
@@ -993,6 +1008,17 @@ private struct EditorInteractionHarness {
       result.append(contentsOf: allTextViews(in: subview))
     }
     return result
+  }
+
+  func hasViewType(containing text: String) -> Bool {
+    allViews(in: window.contentView).contains {
+      String(reflecting: Swift.type(of: $0)).contains(text)
+    }
+  }
+
+  private func allViews(in view: NSView?) -> [NSView] {
+    guard let view else { return [] }
+    return [view] + view.subviews.flatMap { allViews(in: $0) }
   }
 
   private func uniqueSyntaxTextViews() -> [OrgSyntaxTextView] {

@@ -1312,7 +1312,8 @@ private struct EditableRenderedBlockView<Content: View>: View {
   }
 
   private var usesRowTapGestures: Bool {
-    RenderedBlockInteractionPolicy.usesRowTapGestures(block: block, isSourceEditable: isSourceEditable)
+    guard !usesDirectRenderedTextEditor else { return false }
+    return RenderedBlockInteractionPolicy.usesRowTapGestures(block: block, isSourceEditable: isSourceEditable)
   }
 
   private var inlineTextActivation: OrgInlineTextActivation? {
