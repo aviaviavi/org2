@@ -18,7 +18,7 @@ public struct ContentView: View {
         Button {
           store.makeSurfacePrimary(.openClaw)
         } label: {
-          Label("Open OpenClaw", systemImage: "bubble.left.and.sparkles")
+          Label("Open OpenClaw", systemImage: "bubble.left")
         }
 
         Button {
@@ -4110,32 +4110,7 @@ private struct DetailHeader: View {
 
   @ViewBuilder
   private var editControls: some View {
-    if store.isLiveFileEditorSelected {
-      HStack(spacing: 6) {
-        if store.isSavingEntry || store.isLiveFileEditorAutosaving {
-          WorkspaceActivityIndicator(size: .small)
-        }
-        if !store.liveFileEditorStatusText.isEmpty {
-          Text(store.liveFileEditorStatusText)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: true, vertical: false)
-        }
-        Button {
-          Task { await store.saveLiveFileEditor(explicit: true) }
-        } label: {
-          Label("Save", systemImage: "checkmark")
-        }
-        .disabled(!store.canSaveLiveFileEditor)
-
-        Button {
-          store.revertLiveFileEditor()
-        } label: {
-          Label("Revert", systemImage: "arrow.uturn.backward")
-        }
-        .disabled(!store.liveFileEditorHasUnsavedChanges || store.isSavingEntry || store.isLiveFileEditorAutosaving)
-      }
-    } else if store.hasActiveEdit {
+    if store.hasActiveEdit {
       HStack(spacing: 6) {
         Button {
           Task { await store.saveActiveEdit() }
@@ -4149,6 +4124,10 @@ private struct DetailHeader: View {
         } label: {
           Label("Cancel", systemImage: "xmark")
         }
+      }
+    } else if store.isLiveFileEditorSelected {
+      if store.isSavingEntry || store.isLiveFileEditorAutosaving {
+        WorkspaceActivityIndicator(size: .small)
       }
     } else {
       Button {
@@ -4272,34 +4251,73 @@ private struct LiveFileEditorBody: View {
   let location: WorkspaceLocation
 
   var body: some View {
-    Group {
-      if store.isLoadingEntrySource && store.selectedEntrySource == nil {
-        HStack(spacing: 8) {
-          WorkspaceActivityIndicator(size: .small)
-          Text("Loading source")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .workspaceShimmer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-      } else if store.selectedEntrySource != nil {
-        OrgSyntaxTextEditor(
-          text: $store.editableEntryText,
-          monospaced: true,
-          showsScrollers: true,
-          textInset: NSSize(width: 22, height: 18),
-          focusOnAppear: true,
-          textPublishing: .immediate,
-          onLocalTextChange: { text in
-            store.noteLiveFileEditorTextChanged(text)
+    ScrollViewReader { proxy in
+      ScrollView {
+        Group {
+          if store.isLoadingEntrySource && store.selectedEntrySource == nil {
+            HStack(spacing: 8) {
+              WorkspaceActivityIndicator(size: .small)
+              Text("Loading source")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .workspaceShimmer()
+            }
+            .frame(maxWidth: .infinity, minHeight: 420, alignment: .center)
+          } else if let source = store.selectedEntrySource {
+            if store.isRenderingEntrySource && store.selectedRenderedBlocks.isEmpty {
+              HStack(spacing: 8) {
+                WorkspaceActivityIndicator(size: .small)
+                Text("Rendering page")
+                  .font(.callout)
+                  .foregroundStyle(.secondary)
+                  .workspaceShimmer()
+              }
+              .frame(maxWidth: .infinity, minHeight: 420, alignment: .center)
+            } else {
+              OrgRenderedEntryView(
+                blocks: store.selectedRenderedBlocks,
+                blocksRenderSignature: store.selectedRenderedBlocksRenderSignature,
+                source: OrgRenderedEntrySourceContext(source),
+                corpusRoot: store.corpusRoot,
+                selectedBlockID: store.selectedBlockID,
+                selectedBlockIndex: store.selectedBlockID.flatMap { store.selectedRenderedBlockIndexes[$0] },
+                editingBlockID: store.editingBlockID,
+                foldedBlockIDs: store.foldedRenderedBlockIDs,
+                sourceBlockRunsRenderSignature: store.sourceBlockRunsRenderSignature,
+                sourceBlockRuns: store.sourceBlockRuns,
+                searchHighlightQuery: store.renderedSearchHighlightQuery
+              )
+              .equatable()
+            }
+          } else {
+            EmptyStateView(title: "Source Unavailable", detail: store.statusText, action: "Reveal File") {
+              store.revealFile(path: location.file)
+            }
+            .frame(maxWidth: .infinity, minHeight: 420, alignment: .center)
           }
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .textBackgroundColor))
-      } else {
-        EmptyStateView(title: "Source Unavailable", detail: store.statusText, action: "Reveal File") {
-          store.revealFile(path: location.file)
         }
+        .padding(16)
+        .background(DetailScrollCommandBridge(request: pageScrollRequest))
+      }
+      .onChange(of: store.detailScrollRequest) { _, request in
+        scrollToBlockTarget(request, proxy: proxy)
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  private var pageScrollRequest: DetailScrollRequest? {
+    guard let request = store.detailScrollRequest,
+          case .page = request.target
+    else { return nil }
+    return request
+  }
+
+  private func scrollToBlockTarget(_ request: DetailScrollRequest?, proxy: ScrollViewProxy) {
+    guard case .block(let blockID) = request?.target else { return }
+    DispatchQueue.main.async {
+      withAnimation(.easeOut(duration: 0.12)) {
+        proxy.scrollTo(blockID, anchor: .center)
       }
     }
   }
