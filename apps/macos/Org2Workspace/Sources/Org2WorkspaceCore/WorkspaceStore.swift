@@ -805,7 +805,7 @@ public final class WorkspaceStore: ObservableObject {
       isProcessingMeeting = activeMeetingProcessingCount > 0
     }
   }
-  private var activeMeetingProcessingTitles: Set<String> = []
+  private var activeMeetingProcessingIDs: Set<String> = []
   private var activeMeetingProcessingItems: [String: MeetingProcessingItem] = [:]
   private var activeOpenClawVoiceNoteURL: URL?
   private var meetingMeterTask: Task<Void, Never>?
@@ -913,6 +913,7 @@ public final class WorkspaceStore: ObservableObject {
     openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
     restoreInterruptedOpenClawSendStatusIfNeeded()
     refreshAudioSettingsStatus()
+    restoreStartupHomeDetailIfPossible()
   }
 
   public func bootstrap() async {
@@ -929,15 +930,15 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     if corpusRoot != nil {
+      if selectedSurface == .home {
+        ensureHomeDetailReady()
+      }
       await refreshAgenda()
       await refreshMeetings()
       await refreshCorpusFiles()
       await refreshAssignedWork()
       await refreshApprovals()
       refreshOrgCryptManagedRecipientFiles()
-      if selectedSurface == .home {
-        openHome()
-      }
       if screenshotModeFromEnvironment() == nil {
         Task { await refreshOpenClawThreads() }
       } else {
@@ -947,6 +948,19 @@ public final class WorkspaceStore: ObservableObject {
     } else {
       statusText = "No corpus selected"
     }
+  }
+
+  private func restoreStartupHomeDetailIfPossible() {
+    guard corpusRoot == nil,
+          selectedSurface == .home,
+          let restoredRoot = restoreSavedCorpusRoot()
+    else {
+      return
+    }
+
+    corpusRoot = restoredRoot
+    switchOpenClawTranscript(to: Self.openClawTranscriptURL(corpusRoot: restoredRoot), migrationSource: appOpenClawTranscriptURL)
+    openHome()
   }
 
   private func screenshotCorpusRootFromEnvironment() -> URL? {
@@ -2328,7 +2342,7 @@ public final class WorkspaceStore: ObservableObject {
       isMeetingRecordingPaused = false
       isCapturingSystemAudio = false
       stopMeetingInputMetering()
-      beginMeetingProcessing(title: recording.paths.title, status: "Transcribing \(recording.paths.title) locally...")
+      beginMeetingProcessing(paths: recording.paths, status: "Transcribing \(recording.paths.title) locally...")
       let progressID = startMeetingTranscriptionProgress(
         title: recording.paths.title,
         audioDuration: duration
@@ -2413,7 +2427,7 @@ public final class WorkspaceStore: ObservableObject {
     progressID: UUID
   ) async {
     defer {
-      endMeetingProcessing(title: recording.paths.title)
+      endMeetingProcessing(paths: recording.paths)
       stopMeetingTranscriptionProgress(id: progressID)
     }
 
@@ -2484,13 +2498,13 @@ public final class WorkspaceStore: ObservableObject {
     let knownAudioArtifacts = Set(knownItems.compactMap(\.audioArtifact))
 
     for recording in recoverable {
-      let titleKey = Self.normalizedMeetingProcessingTitle(recording.paths.title)
-      guard !activeMeetingProcessingTitles.contains(titleKey) else { continue }
+      let processingID = Self.meetingProcessingID(for: recording.paths)
+      guard !activeMeetingProcessingIDs.contains(processingID) else { continue }
       let relativeAudio = MeetingArtifactWriter.relativePath(from: corpusRoot, to: recording.paths.audioURL)
       guard !knownAudioArtifacts.contains(relativeAudio) else { continue }
 
       beginMeetingProcessing(
-        title: recording.paths.title,
+        paths: recording.paths,
         status: "Resuming transcription for \(recording.paths.title)..."
       )
       let progressID = startMeetingTranscriptionProgress(
@@ -2513,7 +2527,7 @@ public final class WorkspaceStore: ObservableObject {
     progressID: UUID
   ) async {
     defer {
-      endMeetingProcessing(title: recording.paths.title)
+      endMeetingProcessing(paths: recording.paths)
       stopMeetingTranscriptionProgress(id: progressID)
     }
 
@@ -2583,11 +2597,11 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
-    var processingTitle: String?
+    var processingPaths: MeetingArtifactPaths?
     var progressID: UUID?
     defer {
-      if let processingTitle {
-        endMeetingProcessing(title: processingTitle)
+      if let processingPaths {
+        endMeetingProcessing(paths: processingPaths)
       }
       if let progressID {
         stopMeetingTranscriptionProgress(id: progressID)
@@ -2603,8 +2617,8 @@ public final class WorkspaceStore: ObservableObject {
         recordedAt: recordedAt,
         audioExtension: ext
       )
-      processingTitle = paths.title
-      beginMeetingProcessing(title: paths.title, status: "Importing \(paths.title)...")
+      processingPaths = paths
+      beginMeetingProcessing(paths: paths, status: "Importing \(paths.title)...")
       try FileManager.default.copyItem(at: sourceURL, to: paths.audioURL)
       meetingStatusText = "Transcribing \(paths.title) locally..."
       progressID = startMeetingTranscriptionProgress(title: paths.title, audioDuration: nil)
@@ -2834,12 +2848,12 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public var pendingMeetingProcessingItems: [MeetingProcessingItem] {
-    let existingMeetingTitleKeys = Set(meetings.map { Self.normalizedMeetingProcessingTitle($0.title) })
-    return processingMeetings.filter { !existingMeetingTitleKeys.contains($0.id) }
+    let existingMeetingIDs = Set(meetings.map(Self.meetingProcessingID(for:)))
+    return processingMeetings.filter { !existingMeetingIDs.contains($0.id) }
   }
 
   public func isMeetingProcessing(_ meeting: MeetingWorkspaceItem) -> Bool {
-    activeMeetingProcessingTitles.contains(Self.normalizedMeetingProcessingTitle(meeting.title))
+    activeMeetingProcessingIDs.contains(Self.meetingProcessingID(for: meeting))
   }
 
   public func select(_ location: WorkspaceLocation) {
@@ -4698,11 +4712,13 @@ public final class WorkspaceStore: ObservableObject {
         endLineExclusive: deletionRange.endLineExclusive
       )
       let currentRenderedBlocks = selectedRenderedBlocks
+      let allowDestructiveDelete = deletion.source.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       try await Task.detached(priority: .userInitiated) {
         try Self.deleteSourceRangeCleaningAdjacentBlank(
           file: source.file,
           startLine: deletionRange.startLine,
-          endLineExclusive: deletionRange.endLineExclusive
+          endLineExclusive: deletionRange.endLineExclusive,
+          allowDestructiveReplacement: allowDestructiveDelete
         )
       }.value
 
@@ -4820,7 +4836,9 @@ public final class WorkspaceStore: ObservableObject {
           startLine: replacement.startLine,
           endLineExclusive: replacement.endLineExclusive,
           replacement: replacement.replacement,
-          expectedOriginal: replacement.expectedOriginal
+          expectedOriginal: replacement.expectedOriginal,
+          allowDestructiveReplacement: replacement.coversWholeDocument
+            && replacement.replacement.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         )
       }.value
     } catch {
@@ -5672,6 +5690,7 @@ public final class WorkspaceStore: ObservableObject {
     editableBlockText = draft.block.rawText
     activeBlockDrafts[draft.block.id] = draft.block.rawText
     revealRenderedBlockIfHiddenByFold(draft.block.id)
+    requestDetailReveal(toBlock: draft.block.id)
   }
 
   private func revealRenderedBlockIfHiddenByFold(_ blockID: OrgEditableBlock.ID) {
@@ -6343,6 +6362,29 @@ public final class WorkspaceStore: ObservableObject {
       errorText = error.localizedDescription
       statusText = "Could not open \(url.lastPathComponent)"
     }
+  }
+
+  public func ensureHomeDetailReady() {
+    selectedSurface = .home
+    expandedWorkspaceSurface = nil
+    isWorkspaceSurfacePaneClosed = false
+    isWorkspaceDetailPaneClosed = false
+    isWorkspaceDetailPaneExpanded = false
+    guard isTodayHomeDetailSelected else {
+      openHome()
+      return
+    }
+  }
+
+  private var isTodayHomeDetailSelected: Bool {
+    guard selectedSurface == .home,
+          selectedEntrySourceMode == .page,
+          let corpusRoot,
+          let selectedLocation
+    else {
+      return false
+    }
+    return URL(fileURLWithPath: selectedLocation.file).standardizedFileURL.path == todayDailyNotePath(corpusRoot: corpusRoot).standardizedFileURL.path
   }
 
   public var canStartOpenClawVoiceNoteRecording: Bool {
@@ -7902,6 +7944,13 @@ public final class WorkspaceStore: ObservableObject {
     detailScrollRequest = DetailScrollRequest(
       id: (detailScrollRequest?.id ?? 0) + 1,
       target: .block(blockID)
+    )
+  }
+
+  public func requestDetailReveal(toBlock blockID: OrgEditableBlock.ID) {
+    detailScrollRequest = DetailScrollRequest(
+      id: (detailScrollRequest?.id ?? 0) + 1,
+      target: .revealBlock(blockID)
     )
   }
 
@@ -9597,7 +9646,7 @@ public final class WorkspaceStore: ObservableObject {
       guard Self.normalizeLineEndings(current) == Self.normalizeLineEndings(expectedCurrent) else {
         throw WorkspaceEditError.fileChanged(file: standardized)
       }
-      try Self.writeFileText(text, to: standardized)
+      try Self.writeFileText(text, to: standardized, allowDestructiveReplacement: true)
     }.value
 
     if affectsSelectedFile {
@@ -10546,8 +10595,8 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func restoreCorpusRoot() -> URL? {
-    if let saved = defaults.string(forKey: corpusKey), isDirectory(saved) {
-      return URL(fileURLWithPath: saved).standardizedFileURL
+    if let saved = restoreSavedCorpusRoot() {
+      return saved
     }
 
     let candidates = [
@@ -10560,6 +10609,13 @@ public final class WorkspaceStore: ObservableObject {
     return candidates.first(where: isDirectory).map {
       URL(fileURLWithPath: $0).standardizedFileURL
     }
+  }
+
+  private func restoreSavedCorpusRoot() -> URL? {
+    guard let saved = defaults.string(forKey: corpusKey), isDirectory(saved) else {
+      return nil
+    }
+    return URL(fileURLWithPath: saved).standardizedFileURL
   }
 
   private func currentOpenClawSettings(allowKeychainRead: Bool = false) -> OpenClawGatewaySettings {
@@ -11630,13 +11686,18 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  nonisolated private static func replaceEntrySource(_ source: EntrySource, with replacement: String) throws {
+  nonisolated private static func replaceEntrySource(
+    _ source: EntrySource,
+    with replacement: String,
+    allowDestructiveReplacement: Bool = false
+  ) throws {
     try replaceSourceRange(
       file: source.file,
       startLine: source.startLine,
       endLineExclusive: source.endLineExclusive,
       replacement: replacement,
-      expectedOriginal: source.text
+      expectedOriginal: source.text,
+      allowDestructiveReplacement: allowDestructiveReplacement
     )
   }
 
@@ -11644,8 +11705,133 @@ public final class WorkspaceStore: ObservableObject {
     try String(contentsOf: URL(fileURLWithPath: file), encoding: .utf8)
   }
 
-  nonisolated private static func writeFileText(_ text: String, to file: String) throws {
-    try text.write(to: URL(fileURLWithPath: file), atomically: true, encoding: .utf8)
+  nonisolated private static func writeFileText(
+    _ text: String,
+    to file: String,
+    allowDestructiveReplacement: Bool = false
+  ) throws {
+    let url = URL(fileURLWithPath: file)
+    let previous = FileManager.default.fileExists(atPath: url.path)
+      ? try String(contentsOf: url, encoding: .utf8)
+      : ""
+    try writeOrgTextSafely(
+      text,
+      to: url,
+      replacing: previous,
+      operation: "file snapshot restore",
+      allowDestructiveReplacement: allowDestructiveReplacement
+    )
+  }
+
+  nonisolated private static func writeOrgTextSafely(
+    _ text: String,
+    to url: URL,
+    replacing previousText: String,
+    operation: String,
+    allowDestructiveReplacement: Bool = false
+  ) throws {
+    let assessment = orgFileWriteSafetyAssessment(
+      url: url,
+      previousText: previousText,
+      nextText: text
+    )
+    var backupPath: String?
+
+    if let assessment {
+      let backupURL = try writeOrgRecoveryBackup(
+        for: url,
+        previousText: previousText,
+        reason: assessment.reason
+      )
+      backupPath = backupURL.path
+    }
+
+    if assessment?.shouldBlock == true, !allowDestructiveReplacement {
+      throw WorkspaceEditError.destructiveWriteBlocked(
+        file: url.path,
+        backup: backupPath,
+        operation: operation
+      )
+    }
+
+    try text.write(to: url, atomically: true, encoding: .utf8)
+  }
+
+  nonisolated private static func orgFileWriteSafetyAssessment(
+    url: URL,
+    previousText: String,
+    nextText: String
+  ) -> (reason: String, shouldBlock: Bool)? {
+    guard isOrgTextFile(url),
+          !url.pathComponents.contains(".org2-recovery")
+    else {
+      return nil
+    }
+
+    let previous = normalizeLineEndings(previousText)
+    let next = normalizeLineEndings(nextText)
+    guard !previous.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return nil
+    }
+
+    if next.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return ("empty-write", true)
+    }
+
+    let previousByteCount = previous.utf8.count
+    let nextByteCount = next.utf8.count
+    if previousByteCount >= 8192,
+       nextByteCount < max(512, previousByteCount / 20) {
+      return ("large-shrink", false)
+    }
+
+    return nil
+  }
+
+  nonisolated private static func isOrgTextFile(_ url: URL) -> Bool {
+    let ext = url.pathExtension.lowercased()
+    return ext == "org" || ext == "org2"
+  }
+
+  nonisolated private static func writeOrgRecoveryBackup(
+    for url: URL,
+    previousText: String,
+    reason: String
+  ) throws -> URL {
+    let backupDirectory = url
+      .deletingLastPathComponent()
+      .appendingPathComponent(".org2-recovery", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: backupDirectory,
+      withIntermediateDirectories: true
+    )
+
+    let sanitizedFileName = url.lastPathComponent.replacingOccurrences(
+      of: #"[^A-Za-z0-9._-]+"#,
+      with: "-",
+      options: .regularExpression
+    )
+    let sanitizedReason = reason.replacingOccurrences(
+      of: #"[^A-Za-z0-9._-]+"#,
+      with: "-",
+      options: .regularExpression
+    )
+    let baseName = "\(sanitizedFileName).before-\(sanitizedReason).\(orgRecoveryTimestamp())"
+    var backupURL = backupDirectory.appendingPathComponent(baseName)
+    var collisionIndex = 1
+    while FileManager.default.fileExists(atPath: backupURL.path) {
+      backupURL = backupDirectory.appendingPathComponent("\(baseName).\(collisionIndex)")
+      collisionIndex += 1
+    }
+    try previousText.write(to: backupURL, atomically: true, encoding: .utf8)
+    return backupURL
+  }
+
+  nonisolated private static func orgRecoveryTimestamp() -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyyMMdd-HHmmss"
+    return formatter.string(from: Date())
   }
 
   nonisolated private static func entrySource(_ source: EntrySource, replacingText replacement: String) -> EntrySource {
@@ -11828,7 +12014,8 @@ public final class WorkspaceStore: ObservableObject {
     replacement: String,
     expectedOriginal: String,
     updatedSource: EntrySource,
-    caretSourceUTF16Offset: Int
+    caretSourceUTF16Offset: Int,
+    coversWholeDocument: Bool
   ) {
     let sortedPairs = pairs.sorted { lhs, rhs in
       if lhs.block.startLine != rhs.block.startLine {
@@ -11900,7 +12087,8 @@ public final class WorkspaceStore: ObservableObject {
       replacement: replacement,
       expectedOriginal: expectedOriginal,
       updatedSource: updatedSource,
-      caretSourceUTF16Offset: caretSourceUTF16Offset
+      caretSourceUTF16Offset: caretSourceUTF16Offset,
+      coversWholeDocument: coversWholeDocument
     )
   }
 
@@ -12044,7 +12232,8 @@ public final class WorkspaceStore: ObservableObject {
     startLine: Int,
     endLineExclusive: Int,
     replacement: String,
-    expectedOriginal: String? = nil
+    expectedOriginal: String? = nil,
+    allowDestructiveReplacement: Bool = false
   ) throws {
     let url = URL(fileURLWithPath: file)
     let raw = try String(contentsOf: url, encoding: .utf8)
@@ -12077,7 +12266,13 @@ public final class WorkspaceStore: ObservableObject {
     if raw.hasSuffix("\n"), !output.isEmpty, !output.hasSuffix("\n") {
       output += "\n"
     }
-    try output.write(to: url, atomically: true, encoding: .utf8)
+    try writeOrgTextSafely(
+      output,
+      to: url,
+      replacing: raw,
+      operation: "source range edit",
+      allowDestructiveReplacement: allowDestructiveReplacement
+    )
   }
 
   nonisolated private static func splitBlockPlan(
@@ -13037,16 +13232,16 @@ public final class WorkspaceStore: ObservableObject {
     Task { await refreshOpenClawThreads() }
   }
 
-  private func beginMeetingProcessing(title: String, status: String) {
-    let titleKey = Self.normalizedMeetingProcessingTitle(title)
-    activeMeetingProcessingTitles.insert(titleKey)
-    activeMeetingProcessingItems[titleKey] = MeetingProcessingItem(
-      id: titleKey,
-      title: title,
+  private func beginMeetingProcessing(paths: MeetingArtifactPaths, status: String) {
+    let processingID = Self.meetingProcessingID(for: paths)
+    activeMeetingProcessingIDs.insert(processingID)
+    activeMeetingProcessingItems[processingID] = MeetingProcessingItem(
+      id: processingID,
+      title: paths.title,
       status: status,
       startedAt: Date()
     )
-    activeMeetingProcessingCount = activeMeetingProcessingTitles.count
+    activeMeetingProcessingCount = activeMeetingProcessingIDs.count
     publishMeetingProcessingItems()
     if !isRecordingMeeting {
       meetingStatusText = status
@@ -13054,36 +13249,43 @@ public final class WorkspaceStore: ObservableObject {
     statusText = status
   }
 
-  private func endMeetingProcessing(title: String) {
-    let titleKey = Self.normalizedMeetingProcessingTitle(title)
-    activeMeetingProcessingTitles.remove(titleKey)
-    activeMeetingProcessingItems.removeValue(forKey: titleKey)
-    activeMeetingProcessingCount = activeMeetingProcessingTitles.count
+  func beginMeetingProcessingForTesting(paths: MeetingArtifactPaths, status: String) {
+    beginMeetingProcessing(paths: paths, status: status)
+  }
+
+  private func endMeetingProcessing(paths: MeetingArtifactPaths) {
+    let processingID = Self.meetingProcessingID(for: paths)
+    activeMeetingProcessingIDs.remove(processingID)
+    activeMeetingProcessingItems.removeValue(forKey: processingID)
+    activeMeetingProcessingCount = activeMeetingProcessingIDs.count
     publishMeetingProcessingItems()
   }
 
   private func reconcileMeetingProcessingState(with items: [MeetingWorkspaceItem]) {
     guard isProcessingMeeting else { return }
 
-    let completedTitles = Set(items.compactMap { item -> String? in
+    let completedIDs = Set(items.compactMap { item -> String? in
       guard item.transcriptionStatus?.lowercased() == MeetingTranscriptionStatus.complete.rawValue else {
         return nil
       }
-      return Self.normalizedMeetingProcessingTitle(item.title)
+      return Self.meetingProcessingID(for: item)
     })
 
-    if !activeMeetingProcessingTitles.isEmpty {
-      for completedTitle in completedTitles {
-        activeMeetingProcessingTitles.remove(completedTitle)
-        activeMeetingProcessingItems.removeValue(forKey: completedTitle)
+    if !activeMeetingProcessingIDs.isEmpty {
+      for completedID in completedIDs {
+        activeMeetingProcessingIDs.remove(completedID)
+        activeMeetingProcessingItems.removeValue(forKey: completedID)
       }
-      activeMeetingProcessingCount = activeMeetingProcessingTitles.count
+      activeMeetingProcessingCount = activeMeetingProcessingIDs.count
       publishMeetingProcessingItems()
-      if activeMeetingProcessingTitles.isEmpty {
+      if activeMeetingProcessingIDs.isEmpty {
         clearMeetingProcessingState()
       }
     } else if let staleTitle = Self.transcribingMeetingTitle(fromStatus: meetingStatusText),
-              completedTitles.contains(Self.normalizedMeetingProcessingTitle(staleTitle)) {
+              items.contains(where: { item in
+                item.transcriptionStatus?.lowercased() == MeetingTranscriptionStatus.complete.rawValue
+                  && Self.normalizedMeetingProcessingTitle(item.title) == Self.normalizedMeetingProcessingTitle(staleTitle)
+              }) {
       clearMeetingProcessingState()
     }
 
@@ -13102,8 +13304,16 @@ public final class WorkspaceStore: ObservableObject {
     title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
   }
 
+  nonisolated private static func meetingProcessingID(for paths: MeetingArtifactPaths) -> String {
+    paths.noteURL.standardizedFileURL.path
+  }
+
+  nonisolated private static func meetingProcessingID(for item: MeetingWorkspaceItem) -> String {
+    URL(fileURLWithPath: item.file).standardizedFileURL.path
+  }
+
   private func clearMeetingProcessingState() {
-    activeMeetingProcessingTitles = []
+    activeMeetingProcessingIDs = []
     activeMeetingProcessingItems = [:]
     activeMeetingProcessingCount = 0
     isProcessingMeeting = false
@@ -13220,7 +13430,8 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated private static func deleteSourceRangeCleaningAdjacentBlank(
     file: String,
     startLine: Int,
-    endLineExclusive: Int
+    endLineExclusive: Int,
+    allowDestructiveReplacement: Bool = false
   ) throws {
     let url = URL(fileURLWithPath: file)
     let raw = try String(contentsOf: url, encoding: .utf8)
@@ -13241,7 +13452,13 @@ public final class WorkspaceStore: ObservableObject {
     if raw.hasSuffix("\n"), !output.hasSuffix("\n") {
       output += "\n"
     }
-    try output.write(to: url, atomically: true, encoding: .utf8)
+    try writeOrgTextSafely(
+      output,
+      to: url,
+      replacing: raw,
+      operation: "source range delete",
+      allowDestructiveReplacement: allowDestructiveReplacement
+    )
   }
 
   nonisolated private static func adjustedDeletionRangeCleaningAdjacentBlank(
@@ -13312,7 +13529,12 @@ public final class WorkspaceStore: ObservableObject {
     if raw.hasSuffix("\n"), !output.hasSuffix("\n") {
       output += "\n"
     }
-    try output.write(to: url, atomically: true, encoding: .utf8)
+    try writeOrgTextSafely(
+      output,
+      to: url,
+      replacing: raw,
+      operation: "source range swap"
+    )
   }
 
   nonisolated private static func scanAssignedWorkItems(files: [CorpusFile]) throws -> [AssignedWorkItem] {
@@ -14101,7 +14323,6 @@ public final class WorkspaceStore: ObservableObject {
     let root = corpusRoot.standardizedFileURL
     let rootPath = root.path
     let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .isDirectoryKey, .fileSizeKey]
-    let skippedDirectories = Set([".git", ".hg", ".svn", ".trash", "node_modules", "dist", "build", ".build", "DerivedData"])
     guard let enumerator = FileManager.default.enumerator(
       at: root,
       includingPropertiesForKeys: Array(resourceKeys),
@@ -14116,7 +14337,7 @@ public final class WorkspaceStore: ObservableObject {
         continue
       }
       if values.isDirectory == true {
-        if skippedDirectories.contains(url.lastPathComponent) {
+        if shouldSkipDefaultCorpusDirectory(url.lastPathComponent) {
           enumerator.skipDescendants()
         }
         continue
@@ -14257,7 +14478,6 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated private static func scanCorpusFiles(corpusRoot: URL) throws -> [CorpusFile] {
     let root = corpusRoot.standardizedFileURL
     let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .isDirectoryKey, .contentModificationDateKey, .fileSizeKey]
-    let skippedDirectories = Set([".git", ".hg", ".svn", ".trash", ".org2", "node_modules", "dist", "build", ".build", "DerivedData", "sync-conflicts"])
     let allowedExtensions = Set(["org", "org2", "md"])
     guard let enumerator = FileManager.default.enumerator(
       at: root,
@@ -14271,7 +14491,7 @@ public final class WorkspaceStore: ObservableObject {
     for case let url as URL in enumerator {
       let values = try url.resourceValues(forKeys: resourceKeys)
       if values.isDirectory == true {
-        if skippedDirectories.contains(url.lastPathComponent) {
+        if shouldSkipDefaultCorpusDirectory(url.lastPathComponent) {
           enumerator.skipDescendants()
         }
         continue
@@ -14301,9 +14521,36 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  nonisolated private static let defaultIgnoredCorpusDirectories = Set([
+    ".git",
+    ".hg",
+    ".svn",
+    ".stversions",
+    ".trash",
+    ".org2",
+    "node_modules",
+    "dist",
+    "build",
+    ".build",
+    "DerivedData",
+    "sync-conflicts"
+  ])
+
+  nonisolated private static func shouldSkipDefaultCorpusDirectory(_ name: String) -> Bool {
+    name.hasPrefix(".") || defaultIgnoredCorpusDirectories.contains(name)
+  }
+
+  nonisolated private static func hasDefaultIgnoredCorpusPathComponent(_ path: String) -> Bool {
+    path.split(separator: "/").contains { component in
+      defaultIgnoredCorpusDirectories.contains(String(component))
+    }
+  }
+
   nonisolated private static func isDefaultIgnoredSyncArtifactPath(_ path: String) -> Bool {
     let name = URL(fileURLWithPath: path).lastPathComponent
-    return name.hasPrefix(".syncthing.")
+    return hasDefaultIgnoredCorpusPathComponent(path)
+      || name.hasPrefix(".syncthing.")
+      || name.hasPrefix(".")
       || name.contains(".sync-conflict-")
       || name.hasSuffix(".tmp")
   }
@@ -15666,6 +15913,7 @@ private enum WorkspaceEditError: LocalizedError {
   case noHeadline(file: String, line: Int)
   case invalidRange(file: String, line: Int)
   case fileChanged(file: String)
+  case destructiveWriteBlocked(file: String, backup: String?, operation: String)
 
   var errorDescription: String? {
     switch self {
@@ -15679,6 +15927,12 @@ private enum WorkspaceEditError: LocalizedError {
       "Invalid edit range at \(file):\(line)"
     case .fileChanged(let file):
       "File changed on disk; reload \(file) before saving"
+    case .destructiveWriteBlocked(let file, let backup, let operation):
+      if let backup {
+        "Blocked \(operation) because it would empty \(file). Recovery copy saved at \(backup)."
+      } else {
+        "Blocked \(operation) because it would empty \(file)."
+      }
     }
   }
 }

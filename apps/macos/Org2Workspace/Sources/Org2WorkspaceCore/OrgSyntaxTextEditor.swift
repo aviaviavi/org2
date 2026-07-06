@@ -60,6 +60,7 @@ fileprivate enum OrgSyntaxTextBoundaryCaretPlacement {
 
 final class OrgSyntaxTextView: NSTextView {
   var documentSelectionContext: OrgSyntaxTextSelectionContext?
+  var onSaveCommand: ((OrgSyntaxTextEditorSubmitContext) -> Bool)?
   var onDeleteDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment]) -> Bool)?
   var onReplaceDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment], String) -> Bool)?
   var isApplyingCrossEditorSelection = false
@@ -111,6 +112,10 @@ final class OrgSyntaxTextView: NSTextView {
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
     if handlesCrossEditorCopyShortcut(event) {
       copy(nil)
+      return true
+    }
+    if handlesSaveShortcut(event),
+       onSaveCommand?(OrgSyntaxTextEditorSubmitContext(text: string, selectedRange: selectedRange())) == true {
       return true
     }
     if handlesDocumentSelectAllShortcut(event),
@@ -172,6 +177,12 @@ final class OrgSyntaxTextView: NSTextView {
     return modifiers == .command
       && event.charactersIgnoringModifiers?.lowercased() == "c"
       && OrgSyntaxTextSelectionBridge.selectedText(containing: self) != nil
+  }
+
+  private func handlesSaveShortcut(_ event: NSEvent) -> Bool {
+    let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    return modifiers == .command
+      && event.charactersIgnoringModifiers?.lowercased() == "s"
   }
 
   private func handlesDocumentSelectAllShortcut(_ event: NSEvent) -> Bool {
@@ -662,6 +673,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   let contentHeight: Binding<CGFloat>?
   let onLocalTextChange: ((String) -> Void)?
   let shouldPublishTextImmediately: ((String) -> Bool)?
+  let onSaveCommand: ((OrgSyntaxTextEditorSubmitContext) -> Bool)?
   let onSubmit: (() -> Bool)?
   let onSubmitContext: ((OrgSyntaxTextEditorSubmitContext) -> Bool)?
   let onDeleteBackwardContext: ((OrgSyntaxTextEditorSubmitContext) -> Bool)?
@@ -681,6 +693,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     contentHeight: Binding<CGFloat>? = nil,
     onLocalTextChange: ((String) -> Void)? = nil,
     shouldPublishTextImmediately: ((String) -> Bool)? = nil,
+    onSaveCommand: ((OrgSyntaxTextEditorSubmitContext) -> Bool)? = nil,
     onSubmit: (() -> Bool)? = nil,
     onSubmitContext: ((OrgSyntaxTextEditorSubmitContext) -> Bool)? = nil,
     onDeleteBackwardContext: ((OrgSyntaxTextEditorSubmitContext) -> Bool)? = nil,
@@ -699,6 +712,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     self.contentHeight = contentHeight
     self.onLocalTextChange = onLocalTextChange
     self.shouldPublishTextImmediately = shouldPublishTextImmediately
+    self.onSaveCommand = onSaveCommand
     self.onSubmit = onSubmit
     self.onSubmitContext = onSubmitContext
     self.onDeleteBackwardContext = onDeleteBackwardContext
@@ -722,6 +736,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     let textView = OrgSyntaxTextView()
     textView.delegate = context.coordinator
     textView.documentSelectionContext = documentSelectionContext
+    textView.onSaveCommand = onSaveCommand
     textView.onDeleteDocumentSelection = onDeleteDocumentSelection
     textView.onReplaceDocumentSelection = onReplaceDocumentSelection
     textView.string = text
@@ -758,6 +773,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     context.coordinator.parent = self
     guard let textView = scrollView.documentView as? OrgSyntaxTextView else { return }
     textView.documentSelectionContext = documentSelectionContext
+    textView.onSaveCommand = onSaveCommand
     textView.onDeleteDocumentSelection = onDeleteDocumentSelection
     textView.onReplaceDocumentSelection = onReplaceDocumentSelection
 

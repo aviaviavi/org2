@@ -2086,6 +2086,7 @@ struct LiveRenderedTextBlockEditor: View {
         isFocused: $isTextFocused,
         onLocalTextChange: handleLocalTextChange,
         shouldPublishTextImmediately: ParagraphEditorTextPublishingPolicy.shouldPublishImmediately,
+        onSaveCommand: saveTextBlock,
         onSubmitContext: submitTextBlock,
         onDeleteBackwardContext: deleteBackwardFromStart,
         documentSelectionContext: documentSelectionContext,
@@ -2244,6 +2245,20 @@ struct LiveRenderedTextBlockEditor: View {
     }
     store.updateEditingBlockDraft(block, draft: replacement)
     Task { await store.saveEditedBlock(block) }
+  }
+
+  private func saveTextBlock(_ context: OrgSyntaxTextEditorSubmitContext) -> Bool {
+    activateEditingContext()
+    autosaveTask?.cancel()
+    autosaveTask = nil
+    draftText = context.text
+    liveText.update(context.text)
+    presentationText = context.text
+    reserveEditorLines(for: context.text)
+    let sourceText = Self.sourceText(for: block, editableText: context.text)
+    store.updateEditingBlockDraft(block, draft: sourceText)
+    Task { await store.saveEditedBlock(block) }
+    return true
   }
 
   private func submitTextBlock(_ context: OrgSyntaxTextEditorSubmitContext) -> Bool {

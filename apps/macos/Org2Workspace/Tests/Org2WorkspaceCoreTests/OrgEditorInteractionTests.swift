@@ -248,6 +248,53 @@ final class OrgEditorInteractionTests: XCTestCase {
     XCTAssertEqual(source, "alphab")
   }
 
+  func testCommandSInApprovalBodyPersistsFocusedEditorDraft() async throws {
+    let harness = try await makeHarness(initialText: """
+    * TODO Approve reply to Maya
+    :PROPERTIES:
+    :ASSIGNEE: Avi
+    :STATUS: draft-needs-review
+    :END:
+
+    Draft body
+    """)
+    let item = ApprovalItem(
+      title: "Approve reply to Maya",
+      status: "draft-needs-review",
+      todo: "TODO",
+      level: 1,
+      file: harness.file.path,
+      line: 1,
+      idValue: nil,
+      properties: [
+        "ASSIGNEE": "Avi",
+        "STATUS": "draft-needs-review"
+      ],
+      body: "Draft body",
+      tags: []
+    )
+    harness.store.selectedSurface = .approvals
+    harness.store.selectApprovalItem(item)
+    try await waitForCondition {
+      harness.store.selectedRenderedBlocks.contains { $0.rawText == "Draft body" }
+    }
+
+    let bodyEditor = try await harness.syntaxTextView(withExactText: "Draft body")
+    try await harness.focus(
+      bodyEditor,
+      selection: NSRange(location: ("Draft body" as NSString).length, length: 0)
+    )
+    try await harness.typeKeys(" updated")
+    let saveEvent = try XCTUnwrap(harness.keyEvent("s", keyCode: 1, modifiers: .command))
+    XCTAssertTrue(bodyEditor.performKeyEquivalent(with: saveEvent))
+
+    try await waitForCondition {
+      (try? harness.fileText().contains("Draft body updated")) == true
+        && harness.store.editingBlockID == nil
+    }
+    XCTAssertFalse(try harness.fileText().contains("\nDraft body\n"))
+  }
+
   func testTypingListReturnAndBackspaceMergesLikeDocumentEditing() async throws {
     let harness = try await makeHarness(initialText: "")
 
@@ -342,6 +389,74 @@ final class OrgEditorInteractionTests: XCTestCase {
     - [ ] third task
     """), source)
     XCTAssertEqual(source.components(separatedBy: "- [ ]").count - 1, 3)
+  }
+
+  func testRepeatedReturnKeepsAddingListItemsPastSixthItem() async throws {
+    let harness = try await makeHarness(initialText: "")
+
+    try await harness.beginAppendingAtEnd()
+    for index in 1...8 {
+      if index == 1 {
+        try await harness.typeKeys("- [ ] item 1")
+      } else {
+        try await harness.typeKeys("item \(index)")
+      }
+      if index < 8 {
+        try await harness.pressReturnKey()
+        try await harness.waitForFocusedEditorText("")
+      }
+    }
+    try await harness.saveActiveBlock()
+
+    let source = try harness.fileText()
+    let expected = (1...8).map { "- [ ] item \($0)" }.joined(separator: "\n")
+    XCTAssertEqual(source, expected)
+  }
+
+  func testReturnFromSixthExistingListItemCreatesSeventhItem() async throws {
+    let harness = try await makeHarness(initialText: """
+    * Shopping list
+    - chicken thighs
+    - babybell cheese
+    - yellow mustard
+    - red cabbage
+    - 2 limes
+    - star anise
+    """)
+
+    let sixthItem = try await harness.syntaxTextView(withExactText: "star anise")
+    try await harness.focus(
+      sixthItem,
+      selection: NSRange(location: ("star anise" as NSString).length, length: 0)
+    )
+    try await harness.pressReturnKey()
+    try await harness.waitForFocusedEditorText("")
+    let draftID = try XCTUnwrap(harness.store.selectedBlockID)
+    XCTAssertEqual(harness.store.detailScrollRequest?.target, .revealBlock(draftID))
+    try await harness.typeKeys("eggs")
+    try await harness.saveActiveBlock()
+
+    let source = try harness.fileText()
+    XCTAssertTrue(source.contains("""
+    - 2 limes
+    - star anise
+    - eggs
+    """), source)
+  }
+
+  func testHeadingReturnRevealsNextParagraphWithoutCenteredScrollJump() async throws {
+    let existingText = (1...18)
+      .map { "Existing paragraph \($0)" }
+      .joined(separator: "\n\n")
+    let harness = try await makeHarness(initialText: existingText)
+
+    try await harness.beginAppendingAtEnd()
+    try await harness.typeKeys("* New section")
+    try await harness.pressReturnKey()
+    try await harness.waitForFocusedEditorText("")
+
+    let draftID = try XCTUnwrap(harness.store.selectedBlockID)
+    XCTAssertEqual(harness.store.detailScrollRequest?.target, .revealBlock(draftID))
   }
 
   func testReturnOnEmptyListItemExitsToParagraph() async throws {
@@ -642,11 +757,12 @@ final class OrgEditorInteractionTests: XCTestCase {
   }
 
   func testCrossEditorFullSelectionDeleteRemovesSelectedSourceRows() async throws {
-    let harness = try await makeHarness(initialText: """
+    let original = """
     * First heading
     - [ ] task
     * Second heading
-    """)
+    """
+    let harness = try await makeHarness(initialText: original)
 
     let firstHeading = try await harness.syntaxTextView(withExactText: "* First heading")
     let secondHeading = try await harness.syntaxTextView(withExactText: "* Second heading")
@@ -664,6 +780,26 @@ final class OrgEditorInteractionTests: XCTestCase {
       (try? harness.fileText()) == ""
     }
     XCTAssertTrue(harness.store.selectedRenderedBlocks.isEmpty)
+    XCTAssertEqual(try harness.latestRecoveryBackupText(), original)
+  }
+
+  func testLiveFileEditorBlocksEmptyAutosaveAndCreatesRecoveryBackup() async throws {
+    let original = """
+    * Today's note
+    Body that should not disappear.
+    """
+    let harness = try await makeHarness(initialText: original)
+
+    XCTAssertTrue(harness.store.isLiveFileEditorSelected)
+    harness.store.noteLiveFileEditorTextChanged("")
+    await harness.store.saveLiveFileEditor(explicit: false)
+
+    XCTAssertEqual(try harness.fileText(), original)
+    XCTAssertEqual(harness.store.liveFileEditorStatusText, "Autosave failed")
+    XCTAssertTrue(harness.store.errorText?.contains("would empty") == true)
+    XCTAssertEqual(try harness.latestRecoveryBackupText(), original)
+
+    harness.store.revertLiveFileEditor()
   }
 
   func testPartialCrossEntrySelectionDeleteRemovesHighlightedSourceRange() async throws {
@@ -998,6 +1134,23 @@ private struct EditorInteractionHarness {
 
   func fileText() throws -> String {
     try String(contentsOf: file, encoding: .utf8)
+  }
+
+  func latestRecoveryBackupText() throws -> String {
+    let backups = try recoveryBackupURLs()
+    let latest = try XCTUnwrap(backups.sorted { $0.lastPathComponent < $1.lastPathComponent }.last)
+    return try String(contentsOf: latest, encoding: .utf8)
+  }
+
+  private func recoveryBackupURLs() throws -> [URL] {
+    let directory = file.deletingLastPathComponent().appendingPathComponent(".org2-recovery", isDirectory: true)
+    guard FileManager.default.fileExists(atPath: directory.path) else {
+      return []
+    }
+    return try FileManager.default.contentsOfDirectory(
+      at: directory,
+      includingPropertiesForKeys: nil
+    ).filter { !$0.hasDirectoryPath }
   }
 
   func syntaxTextView(withExactText text: String) async throws -> OrgSyntaxTextView {

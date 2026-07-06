@@ -31,6 +31,7 @@ struct OrgRenderedEntryView: View, Equatable {
   let selectedBlockIndex: Int?
   let editingBlockID: OrgEditableBlock.ID?
   let foldedBlockIDs: Set<OrgEditableBlock.ID>
+  let detailScrollRequest: DetailScrollRequest?
   let sourceBlockRunsRenderSignature: String
   let sourceBlockRuns: [String: SourceBlockRunState]
   let searchHighlightQuery: String?
@@ -47,6 +48,7 @@ struct OrgRenderedEntryView: View, Equatable {
     selectedBlockIndex: Int?,
     editingBlockID: OrgEditableBlock.ID?,
     foldedBlockIDs: Set<OrgEditableBlock.ID> = [],
+    detailScrollRequest: DetailScrollRequest? = nil,
     sourceBlockRunsRenderSignature: String,
     sourceBlockRuns: [String: SourceBlockRunState],
     searchHighlightQuery: String? = nil
@@ -59,6 +61,7 @@ struct OrgRenderedEntryView: View, Equatable {
     self.selectedBlockIndex = selectedBlockIndex
     self.editingBlockID = editingBlockID
     self.foldedBlockIDs = foldedBlockIDs
+    self.detailScrollRequest = detailScrollRequest
     self.sourceBlockRunsRenderSignature = sourceBlockRunsRenderSignature
     self.sourceBlockRuns = sourceBlockRuns
     self.searchHighlightQuery = searchHighlightQuery
@@ -72,6 +75,7 @@ struct OrgRenderedEntryView: View, Equatable {
       && lhs.selectedBlockIndex == rhs.selectedBlockIndex
       && lhs.editingBlockID == rhs.editingBlockID
       && lhs.foldedBlockIDs == rhs.foldedBlockIDs
+      && lhs.detailScrollRequest == rhs.detailScrollRequest
       && lhs.sourceBlockRunsRenderSignature == rhs.sourceBlockRunsRenderSignature
       && lhs.searchHighlightQuery == rhs.searchHighlightQuery
   }
@@ -183,6 +187,7 @@ struct OrgRenderedEntryView: View, Equatable {
     )
     .equatable()
     .id(block.id)
+    .background(DetailBlockRevealBridge(blockID: block.id, request: detailScrollRequest))
   }
 
   private func resetRenderedBlockLimitIfNeeded(resetKey: String) {
@@ -425,6 +430,48 @@ struct OrgRenderedEntryView: View, Equatable {
     }
 
     return start..<max(start, end)
+  }
+}
+
+private struct DetailBlockRevealBridge: NSViewRepresentable {
+  let blockID: OrgEditableBlock.ID
+  let request: DetailScrollRequest?
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator()
+  }
+
+  func makeNSView(context: Context) -> NSView {
+    NSView(frame: .zero)
+  }
+
+  func updateNSView(_ view: NSView, context: Context) {
+    guard let request,
+          context.coordinator.lastRequestID != request.id,
+          case .revealBlock(let targetBlockID) = request.target,
+          targetBlockID == blockID
+    else {
+      return
+    }
+    context.coordinator.lastRequestID = request.id
+
+    DispatchQueue.main.async {
+      guard let scrollView = view.enclosingScrollView,
+            let documentView = scrollView.documentView
+      else {
+        return
+      }
+
+      let rowRect = view.convert(view.bounds, to: documentView)
+      guard !rowRect.isEmpty else { return }
+      let paddedRowRect = rowRect.insetBy(dx: 0, dy: -18)
+      guard !scrollView.documentVisibleRect.contains(paddedRowRect) else { return }
+      documentView.scrollToVisible(paddedRowRect)
+    }
+  }
+
+  final class Coordinator {
+    var lastRequestID: Int?
   }
 }
 

@@ -3644,6 +3644,7 @@ public enum DetailScrollDirection: Equatable, Sendable {
 public enum DetailScrollTarget: Equatable, Sendable {
   case page(DetailScrollDirection)
   case block(String)
+  case revealBlock(String)
 }
 
 public struct DetailScrollRequest: Equatable, Sendable {
