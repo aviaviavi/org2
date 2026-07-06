@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 
 const docUri = "file:///todo-completion.org2";
-const docText = "* \n* C\n* NEXT Custom state\n* DONE Closed\n";
+const docText = "* \n* C\n* TODO Open\n* NEXT Custom state\n* DONE Closed\n";
 
 function sendMessage(process, message) {
   const content = JSON.stringify(message);
@@ -72,6 +72,31 @@ function assertSameLabels(actual, expected) {
   assert.deepEqual([...actual].sort(), [...expected].sort());
 }
 
+function decodeSemanticTokenData(data) {
+  const tokens = [];
+  let line = 0;
+  let start = 0;
+
+  for (let i = 0; i + 4 < data.length; i += 5) {
+    const deltaLine = data[i];
+    const deltaStart = data[i + 1];
+    const length = data[i + 2];
+    const tokenType = data[i + 3];
+    const tokenModifiers = data[i + 4];
+
+    line += deltaLine;
+    start = deltaLine === 0 ? start + deltaStart : deltaStart;
+    tokens.push({ line, start, length, tokenType, tokenModifiers });
+  }
+
+  return tokens;
+}
+
+function tokenText(token) {
+  const line = docText.split("\n")[token.line] ?? "";
+  return line.slice(token.start, token.start + token.length);
+}
+
 async function run() {
   const server = spawn("node", ["dist/lsp.js"]);
   const responses = collectResponses(server);
@@ -136,7 +161,7 @@ async function run() {
       method: "textDocument/hover",
       params: {
         textDocument: { uri: docUri },
-        position: { line: 2, character: 3 },
+        position: { line: 3, character: 3 },
       },
     });
     assert.match((await waitForResponse(responses, 4))?.result?.contents?.value || "", /Status bucket: `custom`/);
@@ -147,10 +172,27 @@ async function run() {
       method: "textDocument/hover",
       params: {
         textDocument: { uri: docUri },
-        position: { line: 3, character: 3 },
+        position: { line: 4, character: 3 },
       },
     });
     assert.match((await waitForResponse(responses, 5))?.result?.contents?.value || "", /Status bucket: `closed`/);
+
+    sendMessage(server, {
+      jsonrpc: "2.0",
+      id: 6,
+      method: "textDocument/semanticTokens/full",
+      params: {
+        textDocument: { uri: docUri },
+      },
+    });
+    const semanticTokenData = (await waitForResponse(responses, 6))?.result?.data;
+    assert.ok(Array.isArray(semanticTokenData), `Expected semantic token data, got ${JSON.stringify(semanticTokenData)}`);
+    const keywordTexts = decodeSemanticTokenData(semanticTokenData)
+      .filter((token) => token.tokenType === 0)
+      .map(tokenText);
+    assert.ok(keywordTexts.includes("TODO"), `Expected TODO keyword token, got ${JSON.stringify(keywordTexts)}`);
+    assert.ok(keywordTexts.includes("DONE"), `Expected DONE keyword token, got ${JSON.stringify(keywordTexts)}`);
+    assert.equal(keywordTexts.includes("NEXT"), false);
 
     sendMessage(server, { jsonrpc: "2.0", id: 999, method: "shutdown", params: {} });
     await waitForResponse(responses, 999);

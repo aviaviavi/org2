@@ -1581,21 +1581,7 @@ class LSPServer {
       });
     };
 
-    const todoKeywords = new Set([
-      "TODO",
-      "NEXT",
-      "WAITING",
-      "IN_PROGRESS",
-      "DONE",
-      "CANCELED",
-      "CANCELLED",
-      "OPEN",
-      "BACKLOG",
-      "BLOCKED",
-      "STARTED",
-      "DOING",
-      "CLOSED",
-    ]);
+    const todoKeywords = new Set<string>(TODO_KEYWORDS);
 
     for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
       const line = lines[lineNumber] ?? "";
