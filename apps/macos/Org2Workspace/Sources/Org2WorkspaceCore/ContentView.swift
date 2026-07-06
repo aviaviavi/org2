@@ -188,7 +188,7 @@ private struct HomeView: View {
     OpenClawChatView(presentation: .homePane, surface: .home)
       .onAppear {
         if store.selectedSurface == .home {
-          store.openHome()
+          store.ensureHomeDetailReady()
         }
       }
   }
@@ -4141,33 +4141,58 @@ private struct DetailHeader: View {
 
   @ViewBuilder
   private var editControls: some View {
-    if store.hasActiveEdit {
-      HStack(spacing: 6) {
-        Button {
-          Task { await store.saveActiveEdit() }
-        } label: {
-          Label("Save", systemImage: "checkmark")
-        }
-        .disabled(!store.canSaveActiveEdit)
+    HStack(spacing: 6) {
+      editStatusIndicator
 
+      if !store.isLiveFileEditorSelected {
         Button {
-          store.cancelActiveEdit()
+          store.beginEditingCurrentScope()
         } label: {
-          Label("Cancel", systemImage: "xmark")
+          Label("Edit", systemImage: "square.and.pencil")
         }
+        .disabled(store.hasActiveEdit || store.selectedEntrySource?.isEditable != true || store.isLoadingEntrySource)
+        .opacity(store.hasActiveEdit ? 0 : 1)
+        .allowsHitTesting(!store.hasActiveEdit)
+        .accessibilityHidden(store.hasActiveEdit)
       }
-    } else if store.isLiveFileEditorSelected {
-      if store.isSavingEntry || store.isLiveFileEditorAutosaving {
-        WorkspaceActivityIndicator(size: .small)
-      }
-    } else {
-      Button {
-        store.beginEditingCurrentScope()
-      } label: {
-        Label("Edit", systemImage: "square.and.pencil")
-      }
-      .disabled(store.selectedEntrySource?.isEditable != true || store.isLoadingEntrySource)
     }
+  }
+
+  private var editStatusIndicator: some View {
+    ZStack {
+      if isPersistingEditorChanges {
+        WorkspaceActivityIndicator(size: .small)
+          .accessibilityLabel("Saving changes")
+      } else if hasPendingEditorChanges {
+        Image(systemName: "circle.fill")
+          .font(.system(size: 8, weight: .semibold))
+          .foregroundStyle(.orange)
+          .accessibilityLabel("Unsaved changes")
+      } else {
+        Color.clear
+          .accessibilityHidden(true)
+      }
+    }
+    .frame(width: 24, height: 24)
+    .help(editStatusHelp)
+  }
+
+  private var isPersistingEditorChanges: Bool {
+    store.isSavingEntry || store.isSavingBlock || store.isLiveFileEditorAutosaving
+  }
+
+  private var hasPendingEditorChanges: Bool {
+    store.hasActiveEdit || store.liveFileEditorHasUnsavedChanges
+  }
+
+  private var editStatusHelp: String {
+    if isPersistingEditorChanges {
+      return "Saving changes"
+    }
+    if hasPendingEditorChanges {
+      return "Unsaved changes. Press Command-S to save."
+    }
+    return "No unsaved editor changes"
   }
 
   @ViewBuilder
@@ -4314,6 +4339,7 @@ private struct LiveFileEditorBody: View {
                 selectedBlockIndex: store.selectedBlockID.flatMap { store.selectedRenderedBlockIndexes[$0] },
                 editingBlockID: store.editingBlockID,
                 foldedBlockIDs: store.foldedRenderedBlockIDs,
+                detailScrollRequest: store.detailScrollRequest,
                 sourceBlockRunsRenderSignature: store.sourceBlockRunsRenderSignature,
                 sourceBlockRuns: store.sourceBlockRuns,
                 searchHighlightQuery: store.renderedSearchHighlightQuery
@@ -4416,6 +4442,7 @@ private struct EntryBodyView: View {
             selectedBlockIndex: store.selectedBlockID.flatMap { store.selectedRenderedBlockIndexes[$0] },
             editingBlockID: store.editingBlockID,
             foldedBlockIDs: store.foldedRenderedBlockIDs,
+            detailScrollRequest: store.detailScrollRequest,
             sourceBlockRunsRenderSignature: store.sourceBlockRunsRenderSignature,
             sourceBlockRuns: store.sourceBlockRuns,
             searchHighlightQuery: store.renderedSearchHighlightQuery

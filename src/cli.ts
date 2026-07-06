@@ -7333,12 +7333,41 @@ function isDefaultRoamLinkifyArchivedPath(filePath: string): boolean {
   return isDefaultArchivePath(filePath);
 }
 
+const DEFAULT_IGNORED_CORPUS_DIRECTORIES = new Set([
+  ".git",
+  ".hg",
+  ".svn",
+  ".stversions",
+  ".trash",
+  ".org2",
+  "node_modules",
+  "dist",
+  "build",
+  ".build",
+  "DerivedData",
+  "sync-conflicts",
+]);
+
+function isDefaultIgnoredCorpusDirectoryName(name: string): boolean {
+  return name.startsWith(".") || DEFAULT_IGNORED_CORPUS_DIRECTORIES.has(name);
+}
+
+function hasDefaultIgnoredCorpusPathComponent(filePath: string): boolean {
+  return path.normalize(filePath)
+    .split(path.sep)
+    .some((component) => DEFAULT_IGNORED_CORPUS_DIRECTORIES.has(component));
+}
+
 function isDefaultIgnoredSyncArtifactPath(filePath: string): boolean {
   const base = path.basename(filePath);
-  return base.startsWith(".syncthing.") || base.includes(".sync-conflict-") || base.endsWith(".tmp");
+  return hasDefaultIgnoredCorpusPathComponent(filePath)
+    || base.startsWith(".syncthing.")
+    || base.includes(".sync-conflict-")
+    || base.endsWith(".tmp");
 }
 
 function isOrgLikeFileName(fileName: string, includeArchives = false): boolean {
+  if (fileName.startsWith(".")) return false;
   if (isDefaultIgnoredSyncArtifactPath(fileName)) return false;
   if (fileName.endsWith(".org") || fileName.endsWith(".org2")) return true;
   return includeArchives && isDefaultArchivePath(fileName);
@@ -7378,8 +7407,7 @@ function listOrgLikeFiles(rootDir: string, recursiveScan: boolean, includeArchiv
     for (const ent of entries) {
       const full = path.join(d, ent.name);
       if (ent.isDirectory()) {
-        // Skip common noisy directories
-        if (ent.name === ".git" || ent.name === "node_modules" || ent.name === ".org2") continue;
+        if (isDefaultIgnoredCorpusDirectoryName(ent.name)) continue;
         if (recursiveScan) walk(full);
         continue;
       }

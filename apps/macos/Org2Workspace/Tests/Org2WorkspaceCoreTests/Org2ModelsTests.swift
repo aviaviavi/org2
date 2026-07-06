@@ -1020,6 +1020,44 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testMacApprovalsIgnoreSyncthingHistorySnapshots() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-approval-stversions-\(UUID().uuidString)", isDirectory: true)
+    let agents = root.appendingPathComponent("agents", isDirectory: true)
+    let versions = root.appendingPathComponent(".stversions/agents", isDirectory: true)
+    try FileManager.default.createDirectory(at: agents, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: versions, withIntermediateDirectories: true)
+
+    let live = agents.appendingPathComponent("scarf-revenue-scout.org2")
+    let snapshot = versions.appendingPathComponent("scarf-revenue-scout~20260706-100605.org2")
+    let approval = """
+    **** TODO Approve account-aware follow-up to Databricks / Unity Catalog
+    :PROPERTIES:
+    :ID: approval-databricks
+    :STATUS: draft-needs-review
+    :END:
+    Draft text.
+    """
+    try approval.write(to: live, atomically: true, encoding: .utf8)
+    try approval.write(to: snapshot, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+
+    await store.refreshApprovals(updatesStatus: true)
+
+    XCTAssertEqual(store.approvalItems.count, 1)
+    let approvalItem = try XCTUnwrap(store.approvalItems.first)
+    XCTAssertEqual(approvalItem.title, "Approve account-aware follow-up to Databricks / Unity Catalog")
+    XCTAssertEqual(approvalItem.file, live.path)
+    XCTAssertFalse(approvalItem.file.contains(".stversions"))
+    XCTAssertEqual(store.statusText, "1 approval")
+  }
+
+  @MainActor
   func testLocalCorpusApprovalsRefreshWhenConfigured() async throws {
     let environment = ProcessInfo.processInfo.environment
     guard let rawCorpus = environment["ORG2_WORKSPACE_LOCAL_CORPUS"]?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -1920,6 +1958,54 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(store.isProcessingMeeting)
     XCTAssertFalse(store.meetingStatusText.hasPrefix("Transcribing "))
     XCTAssertEqual(store.meetings.first?.transcriptionStatus, "complete")
+  }
+
+  @MainActor
+  func testRefreshMeetingsKeepsDuplicateTitleProcessingScopedToArtifact() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-meeting-duplicate-processing-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let olderDate = ISO8601DateFormatter().date(from: "2026-07-03T15:02:04Z")!
+    let activeDate = ISO8601DateFormatter().date(from: "2026-07-06T14:29:55Z")!
+    let olderPaths = try MeetingArtifactWriter.preparePaths(
+      corpusRoot: root,
+      title: "Dev Standup",
+      recordedAt: olderDate
+    )
+    let activePaths = try MeetingArtifactWriter.preparePaths(
+      corpusRoot: root,
+      title: "Dev Standup",
+      recordedAt: activeDate
+    )
+    try Data("older audio".utf8).write(to: olderPaths.audioURL)
+    _ = try MeetingArtifactWriter.writeArtifacts(
+      paths: olderPaths,
+      corpusRoot: root,
+      duration: nil,
+      transcript: MeetingTranscriptResult(
+        text: "Older transcript is complete.",
+        status: .complete,
+        engine: "whisper.cpp"
+      )
+    )
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.selectedSurface = .meetings
+    store.beginMeetingProcessingForTesting(
+      paths: activePaths,
+      status: "Transcribing Dev Standup locally..."
+    )
+
+    await store.refreshMeetings()
+
+    let olderMeeting = try XCTUnwrap(store.meetings.first)
+    XCTAssertEqual(olderMeeting.title, "Dev Standup")
+    XCTAssertEqual(olderMeeting.transcriptionStatus, "complete")
+    XCTAssertTrue(store.isProcessingMeeting)
+    XCTAssertFalse(store.isMeetingProcessing(olderMeeting))
+    XCTAssertEqual(store.pendingMeetingProcessingItems.map(\.id), [activePaths.noteURL.standardizedFileURL.path])
+    XCTAssertEqual(store.pendingMeetingProcessingItems.map(\.title), ["Dev Standup"])
   }
 
   func testOpenClawComposerSizingGrowsAndCaps() {
@@ -4470,8 +4556,10 @@ final class Org2ModelsTests: XCTestCase {
       .appendingPathComponent("org2-workspace-files-\(UUID().uuidString)", isDirectory: true)
     let notes = root.appendingPathComponent("notes", isDirectory: true)
     let ignored = root.appendingPathComponent("node_modules/pkg", isDirectory: true)
+    let versioned = root.appendingPathComponent(".stversions/notes", isDirectory: true)
     try FileManager.default.createDirectory(at: notes, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: ignored, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: versioned, withIntermediateDirectories: true)
 
     let alice = notes.appendingPathComponent("alice.org2")
     try """
@@ -4485,6 +4573,7 @@ final class Org2ModelsTests: XCTestCase {
     """.write(to: alice, atomically: true, encoding: .utf8)
     try "# Scratch\n".write(to: root.appendingPathComponent("scratch.md"), atomically: true, encoding: .utf8)
     try "ignored\n".write(to: ignored.appendingPathComponent("ignored.org2"), atomically: true, encoding: .utf8)
+    try "ignored snapshot\n".write(to: versioned.appendingPathComponent("alice~20260706-100605.org2"), atomically: true, encoding: .utf8)
 
     let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
     store.setCorpusRoot(root)
@@ -5415,6 +5504,40 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedLocation?.file, daily.path)
     XCTAssertEqual(store.selectedLocation?.lineForEditor, 1)
     XCTAssertEqual(store.corpusFiles.map(\.relativePath), ["dailies/\(fileName)"])
+  }
+
+  @MainActor
+  func testStoreInitializationRestoresHomeDailyNoteDetailForSavedCorpus() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-startup-home-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try #"{"roam":{"dailiesDir":"dailies"}}"#
+      .write(to: root.appendingPathComponent("org2.json"), atomically: true, encoding: .utf8)
+    let suiteName = "org2-workspace-startup-home-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.set(root.path, forKey: "Org2Workspace.corpusRoot")
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()), defaults: defaults)
+
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    let fileName = "\(formatter.string(from: Date())).org2"
+    let daily = root
+      .appendingPathComponent("dailies", isDirectory: true)
+      .appendingPathComponent(fileName)
+      .standardizedFileURL
+
+    XCTAssertEqual(store.corpusRoot?.path, root.standardizedFileURL.path)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: daily.path))
+    XCTAssertEqual(store.selectedSurface, .home)
+    XCTAssertTrue(store.hasWorkspaceDetailContent)
+    XCTAssertEqual(store.selectedCorpusFileID, daily.path)
+    XCTAssertEqual(store.selectedOpenClawThreadID, daily.path)
+    XCTAssertEqual(store.selectedEntrySourceMode, .page)
+    XCTAssertEqual(store.selectedLocation?.file, daily.path)
+    XCTAssertEqual(store.selectedLocation?.lineForEditor, 1)
   }
 
   func testOpenClawWorkspaceContextMapsRemotePathsAndIncludesGraphSlice() throws {
