@@ -4658,6 +4658,19 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "Z", keyCode: 6, modifiers: [.command, .shift])))
     XCTAssertEqual(store.statusText, "Nothing to redo")
+
+    XCTAssertFalse(store.handleGlobalKeyDown(
+      keyDown(characters: "z", keyCode: 6, modifiers: [.command]),
+      scope: .globalOnly
+    ))
+    XCTAssertFalse(store.handleGlobalKeyDown(
+      keyDown(characters: "Z", keyCode: 6, modifiers: [.command, .shift]),
+      scope: .globalOnly
+    ))
+    XCTAssertFalse(store.handleGlobalKeyDown(
+      keyDown(characters: "s", keyCode: 1, modifiers: [.command]),
+      scope: .globalOnly
+    ))
   }
 
   @MainActor
@@ -10080,6 +10093,66 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.selectedBlock?.id, paragraph.id)
     XCTAssertEqual(store.selectedBlock?.rawText, "Updated body")
     XCTAssertTrue(store.selectedEntrySource?.text.contains("* TODO Parent\nUpdated body\n* Sibling") == true)
+  }
+
+  @MainActor
+  func testExplicitSaveFinalizesDeferredAutosaveInEntryScope() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-entry-autosave-save-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("entry-autosave-save.org2")
+    try """
+    #+TITLE: Entry Autosave Save Test
+
+    * TODO Parent
+    Body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 3,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+    XCTAssertEqual(store.selectedEntrySourceMode, .entry)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+    store.beginEditingBlock(paragraph)
+    store.updateEditingBlockDraft(paragraph, draft: "Updated body")
+    await store.autosaveEditedBlock(paragraph, replacement: "Updated body")
+
+    XCTAssertEqual(store.editingBlockID, paragraph.id)
+    XCTAssertTrue(store.canSaveActiveEdit)
+    XCTAssertTrue((try String(contentsOf: note, encoding: .utf8)).contains("* TODO Parent\nUpdated body\n* Sibling"))
+    XCTAssertTrue(store.selectedEntrySource?.text.contains("* TODO Parent\nBody") == true)
+
+    await store.saveEditedBlock(paragraph)
+
+    XCTAssertNil(store.editingBlockID)
+    XCTAssertFalse(store.canSaveActiveEdit)
+    XCTAssertTrue(store.statusText.hasPrefix("Saved block"))
+    XCTAssertEqual(store.selectedBlock?.rawText, "Updated body")
+    XCTAssertTrue(store.selectedEntrySource?.text.contains("* TODO Parent\nUpdated body") == true)
+    XCTAssertNotEqual(store.statusText, "Block save failed")
   }
 
   @MainActor

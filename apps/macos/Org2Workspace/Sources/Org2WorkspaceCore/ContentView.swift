@@ -4416,7 +4416,12 @@ private struct EntryBodyView: View {
             monospaced: true,
             showsScrollers: true,
             textInset: NSSize(width: 12, height: 12),
-            focusOnAppear: true
+            focusOnAppear: true,
+            onSaveCommand: { context in
+              store.editableEntryText = context.text
+              Task { await store.saveEditedEntry() }
+              return true
+            }
           )
           .frame(minHeight: 520)
           .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))

@@ -3831,9 +3831,18 @@ public final class WorkspaceStore: ObservableObject {
     defer { isSavingBlock = false }
 
     do {
-      let undoSnapshot = fileUndoSnapshot(for: source.file)
       let replacement = Self.normalizeLineEndings(saveReplacementText(for: block))
       let sourceBlock = activeBlockOriginals[block.id] ?? block
+      if finalizeDeferredStableAutosaveIfCurrent(
+        block,
+        source: source,
+        sourceBlock: sourceBlock,
+        replacement: replacement
+      ) {
+        return
+      }
+
+      let undoSnapshot = fileUndoSnapshot(for: source.file)
       let updatedSource = try Self.replacingSourceBlock(
         sourceBlock,
         in: source,
@@ -3896,6 +3905,41 @@ public final class WorkspaceStore: ObservableObject {
       errorText = error.localizedDescription
       statusText = "Block save failed"
     }
+  }
+
+  private func finalizeDeferredStableAutosaveIfCurrent(
+    _ block: OrgEditableBlock,
+    source: EntrySource,
+    sourceBlock: OrgEditableBlock,
+    replacement: String
+  ) -> Bool {
+    guard let deferred = deferredStableAutosaves[block.id],
+          Self.normalizeLineEndings(deferred.block.rawText) == replacement,
+          let fileText = try? Self.sourceText(
+            file: source.file,
+            startLine: deferred.block.startLine,
+            endLineExclusive: deferred.block.endLineExclusive
+          ),
+          Self.normalizeLineEndings(fileText) == replacement
+    else {
+      return false
+    }
+
+    deferredStableAutosaves.removeValue(forKey: block.id)
+    if selectedEntrySource?.id == source.id {
+      selectedEntrySource = deferred.source
+    }
+    let updatedBlocks = Self.replacingBlock(
+      selectedBlock,
+      with: deferred.block,
+      in: selectedRenderedBlocks
+    )
+    setSelectedRenderedBlocks(updatedBlocks, preservingMetadata: true)
+    selectedBlockID = deferred.block.id
+    invalidateCanonicalDocumentCache(for: source.file)
+    statusText = "Saved block \(relativePath(source.file)):\(sourceBlock.displayRange)"
+    resetBlockEditing()
+    return true
   }
 
   public func autosaveEditedBlock(_ block: OrgEditableBlock, replacement: String) async {
@@ -9278,7 +9322,7 @@ public final class WorkspaceStore: ObservableObject {
     _ event: NSEvent,
     scope: WorkspaceKeyboardShortcutScope = .all
   ) -> Bool {
-    if handleGlobalKeyDown(event) {
+    if handleGlobalKeyDown(event, scope: scope) {
       return true
     }
     guard scope == .all else {
@@ -9405,7 +9449,10 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public func handleGlobalKeyDown(_ event: NSEvent) -> Bool {
+  public func handleGlobalKeyDown(
+    _ event: NSEvent,
+    scope: WorkspaceKeyboardShortcutScope = .all
+  ) -> Bool {
     let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
     guard modifiers == [.command] || modifiers == [.command, .shift] || modifiers == [.command, .option] else {
       return false
@@ -9442,11 +9489,13 @@ public final class WorkspaceStore: ObservableObject {
         guard corpusRoot != nil else { return false }
         Task { await refreshWorkspace() }
       case "s":
+        guard scope == .all else { return false }
         guard canSaveCurrentFile else { return false }
         Task { await saveActiveEdit() }
       case "/":
         isKeyboardShortcutsPresented = true
       case "z":
+        guard scope == .all else { return false }
         performUndoCommand()
       default:
         return false
@@ -9475,6 +9524,7 @@ public final class WorkspaceStore: ObservableObject {
         chooseCorpus()
         return true
       case "z":
+        guard scope == .all else { return false }
         performRedoCommand()
         return true
       default:
@@ -9490,9 +9540,6 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func performUndoCommand() {
-    if performTextUndo(redo: false) {
-      return
-    }
     guard let action = workspaceUndoStack.popLast() else {
       statusText = "Nothing to undo"
       return
@@ -9506,9 +9553,6 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func performRedoCommand() {
-    if performTextUndo(redo: true) {
-      return
-    }
     guard let action = workspaceRedoStack.popLast() else {
       statusText = "Nothing to redo"
       return
@@ -9673,24 +9717,6 @@ public final class WorkspaceStore: ObservableObject {
       liveFileEditorStatusText = direction
     }
     scheduleAgendaRefresh(preserveSelection: true)
-  }
-
-  @discardableResult
-  private func performTextUndo(redo: Bool) -> Bool {
-    guard let textView = NSApplication.shared.keyWindow?.firstResponder as? NSTextView,
-          let undoManager = textView.undoManager
-    else {
-      return false
-    }
-
-    if redo {
-      guard undoManager.canRedo else { return false }
-      undoManager.redo()
-    } else {
-      guard undoManager.canUndo else { return false }
-      undoManager.undo()
-    }
-    return true
   }
 
   public func handleDocumentKeyDown(_ event: NSEvent) -> Bool {
@@ -11915,6 +11941,18 @@ public final class WorkspaceStore: ObservableObject {
       throw WorkspaceEditError.invalidRange(file: source.file, line: startLine)
     }
     return lines[startIndex..<endIndex].joined(separator: "\n")
+  }
+
+  nonisolated private static func sourceText(
+    file: String,
+    startLine: Int,
+    endLineExclusive: Int
+  ) throws -> String {
+    try sourceText(
+      in: pageSource(file: file),
+      startLine: startLine,
+      endLineExclusive: endLineExclusive
+    )
   }
 
   nonisolated private static func deletingSourceRangeCleaningAdjacentBlank(
