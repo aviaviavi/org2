@@ -1584,6 +1584,7 @@ private struct ParagraphBlockEditor: View {
           contentHeight: $measuredEditorContentHeight,
           onLocalTextChange: handleLocalTextChange,
           shouldPublishTextImmediately: ParagraphEditorTextPublishingPolicy.shouldPublishImmediately,
+          onSaveCommand: saveParagraph,
           onSubmitContext: submitParagraph,
           documentSelectionContext: documentSelectionContext,
           onDeleteDocumentSelection: deleteDocumentSelection,
@@ -1829,10 +1830,19 @@ private struct ParagraphBlockEditor: View {
   }
 
   private func saveParagraph() {
+    _ = saveParagraph(OrgSyntaxTextEditorSubmitContext(text: currentParagraphText, selectedRange: selectedRange))
+  }
+
+  private func saveParagraph(_ context: OrgSyntaxTextEditorSubmitContext) -> Bool {
     autosaveTask?.cancel()
     autosaveTask = nil
-    store.updateEditingBlockDraft(block, draft: currentParagraphText)
+    draftText = context.text
+    liveText.update(context.text)
+    presentationText = context.text
+    reserveEditorLines(for: context.text)
+    store.updateEditingBlockDraft(block, draft: context.text)
     Task { await store.saveEditedBlock(block) }
+    return true
   }
 
   private func convertParagraph(to kind: OrgInsertBlockKind) {
@@ -2885,7 +2895,8 @@ private struct QuoteBlockEditor: View {
           textPublishing: .deferred(milliseconds: 120),
           selection: $selectedRange,
           isFocused: $isTextFocused,
-          onLocalTextChange: handleLocalTextChange
+          onLocalTextChange: handleLocalTextChange,
+          onSaveCommand: saveQuote
         )
         .frame(minHeight: editorHeight, maxHeight: editorHeight)
         .background(Color.clear)
@@ -3001,10 +3012,19 @@ private struct QuoteBlockEditor: View {
   }
 
   private func saveQuote() {
+    _ = saveQuote(OrgSyntaxTextEditorSubmitContext(text: currentQuoteText, selectedRange: selectedRange))
+  }
+
+  private func saveQuote(_ context: OrgSyntaxTextEditorSubmitContext) -> Bool {
     autosaveTask?.cancel()
     autosaveTask = nil
+    quoteText = context.text
+    liveText.update(context.text)
+    presentationText = context.text
+    reserveEditorLines(for: context.text)
     store.updateEditingBlockDraft(block, draft: rawQuote)
     Task { await store.saveEditedBlock(block) }
+    return true
   }
 
   private func scheduleQuoteAutosave() {
@@ -3110,7 +3130,8 @@ private struct SourceBlockEditor: View {
           textPublishing: .deferred(milliseconds: 120),
           selection: $selectedRange,
           isFocused: $isBodyFocused,
-          onLocalTextChange: handleLocalBodyChange
+          onLocalTextChange: handleLocalBodyChange,
+          onSaveCommand: saveSource
         )
         .frame(minHeight: editorHeight, maxHeight: editorHeight)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -3286,10 +3307,18 @@ private struct SourceBlockEditor: View {
   }
 
   private func saveSource() {
+    _ = saveSource(OrgSyntaxTextEditorSubmitContext(text: liveBody.current(fallback: source.body), selectedRange: selectedRange))
+  }
+
+  private func saveSource(_ context: OrgSyntaxTextEditorSubmitContext) -> Bool {
     autosaveTask?.cancel()
     autosaveTask = nil
+    source.body = context.text
+    liveBody.update(context.text)
+    presentationBody = context.text
     store.updateEditingBlockDraft(block, draft: currentSource.formattedRawText)
     Task { await store.saveEditedBlock(block) }
+    return true
   }
 
   private func scheduleSourceAutosave() {

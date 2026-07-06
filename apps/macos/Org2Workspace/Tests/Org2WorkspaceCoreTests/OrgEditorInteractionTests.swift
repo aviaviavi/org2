@@ -286,6 +286,7 @@ final class OrgEditorInteractionTests: XCTestCase {
     )
     try await harness.typeKeys(" updated")
     let saveEvent = try XCTUnwrap(harness.keyEvent("s", keyCode: 1, modifiers: .command))
+    XCTAssertFalse(harness.store.handleGlobalKeyDown(saveEvent, scope: .globalOnly))
     XCTAssertTrue(bodyEditor.performKeyEquivalent(with: saveEvent))
 
     try await waitForCondition {
@@ -293,6 +294,156 @@ final class OrgEditorInteractionTests: XCTestCase {
         && harness.store.editingBlockID == nil
     }
     XCTAssertFalse(try harness.fileText().contains("\nDraft body\n"))
+  }
+
+  func testCommandSInApprovalQuotePersistsFocusedEditorDraftInEntryScope() async throws {
+    let quoteBody = """
+    Subject: PagerDuty / Rundeck usage-data follow-up
+
+    Hi Martin,
+
+    Wanted to check back in since it's be
+
+    Best,
+    Avi
+    """
+    let harness = try await makeHarness(initialText: """
+    * TODO Approve account-aware follow-up to PagerDuty / Rundeck
+    :PROPERTIES:
+    :ASSIGNEE: Avi
+    :STATUS: draft-needs-review
+    :END:
+
+    - Replacement rationale: PagerDuty had prior interest.
+
+    Draft:
+    #+begin_quote
+    \(quoteBody)
+    #+end_quote
+    """)
+    let item = ApprovalItem(
+      title: "Approve account-aware follow-up to PagerDuty / Rundeck",
+      status: "draft-needs-review",
+      todo: "TODO",
+      level: 1,
+      file: harness.file.path,
+      line: 1,
+      idValue: nil,
+      properties: [
+        "ASSIGNEE": "Avi",
+        "STATUS": "draft-needs-review"
+      ],
+      body: "- Replacement rationale: PagerDuty had prior interest.\n\nDraft:\n#+begin_quote\n\(quoteBody)\n#+end_quote",
+      tags: []
+    )
+    harness.store.selectedSurface = .approvals
+    harness.store.selectApprovalItem(item)
+    try await waitForCondition {
+      harness.store.selectedEntrySourceMode == .entry
+        && harness.store.selectedRenderedBlocks.contains { $0.rawText.contains("#+begin_quote") }
+    }
+
+    let quoteBlock = try XCTUnwrap(harness.store.selectedRenderedBlocks.first {
+      $0.rawText.contains("#+begin_quote")
+    })
+    harness.store.beginEditingBlock(quoteBlock)
+    let quoteEditor = try await harness.syntaxTextView(withExactText: quoteBody)
+    try await harness.focus(
+      quoteEditor,
+      selection: NSRange(location: (quoteBody as NSString).length, length: 0)
+    )
+    try await harness.typeKeys(" extra")
+    let saveEvent = try XCTUnwrap(harness.keyEvent("s", keyCode: 1, modifiers: .command))
+    XCTAssertFalse(harness.store.handleGlobalKeyDown(saveEvent, scope: .globalOnly))
+    XCTAssertTrue(quoteEditor.performKeyEquivalent(with: saveEvent))
+
+    try await waitForCondition {
+      (try? harness.fileText().contains("Avi extra\n#+end_quote")) == true
+        && harness.store.editingBlockID == nil
+        && !harness.store.canSaveActiveEdit
+    }
+
+    await harness.store.reloadSelectedEntrySource()
+    try await waitForCondition {
+      harness.store.selectedRenderedBlocks.contains {
+        $0.rawText.contains("Avi extra\n#+end_quote")
+      }
+    }
+  }
+
+  func testCommandSInRawEntrySourcePersistsFocusedEditorDraft() async throws {
+    let initial = """
+    * TODO Source edit
+    Body
+    """
+    let harness = try await makeHarness(initialText: initial)
+
+    harness.store.selectedEntrySourceMode = .entry
+    await harness.store.reloadSelectedEntrySource()
+    try await waitForCondition {
+      harness.store.selectedEntrySourceMode == .entry
+        && harness.store.selectedEntrySource?.text.contains("* TODO Source edit\nBody") == true
+    }
+    harness.store.beginEditingSelectedEntry()
+    try await waitForCondition {
+      harness.store.isEditingEntry
+    }
+    let sourceEditor = try await harness.syntaxTextView(containing: "* TODO Source edit\nBody")
+    try await harness.focus(
+      sourceEditor,
+      selection: NSRange(location: (sourceEditor.string as NSString).length, length: 0)
+    )
+    let insertion = sourceEditor.string.hasSuffix("\n") ? "extra" : "\nextra"
+    sourceEditor.insertText(insertion, replacementRange: sourceEditor.selectedRange())
+    try await pumpRunLoop()
+    let saveEvent = try XCTUnwrap(harness.keyEvent("s", keyCode: 1, modifiers: .command))
+    XCTAssertFalse(harness.store.handleGlobalKeyDown(saveEvent, scope: .globalOnly))
+    XCTAssertTrue(sourceEditor.performKeyEquivalent(with: saveEvent))
+
+    try await waitForCondition {
+      (try? harness.fileText().contains("Body\nextra")) == true
+        && !harness.store.isEditingEntry
+    }
+  }
+
+  func testCommandSInSourceBlockPersistsFocusedEditorDraftInEntryScope() async throws {
+    let body = #"console.log("old")"#
+    let harness = try await makeHarness(initialText: """
+    * TODO Source block
+    #+begin_src js
+    \(body)
+    #+end_src
+    """)
+    harness.store.selectedEntrySourceMode = .entry
+    await harness.store.reloadSelectedEntrySource()
+    try await waitForCondition {
+      harness.store.selectedRenderedBlocks.contains { $0.rawText.contains("#+begin_src js") }
+    }
+
+    let sourceBlock = try XCTUnwrap(harness.store.selectedRenderedBlocks.first {
+      $0.rawText.contains("#+begin_src js")
+    })
+    harness.store.beginEditingBlock(sourceBlock)
+    let sourceEditor = try await harness.syntaxTextView(withExactText: body)
+    try await harness.focus(
+      sourceEditor,
+      selection: NSRange(location: (body as NSString).length, length: 0)
+    )
+    sourceEditor.insertText("\nconsole.log(\"new\")", replacementRange: sourceEditor.selectedRange())
+    try await pumpRunLoop()
+    let saveEvent = try XCTUnwrap(harness.keyEvent("s", keyCode: 1, modifiers: .command))
+    XCTAssertFalse(harness.store.handleGlobalKeyDown(saveEvent, scope: .globalOnly))
+    XCTAssertTrue(sourceEditor.performKeyEquivalent(with: saveEvent))
+
+    try await waitForCondition {
+      (try? harness.fileText().contains("""
+      console.log("old")
+      console.log("new")
+      #+end_src
+      """)) == true
+        && harness.store.editingBlockID == nil
+        && !harness.store.canSaveActiveEdit
+    }
   }
 
   func testTypingListReturnAndBackspaceMergesLikeDocumentEditing() async throws {
@@ -1158,6 +1309,13 @@ private struct EditorInteractionHarness {
       uniqueSyntaxTextViews().contains { $0.string == text }
     }
     return try XCTUnwrap(uniqueSyntaxTextViews().first { $0.string == text })
+  }
+
+  func syntaxTextView(containing text: String) async throws -> OrgSyntaxTextView {
+    try await waitForCondition {
+      uniqueSyntaxTextViews().contains { $0.string.contains(text) }
+    }
+    return try XCTUnwrap(uniqueSyntaxTextViews().first { $0.string.contains(text) })
   }
 
   func nativeSelectedEditorCount() -> Int {
