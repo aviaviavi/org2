@@ -24,6 +24,7 @@ import {
 } from "./link-abbrev.js";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import { buildPublishDiagnosticsParams } from "./lsp-diagnostics.js";
+import { TODO_KEYWORDS, normalizeTodoKeyword, statusFromKeyword } from "./todo.js";
 
 import fs from "node:fs";
 import path from "node:path";
@@ -1035,13 +1036,12 @@ class LSPServer {
       }
     };
 
-    const todoKeywords = ["TODO", "NEXT", "WAITING", "DONE", "CANCELLED"];
     const headlineMatch = line.match(/^(\*+\s+)([A-Z]*)/);
     if (headlineMatch) {
       const keywordStart = headlineMatch[1].length;
       const typedKeyword = (headlineMatch[2] || "").toUpperCase();
       if (cursor >= keywordStart && cursor <= keywordStart + typedKeyword.length) {
-        for (const keyword of todoKeywords) {
+        for (const keyword of TODO_KEYWORDS) {
           if (typedKeyword && !keyword.startsWith(typedKeyword)) {
             continue;
           }
@@ -2765,13 +2765,18 @@ class LSPServer {
   }
 
   private todoKeywordBucket(keyword: string): "active" | "closed" | "custom" {
-    const normalized = keyword.trim().toUpperCase();
+    const normalized = normalizeTodoKeyword(keyword);
 
-    if (normalized === "TODO" || normalized === "NEXT" || normalized === "WAITING" || normalized === "IN_PROGRESS") {
+    if (!normalized) {
+      return "custom";
+    }
+
+    const status = statusFromKeyword(normalized);
+    if (status === "todo" || status === "in_progress") {
       return "active";
     }
 
-    if (normalized === "DONE" || normalized === "CANCELLED" || normalized === "CANCELED" || normalized === "CLOSED") {
+    if (status === "done" || status === "canceled") {
       return "closed";
     }
 
