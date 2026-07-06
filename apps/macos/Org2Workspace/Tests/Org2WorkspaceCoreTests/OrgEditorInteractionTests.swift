@@ -285,9 +285,11 @@ final class OrgEditorInteractionTests: XCTestCase {
       selection: NSRange(location: ("Draft body" as NSString).length, length: 0)
     )
     try await harness.typeKeys(" updated")
+    try await Task.sleep(nanoseconds: 900_000_000)
+    XCTAssertFalse(try harness.fileText().contains("Draft body updated"))
+    XCTAssertEqual(harness.store.editingBlockID, harness.store.selectedBlockID)
     let saveEvent = try XCTUnwrap(harness.keyEvent("s", keyCode: 1, modifiers: .command))
-    XCTAssertFalse(harness.store.handleGlobalKeyDown(saveEvent, scope: .globalOnly))
-    XCTAssertTrue(bodyEditor.performKeyEquivalent(with: saveEvent))
+    XCTAssertTrue(harness.store.handleGlobalKeyDown(saveEvent, scope: .globalOnly))
 
     try await waitForCondition {
       (try? harness.fileText().contains("Draft body updated")) == true
@@ -353,9 +355,11 @@ final class OrgEditorInteractionTests: XCTestCase {
       selection: NSRange(location: (quoteBody as NSString).length, length: 0)
     )
     try await harness.typeKeys(" extra")
+    try await Task.sleep(nanoseconds: 900_000_000)
+    XCTAssertFalse(try harness.fileText().contains("Avi extra\n#+end_quote"))
+    XCTAssertTrue(harness.store.canSaveActiveEdit)
     let saveEvent = try XCTUnwrap(harness.keyEvent("s", keyCode: 1, modifiers: .command))
-    XCTAssertFalse(harness.store.handleGlobalKeyDown(saveEvent, scope: .globalOnly))
-    XCTAssertTrue(quoteEditor.performKeyEquivalent(with: saveEvent))
+    XCTAssertTrue(harness.store.handleGlobalKeyDown(saveEvent, scope: .globalOnly))
 
     try await waitForCondition {
       (try? harness.fileText().contains("Avi extra\n#+end_quote")) == true
@@ -397,8 +401,7 @@ final class OrgEditorInteractionTests: XCTestCase {
     sourceEditor.insertText(insertion, replacementRange: sourceEditor.selectedRange())
     try await pumpRunLoop()
     let saveEvent = try XCTUnwrap(harness.keyEvent("s", keyCode: 1, modifiers: .command))
-    XCTAssertFalse(harness.store.handleGlobalKeyDown(saveEvent, scope: .globalOnly))
-    XCTAssertTrue(sourceEditor.performKeyEquivalent(with: saveEvent))
+    XCTAssertTrue(harness.store.handleGlobalKeyDown(saveEvent, scope: .globalOnly))
 
     try await waitForCondition {
       (try? harness.fileText().contains("Body\nextra")) == true
@@ -432,8 +435,7 @@ final class OrgEditorInteractionTests: XCTestCase {
     sourceEditor.insertText("\nconsole.log(\"new\")", replacementRange: sourceEditor.selectedRange())
     try await pumpRunLoop()
     let saveEvent = try XCTUnwrap(harness.keyEvent("s", keyCode: 1, modifiers: .command))
-    XCTAssertFalse(harness.store.handleGlobalKeyDown(saveEvent, scope: .globalOnly))
-    XCTAssertTrue(sourceEditor.performKeyEquivalent(with: saveEvent))
+    XCTAssertTrue(harness.store.handleGlobalKeyDown(saveEvent, scope: .globalOnly))
 
     try await waitForCondition {
       (try? harness.fileText().contains("""

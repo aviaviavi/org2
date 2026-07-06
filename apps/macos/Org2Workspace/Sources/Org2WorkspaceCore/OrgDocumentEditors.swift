@@ -1920,23 +1920,6 @@ private struct ParagraphBlockEditor: View {
     let draft = currentParagraphText
     store.updateEditingBlockDraft(block, draft: draft)
     autosaveTask?.cancel()
-
-    guard ParagraphSlashCommand.match(in: draft).query == nil,
-          draft != block.rawText
-    else {
-      return
-    }
-
-    let replacement = draft
-    autosaveTask = Task { [block] in
-      do {
-        try await Task.sleep(nanoseconds: 700_000_000)
-      } catch {
-        return
-      }
-      guard !Task.isCancelled else { return }
-      await store.autosaveEditedBlock(block, replacement: replacement)
-    }
   }
 }
 
@@ -2225,22 +2208,6 @@ struct LiveRenderedTextBlockEditor: View {
     let replacement = currentSourceText
     store.updateEditingBlockDraft(block, draft: replacement)
     autosaveTask?.cancel()
-
-    guard ParagraphSlashCommand.match(in: replacement).query == nil,
-          replacement != block.rawText
-    else {
-      return
-    }
-
-    autosaveTask = Task { [block] in
-      do {
-        try await Task.sleep(nanoseconds: 700_000_000)
-      } catch {
-        return
-      }
-      guard !Task.isCancelled else { return }
-      await store.autosaveEditedBlock(block, replacement: replacement)
-    }
   }
 
   private func flushPendingAutosave() {
@@ -3031,20 +2998,6 @@ private struct QuoteBlockEditor: View {
     let draft = rawQuote
     store.updateEditingBlockDraft(block, draft: draft)
     autosaveTask?.cancel()
-
-    guard draft != block.rawText else {
-      return
-    }
-
-    autosaveTask = Task { [block] in
-      do {
-        try await Task.sleep(nanoseconds: 700_000_000)
-      } catch {
-        return
-      }
-      guard !Task.isCancelled else { return }
-      await store.autosaveEditedBlock(block, replacement: draft)
-    }
   }
 }
 
@@ -3325,20 +3278,6 @@ private struct SourceBlockEditor: View {
     let draft = currentSource.formattedRawText
     store.updateEditingBlockDraft(block, draft: draft)
     autosaveTask?.cancel()
-
-    guard draft != block.rawText else {
-      return
-    }
-
-    autosaveTask = Task { [block] in
-      do {
-        try await Task.sleep(nanoseconds: 700_000_000)
-      } catch {
-        return
-      }
-      guard !Task.isCancelled else { return }
-      await store.autosaveEditedBlock(block, replacement: draft)
-    }
   }
 }
 
