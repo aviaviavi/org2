@@ -21,6 +21,11 @@ private struct RenderedBlocksCacheEntry {
   let blocks: [OrgEditableBlock]
 }
 
+private struct EntrySourceCacheEntry {
+  let modifiedAt: Date?
+  let source: EntrySource
+}
+
 private struct RenderedBlocksMetadata {
   let renderSignature: String
   let structureSignature: String
@@ -777,6 +782,7 @@ public final class WorkspaceStore: ObservableObject {
   private static let orgCryptPublicKeysDirectoryName = "public-keys"
   private static let canonicalParserLineLimit = 2_000
   private static let renderedBlocksCacheLimit = 12
+  private static let entrySourceCacheLimit = 24
   private static let detailNavigationHistoryLimit = 100
   private static let workspaceUndoStackLimit = 100
   private static let workspaceUndoSnapshotMaxBytes = 2_000_000
@@ -856,6 +862,8 @@ public final class WorkspaceStore: ObservableObject {
   private var workspaceUndoStack: [WorkspaceUndoAction] = []
   private var workspaceRedoStack: [WorkspaceUndoAction] = []
   private var canonicalDocumentCache: [String: CanonicalDocumentCacheEntry] = [:]
+  private var entrySourceCache: [String: EntrySourceCacheEntry] = [:]
+  private var entrySourceCacheOrder: [String] = []
   private var renderedBlocksCache: [String: RenderedBlocksCacheEntry] = [:]
   private var renderedBlocksCacheOrder: [String] = []
   private var pendingBlockSelection: PendingBlockSelection?
@@ -867,6 +875,7 @@ public final class WorkspaceStore: ObservableObject {
   private var deferredStableAutosaves: [OrgEditableBlock.ID: DeferredStableAutosave] = [:]
   private var preservesSelectedRenderedBlocksMetadataForNextAssignment = false
   private var scheduledAgendaRefreshTask: Task<Void, Never>?
+  private var scheduledApprovalsRefreshTask: Task<Void, Never>?
   private var agendaTodoShortcutMutationTask: Task<Void, Never>?
   private var pendingAgendaTodoShortcutMutations: [AgendaTodoShortcutMutation] = []
   private var pendingAgendaRefreshAfterBlockEditing = false
@@ -1111,10 +1120,14 @@ public final class WorkspaceStore: ObservableObject {
     sourceBlockRuns = [:]
     editableEntryText = ""
     canonicalDocumentCache = [:]
+    entrySourceCache = [:]
+    entrySourceCacheOrder = []
     renderedBlocksCache = [:]
     renderedBlocksCacheOrder = []
     scheduledAgendaRefreshTask?.cancel()
     scheduledAgendaRefreshTask = nil
+    scheduledApprovalsRefreshTask?.cancel()
+    scheduledApprovalsRefreshTask = nil
     agendaTodoShortcutMutationTask?.cancel()
     agendaTodoShortcutMutationTask = nil
     pendingAgendaTodoShortcutMutations = []
@@ -1737,15 +1750,19 @@ public final class WorkspaceStore: ObservableObject {
     beginApprovalAction(item, kind: .approve)
     defer { endApprovalAction(item, kind: .approve) }
 
-    await approveAndAgentHandoff(HeadlineMutationTarget(
-      file: item.file,
-      line: item.line,
-      title: Org2Display.cleanInline(item.title),
-      agendaItemID: nil
-    ))
-    endApprovalAction(item, kind: .approve)
-    await refreshApprovals(updatesStatus: false)
-    preserveApprovalSelectionAfterMutation(mutatedID: item.id, originalVisibleIndex: originalVisibleIndex)
+    do {
+      try await approveAndAgentHandoff(HeadlineMutationTarget(
+        file: item.file,
+        line: item.line,
+        title: Org2Display.cleanInline(item.title),
+        agendaItemID: nil
+      ))
+      removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
+      scheduleApprovalsRefresh()
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Approve handoff failed"
+    }
   }
 
   public func promptAndRejectApproval(_ item: ApprovalItem) {
@@ -1767,19 +1784,23 @@ public final class WorkspaceStore: ObservableObject {
     beginApprovalAction(item, kind: .reject)
     defer { endApprovalAction(item, kind: .reject) }
 
-    await rejectApproval(
-      HeadlineMutationTarget(
-        file: item.file,
-        line: item.line,
-        title: Org2Display.cleanInline(item.title),
-        agendaItemID: nil
-      ),
-      endStatus: endStatus,
-      reason: reason
-    )
-    endApprovalAction(item, kind: .reject)
-    await refreshApprovals(updatesStatus: false)
-    preserveApprovalSelectionAfterMutation(mutatedID: item.id, originalVisibleIndex: originalVisibleIndex)
+    do {
+      try await rejectApproval(
+        HeadlineMutationTarget(
+          file: item.file,
+          line: item.line,
+          title: Org2Display.cleanInline(item.title),
+          agendaItemID: nil
+        ),
+        endStatus: endStatus,
+        reason: reason
+      )
+      removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
+      scheduleApprovalsRefresh()
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Reject approval failed"
+    }
   }
 
   public func isApprovingApproval(_ item: ApprovalItem) -> Bool {
@@ -1884,6 +1905,24 @@ public final class WorkspaceStore: ObservableObject {
       selectedSurface = .approvals
     } else {
       selectedApprovalItemID = nil
+    }
+  }
+
+  private func removeApprovalItemOptimistically(_ id: ApprovalItem.ID, originalVisibleIndex: Int?) {
+    approvalItems.removeAll { $0.id == id }
+    preserveApprovalSelectionAfterMutation(mutatedID: id, originalVisibleIndex: originalVisibleIndex)
+  }
+
+  private func scheduleApprovalsRefresh(updatesStatus: Bool = false) {
+    scheduledApprovalsRefreshTask?.cancel()
+    scheduledApprovalsRefreshTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(nanoseconds: 250_000_000)
+      guard !Task.isCancelled else { return }
+      guard let self else { return }
+      await self.refreshApprovals(updatesStatus: updatesStatus)
+      if !Task.isCancelled {
+        self.scheduledApprovalsRefreshTask = nil
+      }
     }
   }
 
@@ -3106,6 +3145,7 @@ public final class WorkspaceStore: ObservableObject {
   private func scheduleEntrySourceLoad(for location: WorkspaceLocation) {
     entrySourceLoadGeneration += 1
     let generation = entrySourceLoadGeneration
+    applyCachedEntrySourceIfAvailable(for: location, generation: generation)
     Task { await loadEntrySource(for: location, generation: generation) }
   }
 
@@ -3135,6 +3175,7 @@ public final class WorkspaceStore: ObservableObject {
       else {
         return
       }
+      cacheEntrySource(source, for: location, mode: mode, modifiedAt: Self.modificationDate(for: URL(fileURLWithPath: source.file).standardizedFileURL))
       selectedEntrySource = source
       if isEditingEntry || isLiveFileEditorSelected {
         editableEntryText = source.text
@@ -3152,6 +3193,16 @@ public final class WorkspaceStore: ObservableObject {
       isRenderingEntrySource = false
       errorText = error.localizedDescription
     }
+  }
+
+  private func applyCachedEntrySourceIfAvailable(for location: WorkspaceLocation, generation: Int) {
+    let mode = selectedEntrySourceMode
+    guard let source = cachedEntrySource(for: location, mode: mode) else { return }
+    selectedEntrySource = source
+    if isEditingEntry || isLiveFileEditorSelected {
+      editableEntryText = source.text
+    }
+    renderEntrySource(source, generation: generation)
   }
 
   public func reloadSelectedEntrySource() async {
@@ -8838,7 +8889,12 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Select an approval TODO first"
       return
     }
-    await approveAndAgentHandoff(target)
+    do {
+      try await approveAndAgentHandoff(target)
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Approve handoff failed"
+    }
   }
 
   public func applyApproveAndAgentHandoffShortcut(to location: WorkspaceLocation) async {
@@ -8846,7 +8902,12 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Select an approval TODO first"
       return
     }
-    await approveAndAgentHandoff(target)
+    do {
+      try await approveAndAgentHandoff(target)
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Approve handoff failed"
+    }
   }
 
   public func applyRejectApprovalShortcut(endStatus: TodoEditStatus, reason: String) async {
@@ -8854,7 +8915,12 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Select an approval TODO first"
       return
     }
-    await rejectApproval(target, endStatus: endStatus, reason: reason)
+    do {
+      try await rejectApproval(target, endStatus: endStatus, reason: reason)
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Reject approval failed"
+    }
   }
 
   public func applyRejectApprovalShortcut(endStatus: TodoEditStatus, reason: String, to location: WorkspaceLocation) async {
@@ -8862,7 +8928,12 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Select an approval TODO first"
       return
     }
-    await rejectApproval(target, endStatus: endStatus, reason: reason)
+    do {
+      try await rejectApproval(target, endStatus: endStatus, reason: reason)
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Reject approval failed"
+    }
   }
 
   public func promptAndApplyRejectApprovalShortcut() {
@@ -8883,45 +8954,40 @@ public final class WorkspaceStore: ObservableObject {
     Task { await applyRejectApprovalShortcut(endStatus: rejection.endStatus, reason: rejection.reason, to: location) }
   }
 
-  private func approveAndAgentHandoff(_ target: HeadlineMutationTarget) async {
+  private func approveAndAgentHandoff(_ target: HeadlineMutationTarget) async throws {
     let originalVisibleIndex = target.agendaItemID.flatMap { id in
       visibleAgendaItems.firstIndex(where: { $0.id == id })
     }
     let timestamp = Self.orgTimestamp(Date())
 
-    do {
-      let approvalIdentity = try approvalMutationIdentity(for: target)
-      try await setTodoStatus(.done, for: target)
-      let result = try await activateApprovedAgentAction(for: target, timestamp: timestamp)
-      let currentTarget = try refreshedApprovalMutationTarget(
-        original: target,
-        identity: approvalIdentity
-      )
-      var approvalProperties = try currentApprovalProperties(for: currentTarget)
-      approvalProperties.merge(Self.approvedApprovalProperties(
-        existingProperties: approvalProperties,
-        timestamp: timestamp,
-        pairedTitle: result.title
-      )) { _, new in new }
-      try upsertHeadlineProperties(
-        file: currentTarget.file,
-        line: currentTarget.line,
-        properties: approvalProperties
-      )
-      invalidateCanonicalDocumentCache(for: result.file)
-      await refreshAfterHeadlineMutation(target)
-      preserveAgendaSelectionAfterTodoMutation(
-        target: target,
-        originalVisibleIndex: originalVisibleIndex,
-        shouldAdvanceSelection: true
-      )
-      statusText = result.created
-        ? "Approved and created agent action -> \(result.title)"
-        : "Approved and activated agent action -> \(result.title)"
-    } catch {
-      errorText = error.localizedDescription
-      statusText = "Approve handoff failed"
-    }
+    let approvalIdentity = try approvalMutationIdentity(for: target)
+    try await setTodoStatus(.done, for: target)
+    let result = try await activateApprovedAgentAction(for: target, timestamp: timestamp)
+    let currentTarget = try refreshedApprovalMutationTarget(
+      original: target,
+      identity: approvalIdentity
+    )
+    var approvalProperties = try currentApprovalProperties(for: currentTarget)
+    approvalProperties.merge(Self.approvedApprovalProperties(
+      existingProperties: approvalProperties,
+      timestamp: timestamp,
+      pairedTitle: result.title
+    )) { _, new in new }
+    try upsertHeadlineProperties(
+      file: currentTarget.file,
+      line: currentTarget.line,
+      properties: approvalProperties
+    )
+    invalidateCanonicalDocumentCache(for: result.file)
+    await refreshAfterHeadlineMutation(target)
+    preserveAgendaSelectionAfterTodoMutation(
+      target: target,
+      originalVisibleIndex: originalVisibleIndex,
+      shouldAdvanceSelection: true
+    )
+    statusText = result.created
+      ? "Approved and created agent action -> \(result.title)"
+      : "Approved and activated agent action -> \(result.title)"
   }
 
   private func currentApprovalProperties(for target: HeadlineMutationTarget) throws -> [String: String] {
@@ -9028,50 +9094,45 @@ public final class WorkspaceStore: ObservableObject {
     return target
   }
 
-  private func rejectApproval(_ target: HeadlineMutationTarget, endStatus: TodoEditStatus, reason: String) async {
+  private func rejectApproval(_ target: HeadlineMutationTarget, endStatus: TodoEditStatus, reason: String) async throws {
     let originalVisibleIndex = target.agendaItemID.flatMap { id in
       visibleAgendaItems.firstIndex(where: { $0.id == id })
     }
     let timestamp = Self.orgTimestamp(Date())
 
-    do {
-      let approvalIdentity = try approvalMutationIdentity(for: target)
-      try await setTodoStatus(endStatus, for: target)
-      let currentTarget = try refreshedApprovalMutationTarget(
-        original: target,
-        identity: approvalIdentity
-      )
-      let currentProperties = try currentApprovalProperties(for: currentTarget)
-      try upsertHeadlineProperties(
-        file: currentTarget.file,
-        line: currentTarget.line,
-        properties: [
-          "STATUS": "rejected",
-          "REJECTED_AT": timestamp,
-          "REJECTION_END_STATUS": endStatus.label,
-          "REJECTION_REASON": Self.sanitizeOrgPropertyValue(reason)
-        ]
-      )
-      let pairedRejected = try await rejectPairedApprovedAgentAction(
-        for: currentTarget,
-        approvalProperties: currentProperties,
-        endStatus: endStatus,
-        reason: reason,
-        timestamp: timestamp
-      )
-      await refreshAfterHeadlineMutation(target)
-      preserveAgendaSelectionAfterTodoMutation(
-        target: target,
-        originalVisibleIndex: originalVisibleIndex,
-        shouldAdvanceSelection: true
-      )
-      statusText = pairedRejected
-        ? "Rejected approval and paired send -> \(target.title)"
-        : "Rejected -> \(target.title)"
-    } catch {
-      errorText = error.localizedDescription
-      statusText = "Reject approval failed"
-    }
+    let approvalIdentity = try approvalMutationIdentity(for: target)
+    try await setTodoStatus(endStatus, for: target)
+    let currentTarget = try refreshedApprovalMutationTarget(
+      original: target,
+      identity: approvalIdentity
+    )
+    let currentProperties = try currentApprovalProperties(for: currentTarget)
+    try upsertHeadlineProperties(
+      file: currentTarget.file,
+      line: currentTarget.line,
+      properties: [
+        "STATUS": "rejected",
+        "REJECTED_AT": timestamp,
+        "REJECTION_END_STATUS": endStatus.label,
+        "REJECTION_REASON": Self.sanitizeOrgPropertyValue(reason)
+      ]
+    )
+    let pairedRejected = try await rejectPairedApprovedAgentAction(
+      for: currentTarget,
+      approvalProperties: currentProperties,
+      endStatus: endStatus,
+      reason: reason,
+      timestamp: timestamp
+    )
+    await refreshAfterHeadlineMutation(target)
+    preserveAgendaSelectionAfterTodoMutation(
+      target: target,
+      originalVisibleIndex: originalVisibleIndex,
+      shouldAdvanceSelection: true
+    )
+    statusText = pairedRejected
+      ? "Rejected approval and paired send -> \(target.title)"
+      : "Rejected -> \(target.title)"
   }
 
   private func rejectPairedApprovedAgentAction(
@@ -10991,7 +11052,41 @@ public final class WorkspaceStore: ObservableObject {
 
   private func invalidateCanonicalDocumentCache(for file: String) {
     canonicalDocumentCache.removeValue(forKey: URL(fileURLWithPath: file).standardizedFileURL.path)
+    invalidateEntrySourceCache(for: file)
     invalidateRenderedBlocksCache(for: file)
+  }
+
+  private func entrySourceCacheKey(for location: WorkspaceLocation, mode: EntrySourceMode) -> String {
+    "\(Self.selectionIdentity(for: location))|\(mode.rawValue)"
+  }
+
+  private func cacheEntrySource(
+    _ source: EntrySource,
+    for location: WorkspaceLocation,
+    mode: EntrySourceMode,
+    modifiedAt: Date?
+  ) {
+    let key = entrySourceCacheKey(for: location, mode: mode)
+    entrySourceCache[key] = EntrySourceCacheEntry(modifiedAt: modifiedAt, source: source)
+    entrySourceCacheOrder.removeAll { $0 == key }
+    entrySourceCacheOrder.append(key)
+
+    while entrySourceCacheOrder.count > Self.entrySourceCacheLimit {
+      let evicted = entrySourceCacheOrder.removeFirst()
+      entrySourceCache.removeValue(forKey: evicted)
+    }
+  }
+
+  private func cachedEntrySource(for location: WorkspaceLocation, mode: EntrySourceMode) -> EntrySource? {
+    let key = entrySourceCacheKey(for: location, mode: mode)
+    guard let cached = entrySourceCache[key],
+          cached.modifiedAt == Self.modificationDate(for: URL(fileURLWithPath: location.file).standardizedFileURL)
+    else {
+      return nil
+    }
+    entrySourceCacheOrder.removeAll { $0 == key }
+    entrySourceCacheOrder.append(key)
+    return cached.source
   }
 
   private func renderedBlocksCacheKey(for source: EntrySource) -> String {
@@ -11169,6 +11264,17 @@ public final class WorkspaceStore: ObservableObject {
     }
     renderedBlocksCacheOrder.removeAll { key in
       key.hasPrefix(path)
+    }
+  }
+
+  private func invalidateEntrySourceCache(for file: String) {
+    let path = URL(fileURLWithPath: file).standardizedFileURL.path
+    let keys = entrySourceCache.keys.filter { $0.contains("\u{1F}\(path)\u{1F}") }
+    for key in keys {
+      entrySourceCache.removeValue(forKey: key)
+    }
+    entrySourceCacheOrder.removeAll { key in
+      key.contains("\u{1F}\(path)\u{1F}")
     }
   }
 
