@@ -85,6 +85,21 @@ private struct OpenClawContextPointer: Equatable, Sendable {
   let kind: String
   let reference: String
   let displayReference: String
+  let threadTitle: String
+}
+
+public enum OpenClawThreadMode: String, CaseIterable, Identifiable, Sendable {
+  case newThread
+  case currentThread
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .newThread: "New thread"
+    case .currentThread: "Current thread"
+    }
+  }
 }
 
 private struct OpenClawBlockContextPointer: Equatable, Sendable {
@@ -1779,9 +1794,18 @@ public final class WorkspaceStore: ObservableObject {
     isApprovingApproval(item) || isRejectingApproval(item)
   }
 
-  public func discussApprovalInOpenClaw(_ item: ApprovalItem, message: String? = nil) async {
+  public func discussApprovalInOpenClaw(
+    _ item: ApprovalItem,
+    message: String? = nil,
+    threadMode: OpenClawThreadMode = .newThread
+  ) async {
     let text = Self.openClawApprovalDiscussionPrompt(item: item, message: message)
     selectedSurface = .openClaw
+    prepareOpenClawThread(
+      mode: threadMode,
+      title: "Discuss: \(Org2Display.cleanInline(item.title))",
+      statusText: "New OpenClaw approval chat"
+    )
     await sendOpenClawMessage(text: text)
   }
 
@@ -2648,11 +2672,16 @@ public final class WorkspaceStore: ObservableObject {
     select(.meeting(meeting))
   }
 
-  public func askOpenClawAboutSelectedMeeting() {
-    guard case .meeting = selectedLocation else {
+  public func askOpenClawAboutSelectedMeeting(threadMode: OpenClawThreadMode = .newThread) {
+    guard case .meeting(let meeting) = selectedLocation else {
       statusText = "Select a meeting first"
       return
     }
+    prepareOpenClawThread(
+      mode: threadMode,
+      title: "Meeting: \(Org2Display.cleanInline(meeting.title))",
+      statusText: "New OpenClaw meeting chat"
+    )
     publishOpenClawComposerDraft("Use the selected meeting note and transcript artifact as context. Summarize the meeting, extract decisions, list action items, and cite the org2 file paths you used.")
     selectedSurface = .openClaw
   }
@@ -2720,26 +2749,26 @@ public final class WorkspaceStore: ObservableObject {
     corpusRoot != nil && (selectedEntrySource?.file != nil || selectedLocation?.file != nil)
   }
 
-  public func askOpenClawAboutCurrentSelection() {
+  public func askOpenClawAboutCurrentSelection(threadMode: OpenClawThreadMode = .newThread) {
     guard let pointer = openClawContextPointerForCurrentSelection() else {
       statusText = "Select a page or entry first"
       return
     }
 
-    addOpenClawContext(pointer)
+    addOpenClawContext(pointer, threadMode: threadMode)
   }
 
-  public func askOpenClawAboutBlock(_ block: OrgEditableBlock) {
+  public func askOpenClawAboutBlock(_ block: OrgEditableBlock, threadMode: OpenClawThreadMode = .newThread) {
     if selectedRenderedBlockIndexes[block.id] != nil {
       selectedBlockID = block.id
     }
 
     guard let pointer = openClawContextPointer(for: OpenClawBlockContextPointer(source: selectedEntrySource, block: block)) else {
-      askOpenClawAboutCurrentSelection()
+      askOpenClawAboutCurrentSelection(threadMode: threadMode)
       return
     }
 
-    addOpenClawContext(pointer)
+    addOpenClawContext(pointer, threadMode: threadMode)
   }
 
   public func briefCurrentNodeInOpenClaw() async {
@@ -7032,9 +7061,18 @@ public final class WorkspaceStore: ObservableObject {
     openClawStatusText = statusText
   }
 
+  private func prepareOpenClawThread(mode: OpenClawThreadMode, title: String, statusText: String) {
+    guard mode == .newThread else {
+      ensureOpenClawChatThread()
+      return
+    }
+    createOpenClawChatThread(title: Self.normalizedOpenClawThreadTitle(title), statusText: statusText)
+  }
+
   private func prepareOpenClawThreadForNodeBrief(title: String) {
     guard openClawBriefsStartNewThread else { return }
-    createOpenClawChatThread(
+    prepareOpenClawThread(
+      mode: .newThread,
       title: "Brief: \(title)",
       statusText: "New OpenClaw brief chat"
     )
@@ -7054,6 +7092,21 @@ public final class WorkspaceStore: ObservableObject {
     guard let index = openClawChatThreads.firstIndex(where: { $0.id == id }) else { return }
     let thread = openClawChatThreads[index]
     openClawChatThreads[index] = thread.replacingOpenClawChatMetadata(isPinned: !thread.isPinned)
+    sortOpenClawChatThreadsForDisplay()
+    persistOpenClawTranscript()
+  }
+
+  public func renameOpenClawChatThread(_ id: UUID, title rawTitle: String) {
+    let title = Self.normalizedOpenClawThreadTitle(rawTitle)
+    guard !title.isEmpty,
+          let index = openClawChatThreads.firstIndex(where: { $0.id == id })
+    else { return }
+    let thread = openClawChatThreads[index]
+    guard thread.title != title else { return }
+    openClawChatThreads[index] = thread.replacingOpenClawChatMetadata(title: title)
+    if selectedOpenClawChatThreadID == id {
+      openClawStatusText = "Renamed chat thread"
+    }
     sortOpenClawChatThreadsForDisplay()
     persistOpenClawTranscript()
   }
@@ -7200,9 +7253,10 @@ public final class WorkspaceStore: ObservableObject {
     let unreadMessageCount = isThreadOpen
       ? 0
       : current.unreadMessageCount + newAssistantMessageCount
+    let title = Self.updatedOpenClawThreadTitle(current: current, messages: messages)
     let updated = OpenClawChatThread(
       id: current.id,
-      title: Self.openClawThreadTitle(from: messages, fallback: current.title),
+      title: title,
       createdAt: current.createdAt,
       updatedAt: messages.last?.createdAt ?? Date(),
       sessionKey: current.sessionKey,
@@ -7253,6 +7307,30 @@ public final class WorkspaceStore: ObservableObject {
     }
     let title = heuristicOpenClawThreadTitle(from: firstUserMessage.content)
     return title.isEmpty ? fallback : title
+  }
+
+  nonisolated private static func updatedOpenClawThreadTitle(
+    current: OpenClawChatThread,
+    messages: [OpenClawChatMessage]
+  ) -> String {
+    let heuristicTitle = openClawThreadTitle(from: messages, fallback: current.title)
+    let currentTitle = normalizedOpenClawThreadTitle(current.title)
+    let hasExistingUserMessage = current.messages.contains(where: { $0.role == .user })
+    if currentTitle == "New Chat"
+      || (hasExistingUserMessage && currentTitle == openClawThreadTitle(from: current.messages, fallback: currentTitle)) {
+      return heuristicTitle
+    }
+    return currentTitle
+  }
+
+  nonisolated private static func normalizedOpenClawThreadTitle(_ title: String) -> String {
+    let clean = Org2Display.cleanInline(title)
+      .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return "New Chat" }
+    return clean.count <= 80
+      ? clean
+      : String(clean.prefix(77)).trimmingCharacters(in: .whitespacesAndNewlines) + "..."
   }
 
   nonisolated private static func heuristicOpenClawThreadTitle(from content: String) -> String {
@@ -9489,7 +9567,9 @@ public final class WorkspaceStore: ObservableObject {
         guard corpusRoot != nil else { return false }
         Task { await refreshWorkspace() }
       case "s":
-        guard scope == .all else { return false }
+        guard scope == .all else {
+          return OrgSyntaxTextView.saveFocusedTextViewIfPossible(for: event)
+        }
         guard canSaveCurrentFile else { return false }
         Task { await saveActiveEdit() }
       case "/":
@@ -10444,10 +10524,12 @@ public final class WorkspaceStore: ObservableObject {
 
     if let source = selectedEntrySource {
       let kind = source.isSubtree ? "selected entry" : "selected page"
+      let title = selectedLocation?.title ?? Self.titleFromFileStem(URL(fileURLWithPath: source.file).deletingPathExtension().lastPathComponent)
       return OpenClawContextPointer(
         kind: kind,
         reference: "\(mappedPathForOpenClaw(source.file)):\(source.startLine)",
-        displayReference: "\(relativePath(source.file)):\(source.startLine)"
+        displayReference: "\(relativePath(source.file)):\(source.startLine)",
+        threadTitle: "Ask: \(title)"
       )
     }
 
@@ -10455,7 +10537,8 @@ public final class WorkspaceStore: ObservableObject {
       return OpenClawContextPointer(
         kind: "current selection",
         reference: "\(mappedPathForOpenClaw(location.file)):\(location.lineForEditor)",
-        displayReference: "\(relativePath(location.file)):\(location.lineForEditor)"
+        displayReference: "\(relativePath(location.file)):\(location.lineForEditor)",
+        threadTitle: "Ask: \(location.title)"
       )
     }
 
@@ -10480,27 +10563,50 @@ public final class WorkspaceStore: ObservableObject {
     return OpenClawContextPointer(
       kind: "selected block",
       reference: reference,
-      displayReference: displayReference
+      displayReference: displayReference,
+      threadTitle: "Ask: \(selectedLocation?.title ?? displayFile)"
     )
   }
 
-  private func addOpenClawContext(_ pointer: OpenClawContextPointer) {
+  private func addOpenClawContext(_ pointer: OpenClawContextPointer, threadMode: OpenClawThreadMode) {
     let injectedContext = "Use \(pointer.kind) at \(pointer.reference) as context.\n\n"
+    let hadSelectedThread = selectedOpenClawChatThreadID != nil
+    let unthreadedDraft = hadSelectedThread ? "" : openClawDraft
+    if !canReuseOpenClawContextDraftThread(for: pointer, mode: threadMode) {
+      prepareOpenClawThread(
+        mode: threadMode,
+        title: pointer.threadTitle,
+        statusText: "New OpenClaw context chat"
+      )
+    }
     let previousDraft = currentOpenClawDraftForSelectedThread()
+    let draftToAppend = previousDraft.isEmpty ? unthreadedDraft : previousDraft
     var nextDraft = previousDraft
     if previousDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      nextDraft = injectedContext
-    } else if !previousDraft.contains(pointer.reference) {
-      nextDraft = injectedContext + previousDraft
+      nextDraft = injectedContext + draftToAppend
+    } else if !draftToAppend.contains(pointer.reference) {
+      nextDraft = injectedContext + draftToAppend
     }
     if nextDraft != previousDraft {
       publishOpenClawComposerDraft(nextDraft)
-      recordWorkspaceUndo(.openClawDraft(previous: previousDraft, next: nextDraft))
+      recordWorkspaceUndo(.openClawDraft(previous: hadSelectedThread ? previousDraft : unthreadedDraft, next: nextDraft))
     }
 
     setOpenClawAssistantPanelPresented(true)
     openClawStatusText = "Added \(pointer.displayReference) to OpenClaw"
     statusText = "Added \(pointer.displayReference) to OpenClaw"
+  }
+
+  private func canReuseOpenClawContextDraftThread(
+    for pointer: OpenClawContextPointer,
+    mode: OpenClawThreadMode
+  ) -> Bool {
+    guard mode == .newThread,
+          let thread = selectedOpenClawChatThread,
+          thread.messages.isEmpty,
+          openClawDraft.contains(pointer.reference)
+    else { return false }
+    return Self.normalizedOpenClawThreadTitle(thread.title) == Self.normalizedOpenClawThreadTitle(pointer.threadTitle)
   }
 
   private func mappedPathForOpenClaw(_ path: String) -> String {

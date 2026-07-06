@@ -93,6 +93,9 @@ final class OrgSyntaxTextView: NSTextView {
       copy(nil)
       return
     }
+    if handlesSaveShortcut(event), performSaveShortcut() {
+      return
+    }
     if handlesDocumentSelectAllShortcut(event),
        OrgSyntaxTextSelectionBridge.selectAllDocumentText(containing: self) {
       return
@@ -114,8 +117,7 @@ final class OrgSyntaxTextView: NSTextView {
       copy(nil)
       return true
     }
-    if handlesSaveShortcut(event),
-       onSaveCommand?(OrgSyntaxTextEditorSubmitContext(text: string, selectedRange: selectedRange())) == true {
+    if handlesSaveShortcut(event), performSaveShortcut() {
       return true
     }
     if handlesDocumentSelectAllShortcut(event),
@@ -170,6 +172,34 @@ final class OrgSyntaxTextView: NSTextView {
       return true
     }
     return super.validateUserInterfaceItem(item)
+  }
+
+  @MainActor
+  static func saveFocusedTextViewIfPossible(for event: NSEvent) -> Bool {
+    guard let textView = focusedSyntaxTextView(for: event),
+          textView.handlesSaveShortcut(event)
+    else {
+      return false
+    }
+    return textView.performSaveShortcut()
+  }
+
+  @MainActor
+  private static func focusedSyntaxTextView(for event: NSEvent) -> OrgSyntaxTextView? {
+    var windows: [NSWindow] = []
+    for window in [event.window, NSApplication.shared.keyWindow, NSApplication.shared.mainWindow].compactMap(\.self) {
+      if !windows.contains(where: { $0 === window }) {
+        windows.append(window)
+      }
+    }
+    for window in NSApplication.shared.windows where !windows.contains(where: { $0 === window }) {
+      windows.append(window)
+    }
+    return windows.compactMap { $0.firstResponder as? OrgSyntaxTextView }.first
+  }
+
+  private func performSaveShortcut() -> Bool {
+    onSaveCommand?(OrgSyntaxTextEditorSubmitContext(text: string, selectedRange: selectedRange())) == true
   }
 
   private func handlesCrossEditorCopyShortcut(_ event: NSEvent) -> Bool {

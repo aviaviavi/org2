@@ -666,6 +666,26 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testNamedOpenClawThreadKeepsTitleWhenPromptStartsWithPreamble() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-thread-title-preamble-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      openClawSendHandler: { _, _, _, _ in "ok" }
+    )
+    store.createOpenClawChatThread()
+    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.renameOpenClawChatThread(threadID, title: "Brief: Target Node")
+
+    await store.sendOpenClawMessage(text: "Generate a concise, source-cited briefing for the selected org2 node \"Target Node\".")
+
+    let thread = try XCTUnwrap(store.openClawChatThreads.first(where: { $0.id == threadID }))
+    XCTAssertEqual(thread.title, "Brief: Target Node")
+  }
+
+  @MainActor
   func testOpenClawChatThreadsPinAndArchivePersistLocally() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-thread-metadata-\(UUID().uuidString)", isDirectory: true)
@@ -702,12 +722,16 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.visibleOpenClawChatThreads.first?.id, firstThreadID)
     XCTAssertEqual(store.visibleOpenClawChatThreads.first?.isPinned, true)
 
+    store.renameOpenClawChatThread(firstThreadID, title: "Renamed pinned thread")
+    XCTAssertEqual(store.visibleOpenClawChatThreads.first?.title, "Renamed pinned thread")
+
     let restored = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
       openClawTranscriptURL: transcript
     )
     XCTAssertEqual(restored.visibleOpenClawChatThreads.first?.id, firstThreadID)
+    XCTAssertEqual(restored.visibleOpenClawChatThreads.first?.title, "Renamed pinned thread")
     XCTAssertEqual(restored.visibleOpenClawChatThreads.first?.isPinned, true)
     XCTAssertTrue(restored.archivedOpenClawChatThreads.isEmpty)
   }
@@ -1006,6 +1030,9 @@ final class Org2ModelsTests: XCTestCase {
     let sentText = try XCTUnwrap(calls.first?.last?.content)
     XCTAssertTrue(sentText.contains("OpenClaw approval thread"))
     XCTAssertTrue(sentText.contains("Please review the launch email"))
+    let discussionThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    let discussionThread = try XCTUnwrap(store.openClawChatThreads.first(where: { $0.id == discussionThreadID }))
+    XCTAssertEqual(discussionThread.title, "Discuss: Review and approve launch email")
 
     await store.approve(approval)
 
@@ -1017,6 +1044,50 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(updated.contains(":REVIEW_STATUS: approved"))
     XCTAssertTrue(updated.contains(":STATUS: approved"))
     XCTAssertTrue(store.approvalItems.isEmpty)
+  }
+
+  @MainActor
+  func testDiscussApprovalCanReuseCurrentOpenClawThreadWhenRequested() async throws {
+    let recorder = OpenClawMessageSendRecorder()
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-approval-current-thread-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("approvals.org2")
+    try """
+    * TODO Review launch follow-up
+    :PROPERTIES:
+    :ID: approval-2
+    :REVIEW_STATUS: review-required
+    :END:
+    Needs human review.
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      openClawSendHandler: { messages, _, _, _ in
+        try await recorder.send(messages: messages)
+      }
+    )
+    store.setCorpusRoot(root, persistsDefault: false)
+    store.createOpenClawChatThread()
+    let originalThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.openClawMessages = [
+      OpenClawChatMessage(role: .user, content: "Existing approval context")
+    ]
+
+    await store.refreshApprovals(updatesStatus: true)
+    let approval = try XCTUnwrap(store.approvalItems.first)
+    await store.discussApprovalInOpenClaw(
+      approval,
+      message: "Check this before sending.",
+      threadMode: .currentThread
+    )
+
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, originalThreadID)
+    XCTAssertEqual(store.openClawChatThreads.count, 1)
+    XCTAssertEqual(store.openClawMessages.first?.content, "Existing approval context")
+    XCTAssertTrue(store.openClawMessages.map(\.content).contains { $0.contains("Check this before sending.") })
   }
 
   @MainActor
@@ -2493,8 +2564,15 @@ final class Org2ModelsTests: XCTestCase {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-ai-context-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let suiteName = "org2-workspace-ai-context-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
     let file = root.appendingPathComponent("daily.org2")
-    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+    )
     store.corpusRoot = root
     store.openClawRemoteCorpusPath = "/remote/org2"
     store.selectedEntrySource = EntrySource(
@@ -2510,6 +2588,9 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertEqual(store.selectedSurface, .openClaw)
     XCTAssertFalse(store.isOpenClawAssistantPresented)
+    let contextThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    XCTAssertEqual(store.openClawChatThreads.count, 1)
+    XCTAssertEqual(store.openClawChatThreads.first?.title, "Ask: daily")
     XCTAssertEqual(
       store.openClawDraft,
       "Use selected entry at /remote/org2/daily.org2:7 as context.\n\nWhat should I do next?"
@@ -2517,6 +2598,8 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.openClawStatusText, "Added daily.org2:7 to OpenClaw")
 
     store.askOpenClawAboutCurrentSelection()
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, contextThreadID)
+    XCTAssertEqual(store.openClawChatThreads.count, 1)
     XCTAssertEqual(
       store.openClawDraft,
       "Use selected entry at /remote/org2/daily.org2:7 as context.\n\nWhat should I do next?"
@@ -2539,6 +2622,9 @@ final class Org2ModelsTests: XCTestCase {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-ai-block-context-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let suiteName = "org2-workspace-ai-block-context-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
     let file = root.appendingPathComponent("project.org2")
     let source = EntrySource(
       file: file.path,
@@ -2551,7 +2637,11 @@ final class Org2ModelsTests: XCTestCase {
       """,
       isSubtree: true
     )
-    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+    )
     store.corpusRoot = root
     store.openClawRemoteCorpusPath = "/remote/org2"
     store.selectedEntrySource = source
@@ -2568,6 +2658,8 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertEqual(store.selectedSurface, .openClaw)
     XCTAssertEqual(store.selectedBlockID, paragraph.id)
+    XCTAssertEqual(store.openClawChatThreads.count, 1)
+    XCTAssertEqual(store.openClawChatThreads.first?.title, "Ask: project.org2")
     XCTAssertEqual(
       store.openClawDraft,
       "Use selected block at /remote/org2/project.org2:13-14 as context.\n\n"

@@ -947,13 +947,14 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   }
 
   public func replacingOpenClawChatMetadata(
+    title nextTitle: String? = nil,
     isPinned nextIsPinned: Bool? = nil,
     isArchived nextIsArchived: Bool? = nil,
     unreadMessageCount nextUnreadMessageCount: Int? = nil
   ) -> OpenClawChatThread {
     OpenClawChatThread(
       id: id,
-      title: title,
+      title: nextTitle ?? title,
       createdAt: createdAt,
       updatedAt: updatedAt,
       sessionKey: sessionKey,

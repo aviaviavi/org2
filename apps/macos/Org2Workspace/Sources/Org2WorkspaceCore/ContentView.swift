@@ -461,6 +461,8 @@ private struct OpenClawSidebarThreadList: View {
 
 private struct OpenClawSidebarThreadRow: View {
   @EnvironmentObject private var store: WorkspaceStore
+  @State private var isRenaming = false
+  @State private var renameDraft = ""
   let thread: OpenClawChatThread
   let isSelected: Bool
   let select: () -> Void
@@ -511,6 +513,13 @@ private struct OpenClawSidebarThreadRow: View {
     .disabled(false)
     .contextMenu {
       Button {
+        renameDraft = thread.title
+        isRenaming = true
+      } label: {
+        Label("Rename Thread", systemImage: "pencil")
+      }
+
+      Button {
         store.toggleOpenClawChatThreadPin(thread.id)
       } label: {
         Label(thread.isPinned ? "Unpin Thread" : "Pin Thread", systemImage: thread.isPinned ? "pin.slash" : "pin")
@@ -528,6 +537,13 @@ private struct OpenClawSidebarThreadRow: View {
         } label: {
           Label("Archive Thread", systemImage: "archivebox")
         }
+      }
+    }
+    .alert("Rename Thread", isPresented: $isRenaming) {
+      TextField("Thread name", text: $renameDraft)
+      Button("Cancel", role: .cancel) {}
+      Button("Rename") {
+        store.renameOpenClawChatThread(thread.id, title: renameDraft)
       }
     }
   }
@@ -1508,7 +1524,14 @@ private struct ApprovalsView: View {
       approvalList
     }
     .sheet(item: $discussionItem) { item in
-      ApprovalDiscussionSheet(item: item, message: $discussionMessage)
+      ApprovalDiscussionSheet(
+        item: item,
+        message: $discussionMessage,
+        discuss: { message, threadMode in
+          discussionItem = nil
+          Task { await store.discussApprovalInOpenClaw(item, message: message, threadMode: threadMode) }
+        }
+      )
         .environmentObject(store)
     }
     .onAppear {
@@ -1713,6 +1736,8 @@ private struct ApprovalDiscussionSheet: View {
   @EnvironmentObject private var store: WorkspaceStore
   let item: ApprovalItem
   @Binding var message: String
+  let discuss: (String, OpenClawThreadMode) -> Void
+  @State private var threadMode: OpenClawThreadMode = .newThread
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -1739,16 +1764,25 @@ private struct ApprovalDiscussionSheet: View {
             .stroke(WorkspaceDesign.hairline)
         )
 
+      Picker("Thread", selection: $threadMode) {
+        ForEach(OpenClawThreadMode.allCases) { mode in
+          Text(mode.title).tag(mode)
+        }
+      }
+      .pickerStyle(.radioGroup)
+      .horizontalRadioGroupLayout()
+      .help("Choose whether this approval discussion starts a fresh OpenClaw chat or continues the selected chat.")
+
       HStack {
         Spacer()
         Button("Cancel") {
           dismiss()
         }
         Button {
-          Task {
-            await store.discussApprovalInOpenClaw(item, message: message)
-            dismiss()
-          }
+          let message = message
+          let threadMode = threadMode
+          dismiss()
+          discuss(message, threadMode)
         } label: {
           Label("Discuss", systemImage: "paperplane")
         }
@@ -1757,6 +1791,9 @@ private struct ApprovalDiscussionSheet: View {
     }
     .padding(18)
     .frame(width: 460)
+    .onAppear {
+      threadMode = .newThread
+    }
   }
 }
 
