@@ -1,21 +1,7 @@
-function normalizeHeadlineTodoToken(raw: string): string {
-  return String(raw || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-}
+import { normalizeTodoKeyword } from "./todo.js";
 
 function isRecognizedHeadlineTodoKeyword(value: string): boolean {
-  const key = normalizeHeadlineTodoToken(value);
-  if (!key) return false;
-
-  if (["TODO", "OPEN", "BACKLOG"].includes(key)) return true;
-  if (["PROG", "IN_PROGRESS", "INPROGRESS", "DOING", "STARTED", "WAITING", "WAIT", "BLOCKED", "NEXT", "WIP", "HOLD", "ON_HOLD", "ONHOLD", "PAUSED", "PAUSE"].includes(key)) return true;
-  if (["DONE", "COMPLETE", "COMPLETED", "FINISH", "FINISHED", "CLOSED", "RESOLVED"].includes(key)) return true;
-  if (["CANCELED", "CANCELLED"].includes(key)) return true;
-
-  return false;
+  return normalizeTodoKeyword(value) !== undefined;
 }
 
 export function stripRecognizedHeadlineTodoKeyword(headline: string): string {
