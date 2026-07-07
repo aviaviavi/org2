@@ -3619,6 +3619,26 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSyntaxEditorCanDisableLiveHighlightingDuringTyping() {
+    var boundText = "old"
+    let editor = OrgSyntaxTextEditor(
+      text: Binding(
+        get: { boundText },
+        set: { boundText = $0 }
+      ),
+      liveHighlighting: false
+    )
+    let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
+    let textView = NSTextView()
+
+    textView.string = "* TODO Heading"
+    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+
+    XCTAssertEqual(boundText, "* TODO Heading")
+    XCTAssertFalse(coordinator.hasDeferredHighlighting(for: "* TODO Heading"))
+  }
+
+  @MainActor
   func testSyntaxEditorDoesNotScheduleDeferredHighlightingForLargeBuffers() {
     let largeText = String(repeating: "Body with [[id:abc][Alice]].\n", count: 2_000)
     XCTAssertGreaterThan((largeText as NSString).length, OrgSyntaxHighlighter.liveTokenizationUTF16Limit)
@@ -4947,6 +4967,11 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "5", keyCode: 23, modifiers: [.command])))
     XCTAssertEqual(store.selectedSurface, .meetings)
 
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "2", keyCode: 19, modifiers: [.command])))
+    XCTAssertEqual(store.selectedSurface, .agenda)
+    XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "m", keyCode: 46, modifiers: [.command])))
+    XCTAssertEqual(store.selectedSurface, .meetings)
+
     XCTAssertTrue(store.handleGlobalKeyDown(keyDown(characters: "6", keyCode: 22, modifiers: [.command])))
     XCTAssertEqual(store.selectedSurface, .openClaw)
 
@@ -5057,7 +5082,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(WorkspaceSurface.approvals.commandShortcutTitle, "⌘4")
     XCTAssertEqual(WorkspaceSurface.files.commandShortcutTitle, "⌘3")
     XCTAssertEqual(WorkspaceSurface.search.commandShortcutTitle, "⌘⇧F")
-    XCTAssertEqual(WorkspaceSurface.meetings.commandShortcutTitle, "⌘5")
+    XCTAssertEqual(WorkspaceSurface.meetings.commandShortcutTitle, "⌘5/⌘M")
     XCTAssertEqual(WorkspaceSurface.openClaw.commandShortcutTitle, "⌘6")
     XCTAssertEqual(WorkspaceSurface.sidebarCases, [.home, .agenda, .files, .approvals, .search, .meetings, .openClaw])
   }
@@ -6784,7 +6809,7 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
-  func testRenderedBlockEditingPolicyStartsInlineEditingForRichBlocksOnSingleClick() {
+  func testRenderedBlockEditingPolicyDoesNotStartInlineEditingForRichBlocksOnSingleClick() {
     let editableBlocks = [
       OrgEditableBlock(
         id: "heading",
@@ -6820,7 +6845,7 @@ final class Org2ModelsTests: XCTestCase {
     ]
 
     for block in editableBlocks {
-      XCTAssertTrue(
+      XCTAssertFalse(
         RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: block, isSourceEditable: true),
         block.id
       )
@@ -6831,7 +6856,7 @@ final class Org2ModelsTests: XCTestCase {
     }
   }
 
-  func testRenderedBlockEditingPolicyStartsInlineEditingForStructuralBlocksOnSingleClick() {
+  func testRenderedBlockEditingPolicyDoesNotStartInlineEditingForStructuralBlocksOnSingleClick() {
     let divider = OrgEditableBlock(
       id: "divider",
       startLine: 1,
@@ -6846,7 +6871,7 @@ final class Org2ModelsTests: XCTestCase {
       rawText: "",
       rendered: .blank
     )
-    XCTAssertTrue(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: divider, isSourceEditable: true))
+    XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: divider, isSourceEditable: true))
     XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: blank, isSourceEditable: true))
     let properties = OrgEditableBlock(
       id: "properties",
@@ -6855,7 +6880,7 @@ final class Org2ModelsTests: XCTestCase {
       rawText: ":PROPERTIES:\n:Owner: Avi\n:END:",
       rendered: .properties([OrgPropertyRow(key: "Owner", value: "Avi")])
     )
-    XCTAssertTrue(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: properties, isSourceEditable: true))
+    XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: properties, isSourceEditable: true))
   }
 
   func testRenderedBlockEditingPolicyDoesNotStartInlineEditingForMediaParagraphsOnSingleClick() throws {
@@ -6870,15 +6895,15 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(RenderedBlockEditingPolicy.startsEditingOnSingleClick(block: standalone, isSourceEditable: true))
   }
 
-  func testLiveRenderedTextEditingPolicyUsesDirectEditorsForDocumentTextBlocks() throws {
+  func testLiveRenderedTextEditingPolicyDoesNotUseDirectEditorsForDocumentTextBlocks() throws {
     let paragraph = try XCTUnwrap(OrgEntryRenderer.parseEditable("Body with [[id:abc][Alice]].").first)
     let listItem = try XCTUnwrap(OrgEntryRenderer.parseEditable("- [ ] Task").first)
     let heading = try XCTUnwrap(OrgEntryRenderer.parseEditable("* Heading").first)
     let media = try XCTUnwrap(OrgEntryRenderer.parseEditable("[[file:images/image.png][Image]]").first)
 
-    XCTAssertTrue(LiveRenderedTextEditingPolicy.usesDirectEditor(block: paragraph, isSourceEditable: true))
-    XCTAssertTrue(LiveRenderedTextEditingPolicy.usesDirectEditor(block: listItem, isSourceEditable: true))
-    XCTAssertTrue(LiveRenderedTextEditingPolicy.usesDirectEditor(block: heading, isSourceEditable: true))
+    XCTAssertFalse(LiveRenderedTextEditingPolicy.usesDirectEditor(block: paragraph, isSourceEditable: true))
+    XCTAssertFalse(LiveRenderedTextEditingPolicy.usesDirectEditor(block: listItem, isSourceEditable: true))
+    XCTAssertFalse(LiveRenderedTextEditingPolicy.usesDirectEditor(block: heading, isSourceEditable: true))
     XCTAssertFalse(LiveRenderedTextEditingPolicy.usesDirectEditor(block: media, isSourceEditable: true))
     XCTAssertFalse(LiveRenderedTextEditingPolicy.usesDirectEditor(block: paragraph, isSourceEditable: false))
   }
@@ -9418,6 +9443,20 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(edit?.text, "Ask [[Docker]] about usage")
     XCTAssertEqual(edit?.selectedRange.location, range.location)
     XCTAssertEqual(edit?.selectedRange.length, ("[[Docker]]" as NSString).length)
+
+    let spacedRange = NSRange(location: range.location - 1, length: range.length + 2)
+    let spacedEdit = WorkspaceStore.backlinkReplacementForSelectedText(in: text, range: spacedRange)
+    XCTAssertEqual(spacedEdit?.text, "Ask [[Docker]] about usage")
+    XCTAssertEqual(spacedEdit?.selectedRange.location, range.location)
+
+    let nodeEdit = WorkspaceStore.nodeLinkReplacementForSelectedText(
+      in: text,
+      range: spacedRange,
+      id: "docker-id",
+      title: "Docker"
+    )
+    XCTAssertEqual(nodeEdit?.text, "Ask [[id:docker-id][Docker]] about usage")
+    XCTAssertEqual(nodeEdit?.selectedRange.location, range.location)
   }
 
   @MainActor
@@ -9964,7 +10003,7 @@ final class Org2ModelsTests: XCTestCase {
       "headline": "Parent",
       "kind": "SCHEDULED",
       "file": "\(note.path)",
-      "line": 2,
+      "line": 3,
       "body": "Body",
       "level": 1,
       "tags": [],
@@ -10579,6 +10618,104 @@ final class Org2ModelsTests: XCTestCase {
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("* TODO Parent\nBody\n* Sibling"))
     XCTAssertFalse(updated.contains("Stale body"))
+  }
+
+  @MainActor
+  func testEntrySourceReloadDoesNotDiscardActiveBlockDraft() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-reload-active-block-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("reload-active-block.org2")
+    try """
+    #+TITLE: Reload Active Block Test
+
+    * TODO Parent
+    Body
+    * Sibling
+    Sibling body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": "TODO",
+      "headline": "Parent",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 2,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+    store.beginEditingBlock(paragraph)
+    store.updateEditingBlockDraft(paragraph, draft: "Still typing")
+
+    await store.loadEntrySource(for: .agenda(item))
+
+    XCTAssertEqual(store.editingBlockID, paragraph.id)
+    XCTAssertTrue(store.canSaveActiveEdit)
+    XCTAssertEqual(store.selectedBlock?.id, paragraph.id)
+
+    await store.saveActiveEdit()
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* TODO Parent\nStill typing\n* Sibling"))
+    XCTAssertFalse(updated.contains("* TODO Parent\nBody\n* Sibling"))
+  }
+
+  @MainActor
+  func testLiveFileEditorReloadDoesNotDiscardUnsavedDraft() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-reload-live-file-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("reload-live-file.org2")
+    let original = """
+    #+TITLE: Reload Live File
+
+    * Parent
+    Body
+    """
+    let draft = """
+    #+TITLE: Reload Live File
+
+    * Parent
+    Still typing
+    """
+    try original.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    let location = try XCTUnwrap(store.selectedLocation)
+    await store.loadEntrySource(for: location)
+    try await waitForEntryRender(store)
+
+    store.noteLiveFileEditorTextChanged(draft)
+    await store.loadEntrySource(for: location)
+
+    XCTAssertEqual(store.editableEntryText, draft)
+    XCTAssertTrue(store.liveFileEditorHasUnsavedChanges)
+
+    await store.saveLiveFileEditor(explicit: true)
+    XCTAssertEqual(try String(contentsOf: note, encoding: .utf8), draft)
   }
 
   @MainActor
@@ -11255,6 +11392,7 @@ final class Org2ModelsTests: XCTestCase {
 
   @MainActor
   func testReturnAfterTypingHeadingInEmptyDraftStartsEmptyDraftWithoutReusingEditorState() async throws {
+    try XCTSkipIf(true, "Rendered inline text editing is retired from normal UI entry points; source editing is primary.")
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-heading-return-draft-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -12602,8 +12740,10 @@ final class Org2ModelsTests: XCTestCase {
 
     store.selectBlock(paragraph)
     XCTAssertTrue(store.handleDocumentKeyDown(keyDown(characters: "\r", keyCode: 36)))
-    XCTAssertEqual(store.editingBlockID, paragraph.id)
-    XCTAssertEqual(store.editableBlockText, "Body")
+    XCTAssertNil(store.editingBlockID)
+    XCTAssertTrue(store.isEditingEntry)
+    XCTAssertEqual(store.editableEntryText, "* TODO Parent\nBody")
+    XCTAssertEqual(store.sourceEditorSelection, NSRange(location: 14, length: 0))
     XCTAssertTrue(store.hasActiveEdit)
     XCTAssertTrue(store.canSaveActiveEdit)
     XCTAssertFalse(store.handleDocumentKeyDown(keyDown(characters: "\u{7F}", keyCode: 51)))
@@ -12612,38 +12752,40 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(store.hasActiveEdit)
     store.selectBlock(paragraph)
     XCTAssertTrue(store.handleDocumentKeyDown(keyDown(characters: "!", keyCode: 18)))
-    XCTAssertEqual(store.editingBlockID, paragraph.id)
-    XCTAssertEqual(store.editableBlockText, "Body!")
-    XCTAssertEqual(store.selectedBlock?.rawText, "Body!")
-
-    store.cancelEditingBlock()
     XCTAssertNil(store.editingBlockID)
-    XCTAssertEqual(store.selectedBlock?.rawText, "Body")
+    XCTAssertTrue(store.isEditingEntry)
+    XCTAssertEqual(store.editableEntryText, "* TODO Parent\nBody!")
+    XCTAssertEqual(store.sourceEditorSelection, NSRange(location: 19, length: 0))
+
+    store.cancelActiveEdit()
+    XCTAssertNil(store.editingBlockID)
+    XCTAssertFalse(store.isEditingEntry)
 
     store.selectBlock(heading)
     XCTAssertTrue(store.handleDocumentKeyDown(keyDown(characters: "!", keyCode: 18)))
-    XCTAssertEqual(store.editingBlockID, heading.id)
-    XCTAssertEqual(store.editableBlockText, "* TODO Parent!")
-    XCTAssertEqual(store.selectedBlock?.rawText, "* TODO Parent!")
-
-    store.cancelEditingBlock()
     XCTAssertNil(store.editingBlockID)
-    XCTAssertEqual(store.selectedBlock?.rawText, "* TODO Parent")
+    XCTAssertTrue(store.isEditingEntry)
+    XCTAssertEqual(store.editableEntryText, "* TODO Parent!\nBody")
+    XCTAssertEqual(store.sourceEditorSelection, NSRange(location: 14, length: 0))
+
+    store.cancelActiveEdit()
+    XCTAssertNil(store.editingBlockID)
+    XCTAssertFalse(store.isEditingEntry)
 
     store.selectBlock(paragraph)
     XCTAssertFalse(store.isEditingEntry)
     store.selectedSurface = .agenda
     XCTAssertTrue(store.handleAgendaKeyDown(keyDown(characters: "e", keyCode: 14)))
-    XCTAssertEqual(store.editingBlockID, paragraph.id)
-    XCTAssertEqual(store.editableBlockText, "Body")
-    XCTAssertFalse(store.isEditingEntry)
+    XCTAssertNil(store.editingBlockID)
+    XCTAssertTrue(store.isEditingEntry)
+    XCTAssertEqual(store.sourceEditorSelection, NSRange(location: 14, length: 0))
 
-    store.cancelEditingBlock()
+    store.cancelActiveEdit()
     store.clearSelectedBlock()
     store.beginEditingVisibleBlock()
-    XCTAssertEqual(store.editingBlockID, heading.id)
-    XCTAssertEqual(store.editableBlockText, "* TODO Parent")
-    XCTAssertFalse(store.isEditingEntry)
+    XCTAssertNil(store.editingBlockID)
+    XCTAssertTrue(store.isEditingEntry)
+    XCTAssertEqual(store.sourceEditorSelection, NSRange(location: 0, length: 0))
   }
 
   @MainActor

@@ -9,6 +9,7 @@ private var retainedInteractionWindows: [NSWindow] = []
 @MainActor
 final class OrgEditorInteractionTests: XCTestCase {
   func testTypingHeadingReturnAndParagraphUsesFreshEditorState() async throws {
+    try XCTSkipIf(true, "Rendered inline text editing is retired from normal UI entry points; source editing is primary.")
     let harness = try await makeHarness(initialText: "")
 
     try await harness.beginAppendingAtEnd()
@@ -41,7 +42,7 @@ final class OrgEditorInteractionTests: XCTestCase {
     XCTAssertEqual(source, "* testing\n\nbody")
   }
 
-  func testReturnOnCollapsedHeadingRevealsNewParagraphEditor() async throws {
+  func testReturnOnSelectedRenderedHeadingOpensSourceEditor() async throws {
     let harness = try await makeHarness(initialText: """
     * Current
     Hidden body
@@ -54,24 +55,19 @@ final class OrgEditorInteractionTests: XCTestCase {
     harness.store.selectBlock(headingBlock)
     XCTAssertTrue(harness.store.collapseSelectedRenderedBlock())
 
-    let headingEditor = try await harness.syntaxTextView(withExactText: "* Current")
-    try await harness.focus(
-      headingEditor,
-      selection: NSRange(location: ("* Current" as NSString).length, length: 0)
-    )
-    try await harness.pressReturnKey()
-    try await harness.waitForFocusedEditorText("")
+    let event = try XCTUnwrap(harness.keyEvent("\r", keyCode: 36))
+    XCTAssertTrue(harness.store.handleDocumentKeyDown(event))
+    try await waitForCondition {
+      harness.store.isEditingEntry
+    }
 
-    let draftID = try XCTUnwrap(harness.store.selectedBlockID)
-    XCTAssertEqual(harness.store.editingBlockID, draftID)
-    XCTAssertFalse(harness.store.foldedRenderedBlockIDs.contains(headingBlock.id))
-    XCTAssertTrue(OrgRenderedFoldTree.visibleBlocks(
-      harness.store.selectedRenderedBlocks,
-      foldedBlockIDs: harness.store.foldedRenderedBlockIDs
-    ).contains { $0.id == draftID })
+    XCTAssertNil(harness.store.editingBlockID)
+    XCTAssertEqual(harness.store.editableEntryText, "* Current\nHidden body")
+    XCTAssertEqual(harness.store.sourceEditorSelection, NSRange(location: 0, length: 0))
   }
 
   func testTypingHeadingReturnAfterExistingParagraphKeepsHeadingAboveBlankEditor() async throws {
+    try XCTSkipIf(true, "Rendered inline text editing is retired from normal UI entry points; source editing is primary.")
     let harness = try await makeHarness(initialText: "Existing paragraph")
 
     try await harness.beginAppendingAtEnd()
@@ -93,24 +89,7 @@ final class OrgEditorInteractionTests: XCTestCase {
     XCTAssertGreaterThan(headingFrame.midY, blankFrame.midY)
   }
 
-  func testArrowUpAtStartMovesCaretToEndOfPreviousRenderedBlockAcrossEntries() async throws {
-    let harness = try await makeHarness(initialText: """
-    * Alpha
-    Alpha body
-    * Beta
-    Beta body
-    """)
-
-    let betaHeading = try await harness.syntaxTextView(withExactText: "* Beta")
-    try await harness.focus(betaHeading, selection: NSRange(location: 0, length: 0))
-    try await harness.pressMoveUp()
-
-    let focused = try await harness.focusedEditor()
-    XCTAssertEqual(focused.string, "Alpha body")
-    XCTAssertEqual(focused.selectedRange(), NSRange(location: ("Alpha body" as NSString).length, length: 0))
-  }
-
-  func testLiveRenderedEditorsDoNotInstallRenderedActivationOverlays() async throws {
+  func testRenderedRowsDoNotInstallLiveEditorsOrActivationOverlays() async throws {
     let harness = try await makeHarness(initialText: """
     * Clickable heading
     Clickable paragraph text
@@ -118,53 +97,8 @@ final class OrgEditorInteractionTests: XCTestCase {
     - Clickable list item
     """)
 
-    _ = try await harness.syntaxTextView(withExactText: "* Clickable heading")
-    _ = try await harness.syntaxTextView(withExactText: "Clickable paragraph text")
-    _ = try await harness.syntaxTextView(withExactText: "Clickable list item")
-
+    XCTAssertFalse(harness.hasViewType(containing: "LiveRenderedTextBlockEditor"))
     XCTAssertFalse(harness.hasViewType(containing: "RenderedRowTextActivationOverlay"))
-  }
-
-  func testArrowDownAtEndMovesCaretToNextRenderedBlockAcrossEntries() async throws {
-    let harness = try await makeHarness(initialText: """
-    * Alpha
-    Alpha body
-    * Beta
-    Beta body
-    """)
-
-    let alphaBody = try await harness.syntaxTextView(withExactText: "Alpha body")
-    try await harness.focus(alphaBody, selection: NSRange(location: ("Alpha body" as NSString).length, length: 0))
-    try await harness.pressMoveDown()
-
-    let focused = try await harness.focusedEditor()
-    XCTAssertEqual(focused.string, "* Beta")
-    XCTAssertEqual(focused.selectedRange(), NSRange(location: ("* Beta" as NSString).length, length: 0))
-  }
-
-  func testLeftRightArrowsCrossRenderedBlockBoundaries() async throws {
-    let harness = try await makeHarness(initialText: """
-    * Alpha
-    Alpha body
-    * Beta
-    """)
-
-    let alphaBody = try await harness.syntaxTextView(withExactText: "Alpha body")
-    let betaHeading = try await harness.syntaxTextView(withExactText: "* Beta")
-
-    try await harness.focus(betaHeading, selection: NSRange(location: 0, length: 0))
-    try await harness.pressMoveLeft()
-
-    var focused = try await harness.focusedEditor()
-    XCTAssertEqual(focused.string, "Alpha body")
-    XCTAssertEqual(focused.selectedRange(), NSRange(location: ("Alpha body" as NSString).length, length: 0))
-
-    try await harness.focus(alphaBody, selection: NSRange(location: ("Alpha body" as NSString).length, length: 0))
-    try await harness.pressMoveRight()
-
-    focused = try await harness.focusedEditor()
-    XCTAssertEqual(focused.string, "* Beta")
-    XCTAssertEqual(focused.selectedRange(), NSRange(location: 0, length: 0))
   }
 
   func testTypingParagraphReturnCreatesParagraphAfterCurrentText() async throws {
@@ -213,7 +147,7 @@ final class OrgEditorInteractionTests: XCTestCase {
     XCTAssertEqual(source, "alpha\n\nbeta")
   }
 
-  func testDirectTypingIntoSelectedParagraphThenReturnKeepsTextOnCurrentLine() async throws {
+  func testDirectTypingIntoSelectedParagraphOpensSourceEditorAndInsertsText() async throws {
     let harness = try await makeHarness(initialText: "alpha")
 
     let paragraph = try XCTUnwrap(harness.store.selectedRenderedBlocks.first {
@@ -222,14 +156,13 @@ final class OrgEditorInteractionTests: XCTestCase {
     })
     harness.store.selectBlock(paragraph)
     try await harness.sendWorkspaceKey("b")
-    try await harness.waitForFocusedEditorText("alphab")
-    try await harness.pressReturnKey()
-    try await harness.waitForFocusedEditorText("")
-    try await harness.typeKeys("next")
-    try await harness.saveActiveBlock()
+    XCTAssertTrue(harness.store.isEditingEntry)
+    XCTAssertNil(harness.store.editingBlockID)
+    XCTAssertEqual(harness.store.editableEntryText, "alphab")
+    await harness.store.saveActiveEdit()
 
     let source = try harness.fileText()
-    XCTAssertEqual(source, "alphab\n\nnext")
+    XCTAssertEqual(source, "alphab")
   }
 
   func testDirectTypingIntoSelectedParagraphThenSavePersistsDraft() async throws {
@@ -241,14 +174,16 @@ final class OrgEditorInteractionTests: XCTestCase {
     })
     harness.store.selectBlock(paragraph)
     try await harness.sendWorkspaceKey("b")
-    try await harness.waitForFocusedEditorText("alphab")
-    try await harness.saveActiveBlock()
+    XCTAssertTrue(harness.store.isEditingEntry)
+    XCTAssertEqual(harness.store.editableEntryText, "alphab")
+    await harness.store.saveActiveEdit()
 
     let source = try harness.fileText()
     XCTAssertEqual(source, "alphab")
   }
 
   func testCommandSInApprovalBodyPersistsFocusedEditorDraft() async throws {
+    try XCTSkipIf(true, "Rendered inline approval-body editing is retired from normal UI entry points; source editing is primary.")
     let harness = try await makeHarness(initialText: """
     * TODO Approve reply to Maya
     :PROPERTIES:
@@ -445,6 +380,7 @@ final class OrgEditorInteractionTests: XCTestCase {
   }
 
   func testTypingListReturnAndBackspaceMergesLikeDocumentEditing() async throws {
+    try XCTSkipIf(true, "Rendered inline text editing is retired from normal UI entry points; source editing is primary.")
     let harness = try await makeHarness(initialText: "")
 
     try await harness.beginAppendingAtEnd()
@@ -498,7 +434,7 @@ final class OrgEditorInteractionTests: XCTestCase {
     XCTAssertEqual(source, "- [ ] first task\n- [ ] second task")
   }
 
-  func testDirectTypingIntoSelectedListItemThenReturnKeepsTextOnCurrentItem() async throws {
+  func testDirectTypingIntoSelectedListItemOpensSourceEditorAndInsertsText() async throws {
     let harness = try await makeHarness(initialText: "- [ ] alpha")
 
     let item = try XCTUnwrap(harness.store.selectedRenderedBlocks.first {
@@ -507,17 +443,17 @@ final class OrgEditorInteractionTests: XCTestCase {
     })
     harness.store.selectBlock(item)
     try await harness.sendWorkspaceKey("b")
-    try await harness.waitForFocusedEditorText("alphab")
-    try await harness.pressReturnKey()
-    try await harness.waitForFocusedEditorText("")
-    try await harness.typeKeys("next")
-    try await harness.saveActiveBlock()
+    XCTAssertTrue(harness.store.isEditingEntry)
+    XCTAssertNil(harness.store.editingBlockID)
+    XCTAssertEqual(harness.store.editableEntryText, "- [ ] alphab")
+    await harness.store.saveActiveEdit()
 
     let source = try harness.fileText()
-    XCTAssertEqual(source, "- [ ] alphab\n- [ ] next")
+    XCTAssertEqual(source, "- [ ] alphab")
   }
 
   func testReturnFromSecondListItemCreatesThirdListItem() async throws {
+    try XCTSkipIf(true, "Rendered inline text editing is retired from normal UI entry points; source editing is primary.")
     let harness = try await makeHarness(initialText: "")
 
     try await harness.beginAppendingAtEnd()
@@ -541,6 +477,7 @@ final class OrgEditorInteractionTests: XCTestCase {
   }
 
   func testRepeatedReturnKeepsAddingListItemsPastSixthItem() async throws {
+    try XCTSkipIf(true, "Rendered inline text editing is retired from normal UI entry points; source editing is primary.")
     let harness = try await makeHarness(initialText: "")
 
     try await harness.beginAppendingAtEnd()
@@ -563,6 +500,7 @@ final class OrgEditorInteractionTests: XCTestCase {
   }
 
   func testReturnFromSixthExistingListItemCreatesSeventhItem() async throws {
+    try XCTSkipIf(true, "Rendered inline text editing is retired from normal UI entry points; source editing is primary.")
     let harness = try await makeHarness(initialText: """
     * Shopping list
     - chicken thighs
@@ -609,6 +547,7 @@ final class OrgEditorInteractionTests: XCTestCase {
   }
 
   func testReturnOnEmptyListItemExitsToParagraph() async throws {
+    try XCTSkipIf(true, "Rendered inline text editing is retired from normal UI entry points; source editing is primary.")
     let harness = try await makeHarness(initialText: "")
 
     try await harness.beginAppendingAtEnd()
@@ -628,6 +567,7 @@ final class OrgEditorInteractionTests: XCTestCase {
   }
 
   func testReturnInMiddleOfListItemSplitsTailIntoNextItem() async throws {
+    try XCTSkipIf(true, "Rendered inline text editing is retired from normal UI entry points; source editing is primary.")
     let harness = try await makeHarness(initialText: """
     - [ ] alpha beta
     """)
@@ -678,6 +618,7 @@ final class OrgEditorInteractionTests: XCTestCase {
   }
 
   func testEditingExistingHeadingThroughRenderedEditorPersistsOnce() async throws {
+    try XCTSkipIf(true, "Rendered inline text editing is retired from normal UI entry points; source editing is primary.")
     let harness = try await makeHarness(initialText: """
     * Old heading
     Body text
@@ -699,126 +640,7 @@ final class OrgEditorInteractionTests: XCTestCase {
     XCTAssertTrue(source.contains("* New heading\nBody text"))
   }
 
-  func testCrossEditorSelectionSpansHeadingListItemsAndFollowingParagraph() async throws {
-    let harness = try await makeHarness(initialText: """
-    * Heading
-    - [ ] first
-    - [ ] second
-    After list
-    """)
-
-    let heading = try await harness.syntaxTextView(withExactText: "* Heading")
-    let followingParagraph = try await harness.syntaxTextView(withExactText: "After list")
-
-    OrgSyntaxTextSelectionBridge.selectTextAcrossEditors(
-      anchorView: heading,
-      anchorLocation: 0,
-      targetView: followingParagraph,
-      targetLocation: (followingParagraph.string as NSString).length
-    )
-
-    let expected = """
-    * Heading
-    first
-    second
-    After list
-    """
-    XCTAssertEqual(OrgSyntaxTextSelectionBridge.selectedText(containing: heading), expected)
-    XCTAssertEqual(harness.nativeSelectedEditorCount(), 0)
-
-    heading.copy(nil)
-    XCTAssertEqual(NSPasteboard.general.string(forType: .string), expected)
-  }
-
-  func testMouseDragCrossEditorSelectionDoesNotActivateEveryInlineToolbar() async throws {
-    let harness = try await makeHarness(initialText: """
-    * Heading
-    - [ ] first
-    - [ ] second
-    After list
-    """)
-
-    let heading = try await harness.syntaxTextView(withExactText: "* Heading")
-    let followingParagraph = try await harness.syntaxTextView(withExactText: "After list")
-    let downEvent = try harness.mouseEvent(.leftMouseDown, at: harness.windowPoint(in: heading, edge: .leading))
-    let dragEvent = try harness.mouseEvent(.leftMouseDragged, at: harness.windowPoint(in: followingParagraph, edge: .trailing))
-
-    OrgSyntaxTextSelectionBridge.beginSelection(in: heading, event: downEvent)
-    XCTAssertTrue(OrgSyntaxTextSelectionBridge.updateSelection(from: heading, event: dragEvent))
-    XCTAssertTrue(OrgSyntaxTextSelectionBridge.endSelection(from: heading))
-
-    let expected = """
-    Heading
-    first
-    second
-    After list
-    """
-    XCTAssertEqual(OrgSyntaxTextSelectionBridge.selectedText(containing: heading), expected)
-    XCTAssertEqual(harness.nativeSelectedEditorCount(), 0)
-  }
-
-  func testMouseDownTracksSelectionAcrossMultipleRenderedHeadings() async throws {
-    let harness = try await makeHarness(initialText: """
-    * First heading
-    * Second heading
-    * Third heading
-    """)
-
-    let firstHeading = try await harness.syntaxTextView(withExactText: "* First heading")
-    let thirdHeading = try await harness.syntaxTextView(withExactText: "* Third heading")
-    let downEvent = try harness.mouseEvent(.leftMouseDown, at: harness.windowPoint(in: firstHeading, edge: .leading))
-    let dragEvent = try harness.mouseEvent(.leftMouseDragged, at: harness.windowPoint(in: thirdHeading, edge: .trailing))
-    let upEvent = try harness.mouseEvent(.leftMouseUp, at: harness.windowPoint(in: thirdHeading, edge: .trailing))
-
-    harness.window.postEvent(dragEvent, atStart: false)
-    harness.window.postEvent(upEvent, atStart: false)
-    firstHeading.mouseDown(with: downEvent)
-
-    let expected = """
-    First heading
-    * Second heading
-    * Third heading
-    """
-    XCTAssertEqual(OrgSyntaxTextSelectionBridge.selectedText(containing: firstHeading), expected)
-    XCTAssertEqual(harness.nativeSelectedEditorCount(), 0)
-
-    NSPasteboard.general.clearContents()
-    let copyEvent = try XCTUnwrap(harness.keyEvent("c", keyCode: 8, modifiers: .command))
-    XCTAssertTrue(firstHeading.performKeyEquivalent(with: copyEvent))
-    XCTAssertEqual(NSPasteboard.general.string(forType: .string), expected)
-  }
-
-  func testMouseDraggedCrossEntrySelectionDeleteRemovesHighlightedText() async throws {
-    let harness = try await makeHarness(initialText: """
-    * First heading
-    * Second heading
-    * Third heading
-    """)
-
-    let firstHeading = try await harness.syntaxTextView(withExactText: "* First heading")
-    let thirdHeading = try await harness.syntaxTextView(withExactText: "* Third heading")
-    let downEvent = try harness.mouseEvent(.leftMouseDown, at: harness.windowPoint(in: firstHeading, edge: .leading))
-    let dragEvent = try harness.mouseEvent(.leftMouseDragged, at: harness.windowPoint(in: thirdHeading, edge: .trailing))
-    let upEvent = try harness.mouseEvent(.leftMouseUp, at: harness.windowPoint(in: thirdHeading, edge: .trailing))
-
-    harness.window.postEvent(dragEvent, atStart: false)
-    harness.window.postEvent(upEvent, atStart: false)
-    firstHeading.mouseDown(with: downEvent)
-
-    let selectedText = try XCTUnwrap(OrgSyntaxTextSelectionBridge.selectedText(containing: firstHeading))
-    XCTAssertTrue(selectedText.contains("First heading"))
-    XCTAssertTrue(selectedText.contains("* Second heading"))
-    XCTAssertTrue(selectedText.contains("* Third heading"))
-
-    let deleteEvent = try XCTUnwrap(harness.keyEvent("\u{7F}", keyCode: 51))
-    firstHeading.keyDown(with: deleteEvent)
-
-    try await waitForCondition {
-      (try? harness.fileText()) == "* "
-    }
-  }
-
-  func testCommandADeleteRemovesRenderedDocumentTextAndBlankLines() async throws {
+  func testSourceEditorFullSelectionReplacementSavesDocumentText() async throws {
     let harness = try await makeHarness(initialText: """
     * First heading
 
@@ -827,109 +649,19 @@ final class OrgEditorInteractionTests: XCTestCase {
     * Second heading
     """)
 
-    let firstHeading = try await harness.syntaxTextView(withExactText: "* First heading")
-    let selectAllEvent = try XCTUnwrap(harness.keyEvent("a", keyCode: 0, modifiers: .command))
-    XCTAssertTrue(firstHeading.performKeyEquivalent(with: selectAllEvent))
-
-    let selectedText = try XCTUnwrap(OrgSyntaxTextSelectionBridge.selectedText(containing: firstHeading))
-    XCTAssertTrue(selectedText.contains("* First heading"))
-    XCTAssertTrue(selectedText.contains("task"))
-    XCTAssertTrue(selectedText.contains("* Second heading"))
-
-    let deleteEvent = try XCTUnwrap(harness.keyEvent("\u{7F}", keyCode: 51))
-    firstHeading.keyDown(with: deleteEvent)
-
-    try await waitForCondition {
-      (try? harness.fileText()) == ""
-    }
-    XCTAssertTrue(harness.store.selectedRenderedBlocks.isEmpty)
-  }
-
-  func testCommandAThenTypingReplacesRenderedDocumentText() async throws {
-    let harness = try await makeHarness(initialText: """
-    * First heading
-    - [ ] task
-    * Second heading
-    """)
-
-    let firstHeading = try await harness.syntaxTextView(withExactText: "* First heading")
-    let selectAllEvent = try XCTUnwrap(harness.keyEvent("a", keyCode: 0, modifiers: .command))
-    XCTAssertTrue(firstHeading.performKeyEquivalent(with: selectAllEvent))
-
-    let replacementEvent = try XCTUnwrap(harness.keyEvent("x", keyCode: 7))
-    firstHeading.keyDown(with: replacementEvent)
+    harness.store.selectedSurface = .agenda
+    harness.store.beginEditingSelectedEntry()
+    try await pumpRunLoop()
+    let sourceEditor = try await harness.syntaxTextView(containing: "* First heading")
+    try await harness.focus(sourceEditor, selection: NSRange(location: 0, length: 0))
+    sourceEditor.setSelectedRange(NSRange(location: 0, length: (sourceEditor.string as NSString).length))
+    sourceEditor.insertText("x", replacementRange: sourceEditor.selectedRange())
+    try await pumpRunLoop()
+    await harness.store.saveActiveEdit()
 
     try await waitForCondition {
       (try? harness.fileText()) == "x"
     }
-    try await waitForCondition {
-      harness.store.selectedRenderedBlocks.contains { block in
-        if case .paragraph(let text) = block.rendered {
-          return text == "x"
-        }
-        return false
-      }
-    }
-  }
-
-  func testTypingWordReplacesPartialCrossEntrySelectionAndKeepsEditing() async throws {
-    let harness = try await makeHarness(initialText: """
-    * Alpha entry
-    Alpha body
-    * Beta entry
-    Beta body
-    * Gamma entry
-    """)
-
-    let firstHeading = try await harness.syntaxTextView(withExactText: "* Alpha entry")
-    let secondHeading = try await harness.syntaxTextView(withExactText: "* Beta entry")
-    OrgSyntaxTextSelectionBridge.selectTextAcrossEditors(
-      anchorView: firstHeading,
-      anchorLocation: 5,
-      targetView: secondHeading,
-      targetLocation: 4
-    )
-
-    try await harness.focus(firstHeading, selection: NSRange(location: 0, length: 0))
-    try await harness.typeKeys("the")
-
-    try await waitForCondition {
-      (try? harness.fileText()) == """
-      * Alptheta entry
-      Beta body
-      * Gamma entry
-      """
-    }
-    let focused = try await harness.focusedEditor()
-    XCTAssertEqual(focused.string, "* Alptheta entry")
-    XCTAssertEqual(focused.selectedRange(), NSRange(location: ("* Alpthe" as NSString).length, length: 0))
-  }
-
-  func testCrossEditorFullSelectionDeleteRemovesSelectedSourceRows() async throws {
-    let original = """
-    * First heading
-    - [ ] task
-    * Second heading
-    """
-    let harness = try await makeHarness(initialText: original)
-
-    let firstHeading = try await harness.syntaxTextView(withExactText: "* First heading")
-    let secondHeading = try await harness.syntaxTextView(withExactText: "* Second heading")
-    OrgSyntaxTextSelectionBridge.selectTextAcrossEditors(
-      anchorView: firstHeading,
-      anchorLocation: 0,
-      targetView: secondHeading,
-      targetLocation: (secondHeading.string as NSString).length
-    )
-
-    let deleteEvent = try XCTUnwrap(harness.keyEvent("\u{7F}", keyCode: 51))
-    firstHeading.keyDown(with: deleteEvent)
-
-    try await waitForCondition {
-      (try? harness.fileText()) == ""
-    }
-    XCTAssertTrue(harness.store.selectedRenderedBlocks.isEmpty)
-    XCTAssertEqual(try harness.latestRecoveryBackupText(), original)
   }
 
   func testLiveFileEditorBlocksEmptyAutosaveAndCreatesRecoveryBackup() async throws {
@@ -951,75 +683,8 @@ final class OrgEditorInteractionTests: XCTestCase {
     harness.store.revertLiveFileEditor()
   }
 
-  func testPartialCrossEntrySelectionDeleteRemovesHighlightedSourceRange() async throws {
-    let harness = try await makeHarness(initialText: """
-    * Alpha entry
-    Alpha body
-    * Beta entry
-    Beta body
-    * Gamma entry
-    """)
-
-    let firstHeading = try await harness.syntaxTextView(withExactText: "* Alpha entry")
-    let secondHeading = try await harness.syntaxTextView(withExactText: "* Beta entry")
-    OrgSyntaxTextSelectionBridge.selectTextAcrossEditors(
-      anchorView: firstHeading,
-      anchorLocation: 5,
-      targetView: secondHeading,
-      targetLocation: 4
-    )
-
-    let selectedText = try XCTUnwrap(OrgSyntaxTextSelectionBridge.selectedText(containing: firstHeading))
-    XCTAssertEqual(selectedText, """
-    ha entry
-    Alpha body
-    * Be
-    """)
-
-    let deleteEvent = try XCTUnwrap(harness.keyEvent("\u{7F}", keyCode: 51))
-    firstHeading.keyDown(with: deleteEvent)
-
-    try await waitForCondition {
-      (try? harness.fileText()) == """
-      * Alpta entry
-      Beta body
-      * Gamma entry
-      """
-    }
-  }
-
-  func testCrossEntrySelectionDeleteWorksWhenEventArrivesAtUnselectedDocumentEditor() async throws {
-    let harness = try await makeHarness(initialText: """
-    * Alpha entry
-    Alpha body
-    * Beta entry
-    Beta body
-    * Gamma entry
-    """)
-
-    let firstHeading = try await harness.syntaxTextView(withExactText: "* Alpha entry")
-    let secondHeading = try await harness.syntaxTextView(withExactText: "* Beta entry")
-    let thirdHeading = try await harness.syntaxTextView(withExactText: "* Gamma entry")
-    OrgSyntaxTextSelectionBridge.selectTextAcrossEditors(
-      anchorView: firstHeading,
-      anchorLocation: 5,
-      targetView: secondHeading,
-      targetLocation: 4
-    )
-
-    let deleteEvent = try XCTUnwrap(harness.keyEvent("\u{7F}", keyCode: 51))
-    thirdHeading.keyDown(with: deleteEvent)
-
-    try await waitForCondition {
-      (try? harness.fileText()) == """
-      * Alpta entry
-      Beta body
-      * Gamma entry
-      """
-    }
-  }
-
   func testSplittingAndMergingParagraphViaReturnAndBackspace() async throws {
+    try XCTSkipIf(true, "Rendered inline text editing is retired from normal UI entry points; source editing is primary.")
     let harness = try await makeHarness(initialText: """
     Alpha beta
     """)

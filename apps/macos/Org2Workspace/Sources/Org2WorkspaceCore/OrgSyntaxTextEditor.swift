@@ -698,6 +698,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   let textInset: NSSize
   let focusOnAppear: Bool
   let textPublishing: OrgSyntaxTextEditorTextPublishing
+  let liveHighlighting: Bool
   let selection: Binding<NSRange>?
   let isFocused: Binding<Bool>?
   let contentHeight: Binding<CGFloat>?
@@ -718,6 +719,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     textInset: NSSize = NSSize(width: 8, height: 8),
     focusOnAppear: Bool = false,
     textPublishing: OrgSyntaxTextEditorTextPublishing = .immediate,
+    liveHighlighting: Bool = true,
     selection: Binding<NSRange>? = nil,
     isFocused: Binding<Bool>? = nil,
     contentHeight: Binding<CGFloat>? = nil,
@@ -737,6 +739,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     self.textInset = textInset
     self.focusOnAppear = focusOnAppear
     self.textPublishing = textPublishing
+    self.liveHighlighting = liveHighlighting
     self.selection = selection
     self.isFocused = isFocused
     self.contentHeight = contentHeight
@@ -921,6 +924,13 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         publishTextChange(currentText)
       }
       publishSelectionIfNeeded(textView.selectedRange(), in: currentText)
+      guard parent.liveHighlighting else {
+        cancelDeferredHighlighting()
+        textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
+        recordHighlightedState(text: currentText, utf16Length: currentUTF16Length)
+        publishContentHeight(for: textView)
+        return
+      }
       let shouldScheduleHighlighting = Self.shouldScheduleDeferredHighlighting(
         text: currentText,
         utf16Length: currentUTF16Length,

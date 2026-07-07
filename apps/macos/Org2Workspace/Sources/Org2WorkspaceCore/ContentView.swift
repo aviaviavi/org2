@@ -1157,7 +1157,7 @@ private struct KeyboardShortcutsView: View {
         VStack(alignment: .leading, spacing: 4) {
           Text("Keyboard Shortcuts")
             .font(.title2.weight(.semibold))
-          Text("Global navigation uses Command keys. Agenda and document panes keep Vim-style local keys.")
+          Text("Command shortcuts work globally. Agenda, document, and chat panes add local keys when focused.")
             .font(.callout)
             .foregroundStyle(.secondary)
         }
@@ -1176,17 +1176,30 @@ private struct KeyboardShortcutsView: View {
           GridItem(.flexible(), spacing: 16),
           GridItem(.flexible(), spacing: 16)
         ], alignment: .leading, spacing: 18) {
-          ShortcutSection(title: "Navigate", shortcuts: [
+          ShortcutSection(title: "Workspace", shortcuts: [
+            ShortcutHelpItem(keys: "⌘⇧O", action: "Open corpus"),
+            ShortcutHelpItem(keys: "⌘R", action: "Refresh workspace"),
+            ShortcutHelpItem(keys: "⌘S", action: "Save active edit"),
+            ShortcutHelpItem(keys: "⌘P / ⌘K", action: "Quick Open"),
+            ShortcutHelpItem(keys: "⌘⌃Return", action: "Capture"),
+            ShortcutHelpItem(keys: "⌘? / ⌘/", action: "Show shortcuts"),
+            ShortcutHelpItem(keys: "⌘Z / ⌘⇧Z", action: "Undo / redo workspace edit")
+          ])
+
+          ShortcutSection(title: "Navigation", shortcuts: [
             ShortcutHelpItem(keys: "⌘1", action: "Home"),
             ShortcutHelpItem(keys: "⌘2", action: "Agenda"),
             ShortcutHelpItem(keys: "⌘3", action: "Files"),
             ShortcutHelpItem(keys: "⌘4", action: "Approvals"),
             ShortcutHelpItem(keys: "⌘⇧F", action: "Corpus search"),
-            ShortcutHelpItem(keys: "⌘5", action: "Meetings"),
-            ShortcutHelpItem(keys: "⌘6", action: "OpenClaw Chat"),
-            ShortcutHelpItem(keys: "⌘P / ⌘K", action: "Quick Open"),
-            ShortcutHelpItem(keys: "⌘0", action: "Open OpenClaw Chat"),
-            ShortcutHelpItem(keys: "⌘? / ⌘/", action: "Show shortcuts")
+            ShortcutHelpItem(keys: "⌘5 / ⌘M", action: "Meetings"),
+            ShortcutHelpItem(keys: "⌘6 / ⌘0", action: "OpenClaw Chat")
+          ])
+
+          ShortcutSection(title: "Pane Layout", shortcuts: [
+            ShortcutHelpItem(keys: "⌘⌥P", action: "Make current pane primary"),
+            ShortcutHelpItem(keys: "⌘⌥F", action: "Expand or restore current pane"),
+            ShortcutHelpItem(keys: "⌘⌥W", action: "Close current pane")
           ])
 
           ShortcutSection(title: "Page", shortcuts: [
@@ -1203,25 +1216,34 @@ private struct KeyboardShortcutsView: View {
           ShortcutSection(title: "Agenda", shortcuts: [
             ShortcutHelpItem(keys: "j / ↓", action: "Next item"),
             ShortcutHelpItem(keys: "k / ↑", action: "Previous item"),
+            ShortcutHelpItem(keys: "⌃D / ⌃U", action: "Jump down / up"),
             ShortcutHelpItem(keys: "J / K", action: "Scroll detail pane"),
             ShortcutHelpItem(keys: "gg / G", action: "First / last item"),
-            ShortcutHelpItem(keys: "1 2 3 4", action: "Agenda mode"),
+            ShortcutHelpItem(keys: "1 / 2 / 3 / 4", action: "Agenda mode"),
             ShortcutHelpItem(keys: "/", action: "Filter agenda"),
+            ShortcutHelpItem(keys: "Esc", action: "Clear agenda filter"),
+            ShortcutHelpItem(keys: "r", action: "Refresh agenda or assigned work"),
             ShortcutHelpItem(keys: "o / Return", action: "Open item"),
             ShortcutHelpItem(keys: "e", action: "Edit item source"),
+            ShortcutHelpItem(keys: "c", action: "Capture task"),
             ShortcutHelpItem(keys: "⌘A / ⌘⇧A", action: "Select visible / clear bulk selection"),
-            ShortcutHelpItem(keys: "⇧↑ / ⇧↓", action: "Bulk select previous / next"),
-            ShortcutHelpItem(keys: "t i d x", action: "TODO / in-progress / done / canceled"),
+            ShortcutHelpItem(keys: "⇧↑ / ⇧↓", action: "Extend bulk selection"),
+            ShortcutHelpItem(keys: "Space", action: "Clear TODO status"),
+            ShortcutHelpItem(keys: "t / i / d / x", action: "TODO / in-progress / done / canceled"),
             ShortcutHelpItem(keys: "A", action: "Assign to agent"),
-            ShortcutHelpItem(keys: "p", action: "Priority mode"),
-            ShortcutHelpItem(keys: "s n w m", action: "Schedule today / tomorrow / week / month")
+            ShortcutHelpItem(keys: "p then a/b/c/0", action: "Set or clear priority"),
+            ShortcutHelpItem(keys: "P", action: "Apply property shortcut"),
+            ShortcutHelpItem(keys: "s / n / w / m", action: "Schedule today / tomorrow / week / month"),
+            ShortcutHelpItem(keys: "S / N / W / M", action: "Deadline today / tomorrow / week / month"),
+            ShortcutHelpItem(keys: "q", action: "Quit app")
           ])
 
           ShortcutSection(title: "Document", shortcuts: [
-            ShortcutHelpItem(keys: "j / k", action: "Move block selection"),
-            ShortcutHelpItem(keys: "Return", action: "Edit selected block"),
+            ShortcutHelpItem(keys: "j / k / ↑ / ↓", action: "Move block selection"),
+            ShortcutHelpItem(keys: "Return", action: "Edit selected block source"),
             ShortcutHelpItem(keys: "⌘Return", action: "Insert paragraph after block"),
             ShortcutHelpItem(keys: "/", action: "Insert slash-command paragraph"),
+            ShortcutHelpItem(keys: "Type", action: "Start source edit at selected block"),
             ShortcutHelpItem(keys: "← / →", action: "Collapse / expand block"),
             ShortcutHelpItem(keys: "⌘← / ⌘→", action: "Collapse / expand all"),
             ShortcutHelpItem(keys: "Delete", action: "Delete selected block"),
@@ -1237,12 +1259,21 @@ private struct KeyboardShortcutsView: View {
             ShortcutHelpItem(keys: "⌘U", action: "Underline selected inline text"),
             ShortcutHelpItem(keys: "⌘R", action: "Run source block while editing source")
           ])
+
+          ShortcutSection(title: "OpenClaw Chat", shortcuts: [
+            ShortcutHelpItem(keys: "Return", action: "Send message"),
+            ShortcutHelpItem(keys: "⌘Return", action: "Insert newline")
+          ])
+
+          ShortcutSection(title: "Meetings", shortcuts: [
+            ShortcutHelpItem(keys: "⌘⇧M", action: "Record or stop meeting")
+          ])
         }
         .padding(.vertical, 2)
       }
     }
     .padding(20)
-    .frame(width: 760, height: 620)
+    .frame(width: 820, height: 700)
   }
 }
 
@@ -4543,6 +4574,8 @@ private struct EntryBodyView: View {
             showsScrollers: true,
             textInset: NSSize(width: 12, height: 12),
             focusOnAppear: true,
+            liveHighlighting: false,
+            selection: $store.sourceEditorSelection,
             onSaveCommand: { context in
               store.editableEntryText = context.text
               Task { await store.saveEditedEntry() }

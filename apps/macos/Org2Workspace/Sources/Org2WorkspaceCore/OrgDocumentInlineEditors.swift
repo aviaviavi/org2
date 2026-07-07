@@ -637,10 +637,13 @@ private extension OrgEditableInlineMarkup.Kind {
 
 struct ParagraphInlineLinkEditor: View {
   @Binding var text: String
+  let isExpanded: Bool
+  @State private var isHovered = false
+  @FocusState private var focusedFieldID: String?
 
   var body: some View {
     let links = inlineLinkSet.links
-    if !links.isEmpty {
+    if !links.isEmpty && showsExpandedControls {
       VStack(alignment: .leading, spacing: 6) {
         ForEach(links) { link in
           HStack(spacing: 8) {
@@ -651,11 +654,13 @@ struct ParagraphInlineLinkEditor: View {
 
             TextField("label", text: linkLabelBinding(link))
               .textFieldStyle(.roundedBorder)
+              .focused($focusedFieldID, equals: "\(link.id):label")
               .frame(minWidth: 120)
 
             TextField("target", text: linkTargetBinding(link))
               .textFieldStyle(.roundedBorder)
               .font(.caption.monospaced())
+              .focused($focusedFieldID, equals: "\(link.id):target")
               .frame(minWidth: 220)
           }
           .controlSize(.small)
@@ -664,7 +669,13 @@ struct ParagraphInlineLinkEditor: View {
       .padding(.horizontal, 7)
       .padding(.vertical, 6)
       .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+      .onHover { isHovered = $0 }
+      .animation(.easeInOut(duration: 0.12), value: showsExpandedControls)
     }
+  }
+
+  private var showsExpandedControls: Bool {
+    isExpanded || isHovered || focusedFieldID != nil
   }
 
   private var inlineLinkSet: OrgEditableInlineLinkSet {

@@ -133,6 +133,14 @@ private struct OpenClawBlockContextPointer: Equatable, Sendable {
 private struct OpenClawCorpusSnapshot: Sendable {
   let rootPath: String
   let files: [String: OpenClawSnapshotFile]
+
+  func filtered(to relativePaths: Set<String>) -> OpenClawCorpusSnapshot {
+    guard !relativePaths.isEmpty else { return self }
+    return OpenClawCorpusSnapshot(
+      rootPath: rootPath,
+      files: files.filter { relativePaths.contains($0.key) }
+    )
+  }
 }
 
 private struct OpenClawSnapshotFile: Sendable {
@@ -724,6 +732,7 @@ public final class WorkspaceStore: ObservableObject {
   public private(set) var selectedRenderedBlockIndexes: [OrgEditableBlock.ID: Int] = [:]
   @Published public var selectedEntrySourceMode: EntrySourceMode = .entry
   @Published public var editableEntryText = ""
+  @Published public var sourceEditorSelection = NSRange(location: 0, length: 0)
   @Published public var selectedBlockID: OrgEditableBlock.ID?
   @Published public private(set) var foldedRenderedBlockIDs: Set<OrgEditableBlock.ID> = []
   @Published public var editingBlockID: OrgEditableBlock.ID?
@@ -853,6 +862,7 @@ public final class WorkspaceStore: ObservableObject {
   private var openClawVoiceTranscriptionEstimatedDuration: TimeInterval = 8
   private var pendingNodeBriefArtifactRelativePath: String?
   private var pendingNodeBriefTitle: String?
+  private var postOpenClawWorkspaceRefreshTask: Task<Void, Never>?
   private var pendingG = false
   private var orgRoamLinkResolverGeneration = 0
   private var quickOpenIndexedFiles: [QuickOpenIndexedFile] = []
@@ -1135,6 +1145,7 @@ public final class WorkspaceStore: ObservableObject {
     foldedRenderedBlockIDs = []
     sourceBlockRuns = [:]
     editableEntryText = ""
+    sourceEditorSelection = NSRange(location: 0, length: 0)
     canonicalDocumentCache = [:]
     entrySourceCache = [:]
     entrySourceCacheOrder = []
@@ -1152,6 +1163,8 @@ public final class WorkspaceStore: ObservableObject {
     scheduledAgendaRefreshTask = nil
     scheduledApprovalsRefreshTask?.cancel()
     scheduledApprovalsRefreshTask = nil
+    postOpenClawWorkspaceRefreshTask?.cancel()
+    postOpenClawWorkspaceRefreshTask = nil
     agendaTodoShortcutMutationTask?.cancel()
     agendaTodoShortcutMutationTask = nil
     pendingAgendaTodoShortcutMutations = []
@@ -3140,6 +3153,7 @@ public final class WorkspaceStore: ObservableObject {
     selectedLocation = location
     isEditingEntry = false
     editableEntryText = ""
+    sourceEditorSelection = NSRange(location: 0, length: 0)
     resetBlockState()
     selectedEntrySourceMode = nextMode
     selectedEntrySource = nil
@@ -3205,7 +3219,6 @@ public final class WorkspaceStore: ObservableObject {
     activeEntrySourceLoadingGeneration = generation
     isLoadingEntrySource = true
     isRenderingEntrySource = false
-    resetBlockEditing()
     defer {
       if activeEntrySourceLoadingGeneration == generation {
         activeEntrySourceLoadingGeneration = nil
@@ -3229,10 +3242,12 @@ public final class WorkspaceStore: ObservableObject {
         return
       }
       cacheEntrySource(source, for: location, mode: mode, modifiedAt: Self.modificationDate(for: URL(fileURLWithPath: source.file).standardizedFileURL))
-      selectedEntrySource = source
-      if isEditingEntry || isLiveFileEditorSelected {
-        editableEntryText = source.text
+      guard !shouldDeferEntrySourceApplicationDuringActiveEdit(for: location) else {
+        return
       }
+      let previousSource = selectedEntrySource
+      selectedEntrySource = source
+      updateEditableEntryTextFromLoadedSourceIfSafe(source, previousSource: previousSource)
       renderEntrySource(source, generation: generation)
     } catch {
       guard generation == entrySourceLoadGeneration,
@@ -3251,11 +3266,41 @@ public final class WorkspaceStore: ObservableObject {
   private func applyCachedEntrySourceIfAvailable(for location: WorkspaceLocation, generation: Int) {
     let mode = selectedEntrySourceMode
     guard let source = cachedEntrySource(for: location, mode: mode) else { return }
+    guard !shouldDeferEntrySourceApplicationDuringActiveEdit(for: location) else {
+      return
+    }
+    let previousSource = selectedEntrySource
     selectedEntrySource = source
-    if isEditingEntry || isLiveFileEditorSelected {
+    updateEditableEntryTextFromLoadedSourceIfSafe(source, previousSource: previousSource)
+    renderEntrySource(source, generation: generation)
+  }
+
+  private func shouldDeferEntrySourceApplicationDuringActiveEdit(for location: WorkspaceLocation) -> Bool {
+    guard selectedLocationMatches(location), selectedEntrySource != nil else { return false }
+    if editingBlockID != nil { return true }
+    if isEditingEntry {
+      return Self.normalizeLineEndings(editableEntryText)
+        != Self.normalizeLineEndings(selectedEntrySource?.text ?? "")
+    }
+    if isLiveFileEditorSelected && liveFileEditorHasUnsavedChanges {
+      return true
+    }
+    return false
+  }
+
+  private func updateEditableEntryTextFromLoadedSourceIfSafe(_ source: EntrySource, previousSource: EntrySource?) {
+    if isEditingEntry {
+      let hadUnsavedChanges = Self.normalizeLineEndings(editableEntryText)
+        != Self.normalizeLineEndings(previousSource?.text ?? "")
+      if !hadUnsavedChanges {
+        editableEntryText = source.text
+      }
+    } else if isLiveFileEditorSelected {
+      let hadUnsavedChanges = Self.normalizeLineEndings(editableEntryText)
+        != Self.normalizeLineEndings(previousSource?.text ?? "")
+      guard !hadUnsavedChanges else { return }
       editableEntryText = source.text
     }
-    renderEntrySource(source, generation: generation)
   }
 
   public func reloadSelectedEntrySource() async {
@@ -3303,22 +3348,26 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public func beginEditingSelectedEntry() {
+  public func beginEditingSelectedEntry(initialSelection: NSRange? = nil) {
     guard let source = selectedEntrySource, source.isEditable else {
       statusText = "No editable source loaded"
       return
     }
     editableEntryText = source.text
+    sourceEditorSelection = Self.clampedSourceEditorSelection(
+      initialSelection ?? NSRange(location: 0, length: 0),
+      in: source.text
+    )
     resetBlockState()
     isEditingEntry = true
   }
 
   public func beginEditingCurrentScope() {
-    if selectedEntrySourceMode == .page {
-      beginEditingSelectedEntry()
-    } else {
-      beginEditingVisibleBlock()
+    if let selectedBlock {
+      beginEditingSource(for: selectedBlock)
+      return
     }
+    beginEditingSelectedEntry()
   }
 
   public func beginEditingVisibleBlock() {
@@ -3328,20 +3377,92 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     if let selectedBlock {
-      beginEditingBlock(selectedBlock)
+      beginEditingSource(for: selectedBlock)
       return
     }
 
     guard let firstEditableBlock = selectableBlocks.first else {
-      statusText = "No editable block loaded"
+      beginEditingSelectedEntry()
       return
     }
-    beginEditingBlock(firstEditableBlock)
+    beginEditingSource(for: firstEditableBlock)
   }
 
   public func cancelEditingSelectedEntry() {
     editableEntryText = selectedEntrySource?.text ?? ""
+    sourceEditorSelection = NSRange(location: 0, length: 0)
     isEditingEntry = false
+  }
+
+  public func beginEditingSource(for block: OrgEditableBlock, selection: NSRange? = nil) {
+    guard block.isEditable,
+          let source = selectedEntrySource,
+          source.isEditable
+    else {
+      statusText = "Block is read-only"
+      return
+    }
+    let sourceSelection = Self.sourceEditorSelectionRange(
+      for: block,
+      in: source,
+      selection: selection
+    )
+    beginEditingSelectedEntry(initialSelection: sourceSelection)
+  }
+
+  nonisolated static func sourceEditorSelectionRange(
+    for block: OrgEditableBlock,
+    in source: EntrySource,
+    selection: NSRange? = nil
+  ) -> NSRange {
+    let blockStartOffset = sourceEditorUTF16Offset(forAbsoluteLine: block.startLine, in: source)
+    let sourceLength = source.text.utf16.count
+    let blockLength = block.rawText.utf16.count
+    let localSelection = selection ?? NSRange(location: 0, length: 0)
+    let localLocation = min(max(0, localSelection.location), blockLength)
+    let localLength = min(max(0, localSelection.length), max(0, blockLength - localLocation))
+    let sourceLocation = min(sourceLength, blockStartOffset + localLocation)
+    let sourceLengthRemaining = max(0, sourceLength - sourceLocation)
+    return NSRange(
+      location: sourceLocation,
+      length: min(localLength, sourceLengthRemaining)
+    )
+  }
+
+  nonisolated private static func clampedSourceEditorSelection(
+    _ selection: NSRange,
+    in text: String
+  ) -> NSRange {
+    let textLength = text.utf16.count
+    let location = min(max(0, selection.location), textLength)
+    return NSRange(
+      location: location,
+      length: min(max(0, selection.length), max(0, textLength - location))
+    )
+  }
+
+  nonisolated private static func sourceEditorUTF16Offset(
+    forAbsoluteLine line: Int,
+    in source: EntrySource
+  ) -> Int {
+    let lineOffset = max(0, line - source.startLine)
+    guard lineOffset > 0 else { return 0 }
+
+    var currentLineOffset = 0
+    var utf16Offset = 0
+    var index = source.text.utf16.startIndex
+    while index < source.text.utf16.endIndex {
+      let codeUnit = source.text.utf16[index]
+      utf16Offset += 1
+      index = source.text.utf16.index(after: index)
+      if codeUnit == 10 {
+        currentLineOffset += 1
+        if currentLineOffset >= lineOffset {
+          return utf16Offset
+        }
+      }
+    }
+    return utf16Offset
   }
 
   public func beginEditingBlock(
@@ -3582,7 +3703,7 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Select a block first"
       return
     }
-    beginEditingBlock(selectedBlock)
+    beginEditingSource(for: selectedBlock)
   }
 
   public func beginEditingSelectedBlock(appending text: String) -> Bool {
@@ -3590,11 +3711,19 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Select a block first"
       return false
     }
-    guard let draft = Self.editingDraft(selectedBlock, appending: text) else {
-      return false
-    }
-    beginEditingBlock(selectedBlock, initialDraft: draft)
+    beginEditingSource(
+      for: selectedBlock,
+      selection: NSRange(location: selectedBlock.rawText.utf16.count, length: 0)
+    )
+    insertTextInSourceEditor(text)
     return true
+  }
+
+  private func insertTextInSourceEditor(_ text: String) {
+    guard isEditingEntry, !text.isEmpty else { return }
+    let range = Self.clampedSourceEditorSelection(sourceEditorSelection, in: editableEntryText)
+    editableEntryText = (editableEntryText as NSString).replacingCharacters(in: range, with: text)
+    sourceEditorSelection = NSRange(location: range.location + text.utf16.count, length: 0)
   }
 
   public func duplicateSelectedBlock() async {
@@ -3751,13 +3880,13 @@ public final class WorkspaceStore: ObservableObject {
     } catch {
       recordOrgCryptEncryptionFailure(error, savedPrefix: "Saved, but")
       recordFileUndo(from: undoSnapshot)
-      await finishSavedEntry(source: source)
+      await finishSavedEntry(source: source, savedText: replacement)
       return
     }
 
     recordFileUndo(from: undoSnapshot)
     statusText = savedStatus
-    await finishSavedEntry(source: source)
+    await finishSavedEntry(source: source, savedText: replacement)
   }
 
   public func noteLiveFileEditorTextChanged(_ text: String) {
@@ -3812,9 +3941,18 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     do {
-      try await Task.detached(priority: explicit ? .userInitiated : .utility) {
+      if explicit {
+        try await Task.detached(priority: .userInitiated) {
+          try Self.replaceEntrySource(source, with: replacement)
+        }.value
+      } else {
+        guard selectedEntrySource?.id == source.id,
+              Self.normalizeLineEndings(editableEntryText) == Self.normalizeLineEndings(replacement)
+        else {
+          return
+        }
         try Self.replaceEntrySource(source, with: replacement)
-      }.value
+      }
     } catch {
       errorText = error.localizedDescription
       liveFileEditorStatusText = explicit ? "Save failed" : "Autosave failed"
@@ -3827,6 +3965,11 @@ public final class WorkspaceStore: ObservableObject {
     guard selectedEntrySource?.id == source.id else {
       recordFileUndo(from: undoSnapshot)
       return
+    }
+    if !explicit {
+      guard Self.normalizeLineEndings(editableEntryText) == Self.normalizeLineEndings(replacement) else {
+        return
+      }
     }
 
     selectedEntrySource = Self.entrySource(source, replacingText: replacement)
@@ -3864,11 +4007,16 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func finishSavedEntry(source: EntrySource) async {
+  private func finishSavedEntry(source: EntrySource, savedText: String) async {
     invalidateCanonicalDocumentCache(for: source.file)
+    let savedSource = Self.entrySource(source, replacingText: savedText)
+    selectedEntrySource = savedSource
+    editableEntryText = savedSource.text
     isEditingEntry = false
     if let selectedLocation {
       await loadEntrySource(for: selectedLocation)
+    } else {
+      renderEntrySource(savedSource, generation: entrySourceLoadGeneration)
     }
     scheduleAgendaRefresh(preserveSelection: true)
   }
@@ -4104,15 +4252,13 @@ public final class WorkspaceStore: ObservableObject {
       let file = source.file
       let startLine = block.startLine
       let endLineExclusive = block.endLineExclusive
-      try await Task.detached(priority: .utility) {
-        try Self.replaceSourceRange(
-          file: file,
-          startLine: startLine,
-          endLineExclusive: endLineExclusive,
-          replacement: normalizedReplacement,
-          expectedOriginal: block.rawText
-        )
-      }.value
+      try Self.replaceSourceRange(
+        file: file,
+        startLine: startLine,
+        endLineExclusive: endLineExclusive,
+        replacement: normalizedReplacement,
+        expectedOriginal: block.rawText
+      )
 
       recordFileUndo(from: undoSnapshot)
       guard isCurrentAutosaveDraft(block, in: source, replacement: normalizedReplacement) else {
@@ -4127,6 +4273,9 @@ public final class WorkspaceStore: ObservableObject {
           with: normalizedReplacement
         )
       }.value
+      guard isCurrentAutosaveDraft(block, in: source, replacement: normalizedReplacement) else {
+        return
+      }
 
       let updatedVisibleBlocks = blocksWithTransientDraft(updatedBlocks, for: updatedSource)
       let parsedUpdatedBlock = blockForSelectionLine(
@@ -7079,17 +7228,22 @@ public final class WorkspaceStore: ObservableObject {
   ) async -> OpenClawCorpusChangeSummary? {
     guard let snapshot else { return nil }
     let root = URL(fileURLWithPath: snapshot.rootPath).standardizedFileURL
+    let referencedPaths = openClawReferencedChangeRelativePaths(in: reply)
     for delay in Self.openClawChangeSnapshotRetryDelays {
       if delay > 0 {
         try? await Task.sleep(nanoseconds: delay)
       }
       guard let afterSnapshot = try? await Task.detached(priority: .utility, operation: {
-        try Self.openClawCorpusSnapshot(corpusRoot: root)
+        if referencedPaths.isEmpty {
+          return try Self.openClawCorpusSnapshot(corpusRoot: root)
+        }
+        return try Self.openClawCorpusSnapshot(corpusRoot: root, relativePaths: referencedPaths)
       }).value else {
         continue
       }
-      if let summary = Self.openClawChangeSummary(before: snapshot, after: afterSnapshot) {
-        return attributedOpenClawChangeSummary(summary, referencedIn: reply)
+      let beforeSnapshot = referencedPaths.isEmpty ? snapshot : snapshot.filtered(to: referencedPaths)
+      if let summary = Self.openClawChangeSummary(before: beforeSnapshot, after: afterSnapshot) {
+        return attributedOpenClawChangeSummary(summary, referencedPaths: referencedPaths)
       }
     }
     return nil
@@ -7099,7 +7253,16 @@ public final class WorkspaceStore: ObservableObject {
     _ summary: OpenClawCorpusChangeSummary,
     referencedIn reply: String
   ) -> OpenClawCorpusChangeSummary {
-    let referencedPaths = openClawReferencedChangeRelativePaths(in: reply)
+    attributedOpenClawChangeSummary(
+      summary,
+      referencedPaths: openClawReferencedChangeRelativePaths(in: reply)
+    )
+  }
+
+  private func attributedOpenClawChangeSummary(
+    _ summary: OpenClawCorpusChangeSummary,
+    referencedPaths: Set<String>
+  ) -> OpenClawCorpusChangeSummary {
     guard !referencedPaths.isEmpty else { return summary }
     let filteredFiles = summary.files.filter { referencedPaths.contains($0.relativePath) }
     return filteredFiles.isEmpty ? summary : OpenClawCorpusChangeSummary(files: filteredFiles)
@@ -7175,10 +7338,7 @@ public final class WorkspaceStore: ObservableObject {
       await loadEntrySource(for: selectedLocation)
     }
 
-    await refreshCorpusFiles()
-    await refreshAgenda(preserveSelection: true, updatesStatus: false)
-    await refreshMeetings()
-    Task { await refreshOpenClawThreads(showsLoading: false) }
+    schedulePostOpenClawWorkspaceRefresh()
 
     if let generatedBriefRelativePath {
       let artifactURL = root.appendingPathComponent(generatedBriefRelativePath).standardizedFileURL
@@ -7187,6 +7347,21 @@ public final class WorkspaceStore: ObservableObject {
         relativePath: generatedBriefRelativePath,
         title: generatedBriefTitle ?? artifactURL.deletingPathExtension().lastPathComponent
       )
+    }
+  }
+
+  private func schedulePostOpenClawWorkspaceRefresh() {
+    postOpenClawWorkspaceRefreshTask?.cancel()
+    postOpenClawWorkspaceRefreshTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(nanoseconds: 350_000_000)
+      guard !Task.isCancelled, let self else { return }
+      await self.refreshCorpusFiles()
+      guard !Task.isCancelled else { return }
+      await self.refreshAgenda(preserveSelection: true, updatesStatus: false)
+      guard !Task.isCancelled else { return }
+      await self.refreshMeetings()
+      guard !Task.isCancelled else { return }
+      await self.refreshOpenClawThreads(showsLoading: false)
     }
   }
 
@@ -9764,6 +9939,8 @@ public final class WorkspaceStore: ObservableObject {
         makeSurfacePrimary(.meetings)
       case "6":
         makeSurfacePrimary(.openClaw)
+      case "m":
+        makeSurfacePrimary(.meetings)
       case "7":
         openDailyNote(.today)
       case "8":
@@ -9989,6 +10166,9 @@ public final class WorkspaceStore: ObservableObject {
       resetBlockState()
       if isLiveFileEditorSelected, selectedEntrySourceMode == .page {
         editableEntryText = text
+        if let selectedEntrySource {
+          self.selectedEntrySource = Self.entrySource(selectedEntrySource, replacingText: text)
+        }
       }
     }
 
@@ -11143,7 +11323,9 @@ public final class WorkspaceStore: ObservableObject {
 
   private func applyRenderedBlocks(_ blocks: [OrgEditableBlock], for source: EntrySource) {
     let visibleBlocks = blocksWithTransientDraft(blocks, for: source)
-    selectedRenderedBlocks = visibleBlocks
+    if selectedRenderedBlocks != visibleBlocks {
+      selectedRenderedBlocks = visibleBlocks
+    }
     if let pending = pendingBlockSelection,
        pending.file == source.file {
       let pendingBlock = blockForSelectionLine(pending.line, mode: pending.mode, in: visibleBlocks)
@@ -14768,6 +14950,59 @@ public final class WorkspaceStore: ObservableObject {
     return OpenClawCorpusSnapshot(rootPath: rootPath, files: files)
   }
 
+  nonisolated private static func openClawCorpusSnapshot(
+    corpusRoot: URL,
+    relativePaths: Set<String>
+  ) throws -> OpenClawCorpusSnapshot {
+    let root = corpusRoot.standardizedFileURL
+    let rootPath = root.path
+    guard !relativePaths.isEmpty else {
+      return OpenClawCorpusSnapshot(rootPath: rootPath, files: [:])
+    }
+
+    var files: [String: OpenClawSnapshotFile] = [:]
+    for relativePath in relativePaths {
+      guard let file = try openClawSnapshotFile(corpusRoot: root, relativePath: relativePath) else {
+        continue
+      }
+      files[relativePath] = file
+    }
+    return OpenClawCorpusSnapshot(rootPath: rootPath, files: files)
+  }
+
+  nonisolated private static func openClawSnapshotFile(
+    corpusRoot root: URL,
+    relativePath: String
+  ) throws -> OpenClawSnapshotFile? {
+    let rootPath = root.standardizedFileURL.path
+    let cleanRelativePath = relativePath.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanRelativePath.isEmpty,
+          cleanRelativePath != ".",
+          !cleanRelativePath.hasPrefix("/"),
+          !cleanRelativePath.split(separator: "/").contains(where: { $0 == ".." })
+    else {
+      return nil
+    }
+
+    let url = root
+      .appendingPathComponent(cleanRelativePath, isDirectory: false)
+      .standardizedFileURL
+    guard url.path.hasPrefix(rootPath + "/") else { return nil }
+    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+    let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+    guard values.isRegularFile == true,
+          openClawChangeSnapshotAllowedExtensions.contains(url.pathExtension.lowercased()),
+          let byteCount = values.fileSize,
+          byteCount <= openClawChangeSnapshotMaxFileBytes,
+          let data = try? Data(contentsOf: url),
+          !data.contains(0),
+          let text = String(data: data, encoding: .utf8)
+    else {
+      return nil
+    }
+    return OpenClawSnapshotFile(text: text)
+  }
+
   nonisolated private static func openClawChangeSummary(
     before: OpenClawCorpusSnapshot,
     after: OpenClawCorpusSnapshot
@@ -15505,13 +15740,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   nonisolated public static func selectedText(in text: String, range: NSRange) -> String? {
-    guard range.length > 0,
-          let swiftRange = Range(range, in: text)
-    else {
-      return nil
-    }
-    let selected = String(text[swiftRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-    return selected.isEmpty ? nil : selected
+    trimmedSelection(in: text, range: range)?.text
   }
 
   nonisolated public static func replacingSelection(
@@ -15532,8 +15761,8 @@ public final class WorkspaceStore: ObservableObject {
     in text: String,
     range: NSRange
   ) -> InlineSelectionReplacement? {
-    guard let selected = selectedText(in: text, range: range) else { return nil }
-    return replacingSelection(in: text, range: range, with: "[[\(selected)]]")
+    guard let selected = trimmedSelection(in: text, range: range) else { return nil }
+    return replacingSelection(in: text, range: selected.range, with: "[[\(selected.text)]]")
   }
 
   nonisolated public static func nodeLinkReplacementForSelectedText(
@@ -15544,7 +15773,40 @@ public final class WorkspaceStore: ObservableObject {
   ) -> InlineSelectionReplacement? {
     let cleanTitle = Org2Display.cleanInline(title).trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanTitle.isEmpty else { return nil }
-    return replacingSelection(in: text, range: range, with: "[[id:\(id)][\(cleanTitle)]]")
+    guard let selected = trimmedSelection(in: text, range: range) else { return nil }
+    return replacingSelection(in: text, range: selected.range, with: "[[id:\(id)][\(cleanTitle)]]")
+  }
+
+  nonisolated private static func trimmedSelection(
+    in text: String,
+    range: NSRange
+  ) -> (text: String, range: NSRange)? {
+    guard range.length > 0 else { return nil }
+    let ns = text as NSString
+    let location = min(max(0, range.location), ns.length)
+    let length = min(max(0, range.length), ns.length - location)
+    guard length > 0,
+          let swiftRange = Range(NSRange(location: location, length: length), in: text)
+    else {
+      return nil
+    }
+
+    var lower = swiftRange.lowerBound
+    var upper = swiftRange.upperBound
+    while lower < upper, text[lower].isWhitespace {
+      lower = text.index(after: lower)
+    }
+    while lower < upper {
+      let beforeUpper = text.index(before: upper)
+      guard text[beforeUpper].isWhitespace else { break }
+      upper = beforeUpper
+    }
+    guard lower < upper else { return nil }
+
+    return (
+      text: String(text[lower..<upper]),
+      range: NSRange(lower..<upper, in: text)
+    )
   }
 
   public func createKnowledgeNodeFromSelection(text: String, range: NSRange) async -> InlineSelectionReplacement? {
@@ -16405,7 +16667,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     case .approvals: "⌘4"
     case .files: "⌘3"
     case .search: "⌘⇧F"
-    case .meetings: "⌘5"
+    case .meetings: "⌘5/⌘M"
     case .openClaw: "⌘6"
     }
   }
