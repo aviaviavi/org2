@@ -142,6 +142,24 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(payload.days[0].items[0].lineForEditor, 5)
     XCTAssertEqual(payload.days[0].items[0].properties["EFFORT"], "30m")
     XCTAssertEqual(payload.days[0].items[0].tags, ["work"])
+    XCTAssertEqual(payload.days[0].items[0].priority, "A")
+  }
+
+  func testAgendaPriorityPillNormalizesOrgPriorityTokens() {
+    XCTAssertEqual(AgendaPriorityPill.normalizedPriority("A"), "A")
+    XCTAssertEqual(AgendaPriorityPill.normalizedPriority("b"), "B")
+    XCTAssertEqual(AgendaPriorityPill.normalizedPriority("[#c]"), "C")
+    XCTAssertEqual(AgendaPriorityPill.normalizedPriority("  [#1]  "), "1")
+    XCTAssertNil(AgendaPriorityPill.normalizedPriority(nil))
+    XCTAssertNil(AgendaPriorityPill.normalizedPriority(""))
+    XCTAssertNil(AgendaPriorityPill.normalizedPriority("[#AA]"))
+  }
+
+  func testAgendaPriorityPillToneUsesSubtleABCLevels() {
+    XCTAssertEqual(AgendaPriorityPill.tone(for: "A"), .urgent)
+    XCTAssertEqual(AgendaPriorityPill.tone(for: "B"), .elevated)
+    XCTAssertEqual(AgendaPriorityPill.tone(for: "C"), .quiet)
+    XCTAssertEqual(AgendaPriorityPill.tone(for: "1"), .neutral)
   }
 
   func testDecodesSearchAndBacklinksPayloads() throws {
@@ -737,7 +755,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testOpenClawChatThreadsTrackUnreadBackgroundRepliesAndSound() throws {
+  func testOpenClawChatThreadsTrackUnreadBackgroundRepliesAndSound() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-chat-thread-unread-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -749,7 +767,10 @@ final class Org2ModelsTests: XCTestCase {
     let store = try WorkspaceStore(
       cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
       defaults: defaults,
-      openClawTranscriptURL: transcript
+      openClawTranscriptURL: transcript,
+      openClawSendHandler: { _, _, _, _ in
+        "Background reply"
+      }
     )
     var soundCount = 0
     store.openClawIncomingMessageSoundPlayer = {
@@ -757,14 +778,10 @@ final class Org2ModelsTests: XCTestCase {
     }
     store.selectedSurface = .agenda
 
-    store.openClawMessages = [
-      OpenClawChatMessage(role: .user, content: "Question while away")
-    ]
-    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
-    XCTAssertEqual(store.openClawChatThreads.first?.unreadMessageCount, 0)
-    XCTAssertEqual(soundCount, 0)
+    store.openClawDraft = "Question while away"
+    await store.sendOpenClawMessage()
 
-    store.openClawMessages.append(OpenClawChatMessage(role: .assistant, content: "Background reply"))
+    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
     XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 1)
     XCTAssertEqual(store.openClawUnreadMessageCount, 1)
     XCTAssertEqual(soundCount, 1)
@@ -786,6 +803,39 @@ final class Org2ModelsTests: XCTestCase {
       openClawTranscriptURL: transcript
     )
     XCTAssertEqual(reopened.openClawChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 0)
+  }
+
+  @MainActor
+  func testOpenClawGenericMessageSyncDoesNotPlayIncomingSound() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-thread-sync-sound-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let suiteName = "org2-workspace-chat-thread-sync-sound-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults,
+      openClawTranscriptURL: transcript
+    )
+    var soundCount = 0
+    store.openClawIncomingMessageSoundPlayer = {
+      soundCount += 1
+    }
+    store.selectedSurface = .agenda
+
+    store.openClawMessages = [
+      OpenClawChatMessage(role: .user, content: "Known question")
+    ]
+    store.openClawMessages.append(OpenClawChatMessage(role: .assistant, content: "Known reply"))
+
+    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.messageCount, 2)
+    XCTAssertEqual(store.openClawChatThreads.first(where: { $0.id == threadID })?.unreadMessageCount, 0)
+    XCTAssertEqual(store.openClawUnreadMessageCount, 0)
+    XCTAssertEqual(soundCount, 0)
   }
 
   @MainActor
@@ -5670,6 +5720,67 @@ final class Org2ModelsTests: XCTestCase {
 
     try await waitForCondition {
       store.selectedEntrySource?.file == note.path
+        && !store.isLoadingEntrySource
+        && !store.isRenderingEntrySource
+        && !store.selectedRenderedBlocks.isEmpty
+    }
+  }
+
+  @MainActor
+  func testChangingCorpusClearsInterruptedSourceLoadingState() throws {
+    let firstRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-source-loading-first-\(UUID().uuidString)", isDirectory: true)
+    let secondRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-source-loading-second-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: firstRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: secondRoot, withIntermediateDirectories: true)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(firstRoot)
+    store.isLoadingEntrySource = true
+    store.isRenderingEntrySource = true
+
+    store.setCorpusRoot(secondRoot)
+
+    XCTAssertFalse(store.isLoadingEntrySource)
+    XCTAssertFalse(store.isRenderingEntrySource)
+    XCTAssertNil(store.selectedEntrySource)
+    XCTAssertTrue(store.selectedRenderedBlocks.isEmpty)
+  }
+
+  @MainActor
+  func testLoadsAgendaItemWithLinkedHeadingTitle() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-linked-agenda-heading-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("linked-heading.org2")
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd EEE"
+    let today = formatter.string(from: Date())
+
+    try """
+    ** TODOs
+    *** TODO Add or update the [[id:f900674b-5d4b-4022-a5c6-805f1f40239b][AWS]] [[id:283493fe-f840-4485-93d7-b860dfcc53b7][payment]] method
+    SCHEDULED: <\(today)>
+    :PROPERTIES:
+    :OWNER: Avi
+    :END:
+    [[id:f900674b-5d4b-4022-a5c6-805f1f40239b][AWS]] shows an expired [[id:283493fe-f840-4485-93d7-b860dfcc53b7][payment]] method.
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.refreshAgenda()
+
+    let item = try XCTUnwrap(store.visibleAgendaItems.first {
+      $0.headline.contains("Add or update")
+    })
+    store.selectAgendaItem(item)
+
+    try await waitForCondition {
+      store.selectedEntrySource?.file == note.path
+        && store.selectedEntrySource?.text.contains("payment]] method") == true
         && !store.isLoadingEntrySource
         && !store.isRenderingEntrySource
         && !store.selectedRenderedBlocks.isEmpty

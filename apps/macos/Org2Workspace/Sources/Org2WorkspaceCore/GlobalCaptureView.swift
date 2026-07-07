@@ -3,6 +3,7 @@ import SwiftUI
 public struct GlobalCaptureView: View {
   @EnvironmentObject private var store: WorkspaceStore
   @Environment(\.dismiss) private var dismiss
+  @State private var draft = WorkspaceCaptureDraft()
   @FocusState private var focusedField: FocusedField?
 
   private enum FocusedField {
@@ -20,7 +21,7 @@ public struct GlobalCaptureView: View {
         GridRow {
           Text("Type")
             .foregroundStyle(.secondary)
-          Picker("Type", selection: $store.captureDraft.kind) {
+          Picker("Type", selection: $draft.kind) {
             ForEach(WorkspaceCaptureKind.allCases) { kind in
               Text(kind.title).tag(kind)
             }
@@ -29,11 +30,11 @@ public struct GlobalCaptureView: View {
           .pickerStyle(.segmented)
         }
 
-        if store.captureDraft.kind == .task {
+        if draft.kind == .task {
           GridRow {
             Text("Status")
               .foregroundStyle(.secondary)
-            Picker("Status", selection: $store.captureDraft.todoStatus) {
+            Picker("Status", selection: $draft.todoStatus) {
               ForEach(Self.todoStatuses, id: \.self) { status in
                 Text(status.label).tag(status)
               }
@@ -46,7 +47,7 @@ public struct GlobalCaptureView: View {
         GridRow {
           Text("Title")
             .foregroundStyle(.secondary)
-          TextField("Follow up", text: $store.captureDraft.title)
+          TextField("Follow up", text: $draft.title)
             .textFieldStyle(.roundedBorder)
             .focused($focusedField, equals: .title)
         }
@@ -55,7 +56,7 @@ public struct GlobalCaptureView: View {
           Text("Priority")
             .foregroundStyle(.secondary)
           HStack(spacing: 10) {
-            Picker("Priority", selection: $store.captureDraft.priority) {
+            Picker("Priority", selection: $draft.priority) {
               Text("None").tag("")
               Text("A").tag("A")
               Text("B").tag("B")
@@ -64,7 +65,7 @@ public struct GlobalCaptureView: View {
             .labelsHidden()
             .frame(width: 112)
 
-            TextField("tags", text: $store.captureDraft.tagsText)
+            TextField("tags", text: $draft.tagsText)
               .textFieldStyle(.roundedBorder)
           }
         }
@@ -74,25 +75,25 @@ public struct GlobalCaptureView: View {
             .foregroundStyle(.secondary)
           VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-              Toggle("Scheduled", isOn: $store.captureDraft.includeScheduled)
+              Toggle("Scheduled", isOn: $draft.includeScheduled)
               DatePicker(
                 "Scheduled date",
-                selection: $store.captureDraft.scheduledDate,
+                selection: $draft.scheduledDate,
                 displayedComponents: .date
               )
               .labelsHidden()
-              .disabled(!store.captureDraft.includeScheduled)
+              .disabled(!draft.includeScheduled)
             }
 
             HStack(spacing: 10) {
-              Toggle("Deadline", isOn: $store.captureDraft.includeDeadline)
+              Toggle("Deadline", isOn: $draft.includeDeadline)
               DatePicker(
                 "Deadline date",
-                selection: $store.captureDraft.deadlineDate,
+                selection: $draft.deadlineDate,
                 displayedComponents: .date
               )
               .labelsHidden()
-              .disabled(!store.captureDraft.includeDeadline)
+              .disabled(!draft.includeDeadline)
             }
           }
         }
@@ -100,7 +101,7 @@ public struct GlobalCaptureView: View {
         GridRow {
           Text("Agent")
             .foregroundStyle(.secondary)
-          Toggle("Ready for agent", isOn: $store.captureDraft.assignToAgent)
+          Toggle("Ready for agent", isOn: $draft.assignToAgent)
         }
       }
 
@@ -108,7 +109,7 @@ public struct GlobalCaptureView: View {
         Text("Body")
           .foregroundStyle(.secondary)
 
-        TextEditor(text: $store.captureDraft.body)
+        TextEditor(text: $draft.body)
           .font(.body)
           .focused($focusedField, equals: .body)
           .frame(minHeight: 120)
@@ -116,7 +117,7 @@ public struct GlobalCaptureView: View {
           .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
       }
 
-      if !store.captureDraft.attachments.isEmpty {
+      if !draft.attachments.isEmpty {
         attachmentList
       }
 
@@ -135,19 +136,20 @@ public struct GlobalCaptureView: View {
         .keyboardShortcut(.cancelAction)
 
         Button {
-          Task { await store.submitCaptureDraft() }
+          Task { await store.submitCaptureDraft(draft) }
         } label: {
           Label("Capture", systemImage: "square.and.pencil")
         }
         .keyboardShortcut(.defaultAction)
         .buttonStyle(.borderedProminent)
-        .disabled(store.captureDraft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .disabled(draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
       }
     }
     .padding(20)
     .frame(width: 660)
     .frame(minHeight: 540)
     .onAppear {
+      draft = store.captureDraft
       focusedField = .title
     }
   }
@@ -161,7 +163,7 @@ public struct GlobalCaptureView: View {
         .font(.title3.weight(.semibold))
       Spacer()
       Button {
-        store.importPasteboardIntoCaptureDraft()
+        draft = store.captureDraftByImportingPasteboard(into: draft)
       } label: {
         Label("Import Clipboard", systemImage: "doc.on.clipboard")
       }
@@ -173,7 +175,7 @@ public struct GlobalCaptureView: View {
       Text("Attachments")
         .foregroundStyle(.secondary)
       VStack(spacing: 0) {
-        ForEach(store.captureDraft.attachments) { attachment in
+        ForEach(draft.attachments) { attachment in
           HStack(spacing: 10) {
             Image(systemName: Self.iconName(for: attachment.kind))
               .foregroundStyle(.secondary)
@@ -182,7 +184,7 @@ public struct GlobalCaptureView: View {
               .lineLimit(1)
             Spacer()
             Button {
-              store.captureDraft.attachments.removeAll { $0.id == attachment.id }
+              draft.attachments.removeAll { $0.id == attachment.id }
             } label: {
               Label("Remove", systemImage: "xmark")
             }
@@ -190,7 +192,7 @@ public struct GlobalCaptureView: View {
             .buttonStyle(.borderless)
           }
           .padding(.vertical, 6)
-          if attachment.id != store.captureDraft.attachments.last?.id {
+          if attachment.id != draft.attachments.last?.id {
             Divider()
           }
         }

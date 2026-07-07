@@ -861,6 +861,7 @@ public final class WorkspaceStore: ObservableObject {
   private var searchIndexTask: Task<Void, Never>?
   private var searchIndexGeneration = 0
   private var entrySourceLoadGeneration = 0
+  private var activeEntrySourceLoadingGeneration: Int?
   private var liveFileEditorAutosaveTask: Task<Void, Never>?
   private var liveFileEditorAutosaveGeneration = 0
   private var backlinksLoadGeneration = 0
@@ -1161,8 +1162,10 @@ public final class WorkspaceStore: ObservableObject {
     searchIndexStatusText = ""
     resetBlockState()
     isEditingEntry = false
+    isLoadingEntrySource = false
     isRenderingEntrySource = false
     entrySourceLoadGeneration += 1
+    activeEntrySourceLoadingGeneration = nil
     backlinks = nil
     errorText = nil
   }
@@ -3199,11 +3202,13 @@ public final class WorkspaceStore: ObservableObject {
 
   private func loadEntrySource(for location: WorkspaceLocation, generation: Int) async {
     guard generation == entrySourceLoadGeneration else { return }
+    activeEntrySourceLoadingGeneration = generation
     isLoadingEntrySource = true
     isRenderingEntrySource = false
     resetBlockEditing()
     defer {
-      if generation == entrySourceLoadGeneration {
+      if activeEntrySourceLoadingGeneration == generation {
+        activeEntrySourceLoadingGeneration = nil
         isLoadingEntrySource = false
       }
     }
@@ -6891,11 +6896,21 @@ public final class WorkspaceStore: ObservableObject {
     var messages = openClawMessages(for: threadID)
     guard let index = messages.firstIndex(where: { $0.id == userMessageID }) else {
       messages.append(assistantMessage)
-      replaceOpenClawMessages(messages, for: threadID, shouldPersist: true)
+      replaceOpenClawMessages(
+        messages,
+        for: threadID,
+        shouldPersist: true,
+        notifiesForNewAssistantMessages: true
+      )
       return
     }
     messages.insert(assistantMessage, at: messages.index(after: index))
-    replaceOpenClawMessages(messages, for: threadID, shouldPersist: true)
+    replaceOpenClawMessages(
+      messages,
+      for: threadID,
+      shouldPersist: true,
+      notifiesForNewAssistantMessages: true
+    )
   }
 
   public func retryOpenClawMessage(_ messageID: UUID) async {
@@ -6969,12 +6984,17 @@ public final class WorkspaceStore: ObservableObject {
   private func replaceOpenClawMessages(
     _ messages: [OpenClawChatMessage],
     for threadID: UUID,
-    shouldPersist: Bool
+    shouldPersist: Bool,
+    notifiesForNewAssistantMessages: Bool = false
   ) {
     if selectedOpenClawChatThreadID == threadID {
       replaceOpenClawMessages(messages, shouldPersist: false)
     }
-    updateOpenClawChatThread(threadID, messages: messages)
+    updateOpenClawChatThread(
+      threadID,
+      messages: messages,
+      notifiesForNewAssistantMessages: notifiesForNewAssistantMessages
+    )
     if shouldPersist {
       persistOpenClawTranscript()
     }
@@ -7403,17 +7423,20 @@ public final class WorkspaceStore: ObservableObject {
     updateOpenClawChatThread(selectedOpenClawChatThreadID, messages: messages)
   }
 
-  private func updateOpenClawChatThread(_ threadID: UUID, messages: [OpenClawChatMessage]) {
+  private func updateOpenClawChatThread(
+    _ threadID: UUID,
+    messages: [OpenClawChatMessage],
+    notifiesForNewAssistantMessages: Bool = false
+  ) {
     guard let index = openClawChatThreads.firstIndex(where: { $0.id == threadID })
     else {
       return
     }
 
     let current = openClawChatThreads[index]
-    let newAssistantMessageCount = Self.newAssistantMessageCount(
-      previousMessages: current.messages,
-      currentMessages: messages
-    )
+    let newAssistantMessageCount = notifiesForNewAssistantMessages
+      ? Self.newAssistantMessageCount(previousMessages: current.messages, currentMessages: messages)
+      : 0
     let isThreadOpen = selectedSurface == .openClaw && selectedOpenClawChatThreadID == current.id
     let unreadMessageCount = isThreadOpen
       ? 0
@@ -9477,17 +9500,30 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func importPasteboardIntoCaptureDraft() {
+    captureDraft = captureDraftByImportingPasteboard(into: captureDraft)
+  }
+
+  public func captureDraftByImportingPasteboard(into draft: WorkspaceCaptureDraft) -> WorkspaceCaptureDraft {
+    var updated = draft
     let content = Self.capturePasteboardContent(from: .general)
+    Self.applyCapturePasteboardContent(content, to: &updated)
+    return updated
+  }
+
+  private static func applyCapturePasteboardContent(
+    _ content: WorkspaceCapturePasteboardContent,
+    to draft: inout WorkspaceCaptureDraft
+  ) {
     if !content.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      let body = captureDraft.body.trimmingCharacters(in: .whitespacesAndNewlines)
-      captureDraft.body = body.isEmpty
+      let body = draft.body.trimmingCharacters(in: .whitespacesAndNewlines)
+      draft.body = body.isEmpty
         ? content.text
-        : "\(captureDraft.body.trimmingCharacters(in: .newlines))\n\n\(content.text)"
+        : "\(draft.body.trimmingCharacters(in: .newlines))\n\n\(content.text)"
     }
-    captureDraft.attachments.append(contentsOf: content.attachments)
-    if captureDraft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+    draft.attachments.append(contentsOf: content.attachments)
+    if draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
        let title = Self.captureTitleCandidate(from: content.text) {
-      captureDraft.title = title
+      draft.title = title
     }
   }
 
