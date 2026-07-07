@@ -4575,6 +4575,7 @@ private struct EntryBodyView: View {
             textInset: NSSize(width: 12, height: 12),
             focusOnAppear: true,
             liveHighlighting: false,
+            orgWritingCommands: true,
             selection: $store.sourceEditorSelection,
             onSaveCommand: { context in
               store.editableEntryText = context.text

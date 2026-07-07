@@ -664,6 +664,26 @@ final class OrgEditorInteractionTests: XCTestCase {
     }
   }
 
+  func testSourceEditorReturnContinuesOrgListWhileWriting() async throws {
+    let harness = try await makeHarness(initialText: "- [ ] first task")
+
+    harness.store.selectedSurface = .agenda
+    harness.store.beginEditingSelectedEntry()
+    try await pumpRunLoop()
+    let sourceEditor = try await harness.syntaxTextView(containing: "- [ ] first task")
+    try await harness.focus(
+      sourceEditor,
+      selection: NSRange(location: (sourceEditor.string as NSString).length, length: 0)
+    )
+    try await harness.pressReturnKey()
+    try await harness.typeKeys("second task")
+    await harness.store.saveActiveEdit()
+
+    try await waitForCondition {
+      (try? harness.fileText()) == "- [ ] first task\n- [ ] second task"
+    }
+  }
+
   func testLiveFileEditorBlocksEmptyAutosaveAndCreatesRecoveryBackup() async throws {
     let original = """
     * Today's note

@@ -1,12 +1,12 @@
-# macOS Editor Direction
+#+TITLE: macOS Editor Direction
 
-## Problem
+* Problem
 
 The SwiftUI rendered block editor has been carrying too much responsibility. It is useful as a structured reading, review, and workflow surface, but trying to make every rendered block behave like a full native text editor has produced fragile cursor, selection, autosave, and inline-editing behavior.
 
 Org2's source of truth is still ordinary text files. The macOS app should reinforce that model instead of creating a second editor semantics layer in SwiftUI.
 
-## North Star
+* North Star
 
 The primary writing experience in the macOS app should feel like a fast native text editor with Org2-aware affordances layered on top:
 
@@ -16,7 +16,7 @@ The primary writing experience in the macOS app should feel like a fast native t
 - Rendered views should stay excellent for reading, reviewing, navigation, approvals, agenda actions, folding, and structured mutations.
 - Raw/source editing is the full-fidelity escape hatch and should become the default writing surface until the rendered editor is proven reliable.
 
-## Short-Term Plan
+* Short-Term Plan
 
 Make source editing the normal edit path from rendered views:
 
@@ -27,17 +27,17 @@ Make source editing the normal edit path from rendered views:
 - Existing structural commands such as insert, move, delete, TODO changes, planning changes, and property edits continue to mutate source text through the store.
 - Keep legacy block editing code available for narrow structural internals and tests while it is being retired from normal UI entry points.
 
-## Medium-Term Plan
+* Medium-Term Plan
 
 Harden the source editor into the first-class writing surface:
 
-- Improve `OrgSyntaxTextEditor` around large files, selection preservation, undo grouping, and incremental syntax highlighting.
+- Improve ~OrgSyntaxTextEditor~ around large files, selection preservation, undo grouping, and incremental syntax highlighting.
 - Add source-editor commands for Org2 actions that users expect from org-mode-style editing: heading/list insertion, promote/demote, TODO cycling, planning/property shortcuts, folding, and link insertion.
 - Use parser-provided ranges and diagnostics for semantic highlighting, navigation, and structured commands.
 - Keep save behavior boring: Command-S writes exactly the visible buffer, autosave never overwrites newer local text, and background reloads never replace active edits.
 - Add focused regression tests for source-editor entry from agenda, approvals, rendered rows, and full-page files.
 
-## Longer-Term Options
+* Longer-Term Options
 
 After the source editor is solid, richer rendering can return as overlays and sidecars rather than as the authoritative text input path:
 

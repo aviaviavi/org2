@@ -6,6 +6,161 @@ struct OrgSyntaxTextEditorSubmitContext {
   let selectedRange: NSRange
 }
 
+struct OrgSyntaxTextEditReplacement: Equatable {
+  let range: NSRange
+  let replacement: String
+
+  var selectedRangeAfterReplacement: NSRange {
+    NSRange(location: range.location + (replacement as NSString).length, length: 0)
+  }
+}
+
+enum OrgSourceTextEditing {
+  static func newlineReplacement(
+    in text: String,
+    selectedRange: NSRange
+  ) -> OrgSyntaxTextEditReplacement? {
+    let nsText = text as NSString
+    let selectedRange = clampedRange(selectedRange, utf16Length: nsText.length)
+    let lineContext = lineContext(in: nsText, selectedRange: selectedRange)
+    guard let continuation = listContinuation(for: lineContext.textBeforeSelection)
+      ?? indentationContinuation(for: lineContext.textBeforeSelection)
+    else {
+      return nil
+    }
+    return OrgSyntaxTextEditReplacement(
+      range: selectedRange,
+      replacement: "\n" + continuation
+    )
+  }
+
+  private static func clampedRange(_ range: NSRange, utf16Length length: Int) -> NSRange {
+    let location = min(max(0, range.location), length)
+    return NSRange(
+      location: location,
+      length: min(max(0, range.length), length - location)
+    )
+  }
+
+  private static func lineContext(
+    in text: NSString,
+    selectedRange: NSRange
+  ) -> (lineText: String, textBeforeSelection: String) {
+    let lineRange = text.lineRange(for: NSRange(location: selectedRange.location, length: 0))
+    let lineEnd = lineContentEnd(in: text, lineRange: lineRange)
+    let contentRange = NSRange(location: lineRange.location, length: max(0, lineEnd - lineRange.location))
+    let beforeEnd = min(selectedRange.location, lineEnd)
+    let beforeRange = NSRange(location: lineRange.location, length: max(0, beforeEnd - lineRange.location))
+    return (
+      lineText: text.substring(with: contentRange),
+      textBeforeSelection: text.substring(with: beforeRange)
+    )
+  }
+
+  private static func lineContentEnd(in text: NSString, lineRange: NSRange) -> Int {
+    var end = lineRange.location + lineRange.length
+    while end > lineRange.location {
+      let character = text.character(at: end - 1)
+      if character == 10 || character == 13 {
+        end -= 1
+      } else {
+        break
+      }
+    }
+    return end
+  }
+
+  private static func indentationContinuation(for linePrefix: String) -> String? {
+    let indent = leadingWhitespace(in: linePrefix)
+    guard !indent.isEmpty,
+          linePrefix.trimmingCharacters(in: .whitespaces).isEmpty == false
+    else {
+      return nil
+    }
+    return indent
+  }
+
+  private static func listContinuation(for linePrefix: String) -> String? {
+    let indent = leadingWhitespace(in: linePrefix)
+    let rest = String(linePrefix.dropFirst(indent.count))
+    guard let marker = listMarker(in: rest) else { return nil }
+    let content = rest.dropFirst(marker.consumedUTF16Length)
+    guard content.trimmingCharacters(in: .whitespaces).isEmpty == false else {
+      return nil
+    }
+    return indent + marker.nextPrefix
+  }
+
+  private static func leadingWhitespace(in text: String) -> String {
+    String(text.prefix { $0 == " " || $0 == "\t" })
+  }
+
+  private static func listMarker(in text: String) -> (consumedUTF16Length: Int, nextPrefix: String)? {
+    guard !text.isEmpty else { return nil }
+    if let marker = unorderedListMarker(in: text) {
+      return marker
+    }
+    return orderedListMarker(in: text)
+  }
+
+  private static func unorderedListMarker(in text: String) -> (consumedUTF16Length: Int, nextPrefix: String)? {
+    guard let first = text.first,
+          first == "-" || first == "+",
+          text.dropFirst().first?.isWhitespace == true
+    else {
+      return nil
+    }
+    let basePrefix = "\(first) "
+    let afterMarker = String(text.dropFirst(2))
+    if let checkbox = checkboxPrefix(in: afterMarker) {
+      return (
+        (basePrefix + checkbox).utf16.count,
+        basePrefix + checkbox
+      )
+    }
+    return (basePrefix.utf16.count, basePrefix)
+  }
+
+  private static func orderedListMarker(in text: String) -> (consumedUTF16Length: Int, nextPrefix: String)? {
+    var digits = ""
+    var index = text.startIndex
+    while index < text.endIndex, text[index].isNumber {
+      digits.append(text[index])
+      index = text.index(after: index)
+    }
+    guard !digits.isEmpty,
+          index < text.endIndex,
+          text[index] == "." || text[index] == ")"
+    else {
+      return nil
+    }
+    let delimiter = text[index]
+    let afterDelimiter = text.index(after: index)
+    guard afterDelimiter < text.endIndex,
+          text[afterDelimiter].isWhitespace
+    else {
+      return nil
+    }
+    let number = Int(digits) ?? 0
+    let basePrefix = "\(number + 1)\(delimiter) "
+    let afterMarker = String(text[text.index(after: afterDelimiter)...])
+    if let checkbox = checkboxPrefix(in: afterMarker) {
+      return (
+        "\(digits)\(delimiter) \(checkbox)".utf16.count,
+        basePrefix + checkbox
+      )
+    }
+    return ("\(digits)\(delimiter) ".utf16.count, basePrefix)
+  }
+
+  private static func checkboxPrefix(in text: String) -> String? {
+    for candidate in ["[ ] ", "[X] ", "[x] ", "[-] "] where text.hasPrefix(candidate) {
+      return candidate
+    }
+    return nil
+  }
+}
+
 enum OrgSyntaxTextEditorTextPublishing: Equatable {
   case immediate
   case deferred(milliseconds: Int)
@@ -699,6 +854,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   let focusOnAppear: Bool
   let textPublishing: OrgSyntaxTextEditorTextPublishing
   let liveHighlighting: Bool
+  let orgWritingCommands: Bool
   let selection: Binding<NSRange>?
   let isFocused: Binding<Bool>?
   let contentHeight: Binding<CGFloat>?
@@ -720,6 +876,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     focusOnAppear: Bool = false,
     textPublishing: OrgSyntaxTextEditorTextPublishing = .immediate,
     liveHighlighting: Bool = true,
+    orgWritingCommands: Bool = false,
     selection: Binding<NSRange>? = nil,
     isFocused: Binding<Bool>? = nil,
     contentHeight: Binding<CGFloat>? = nil,
@@ -740,6 +897,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     self.focusOnAppear = focusOnAppear
     self.textPublishing = textPublishing
     self.liveHighlighting = liveHighlighting
+    self.orgWritingCommands = orgWritingCommands
     self.selection = selection
     self.isFocused = isFocused
     self.contentHeight = contentHeight
@@ -986,10 +1144,14 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       }
 
       if let event = NSApp.currentEvent {
-        let modifiers = event.modifierFlags.intersection([.shift, .option, .control])
+        let modifiers = event.modifierFlags.intersection([.shift, .option, .control, .command])
         if !modifiers.isEmpty {
           return false
         }
+      }
+
+      if handleOrgNewlineCommand(in: textView) {
+        return true
       }
 
       flushTextPublishing(from: textView)
@@ -1005,6 +1167,21 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         return false
       }
       return onSubmit()
+    }
+
+    private func handleOrgNewlineCommand(in textView: NSTextView) -> Bool {
+      guard parent.orgWritingCommands,
+            let replacement = OrgSourceTextEditing.newlineReplacement(
+              in: textView.string,
+              selectedRange: textView.selectedRange()
+            )
+      else {
+        return false
+      }
+      textView.insertText(replacement.replacement, replacementRange: replacement.range)
+      textView.setSelectedRange(replacement.selectedRangeAfterReplacement)
+      publishSelectionIfNeeded(replacement.selectedRangeAfterReplacement, in: textView.string)
+      return true
     }
 
     private func handleBoundaryArrowCommand(_ commandSelector: Selector, in textView: NSTextView) -> Bool {
