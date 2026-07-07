@@ -6,7 +6,7 @@
 :END:
 body
 
-* WAIT [#B] Mention target :blocked:
+* IN_PROGRESS [#B] Mention target :blocked:
 :PROPERTIES:
 :ID: 22222222-2222-2222-2222-222222222222
 :END:
