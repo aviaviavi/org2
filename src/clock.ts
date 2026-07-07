@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { normalizeTodoKeyword } from "./todo.js";
+import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 
 export type OrgClockInterval = {
   file: string;
@@ -91,13 +91,10 @@ function relativePath(rootDir: string, filePath: string): string {
 function parseHeading(line: string): { level: number; title: string; tags: string[] } | null {
   const match = /^(\*+)\s+(.*?)\s*$/.exec(line);
   if (!match) return null;
-  let rest = String(match[2] || "").trim();
+  const rest = String(match[2] || "").trim();
   const tagMatch = /\s+(:[A-Za-z0-9_@#%:]+:)\s*$/.exec(rest);
   const tags = tagMatch ? String(tagMatch[1]).split(":").filter(Boolean) : [];
-  if (tagMatch) rest = rest.slice(0, tagMatch.index).trim();
-  const first = rest.split(/\s+/)[0]?.toUpperCase() || "";
-  if (normalizeTodoKeyword(first)) rest = rest.slice(first.length).trim();
-  return { level: match[1]!.length, title: rest, tags };
+  return { level: match[1]!.length, title: parseHeadlineTitleForRoam(line), tags };
 }
 
 export function extractClockReport(files: string[], opts?: { rootDir?: string }): OrgClockReport {

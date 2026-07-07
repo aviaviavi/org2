@@ -2,12 +2,12 @@ import SwiftUI
 
 enum WorkspaceDesign {
   static let cornerRadius: CGFloat = 8
-  static let controlRadius: CGFloat = 6
+  static let controlRadius: CGFloat = 8
   static let contentInset: CGFloat = 14
   static let rowVerticalPadding: CGFloat = 7
 
   static var barBackground: Color {
-    Color(nsColor: .controlBackgroundColor).opacity(0.94)
+    Color(nsColor: .windowBackgroundColor).opacity(0.92)
   }
 
   static var surfaceBackground: Color {
@@ -19,15 +19,27 @@ enum WorkspaceDesign {
   }
 
   static var subtleFill: Color {
-    Color.secondary.opacity(0.055)
+    Color.secondary.opacity(0.038)
   }
 
   static var selectedFill: Color {
-    Color.accentColor.opacity(0.095)
+    Color.accentColor.opacity(0.11)
   }
 
   static var hairline: Color {
-    Color.secondary.opacity(0.13)
+    Color.secondary.opacity(0.09)
+  }
+
+  static var controlFill: Color {
+    Color.secondary.opacity(0.048)
+  }
+
+  static var controlPressedFill: Color {
+    Color.secondary.opacity(0.11)
+  }
+
+  static var panelFill: Color {
+    Color.secondary.opacity(0.032)
   }
 }
 
@@ -41,7 +53,7 @@ struct WorkspaceIconBadge: View {
       .font(.system(size: 13, weight: .medium))
       .foregroundStyle(tint)
       .frame(width: 24, height: 24)
-      .background(fill, in: RoundedRectangle(cornerRadius: WorkspaceDesign.controlRadius, style: .continuous))
+      .background(fill, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
   }
 }
 
@@ -194,13 +206,9 @@ struct KeyboardShortcutBadge: View {
     Text(text)
       .font(.caption2.monospaced().weight(.medium))
       .foregroundStyle(.tertiary)
-      .padding(.horizontal, 4)
+      .padding(.horizontal, 5)
       .padding(.vertical, 1)
-      .background(Color.secondary.opacity(0.045), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
-      .overlay(
-        RoundedRectangle(cornerRadius: 3, style: .continuous)
-          .stroke(Color.secondary.opacity(0.10))
-      )
+      .background(WorkspaceDesign.controlFill, in: Capsule())
   }
 }
 
@@ -209,21 +217,24 @@ struct WorkspaceActionButtonStyle: ButtonStyle {
 
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
-      .font(.callout.weight(.medium))
-      .foregroundStyle(isEnabled ? Color.primary : Color.secondary)
+      .font(.callout.weight(.semibold))
+      .foregroundStyle(isEnabled
+        ? Color.primary.opacity(configuration.isPressed ? 0.86 : 0.93)
+        : Color.secondary)
       .lineLimit(1)
       .truncationMode(.tail)
       .fixedSize(horizontal: false, vertical: true)
-      .padding(.horizontal, 8)
-      .padding(.vertical, 5)
+      .padding(.horizontal, 9)
+      .padding(.vertical, 4)
       .background(
-        configuration.isPressed ? Color.secondary.opacity(0.12) : Color.secondary.opacity(0.045),
-        in: RoundedRectangle(cornerRadius: WorkspaceDesign.controlRadius, style: .continuous)
+        configuration.isPressed ? WorkspaceDesign.controlPressedFill : WorkspaceDesign.controlFill,
+        in: Capsule()
       )
       .overlay(
-        RoundedRectangle(cornerRadius: WorkspaceDesign.controlRadius, style: .continuous)
-          .stroke(WorkspaceDesign.hairline)
+        Capsule()
+          .stroke(configuration.isPressed ? WorkspaceDesign.hairline : Color.clear)
       )
       .opacity(isEnabled ? 1 : 0.55)
+      .scaleEffect(configuration.isPressed ? 0.985 : 1)
   }
 }

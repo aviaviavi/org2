@@ -17,19 +17,19 @@ const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'org2-clock-'));
 const file = path.join(tmpDir, 'work.org2');
 fs.writeFileSync(file, `#+TITLE: Work
 
-* Project Alpha :project:work:
-** TODO Build parser :dev:
+* [#A] Project Alpha :project:work:
+** TODO [#B] Build parser :dev:
 CLOCK: [2026-05-26 Tue 09:00]--[2026-05-26 Tue 10:30] =>  1:30
 CLOCK: [2026-05-26 Tue 10:00]--[2026-05-26 Tue 11:00] =>  1:00
 CLOCK: [bad]
 CLOCK: [2026-02-30 Mon 12:00]--[2026-02-30 Mon 12:30] =>  0:30
-** DONE Review :review:
+** DONE [#C] Review :review:
 CLOCK: [2026-05-27 Wed 13:00]--[2026-05-27 Wed 13:30] =>  0:30
 `);
 
 const ast = JSON.parse(execFileSync('node', [path.join(repo, 'dist', 'parse.js'), file], { encoding: 'utf8' }));
 const project = ast.children.find((n) => n.type === 'Headline');
-const build = project.children.find((n) => n.type === 'Headline' && n.title.some((t) => t.value === 'Build parser'));
+const build = project.children.find((n) => n.type === 'Headline' && n.title.some((t) => t.value?.includes('Build parser')));
 assert.equal(build.children.filter((n) => n.type === 'Clock').length, 4);
 
 const printed = execFileSync('node', [cli, 'fmt', '--file', file], { encoding: 'utf8' });
@@ -51,6 +51,9 @@ const report = JSON.parse(execFileSync('node', [cli, 'clock', '--dir', tmpDir, '
 assert.equal(report.schemaVersion, 'org2-clock-report/v1');
 assert.equal(report.summary.byTag.dev, 150);
 assert.equal(report.summary.byFile['work.org2'], 180);
+assert.equal(report.summary.byHeading['Build parser'], 150);
+assert.equal(report.summary.byHeading.Review, 30);
+assert.equal(report.summary.byHeading['[#B] Build parser'], undefined);
 const queryReport = JSON.parse(execFileSync('node', [cli, 'query', 'clocks', '--dir', tmpDir, '--format', 'json'], { encoding: 'utf8' }));
 assert.deepEqual(queryReport.summary, report.summary);
 

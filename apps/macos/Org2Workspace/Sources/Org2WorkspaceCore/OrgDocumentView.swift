@@ -1184,14 +1184,14 @@ private struct EditableRenderedBlockView<Content: View>: View {
       return WorkspaceDesign.selectedFill
     }
     if showsChrome, allowsHoverChrome && isHovered {
-      return WorkspaceDesign.subtleFill
+      return WorkspaceDesign.panelFill
     }
     return .clear
   }
 
   private var selectionStrokeColor: Color {
     guard isSelected, !usesDirectRenderedTextEditor else { return .clear }
-    return Color.accentColor.opacity(0.34)
+    return Color.accentColor.opacity(0.20)
   }
 
   private var showsControls: Bool {

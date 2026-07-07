@@ -1468,13 +1468,9 @@ private struct MetricView: View {
         .minimumScaleFactor(0.82)
     }
     .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-    .padding(.horizontal, 10)
-    .padding(.vertical, 8)
-    .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous))
-    .overlay(
-      RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous)
-        .stroke(WorkspaceDesign.hairline)
-    )
+    .padding(.horizontal, 12)
+    .padding(.vertical, 9)
+    .background(WorkspaceDesign.panelFill, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous))
   }
 }
 
@@ -1980,9 +1976,10 @@ private struct AgendaBulkActionBar: View {
       }
     }
     .controlSize(.small)
+    .buttonStyle(WorkspaceActionButtonStyle())
     .padding(.horizontal, WorkspaceDesign.contentInset)
     .padding(.vertical, 8)
-    .background(WorkspaceDesign.subtleFill)
+    .background(WorkspaceDesign.panelFill)
     .overlay(alignment: .bottom) {
       Divider()
     }
@@ -2008,7 +2005,10 @@ private struct AgendaRow: View {
       .help(store.isAgendaItemBulkSelected(item) ? "Remove from bulk selection" : "Add to bulk selection")
       .padding(.top, 1)
 
-      StatusPill(text: item.todo ?? "TASK")
+      HStack(spacing: 4) {
+        StatusPill(text: item.todo ?? "TASK")
+        AgendaPriorityPill(priority: item.priority)
+      }
       VStack(alignment: .leading, spacing: 4) {
         HStack(spacing: 6) {
           Text(Org2Display.cleanInline(item.headline))
@@ -2036,6 +2036,94 @@ private struct AgendaRow: View {
       AgendaAssignmentIndicator(item: item)
     }
     .padding(.vertical, WorkspaceDesign.rowVerticalPadding)
+  }
+}
+
+struct AgendaPriorityPill: View {
+  let priority: String?
+
+  @ViewBuilder
+  var body: some View {
+    if let normalized = Self.normalizedPriority(priority) {
+      Text(normalized)
+        .font(.system(size: 10, weight: .bold, design: .rounded))
+        .foregroundStyle(tone.foreground)
+        .frame(minWidth: 16)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+        .background(tone.background, in: Capsule())
+        .accessibilityLabel("Priority \(normalized)")
+        .help("Priority [#\(normalized)]")
+    }
+  }
+
+  private var tone: AgendaPriorityTone {
+    guard let normalized = Self.normalizedPriority(priority) else {
+      return .neutral
+    }
+    return Self.tone(for: normalized)
+  }
+
+  nonisolated static func normalizedPriority(_ raw: String?) -> String? {
+    guard var value = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !value.isEmpty
+    else {
+      return nil
+    }
+    value = value
+      .replacingOccurrences(of: "[#", with: "")
+      .replacingOccurrences(of: "]", with: "")
+      .uppercased()
+    guard value.range(of: #"^[A-Z0-9]$"#, options: .regularExpression) != nil else {
+      return nil
+    }
+    return value
+  }
+
+  nonisolated static func tone(for normalizedPriority: String) -> AgendaPriorityTone {
+    switch normalizedPriority {
+    case "A":
+      return .urgent
+    case "B":
+      return .elevated
+    case "C":
+      return .quiet
+    default:
+      return .neutral
+    }
+  }
+}
+
+enum AgendaPriorityTone: Equatable {
+  case urgent
+  case elevated
+  case quiet
+  case neutral
+
+  var foreground: Color {
+    switch self {
+    case .urgent:
+      return .orange
+    case .elevated:
+      return .indigo
+    case .quiet:
+      return .secondary
+    case .neutral:
+      return .secondary
+    }
+  }
+
+  var background: Color {
+    switch self {
+    case .urgent:
+      return Color.orange.opacity(0.13)
+    case .elevated:
+      return Color.indigo.opacity(0.11)
+    case .quiet:
+      return WorkspaceDesign.controlFill
+    case .neutral:
+      return WorkspaceDesign.controlFill
+    }
   }
 }
 
@@ -4024,6 +4112,7 @@ private struct DetailHeader: View {
       compactDetailActionBar
     }
     .controlSize(.small)
+    .buttonStyle(WorkspaceActionButtonStyle())
   }
 
   private var fullDetailActionBar: some View {
@@ -5052,7 +5141,7 @@ private struct StatTile: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(.horizontal, 9)
     .padding(.vertical, 8)
-    .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .background(WorkspaceDesign.panelFill, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius, style: .continuous))
   }
 }
 
@@ -5065,7 +5154,7 @@ private struct CountPill: View {
       .foregroundStyle(.secondary)
       .padding(.horizontal, 7)
       .padding(.vertical, 3)
-      .background(WorkspaceDesign.subtleFill, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+      .background(WorkspaceDesign.controlFill, in: Capsule())
   }
 }
 
@@ -5282,14 +5371,10 @@ struct StatusPill: View {
     Text(text)
       .font(.system(size: 10, weight: .bold, design: .rounded))
       .foregroundStyle(statusForeground)
-      .padding(.horizontal, 6)
+      .padding(.horizontal, 7)
       .padding(.vertical, 2)
       .frame(minWidth: 38)
-      .background(statusColor, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-      .overlay(
-        RoundedRectangle(cornerRadius: 4, style: .continuous)
-          .stroke(statusForeground.opacity(0.08))
-      )
+      .background(statusColor, in: Capsule())
   }
 
   private var statusColor: Color {
