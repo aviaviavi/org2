@@ -1602,7 +1602,7 @@ private struct ParagraphBlockEditor: View {
         if showsInlineDetails && hasInlineDetails {
           VStack(alignment: .leading, spacing: 6) {
             ParagraphInlineMarkupEditor(text: $draftText)
-            ParagraphInlineLinkEditor(text: $draftText)
+            ParagraphInlineLinkEditor(text: $draftText, isExpanded: isHovered)
             ParagraphInlineTimestampEditor(text: $draftText)
           }
         }

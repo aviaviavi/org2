@@ -231,10 +231,10 @@ struct OrgRenderedEntryView: View, Equatable {
         store.selectBlock(block)
       },
       beginEditing: {
-        store.beginEditingBlock(block)
+        store.beginEditingSource(for: block)
       },
       beginEditingAt: { selection in
-        store.beginEditingBlock(block, initialSelection: selection)
+        store.beginEditingSource(for: block, selection: selection)
       },
       initialSelection: {
         store.initialSelectionForEditingBlock(block)
@@ -944,44 +944,14 @@ enum RenderedRowChrome {
 }
 
 enum RenderedBlockEditingPolicy {
-  static func startsEditingOnSingleClick(block: OrgEditableBlock, isSourceEditable: Bool) -> Bool {
-    guard isSourceEditable,
-          block.isEditable,
-          OrgCrypt.armorSummary(block.rawText) == nil
-    else {
-      return false
-    }
-
-    switch block.rendered {
-    case .paragraph:
-      return OrgMediaAttachment.standalone(raw: block.rawText) == nil
-        && OrgMediaAttachment.embedded(in: block.rawText) == nil
-    case .heading, .planning, .properties, .quote, .source, .table, .horizontalRule, .listItem, .keyword:
-      return true
-    case .blank:
-      return false
-    }
+  static func startsEditingOnSingleClick(block _: OrgEditableBlock, isSourceEditable _: Bool) -> Bool {
+    false
   }
 }
 
 enum LiveRenderedTextEditingPolicy {
-  static func usesDirectEditor(block: OrgEditableBlock, isSourceEditable: Bool) -> Bool {
-    guard isSourceEditable,
-          block.isEditable,
-          OrgCrypt.armorSummary(block.rawText) == nil
-    else {
-      return false
-    }
-
-    switch block.rendered {
-    case .paragraph:
-      return OrgMediaAttachment.standalone(raw: block.rawText) == nil
-        && OrgMediaAttachment.embedded(in: block.rawText) == nil
-    case .heading, .listItem:
-      return true
-    case .blank, .planning, .properties, .quote, .source, .table, .horizontalRule, .keyword:
-      return false
-    }
+  static func usesDirectEditor(block _: OrgEditableBlock, isSourceEditable _: Bool) -> Bool {
+    false
   }
 }
 
