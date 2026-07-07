@@ -3639,6 +3639,50 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testOrgSourceTextEditingContinuesListsAndIndentation() {
+    let task = "- [ ] first task"
+    XCTAssertEqual(
+      OrgSourceTextEditing.newlineReplacement(
+        in: task,
+        selectedRange: NSRange(location: (task as NSString).length, length: 0)
+      ),
+      OrgSyntaxTextEditReplacement(
+        range: NSRange(location: (task as NSString).length, length: 0),
+        replacement: "\n- [ ] "
+      )
+    )
+
+    let ordered = "9. ninth"
+    XCTAssertEqual(
+      OrgSourceTextEditing.newlineReplacement(
+        in: ordered,
+        selectedRange: NSRange(location: (ordered as NSString).length, length: 0)
+      )?.replacement,
+      "\n10. "
+    )
+
+    let indented = "  wrapped thought"
+    XCTAssertEqual(
+      OrgSourceTextEditing.newlineReplacement(
+        in: indented,
+        selectedRange: NSRange(location: (indented as NSString).length, length: 0)
+      )?.replacement,
+      "\n  "
+    )
+
+    let emptyTask = "- [ ] "
+    XCTAssertNil(OrgSourceTextEditing.newlineReplacement(
+      in: emptyTask,
+      selectedRange: NSRange(location: (emptyTask as NSString).length, length: 0)
+    ))
+    let heading = "* Heading"
+    XCTAssertNil(OrgSourceTextEditing.newlineReplacement(
+      in: heading,
+      selectedRange: NSRange(location: (heading as NSString).length, length: 0)
+    ))
+  }
+
+  @MainActor
   func testSyntaxEditorDoesNotScheduleDeferredHighlightingForLargeBuffers() {
     let largeText = String(repeating: "Body with [[id:abc][Alice]].\n", count: 2_000)
     XCTAssertGreaterThan((largeText as NSString).length, OrgSyntaxHighlighter.liveTokenizationUTF16Limit)
