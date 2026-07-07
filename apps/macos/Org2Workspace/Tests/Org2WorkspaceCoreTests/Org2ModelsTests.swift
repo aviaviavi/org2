@@ -4386,6 +4386,174 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testBackgroundAgendaRefreshKeepsExistingListInteractive() async throws {
+    let workspace = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-background-agenda-\(UUID().uuidString)", isDirectory: true)
+    let repoRoot = workspace.appendingPathComponent("repo", isDirectory: true)
+    let dist = repoRoot.appendingPathComponent("dist", isDirectory: true)
+    let corpus = workspace.appendingPathComponent("corpus", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: corpus, withIntermediateDirectories: true)
+    try """
+    setTimeout(() => {
+      process.stdout.write(JSON.stringify({
+        "$schema": "org2:agenda:v1",
+        "range": { "start": "2026-06-12", "end": "2026-06-18", "days": 7 },
+        "overdue": [],
+        "days": [{ "date": "2026-06-12", "weekday": "Fri", "items": [] }],
+        "skippedFiles": 0
+      }));
+    }, 350);
+    """.write(to: dist.appendingPathComponent("cli.js"), atomically: true, encoding: .utf8)
+
+    let note = corpus.appendingPathComponent("agenda.org2")
+    try "* TODO Existing\n".write(to: note, atomically: true, encoding: .utf8)
+    let existingAgenda: AgendaPayload = try JSONDecoder().decode(AgendaPayload.self, from: Data("""
+    {
+      "$schema": "org2:agenda:v1",
+      "range": { "start": "2026-06-12", "end": "2026-06-18", "days": 7 },
+      "overdue": [],
+      "days": [{
+        "date": "2026-06-12",
+        "weekday": "Fri",
+        "items": [{
+          "todo": "TODO",
+          "headline": "Existing",
+          "kind": "SCHEDULED",
+          "file": "\(note.path)",
+          "line": 1,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
+        }]
+      }],
+      "skippedFiles": 0
+    }
+    """.utf8))
+    let store = WorkspaceStore(cli: Org2CLI(repoRoot: repoRoot))
+    store.setCorpusRoot(corpus)
+    store.agenda = existingAgenda
+
+    let refresh = Task { await store.refreshAgenda(preserveSelection: true, updatesStatus: false) }
+    try await Task.sleep(nanoseconds: 100_000_000)
+
+    XCTAssertFalse(store.isLoadingAgenda)
+    XCTAssertEqual(store.agenda?.totalItemCount, 1)
+
+    await refresh.value
+
+    XCTAssertFalse(store.isLoadingAgenda)
+    XCTAssertEqual(store.agenda?.totalItemCount, 0)
+  }
+
+  @MainActor
+  func testBackgroundApprovalRefreshKeepsExistingListInteractive() async throws {
+    let workspace = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-background-approvals-\(UUID().uuidString)", isDirectory: true)
+    let repoRoot = workspace.appendingPathComponent("repo", isDirectory: true)
+    let dist = repoRoot.appendingPathComponent("dist", isDirectory: true)
+    let corpus = workspace.appendingPathComponent("corpus", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: corpus, withIntermediateDirectories: true)
+    let note = corpus.appendingPathComponent("approvals.org2")
+    try "* TODO Review thing\n".write(to: note, atomically: true, encoding: .utf8)
+    let encodedPath = String(data: try JSONEncoder().encode(note.path), encoding: .utf8)!
+    try """
+    const fs = require("fs");
+    const state = "\(workspace.appendingPathComponent("approval-state.txt").path)";
+    const count = fs.existsSync(state) ? Number(fs.readFileSync(state, "utf8")) + 1 : 1;
+    fs.writeFileSync(state, String(count));
+    const payload = count === 1 ? {
+      count: 1,
+      items: [{
+        title: "Review thing",
+        status: "review-required",
+        todo: "TODO",
+        level: 1,
+        file: \(encodedPath),
+        line: 1,
+        idValue: "approval-1",
+        properties: { ID: "approval-1", REVIEW_STATUS: "review-required" },
+        body: "Existing body.",
+        tags: []
+      }]
+    } : { count: 0, items: [] };
+    setTimeout(() => {
+      process.stdout.write(JSON.stringify(payload));
+    }, count === 1 ? 0 : 350);
+    """.write(to: dist.appendingPathComponent("cli.js"), atomically: true, encoding: .utf8)
+
+    let store = WorkspaceStore(cli: Org2CLI(repoRoot: repoRoot))
+    store.setCorpusRoot(corpus)
+    await store.refreshApprovals(updatesStatus: true)
+    XCTAssertEqual(store.approvalItems.count, 1)
+
+    let refresh = Task { await store.refreshApprovals(updatesStatus: false) }
+    try await Task.sleep(nanoseconds: 100_000_000)
+
+    XCTAssertFalse(store.isLoadingApprovals)
+    XCTAssertEqual(store.approvalItems.count, 1)
+
+    await refresh.value
+
+    XCTAssertFalse(store.isLoadingApprovals)
+    XCTAssertTrue(store.approvalItems.isEmpty)
+  }
+
+  @MainActor
+  func testBackgroundAssignedWorkRefreshKeepsExistingListInteractive() async throws {
+    let workspace = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-background-assigned-\(UUID().uuidString)", isDirectory: true)
+    let corpus = workspace.appendingPathComponent("corpus", isDirectory: true)
+    try FileManager.default.createDirectory(at: corpus, withIntermediateDirectories: true)
+    let note = corpus.appendingPathComponent("assigned.org2")
+    try "* TODO Unassigned after refresh\n".write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(corpus)
+    store.assignedWorkItems = [
+      AssignedWorkItem(
+        file: note.path,
+        line: 1,
+        headline: "Existing assigned work",
+        todo: "TODO",
+        assignee: "Avi",
+        status: "ready"
+      )
+    ]
+
+    await store.refreshAssignedWork(showsLoading: false)
+
+    XCTAssertFalse(store.isLoadingAssignedWork)
+    XCTAssertTrue(store.assignedWorkItems.isEmpty)
+  }
+
+  @MainActor
+  func testBackgroundOpenClawThreadRefreshKeepsExistingListInteractive() async throws {
+    let workspace = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-background-openclaw-\(UUID().uuidString)", isDirectory: true)
+    let corpus = workspace.appendingPathComponent("corpus", isDirectory: true)
+    let agents = corpus.appendingPathComponent("agents", isDirectory: true)
+    try FileManager.default.createDirectory(at: agents, withIntermediateDirectories: true)
+
+    let staleThread = OpenClawThread(
+      title: "Existing thread",
+      file: agents.appendingPathComponent("old.org2").path,
+      zone: "agents",
+      modifiedAt: nil
+    )
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(corpus)
+    store.openClawThreads = [staleThread]
+
+    await store.refreshOpenClawThreads(showsLoading: false)
+
+    XCTAssertFalse(store.isLoadingOpenClawThreads)
+    XCTAssertTrue(store.openClawThreads.isEmpty)
+  }
+
+  @MainActor
   func testBriefCurrentNodeAutoOpensArtifactAfterOpenClawWritesIt() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-node-brief-autoload-\(UUID().uuidString)", isDirectory: true)
