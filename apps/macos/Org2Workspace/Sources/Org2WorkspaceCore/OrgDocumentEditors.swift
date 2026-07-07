@@ -1749,8 +1749,7 @@ private struct ParagraphBlockEditor: View {
   private func deleteDocumentSelection(_ fragments: [OrgSyntaxTextSelectionDocumentFragment]) -> Bool {
     autosaveTask?.cancel()
     autosaveTask = nil
-    Task { await store.deleteRenderedTextSelection(fragments) }
-    return true
+    return store.beginRenderedTextSelectionReplacement(fragments, replacementText: "")
   }
 
   private func replaceDocumentSelection(
@@ -1759,8 +1758,7 @@ private struct ParagraphBlockEditor: View {
   ) -> Bool {
     autosaveTask?.cancel()
     autosaveTask = nil
-    Task { await store.replaceRenderedTextSelection(fragments, replacementText: replacement) }
-    return true
+    return store.beginRenderedTextSelectionReplacement(fragments, replacementText: replacement)
   }
 
   private var paragraphControls: some View {
@@ -1920,6 +1918,20 @@ private struct ParagraphBlockEditor: View {
     let draft = currentParagraphText
     store.updateEditingBlockDraft(block, draft: draft)
     autosaveTask?.cancel()
+
+    guard draft != block.rawText else {
+      return
+    }
+
+    autosaveTask = Task { [block, draft] in
+      do {
+        try await Task.sleep(nanoseconds: 500_000_000)
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      await store.autosaveEditedBlock(block, replacement: draft)
+    }
   }
 }
 
@@ -2170,8 +2182,7 @@ struct LiveRenderedTextBlockEditor: View {
     isFinishingWithStructuralEdit = true
     autosaveTask?.cancel()
     autosaveTask = nil
-    Task { await store.deleteRenderedTextSelection(fragments) }
-    return true
+    return store.beginRenderedTextSelectionReplacement(fragments, replacementText: "")
   }
 
   private func replaceDocumentSelection(
@@ -2181,8 +2192,7 @@ struct LiveRenderedTextBlockEditor: View {
     isFinishingWithStructuralEdit = true
     autosaveTask?.cancel()
     autosaveTask = nil
-    Task { await store.replaceRenderedTextSelection(fragments, replacementText: replacement) }
-    return true
+    return store.beginRenderedTextSelectionReplacement(fragments, replacementText: replacement)
   }
 
   private func activateEditingContext() {
@@ -2208,6 +2218,20 @@ struct LiveRenderedTextBlockEditor: View {
     let replacement = currentSourceText
     store.updateEditingBlockDraft(block, draft: replacement)
     autosaveTask?.cancel()
+
+    guard replacement != block.rawText else {
+      return
+    }
+
+    autosaveTask = Task { [block, replacement] in
+      do {
+        try await Task.sleep(nanoseconds: 500_000_000)
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      await store.autosaveEditedBlock(block, replacement: replacement)
+    }
   }
 
   private func flushPendingAutosave() {
@@ -2998,6 +3022,20 @@ private struct QuoteBlockEditor: View {
     let draft = rawQuote
     store.updateEditingBlockDraft(block, draft: draft)
     autosaveTask?.cancel()
+
+    guard draft != block.rawText else {
+      return
+    }
+
+    autosaveTask = Task { [block, draft] in
+      do {
+        try await Task.sleep(nanoseconds: 500_000_000)
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      await store.autosaveEditedBlock(block, replacement: draft)
+    }
   }
 }
 
@@ -3278,6 +3316,20 @@ private struct SourceBlockEditor: View {
     let draft = currentSource.formattedRawText
     store.updateEditingBlockDraft(block, draft: draft)
     autosaveTask?.cancel()
+
+    guard draft != block.rawText else {
+      return
+    }
+
+    autosaveTask = Task { [block, draft] in
+      do {
+        try await Task.sleep(nanoseconds: 500_000_000)
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      await store.autosaveEditedBlock(block, replacement: draft)
+    }
   }
 }
 

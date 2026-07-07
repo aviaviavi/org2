@@ -54,6 +54,16 @@ private struct PendingBlockSelection {
   }
 }
 
+private struct RenderedTextSelectionWrite {
+  let file: String
+  let startLine: Int
+  let endLineExclusive: Int
+  let replacement: String
+  let expectedOriginal: String
+  let allowDestructiveReplacement: Bool
+  let failureStatus: String
+}
+
 private enum PendingBlockSelectionMode {
   case containingOrNearest
   case nextOrNearest
@@ -874,6 +884,10 @@ public final class WorkspaceStore: ObservableObject {
   private var activeBlockInitialSelections: [OrgEditableBlock.ID: NSRange] = [:]
   private var deferredStableAutosaves: [OrgEditableBlock.ID: DeferredStableAutosave] = [:]
   private var preservesSelectedRenderedBlocksMetadataForNextAssignment = false
+  private var isRefreshingAgenda = false
+  private var isRefreshingApprovals = false
+  private var isRefreshingAssignedWork = false
+  private var isRefreshingOpenClawThreads = false
   private var scheduledAgendaRefreshTask: Task<Void, Never>?
   private var scheduledApprovalsRefreshTask: Task<Void, Never>?
   private var agendaTodoShortcutMutationTask: Task<Void, Never>?
@@ -977,6 +991,7 @@ public final class WorkspaceStore: ObservableObject {
   private func restoreStartupHomeDetailIfPossible() {
     guard corpusRoot == nil,
           selectedSurface == .home,
+          !Self.shouldIgnoreStandardDefaultsForTests(defaults),
           let restoredRoot = restoreSavedCorpusRoot()
     else {
       return
@@ -1124,6 +1139,14 @@ public final class WorkspaceStore: ObservableObject {
     entrySourceCacheOrder = []
     renderedBlocksCache = [:]
     renderedBlocksCacheOrder = []
+    isRefreshingAgenda = false
+    isRefreshingApprovals = false
+    isRefreshingAssignedWork = false
+    isRefreshingOpenClawThreads = false
+    isLoadingAgenda = false
+    isLoadingApprovals = false
+    isLoadingAssignedWork = false
+    isLoadingOpenClawThreads = false
     scheduledAgendaRefreshTask?.cancel()
     scheduledAgendaRefreshTask = nil
     scheduledApprovalsRefreshTask?.cancel()
@@ -1236,6 +1259,13 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func refreshAgenda(preserveSelection: Bool = false, updatesStatus: Bool = true) async {
+    guard !isRefreshingAgenda else {
+      if updatesStatus {
+        statusText = "Agenda already refreshing"
+      }
+      return
+    }
+
     guard let corpusRoot else {
       if updatesStatus {
         statusText = "No corpus selected"
@@ -1243,9 +1273,18 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
-    isLoadingAgenda = true
+    isRefreshingAgenda = true
+    let showsLoading = updatesStatus || agenda == nil
+    if showsLoading {
+      isLoadingAgenda = true
+    }
     errorText = nil
-    defer { isLoadingAgenda = false }
+    defer {
+      isRefreshingAgenda = false
+      if showsLoading {
+        isLoadingAgenda = false
+      }
+    }
 
     do {
       let today = Self.formatDate(Date())
@@ -1273,7 +1312,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func refreshApprovals(updatesStatus: Bool = false) async {
-    guard !isLoadingApprovals else {
+    guard !isRefreshingApprovals else {
       if updatesStatus {
         statusText = "Approvals already refreshing"
       }
@@ -1287,9 +1326,18 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
 
-    isLoadingApprovals = true
+    isRefreshingApprovals = true
+    let showsLoading = updatesStatus || approvalItems.isEmpty
+    if showsLoading {
+      isLoadingApprovals = true
+    }
     errorText = nil
-    defer { isLoadingApprovals = false }
+    defer {
+      isRefreshingApprovals = false
+      if showsLoading {
+        isLoadingApprovals = false
+      }
+    }
     if updatesStatus {
       statusText = "Scanning approvals..."
     }
@@ -2761,7 +2809,7 @@ public final class WorkspaceStore: ObservableObject {
       meetingStatusText = statusText
       await refreshMeetings()
       await refreshAgenda()
-      Task { await refreshOpenClawThreads() }
+      Task { await refreshOpenClawThreads(showsLoading: false) }
     } catch {
       errorText = error.localizedDescription
       statusText = "Meeting delete failed"
@@ -2893,7 +2941,7 @@ public final class WorkspaceStore: ObservableObject {
       }
       guard Self.hasUsableNodeBriefArtifact(at: url) else { continue }
       await refreshCorpusFiles()
-      Task { await refreshOpenClawThreads() }
+      Task { await refreshOpenClawThreads(showsLoading: false) }
       openNodeBriefArtifact(url: url, relativePath: relativePath, title: title)
       return true
     }
@@ -4890,24 +4938,47 @@ public final class WorkspaceStore: ObservableObject {
     await replaceRenderedTextSelection(fragments, replacementText: "")
   }
 
+  @discardableResult
+  func beginRenderedTextSelectionReplacement(
+    _ fragments: [OrgSyntaxTextSelectionDocumentFragment],
+    replacementText: String
+  ) -> Bool {
+    guard let write = prepareRenderedTextSelectionReplacement(fragments, replacementText: replacementText) else {
+      return false
+    }
+    Task { @MainActor [weak self] in
+      await self?.finishRenderedTextSelectionWrite(write)
+    }
+    return true
+  }
+
   func replaceRenderedTextSelection(
     _ fragments: [OrgSyntaxTextSelectionDocumentFragment],
     replacementText: String
   ) async {
+    guard let write = prepareRenderedTextSelectionReplacement(fragments, replacementText: replacementText) else {
+      return
+    }
+    await finishRenderedTextSelectionWrite(write)
+  }
+
+  private func prepareRenderedTextSelectionReplacement(
+    _ fragments: [OrgSyntaxTextSelectionDocumentFragment],
+    replacementText: String
+  ) -> RenderedTextSelectionWrite? {
     guard let source = selectedEntrySource, source.isEditable else {
       statusText = "No editable source loaded"
-      return
+      return nil
     }
 
     let currentBlocks = selectedRenderedBlocks
     let selectionPairs = Self.renderedTextSelectionPairs(fragments, in: currentBlocks)
     guard !selectionPairs.isEmpty else {
       statusText = "No editable selection"
-      return
+      return nil
     }
 
     isSavingBlock = true
-    defer { isSavingBlock = false }
 
     do {
       let replacement = try Self.renderedTextSelectionReplacement(
@@ -4920,7 +4991,8 @@ public final class WorkspaceStore: ObservableObject {
 
       guard selectedEntrySource?.file == source.file else {
         recordFileUndo(from: undoSnapshot)
-        return
+        isSavingBlock = false
+        return nil
       }
 
       recordFileUndo(from: undoSnapshot)
@@ -4954,20 +5026,40 @@ public final class WorkspaceStore: ObservableObject {
         : "Replaced selection in \(relativePath(source.file))"
       scheduleAgendaRefresh(preserveSelection: true)
 
+      return RenderedTextSelectionWrite(
+        file: source.file,
+        startLine: replacement.startLine,
+        endLineExclusive: replacement.endLineExclusive,
+        replacement: replacement.replacement,
+        expectedOriginal: replacement.expectedOriginal,
+        allowDestructiveReplacement: replacement.coversWholeDocument
+          && replacement.replacement.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        failureStatus: replacementText.isEmpty ? "Delete selection failed" : "Replace selection failed"
+      )
+    } catch {
+      isSavingBlock = false
+      errorText = error.localizedDescription
+      statusText = replacementText.isEmpty ? "Delete selection failed" : "Replace selection failed"
+      return nil
+    }
+  }
+
+  private func finishRenderedTextSelectionWrite(_ write: RenderedTextSelectionWrite) async {
+    defer { isSavingBlock = false }
+    do {
       try await Task.detached(priority: .userInitiated) {
         try Self.replaceSourceRange(
-          file: source.file,
-          startLine: replacement.startLine,
-          endLineExclusive: replacement.endLineExclusive,
-          replacement: replacement.replacement,
-          expectedOriginal: replacement.expectedOriginal,
-          allowDestructiveReplacement: replacement.coversWholeDocument
-            && replacement.replacement.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+          file: write.file,
+          startLine: write.startLine,
+          endLineExclusive: write.endLineExclusive,
+          replacement: write.replacement,
+          expectedOriginal: write.expectedOriginal,
+          allowDestructiveReplacement: write.allowDestructiveReplacement
         )
       }.value
     } catch {
       errorText = error.localizedDescription
-      statusText = replacementText.isEmpty ? "Delete selection failed" : "Replace selection failed"
+      statusText = write.failureStatus
     }
   }
 
@@ -5179,14 +5271,25 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public func refreshOpenClawThreads() async {
+  public func refreshOpenClawThreads(showsLoading: Bool = true) async {
+    guard !isRefreshingOpenClawThreads else { return }
+
     guard let corpusRoot else {
       openClawThreads = []
       return
     }
 
-    isLoadingOpenClawThreads = true
-    defer { isLoadingOpenClawThreads = false }
+    isRefreshingOpenClawThreads = true
+    let shouldShowLoading = showsLoading || openClawThreads.isEmpty
+    if shouldShowLoading {
+      isLoadingOpenClawThreads = true
+    }
+    defer {
+      isRefreshingOpenClawThreads = false
+      if shouldShowLoading {
+        isLoadingOpenClawThreads = false
+      }
+    }
 
     do {
       let threads = try await Task.detached(priority: .utility) {
@@ -5200,14 +5303,25 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  public func refreshAssignedWork() async {
+  public func refreshAssignedWork(showsLoading: Bool = true) async {
+    guard !isRefreshingAssignedWork else { return }
+
     guard let corpusRoot else {
       assignedWorkItems = []
       return
     }
 
-    isLoadingAssignedWork = true
-    defer { isLoadingAssignedWork = false }
+    isRefreshingAssignedWork = true
+    let shouldShowLoading = showsLoading || assignedWorkItems.isEmpty
+    if shouldShowLoading {
+      isLoadingAssignedWork = true
+    }
+    defer {
+      isRefreshingAssignedWork = false
+      if shouldShowLoading {
+        isLoadingAssignedWork = false
+      }
+    }
 
     do {
       let files = corpusFiles.isEmpty ? try Self.scanCorpusFiles(corpusRoot: corpusRoot) : corpusFiles
@@ -7044,7 +7158,7 @@ public final class WorkspaceStore: ObservableObject {
     await refreshCorpusFiles()
     await refreshAgenda(preserveSelection: true, updatesStatus: false)
     await refreshMeetings()
-    Task { await refreshOpenClawThreads() }
+    Task { await refreshOpenClawThreads(showsLoading: false) }
 
     if let generatedBriefRelativePath {
       let artifactURL = root.appendingPathComponent(generatedBriefRelativePath).standardizedFileURL
@@ -8508,7 +8622,7 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Assigned \(selected.count) TODO\(selected.count == 1 ? "" : "s") to \(assignee)"
       isSimilarTodoAssignmentPresented = false
       await refreshAgenda(preserveSelection: true, updatesStatus: false)
-      await refreshAssignedWork()
+      await refreshAssignedWork(showsLoading: false)
       if let selectedLocation, touchedFiles.contains(selectedLocation.file) {
         await loadEntrySource(for: selectedLocation)
       }
@@ -10788,6 +10902,10 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func restoreCorpusRoot() -> URL? {
+    guard !Self.shouldIgnoreStandardDefaultsForTests(defaults) else {
+      return nil
+    }
+
     if let saved = restoreSavedCorpusRoot() {
       return saved
     }
@@ -13479,7 +13597,7 @@ public final class WorkspaceStore: ObservableObject {
       selectMeeting(item)
     }
     await refreshAgenda()
-    Task { await refreshOpenClawThreads() }
+    Task { await refreshOpenClawThreads(showsLoading: false) }
   }
 
   private func beginMeetingProcessing(paths: MeetingArtifactPaths, status: String) {
