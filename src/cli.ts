@@ -2991,24 +2991,42 @@ const AGENDA_SORT_ALLOWED_HINT = "default, [+-]file, [+-]headline, [+-]todo, [+-
 const AGENDA_GROUP_ALLOWED_HINT = AGENDA_SORT_ALLOWED_HINT;
 const AGENDA_DATE_ORDER_ALLOWED_HINT = "asc, desc";
 
+const AGENDA_STATUS_BUCKET_TOKEN_MAP: Record<string, AgendaStatusBucket> = {
+  todo: "todo",
+  open: "todo",
+  backlog: "todo",
+  in_progress: "in_progress",
+  inprogress: "in_progress",
+  prog: "in_progress",
+  doing: "in_progress",
+  started: "in_progress",
+  waiting: "in_progress",
+  wait: "in_progress",
+  blocked: "in_progress",
+  next: "in_progress",
+  wip: "in_progress",
+  hold: "in_progress",
+  on_hold: "in_progress",
+  onhold: "in_progress",
+  paused: "in_progress",
+  pause: "in_progress",
+  done: "done",
+  complete: "done",
+  completed: "done",
+  finish: "done",
+  finished: "done",
+  closed: "done",
+  resolved: "done",
+  canceled: "canceled",
+  cancelled: "canceled",
+  cancel: "canceled",
+  custom: "custom",
+};
+
 function agendaStatusBucketForKeyword(todo: string | undefined): AgendaStatusBucket | null {
-  const raw = String(todo || "").trim().toUpperCase();
-  if (!raw) return null;
-  const key = raw.replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-  if (!key) return null;
-
-  if (["DONE", "COMPLETE", "COMPLETED", "FINISH", "FINISHED", "CLOSED", "RESOLVED"].includes(key)) return "done";
-  if (key === "CANCELED" || key === "CANCELLED") return "canceled";
-  if (
-    ["PROG", "IN_PROGRESS", "INPROGRESS", "DOING", "STARTED", "WAITING", "WAIT", "BLOCKED", "NEXT", "WIP", "HOLD", "ON_HOLD", "ONHOLD", "PAUSED", "PAUSE"].includes(
-      key,
-    )
-  ) {
-    return "in_progress";
-  }
-  if (["TODO", "OPEN", "BACKLOG"].includes(key)) return "todo";
-
-  return "custom";
+  const token = normalizeAgendaStatusFilterToken(String(todo || ""));
+  if (!token) return null;
+  return AGENDA_STATUS_BUCKET_TOKEN_MAP[token] || "custom";
 }
 
 function normalizeAgendaStatusFilterToken(tokenRaw: string): string {
@@ -3024,15 +3042,8 @@ function splitAgendaStatusFilterTokens(raw: string): string[] {
 }
 
 function parseTodoStatusArg(rawStatus: string): TodoStatus | "" {
-  const token = normalizeAgendaStatusFilterToken(rawStatus);
-  if (!token) return "";
-
-  if (token === "todo" || token === "open" || token === "backlog") return "todo";
-  if (token === "in_progress" || token === "inprogress" || token === "prog" || token === "doing" || token === "started" || token === "waiting" || token === "wait" || token === "blocked" || token === "next" || token === "wip" || token === "hold" || token === "on_hold" || token === "onhold" || token === "paused" || token === "pause") return "in_progress";
-  if (token === "done" || token === "complete" || token === "completed" || token === "finish" || token === "finished" || token === "closed" || token === "resolved") return "done";
-  if (token === "canceled" || token === "cancelled" || token === "cancel") return "canceled";
-
-  return "";
+  const bucket = agendaStatusBucketForKeyword(rawStatus);
+  return bucket && bucket !== "custom" ? bucket : "";
 }
 
 function parseAgendaStatusFilterArgs(rawArgs: string[]): {
@@ -3071,57 +3082,15 @@ function parseAgendaStatusFilterArgs(rawArgs: string[]): {
       return;
     }
 
-    if (token === "open" || token === "todo" || token === "backlog") {
-      selected.add("todo");
-      return;
-    }
-
-    if (
-      token === "in_progress" ||
-      token === "inprogress" ||
-      token === "prog" ||
-      token === "doing" ||
-      token === "started" ||
-      token === "waiting" ||
-      token === "wait" ||
-      token === "blocked" ||
-      token === "next" ||
-      token === "wip" ||
-      token === "hold" ||
-      token === "on_hold" ||
-      token === "onhold" ||
-      token === "paused" ||
-      token === "pause"
-    ) {
-      selected.add("in_progress");
-      return;
-    }
-
-    if (
-      token === "done" ||
-      token === "complete" ||
-      token === "completed" ||
-      token === "finish" ||
-      token === "finished" ||
-      token === "resolved"
-    ) {
-      selected.add("done");
-      return;
-    }
-
-    if (token === "canceled" || token === "cancelled" || token === "cancel") {
-      selected.add("canceled");
-      return;
-    }
-
     if (token === "closed") {
       selected.add("done");
       selected.add("canceled");
       return;
     }
 
-    if (token === "custom") {
-      selected.add("custom");
+    const bucket = AGENDA_STATUS_BUCKET_TOKEN_MAP[token];
+    if (bucket) {
+      selected.add(bucket);
       return;
     }
 
@@ -4165,39 +4134,9 @@ function parseAgendaStatusOrderArgs(rawArgs: string[]): {
     if (token === "all") return ["todo", "in_progress", "done", "canceled", "custom"];
     if (token === "active") return ["todo", "in_progress"];
     if (token === "actionable") return ["todo", "in_progress", "custom"];
-    if (token === "todo" || token === "open" || token === "backlog") return ["todo"];
-    if (
-      token === "in_progress" ||
-      token === "inprogress" ||
-      token === "prog" ||
-      token === "doing" ||
-      token === "started" ||
-      token === "waiting" ||
-      token === "wait" ||
-      token === "blocked" ||
-      token === "next" ||
-      token === "wip" ||
-      token === "hold" ||
-      token === "on_hold" ||
-      token === "onhold" ||
-      token === "paused" ||
-      token === "pause"
-    ) {
-      return ["in_progress"];
-    }
-    if (
-      token === "done" ||
-      token === "complete" ||
-      token === "completed" ||
-      token === "finish" ||
-      token === "finished" ||
-      token === "resolved"
-    ) {
-      return ["done"];
-    }
-    if (token === "canceled" || token === "cancelled" || token === "cancel") return ["canceled"];
     if (token === "closed") return ["done", "canceled"];
-    if (token === "custom") return ["custom"];
+    const bucket = AGENDA_STATUS_BUCKET_TOKEN_MAP[token];
+    if (bucket) return [bucket];
     return null;
   };
 
