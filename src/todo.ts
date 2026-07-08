@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { computeSubtreeRange, findHeadingAtOrAbove } from "./sourceLines.js";
 
 export type TodoStatus = "todo" | "in_progress" | "done" | "canceled";
 
@@ -44,15 +45,6 @@ export function formatOrgTimestamp(now: Date): string {
   return `<${year}-${month}-${day} ${dow} ${hh}:${mm}>`;
 }
 
-function isHeadlineLine(line: string): boolean {
-  return /^\*+\s+/.test(line);
-}
-
-function getHeadlineLevel(line: string): number {
-  const m = /^(\*+)\s+/.exec(line);
-  return m ? m[1].length : 0;
-}
-
 function parseHeadlineTodoKeyword(line: string): TodoKeyword | undefined {
   const m = /^(\*+)\s+(.*)$/.exec(line);
   if (!m) return undefined;
@@ -76,17 +68,6 @@ function replaceOrInsertTodoKeyword(line: string, newKeyword: TodoKeyword): { li
 
   // Insert keyword before title.
   return { line: `${stars} ${newKeyword} ${rest}`, oldKeyword: undefined };
-}
-
-function computeSubtreeRange(lines: string[], headingIndex: number): { start: number; endExclusive: number; level: number } {
-  const level = getHeadlineLevel(lines[headingIndex] ?? "");
-  for (let i = headingIndex + 1; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    if (isHeadlineLine(line) && getHeadlineLevel(line) <= level) {
-      return { start: headingIndex, endExclusive: i, level };
-    }
-  }
-  return { start: headingIndex, endExclusive: lines.length, level };
 }
 
 function findPlanningBlockEnd(lines: string[], headingIndex: number, endExclusive: number): number {
@@ -225,18 +206,7 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
   const stamp = formatOrgTimestamp(now);
   const lines = input.split("\n");
 
-  const cursorIndex = Math.max(0, Math.min(lines.length - 1, opts.lineNumber - 1));
-
-  let headingIndex = -1;
-  for (let i = cursorIndex; i >= 0; i--) {
-    if (isHeadlineLine(lines[i] ?? "")) {
-      headingIndex = i;
-      break;
-    }
-  }
-  if (headingIndex < 0) {
-    throw new Error(`No headline found at or above line ${opts.lineNumber}`);
-  }
+  const headingIndex = findHeadingAtOrAbove(lines, opts.lineNumber);
 
   const oldKeyword = parseHeadlineTodoKeyword(lines[headingIndex] ?? "");
   const oldStatus = statusFromKeyword(oldKeyword);
@@ -332,14 +302,6 @@ export function updateTodoInFile(opts: UpdateTodoOptions & { apply: boolean }): 
     fs.writeFileSync(opts.filePath, res.text, "utf8");
   }
   return res;
-}
-
-function findHeadingAtOrAbove(lines: string[], lineNumber: number): number {
-  const cursorIndex = Math.max(0, Math.min(lines.length - 1, lineNumber - 1));
-  for (let i = cursorIndex; i >= 0; i--) {
-    if (isHeadlineLine(lines[i] ?? "")) return i;
-  }
-  throw new Error(`No headline found at or above line ${lineNumber}`);
 }
 
 function propertyValue(lines: string[], propsStart: number, propsEnd: number, key: string): string | undefined {

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { computeSubtreeRange, findHeadingAtOrAbove } from "./sourceLines.js";
 
 export type PlanningKind = "SCHEDULED" | "DEADLINE";
 
@@ -7,26 +8,6 @@ export type PlanningKindArg = "scheduled" | "deadline";
 export function planningKindFromArg(kind: PlanningKindArg): PlanningKind {
   if (kind === "deadline") return "DEADLINE";
   return "SCHEDULED";
-}
-
-function isHeadlineLine(line: string): boolean {
-  return /^\*+\s+/.test(line);
-}
-
-function getHeadlineLevel(line: string): number {
-  const m = /^(\*+)\s+/.exec(line);
-  return m ? m[1].length : 0;
-}
-
-function computeSubtreeRange(lines: string[], headingIndex: number): { start: number; endExclusive: number; level: number } {
-  const level = getHeadlineLevel(lines[headingIndex] ?? "");
-  for (let i = headingIndex + 1; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    if (isHeadlineLine(line) && getHeadlineLevel(line) <= level) {
-      return { start: headingIndex, endExclusive: i, level };
-    }
-  }
-  return { start: headingIndex, endExclusive: lines.length, level };
 }
 
 function isPlanningLine(line: string): boolean {
@@ -88,18 +69,7 @@ export type UpdatePlanningOptions = {
 
 export function updatePlanningInText(input: string, opts: UpdatePlanningOptions): UpdatePlanningResult {
   const lines = input.split("\n");
-  const cursorIndex = Math.max(0, Math.min(lines.length - 1, opts.lineNumber - 1));
-
-  let headingIndex = -1;
-  for (let i = cursorIndex; i >= 0; i--) {
-    if (isHeadlineLine(lines[i] ?? "")) {
-      headingIndex = i;
-      break;
-    }
-  }
-  if (headingIndex < 0) {
-    throw new Error(`No headline found at or above line ${opts.lineNumber}`);
-  }
+  const headingIndex = findHeadingAtOrAbove(lines, opts.lineNumber);
 
   const { endExclusive } = computeSubtreeRange(lines, headingIndex);
 
