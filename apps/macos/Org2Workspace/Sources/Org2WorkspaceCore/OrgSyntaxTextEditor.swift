@@ -9,10 +9,25 @@ struct OrgSyntaxTextEditorSubmitContext {
 struct OrgSyntaxTextEditReplacement: Equatable {
   let range: NSRange
   let replacement: String
+  let selectedRange: NSRange?
+
+  init(range: NSRange, replacement: String, selectedRange: NSRange? = nil) {
+    self.range = range
+    self.replacement = replacement
+    self.selectedRange = selectedRange
+  }
 
   var selectedRangeAfterReplacement: NSRange {
-    NSRange(location: range.location + (replacement as NSString).length, length: 0)
+    if let selectedRange {
+      return selectedRange
+    }
+    return NSRange(location: range.location + (replacement as NSString).length, length: 0)
   }
+}
+
+enum OrgSourceTextIndentDirection {
+  case indent
+  case outdent
 }
 
 enum OrgSourceTextEditing {
@@ -34,12 +49,87 @@ enum OrgSourceTextEditing {
     )
   }
 
+  static func indentationReplacement(
+    in text: String,
+    selectedRange: NSRange,
+    direction: OrgSourceTextIndentDirection
+  ) -> OrgSyntaxTextEditReplacement? {
+    let nsText = text as NSString
+    let selectedRange = clampedRange(selectedRange, utf16Length: nsText.length)
+    let affectedRange = affectedLineRange(in: nsText, selectedRange: selectedRange)
+    guard affectedRange.length > 0 else { return nil }
+
+    var replacement = ""
+    var changedEdits: [(location: Int, delta: Int)] = []
+    var location = affectedRange.location
+    let affectedEnd = affectedRange.location + affectedRange.length
+
+    while location < affectedEnd {
+      let lineRange = nsText.lineRange(for: NSRange(location: location, length: 0))
+      let lineEnd = lineRange.location + lineRange.length
+      let contentEnd = lineContentEnd(in: nsText, lineRange: lineRange)
+      let contentRange = NSRange(
+        location: lineRange.location,
+        length: max(0, contentEnd - lineRange.location)
+      )
+      let suffixRange = NSRange(
+        location: contentEnd,
+        length: max(0, lineEnd - contentEnd)
+      )
+      let content = nsText.substring(with: contentRange)
+      let suffix = nsText.substring(with: suffixRange)
+      let transformed = transformedLineContent(content, direction: direction)
+      replacement += transformed.text + suffix
+      if transformed.text != content {
+        changedEdits.append((
+          location: lineRange.location + transformed.editUTF16Offset,
+          delta: (transformed.text as NSString).length - (content as NSString).length
+        ))
+      }
+      location = lineEnd
+    }
+
+    guard !changedEdits.isEmpty else { return nil }
+    let selectionEnd = selectedRange.location + selectedRange.length
+    let adjustedLocation = adjustedOffset(
+      selectedRange.location,
+      edits: changedEdits,
+      includeInsertionAtOffset: selectedRange.length == 0
+    )
+    let adjustedEnd = adjustedOffset(
+      selectionEnd,
+      edits: changedEdits,
+      includeInsertionAtOffset: false
+    )
+    return OrgSyntaxTextEditReplacement(
+      range: affectedRange,
+      replacement: replacement,
+      selectedRange: NSRange(
+        location: max(0, adjustedLocation),
+        length: max(0, adjustedEnd - adjustedLocation)
+      )
+    )
+  }
+
   private static func clampedRange(_ range: NSRange, utf16Length length: Int) -> NSRange {
     let location = min(max(0, range.location), length)
     return NSRange(
       location: location,
       length: min(max(0, range.length), length - location)
     )
+  }
+
+  private static func affectedLineRange(in text: NSString, selectedRange: NSRange) -> NSRange {
+    guard text.length > 0 else { return NSRange(location: 0, length: 0) }
+    let start = min(max(0, selectedRange.location), text.length)
+    let rawEnd = selectedRange.location + selectedRange.length
+    let endProbe = selectedRange.length > 0
+      ? max(selectedRange.location, rawEnd - 1)
+      : rawEnd
+    let end = min(max(0, endProbe), text.length)
+    let startLine = text.lineRange(for: NSRange(location: start, length: 0))
+    let endLine = text.lineRange(for: NSRange(location: end, length: 0))
+    return NSUnionRange(startLine, endLine)
   }
 
   private static func lineContext(
@@ -68,6 +158,71 @@ enum OrgSourceTextEditing {
       }
     }
     return end
+  }
+
+  private static func adjustedOffset(
+    _ offset: Int,
+    edits: [(location: Int, delta: Int)],
+    includeInsertionAtOffset: Bool
+  ) -> Int {
+    edits.reduce(offset) { current, edit in
+      if edit.location < offset || (includeInsertionAtOffset && edit.delta > 0 && edit.location == offset) {
+        return current + edit.delta
+      }
+      return current
+    }
+  }
+
+  private static func transformedLineContent(
+    _ content: String,
+    direction: OrgSourceTextIndentDirection
+  ) -> (text: String, editUTF16Offset: Int) {
+    if let heading = headingMarker(in: content) {
+      switch direction {
+      case .indent:
+        return ("*" + content, 0)
+      case .outdent:
+        guard heading.level > 1 else { return (content, 0) }
+        return (String(content.dropFirst()), 0)
+      }
+    }
+
+    guard isListLine(content) else {
+      return (content, 0)
+    }
+    switch direction {
+    case .indent:
+      return ("  " + content, 0)
+    case .outdent:
+      if content.hasPrefix("\t") {
+        return (String(content.dropFirst()), 0)
+      }
+      let removableSpaces = content.prefix(2).filter { $0 == " " }.count
+      guard removableSpaces > 0 else { return (content, 0) }
+      return (String(content.dropFirst(removableSpaces)), 0)
+    }
+  }
+
+  private static func headingMarker(in text: String) -> (level: Int, consumedUTF16Length: Int)? {
+    var level = 0
+    var index = text.startIndex
+    while index < text.endIndex, text[index] == "*" {
+      level += 1
+      index = text.index(after: index)
+    }
+    guard level > 0,
+          index < text.endIndex,
+          text[index].isWhitespace
+    else {
+      return nil
+    }
+    return (level, level)
+  }
+
+  private static func isListLine(_ text: String) -> Bool {
+    let indent = leadingWhitespace(in: text)
+    let rest = String(text.dropFirst(indent.count))
+    return listMarker(in: rest) != nil
   }
 
   private static func indentationContinuation(for linePrefix: String) -> String? {
@@ -1139,6 +1294,14 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         return handleDeleteBackwardCommand(in: textView)
       }
 
+      if commandSelector == #selector(NSResponder.insertTab(_:)) {
+        return handleOrgIndentCommand(.indent, in: textView)
+      }
+
+      if commandSelector == #selector(NSResponder.insertBacktab(_:)) {
+        return handleOrgIndentCommand(.outdent, in: textView)
+      }
+
       guard commandSelector == #selector(NSResponder.insertNewline(_:)) else {
         return false
       }
@@ -1167,6 +1330,25 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         return false
       }
       return onSubmit()
+    }
+
+    private func handleOrgIndentCommand(
+      _ direction: OrgSourceTextIndentDirection,
+      in textView: NSTextView
+    ) -> Bool {
+      guard parent.orgWritingCommands,
+            let replacement = OrgSourceTextEditing.indentationReplacement(
+              in: textView.string,
+              selectedRange: textView.selectedRange(),
+              direction: direction
+            )
+      else {
+        return false
+      }
+      textView.insertText(replacement.replacement, replacementRange: replacement.range)
+      textView.setSelectedRange(replacement.selectedRangeAfterReplacement)
+      publishSelectionIfNeeded(replacement.selectedRangeAfterReplacement, in: textView.string)
+      return true
     }
 
     private func handleOrgNewlineCommand(in textView: NSTextView) -> Bool {
@@ -2124,7 +2306,8 @@ enum OrgSyntaxHighlighter {
       .foregroundColor: NSColor.clear,
       .backgroundColor: NSColor.clear,
       .underlineStyle: 0,
-      .font: NSFont.monospacedSystemFont(ofSize: max(0.1, baseFont.pointSize * 0.01), weight: .regular)
+      .kern: -0.1,
+      .font: NSFont.monospacedSystemFont(ofSize: max(0.01, baseFont.pointSize * 0.001), weight: .regular)
     ]
   }
 }

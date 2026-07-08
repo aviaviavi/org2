@@ -3263,6 +3263,20 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(tickBackground, NSColor.clear)
   }
 
+  func testOrgSyntaxHighlighterCollapsesHiddenLinkSyntaxWidth() {
+    let raw = "for[[id:11111111-1111-4111-8111-111111111111][Crowell]]"
+    let storage = NSTextStorage(string: raw)
+    OrgSyntaxHighlighter.apply(to: storage, monospaced: false)
+
+    let visibleStorage = NSTextStorage(string: "forCrowell")
+    visibleStorage.setAttributes(
+      OrgSyntaxHighlighter.baseTypingAttributes(monospaced: false),
+      range: NSRange(location: 0, length: visibleStorage.length)
+    )
+
+    XCTAssertLessThan(abs(Self.laidOutWidth(storage) - Self.laidOutWidth(visibleStorage)), 0.5)
+  }
+
   func testOrgSyntaxHighlighterSkipsLiveTokenizationForLargeBuffers() {
     XCTAssertTrue(OrgSyntaxHighlighter.shouldTokenizeLiveText(
       utf16Length: OrgSyntaxHighlighter.liveTokenizationUTF16Limit
@@ -3679,6 +3693,53 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNil(OrgSourceTextEditing.newlineReplacement(
       in: heading,
       selectedRange: NSRange(location: (heading as NSString).length, length: 0)
+    ))
+  }
+
+  @MainActor
+  func testOrgSourceTextEditingIndentsAndOutdentsListsAndHeadings() {
+    let list = "- first\n  - second"
+    XCTAssertEqual(
+      OrgSourceTextEditing.indentationReplacement(
+        in: list,
+        selectedRange: NSRange(location: 0, length: (list as NSString).length),
+        direction: .indent
+      )?.replacement,
+      "  - first\n    - second"
+    )
+
+    XCTAssertEqual(
+      OrgSourceTextEditing.indentationReplacement(
+        in: list,
+        selectedRange: NSRange(location: (list as NSString).length, length: 0),
+        direction: .outdent
+      )?.replacement,
+      "- second"
+    )
+
+    let heading = "* Parent\n** Child"
+    XCTAssertEqual(
+      OrgSourceTextEditing.indentationReplacement(
+        in: heading,
+        selectedRange: NSRange(location: 0, length: (heading as NSString).length),
+        direction: .indent
+      )?.replacement,
+      "** Parent\n*** Child"
+    )
+
+    XCTAssertEqual(
+      OrgSourceTextEditing.indentationReplacement(
+        in: heading,
+        selectedRange: NSRange(location: (heading as NSString).length, length: 0),
+        direction: .outdent
+      )?.replacement,
+      "* Child"
+    )
+
+    XCTAssertNil(OrgSourceTextEditing.indentationReplacement(
+      in: "plain paragraph",
+      selectedRange: NSRange(location: 0, length: 0),
+      direction: .indent
     ))
   }
 
@@ -9094,6 +9155,60 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testRejectApprovalItemUsesStableIDWhenLinePointsAtParent() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-reject-approval-stale-line-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("reject-approval-stale-line.org2")
+    try """
+    * TODO Parent wrapper
+    :PROPERTIES:
+    :ID: parent-id
+    :STATUS: waiting
+    :END:
+
+    ** TODO Approve reply to Sergio Sastre Florez badge/download count mismatch
+    :PROPERTIES:
+    :ID: approval-child-id
+    :STATUS: draft-needs-review
+    :ASSIGNEE: Avi
+    :END:
+
+    Draft body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let staleLineItem = ApprovalItem(
+      title: "Approve reply to Sergio Sastre Florez badge/download count mismatch",
+      status: "draft-needs-review",
+      todo: "TODO",
+      level: 2,
+      file: note.path,
+      line: 1,
+      idValue: "approval-child-id",
+      properties: [
+        "ID": "approval-child-id",
+        "STATUS": "draft-needs-review",
+        "ASSIGNEE": "Avi"
+      ],
+      body: "Draft body",
+      tags: []
+    )
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+
+    await store.rejectApproval(staleLineItem, endStatus: .done, reason: "already responded")
+
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertNil(store.errorText, store.statusText)
+    XCTAssertTrue(updated.contains("* TODO Parent wrapper"))
+    XCTAssertFalse(updated.contains("* DONE Parent wrapper"))
+    XCTAssertTrue(updated.contains("** DONE Approve reply to Sergio Sastre Florez badge/download count mismatch"))
+    XCTAssertTrue(updated.contains(":STATUS: rejected"))
+    XCTAssertTrue(updated.contains(":REJECTION_END_STATUS: DONE"))
+    XCTAssertTrue(updated.contains(":REJECTION_REASON: already responded"))
+  }
+
+  @MainActor
   func testPriorityAndPropertyShortcutsUpdateTempNote() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-priority-\(UUID().uuidString)", isDirectory: true)
@@ -9736,7 +9851,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testFileTabSelectionUsesLiveFileEditorBufferWithoutLegacyEditMode() async throws {
+  func testFileTabSelectionStartsReadOnlyUntilExplicitEdit() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-live-file-editor-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -9767,6 +9882,13 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(store.isEditingEntry)
     XCTAssertFalse(store.hasActiveEdit)
     XCTAssertEqual(store.editableEntryText, store.selectedEntrySource?.text)
+    XCTAssertFalse(store.canSaveActiveEdit)
+    XCTAssertFalse(store.canSaveLiveFileEditor)
+
+    store.beginEditingCurrentScope()
+
+    XCTAssertTrue(store.isEditingEntry)
+    XCTAssertTrue(store.hasActiveEdit)
     XCTAssertTrue(store.canSaveCurrentFile)
   }
 
@@ -9797,6 +9919,9 @@ final class Org2ModelsTests: XCTestCase {
     await store.loadEntrySource(for: location)
     try await waitForEntryRender(store)
 
+    store.beginEditingCurrentScope()
+    XCTAssertTrue(store.isEditingEntry)
+
     store.editableEntryText = store.editableEntryText.replacingOccurrences(of: "Body", with: "Edited body")
     await store.saveActiveEdit()
 
@@ -9806,7 +9931,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(store.isEditingEntry)
     XCTAssertFalse(store.hasActiveEdit)
     XCTAssertEqual(store.selectedEntrySource?.text, store.editableEntryText)
-    XCTAssertEqual(store.liveFileEditorStatusText, "Saved")
+    XCTAssertTrue(store.statusText.contains("Saved"))
   }
 
   @MainActor
@@ -10752,13 +10877,15 @@ final class Org2ModelsTests: XCTestCase {
     await store.loadEntrySource(for: location)
     try await waitForEntryRender(store)
 
-    store.noteLiveFileEditorTextChanged(draft)
+    store.beginEditingCurrentScope()
+    XCTAssertTrue(store.isEditingEntry)
+    store.editableEntryText = draft
     await store.loadEntrySource(for: location)
 
     XCTAssertEqual(store.editableEntryText, draft)
-    XCTAssertTrue(store.liveFileEditorHasUnsavedChanges)
+    XCTAssertTrue(store.hasActiveEdit)
 
-    await store.saveLiveFileEditor(explicit: true)
+    await store.saveActiveEdit()
     XCTAssertEqual(try String(contentsOf: note, encoding: .utf8), draft)
   }
 
@@ -13293,5 +13420,15 @@ final class Org2ModelsTests: XCTestCase {
 
   private func optionalLocation(_ range: NSRange) -> Int? {
     range.location == NSNotFound ? nil : range.location
+  }
+
+  private static func laidOutWidth(_ storage: NSTextStorage) -> CGFloat {
+    let layoutManager = NSLayoutManager()
+    let textContainer = NSTextContainer(size: NSSize(width: 10_000, height: 1_000))
+    textContainer.lineFragmentPadding = 0
+    layoutManager.addTextContainer(textContainer)
+    storage.addLayoutManager(layoutManager)
+    layoutManager.ensureLayout(for: textContainer)
+    return layoutManager.usedRect(for: textContainer).width
   }
 }

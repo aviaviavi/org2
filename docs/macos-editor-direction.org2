@@ -16,6 +16,16 @@ The primary writing experience in the macOS app should feel like a fast native t
 - Rendered views should stay excellent for reading, reviewing, navigation, approvals, agenda actions, folding, and structured mutations.
 - Raw/source editing is the full-fidelity escape hatch and should become the default writing surface until the rendered editor is proven reliable.
 
+* Rendering Architecture
+
+The editor and renderer should be separate concerns:
+
+- Native source editing is the authoring core. It owns cursor behavior, selection, undo, IME, keyboard input, and save semantics.
+- The shared Org2 compiler/runtime sits between source text and every rendered surface. It should provide source ranges, IDs, semantic blocks, diagnostics, and export/render data.
+- Native SwiftUI remains the right layer for workspace chrome and structured workflow controls such as agenda rows, approvals, TODO/planning/property menus, file navigation, and agent handoff actions.
+- HTML is a strong candidate for rich read/preview rendering. Org2 pages, generated artifacts, tables, citations, backlinks, published-style previews, and custom views may be easier to render well through compiler-generated HTML than through hand-built SwiftUI rows.
+- HTML/WebView state should not become the authoritative editing state unless we deliberately adopt a proper editor engine and accept that complexity. The default writing path stays native text.
+
 * Short-Term Plan
 
 Make source editing the normal edit path from rendered views:
@@ -27,6 +37,12 @@ Make source editing the normal edit path from rendered views:
 - Existing structural commands such as insert, move, delete, TODO changes, planning changes, and property edits continue to mutate source text through the store.
 - Keep legacy block editing code available for narrow structural internals and tests while it is being retired from normal UI entry points.
 
+Current source-editor writing-loop coverage:
+
+- Return continues active list markers, checkbox list markers, ordered list numbering, and indentation.
+- Tab and Shift-Tab demote/promote headings and indent/outdent list items in the source editor.
+- Focused tests cover writing through the source editor and saving the resulting document text.
+
 * Medium-Term Plan
 
 Harden the source editor into the first-class writing surface:
@@ -36,12 +52,14 @@ Harden the source editor into the first-class writing surface:
 - Use parser-provided ranges and diagnostics for semantic highlighting, navigation, and structured commands.
 - Keep save behavior boring: Command-S writes exactly the visible buffer, autosave never overwrites newer local text, and background reloads never replace active edits.
 - Add focused regression tests for source-editor entry from agenda, approvals, rendered rows, and full-page files.
+- Start designing the HTML render pipeline as a preview/read surface fed by shared compiler output, not as a replacement for the native source editor.
 
 * Longer-Term Options
 
-After the source editor is solid, richer rendering can return as overlays and sidecars rather than as the authoritative text input path:
+After the source editor is solid, richer rendering can return as previews, overlays, and sidecars rather than as the authoritative text input path:
 
 - Gutter controls for TODOs, priorities, scheduling, backlinks, and block actions.
 - Inline previews for links, images, source blocks, citations, and generated artifacts.
-- Optional rendered/read mode that remains separate from the active text buffer.
+- Optional HTML rendered/read mode that remains separate from the active text buffer.
+- Compiler-generated HTML views for published-style pages, generated artifacts, graph/backlink views, and tables where WebView rendering is a better fit than SwiftUI.
 - Selective hybrid widgets only where they do not fight native text editing behavior.

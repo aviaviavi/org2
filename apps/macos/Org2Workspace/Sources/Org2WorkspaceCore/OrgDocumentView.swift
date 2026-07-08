@@ -8,12 +8,36 @@ struct OrgRenderedEntrySourceContext: Equatable, Sendable {
   let isSubtree: Bool
   let isEditable: Bool
 
+  init(
+    file: String,
+    startLine: Int,
+    endLineExclusive: Int,
+    isSubtree: Bool,
+    isEditable: Bool
+  ) {
+    self.file = file
+    self.startLine = startLine
+    self.endLineExclusive = endLineExclusive
+    self.isSubtree = isSubtree
+    self.isEditable = isEditable
+  }
+
   init(_ source: EntrySource) {
     self.file = source.file
     self.startLine = source.startLine
     self.endLineExclusive = source.endLineExclusive
     self.isSubtree = source.isSubtree
     self.isEditable = source.isEditable
+  }
+
+  func overridingEditable(_ isEditable: Bool) -> OrgRenderedEntrySourceContext {
+    OrgRenderedEntrySourceContext(
+      file: file,
+      startLine: startLine,
+      endLineExclusive: endLineExclusive,
+      isSubtree: isSubtree,
+      isEditable: isEditable
+    )
   }
 
   var id: String {
