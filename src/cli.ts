@@ -21,6 +21,7 @@ import {
 import { resolvePublishHeadIncludes } from "./publish-defaults.js";
 import { assignTodoInText, formatOrgTimestamp, normalizeTodoKeyword, TODO_KEYWORDS, updateTodoInText, type TodoStatus } from "./todo.js";
 import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from "./planning.js";
+import { computeSubtreeRange, findHeadingAtOrAbove } from "./sourceLines.js";
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
 import { compileCorpus, compileCorpusIncremental, extractCheckboxProgress, renderCompiledCorpus } from "./corpusCompile.js";
@@ -14579,35 +14580,6 @@ Flags:
       return line;
     };
 
-    const findHeadingAtOrAbove = (
-      lines: string[],
-      line1: number,
-    ): { lineIndex: number; level: number; line: string } | null => {
-      const start = Math.min(Math.max(line1 - 1, 0), Math.max(0, lines.length - 1));
-      for (let idx = start; idx >= 0; idx -= 1) {
-        const line = lines[idx] ?? "";
-        const m = /^(\*+)\s+/.exec(line);
-        if (m) {
-          return {
-            lineIndex: idx,
-            level: m[1]!.length,
-            line,
-          };
-        }
-      }
-      return null;
-    };
-
-    const findSubtreeEndExclusive = (lines: string[], startLineIndex: number, level: number): number => {
-      for (let idx = startLineIndex + 1; idx < lines.length; idx += 1) {
-        const m = /^(\*+)\s+/.exec(lines[idx] ?? "");
-        if (m && m[1]!.length <= level) {
-          return idx;
-        }
-      }
-      return lines.length;
-    };
-
     const normalizeOutText = (lines: string[]): string => {
       const text = lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd();
       return text.length > 0 ? `${text}\n` : "";
@@ -14649,18 +14621,22 @@ Flags:
     const sourceLines = sourceRaw.split("\n");
 
     const sourcePosLine1 = parsePosLine(refilePos, "--pos");
-    const sourceHeading = findHeadingAtOrAbove(sourceLines, sourcePosLine1);
-    if (!sourceHeading) {
+    let sourceHeadingIndex: number;
+    try {
+      sourceHeadingIndex = findHeadingAtOrAbove(sourceLines, sourcePosLine1);
+    } catch {
       console.error("Error: no source headline found at or above --pos");
       process.exit(1);
     }
+    const sourceHeadingLine = sourceLines[sourceHeadingIndex] ?? "";
 
-    const sourceEndExclusive = findSubtreeEndExclusive(sourceLines, sourceHeading.lineIndex, sourceHeading.level);
-    const sourceSubtreeLines = sourceLines.slice(sourceHeading.lineIndex, sourceEndExclusive);
+    const sourceRange = computeSubtreeRange(sourceLines, sourceHeadingIndex);
+    const sourceEndExclusive = sourceRange.endExclusive;
+    const sourceSubtreeLines = sourceLines.slice(sourceHeadingIndex, sourceEndExclusive);
     const sourceSubtreeText = sourceSubtreeLines.join("\n").trimEnd() + "\n";
 
     const sourceRemainingLines = [
-      ...sourceLines.slice(0, sourceHeading.lineIndex),
+      ...sourceLines.slice(0, sourceHeadingIndex),
       ...sourceLines.slice(sourceEndExclusive),
     ];
     const sourceOutText = normalizeOutText(sourceRemainingLines);
@@ -14683,33 +14659,32 @@ Flags:
       const toPosLine1Raw = parsePosLine(refileToPos, "--to-pos");
       if (
         sameFile &&
-        toPosLine1Raw >= sourceHeading.lineIndex + 1 &&
+        toPosLine1Raw >= sourceHeadingIndex + 1 &&
         toPosLine1Raw <= sourceEndExclusive
       ) {
         console.error("Error: --to-pos cannot point inside the subtree being moved");
         process.exit(1);
       }
 
-      const removedLineCount = sourceEndExclusive - sourceHeading.lineIndex;
+      const removedLineCount = sourceEndExclusive - sourceHeadingIndex;
       const toPosLine1Adjusted =
-        sameFile && toPosLine1Raw > sourceHeading.lineIndex + 1
+        sameFile && toPosLine1Raw > sourceHeadingIndex + 1
           ? Math.max(1, toPosLine1Raw - removedLineCount)
           : toPosLine1Raw;
 
-      const destinationHeading = findHeadingAtOrAbove(destinationLines, toPosLine1Adjusted);
-      if (!destinationHeading) {
+      let destinationHeadingIndex: number;
+      try {
+        destinationHeadingIndex = findHeadingAtOrAbove(destinationLines, toPosLine1Adjusted);
+      } catch {
         console.error("Error: no destination headline found at or above --to-pos");
         process.exit(1);
       }
 
-      destinationHeadingLine1 = destinationHeading.lineIndex + 1;
-      destinationInsertIndex = findSubtreeEndExclusive(
-        destinationLines,
-        destinationHeading.lineIndex,
-        destinationHeading.level,
-      );
+      const destinationRange = computeSubtreeRange(destinationLines, destinationHeadingIndex);
+      destinationHeadingLine1 = destinationHeadingIndex + 1;
+      destinationInsertIndex = destinationRange.endExclusive;
 
-      headingLevelDelta = destinationHeading.level + 1 - sourceHeading.level;
+      headingLevelDelta = destinationRange.level + 1 - sourceRange.level;
       if (headingLevelDelta !== 0) {
         movedSubtreeLines = sourceSubtreeLines.map((line) => {
           const m = /^(\*+)(\s+.*)$/.exec(line);
@@ -14771,8 +14746,8 @@ Flags:
             destinationChanged,
             sourcePath: sourcePathInput,
             destinationPath: destinationPathInput,
-            sourceHeadlineLine1: sourceHeading.lineIndex + 1,
-            sourceHeadline: sourceHeading.line,
+            sourceHeadlineLine1: sourceHeadingIndex + 1,
+            sourceHeadline: sourceHeadingLine,
             destinationHeadingLine1,
             headingLevelDelta,
             sourceSubtreeText,
@@ -14790,7 +14765,7 @@ Flags:
 
     if (!refileApply) {
       process.stdout.write(
-        `Would refile subtree starting at ${sourcePathInput}:${sourceHeading.lineIndex + 1} to ${destinationPathInput}` +
+        `Would refile subtree starting at ${sourcePathInput}:${sourceHeadingIndex + 1} to ${destinationPathInput}` +
           (destinationHeadingLine1 ? ` under heading line ${destinationHeadingLine1}` : " (file end)") +
           "\nUse --apply to write changes.\n",
       );
@@ -14807,7 +14782,7 @@ Flags:
 
     if (refileFormat === "text") {
       process.stdout.write(
-        `Refiled subtree from ${sourcePathInput}:${sourceHeading.lineIndex + 1} to ${destinationPathInput}` +
+        `Refiled subtree from ${sourcePathInput}:${sourceHeadingIndex + 1} to ${destinationPathInput}` +
           (destinationHeadingLine1 ? ` under heading line ${destinationHeadingLine1}.` : ".") +
           "\n",
       );
