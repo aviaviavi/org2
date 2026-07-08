@@ -22,7 +22,12 @@ export function findHeadingAtOrAbove(lines: string[], lineNumber: number): numbe
 }
 
 export function computeSubtreeRange(lines: string[], headingIndex: number): SubtreeRange {
-  const level = getHeadlineLevel(lines[headingIndex] ?? "");
+  const headingLine = lines[headingIndex] ?? "";
+  if (headingIndex < 0 || headingIndex >= lines.length || !isHeadlineLine(headingLine)) {
+    throw new Error(`Expected headline at line index ${headingIndex}`);
+  }
+
+  const level = getHeadlineLevel(headingLine);
   for (let i = headingIndex + 1; i < lines.length; i += 1) {
     const line = lines[i] ?? "";
     if (isHeadlineLine(line) && getHeadlineLevel(line) <= level) {
