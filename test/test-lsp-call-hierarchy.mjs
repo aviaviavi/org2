@@ -18,7 +18,7 @@ Calls target here: [[id:abc-123]]
 Calls target file: [[file:target.org]]
 `;
 
-const fileTargetContent = `* BACKLOG [#C] File Target :archive:
+const fileTargetContent = `* IN_PROGRESS [#C] File Target :archive:
 Links to another file: [[file:next.org]]
 Links to referenced id: [[id:def-456]]
 `;

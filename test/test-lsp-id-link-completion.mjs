@@ -2,12 +2,12 @@
 
 import { spawn } from "node:child_process";
 
-const idCatalogContent = `* BACKLOG [#A] Alpha Node :work:
+const idCatalogContent = `* TODO [#A] Alpha Node :work:
 :PROPERTIES:
 :ID: abc-123
 :END:
 
-* WAIT [#B] Beta Node :ops:
+* IN_PROGRESS [#B] Beta Node :ops:
 :PROPERTIES:
 :ID: abd-456
 :END:
@@ -153,7 +153,7 @@ async function run() {
     if (!String(alphaItem?.detail || "").includes("Alpha Node") || !String(betaItem?.detail || "").includes("Beta Node")) {
       throw new Error(`Expected completion details to include normalized headline titles, got ${JSON.stringify(broadResponse?.result)}`);
     }
-    if (/\[#|:work:|:ops:|\bBACKLOG\b|\bWAIT\b/.test(`${alphaItem?.detail || ""}\n${betaItem?.detail || ""}`)) {
+    if (/\[#|:work:|:ops:|\bTODO\b|\bIN_PROGRESS\b/.test(`${alphaItem?.detail || ""}\n${betaItem?.detail || ""}`)) {
       throw new Error(`Expected completion details to strip TODO/priority/tag syntax, got ${JSON.stringify(broadResponse?.result)}`);
     }
 

@@ -10,7 +10,7 @@ Line link: [[file:target.org::7]]
 
 const targetDoc = `* TODO [#C] Root :meta:
 Intro line
-* BACKLOG [#A] Deep Node :project:urgent:
+* IN_PROGRESS [#A] Deep Node :project:urgent:
 :PROPERTIES:
 :CUSTOM_ID: anchor-1
 :END:
