@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseHeadlineTitleForRoam } from "./headlineTitle.js";
 import { defaultSearchIndexPath } from "./indexPaths.js";
+import { computeSubtreeRange } from "./sourceLines.js";
 import { normalizeTodoKeyword } from "./todo.js";
 
 export { defaultSearchIndexPath };
@@ -353,11 +354,7 @@ function parseSearchHeading(line: string): Omit<SearchHeading, "line"> | null {
 
 function subtreeEndLine(lines: string[], heading: SearchHeading | undefined, matchLine: number): number {
   if (!heading) return matchLine;
-  for (let j = heading.line + 1; j < lines.length; j += 1) {
-    const parsed = parseSearchHeading(lines[j] || "");
-    if (parsed && parsed.level <= heading.level) return Math.max(heading.line, j - 1);
-  }
-  return Math.max(heading.line, lines.length - 1);
+  return Math.max(heading.line, computeSubtreeRange(lines, heading.line).endExclusive - 1);
 }
 
 function dateKeyFromFile(file: string): string {
