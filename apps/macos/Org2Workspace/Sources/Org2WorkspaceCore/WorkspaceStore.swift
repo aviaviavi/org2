@@ -414,12 +414,14 @@ private struct HeadlineMutationTarget: Sendable {
   let line: Int
   let title: String
   let agendaItemID: String?
+  let idValue: String?
 
-  init(file: String, line: Int, title: String, agendaItemID: String? = nil) {
+  init(file: String, line: Int, title: String, agendaItemID: String? = nil, idValue: String? = nil) {
     self.file = file
     self.line = line
     self.title = title
     self.agendaItemID = agendaItemID
+    self.idValue = idValue?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
   }
 
   init(item: AgendaItem) {
@@ -427,7 +429,8 @@ private struct HeadlineMutationTarget: Sendable {
       file: item.file,
       line: item.lineForEditor,
       title: Org2Display.cleanInline(item.headline),
-      agendaItemID: item.id
+      agendaItemID: item.id,
+      idValue: item.properties["ID"]
     )
   }
 }
@@ -1819,7 +1822,8 @@ public final class WorkspaceStore: ObservableObject {
         file: item.file,
         line: item.line,
         title: Org2Display.cleanInline(item.title),
-        agendaItemID: nil
+        agendaItemID: nil,
+        idValue: item.idValue
       ))
       removeApprovalItemOptimistically(item.id, originalVisibleIndex: originalVisibleIndex)
       scheduleApprovalsRefresh()
@@ -1854,7 +1858,8 @@ public final class WorkspaceStore: ObservableObject {
           file: item.file,
           line: item.line,
           title: Org2Display.cleanInline(item.title),
-          agendaItemID: nil
+          agendaItemID: nil,
+          idValue: item.idValue
         ),
         endStatus: endStatus,
         reason: reason
@@ -3571,7 +3576,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public var canSaveLiveFileEditor: Bool {
-    isLiveFileEditorAvailable && !isSavingEntry
+    isLiveFileEditorAvailable && liveFileEditorHasUnsavedChanges && !isSavingEntry
   }
 
   public var liveFileEditorHasUnsavedChanges: Bool {
@@ -3805,7 +3810,7 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     guard let block = activeEditingBlock else {
-      if isLiveFileEditorAvailable {
+      if isLiveFileEditorAvailable && liveFileEditorHasUnsavedChanges {
         await saveLiveFileEditor(explicit: true)
         return
       }
@@ -9273,21 +9278,25 @@ public final class WorkspaceStore: ObservableObject {
     let timestamp = Self.orgTimestamp(Date())
 
     let approvalIdentity = try approvalMutationIdentity(for: target)
-    try await setTodoStatus(.done, for: target)
-    let result = try await activateApprovedAgentAction(for: target, timestamp: timestamp)
-    let currentTarget = try refreshedApprovalMutationTarget(
+    let mutationTarget = try refreshedApprovalMutationTarget(
       original: target,
       identity: approvalIdentity
     )
-    var approvalProperties = try currentApprovalProperties(for: currentTarget)
+    try await setTodoStatus(.done, for: mutationTarget)
+    let result = try await activateApprovedAgentAction(for: mutationTarget, timestamp: timestamp)
+    let propertyTarget = try refreshedApprovalMutationTarget(
+      original: mutationTarget,
+      identity: approvalIdentity
+    )
+    var approvalProperties = try currentApprovalProperties(for: propertyTarget)
     approvalProperties.merge(Self.approvedApprovalProperties(
       existingProperties: approvalProperties,
       timestamp: timestamp,
       pairedTitle: result.title
     )) { _, new in new }
     try upsertHeadlineProperties(
-      file: currentTarget.file,
-      line: currentTarget.line,
+      file: propertyTarget.file,
+      line: propertyTarget.line,
       properties: approvalProperties
     )
     invalidateCanonicalDocumentCache(for: result.file)
@@ -9358,6 +9367,10 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func approvalMutationIdentity(for target: HeadlineMutationTarget) throws -> ApprovalMutationIdentity {
+    if let idValue = target.idValue {
+      return ApprovalMutationIdentity(title: target.title, idValue: idValue)
+    }
+
     let url = URL(fileURLWithPath: target.file)
     let raw = try String(contentsOf: url, encoding: .utf8)
     let lines = Self.normalizeLineEndings(raw)
@@ -9413,15 +9426,19 @@ public final class WorkspaceStore: ObservableObject {
     let timestamp = Self.orgTimestamp(Date())
 
     let approvalIdentity = try approvalMutationIdentity(for: target)
-    try await setTodoStatus(endStatus, for: target)
-    let currentTarget = try refreshedApprovalMutationTarget(
+    let mutationTarget = try refreshedApprovalMutationTarget(
       original: target,
       identity: approvalIdentity
     )
-    let currentProperties = try currentApprovalProperties(for: currentTarget)
+    try await setTodoStatus(endStatus, for: mutationTarget)
+    let propertyTarget = try refreshedApprovalMutationTarget(
+      original: mutationTarget,
+      identity: approvalIdentity
+    )
+    let currentProperties = try currentApprovalProperties(for: propertyTarget)
     try upsertHeadlineProperties(
-      file: currentTarget.file,
-      line: currentTarget.line,
+      file: propertyTarget.file,
+      line: propertyTarget.line,
       properties: [
         "STATUS": "rejected",
         "REJECTED_AT": timestamp,
@@ -9430,7 +9447,7 @@ public final class WorkspaceStore: ObservableObject {
       ]
     )
     let pairedRejected = try await rejectPairedApprovedAgentAction(
-      for: currentTarget,
+      for: propertyTarget,
       approvalProperties: currentProperties,
       endStatus: endStatus,
       reason: reason,

@@ -684,6 +684,64 @@ final class OrgEditorInteractionTests: XCTestCase {
     }
   }
 
+  func testSourceEditorTabIndentsAndOutdentsOrgListWhileWriting() async throws {
+    let harness = try await makeHarness(initialText: """
+    - first
+      - second
+    """)
+
+    harness.store.selectedSurface = .agenda
+    harness.store.beginEditingSelectedEntry()
+    try await pumpRunLoop()
+    let sourceEditor = try await harness.syntaxTextView(containing: "- first")
+    try await harness.focus(sourceEditor, selection: NSRange(location: 0, length: 0))
+    try await harness.pressTab()
+    await harness.store.saveActiveEdit()
+    try await waitForCondition {
+      (try? harness.fileText()) == "  - first\n  - second"
+    }
+
+    harness.store.beginEditingSelectedEntry()
+    try await pumpRunLoop()
+    let updatedEditor = try await harness.syntaxTextView(containing: "  - first")
+    let secondLineLocation = ("  - first\n" as NSString).length
+    try await harness.focus(updatedEditor, selection: NSRange(location: secondLineLocation, length: 0))
+    try await harness.pressBacktab()
+    await harness.store.saveActiveEdit()
+    try await waitForCondition {
+      (try? harness.fileText()) == "  - first\n- second"
+    }
+  }
+
+  func testSourceEditorTabDemotesAndPromotesHeadingsWhileWriting() async throws {
+    let harness = try await makeHarness(initialText: """
+    * Parent
+    ** Child
+    """)
+
+    harness.store.selectedSurface = .agenda
+    harness.store.beginEditingSelectedEntry()
+    try await pumpRunLoop()
+    let sourceEditor = try await harness.syntaxTextView(containing: "* Parent")
+    try await harness.focus(sourceEditor, selection: NSRange(location: 0, length: 0))
+    try await harness.pressTab()
+    await harness.store.saveActiveEdit()
+    try await waitForCondition {
+      (try? harness.fileText()) == "** Parent\n** Child"
+    }
+
+    harness.store.beginEditingSelectedEntry()
+    try await pumpRunLoop()
+    let updatedEditor = try await harness.syntaxTextView(containing: "** Parent")
+    let childLineLocation = ("** Parent\n" as NSString).length
+    try await harness.focus(updatedEditor, selection: NSRange(location: childLineLocation, length: 0))
+    try await harness.pressBacktab()
+    await harness.store.saveActiveEdit()
+    try await waitForCondition {
+      (try? harness.fileText()) == "** Parent\n* Child"
+    }
+  }
+
   func testLiveFileEditorBlocksEmptyAutosaveAndCreatesRecoveryBackup() async throws {
     let original = """
     * Today's note
@@ -851,6 +909,20 @@ private struct EditorInteractionHarness {
     try await sendKey("\r", keyCode: 36)
     let elapsed = CACurrentMediaTime() - start
     XCTAssertLessThan(elapsed, 0.35, "Return handling should not visibly stall")
+  }
+
+  func pressTab() async throws {
+    let start = CACurrentMediaTime()
+    try await sendCommand(#selector(NSResponder.insertTab(_:)))
+    let elapsed = CACurrentMediaTime() - start
+    XCTAssertLessThan(elapsed, 0.35, "Tab handling should not visibly stall")
+  }
+
+  func pressBacktab() async throws {
+    let start = CACurrentMediaTime()
+    try await sendCommand(#selector(NSResponder.insertBacktab(_:)))
+    let elapsed = CACurrentMediaTime() - start
+    XCTAssertLessThan(elapsed, 0.35, "Shift-Tab handling should not visibly stall")
   }
 
   func pressMoveUp() async throws {

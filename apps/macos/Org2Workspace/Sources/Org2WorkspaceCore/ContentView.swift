@@ -4202,7 +4202,7 @@ private struct DetailHeader: View {
 
   private var scopeAndEditControls: some View {
     HStack(spacing: 7) {
-      if !store.isLiveFileEditorSelected {
+      if !store.isLiveFileEditorSelected && !store.hasActiveEdit {
         scopePicker
       }
       editControls
@@ -4301,16 +4301,29 @@ private struct DetailHeader: View {
     HStack(spacing: 6) {
       editStatusIndicator
 
-      if !store.isLiveFileEditorSelected {
+      if store.hasActiveEdit {
+        Button {
+          Task { await store.saveActiveEdit() }
+        } label: {
+          Label("Save", systemImage: "checkmark")
+        }
+        .disabled(!store.canSaveActiveEdit)
+        .help("Save changes (Command-S)")
+
+        Button {
+          store.cancelActiveEdit()
+        } label: {
+          Label("Cancel", systemImage: "xmark")
+        }
+        .help("Discard changes")
+      } else {
         Button {
           store.beginEditingCurrentScope()
         } label: {
           Label("Edit", systemImage: "square.and.pencil")
         }
-        .disabled(store.hasActiveEdit || store.selectedEntrySource?.isEditable != true || store.isLoadingEntrySource)
-        .opacity(store.hasActiveEdit ? 0 : 1)
-        .allowsHitTesting(!store.hasActiveEdit)
-        .accessibilityHidden(store.hasActiveEdit)
+        .disabled(store.selectedEntrySource?.isEditable != true || store.isLoadingEntrySource)
+        .help("Edit this file")
       }
     }
   }
@@ -4486,11 +4499,13 @@ private struct LiveFileEditorBody: View {
                   .workspaceShimmer()
               }
               .frame(maxWidth: .infinity, minHeight: 420, alignment: .center)
+            } else if store.isEditingEntry {
+              OrgSourceEditorWithLinkTools()
             } else {
               OrgRenderedEntryView(
                 blocks: store.selectedRenderedBlocks,
                 blocksRenderSignature: store.selectedRenderedBlocksRenderSignature,
-                source: OrgRenderedEntrySourceContext(source),
+                source: OrgRenderedEntrySourceContext(source).overridingEditable(false),
                 corpusRoot: store.corpusRoot,
                 selectedBlockID: store.selectedBlockID,
                 selectedBlockIndex: store.selectedBlockID.flatMap { store.selectedRenderedBlockIndexes[$0] },
@@ -4537,6 +4552,121 @@ private struct LiveFileEditorBody: View {
   }
 }
 
+private struct OrgSourceEditorWithLinkTools: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(\.orgRoamLinkResolver) private var orgRoamLinkResolver
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      OrgSyntaxTextEditor(
+        text: $store.editableEntryText,
+        monospaced: true,
+        showsScrollers: true,
+        textInset: NSSize(width: 12, height: 12),
+        focusOnAppear: true,
+        liveHighlighting: false,
+        orgWritingCommands: true,
+        selection: $store.sourceEditorSelection,
+        onSaveCommand: { context in
+          store.editableEntryText = context.text
+          Task { await store.saveEditedEntry() }
+          return true
+        }
+      )
+      .frame(minHeight: 520)
+      .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+          .stroke(Color.secondary.opacity(0.16))
+      )
+
+      if hasSelection {
+        ParagraphInlineFormatBar(
+          text: $store.editableEntryText,
+          selectedRange: $store.sourceEditorSelection,
+          insertBacklink: insertBacklinkForSelection,
+          createNodeFromSelection: createNodeFromSelection
+        )
+      }
+
+      if let wikiLinkCompletionMatch {
+        ParagraphWikiLinkCompletionPanel(
+          query: wikiLinkCompletionMatch.query,
+          candidates: orgRoamLinkResolver.searchCandidates(matching: wikiLinkCompletionMatch.query, limit: 6),
+          choose: { node in
+            resolveWikiLinkCompletion(wikiLinkCompletionMatch, to: node)
+          },
+          create: {
+            createNodeFromWikiLinkCompletion(wikiLinkCompletionMatch)
+          }
+        )
+      }
+    }
+  }
+
+  private var hasSelection: Bool {
+    store.sourceEditorSelection.length > 0
+  }
+
+  private var wikiLinkCompletionMatch: ParagraphWikiLinkCompletionMatch? {
+    ParagraphWikiLinkCompletion.match(
+      in: store.editableEntryText,
+      selectedRange: store.sourceEditorSelection
+    )
+  }
+
+  private func insertBacklinkForSelection() {
+    guard let edit = WorkspaceStore.backlinkReplacementForSelectedText(
+      in: store.editableEntryText,
+      range: store.sourceEditorSelection
+    ) else {
+      store.statusText = "Select text first"
+      return
+    }
+    applyInlineEdit(edit)
+  }
+
+  private func createNodeFromSelection() {
+    let text = store.editableEntryText
+    let range = store.sourceEditorSelection
+    Task {
+      guard let edit = await store.createKnowledgeNodeFromSelection(text: text, range: range) else {
+        return
+      }
+      applyInlineEdit(edit)
+    }
+  }
+
+  private func resolveWikiLinkCompletion(
+    _ match: ParagraphWikiLinkCompletionMatch,
+    to node: OrgRoamNodeReference
+  ) {
+    guard let edit = ParagraphWikiLinkCompletion.replacement(
+      in: store.editableEntryText,
+      match: match,
+      node: node
+    ) else {
+      return
+    }
+    applyInlineEdit(edit)
+  }
+
+  private func createNodeFromWikiLinkCompletion(_ match: ParagraphWikiLinkCompletionMatch) {
+    let text = store.editableEntryText
+    Task {
+      guard let edit = await store.createKnowledgeNodeFromWikiLinkCompletion(text: text, match: match) else {
+        return
+      }
+      applyInlineEdit(edit)
+    }
+  }
+
+  private func applyInlineEdit(_ edit: InlineSelectionReplacement) {
+    store.editableEntryText = edit.text
+    store.sourceEditorSelection = edit.selectedRange
+  }
+}
+
 private struct EntryBodyView: View {
   @EnvironmentObject private var store: WorkspaceStore
   let location: WorkspaceLocation
@@ -4568,27 +4698,7 @@ private struct EntryBodyView: View {
           }
         }
         if store.isEditingEntry {
-          OrgSyntaxTextEditor(
-            text: $store.editableEntryText,
-            monospaced: true,
-            showsScrollers: true,
-            textInset: NSSize(width: 12, height: 12),
-            focusOnAppear: true,
-            liveHighlighting: false,
-            orgWritingCommands: true,
-            selection: $store.sourceEditorSelection,
-            onSaveCommand: { context in
-              store.editableEntryText = context.text
-              Task { await store.saveEditedEntry() }
-              return true
-            }
-          )
-          .frame(minHeight: 520)
-          .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-          .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-              .stroke(Color.secondary.opacity(0.16))
-          )
+          OrgSourceEditorWithLinkTools()
         } else if store.isRenderingEntrySource && store.selectedRenderedBlocks.isEmpty {
           HStack(spacing: 8) {
             WorkspaceActivityIndicator(size: .small)
