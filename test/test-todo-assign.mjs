@@ -47,6 +47,13 @@ assert.match(replacedText, /^\* TODO Existing drawer/m);
 assert.match(replacedText, /:ASSIGNEE: OpenClaw/);
 assert.match(replacedText, /:STATUS: draft-needs-review/);
 
+fs.writeFileSync(note, "* TODO Unterminated drawer\n:PROPERTIES:\n:STATUS: malformed\nBody\n", "utf8");
+const repaired = JSON.parse(cli(["todo", "assign", "--file", note, "--line", "1", "--assignee", "OpenClaw", "--apply"]));
+assert.equal(repaired.changed, true);
+
+const repairedText = fs.readFileSync(note, "utf8");
+assert.match(repairedText, /^\* TODO Unterminated drawer\n:PROPERTIES:\n:ASSIGNEE: OpenClaw\n:END:\n:PROPERTIES:/m);
+
 fs.writeFileSync(note, `* TODO Send approved follow-up
 :PROPERTIES:
 :STATUS: waiting-on-approval

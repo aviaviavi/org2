@@ -55,6 +55,7 @@ const colorOrgContent = `* Color Playground
 :SHORT: #f0a
 :END:
 `;
+const startupResponseWaitMs = 1000;
 const expectedFormattedTableSnippet = "| a      | b   |";
 const expectedRangeFormattedSnippet = "| a      | bb  |";
 
@@ -135,6 +136,20 @@ async function testLSPFeatures() {
     }
   });
 
+  const waitForResponse = (id, timeoutMs = startupResponseWaitMs) =>
+    new Promise((resolve) => {
+      const deadline = Date.now() + timeoutMs;
+      const tick = () => {
+        const response = allResponses.find((r) => r.id === id);
+        if (response || Date.now() >= deadline) {
+          resolve(response);
+          return;
+        }
+        setTimeout(tick, 20);
+      };
+      tick();
+    });
+
   return new Promise((resolve) => {
     setTimeout(() => {
       const renameLinkPos = findPosition(testOrgContent, "id:abc-123");
@@ -151,8 +166,8 @@ async function testLSPFeatures() {
         params: { processId: process.pid, clientInfo: { name: "test" }, rootUri: "file:///test", capabilities: {} },
       });
 
-      setTimeout(() => {
-        const initResponse = allResponses.find((r) => r.id === 1);
+      setTimeout(async () => {
+        const initResponse = await waitForResponse(1);
         const capabilities = initResponse?.result?.capabilities;
         const semanticTypes = capabilities?.semanticTokensProvider?.legend?.tokenTypes;
         const semanticLegendOk =
@@ -190,7 +205,23 @@ async function testLSPFeatures() {
           );
           testsPassed++;
         } else {
-          console.log("✗ Initialize failed or required LSP capabilities missing\n");
+          console.log(
+            `✗ Initialize failed or required LSP capabilities missing: ${JSON.stringify({
+              hasResponse: Boolean(initResponse),
+              hasCapabilities: Boolean(capabilities),
+              signatureHelp: Boolean(capabilities?.signatureHelpProvider),
+              semanticLegendOk,
+              codeLensOk,
+              linkedEditingOk,
+              documentColorOk,
+              inlayHintOk,
+              declarationOk,
+              typeDefinitionOk,
+              implementationOk,
+              callHierarchyOk,
+              willRenameFilesOk,
+            })}\n`
+          );
           testsFailed++;
         }
 
@@ -224,8 +255,8 @@ async function testLSPFeatures() {
             },
           });
 
-          setTimeout(() => {
-            const symbolResponse = allResponses.find((r) => r.id === 2);
+          setTimeout(async () => {
+            const symbolResponse = await waitForResponse(2);
             if (symbolResponse && Array.isArray(symbolResponse.result)) {
               const symbols = symbolResponse.result;
               console.log(`✓ DocumentSymbol response received with ${symbols.length} symbols`);
