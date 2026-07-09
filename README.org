@@ -1,197 +1,36 @@
 * Org2
-#+attr_html: :width 100px
-[[./logo.png]]
 
-Org2 is a local-first knowledge compiler for Org-shaped plain text: it parses notes, tasks, links, and metadata into structured semantics, then derives useful artifacts such as agendas, graph views, lint reports, websites, and editor intelligence.
+Docs website: https://org2.avi.press/
 
-It keeps the portable, hackable spirit of Org Mode, but the center of gravity is the compiler/runtime layer rather than any single editor.
+For now, the canonical project docs live on the website.
 
-Reference: https://avi.press/posts/2024-01-15-standalone-org.html
+** Development
 
-** Status
-
-Org2 is *early alpha*.
-
-- Primary goal: make a plain-text corpus computable through structured semantics, derived artifacts, and local knowledge operations
-- Best-supported workflow today: VS Code + CLI (already practical for daily notes/tasks)
-- Core language support is broadly implemented
-- Org Mode compatibility matters, but 100% feature-for-feature GNU Org parity is *not* the project goal
-- APIs and command flags may still change
-
-** Compiler model
-
-Org2 treats a folder of Org files as a corpus that can be analyzed, checked, transformed, and published.
-
-- *Parse* plain text into a typed AST with headings, drawers, links, planning lines, TODO states, blocks, tables, and source ranges.
-- *Resolve* IDs, links, artifact roles, provenance, agenda semantics, and roam-style graph relationships.
-- *Derive* artifacts from that semantic model: agendas, lint/health reports, HTML sites, graph views, LSP features, and agent-readable structure.
-- *Operate locally* on files without requiring a hosted database or proprietary workspace.
-
-Compatibility and editor support are important, but they sit on top of this compiler/runtime layer.
-
-** What’s working now
-
-- Core Org structures: headings, drawers/properties, links, planning lines, TODO states
-- Agenda workflows (CLI + VS Code)
-- Basic editing workflows (TODO/planning updates, archive/refile, capture)
-- HTML export/publish pipeline
-- Provider-free external LLM context pattern built from cited local query output
-- Corpus lint for artifact roles, provenance, IDs, and corpus-flow conventions
-- Roam/knowledge graph operations for IDs, backlinks, node creation, and link insertion
-- LSP server (MVP) for links/navigation/completions/formatting
-
-** What’s not done yet
-
-- Full Org Mode parity
-- Mature recurring/habits/clocking ecosystem
-- Stable plugin ecosystem
-- Broad editor parity beyond VS Code
-
-** Spec
-
-- v0 draft: [[./spec/v0/SPEC.org]]
-
-** Docs site
-
-The repo includes a basic docs site authored in Org files under =docs/site/=.
-
-Generate it locally:
+Run the full test suite with:
 
 #+begin_src sh
-npm run org2 -- publish docs-site --config org2.json
+npm test
 #+end_src
 
-Output is written to =site/=. On GitHub, =.github/workflows/docs-pages.yml= builds and deploys this to GitHub Pages.
-
-** Quick start
+Build or update the local macOS app bundle with:
 
 #+begin_src sh
-cd /path/to/org2
-npm install
-npm run build
+make macos-app
 #+end_src
 
-Run CLI from source:
+The equivalent npm script is =npm run build:macos-app=.
 
-- =npm run org2 -- <command> [...args]= (recommended)
-- =node dist/cli.js <command> [...args]=
+By default this writes to =~/Applications/Org2Workspace.app=, signs it with
+bundle id =org.org2.workspace=, and uses the first available stable code-signing
+identity. Stable signing matters for macOS Screen/System Audio permissions;
+ad-hoc signing changes the app's TCC identity on each rebuild. Override the
+signing identity with =ORG2_WORKSPACE_CODE_SIGN_IDENTITY=, or set it to =adhoc=
+to force ad-hoc signing. Override the app path or bundle id with
+=ORG2_WORKSPACE_APP_PATH= or =ORG2_WORKSPACE_BUNDLE_ID= when needed. On Apple
+Silicon it builds arm64 by default; override with =ORG2_WORKSPACE_SWIFT_ARCH= if
+needed.
 
-Discover current commands/flags:
-
-#+begin_src sh
-npm run org2 -- --help
-npm run org2 -- agenda --help
-#+end_src
-
-** Common CLI usage
-
-Agenda on a directory:
-
-#+begin_src sh
-npm run org2 -- agenda --dir /path/to/org --recursive
-npm run org2 -- agenda --dir /path/to/org --recursive --tui
-#+end_src
-
-The TUI groups overdue, today, and the next 7 days into collapsible left-pane sections. Use =j/k= or arrow keys to move, =J/K= or =Ctrl-d/Ctrl-u= to scroll the right detail pane, =/= to filter todos by text anywhere in the block, =gg= / =G= to jump to the top or bottom, =h=/left to collapse the current section, =l=/right or =Enter= to expand it, =Space= to cycle TODO/IN_PROGRESS/DONE, =t/i/d/x= to set status, =A= to approve and hand off an action, =r= to refresh, and =q= to quit. The same approval handoff is available from scripts as =org2 todo approve --file FILE --line N --apply=: nested =Approve...= tasks become =DONE= with =STATUS=approved=, paired =Send approved...= tasks become =approved-to-send=, and paired =Continue approved...= tasks become =ready-for-agent=.
-
-Agenda on explicit files:
-
-#+begin_src sh
-npm run org2 -- agenda --files a.org b.org
-#+end_src
-
-Bounded range + JSON:
-
-#+begin_src sh
-npm run org2 -- agenda --from 2026-01-01 --to 2026-01-31 --format json
-#+end_src
-
-Effort convention: add =:EFFORT:= in a headline property drawer using minutes, =H:MM=, =2h=, =30m=, or =2h30m=. Agenda JSON includes per-row =effort=, and =agenda --workload --format json= adds a =workload= rollup by date, group, and tag; compiled corpora include per-node effort and =effortSummary= by project/title, tag, and file. =org2 lint= warns on malformed effort values.
-
-Habit convention: mark a repeating TODO headline with =:HABIT: true= (or =:STYLE: habit=) in its property drawer and use a repeater on =SCHEDULED= or =DEADLINE=. JSON agenda rows then include a =habit= object with the marker, closed-day history, and a streak-ish count; VS Code surfaces that state in the agenda row. =org2 lint= warns when a habit marker is missing repeating planning.
-
-Archive convention: =org2 archive= writes provenance into archived subtrees and defaults to =FILE_archive= for Org files. Directory scans for active views exclude common archive destinations by default (=/archive/=, =/archives/=, =*.org_archive=, =*.org2_archive=, =*.archive=, =*.archive.*=, and =*_archive=). Use =--include-archives= with agenda/search/query/compile/lint when you intentionally want archived content included.
-
-
-Context pack for agents or humans:
-
-#+begin_src sh
-npm run org2 -- context "scarf support triage" --dir /path/to/org --recursive --budget 8k
-npm run org2 -- context "scarf support triage" --dir /path/to/org --format json
-#+end_src
-
-=context= emits a deterministic, bounded bundle with the objective/query, top cited notes with =file:line= provenance, recent timeline entries, active TODOs, related entities/backlinks, uncertainty, and suggested next actions. Use =--format markdown= (default), =--format org=, or =--format json=. OpenClaw or another agent should call this before starting corpus-dependent work, keep cited provenance in its answer/work product, and refresh the pack if the query scope changes.
-
-Run corpus lint:
-
-#+begin_src sh
-npm run org2 -- lint --dir /path/to/org --recursive
-#+end_src
-
-This catches artifact-role/provenance issues and now also checks the conventional corpus flow of =raw/= -> =notes/= -> =compiled/= -> =views/= -> =publish/= when you use those directories.
-
-Run language server:
-
-#+begin_src sh
-npm run org2 -- lsp
-#+end_src
-
-Org-crypt basics (decrypt/encrypt subtree at cursor line):
-
-#+begin_src sh
-npm run org2 -- crypt decrypt --file notes.org2 --line 42 --passphrase 'your-passphrase' --apply
-npm run org2 -- crypt encrypt --file notes.org2 --line 42 --passphrase 'your-passphrase' --apply
-#+end_src
-
-** Editor support
-
-- *VS Code* (=editors/vscode-org2/=): primary integration target
-- *Vim/Neovim* (=editors/vim-org2/=): minimal support
-- Other editors: planned
-
-** Contributing
-
-Contributions welcome.
-
-Keep PRs focused, test-backed, and workflow-oriented.
-
-Before opening a PR:
-- run tests/build
-- validate end-to-end behavior for the touched workflow
-- keep docs concise and user-centered
-
-Test layout:
-- Use =test/= for Node test scripts, with feature subdirectories for nearby fixtures when useful.
-- Agent/context-pack coverage lives in =test/agent/=; after =npm run build=, run a targeted agent test with =node test/agent/test-agent-context.mjs=.
-
-** Release packaging
-
-Tag-based releases publish both packages:
-
-- npm package (=@aviaviavi/org2=)
-- VS Code extension (=editors/vscode-org2=)
-
-Workflow: =.github/workflows/release-packages.yml=
-
-Trigger:
-- push a SemVer tag like =v0.1.0=
-
-Required GitHub secrets:
-- =VSCE_PAT=
-- =OVSX_PAT= (optional; publishes to Open VSX when provided)
-
-npm publishing uses Trusted Publishing (OIDC), so no long-lived =NPM_TOKEN= secret is required.
-
-The release workflow also uploads built artifacts (=*.tgz= and =*.vsix=) to the GitHub Release.
-
-** License
-
-Apache License 2.0. See =LICENSE=.
-
-** Repo map
-
-- Core parser/CLI/LSP: =src/=
-- VS Code extension: =editors/vscode-org2/=
-- Vim plugin: =editors/vim-org2/=
-- Spec draft: =spec/v0/SPEC.org=
-- Detailed LSP notes: =LSP_README.md=
+The canonical test layout is =test/= for Node test scripts, with feature
+subdirectories for nearby fixtures when useful. Agent/context-pack coverage
+lives under =test/agent/=; run a targeted agent test with
+=node test/agent/test-agent-context.mjs= after =npm run build=.
