@@ -6,9 +6,11 @@ import { fileURLToPath } from "node:url";
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const {
   computeSubtreeRange,
+  findPlanningBlockEnd,
   findHeadingAtOrAbove,
   getHeadlineLevel,
   isHeadlineLine,
+  isPlanningLine,
   upsertHeadlinePropertyInLines,
 } = await import(path.join(repo, "dist", "sourceLines.js"));
 
@@ -30,6 +32,12 @@ assert.equal(isHeadlineLine("* Heading"), true);
 assert.equal(isHeadlineLine("*Heading"), false);
 assert.equal(isHeadlineLine(" ** Indented"), false);
 
+assert.equal(isPlanningLine("SCHEDULED: <2026-07-09 Thu>"), true);
+assert.equal(isPlanningLine("  deadline: <2026-07-09 Thu>"), true);
+assert.equal(isPlanningLine("CLOSED:"), true);
+assert.equal(isPlanningLine("SCHEDULED:<2026-07-09 Thu>"), false);
+assert.equal(isPlanningLine("Body SCHEDULED: <2026-07-09 Thu>"), false);
+
 assert.equal(getHeadlineLevel("*** Deep"), 3);
 assert.equal(getHeadlineLevel("Body"), 0);
 
@@ -40,6 +48,13 @@ assert.equal(findHeadingAtOrAbove(lines, 999), 9);
 assert.deepEqual(computeSubtreeRange(lines, 1), { start: 1, endExclusive: 9, level: 1 });
 assert.deepEqual(computeSubtreeRange(lines, 3), { start: 3, endExclusive: 7, level: 2 });
 assert.deepEqual(computeSubtreeRange(lines, 9), { start: 9, endExclusive: 11, level: 1 });
+
+assert.equal(findPlanningBlockEnd([
+  "* Task",
+  "SCHEDULED: <2026-07-09 Thu>",
+  "deadline: <2026-07-10 Fri>",
+  "Body",
+], 0, 4), 3);
 
 const propertyInsertLines = [
   "* Task",

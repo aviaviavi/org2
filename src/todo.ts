@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { computeSubtreeRange, findHeadingAtOrAbove } from "./sourceLines.js";
+import { computeSubtreeRange, findHeadingAtOrAbove, findPlanningBlockEnd } from "./sourceLines.js";
 
 export type TodoStatus = "todo" | "in_progress" | "done" | "canceled";
 
@@ -68,21 +68,6 @@ function replaceOrInsertTodoKeyword(line: string, newKeyword: TodoKeyword): { li
 
   // Insert keyword before title.
   return { line: `${stars} ${newKeyword} ${rest}`, oldKeyword: undefined };
-}
-
-function findPlanningBlockEnd(lines: string[], headingIndex: number, endExclusive: number): number {
-  // Planning lines typically immediately follow headline.
-  // We'll treat lines starting with SCHEDULED:, DEADLINE:, CLOSED: as planning.
-  let i = headingIndex + 1;
-  while (i < endExclusive) {
-    const line = lines[i] ?? "";
-    if (/^(SCHEDULED:|DEADLINE:|CLOSED:)\s/.test(line)) {
-      i++;
-      continue;
-    }
-    break;
-  }
-  return i;
 }
 
 function upsertClosedPlanning(lines: string[], headingIndex: number, endExclusive: number, closedAt: string): void {
