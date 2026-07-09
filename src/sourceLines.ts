@@ -13,8 +13,16 @@ export function getHeadlineLevel(line: string): number {
   return match ? match[1].length : 0;
 }
 
-function isPlanningLine(line: string): boolean {
-  return /^(SCHEDULED|DEADLINE|CLOSED):/i.test(line.trim());
+export function isPlanningLine(line: string): boolean {
+  return /^(SCHEDULED|DEADLINE|CLOSED):(?:\s|$)/i.test(line.trim());
+}
+
+export function findPlanningBlockEnd(lines: string[], headingIndex: number, endExclusive: number): number {
+  let i = headingIndex + 1;
+  while (i < endExclusive && isPlanningLine(lines[i] ?? "")) {
+    i += 1;
+  }
+  return i;
 }
 
 export function findHeadingAtOrAbove(lines: string[], lineNumber: number): number {

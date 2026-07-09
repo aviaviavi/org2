@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { computeSubtreeRange, findHeadingAtOrAbove } from "./sourceLines.js";
+import { computeSubtreeRange, findHeadingAtOrAbove, findPlanningBlockEnd } from "./sourceLines.js";
 
 export type PlanningKind = "SCHEDULED" | "DEADLINE";
 
@@ -8,10 +8,6 @@ export type PlanningKindArg = "scheduled" | "deadline";
 export function planningKindFromArg(kind: PlanningKindArg): PlanningKind {
   if (kind === "deadline") return "DEADLINE";
   return "SCHEDULED";
-}
-
-function isPlanningLine(line: string): boolean {
-  return /^(SCHEDULED:|DEADLINE:|CLOSED:)\s/.test(line);
 }
 
 function formatOrgDateTimestamp(dateIso: string): string {
@@ -36,13 +32,13 @@ function replacePlanningTokenInLine(line: string, kind: PlanningKind, timestamp:
   // "SCHEDULED: <...> DEADLINE: <...>"
   // We replace only the token for `kind`, preserving the rest.
 
-  const tokenRe = new RegExp(`\\b${kind}:\\s+<[^>]*>`);
+  const tokenRe = new RegExp(`\\b${kind}:\\s+<[^>]*>`, "i");
   if (tokenRe.test(line)) {
     return line.replace(tokenRe, `${kind}: ${timestamp}`);
   }
 
   // If the line contains `${kind}:` but not a recognized <...> timestamp, do a looser replacement.
-  const looseRe = new RegExp(`\\b${kind}:\\s+[^\n]*?(?=(\\s+(SCHEDULED|DEADLINE|CLOSED):)|$)`);
+  const looseRe = new RegExp(`\\b${kind}:\\s+[^\n]*?(?=(\\s+(SCHEDULED|DEADLINE|CLOSED):)|$)`, "i");
   if (looseRe.test(line)) {
     return line.replace(looseRe, `${kind}: ${timestamp}`);
   }
@@ -79,16 +75,15 @@ export function updatePlanningInText(input: string, opts: UpdatePlanningOptions)
   // We'll update the first planning line that mentions the target kind; otherwise insert
   // a new planning line at the end of the planning block.
 
-  let planStart = headingIndex + 1;
-  let planEnd = planStart;
-  while (planEnd < endExclusive && isPlanningLine(lines[planEnd] ?? "")) planEnd++;
+  const planStart = headingIndex + 1;
+  const planEnd = findPlanningBlockEnd(lines, headingIndex, endExclusive);
 
   let changed = false;
 
   // Search within planning block.
   for (let i = planStart; i < planEnd; i++) {
     const line = lines[i] ?? "";
-    if (new RegExp(`\\b${opts.kind}:`).test(line)) {
+    if (new RegExp(`\\b${opts.kind}:`, "i").test(line)) {
       const updated = replacePlanningTokenInLine(line, opts.kind, timestamp);
       if (updated !== line) {
         lines[i] = updated;
