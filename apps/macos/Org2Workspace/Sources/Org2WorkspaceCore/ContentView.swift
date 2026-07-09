@@ -3953,15 +3953,7 @@ private struct DetailView: View {
             LiveFileEditorBody(location: location)
               .frame(minWidth: 420, idealWidth: 560, maxHeight: .infinity)
           } else {
-            ScrollViewReader { proxy in
-              ScrollView {
-                EntryBodyView(location: location)
-                  .background(DetailScrollCommandBridge(request: pageScrollRequest))
-              }
-              .onChange(of: store.detailScrollRequest) { _, request in
-                scrollToBlockTarget(request, proxy: proxy)
-              }
-            }
+            EntryBodyView(location: location)
             .frame(minWidth: 420, idealWidth: 560, maxHeight: .infinity)
           }
 
@@ -3980,21 +3972,6 @@ private struct DetailView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
   }
 
-  private var pageScrollRequest: DetailScrollRequest? {
-    guard let request = store.detailScrollRequest,
-          case .page = request.target
-    else { return nil }
-    return request
-  }
-
-  private func scrollToBlockTarget(_ request: DetailScrollRequest?, proxy: ScrollViewProxy) {
-    guard case .block(let blockID) = request?.target else { return }
-    DispatchQueue.main.async {
-      withAnimation(.easeOut(duration: 0.12)) {
-        proxy.scrollTo(blockID, anchor: .center)
-      }
-    }
-  }
 }
 
 private struct DetailScrollCommandBridge: NSViewRepresentable {
@@ -4477,78 +4454,118 @@ private struct LiveFileEditorBody: View {
   let location: WorkspaceLocation
 
   var body: some View {
-    ScrollViewReader { proxy in
-      ScrollView {
-        Group {
-          if store.isLoadingEntrySource && store.selectedEntrySource == nil {
-            HStack(spacing: 8) {
-              WorkspaceActivityIndicator(size: .small)
-              Text("Loading source")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .workspaceShimmer()
-            }
-            .frame(maxWidth: .infinity, minHeight: 420, alignment: .center)
-          } else if let source = store.selectedEntrySource {
-            if store.isRenderingEntrySource && store.selectedRenderedBlocks.isEmpty {
-              HStack(spacing: 8) {
-                WorkspaceActivityIndicator(size: .small)
-                Text("Rendering page")
-                  .font(.callout)
-                  .foregroundStyle(.secondary)
-                  .workspaceShimmer()
-              }
-              .frame(maxWidth: .infinity, minHeight: 420, alignment: .center)
-            } else if store.isEditingEntry {
-              OrgSourceEditorWithLinkTools()
-            } else {
-              OrgRenderedEntryView(
-                blocks: store.selectedRenderedBlocks,
-                blocksRenderSignature: store.selectedRenderedBlocksRenderSignature,
-                source: OrgRenderedEntrySourceContext(source).overridingEditable(false),
-                corpusRoot: store.corpusRoot,
-                selectedBlockID: store.selectedBlockID,
-                selectedBlockIndex: store.selectedBlockID.flatMap { store.selectedRenderedBlockIndexes[$0] },
-                editingBlockID: store.editingBlockID,
-                foldedBlockIDs: store.foldedRenderedBlockIDs,
-                detailScrollRequest: store.detailScrollRequest,
-                sourceBlockRunsRenderSignature: store.sourceBlockRunsRenderSignature,
-                sourceBlockRuns: store.sourceBlockRuns,
-                searchHighlightQuery: store.renderedSearchHighlightQuery
-              )
-              .equatable()
-            }
-          } else {
-            EmptyStateView(title: "Source Unavailable", detail: store.statusText, action: "Reveal File") {
-              store.revealFile(path: location.file)
-            }
-            .frame(maxWidth: .infinity, minHeight: 420, alignment: .center)
+    Group {
+      if store.isLoadingEntrySource && store.selectedEntrySource == nil {
+        OrgHTMLLoadingView(label: "Loading source")
+      } else if let source = store.selectedEntrySource {
+        if store.isEditingEntry {
+          ScrollView {
+            OrgSourceEditorWithLinkTools()
+              .padding(16)
           }
+        } else if store.editingBlockID != nil {
+          ScrollView {
+            LegacyStructuredEntryEditorView(source: source)
+              .padding(16)
+          }
+        } else if let html = store.selectedEntryHTML {
+          OrgHTMLDocumentView(
+            html: html,
+            source: source,
+            corpusRoot: store.corpusRoot,
+            searchQuery: store.renderedSearchHighlightQuery,
+            searchOccurrenceIndex: store.pageSearchSelectedOccurrenceIndex,
+            searchOccurrenceCount: store.pageSearchOccurrenceCount,
+            scrollRequest: store.detailScrollRequest,
+            reportStatus: { store.statusText = $0 }
+          )
+        } else if let error = store.selectedEntryRenderError {
+          OrgHTMLRenderFailureView(message: error)
+        } else {
+          OrgHTMLLoadingView(label: "Rendering page")
         }
-        .padding(16)
-        .background(DetailScrollCommandBridge(request: pageScrollRequest))
-      }
-      .onChange(of: store.detailScrollRequest) { _, request in
-        scrollToBlockTarget(request, proxy: proxy)
+      } else {
+        EmptyStateView(title: "Source Unavailable", detail: store.statusText, action: "Reveal File") {
+          store.revealFile(path: location.file)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
+}
 
-  private var pageScrollRequest: DetailScrollRequest? {
-    guard let request = store.detailScrollRequest,
-          case .page = request.target
-    else { return nil }
-    return request
+private struct LegacyStructuredEntryEditorView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let source: EntrySource
+
+  var body: some View {
+    OrgRenderedEntryView(
+      blocks: store.selectedRenderedBlocks,
+      blocksRenderSignature: store.selectedRenderedBlocksRenderSignature,
+      source: OrgRenderedEntrySourceContext(source),
+      corpusRoot: store.corpusRoot,
+      selectedBlockID: store.selectedBlockID,
+      selectedBlockIndex: store.selectedBlockID.flatMap { store.selectedRenderedBlockIndexes[$0] },
+      editingBlockID: store.editingBlockID,
+      foldedBlockIDs: store.foldedRenderedBlockIDs,
+      detailScrollRequest: store.detailScrollRequest,
+      sourceBlockRunsRenderSignature: store.sourceBlockRunsRenderSignature,
+      sourceBlockRuns: store.sourceBlockRuns,
+      searchHighlightQuery: store.renderedSearchHighlightQuery
+    )
+    .equatable()
   }
+}
 
-  private func scrollToBlockTarget(_ request: DetailScrollRequest?, proxy: ScrollViewProxy) {
-    guard case .block(let blockID) = request?.target else { return }
-    DispatchQueue.main.async {
-      withAnimation(.easeOut(duration: 0.12)) {
-        proxy.scrollTo(blockID, anchor: .center)
+private struct OrgHTMLLoadingView: View {
+  let label: String
+
+  var body: some View {
+    HStack(spacing: 8) {
+      WorkspaceActivityIndicator(size: .small)
+      Text(label)
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .workspaceShimmer()
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+  }
+}
+
+private struct OrgHTMLRenderFailureView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  let message: String
+
+  var body: some View {
+    VStack(spacing: 12) {
+      Image(systemName: "doc.text.magnifyingglass")
+        .font(.system(size: 28, weight: .regular))
+        .foregroundStyle(.secondary)
+      Text("Preview unavailable")
+        .font(.headline)
+      Text(message)
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: 420)
+      HStack(spacing: 8) {
+        Button {
+          store.retrySelectedEntryRendering()
+        } label: {
+          Label("Retry", systemImage: "arrow.clockwise")
+        }
+        if store.selectedEntrySource?.isEditable == true {
+          Button {
+            store.beginEditingSelectedEntry()
+          } label: {
+            Label("Edit Source", systemImage: "square.and.pencil")
+          }
+        }
       }
     }
+    .padding(24)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
   }
 }
 
@@ -4672,19 +4689,10 @@ private struct EntryBodyView: View {
   let location: WorkspaceLocation
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      DetailMetadataGrid(rows: metadataRows(location))
-
-      if store.isLoadingEntrySource && store.selectedEntrySource == nil {
-        HStack(spacing: 8) {
-          WorkspaceActivityIndicator(size: .small)
-          Text("Loading source")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .workspaceShimmer()
-        }
-      } else if let source = store.selectedEntrySource {
-        VStack(alignment: .leading, spacing: 4) {
+    VStack(alignment: .leading, spacing: 0) {
+      VStack(alignment: .leading, spacing: 12) {
+        DetailMetadataGrid(rows: metadataRows(location))
+        if let source = store.selectedEntrySource {
           HStack(spacing: 8) {
             WorkspaceIconBadge(systemImage: "doc.richtext")
             VStack(alignment: .leading, spacing: 2) {
@@ -4697,38 +4705,46 @@ private struct EntryBodyView: View {
             }
           }
         }
+      }
+      .padding(16)
+
+      Divider()
+
+      if store.isLoadingEntrySource && store.selectedEntrySource == nil {
+        OrgHTMLLoadingView(label: "Loading source")
+      } else if let source = store.selectedEntrySource {
         if store.isEditingEntry {
-          OrgSourceEditorWithLinkTools()
-        } else if store.isRenderingEntrySource && store.selectedRenderedBlocks.isEmpty {
-          HStack(spacing: 8) {
-            WorkspaceActivityIndicator(size: .small)
-            Text("Rendering preview")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .workspaceShimmer()
+          ScrollView {
+            OrgSourceEditorWithLinkTools()
+              .padding(16)
           }
-        } else {
-          OrgRenderedEntryView(
-            blocks: store.selectedRenderedBlocks,
-            blocksRenderSignature: store.selectedRenderedBlocksRenderSignature,
-            source: store.selectedEntrySource.map(OrgRenderedEntrySourceContext.init),
+        } else if store.editingBlockID != nil {
+          ScrollView {
+            LegacyStructuredEntryEditorView(source: source)
+              .padding(16)
+          }
+        } else if let html = store.selectedEntryHTML {
+          OrgHTMLDocumentView(
+            html: html,
+            source: source,
             corpusRoot: store.corpusRoot,
-            selectedBlockID: store.selectedBlockID,
-            selectedBlockIndex: store.selectedBlockID.flatMap { store.selectedRenderedBlockIndexes[$0] },
-            editingBlockID: store.editingBlockID,
-            foldedBlockIDs: store.foldedRenderedBlockIDs,
-            detailScrollRequest: store.detailScrollRequest,
-            sourceBlockRunsRenderSignature: store.sourceBlockRunsRenderSignature,
-            sourceBlockRuns: store.sourceBlockRuns,
-            searchHighlightQuery: store.renderedSearchHighlightQuery
+            searchQuery: store.renderedSearchHighlightQuery,
+            searchOccurrenceIndex: store.pageSearchSelectedOccurrenceIndex,
+            searchOccurrenceCount: store.pageSearchOccurrenceCount,
+            scrollRequest: store.detailScrollRequest,
+            reportStatus: { store.statusText = $0 }
           )
-          .equatable()
+        } else if let error = store.selectedEntryRenderError {
+          OrgHTMLRenderFailureView(message: error)
+        } else {
+          OrgHTMLLoadingView(label: "Rendering preview")
         }
       } else {
         fallbackBody(location)
+          .padding(16)
       }
     }
-    .padding(16)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .contextMenu {
       Button {
         store.askOpenClawAboutCurrentSelection()

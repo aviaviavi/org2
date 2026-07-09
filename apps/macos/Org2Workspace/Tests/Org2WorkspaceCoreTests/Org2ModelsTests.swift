@@ -313,6 +313,62 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(paragraph.sourceRange, Org2CanonicalSourceRange(startLine: 42, endLine: 42))
   }
 
+  func testOrg2CLIRendersSafeAppHTMLFromText() async throws {
+    let cli = try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())
+    let html = try await cli.renderAppHTML(
+      """
+      #+HTML_HEAD: <script>globalThis.unsafeHead = true</script>
+      * TODO App preview
+      A [[id:preview-target][linked note]].
+      """,
+      sourcePath: "/tmp/app-preview.org2",
+      sourceLineOffset: 30
+    )
+
+    XCTAssertTrue(html.contains("org2-app-document-style"))
+    XCTAssertTrue(html.contains("data-org2-start-line=\"32\""))
+    XCTAssertTrue(html.contains("org2-workspace://open-link?target=id%3Apreview-target"))
+    XCTAssertFalse(html.contains("globalThis.unsafeHead"))
+  }
+
+  func testOrg2CLIAppHTMLRenderHasHardTimeout() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-render-timeout-\(UUID().uuidString)", isDirectory: true)
+    let dist = root.appendingPathComponent("dist", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    try "setInterval(() => {}, 1000);\n".write(
+      to: dist.appendingPathComponent("render-html.js"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let cli = Org2CLI(repoRoot: root)
+
+    do {
+      _ = try await cli.renderAppHTML("* Slow\n", sourcePath: "/tmp/slow.org2", timeout: 0.05)
+      XCTFail("Expected rendering to time out")
+    } catch let error as Org2CLIError {
+      XCTAssertEqual(error, .commandTimedOut(seconds: 1))
+    }
+  }
+
+  func testOrgHTMLLinkTargetResolvesRelativeFileAndHeading() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-html-link-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let source = root.appendingPathComponent("source.org2")
+    let target = root.appendingPathComponent("target.org2")
+    try "* Source\n".write(to: source, atomically: true, encoding: .utf8)
+    try "* First\n* TODO Destination :work:\nBody\n".write(to: target, atomically: true, encoding: .utf8)
+
+    let resolved = try XCTUnwrap(OrgHTMLLinkTarget.resolve(
+      "file:target.org2::*Destination",
+      relativeTo: source.path,
+      corpusRoot: root
+    ))
+    XCTAssertEqual(resolved.url, target.standardizedFileURL)
+    XCTAssertEqual(resolved.line, 2)
+  }
+
   func testApprovalItemsUseCanonicalParserSignals() async throws {
     let cli = try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())
     let text = """
@@ -5484,6 +5540,7 @@ final class Org2ModelsTests: XCTestCase {
     store.selectAgendaItem(first)
     try await waitForCondition {
       store.selectedEntrySource?.file == note.path
+        && store.selectedEntryHTML?.contains("First task") == true
         && !store.isLoadingEntrySource
         && !store.isRenderingEntrySource
         && !store.selectedRenderedBlocks.isEmpty
