@@ -21,7 +21,7 @@ import {
 import { resolvePublishHeadIncludes } from "./publish-defaults.js";
 import { assignTodoInText, formatOrgTimestamp, normalizeTodoKeyword, TODO_KEYWORDS, updateTodoInText, type TodoStatus } from "./todo.js";
 import { planningKindFromArg, updatePlanningInText, type PlanningKindArg } from "./planning.js";
-import { computeSubtreeRange, findHeadingAtOrAbove } from "./sourceLines.js";
+import { computeSubtreeRange, findHeadingAtOrAbove, isHeadlineLine, upsertHeadlinePropertyInLines } from "./sourceLines.js";
 import { findBacklinksInText, type Backlink } from "./backlinks.js";
 import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js";
 import { compileCorpus, compileCorpusIncremental, extractCheckboxProgress, renderCompiledCorpus } from "./corpusCompile.js";
@@ -5896,41 +5896,6 @@ function applyAgendaTuiDoneAndAgentHandoff(item: ScheduledItem): ScheduledItem {
   return applyAgendaTuiProperty(readyItem, "ORG2_AGENT_HANDOFF_AT", timestamp);
 }
 
-function upsertHeadlinePropertyInLines(lines: string[], headingIndex: number, key: string, value: string): void {
-  let insertAt = headingIndex + 1;
-  while (insertAt < lines.length && /^(SCHEDULED|DEADLINE|CLOSED):/i.test((lines[insertAt] ?? "").trim())) {
-    insertAt += 1;
-  }
-
-  let drawerStart = -1;
-  let drawerEnd = -1;
-  if ((lines[insertAt] ?? "").trim().toUpperCase() === ":PROPERTIES:") {
-    drawerStart = insertAt;
-    for (let i = insertAt + 1; i < lines.length; i += 1) {
-      const trimmed = (lines[i] ?? "").trim().toUpperCase();
-      if (/^(\*+)\s+/.test(lines[i] ?? "")) break;
-      if (trimmed === ":END:") {
-        drawerEnd = i;
-        break;
-      }
-    }
-  }
-
-  if (drawerStart < 0 || drawerEnd < 0) {
-    lines.splice(insertAt, 0, ":PROPERTIES:", `:${key}: ${value}`, ":END:");
-    return;
-  }
-
-  const keyPrefix = `:${key}:`;
-  for (let i = drawerStart + 1; i < drawerEnd; i += 1) {
-    if ((lines[i] ?? "").toUpperCase().startsWith(keyPrefix.toUpperCase())) {
-      lines[i] = `${keyPrefix} ${value}`;
-      return;
-    }
-  }
-  lines.splice(drawerEnd, 0, `${keyPrefix} ${value}`);
-}
-
 function isAgendaApprovalTitle(title: string): boolean {
   return /^Approve\b/i.test(title);
 }
@@ -5989,11 +5954,11 @@ function applyNestedApprovalHandoffInText(text: string, lineNumber: number, time
 
   const approvalId = agendaPrimaryIdFromProperties(childProperties);
   upsertHeadlinePropertyInLines(lines, childIndex, "STATUS", "approved");
+  upsertHeadlinePropertyInLines(lines, childIndex, isAgendaApprovedSendTitle(parent.title) ? "PAIRED_SEND_TODO" : "PAIRED_AGENT_TODO", parent.title);
   upsertHeadlinePropertyInLines(lines, parentIndex, "STATUS", agendaApprovedAgentActionStatus(parent.title));
   upsertHeadlinePropertyInLines(lines, parentIndex, "ASSIGNEE", "OpenClaw");
   upsertHeadlinePropertyInLines(lines, parentIndex, "ORG2_AGENT_HANDOFF_AT", timestamp);
   if (approvalId) upsertHeadlinePropertyInLines(lines, parentIndex, "APPROVAL_ID", approvalId);
-  upsertHeadlinePropertyInLines(lines, childIndex, isAgendaApprovedSendTitle(parent.title) ? "PAIRED_SEND_TODO" : "PAIRED_AGENT_TODO", parent.title);
   return { text: lines.join("\n"), changed: true };
 }
 
@@ -6066,44 +6031,11 @@ function parseAgendaTuiPropertyAssignment(raw: string): { key: string; value: st
 function applyAgendaTuiProperty(item: ScheduledItem, key: string, value: string): ScheduledItem {
   const lines = fs.readFileSync(item.filePath, "utf8").replace(/\r\n/g, "\n").split("\n");
   const headingIndex = item.lineNumber;
-  if (!/^(\*+)\s+/.test(lines[headingIndex] ?? "")) {
+  if (!isHeadlineLine(lines[headingIndex] ?? "")) {
     throw new Error(`Could not locate headline at ${item.filePath}:${headingIndex + 1}`);
   }
 
-  let insertAt = headingIndex + 1;
-  while (insertAt < lines.length && /^(SCHEDULED|DEADLINE|CLOSED):/i.test((lines[insertAt] ?? "").trim())) {
-    insertAt += 1;
-  }
-
-  let drawerStart = -1;
-  let drawerEnd = -1;
-  if ((lines[insertAt] ?? "").trim().toUpperCase() === ":PROPERTIES:") {
-    drawerStart = insertAt;
-    for (let i = insertAt + 1; i < lines.length; i += 1) {
-      const trimmed = (lines[i] ?? "").trim().toUpperCase();
-      if (/^(\*+)\s+/.test(lines[i] ?? "")) break;
-      if (trimmed === ":END:") {
-        drawerEnd = i;
-        break;
-      }
-    }
-  }
-
-  if (drawerStart < 0 || drawerEnd < 0) {
-    lines.splice(insertAt, 0, ":PROPERTIES:", `:${key}: ${value}`, ":END:");
-  } else {
-    const keyPrefix = `:${key}:`;
-    let replaced = false;
-    for (let i = drawerStart + 1; i < drawerEnd; i += 1) {
-      if ((lines[i] ?? "").toUpperCase().startsWith(keyPrefix.toUpperCase())) {
-        lines[i] = `${keyPrefix} ${value}`;
-        replaced = true;
-        break;
-      }
-    }
-    if (!replaced) lines.splice(drawerEnd, 0, `${keyPrefix} ${value}`);
-  }
-
+  upsertHeadlinePropertyInLines(lines, headingIndex, key, value);
   fs.writeFileSync(item.filePath, lines.join("\n"), "utf8");
   return { ...item, properties: { ...item.properties, [key]: value } };
 }
