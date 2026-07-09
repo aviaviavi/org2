@@ -11436,12 +11436,17 @@ final class Org2ModelsTests: XCTestCase {
 
     await store.splitEditingBlock(paragraph, atUTF16Offset: 6)
     try await waitForCondition {
-      store.selectedBlock?.rawText == "beta gamma" && store.editingBlockID == store.selectedBlock?.id
+      store.isEditingEntry
+        && store.editingBlockID == nil
+        && store.editableEntryText.contains("Alpha\n\nbeta gamma")
     }
 
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("Alpha\n\nbeta gamma\n* Sibling"))
-    XCTAssertEqual(store.editableBlockText, "beta gamma")
+    XCTAssertEqual(
+      store.sourceEditorSelection,
+      NSRange(location: ("* TODO Parent\nAlpha\n\n" as NSString).length, length: 0)
+    )
   }
 
   @MainActor
@@ -11491,11 +11496,17 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.editableBlockText, "Alpha beta gamma")
     await store.splitEditingBlock(paragraph, atUTF16Offset: 6)
     try await waitForCondition {
-      store.selectedBlock?.rawText == "edited beta" && store.editingBlockID == store.selectedBlock?.id
+      store.isEditingEntry
+        && store.editingBlockID == nil
+        && store.editableEntryText.contains("Alpha\n\nedited beta")
     }
 
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("Alpha\n\nedited beta\n* Sibling"))
+    XCTAssertEqual(
+      store.sourceEditorSelection,
+      NSRange(location: ("* TODO Parent\nAlpha\n\n" as NSString).length, length: 0)
+    )
   }
 
   @MainActor
@@ -12944,6 +12955,16 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(store.isEditingEntry)
 
     store.selectBlock(paragraph)
+    store.beginEditingCurrentScope()
+    XCTAssertNil(store.editingBlockID)
+    XCTAssertTrue(store.isEditingEntry)
+    XCTAssertEqual(store.sourceEditorSelection, NSRange(location: 14, length: 0))
+
+    store.cancelActiveEdit()
+    XCTAssertNil(store.editingBlockID)
+    XCTAssertFalse(store.isEditingEntry)
+
+    store.selectBlock(paragraph)
     XCTAssertFalse(store.isEditingEntry)
     store.selectedSurface = .agenda
     XCTAssertTrue(store.handleAgendaKeyDown(keyDown(characters: "e", keyCode: 14)))
@@ -12957,6 +12978,67 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertNil(store.editingBlockID)
     XCTAssertTrue(store.isEditingEntry)
     XCTAssertEqual(store.sourceEditorSelection, NSRange(location: 0, length: 0))
+  }
+
+  @MainActor
+  func testRenderedSelectionReplacementReopensSourceEditor() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-rendered-selection-source-edit-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("rendered-selection.org2")
+    try """
+    * Parent
+    Alpha beta
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let itemJSON = """
+    {
+      "todo": null,
+      "headline": "Parent",
+      "kind": "entry",
+      "file": "\(note.path)",
+      "line": 1,
+      "body": "Alpha beta",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data(itemJSON.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.select(.agenda(item))
+    await store.loadEntrySource(for: .agenda(item))
+    try await waitForEntryRender(store)
+
+    let paragraph = try XCTUnwrap(store.selectedRenderedBlocks.first {
+      if case .paragraph = $0.rendered { return true }
+      return false
+    })
+    let paragraphText = paragraph.rawText as NSString
+    let betaRange = paragraphText.range(of: "beta")
+    let fragment = OrgSyntaxTextSelectionDocumentFragment(
+      context: OrgSyntaxTextSelectionContext(
+        blockID: paragraph.id,
+        startLine: paragraph.startLine,
+        endLineExclusive: paragraph.endLineExclusive,
+        editorToSourceUTF16Offset: 0
+      ),
+      editorRange: betaRange,
+      editorUTF16Length: paragraphText.length,
+      editorText: paragraph.rawText
+    )
+
+    await store.replaceRenderedTextSelection([fragment], replacementText: "BETA")
+
+    XCTAssertNil(store.editingBlockID)
+    XCTAssertTrue(store.isEditingEntry)
+    XCTAssertEqual(store.editableEntryText, "* Parent\nAlpha BETA")
+    XCTAssertEqual(
+      store.sourceEditorSelection,
+      NSRange(location: ("* Parent\nAlpha BETA" as NSString).length, length: 0)
+    )
+    XCTAssertEqual(try String(contentsOf: note, encoding: .utf8), "* Parent\nAlpha BETA")
   }
 
   @MainActor

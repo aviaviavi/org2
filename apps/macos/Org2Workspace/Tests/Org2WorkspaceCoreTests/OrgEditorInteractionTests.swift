@@ -306,6 +306,80 @@ final class OrgEditorInteractionTests: XCTestCase {
     }
   }
 
+  func testCommandSInApprovalEntrySourcePersistsFocusedEditorDraft() async throws {
+    let quoteBody = """
+    Subject: PagerDuty / Rundeck usage-data follow-up
+
+    Hi Martin,
+
+    Wanted to check back in since it's be
+
+    Best,
+    Avi
+    """
+    let replacement = "Wanted to check back in with a cleaner source-editor draft."
+    let harness = try await makeHarness(initialText: """
+    * TODO Approve account-aware follow-up to PagerDuty / Rundeck
+    :PROPERTIES:
+    :ASSIGNEE: Avi
+    :STATUS: draft-needs-review
+    :END:
+
+    - Replacement rationale: PagerDuty had prior interest.
+
+    Draft:
+    #+begin_quote
+    \(quoteBody)
+    #+end_quote
+    """)
+    let item = ApprovalItem(
+      title: "Approve account-aware follow-up to PagerDuty / Rundeck",
+      status: "draft-needs-review",
+      todo: "TODO",
+      level: 1,
+      file: harness.file.path,
+      line: 1,
+      idValue: nil,
+      properties: [
+        "ASSIGNEE": "Avi",
+        "STATUS": "draft-needs-review"
+      ],
+      body: "- Replacement rationale: PagerDuty had prior interest.\n\nDraft:\n#+begin_quote\n\(quoteBody)\n#+end_quote",
+      tags: []
+    )
+    harness.store.selectedSurface = .approvals
+    harness.store.selectApprovalItem(item)
+    try await waitForCondition {
+      harness.store.selectedEntrySourceMode == .entry
+        && harness.store.selectedEntrySource?.text.contains(quoteBody) == true
+    }
+
+    harness.store.beginEditingCurrentScope()
+    let sourceEditor = try await harness.syntaxTextView(containing: quoteBody)
+    let sourceText = sourceEditor.string as NSString
+    let oldRange = sourceText.range(of: "Wanted to check back in since it's be")
+    XCTAssertNotEqual(oldRange.location, NSNotFound)
+    try await harness.focus(sourceEditor, selection: oldRange)
+    sourceEditor.insertText(replacement, replacementRange: sourceEditor.selectedRange())
+    try await pumpRunLoop()
+
+    let saveEvent = try XCTUnwrap(harness.keyEvent("s", keyCode: 1, modifiers: .command))
+    XCTAssertTrue(harness.store.handleGlobalKeyDown(saveEvent, scope: .globalOnly))
+
+    try await waitForCondition {
+      (try? harness.fileText().contains(replacement)) == true
+        && (try? harness.fileText().contains("Wanted to check back in since it's be")) == false
+        && !harness.store.isEditingEntry
+    }
+
+    await harness.store.reloadSelectedEntrySource()
+    try await waitForCondition {
+      harness.store.selectedRenderedBlocks.contains {
+        $0.rawText.contains(replacement)
+      }
+    }
+  }
+
   func testCommandSInRawEntrySourcePersistsFocusedEditorDraft() async throws {
     let initial = """
     * TODO Source edit
