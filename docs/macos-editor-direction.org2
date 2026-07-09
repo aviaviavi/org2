@@ -28,7 +28,7 @@ The editor and renderer should be separate concerns:
 
 * Short-Term Plan
 
-Make source editing the normal edit path from rendered views:
+Status: complete. Source editing is now the normal edit path from rendered views:
 
 - The toolbar Edit command opens the source editor for the current entry or page.
 - Editing from a rendered block opens the source editor with the caret near that block's source range.
@@ -42,6 +42,7 @@ Current source-editor writing-loop coverage:
 - Return continues active list markers, checkbox list markers, ordered list numbering, and indentation.
 - Tab and Shift-Tab demote/promote headings and indent/outdent list items in the source editor.
 - Focused tests cover writing through the source editor and saving the resulting document text.
+- Regression tests cover source-editor entry from current scope, agenda/rendered row selection, approvals, page-scope files, direct typing, and rendered-selection replacement.
 
 * Medium-Term Plan
 

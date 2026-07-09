@@ -11352,9 +11352,9 @@ public final class WorkspaceStore: ObservableObject {
          let pendingBlock,
          pendingBlock.isEditable,
          source.isEditable {
-        beginEditingBlock(
-          pendingBlock,
-          initialSelection: pending.initialSourceUTF16Offset.map {
+        beginEditingSource(
+          for: pendingBlock,
+          selection: pending.initialSourceUTF16Offset.map {
             Self.editableSelection(for: pendingBlock, sourceUTF16Offset: $0)
           }
         )
