@@ -26,6 +26,10 @@ private struct EntrySourceCacheEntry {
   let source: EntrySource
 }
 
+private struct RenderedHTMLCacheEntry {
+  let html: String
+}
+
 private struct RenderedBlocksMetadata {
   let renderSignature: String
   let structureSignature: String
@@ -705,6 +709,8 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var isCheckingWorkspaceHealth = false
   @Published public var selectedLocation: WorkspaceLocation?
   @Published public var selectedEntrySource: EntrySource?
+  @Published public private(set) var selectedEntryHTML: String?
+  @Published public private(set) var selectedEntryRenderError: String?
   @Published public var selectedRenderedBlocks: [OrgEditableBlock] = [] {
     didSet {
       defer {
@@ -804,6 +810,7 @@ public final class WorkspaceStore: ObservableObject {
   private static let orgCryptPublicKeysDirectoryName = "public-keys"
   private static let canonicalParserLineLimit = 2_000
   private static let renderedBlocksCacheLimit = 12
+  private static let renderedHTMLCacheLimit = 24
   private static let entrySourceCacheLimit = 24
   private static let detailNavigationHistoryLimit = 100
   private static let workspaceUndoStackLimit = 100
@@ -874,6 +881,7 @@ public final class WorkspaceStore: ObservableObject {
   private var searchIndexTask: Task<Void, Never>?
   private var searchIndexGeneration = 0
   private var entrySourceLoadGeneration = 0
+  private var entryHTMLRenderGeneration = 0
   private var activeEntrySourceLoadingGeneration: Int?
   private var liveFileEditorAutosaveTask: Task<Void, Never>?
   private var liveFileEditorAutosaveGeneration = 0
@@ -890,6 +898,9 @@ public final class WorkspaceStore: ObservableObject {
   private var entrySourceCacheOrder: [String] = []
   private var renderedBlocksCache: [String: RenderedBlocksCacheEntry] = [:]
   private var renderedBlocksCacheOrder: [String] = []
+  private var renderedHTMLCache: [String: RenderedHTMLCacheEntry] = [:]
+  private var renderedHTMLCacheOrder: [String] = []
+  private var selectedEntryHTMLRenderKey: String?
   private var pendingBlockSelection: PendingBlockSelection?
   private var transientDraftBlock: TransientDraftBlock?
   private var transientDraftIDCounter = 0
@@ -1144,6 +1155,9 @@ public final class WorkspaceStore: ObservableObject {
     selectedLocation = nil
     detailNavigationBackStack = []
     selectedEntrySource = nil
+    selectedEntryHTML = nil
+    selectedEntryRenderError = nil
+    selectedEntryHTMLRenderKey = nil
     selectedRenderedBlocks = []
     foldedRenderedBlockIDs = []
     sourceBlockRuns = [:]
@@ -1154,6 +1168,8 @@ public final class WorkspaceStore: ObservableObject {
     entrySourceCacheOrder = []
     renderedBlocksCache = [:]
     renderedBlocksCacheOrder = []
+    renderedHTMLCache = [:]
+    renderedHTMLCacheOrder = []
     isRefreshingAgenda = false
     isRefreshingApprovals = false
     isRefreshingAssignedWork = false
@@ -1181,6 +1197,7 @@ public final class WorkspaceStore: ObservableObject {
     isLoadingEntrySource = false
     isRenderingEntrySource = false
     entrySourceLoadGeneration += 1
+    entryHTMLRenderGeneration += 1
     activeEntrySourceLoadingGeneration = nil
     backlinks = nil
     errorText = nil
@@ -3162,8 +3179,12 @@ public final class WorkspaceStore: ObservableObject {
     resetBlockState()
     selectedEntrySourceMode = nextMode
     selectedEntrySource = nil
+    selectedEntryHTML = nil
+    selectedEntryRenderError = nil
+    selectedEntryHTMLRenderKey = nil
     selectedRenderedBlocks = []
     isRenderingEntrySource = false
+    entryHTMLRenderGeneration += 1
     Task { await loadBacklinks(for: location) }
     scheduleEntrySourceLoad(for: location)
   }
@@ -3251,6 +3272,7 @@ public final class WorkspaceStore: ObservableObject {
         return
       }
       let previousSource = selectedEntrySource
+      prepareEntryHTML(for: source)
       selectedEntrySource = source
       updateEditableEntryTextFromLoadedSourceIfSafe(source, previousSource: previousSource)
       renderEntrySource(source, generation: generation)
@@ -3261,6 +3283,9 @@ public final class WorkspaceStore: ObservableObject {
         return
       }
       selectedEntrySource = nil
+      selectedEntryHTML = nil
+      selectedEntryRenderError = error.localizedDescription
+      selectedEntryHTMLRenderKey = nil
       selectedRenderedBlocks = []
       selectedBlockID = nil
       isRenderingEntrySource = false
@@ -3275,6 +3300,7 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
     let previousSource = selectedEntrySource
+    prepareEntryHTML(for: source)
     selectedEntrySource = source
     updateEditableEntryTextFromLoadedSourceIfSafe(source, previousSource: previousSource)
     renderEntrySource(source, generation: generation)
@@ -11294,48 +11320,116 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func renderEntrySource(_ source: EntrySource, generation: Int) {
+    let renderKey = Self.entryHTMLRenderKey(for: source)
+    if selectedEntryHTMLRenderKey != renderKey {
+      prepareEntryHTML(for: source)
+    }
+    entryHTMLRenderGeneration += 1
+    let renderGeneration = entryHTMLRenderGeneration
     isRenderingEntrySource = true
-    let modifiedAt = Self.modificationDate(for: URL(fileURLWithPath: source.file).standardizedFileURL)
-    if let blocks = cachedRenderedBlocks(for: source, modifiedAt: modifiedAt) {
-      applyRenderedBlocks(blocks, for: source)
-      isRenderingEntrySource = false
-      return
+    selectedEntryRenderError = nil
+
+    let cachedHTML = renderedHTMLCache[renderKey]?.html
+    if let cachedHTML {
+      renderedHTMLCacheOrder.removeAll { $0 == renderKey }
+      renderedHTMLCacheOrder.append(renderKey)
+      selectedEntryHTML = cachedHTML
+      selectedEntryHTMLRenderKey = renderKey
     }
 
     Task { @MainActor in
+      if cachedHTML == nil {
+        do {
+          let html = try await cli.renderAppHTML(
+            source.text,
+            sourcePath: source.file,
+            sourceLineOffset: max(0, source.startLine - 1)
+          )
+          guard generation == self.entrySourceLoadGeneration,
+                renderGeneration == self.entryHTMLRenderGeneration,
+                self.selectedEntrySource?.id == source.id,
+                self.selectedEntryHTMLRenderKey == renderKey
+          else {
+            return
+          }
+          self.cacheRenderedHTML(html, key: renderKey)
+          self.selectedEntryHTML = html
+          self.selectedEntryRenderError = nil
+        } catch {
+          guard generation == self.entrySourceLoadGeneration,
+                renderGeneration == self.entryHTMLRenderGeneration,
+                self.selectedEntrySource?.id == source.id,
+                self.selectedEntryHTMLRenderKey == renderKey
+          else {
+            return
+          }
+          self.selectedEntryHTML = nil
+          self.selectedEntryRenderError = error.localizedDescription
+        }
+      }
+
+      let modifiedAt = Self.modificationDate(for: URL(fileURLWithPath: source.file).standardizedFileURL)
       let blocks: [OrgEditableBlock]
-      if source.endLineExclusive - source.startLine > Self.canonicalParserLineLimit {
-        blocks = await Task.detached(priority: .userInitiated) {
+      if let cachedBlocks = self.cachedRenderedBlocks(for: source, modifiedAt: modifiedAt) {
+        blocks = cachedBlocks
+      } else {
+        blocks = await Task.detached(priority: .utility) {
           OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine)
         }.value
-      } else {
-        do {
-          let document = try await canonicalDocument(for: source)
-          blocks = await Task.detached(priority: .userInitiated) {
-            OrgEntryRenderer.parseEditable(
-              source.text,
-              baseLine: source.startLine,
-              canonicalDocument: document
-            )
-          }.value
-        } catch {
-          blocks = await Task.detached(priority: .userInitiated) {
-            OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine)
-          }.value
-        }
       }
       guard generation == self.entrySourceLoadGeneration,
-            self.selectedEntrySource?.id == source.id
+            renderGeneration == self.entryHTMLRenderGeneration,
+            self.selectedEntrySource?.id == source.id,
+            self.selectedEntryHTMLRenderKey == renderKey
       else {
-        if generation == self.entrySourceLoadGeneration {
-          self.isRenderingEntrySource = false
-        }
         return
       }
-      self.cacheRenderedBlocks(blocks, for: source, modifiedAt: modifiedAt)
+      if self.cachedRenderedBlocks(for: source, modifiedAt: modifiedAt) == nil {
+        self.cacheRenderedBlocks(blocks, for: source, modifiedAt: modifiedAt)
+      }
       self.applyRenderedBlocks(blocks, for: source)
       self.isRenderingEntrySource = false
     }
+  }
+
+  public func retrySelectedEntryRendering() {
+    guard let source = selectedEntrySource else { return }
+    let key = Self.entryHTMLRenderKey(for: source)
+    renderedHTMLCache.removeValue(forKey: key)
+    renderedHTMLCacheOrder.removeAll { $0 == key }
+    selectedEntryHTML = nil
+    selectedEntryRenderError = nil
+    selectedEntryHTMLRenderKey = key
+    renderEntrySource(source, generation: entrySourceLoadGeneration)
+  }
+
+  private func prepareEntryHTML(for source: EntrySource) {
+    let renderKey = Self.entryHTMLRenderKey(for: source)
+    guard selectedEntryHTMLRenderKey != renderKey else { return }
+    entryHTMLRenderGeneration += 1
+    selectedEntryHTML = nil
+    selectedEntryRenderError = nil
+    selectedEntryHTMLRenderKey = renderKey
+    selectedRenderedBlocks = []
+    selectedBlockID = nil
+  }
+
+  private func cacheRenderedHTML(_ html: String, key: String) {
+    renderedHTMLCache[key] = RenderedHTMLCacheEntry(html: html)
+    renderedHTMLCacheOrder.removeAll { $0 == key }
+    renderedHTMLCacheOrder.append(key)
+    while renderedHTMLCacheOrder.count > Self.renderedHTMLCacheLimit {
+      let evicted = renderedHTMLCacheOrder.removeFirst()
+      renderedHTMLCache.removeValue(forKey: evicted)
+    }
+  }
+
+  nonisolated private static func entryHTMLRenderKey(for source: EntrySource) -> String {
+    let path = URL(fileURLWithPath: source.file).standardizedFileURL.path
+    let digest = SHA256.hash(data: Data(source.text.utf8))
+      .map { String(format: "%02x", $0) }
+      .joined()
+    return "\(path)|\(source.startLine)|\(source.endLineExclusive)|\(digest)"
   }
 
   private func applyRenderedBlocks(_ blocks: [OrgEditableBlock], for source: EntrySource) {
@@ -11407,6 +11501,7 @@ public final class WorkspaceStore: ObservableObject {
     canonicalDocumentCache.removeValue(forKey: URL(fileURLWithPath: file).standardizedFileURL.path)
     invalidateEntrySourceCache(for: file)
     invalidateRenderedBlocksCache(for: file)
+    invalidateRenderedHTMLCache(for: file)
   }
 
   private func entrySourceCacheKey(for location: WorkspaceLocation, mode: EntrySourceMode) -> String {
@@ -11618,6 +11713,15 @@ public final class WorkspaceStore: ObservableObject {
     renderedBlocksCacheOrder.removeAll { key in
       key.hasPrefix(path)
     }
+  }
+
+  private func invalidateRenderedHTMLCache(for file: String) {
+    let path = URL(fileURLWithPath: file).standardizedFileURL.path + "|"
+    let keys = renderedHTMLCache.keys.filter { $0.hasPrefix(path) }
+    for key in keys {
+      renderedHTMLCache.removeValue(forKey: key)
+    }
+    renderedHTMLCacheOrder.removeAll { $0.hasPrefix(path) }
   }
 
   private func invalidateEntrySourceCache(for file: String) {

@@ -78,6 +78,154 @@ const DOCUMENT_TOC_STYLE = `.org2-toc { border: 1px solid rgba(127,127,127,0.35)
 .org2-toc li.org2-toc-level-5 { margin-left: 3rem; }
 .org2-toc li.org2-toc-level-6 { margin-left: 3.75rem; }`;
 
+const APP_DOCUMENT_STYLE = `:root {
+  color-scheme: light dark;
+  --org2-text: #24262a;
+  --org2-muted: #6c7078;
+  --org2-faint: rgba(36, 38, 42, 0.08);
+  --org2-rule: rgba(36, 38, 42, 0.12);
+  --org2-code: rgba(36, 38, 42, 0.055);
+  --org2-link: #1769aa;
+  --org2-accent: #2f73b7;
+  --org2-success: #20804a;
+  --org2-danger: #b64238;
+  --org2-warning: #966512;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --org2-text: #e9eaed;
+    --org2-muted: #a4a8b0;
+    --org2-faint: rgba(233, 234, 237, 0.08);
+    --org2-rule: rgba(233, 234, 237, 0.13);
+    --org2-code: rgba(233, 234, 237, 0.07);
+    --org2-link: #70b7f0;
+    --org2-accent: #79b8ed;
+    --org2-success: #6ac58c;
+    --org2-danger: #ee8178;
+    --org2-warning: #e0b361;
+  }
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { width: 100%; min-height: 100%; margin: 0; background: transparent; overflow-x: hidden; }
+body {
+  color: var(--org2-text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.58;
+  letter-spacing: 0;
+  -webkit-font-smoothing: antialiased;
+  overflow-wrap: anywhere;
+}
+main.org2-document { width: min(100%, 760px); max-width: 100%; margin: 0 auto; padding: 22px 30px 64px; }
+.org2-headline { margin: 0; }
+.org2-headline + .org2-headline { margin-top: 0.72rem; }
+.org2-headline-summary {
+  margin: 0.9rem 0 0.36rem;
+  color: var(--org2-text);
+  cursor: pointer;
+  list-style-position: outside;
+}
+.org2-headline-summary::marker { color: var(--org2-muted); font-size: 0.64em; }
+.org2-headline-summary:hover::marker { color: var(--org2-accent); }
+.org2-headline-summary > h1,
+.org2-headline-summary > h2,
+.org2-headline-summary > h3,
+.org2-headline-summary > h4,
+.org2-headline-summary > h5,
+.org2-headline-summary > h6 { display: inline; margin: 0; }
+.org2-headline.level-1 > .org2-headline-summary { margin-top: 0.08rem; }
+.org2-headline-body { min-width: 0; }
+.org2-headline-body > .org2-headline.level-2 { margin-left: 0.35rem; padding-left: 0.5rem; border-left: 1px solid var(--org2-rule); }
+.org2-headline-body > .org2-headline.level-3 { margin-left: 0.25rem; padding-left: 0.45rem; border-left: 1px solid var(--org2-rule); }
+.org2-headline-body > .org2-headline.level-4,
+.org2-headline-body > .org2-headline.level-5,
+.org2-headline-body > .org2-headline.level-6 { margin-left: 0.2rem; padding-left: 0.35rem; border-left: 1px solid var(--org2-rule); }
+h1, h2, h3, h4, h5, h6 {
+  color: var(--org2-text);
+  font-weight: 620;
+  line-height: 1.3;
+  letter-spacing: 0;
+  margin: 1rem 0 0.42rem;
+  text-wrap: balance;
+}
+h1 { font-size: 1.16rem; margin-top: 0.1rem; }
+h2 { font-size: 1.08rem; color: color-mix(in srgb, var(--org2-text) 78%, var(--org2-accent)); }
+h3 { font-size: 1.02rem; color: color-mix(in srgb, var(--org2-text) 72%, var(--org2-muted)); }
+h4, h5, h6 { font-size: 0.98rem; color: var(--org2-muted); }
+p { max-width: 100%; margin: 0.55rem 0 0.8rem; overflow-wrap: anywhere; }
+a { color: var(--org2-link); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--org2-link) 35%, transparent); }
+a:hover { border-bottom-color: var(--org2-link); }
+strong { font-weight: 650; }
+code {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--org2-code);
+  border: 1px solid var(--org2-rule);
+  border-radius: 4px;
+  padding: 0.08em 0.3em;
+}
+pre, .org2-src, .org2-example, .org2-verse, .org2-export, .org2-directive {
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow: auto;
+  margin: 0.85rem 0 1rem;
+  padding: 0.9rem 1rem !important;
+  color: var(--org2-text);
+  background: var(--org2-code) !important;
+  border: 1px solid var(--org2-rule) !important;
+  border-radius: 6px !important;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 0.88rem !important;
+  line-height: 1.45 !important;
+  white-space: pre;
+}
+pre code { padding: 0; border: 0; background: transparent; font-size: inherit; }
+blockquote { margin: 0.9rem 0; padding: 0.15rem 0 0.15rem 1rem; border-left: 3px solid var(--org2-accent); color: var(--org2-muted); }
+.org2-quote { white-space: pre-wrap; overflow-wrap: anywhere; }
+ul, ol { margin: 0.55rem 0 0.9rem; padding-left: 1.55rem; }
+li { min-width: 0; margin: 0.24rem 0; padding-left: 0.12rem; overflow-wrap: anywhere; }
+li > p { display: inline; }
+input[type="checkbox"] { width: 0.95rem; height: 0.95rem; margin: 0 0.42rem 0 -0.05rem; accent-color: var(--org2-accent); vertical-align: -0.11rem; }
+.org2-todo {
+  display: inline-block;
+  margin-right: 0.35rem;
+  padding: 0.08rem 0.34rem;
+  color: var(--org2-accent);
+  background: color-mix(in srgb, var(--org2-accent) 10%, transparent);
+  border-radius: 4px;
+  font-size: 0.67em;
+  font-weight: 750;
+  line-height: 1.35;
+  vertical-align: 0.12em;
+}
+.org2-todo.todo-done { color: var(--org2-success); background: color-mix(in srgb, var(--org2-success) 11%, transparent); }
+.org2-todo.todo-canceled, .org2-todo.todo-cancelled { color: var(--org2-danger); background: color-mix(in srgb, var(--org2-danger) 10%, transparent); }
+.org2-tags { display: inline-flex; flex-wrap: wrap; gap: 0.28rem; margin-left: 0.35rem; vertical-align: 0.1em; }
+.org2-tag { color: var(--org2-muted); background: var(--org2-faint); border-radius: 4px; padding: 0.08rem 0.34rem; font-size: 0.65em; font-weight: 550; }
+.org2-planning { color: var(--org2-muted); font-size: 0.88rem; font-variant-numeric: tabular-nums; }
+.org2-planning-kind { color: var(--org2-warning); font-size: 0.78em; font-weight: 700; }
+.org2-timestamp, .org2-timestamp-range { font-variant-numeric: tabular-nums; }
+.org2-properties-drawer { margin: 0.75rem 0 1rem; padding: 0.55rem 0.8rem 0.65rem; background: var(--org2-faint); border-left: 2px solid var(--org2-rule); font-size: 0.82rem; }
+.org2-properties-drawer > summary { color: var(--org2-muted); cursor: pointer; font-weight: 650; user-select: none; }
+.org2-properties-drawer > summary::marker { color: var(--org2-muted); }
+.org2-properties-drawer[open] > summary { margin-bottom: 0.5rem; }
+.org2-properties { display: grid; grid-template-columns: minmax(6rem, max-content) 1fr; gap: 0.22rem 0.9rem; margin: 0; padding: 0; }
+.org2-properties dt { color: var(--org2-muted); font-weight: 650; }
+.org2-properties dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; }
+.org2-drawer { margin: 0.75rem 0; color: var(--org2-muted); font-size: 0.9rem; }
+.org2-drawer summary { cursor: pointer; font-weight: 600; }
+.org2-keyword { color: var(--org2-muted); font-size: 0.88rem; }
+.org2-keyword-name { font-weight: 650; }
+table { width: 100%; margin: 0.8rem 0 1.15rem; border-collapse: collapse; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+th, td { padding: 0.46rem 0.58rem; border-bottom: 1px solid var(--org2-rule); text-align: left; vertical-align: top; }
+th { color: var(--org2-muted); background: var(--org2-faint); font-size: 0.82rem; font-weight: 650; }
+::selection { background: color-mix(in srgb, var(--org2-accent) 30%, transparent); }
+@media (max-width: 560px) {
+  main.org2-document { padding: 18px 18px 48px; }
+  .org2-properties { grid-template-columns: 1fr; gap: 0.08rem; }
+  .org2-properties dd { margin-bottom: 0.35rem; }
+}`;
+
 const DEFAULT_INDEX_STYLE = `:root { color-scheme: light dark; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
 main { display: grid; gap: 1rem; }
@@ -127,6 +275,7 @@ type RenderContext = {
   headlineNumbers?: WeakMap<HeadlineNode, string>;
   rewriteFileLinks?: boolean;
   linkAbbreviations?: LinkAbbreviationMap;
+  profile?: "publish" | "app";
 };
 
 export type OrgExportMetadata = {
@@ -347,9 +496,13 @@ function renderHeadMetaSection(metadata: OrgExportMetadata): string {
   return rows.length > 0 ? `${rows.join("\n")}\n` : "";
 }
 
-function renderHeadExtraSection(metadata: OrgExportMetadata, extraHead?: string[]): string {
+function renderHeadExtraSection(
+  metadata: OrgExportMetadata,
+  extraHead?: string[],
+  includeDocumentHtml = true,
+): string {
   const snippets = [
-    ...(Array.isArray(metadata.htmlHead) ? metadata.htmlHead : []),
+    ...(includeDocumentHtml && Array.isArray(metadata.htmlHead) ? metadata.htmlHead : []),
     ...(Array.isArray(extraHead) ? extraHead : []),
   ]
     .map((snippet) => String(snippet || "").trim())
@@ -635,16 +788,30 @@ function renderEmphasis(node: EmphasisNode): string {
   return `<code>${content}</code>`;
 }
 
+function appLinkHref(rawTarget: string, expandedTarget: string, context: RenderContext): string {
+  if (linkTargetNeedsHeadingAnchor(expandedTarget)) {
+    return rewriteOrgInternalHrefForHtml(expandedTarget, context);
+  }
+
+  if (/^(https?|mailto):/i.test(expandedTarget)) {
+    return expandedTarget;
+  }
+
+  return `org2-workspace://open-link?target=${encodeURIComponent(rawTarget)}`;
+}
+
 function renderLink(node: LinkNode, context: RenderContext): string {
   const hrefRaw = String(node.targetRaw || "").trim();
   const expandedHrefRaw = expandLinkAbbreviationTarget(hrefRaw, context.linkAbbreviations);
-  let href = expandedHrefRaw;
+  let href = context.profile === "app"
+    ? appLinkHref(hrefRaw, expandedHrefRaw, context)
+    : expandedHrefRaw;
 
-  if (context.rewriteFileLinks) {
+  if (context.profile !== "app" && context.rewriteFileLinks) {
     href = rewriteOrgFileHrefForHtml(expandedHrefRaw);
   }
 
-  if (linkTargetNeedsHeadingAnchor(expandedHrefRaw)) {
+  if (context.profile !== "app" && linkTargetNeedsHeadingAnchor(expandedHrefRaw)) {
     href = rewriteOrgInternalHrefForHtml(expandedHrefRaw, context);
   }
 
@@ -667,35 +834,49 @@ function renderInlineChildren(nodes: InlineNode[], context: RenderContext): stri
   return nodes.map((node) => renderInline(node, context)).join("");
 }
 
-function renderParagraph(node: ParagraphNode, context: RenderContext): string {
-  if (node.children.length === 1 && node.children[0]?.type === "Text") {
-    const raw = String(node.children[0].value || "").trim();
-    if (raw === "--") return "<p>&#x2013;</p>";
-    if (raw === "---") return "<p>&#x2014;</p>";
-  }
-  return `<p>${renderInlineChildren(node.children, context)}</p>`;
+type SourceRangedNode = Node & { sourceRange?: { startLine: number; endLine: number } };
+
+function renderSourceAttributes(node: Node, context: RenderContext): string {
+  if (context.profile !== "app") return "";
+  const range = (node as SourceRangedNode).sourceRange;
+  if (!range) return "";
+  return ` data-org2-start-line="${range.startLine}" data-org2-end-line="${range.endLine}"`;
 }
 
-function renderPlanning(node: PlanningNode): string {
+function renderParagraph(node: ParagraphNode, context: RenderContext): string {
+  const sourceAttributes = renderSourceAttributes(node, context);
+  if (node.children.length === 1 && node.children[0]?.type === "Text") {
+    const raw = String(node.children[0].value || "").trim();
+    if (raw === "--") return `<p${sourceAttributes}>&#x2013;</p>`;
+    if (raw === "---") return `<p${sourceAttributes}>&#x2014;</p>`;
+  }
+  return `<p${sourceAttributes}>${renderInlineChildren(node.children, context)}</p>`;
+}
+
+function renderPlanning(node: PlanningNode, context: RenderContext): string {
   const raw = node.timestamp
     ? node.timestamp.type === "Timestamp"
       ? node.timestamp.raw
       : node.timestamp.start.raw + node.timestamp.separatorRaw + node.timestamp.end.raw
     : node.raw;
-  return `<p class="org2-planning"><span class="org2-planning-kind">${escapeHtml(node.kind)}</span> ${escapeHtml(raw)}</p>`;
+  return `<p class="org2-planning"${renderSourceAttributes(node, context)}><span class="org2-planning-kind">${escapeHtml(node.kind)}</span> ${escapeHtml(raw)}</p>`;
 }
 
-function renderPropertyDrawer(node: PropertyDrawerNode): string {
+function renderPropertyDrawer(node: PropertyDrawerNode, context: RenderContext): string {
   if (!node.properties.length) return "";
 
   const rows = node.properties
     .map((property) => `<dt>${escapeHtml(property.key)}</dt><dd>${escapeHtml(property.value)}</dd>`)
     .join("\n");
 
-  return `<dl class="org2-properties">\n${rows}\n</dl>`;
+  if (context.profile === "app") {
+    return `<details class="org2-properties-drawer" open${renderSourceAttributes(node, context)}>\n<summary>Properties</summary>\n<dl class="org2-properties">\n${rows}\n</dl>\n</details>`;
+  }
+
+  return `<dl class="org2-properties"${renderSourceAttributes(node, context)}>\n${rows}\n</dl>`;
 }
 
-function renderSrcBlock(node: SrcBlockNode): string {
+function renderSrcBlock(node: SrcBlockNode, context: RenderContext): string {
   const languageRaw = String(node.begin.afterKeywordRaw || "")
     .trim()
     .split(/\s+/)[0];
@@ -704,20 +885,23 @@ function renderSrcBlock(node: SrcBlockNode): string {
   const codeClassAttr = language ? ` class="language-${escapeAttr(language)}"` : "";
   const body = escapeHtml(node.bodyRaw.replace(/\n$/, ""));
   const baseStyle = "padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;";
-  return `<pre class="org2-src${languageClass}" style="${escapeAttr(baseStyle)}"><code${codeClassAttr}>${body}</code></pre>`;
+  return `<pre class="org2-src${languageClass}"${renderSourceAttributes(node, context)} style="${escapeAttr(baseStyle)}"><code${codeClassAttr}>${body}</code></pre>`;
 }
 
-function renderBlock(node: BlockNode): string {
+function renderBlock(node: BlockNode, context: RenderContext): string {
   const bodyRaw = node.bodyRaw.replace(/\n$/, "");
   const body = escapeHtml(bodyRaw);
 
-  if (node.kind === "quote") return `<blockquote>${body}</blockquote>`;
+  if (node.kind === "quote") {
+    const appClass = context.profile === "app" ? ' class="org2-quote"' : "";
+    return `<blockquote${appClass}${renderSourceAttributes(node, context)}>${body}</blockquote>`;
+  }
   if (node.kind === "center") return `<div class="org2-center">${body}</div>`;
   if (node.kind === "verse") return `<pre class="org2-verse">${body}</pre>`;
   if (node.kind === "comment") return `<pre class="org2-comment">${body}</pre>`;
   if (node.kind === "export") {
     const exportTarget = String(node.begin.afterKeywordRaw || "").trim().toLowerCase();
-    if (exportTarget === "html") return bodyRaw;
+    if (exportTarget === "html" && context.profile !== "app") return bodyRaw;
     return `<pre class="org2-export">${body}</pre>`;
   }
   return `<pre class="org2-example">${body}</pre>`;
@@ -754,11 +938,12 @@ function renderTable(node: TableNode, context: RenderContext): string {
     headerRows.length > 0 ? `<thead>\n${headerRows.map((row) => renderTableRow(row, true, context)).join("\n")}\n</thead>` : "";
   const renderedBody = `<tbody>\n${resolvedBodyRows.map((row) => renderTableRow(row, false, context)).join("\n")}\n</tbody>`;
 
-  return `<table>\n${[renderedHead, renderedBody].filter(Boolean).join("\n")}\n</table>`;
+  return `<table${renderSourceAttributes(node, context)}>\n${[renderedHead, renderedBody].filter(Boolean).join("\n")}\n</table>`;
 }
 
 function renderListItem(node: ListItemNode, context: RenderContext): string {
   const body = renderNodes(node.children, context);
+  const sourceAttributes = renderSourceAttributes(node, context);
   const checkbox =
     node.checkbox === "checked"
       ? '<input type="checkbox" checked disabled /> '
@@ -766,15 +951,15 @@ function renderListItem(node: ListItemNode, context: RenderContext): string {
         ? '<input type="checkbox" disabled /> '
         : "";
 
-  if (!body.trim()) return `<li>${checkbox}</li>`;
-  if (body.includes("\n")) return `<li>${checkbox}\n${body}\n</li>`;
-  return `<li>${checkbox}${body}</li>`;
+  if (!body.trim()) return `<li${sourceAttributes}>${checkbox}</li>`;
+  if (body.includes("\n")) return `<li${sourceAttributes}>${checkbox}\n${body}\n</li>`;
+  return `<li${sourceAttributes}>${checkbox}${body}</li>`;
 }
 
 function renderList(node: ListNode, context: RenderContext): string {
   const tag = node.ordered ? "ol" : "ul";
   const items = node.items.map((item) => renderListItem(item, context)).join("\n");
-  return `<${tag}>\n${items}\n</${tag}>`;
+  return `<${tag}${renderSourceAttributes(node, context)}>\n${items}\n</${tag}>`;
 }
 
 function renderHeadline(node: HeadlineNode, context: RenderContext): string {
@@ -783,7 +968,9 @@ function renderHeadline(node: HeadlineNode, context: RenderContext): string {
   const title = renderInlineChildren(node.title, context);
   const headingNumberRaw = context.headlineNumbers?.get(node);
   const headingNumber = headingNumberRaw ? `<span class="org2-headline-number">${escapeHtml(headingNumberRaw)}</span> ` : "";
-  const todo = node.todo ? `<span class="org2-todo">${escapeHtml(node.todo)}</span> ` : "";
+  const todoClass = String(node.todo || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+  const appTodoClass = context.profile === "app" && todoClass ? ` todo-${escapeAttr(todoClass)}` : "";
+  const todo = node.todo ? `<span class="org2-todo${appTodoClass}">${escapeHtml(node.todo)}</span> ` : "";
   const tags =
     node.tags && node.tags.length > 0
       ? ` <span class="org2-tags">${node.tags.map((tag) => `<span class="org2-tag">${escapeHtml(tag)}</span>`).join(" ")}</span>`
@@ -792,11 +979,18 @@ function renderHeadline(node: HeadlineNode, context: RenderContext): string {
   const headingIdAttr = headingId ? ` id="${escapeAttr(headingId)}"` : "";
 
   const childrenHtml = renderNodes(node.children, context);
-  if (!childrenHtml.trim()) {
-    return `<section class="org2-headline level-${node.level}">\n<${headingTag}${headingIdAttr}>${headingNumber}${todo}${title}${tags}</${headingTag}>\n</section>`;
+  if (context.profile === "app") {
+    const body = childrenHtml.trim()
+      ? `\n<div class="org2-headline-body">\n${childrenHtml}\n</div>`
+      : "";
+    return `<details class="org2-headline level-${node.level}" open${renderSourceAttributes(node, context)}>\n<summary class="org2-headline-summary"><${headingTag}${headingIdAttr}>${headingNumber}${todo}${title}${tags}</${headingTag}></summary>${body}\n</details>`;
   }
 
-  return `<section class="org2-headline level-${node.level}">\n<${headingTag}${headingIdAttr}>${headingNumber}${todo}${title}${tags}</${headingTag}>\n${childrenHtml}\n</section>`;
+  if (!childrenHtml.trim()) {
+    return `<section class="org2-headline level-${node.level}"${renderSourceAttributes(node, context)}>\n<${headingTag}${headingIdAttr}>${headingNumber}${todo}${title}${tags}</${headingTag}>\n</section>`;
+  }
+
+  return `<section class="org2-headline level-${node.level}"${renderSourceAttributes(node, context)}>\n<${headingTag}${headingIdAttr}>${headingNumber}${todo}${title}${tags}</${headingTag}>\n${childrenHtml}\n</section>`;
 }
 
 function renderNode(node: Node, context: RenderContext): string {
@@ -804,15 +998,15 @@ function renderNode(node: Node, context: RenderContext): string {
   if (node.type === "Paragraph") return renderParagraph(node, context);
   if (node.type === "List") return renderList(node, context);
   if (node.type === "ListItem") return renderListItem(node, context);
-  if (node.type === "Planning") return renderPlanning(node);
-  if (node.type === "PropertyDrawer") return renderPropertyDrawer(node);
-  if (node.type === "SrcBlock") return renderSrcBlock(node);
-  if (node.type === "Block") return renderBlock(node);
+  if (node.type === "Planning") return renderPlanning(node, context);
+  if (node.type === "PropertyDrawer") return renderPropertyDrawer(node, context);
+  if (node.type === "SrcBlock") return renderSrcBlock(node, context);
+  if (node.type === "Block") return renderBlock(node, context);
   if (node.type === "Table") return renderTable(node, context);
   if (node.type === "Drawer") {
     const name = escapeHtml(node.nameRaw);
     const body = escapeHtml(node.bodyRaw.replace(/\n$/, ""));
-    return `<details class="org2-drawer"><summary>${name}</summary><pre>${body}</pre></details>`;
+    return `<details class="org2-drawer"${renderSourceAttributes(node, context)}><summary>${name}</summary><pre>${body}</pre></details>`;
   }
   if (node.type === "KeywordLine") {
     const key = String(node.keyRaw || "").trim().toUpperCase();
@@ -942,6 +1136,7 @@ function buildDocumentRenderContext(
     rewriteFileLinks?: boolean;
     linkAbbreviations?: LinkAbbreviationRecord;
     linearTeam?: string;
+    profile?: "publish" | "app";
   },
 ): { context: RenderContext; tocItems: TocItem[] } {
   let tocItems: TocItem[] = [];
@@ -953,6 +1148,7 @@ function buildDocumentRenderContext(
 
   const context: RenderContext = {
     rewriteFileLinks: opts.rewriteFileLinks === true,
+    profile: opts.profile,
     // Precedence: built-ins < config < document-local #+LINK
     linkAbbreviations: mergeLinkAbbreviations([builtIns, configAbbreviations, documentAbbreviations]),
   };
@@ -1005,9 +1201,14 @@ function renderDocumentHtml(opts: {
   preambleHtml?: string;
   postambleHtml?: string;
   compatContentWrapper?: boolean;
+  includeDocumentHtml?: boolean;
 }): string {
   const headMetaSection = renderHeadMetaSection(opts.metadata);
-  const headExtraSection = renderHeadExtraSection(opts.metadata, opts.headIncludes);
+  const headExtraSection = renderHeadExtraSection(
+    opts.metadata,
+    opts.headIncludes,
+    opts.includeDocumentHtml,
+  );
   const headStyleSection = renderHeadStyleSection({
     stylesheets: opts.stylesheets,
     includeDefaultStyle: opts.includeDefaultStyle,
@@ -1058,6 +1259,7 @@ export function renderOrgDocumentToHtml(
     compatContentWrapper?: boolean;
     linkAbbreviations?: LinkAbbreviationRecord;
     linearTeam?: string;
+    profile?: "publish" | "app";
   } = {},
 ): { html: string; title: string; metadata: OrgExportMetadata } {
   const title = resolveTitle(doc, opts.title, opts.sourcePath);
@@ -1071,6 +1273,7 @@ export function renderOrgDocumentToHtml(
     rewriteFileLinks: opts.rewriteFileLinks,
     linkAbbreviations: opts.linkAbbreviations,
     linearTeam: opts.linearTeam,
+    profile: opts.profile,
   });
 
   const mainBody = renderMainBody({
@@ -1095,9 +1298,34 @@ export function renderOrgDocumentToHtml(
     preambleHtml: String(opts.preambleHtml || "").trim(),
     postambleHtml: String(opts.postambleHtml || "").trim(),
     compatContentWrapper: opts.compatContentWrapper,
+    includeDocumentHtml: opts.profile !== "app",
   });
 
   return { html, title, metadata };
+}
+
+export function renderOrgDocumentToAppHtml(
+  doc: DocumentNode,
+  opts: {
+    title?: string;
+    sourcePath?: string;
+    linkAbbreviations?: LinkAbbreviationRecord;
+    linearTeam?: string;
+  } = {},
+): { html: string; title: string; metadata: OrgExportMetadata } {
+  return renderOrgDocumentToHtml(doc, {
+    title: opts.title,
+    sourcePath: opts.sourcePath,
+    includeDefaultStyle: false,
+    includeToc: false,
+    includeHeadlineNumbers: false,
+    includeDocumentHeader: false,
+    rewriteFileLinks: false,
+    headIncludes: [`<style id="org2-app-document-style">\n${APP_DOCUMENT_STYLE}\n</style>`],
+    linkAbbreviations: opts.linkAbbreviations,
+    linearTeam: opts.linearTeam,
+    profile: "app",
+  });
 }
 
 export type OrgExportIndexItem = {

@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public struct Org2CLI: Sendable {
@@ -68,6 +69,27 @@ public struct Org2CLI: Sendable {
     return try JSONDecoder().decode(T.self, from: data)
   }
 
+  public func renderAppHTML(
+    _ text: String,
+    sourcePath: String,
+    sourceLineOffset: Int = 0,
+    timeout: TimeInterval = 8
+  ) async throws -> String {
+    var arguments = ["--source-path", sourcePath]
+    if sourceLineOffset > 0 {
+      arguments.append(contentsOf: ["--source-line-offset", "\(sourceLineOffset)"])
+    }
+    let data = try await Task.detached(priority: .userInitiated) {
+      try runProcess(
+        scriptPath: repoRoot.appendingPathComponent("dist/render-html.js"),
+        arguments: arguments,
+        standardInput: Data(text.utf8),
+        timeout: timeout
+      )
+    }.value
+    return String(decoding: data, as: UTF8.self)
+  }
+
   public func parseFileJSONSync<T: Decodable>(_ file: URL, sourceRanges: Bool = false, as type: T.Type = T.self) throws -> T {
     var arguments = [file.path]
     if sourceRanges {
@@ -87,7 +109,12 @@ public struct Org2CLI: Sendable {
     try runProcess(scriptPath: cliPath, arguments: arguments)
   }
 
-  private func runProcess(scriptPath: URL, arguments: [String], standardInput: Data? = nil) throws -> Data {
+  private func runProcess(
+    scriptPath: URL,
+    arguments: [String],
+    standardInput: Data? = nil,
+    timeout: TimeInterval? = nil
+  ) throws -> Data {
     guard FileManager.default.fileExists(atPath: scriptPath.path) else {
       throw Org2CLIError.missingCLI(scriptPath.path)
     }
@@ -137,8 +164,33 @@ public struct Org2CLI: Sendable {
       readGroup.leave()
     }
 
+    let didTimeOut: Bool
+    if let timeout {
+      let deadline = Date().addingTimeInterval(max(0.01, timeout))
+      while process.isRunning && Date() < deadline {
+        Thread.sleep(forTimeInterval: 0.01)
+      }
+      didTimeOut = process.isRunning
+      if didTimeOut {
+        process.terminate()
+        let terminationDeadline = Date().addingTimeInterval(0.5)
+        while process.isRunning && Date() < terminationDeadline {
+          Thread.sleep(forTimeInterval: 0.01)
+        }
+        if process.isRunning {
+          Darwin.kill(process.processIdentifier, SIGKILL)
+        }
+      }
+    } else {
+      didTimeOut = false
+    }
+
     process.waitUntilExit()
     readGroup.wait()
+
+    if didTimeOut {
+      throw Org2CLIError.commandTimedOut(seconds: Int(timeout?.rounded(.up) ?? 0))
+    }
 
     let outData = stdoutCollector.data
     let errData = stderrCollector.data
@@ -197,6 +249,7 @@ private final class PipeOutputCollector: @unchecked Sendable {
 public enum Org2CLIError: LocalizedError, Equatable {
   case missingCLI(String)
   case commandFailed(status: Int, message: String)
+  case commandTimedOut(seconds: Int)
 
   public var errorDescription: String? {
     switch self {
@@ -204,6 +257,8 @@ public enum Org2CLIError: LocalizedError, Equatable {
       "Org2 CLI not found at \(path). Run npm run build in the org2 repo."
     case .commandFailed(_, let message):
       message
+    case .commandTimedOut(let seconds):
+      "Org2 rendering timed out after \(seconds) second\(seconds == 1 ? "" : "s")."
     }
   }
 }
