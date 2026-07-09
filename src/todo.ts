@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { computeSubtreeRange, findHeadingAtOrAbove, findPlanningBlockEnd } from "./sourceLines.js";
+import { computeSubtreeRange, findHeadingAtOrAbove, findPlanningBlockEnd, upsertHeadlinePropertyInLines } from "./sourceLines.js";
 
 export type TodoStatus = "todo" | "in_progress" | "done" | "canceled";
 
@@ -115,27 +115,6 @@ function findDrawer(lines: string[], start: number, endExclusive: number, name: 
     }
   }
   return null;
-}
-
-function upsertProperty(lines: string[], propsStart: number, propsEnd: number, key: string, value: string): void {
-  const keyPrefix = `:${key}:`;
-  for (let i = propsStart + 1; i < propsEnd; i++) {
-    const line = lines[i] ?? "";
-    if (line.toUpperCase().startsWith(keyPrefix.toUpperCase())) {
-      lines[i] = `${keyPrefix} ${value}`;
-      return;
-    }
-  }
-  // Insert before :END:
-  lines.splice(propsEnd, 0, `${keyPrefix} ${value}`);
-}
-
-function ensurePropertyDrawer(lines: string[], insertAt: number): { start: number; end: number } {
-  // Insert a new drawer:
-  // :PROPERTIES:
-  // :END:
-  lines.splice(insertAt, 0, ":PROPERTIES:", ":END:");
-  return { start: insertAt, end: insertAt + 1 };
 }
 
 function ensureLogbookDrawer(lines: string[], insertAt: number): { start: number; end: number } {
@@ -305,20 +284,14 @@ export function assignTodoInText(input: string, opts: AssignTodoOptions): Assign
 
   const lines = input.split("\n");
   const headingIndex = findHeadingAtOrAbove(lines, opts.lineNumber);
-  let endExclusive = computeSubtreeRange(lines, headingIndex).endExclusive;
+  const endExclusive = computeSubtreeRange(lines, headingIndex).endExclusive;
   const afterPlanning = findPlanningBlockEnd(lines, headingIndex, endExclusive);
 
-  let props: { start: number; end: number; terminated: boolean } | null = findDrawer(lines, afterPlanning, endExclusive, "PROPERTIES");
-  if (!props || !props.terminated) {
-    const created = ensurePropertyDrawer(lines, afterPlanning);
-    props = { start: created.start, end: created.end, terminated: true };
-    endExclusive = computeSubtreeRange(lines, headingIndex).endExclusive;
-  }
-
-  const oldAssignee = propertyValue(lines, props.start, props.end, "ASSIGNEE");
+  const props = findDrawer(lines, afterPlanning, endExclusive, "PROPERTIES");
+  const oldAssignee = props?.terminated ? propertyValue(lines, props.start, props.end, "ASSIGNEE") : undefined;
   const changed = oldAssignee !== assignee;
   if (changed) {
-    upsertProperty(lines, props.start, props.end, "ASSIGNEE", assignee);
+    upsertHeadlinePropertyInLines(lines, headingIndex, "ASSIGNEE", assignee);
   }
 
   return {
