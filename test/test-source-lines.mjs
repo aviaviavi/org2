@@ -9,6 +9,7 @@ const {
   findHeadingAtOrAbove,
   getHeadlineLevel,
   isHeadlineLine,
+  upsertHeadlinePropertyInLines,
 } = await import(path.join(repo, "dist", "sourceLines.js"));
 
 const lines = [
@@ -40,9 +41,45 @@ assert.deepEqual(computeSubtreeRange(lines, 1), { start: 1, endExclusive: 9, lev
 assert.deepEqual(computeSubtreeRange(lines, 3), { start: 3, endExclusive: 7, level: 2 });
 assert.deepEqual(computeSubtreeRange(lines, 9), { start: 9, endExclusive: 11, level: 1 });
 
+const propertyInsertLines = [
+  "* Task",
+  "SCHEDULED: <2026-07-09 Thu>",
+  "Body",
+];
+upsertHeadlinePropertyInLines(propertyInsertLines, 0, "ASSIGNEE", "OpenClaw");
+assert.deepEqual(propertyInsertLines, [
+  "* Task",
+  "SCHEDULED: <2026-07-09 Thu>",
+  ":PROPERTIES:",
+  ":ASSIGNEE: OpenClaw",
+  ":END:",
+  "Body",
+]);
+
+const propertyUpdateLines = [
+  "* Task",
+  ":PROPERTIES:",
+  ":ASSIGNEE: Avi",
+  ":STATUS: draft",
+  ":END:",
+  "Body",
+];
+upsertHeadlinePropertyInLines(propertyUpdateLines, 0, "assignee", "OpenClaw");
+upsertHeadlinePropertyInLines(propertyUpdateLines, 0, "PRIORITY", "A");
+assert.deepEqual(propertyUpdateLines, [
+  "* Task",
+  ":PROPERTIES:",
+  ":ASSIGNEE: OpenClaw",
+  ":STATUS: draft",
+  ":PRIORITY: A",
+  ":END:",
+  "Body",
+]);
+
 assert.throws(() => findHeadingAtOrAbove(lines, 1), /No headline found at or above line 1/);
 assert.throws(() => findHeadingAtOrAbove(["Intro"], 1), /No headline found at or above line 1/);
 assert.throws(() => computeSubtreeRange(lines, 0), /Expected headline at line index 0/);
 assert.throws(() => computeSubtreeRange(lines, lines.length), /Expected headline at line index 11/);
+assert.throws(() => upsertHeadlinePropertyInLines(lines, 0, "ASSIGNEE", "OpenClaw"), /Expected headline at line index 0/);
 
 console.log("✓ source-lines");
