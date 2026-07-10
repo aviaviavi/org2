@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { computeSubtreeRange, findHeadingAtOrAbove, findPlanningBlockEnd } from "./sourceLines.js";
+import { computeSubtreeRange, findHeadingAtOrAbove, findPlanningBlockEnd, splitSourceLines } from "./sourceLines.js";
 
 export type PlanningKind = "SCHEDULED" | "DEADLINE";
 
@@ -64,7 +64,7 @@ export type UpdatePlanningOptions = {
 };
 
 export function updatePlanningInText(input: string, opts: UpdatePlanningOptions): UpdatePlanningResult {
-  const lines = input.split("\n");
+  const lines = splitSourceLines(input);
   const headingIndex = findHeadingAtOrAbove(lines, opts.lineNumber);
 
   const { endExclusive } = computeSubtreeRange(lines, headingIndex);

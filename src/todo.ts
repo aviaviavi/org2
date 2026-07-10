@@ -5,6 +5,7 @@ import {
   findHeadingAtOrAbove,
   findPlanningBlockEnd,
   getDrawerPropertyValue,
+  splitSourceLines,
   upsertHeadlinePropertyInLines,
 } from "./sourceLines.js";
 
@@ -160,7 +161,7 @@ export function computeToggleStatus(current: TodoStatus): TodoStatus {
 export function updateTodoInText(input: string, opts: UpdateTodoOptions): UpdateTodoResult {
   const now = opts.now ?? new Date();
   const stamp = formatOrgTimestamp(now);
-  const lines = input.split("\n");
+  const lines = splitSourceLines(input);
 
   const headingIndex = findHeadingAtOrAbove(lines, opts.lineNumber);
 
@@ -264,7 +265,7 @@ export function assignTodoInText(input: string, opts: AssignTodoOptions): Assign
   const assignee = opts.assignee.trim();
   if (!assignee) throw new Error("Assignee cannot be empty");
 
-  const lines = input.split("\n");
+  const lines = splitSourceLines(input);
   const headingIndex = findHeadingAtOrAbove(lines, opts.lineNumber);
   const endExclusive = computeSubtreeRange(lines, headingIndex).endExclusive;
   const afterPlanning = findPlanningBlockEnd(lines, headingIndex, endExclusive);
