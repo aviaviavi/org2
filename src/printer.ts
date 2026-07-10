@@ -203,11 +203,9 @@ function printList(node: ListNode, indent: string = ""): string {
   const items = node.items.map((item, index) => {
     const marker = node.ordered ? `${index + 1}.` : "-";
 
-    const checkbox = (item as any).checkbox as undefined | "unchecked" | "checked" | "checkedLower";
     let checkboxStr = "";
-    if (checkbox === "unchecked") checkboxStr = " [ ]";
-    if (checkbox === "checked") checkboxStr = " [X]";
-    if (checkbox === "checkedLower") checkboxStr = " [x]";
+    if (item.checkbox === "unchecked") checkboxStr = " [ ]";
+    if (item.checkbox === "checked") checkboxStr = " [X]";
 
     const nestedListIndent = indent + " ".repeat(marker.length + 1);
     const continuationIndent = indent + " ".repeat(marker.length + checkboxStr.length + 1);
@@ -227,7 +225,7 @@ function printList(node: ListNode, indent: string = ""): string {
   return items.join("\n");
 }
 
-function printNode(node: any): string {
+function printNode(node: Node): string {
   switch (node.type) {
     case "Paragraph":
       return printParagraph(node);
@@ -259,13 +257,17 @@ function printNode(node: any): string {
       return printListItem(node, "", "");
     case "Text":
       return printText(node);
-    default:
-      throw new Error(`Unsupported node in printer: ${node.type}`);
+    default: {
+      const _exhaustive: never = node;
+      return _exhaustive;
+    }
   }
 }
 
+type NodeWithSpacing = Node & { blankLinesBefore?: unknown };
+
 function blankLinesBefore(node: Node): number | undefined {
-  const value = (node as any).blankLinesBefore;
+  const value = (node as NodeWithSpacing).blankLinesBefore;
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
