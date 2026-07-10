@@ -5,8 +5,14 @@ export type LinkAbbreviationMap = Map<string, string>;
 export type LinkAbbreviationRecord = Record<string, string>;
 
 const LINK_LINE_RE = /^\s*#\+LINK:\s*([^\s]+)\s+(.*?)\s*$/i;
+const ABBREVIATION_PREFIX_RE = /^[A-Za-z][A-Za-z0-9+.-]*$/;
 
 const RESERVED_PREFIXES = new Set(["http", "https", "mailto", "file", "id"]);
+
+type LinkAbbreviationEntry = {
+  prefix: string;
+  template: string;
+};
 
 function normalizePrefix(value: string): string {
   return String(value || "").trim().toLowerCase();
@@ -16,11 +22,27 @@ function normalizeTemplate(value: string): string {
   return String(value || "").trim();
 }
 
-function setIfValid(out: LinkAbbreviationMap, prefixRaw: string, templateRaw: string): void {
+function parseLinkAbbreviationEntry(prefixRaw: string, templateRaw: string): LinkAbbreviationEntry | null {
   const prefix = normalizePrefix(prefixRaw);
   const template = normalizeTemplate(templateRaw);
-  if (!prefix || !template) return;
-  out.set(prefix, template);
+  if (!prefix || !template) return null;
+  if (!ABBREVIATION_PREFIX_RE.test(prefix)) return null;
+  return { prefix, template };
+}
+
+function parseLinkAbbreviationDefinition(raw: string): LinkAbbreviationEntry | null {
+  const definition = String(raw || "").trim();
+  if (!definition) return null;
+
+  const match = /^([^\s]+)\s+(.+?)\s*$/.exec(definition);
+  if (!match) return null;
+  return parseLinkAbbreviationEntry(match[1] || "", match[2] || "");
+}
+
+function setIfValid(out: LinkAbbreviationMap, prefixRaw: string, templateRaw: string): void {
+  const entry = parseLinkAbbreviationEntry(prefixRaw, templateRaw);
+  if (!entry) return;
+  out.set(entry.prefix, entry.template);
 }
 
 export function buildBuiltInLinkAbbreviations(linearTeam?: string): LinkAbbreviationMap {
@@ -45,15 +67,9 @@ export function collectLinkAbbreviationsFromDoc(doc: DocumentNode): LinkAbbrevia
     if (node.type !== "KeywordLine") continue;
     if (String(node.keyRaw || "").trim().toUpperCase() !== "LINK") continue;
 
-    const raw = String(node.valueRaw || "").trim();
-    if (!raw) continue;
-
-    const parts = raw.split(/\s+/);
-    if (parts.length < 2) continue;
-
-    const prefix = parts[0] || "";
-    const template = raw.slice(prefix.length).trim();
-    setIfValid(out, prefix, template);
+    const entry = parseLinkAbbreviationDefinition(node.valueRaw || "");
+    if (!entry) continue;
+    out.set(entry.prefix, entry.template);
   }
 
   return out;
@@ -64,7 +80,9 @@ export function collectLinkAbbreviationsFromText(text: string): LinkAbbreviation
   for (const line of String(text || "").split(/\r?\n/)) {
     const m = LINK_LINE_RE.exec(line);
     if (!m) continue;
-    setIfValid(out, m[1] || "", m[2] || "");
+    const entry = parseLinkAbbreviationEntry(m[1] || "", m[2] || "");
+    if (!entry) continue;
+    out.set(entry.prefix, entry.template);
   }
   return out;
 }
