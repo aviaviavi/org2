@@ -6,8 +6,10 @@ import { fileURLToPath } from "node:url";
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const {
   computeSubtreeRange,
+  findDrawerInLines,
   findPlanningBlockEnd,
   findHeadingAtOrAbove,
+  getDrawerPropertyValue,
   getHeadlineLevel,
   isHeadlineLine,
   isPlanningLine,
@@ -48,6 +50,27 @@ assert.equal(findHeadingAtOrAbove(lines, 999), 9);
 assert.deepEqual(computeSubtreeRange(lines, 1), { start: 1, endExclusive: 9, level: 1 });
 assert.deepEqual(computeSubtreeRange(lines, 3), { start: 3, endExclusive: 7, level: 2 });
 assert.deepEqual(computeSubtreeRange(lines, 9), { start: 9, endExclusive: 11, level: 1 });
+
+const drawerLines = [
+  "* Task",
+  ":PROPERTIES:",
+  ":Assignee: Avi",
+  ":END:",
+  ":LOGBOOK:",
+  "- State \"DONE\" from \"TODO\" <2026-07-09 Thu 12:00>",
+  ":END:",
+  "Body",
+];
+const propsDrawer = findDrawerInLines(drawerLines, 1, drawerLines.length, "properties");
+assert.deepEqual(propsDrawer, { start: 1, end: 3, terminated: true });
+assert.equal(getDrawerPropertyValue(drawerLines, propsDrawer, "assignee"), "Avi");
+assert.equal(getDrawerPropertyValue(drawerLines, propsDrawer, "missing"), undefined);
+assert.deepEqual(findDrawerInLines(drawerLines, 1, drawerLines.length, "LOGBOOK"), { start: 4, end: 6, terminated: true });
+assert.equal(findDrawerInLines(drawerLines, 7, drawerLines.length, "PROPERTIES"), null);
+
+const unterminatedDrawer = findDrawerInLines(["* Task", ":PROPERTIES:", ":STATUS: malformed", "Body"], 1, 4, "PROPERTIES");
+assert.deepEqual(unterminatedDrawer, { start: 1, end: 3, terminated: false });
+assert.equal(getDrawerPropertyValue(["* Task", ":PROPERTIES:", ":STATUS: malformed", "Body"], unterminatedDrawer, "STATUS"), undefined);
 
 assert.equal(findPlanningBlockEnd([
   "* Task",
