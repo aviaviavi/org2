@@ -4,6 +4,12 @@ export type SubtreeRange = {
   level: number;
 };
 
+export type DrawerRange = {
+  start: number;
+  end: number;
+  terminated: boolean;
+};
+
 export function isHeadlineLine(line: string): boolean {
   return /^\*+\s+/.test(line);
 }
@@ -49,6 +55,33 @@ export function computeSubtreeRange(lines: string[], headingIndex: number): Subt
   return { start: headingIndex, endExclusive: lines.length, level };
 }
 
+export function findDrawerInLines(lines: string[], start: number, endExclusive: number, name: string): DrawerRange | null {
+  const begin = `:${name.trim().toUpperCase()}:`;
+  for (let i = start; i < endExclusive; i += 1) {
+    if ((lines[i] ?? "").trim().toUpperCase() !== begin) continue;
+
+    for (let j = i + 1; j < endExclusive; j += 1) {
+      if ((lines[j] ?? "").trim().toUpperCase() === ":END:") {
+        return { start: i, end: j, terminated: true };
+      }
+    }
+    return { start: i, end: endExclusive - 1, terminated: false };
+  }
+  return null;
+}
+
+export function getDrawerPropertyValue(lines: string[], drawer: DrawerRange, key: string): string | undefined {
+  if (!drawer.terminated) return undefined;
+
+  const keyPrefix = `:${key.trim().toUpperCase()}:`;
+  for (let i = drawer.start + 1; i < drawer.end; i += 1) {
+    const line = lines[i] ?? "";
+    if (!line.toUpperCase().startsWith(keyPrefix)) continue;
+    return line.slice(keyPrefix.length).trim();
+  }
+  return undefined;
+}
+
 export function upsertHeadlinePropertyInLines(lines: string[], headingIndex: number, key: string, value: string): void {
   if (headingIndex < 0 || headingIndex >= lines.length || !isHeadlineLine(lines[headingIndex] ?? "")) {
     throw new Error(`Expected headline at line index ${headingIndex}`);
@@ -60,31 +93,20 @@ export function upsertHeadlinePropertyInLines(lines: string[], headingIndex: num
     insertAt += 1;
   }
 
-  let drawerStart = -1;
-  let drawerEnd = -1;
-  if ((lines[insertAt] ?? "").trim().toUpperCase() === ":PROPERTIES:") {
-    drawerStart = insertAt;
-    for (let i = insertAt + 1; i < lines.length; i += 1) {
-      const trimmed = (lines[i] ?? "").trim().toUpperCase();
-      if (isHeadlineLine(lines[i] ?? "")) break;
-      if (trimmed === ":END:") {
-        drawerEnd = i;
-        break;
-      }
-    }
-  }
+  const nextHeading = computeSubtreeRange(lines, headingIndex).endExclusive;
+  const drawer = findDrawerInLines(lines, insertAt, nextHeading, "PROPERTIES");
 
-  if (drawerStart < 0 || drawerEnd < 0) {
+  if (!drawer || !drawer.terminated || drawer.start !== insertAt) {
     lines.splice(insertAt, 0, ":PROPERTIES:", `:${propertyKey}: ${value}`, ":END:");
     return;
   }
 
   const keyPrefix = `:${propertyKey}:`;
-  for (let i = drawerStart + 1; i < drawerEnd; i += 1) {
-    if ((lines[i] ?? "").toUpperCase().startsWith(keyPrefix.toUpperCase())) {
+  for (let i = drawer.start + 1; i < drawer.end; i += 1) {
+    if ((lines[i] ?? "").toUpperCase().startsWith(keyPrefix)) {
       lines[i] = `${keyPrefix} ${value}`;
       return;
     }
   }
-  lines.splice(drawerEnd, 0, `${keyPrefix} ${value}`);
+  lines.splice(drawer.end, 0, `${keyPrefix} ${value}`);
 }

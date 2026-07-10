@@ -1,5 +1,12 @@
 import fs from "node:fs";
-import { computeSubtreeRange, findHeadingAtOrAbove, findPlanningBlockEnd, upsertHeadlinePropertyInLines } from "./sourceLines.js";
+import {
+  computeSubtreeRange,
+  findDrawerInLines,
+  findHeadingAtOrAbove,
+  findPlanningBlockEnd,
+  getDrawerPropertyValue,
+  upsertHeadlinePropertyInLines,
+} from "./sourceLines.js";
 
 export type TodoStatus = "todo" | "in_progress" | "done" | "canceled";
 
@@ -102,21 +109,6 @@ function removeClosedPlanning(lines: string[], headingIndex: number, endExclusiv
   }
 }
 
-function findDrawer(lines: string[], start: number, endExclusive: number, name: string): { start: number; end: number; terminated: boolean } | null {
-  const begin = `:${name}:`;
-  for (let i = start; i < endExclusive; i++) {
-    if ((lines[i] ?? "") === begin) {
-      for (let j = i + 1; j < endExclusive; j++) {
-        if ((lines[j] ?? "") === ":END:") {
-          return { start: i, end: j, terminated: true };
-        }
-      }
-      return { start: i, end: endExclusive - 1, terminated: false };
-    }
-  }
-  return null;
-}
-
 function ensureLogbookDrawer(lines: string[], insertAt: number): { start: number; end: number } {
   lines.splice(insertAt, 0, ":LOGBOOK:", ":END:");
   return { start: insertAt, end: insertAt + 1 };
@@ -207,7 +199,7 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
     const afterPlanning = findPlanningBlockEnd(lines, headingIndex, endExclusive);
     let insertAfterProps = afterPlanning;
 
-    const props = findDrawer(lines, afterPlanning, endExclusive, "PROPERTIES");
+    const props = findDrawerInLines(lines, afterPlanning, endExclusive, "PROPERTIES");
     if (props && props.terminated) {
       insertAfterProps = props.end + 1;
     }
@@ -216,7 +208,7 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
       // Prefer existing LOGBOOK drawer placement (even if it appears before PROPERTIES)
       // to avoid creating duplicate drawers during status transitions.
       const logbookSearchStart = afterPlanning;
-      let logbook = findDrawer(lines, logbookSearchStart, endExclusive, "LOGBOOK");
+      let logbook = findDrawerInLines(lines, logbookSearchStart, endExclusive, "LOGBOOK");
       if (!logbook || !logbook.terminated) {
         const created = ensureLogbookDrawer(lines, insertAfterProps);
         logbook = { start: created.start, end: created.end, terminated: true };
@@ -225,7 +217,7 @@ export function updateTodoInText(input: string, opts: UpdateTodoOptions): Update
       // Insert log entry before :END:
       // Find end again (may have shifted)
       endExclusive = subtreeEndExclusive();
-      const log2 = findDrawer(lines, logbookSearchStart, endExclusive, "LOGBOOK");
+      const log2 = findDrawerInLines(lines, logbookSearchStart, endExclusive, "LOGBOOK");
       if (log2 && log2.terminated) {
         const oldKeywordForLog =
           oldKeyword && statusFromKeyword(oldKeyword) === oldStatus
@@ -268,16 +260,6 @@ export function updateTodoInFile(opts: UpdateTodoOptions & { apply: boolean }): 
   return res;
 }
 
-function propertyValue(lines: string[], propsStart: number, propsEnd: number, key: string): string | undefined {
-  const keyPrefix = `:${key}:`;
-  for (let i = propsStart + 1; i < propsEnd; i++) {
-    const line = lines[i] ?? "";
-    if (!line.toUpperCase().startsWith(keyPrefix.toUpperCase())) continue;
-    return line.slice(keyPrefix.length).trim();
-  }
-  return undefined;
-}
-
 export function assignTodoInText(input: string, opts: AssignTodoOptions): AssignTodoResult {
   const assignee = opts.assignee.trim();
   if (!assignee) throw new Error("Assignee cannot be empty");
@@ -287,8 +269,8 @@ export function assignTodoInText(input: string, opts: AssignTodoOptions): Assign
   const endExclusive = computeSubtreeRange(lines, headingIndex).endExclusive;
   const afterPlanning = findPlanningBlockEnd(lines, headingIndex, endExclusive);
 
-  const props = findDrawer(lines, afterPlanning, endExclusive, "PROPERTIES");
-  const oldAssignee = props?.terminated ? propertyValue(lines, props.start, props.end, "ASSIGNEE") : undefined;
+  const props = findDrawerInLines(lines, afterPlanning, endExclusive, "PROPERTIES");
+  const oldAssignee = props ? getDrawerPropertyValue(lines, props, "ASSIGNEE") : undefined;
   const changed = oldAssignee !== assignee;
   if (changed) {
     upsertHeadlinePropertyInLines(lines, headingIndex, "ASSIGNEE", assignee);
