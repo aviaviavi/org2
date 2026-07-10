@@ -13,6 +13,7 @@ const {
   getHeadlineLevel,
   isHeadlineLine,
   isPlanningLine,
+  splitSourceLines,
   upsertHeadlinePropertyInLines,
 } = await import(path.join(repo, "dist", "sourceLines.js"));
 
@@ -39,6 +40,9 @@ assert.equal(isPlanningLine("  deadline: <2026-07-09 Thu>"), true);
 assert.equal(isPlanningLine("CLOSED:"), true);
 assert.equal(isPlanningLine("SCHEDULED:<2026-07-09 Thu>"), false);
 assert.equal(isPlanningLine("Body SCHEDULED: <2026-07-09 Thu>"), false);
+
+assert.deepEqual(splitSourceLines("A\r\nB\nC\rD"), ["A", "B", "C", "D"]);
+assert.deepEqual(splitSourceLines("A\r\n"), ["A", ""]);
 
 assert.equal(getHeadlineLevel("*** Deep"), 3);
 assert.equal(getHeadlineLevel("Body"), 0);

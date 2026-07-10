@@ -49,6 +49,15 @@ assert.equal(normalizedPlanning.changed, true);
 assert.match(normalizedPlanning.text, /^\* TODO Mixed\nSCHEDULED: <2026-07-08 Wed>\nBody$/m);
 assert.doesNotMatch(normalizedPlanning.text, /scheduled: .* SCHEDULED:/);
 
+const crlfPlanning = updatePlanningInText("* TODO CRLF\r\nBody\r\n", {
+  filePath: "tasks.org2",
+  lineNumber: 1,
+  kind: "DEADLINE",
+  date: "2026-07-08",
+});
+assert.equal(crlfPlanning.text, "* TODO CRLF\nDEADLINE: <2026-07-08 Wed>\nBody\n");
+assert.doesNotMatch(crlfPlanning.text, /\r/);
+
 const completed = updateTodoInText(source, {
   filePath: "tasks.org2",
   lineNumber: 10,
@@ -58,6 +67,15 @@ const completed = updateTodoInText(source, {
 assert.equal(completed.headingLineNumber, 9);
 assert.match(completed.text, /^\*\* DONE Sibling\nCLOSED: <2026-07-08 Wed 12:34>\nSibling body line\./m);
 assert.doesNotMatch(completed.text, /^\*\* TODO Child\nCLOSED:/m);
+
+const crlfCompleted = updateTodoInText("* TODO CRLF\r\nBody\r\n", {
+  filePath: "tasks.org2",
+  lineNumber: 1,
+  status: "done",
+  now: new Date(2026, 6, 8, 12, 34),
+});
+assert.equal(crlfCompleted.text, "* DONE CRLF\nCLOSED: <2026-07-08 Wed 12:34>\nBody\n");
+assert.doesNotMatch(crlfCompleted.text, /\r/);
 
 assert.throws(
   () => updatePlanningInText(source, {

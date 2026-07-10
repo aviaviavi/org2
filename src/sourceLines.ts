@@ -10,6 +10,10 @@ export type DrawerRange = {
   terminated: boolean;
 };
 
+export function splitSourceLines(input: string): string[] {
+  return input.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+}
+
 export function isHeadlineLine(line: string): boolean {
   return /^\*+\s+/.test(line);
 }
