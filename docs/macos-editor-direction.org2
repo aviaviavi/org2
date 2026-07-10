@@ -46,14 +46,16 @@ Current source-editor writing-loop coverage:
 
 * Medium-Term Plan
 
-Harden the source editor into the first-class writing surface:
+Status: complete. The native source editor is now the first-class writing surface:
 
-- Improve ~OrgSyntaxTextEditor~ around large files, selection preservation, undo grouping, and incremental syntax highlighting.
-- Add source-editor commands for Org2 actions that users expect from org-mode-style editing: heading/list insertion, promote/demote, TODO cycling, planning/property shortcuts, folding, and link insertion.
-- Use parser-provided ranges and diagnostics for semantic highlighting, navigation, and structured commands.
-- Keep save behavior boring: Command-S writes exactly the visible buffer, autosave never overwrites newer local text, and background reloads never replace active edits.
-- Add focused regression tests for source-editor entry from agenda, approvals, rendered rows, and full-page files.
-- Start designing the HTML render pipeline as a preview/read surface fed by shared compiler output, not as a replacement for the native source editor.
+- ~OrgSyntaxTextEditor~ preserves native selection and undo behavior, highlights the edited and visible line ranges incrementally, and avoids whole-document tokenization for large buffers.
+- Source commands cover heading and list insertion, heading/list promotion and demotion, TODO cycling, scheduling and deadlines, property and link insertion, heading navigation, and presentation-only source folding.
+- Commands are available from a compact source toolbar, the macOS Source menu, and Mac-native shortcuts. Vim-style or SpaceMacs-style bindings remain a future optional keymap.
+- A debounced editor-analysis process runs the shared parser against the current in-memory buffer. Parser-provided ranges drive navigation, structured commands, folding, subtle semantic region presentation, and inline diagnostics without becoming a second editable model.
+- Command edits are applied to the live ~NSTextView~ buffer and participate in native undo. They do not write around unsaved text through store-level file mutations.
+- Command-S writes exactly the visible buffer and keeps the editor open with a clean baseline. Background reloads are deferred while source editing is active, and a stale file produces a visible save conflict without discarding the draft.
+- Focused regressions cover source-editor entry from agenda and rendered selections, full-page files, semantic analysis, structured source commands, large-buffer highlighting, save continuity, reload deferral, and stale-write conflicts.
+- Read mode is compiler-generated HTML in a ~WKWebView~. Entry/page scope, source links, folding, property drawers, block quotes, and published-style typography are handled in the read pipeline while authoring remains native source text.
 
 * Longer-Term Options
 
@@ -61,6 +63,6 @@ After the source editor is solid, richer rendering can return as previews, overl
 
 - Gutter controls for TODOs, priorities, scheduling, backlinks, and block actions.
 - Inline previews for links, images, source blocks, citations, and generated artifacts.
-- Optional HTML rendered/read mode that remains separate from the active text buffer.
+- Optional split source/HTML preview while editing, still separate from the active text buffer.
 - Compiler-generated HTML views for published-style pages, generated artifacts, graph/backlink views, and tables where WebView rendering is a better fit than SwiftUI.
 - Selective hybrid widgets only where they do not fight native text editing behavior.

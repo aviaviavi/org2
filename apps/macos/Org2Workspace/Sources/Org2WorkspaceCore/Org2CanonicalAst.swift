@@ -6,6 +6,110 @@ public struct Org2CanonicalDocument: Decodable, Equatable, Sendable {
   public let children: [Org2CanonicalNode]
 }
 
+public struct Org2EditorAnalysisPayload: Decodable, Equatable, Sendable {
+  public let document: Org2CanonicalDocument
+  public let diagnostics: [Org2EditorDiagnostic]
+}
+
+public struct Org2EditorDiagnostic: Decodable, Equatable, Sendable, Identifiable {
+  public let message: String
+  public let line: Int
+  public let column: Int
+
+  public var id: String { "\(line):\(column):\(message)" }
+}
+
+public enum OrgSourceSemanticRegionKind: String, Equatable, Sendable {
+  case headline
+  case paragraph
+  case keyword
+  case planning
+  case properties
+  case sourceBlock
+  case block
+  case table
+  case unsupported
+}
+
+public struct OrgSourceSemanticRegion: Equatable, Sendable, Identifiable {
+  public let kind: OrgSourceSemanticRegionKind
+  public let startLine: Int
+  public let endLine: Int
+  public let level: Int?
+  public let todo: String?
+
+  public var id: String { "\(kind.rawValue):\(startLine):\(endLine):\(level ?? 0)" }
+}
+
+public struct OrgSourceEditorSemanticSnapshot: Equatable, Sendable {
+  public let regions: [OrgSourceSemanticRegion]
+  public let diagnostics: [Org2EditorDiagnostic]
+
+  public init(
+    regions: [OrgSourceSemanticRegion],
+    diagnostics: [Org2EditorDiagnostic] = []
+  ) {
+    self.regions = regions
+    self.diagnostics = diagnostics
+  }
+
+  public init(payload: Org2EditorAnalysisPayload) {
+    var regions: [OrgSourceSemanticRegion] = []
+
+    func append(_ nodes: [Org2CanonicalNode]) {
+      for node in nodes {
+        switch node {
+        case .headline(let headline):
+          if let range = headline.sourceRange {
+            regions.append(OrgSourceSemanticRegion(
+              kind: .headline,
+              startLine: range.startLine,
+              endLine: range.endLine,
+              level: headline.level,
+              todo: headline.todo
+            ))
+          }
+          append(headline.children)
+        case .paragraph(let paragraph):
+          appendRegion(.paragraph, paragraph.sourceRange)
+        case .keywordLine(let keyword):
+          appendRegion(.keyword, keyword.sourceRange)
+        case .planning(let planning):
+          appendRegion(.planning, planning.sourceRange)
+        case .propertyDrawer(let drawer):
+          appendRegion(.properties, drawer.sourceRange)
+        case .srcBlock(let block):
+          appendRegion(.sourceBlock, block.sourceRange)
+        case .block(let block):
+          appendRegion(.block, block.sourceRange)
+        case .table(let table):
+          appendRegion(.table, table.sourceRange)
+        case .unsupported(_, let range):
+          appendRegion(.unsupported, range)
+        }
+      }
+    }
+
+    func appendRegion(_ kind: OrgSourceSemanticRegionKind, _ range: Org2CanonicalSourceRange?) {
+      guard let range else { return }
+      regions.append(OrgSourceSemanticRegion(
+        kind: kind,
+        startLine: range.startLine,
+        endLine: range.endLine,
+        level: nil,
+        todo: nil
+      ))
+    }
+
+    append(payload.document.children)
+    self.regions = regions.sorted {
+      if $0.startLine != $1.startLine { return $0.startLine < $1.startLine }
+      return $0.endLine > $1.endLine
+    }
+    diagnostics = payload.diagnostics
+  }
+}
+
 public struct Org2CanonicalSourceRange: Decodable, Equatable, Sendable {
   public let startLine: Int
   public let endLine: Int

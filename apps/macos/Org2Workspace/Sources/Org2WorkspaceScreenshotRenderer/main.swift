@@ -27,6 +27,12 @@ struct Org2WorkspaceScreenshotRenderer {
         }
       }
       try? await Task.sleep(nanoseconds: 1_000_000_000)
+      if ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_EDIT_SOURCE"] != nil {
+        await MainActor.run {
+          store.beginEditingCurrentScope()
+        }
+        try? await Task.sleep(nanoseconds: 250_000_000)
+      }
 
       try await MainActor.run {
         let content = ZStack {

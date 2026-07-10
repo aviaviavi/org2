@@ -90,6 +90,27 @@ public struct Org2CLI: Sendable {
     return String(decoding: data, as: UTF8.self)
   }
 
+  public func analyzeEditorText(
+    _ text: String,
+    sourceLineOffset: Int = 0,
+    timeout: TimeInterval = 5
+  ) async throws -> OrgSourceEditorSemanticSnapshot {
+    var arguments: [String] = []
+    if sourceLineOffset > 0 {
+      arguments.append(contentsOf: ["--source-line-offset", "\(sourceLineOffset)"])
+    }
+    let data = try await Task.detached(priority: .utility) {
+      try runProcess(
+        scriptPath: repoRoot.appendingPathComponent("dist/editor-analysis.js"),
+        arguments: arguments,
+        standardInput: Data(text.utf8),
+        timeout: timeout
+      )
+    }.value
+    let payload = try JSONDecoder().decode(Org2EditorAnalysisPayload.self, from: data)
+    return OrgSourceEditorSemanticSnapshot(payload: payload)
+  }
+
   public func parseFileJSONSync<T: Decodable>(_ file: URL, sourceRanges: Bool = false, as type: T.Type = T.self) throws -> T {
     var arguments = [file.path]
     if sourceRanges {

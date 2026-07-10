@@ -742,6 +742,8 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedEntrySourceMode: EntrySourceMode = .entry
   @Published public var editableEntryText = ""
   @Published public var sourceEditorSelection = NSRange(location: 0, length: 0)
+  @Published public var sourceEditorCommandRequest: OrgSourceEditorCommandRequest?
+  @Published public var sourceEditorDiagnostics: [Org2EditorDiagnostic] = []
   @Published public var selectedBlockID: OrgEditableBlock.ID?
   @Published public private(set) var foldedRenderedBlockIDs: Set<OrgEditableBlock.ID> = []
   @Published public var editingBlockID: OrgEditableBlock.ID?
@@ -885,6 +887,7 @@ public final class WorkspaceStore: ObservableObject {
   private var activeEntrySourceLoadingGeneration: Int?
   private var liveFileEditorAutosaveTask: Task<Void, Never>?
   private var liveFileEditorAutosaveGeneration = 0
+  private var sourceEditorCommandGeneration = 0
   private var backlinksLoadGeneration = 0
   private var detailNavigationBackStack: [DetailNavigationSnapshot] = [] {
     didSet {
@@ -3309,10 +3312,7 @@ public final class WorkspaceStore: ObservableObject {
   private func shouldDeferEntrySourceApplicationDuringActiveEdit(for location: WorkspaceLocation) -> Bool {
     guard selectedLocationMatches(location), selectedEntrySource != nil else { return false }
     if editingBlockID != nil { return true }
-    if isEditingEntry {
-      return Self.normalizeLineEndings(editableEntryText)
-        != Self.normalizeLineEndings(selectedEntrySource?.text ?? "")
-    }
+    if isEditingEntry { return true }
     if isLiveFileEditorSelected && liveFileEditorHasUnsavedChanges {
       return true
     }
@@ -3390,7 +3390,28 @@ public final class WorkspaceStore: ObservableObject {
       in: source.text
     )
     resetBlockState()
+    sourceEditorDiagnostics = []
     isEditingEntry = true
+  }
+
+  public func requestSourceEditorCommand(_ command: OrgSourceEditorCommand) {
+    guard isEditingEntry else {
+      statusText = "Open source editing first"
+      return
+    }
+    sourceEditorCommandGeneration += 1
+    sourceEditorCommandRequest = OrgSourceEditorCommandRequest(
+      id: sourceEditorCommandGeneration,
+      command: command
+    )
+  }
+
+  public func analyzeSourceEditorText(_ text: String) async -> OrgSourceEditorSemanticSnapshot? {
+    do {
+      return try await cli.analyzeEditorText(text)
+    } catch {
+      return nil
+    }
   }
 
   public func beginEditingCurrentScope() {
@@ -3422,6 +3443,8 @@ public final class WorkspaceStore: ObservableObject {
   public func cancelEditingSelectedEntry() {
     editableEntryText = selectedEntrySource?.text ?? ""
     sourceEditorSelection = NSRange(location: 0, length: 0)
+    sourceEditorDiagnostics = []
+    sourceEditorCommandRequest = nil
     isEditingEntry = false
   }
 
@@ -3573,7 +3596,7 @@ public final class WorkspaceStore: ObservableObject {
 
   public var canSaveActiveEdit: Bool {
     if isEditingEntry {
-      return !isSavingEntry
+      return entryEditorHasUnsavedChanges && !isSavingEntry
     }
     if editingBlockID != nil {
       return !isSavingBlock
@@ -3582,7 +3605,8 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public var canSaveCurrentFile: Bool {
-    canSaveActiveEdit
+    (isEditingEntry && !isSavingEntry)
+      || canSaveActiveEdit
       || canSaveLiveFileEditor
       || (orgCryptEncryptOnSave && selectedFileForOrgCryptSave != nil)
   }
@@ -3607,6 +3631,11 @@ public final class WorkspaceStore: ObservableObject {
 
   public var liveFileEditorHasUnsavedChanges: Bool {
     guard let source = selectedEntrySource, isLiveFileEditorSelected else { return false }
+    return Self.normalizeLineEndings(editableEntryText) != Self.normalizeLineEndings(source.text)
+  }
+
+  public var entryEditorHasUnsavedChanges: Bool {
+    guard isEditingEntry, let source = selectedEntrySource else { return false }
     return Self.normalizeLineEndings(editableEntryText) != Self.normalizeLineEndings(source.text)
   }
 
@@ -3886,6 +3915,10 @@ public final class WorkspaceStore: ObservableObject {
       statusText = "Selection is read-only"
       return
     }
+    guard entryEditorHasUnsavedChanges else {
+      statusText = "No source changes to save"
+      return
+    }
 
     isSavingEntry = true
     defer { isSavingEntry = false }
@@ -3898,7 +3931,11 @@ public final class WorkspaceStore: ObservableObject {
       }.value
     } catch {
       errorText = error.localizedDescription
-      statusText = "Save failed"
+      if case WorkspaceEditError.fileChanged = error {
+        statusText = "Save conflict: file changed on disk"
+      } else {
+        statusText = "Save failed"
+      }
       return
     }
 
@@ -3911,13 +3948,17 @@ public final class WorkspaceStore: ObservableObject {
     } catch {
       recordOrgCryptEncryptionFailure(error, savedPrefix: "Saved, but")
       recordFileUndo(from: undoSnapshot)
-      await finishSavedEntry(source: source, savedText: replacement)
+      await finishSavedEntry(source: source, savedText: replacement, keepEditing: true)
       return
     }
 
     recordFileUndo(from: undoSnapshot)
     statusText = savedStatus
-    await finishSavedEntry(source: source, savedText: replacement)
+    await finishSavedEntry(
+      source: source,
+      savedText: replacement,
+      keepEditing: !savedStatus.contains("encrypted")
+    )
   }
 
   public func noteLiveFileEditorTextChanged(_ text: String) {
@@ -3986,9 +4027,16 @@ public final class WorkspaceStore: ObservableObject {
       }
     } catch {
       errorText = error.localizedDescription
-      liveFileEditorStatusText = explicit ? "Save failed" : "Autosave failed"
+      if case WorkspaceEditError.fileChanged = error {
+        liveFileEditorStatusText = "Conflict"
+        statusText = "Save conflict: file changed on disk"
+      } else {
+        liveFileEditorStatusText = explicit ? "Save failed" : "Autosave failed"
+      }
       if explicit {
-        statusText = "Save failed"
+        if !statusText.hasPrefix("Save conflict") {
+          statusText = "Save failed"
+        }
       }
       return
     }
@@ -4038,13 +4086,17 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  private func finishSavedEntry(source: EntrySource, savedText: String) async {
+  private func finishSavedEntry(
+    source: EntrySource,
+    savedText: String,
+    keepEditing: Bool
+  ) async {
     invalidateCanonicalDocumentCache(for: source.file)
     let savedSource = Self.entrySource(source, replacingText: savedText)
     selectedEntrySource = savedSource
     editableEntryText = savedSource.text
-    isEditingEntry = false
-    if let selectedLocation {
+    isEditingEntry = keepEditing
+    if !keepEditing, let selectedLocation {
       await loadEntrySource(for: selectedLocation)
     } else {
       renderEntrySource(savedSource, generation: entrySourceLoadGeneration)
