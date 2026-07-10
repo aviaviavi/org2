@@ -121,12 +121,31 @@ main.org2-document { width: min(100%, 760px); max-width: 100%; margin: 0 auto; p
 .org2-headline + .org2-headline { margin-top: 0.72rem; }
 .org2-headline-summary {
   margin: 0.9rem 0 0.36rem;
+  padding-left: 1.15rem;
   color: var(--org2-text);
   cursor: pointer;
-  list-style-position: outside;
+  list-style: none;
+  position: relative;
 }
-.org2-headline-summary::marker { color: var(--org2-muted); font-size: 0.64em; }
-.org2-headline-summary:hover::marker { color: var(--org2-accent); }
+.org2-headline-summary::-webkit-details-marker,
+.org2-properties-drawer > summary::-webkit-details-marker,
+.org2-drawer > summary::-webkit-details-marker { display: none; }
+.org2-headline-summary::before,
+.org2-properties-drawer > summary::before,
+.org2-drawer > summary::before {
+  content: "▶";
+  position: absolute;
+  left: 0.05rem;
+  top: 0.22em;
+  color: var(--org2-muted);
+  font-size: 0.82rem;
+  font-weight: 750;
+  line-height: 1.2;
+}
+details[open] > summary::before { content: "▼"; }
+.org2-headline-summary:hover::before,
+.org2-properties-drawer > summary:hover::before,
+.org2-drawer > summary:hover::before { color: var(--org2-accent); }
 .org2-headline-summary > h1,
 .org2-headline-summary > h2,
 .org2-headline-summary > h3,
@@ -206,14 +225,21 @@ input[type="checkbox"] { width: 0.95rem; height: 0.95rem; margin: 0 0.42rem 0 -0
 .org2-planning-kind { color: var(--org2-warning); font-size: 0.78em; font-weight: 700; }
 .org2-timestamp, .org2-timestamp-range { font-variant-numeric: tabular-nums; }
 .org2-properties-drawer { margin: 0.75rem 0 1rem; padding: 0.55rem 0.8rem 0.65rem; background: var(--org2-faint); border-left: 2px solid var(--org2-rule); font-size: 0.82rem; }
-.org2-properties-drawer > summary { color: var(--org2-muted); cursor: pointer; font-weight: 650; user-select: none; }
-.org2-properties-drawer > summary::marker { color: var(--org2-muted); }
+.org2-properties-drawer > summary {
+  position: relative;
+  padding-left: 1.15rem;
+  color: var(--org2-muted);
+  cursor: pointer;
+  font-weight: 650;
+  list-style: none;
+  user-select: none;
+}
 .org2-properties-drawer[open] > summary { margin-bottom: 0.5rem; }
 .org2-properties { display: grid; grid-template-columns: minmax(6rem, max-content) 1fr; gap: 0.22rem 0.9rem; margin: 0; padding: 0; }
 .org2-properties dt { color: var(--org2-muted); font-weight: 650; }
 .org2-properties dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; }
 .org2-drawer { margin: 0.75rem 0; color: var(--org2-muted); font-size: 0.9rem; }
-.org2-drawer summary { cursor: pointer; font-weight: 600; }
+.org2-drawer summary { position: relative; padding-left: 1.15rem; cursor: pointer; font-weight: 600; list-style: none; }
 .org2-keyword { color: var(--org2-muted); font-size: 0.88rem; }
 .org2-keyword-name { font-weight: 650; }
 table { width: 100%; margin: 0.8rem 0 1.15rem; border-collapse: collapse; font-size: 0.9rem; font-variant-numeric: tabular-nums; }

@@ -4021,23 +4021,22 @@ private struct DetailHeader: View {
   let location: WorkspaceLocation
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      HStack(alignment: .top, spacing: 12) {
-        WorkspaceIconBadge(systemImage: locationIcon, tint: .accentColor, fill: Color.accentColor.opacity(0.12))
-        VStack(alignment: .leading, spacing: 6) {
-          Text(location.title)
-            .font(.title3.weight(.semibold))
-            .lineLimit(nil)
-          if !location.subtitle.isEmpty {
-            Text(location.subtitle)
-              .font(.callout)
-              .foregroundStyle(.secondary)
-              .lineLimit(nil)
+    VStack(alignment: .leading, spacing: 10) {
+      ViewThatFits(in: .horizontal) {
+        HStack(alignment: .top, spacing: 20) {
+          detailIdentity
+            .frame(maxWidth: .infinity, alignment: .leading)
+          if !headerMetadataRows.isEmpty {
+            DetailMetadataGrid(rows: headerMetadataRows)
+              .fixedSize(horizontal: true, vertical: false)
           }
-          Text(store.relativePath(location.file) + ":\(location.lineForEditor)")
-            .font(.caption)
-            .foregroundStyle(.tertiary)
-            .textSelection(.enabled)
+        }
+
+        VStack(alignment: .leading, spacing: 8) {
+          detailIdentity
+          if !headerMetadataRows.isEmpty {
+            DetailMetadataGrid(rows: headerMetadataRows)
+          }
         }
       }
 
@@ -4094,6 +4093,33 @@ private struct DetailHeader: View {
     .background(WorkspaceDesign.barBackground)
     .onChange(of: store.pageSearchFocusToken) {
       isPageSearchFocused = true
+    }
+  }
+
+  private var detailIdentity: some View {
+    HStack(alignment: .top, spacing: 12) {
+      WorkspaceIconBadge(systemImage: locationIcon, tint: .accentColor, fill: Color.accentColor.opacity(0.12))
+      VStack(alignment: .leading, spacing: 5) {
+        Text(location.title)
+          .font(.title3.weight(.semibold))
+          .lineLimit(nil)
+        if !location.subtitle.isEmpty {
+          Text(location.subtitle)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .lineLimit(nil)
+        }
+        Text(store.relativePath(location.file) + ":\(location.lineForEditor)")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+          .textSelection(.enabled)
+      }
+    }
+  }
+
+  private var headerMetadataRows: [(String, String)] {
+    DetailMetadata.rows(for: location).filter { row in
+      !(row.0 == "Zone" && row.1 == location.subtitle)
     }
   }
 
@@ -4290,9 +4316,12 @@ private struct DetailHeader: View {
         Button {
           store.cancelActiveEdit()
         } label: {
-          Label("Cancel", systemImage: "xmark")
+          Label(
+            store.entryEditorHasUnsavedChanges ? "Cancel" : "Done",
+            systemImage: store.entryEditorHasUnsavedChanges ? "xmark" : "checkmark"
+          )
         }
-        .help("Discard changes")
+        .help(store.entryEditorHasUnsavedChanges ? "Discard changes" : "Close source editor")
       } else {
         Button {
           store.beginEditingCurrentScope()
@@ -4329,7 +4358,9 @@ private struct DetailHeader: View {
   }
 
   private var hasPendingEditorChanges: Bool {
-    store.hasActiveEdit || store.liveFileEditorHasUnsavedChanges
+    store.entryEditorHasUnsavedChanges
+      || store.editingBlockID != nil
+      || store.liveFileEditorHasUnsavedChanges
   }
 
   private var editStatusHelp: String {
@@ -4575,14 +4606,26 @@ private struct OrgSourceEditorWithLinkTools: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
+      sourceEditorCommandBar
+
       OrgSyntaxTextEditor(
         text: $store.editableEntryText,
         monospaced: true,
         showsScrollers: true,
         textInset: NSSize(width: 12, height: 12),
         focusOnAppear: true,
-        liveHighlighting: false,
+        liveHighlighting: true,
+        incrementalHighlighting: true,
+        concealsSyntax: false,
         orgWritingCommands: true,
+        commandRequest: store.sourceEditorCommandRequest,
+        semanticAnalyzer: { text in
+          await store.analyzeSourceEditorText(text)
+        },
+        diagnostics: $store.sourceEditorDiagnostics,
+        onCommandStatus: { status in
+          store.statusText = status
+        },
         selection: $store.sourceEditorSelection,
         onSaveCommand: { context in
           store.editableEntryText = context.text
@@ -4619,6 +4662,103 @@ private struct OrgSourceEditorWithLinkTools: View {
         )
       }
     }
+  }
+
+  private var sourceEditorCommandBar: some View {
+    HStack(spacing: 8) {
+      HStack(spacing: 6) {
+        Menu {
+          Button("Heading") { store.requestSourceEditorCommand(.insertHeading) }
+          Button("List Item") { store.requestSourceEditorCommand(.insertListItem) }
+          Divider()
+          Button("Link...") { store.requestSourceEditorCommand(.insertLink) }
+          Button("Property...") { store.requestSourceEditorCommand(.insertProperty) }
+        } label: {
+          Label("Insert", systemImage: "plus")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+
+        Button {
+          store.requestSourceEditorCommand(.cycleTodo)
+        } label: {
+          Label("Cycle TODO", systemImage: "arrow.triangle.2.circlepath")
+        }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
+        .frame(width: 26, height: 24)
+        .help("Cycle TODO (Command-Option-T)")
+
+        Menu {
+          Button("Schedule Today") { store.requestSourceEditorCommand(.scheduleToday) }
+          Button("Deadline Today") { store.requestSourceEditorCommand(.deadlineToday) }
+          Button("Clear Planning") { store.requestSourceEditorCommand(.clearPlanning) }
+        } label: {
+          Label("Planning", systemImage: "calendar.badge.clock")
+        }
+        .labelStyle(.iconOnly)
+        .menuStyle(.borderlessButton)
+        .frame(width: 26, height: 24)
+        .fixedSize()
+        .help("Planning")
+      }
+      .fixedSize(horizontal: true, vertical: false)
+
+      Divider()
+        .frame(height: 18)
+
+      ControlGroup {
+        Button {
+          store.requestSourceEditorCommand(.promote)
+        } label: {
+          Label("Promote", systemImage: "decrease.indent")
+        }
+        .labelStyle(.iconOnly)
+        .help("Promote (Command-Option-Left Arrow)")
+
+        Button {
+          store.requestSourceEditorCommand(.demote)
+        } label: {
+          Label("Demote", systemImage: "increase.indent")
+        }
+        .labelStyle(.iconOnly)
+        .help("Demote (Command-Option-Right Arrow)")
+      }
+      .fixedSize(horizontal: true, vertical: false)
+
+      Divider()
+        .frame(height: 18)
+
+      Menu {
+        Button("Toggle Current Heading") { store.requestSourceEditorCommand(.toggleFold) }
+        Button("Expand All") { store.requestSourceEditorCommand(.unfoldAll) }
+        Divider()
+        Button("Previous Heading") { store.requestSourceEditorCommand(.previousHeading) }
+        Button("Next Heading") { store.requestSourceEditorCommand(.nextHeading) }
+      } label: {
+        Label("Outline", systemImage: "list.bullet.indent")
+      }
+      .menuStyle(.borderlessButton)
+      .fixedSize()
+      .help("Outline and folding")
+
+      Spacer(minLength: 8)
+
+      if let diagnostic = store.sourceEditorDiagnostics.first {
+        Label(
+          store.sourceEditorDiagnostics.count == 1
+            ? "Line \(diagnostic.line)"
+            : "\(store.sourceEditorDiagnostics.count) issues",
+          systemImage: "exclamationmark.triangle"
+        )
+        .font(.caption)
+        .foregroundStyle(.orange)
+        .help(diagnostic.message)
+      }
+    }
+    .controlSize(.small)
+    .padding(.horizontal, 2)
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   private var hasSelection: Bool {
@@ -4690,26 +4830,6 @@ private struct EntryBodyView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      VStack(alignment: .leading, spacing: 12) {
-        DetailMetadataGrid(rows: metadataRows(location))
-        if let source = store.selectedEntrySource {
-          HStack(spacing: 8) {
-            WorkspaceIconBadge(systemImage: "doc.richtext")
-            VStack(alignment: .leading, spacing: 2) {
-              Text(store.selectedEntrySourceMode.title)
-                .font(.headline)
-              Text(store.relativePath(source.file) + ":\(source.displayRange)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-            }
-          }
-        }
-      }
-      .padding(16)
-
-      Divider()
-
       if store.isLoadingEntrySource && store.selectedEntrySource == nil {
         OrgHTMLLoadingView(label: "Loading source")
       } else if let source = store.selectedEntrySource {
@@ -4785,7 +4905,10 @@ private struct EntryBodyView: View {
     }
   }
 
-  private func metadataRows(_ location: WorkspaceLocation) -> [(String, String)] {
+}
+
+private enum DetailMetadata {
+  static func rows(for location: WorkspaceLocation) -> [(String, String)] {
     switch location {
     case .agenda(let item):
       let planning = [item.kind, item.time].compactMap { $0 }.joined(separator: " ")
@@ -4824,7 +4947,7 @@ private struct EntryBodyView: View {
     case .openClaw(let thread):
       let rows: [(String, String)] = [
         ("Zone", thread.zone),
-        ("Modified", thread.modifiedAt.map(Self.dateLabel) ?? ""),
+        ("Modified", thread.modifiedAt.map(dateLabel) ?? ""),
         ("ID", thread.idValue.map(Org2Display.shortID) ?? "")
       ]
       return nonEmptyRows(rows)
@@ -4841,7 +4964,7 @@ private struct EntryBodyView: View {
     }
   }
 
-  private func nonEmptyRows(_ rows: [(String, String)]) -> [(String, String)] {
+  private static func nonEmptyRows(_ rows: [(String, String)]) -> [(String, String)] {
     rows.filter { !$0.1.isEmpty }
   }
 

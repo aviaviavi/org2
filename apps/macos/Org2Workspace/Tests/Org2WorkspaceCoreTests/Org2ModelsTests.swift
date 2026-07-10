@@ -313,6 +313,22 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(paragraph.sourceRange, Org2CanonicalSourceRange(startLine: 42, endLine: 42))
   }
 
+  func testOrg2CLIAnalyzesEditorTextWithSemanticRegionsAndDiagnostics() async throws {
+    let cli = try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())
+    let snapshot = try await cli.analyzeEditorText(
+      "* TODO Parent\nBody\n** Child\n",
+      sourceLineOffset: 20
+    )
+
+    XCTAssertTrue(snapshot.diagnostics.isEmpty)
+    XCTAssertEqual(snapshot.regions.first(where: { $0.kind == .headline && $0.level == 1 })?.startLine, 21)
+    XCTAssertEqual(snapshot.regions.first(where: { $0.kind == .headline && $0.level == 2 })?.startLine, 23)
+
+    let invalid = try await cli.analyzeEditorText("* Parent\n:PROPERTIES:\n:ID: one\n")
+    XCTAssertEqual(invalid.diagnostics.first?.line, 4)
+    XCTAssertTrue(invalid.diagnostics.first?.message.localizedCaseInsensitiveContains("property drawer") == true)
+  }
+
   func testOrg2CLIRendersSafeAppHTMLFromText() async throws {
     let cli = try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())
     let html = try await cli.renderAppHTML(
@@ -3797,6 +3813,121 @@ final class Org2ModelsTests: XCTestCase {
       selectedRange: NSRange(location: 0, length: 0),
       direction: .indent
     ))
+  }
+
+  @MainActor
+  func testOrgSourceTextEditingStructuredCommandsUseSemanticHeadingRanges() throws {
+    let text = """
+    * Parent
+    Body
+    ** TODO Child
+    Child body
+    * Sibling
+    """
+    let snapshot = OrgSourceTextEditing.fallbackSemanticSnapshot(in: text)
+    let parent = try XCTUnwrap(snapshot.regions.first { $0.startLine == 1 })
+    let child = try XCTUnwrap(snapshot.regions.first { $0.startLine == 3 })
+    XCTAssertEqual(parent.endLine, 4)
+    XCTAssertEqual(child.endLine, 4)
+    XCTAssertEqual(
+      OrgSourceTextEditing.enclosingHeadline(in: snapshot, line: 4)?.startLine,
+      3
+    )
+
+    let bodyOffset = ("* Parent\nBody" as NSString).length
+    XCTAssertEqual(
+      OrgSourceTextEditing.headingInsertionReplacement(
+        in: text,
+        selectedRange: NSRange(location: bodyOffset, length: 0),
+        snapshot: snapshot
+      ).replacement,
+      "\n* "
+    )
+
+    let cycled = try XCTUnwrap(OrgSourceTextEditing.todoCycleReplacement(
+      in: text,
+      selectedRange: NSRange(location: bodyOffset, length: 0),
+      snapshot: snapshot
+    ))
+    XCTAssertEqual(cycled.replacement, "TODO ")
+    XCTAssertEqual((text as NSString).replacingCharacters(in: cycled.range, with: cycled.replacement).components(separatedBy: "\n")[0], "* TODO Parent")
+
+    let linked = try XCTUnwrap(OrgSourceTextEditing.linkReplacement(
+      in: "Alpha beta",
+      selectedRange: NSRange(location: 6, length: 4),
+      target: "id:beta",
+      description: nil
+    ))
+    XCTAssertEqual(linked.replacement, "[[id:beta][beta]]")
+
+    let nextHeading = try XCTUnwrap(OrgSourceTextEditing.headingNavigationRange(
+      in: text,
+      selectedRange: NSRange(location: 0, length: 0),
+      direction: .nextHeading,
+      snapshot: snapshot
+    ))
+    XCTAssertEqual(nextHeading.location, ("* Parent\nBody\n" as NSString).length)
+  }
+
+  @MainActor
+  func testOrgSourceTextEditingPlanningAndPropertyCommandsStayInBuffer() throws {
+    let text = "* TODO Parent\nBody"
+    let snapshot = OrgSourceTextEditing.fallbackSemanticSnapshot(in: text)
+    var calendar = Calendar.current
+    calendar.timeZone = .current
+    let date = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 9)))
+
+    let planning = try XCTUnwrap(OrgSourceTextEditing.planningReplacement(
+      in: text,
+      selectedRange: NSRange(location: (text as NSString).length, length: 0),
+      kind: "SCHEDULED",
+      date: date,
+      snapshot: snapshot
+    ))
+    XCTAssertEqual(planning.replacement, "\nSCHEDULED: <2026-07-09 Thu>")
+
+    let property = try XCTUnwrap(OrgSourceTextEditing.propertyReplacement(
+      in: text,
+      selectedRange: NSRange(location: (text as NSString).length, length: 0),
+      key: "owner",
+      value: "Avi",
+      snapshot: snapshot
+    ))
+    XCTAssertEqual(property.replacement, "\n:PROPERTIES:\n:OWNER: Avi\n:END:")
+
+    let plannedText = "* TODO Parent\nSCHEDULED: <2026-07-09 Thu>\nDEADLINE: <2026-07-10 Fri>\nBody"
+    let plannedSnapshot = OrgSourceTextEditing.fallbackSemanticSnapshot(in: plannedText)
+    let cleared = try XCTUnwrap(OrgSourceTextEditing.clearPlanningReplacement(
+      in: plannedText,
+      selectedRange: NSRange(location: (plannedText as NSString).length, length: 0),
+      snapshot: plannedSnapshot
+    ))
+    XCTAssertEqual(
+      (plannedText as NSString).replacingCharacters(in: cleared.range, with: cleared.replacement),
+      "* TODO Parent\nBody"
+    )
+  }
+
+  @MainActor
+  func testSyntaxEditorIncrementallyHighlightsLargeSourceWithoutConcealingSyntax() {
+    let prefix = String(repeating: "Plain body line\n", count: 2_000)
+    let heading = "* TODO Large"
+    let text = prefix + heading
+    XCTAssertGreaterThan((text as NSString).length, OrgSyntaxHighlighter.liveTokenizationUTF16Limit)
+    let storage = NSTextStorage(string: text)
+    let range = (text as NSString).range(of: heading)
+
+    OrgSyntaxHighlighter.apply(
+      to: storage,
+      characterRange: range,
+      monospaced: true,
+      concealsSyntax: false
+    )
+
+    let starColor = storage.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? NSColor
+    let todoColor = storage.attribute(.foregroundColor, at: range.location + 2, effectiveRange: nil) as? NSColor
+    XCTAssertEqual(starColor, NSColor.tertiaryLabelColor)
+    XCTAssertEqual(todoColor, NSColor.controlAccentColor)
   }
 
   @MainActor
@@ -9798,13 +9929,15 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertFalse(store.canSaveActiveEdit)
     store.beginEditingSelectedEntry()
-    XCTAssertTrue(store.canSaveActiveEdit)
+    XCTAssertFalse(store.canSaveActiveEdit)
     store.editableEntryText = store.editableEntryText.replacingOccurrences(of: "Body", with: "Updated body")
+    XCTAssertTrue(store.canSaveActiveEdit)
     await store.saveActiveEdit()
 
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("Updated body"))
     XCTAssertTrue(updated.contains("* Sibling\nSibling body"))
+    XCTAssertTrue(store.isEditingEntry)
     XCTAssertFalse(store.canSaveActiveEdit)
   }
 
@@ -9898,7 +10031,8 @@ final class Org2ModelsTests: XCTestCase {
 
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("* Quick note\nSome body"))
-    XCTAssertFalse(store.isEditingEntry)
+    XCTAssertTrue(store.isEditingEntry)
+    XCTAssertFalse(store.entryEditorHasUnsavedChanges)
     XCTAssertTrue(store.selectedRenderedBlocks.contains {
       if case .heading(let heading) = $0.rendered {
         return heading.title == "Quick note"
@@ -9985,8 +10119,9 @@ final class Org2ModelsTests: XCTestCase {
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("Edited body"))
     XCTAssertTrue(store.isLiveFileEditorAvailable)
-    XCTAssertFalse(store.isEditingEntry)
-    XCTAssertFalse(store.hasActiveEdit)
+    XCTAssertTrue(store.isEditingEntry)
+    XCTAssertTrue(store.hasActiveEdit)
+    XCTAssertFalse(store.entryEditorHasUnsavedChanges)
     XCTAssertEqual(store.selectedEntrySource?.text, store.editableEntryText)
     XCTAssertTrue(store.statusText.contains("Saved"))
   }
@@ -10033,8 +10168,11 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(updated.contains("#+TITLE: 2026-06-13 synced"))
     XCTAssertTrue(updated.contains("* Phone note\nSynced from mobile."))
     XCTAssertFalse(updated.contains("* Mac note"))
-    XCTAssertEqual(store.statusText, "Save failed")
+    XCTAssertEqual(store.statusText, "Save conflict: file changed on disk")
     XCTAssertTrue(store.errorText?.contains("File changed on disk") == true)
+    XCTAssertTrue(store.isEditingEntry)
+    XCTAssertTrue(store.entryEditorHasUnsavedChanges)
+    XCTAssertTrue(store.editableEntryText.contains("* Mac note"))
   }
 
   @MainActor
@@ -10149,13 +10287,14 @@ final class Org2ModelsTests: XCTestCase {
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("changed plaintext"))
     XCTAssertFalse(updated.contains("-----BEGIN PGP MESSAGE-----"))
-    XCTAssertFalse(store.isEditingEntry)
+    XCTAssertTrue(store.isEditingEntry)
+    XCTAssertFalse(store.entryEditorHasUnsavedChanges)
     XCTAssertEqual(store.statusText, "Saved, but encryption failed")
     XCTAssertTrue(store.errorText?.contains("Encryption failed") == true)
   }
 
   @MainActor
-  func testLegacyEntryEditStateKeepsRenderedSourceLoaded() async throws {
+  func testActiveSourceEditorDefersRenderedSourceReload() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-rendered-entry-edit-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -10196,14 +10335,9 @@ final class Org2ModelsTests: XCTestCase {
     try await waitForEntryRender(store)
 
     XCTAssertTrue(store.isEditingEntry)
-    XCTAssertTrue(store.canSaveActiveEdit)
-    XCTAssertFalse(store.selectedRenderedBlocks.isEmpty)
-    XCTAssertTrue(store.selectedRenderedBlocks.contains {
-      if case .heading(let heading) = $0.rendered {
-        return heading.title == "Parent"
-      }
-      return false
-    })
+    XCTAssertFalse(store.canSaveActiveEdit)
+    XCTAssertTrue(store.selectedRenderedBlocks.isEmpty)
+    XCTAssertTrue(store.editableEntryText.contains("* TODO Parent\nBody"))
   }
 
   @MainActor
@@ -10944,6 +11078,39 @@ final class Org2ModelsTests: XCTestCase {
 
     await store.saveActiveEdit()
     XCTAssertEqual(try String(contentsOf: note, encoding: .utf8), draft)
+  }
+
+  @MainActor
+  func testActiveSourceEditorReloadDoesNotReplaceCleanBuffer() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-reload-clean-source-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("reload-clean-source.org2")
+    let original = "* Parent\nOriginal body\n"
+    let external = "* Parent\nChanged elsewhere\n"
+    try original.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    let location = try XCTUnwrap(store.selectedLocation)
+    await store.loadEntrySource(for: location)
+    try await waitForEntryRender(store)
+    store.beginEditingCurrentScope()
+    XCTAssertFalse(store.entryEditorHasUnsavedChanges)
+
+    try external.write(to: note, atomically: true, encoding: .utf8)
+    await store.loadEntrySource(for: location)
+
+    XCTAssertTrue(store.isEditingEntry)
+    XCTAssertEqual(store.editableEntryText, original)
+    XCTAssertEqual(store.selectedEntrySource?.text, original)
+    XCTAssertFalse(store.entryEditorHasUnsavedChanges)
   }
 
   @MainActor
@@ -12984,7 +13151,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.editableEntryText, "* TODO Parent\nBody")
     XCTAssertEqual(store.sourceEditorSelection, NSRange(location: 14, length: 0))
     XCTAssertTrue(store.hasActiveEdit)
-    XCTAssertTrue(store.canSaveActiveEdit)
+    XCTAssertFalse(store.canSaveActiveEdit)
     XCTAssertFalse(store.handleDocumentKeyDown(keyDown(characters: "\u{7F}", keyCode: 51)))
 
     store.cancelActiveEdit()

@@ -211,6 +211,96 @@ struct Org2WorkspaceApp: App {
         .disabled(!store.hasSelectedBlock)
       }
 
+      CommandMenu("Source") {
+        Button("Insert Heading") {
+          store.requestSourceEditorCommand(.insertHeading)
+        }
+        .keyboardShortcut(.return, modifiers: [.command, .option])
+        .disabled(!store.isEditingEntry)
+
+        Button("Insert List Item") {
+          store.requestSourceEditorCommand(.insertListItem)
+        }
+        .keyboardShortcut("l", modifiers: [.command, .option])
+        .disabled(!store.isEditingEntry)
+
+        Button("Insert Link...") {
+          store.requestSourceEditorCommand(.insertLink)
+        }
+        .keyboardShortcut("k", modifiers: [.command])
+        .disabled(!store.isEditingEntry)
+
+        Button("Set Property...") {
+          store.requestSourceEditorCommand(.insertProperty)
+        }
+        .disabled(!store.isEditingEntry)
+
+        Divider()
+
+        Button("Promote") {
+          store.requestSourceEditorCommand(.promote)
+        }
+        .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+        .disabled(!store.isEditingEntry)
+
+        Button("Demote") {
+          store.requestSourceEditorCommand(.demote)
+        }
+        .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+        .disabled(!store.isEditingEntry)
+
+        Button("Cycle TODO") {
+          store.requestSourceEditorCommand(.cycleTodo)
+        }
+        .keyboardShortcut("t", modifiers: [.command, .option])
+        .disabled(!store.isEditingEntry)
+
+        Divider()
+
+        Button("Schedule Today") {
+          store.requestSourceEditorCommand(.scheduleToday)
+        }
+        .keyboardShortcut("s", modifiers: [.command, .option])
+        .disabled(!store.isEditingEntry)
+
+        Button("Deadline Today") {
+          store.requestSourceEditorCommand(.deadlineToday)
+        }
+        .keyboardShortcut("d", modifiers: [.command, .option])
+        .disabled(!store.isEditingEntry)
+
+        Button("Clear Planning") {
+          store.requestSourceEditorCommand(.clearPlanning)
+        }
+        .disabled(!store.isEditingEntry)
+
+        Divider()
+
+        Button("Toggle Heading Fold") {
+          store.requestSourceEditorCommand(.toggleFold)
+        }
+        .keyboardShortcut("[", modifiers: [.command, .option])
+        .disabled(!store.isEditingEntry)
+
+        Button("Expand All Headings") {
+          store.requestSourceEditorCommand(.unfoldAll)
+        }
+        .keyboardShortcut("]", modifiers: [.command, .option])
+        .disabled(!store.isEditingEntry)
+
+        Button("Previous Heading") {
+          store.requestSourceEditorCommand(.previousHeading)
+        }
+        .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+        .disabled(!store.isEditingEntry)
+
+        Button("Next Heading") {
+          store.requestSourceEditorCommand(.nextHeading)
+        }
+        .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+        .disabled(!store.isEditingEntry)
+      }
+
       CommandMenu("Encryption") {
         Button("Decrypt Subtree") {
           Task { await store.runOrgCrypt(.decrypt) }

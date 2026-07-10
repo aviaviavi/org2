@@ -2,7 +2,7 @@
 
 Org2 Workspace is the native macOS client for working with an Org2 corpus. It is an alpha app in =apps/macos/Org2Workspace=, built as a Swift Package, and uses the same parser/CLI output as the rest of Org2 instead of maintaining a private database.
 
-The app is currently best understood as a local workspace shell for dogfooding the product direction: global capture, agenda review, approval review, file navigation, search, rendered block editing, meeting capture, OpenClaw handoff, knowledge-node creation, and crypt workflows over normal files.
+The app is currently best understood as a local workspace shell for dogfooding the product direction: global capture, agenda review, approval review, file navigation, search, compiler-generated HTML reading, native source editing, meeting capture, OpenClaw handoff, knowledge-node creation, and crypt workflows over normal files.
 
 * Screenshots
 
@@ -30,18 +30,22 @@ The sidebar exposes the main workspace surfaces:
 
 Global capture is available while the app is running. =Cmd-Ctrl-Return= opens a capture modal from anywhere on macOS, and the in-app =Capture= command uses the same path. Captures append to today's daily note, using =roam.dailiesDir= from =org2.json= when configured. The modal can write notes or TODOs, set TODO state, priority, tags, scheduled/deadline dates, and mark a capture ready for agent handoff. The paste control accepts text, URLs, local files, and pasted image data; local files and images are copied into =attachments/= and linked from the capture.
 
-The detail pane can render a selected file, agenda item, approval item, search result, backlink, meeting note, or agent thread. It supports both raw source editing and structured rendered-block editing.
+The detail pane can render a selected file, agenda item, approval item, search result, backlink, meeting note, or agent thread. Read mode uses compiler-generated HTML; the Edit command opens the same entry or page in a native source editor.
 
 * Document editing
 
-The rendered editor is meant to make Org-shaped text feel native without hiding the source file. Current editing affordances include:
+The writing surface is a native ~NSTextView~ over the selected Org2 entry or full page. It keeps normal macOS cursor movement, selection, IME, undo, and save behavior while layering Org2 commands over the visible text buffer.
 
-- heading, planning, keyword, property drawer, paragraph, list item, media, quote, source, and table block editors,
-- block selection, insertion, duplication, deletion, movement, and folding,
-- inline editing for links, timestamps, and markup,
-- TODO, priority, tag, planning, property, and checkbox quick edits,
-- source block execution for supported local languages,
-- syntax-highlighted raw text editing with autosave-oriented block updates.
+Current source-editor affordances include:
+
+- incremental syntax highlighting that remains responsive on large files,
+- parser-backed source ranges, heading navigation, folding, semantic region presentation, and inline diagnostics,
+- Return continuation for unordered, ordered, checkbox, and indented list lines,
+- heading and list insertion, promotion and demotion, TODO cycling, scheduling, deadlines, property insertion, link insertion, and planning cleanup,
+- presentation-only heading folding that never changes the source text,
+- Command-S saving that keeps the editor open and refuses stale writes without discarding the draft.
+
+Read mode is deliberately separate. It renders the selected entry or page as HTML from the shared compiler, including headings, links, property drawers, quotes, tables, and other rich document structures. Rendered content is used for reading, navigation, and workflow actions, not as an authoritative editable DOM.
 
 The important product rule is that the app should write ordinary Org2 text. Users should be able to inspect every change in Git or another editor.
 
@@ -85,7 +89,11 @@ High-value shortcuts include:
 - =Cmd-Ctrl-Return= for system-wide capture while the app is running,
 - =Cmd-7=, =Cmd-8=, and =Cmd-9= for today/yesterday/tomorrow daily notes,
 - agenda-local =j= / =k= navigation, =/= filtering, and TODO/planning shortcuts,
-- document-local block navigation, editing, insertion, folding, duplication, movement, and deletion shortcuts.
+- =Cmd-Option-Return= and =Cmd-Option-L= for heading and list insertion in source editing,
+- =Cmd-Option-Left/Right= for promote/demote and =Cmd-Option-Up/Down= for heading navigation,
+- =Cmd-Option-T= for TODO cycling and =Cmd-Option-S/D= for scheduling or deadlines,
+- =Cmd-Option-[= / =Cmd-Option-]= for current-heading fold and expand all,
+- =Cmd-K= while the source editor is focused for link insertion.
 
 Use the in-app keyboard shortcuts sheet for the full current map.
 

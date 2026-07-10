@@ -369,7 +369,8 @@ final class OrgEditorInteractionTests: XCTestCase {
     try await waitForCondition {
       (try? harness.fileText().contains(replacement)) == true
         && (try? harness.fileText().contains("Wanted to check back in since it's be")) == false
-        && !harness.store.isEditingEntry
+        && harness.store.isEditingEntry
+        && !harness.store.entryEditorHasUnsavedChanges
     }
 
     await harness.store.reloadSelectedEntrySource()
@@ -410,7 +411,8 @@ final class OrgEditorInteractionTests: XCTestCase {
 
     try await waitForCondition {
       (try? harness.fileText().contains("Body\nextra")) == true
-        && !harness.store.isEditingEntry
+        && harness.store.isEditingEntry
+        && !harness.store.entryEditorHasUnsavedChanges
     }
   }
 

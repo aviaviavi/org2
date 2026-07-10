@@ -30,6 +30,33 @@ enum OrgSourceTextIndentDirection {
   case outdent
 }
 
+public enum OrgSourceEditorCommand: Equatable, Sendable {
+  case insertHeading
+  case insertListItem
+  case promote
+  case demote
+  case cycleTodo
+  case scheduleToday
+  case deadlineToday
+  case clearPlanning
+  case insertProperty
+  case insertLink
+  case toggleFold
+  case unfoldAll
+  case previousHeading
+  case nextHeading
+}
+
+public struct OrgSourceEditorCommandRequest: Equatable, Sendable {
+  public let id: Int
+  public let command: OrgSourceEditorCommand
+
+  public init(id: Int, command: OrgSourceEditorCommand) {
+    self.id = id
+    self.command = command
+  }
+}
+
 enum OrgSourceTextEditing {
   static func newlineReplacement(
     in text: String,
@@ -110,6 +137,397 @@ enum OrgSourceTextEditing {
       )
     )
   }
+
+  static func headingInsertionReplacement(
+    in text: String,
+    selectedRange: NSRange,
+    snapshot: OrgSourceEditorSemanticSnapshot?
+  ) -> OrgSyntaxTextEditReplacement {
+    let nsText = text as NSString
+    let selection = clampedRange(selectedRange, utf16Length: nsText.length)
+    let context = lineContext(in: nsText, selectedRange: selection)
+    let line = lineNumber(in: nsText, utf16Offset: selection.location)
+    let level = headingMarker(in: context.lineText)?.level
+      ?? enclosingHeadline(in: snapshot, line: line)?.level
+      ?? 1
+    let lineRange = nsText.lineRange(for: NSRange(location: selection.location, length: 0))
+    let contentEnd = lineContentEnd(in: nsText, lineRange: lineRange)
+    let prefix = "\n" + String(repeating: "*", count: max(1, level)) + " "
+    return OrgSyntaxTextEditReplacement(
+      range: NSRange(location: contentEnd, length: 0),
+      replacement: prefix
+    )
+  }
+
+  static func listItemInsertionReplacement(
+    in text: String,
+    selectedRange: NSRange
+  ) -> OrgSyntaxTextEditReplacement {
+    let nsText = text as NSString
+    let selection = clampedRange(selectedRange, utf16Length: nsText.length)
+    let context = lineContext(in: nsText, selectedRange: selection)
+    let indent = leadingWhitespace(in: context.lineText)
+    let rest = String(context.lineText.dropFirst(indent.count))
+    let prefix = listMarker(in: rest)?.nextPrefix ?? "- "
+    let lineRange = nsText.lineRange(for: NSRange(location: selection.location, length: 0))
+    let contentEnd = lineContentEnd(in: nsText, lineRange: lineRange)
+    return OrgSyntaxTextEditReplacement(
+      range: NSRange(location: contentEnd, length: 0),
+      replacement: "\n" + indent + prefix
+    )
+  }
+
+  static func todoCycleReplacement(
+    in text: String,
+    selectedRange: NSRange,
+    snapshot: OrgSourceEditorSemanticSnapshot?
+  ) -> OrgSyntaxTextEditReplacement? {
+    let nsText = text as NSString
+    let selection = clampedRange(selectedRange, utf16Length: nsText.length)
+    let currentLine = lineNumber(in: nsText, utf16Offset: selection.location)
+    let headingLine = headingMarker(in: lineText(in: nsText, line: currentLine)) != nil
+      ? currentLine
+      : enclosingHeadline(in: snapshot, line: currentLine)?.startLine
+    guard let headingLine else { return nil }
+    let range = lineRange(in: nsText, line: headingLine)
+    let raw = nsText.substring(with: NSRange(
+      location: range.location,
+      length: max(0, lineContentEnd(in: nsText, lineRange: range) - range.location)
+    ))
+    guard let match = headingTodoRegex.firstMatch(
+      in: raw,
+      range: NSRange(location: 0, length: (raw as NSString).length)
+    ) else { return nil }
+
+    let current = match.range(at: 2).location == NSNotFound
+      ? nil
+      : (raw as NSString).substring(with: match.range(at: 2))
+    let next: String?
+    switch current {
+    case nil: next = "TODO"
+    case "TODO": next = "IN_PROGRESS"
+    case "IN_PROGRESS", "PROG", "WAIT", "HOLD", "PAUSED": next = "DONE"
+    default: next = nil
+    }
+    let prefixRange = match.range(at: 1)
+    let statusRange = match.range(at: 2)
+    let replacementRange: NSRange
+    let replacement: String
+    if statusRange.location != NSNotFound {
+      replacementRange = NSRange(
+        location: range.location + statusRange.location,
+        length: statusRange.length + 1
+      )
+      replacement = next.map { $0 + " " } ?? ""
+    } else {
+      replacementRange = NSRange(
+        location: range.location + NSMaxRange(prefixRange),
+        length: 0
+      )
+      replacement = next.map { $0 + " " } ?? ""
+    }
+    return OrgSyntaxTextEditReplacement(range: replacementRange, replacement: replacement)
+  }
+
+  static func planningReplacement(
+    in text: String,
+    selectedRange: NSRange,
+    kind: String,
+    date: Date?,
+    snapshot: OrgSourceEditorSemanticSnapshot?
+  ) -> OrgSyntaxTextEditReplacement? {
+    let normalizedKind = kind.uppercased()
+    guard normalizedKind == "SCHEDULED" || normalizedKind == "DEADLINE" else { return nil }
+    let nsText = text as NSString
+    let selection = clampedRange(selectedRange, utf16Length: nsText.length)
+    let currentLine = lineNumber(in: nsText, utf16Offset: selection.location)
+    guard let headline = enclosingHeadline(in: snapshot, line: currentLine)
+      ?? headlineRegion(startingAt: currentLine, in: snapshot)
+    else { return nil }
+
+    let endLine = min(headline.endLine, lineCount(in: nsText))
+    for line in (headline.startLine + 1)...max(headline.startLine + 1, endLine) {
+      let raw = lineText(in: nsText, line: line)
+      if raw.range(of: #"^\s*\#(normalizedKind):"#, options: .regularExpression) != nil {
+        let range = lineRange(in: nsText, line: line)
+        if let date {
+          return OrgSyntaxTextEditReplacement(
+            range: NSRange(
+              location: range.location,
+              length: max(0, lineContentEnd(in: nsText, lineRange: range) - range.location)
+            ),
+            replacement: planningLine(kind: normalizedKind, date: date)
+          )
+        }
+        return OrgSyntaxTextEditReplacement(range: range, replacement: "")
+      }
+      if headingMarker(in: raw) != nil { break }
+    }
+
+    guard let date else { return nil }
+    let headingRange = lineRange(in: nsText, line: headline.startLine)
+    let insertion = lineContentEnd(in: nsText, lineRange: headingRange)
+    return OrgSyntaxTextEditReplacement(
+      range: NSRange(location: insertion, length: 0),
+      replacement: "\n" + planningLine(kind: normalizedKind, date: date)
+    )
+  }
+
+  static func clearPlanningReplacement(
+    in text: String,
+    selectedRange: NSRange,
+    snapshot: OrgSourceEditorSemanticSnapshot?
+  ) -> OrgSyntaxTextEditReplacement? {
+    let nsText = text as NSString
+    let selection = clampedRange(selectedRange, utf16Length: nsText.length)
+    let currentLine = lineNumber(in: nsText, utf16Offset: selection.location)
+    guard let headline = enclosingHeadline(in: snapshot, line: currentLine)
+      ?? headlineRegion(startingAt: currentLine, in: snapshot)
+    else { return nil }
+
+    var planningRanges: [NSRange] = []
+    let endLine = min(headline.endLine, lineCount(in: nsText))
+    for line in (headline.startLine + 1)...max(headline.startLine + 1, endLine) {
+      let raw = lineText(in: nsText, line: line)
+      if raw.range(
+        of: #"^\s*(?:SCHEDULED|DEADLINE|CLOSED):"#,
+        options: [.regularExpression, .caseInsensitive]
+      ) != nil {
+        planningRanges.append(lineRange(in: nsText, line: line))
+      } else if headingMarker(in: raw) != nil {
+        break
+      }
+    }
+    guard let first = planningRanges.first, let last = planningRanges.last else { return nil }
+
+    let span = NSRange(location: first.location, length: NSMaxRange(last) - first.location)
+    let replacement = NSMutableString(string: nsText.substring(with: span))
+    for range in planningRanges.reversed() {
+      replacement.replaceCharacters(
+        in: NSRange(location: range.location - span.location, length: range.length),
+        with: ""
+      )
+    }
+    return OrgSyntaxTextEditReplacement(
+      range: span,
+      replacement: replacement as String,
+      selectedRange: NSRange(location: span.location, length: 0)
+    )
+  }
+
+  static func propertyReplacement(
+    in text: String,
+    selectedRange: NSRange,
+    key rawKey: String,
+    value: String,
+    snapshot: OrgSourceEditorSemanticSnapshot?
+  ) -> OrgSyntaxTextEditReplacement? {
+    let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
+      .uppercased()
+      .replacingOccurrences(of: " ", with: "_")
+    guard !key.isEmpty, !key.contains(":") else { return nil }
+    let nsText = text as NSString
+    let selection = clampedRange(selectedRange, utf16Length: nsText.length)
+    let currentLine = lineNumber(in: nsText, utf16Offset: selection.location)
+    guard let headline = enclosingHeadline(in: snapshot, line: currentLine)
+      ?? headlineRegion(startingAt: currentLine, in: snapshot)
+    else { return nil }
+
+    var drawerStart: Int?
+    let endLine = min(headline.endLine, lineCount(in: nsText))
+    for line in (headline.startLine + 1)...max(headline.startLine + 1, endLine) {
+      let raw = lineText(in: nsText, line: line)
+      if raw == ":PROPERTIES:" {
+        drawerStart = line
+        continue
+      }
+      if drawerStart != nil {
+        if raw == ":END:" {
+          let endRange = lineRange(in: nsText, line: line)
+          return OrgSyntaxTextEditReplacement(
+            range: NSRange(location: endRange.location, length: 0),
+            replacement: ":\(key): \(value)\n"
+          )
+        }
+        if raw.uppercased().hasPrefix(":\(key):") {
+          let range = lineRange(in: nsText, line: line)
+          return OrgSyntaxTextEditReplacement(
+            range: NSRange(
+              location: range.location,
+              length: max(0, lineContentEnd(in: nsText, lineRange: range) - range.location)
+            ),
+            replacement: ":\(key): \(value)"
+          )
+        }
+      }
+      if headingMarker(in: raw) != nil { break }
+    }
+
+    let headingRange = lineRange(in: nsText, line: headline.startLine)
+    let insertion = lineContentEnd(in: nsText, lineRange: headingRange)
+    return OrgSyntaxTextEditReplacement(
+      range: NSRange(location: insertion, length: 0),
+      replacement: "\n:PROPERTIES:\n:\(key): \(value)\n:END:"
+    )
+  }
+
+  static func linkReplacement(
+    in text: String,
+    selectedRange: NSRange,
+    target rawTarget: String,
+    description rawDescription: String?
+  ) -> OrgSyntaxTextEditReplacement? {
+    let target = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !target.isEmpty else { return nil }
+    let nsText = text as NSString
+    let selection = clampedRange(selectedRange, utf16Length: nsText.length)
+    let selectedText = selection.length > 0 ? nsText.substring(with: selection) : ""
+    let description = rawDescription?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let label = (description?.isEmpty == false ? description : selectedText.isEmpty ? nil : selectedText)
+    let replacement = label.map { "[[\(target)][\($0)]]" } ?? "[[\(target)]]"
+    return OrgSyntaxTextEditReplacement(range: selection, replacement: replacement)
+  }
+
+  static func headingNavigationRange(
+    in text: String,
+    selectedRange: NSRange,
+    direction: OrgSourceEditorCommand,
+    snapshot: OrgSourceEditorSemanticSnapshot?
+  ) -> NSRange? {
+    guard direction == .previousHeading || direction == .nextHeading,
+          let snapshot
+    else { return nil }
+    let nsText = text as NSString
+    let currentLine = lineNumber(in: nsText, utf16Offset: selectedRange.location)
+    let headlines = snapshot.regions.filter { $0.kind == .headline }
+    let target = direction == .nextHeading
+      ? headlines.first(where: { $0.startLine > currentLine })
+      : headlines.last(where: { $0.startLine < currentLine })
+    guard let target else { return nil }
+    return NSRange(location: lineRange(in: nsText, line: target.startLine).location, length: 0)
+  }
+
+  static func sourceRange(
+    for region: OrgSourceSemanticRegion,
+    in text: String,
+    excludingFirstLine: Bool = false
+  ) -> NSRange? {
+    let nsText = text as NSString
+    let startLine = region.startLine + (excludingFirstLine ? 1 : 0)
+    guard startLine <= region.endLine,
+          startLine <= lineCount(in: nsText)
+    else { return nil }
+    let start = lineRange(in: nsText, line: startLine).location
+    let endRange = lineRange(in: nsText, line: min(region.endLine, lineCount(in: nsText)))
+    return NSRange(location: start, length: NSMaxRange(endRange) - start)
+  }
+
+  static func lineNumber(in text: NSString, utf16Offset: Int) -> Int {
+    let clamped = min(max(0, utf16Offset), text.length)
+    var line = 1
+    var location = 0
+    while location < clamped {
+      if text.character(at: location) == 10 { line += 1 }
+      location += 1
+    }
+    return line
+  }
+
+  static func lineRange(in text: NSString, line requestedLine: Int) -> NSRange {
+    let target = max(1, requestedLine)
+    var line = 1
+    var location = 0
+    while line < target, location < text.length {
+      if text.character(at: location) == 10 { line += 1 }
+      location += 1
+    }
+    return text.lineRange(for: NSRange(location: min(location, text.length), length: 0))
+  }
+
+  static func lineText(in text: NSString, line: Int) -> String {
+    let range = lineRange(in: text, line: line)
+    return text.substring(with: NSRange(
+      location: range.location,
+      length: max(0, lineContentEnd(in: text, lineRange: range) - range.location)
+    ))
+  }
+
+  static func lineCount(in text: NSString) -> Int {
+    guard text.length > 0 else { return 1 }
+    var count = 1
+    for location in 0..<text.length where text.character(at: location) == 10 { count += 1 }
+    return count
+  }
+
+  static func fallbackSemanticSnapshot(in text: String) -> OrgSourceEditorSemanticSnapshot {
+    let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+    var regions: [OrgSourceSemanticRegion] = []
+    var stack: [(level: Int, startLine: Int, todo: String?)] = []
+
+    func closeHeadlines(at level: Int, endLine: Int) {
+      while let last = stack.last, last.level >= level {
+        let closed = stack.removeLast()
+        regions.append(OrgSourceSemanticRegion(
+          kind: .headline,
+          startLine: closed.startLine,
+          endLine: max(closed.startLine, endLine),
+          level: closed.level,
+          todo: closed.todo
+        ))
+      }
+    }
+
+    for (index, slice) in lines.enumerated() {
+      let line = String(slice)
+      guard let marker = headingMarker(in: line) else { continue }
+      closeHeadlines(at: marker.level, endLine: index)
+      let nsLine = line as NSString
+      let match = headingTodoRegex.firstMatch(
+        in: line,
+        range: NSRange(location: 0, length: nsLine.length)
+      )
+      let todo = match.flatMap { match -> String? in
+        let range = match.range(at: 2)
+        return range.location == NSNotFound ? nil : nsLine.substring(with: range)
+      }
+      stack.append((marker.level, index + 1, todo))
+    }
+    closeHeadlines(at: 0, endLine: max(1, lines.count))
+    return OrgSourceEditorSemanticSnapshot(
+      regions: regions.sorted { $0.startLine < $1.startLine }
+    )
+  }
+
+  static func enclosingHeadline(
+    in snapshot: OrgSourceEditorSemanticSnapshot?,
+    line: Int
+  ) -> OrgSourceSemanticRegion? {
+    snapshot?.regions
+      .filter { $0.kind == .headline && $0.startLine <= line && $0.endLine >= line }
+      .max {
+        if $0.startLine != $1.startLine { return $0.startLine < $1.startLine }
+        return ($0.level ?? 0) < ($1.level ?? 0)
+      }
+  }
+
+  static func headlineRegion(
+    startingAt line: Int,
+    in snapshot: OrgSourceEditorSemanticSnapshot?
+  ) -> OrgSourceSemanticRegion? {
+    snapshot?.regions.first { $0.kind == .headline && $0.startLine == line }
+  }
+
+  private static func planningLine(kind: String, date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.dateFormat = "yyyy-MM-dd EEE"
+    return "\(kind): <\(formatter.string(from: date))>"
+  }
+
+  private static let headingTodoRegex = try! NSRegularExpression(
+    pattern: #"^(\*+\s+)(?:(TODO|IN_PROGRESS|PROG|WAIT|HOLD|PAUSED|DONE|CANCELED|CANCELLED)\s+)?"#
+  )
 
   private static func clampedRange(_ range: NSRange, utf16Length length: Int) -> NSRange {
     let location = min(max(0, range.location), length)
@@ -373,6 +791,7 @@ final class OrgSyntaxTextView: NSTextView {
   var onSaveCommand: ((OrgSyntaxTextEditorSubmitContext) -> Bool)?
   var onDeleteDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment]) -> Bool)?
   var onReplaceDocumentSelection: (([OrgSyntaxTextSelectionDocumentFragment], String) -> Bool)?
+  var onSourceEditorCommand: ((OrgSourceEditorCommand, OrgSyntaxTextView) -> Bool)?
   var isApplyingCrossEditorSelection = false
   private var crossEditorHighlightedRange: NSRange?
 
@@ -399,6 +818,10 @@ final class OrgSyntaxTextView: NSTextView {
   }
 
   override func keyDown(with event: NSEvent) {
+    if let command = sourceEditorCommand(for: event),
+       onSourceEditorCommand?(command, self) == true {
+      return
+    }
     if handlesCrossEditorCopyShortcut(event) {
       copy(nil)
       return
@@ -423,6 +846,10 @@ final class OrgSyntaxTextView: NSTextView {
   }
 
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    if let command = sourceEditorCommand(for: event),
+       onSourceEditorCommand?(command, self) == true {
+      return true
+    }
     if handlesCrossEditorCopyShortcut(event) {
       copy(nil)
       return true
@@ -517,6 +944,32 @@ final class OrgSyntaxTextView: NSTextView {
     return modifiers == .command
       && event.charactersIgnoringModifiers?.lowercased() == "c"
       && OrgSyntaxTextSelectionBridge.selectedText(containing: self) != nil
+  }
+
+  private func sourceEditorCommand(for event: NSEvent) -> OrgSourceEditorCommand? {
+    guard onSourceEditorCommand != nil else { return nil }
+    let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    let characters = event.charactersIgnoringModifiers?.lowercased()
+
+    if modifiers == .command, characters == "k" { return .insertLink }
+    guard modifiers == [.command, .option] else { return nil }
+    switch event.keyCode {
+    case 36: return .insertHeading
+    case 123: return .promote
+    case 124: return .demote
+    case 125: return .nextHeading
+    case 126: return .previousHeading
+    default: break
+    }
+    switch characters {
+    case "l": return .insertListItem
+    case "t": return .cycleTodo
+    case "s": return .scheduleToday
+    case "d": return .deadlineToday
+    case "[": return .toggleFold
+    case "]": return .unfoldAll
+    default: return nil
+    }
   }
 
   private func handlesSaveShortcut(_ event: NSEvent) -> Bool {
@@ -1009,7 +1462,13 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   let focusOnAppear: Bool
   let textPublishing: OrgSyntaxTextEditorTextPublishing
   let liveHighlighting: Bool
+  let incrementalHighlighting: Bool
+  let concealsSyntax: Bool
   let orgWritingCommands: Bool
+  let commandRequest: OrgSourceEditorCommandRequest?
+  let semanticAnalyzer: ((String) async -> OrgSourceEditorSemanticSnapshot?)?
+  let diagnostics: Binding<[Org2EditorDiagnostic]>?
+  let onCommandStatus: ((String) -> Void)?
   let selection: Binding<NSRange>?
   let isFocused: Binding<Bool>?
   let contentHeight: Binding<CGFloat>?
@@ -1031,7 +1490,13 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     focusOnAppear: Bool = false,
     textPublishing: OrgSyntaxTextEditorTextPublishing = .immediate,
     liveHighlighting: Bool = true,
+    incrementalHighlighting: Bool = false,
+    concealsSyntax: Bool = true,
     orgWritingCommands: Bool = false,
+    commandRequest: OrgSourceEditorCommandRequest? = nil,
+    semanticAnalyzer: ((String) async -> OrgSourceEditorSemanticSnapshot?)? = nil,
+    diagnostics: Binding<[Org2EditorDiagnostic]>? = nil,
+    onCommandStatus: ((String) -> Void)? = nil,
     selection: Binding<NSRange>? = nil,
     isFocused: Binding<Bool>? = nil,
     contentHeight: Binding<CGFloat>? = nil,
@@ -1052,7 +1517,13 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     self.focusOnAppear = focusOnAppear
     self.textPublishing = textPublishing
     self.liveHighlighting = liveHighlighting
+    self.incrementalHighlighting = incrementalHighlighting
+    self.concealsSyntax = concealsSyntax
     self.orgWritingCommands = orgWritingCommands
+    self.commandRequest = commandRequest
+    self.semanticAnalyzer = semanticAnalyzer
+    self.diagnostics = diagnostics
+    self.onCommandStatus = onCommandStatus
     self.selection = selection
     self.isFocused = isFocused
     self.contentHeight = contentHeight
@@ -1085,6 +1556,9 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     textView.onSaveCommand = onSaveCommand
     textView.onDeleteDocumentSelection = onDeleteDocumentSelection
     textView.onReplaceDocumentSelection = onReplaceDocumentSelection
+    textView.onSourceEditorCommand = { [weak coordinator = context.coordinator] command, textView in
+      coordinator?.performSourceEditorCommand(command, in: textView) == true
+    }
     textView.string = text
     textView.drawsBackground = false
     textView.isRichText = false
@@ -1108,8 +1582,10 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     textView.autoresizingMask = [.width]
 
     scrollView.documentView = textView
+    context.coordinator.observeScrolling(of: scrollView, textView: textView)
     context.coordinator.recordKnownText(text, utf16Length: textView.textStorage?.length)
     context.coordinator.applyHighlighting(to: textView)
+    context.coordinator.scheduleSemanticAnalysis(for: textView, expectedText: text, delayMilliseconds: 0)
     context.coordinator.publishContentHeight(for: textView)
     context.coordinator.applyFocusRequestIfNeeded(to: textView, enabled: focusOnAppear)
     return scrollView
@@ -1122,6 +1598,9 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     textView.onSaveCommand = onSaveCommand
     textView.onDeleteDocumentSelection = onDeleteDocumentSelection
     textView.onReplaceDocumentSelection = onReplaceDocumentSelection
+    textView.onSourceEditorCommand = { [weak coordinator = context.coordinator] command, textView in
+      coordinator?.performSourceEditorCommand(command, in: textView) == true
+    }
 
     var currentUTF16Length = textView.textStorage?.length
     let cachedEditorText = context.coordinator.knownText(matchingUTF16Length: currentUTF16Length)
@@ -1143,6 +1622,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       currentUTF16Length = textView.textStorage?.length
       context.coordinator.recordKnownText(text, utf16Length: currentUTF16Length)
       context.coordinator.invalidateHighlighting()
+      context.coordinator.clearSemanticState()
       editorText = text
       appliedProgrammaticText = true
     }
@@ -1168,6 +1648,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     if appliedProgrammaticText || !context.coordinator.hasDeferredHighlighting(for: editorText) {
       context.coordinator.applyHighlightingIfNeeded(to: textView, currentText: editorText)
     }
+    context.coordinator.performRequestedCommandIfNeeded(commandRequest, in: textView)
     context.coordinator.publishContentHeight(for: textView)
   }
 
@@ -1200,16 +1681,36 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     private var hasHighlightedText = false
     private var deferredHighlightText: String?
     private var deferredHighlightMonospaced: Bool?
-    private var deferredHighlightWorkItem: DispatchWorkItem?
+    nonisolated(unsafe) private var deferredHighlightWorkItem: DispatchWorkItem?
     private var deferredTextPublishText: String?
-    private var deferredTextPublishWorkItem: DispatchWorkItem?
+    nonisolated(unsafe) private var deferredTextPublishWorkItem: DispatchWorkItem?
     private var deferredTextPublishGeneration = 0
     private var lastKnownText: String?
     private var lastKnownTextUTF16Length: Int?
     private var hasAppliedFocusRequest = false
+    private var pendingEditedRange: NSRange?
+    private var semanticAnalysisTask: Task<Void, Never>?
+    private var semanticSnapshot: OrgSourceEditorSemanticSnapshot?
+    private var semanticSnapshotText: String?
+    private var foldedHeadlineStartLines = Set<Int>()
+    private var foldPresentationRanges: [NSRange] = []
+    private var diagnosticPresentationRanges: [NSRange] = []
+    private var semanticPresentationRanges: [NSRange] = []
+    private var lastCommandRequestID: Int?
+    private var observedClipView: NSClipView?
+    nonisolated(unsafe) private var scrollObserver: NSObjectProtocol?
 
     init(parent: OrgSyntaxTextEditor) {
       self.parent = parent
+    }
+
+    deinit {
+      deferredHighlightWorkItem?.cancel()
+      deferredTextPublishWorkItem?.cancel()
+      semanticAnalysisTask?.cancel()
+      if let scrollObserver {
+        NotificationCenter.default.removeObserver(scrollObserver)
+      }
     }
 
     func applyFocusRequestIfNeeded(to textView: NSTextView, enabled: Bool) {
@@ -1237,10 +1738,19 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         publishTextChange(currentText)
       }
       publishSelectionIfNeeded(textView.selectedRange(), in: currentText)
+      scheduleSemanticAnalysis(for: textView, expectedText: currentText)
       guard parent.liveHighlighting else {
         cancelDeferredHighlighting()
         textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: parent.monospaced)
         recordHighlightedState(text: currentText, utf16Length: currentUTF16Length)
+        publishContentHeight(for: textView)
+        return
+      }
+      if parent.incrementalHighlighting {
+        let editedRange = pendingEditedRange
+          ?? NSRange(location: textView.selectedRange().location, length: 0)
+        pendingEditedRange = nil
+        applyIncrementalHighlighting(to: textView, editedRange: editedRange)
         publishContentHeight(for: textView)
         return
       }
@@ -1270,8 +1780,28 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         return
       }
       let selectedRange = textView.selectedRange()
+      unfoldIfSelectionEntersHiddenText(selectedRange, in: textView)
       guard shouldReadTextForSelectionPublishing(selectedRange) else { return }
       publishSelectionIfNeeded(selectedRange, in: textView.string)
+    }
+
+    func textView(
+      _ textView: NSTextView,
+      shouldChangeTextIn affectedCharRange: NSRange,
+      replacementString: String?
+    ) -> Bool {
+      let replacementLength = ((replacementString ?? "") as NSString).length
+      pendingEditedRange = NSRange(
+        location: affectedCharRange.location,
+        length: max(1, replacementLength)
+      )
+      unfoldIfEditTouchesHiddenText(affectedCharRange, in: textView)
+      adjustFoldedHeadlines(
+        for: affectedCharRange,
+        replacement: replacementString ?? "",
+        in: textView.string
+      )
+      return true
     }
 
     func textDidBeginEditing(_ notification: Notification) {
@@ -1364,6 +1894,533 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       textView.setSelectedRange(replacement.selectedRangeAfterReplacement)
       publishSelectionIfNeeded(replacement.selectedRangeAfterReplacement, in: textView.string)
       return true
+    }
+
+    func performRequestedCommandIfNeeded(
+      _ request: OrgSourceEditorCommandRequest?,
+      in textView: OrgSyntaxTextView
+    ) {
+      guard let request, request.id != lastCommandRequestID else { return }
+      lastCommandRequestID = request.id
+      _ = performSourceEditorCommand(request.command, in: textView)
+    }
+
+    @discardableResult
+    func performSourceEditorCommand(
+      _ command: OrgSourceEditorCommand,
+      in textView: OrgSyntaxTextView
+    ) -> Bool {
+      guard parent.orgWritingCommands else { return false }
+      textView.window?.makeFirstResponder(textView)
+      let text = textView.string
+      let selection = textView.selectedRange()
+      let snapshot = currentSemanticSnapshot(for: text)
+      let replacement: OrgSyntaxTextEditReplacement?
+      let actionName: String
+
+      switch command {
+      case .insertHeading:
+        replacement = OrgSourceTextEditing.headingInsertionReplacement(
+          in: text,
+          selectedRange: selection,
+          snapshot: snapshot
+        )
+        actionName = "Insert Heading"
+      case .insertListItem:
+        replacement = OrgSourceTextEditing.listItemInsertionReplacement(
+          in: text,
+          selectedRange: selection
+        )
+        actionName = "Insert List Item"
+      case .promote:
+        replacement = OrgSourceTextEditing.indentationReplacement(
+          in: text,
+          selectedRange: selection,
+          direction: .outdent
+        )
+        actionName = "Promote"
+      case .demote:
+        replacement = OrgSourceTextEditing.indentationReplacement(
+          in: text,
+          selectedRange: selection,
+          direction: .indent
+        )
+        actionName = "Demote"
+      case .cycleTodo:
+        replacement = OrgSourceTextEditing.todoCycleReplacement(
+          in: text,
+          selectedRange: selection,
+          snapshot: snapshot
+        )
+        actionName = "Cycle TODO"
+      case .scheduleToday:
+        replacement = OrgSourceTextEditing.planningReplacement(
+          in: text,
+          selectedRange: selection,
+          kind: "SCHEDULED",
+          date: Calendar.current.startOfDay(for: Date()),
+          snapshot: snapshot
+        )
+        actionName = "Schedule Today"
+      case .deadlineToday:
+        replacement = OrgSourceTextEditing.planningReplacement(
+          in: text,
+          selectedRange: selection,
+          kind: "DEADLINE",
+          date: Calendar.current.startOfDay(for: Date()),
+          snapshot: snapshot
+        )
+        actionName = "Set Deadline"
+      case .clearPlanning:
+        replacement = OrgSourceTextEditing.clearPlanningReplacement(
+          in: text,
+          selectedRange: selection,
+          snapshot: snapshot
+        )
+        actionName = "Clear Planning"
+      case .insertProperty:
+        guard let property = promptForProperty(in: textView) else { return true }
+        replacement = OrgSourceTextEditing.propertyReplacement(
+          in: text,
+          selectedRange: selection,
+          key: property.key,
+          value: property.value,
+          snapshot: snapshot
+        )
+        actionName = "Set Property"
+      case .insertLink:
+        guard let link = promptForLink(in: textView) else { return true }
+        replacement = OrgSourceTextEditing.linkReplacement(
+          in: text,
+          selectedRange: selection,
+          target: link.target,
+          description: link.description
+        )
+        actionName = "Insert Link"
+      case .toggleFold:
+        return toggleFold(at: selection, in: textView, snapshot: snapshot)
+      case .unfoldAll:
+        foldedHeadlineStartLines.removeAll()
+        applyFoldPresentation(to: textView)
+        reportCommandStatus("Expanded all source headings")
+        return true
+      case .previousHeading, .nextHeading:
+        guard let range = OrgSourceTextEditing.headingNavigationRange(
+          in: text,
+          selectedRange: selection,
+          direction: command,
+          snapshot: snapshot
+        ) else {
+          NSSound.beep()
+          return true
+        }
+        textView.setSelectedRange(range)
+        textView.scrollRangeToVisible(range)
+        publishSelectionIfNeeded(range, in: text)
+        return true
+      }
+
+      guard let replacement else {
+        NSSound.beep()
+        reportCommandStatus("No applicable Org2 structure at the cursor")
+        return true
+      }
+      apply(replacement, actionName: actionName, to: textView)
+      return true
+    }
+
+    private func apply(
+      _ replacement: OrgSyntaxTextEditReplacement,
+      actionName: String,
+      to textView: NSTextView
+    ) {
+      let undoManager = textView.undoManager
+      undoManager?.beginUndoGrouping()
+      textView.insertText(replacement.replacement, replacementRange: replacement.range)
+      textView.setSelectedRange(replacement.selectedRangeAfterReplacement)
+      undoManager?.setActionName(actionName)
+      undoManager?.endUndoGrouping()
+      publishSelectionIfNeeded(replacement.selectedRangeAfterReplacement, in: textView.string)
+      textView.scrollRangeToVisible(replacement.selectedRangeAfterReplacement)
+      reportCommandStatus(actionName)
+    }
+
+    private func currentSemanticSnapshot(for text: String) -> OrgSourceEditorSemanticSnapshot {
+      if semanticSnapshotText == text, let semanticSnapshot {
+        return semanticSnapshot
+      }
+      return OrgSourceTextEditing.fallbackSemanticSnapshot(in: text)
+    }
+
+    private func promptForLink(in textView: NSTextView) -> (target: String, description: String?)? {
+      let selectedRange = OrgSyntaxTextEditor.clampedRange(
+        textView.selectedRange(),
+        utf16Length: (textView.string as NSString).length
+      )
+      let selectedText = selectedRange.length > 0
+        ? (textView.string as NSString).substring(with: selectedRange)
+        : ""
+      let clipboard = NSPasteboard.general.string(forType: .string) ?? ""
+      let targetField = NSTextField(string: clipboardLooksLikeLink(clipboard) ? clipboard : "")
+      targetField.placeholderString = "URL, id:..., or file:..."
+      let descriptionField = NSTextField(string: selectedText)
+      descriptionField.placeholderString = "Description (optional)"
+      let stack = NSStackView(views: [targetField, descriptionField])
+      stack.orientation = .vertical
+      stack.spacing = 8
+      stack.frame = NSRect(x: 0, y: 0, width: 420, height: 54)
+
+      let alert = NSAlert()
+      alert.messageText = "Insert Org2 Link"
+      alert.informativeText = "Enter a link target and optional visible description."
+      alert.accessoryView = stack
+      alert.addButton(withTitle: "Insert")
+      alert.addButton(withTitle: "Cancel")
+      guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+      let target = targetField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !target.isEmpty else { return nil }
+      return (target, descriptionField.stringValue)
+    }
+
+    private func promptForProperty(in textView: NSTextView) -> (key: String, value: String)? {
+      let keyField = NSTextField()
+      keyField.placeholderString = "Property name"
+      let valueField = NSTextField()
+      valueField.placeholderString = "Value"
+      let stack = NSStackView(views: [keyField, valueField])
+      stack.orientation = .vertical
+      stack.spacing = 8
+      stack.frame = NSRect(x: 0, y: 0, width: 420, height: 54)
+
+      let alert = NSAlert()
+      alert.messageText = "Set Org2 Property"
+      alert.informativeText = "The property is updated or added to the current heading."
+      alert.accessoryView = stack
+      alert.addButton(withTitle: "Set")
+      alert.addButton(withTitle: "Cancel")
+      guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+      let key = keyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !key.isEmpty else { return nil }
+      return (key, valueField.stringValue)
+    }
+
+    private func clipboardLooksLikeLink(_ value: String) -> Bool {
+      let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+      return trimmed.range(of: #"^(?:https?://|mailto:|id:|file:|\./|\.\./|/)"#, options: .regularExpression) != nil
+    }
+
+    private func reportCommandStatus(_ status: String) {
+      parent.onCommandStatus?(status)
+    }
+
+    private func toggleFold(
+      at selection: NSRange,
+      in textView: NSTextView,
+      snapshot: OrgSourceEditorSemanticSnapshot
+    ) -> Bool {
+      let nsText = textView.string as NSString
+      let line = OrgSourceTextEditing.lineNumber(in: nsText, utf16Offset: selection.location)
+      guard let headline = OrgSourceTextEditing.enclosingHeadline(in: snapshot, line: line),
+            OrgSourceTextEditing.sourceRange(
+              for: headline,
+              in: textView.string,
+              excludingFirstLine: true
+            )?.length ?? 0 > 0
+      else {
+        NSSound.beep()
+        reportCommandStatus("The current heading has no body to fold")
+        return true
+      }
+
+      if foldedHeadlineStartLines.contains(headline.startLine) {
+        foldedHeadlineStartLines.remove(headline.startLine)
+        reportCommandStatus("Expanded source heading")
+      } else {
+        foldedHeadlineStartLines.insert(headline.startLine)
+        let headingRange = OrgSourceTextEditing.lineRange(in: nsText, line: headline.startLine)
+        textView.setSelectedRange(NSRange(location: headingRange.location, length: 0))
+        reportCommandStatus("Collapsed source heading")
+      }
+      applyFoldPresentation(to: textView)
+      publishContentHeight(for: textView)
+      return true
+    }
+
+    private func applyFoldPresentation(to textView: NSTextView) {
+      guard let layoutManager = textView.layoutManager else { return }
+      let textLength = (textView.string as NSString).length
+      for range in validPresentationRanges(foldPresentationRanges, textLength: textLength) {
+        layoutManager.removeTemporaryAttribute(.font, forCharacterRange: range)
+        layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: range)
+        layoutManager.removeTemporaryAttribute(.paragraphStyle, forCharacterRange: range)
+      }
+      foldPresentationRanges = []
+      guard !foldedHeadlineStartLines.isEmpty else { return }
+      let snapshot = currentSemanticSnapshot(for: textView.string)
+      let hiddenFont = NSFont.systemFont(ofSize: 0.01)
+      let paragraph = NSMutableParagraphStyle()
+      paragraph.minimumLineHeight = 0.01
+      paragraph.maximumLineHeight = 0.01
+      paragraph.lineSpacing = 0
+      for headline in snapshot.regions where headline.kind == .headline
+        && foldedHeadlineStartLines.contains(headline.startLine) {
+        guard let range = OrgSourceTextEditing.sourceRange(
+          for: headline,
+          in: textView.string,
+          excludingFirstLine: true
+        ), range.length > 0 else { continue }
+        layoutManager.addTemporaryAttribute(.font, value: hiddenFont, forCharacterRange: range)
+        layoutManager.addTemporaryAttribute(.foregroundColor, value: NSColor.clear, forCharacterRange: range)
+        layoutManager.addTemporaryAttribute(.paragraphStyle, value: paragraph, forCharacterRange: range)
+        foldPresentationRanges.append(range)
+      }
+      for range in foldPresentationRanges {
+        layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+      }
+    }
+
+    private func adjustFoldedHeadlines(
+      for affectedRange: NSRange,
+      replacement: String,
+      in text: String
+    ) {
+      guard !foldedHeadlineStartLines.isEmpty else { return }
+      let nsText = text as NSString
+      let range = OrgSyntaxTextEditor.clampedRange(affectedRange, utf16Length: nsText.length)
+      let removed = nsText.substring(with: range).filter { $0 == "\n" }.count
+      let inserted = replacement.filter { $0 == "\n" }.count
+      let lineDelta = inserted - removed
+      guard lineDelta != 0 || range.length > 0 else { return }
+
+      var adjusted = Set<Int>()
+      for startLine in foldedHeadlineStartLines {
+        let headingOffset = OrgSourceTextEditing.lineRange(in: nsText, line: startLine).location
+        if NSMaxRange(range) <= headingOffset {
+          adjusted.insert(max(1, startLine + lineDelta))
+        } else if range.location > headingOffset {
+          adjusted.insert(startLine)
+        }
+      }
+      foldedHeadlineStartLines = adjusted
+    }
+
+    private func unfoldIfSelectionEntersHiddenText(_ selection: NSRange, in textView: NSTextView) {
+      guard !foldedHeadlineStartLines.isEmpty else { return }
+      let snapshot = currentSemanticSnapshot(for: textView.string)
+      for headline in snapshot.regions where headline.kind == .headline
+        && foldedHeadlineStartLines.contains(headline.startLine) {
+        guard let range = OrgSourceTextEditing.sourceRange(
+          for: headline,
+          in: textView.string,
+          excludingFirstLine: true
+        ) else { continue }
+        if selection.location >= range.location && selection.location < NSMaxRange(range) {
+          foldedHeadlineStartLines.remove(headline.startLine)
+          applyFoldPresentation(to: textView)
+          reportCommandStatus("Expanded source heading for editing")
+          return
+        }
+      }
+    }
+
+    private func unfoldIfEditTouchesHiddenText(_ range: NSRange, in textView: NSTextView) {
+      guard !foldedHeadlineStartLines.isEmpty else { return }
+      let snapshot = currentSemanticSnapshot(for: textView.string)
+      for headline in snapshot.regions where headline.kind == .headline
+        && foldedHeadlineStartLines.contains(headline.startLine) {
+        guard let hidden = OrgSourceTextEditing.sourceRange(
+          for: headline,
+          in: textView.string,
+          excludingFirstLine: true
+        ) else { continue }
+        if NSIntersectionRange(hidden, range).length > 0
+            || (range.length == 0 && range.location >= hidden.location && range.location < NSMaxRange(hidden)) {
+          foldedHeadlineStartLines.remove(headline.startLine)
+          applyFoldPresentation(to: textView)
+          return
+        }
+      }
+    }
+
+    func clearSemanticState() {
+      semanticAnalysisTask?.cancel()
+      semanticAnalysisTask = nil
+      semanticSnapshot = nil
+      semanticSnapshotText = nil
+      foldedHeadlineStartLines.removeAll()
+      foldPresentationRanges = []
+      diagnosticPresentationRanges = []
+      semanticPresentationRanges = []
+      parent.diagnostics?.wrappedValue = []
+    }
+
+    func scheduleSemanticAnalysis(
+      for textView: NSTextView,
+      expectedText: String,
+      delayMilliseconds: Int = 180
+    ) {
+      semanticAnalysisTask?.cancel()
+      guard let analyzer = parent.semanticAnalyzer else {
+        semanticSnapshot = OrgSourceTextEditing.fallbackSemanticSnapshot(in: expectedText)
+        semanticSnapshotText = expectedText
+        return
+      }
+      semanticAnalysisTask = Task { @MainActor [weak self, weak textView] in
+        if delayMilliseconds > 0 {
+          do {
+            try await Task.sleep(nanoseconds: UInt64(delayMilliseconds) * 1_000_000)
+          } catch {
+            return
+          }
+        }
+        guard !Task.isCancelled,
+              let snapshot = await analyzer(expectedText),
+              !Task.isCancelled,
+              let self,
+              let textView,
+              textView.string == expectedText
+        else { return }
+        self.semanticSnapshot = snapshot
+        self.semanticSnapshotText = expectedText
+        self.parent.diagnostics?.wrappedValue = snapshot.diagnostics
+        self.applySemanticPresentation(to: textView, snapshot: snapshot)
+        self.applyDiagnosticPresentation(to: textView, diagnostics: snapshot.diagnostics)
+        self.applyFoldPresentation(to: textView)
+      }
+    }
+
+    private func applySemanticPresentation(
+      to textView: NSTextView,
+      snapshot: OrgSourceEditorSemanticSnapshot
+    ) {
+      guard let layoutManager = textView.layoutManager else { return }
+      let textLength = (textView.string as NSString).length
+      for range in validPresentationRanges(semanticPresentationRanges, textLength: textLength) {
+        layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
+      }
+      semanticPresentationRanges = []
+
+      for region in snapshot.regions {
+        let color: NSColor?
+        switch region.kind {
+        case .properties:
+          color = NSColor.secondaryLabelColor.withAlphaComponent(0.035)
+        case .sourceBlock:
+          color = NSColor.controlAccentColor.withAlphaComponent(0.025)
+        case .table:
+          color = NSColor.secondaryLabelColor.withAlphaComponent(0.025)
+        default:
+          color = nil
+        }
+        guard let color,
+              let range = OrgSourceTextEditing.sourceRange(for: region, in: textView.string),
+              range.length > 0
+        else { continue }
+        layoutManager.addTemporaryAttribute(.backgroundColor, value: color, forCharacterRange: range)
+        semanticPresentationRanges.append(range)
+      }
+    }
+
+    private func applyDiagnosticPresentation(
+      to textView: NSTextView,
+      diagnostics: [Org2EditorDiagnostic]
+    ) {
+      guard let layoutManager = textView.layoutManager else { return }
+      let textLength = (textView.string as NSString).length
+      for range in validPresentationRanges(diagnosticPresentationRanges, textLength: textLength) {
+        layoutManager.removeTemporaryAttribute(.underlineStyle, forCharacterRange: range)
+        layoutManager.removeTemporaryAttribute(.underlineColor, forCharacterRange: range)
+        layoutManager.removeTemporaryAttribute(.toolTip, forCharacterRange: range)
+      }
+      diagnosticPresentationRanges = []
+      guard textLength > 0 else { return }
+      let nsText = textView.string as NSString
+      for diagnostic in diagnostics {
+        let lineRange = OrgSourceTextEditing.lineRange(in: nsText, line: diagnostic.line)
+        let contentEnd = max(lineRange.location, min(
+          textLength,
+          lineRange.location + lineRange.length
+        ))
+        let location = min(
+          max(lineRange.location, lineRange.location + max(0, diagnostic.column - 1)),
+          max(0, textLength - 1)
+        )
+        let range = NSRange(
+          location: location,
+          length: max(1, min(max(1, contentEnd - location), textLength - location))
+        )
+        layoutManager.addTemporaryAttribute(
+          .underlineStyle,
+          value: NSUnderlineStyle.patternDot.rawValue | NSUnderlineStyle.single.rawValue,
+          forCharacterRange: range
+        )
+        layoutManager.addTemporaryAttribute(.underlineColor, value: NSColor.systemRed, forCharacterRange: range)
+        layoutManager.addTemporaryAttribute(.toolTip, value: diagnostic.message, forCharacterRange: range)
+        diagnosticPresentationRanges.append(range)
+      }
+    }
+
+    private func validPresentationRanges(_ ranges: [NSRange], textLength: Int) -> [NSRange] {
+      ranges.compactMap { range in
+        guard range.location < textLength else { return nil }
+        return NSRange(
+          location: max(0, range.location),
+          length: min(range.length, textLength - max(0, range.location))
+        )
+      }.filter { $0.length > 0 }
+    }
+
+    func observeScrolling(of scrollView: NSScrollView, textView: NSTextView) {
+      let clipView = scrollView.contentView
+      guard observedClipView !== clipView else { return }
+      if let scrollObserver {
+        NotificationCenter.default.removeObserver(scrollObserver)
+      }
+      observedClipView = clipView
+      clipView.postsBoundsChangedNotifications = true
+      scrollObserver = NotificationCenter.default.addObserver(
+        forName: NSView.boundsDidChangeNotification,
+        object: clipView,
+        queue: .main
+      ) { [weak self, weak textView] _ in
+        Task { @MainActor in
+          guard let self, let textView, self.parent.incrementalHighlighting else { return }
+          self.highlightVisibleRange(in: textView)
+        }
+      }
+      DispatchQueue.main.async { [weak self, weak textView] in
+        guard let self, let textView, self.parent.incrementalHighlighting else { return }
+        self.highlightVisibleRange(in: textView)
+      }
+    }
+
+    private func applyIncrementalHighlighting(to textView: NSTextView, editedRange: NSRange) {
+      guard let storage = textView.textStorage else { return }
+      let typingAttributes = OrgSyntaxHighlighter.apply(
+        to: storage,
+        characterRange: editedRange,
+        monospaced: parent.monospaced,
+        concealsSyntax: parent.concealsSyntax
+      )
+      textView.typingAttributes = typingAttributes
+      recordHighlightedState(for: textView)
+    }
+
+    private func highlightVisibleRange(in textView: NSTextView) {
+      guard let layoutManager = textView.layoutManager,
+            let textContainer = textView.textContainer,
+            let storage = textView.textStorage
+      else { return }
+      let visibleRect = textView.enclosingScrollView?.contentView.bounds ?? textView.visibleRect
+      let glyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect.insetBy(dx: 0, dy: -240), in: textContainer)
+      let characterRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+      guard characterRange.length > 0 else { return }
+      _ = OrgSyntaxHighlighter.apply(
+        to: storage,
+        characterRange: characterRange,
+        monospaced: parent.monospaced,
+        concealsSyntax: parent.concealsSyntax
+      )
     }
 
     private func handleBoundaryArrowCommand(_ commandSelector: Selector, in textView: NSTextView) -> Bool {
@@ -1734,7 +2791,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
       let visibleOrigin = Self.visibleOrigin(of: textView)
       let typingAttributes = OrgSyntaxHighlighter.apply(
         to: storage,
-        monospaced: parent.monospaced
+        monospaced: parent.monospaced,
+        concealsSyntax: parent.concealsSyntax
       )
       textView.typingAttributes = typingAttributes
       textView.selectedRanges = selectedRanges
@@ -1850,7 +2908,11 @@ enum OrgSyntaxHighlighter {
   }
 
   @discardableResult
-  static func apply(to storage: NSTextStorage, monospaced: Bool) -> [NSAttributedString.Key: Any] {
+  static func apply(
+    to storage: NSTextStorage,
+    monospaced: Bool,
+    concealsSyntax: Bool = true
+  ) -> [NSAttributedString.Key: Any] {
     let baseFont = baseFont(monospaced: monospaced)
     let baseAttributes = baseAttributes(font: baseFont)
     let fullRange = NSRange(location: 0, length: storage.length)
@@ -1860,8 +2922,44 @@ enum OrgSyntaxHighlighter {
     if shouldTokenizeLiveText(utf16Length: storage.length) {
       let text = storage.string
       for token in tokens(in: text) where NSMaxRange(token.range) <= storage.length {
-        storage.addAttributes(attributes(for: token.kind, baseFont: baseFont), range: token.range)
+        storage.addAttributes(
+          attributes(for: token.kind, baseFont: baseFont, concealsSyntax: concealsSyntax),
+          range: token.range
+        )
       }
+    }
+    storage.endEditing()
+    return baseAttributes
+  }
+
+  @discardableResult
+  static func apply(
+    to storage: NSTextStorage,
+    characterRange requestedRange: NSRange,
+    monospaced: Bool,
+    concealsSyntax: Bool
+  ) -> [NSAttributedString.Key: Any] {
+    let baseFont = baseFont(monospaced: monospaced)
+    let baseAttributes = baseAttributes(font: baseFont)
+    guard storage.length > 0 else { return baseAttributes }
+    let location = min(max(0, requestedRange.location), storage.length)
+    let length = min(max(0, requestedRange.length), storage.length - location)
+    let nsText = storage.string as NSString
+    let lineRange = nsText.lineRange(for: NSRange(location: location, length: length))
+    let substring = nsText.substring(with: lineRange)
+
+    storage.beginEditing()
+    storage.setAttributes(baseAttributes, range: lineRange)
+    for token in tokens(in: substring) {
+      let range = NSRange(
+        location: lineRange.location + token.range.location,
+        length: token.range.length
+      )
+      guard NSMaxRange(range) <= storage.length else { continue }
+      storage.addAttributes(
+        attributes(for: token.kind, baseFont: baseFont, concealsSyntax: concealsSyntax),
+        range: range
+      )
     }
     storage.endEditing()
     return baseAttributes
@@ -2228,11 +3326,23 @@ enum OrgSyntaxHighlighter {
     ]
   }
 
-  private static func attributes(for kind: OrgSyntaxHighlightKind, baseFont: NSFont) -> [NSAttributedString.Key: Any] {
+  private static func attributes(
+    for kind: OrgSyntaxHighlightKind,
+    baseFont: NSFont,
+    concealsSyntax: Bool
+  ) -> [NSAttributedString.Key: Any] {
     switch kind {
     case .headingStars:
-      return hiddenSyntaxAttributes(baseFont: baseFont)
+      return concealsSyntax
+        ? hiddenSyntaxAttributes(baseFont: baseFont)
+        : sourceSyntaxAttributes(baseFont: baseFont)
     case .headingTitle:
+      if !concealsSyntax {
+        return [
+          .foregroundColor: NSColor.labelColor,
+          .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .semibold)
+        ]
+      }
       return [
         .foregroundColor: NSColor.labelColor,
         .font: NSFont.systemFont(ofSize: baseFont.pointSize + 2, weight: .semibold)
@@ -2274,7 +3384,9 @@ enum OrgSyntaxHighlighter {
         .underlineStyle: NSUnderlineStyle.single.rawValue
       ]
     case .linkTarget:
-      return hiddenSyntaxAttributes(baseFont: baseFont)
+      return concealsSyntax
+        ? hiddenSyntaxAttributes(baseFont: baseFont)
+        : sourceSyntaxAttributes(baseFont: baseFont)
     case .code:
       return [
         .foregroundColor: NSColor.labelColor,
@@ -2293,7 +3405,9 @@ enum OrgSyntaxHighlighter {
         .font: NSFont.monospacedDigitSystemFont(ofSize: baseFont.pointSize, weight: .regular)
       ]
     case .syntaxDelimiter:
-      return hiddenSyntaxAttributes(baseFont: baseFont)
+      return concealsSyntax
+        ? hiddenSyntaxAttributes(baseFont: baseFont)
+        : sourceSyntaxAttributes(baseFont: baseFont)
     case .comment:
       return [
         .foregroundColor: NSColor.secondaryLabelColor
@@ -2308,6 +3422,13 @@ enum OrgSyntaxHighlighter {
       .underlineStyle: 0,
       .kern: -0.1,
       .font: NSFont.monospacedSystemFont(ofSize: max(0.01, baseFont.pointSize * 0.001), weight: .regular)
+    ]
+  }
+
+  private static func sourceSyntaxAttributes(baseFont: NSFont) -> [NSAttributedString.Key: Any] {
+    [
+      .foregroundColor: NSColor.tertiaryLabelColor,
+      .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular)
     ]
   }
 }
