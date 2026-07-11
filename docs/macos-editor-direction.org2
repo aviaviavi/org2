@@ -49,6 +49,7 @@ Current source-editor writing-loop coverage:
 Status: complete. The native source editor is now the first-class writing surface:
 
 - ~OrgSyntaxTextEditor~ preserves native selection and undo behavior, highlights the edited and visible line ranges incrementally, and avoids whole-document tokenization for large buffers.
+- The source writing surface uses native macOS spelling and grammar checking for prose while excluding Org2 metadata, links, timestamps, tables, and source blocks; automatic correction remains off.
 - Source commands cover heading and list insertion, heading/list promotion and demotion, TODO cycling, scheduling and deadlines, property and link insertion, heading navigation, and presentation-only source folding.
 - Commands are available from a compact source toolbar, the macOS Source menu, and Mac-native shortcuts. Vim-style or SpaceMacs-style bindings remain a future optional keymap.
 - A debounced editor-analysis process runs the shared parser against the current in-memory buffer. Parser-provided ranges drive navigation, structured commands, folding, subtle semantic region presentation, and inline diagnostics without becoming a second editable model.

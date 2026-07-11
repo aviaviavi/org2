@@ -37,6 +37,13 @@ Send this once approved.
 :STATUS: draft-needs-review
 :END:
 Already closed.
+
+* TODO [#B] Approve sending Mercor technographics data [[id:8f3c76e5-dd1f-4819-9738-7959b95c3649][overview]] draft
+:PROPERTIES:
+:ID: approval-priority
+:STATUS: waiting-on-avi-approval
+:END:
+Approve before sending.
 `, "utf8");
 
 fs.writeFileSync(versionedApproval, `* TODO Review outreach copy
@@ -61,7 +68,7 @@ const payload = JSON.parse(cli(["approvals", "--dir", tmp, "--recursive", "--for
 assert.equal(payload.$schema, "org2:approvals:v1");
 assert.equal(payload.index.used, true);
 assert.equal(payload.index.rebuilt, true);
-assert.equal(payload.count, 1);
+assert.equal(payload.count, 2);
 assert.equal(payload.skippedCandidates ?? 0, 0);
 assert.equal(payload.items[0].title, "Review outreach copy");
 assert.equal(payload.items[0].line, 3);
@@ -73,18 +80,22 @@ assert.deepEqual(payload.items[0].properties, {
   ID: "approval-1",
   STATUS: "draft-needs-review",
 });
+assert.equal(payload.items[1].title, "Approve sending Mercor technographics data overview draft");
+assert.equal(payload.items[1].idValue, "approval-priority");
+assert.equal(payload.items[1].status, "waiting-on-avi-approval");
 
 const scannedPayload = JSON.parse(cli(["approvals", "--dir", tmp, "--recursive", "--index", "never", "--format", "json"]));
 assert.equal(scannedPayload.index.used, false);
-assert.equal(scannedPayload.count, 1);
+assert.equal(scannedPayload.count, 2);
 assert.doesNotMatch(scannedPayload.items[0].file, /\.stversions/);
 
 const indexedPayload = JSON.parse(cli(["approvals", "--dir", tmp, "--recursive", "--format", "json"]));
 assert.equal(indexedPayload.index.used, true);
 assert.equal(indexedPayload.index.rebuilt, undefined);
-assert.equal(indexedPayload.count, 1);
+assert.equal(indexedPayload.count, 2);
 
 const text = cli(["approvals", "--dir", tmp, "--recursive"]);
 assert.match(text, /approvals\.org2:3 TODO Review outreach copy \[draft-needs-review\]/);
+assert.match(text, /TODO Approve sending Mercor technographics data overview draft \[waiting-on-avi-approval\]/);
 
 console.log("✓ cli approvals");

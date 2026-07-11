@@ -90,6 +90,8 @@ const APP_DOCUMENT_STYLE = `:root {
   --org2-success: #20804a;
   --org2-danger: #b64238;
   --org2-warning: #966512;
+  --org2-content-width: 960px;
+  --org2-page-padding: 28px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -116,7 +118,12 @@ body {
   -webkit-font-smoothing: antialiased;
   overflow-wrap: anywhere;
 }
-main.org2-document { width: min(100%, 760px); max-width: 100%; margin: 0 auto; padding: 22px 30px 64px; }
+main.org2-document {
+  width: min(100%, var(--org2-content-width));
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 22px min(var(--org2-page-padding), 5vw) 64px;
+}
 .org2-headline { margin: 0; }
 .org2-headline + .org2-headline { margin-top: 0.72rem; }
 .org2-headline-summary {
@@ -245,12 +252,118 @@ input[type="checkbox"] { width: 0.95rem; height: 0.95rem; margin: 0 0.42rem 0 -0
 table { width: 100%; margin: 0.8rem 0 1.15rem; border-collapse: collapse; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
 th, td { padding: 0.46rem 0.58rem; border-bottom: 1px solid var(--org2-rule); text-align: left; vertical-align: top; }
 th { color: var(--org2-muted); background: var(--org2-faint); font-size: 0.82rem; font-weight: 650; }
+.org2-table-scroll { width: 100%; max-width: 100%; margin: 0.8rem 0 1.15rem; overflow-x: auto; overscroll-behavior-inline: contain; }
+.org2-table-scroll table { width: auto; min-width: 100%; margin: 0; }
+.org2-table-scroll th, .org2-table-scroll td { overflow-wrap: normal; word-break: normal; hyphens: none; }
+.org2-resizable-table th, .org2-resizable-table td { min-width: 72px; }
+.org2-table-resize-anchor { position: relative; }
+.org2-column-resizer {
+  position: absolute;
+  top: 0;
+  right: -5px;
+  bottom: 0;
+  width: 10px;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+}
+.org2-column-resizer::after {
+  content: "";
+  position: absolute;
+  top: 18%;
+  right: 4px;
+  bottom: 18%;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+}
+.org2-column-resizer:hover::after,
+body.org2-resizing-column .org2-column-resizer::after { background: var(--org2-accent); }
+body.org2-resizing-column { cursor: col-resize; user-select: none; }
 ::selection { background: color-mix(in srgb, var(--org2-accent) 30%, transparent); }
 @media (max-width: 560px) {
-  main.org2-document { padding: 18px 18px 48px; }
+  main.org2-document { padding-top: 18px; padding-bottom: 48px; }
   .org2-properties { grid-template-columns: 1fr; gap: 0.08rem; }
   .org2-properties dd { margin-bottom: 0.35rem; }
 }`;
+
+const APP_DOCUMENT_SCRIPT = `(() => {
+  const minimumColumnWidth = 72;
+
+  function installTableResizers() {
+    document.querySelectorAll(".org2-table-scroll table").forEach((table) => {
+      if (table.dataset.org2Resizable === "true") return;
+      const row = table.tHead && table.tHead.rows.length > 0 ? table.tHead.rows[0] : table.rows[0];
+      if (!row || row.cells.length === 0) return;
+
+      const measuredTableWidth = Math.ceil(table.getBoundingClientRect().width);
+      const measuredWidths = Array.from(row.cells, (cell) =>
+        Math.max(minimumColumnWidth, Math.ceil(cell.getBoundingClientRect().width))
+      );
+      const colgroup = document.createElement("colgroup");
+      const columns = measuredWidths.map((width) => {
+        const column = document.createElement("col");
+        column.style.width = width + "px";
+        colgroup.appendChild(column);
+        return column;
+      });
+      table.insertBefore(colgroup, table.firstChild);
+      table.dataset.org2Resizable = "true";
+      table.classList.add("org2-resizable-table");
+      table.style.tableLayout = "fixed";
+      table.style.width = Math.max(
+        measuredTableWidth,
+        measuredWidths.reduce((total, width) => total + width, 0)
+      ) + "px";
+
+      Array.from(row.cells).forEach((cell, index) => {
+        cell.classList.add("org2-table-resize-anchor");
+        const handle = document.createElement("span");
+        handle.className = "org2-column-resizer";
+        handle.setAttribute("role", "separator");
+        handle.setAttribute("aria-orientation", "vertical");
+        handle.setAttribute("aria-label", "Resize table column " + (index + 1));
+        handle.title = "Drag to resize column";
+
+        handle.addEventListener("mousedown", (event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          event.stopPropagation();
+
+          const startX = event.clientX;
+          const startWidth = parseFloat(columns[index].style.width) || measuredWidths[index];
+          const startTableWidth = table.getBoundingClientRect().width;
+          document.body.classList.add("org2-resizing-column");
+
+          const move = (moveEvent) => {
+            const nextWidth = Math.max(minimumColumnWidth, startWidth + moveEvent.clientX - startX);
+            columns[index].style.width = nextWidth + "px";
+            table.style.width = Math.max(
+              table.parentElement ? table.parentElement.clientWidth : 0,
+              startTableWidth + nextWidth - startWidth
+            ) + "px";
+          };
+          const finish = () => {
+            document.body.classList.remove("org2-resizing-column");
+            window.removeEventListener("mousemove", move);
+            window.removeEventListener("mouseup", finish);
+          };
+
+          window.addEventListener("mousemove", move);
+          window.addEventListener("mouseup", finish);
+        });
+
+        cell.appendChild(handle);
+      });
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", installTableResizers, { once: true });
+  } else {
+    installTableResizers();
+  }
+})();`;
 
 const DEFAULT_INDEX_STYLE = `:root { color-scheme: light dark; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
@@ -964,7 +1077,8 @@ function renderTable(node: TableNode, context: RenderContext): string {
     headerRows.length > 0 ? `<thead>\n${headerRows.map((row) => renderTableRow(row, true, context)).join("\n")}\n</thead>` : "";
   const renderedBody = `<tbody>\n${resolvedBodyRows.map((row) => renderTableRow(row, false, context)).join("\n")}\n</tbody>`;
 
-  return `<table${renderSourceAttributes(node, context)}>\n${[renderedHead, renderedBody].filter(Boolean).join("\n")}\n</table>`;
+  const table = `<table${renderSourceAttributes(node, context)}>\n${[renderedHead, renderedBody].filter(Boolean).join("\n")}\n</table>`;
+  return context.profile === "app" ? `<div class="org2-table-scroll">\n${table}\n</div>` : table;
 }
 
 function renderListItem(node: ListItemNode, context: RenderContext): string {
@@ -1347,7 +1461,10 @@ export function renderOrgDocumentToAppHtml(
     includeHeadlineNumbers: false,
     includeDocumentHeader: false,
     rewriteFileLinks: false,
-    headIncludes: [`<style id="org2-app-document-style">\n${APP_DOCUMENT_STYLE}\n</style>`],
+    headIncludes: [
+      `<style id="org2-app-document-style">\n${APP_DOCUMENT_STYLE}\n</style>`,
+      `<script id="org2-app-document-script">\n${APP_DOCUMENT_SCRIPT}\n</script>`,
+    ],
     linkAbbreviations: opts.linkAbbreviations,
     linearTeam: opts.linearTeam,
     profile: "app",

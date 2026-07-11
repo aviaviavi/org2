@@ -81,7 +81,7 @@ final class Org2ModelsTests: XCTestCase {
   private func searchResult(
     file: String,
     line: Int,
-    heading: String,
+    heading: String?,
     todo: String?,
     snippet: String = "Matched text"
   ) -> SearchResult {
@@ -406,6 +406,13 @@ final class Org2ModelsTests: XCTestCase {
     :REVIEW_STATUS: review-required
     :END:
     Already done.
+
+    * TODO [#B] Approve sending Mercor technographics data [[id:8f3c76e5-dd1f-4819-9738-7959b95c3649][overview]] draft
+    :PROPERTIES:
+    :ID: approval-priority
+    :STATUS: waiting-on-avi-approval
+    :END:
+    Approve before sending.
     """
     let document: Org2CanonicalDocument = try await cli.parseTextJSON(text, sourceRanges: true)
 
@@ -417,12 +424,15 @@ final class Org2ModelsTests: XCTestCase {
 
     XCTAssertEqual(approvals.map(\.title), [
       "Follow up with vendor",
-      "Review and approve launch email"
+      "Review and approve launch email",
+      "Approve sending Mercor technographics data overview draft"
     ])
     XCTAssertEqual(approvals[0].status, "Avi approval")
     XCTAssertEqual(approvals[1].status, "review-required")
     XCTAssertEqual(approvals[1].idValue, "approval-1")
     XCTAssertTrue(approvals[1].body.contains("Please review"))
+    XCTAssertEqual(approvals[2].status, "waiting-on-avi-approval")
+    XCTAssertEqual(approvals[2].idValue, "approval-priority")
   }
 
   func testApprovalCandidatePrefilterSkipsIrrelevantFiles() {
@@ -438,6 +448,13 @@ final class Org2ModelsTests: XCTestCase {
     * TODO Review and approve launch email
     :PROPERTIES:
     :REVIEW_STATUS: review-required
+    :END:
+    """))
+
+    XCTAssertTrue(WorkspaceStore.approvalCandidateTextMayContainItem("""
+    * TODO [#B] Approve sending Mercor technographics overview draft
+    :PROPERTIES:
+    :STATUS: waiting-on-avi-approval
     :END:
     """))
 
@@ -755,6 +772,61 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(title, "Thread nav still bit clunky")
   }
 
+  func testOpenClawSidebarContextTargetPrefersInteractedRowOverTopRowFallback() {
+    let topThreadID = UUID()
+    let selectedThreadID = UUID()
+    let hoveredThreadID = UUID()
+
+    XCTAssertEqual(
+      OpenClawSidebarContextTarget.resolve(
+        hoveredThreadID: hoveredThreadID,
+        selectedThreadID: selectedThreadID,
+        fallbackThreadID: topThreadID
+      ),
+      hoveredThreadID
+    )
+    XCTAssertEqual(
+      OpenClawSidebarContextTarget.resolve(
+        hoveredThreadID: nil,
+        selectedThreadID: selectedThreadID,
+        fallbackThreadID: topThreadID
+      ),
+      selectedThreadID
+    )
+  }
+
+  @MainActor
+  func testRenamingOpenClawThreadDoesNotLeakStatusIntoAnotherEmptyThread() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-thread-rename-status-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+    )
+    store.createOpenClawChatThread()
+    let firstThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.createOpenClawChatThread()
+    let secondThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.openClawStatusText = "Ready for a message"
+
+    store.selectOpenClawChatThread(firstThreadID)
+    store.renameOpenClawChatThread(firstThreadID, title: "Renamed thread")
+    store.selectOpenClawChatThread(secondThreadID)
+
+    XCTAssertEqual(
+      store.openClawChatThreads.first(where: { $0.id == firstThreadID })?.title,
+      "Renamed thread"
+    )
+    XCTAssertEqual(
+      store.openClawChatThreads.first(where: { $0.id == secondThreadID })?.title,
+      "New Chat"
+    )
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, secondThreadID)
+    XCTAssertTrue(store.openClawMessages.isEmpty)
+    XCTAssertEqual(store.openClawStatusText, "Ready for a message")
+  }
+
   @MainActor
   func testNamedOpenClawThreadKeepsTitleWhenPromptStartsWithPreamble() async throws {
     let root = FileManager.default.temporaryDirectory
@@ -824,6 +896,42 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(restored.visibleOpenClawChatThreads.first?.title, "Renamed pinned thread")
     XCTAssertEqual(restored.visibleOpenClawChatThreads.first?.isPinned, true)
     XCTAssertTrue(restored.archivedOpenClawChatThreads.isEmpty)
+  }
+
+  @MainActor
+  func testArchivingSelectedOpenClawThreadTargetsExactRowAndKeepsNearbySelection() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-thread-archive-row-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+    )
+
+    for title in ["First thread", "Second thread", "Third thread"] {
+      store.createOpenClawChatThread()
+      store.openClawMessages = [OpenClawChatMessage(role: .user, content: title)]
+    }
+
+    let threadsBeforeArchive = store.visibleOpenClawChatThreads
+    XCTAssertGreaterThanOrEqual(threadsBeforeArchive.count, 3)
+    let target = threadsBeforeArchive[1]
+    let expectedReplacement = threadsBeforeArchive[2]
+    store.selectOpenClawChatThread(target.id)
+
+    store.archiveOpenClawChatThread(target.id)
+
+    XCTAssertEqual(store.archivedOpenClawChatThreads.map(\.id), [target.id])
+    XCTAssertFalse(store.visibleOpenClawChatThreads.contains(where: { $0.id == target.id }))
+    XCTAssertTrue(store.visibleOpenClawChatThreads.contains(where: { $0.id == threadsBeforeArchive[0].id }))
+    XCTAssertTrue(store.visibleOpenClawChatThreads.contains(where: { $0.id == expectedReplacement.id }))
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, expectedReplacement.id)
+    XCTAssertTrue(store.canUndoOpenClawChatThreadArchive)
+
+    store.undoLastOpenClawChatThreadArchive()
+
+    XCTAssertTrue(store.visibleOpenClawChatThreads.contains(where: { $0.id == target.id }))
+    XCTAssertFalse(store.canUndoOpenClawChatThreadArchive)
   }
 
   @MainActor
@@ -1000,6 +1108,47 @@ final class Org2ModelsTests: XCTestCase {
     )
 
     XCTAssertEqual(restored.openClawMessages.map(\.content), ["Hello OpenClaw", "Hello from restart-safe storage"])
+  }
+
+  @MainActor
+  func testComposedOpenClawMessageStaysInThreadSelectedAtSubmission() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-submit-thread-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      openClawSendHandler: { _, _, _, _ in "Reply for submitted thread" }
+    )
+    store.createOpenClawChatThread()
+    let firstThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.renameOpenClawChatThread(firstThreadID, title: "First thread")
+    store.createOpenClawChatThread()
+    let secondThreadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    store.renameOpenClawChatThread(secondThreadID, title: "Second thread")
+    store.selectOpenClawChatThread(firstThreadID)
+
+    store.sendComposedOpenClawMessage(text: "Message for first thread")
+    XCTAssertEqual(
+      store.openClawChatThreads.first(where: { $0.id == firstThreadID })?.messages.map(\.content),
+      ["Message for first thread"]
+    )
+    store.selectOpenClawChatThread(secondThreadID)
+
+    let deadline = Date().addingTimeInterval(5)
+    while store.openClawChatThreads.first(where: { $0.id == firstThreadID })?.messages.count != 2,
+          Date() < deadline {
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+
+    XCTAssertEqual(
+      store.openClawChatThreads.first(where: { $0.id == firstThreadID })?.messages.map(\.content),
+      ["Message for first thread", "Reply for submitted thread"]
+    )
+    XCTAssertTrue(
+      store.openClawChatThreads.first(where: { $0.id == secondThreadID })?.messages.isEmpty == true
+    )
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, secondThreadID)
   }
 
   @MainActor
@@ -1846,6 +1995,41 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(OpenClawChatClient.openClawAgentHeaderValue(for: ""), "main")
     XCTAssertEqual(OpenClawChatClient.openClawAgentHeaderValue(for: "openclaw"), "main")
     XCTAssertEqual(OpenClawChatClient.openClawAgentHeaderValue(for: "openclaw/org2-workspace"), "org2-workspace")
+  }
+
+  func testOpenClawChatClientAllowsLongRunningAgentRequests() {
+    let configuration = OpenClawChatClient.sessionConfiguration()
+
+    XCTAssertEqual(OpenClawChatClient.requestTimeout, 7_200)
+    XCTAssertEqual(OpenClawChatClient.resourceTimeout, 7_200)
+    XCTAssertEqual(configuration.timeoutIntervalForRequest, 7_200)
+    XCTAssertEqual(configuration.timeoutIntervalForResource, 7_200)
+  }
+
+  @MainActor
+  func testRenderedDocumentLayoutDefaultsAndPersists() throws {
+    let suiteName = "org2-workspace-rendered-layout-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults
+    )
+    XCTAssertEqual(store.renderedDocumentWidth, .comfortable)
+    XCTAssertEqual(store.renderedDocumentMargin, .standard)
+    XCTAssertEqual(store.renderedDocumentLayout.width.cssValue, "960px")
+    XCTAssertEqual(store.renderedDocumentLayout.margin.cssValue, "28px")
+
+    store.renderedDocumentWidth = .full
+    store.renderedDocumentMargin = .compact
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      defaults: defaults
+    )
+    XCTAssertEqual(restored.renderedDocumentWidth, .full)
+    XCTAssertEqual(restored.renderedDocumentMargin, .compact)
   }
 
   func testMeetingArtifactWriterCreatesNoteAndTranscript() throws {
@@ -2793,14 +2977,17 @@ final class Org2ModelsTests: XCTestCase {
     let refs = OpenClawFileReference.extract(from: """
     Check /srv/org2/notes/alice.org2:42 and notes/daily/2026-06-12.org.
     Also [thread](file:///srv/org2/threads/follow-up.org2#9).
+    Ranges work at /srv/org2/notes/range.org2:12-18 and /srv/org2/notes/github.org2#L21-L24.
     """)
 
     XCTAssertEqual(refs.map(\.path), [
       "/srv/org2/notes/alice.org2",
       "notes/daily/2026-06-12.org",
-      "/srv/org2/threads/follow-up.org2"
+      "/srv/org2/threads/follow-up.org2",
+      "/srv/org2/notes/range.org2",
+      "/srv/org2/notes/github.org2"
     ])
-    XCTAssertEqual(refs.map(\.line), [42, nil, 9])
+    XCTAssertEqual(refs.map(\.line), [42, nil, 9, 12, 21])
     XCTAssertEqual(refs[0].displayTitle, "alice.org2:42")
   }
 
@@ -2821,13 +3008,13 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   func testOrgInlineParserRendersMarkdownFileCitationsInline() {
-    let spans = OrgInlineParser.parse("Found in [personal.org](/Users/avi/avi.org2/personal.org:58).")
+    let spans = OrgInlineParser.parse("Found in [personal.org](/Users/avi/avi.org2/personal.org:58-63).")
 
     XCTAssertEqual(spans, [
       .text("Found in "),
       .link(
         label: "personal.org",
-        target: "/Users/avi/avi.org2/personal.org:58",
+        target: "/Users/avi/avi.org2/personal.org:58-63",
         fileReference: OpenClawFileReference(path: "/Users/avi/avi.org2/personal.org", line: 58)
       ),
       .text(".")
@@ -3816,6 +4003,107 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSyntaxEditorConfiguresNativeFindBar() {
+    let textView = NSTextView()
+
+    OrgSyntaxTextEditor.configureNativeFind(in: textView)
+
+    XCTAssertTrue(textView.usesFindBar)
+    XCTAssertTrue(textView.isIncrementalSearchingEnabled)
+  }
+
+  @MainActor
+  func testSyntaxEditorConsumesCommandFToPresentNativeFindBar() throws {
+    let scrollView = NSScrollView()
+    let textView = OrgSyntaxTextView()
+    textView.string = "Find this text"
+    OrgSyntaxTextEditor.configureNativeFind(in: textView)
+    scrollView.documentView = textView
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 480, height: 320),
+      styleMask: [.titled],
+      backing: .buffered,
+      defer: false
+    )
+    window.contentView = scrollView
+    XCTAssertTrue(window.makeFirstResponder(textView))
+    let event = try XCTUnwrap(NSEvent.keyEvent(
+      with: .keyDown,
+      location: .zero,
+      modifierFlags: [.command],
+      timestamp: ProcessInfo.processInfo.systemUptime,
+      windowNumber: window.windowNumber,
+      context: nil,
+      characters: "f",
+      charactersIgnoringModifiers: "f",
+      isARepeat: false,
+      keyCode: 3
+    ))
+
+    XCTAssertTrue(textView.performKeyEquivalent(with: event))
+  }
+
+  @MainActor
+  func testSyntaxEditorConfiguresNativeSpellingAndGrammarChecking() {
+    let textView = NSTextView()
+
+    OrgSyntaxTextEditor.configureTextChecking(.spellingAndGrammar, in: textView)
+
+    XCTAssertTrue(textView.isContinuousSpellCheckingEnabled)
+    XCTAssertTrue(textView.isGrammarCheckingEnabled)
+    XCTAssertNotEqual(
+      textView.enabledTextCheckingTypes & NSTextCheckingResult.CheckingType.spelling.rawValue,
+      0
+    )
+    XCTAssertNotEqual(
+      textView.enabledTextCheckingTypes & NSTextCheckingResult.CheckingType.grammar.rawValue,
+      0
+    )
+
+    OrgSyntaxTextEditor.configureTextChecking(.disabled, in: textView)
+    XCTAssertFalse(textView.isContinuousSpellCheckingEnabled)
+    XCTAssertFalse(textView.isGrammarCheckingEnabled)
+    XCTAssertEqual(textView.enabledTextCheckingTypes, 0)
+  }
+
+  func testSourceTextCheckingExcludesOrgSyntaxAndChecksProse() throws {
+    let text = """
+    * TODO Review writting
+    :PROPERTIES:
+    :OWNER: Avi
+    :END:
+    Body misspelld prose with [[https://example.com][mistakn label]].
+    #+begin_src swift
+    let teh = true
+    #+end_src
+    """
+    let snapshot = OrgSourceEditorSemanticSnapshot(regions: [
+      OrgSourceSemanticRegion(kind: .headline, startLine: 1, endLine: 8, level: 1, todo: "TODO"),
+      OrgSourceSemanticRegion(kind: .properties, startLine: 2, endLine: 4, level: nil, todo: nil),
+      OrgSourceSemanticRegion(kind: .sourceBlock, startLine: 6, endLine: 8, level: nil, todo: nil)
+    ])
+    let nsText = text as NSString
+
+    func isSuppressed(_ value: String) throws -> Bool {
+      let range = nsText.range(of: value)
+      XCTAssertNotEqual(range.location, NSNotFound)
+      return OrgSourceTextChecking.shouldSuppress(in: text, range: range, snapshot: snapshot)
+    }
+
+    XCTAssertTrue(try isSuppressed("TODO"))
+    XCTAssertTrue(try isSuppressed("OWNER"))
+    XCTAssertTrue(try isSuppressed("example.com"))
+    XCTAssertTrue(try isSuppressed("teh"))
+    XCTAssertFalse(try isSuppressed("writting"))
+    XCTAssertFalse(try isSuppressed("misspelld"))
+    XCTAssertFalse(try isSuppressed("mistakn"))
+    XCTAssertEqual(
+      OrgSourceTextChecking.excludedSemanticRanges(in: text, snapshot: snapshot).count,
+      2
+    )
+  }
+
+  @MainActor
   func testOrgSourceTextEditingStructuredCommandsUseSemanticHeadingRanges() throws {
     let text = """
     * Parent
@@ -4241,7 +4529,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   func testOpenClawFileReferenceDeepLinkRoundTrips() throws {
-    let reference = OpenClawFileReference(path: "file:notes/daily.org2#12", line: nil)
+    let reference = OpenClawFileReference(path: "file:notes/daily.org2#L12-L16", line: nil)
     let url = try XCTUnwrap(reference.deepLinkURL)
     let restored = try XCTUnwrap(OpenClawFileReference.fromDeepLinkURL(url))
 
@@ -4320,6 +4608,40 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testOpenClawFileReferenceRevealsDetailFromExpandedChat() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-link-expanded-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("alice.org2")
+    try """
+    #+TITLE: Alice
+
+    * TODO Follow up
+    Body
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.makeSurfacePrimary(.openClaw)
+    let reference = OpenClawFileReference(path: note.path, line: 3)
+    store.openChatFileReference(reference)
+    try await waitForCondition {
+      store.selectedEntrySource != nil
+    }
+
+    store.expandSurface(.openClaw)
+    XCTAssertTrue(store.isWorkspaceDetailPaneClosed)
+
+    store.openChatFileReference(reference)
+
+    XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
+    XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
+    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertEqual(store.selectedLocation?.file, note.path)
+    XCTAssertEqual(store.selectedLocation?.lineForEditor, 3)
+  }
+
+  @MainActor
   func testDetailNavigationBackRestoresPreviousLocation() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-detail-back-\(UUID().uuidString)", isDirectory: true)
@@ -4333,17 +4655,147 @@ final class Org2ModelsTests: XCTestCase {
     store.setCorpusRoot(root)
     let firstThread = OpenClawThread(title: "First", file: first.path, line: 1, zone: "test", modifiedAt: nil)
     store.select(.openClaw(firstThread))
-    XCTAssertFalse(store.canNavigateBackInDetail)
+    XCTAssertFalse(store.canNavigateBack)
 
     store.openChatFileReference(OpenClawFileReference(path: second.path, line: 1))
 
-    XCTAssertTrue(store.canNavigateBackInDetail)
+    XCTAssertTrue(store.canNavigateBack)
     XCTAssertEqual(store.selectedLocation?.file, second.path)
 
-    store.navigateBackInDetail()
+    store.navigateBack()
 
-    XCTAssertFalse(store.canNavigateBackInDetail)
+    XCTAssertFalse(store.canNavigateBack)
     XCTAssertEqual(store.selectedLocation?.file, first.path)
+  }
+
+  @MainActor
+  func testWorkspaceNavigationBackRestoresSurfaceSequence() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+
+    XCTAssertEqual(store.selectedSurface, .home)
+    XCTAssertFalse(store.canNavigateBack)
+
+    store.makeSurfacePrimary(.agenda)
+    store.makeSurfacePrimary(.files)
+
+    XCTAssertEqual(store.selectedSurface, .files)
+    XCTAssertTrue(store.canNavigateBack)
+
+    store.navigateBack()
+    XCTAssertEqual(store.selectedSurface, .agenda)
+    XCTAssertTrue(store.canNavigateBack)
+
+    store.navigateBack()
+    XCTAssertEqual(store.selectedSurface, .home)
+    XCTAssertFalse(store.canNavigateBack)
+  }
+
+  @MainActor
+  func testWorkspaceNavigationBackRestoresDocumentAndOwningSurface() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-global-back-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("note.org2")
+    let meetingNote = root.appendingPathComponent("meeting.org2")
+    try "#+TITLE: Note\n".write(to: note, atomically: true, encoding: .utf8)
+    try "#+TITLE: Meeting\n".write(to: meetingNote, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: 0
+    ))
+    store.selectMeeting(MeetingWorkspaceItem(
+      title: "Meeting",
+      file: meetingNote.path,
+      recordedAt: nil,
+      modifiedAt: nil,
+      audioArtifact: nil,
+      transcriptArtifact: nil,
+      transcriptionStatus: nil,
+      idValue: nil
+    ))
+
+    XCTAssertEqual(store.selectedSurface, .meetings)
+    XCTAssertEqual(store.selectedLocation?.file, meetingNote.path)
+
+    store.navigateBack()
+
+    XCTAssertEqual(store.selectedSurface, .files)
+    XCTAssertEqual(store.selectedLocation?.file, note.path)
+  }
+
+  @MainActor
+  func testWorkspaceNavigationBackRestoresPaneLayoutChanges() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-pane-layout-back-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("note.org2")
+    try "#+TITLE: Note\n".write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: 0
+    ))
+
+    store.closeDetailPane()
+    XCTAssertTrue(store.isWorkspaceDetailPaneClosed)
+    store.navigateBack()
+    XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
+    XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
+    XCTAssertEqual(store.selectedLocation?.file, note.path)
+
+    store.toggleDetailPaneExpansion()
+    XCTAssertTrue(store.isWorkspaceSurfacePaneClosed)
+    store.navigateBack()
+    XCTAssertFalse(store.isWorkspaceSurfacePaneClosed)
+    XCTAssertFalse(store.isWorkspaceDetailPaneClosed)
+    XCTAssertEqual(store.selectedLocation?.file, note.path)
+
+    store.toggleNodeContextPane()
+    XCTAssertTrue(store.isNodeContextPanePresented)
+    store.navigateBack()
+    XCTAssertFalse(store.isNodeContextPanePresented)
+
+    XCTAssertEqual(store.selectedEntrySourceMode, .page)
+    store.selectEntrySourceMode(.entry)
+    XCTAssertEqual(store.selectedEntrySourceMode, .entry)
+    store.navigateBack()
+    XCTAssertEqual(store.selectedEntrySourceMode, .page)
+    XCTAssertEqual(store.selectedLocation?.file, note.path)
+  }
+
+  @MainActor
+  func testWorkspaceNavigationBackRestoresChatThreadSelection() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-selection-back-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json")
+    )
+    store.createOpenClawChatThread()
+    store.createOpenClawChatThread()
+    store.createOpenClawChatThread()
+    store.makeSurfacePrimary(.openClaw)
+    let threads = store.visibleOpenClawChatThreads
+    XCTAssertGreaterThanOrEqual(threads.count, 3)
+
+    store.selectOpenClawChatThread(threads[1].id)
+    store.selectOpenClawChatThread(threads[2].id)
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, threads[2].id)
+
+    store.navigateBack()
+
+    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, threads[1].id)
   }
 
   @MainActor
@@ -5088,6 +5540,130 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(displayResults.map(\.heading), ["Active item", "Plain note", "Done item"])
   }
 
+  @MainActor
+  func testWorkspaceTextSearchSectionsUseExplicitPriorityOrder() throws {
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    let active = searchResult(file: "/tmp/action.org2", line: 4, heading: "Active item", todo: "TODO")
+    let entry = searchResult(file: "/tmp/entry.org2", line: 8, heading: "Finished entry", todo: "DONE")
+    let corpusText = searchResult(file: "/tmp/prose.org2", line: 2, heading: nil, todo: nil)
+    let file = CorpusFile(
+      path: "/tmp/project.org2",
+      relativePath: "project.org2",
+      modifiedAt: nil,
+      byteCount: 100
+    )
+    let page = OrgRoamNodeReference(
+      idValue: "page-id",
+      title: "Project Page",
+      file: file.path,
+      line: 1,
+      isPageNode: true
+    )
+    let threadID = UUID()
+    let chatThread = OpenClawChatSearchResult(
+      threadID: threadID,
+      messageID: nil,
+      matchKind: .threadTitle,
+      title: "Project chat",
+      snippet: "Thread title match",
+      messageCount: 2,
+      updatedAt: Date()
+    )
+    let chatMessage = OpenClawChatSearchResult(
+      threadID: threadID,
+      messageID: UUID(),
+      matchKind: .messageText,
+      title: "Another chat",
+      snippet: "Message body match",
+      messageCount: 2,
+      updatedAt: Date()
+    )
+
+    store.searchResults = [corpusText, entry, active]
+    store.workspaceFileSearchResults = [file]
+    store.openClawChatSearchResults = [chatMessage, chatThread]
+    store.workspacePageSearchResults = [page]
+
+    XCTAssertEqual(store.workspaceTextSearchSections.map(\.category), [
+      .activeTodos,
+      .files,
+      .chatThreads,
+      .pages,
+      .entries,
+      .chatMessages,
+      .corpusText
+    ])
+    XCTAssertEqual(store.workspaceTextSearchResultCount, 7)
+    guard case .entry(let terminalTodo) = store.workspaceTextSearchSections[4].items[0] else {
+      return XCTFail("Expected terminal TODO under Entries")
+    }
+    XCTAssertEqual(terminalTodo.todo, "DONE")
+  }
+
+  func testWorkspaceChatSearchSeparatesThreadTitlesFromMessageText() {
+    let thread = OpenClawChatThread(
+      id: UUID(),
+      title: "Billing reconciliation",
+      createdAt: Date(),
+      updatedAt: Date(),
+      sessionKey: "search-test",
+      messages: [
+        OpenClawChatMessage(role: .user, content: "Review the billing reconciliation details.")
+      ]
+    )
+
+    let results = WorkspaceStore.searchOpenClawChatThreads(
+      [thread],
+      query: "billing",
+      limit: 10
+    )
+
+    XCTAssertEqual(results.map(\.matchKind), [.threadTitle, .messageText])
+    XCTAssertNil(results[0].messageID)
+    XCTAssertNotNil(results[1].messageID)
+  }
+
+  func testWorkspaceFileAndPageSearchUseDistinctMatchSurfaces() {
+    let projectFile = CorpusFile(
+      path: "/tmp/projects/roadmap.org2",
+      relativePath: "projects/roadmap.org2",
+      modifiedAt: nil,
+      byteCount: nil
+    )
+    let page = OrgRoamNodeReference(
+      idValue: nil,
+      title: "Revenue Roadmap",
+      aliases: ["Growth Plan"],
+      file: projectFile.path,
+      line: 1,
+      isPageNode: true
+    )
+
+    XCTAssertEqual(
+      WorkspaceStore.searchCorpusFilesForWorkspace(
+        [projectFile],
+        query: "projects",
+        limit: 10
+      ).map(\.relativePath),
+      ["projects/roadmap.org2"]
+    )
+    XCTAssertTrue(
+      WorkspaceStore.searchPageNodesForWorkspace(
+        [page],
+        query: "projects",
+        limit: 10
+      ).isEmpty
+    )
+    XCTAssertEqual(
+      WorkspaceStore.searchPageNodesForWorkspace(
+        [page],
+        query: "growth",
+        limit: 10
+      ).map(\.title),
+      ["Revenue Roadmap"]
+    )
+  }
+
   func testWorkspaceSearchGroupsRepeatedFileResultsForDisplay() {
     let done = searchResult(file: "/tmp/accounts.org2", line: 12, heading: "Done account note", todo: "DONE")
     let active = searchResult(file: "/tmp/accounts.org2", line: 4, heading: "Active account todo", todo: "WAIT")
@@ -5351,6 +5927,19 @@ final class Org2ModelsTests: XCTestCase {
       ),
       .all
     )
+
+    XCTAssertTrue(WorkspaceKeyboardEventRouting.defersToNativeTextFind(
+      keyDown(characters: "f", keyCode: 3, modifiers: [.command]),
+      sourceEditorActive: true
+    ))
+    XCTAssertFalse(WorkspaceKeyboardEventRouting.defersToNativeTextFind(
+      keyDown(characters: "F", keyCode: 3, modifiers: [.command, .shift]),
+      sourceEditorActive: true
+    ))
+    XCTAssertFalse(WorkspaceKeyboardEventRouting.defersToNativeTextFind(
+      keyDown(characters: "f", keyCode: 3, modifiers: [.command]),
+      sourceEditorActive: false
+    ))
   }
 
   @MainActor
@@ -6313,6 +6902,9 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(prompt.contains(":KIND: agent-thread"))
     XCTAssertTrue(prompt.contains("Context attachments"))
     XCTAssertTrue(prompt.contains("org2 search <query> --dir <root>"))
+    XCTAssertTrue(prompt.contains("Clickable citations in AI chat"))
+    XCTAssertTrue(prompt.contains("[descriptive label](\(remoteRoot)/notes/example.org2:42)"))
+    XCTAssertTrue(prompt.contains("#L42-L47"))
     XCTAssertTrue(prompt.contains("\(remoteRoot)/notes/alice.org2:4"))
     XCTAssertTrue(prompt.contains("\(remoteRoot)/threads/follow-up.org2:8"))
     XCTAssertTrue(prompt.contains("~~~org"))
@@ -9476,9 +10068,13 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(store.canOrganizeCurrentHeadline)
 
     await store.applyPriorityShortcut("A")
+    XCTAssertEqual(store.selectedSurface, .search)
     await store.applyPlanningShortcut(kind: .deadline, target: .today)
+    XCTAssertEqual(store.selectedSurface, .search)
     await store.applyTodoShortcut(.inProgress)
+    XCTAssertEqual(store.selectedSurface, .search)
     await store.applyPropertyShortcut(key: "OWNER", value: "agent")
+    XCTAssertEqual(store.selectedSurface, .search)
 
     let formatter = DateFormatter()
     formatter.calendar = Calendar(identifier: .gregorian)
@@ -9490,6 +10086,40 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertTrue(updated.contains("* IN_PROGRESS [#A] Review from search"))
     XCTAssertTrue(updated.contains("DEADLINE: <\(today)"))
     XCTAssertTrue(updated.contains(":OWNER: agent"))
+  }
+
+  @MainActor
+  func testApprovalContextTodoMutationDoesNotNavigateToAgenda() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-approval-context-status-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("approval.org2")
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone.current
+    formatter.dateFormat = "yyyy-MM-dd"
+    let today = formatter.string(from: Date())
+    try """
+    * TODO Review approval draft
+    SCHEDULED: <\(today)>
+    :PROPERTIES:
+    :STATUS: draft-needs-review
+    :END:
+    """.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    await store.refreshAgenda(updatesStatus: false)
+    let item = try XCTUnwrap(store.visibleAgendaItems.first)
+    store.select(.agenda(item))
+    store.selectedSurface = .approvals
+
+    await store.applyTodoShortcut(.done, to: .agenda(item))
+
+    XCTAssertEqual(store.selectedSurface, .approvals)
+    let updated = try String(contentsOf: note, encoding: .utf8)
+    XCTAssertTrue(updated.contains("* DONE Review approval draft"))
   }
 
   @MainActor
@@ -10510,6 +11140,33 @@ final class Org2ModelsTests: XCTestCase {
         && store.selectedEntrySource?.text == updated
     }
     XCTAssertEqual(store.statusText, "Redid edit in live-undo.org2")
+  }
+
+  @MainActor
+  func testWorkspaceUndoPrefersFocusedNativeTextEditor() throws {
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 320, height: 120),
+      styleMask: [.borderless],
+      backing: .buffered,
+      defer: false
+    )
+    defer { window.orderOut(nil) }
+    let scrollView = NSScrollView(frame: window.contentView?.bounds ?? .zero)
+    let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+    textView.allowsUndo = true
+    scrollView.documentView = textView
+    window.contentView = scrollView
+    window.makeKeyAndOrderFront(nil)
+    XCTAssertTrue(window.makeFirstResponder(textView))
+    textView.string = "Draft"
+    textView.setSelectedRange(NSRange(location: 5, length: 0))
+    textView.insertText(" updated", replacementRange: textView.selectedRange())
+    XCTAssertEqual(textView.string, "Draft updated")
+
+    XCTAssertTrue(WorkspaceStore.performNativeTextUndoIfPossible(firstResponder: textView))
+    XCTAssertEqual(textView.string, "Draft")
+    XCTAssertTrue(WorkspaceStore.performNativeTextRedoIfPossible(firstResponder: textView))
+    XCTAssertEqual(textView.string, "Draft updated")
   }
 
   @MainActor

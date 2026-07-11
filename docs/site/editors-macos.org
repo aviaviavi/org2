@@ -39,6 +39,7 @@ The writing surface is a native ~NSTextView~ over the selected Org2 entry or ful
 Current source-editor affordances include:
 
 - incremental syntax highlighting that remains responsive on large files,
+- native macOS spelling and grammar checking for prose without automatic source-text correction,
 - parser-backed source ranges, heading navigation, folding, semantic region presentation, and inline diagnostics,
 - Return continuation for unordered, ordered, checkbox, and indented list lines,
 - heading and list insertion, promotion and demotion, TODO cycling, scheduling, deadlines, property insertion, link insertion, and planning cleanup,
