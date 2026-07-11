@@ -88,15 +88,22 @@ public struct OpenClawGatewaySettings: Sendable {
 }
 
 public struct OpenClawChatClient: Sendable {
+  static let requestTimeout: TimeInterval = 2 * 60 * 60
+  static let resourceTimeout: TimeInterval = 2 * 60 * 60
+
   public let settings: OpenClawGatewaySettings
   private let session: URLSession
 
   public init(settings: OpenClawGatewaySettings = .resolve()) {
     self.settings = settings
+    self.session = URLSession(configuration: Self.sessionConfiguration())
+  }
+
+  static func sessionConfiguration() -> URLSessionConfiguration {
     let configuration = URLSessionConfiguration.default
-    configuration.timeoutIntervalForRequest = 600
-    configuration.timeoutIntervalForResource = 600
-    self.session = URLSession(configuration: configuration)
+    configuration.timeoutIntervalForRequest = requestTimeout
+    configuration.timeoutIntervalForResource = resourceTimeout
+    return configuration
   }
 
   public func send(
@@ -177,7 +184,7 @@ public struct OpenClawChatClient: Sendable {
     var output = [
       OpenAIChatMessage(
         role: "system",
-        content: .text("You are OpenClaw working with the user's org2 workspace. Use the provided org2 workspace context, configured remote paths, and existing org2 tooling. Keep answers grounded in the corpus and cite source files/lines when acting on workspace facts.")
+        content: .text("You are OpenClaw working with the user's org2 workspace. Use the provided org2 workspace context, configured remote paths, and existing org2 tooling. Keep answers grounded in the corpus. Cite workspace facts with clickable Markdown file links using the mapped path and line number, for example [source](/path/to/file.org2:42).")
       )
     ]
 
@@ -264,6 +271,14 @@ public struct OpenClawWorkspaceContext: Sendable {
     - org2 roam, org2 query, org2 todo, org2 capture for graph, lookup, mutation, and capture workflows
 
     Do not write generated Backlinks sections into note files. Treat backlinks as computed views. Preserve the org2 plaintext format and cite file paths plus line numbers for concrete claims.
+    """)
+
+    sections.append("""
+    Clickable citations in AI chat
+
+    When referring to workspace content in your response, use Markdown links whose target is the exact mapped file path followed by a 1-based line number: [descriptive label](\(citationExamplePath):42). Relative paths are also accepted when that is how a source path appears in this context.
+
+    For a line range, use [descriptive label](\(citationExamplePath):42-47); Org2 Workspace opens the file at the first cited line. The equivalent #L42 and #L42-L47 suffixes are accepted, but the :42 form is preferred. Do not replace the mapped path with a local path that is unavailable to the app.
     """)
 
     sections.append("""
@@ -380,6 +395,12 @@ public struct OpenClawWorkspaceContext: Sendable {
 
   private func mappedPath(_ path: String) -> String {
     Self.mappedPath(path, localCorpusRoot: localCorpusRoot, remoteCorpusRoot: remoteCorpusRoot)
+  }
+
+  private var citationExamplePath: String {
+    let root = remoteCorpusRoot ?? localCorpusRoot
+    guard let root else { return "notes/example.org2" }
+    return root + "/notes/example.org2"
   }
 
   private static func mappedPath(_ path: String, localCorpusRoot: String?, remoteCorpusRoot: String?) -> String {

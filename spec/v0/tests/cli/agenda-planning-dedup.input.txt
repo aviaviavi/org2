@@ -1,0 +1,7 @@
+* TODO Same-day schedule and deadline
+SCHEDULED: <2026-01-21 Wed>
+DEADLINE: <2026-01-21 Wed>
+
+* TODO Different schedule and deadline days
+SCHEDULED: <2026-01-21 Wed>
+DEADLINE: <2026-01-22 Thu>

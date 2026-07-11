@@ -2,6 +2,62 @@ import AppKit
 import SwiftUI
 import WebKit
 
+public enum RenderedDocumentWidth: String, CaseIterable, Identifiable, Sendable {
+  case readable
+  case comfortable
+  case wide
+  case full
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .readable: "Readable"
+    case .comfortable: "Comfortable"
+    case .wide: "Wide"
+    case .full: "Full Width"
+    }
+  }
+
+  var cssValue: String {
+    switch self {
+    case .readable: "760px"
+    case .comfortable: "960px"
+    case .wide: "1200px"
+    case .full: "100%"
+    }
+  }
+}
+
+public enum RenderedDocumentMargin: String, CaseIterable, Identifiable, Sendable {
+  case compact
+  case standard
+  case roomy
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .compact: "Compact"
+    case .standard: "Standard"
+    case .roomy: "Roomy"
+    }
+  }
+
+  var cssValue: String {
+    switch self {
+    case .compact: "16px"
+    case .standard: "28px"
+    case .roomy: "44px"
+    }
+  }
+}
+
+struct OrgHTMLDocumentLayout: Equatable {
+  let width: RenderedDocumentWidth
+  let margin: RenderedDocumentMargin
+}
+
 struct OrgHTMLDocumentView: NSViewRepresentable {
   @Environment(\.openOrgFileReference) private var openOrgFileReference
   @Environment(\.orgRoamLinkResolver) private var linkResolver
@@ -13,6 +69,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
   let searchOccurrenceIndex: Int?
   let searchOccurrenceCount: Int
   let scrollRequest: DetailScrollRequest?
+  let layout: OrgHTMLDocumentLayout
   let reportStatus: @MainActor (String) -> Void
 
   func makeCoordinator() -> Coordinator {
@@ -21,7 +78,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
 
   func makeNSView(context: Context) -> WKWebView {
     let configuration = WKWebViewConfiguration()
-    configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+    configuration.defaultWebpagePreferences.allowsContentJavaScript = true
     configuration.websiteDataStore = .nonPersistent()
 
     let webView = WKWebView(frame: .zero, configuration: configuration)
@@ -39,6 +96,8 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     coordinator.source = source
     coordinator.corpusRoot = corpusRoot
     coordinator.reportStatus = reportStatus
+    let layoutChanged = coordinator.layout != layout
+    coordinator.layout = layout
 
     let renderID = "\(source.id)|\(html.utf8.count)|\(html.hashValue)"
     if coordinator.renderID != renderID {
@@ -49,6 +108,8 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
         html,
         baseURL: URL(fileURLWithPath: source.file).deletingLastPathComponent()
       )
+    } else if layoutChanged {
+      coordinator.applyLayout(to: webView)
     } else if coordinator.searchQuery != searchQuery {
       coordinator.searchQuery = searchQuery
       coordinator.searchOccurrenceIndex = searchOccurrenceIndex
@@ -83,6 +144,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     var searchQuery: String?
     var searchOccurrenceIndex: Int?
     var scrollRequestID: Int?
+    var layout = OrgHTMLDocumentLayout(width: .comfortable, margin: .standard)
     var openOrgFileReference: @MainActor (OpenClawFileReference) -> Void = { _ in }
     var linkResolver = OrgRoamLinkResolver.empty
     var source: EntrySource?
@@ -90,7 +152,16 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     var reportStatus: @MainActor (String) -> Void = { _ in }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
+      applyLayout(to: webView)
       applySearch(to: webView, backwards: false)
+    }
+
+    func applyLayout(to webView: WKWebView) {
+      let script = """
+      document.documentElement.style.setProperty('--org2-content-width', '\(layout.width.cssValue)');
+      document.documentElement.style.setProperty('--org2-page-padding', '\(layout.margin.cssValue)');
+      """
+      webView.evaluateJavaScript(script)
     }
 
     func webView(

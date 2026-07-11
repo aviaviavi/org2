@@ -30,6 +30,11 @@ enum OrgSourceTextIndentDirection {
   case outdent
 }
 
+enum OrgSyntaxTextCheckingMode: Equatable, Sendable {
+  case disabled
+  case spellingAndGrammar
+}
+
 public enum OrgSourceEditorCommand: Equatable, Sendable {
   case insertHeading
   case insertListItem
@@ -565,7 +570,7 @@ enum OrgSourceTextEditing {
     )
   }
 
-  private static func lineContentEnd(in text: NSString, lineRange: NSRange) -> Int {
+  static func lineContentEnd(in text: NSString, lineRange: NSRange) -> Int {
     var end = lineRange.location + lineRange.length
     while end > lineRange.location {
       let character = text.character(at: end - 1)
@@ -734,6 +739,102 @@ enum OrgSourceTextEditing {
   }
 }
 
+enum OrgSourceTextChecking {
+  static func shouldSuppress(
+    in text: String,
+    range requestedRange: NSRange,
+    snapshot: OrgSourceEditorSemanticSnapshot?
+  ) -> Bool {
+    let nsText = text as NSString
+    guard nsText.length > 0 else { return false }
+    let location = min(max(0, requestedRange.location), max(0, nsText.length - 1))
+    let range = NSRange(
+      location: location,
+      length: min(max(1, requestedRange.length), nsText.length - location)
+    )
+    let line = OrgSourceTextEditing.lineNumber(in: nsText, utf16Offset: range.location)
+
+    if snapshot?.regions.contains(where: { region in
+      guard region.startLine <= line, region.endLine >= line else { return false }
+      switch region.kind {
+      case .keyword, .planning, .properties, .sourceBlock, .table:
+        return true
+      default:
+        return false
+      }
+    }) == true {
+      return true
+    }
+
+    let lineRange = nsText.lineRange(for: NSRange(location: range.location, length: 0))
+    let lineText = nsText.substring(with: NSRange(
+      location: lineRange.location,
+      length: max(0, OrgSourceTextEditing.lineContentEnd(in: nsText, lineRange: lineRange) - lineRange.location)
+    ))
+    let trimmed = lineText.trimmingCharacters(in: CharacterSet.whitespaces)
+    if isNonProseLine(trimmed) { return true }
+
+    let relativeRange = NSRange(
+      location: range.location - lineRange.location,
+      length: range.length
+    )
+    for token in OrgSyntaxHighlighter.tokens(in: lineText)
+      where NSIntersectionRange(token.range, relativeRange).length > 0 {
+      switch token.kind {
+      case .headingStars, .keyword, .planningKeyword, .propertyKey, .todo, .priority,
+           .tag, .linkTarget, .code, .timestamp, .syntaxDelimiter, .comment:
+        return true
+      case .link:
+        if let raw = substring(in: lineText, range: token.range), isBareLink(raw) {
+          return true
+        }
+      case .headingTitle, .emphasis:
+        break
+      }
+    }
+    return false
+  }
+
+  static func excludedSemanticRanges(
+    in text: String,
+    snapshot: OrgSourceEditorSemanticSnapshot
+  ) -> [NSRange] {
+    snapshot.regions.compactMap { region in
+      switch region.kind {
+      case .keyword, .planning, .properties, .sourceBlock, .table:
+        return OrgSourceTextEditing.sourceRange(for: region, in: text)
+      default:
+        return nil
+      }
+    }
+  }
+
+  private static func isNonProseLine(_ line: String) -> Bool {
+    let uppercased = line.uppercased()
+    return line.hasPrefix("#+")
+      || line.hasPrefix(":")
+      || line.hasPrefix("|")
+      || uppercased.hasPrefix("SCHEDULED:")
+      || uppercased.hasPrefix("DEADLINE:")
+      || uppercased.hasPrefix("CLOSED:")
+  }
+
+  private static func isBareLink(_ raw: String) -> Bool {
+    let lowercased = raw.lowercased()
+    return lowercased.hasPrefix("http://")
+      || lowercased.hasPrefix("https://")
+      || lowercased.hasPrefix("file:")
+      || lowercased.hasPrefix("mailto:")
+      || (!raw.hasPrefix("[[") && !raw.hasPrefix("["))
+  }
+
+  private static func substring(in text: String, range: NSRange) -> String? {
+    let nsText = text as NSString
+    guard range.location != NSNotFound, NSMaxRange(range) <= nsText.length else { return nil }
+    return nsText.substring(with: range)
+  }
+}
+
 enum OrgSyntaxTextEditorTextPublishing: Equatable {
   case immediate
   case deferred(milliseconds: Int)
@@ -818,6 +919,10 @@ final class OrgSyntaxTextView: NSTextView {
   }
 
   override func keyDown(with event: NSEvent) {
+    if handlesFindShortcut(event) {
+      performFindShortcut()
+      return
+    }
     if let command = sourceEditorCommand(for: event),
        onSourceEditorCommand?(command, self) == true {
       return
@@ -846,6 +951,10 @@ final class OrgSyntaxTextView: NSTextView {
   }
 
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    if handlesFindShortcut(event) {
+      performFindShortcut()
+      return true
+    }
     if let command = sourceEditorCommand(for: event),
        onSourceEditorCommand?(command, self) == true {
       return true
@@ -937,6 +1046,18 @@ final class OrgSyntaxTextView: NSTextView {
 
   private func performSaveShortcut() -> Bool {
     onSaveCommand?(OrgSyntaxTextEditorSubmitContext(text: string, selectedRange: selectedRange())) == true
+  }
+
+  private func performFindShortcut() {
+    let sender = NSMenuItem()
+    sender.tag = NSTextFinder.Action.showFindInterface.rawValue
+    performTextFinderAction(sender)
+  }
+
+  private func handlesFindShortcut(_ event: NSEvent) -> Bool {
+    let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    return modifiers == .command
+      && event.charactersIgnoringModifiers?.lowercased() == "f"
   }
 
   private func handlesCrossEditorCopyShortcut(_ event: NSEvent) -> Bool {
@@ -1465,6 +1586,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
   let incrementalHighlighting: Bool
   let concealsSyntax: Bool
   let orgWritingCommands: Bool
+  let textChecking: OrgSyntaxTextCheckingMode
   let commandRequest: OrgSourceEditorCommandRequest?
   let semanticAnalyzer: ((String) async -> OrgSourceEditorSemanticSnapshot?)?
   let diagnostics: Binding<[Org2EditorDiagnostic]>?
@@ -1493,6 +1615,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     incrementalHighlighting: Bool = false,
     concealsSyntax: Bool = true,
     orgWritingCommands: Bool = false,
+    textChecking: OrgSyntaxTextCheckingMode = .disabled,
     commandRequest: OrgSourceEditorCommandRequest? = nil,
     semanticAnalyzer: ((String) async -> OrgSourceEditorSemanticSnapshot?)? = nil,
     diagnostics: Binding<[Org2EditorDiagnostic]>? = nil,
@@ -1520,6 +1643,7 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     self.incrementalHighlighting = incrementalHighlighting
     self.concealsSyntax = concealsSyntax
     self.orgWritingCommands = orgWritingCommands
+    self.textChecking = textChecking
     self.commandRequest = commandRequest
     self.semanticAnalyzer = semanticAnalyzer
     self.diagnostics = diagnostics
@@ -1568,7 +1692,8 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     textView.isAutomaticDashSubstitutionEnabled = false
     textView.isAutomaticTextReplacementEnabled = false
     textView.isAutomaticSpellingCorrectionEnabled = false
-    textView.isContinuousSpellCheckingEnabled = false
+    Self.configureNativeFind(in: textView)
+    Self.configureTextChecking(textChecking, in: textView)
     textView.font = OrgSyntaxHighlighter.baseFont(monospaced: monospaced)
     textView.typingAttributes = OrgSyntaxHighlighter.baseTypingAttributes(monospaced: monospaced)
     textView.textContainerInset = textInset
@@ -1670,6 +1795,24 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
     hasPendingLocalText: Bool
   ) -> Bool {
     editorText != boundText && !hasPendingLocalText
+  }
+
+  static func configureTextChecking(
+    _ mode: OrgSyntaxTextCheckingMode,
+    in textView: NSTextView
+  ) {
+    let isEnabled = mode == .spellingAndGrammar
+    textView.isContinuousSpellCheckingEnabled = isEnabled
+    textView.isGrammarCheckingEnabled = isEnabled
+    textView.enabledTextCheckingTypes = isEnabled
+      ? NSTextCheckingResult.CheckingType.spelling.rawValue
+        | NSTextCheckingResult.CheckingType.grammar.rawValue
+      : 0
+  }
+
+  static func configureNativeFind(in textView: NSTextView) {
+    textView.usesFindBar = true
+    textView.isIncrementalSearchingEnabled = true
   }
 
   @MainActor
@@ -1802,6 +1945,19 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         in: textView.string
       )
       return true
+    }
+
+    func textView(
+      _ textView: NSTextView,
+      shouldSetSpellingState value: Int,
+      range affectedCharRange: NSRange
+    ) -> Int {
+      guard parent.textChecking == .spellingAndGrammar, value != 0 else { return 0 }
+      return OrgSourceTextChecking.shouldSuppress(
+        in: textView.string,
+        range: affectedCharRange,
+        snapshot: semanticSnapshotText == textView.string ? semanticSnapshot : nil
+      ) ? 0 : value
     }
 
     func textDidBeginEditing(_ notification: Notification) {
@@ -2283,9 +2439,20 @@ struct OrgSyntaxTextEditor: NSViewRepresentable {
         self.semanticSnapshot = snapshot
         self.semanticSnapshotText = expectedText
         self.parent.diagnostics?.wrappedValue = snapshot.diagnostics
+        self.clearTextCheckingIndicators(in: textView, snapshot: snapshot)
         self.applySemanticPresentation(to: textView, snapshot: snapshot)
         self.applyDiagnosticPresentation(to: textView, diagnostics: snapshot.diagnostics)
         self.applyFoldPresentation(to: textView)
+      }
+    }
+
+    private func clearTextCheckingIndicators(
+      in textView: NSTextView,
+      snapshot: OrgSourceEditorSemanticSnapshot
+    ) {
+      guard parent.textChecking == .spellingAndGrammar else { return }
+      for range in OrgSourceTextChecking.excludedSemanticRanges(in: textView.string, snapshot: snapshot) {
+        textView.setSpellingState(0, range: range)
       }
     }
 

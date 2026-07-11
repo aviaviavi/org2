@@ -456,9 +456,15 @@ public struct SearchResultGroup: Identifiable, Hashable, Sendable {
   }
 }
 
+public enum OpenClawChatSearchMatchKind: String, Hashable, Sendable {
+  case threadTitle
+  case messageText
+}
+
 public struct OpenClawChatSearchResult: Identifiable, Hashable, Sendable {
   public let threadID: UUID
   public let messageID: UUID?
+  public let matchKind: OpenClawChatSearchMatchKind
   public let title: String
   public let snippet: String
   public let messageCount: Int
@@ -467,6 +473,7 @@ public struct OpenClawChatSearchResult: Identifiable, Hashable, Sendable {
   public init(
     threadID: UUID,
     messageID: UUID?,
+    matchKind: OpenClawChatSearchMatchKind,
     title: String,
     snippet: String,
     messageCount: Int,
@@ -474,6 +481,7 @@ public struct OpenClawChatSearchResult: Identifiable, Hashable, Sendable {
   ) {
     self.threadID = threadID
     self.messageID = messageID
+    self.matchKind = matchKind
     self.title = title
     self.snippet = snippet
     self.messageCount = messageCount
@@ -483,6 +491,71 @@ public struct OpenClawChatSearchResult: Identifiable, Hashable, Sendable {
   public var id: String {
     "\(threadID.uuidString):\(messageID?.uuidString ?? "thread")"
   }
+}
+
+public enum WorkspaceTextSearchCategory: Int, CaseIterable, Identifiable, Hashable, Sendable {
+  case activeTodos
+  case files
+  case chatThreads
+  case pages
+  case entries
+  case chatMessages
+  case corpusText
+
+  public var id: Int { rawValue }
+
+  public var title: String {
+    switch self {
+    case .activeTodos: "Active TODOs"
+    case .files: "Files"
+    case .chatThreads: "Chat Threads"
+    case .pages: "Pages"
+    case .entries: "Entries"
+    case .chatMessages: "Chat Messages"
+    case .corpusText: "Corpus Text"
+    }
+  }
+}
+
+public enum WorkspaceTextSearchItem: Identifiable, Hashable, Sendable {
+  case activeTodo(SearchResult)
+  case file(CorpusFile)
+  case chatThread(OpenClawChatSearchResult)
+  case page(OrgRoamNodeReference)
+  case entry(SearchResult)
+  case chatMessage(OpenClawChatSearchResult)
+  case corpusText(SearchResult)
+
+  public var id: String {
+    switch self {
+    case .activeTodo(let result): "todo:\(result.id)"
+    case .file(let file): "file:\(file.id)"
+    case .chatThread(let result): "chat-thread:\(result.id)"
+    case .page(let node): "page:\(node.id)"
+    case .entry(let result): "entry:\(result.id)"
+    case .chatMessage(let result): "chat-message:\(result.id)"
+    case .corpusText(let result): "corpus-text:\(result.id)"
+    }
+  }
+
+  public var category: WorkspaceTextSearchCategory {
+    switch self {
+    case .activeTodo: .activeTodos
+    case .file: .files
+    case .chatThread: .chatThreads
+    case .page: .pages
+    case .entry: .entries
+    case .chatMessage: .chatMessages
+    case .corpusText: .corpusText
+    }
+  }
+}
+
+public struct WorkspaceTextSearchSection: Identifiable, Hashable, Sendable {
+  public let category: WorkspaceTextSearchCategory
+  public let items: [WorkspaceTextSearchItem]
+
+  public var id: WorkspaceTextSearchCategory { category }
 }
 
 public struct HeadingRef: Decodable, Hashable, Sendable {
@@ -1078,7 +1151,7 @@ public struct OpenClawFileReference: Identifiable, Hashable, Sendable {
   }
 
   public static func extract(from text: String, limit: Int = 8) -> [OpenClawFileReference] {
-    let pattern = #"(?<![A-Za-z0-9_./~-])((?:file:(?://)?)?(?:~|/|[A-Za-z0-9_.-]+/)[^\s\]\)"'`<>]*\.(?:org2?|md))(?:[:#](\d+))?"#
+    let pattern = #"(?<![A-Za-z0-9_./~-])((?:file:(?://)?)?(?:~|/|[A-Za-z0-9_.-]+/)[^\s\]\)"'`<>]*\.(?:org2?|md))(?:(?::|#)[Ll]?(\d+)(?:-[Ll]?\d+)?)?"#
     guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
     let nsText = text as NSString
     let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
@@ -1109,7 +1182,10 @@ public struct OpenClawFileReference: Identifiable, Hashable, Sendable {
 
     let lowercased = target.lowercased()
     let isFileTarget = lowercased.hasPrefix("file:")
-      || lowercased.range(of: #"\.(?:org2?|md)(?:[:#]\d+)?$"#, options: .regularExpression) != nil
+      || lowercased.range(
+        of: #"\.(?:org2?|md)(?:(?::|#)l?\d+(?:-l?\d+)?)?$"#,
+        options: .regularExpression
+      ) != nil
     guard isFileTarget else { return nil }
 
     return OpenClawFileReference(path: target, line: nil)
@@ -1150,7 +1226,9 @@ public struct OpenClawFileReference: Identifiable, Hashable, Sendable {
 
     let nsPath = path as NSString
     let fullRange = NSRange(location: 0, length: nsPath.length)
-    if let regex = try? NSRegularExpression(pattern: #"^(.*\.(?:org2?|md))[:#](\d+)$"#),
+    if let regex = try? NSRegularExpression(
+      pattern: #"^(.*\.(?:org2?|md))(?::|#)[Ll]?(\d+)(?:-[Ll]?\d+)?$"#
+    ),
        let match = regex.firstMatch(in: path, range: fullRange),
        match.numberOfRanges == 3 {
       let cleanPath = nsPath.substring(with: match.range(at: 1))
@@ -2555,7 +2633,7 @@ public enum OrgInlineParser {
     pattern: #"^(\d{4}-\d{2}-\d{2})(?:\s+[A-Za-z]{3})?(?:\s+(\d{1,2}:\d{2}(?:-\d{1,2}:\d{2})?))?(.*)$"#
   )
   private static let fileReferenceRegex = try! NSRegularExpression(
-    pattern: #"^((?:file:(?://)?)?(?:~|/|[A-Za-z0-9_.-]+/)[^\s\]\)"'`<>]*\.(?:org2?|md))(?:[:#](\d+))?"#
+    pattern: #"^((?:file:(?://)?)?(?:~|/|[A-Za-z0-9_.-]+/)[^\s\]\)"'`<>]*\.(?:org2?|md))(?:(?::|#)[Ll]?(\d+)(?:-[Ll]?\d+)?)?"#
   )
 }
 

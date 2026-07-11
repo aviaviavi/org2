@@ -367,7 +367,6 @@ struct OpenClawComposerView: View {
             Text(store.openClawQueuedMessageCount > 1 ? "\(store.openClawQueuedMessageCount - 1) queued" : "Sending")
               .font(.caption.weight(.medium))
               .foregroundStyle(.secondary)
-              .workspaceShimmer()
           }
         }
         if store.isRecordingOpenClawVoiceNote {
@@ -467,7 +466,7 @@ struct OpenClawComposerView: View {
     localDraft = ""
     lastStoreDraft = ""
     store.cacheOpenClawComposerDraft("")
-    Task { await store.sendComposedOpenClawMessage(text: text) }
+    store.sendComposedOpenClawMessage(text: text)
     return true
   }
 
@@ -726,7 +725,6 @@ struct OpenClawTypingIndicatorView: View {
             Text("OpenClaw is thinking\(elapsedSuffix(now: context.date))")
               .font(.caption.weight(.medium))
               .foregroundStyle(.secondary)
-              .workspaceShimmer()
           }
         }
         Text("Waiting for the gateway response")

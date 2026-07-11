@@ -740,6 +740,18 @@ final class OrgEditorInteractionTests: XCTestCase {
     }
   }
 
+  func testFullFileSourceEditorFillsAvailablePaneHeight() async throws {
+    let harness = try await makeHarness(initialText: "* Heading\nBody")
+    harness.store.beginEditingCurrentScope()
+    let textView = try await harness.focusedEditor()
+    try await pumpRunLoop()
+
+    let editorScrollView = try XCTUnwrap(textView.enclosingScrollView)
+    let editorFrame = editorScrollView.convert(editorScrollView.bounds, to: nil)
+    XCTAssertLessThan(editorFrame.minY, 40)
+    XCTAssertGreaterThan(editorFrame.height, 500)
+  }
+
   func testSourceEditorReturnContinuesOrgListWhileWriting() async throws {
     let harness = try await makeHarness(initialText: "- [ ] first task")
 

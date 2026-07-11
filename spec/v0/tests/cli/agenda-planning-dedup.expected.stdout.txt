@@ -1,0 +1,57 @@
+{
+  "$schema": "org2:agenda:v1",
+  "range": {
+    "start": "2026-01-21",
+    "end": "2026-01-22",
+    "days": 2
+  },
+  "overdue": [],
+  "days": [
+    {
+      "date": "2026-01-21",
+      "weekday": "Wednesday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Same-day schedule and deadline",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-planning-dedup.input.txt",
+          "line": 0,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
+        },
+        {
+          "todo": "TODO",
+          "headline": "Different schedule and deadline days",
+          "kind": "SCHEDULED",
+          "file": "spec/v0/tests/cli/agenda-planning-dedup.input.txt",
+          "line": 4,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
+        }
+      ]
+    },
+    {
+      "date": "2026-01-22",
+      "weekday": "Thursday",
+      "items": [
+        {
+          "todo": "TODO",
+          "headline": "Different schedule and deadline days",
+          "kind": "DEADLINE",
+          "file": "spec/v0/tests/cli/agenda-planning-dedup.input.txt",
+          "line": 4,
+          "body": "",
+          "level": 1,
+          "tags": [],
+          "properties": {}
+        }
+      ]
+    }
+  ],
+  "skippedFiles": 0
+}

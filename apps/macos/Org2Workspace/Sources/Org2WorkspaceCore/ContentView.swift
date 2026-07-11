@@ -14,6 +14,17 @@ public struct ContentView: View {
       WorkspaceMainArea()
     }
     .toolbar {
+      ToolbarItem(placement: .navigation) {
+        Button {
+          store.navigateBack()
+        } label: {
+          Label("Back", systemImage: "chevron.left")
+        }
+        .labelStyle(.iconOnly)
+        .frame(width: 28, height: 28)
+        .help(store.canNavigateBack ? "Back" : "No previous location")
+      }
+
       ToolbarItemGroup {
         Button {
           store.makeSurfacePrimary(.openClaw)
@@ -147,6 +158,9 @@ private struct WorkspaceSurfaceCacheView: NSViewRepresentable {
       let host = NSHostingView(rootView: AnyView(
         WorkspaceSurfaceView(surface: surface)
           .environmentObject(store)
+          .environment(\.openOrgFileReference) { reference in
+            store.openChatFileReference(reference)
+          }
       ))
       host.translatesAutoresizingMaskIntoConstraints = false
       hosts[surface] = host
@@ -204,7 +218,7 @@ private struct SidebarView: View {
   @EnvironmentObject private var store: WorkspaceStore
 
   var body: some View {
-    List(selection: $store.selectedSurface) {
+    List(selection: surfaceSelection) {
       Section("Workspace") {
         ForEach(WorkspaceSurface.sidebarCases) { surface in
           if surface == .openClaw {
@@ -214,9 +228,6 @@ private struct SidebarView: View {
             SidebarSurfaceRow(surface: surface)
               .tag(surface)
               .contentShape(Rectangle())
-              .onTapGesture {
-                store.makeSurfacePrimary(surface)
-              }
               .help(surface.commandShortcutTitle.isEmpty ? surface.title : "\(surface.title) (\(surface.commandShortcutTitle))")
           }
         }
@@ -286,6 +297,13 @@ private struct SidebarView: View {
     }
     .listStyle(.sidebar)
   }
+
+  private var surfaceSelection: Binding<WorkspaceSurface> {
+    Binding(
+      get: { store.selectedSurface },
+      set: { store.makeSurfacePrimary($0) }
+    )
+  }
 }
 
 private struct SidebarSurfaceRow: View {
@@ -342,7 +360,7 @@ private struct OpenClawSidebarSurfaceGroup: View {
         .help("New chat thread")
 
         Button {
-          withAnimation(.easeInOut(duration: 0.16)) {
+          withAnimation(WorkspaceMotion.disclosure) {
             isThreadListExpanded.toggle()
           }
         } label: {
@@ -371,6 +389,10 @@ private struct OpenClawSidebarThreadList: View {
   @EnvironmentObject private var store: WorkspaceStore
   @State private var showsAllThreads = false
   @State private var showsArchivedThreads = false
+  @State private var isRenamePresented = false
+  @State private var renamingThreadID: UUID?
+  @State private var renameDraft = ""
+  @State private var contextualThreadID: UUID?
 
   private let maxHeight: CGFloat = 220
   private let initialLimit = 5
@@ -389,16 +411,25 @@ private struct OpenClawSidebarThreadList: View {
             ForEach(visibleThreads) { thread in
               OpenClawSidebarThreadRow(
                 thread: thread,
-                isSelected: store.selectedOpenClawChatThreadID == thread.id && store.selectedSurface == .openClaw
-              ) {
-                store.makeSurfacePrimary(.openClaw)
-                store.selectOpenClawChatThread(thread.id)
+                isSelected: store.selectedOpenClawChatThreadID == thread.id && store.selectedSurface == .openClaw,
+                contextThreadID: resolvedContextThreadID(fallback: thread.id),
+                select: {
+                  contextualThreadID = thread.id
+                  store.makeSurfacePrimary(.openClaw)
+                  store.selectOpenClawChatThread(thread.id)
+                },
+                rename: beginRenaming
+              )
+              .onHover { isHovered in
+                if isHovered {
+                  contextualThreadID = thread.id
+                }
               }
             }
 
             if store.visibleOpenClawChatThreads.count > initialLimit {
               Button {
-                withAnimation(.easeInOut(duration: 0.16)) {
+                withAnimation(WorkspaceMotion.disclosure) {
                   showsAllThreads.toggle()
                 }
               } label: {
@@ -414,30 +445,58 @@ private struct OpenClawSidebarThreadList: View {
             }
 
             if !store.archivedOpenClawChatThreads.isEmpty {
-              Button {
-                withAnimation(.easeInOut(duration: 0.16)) {
-                  showsArchivedThreads.toggle()
+              HStack(spacing: 4) {
+                Button {
+                  withAnimation(WorkspaceMotion.disclosure) {
+                    showsArchivedThreads.toggle()
+                  }
+                } label: {
+                  Text(showsArchivedThreads ? "Hide archived" : "Show archived")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 6)
                 }
-              } label: {
-                Text(showsArchivedThreads ? "Hide archived" : "Show archived")
-                  .font(.callout)
-                  .foregroundStyle(.secondary)
-                  .frame(maxWidth: .infinity, alignment: .leading)
-                  .padding(.leading, 42)
-                  .padding(.vertical, 6)
+                .buttonStyle(.plain)
+                .help(showsArchivedThreads ? "Hide archived chat threads" : "Show archived chat threads")
+
+                if store.canUndoOpenClawChatThreadArchive {
+                  Button {
+                    withAnimation(WorkspaceMotion.disclosure) {
+                      store.undoLastOpenClawChatThreadArchive()
+                    }
+                  } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                      .font(.caption.weight(.semibold))
+                      .foregroundStyle(.secondary)
+                      .frame(width: 24, height: 24)
+                      .contentShape(Rectangle())
+                  }
+                  .buttonStyle(.plain)
+                  .help("Undo last chat archive")
+                }
               }
-              .buttonStyle(.plain)
-              .help(showsArchivedThreads ? "Hide archived chat threads" : "Show archived chat threads")
+              .padding(.leading, 42)
+              .padding(.trailing, 8)
             }
 
             if showsArchivedThreads {
               ForEach(store.archivedOpenClawChatThreads) { thread in
                 OpenClawSidebarThreadRow(
                   thread: thread,
-                  isSelected: store.selectedOpenClawChatThreadID == thread.id && store.selectedSurface == .openClaw
-                ) {
-                  store.makeSurfacePrimary(.openClaw)
-                  store.selectOpenClawChatThread(thread.id)
+                  isSelected: store.selectedOpenClawChatThreadID == thread.id && store.selectedSurface == .openClaw,
+                  contextThreadID: resolvedContextThreadID(fallback: thread.id),
+                  select: {
+                    contextualThreadID = thread.id
+                    store.makeSurfacePrimary(.openClaw)
+                    store.selectOpenClawChatThread(thread.id)
+                  },
+                  rename: beginRenaming
+                )
+                .onHover { isHovered in
+                  if isHovered {
+                    contextualThreadID = thread.id
+                  }
                 }
               }
             }
@@ -449,6 +508,22 @@ private struct OpenClawSidebarThreadList: View {
       }
     }
     .padding(.top, 2)
+    .onChange(of: store.archivedOpenClawChatThreads.count) {
+      withAnimation(WorkspaceMotion.disclosure) {
+        showsArchivedThreads = !store.archivedOpenClawChatThreads.isEmpty
+      }
+    }
+    .alert("Rename Thread", isPresented: $isRenamePresented) {
+      TextField("Thread name", text: $renameDraft)
+      Button("Cancel", role: .cancel) {
+        renamingThreadID = nil
+      }
+      Button("Rename") {
+        guard let renamingThreadID else { return }
+        store.renameOpenClawChatThread(renamingThreadID, title: renameDraft)
+        self.renamingThreadID = nil
+      }
+    }
   }
 
   private var visibleThreads: [OpenClawChatThread] {
@@ -457,15 +532,39 @@ private struct OpenClawSidebarThreadList: View {
     }
     return Array(store.visibleOpenClawChatThreads.prefix(initialLimit))
   }
+
+  private func beginRenaming(_ thread: OpenClawChatThread) {
+    renamingThreadID = thread.id
+    renameDraft = thread.title
+    isRenamePresented = true
+  }
+
+  private func resolvedContextThreadID(fallback: UUID) -> UUID {
+    OpenClawSidebarContextTarget.resolve(
+      hoveredThreadID: contextualThreadID,
+      selectedThreadID: store.selectedSurface == .openClaw ? store.selectedOpenClawChatThreadID : nil,
+      fallbackThreadID: fallback
+    )
+  }
+}
+
+enum OpenClawSidebarContextTarget {
+  static func resolve(
+    hoveredThreadID: UUID?,
+    selectedThreadID: UUID?,
+    fallbackThreadID: UUID
+  ) -> UUID {
+    hoveredThreadID ?? selectedThreadID ?? fallbackThreadID
+  }
 }
 
 private struct OpenClawSidebarThreadRow: View {
   @EnvironmentObject private var store: WorkspaceStore
-  @State private var isRenaming = false
-  @State private var renameDraft = ""
   let thread: OpenClawChatThread
   let isSelected: Bool
+  let contextThreadID: UUID
   let select: () -> Void
+  let rename: (OpenClawChatThread) -> Void
 
   var body: some View {
     Button(action: select) {
@@ -504,48 +603,55 @@ private struct OpenClawSidebarThreadRow: View {
       .padding(.trailing, 8)
       .padding(.vertical, 7)
       .background(
-        isSelected ? Color.secondary.opacity(0.14) : Color.clear,
-        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        isSelected ? WorkspaceDesign.selectedFill : Color.clear,
+        in: RoundedRectangle(cornerRadius: WorkspaceDesign.controlRadius, style: .continuous)
       )
+      .overlay(alignment: .leading) {
+        if isSelected {
+          Capsule()
+            .fill(Color.accentColor.opacity(0.72))
+            .frame(width: 2, height: 18)
+            .padding(.leading, 4)
+        }
+      }
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .disabled(false)
     .contextMenu {
       Button {
-        renameDraft = thread.title
-        isRenaming = true
+        rename(contextThread)
       } label: {
         Label("Rename Thread", systemImage: "pencil")
       }
 
       Button {
-        store.toggleOpenClawChatThreadPin(thread.id)
+        store.toggleOpenClawChatThreadPin(contextThread.id)
       } label: {
-        Label(thread.isPinned ? "Unpin Thread" : "Pin Thread", systemImage: thread.isPinned ? "pin.slash" : "pin")
+        Label(
+          contextThread.isPinned ? "Unpin Thread" : "Pin Thread",
+          systemImage: contextThread.isPinned ? "pin.slash" : "pin"
+        )
       }
 
-      if thread.isArchived {
+      if contextThread.isArchived {
         Button {
-          store.restoreOpenClawChatThread(thread.id)
+          store.restoreOpenClawChatThread(contextThread.id)
         } label: {
           Label("Unarchive Thread", systemImage: "tray.and.arrow.up")
         }
       } else {
         Button {
-          store.archiveOpenClawChatThread(thread.id)
+          store.archiveOpenClawChatThread(contextThread.id)
         } label: {
           Label("Archive Thread", systemImage: "archivebox")
         }
       }
     }
-    .alert("Rename Thread", isPresented: $isRenaming) {
-      TextField("Thread name", text: $renameDraft)
-      Button("Cancel", role: .cancel) {}
-      Button("Rename") {
-        store.renameOpenClawChatThread(thread.id, title: renameDraft)
-      }
-    }
+  }
+
+  private var contextThread: OpenClawChatThread {
+    store.openClawChatThreads.first(where: { $0.id == contextThreadID }) ?? thread
   }
 
   private static func relativeDate(_ date: Date) -> String {
@@ -922,7 +1028,6 @@ private struct QuickOpenView: View {
           WorkspaceActivityIndicator(size: .small)
           Text(store.isScanningCorpusFiles ? "Scanning files" : "Searching files")
             .foregroundStyle(.secondary)
-            .workspaceShimmer()
         }
       }
 
@@ -1203,7 +1308,7 @@ private struct KeyboardShortcutsView: View {
           ])
 
           ShortcutSection(title: "Page", shortcuts: [
-            ShortcutHelpItem(keys: "⌘F", action: "Find in current page"),
+            ShortcutHelpItem(keys: "⌘F", action: "Find in current document"),
             ShortcutHelpItem(keys: "Esc", action: "Clear selected block")
           ])
 
@@ -2209,7 +2314,6 @@ private struct AgendaAssignmentIndicator: View {
 private struct SearchView: View {
   @EnvironmentObject private var store: WorkspaceStore
   @FocusState private var isSearchFocused: Bool
-  @State private var expandedCorpusSearchFileIDs: Set<String> = []
 
   var body: some View {
     VStack(spacing: 0) {
@@ -2270,16 +2374,13 @@ private struct SearchView: View {
     .onChange(of: store.searchFocusToken) {
       isSearchFocused = true
     }
-    .onChange(of: store.searchResults.map(\.id)) {
-      expandedCorpusSearchFileIDs = []
-    }
   }
 
   @ViewBuilder
   private var searchResultsBody: some View {
     switch store.searchMode {
     case .text:
-      if store.searchResults.isEmpty && store.openClawChatSearchResults.isEmpty {
+      if store.workspaceTextSearchSections.isEmpty {
         if store.isSearching {
           Spacer()
           WorkspaceLoadingStateView("Searching")
@@ -2291,62 +2392,10 @@ private struct SearchView: View {
         }
       } else {
         List {
-          if !store.openClawChatSearchResults.isEmpty {
-            Section("Chat Threads") {
-              ForEach(store.openClawChatSearchResults) { result in
-                ChatSearchRow(result: result)
-                  .contentShape(Rectangle())
-                  .onTapGesture {
-                    store.selectOpenClawChatSearchResult(result)
-                  }
-              }
-            }
-          }
-
-          if !store.searchResults.isEmpty {
-            Section("Corpus") {
-              ForEach(store.corpusSearchResultGroups) { group in
-                let representative = group.representative
-                SearchRow(
-                  result: representative,
-                  matchCount: group.results.count > 1 ? group.results.count : nil,
-                  isExpanded: group.results.count > 1 ? expandedCorpusSearchFileIDs.contains(group.id) : nil,
-                  toggleExpansion: {
-                    toggleCorpusSearchGroup(group)
-                  }
-                )
-                  .contentShape(Rectangle())
-                  .onTapGesture {
-                    store.select(.search(representative))
-                  }
-                  .contextMenu {
-                    WorkspaceLocationContextMenu(
-                      location: .search(representative),
-                      showsHeadingActions: representative.todo != nil,
-                      select: { store.select(.search(representative)) }
-                    ) {
-                      Label("Open", systemImage: "magnifyingglass")
-                    }
-                  }
-
-                if expandedCorpusSearchFileIDs.contains(group.id) {
-                  ForEach(Array(group.results.dropFirst())) { result in
-                    SearchRow(result: result, isNested: true)
-                      .contentShape(Rectangle())
-                      .onTapGesture {
-                        store.select(.search(result))
-                      }
-                      .contextMenu {
-                        WorkspaceLocationContextMenu(
-                          location: .search(result),
-                          showsHeadingActions: result.todo != nil,
-                          select: { store.select(.search(result)) }
-                        ) {
-                          Label("Open", systemImage: "magnifyingglass")
-                        }
-                      }
-                  }
-                }
+          ForEach(store.workspaceTextSearchSections) { section in
+            Section(section.category.title) {
+              ForEach(section.items) { item in
+                workspaceSearchRow(item)
               }
             }
           }
@@ -2396,12 +2445,54 @@ private struct SearchView: View {
     Task { await store.runSearch() }
   }
 
-  private func toggleCorpusSearchGroup(_ group: SearchResultGroup) {
-    if expandedCorpusSearchFileIDs.contains(group.id) {
-      expandedCorpusSearchFileIDs.remove(group.id)
-    } else {
-      expandedCorpusSearchFileIDs.insert(group.id)
+  @ViewBuilder
+  private func workspaceSearchRow(_ item: WorkspaceTextSearchItem) -> some View {
+    switch item {
+    case .activeTodo(let result), .entry(let result), .corpusText(let result):
+      corpusSearchRow(result)
+    case .file(let file):
+      CorpusFileRow(file: file)
+        .padding(.horizontal, WorkspaceDesign.contentInset)
+        .contentShape(Rectangle())
+        .onTapGesture {
+          store.selectSearchFile(file)
+        }
+        .contextMenu {
+          CorpusFileContextMenu(file: file)
+        }
+    case .chatThread(let result), .chatMessage(let result):
+      ChatSearchRow(result: result)
+        .contentShape(Rectangle())
+        .onTapGesture {
+          store.selectOpenClawChatSearchResult(result)
+        }
+    case .page(let node):
+      NodeSearchRow(node: node)
+        .contentShape(Rectangle())
+        .onTapGesture {
+          store.selectSearchNode(node)
+        }
+        .contextMenu {
+          NodeSearchContextMenu(node: node)
+        }
     }
+  }
+
+  private func corpusSearchRow(_ result: SearchResult) -> some View {
+    SearchRow(result: result)
+      .contentShape(Rectangle())
+      .onTapGesture {
+        store.select(.search(result))
+      }
+      .contextMenu {
+        WorkspaceLocationContextMenu(
+          location: .search(result),
+          showsHeadingActions: result.todo != nil,
+          select: { store.select(.search(result)) }
+        ) {
+          Label("Open", systemImage: "magnifyingglass")
+        }
+      }
   }
 }
 
@@ -3329,14 +3420,14 @@ private struct OpenClawChatView: View {
       ))
       .onChange(of: store.openClawMessages.count) {
         if let last = store.openClawMessages.last {
-          withAnimation(.easeOut(duration: 0.18)) {
+          withAnimation(WorkspaceMotion.quick) {
             proxy.scrollTo(last.id, anchor: .bottom)
           }
         }
       }
       .onChange(of: store.isSendingOpenClawMessage) {
         if store.isSendingOpenClawMessage {
-          withAnimation(.easeOut(duration: 0.18)) {
+          withAnimation(WorkspaceMotion.quick) {
             proxy.scrollTo("openclaw-typing", anchor: .bottom)
           }
         }
@@ -3573,7 +3664,7 @@ private struct OpenClawConfigurationSheet: View {
     VStack(alignment: .leading, spacing: 16) {
       VStack(alignment: .leading, spacing: 4) {
         Text("OpenClaw Gateway")
-          .font(.title3.weight(.semibold))
+          .font(.headline.weight(.semibold))
         Text("Configure the local or network gateway used by OpenClaw Chat.")
           .font(.callout)
           .foregroundStyle(.secondary)
@@ -4021,7 +4112,7 @@ private struct DetailHeader: View {
   let location: WorkspaceLocation
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: 8) {
       ViewThatFits(in: .horizontal) {
         HStack(alignment: .top, spacing: 20) {
           detailIdentity
@@ -4088,7 +4179,8 @@ private struct DetailHeader: View {
         }
       }
     }
-    .padding(WorkspaceDesign.contentInset)
+    .padding(.horizontal, WorkspaceDesign.headerHorizontalInset)
+    .padding(.vertical, WorkspaceDesign.headerVerticalInset)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(WorkspaceDesign.barBackground)
     .onChange(of: store.pageSearchFocusToken) {
@@ -4097,20 +4189,20 @@ private struct DetailHeader: View {
   }
 
   private var detailIdentity: some View {
-    HStack(alignment: .top, spacing: 12) {
+    HStack(alignment: .top, spacing: 10) {
       WorkspaceIconBadge(systemImage: locationIcon, tint: .accentColor, fill: Color.accentColor.opacity(0.12))
-      VStack(alignment: .leading, spacing: 5) {
+      VStack(alignment: .leading, spacing: 3) {
         Text(location.title)
-          .font(.title3.weight(.semibold))
+          .font(.headline.weight(.semibold))
           .lineLimit(nil)
         if !location.subtitle.isEmpty {
           Text(location.subtitle)
-            .font(.callout)
+            .font(.caption)
             .foregroundStyle(.secondary)
             .lineLimit(nil)
         }
         Text(store.relativePath(location.file) + ":\(location.lineForEditor)")
-          .font(.caption)
+          .font(.caption2)
           .foregroundStyle(.tertiary)
           .textSelection(.enabled)
       }
@@ -4174,15 +4266,6 @@ private struct DetailHeader: View {
 
   private var detailNavigationControls: some View {
     HStack(spacing: 7) {
-      Button {
-        store.navigateBackInDetail()
-      } label: {
-        Label("Back", systemImage: "chevron.left")
-      }
-      .labelStyle(.iconOnly)
-      .disabled(!store.canNavigateBackInDetail)
-      .help("Back")
-
       DetailPaneControlGroup()
 
       Divider()
@@ -4208,9 +4291,33 @@ private struct DetailHeader: View {
       if !store.isLiveFileEditorSelected && !store.hasActiveEdit {
         scopePicker
       }
+      if !store.hasActiveEdit {
+        documentLayoutMenu
+      }
       editControls
       organizeMenu
     }
+  }
+
+  private var documentLayoutMenu: some View {
+    Menu {
+      Picker("Document Width", selection: $store.renderedDocumentWidth) {
+        ForEach(RenderedDocumentWidth.allCases) { width in
+          Text(width.title).tag(width)
+        }
+      }
+
+      Picker("Side Margins", selection: $store.renderedDocumentMargin) {
+        ForEach(RenderedDocumentMargin.allCases) { margin in
+          Text(margin.title).tag(margin)
+        }
+      }
+    } label: {
+      Label("Layout", systemImage: "doc.richtext")
+    }
+    .labelStyle(.iconOnly)
+    .fixedSize(horizontal: true, vertical: false)
+    .help("Document width and margins")
   }
 
   private var sourceMenu: some View {
@@ -4257,6 +4364,7 @@ private struct DetailHeader: View {
       } label: {
         Label("Context", systemImage: "sidebar.right")
       }
+      .labelStyle(.iconOnly)
       .help("Show or hide node context")
 
       Button {
@@ -4268,6 +4376,7 @@ private struct DetailHeader: View {
           Label("Brief", systemImage: "text.bubble")
         }
       }
+      .labelStyle(.iconOnly)
       .disabled(!store.canBriefCurrentNodeInOpenClaw)
       .help(store.openClawBriefsStartNewThread
         ? "Generate or open the cached node brief. New requests start a new OpenClaw chat thread."
@@ -4285,18 +4394,27 @@ private struct DetailHeader: View {
   }
 
   private var scopePicker: some View {
-    Picker("Scope", selection: $store.selectedEntrySourceMode) {
+    Picker("Scope", selection: entrySourceModeSelection) {
       ForEach(EntrySourceMode.allCases) { mode in
         Text(mode.title).tag(mode)
       }
     }
     .pickerStyle(.segmented)
-    .frame(width: 136)
+    .labelsHidden()
+    .accessibilityLabel("Document scope")
+    .frame(width: 112)
     .fixedSize(horizontal: true, vertical: false)
     .onChange(of: store.selectedEntrySourceMode) {
       Task { await store.reloadSelectedEntrySource() }
     }
     .help("Render entry or full page scope")
+  }
+
+  private var entrySourceModeSelection: Binding<EntrySourceMode> {
+    Binding(
+      get: { store.selectedEntrySourceMode },
+      set: { store.selectEntrySourceMode($0) }
+    )
   }
 
   @ViewBuilder
@@ -4469,6 +4587,7 @@ private struct DetailHeader: View {
     } label: {
       Label("Organize", systemImage: "ellipsis.circle")
     }
+    .labelStyle(.iconOnly)
     .disabled(!store.canOrganizeCurrentHeadline)
     .help("Status, schedule, deadline, priority, agent handoff, and properties")
   }
@@ -4490,10 +4609,9 @@ private struct LiveFileEditorBody: View {
         OrgHTMLLoadingView(label: "Loading source")
       } else if let source = store.selectedEntrySource {
         if store.isEditingEntry {
-          ScrollView {
-            OrgSourceEditorWithLinkTools()
-              .padding(16)
-          }
+          OrgSourceEditorWithLinkTools()
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if store.editingBlockID != nil {
           ScrollView {
             LegacyStructuredEntryEditorView(source: source)
@@ -4508,6 +4626,7 @@ private struct LiveFileEditorBody: View {
             searchOccurrenceIndex: store.pageSearchSelectedOccurrenceIndex,
             searchOccurrenceCount: store.pageSearchOccurrenceCount,
             scrollRequest: store.detailScrollRequest,
+            layout: store.renderedDocumentLayout,
             reportStatus: { store.statusText = $0 }
           )
         } else if let error = store.selectedEntryRenderError {
@@ -4558,7 +4677,6 @@ private struct OrgHTMLLoadingView: View {
       Text(label)
         .font(.callout)
         .foregroundStyle(.secondary)
-        .workspaceShimmer()
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
   }
@@ -4618,6 +4736,7 @@ private struct OrgSourceEditorWithLinkTools: View {
         incrementalHighlighting: true,
         concealsSyntax: false,
         orgWritingCommands: true,
+        textChecking: .spellingAndGrammar,
         commandRequest: store.sourceEditorCommandRequest,
         semanticAnalyzer: { text in
           await store.analyzeSourceEditorText(text)
@@ -4633,7 +4752,8 @@ private struct OrgSourceEditorWithLinkTools: View {
           return true
         }
       )
-      .frame(minHeight: 520)
+      .frame(minHeight: 320, maxHeight: .infinity)
+      .layoutPriority(1)
       .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
       .overlay(
         RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -4834,10 +4954,9 @@ private struct EntryBodyView: View {
         OrgHTMLLoadingView(label: "Loading source")
       } else if let source = store.selectedEntrySource {
         if store.isEditingEntry {
-          ScrollView {
-            OrgSourceEditorWithLinkTools()
-              .padding(16)
-          }
+          OrgSourceEditorWithLinkTools()
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if store.editingBlockID != nil {
           ScrollView {
             LegacyStructuredEntryEditorView(source: source)
@@ -4852,6 +4971,7 @@ private struct EntryBodyView: View {
             searchOccurrenceIndex: store.pageSearchSelectedOccurrenceIndex,
             searchOccurrenceCount: store.pageSearchOccurrenceCount,
             scrollRequest: store.detailScrollRequest,
+            layout: store.renderedDocumentLayout,
             reportStatus: { store.statusText = $0 }
           )
         } else if let error = store.selectedEntryRenderError {
@@ -5575,8 +5695,8 @@ private struct HeaderBar<Trailing: View>: View {
     }
     .controlSize(.small)
     .buttonStyle(WorkspaceActionButtonStyle())
-    .padding(.horizontal, 18)
-    .padding(.vertical, 14)
+    .padding(.horizontal, WorkspaceDesign.headerHorizontalInset)
+    .padding(.vertical, WorkspaceDesign.headerVerticalInset)
     .background(WorkspaceDesign.barBackground)
     .overlay(alignment: .bottom) {
       Divider()
@@ -5585,19 +5705,29 @@ private struct HeaderBar<Trailing: View>: View {
 
   private func headerContent(compact: Bool) -> some View {
     HStack(alignment: .center, spacing: compact ? 8 : 12) {
-      VStack(alignment: .leading, spacing: 2) {
-        Text(title)
-          .font(compact ? .headline.weight(.semibold) : .title2.weight(.semibold))
-          .lineLimit(1)
-          .truncationMode(.tail)
-          .allowsTightening(true)
-          .layoutPriority(1)
-        if !compact {
-          Text(subtitle)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+      HStack(spacing: 9) {
+        if let surface {
+          WorkspaceIconBadge(
+            systemImage: surface.systemImage,
+            tint: .accentColor,
+            fill: Color.accentColor.opacity(0.10)
+          )
+        }
+
+        VStack(alignment: .leading, spacing: 2) {
+          Text(title)
+            .font(.headline.weight(.semibold))
             .lineLimit(1)
-            .truncationMode(.middle)
+            .truncationMode(.tail)
+            .allowsTightening(true)
+            .layoutPriority(1)
+          if !compact {
+            Text(subtitle)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+              .truncationMode(.middle)
+          }
         }
       }
       .frame(minWidth: compact ? 56 : 92, alignment: .leading)
@@ -5731,6 +5861,12 @@ private struct KeyboardEventMonitor: ViewModifier {
     content
       .onAppear {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+          if WorkspaceKeyboardEventRouting.defersToNativeTextFind(
+            event,
+            sourceEditorActive: Self.isSourceEditorActive
+          ) {
+            return event
+          }
           let scope = WorkspaceKeyboardEventRouting.scope(
             for: event,
             textInputActive: Self.isTextInputActive
@@ -5755,9 +5891,20 @@ private struct KeyboardEventMonitor: ViewModifier {
     }
     return responder is NSTextView || responder is NSTextField
   }
+
+  private static var isSourceEditorActive: Bool {
+    NSApplication.shared.keyWindow?.firstResponder is OrgSyntaxTextView
+  }
 }
 
 enum WorkspaceKeyboardEventRouting {
+  static func defersToNativeTextFind(_ event: NSEvent, sourceEditorActive: Bool) -> Bool {
+    guard sourceEditorActive else { return false }
+    let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+    let key = (event.charactersIgnoringModifiers ?? event.characters ?? "").lowercased()
+    return modifiers == [.command] && key == "f"
+  }
+
   static func scope(for event: NSEvent, textInputActive: Bool) -> WorkspaceKeyboardShortcutScope? {
     guard textInputActive else { return .all }
     return isCommandShortcut(event) ? .globalOnly : nil

@@ -873,7 +873,7 @@ function containsApprovalSignal(raw: string): boolean {
 }
 
 function approvalTextHasHumanApprovalTitle(normalizedText: string): boolean {
-  return /(?:^|\n)\*+\s+(?:(?:todo|in_progress|prog|wait|hold|paused)\s+)?(?:approve|review|review\/|review-send|review and approve|review\/approve)\b/i.test(normalizedText);
+  return /(?:^|\n)\*+\s+(?:(?:todo|in_progress|prog|wait|hold|paused)\s+)?(?:\[#[a-z0-9]\]\s+)?(?:approve|review|review\/|review-send|review and approve|review\/approve)\b/i.test(normalizedText);
 }
 
 function approvalCandidateTextMayContainItem(raw: string): boolean {
@@ -1128,7 +1128,7 @@ function appendApprovalItemFromHeadline(
   if (!sourceRange) return;
 
   const properties = approvalHeadlineProperties(headline);
-  const title = headlineTitleText(headline);
+  const title = extractAgendaPriorityFromHeadlineTitle(headlineTitleText(headline)).title;
   const status = approvalStatus(title, properties);
   if (!status) return;
 
@@ -2874,6 +2874,29 @@ interface ScheduledItem {
   tags: string[];
   properties: Record<string, string>;
   habit?: HabitAgendaState;
+}
+
+function deduplicateAgendaPlanningItems(items: ScheduledItem[]): ScheduledItem[] {
+  const deduplicated: ScheduledItem[] = [];
+  const itemIndexesBySourceDate = new Map<string, number>();
+
+  for (const item of items) {
+    const key = `${item.filePath}\u0000${item.lineNumber}\u0000${item.date}`;
+    const existingIndex = itemIndexesBySourceDate.get(key);
+
+    if (existingIndex === undefined) {
+      itemIndexesBySourceDate.set(key, deduplicated.length);
+      deduplicated.push(item);
+      continue;
+    }
+
+    const existing = deduplicated[existingIndex];
+    if (existing?.kind !== "DEADLINE" && item.kind === "DEADLINE") {
+      deduplicated[existingIndex] = item;
+    }
+  }
+
+  return deduplicated;
 }
 
 type AgendaStatusBucket = "todo" | "in_progress" | "done" | "canceled" | "custom";
@@ -5278,7 +5301,7 @@ function findScheduledItemsInText(
     }
   }
 
-  return items;
+  return deduplicateAgendaPlanningItems(items);
 }
 
 function findScheduledItems(
