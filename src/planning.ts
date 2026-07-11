@@ -19,8 +19,12 @@ function formatOrgDateTimestamp(dateIso: string): string {
   const month = Number(m[2]);
   const day = Number(m[3]);
 
-  const d = new Date(Date.UTC(year, month - 1, day));
-  if (isNaN(d.getTime())) throw new Error(`Invalid --date: ${dateIso}`);
+  const d = new Date(0);
+  d.setUTCHours(0, 0, 0, 0);
+  d.setUTCFullYear(year, month - 1, day);
+  if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) {
+    throw new Error(`Invalid --date: ${dateIso}`);
+  }
 
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const dow = days[d.getUTCDay()];
