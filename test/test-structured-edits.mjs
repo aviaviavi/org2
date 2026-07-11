@@ -39,6 +39,26 @@ assert.equal(planned.headingLineNumber, 7);
 assert.match(planned.text, /^\*\*\* TODO Grandchild\nDEADLINE: <2026-07-08 Wed>\nGrandchild body line\./m);
 assert.doesNotMatch(planned.text, /^\*\* TODO Sibling\nDEADLINE:/m);
 
+const leapDayPlanning = updatePlanningInText("* TODO Leap day\n", {
+  filePath: "tasks.org2",
+  lineNumber: 1,
+  kind: "SCHEDULED",
+  date: "2028-02-29",
+});
+assert.match(leapDayPlanning.text, /SCHEDULED: <2028-02-29 Tue>/);
+
+for (const invalidDate of ["2026-02-29", "2026-02-31", "2026-13-01"]) {
+  assert.throws(
+    () => updatePlanningInText("* TODO Invalid date\n", {
+      filePath: "tasks.org2",
+      lineNumber: 1,
+      kind: "SCHEDULED",
+      date: invalidDate,
+    }),
+    new RegExp(`Invalid --date: ${invalidDate}`),
+  );
+}
+
 const normalizedPlanning = updatePlanningInText("* TODO Mixed\nscheduled: <2026-07-01 Wed>\nBody\n", {
   filePath: "tasks.org2",
   lineNumber: 1,
