@@ -30,6 +30,28 @@ export type Org2PublishProjectConfig = {
   };
 };
 
+export type Org2ClickHouseDataSourceConfig = {
+  type: "clickhouse";
+  url: string;
+  database?: string;
+  userEnv?: string;
+  passwordEnv?: string;
+  timeoutMs?: number;
+  maxRows?: number;
+  maxResponseBytes?: number;
+};
+
+export type Org2MetabaseDataSourceConfig = {
+  type: "metabase";
+  url: string;
+  apiKeyEnv: string;
+  timeoutMs?: number;
+  maxRows?: number;
+  maxResponseBytes?: number;
+};
+
+export type Org2DataSourceConfig = Org2ClickHouseDataSourceConfig | Org2MetabaseDataSourceConfig;
+
 export interface Org2Config {
   agendaFiles?: string[];
   recursive?: boolean;
@@ -49,6 +71,7 @@ export interface Org2Config {
   publish?: {
     projects?: Record<string, Org2PublishProjectConfig>;
   };
+  dataSources?: Record<string, Org2DataSourceConfig>;
 }
 
 export function findConfigFile(startDir: string): string | null {

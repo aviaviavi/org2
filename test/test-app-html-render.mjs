@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { renderOrgCharts } from "../dist/chartRender.js";
 import { renderOrgDocumentToAppHtml, renderOrgDocumentToHtml } from "../dist/export.js";
 import { parseOrgToCanonicalAst } from "../dist/parser.js";
 
@@ -30,6 +31,7 @@ const document = parseOrgToCanonicalAst(source, {
 });
 const rendered = renderOrgDocumentToAppHtml(document, {
   sourcePath: "notes/render.org2",
+  customCss: ":root { --org2-accent: hotpink; } </style><script>unsafe()</script>",
 });
 
 assert.match(rendered.html, /id="org2-app-document-style"/);
@@ -50,6 +52,15 @@ assert.match(rendered.html, /\.org2-table-scroll th, \.org2-table-scroll td \{ o
 assert.match(rendered.html, /--org2-content-width: 960px;/);
 assert.match(rendered.html, /--org2-page-padding: 28px;/);
 assert.match(rendered.html, /id="org2-app-document-script"/);
+assert.match(rendered.html, /className = "org2-heading-ai-action"/);
+assert.match(rendered.html, /org2-workspace:\/\/ask-ai\?line=/);
+assert.match(rendered.html, /opacity: 0\.46;/);
+assert.match(rendered.html, /vertical-align: middle;/);
+assert.match(rendered.html, /transform: translateY\(-2px\);/);
+assert.match(rendered.html, /paragraph\.classList\.add\("org2-section-label"\)/);
+assert.match(rendered.html, /id="org2-app-user-style"/);
+assert.match(rendered.html, /--org2-accent: hotpink/);
+assert.doesNotMatch(rendered.html, /<\/style><script>unsafe/);
 assert.match(rendered.html, /className = "org2-column-resizer"/);
 assert.match(rendered.html, /addEventListener\("mousemove"/);
 assert.match(rendered.html, /h1 \{ font-size: 1\.16rem;/);
@@ -72,5 +83,35 @@ assert.doesNotMatch(published.html, /org2-table-scroll/);
 assert.doesNotMatch(published.html, /org2-app-document-script/);
 assert.match(published.html, /<section class="org2-headline level-1"/);
 assert.match(published.html, /<dl class="org2-properties">/);
+
+const chartSource = `* Metrics
+
+#+name: package_fetches
+| day | fetches |
+|-----+---------|
+| Mon | 12      |
+| Tue | 18      |
+
+#+name: package_fetches_chart
+\`\`\`chart line
+x: day
+y: fetches
+source: package_fetches
+\`\`\`
+`;
+const chartDocument = parseOrgToCanonicalAst(chartSource, { sourceRanges: true, sourceLineOffset: 30 });
+const charts = renderOrgCharts(chartSource, { sourceLineOffset: 30 })
+  .filter((chart) => chart.ok && chart.svg && chart.source)
+  .map((chart) => ({ svg: chart.svg, source: chart.source }));
+const chartRendered = renderOrgDocumentToAppHtml(chartDocument, { charts });
+assert.match(chartRendered.html, /<figure class="org2-chart" data-org2-start-line="40"/);
+assert.match(chartRendered.html, /<svg [^>]*role="img"/);
+assert.match(chartRendered.html, /<polyline /);
+assert.doesNotMatch(chartRendered.html, /<code class="language-chart">/);
+assert.match(chartRendered.html, /\.org2-chart svg \{ display: block; width: 100%;/);
+const chartPublished = renderOrgDocumentToHtml(chartDocument, { charts });
+assert.match(chartPublished.html, /<figure class="org2-chart">/);
+assert.match(chartPublished.html, /<polyline /);
+assert.doesNotMatch(chartPublished.html, /language-chart/);
 
 console.log("app HTML renderer tests: ok");

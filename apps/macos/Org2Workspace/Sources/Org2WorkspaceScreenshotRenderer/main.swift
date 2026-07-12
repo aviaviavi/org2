@@ -30,8 +30,12 @@ struct Org2WorkspaceScreenshotRenderer {
       if ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_EDIT_SOURCE"] != nil {
         await MainActor.run {
           store.beginEditingCurrentScope()
+          if ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_SPLIT_PREVIEW"] != nil {
+            store.sourceEditorPresentation = .split
+            store.scheduleSourceEditorPreview(immediate: true)
+          }
         }
-        try? await Task.sleep(nanoseconds: 250_000_000)
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
       }
 
       try await MainActor.run {
@@ -57,7 +61,10 @@ struct Org2WorkspaceScreenshotRenderer {
         window.setFrame(bounds, display: false)
         window.contentView = hostingView
         window.makeKeyAndOrderFront(nil)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        let renderSettleTime = ProcessInfo.processInfo.environment["ORG2_WORKSPACE_SCREENSHOT_EDIT_SOURCE"] == nil
+          ? 0.25
+          : 1.5
+        RunLoop.current.run(until: Date().addingTimeInterval(renderSettleTime))
         window.layoutIfNeeded()
         hostingView.layoutSubtreeIfNeeded()
         hostingView.displayIfNeeded()
@@ -94,6 +101,7 @@ struct Org2WorkspaceScreenshotRenderer {
     }
     return args[index + 1]
   }
+
 }
 
 private enum ScreenshotRenderError: LocalizedError {

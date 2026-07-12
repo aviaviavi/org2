@@ -439,10 +439,14 @@ public enum OpenClawChatError: LocalizedError, Equatable {
     switch self {
     case .invalidResponse:
       return "OpenClaw returned an invalid response."
+    case .httpStatus(401, let message) where Self.isProviderAuthenticationFailure(message):
+      return "OpenClaw reached the gateway, but the selected agent's model provider rejected authentication. On the gateway host, re-authenticate the provider or switch the agent to a working model. Retrying alone won't help."
     case .httpStatus(401, _):
-      return "OpenClaw gateway rejected the request. Check gateway auth for the local Clawdbot gateway."
+      return "OpenClaw gateway rejected the saved gateway token. Open Configure, update the gateway token, save, then retry."
+    case .httpStatus(403, let message) where Self.isProviderAuthenticationFailure(message):
+      return "OpenClaw reached the gateway, but the selected agent's model provider rejected authentication. On the gateway host, re-authenticate the provider or switch the agent to a working model. Retrying alone won't help."
     case .httpStatus(404, _):
-      return "OpenClaw chat endpoint is not enabled on the local gateway. Enable gateway.http.endpoints.chatCompletions.enabled in Clawdbot config and restart the gateway."
+      return "OpenClaw chat is not enabled on this gateway. Enable gateway.http.endpoints.chatCompletions.enabled in the OpenClaw config, then restart the gateway."
     case .httpStatus(let status, let message):
       if let message, !message.isEmpty {
         return "OpenClaw gateway returned HTTP \(status): \(message)"
@@ -453,6 +457,16 @@ public enum OpenClawChatError: LocalizedError, Equatable {
     case .transport(let message):
       return "Could not reach OpenClaw gateway: \(message)"
     }
+  }
+
+  static func isProviderAuthenticationFailure(_ message: String?) -> Bool {
+    guard let message else { return false }
+    let normalized = message.lowercased()
+    return normalized.contains("authentication failed at the provider")
+      || normalized.contains("provider credentials")
+      || normalized.contains("403 <html")
+      || (normalized.contains("chatgpt.com") && normalized.contains("403"))
+      || normalized.contains("challenge-error-text")
   }
 }
 

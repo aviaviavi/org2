@@ -65,6 +65,7 @@ export type RenderChartOptions = {
   line?: number;
   blockId?: string;
   outputPath?: string;
+  sourceLineOffset?: number;
 };
 
 const AFFILIATED_KEYS = new Set(["NAME", "CAPTION", "PLOT", "CHART", "DATASET", "VIEW", "RESULTS", "HEADER", "HEADERS"]);
@@ -474,6 +475,17 @@ function selectCandidate(candidates: ChartCandidate[], opts: RenderChartOptions)
   return candidates[0];
 }
 
+function offsetChartSource(source: ChartRenderSource, offset: number): ChartRenderSource {
+  if (offset <= 0) return source;
+  return {
+    ...source,
+    line: source.line + offset,
+    ...(source.endLine ? { endLine: source.endLine + offset } : {}),
+    ...(source.chartLine ? { chartLine: source.chartLine + offset } : {}),
+    ...(source.chartEndLine ? { chartEndLine: source.chartEndLine + offset } : {}),
+  };
+}
+
 function columnIndex(headers: string[], column: string): number {
   const lower = column.toLowerCase();
   return headers.findIndex((header) => header.toLowerCase() === lower);
@@ -512,8 +524,8 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
   }
 
   const width = 720;
-  const height = 420;
-  const margin = { top: candidate.spec.title ? 54 : 28, right: 28, bottom: 74, left: 64 };
+  const height = 450;
+  const margin = { top: candidate.spec.title ? 54 : 28, right: 28, bottom: 100, left: 64 };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
   const maxValue = Math.max(1, ...sortedPoints.map((point) => point.value));
@@ -521,21 +533,22 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
   const span = Math.max(1, maxValue - minValue);
   const yFor = (value: number): number => margin.top + plotHeight - ((value - minValue) / span) * plotHeight;
   const zeroY = yFor(0);
-  const axisColor = "#334155";
-  const gridColor = "#d7dee8";
-  const markColor = "#2563eb";
+  const axisColor = "var(--org2-chart-axis, #334155)";
+  const gridColor = "var(--org2-chart-grid, #d7dee8)";
+  const markColor = "var(--org2-chart-mark, #2563eb)";
+  const labelColor = "var(--org2-chart-label, #475569)";
 
   const labelEvery = Math.max(1, Math.ceil(sortedPoints.length / 8));
   const labels = sortedPoints.map((point, index) => {
     if (index % labelEvery !== 0 && index !== sortedPoints.length - 1) return "";
     const x = margin.left + (sortedPoints.length === 1 ? plotWidth / 2 : (plotWidth * index) / (sortedPoints.length - 1));
-    return `<text x="${x.toFixed(1)}" y="${height - 28}" font-size="12" fill="#475569" text-anchor="end" transform="rotate(-35 ${x.toFixed(1)} ${height - 28})">${escapeXml(point.label)}</text>`;
+    return `<text x="${x.toFixed(1)}" y="${height - 44}" font-size="12" fill="${labelColor}" text-anchor="end" transform="rotate(-35 ${x.toFixed(1)} ${height - 44})">${escapeXml(point.label)}</text>`;
   }).filter(Boolean);
 
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
     const value = minValue + span * ratio;
     const y = yFor(value);
-    return `<line x1="${margin.left}" y1="${y.toFixed(1)}" x2="${width - margin.right}" y2="${y.toFixed(1)}" stroke="${gridColor}" stroke-width="1"/><text x="${margin.left - 10}" y="${(y + 4).toFixed(1)}" font-size="12" fill="#475569" text-anchor="end">${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)}</text>`;
+    return `<line x1="${margin.left}" y1="${y.toFixed(1)}" x2="${width - margin.right}" y2="${y.toFixed(1)}" stroke="${gridColor}" stroke-width="1"/><text x="${margin.left - 10}" y="${(y + 4).toFixed(1)}" font-size="12" fill="${labelColor}" text-anchor="end">${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)}</text>`;
   });
 
   const marks = candidate.spec.type === "bar" || candidate.spec.type === "histogram"
@@ -559,20 +572,20 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
       ];
 
   const title = candidate.spec.title
-    ? `<text x="${margin.left}" y="28" font-size="18" font-weight="600" fill="#0f172a">${escapeXml(candidate.spec.title)}</text>`
+    ? `<text x="${margin.left}" y="28" font-size="18" font-weight="600" fill="var(--org2-chart-title, #0f172a)">${escapeXml(candidate.spec.title)}</text>`
     : "";
   const svg = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img">`,
     `<desc>Org2 ${candidate.spec.type} chart for ${escapeXml(candidate.spec.y)} by ${escapeXml(candidate.spec.x)}</desc>`,
-    `<rect width="${width}" height="${height}" fill="#ffffff"/>`,
+    `<rect width="${width}" height="${height}" fill="var(--org2-chart-background, #ffffff)"/>`,
     title,
     ...yTicks,
     `<line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${height - margin.bottom}" stroke="${axisColor}" stroke-width="1.5"/>`,
     `<line x1="${margin.left}" y1="${zeroY.toFixed(1)}" x2="${width - margin.right}" y2="${zeroY.toFixed(1)}" stroke="${axisColor}" stroke-width="1.5"/>`,
     ...marks,
     ...labels,
-    `<text x="${(margin.left + plotWidth / 2).toFixed(1)}" y="${height - 8}" font-size="13" fill="#334155" text-anchor="middle">${escapeXml(candidate.spec.x)}</text>`,
-    `<text x="18" y="${(margin.top + plotHeight / 2).toFixed(1)}" font-size="13" fill="#334155" text-anchor="middle" transform="rotate(-90 18 ${(margin.top + plotHeight / 2).toFixed(1)})">${escapeXml(candidate.spec.y)}</text>`,
+    `<text x="${(margin.left + plotWidth / 2).toFixed(1)}" y="${height - 10}" font-size="13" fill="${axisColor}" text-anchor="middle">${escapeXml(candidate.spec.x)}</text>`,
+    `<text x="18" y="${(margin.top + plotHeight / 2).toFixed(1)}" font-size="13" fill="${axisColor}" text-anchor="middle" transform="rotate(-90 18 ${(margin.top + plotHeight / 2).toFixed(1)})">${escapeXml(candidate.spec.y)}</text>`,
     `</svg>`,
   ].filter(Boolean).join("\n");
 
@@ -600,12 +613,30 @@ export function renderOrgChart(raw: string, opts: RenderChartOptions = {}): Char
 
   const rendered = renderSvg(selected);
   const errors = rendered.diagnostics.filter((item) => item.severity === "error");
+  const offset = Math.max(0, opts.sourceLineOffset || 0);
+  const source = offsetChartSource(selected.source, offset);
   return {
     ok: errors.length === 0 && Boolean(rendered.svg),
     format: "svg",
     ...(opts.outputPath ? { artifact: opts.outputPath } : {}),
     ...(rendered.svg ? { svg: rendered.svg } : {}),
-    source: selected.source,
+    source,
     diagnostics: rendered.diagnostics,
   };
+}
+
+export function renderOrgCharts(raw: string, opts: Pick<RenderChartOptions, "file" | "sourceLineOffset"> = {}): ChartRenderResult[] {
+  const candidates = collectChartCandidates(raw, opts.file);
+  const offset = Math.max(0, opts.sourceLineOffset || 0);
+  return candidates.map((candidate) => {
+    const rendered = renderSvg(candidate);
+    const source = offsetChartSource(candidate.source, offset);
+    return {
+      ok: rendered.diagnostics.every((item) => item.severity !== "error") && Boolean(rendered.svg),
+      format: "svg",
+      ...(rendered.svg ? { svg: rendered.svg } : {}),
+      source,
+      diagnostics: rendered.diagnostics,
+    };
+  });
 }

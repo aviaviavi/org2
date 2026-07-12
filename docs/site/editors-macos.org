@@ -41,12 +41,17 @@ Current source-editor affordances include:
 - incremental syntax highlighting that remains responsive on large files,
 - native macOS spelling and grammar checking for prose without automatic source-text correction,
 - parser-backed source ranges, heading navigation, folding, semantic region presentation, and inline diagnostics,
+- a semantic heading gutter with fold, TODO, priority, planning, reference, property, and structural actions,
 - Return continuation for unordered, ordered, checkbox, and indented list lines,
 - heading and list insertion, promotion and demotion, TODO cycling, scheduling, deadlines, property insertion, link insertion, and planning cleanup,
 - presentation-only heading folding that never changes the source text,
 - Command-S saving that keeps the editor open and refuses stale writes without discarding the draft.
 
-Read mode is deliberately separate. It renders the selected entry or page as HTML from the shared compiler, including headings, links, property drawers, quotes, tables, and other rich document structures. Rendered content is used for reading, navigation, and workflow actions, not as an authoritative editable DOM.
+Read mode is deliberately separate. It renders the selected entry or page as HTML from the shared compiler, including headings, links, property drawers, quotes, tables, citations, media, source blocks, and generated Org2 artifacts. Rendered content is used for reading, navigation, and workflow actions, not as an authoritative editable DOM.
+
+Source editing can optionally show that HTML renderer in a resizable split view. The preview updates after a short idle delay, follows the source line near the caret, rejects stale render results, and can be paused. Typing never waits for HTML generation.
+
+Document presentation is customizable without enabling document scripts. Use the document-layout menu to create or edit =.org2/app.css= at the corpus root; its CSS applies to read mode and the source preview. The app continues to exclude =HTML_HEAD= scripts and raw export HTML from its safe rendering profile.
 
 The important product rule is that the app should write ordinary Org2 text. Users should be able to inspect every change in Git or another editor.
 

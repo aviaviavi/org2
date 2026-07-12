@@ -131,7 +131,7 @@ private struct OpenClawSendFailureView: View {
         Text(failureText)
           .font(.caption)
           .foregroundStyle(.secondary)
-          .lineLimit(compact ? 2 : 3)
+          .lineLimit(compact ? 4 : 5)
           .truncationMode(.tail)
       }
       Spacer(minLength: 8)
@@ -141,12 +141,12 @@ private struct OpenClawSendFailureView: View {
         if compact {
           Image(systemName: "arrow.clockwise")
         } else {
-          Label("Retry", systemImage: "arrow.clockwise")
+          Label(retryButtonTitle, systemImage: "arrow.clockwise")
         }
       }
       .buttonStyle(WorkspaceActionButtonStyle())
       .disabled(store.isSendingOpenClawMessage)
-      .help("Retry sending this message")
+      .help(retryHelpText)
     }
     .padding(.horizontal, 8)
     .padding(.vertical, 7)
@@ -159,12 +159,29 @@ private struct OpenClawSendFailureView: View {
   }
 
   private var title: String {
+    if isProviderAuthenticationFailure {
+      return "Model provider authentication failed"
+    }
     switch deliveryStatus {
     case .interrupted:
       return "Response interrupted"
     case .sending, .sent, .failed:
       return "Message failed to send"
     }
+  }
+
+  private var isProviderAuthenticationFailure: Bool {
+    failureText.localizedCaseInsensitiveContains("model provider rejected authentication")
+  }
+
+  private var retryButtonTitle: String {
+    isProviderAuthenticationFailure ? "Retry After Fix" : "Retry"
+  }
+
+  private var retryHelpText: String {
+    isProviderAuthenticationFailure
+      ? "Fix the model provider on the OpenClaw gateway host, then retry this message"
+      : "Retry sending this message"
   }
 }
 

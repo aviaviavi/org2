@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 enum WorkspaceDesign {
@@ -7,6 +8,29 @@ enum WorkspaceDesign {
   static let rowVerticalPadding: CGFloat = 8
   static let headerHorizontalInset: CGFloat = 16
   static let headerVerticalInset: CGFloat = 11
+
+  // AppKit's semantic label colors can become extremely faint when a hosted
+  // editor hierarchy is treated as inactive. Keep document chrome and source
+  // text tied to the current appearance, not window activation.
+  static let stablePrimaryNSColor = NSColor(name: nil) { appearance in
+    isDark(appearance) ? NSColor(deviceWhite: 0.92, alpha: 1) : NSColor(deviceWhite: 0.12, alpha: 1)
+  }
+
+  static let stableSecondaryNSColor = NSColor(name: nil) { appearance in
+    isDark(appearance) ? NSColor(deviceWhite: 0.68, alpha: 1) : NSColor(deviceWhite: 0.40, alpha: 1)
+  }
+
+  static let stableTertiaryNSColor = NSColor(name: nil) { appearance in
+    isDark(appearance) ? NSColor(deviceWhite: 0.50, alpha: 1) : NSColor(deviceWhite: 0.58, alpha: 1)
+  }
+
+  static var primaryText: Color { Color(nsColor: stablePrimaryNSColor) }
+  static var secondaryText: Color { Color(nsColor: stableSecondaryNSColor) }
+  static var tertiaryText: Color { Color(nsColor: stableTertiaryNSColor) }
+
+  private static func isDark(_ appearance: NSAppearance) -> Bool {
+    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+  }
 
   static var barBackground: Color {
     Color(nsColor: .windowBackgroundColor)
@@ -138,8 +162,8 @@ struct WorkspaceActionButtonStyle: ButtonStyle {
     configuration.label
       .font(.callout.weight(.semibold))
       .foregroundStyle(isEnabled
-        ? Color.primary.opacity(configuration.isPressed ? 0.86 : 0.93)
-        : Color.secondary)
+        ? WorkspaceDesign.primaryText.opacity(configuration.isPressed ? 0.86 : 0.93)
+        : WorkspaceDesign.secondaryText)
       .lineLimit(1)
       .truncationMode(.tail)
       .fixedSize(horizontal: false, vertical: true)

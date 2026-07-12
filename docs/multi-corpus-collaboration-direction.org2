@@ -1,0 +1,223 @@
+#+TITLE: Multi-Corpus Collaboration Direction
+
+* Status
+
+Proposed product direction. This document defines the initial model and an incremental implementation path; it is not a claim that the described collaboration and permission features already exist.
+
+* Problem
+
+Org2 is increasingly useful as an extension of an individual's working memory: personal tasks, meetings, projects, notes, and agent-assisted workflows can all live in one local corpus. Collaboration introduces a different requirement. A user may want an assistant, teammate, or agent to help with selected work without exposing the user's full private corpus.
+
+A single universal corpus does not provide a good boundary for this. Per-subtree encryption can protect exceptional material, but it is too complicated to be the normal mechanism for deciding which everyday notes and tasks a collaborator can see. Sharing also raises questions beyond reading a note: who can edit it, whether an agent can act directly or only propose changes, how work moves from a private context into a shared one, and how a user sees work spread across several contexts.
+
+* Product Thesis
+
+Org2 Workspace is not a window onto one universal corpus. It is a local, permission-aware view over a federation of ordinary-file corpora.
+
+Each corpus represents a durable trust and collaboration boundary. People and agents mount only the corpora appropriate to their roles. Work crosses corpus boundaries through explicit, reviewable handoffs that preserve provenance and include enough shared context to stand on their own. Encryption supports exceptions within a corpus without becoming the default collaboration interface.
+
+* Core Model
+
+The product should distinguish three concepts:
+
+- A *corpus* is a durable storage, trust, and collaboration boundary. It remains a normal directory or repository of inspectable Org2 text and related artifacts.
+- A *workspace* is the set of corpora visible to a particular person or agent, plus the local policies that govern how that principal may use them.
+- An *encrypted subtree* is an exceptional restriction inside a corpus. Its cryptographic recipients may be narrower than the membership of the surrounding corpus.
+
+For example, one person's workspace might mount:
+
+#+begin_example
+Workspace
+├── Personal corpus              read/write
+├── Company corpus               read/write
+└── Client project corpus        read/propose
+#+end_example
+
+A collaborator's workspace could mount their own personal corpus and the same company corpus without exposing either person's private corpus. A company agent might mount only the company corpus. A project-specific agent might mount only one project corpus or a narrower generated task packet.
+
+The important relationship is membership, not ownership. Collaboration should normally occur in a corpus shared by the participants. Delegating work should not require one participant to write into another participant's private corpus or receive access to the delegator's full private context.
+
+* Boundary Principles
+
+** Corpus boundaries are the ordinary sharing mechanism
+
+If a person or agent routinely needs access to material, that material should normally live in a corpus they routinely mount. A company corpus should hold the shared operating memory for that trust group: shared projects, tasks, meetings, decisions, and reference material.
+
+A company corpus does not have to become one enormous organizational database. Additional corpora can represent meaningfully different trust groups or operational boundaries, such as a client engagement, finance, or board materials. Users should not need to predict and configure every possible boundary before collaboration becomes useful.
+
+** Encryption is for exceptions
+
+Org-crypt remains valuable for material that is more restricted than its surrounding corpus. It should not be the primary everyday collaboration interface.
+
+Use corpus boundaries for ordinary isolation, encryption for exceptional isolation, and metadata for workflow policy.
+
+** Metadata is not enforcement
+
+Properties such as =VISIBILITY= and =ACCESS_POLICY= can describe handling and workflow requirements, but plaintext metadata does not prevent a process with filesystem access from reading a file. Org2 must not present policy metadata as a security guarantee.
+
+Initially, real access enforcement comes from the directory or repository boundary, its transport and operating-system permissions, and encryption where used. A future hosted collaboration layer may enforce remote membership and permissions, but the file model must remain valid without it.
+
+** Workspaces are principal-specific
+
+A person's complete set of mounted corpora must not automatically become an agent's access set. Each agent needs an explicit workspace profile that identifies its mounts and capabilities. The same applies to automation, indexing, publishing, and generated context.
+
+* Delegation Across Boundaries
+
+Delegation should be modeled as an explicit promotion or handoff from one trust context into another, not merely as sharing an opaque link.
+
+#+begin_example
+Private task or note
+        |
+        | Delegate or share to corpus
+        v
+Reviewable handoff packet
+        |
+        v
+Shared task in the destination corpus
+        |
+        v
+Collaborator or agent performs work
+#+end_example
+
+A private task often depends on context that the recipient cannot access. A handoff must therefore include the minimum sufficient shared context rather than only a dangling reference to the private source. Org2 should help the delegator select or prepare:
+
+- the desired outcome;
+- relevant background and citations;
+- an assignee or responsible role;
+- deadlines and scheduling information;
+- constraints and decision authority;
+- the required review or approval policy; and
+- sanitized attachments or snapshots where appropriate.
+
+The origin may remain available as private provenance to principals who can see it. The destination artifact must remain understandable and actionable without access to that origin. Private titles, paths, identifiers, or excerpts must not leak into a shared artifact or derived index by default.
+
+Shared delegation artifacts should be able to express semantics such as:
+
+- owner or assignee;
+- delegated by;
+- desired outcome;
+- authority, such as research, draft, schedule, decide, spend, or send;
+- review policy, such as direct action, approval required, or proposal only;
+- shared context and citations;
+- status, responses, and completion evidence; and
+- a provenance reference where visible to the current principal.
+
+The exact language syntax should follow existing Org2 conventions and should be designed separately from this product model.
+
+* Corpus Identity and Federation
+
+Paths are not stable identities. Every corpus participating in a multi-corpus workspace should have a small, portable identity stored inside the corpus, for example:
+
+#+begin_src json
+{
+  "id": "company-operations",
+  "name": "Company Operations",
+  "kind": "shared"
+}
+#+end_src
+
+The precise manifest filename and schema remain to be decided. Corpus IDs should be stable, unique enough for federation, and safe to expose in links and compiled outputs.
+
+A workspace maintains a local registry of mounts. Each mount associates a corpus identity with a local path and the capabilities available to the current principal. Paths and credentials remain local configuration rather than portable corpus content.
+
+Compilation should remain corpus-local by default. Workspace-level agenda, search, graph, backlink, and agent-context operations may build a federated view over the mounted corpora, but every result must retain its source corpus identity.
+
+* Semantic Invariants
+
+- A node is globally addressable by the pair =(corpus ID, node ID)=. Bare node IDs may remain convenient within a corpus.
+- Cross-corpus links are explicit and fail safely when the target corpus is not mounted.
+- A missing or inaccessible target must not reveal private target metadata through errors, previews, indexes, or backlinks.
+- Moving, copying, or promoting material across corpora preserves reviewable provenance without leaking inaccessible source content.
+- A shared artifact is usable without access to its private origin.
+- Agenda, search, graph, publishing, and agent context operate only over the corpora mounted in the active workspace profile.
+- Derived caches and indexes inherit the boundary of their inputs and do not silently combine data from unrelated workspace profiles.
+- Agents receive explicit workspace profiles and never inherit a human operator's complete access set by convenience.
+- Ordinary files remain the source of truth. Federation must not require a private canonical database.
+
+* Initial Capability Model
+
+The first permission model should be deliberately coarse. It should describe useful product behavior without pretending to replace filesystem or cryptographic enforcement.
+
+| Scope | Initial capabilities |
+|-------+----------------------|
+| Corpus membership | none, read, contribute, edit, administer |
+| Agent write policy | read-only, propose changes, write generated zones, direct write |
+| Encrypted subtree | explicit cryptographic recipients |
+| Local enforcement | filesystem, repository host, sync provider, or operating-system permissions |
+
+The distinction between =contribute= and =edit= should be resolved during implementation. One likely interpretation is that contributors can create work or proposals in designated zones while editors can modify canonical shared notes.
+
+Agent write policies should align with the corpus-flow model. An agent allowed to propose changes may write to reviewable =views/= or another designated generated zone without being permitted to mutate canonical =notes/= directly.
+
+* Incremental Product Path
+
+** Phase 1: Shared corpus convention
+
+- Document the use of a separately shared folder or repository as a company or team corpus.
+- Establish the corpus identity manifest and validation rules.
+- Keep transport and membership external to Org2 at this stage.
+- Ensure the CLI and compiler consistently report corpus identity in machine-readable output.
+
+This phase should be usable before the macOS app has a complete multi-corpus interface.
+
+** Phase 2: Multi-corpus Workspace
+
+- Remember multiple corpus mounts in Org2 Workspace.
+- Add fast corpus switching with a clear indication of the active corpus.
+- Keep writes and corpus-specific operations scoped to an explicit destination.
+- Add a federated agenda and search view across the active workspace profile.
+- Preserve corpus identity on every result and navigation target.
+
+** Phase 3: Cross-corpus handoff
+
+- Add a =Delegate or Share to Corpus= workflow.
+- Create a previewable handoff packet before writing to the destination corpus.
+- Support move, copy, and summarized/sanitized handoff modes where their semantics are clear.
+- Require an explicit destination and show which context will cross the boundary.
+- Preserve safe provenance and warn about inaccessible or potentially private links.
+
+** Phase 4: Principal and agent profiles
+
+- Define workspace profiles as named sets of corpus mounts and capabilities.
+- Allow agent and automation invocations to select an explicit profile.
+- Enforce read, proposal, generated-zone, and direct-write behavior at Org2 command boundaries.
+- Make agent context generation boundary-aware and auditable.
+
+** Phase 5: Collaboration services, if needed
+
+- Investigate invitations, identity, remote membership, and hosted access enforcement.
+- Consider note-level sharing links only after corpus-level collaboration and handoffs are proven insufficient.
+- Preserve local files, portable corpus identity, and transport independence even when a hosted service is present.
+
+* Non-Goals for the Initial Work
+
+- Building a hosted identity and permissions service before local multi-corpus workflows are useful.
+- Implementing arbitrary per-heading access-control lists over plaintext files.
+- Treating encryption recipient management as the everyday sharing experience.
+- Merging mounted corpora into one canonical database or directory.
+- Giving an agent access to every corpus visible to the person invoking it.
+- Guaranteeing that policy metadata is enforced outside Org2-controlled commands.
+
+* Open Product Questions
+
+- What is the smallest useful corpus manifest, and how are corpus ID collisions handled?
+- Is a workspace profile stored only in local app configuration, or can a safe portable profile be checked into a separate file?
+- Which operations should work across all mounted corpora, and which must always require one active corpus?
+- What are the precise semantics of =contribute=, =edit=, and =administer= for an ordinary-file corpus?
+- How should cross-corpus links be represented in Org2 syntax and compiler output?
+- Should a handoff copy source text, create a structured task packet, generate a summary, or offer all three as explicit choices?
+- How should private provenance be recorded so it is useful locally but cannot leak through synchronization or federation?
+- What conflict behavior is needed when several people edit a corpus through different file transports?
+- When should a shared domain become a separate corpus rather than an encrypted subtree or a directory inside an existing corpus?
+- Which permission checks belong in the shared compiler/runtime, and which remain responsibilities of the host filesystem or future collaboration service?
+
+* Near-Term Success Criteria
+
+The initial direction is working when:
+
+- two collaborators can use a shared corpus without exposing either person's private corpus;
+- one person can see private and shared work in a single local Workspace view;
+- a task can be delegated from private work into the shared corpus with sufficient, reviewable context;
+- an agent can operate on the shared corpus without receiving access to the delegator's private corpus;
+- agenda and search clearly identify which corpus produced each result; and
+- no federated index, derived cache, handoff, or error message silently leaks content from an inaccessible corpus.

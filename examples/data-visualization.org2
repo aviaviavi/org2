@@ -1,0 +1,62 @@
+#+TITLE: Org2 data visualization
+
+* Package fetches
+
+This table can be materialized from a local CSV, a saved Metabase question, or a ClickHouse query. The rendered document stays static and fast.
+
+#+name: package_fetches
+| day        | fetches |
+|------------+---------|
+| 2026-07-01 | 18420   |
+| 2026-07-02 | 21380   |
+| 2026-07-03 | 19740   |
+| 2026-07-04 | 16210   |
+| 2026-07-05 | 17680   |
+| 2026-07-06 | 23510   |
+| 2026-07-07 | 24880   |
+
+#+name: package_fetches_chart
+```chart line
+title: Package fetches by day
+x: day
+y: fetches
+source: package_fetches
+```
+
+* Local CSV query template
+
+```dataset package_fetch_csv
+type: csv
+path: ./data/package-fetches.csv
+engine: duckdb
+```
+
+```sql results=package_fetches_by_day freshness=24h
+SELECT day, sum(fetches) AS fetches
+FROM package_fetch_csv
+GROUP BY day
+ORDER BY day
+```
+
+* ClickHouse query template
+
+```dataset package_fetch_warehouse
+type: clickhouse
+profile: scarf-clickhouse
+query: |
+  SELECT toDate(timestamp) AS day, count() AS fetches
+  FROM package_downloads
+  WHERE timestamp >= now() - INTERVAL 30 DAY
+  GROUP BY day
+  ORDER BY day
+```
+
+* Metabase query template
+
+```dataset package_fetch_question
+type: metabase
+profile: scarf-metabase
+question: 123
+parameters: |
+  []
+```

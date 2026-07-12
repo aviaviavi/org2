@@ -73,11 +73,15 @@ public struct Org2CLI: Sendable {
     _ text: String,
     sourcePath: String,
     sourceLineOffset: Int = 0,
+    stylesheetPath: String? = nil,
     timeout: TimeInterval = 8
   ) async throws -> String {
     var arguments = ["--source-path", sourcePath]
     if sourceLineOffset > 0 {
       arguments.append(contentsOf: ["--source-line-offset", "\(sourceLineOffset)"])
+    }
+    if let stylesheetPath, !stylesheetPath.isEmpty {
+      arguments.append(contentsOf: ["--stylesheet", stylesheetPath])
     }
     let data = try await Task.detached(priority: .userInitiated) {
       try runProcess(
