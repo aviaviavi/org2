@@ -27,8 +27,8 @@ import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js
 import { compileCorpus, compileCorpusIncremental, extractCheckboxProgress, renderCompiledCorpus } from "./corpusCompile.js";
 import { extractClockReport } from "./clock.js";
 import { buildAgentContextPayload, renderAgentContextPack, type AgentInclude } from "./agentContext.js";
-import { renderOrgChart } from "./chartRender.js";
-import { runOrg2DataQuery } from "./dataQuery.js";
+import { renderOrgChart, renderOrgCharts } from "./chartRender.js";
+import { applyDataQueryResult, runOrg2DataQuery } from "./dataQuery.js";
 import {
   buildSearchIndex,
   loadFreshSearchIndex,
@@ -65,6 +65,12 @@ import type {
   TimestampNode,
   TimestampRangeNode,
 } from "./ast.js";
+
+function embeddedChartsForSource(raw: string, file?: string) {
+  return renderOrgCharts(raw, { file })
+    .filter((chart): chart is typeof chart & { svg: string; source: NonNullable<typeof chart.source> } => chart.ok && Boolean(chart.svg && chart.source))
+    .map((chart) => ({ svg: chart.svg, source: chart.source }));
+}
 
 // Parse ISO date string to Date
 function parseIsoDate(dateStr: string): Date {
@@ -8526,6 +8532,7 @@ async function main(): Promise<void> {
   let dataQueryIncludeScript = false;
   let dataQueryInspect = false;
   let dataQueryStdin = false;
+  let dataQueryApply = false;
 
   // Clock reports
   let clockFormat: "text" | "json" = "text";
@@ -10048,6 +10055,8 @@ async function main(): Promise<void> {
         roamApply = true;
       } else if (command === "ai") {
         aiApply = true;
+      } else if (command === "query-data") {
+        dataQueryApply = true;
       }
       i++;
     } else if (arg === "--verbose" || arg === "--verbose-errors") {
@@ -10115,7 +10124,7 @@ Roam / IDs:
   org2 clock --dir DIR [--recursive] [--format text|json]
   org2 compile corpus --dir DIR [--recursive] [--out FILE] [--format json|jsonl]
   org2 render-chart --file FILE [--block-id ID|--line N] [--out FILE] [--format svg|json]
-  org2 query-data (--file FILE|--stdin) [--results NAME|--line N] [--out FILE] [--format org|json]
+  org2 query-data (--file FILE|--stdin) [--results NAME|--line N] [--out FILE|--apply] [--format org|json]
   org2 context QUERY [--dir DIR] [--recursive] [--budget 8k] [--format markdown|org|json]
   org2 brief today [--dir DIR] [--recursive] [--out views/today.org]
   org2 brief project NAME [--dir DIR] [--recursive] [--out views/NAME.org]
@@ -10472,7 +10481,7 @@ Output:
     text = `org2 query-data
 
 Usage:
-  org2 query-data --file FILE [--results NAME|--line N] [--out FILE] [--format org|json]
+  org2 query-data --file FILE [--results NAME|--line N] [--out FILE|--apply] [--format org|json]
   org2 query-data --stdin [--results NAME|--line N] [--out FILE] [--format org|json]
   org2 query-data --file FILE --inspect
 
@@ -10483,14 +10492,18 @@ Flags:
   --line N            Select the SQL result block containing or after line N
   --duckdb PATH       DuckDB CLI path (default: duckdb)
   --out FILE          Write materialized org table or JSON envelope to FILE
+  --apply             Insert or replace the materialized result in the source file
   --format FORMAT     org (default) or json diagnostics envelope
   --include-script    Include generated DuckDB SQL setup in JSON/inspect output
   --inspect           Parse query-data blocks as JSON without running DuckDB
 
 Input:
   Reads fenced \`\`\`dataset NAME blocks with engine: duckdb and either
-  type: csv|parquet|json plus path/url, or type: table plus source:
-  named_org_table. Optional \`\`\`sql view=NAME blocks define reusable
+  type: csv|parquet|json plus path/url, type: table plus source:
+  named_org_table, type: clickhouse plus profile/query, or type: metabase
+  plus profile/question. Remote profiles are resolved from dataSources in the
+  nearest org2.json and secrets are read from profile-named environment
+  variables. Optional \`\`\`sql view=NAME blocks define reusable
   DuckDB views before the selected \`\`\`sql results=NAME block is run. SQL result
   result names must be unique. Dataset names and SQL view names must not
   conflict because they share DuckDB's relation namespace. SQL result blocks may
@@ -10500,9 +10513,8 @@ Input:
   path. Dataset credential/auth and config/profile metadata must be external
   references such as env:VAR, secret:NAME, config:NAME, or profile:NAME; inline
   secrets are rejected and references are not injected into DuckDB SQL.
-  This is an explicit
-  local/ad hoc data bridge; Org2 does not store credentials or call remote
-  warehouses.`;
+  Refresh is explicit: this command may call configured remote sources, while
+  HTML rendering never executes warehouse queries.`;
   } else if (command === "context") {
     text = `org2 context
 
@@ -10766,11 +10778,23 @@ Flags:
       console.error("Error: query-data accepts only one of --results or --line");
       process.exit(1);
     }
+    if (dataQueryApply && dataQueryStdin) {
+      console.error("Error: query-data --apply requires --file");
+      process.exit(1);
+    }
+    if (dataQueryApply && dataQueryOut) {
+      console.error("Error: query-data accepts only one of --apply or --out");
+      process.exit(1);
+    }
+    if (dataQueryApply && dataQueryInspect) {
+      console.error("Error: query-data accepts only one of --apply or --inspect");
+      process.exit(1);
+    }
 
     const input = dataQueryStdin
       ? fs.readFileSync(0, "utf8").replace(/\r\n/g, "\n")
       : fs.readFileSync(path.resolve(dataQueryFile), "utf8").replace(/\r\n/g, "\n");
-    const result = runOrg2DataQuery(input, {
+    const result = await runOrg2DataQuery(input, {
       ...(dataQueryFile ? { file: dataQueryFile } : {}),
       ...(dataQueryResultId ? { resultId: dataQueryResultId } : {}),
       ...(dataQueryLine > 0 ? { resultLine: dataQueryLine } : {}),
@@ -10782,7 +10806,16 @@ Flags:
 
     const outputIsJson = dataQueryFormat === "json" || dataQueryInspect;
     const output = outputIsJson ? JSON.stringify(result, null, 2) + "\n" : result.orgTable || "";
-    if (result.ok && dataQueryOut) {
+    if (result.ok && dataQueryApply) {
+      const sourcePath = path.resolve(dataQueryFile);
+      const applied = applyDataQueryResult(input, result);
+      if (applied.changed) fs.writeFileSync(sourcePath, applied.text, "utf8");
+      if (outputIsJson) {
+        process.stdout.write(JSON.stringify({ ...result, applied: true, changed: applied.changed, file: sourcePath }, null, 2) + "\n");
+      } else {
+        process.stdout.write(`${applied.changed ? "Updated" : "Unchanged"} ${dataQueryFile}\n`);
+      }
+    } else if (result.ok && dataQueryOut) {
       const outputPath = path.resolve(dataQueryOut);
       fs.mkdirSync(path.dirname(outputPath), { recursive: true });
       fs.writeFileSync(outputPath, output, "utf8");
@@ -11556,7 +11589,8 @@ Flags:
     const exported: Array<{ sourcePath: string; outputPath: string; outputPathAbsolute: string; title: string; changed: boolean; metadata?: ExportMetadataPayload; }> = [];
     for (const sourcePath of sourceFiles) {
       const sourceRaw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
-      const sourceAst = parseOrgToCanonicalAst(sourceRaw);
+      const sourceAst = parseOrgToCanonicalAst(sourceRaw, { sourceRanges: true });
+      const sourceCharts = embeddedChartsForSource(sourceRaw, sourcePath);
 
       const relativeSourcePath = path.relative(sourceDir, sourcePath);
       const outputRelativePath = /\.(org|org2)$/i.test(relativeSourcePath)
@@ -11583,6 +11617,7 @@ Flags:
         compatContentWrapper: true,
         linkAbbreviations: configLinkAbbreviations,
         linearTeam: configLinearTeam,
+        charts: sourceCharts,
       });
 
       const ogSlug = outputRelativePathPosix
@@ -11654,6 +11689,7 @@ Flags:
         compatContentWrapper: true,
         linkAbbreviations: configLinkAbbreviations,
         linearTeam: configLinearTeam,
+        charts: sourceCharts,
       });
 
       const existingOutput = fs.existsSync(outputPathAbsolute)
@@ -11979,7 +12015,8 @@ Flags:
 
       for (const sourcePath of sourceFiles) {
         const sourceRaw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
-        const sourceAst = parseOrgToCanonicalAst(sourceRaw);
+        const sourceAst = parseOrgToCanonicalAst(sourceRaw, { sourceRanges: true });
+        const sourceCharts = embeddedChartsForSource(sourceRaw, sourcePath);
         const rendered = renderOrgDocumentToHtml(sourceAst, {
           sourcePath: toDisplayPath(sourcePath),
           stylesheets: exportStylesheetsNormalized,
@@ -11991,6 +12028,7 @@ Flags:
           rewriteFileLinks: exportRewriteFileLinks,
           linkAbbreviations: exportConfigLinkAbbreviations,
           linearTeam: exportConfigLinearTeam,
+          charts: sourceCharts,
         });
 
         const relativeSourcePath = path.relative(sourceDir, sourcePath);
@@ -12112,7 +12150,8 @@ Flags:
     const sourcePathInput = exportFile;
     const sourcePath = path.resolve(sourcePathInput);
     const sourceRaw = fs.readFileSync(sourcePath, "utf8").replace(/\r\n/g, "\n");
-    const sourceAst = parseOrgToCanonicalAst(sourceRaw);
+    const sourceAst = parseOrgToCanonicalAst(sourceRaw, { sourceRanges: true });
+    const sourceCharts = embeddedChartsForSource(sourceRaw, sourcePath);
     const rendered = renderOrgDocumentToHtml(sourceAst, {
       title: exportTitle || undefined,
       sourcePath: sourcePathInput,
@@ -12125,6 +12164,7 @@ Flags:
       rewriteFileLinks: exportRewriteFileLinks,
       linkAbbreviations: exportConfigLinkAbbreviations,
       linearTeam: exportConfigLinearTeam,
+      charts: sourceCharts,
     });
 
     const defaultOutputPath = (() => {

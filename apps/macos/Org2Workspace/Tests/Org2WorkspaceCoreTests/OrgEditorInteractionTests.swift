@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import WebKit
 import XCTest
 @testable import Org2WorkspaceCore
 
@@ -8,6 +9,160 @@ private var retainedInteractionWindows: [NSWindow] = []
 
 @MainActor
 final class OrgEditorInteractionTests: XCTestCase {
+  func testRenderedHeadingAskAIButtonRoutesProgrammaticNavigation() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-heading-ai-click-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let file = root.appendingPathComponent("project.org2")
+    let source = EntrySource(
+      file: file.path,
+      startLine: 40,
+      endLineExclusive: 42,
+      text: "* Target heading\nBody",
+      isSubtree: true
+    )
+    let html = try await Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()).renderAppHTML(
+      source.text,
+      sourcePath: source.file,
+      sourceLineOffset: source.startLine - 1
+    )
+    var receivedLine: Int?
+    let content = OrgHTMLDocumentView(
+      html: html,
+      source: source,
+      corpusRoot: root,
+      searchQuery: nil,
+      searchOccurrenceIndex: nil,
+      searchOccurrenceCount: 0,
+      scrollRequest: nil,
+      layout: OrgHTMLDocumentLayout(width: .comfortable, margin: .standard),
+      askAIAboutHeading: { receivedLine = $0 },
+      reportStatus: { _ in }
+    )
+    let hostingView = NSHostingView(rootView: content)
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+      styleMask: [.titled, .closable, .resizable],
+      backing: .buffered,
+      defer: false
+    )
+    window.contentView = hostingView
+    window.makeKeyAndOrderFront(nil)
+    retainedInteractionWindows.append(window)
+
+    var webView: WKWebView?
+    try await waitForCondition {
+      webView = firstWebView(in: window.contentView)
+      return webView != nil
+    }
+    let renderedWebView = try XCTUnwrap(webView)
+    let deadline = Date().addingTimeInterval(5)
+    var buttonReady = false
+    while Date() < deadline && !buttonReady {
+      buttonReady = (try? await renderedWebView.callAsyncJavaScript(
+        "return Boolean(document.querySelector('.org2-heading-ai-action'));",
+        arguments: [:],
+        in: nil,
+        contentWorld: .page
+      )) as? Bool == true
+      if !buttonReady { try await pumpRunLoop() }
+    }
+    XCTAssertTrue(buttonReady)
+
+    _ = try await renderedWebView.callAsyncJavaScript(
+      "document.querySelector('.org2-heading-ai-action').click(); return true;",
+      arguments: [:],
+      in: nil,
+      contentWorld: .page
+    )
+    try await waitForCondition { receivedLine == 40 }
+  }
+
+  func testRenderedBoldSectionShowsAndRoutesAskAIButton() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-section-ai-click-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let file = root.appendingPathComponent("board.org2")
+    let source = EntrySource(
+      file: file.path,
+      startLine: 40,
+      endLineExclusive: 43,
+      text: "*Revenue*\n\nRevenue body",
+      isSubtree: false
+    )
+    let html = try await Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()).renderAppHTML(
+      source.text,
+      sourcePath: source.file,
+      sourceLineOffset: source.startLine - 1
+    )
+    var receivedLine: Int?
+    let content = OrgHTMLDocumentView(
+      html: html,
+      source: source,
+      corpusRoot: root,
+      searchQuery: nil,
+      searchOccurrenceIndex: nil,
+      searchOccurrenceCount: 0,
+      scrollRequest: nil,
+      layout: OrgHTMLDocumentLayout(width: .comfortable, margin: .standard),
+      askAIAboutHeading: { receivedLine = $0 },
+      reportStatus: { _ in }
+    )
+    let hostingView = NSHostingView(rootView: content)
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+      styleMask: [.titled, .closable, .resizable],
+      backing: .buffered,
+      defer: false
+    )
+    window.contentView = hostingView
+    window.makeKeyAndOrderFront(nil)
+    retainedInteractionWindows.append(window)
+
+    var webView: WKWebView?
+    try await waitForCondition {
+      webView = firstWebView(in: window.contentView)
+      return webView != nil
+    }
+    let renderedWebView = try XCTUnwrap(webView)
+    let deadline = Date().addingTimeInterval(5)
+    var visibleButtonReady = false
+    while Date() < deadline && !visibleButtonReady {
+      visibleButtonReady = (try? await renderedWebView.callAsyncJavaScript(
+        """
+        const button = document.querySelector('.org2-section-label > .org2-heading-ai-action');
+        const label = document.querySelector('.org2-section-label > strong');
+        return Boolean(button && label && Number.parseFloat(getComputedStyle(button).opacity) > 0);
+        """,
+        arguments: [:],
+        in: nil,
+        contentWorld: .page
+      )) as? Bool == true
+      if !visibleButtonReady { try await pumpRunLoop() }
+    }
+    XCTAssertTrue(visibleButtonReady)
+
+    let centerOffset = try await renderedWebView.callAsyncJavaScript(
+      """
+      const buttonRect = document.querySelector('.org2-section-label > .org2-heading-ai-action').getBoundingClientRect();
+      const labelRect = document.querySelector('.org2-section-label > strong').getBoundingClientRect();
+      return (buttonRect.top + buttonRect.height / 2) - (labelRect.top + labelRect.height / 2);
+      """,
+      arguments: [:],
+      in: nil,
+      contentWorld: .page
+    ) as? Double
+    XCTAssertLessThanOrEqual(abs(try XCTUnwrap(centerOffset)), 2)
+
+    _ = try await renderedWebView.callAsyncJavaScript(
+      "document.querySelector('.org2-section-label > .org2-heading-ai-action').click(); return true;",
+      arguments: [:],
+      in: nil,
+      contentWorld: .page
+    )
+    try await waitForCondition { receivedLine == 40 }
+  }
+
   func testTypingHeadingReturnAndParagraphUsesFreshEditorState() async throws {
     try XCTSkipIf(true, "Rendered inline text editing is retired from normal UI entry points; source editing is primary.")
     let harness = try await makeHarness(initialText: "")
@@ -752,6 +907,32 @@ final class OrgEditorInteractionTests: XCTestCase {
     XCTAssertGreaterThan(editorFrame.height, 500)
   }
 
+  func testSourceEditorShowsParserBackedHeadingGutter() async throws {
+    let harness = try await makeHarness(initialText: """
+    * TODO [#A] Parent
+    SCHEDULED: <2026-07-11 Sat>
+    Body
+    ** Child
+    Child body
+    """)
+    harness.store.beginEditingCurrentScope()
+    let textView = try await harness.focusedEditor()
+    let scrollView = try XCTUnwrap(textView.enclosingScrollView)
+
+    try await waitForCondition {
+      (scrollView.verticalRulerView as? OrgSourceEditorGutterView)?.items.count == 2
+    }
+
+    let gutter = try XCTUnwrap(scrollView.verticalRulerView as? OrgSourceEditorGutterView)
+    XCTAssertTrue(scrollView.hasVerticalRuler)
+    XCTAssertTrue(scrollView.rulersVisible)
+    XCTAssertEqual(gutter.items.first?.priority, "A")
+    XCTAssertTrue(gutter.items.first?.hasScheduled == true)
+    harness.window.layoutIfNeeded()
+    let firstMarkerY = try XCTUnwrap(gutter.markerY(forLine: 1, in: textView))
+    XCTAssertTrue(gutter.bounds.insetBy(dx: 0, dy: -12).contains(NSPoint(x: 8, y: firstMarkerY)))
+  }
+
   func testSourceEditorReturnContinuesOrgListWhileWriting() async throws {
     let harness = try await makeHarness(initialText: "- [ ] first task")
 
@@ -1368,4 +1549,14 @@ private func waitForCondition(
 private func pumpRunLoop() async throws {
   await Task.yield()
   try await Task.sleep(nanoseconds: 20_000_000)
+}
+
+@MainActor
+private func firstWebView(in view: NSView?) -> WKWebView? {
+  guard let view else { return nil }
+  if let webView = view as? WKWebView { return webView }
+  for subview in view.subviews {
+    if let webView = firstWebView(in: subview) { return webView }
+  }
+  return nil
 }

@@ -1,0 +1,22 @@
+{
+  "dataSources": {
+    "scarf-clickhouse": {
+      "type": "clickhouse",
+      "url": "https://clickhouse.example.com/",
+      "database": "analytics",
+      "userEnv": "SCARF_CLICKHOUSE_USER",
+      "passwordEnv": "SCARF_CLICKHOUSE_PASSWORD",
+      "timeoutMs": 300000,
+      "maxRows": 10000,
+      "maxResponseBytes": 16777216
+    },
+    "scarf-metabase": {
+      "type": "metabase",
+      "url": "https://metabase.example.com/",
+      "apiKeyEnv": "SCARF_METABASE_API_KEY",
+      "timeoutMs": 300000,
+      "maxRows": 10000,
+      "maxResponseBytes": 16777216
+    }
+  }
+}

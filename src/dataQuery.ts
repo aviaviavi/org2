@@ -1,6 +1,8 @@
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { findConfigFile, loadConfig, type Org2DataSourceConfig } from "./config.js";
+import { loadRemoteDataset, type RemoteDatasetRequest } from "./dataSources.js";
 
 export type DataQueryDiagnostic = {
   severity: "error" | "warning";
@@ -14,7 +16,7 @@ export type DataQueryDiagnostic = {
 export type DataQueryDataset = {
   id: string;
   line: number;
-  type: "csv" | "parquet" | "json" | "table";
+  type: "csv" | "parquet" | "json" | "table" | "clickhouse" | "metabase";
   engine: "duckdb";
   path?: string;
   url?: string;
@@ -22,6 +24,10 @@ export type DataQueryDataset = {
   configRef?: string;
   resolvedPath?: string;
   sourceTable?: string;
+  profile?: string;
+  query?: string;
+  questionId?: number;
+  parameters?: unknown;
   source?: {
     line: number;
     endLine: number;
@@ -92,6 +98,8 @@ export type RunDataQueryOptions = {
   includeScript?: boolean;
   inspectOnly?: boolean;
   ranAt?: string;
+  dataSources?: Record<string, Org2DataSourceConfig>;
+  env?: NodeJS.ProcessEnv;
 };
 
 type FencedBlock = {
@@ -110,7 +118,7 @@ type NamedOrgTable = {
   rows: string[][];
 };
 
-const SUPPORTED_DATASET_TYPES = new Set(["csv", "parquet", "json", "table", "org-table"]);
+const SUPPORTED_DATASET_TYPES = new Set(["csv", "parquet", "json", "table", "org-table", "clickhouse", "metabase"]);
 
 function diagnostic(message: string, source?: { line?: number; blockId?: string }, severity: "error" | "warning" = "error"): DataQueryDiagnostic {
   return { severity, message, ...(source ? { source } : {}) };
@@ -122,10 +130,40 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function parseKeyValueBody(body: string): Map<string, string> {
   const out = new Map<string, string>();
-  for (const line of body.split("\n")) {
-    const match = /^\s*([A-Za-z0-9_-]+)\s*[:=]\s*(.*?)\s*$/.exec(line);
+  const lines = body.split("\n");
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index] || "";
+    const match = /^(\s*)([A-Za-z0-9_-]+)\s*[:=]\s*(.*?)\s*$/.exec(line);
     if (!match) continue;
-    out.set(String(match[1] || "").toLowerCase(), String(match[2] || "").trim());
+    const key = String(match[2] || "").toLowerCase();
+    const value = String(match[3] || "").trim();
+    if (value !== "|" && value !== ">") {
+      out.set(key, value);
+      continue;
+    }
+
+    const parentIndent = String(match[1] || "").length;
+    const bodyLines: string[] = [];
+    let next = index + 1;
+    while (next < lines.length) {
+      const candidate = lines[next] || "";
+      if (!candidate.trim()) {
+        bodyLines.push("");
+        next++;
+        continue;
+      }
+      const indent = /^\s*/.exec(candidate)?.[0].length || 0;
+      if (indent <= parentIndent) break;
+      bodyLines.push(candidate);
+      next++;
+    }
+    const nonBlankIndents = bodyLines
+      .filter((candidate) => candidate.trim())
+      .map((candidate) => /^\s*/.exec(candidate)?.[0].length || 0);
+    const trimIndent = nonBlankIndents.length > 0 ? Math.min(...nonBlankIndents) : 0;
+    const multiline = bodyLines.map((candidate) => candidate.slice(trimIndent)).join(value === ">" ? " " : "\n").trim();
+    out.set(key, multiline);
+    index = next - 1;
   }
   return out;
 }
@@ -140,7 +178,11 @@ function isSafeCredentialRef(value: string): boolean {
 function isSafeConfigRef(value: string): boolean {
   const trimmed = value.trim();
   if (!trimmed) return true;
-  return /^(?:config|profile|env|file):[A-Za-z0-9_./:-]+$/.test(trimmed);
+  return /^(?:[A-Za-z0-9_.-]+|(?:config|profile|env|file):[A-Za-z0-9_./:-]+)$/.test(trimmed);
+}
+
+function profileName(value: string): string {
+  return value.trim().replace(/^profile:/i, "");
 }
 
 function parseFenceArgs(raw: string): { kind: string; args: string[] } | null {
@@ -349,19 +391,33 @@ function parseDataset(block: FencedBlock, baseDir: string, namedTables: Map<stri
   const sourceTable = values.get("source") || values.get("table") || "";
   const credentialRef = values.get("credential") || values.get("credentials") || values.get("auth") || values.get("auth-ref") || "";
   const configRef = values.get("config") || values.get("profile") || "";
+  const remoteProfile = profileName(configRef);
+  const query = values.get("query") || values.get("sql") || "";
+  const questionRaw = values.get("question") || values.get("question-id") || values.get("card") || values.get("card-id") || "";
+  const questionId = Number.parseInt(questionRaw, 10);
+  const parametersRaw = values.get("parameters") || values.get("params") || "";
+  const remoteType = type === "clickhouse" || type === "metabase";
 
   if (!SUPPORTED_DATASET_TYPES.has(typeRaw)) {
-    diagnostics.push(diagnostic("Dataset type must be csv, parquet, json, or table", { line: block.line, ...(id ? { blockId: id } : {}) }));
+    diagnostics.push(diagnostic("Dataset type must be csv, parquet, json, table, clickhouse, or metabase", { line: block.line, ...(id ? { blockId: id } : {}) }));
   }
   if (engineRaw && engineRaw !== "duckdb") {
     diagnostics.push(diagnostic(`Unsupported dataset engine "${engineRaw}"; only duckdb is supported`, { line: block.line, ...(id ? { blockId: id } : {}) }));
   }
-  if (type === "table" && !sourceTable) {
+  if (remoteType && !remoteProfile) {
+    diagnostics.push(diagnostic(`${type} dataset block requires profile: NAME`, { line: block.line, ...(id ? { blockId: id } : {}) }));
+  } else if (type === "clickhouse" && !query) {
+    diagnostics.push(diagnostic("ClickHouse dataset block requires query: | followed by indented SQL", { line: block.line, ...(id ? { blockId: id } : {}) }));
+  } else if (type === "metabase" && (!questionRaw || !Number.isInteger(questionId) || questionId <= 0)) {
+    diagnostics.push(diagnostic("Metabase dataset block requires a positive question: ID", { line: block.line, ...(id ? { blockId: id } : {}) }));
+  } else if (type === "table" && !sourceTable) {
     diagnostics.push(diagnostic("Table dataset block requires source: named_table", { line: block.line, ...(id ? { blockId: id } : {}) }));
-  } else if (type !== "table" && !sourcePath && !sourceUrl) {
+  } else if (!remoteType && type !== "table" && !sourcePath && !sourceUrl) {
     diagnostics.push(diagnostic("Dataset block requires path: ./file.csv or url: https://example.com/file.csv", { line: block.line, ...(id ? { blockId: id } : {}) }));
-  } else if (type !== "table" && sourcePath && sourceUrl) {
+  } else if (!remoteType && type !== "table" && sourcePath && sourceUrl) {
     diagnostics.push(diagnostic("Dataset block accepts only one of path/file or url/uri/endpoint", { line: block.line, ...(id ? { blockId: id } : {}) }));
+  } else if (remoteType && (sourcePath || sourceUrl)) {
+    diagnostics.push(diagnostic(`${type} dataset URLs come from the named profile; path/url is not accepted in the note`, { line: block.line, ...(id ? { blockId: id } : {}) }));
   }
   const table = type === "table" && sourceTable ? namedTables.get(sourceTable) : undefined;
   if (type === "table" && sourceTable && !table) {
@@ -373,7 +429,46 @@ function parseDataset(block: FencedBlock, baseDir: string, namedTables: Map<stri
   if (configRef && !isSafeConfigRef(configRef)) {
     diagnostics.push(diagnostic("Dataset config/profile metadata must be a reference such as config:NAME, profile:NAME, env:VAR, or file:PATH", { line: block.line, ...(id ? { blockId: id } : {}) }));
   }
+  let parameters: unknown;
+  if (parametersRaw) {
+    try {
+      parameters = JSON.parse(parametersRaw);
+    } catch (error) {
+      diagnostics.push(diagnostic(`Metabase parameters must be valid JSON: ${error instanceof Error ? error.message : String(error)}`, { line: block.line, ...(id ? { blockId: id } : {}) }));
+    }
+  }
   if (diagnostics.some((item) => item.severity === "error")) return { diagnostics };
+
+  if (type === "clickhouse") {
+    return {
+      dataset: {
+        id,
+        line: block.line,
+        type,
+        engine: "duckdb",
+        profile: remoteProfile,
+        query,
+        ...(configRef ? { configRef } : {}),
+      },
+      diagnostics,
+    };
+  }
+
+  if (type === "metabase") {
+    return {
+      dataset: {
+        id,
+        line: block.line,
+        type,
+        engine: "duckdb",
+        profile: remoteProfile,
+        questionId,
+        ...(parameters !== undefined ? { parameters } : {}),
+        ...(configRef ? { configRef } : {}),
+      },
+      diagnostics,
+    };
+  }
 
   if (type === "table" && table) {
     return {
@@ -472,6 +567,31 @@ function inlineOrgTableView(dataset: DataQueryDataset, table: NamedOrgTable): st
   return `CREATE OR REPLACE VIEW ${quoteIdentifier(dataset.id)} AS SELECT * FROM (VALUES ${values}) AS t(${columns});`;
 }
 
+function sqlValue(value: unknown): string {
+  if (value === null || value === undefined) return "NULL";
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "NULL";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "object") return quoteString(JSON.stringify(value));
+  return quoteString(String(value));
+}
+
+function inlineRemoteRowsView(dataset: DataQueryDataset, rows: Record<string, unknown>[]): string {
+  const columns = Array.from(rows.reduce((keys, row) => {
+    for (const key of Object.keys(row)) keys.add(key);
+    return keys;
+  }, new Set<string>()));
+  if (columns.length === 0) {
+    return `CREATE OR REPLACE VIEW ${quoteIdentifier(dataset.id)} AS SELECT NULL AS ${quoteIdentifier("_empty")} WHERE false;`;
+  }
+  if (rows.length === 0) {
+    return `CREATE OR REPLACE VIEW ${quoteIdentifier(dataset.id)} AS SELECT ${columns.map((column) => `NULL AS ${quoteIdentifier(column)}`).join(", ")} WHERE false;`;
+  }
+  const values = rows
+    .map((row) => `(${columns.map((column) => sqlValue(row[column])).join(", ")})`)
+    .join(", ");
+  return `CREATE OR REPLACE VIEW ${quoteIdentifier(dataset.id)} AS SELECT * FROM (VALUES ${values}) AS t(${columns.map(quoteIdentifier).join(", ")});`;
+}
+
 function viewSql(view: DataQuerySqlView): string {
   return `CREATE OR REPLACE VIEW ${quoteIdentifier(view.id)} AS SELECT * FROM (${view.sql.replace(/;\s*$/, "")}) AS org2_view;`;
 }
@@ -480,8 +600,17 @@ function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function buildDuckDbScript(datasets: DataQueryDataset[], views: DataQuerySqlView[], sql: string, namedTables: Map<string, NamedOrgTable>): string {
+function buildDuckDbScript(
+  datasets: DataQueryDataset[],
+  views: DataQuerySqlView[],
+  sql: string,
+  namedTables: Map<string, NamedOrgTable>,
+  remoteRows: Map<string, Record<string, unknown>[]> = new Map(),
+): string {
   const setup = datasets.map((dataset) => {
+    if (dataset.type === "clickhouse" || dataset.type === "metabase") {
+      return inlineRemoteRowsView(dataset, remoteRows.get(dataset.id) || []);
+    }
     if (dataset.type === "table" && dataset.sourceTable) {
       const table = namedTables.get(dataset.sourceTable);
       if (table) return inlineOrgTableView(dataset, table);
@@ -529,6 +658,42 @@ export function rowsToOrgTable(rows: Record<string, unknown>[]): string {
   return [rowLine(headers), separator, ...renderedRows.map(rowLine)].join("\n") + "\n";
 }
 
+export function applyDataQueryResult(input: string, result: DataQueryResult): { text: string; changed: boolean } {
+  if (!result.ok || !result.resultId || !result.orgTable || !result.source) {
+    throw new Error("Cannot apply an unsuccessful or incomplete data query result");
+  }
+  const normalized = input.replace(/\r\n/g, "\n");
+  const hadTrailingNewline = normalized.endsWith("\n");
+  const lines = normalized.split("\n");
+  if (hadTrailingNewline) lines.pop();
+  const generated = result.orgTable.trimEnd().split("\n");
+  const resultPattern = new RegExp(`^\\s*#\\+query-data:\\s+.*\\bresult=${result.resultId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\s|$)`, "i");
+  const existingStart = lines.findIndex((line) => resultPattern.test(line));
+
+  if (existingStart >= 0) {
+    let existingEnd = existingStart + 1;
+    while (existingEnd < lines.length) {
+      const line = lines[existingEnd] || "";
+      if (/^\s*#\+(?:name|results):/i.test(line) || isTableLine(line)) {
+        existingEnd++;
+        continue;
+      }
+      break;
+    }
+    lines.splice(existingStart, existingEnd - existingStart, ...generated);
+  } else {
+    const insertIndex = Math.max(0, Math.min(lines.length, result.source.endLine));
+    const before = lines.slice(0, insertIndex);
+    const after = lines.slice(insertIndex);
+    while (before.length > 0 && before[before.length - 1] === "") before.pop();
+    while (after.length > 0 && after[0] === "") after.shift();
+    lines.splice(0, lines.length, ...before, "", ...generated, "", ...after);
+  }
+
+  const text = `${lines.join("\n")}${hadTrailingNewline ? "\n" : ""}`;
+  return { text, changed: text !== normalized };
+}
+
 function materializedResultTable(resultId: string, rows: Record<string, unknown>[], provenance: NonNullable<DataQueryResult["provenance"]>): string {
   const artifact = provenance.artifact ? ` artifact=${provenance.artifact}` : "";
   const freshness = provenance.freshness ? ` freshness=${provenance.freshness}` : "";
@@ -570,7 +735,29 @@ function resultProvenance(
   };
 }
 
-export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}): DataQueryResult {
+function remoteDatasetRequest(dataset: DataQueryDataset): RemoteDatasetRequest | undefined {
+  if (dataset.type === "clickhouse" && dataset.profile && dataset.query) {
+    return { type: "clickhouse", profile: dataset.profile, query: dataset.query };
+  }
+  if (dataset.type === "metabase" && dataset.profile && dataset.questionId) {
+    return {
+      type: "metabase",
+      profile: dataset.profile,
+      questionId: dataset.questionId,
+      ...(dataset.parameters !== undefined ? { parameters: dataset.parameters } : {}),
+    };
+  }
+  return undefined;
+}
+
+function resolveDataSources(file: string | undefined, explicit: Record<string, Org2DataSourceConfig> | undefined): Record<string, Org2DataSourceConfig> | undefined {
+  if (explicit) return explicit;
+  const startDir = file ? path.dirname(path.resolve(file)) : process.cwd();
+  const configPath = findConfigFile(startDir);
+  return configPath ? loadConfig(configPath).dataSources : undefined;
+}
+
+export async function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}): Promise<DataQueryResult> {
   const file = opts.file;
   const baseDir = file ? path.dirname(path.resolve(file)) : process.cwd();
   const duckdbPath = opts.duckdbPath || "duckdb";
@@ -630,6 +817,22 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
   const selectedByLine = opts.resultLine && opts.resultLine > 0 ? selectSqlBlockByLine(sqlBlocks, opts.resultLine) : undefined;
   const resultId = opts.resultId?.trim() || selectedByLine?.resultId || (sqlBlocks.length === 1 ? sqlBlocks[0]?.resultId : "");
   const selected = selectedByLine || (resultId ? sqlBlocks.find((block) => block.resultId === resultId) : undefined);
+  const remoteDatasets = datasets.filter((dataset) => dataset.type === "clickhouse" || dataset.type === "metabase");
+  let dataSources: Record<string, Org2DataSourceConfig> | undefined;
+  if (remoteDatasets.length > 0) {
+    try {
+      dataSources = resolveDataSources(file, opts.dataSources);
+      for (const dataset of remoteDatasets) {
+        const request = remoteDatasetRequest(dataset);
+        const profile = request ? dataSources?.[request.profile] : undefined;
+        if (!request) continue;
+        if (!profile) diagnostics.push(diagnostic(`No data source profile named "${request.profile}" was found in org2.json`, { line: dataset.line, blockId: dataset.id }));
+        else if (profile.type !== request.type) diagnostics.push(diagnostic(`Data source profile "${request.profile}" is ${profile.type}, but dataset "${dataset.id}" requires ${request.type}`, { line: dataset.line, blockId: dataset.id }));
+      }
+    } catch (error) {
+      diagnostics.push(diagnostic(error instanceof Error ? error.message : String(error)));
+    }
+  }
 
   if (opts.inspectOnly) {
     if (sqlBlocks.length === 0) diagnostics.push(diagnostic("No SQL result blocks found"));
@@ -664,7 +867,23 @@ export function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}):
     return { ok: false, mode: "execute", engine: "duckdb", ...(resultId ? { resultId } : {}), datasets, views, resultBlocks, rowCount: 0, rows: [], diagnostics };
   }
 
-  const script = buildDuckDbScript(datasets, views, selected.sql, namedTables);
+  const remoteRows = new Map<string, Record<string, unknown>[]>();
+  await Promise.all(remoteDatasets.map(async (dataset) => {
+    const request = remoteDatasetRequest(dataset);
+    if (!request) return;
+    try {
+      const loaded = await loadRemoteDataset(request, dataSources, opts.env);
+      remoteRows.set(dataset.id, loaded.rows);
+      dataset.rowCount = loaded.rows.length;
+    } catch (error) {
+      diagnostics.push(diagnostic(`Failed to load dataset "${dataset.id}": ${error instanceof Error ? error.message : String(error)}`, { line: dataset.line, blockId: dataset.id }));
+    }
+  }));
+  if (diagnostics.some((item) => item.severity === "error")) {
+    return { ok: false, mode: "execute", engine: "duckdb", resultId: selected.resultId, datasets, views, resultBlocks, rowCount: 0, rows: [], diagnostics };
+  }
+
+  const script = buildDuckDbScript(datasets, views, selected.sql, namedTables, remoteRows);
   const provenance = resultProvenance(selected, datasets, views, script, opts.outputArtifact, opts.ranAt || new Date().toISOString());
   const child = spawnSync(duckdbPath, ["-json", ":memory:"], {
     encoding: "utf8",

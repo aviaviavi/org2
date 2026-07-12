@@ -736,6 +736,18 @@ public final class WorkspaceStore: ObservableObject {
       defaults.set(renderedDocumentMargin.rawValue, forKey: renderedDocumentMarginKey)
     }
   }
+  @Published public var sourceEditorPresentation: SourceEditorPresentation = .source {
+    didSet {
+      defaults.set(sourceEditorPresentation.rawValue, forKey: sourceEditorPresentationKey)
+      if sourceEditorPresentation == .source {
+        cancelSourceEditorPreviewRender(clearStatus: false)
+      }
+    }
+  }
+  @Published public var isSourceEditorPreviewPaused = false
+  @Published public private(set) var sourceEditorPreviewHTML: String?
+  @Published public private(set) var sourceEditorPreviewError: String?
+  @Published public private(set) var isRenderingSourceEditorPreview = false
   @Published public var selectedRenderedBlocks: [OrgEditableBlock] = [] {
     didSet {
       defer {
@@ -825,6 +837,7 @@ public final class WorkspaceStore: ObservableObject {
   private let openClawBriefsStartNewThreadKey = "Org2Workspace.openClawBriefsStartNewThread"
   private let renderedDocumentWidthKey = "Org2Workspace.renderedDocument.width"
   private let renderedDocumentMarginKey = "Org2Workspace.renderedDocument.margin"
+  private let sourceEditorPresentationKey = "Org2Workspace.sourceEditor.presentation"
   private let orgCryptEncryptOnSaveKey = "Org2Workspace.orgCrypt.encryptOnSave"
   private let orgCryptRecipientsKey = "Org2Workspace.orgCrypt.recipients"
   private let orgCryptRecipientFilesKey = "Org2Workspace.orgCrypt.recipientFiles"
@@ -949,6 +962,9 @@ public final class WorkspaceStore: ObservableObject {
   private var pendingAgendaTodoShortcutMutations: [AgendaTodoShortcutMutation] = []
   private var pendingAgendaRefreshAfterBlockEditing = false
   private var assignedWorkSearchRows: [AssignedWorkSearchRow] = []
+  private var sourceEditorPreviewTask: Task<Void, Never>?
+  private var sourceEditorPreviewGeneration = 0
+  private var sourceEditorLocalDraftText: String?
 
   public init(
     cli: Org2CLI? = nil,
@@ -991,6 +1007,8 @@ public final class WorkspaceStore: ObservableObject {
       .flatMap(RenderedDocumentWidth.init(rawValue:)) ?? .comfortable
     renderedDocumentMargin = defaults.string(forKey: renderedDocumentMarginKey)
       .flatMap(RenderedDocumentMargin.init(rawValue:)) ?? .standard
+    sourceEditorPresentation = defaults.string(forKey: sourceEditorPresentationKey)
+      .flatMap(SourceEditorPresentation.init(rawValue:)) ?? .source
     orgCryptEncryptOnSave = defaults.object(forKey: orgCryptEncryptOnSaveKey) as? Bool ?? true
     orgCryptRecipientsText = OrgCryptSettings.listText(defaults.stringArray(forKey: orgCryptRecipientsKey) ?? [])
     orgCryptRecipientFilesText = OrgCryptSettings.listText(defaults.stringArray(forKey: orgCryptRecipientFilesKey) ?? [])
@@ -1190,6 +1208,7 @@ public final class WorkspaceStore: ObservableObject {
     selectedOpenClawThreadID = nil
     refreshOrgCryptManagedRecipientFiles()
     selectedLocation = nil
+    cancelSourceEditorPreviewRender(clearStatus: true)
     workspaceNavigationBackStack = []
     selectedEntrySource = nil
     selectedEntryHTML = nil
@@ -1247,9 +1266,19 @@ public final class WorkspaceStore: ObservableObject {
     await refreshCorpusFiles()
     await refreshAssignedWork()
     await refreshApprovals()
+    await refreshSelectedDetailFromDisk()
     refreshWorkspaceHealth()
     refreshOrgCryptManagedRecipientFiles()
     Task { await refreshOpenClawThreads() }
+  }
+
+  private func refreshSelectedDetailFromDisk() async {
+    guard let selectedLocation else { return }
+    guard editingBlockID == nil, !isEditingEntry else { return }
+    guard !isLiveFileEditorSelected || !liveFileEditorHasUnsavedChanges else { return }
+
+    invalidateCanonicalDocumentCache(for: selectedLocation.file)
+    await loadEntrySource(for: selectedLocation)
   }
 
   public func refreshAudioSettingsStatus(preserveStatusText: Bool = false) {
@@ -2963,6 +2992,44 @@ public final class WorkspaceStore: ObservableObject {
     addOpenClawContext(pointer, threadMode: threadMode)
   }
 
+  public func askOpenClawAboutSourceHeading(at line: Int) {
+    guard let source = selectedEntrySource else {
+      statusText = "No source loaded"
+      return
+    }
+    if let block = Self.sourceAIContextBlock(at: line, in: selectedRenderedBlocks) {
+      askOpenClawAboutBlock(block)
+      return
+    }
+
+    Task { @MainActor [weak self] in
+      let blocks = await Task.detached(priority: .userInitiated) {
+        OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine)
+      }.value
+      guard let self, self.selectedEntrySource?.id == source.id else { return }
+      guard let block = Self.sourceAIContextBlock(at: line, in: blocks) else {
+        self.statusText = "Could not resolve that section"
+        return
+      }
+      self.askOpenClawAboutBlock(block)
+    }
+  }
+
+  nonisolated static func sourceAIContextBlock(
+    at line: Int,
+    in blocks: [OrgEditableBlock]
+  ) -> OrgEditableBlock? {
+    blocks.first { block in
+      guard block.startLine == line else { return false }
+      switch block.rendered {
+      case .heading, .paragraph:
+        return true
+      default:
+        return false
+      }
+    }
+  }
+
   public func briefCurrentNodeInOpenClaw() async {
     guard let location = selectedLocation else {
       statusText = "Select a node first"
@@ -3258,6 +3325,7 @@ public final class WorkspaceStore: ObservableObject {
 
     applyDetailSelectionMetadata(for: location)
     selectedLocation = location
+    cancelSourceEditorPreviewRender(clearStatus: true)
     isEditingEntry = false
     editableEntryText = ""
     sourceEditorSelection = NSRange(location: 0, length: 0)
@@ -3381,6 +3449,7 @@ public final class WorkspaceStore: ObservableObject {
     persistLiveFileEditorDraftBeforeNavigation()
     cancelLiveFileEditorAutosave(resetStatus: false)
     selectedLocation = nil
+    cancelSourceEditorPreviewRender(clearStatus: true)
     selectedEntrySource = nil
     selectedEntryHTML = nil
     selectedEntryRenderError = nil
@@ -3587,12 +3656,16 @@ public final class WorkspaceStore: ObservableObject {
       return
     }
     editableEntryText = source.text
+    sourceEditorLocalDraftText = source.text
     sourceEditorSelection = Self.clampedSourceEditorSelection(
       initialSelection ?? NSRange(location: 0, length: 0),
       in: source.text
     )
     resetBlockState()
     sourceEditorDiagnostics = []
+    sourceEditorPreviewHTML = selectedEntryHTML
+    sourceEditorPreviewError = nil
+    isSourceEditorPreviewPaused = false
     isEditingEntry = true
   }
 
@@ -3613,6 +3686,146 @@ public final class WorkspaceStore: ObservableObject {
       return try await cli.analyzeEditorText(text)
     } catch {
       return nil
+    }
+  }
+
+  public func scheduleSourceEditorPreview(immediate: Bool = false) {
+    guard isEditingEntry,
+          sourceEditorPresentation == .split,
+          !isSourceEditorPreviewPaused,
+          let source = selectedEntrySource
+    else {
+      cancelSourceEditorPreviewRender(clearStatus: false)
+      return
+    }
+
+    sourceEditorPreviewTask?.cancel()
+    sourceEditorPreviewGeneration += 1
+    let generation = sourceEditorPreviewGeneration
+    let text = editableEntryText
+    sourceEditorPreviewTask = Task { @MainActor [weak self] in
+      guard let self else { return }
+      if !immediate {
+        do {
+          try await Task.sleep(nanoseconds: 700_000_000)
+        } catch {
+          return
+        }
+      }
+      guard !Task.isCancelled,
+            self.isEditingEntry,
+            self.sourceEditorPresentation == .split,
+            !self.isSourceEditorPreviewPaused,
+            self.selectedEntrySource?.id == source.id,
+            self.editableEntryText == text
+      else { return }
+
+      self.isRenderingSourceEditorPreview = true
+      self.sourceEditorPreviewError = nil
+      do {
+        let html = try await self.cli.renderAppHTML(
+          text,
+          sourcePath: source.file,
+          sourceLineOffset: max(0, source.startLine - 1),
+          stylesheetPath: self.appHTMLStylesheetPath
+        )
+        guard !Task.isCancelled,
+              generation == self.sourceEditorPreviewGeneration,
+              self.isEditingEntry,
+              self.sourceEditorPresentation == .split,
+              !self.isSourceEditorPreviewPaused,
+              self.selectedEntrySource?.id == source.id,
+              self.editableEntryText == text
+        else { return }
+        self.sourceEditorPreviewHTML = html
+        self.sourceEditorPreviewError = nil
+      } catch {
+        guard generation == self.sourceEditorPreviewGeneration,
+              self.isEditingEntry,
+              self.sourceEditorPresentation == .split,
+              !self.isSourceEditorPreviewPaused,
+              self.selectedEntrySource?.id == source.id
+        else { return }
+        self.sourceEditorPreviewError = error.localizedDescription
+      }
+      if generation == self.sourceEditorPreviewGeneration {
+        self.isRenderingSourceEditorPreview = false
+      }
+    }
+  }
+
+  public func setSourceEditorPreviewPaused(_ paused: Bool) {
+    isSourceEditorPreviewPaused = paused
+    if paused {
+      cancelSourceEditorPreviewRender(clearStatus: false)
+    } else {
+      scheduleSourceEditorPreview(immediate: true)
+    }
+  }
+
+  public func showSourceEditorBacklinks(at line: Int) {
+    guard isEditingEntry, let source = selectedEntrySource else { return }
+    nodeContextTab = .references
+    isNodeContextPanePresented = true
+    let absoluteLine = source.startLine + max(1, line) - 1
+    statusText = "Loading references for line \(absoluteLine)"
+    Task { await loadSourceEditorBacklinks(source: source, line: absoluteLine) }
+  }
+
+  private func loadSourceEditorBacklinks(source: EntrySource, line: Int) async {
+    backlinksLoadGeneration += 1
+    let generation = backlinksLoadGeneration
+    guard let corpusRoot else {
+      backlinks = nil
+      return
+    }
+    isLoadingBacklinks = true
+    defer {
+      if generation == backlinksLoadGeneration {
+        isLoadingBacklinks = false
+      }
+    }
+
+    do {
+      let lookup: OrgIDLookupPayload = try await cli.runJSON([
+        "id", "get",
+        "--file", source.file,
+        "--line", "\(line)",
+        "--format", "json"
+      ])
+      let payload: BacklinksPayload = try await cli.runJSON([
+        "backlinks",
+        "--id", lookup.id,
+        "--dir", corpusRoot.path,
+        "--recursive",
+        "--format", "json"
+      ])
+      guard generation == backlinksLoadGeneration,
+            isEditingEntry,
+            selectedEntrySource?.id == source.id
+      else { return }
+      backlinks = payload
+      statusText = payload.backlinks.isEmpty
+        ? "No references for this heading"
+        : "Loaded \(payload.backlinks.count) reference\(payload.backlinks.count == 1 ? "" : "s")"
+    } catch {
+      guard generation == backlinksLoadGeneration,
+            isEditingEntry,
+            selectedEntrySource?.id == source.id
+      else { return }
+      backlinks = nil
+      statusText = "This heading has no ID-backed references"
+    }
+  }
+
+  private func cancelSourceEditorPreviewRender(clearStatus: Bool) {
+    sourceEditorPreviewTask?.cancel()
+    sourceEditorPreviewTask = nil
+    sourceEditorPreviewGeneration += 1
+    isRenderingSourceEditorPreview = false
+    if clearStatus {
+      sourceEditorPreviewHTML = nil
+      sourceEditorPreviewError = nil
     }
   }
 
@@ -3643,7 +3856,9 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func cancelEditingSelectedEntry() {
+    cancelSourceEditorPreviewRender(clearStatus: true)
     editableEntryText = selectedEntrySource?.text ?? ""
+    sourceEditorLocalDraftText = nil
     sourceEditorSelection = NSRange(location: 0, length: 0)
     sourceEditorDiagnostics = []
     sourceEditorCommandRequest = nil
@@ -3838,7 +4053,13 @@ public final class WorkspaceStore: ObservableObject {
 
   public var entryEditorHasUnsavedChanges: Bool {
     guard isEditingEntry, let source = selectedEntrySource else { return false }
-    return Self.normalizeLineEndings(editableEntryText) != Self.normalizeLineEndings(source.text)
+    return Self.normalizeLineEndings(sourceEditorLocalDraftText ?? editableEntryText)
+      != Self.normalizeLineEndings(source.text)
+  }
+
+  public func noteSourceEditorLocalTextChanged(_ text: String) {
+    guard isEditingEntry else { return }
+    sourceEditorLocalDraftText = text
   }
 
   public func cancelActiveEdit() {
@@ -3985,6 +4206,7 @@ public final class WorkspaceStore: ObservableObject {
     guard isEditingEntry, !text.isEmpty else { return }
     let range = Self.clampedSourceEditorSelection(sourceEditorSelection, in: editableEntryText)
     editableEntryText = (editableEntryText as NSString).replacingCharacters(in: range, with: text)
+    sourceEditorLocalDraftText = editableEntryText
     sourceEditorSelection = NSRange(location: range.location + text.utf16.count, length: 0)
   }
 
@@ -4077,6 +4299,19 @@ public final class WorkspaceStore: ObservableObject {
     await saveEditedBlock(block)
   }
 
+  public func saveAndFinishActiveEdit() async {
+    if isEditingEntry {
+      if entryEditorHasUnsavedChanges {
+        await saveEditedEntry()
+      }
+      guard isEditingEntry, !entryEditorHasUnsavedChanges else { return }
+      cancelEditingSelectedEntry()
+      return
+    }
+
+    await saveActiveEdit()
+  }
+
   private var selectedFileForOrgCryptSave: String? {
     selectedEntrySource?.file ?? selectedLocation?.file
   }
@@ -4125,7 +4360,7 @@ public final class WorkspaceStore: ObservableObject {
     isSavingEntry = true
     defer { isSavingEntry = false }
 
-    let replacement = editableEntryText
+    let replacement = sourceEditorLocalDraftText ?? editableEntryText
     let undoSnapshot = fileUndoSnapshot(for: source.file)
     do {
       try await Task.detached(priority: .userInitiated) {
@@ -4297,8 +4532,10 @@ public final class WorkspaceStore: ObservableObject {
     let savedSource = Self.entrySource(source, replacingText: savedText)
     selectedEntrySource = savedSource
     editableEntryText = savedSource.text
+    sourceEditorLocalDraftText = keepEditing ? savedSource.text : nil
     isEditingEntry = keepEditing
     if !keepEditing, let selectedLocation {
+      cancelSourceEditorPreviewRender(clearStatus: true)
       await loadEntrySource(for: selectedLocation)
     } else {
       renderEntrySource(savedSource, generation: entrySourceLoadGeneration)
@@ -7399,6 +7636,8 @@ public final class WorkspaceStore: ObservableObject {
         insertOpenClawReply(reply, after: userMessageID, in: threadID, changeSummary: changeSummary)
         if let changeSummary {
           await refreshAfterOpenClawChanges(changeSummary)
+        } else {
+          await refreshSelectedDetailFromDisk()
         }
         removeFirstPendingOpenClawUserMessage(in: threadID)
         if openClawPendingUserMessageIDs(for: threadID).isEmpty {
@@ -11812,7 +12051,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func renderEntrySource(_ source: EntrySource, generation: Int) {
-    let renderKey = Self.entryHTMLRenderKey(for: source)
+    let renderKey = entryHTMLRenderKey(for: source)
     if selectedEntryHTMLRenderKey != renderKey {
       prepareEntryHTML(for: source)
     }
@@ -11835,7 +12074,8 @@ public final class WorkspaceStore: ObservableObject {
           let html = try await cli.renderAppHTML(
             source.text,
             sourcePath: source.file,
-            sourceLineOffset: max(0, source.startLine - 1)
+            sourceLineOffset: max(0, source.startLine - 1),
+            stylesheetPath: appHTMLStylesheetPath
           )
           guard generation == self.entrySourceLoadGeneration,
                 renderGeneration == self.entryHTMLRenderGeneration,
@@ -11884,9 +12124,52 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  private var appHTMLStylesheetPath: String? {
+    guard let corpusRoot else { return nil }
+    let candidates = [
+      corpusRoot.appendingPathComponent(".org2/app.css"),
+      corpusRoot.appendingPathComponent("org2-app.css")
+    ]
+    return candidates.first { FileManager.default.fileExists(atPath: $0.path) }?.path
+  }
+
+  public var hasAppHTMLStylesheet: Bool {
+    appHTMLStylesheetPath != nil
+  }
+
+  public func openAppHTMLStylesheet() {
+    guard let corpusRoot else {
+      statusText = "Open a corpus before customizing document styles"
+      return
+    }
+    let stylesheetURL = corpusRoot.appendingPathComponent(".org2/app.css")
+    do {
+      try FileManager.default.createDirectory(
+        at: stylesheetURL.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+      )
+      if !FileManager.default.fileExists(atPath: stylesheetURL.path) {
+        let template = """
+        /* Org2 Workspace document overrides. This file only affects HTML read and preview views. */
+        :root {
+          /* --org2-content-width: 960px; */
+          /* --org2-page-padding: 28px; */
+          /* --org2-accent: #2f73b7; */
+        }
+        """
+        try template.write(to: stylesheetURL, atomically: true, encoding: .utf8)
+      }
+      NSWorkspace.shared.open(stylesheetURL)
+      statusText = "Opened .org2/app.css"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Could not open document stylesheet"
+    }
+  }
+
   public func retrySelectedEntryRendering() {
     guard let source = selectedEntrySource else { return }
-    let key = Self.entryHTMLRenderKey(for: source)
+    let key = entryHTMLRenderKey(for: source)
     renderedHTMLCache.removeValue(forKey: key)
     renderedHTMLCacheOrder.removeAll { $0 == key }
     selectedEntryHTML = nil
@@ -11896,7 +12179,7 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   private func prepareEntryHTML(for source: EntrySource) {
-    let renderKey = Self.entryHTMLRenderKey(for: source)
+    let renderKey = entryHTMLRenderKey(for: source)
     guard selectedEntryHTMLRenderKey != renderKey else { return }
     entryHTMLRenderGeneration += 1
     selectedEntryHTML = nil
@@ -11916,12 +12199,18 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
-  nonisolated private static func entryHTMLRenderKey(for source: EntrySource) -> String {
+  private func entryHTMLRenderKey(for source: EntrySource) -> String {
     let path = URL(fileURLWithPath: source.file).standardizedFileURL.path
     let digest = SHA256.hash(data: Data(source.text.utf8))
       .map { String(format: "%02x", $0) }
       .joined()
-    return "\(path)|\(source.startLine)|\(source.endLineExclusive)|\(digest)"
+    let stylesheetDigest = appHTMLStylesheetPath.map { stylesheetPath in
+      let attributes = try? FileManager.default.attributesOfItem(atPath: stylesheetPath)
+      let modified = (attributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+      let size = attributes?[.size] as? NSNumber
+      return "\(stylesheetPath):\(modified):\(size?.int64Value ?? 0)"
+    } ?? "default"
+    return "\(path)|\(source.startLine)|\(source.endLineExclusive)|\(digest)|\(stylesheetDigest)"
   }
 
   private func applyRenderedBlocks(_ blocks: [OrgEditableBlock], for source: EntrySource) {

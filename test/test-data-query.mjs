@@ -22,6 +22,7 @@ const data = path.join(tmp, "package-fetches.csv");
 const fakeDuckdb = path.join(tmp, "duckdb");
 const out = path.join(tmp, "fetches_by_state.org");
 const jsonOut = path.join(tmp, "fetches_by_state.json");
+const applyNote = path.join(tmp, "apply-report.org2");
 
 function regexEscape(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -49,6 +50,7 @@ x: state
 y: fetches
 \`\`\`
 `, "utf8");
+fs.copyFileSync(note, applyNote);
 
 fs.writeFileSync(tableNote, `* Package fetch report
 
@@ -412,6 +414,16 @@ const writtenJson = JSON.parse(fs.readFileSync(jsonOut, "utf8"));
 assert.equal(writtenJson.provenance.artifact, jsonOut);
 assert.equal(writtenJson.provenance.freshness, "24h");
 assert.match(writtenJson.orgTable, new RegExp(`artifact=${regexEscape(jsonOut)} freshness=24h`));
+
+cli(["query-data", "--file", applyNote, "--results", "fetches_by_state", "--duckdb", fakeDuckdb, "--apply"]);
+let appliedText = fs.readFileSync(applyNote, "utf8");
+assert.equal((appliedText.match(/^#\+query-data: result=fetches_by_state/gm) || []).length, 1);
+assert.ok(appliedText.indexOf("#+query-data: result=fetches_by_state") < appliedText.indexOf("```chart bar"));
+assert.match(appliedText, /#\+name: fetches_by_state\n#\+results: query-data-fetches_by_state\n\| state \| fetches \|/);
+cli(["query-data", "--file", applyNote, "--results", "fetches_by_state", "--duckdb", fakeDuckdb, "--apply"]);
+appliedText = fs.readFileSync(applyNote, "utf8");
+assert.equal((appliedText.match(/^#\+query-data: result=fetches_by_state/gm) || []).length, 1);
+assert.match(cli(["render-chart", "--file", applyNote]), /^<svg /);
 
 const tableJson = JSON.parse(cli(["query-data", "--file", tableNote, "--results", "fetches_total", "--duckdb", fakeDuckdb, "--format", "json", "--include-script"]));
 assert.equal(tableJson.ok, true);

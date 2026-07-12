@@ -192,6 +192,7 @@ private struct WorkspaceSurfaceView: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .foregroundStyle(WorkspaceDesign.primaryText)
   }
 }
 
@@ -4136,7 +4137,7 @@ private struct DetailHeader: View {
       if store.isPageSearchPresented {
         HStack(spacing: 8) {
           Image(systemName: "magnifyingglass")
-            .foregroundStyle(.secondary)
+            .foregroundStyle(WorkspaceDesign.secondaryText)
           TextField("Find in page", text: $store.pageSearchQuery)
             .textFieldStyle(.roundedBorder)
             .focused($isPageSearchFocused)
@@ -4145,7 +4146,9 @@ private struct DetailHeader: View {
             }
           Text(store.pageSearchOccurrenceSummary)
             .font(.caption.monospacedDigit())
-            .foregroundStyle(store.pageSearchOccurrenceCount == 0 ? .secondary : .primary)
+            .foregroundStyle(store.pageSearchOccurrenceCount == 0
+              ? WorkspaceDesign.secondaryText
+              : WorkspaceDesign.primaryText)
             .frame(minWidth: 72, alignment: .trailing)
           Button {
             store.selectPreviousPageSearchOccurrence()
@@ -4198,12 +4201,12 @@ private struct DetailHeader: View {
         if !location.subtitle.isEmpty {
           Text(location.subtitle)
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(WorkspaceDesign.secondaryText)
             .lineLimit(nil)
         }
         Text(store.relativePath(location.file) + ":\(location.lineForEditor)")
           .font(.caption2)
-          .foregroundStyle(.tertiary)
+          .foregroundStyle(WorkspaceDesign.tertiaryText)
           .textSelection(.enabled)
       }
     }
@@ -4310,6 +4313,25 @@ private struct DetailHeader: View {
       Picker("Side Margins", selection: $store.renderedDocumentMargin) {
         ForEach(RenderedDocumentMargin.allCases) { margin in
           Text(margin.title).tag(margin)
+        }
+      }
+
+      Divider()
+
+      Button {
+        store.openAppHTMLStylesheet()
+      } label: {
+        Label(
+          store.hasAppHTMLStylesheet ? "Edit Custom Stylesheet" : "Create Custom Stylesheet",
+          systemImage: "paintbrush"
+        )
+      }
+
+      if store.hasAppHTMLStylesheet {
+        Button {
+          store.retrySelectedEntryRendering()
+        } label: {
+          Label("Reload Custom Styles", systemImage: "arrow.clockwise")
         }
       }
     } label: {
@@ -4434,12 +4456,17 @@ private struct DetailHeader: View {
         Button {
           store.cancelActiveEdit()
         } label: {
-          Label(
-            store.entryEditorHasUnsavedChanges ? "Cancel" : "Done",
-            systemImage: store.entryEditorHasUnsavedChanges ? "xmark" : "checkmark"
-          )
+          Label("Cancel", systemImage: "xmark")
         }
-        .help(store.entryEditorHasUnsavedChanges ? "Discard changes" : "Close source editor")
+        .help(hasPendingEditorChanges ? "Discard changes" : "Close source editor")
+
+        Button {
+          Task { await store.saveAndFinishActiveEdit() }
+        } label: {
+          Label("Save & Done", systemImage: "checkmark.circle")
+        }
+        .disabled(isPersistingEditorChanges)
+        .help(hasPendingEditorChanges ? "Save changes and close the editor" : "Close the editor")
       } else {
         Button {
           store.beginEditingCurrentScope()
@@ -4627,6 +4654,7 @@ private struct LiveFileEditorBody: View {
             searchOccurrenceCount: store.pageSearchOccurrenceCount,
             scrollRequest: store.detailScrollRequest,
             layout: store.renderedDocumentLayout,
+            askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
             reportStatus: { store.statusText = $0 }
           )
         } else if let error = store.selectedEntryRenderError {
@@ -4721,22 +4749,63 @@ private struct OrgHTMLRenderFailureView: View {
 private struct OrgSourceEditorWithLinkTools: View {
   @EnvironmentObject private var store: WorkspaceStore
   @Environment(\.orgRoamLinkResolver) private var orgRoamLinkResolver
+  @State private var sourcePreviewLine: Int?
+  @State private var sourcePreviewScrollTask: Task<Void, Never>?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       sourceEditorCommandBar
 
+      if store.sourceEditorPresentation == .split {
+        HSplitView {
+          sourceColumn
+            .frame(minWidth: 360)
+          sourcePreview
+            .frame(minWidth: 320)
+        }
+      } else {
+        sourceColumn
+      }
+    }
+    .task {
+      scheduleSourcePreviewScroll()
+      if store.sourceEditorPresentation == .split {
+        store.scheduleSourceEditorPreview(immediate: true)
+      }
+    }
+    .onChange(of: store.editableEntryText) {
+      scheduleSourcePreviewScroll()
+      store.scheduleSourceEditorPreview()
+    }
+    .onChange(of: store.sourceEditorSelection) {
+      scheduleSourcePreviewScroll()
+    }
+    .onChange(of: store.sourceEditorPresentation) { _, presentation in
+      scheduleSourcePreviewScroll()
+      if presentation == .split {
+        store.scheduleSourceEditorPreview(immediate: true)
+      }
+    }
+    .onDisappear {
+      sourcePreviewScrollTask?.cancel()
+    }
+  }
+
+  private var sourceColumn: some View {
+    VStack(alignment: .leading, spacing: 8) {
       OrgSyntaxTextEditor(
         text: $store.editableEntryText,
         monospaced: true,
         showsScrollers: true,
         textInset: NSSize(width: 12, height: 12),
         focusOnAppear: true,
+        textPublishing: .deferred(milliseconds: 180),
         liveHighlighting: true,
         incrementalHighlighting: true,
         concealsSyntax: false,
         orgWritingCommands: true,
         textChecking: .spellingAndGrammar,
+        caretPublishingDelayMilliseconds: 180,
         commandRequest: store.sourceEditorCommandRequest,
         semanticAnalyzer: { text in
           await store.analyzeSourceEditorText(text)
@@ -4746,6 +4815,12 @@ private struct OrgSourceEditorWithLinkTools: View {
           store.statusText = status
         },
         selection: $store.sourceEditorSelection,
+        onGutterBacklinks: { line in
+          store.showSourceEditorBacklinks(at: line)
+        },
+        onLocalTextChange: { text in
+          store.noteSourceEditorLocalTextChanged(text)
+        },
         onSaveCommand: { context in
           store.editableEntryText = context.text
           Task { await store.saveEditedEntry() }
@@ -4754,10 +4829,10 @@ private struct OrgSourceEditorWithLinkTools: View {
       )
       .frame(minHeight: 320, maxHeight: .infinity)
       .layoutPriority(1)
-      .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+      .background(Color.secondary.opacity(0.045), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
       .overlay(
         RoundedRectangle(cornerRadius: 6, style: .continuous)
-          .stroke(Color.secondary.opacity(0.16))
+          .stroke(WorkspaceDesign.hairline)
       )
 
       if hasSelection {
@@ -4781,6 +4856,94 @@ private struct OrgSourceEditorWithLinkTools: View {
           }
         )
       }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  private var sourcePreview: some View {
+    VStack(spacing: 0) {
+      HStack(spacing: 6) {
+        Label("Preview", systemImage: "doc.richtext")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.secondary)
+
+        Spacer(minLength: 8)
+
+        if store.isRenderingSourceEditorPreview {
+          WorkspaceActivityIndicator(size: .small)
+            .help("Updating preview")
+        }
+
+        Button {
+          store.setSourceEditorPreviewPaused(!store.isSourceEditorPreviewPaused)
+        } label: {
+          Image(systemName: store.isSourceEditorPreviewPaused ? "play.fill" : "pause.fill")
+        }
+        .buttonStyle(.borderless)
+        .frame(width: 24, height: 22)
+        .help(store.isSourceEditorPreviewPaused ? "Resume live preview" : "Pause live preview")
+      }
+      .padding(.horizontal, 10)
+      .frame(height: 32)
+      .background(WorkspaceDesign.panelFill)
+
+      Divider()
+
+      if let html = store.sourceEditorPreviewHTML,
+         let source = store.selectedEntrySource {
+        OrgHTMLDocumentView(
+          html: html,
+          source: source,
+          corpusRoot: store.corpusRoot,
+          searchQuery: nil,
+          searchOccurrenceIndex: nil,
+          searchOccurrenceCount: 0,
+          scrollRequest: sourcePreviewScrollRequest,
+          layout: store.renderedDocumentLayout,
+          askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
+          reportStatus: { store.statusText = $0 }
+        )
+      } else if let error = store.sourceEditorPreviewError {
+        OrgHTMLRenderFailureView(message: error)
+      } else {
+        OrgHTMLLoadingView(label: "Preparing preview")
+      }
+    }
+    .background(Color(nsColor: .textBackgroundColor))
+    .overlay(alignment: .leading) {
+      Rectangle()
+        .fill(WorkspaceDesign.hairline)
+        .frame(width: 1)
+    }
+  }
+
+  private var sourcePreviewScrollRequest: DetailScrollRequest? {
+    sourcePreviewLine.map { DetailScrollRequest(id: $0, target: .sourceLine($0)) }
+  }
+
+  private func scheduleSourcePreviewScroll() {
+    sourcePreviewScrollTask?.cancel()
+    guard store.sourceEditorPresentation == .split,
+          let source = store.selectedEntrySource
+    else {
+      sourcePreviewLine = nil
+      return
+    }
+    let text = store.editableEntryText
+    let offset = min(max(0, store.sourceEditorSelection.location), text.utf16.count)
+    sourcePreviewScrollTask = Task { @MainActor in
+      do {
+        try await Task.sleep(nanoseconds: 90_000_000)
+      } catch {
+        return
+      }
+      let localLine = await Task.detached(priority: .userInitiated) {
+        1 + text.utf16.prefix(offset).reduce(into: 0) { count, unit in
+          if unit == 10 { count += 1 }
+        }
+      }.value
+      guard !Task.isCancelled else { return }
+      sourcePreviewLine = source.startLine + localLine - 1
     }
   }
 
@@ -4875,6 +5038,21 @@ private struct OrgSourceEditorWithLinkTools: View {
         .foregroundStyle(.orange)
         .help(diagnostic.message)
       }
+
+      Divider()
+        .frame(height: 18)
+
+      Picker("Editor presentation", selection: $store.sourceEditorPresentation) {
+        ForEach(SourceEditorPresentation.allCases) { presentation in
+          Image(systemName: presentation.systemImage)
+            .tag(presentation)
+            .help(presentation.title)
+        }
+      }
+      .pickerStyle(.segmented)
+      .labelsHidden()
+      .frame(width: 68)
+      .help("Source only or live source and HTML preview")
     }
     .controlSize(.small)
     .padding(.horizontal, 2)
@@ -4972,6 +5150,7 @@ private struct EntryBodyView: View {
             searchOccurrenceCount: store.pageSearchOccurrenceCount,
             scrollRequest: store.detailScrollRequest,
             layout: store.renderedDocumentLayout,
+            askAIAboutHeading: { store.askOpenClawAboutSourceHeading(at: $0) },
             reportStatus: { store.statusText = $0 }
           )
         } else if let error = store.selectedEntryRenderError {
@@ -5106,10 +5285,10 @@ private struct DetailMetadataGrid: View {
           GridRow {
             Text(row.0)
               .font(.caption2.weight(.medium))
-              .foregroundStyle(.tertiary)
+              .foregroundStyle(WorkspaceDesign.tertiaryText)
             Text(row.1)
               .font(.caption)
-              .foregroundStyle(.secondary)
+              .foregroundStyle(WorkspaceDesign.secondaryText)
               .textSelection(.enabled)
           }
         }

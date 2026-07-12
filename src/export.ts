@@ -69,6 +69,9 @@ th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text
 thead th { background: rgba(127,127,127,0.16); }
 a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }`;
 
+const DOCUMENT_CHART_STYLE = `.org2-chart { margin: 1rem 0 1.35rem; overflow-x: auto; }
+.org2-chart svg { display: block; width: 100%; min-width: 460px; height: auto; margin: 0 auto; }`;
+
 const DOCUMENT_TOC_STYLE = `.org2-toc { border: 1px solid rgba(127,127,127,0.35); border-radius: 0.5rem; padding: 0.75rem 1rem; margin: 0.25rem 0 1rem; }
 .org2-toc h2 { margin: 0 0 0.5rem; font-size: 1rem; }
 .org2-toc ul { margin: 0; padding-left: 1.25rem; display: grid; gap: 0.25rem; }
@@ -159,6 +162,37 @@ details[open] > summary::before { content: "▼"; }
 .org2-headline-summary > h4,
 .org2-headline-summary > h5,
 .org2-headline-summary > h6 { display: inline; margin: 0; }
+.org2-heading-ai-action {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.45rem;
+  padding: 0.12rem 0.34rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--org2-muted);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: 0;
+  vertical-align: middle;
+  transform: translateY(-2px);
+  opacity: 0.46;
+  cursor: pointer;
+  transition: opacity 110ms ease-out, color 110ms ease-out, background-color 110ms ease-out;
+}
+.org2-headline-summary:hover > .org2-heading-ai-action,
+.org2-section-label:hover > .org2-heading-ai-action,
+.org2-heading-ai-action:focus-visible {
+  opacity: 1;
+}
+.org2-heading-ai-action:hover,
+.org2-heading-ai-action:focus-visible {
+  color: var(--org2-accent);
+  background: color-mix(in srgb, var(--org2-accent) 9%, transparent);
+  outline: none;
+}
 .org2-headline.level-1 > .org2-headline-summary { margin-top: 0.08rem; }
 .org2-headline-body { min-width: 0; }
 .org2-headline-body > .org2-headline.level-2 { margin-left: 0.35rem; padding-left: 0.5rem; border-left: 1px solid var(--org2-rule); }
@@ -257,6 +291,8 @@ th { color: var(--org2-muted); background: var(--org2-faint); font-size: 0.82rem
 .org2-table-scroll th, .org2-table-scroll td { overflow-wrap: normal; word-break: normal; hyphens: none; }
 .org2-resizable-table th, .org2-resizable-table td { min-width: 72px; }
 .org2-table-resize-anchor { position: relative; }
+.org2-chart { box-sizing: border-box; width: 100%; margin: 1rem 0 1.35rem; padding: 0.75rem; border: 1px solid color-mix(in srgb, var(--org2-text) 12%, transparent); border-radius: 8px; background: #fff; overflow-x: auto; }
+.org2-chart svg { display: block; width: 100%; min-width: 460px; height: auto; margin: 0 auto; }
 .org2-column-resizer {
   position: absolute;
   top: 0;
@@ -289,6 +325,41 @@ body.org2-resizing-column { cursor: col-resize; user-select: none; }
 
 const APP_DOCUMENT_SCRIPT = `(() => {
   const minimumColumnWidth = 72;
+
+  function appendAIAction(container, line) {
+    if (!container || !line || container.querySelector(":scope > .org2-heading-ai-action")) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "org2-heading-ai-action";
+    button.textContent = "✦ Ask AI";
+    button.title = "Ask AI about this section";
+    button.setAttribute("aria-label", "Ask AI about this section");
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      window.location.href = "org2-workspace://ask-ai?line=" + encodeURIComponent(line);
+    });
+    container.appendChild(button);
+  }
+
+  function installHeadingActions() {
+    document.querySelectorAll("details.org2-headline[data-org2-start-line]").forEach((headline) => {
+      const summary = headline.querySelector(":scope > .org2-headline-summary");
+      const line = headline.dataset.org2StartLine;
+      appendAIAction(summary, line);
+    });
+
+    document.querySelectorAll("p[data-org2-start-line]").forEach((paragraph) => {
+      const meaningfulChildren = Array.from(paragraph.childNodes).filter((node) =>
+        node.nodeType !== Node.TEXT_NODE || Boolean(node.textContent && node.textContent.trim())
+      );
+      if (meaningfulChildren.length !== 1) return;
+      const label = meaningfulChildren[0];
+      if (!(label instanceof HTMLElement) || label.tagName !== "STRONG") return;
+      paragraph.classList.add("org2-section-label");
+      appendAIAction(paragraph, paragraph.dataset.org2StartLine);
+    });
+  }
 
   function installTableResizers() {
     document.querySelectorAll(".org2-table-scroll table").forEach((table) => {
@@ -359,8 +430,12 @@ const APP_DOCUMENT_SCRIPT = `(() => {
   }
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", installTableResizers, { once: true });
+    document.addEventListener("DOMContentLoaded", () => {
+      installHeadingActions();
+      installTableResizers();
+    }, { once: true });
   } else {
+    installHeadingActions();
     installTableResizers();
   }
 })();`;
@@ -415,6 +490,16 @@ type RenderContext = {
   rewriteFileLinks?: boolean;
   linkAbbreviations?: LinkAbbreviationMap;
   profile?: "publish" | "app";
+  chartsByTableLine?: Map<number, OrgEmbeddedChart>;
+  chartsByBlockLine?: Map<number, OrgEmbeddedChart>;
+};
+
+export type OrgEmbeddedChart = {
+  svg: string;
+  source: {
+    line: number;
+    chartLine?: number;
+  };
 };
 
 export type OrgExportMetadata = {
@@ -1020,11 +1105,20 @@ function renderSrcBlock(node: SrcBlockNode, context: RenderContext): string {
     .trim()
     .split(/\s+/)[0];
   const language = languageRaw.toLowerCase().replace(/[^a-z0-9_+-]/g, "");
+  const sourceRange = (node as SourceRangedNode).sourceRange;
+  const embeddedChart = sourceRange && (language === "chart" || language === "plot")
+    ? context.chartsByBlockLine?.get(sourceRange.startLine)
+    : undefined;
+  if (embeddedChart) return renderEmbeddedChart(embeddedChart, renderSourceAttributes(node, context));
   const languageClass = language ? ` language-${language}` : "";
   const codeClassAttr = language ? ` class="language-${escapeAttr(language)}"` : "";
   const body = escapeHtml(node.bodyRaw.replace(/\n$/, ""));
   const baseStyle = "padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;";
   return `<pre class="org2-src${languageClass}"${renderSourceAttributes(node, context)} style="${escapeAttr(baseStyle)}"><code${codeClassAttr}>${body}</code></pre>`;
+}
+
+function renderEmbeddedChart(chart: OrgEmbeddedChart, sourceAttributes = ""): string {
+  return `<figure class="org2-chart"${sourceAttributes}>\n${chart.svg.trim()}\n</figure>`;
 }
 
 function renderBlock(node: BlockNode, context: RenderContext): string {
@@ -1077,8 +1171,12 @@ function renderTable(node: TableNode, context: RenderContext): string {
     headerRows.length > 0 ? `<thead>\n${headerRows.map((row) => renderTableRow(row, true, context)).join("\n")}\n</thead>` : "";
   const renderedBody = `<tbody>\n${resolvedBodyRows.map((row) => renderTableRow(row, false, context)).join("\n")}\n</tbody>`;
 
-  const table = `<table${renderSourceAttributes(node, context)}>\n${[renderedHead, renderedBody].filter(Boolean).join("\n")}\n</table>`;
-  return context.profile === "app" ? `<div class="org2-table-scroll">\n${table}\n</div>` : table;
+  const sourceAttributes = renderSourceAttributes(node, context);
+  const table = `<table${sourceAttributes}>\n${[renderedHead, renderedBody].filter(Boolean).join("\n")}\n</table>`;
+  const tableHtml = context.profile === "app" ? `<div class="org2-table-scroll">\n${table}\n</div>` : table;
+  const sourceRange = (node as SourceRangedNode).sourceRange;
+  const chart = sourceRange ? context.chartsByTableLine?.get(sourceRange.startLine) : undefined;
+  return chart ? `${tableHtml}\n${renderEmbeddedChart(chart)}` : tableHtml;
 }
 
 function renderListItem(node: ListItemNode, context: RenderContext): string {
@@ -1277,6 +1375,7 @@ function buildDocumentRenderContext(
     linkAbbreviations?: LinkAbbreviationRecord;
     linearTeam?: string;
     profile?: "publish" | "app";
+    charts?: OrgEmbeddedChart[];
   },
 ): { context: RenderContext; tocItems: TocItem[] } {
   let tocItems: TocItem[] = [];
@@ -1292,6 +1391,15 @@ function buildDocumentRenderContext(
     // Precedence: built-ins < config < document-local #+LINK
     linkAbbreviations: mergeLinkAbbreviations([builtIns, configAbbreviations, documentAbbreviations]),
   };
+
+  if (opts.charts?.length) {
+    context.chartsByTableLine = new Map();
+    context.chartsByBlockLine = new Map();
+    for (const chart of opts.charts) {
+      if (chart.source.chartLine) context.chartsByBlockLine.set(chart.source.chartLine, chart);
+      else context.chartsByTableLine.set(chart.source.line, chart);
+    }
+  }
 
   if (includeHeadlineData) {
     const anchors = buildHeadlineAnchors(doc, {
@@ -1400,6 +1508,7 @@ export function renderOrgDocumentToHtml(
     linkAbbreviations?: LinkAbbreviationRecord;
     linearTeam?: string;
     profile?: "publish" | "app";
+    charts?: OrgEmbeddedChart[];
   } = {},
 ): { html: string; title: string; metadata: OrgExportMetadata } {
   const title = resolveTitle(doc, opts.title, opts.sourcePath);
@@ -1414,6 +1523,7 @@ export function renderOrgDocumentToHtml(
     linkAbbreviations: opts.linkAbbreviations,
     linearTeam: opts.linearTeam,
     profile: opts.profile,
+    charts: opts.charts,
   });
 
   const mainBody = renderMainBody({
@@ -1430,7 +1540,10 @@ export function renderOrgDocumentToHtml(
     title,
     language: metadata.language || "en",
     metadata,
-    headIncludes: opts.headIncludes,
+    headIncludes: [
+      ...(opts.headIncludes || []),
+      opts.charts?.length && opts.profile !== "app" ? `<style id="org2-chart-style">\n${DOCUMENT_CHART_STYLE}\n</style>` : "",
+    ].filter(Boolean),
     stylesheets: opts.stylesheets,
     includeDefaultStyle: opts.includeDefaultStyle,
     includeToc: renderOptions.includeToc,
@@ -1451,8 +1564,14 @@ export function renderOrgDocumentToAppHtml(
     sourcePath?: string;
     linkAbbreviations?: LinkAbbreviationRecord;
     linearTeam?: string;
+    customCss?: string;
+    charts?: OrgEmbeddedChart[];
   } = {},
 ): { html: string; title: string; metadata: OrgExportMetadata } {
+  const customCss = String(opts.customCss || "").trim();
+  const customStyle = customCss
+    ? `<style id="org2-app-user-style">\n${customCss.replace(/<\/style/gi, "<\\/style")}\n</style>`
+    : "";
   return renderOrgDocumentToHtml(doc, {
     title: opts.title,
     sourcePath: opts.sourcePath,
@@ -1464,10 +1583,12 @@ export function renderOrgDocumentToAppHtml(
     headIncludes: [
       `<style id="org2-app-document-style">\n${APP_DOCUMENT_STYLE}\n</style>`,
       `<script id="org2-app-document-script">\n${APP_DOCUMENT_SCRIPT}\n</script>`,
-    ],
+      customStyle,
+    ].filter(Boolean),
     linkAbbreviations: opts.linkAbbreviations,
     linearTeam: opts.linearTeam,
     profile: "app",
+    charts: opts.charts,
   });
 }
 

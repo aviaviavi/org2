@@ -58,12 +58,13 @@ Status: complete. The native source editor is now the first-class writing surfac
 - Focused regressions cover source-editor entry from agenda and rendered selections, full-page files, semantic analysis, structured source commands, large-buffer highlighting, save continuity, reload deferral, and stale-write conflicts.
 - Read mode is compiler-generated HTML in a ~WKWebView~. Entry/page scope, source links, folding, property drawers, block quotes, and published-style typography are handled in the read pipeline while authoring remains native source text.
 
-* Longer-Term Options
+* Longer-Term Editor Layer
 
-After the source editor is solid, richer rendering can return as previews, overlays, and sidecars rather than as the authoritative text input path:
+Status: complete. Richer rendering now returns as previews, overlays, and sidecars rather than as the authoritative text input path:
 
-- Gutter controls for TODOs, priorities, scheduling, backlinks, and block actions.
-- Inline previews for links, images, source blocks, citations, and generated artifacts.
-- Optional split source/HTML preview while editing, still separate from the active text buffer.
-- Compiler-generated HTML views for published-style pages, generated artifacts, graph/backlink views, and tables where WebView rendering is a better fit than SwiftUI.
-- Selective hybrid widgets only where they do not fight native text editing behavior.
+- The native source gutter shows heading folds, TODO state, priority, scheduling/deadline state, and diagnostics. Direct clicks fold or cycle state; the heading menu exposes planning, priority, property, reference, and structural actions against the live text buffer.
+- The optional split source/HTML view renders the in-memory buffer after a short idle debounce. Work is cancellable, stale results are rejected, rendering can be paused, and the preview follows the source line near the caret.
+- Links, images, source blocks, citations, generated artifacts, and tables preview through compiler HTML rather than fragile text attachments. The authoritative editor remains the native ~NSTextView~.
+- Published-style pages, ordinary entries, generated Org2 artifacts, and document-shaped tables use the shared compiler's HTML renderer. Workflow lists and controls such as agenda, approvals, backlink navigation, and graph-like workspace context remain native where immediate selection and mutation matter more than document layout.
+- Users can safely customize app HTML with a corpus-level =.org2/app.css= stylesheet. Document-provided scripts and raw HTML head content remain excluded from the app profile.
+- Hybrid controls are deliberately limited to the semantic gutter, source toolbar, and HTML sidecar. They derive from source/compiler state and never own canonical content.

@@ -53,6 +53,27 @@ public enum RenderedDocumentMargin: String, CaseIterable, Identifiable, Sendable
   }
 }
 
+public enum SourceEditorPresentation: String, CaseIterable, Identifiable, Sendable {
+  case source
+  case split
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .source: "Source"
+    case .split: "Split"
+    }
+  }
+
+  public var systemImage: String {
+    switch self {
+    case .source: "doc.plaintext"
+    case .split: "rectangle.split.2x1"
+    }
+  }
+}
+
 struct OrgHTMLDocumentLayout: Equatable {
   let width: RenderedDocumentWidth
   let margin: RenderedDocumentMargin
@@ -70,6 +91,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
   let searchOccurrenceCount: Int
   let scrollRequest: DetailScrollRequest?
   let layout: OrgHTMLDocumentLayout
+  let askAIAboutHeading: @MainActor (Int) -> Void
   let reportStatus: @MainActor (String) -> Void
 
   func makeCoordinator() -> Coordinator {
@@ -95,6 +117,7 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     coordinator.linkResolver = linkResolver
     coordinator.source = source
     coordinator.corpusRoot = corpusRoot
+    coordinator.askAIAboutHeading = askAIAboutHeading
     coordinator.reportStatus = reportStatus
     let layoutChanged = coordinator.layout != layout
     coordinator.layout = layout
@@ -144,16 +167,19 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     var searchQuery: String?
     var searchOccurrenceIndex: Int?
     var scrollRequestID: Int?
+    var scrollRequest: DetailScrollRequest?
     var layout = OrgHTMLDocumentLayout(width: .comfortable, margin: .standard)
     var openOrgFileReference: @MainActor (OpenClawFileReference) -> Void = { _ in }
     var linkResolver = OrgRoamLinkResolver.empty
     var source: EntrySource?
     var corpusRoot: URL?
+    var askAIAboutHeading: @MainActor (Int) -> Void = { _ in }
     var reportStatus: @MainActor (String) -> Void = { _ in }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
       applyLayout(to: webView)
       applySearch(to: webView, backwards: false)
+      applyScrollRequest(scrollRequest, to: webView)
     }
 
     func applyLayout(to webView: WKWebView) {
@@ -169,9 +195,41 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       decidePolicyFor navigationAction: WKNavigationAction,
       decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
     ) {
-      guard navigationAction.navigationType == .linkActivated,
-            let url = navigationAction.request.url
-      else {
+      guard let url = navigationAction.request.url else {
+        decisionHandler(.allow)
+        return
+      }
+
+      if url.scheme?.lowercased() == OpenClawFileReference.deepLinkScheme,
+         url.host == "ask-ai",
+         let rawLine = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+           .queryItems?
+           .first(where: { $0.name == "line" })?
+           .value,
+         let line = Int(rawLine),
+         line > 0 {
+        askAIAboutHeading(line)
+        decisionHandler(.cancel)
+        return
+      }
+
+      if url.scheme?.lowercased() == OpenClawFileReference.deepLinkScheme,
+         url.host == "open-link",
+         let target = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+           .queryItems?
+           .first(where: { $0.name == "target" })?
+           .value {
+        open(target: target)
+        decisionHandler(.cancel)
+        return
+      }
+
+      if url.scheme?.lowercased() == OpenClawFileReference.deepLinkScheme {
+        decisionHandler(.cancel)
+        return
+      }
+
+      guard navigationAction.navigationType == .linkActivated else {
         decisionHandler(.allow)
         return
       }
@@ -180,17 +238,6 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
           || url.scheme?.lowercased() == "https"
           || url.scheme?.lowercased() == "mailto" {
         NSWorkspace.shared.open(url)
-        decisionHandler(.cancel)
-        return
-      }
-
-      if url.scheme == OpenClawFileReference.deepLinkScheme,
-         url.host == "open-link",
-         let target = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-           .queryItems?
-           .first(where: { $0.name == "target" })?
-           .value {
-        open(target: target)
         decisionHandler(.cancel)
         return
       }
@@ -213,7 +260,30 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
     }
 
     func applyScrollRequest(_ request: DetailScrollRequest?, to webView: WKWebView) {
-      guard let request, case .page(let direction) = request.target else { return }
+      scrollRequest = request
+      guard let request else { return }
+      if case .sourceLine(let line) = request.target {
+        let script = """
+        (() => {
+          const line = \(line);
+          const elements = Array.from(document.querySelectorAll('[data-org2-start-line]'));
+          const candidates = elements.filter((element) => {
+            const start = Number(element.dataset.org2StartLine || 0);
+            const end = Number(element.dataset.org2EndLine || start);
+            return start <= line && end >= line;
+          });
+          const target = candidates.sort((lhs, rhs) => {
+            const lhsSpan = Number(lhs.dataset.org2EndLine || 0) - Number(lhs.dataset.org2StartLine || 0);
+            const rhsSpan = Number(rhs.dataset.org2EndLine || 0) - Number(rhs.dataset.org2StartLine || 0);
+            return lhsSpan - rhsSpan;
+          })[0];
+          target?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+        })();
+        """
+        webView.evaluateJavaScript(script)
+        return
+      }
+      guard case .page(let direction) = request.target else { return }
       guard let scrollView = webView.subviews.compactMap({ $0 as? NSScrollView }).first else { return }
       guard let documentView = scrollView.documentView else { return }
       let clipView = scrollView.contentView

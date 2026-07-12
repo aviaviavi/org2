@@ -331,6 +331,10 @@ final class Org2ModelsTests: XCTestCase {
 
   func testOrg2CLIRendersSafeAppHTMLFromText() async throws {
     let cli = try Org2CLI(repoRoot: Org2CLI.defaultRepoRoot())
+    let stylesheet = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-app-style-\(UUID().uuidString).css")
+    try ":root { --org2-accent: hotpink; }".write(to: stylesheet, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: stylesheet) }
     let html = try await cli.renderAppHTML(
       """
       #+HTML_HEAD: <script>globalThis.unsafeHead = true</script>
@@ -338,12 +342,15 @@ final class Org2ModelsTests: XCTestCase {
       A [[id:preview-target][linked note]].
       """,
       sourcePath: "/tmp/app-preview.org2",
-      sourceLineOffset: 30
+      sourceLineOffset: 30,
+      stylesheetPath: stylesheet.path
     )
 
     XCTAssertTrue(html.contains("org2-app-document-style"))
     XCTAssertTrue(html.contains("data-org2-start-line=\"32\""))
     XCTAssertTrue(html.contains("org2-workspace://open-link?target=id%3Apreview-target"))
+    XCTAssertTrue(html.contains("org2-app-user-style"))
+    XCTAssertTrue(html.contains("--org2-accent: hotpink"))
     XCTAssertFalse(html.contains("globalThis.unsafeHead"))
   }
 
@@ -616,6 +623,23 @@ final class Org2ModelsTests: XCTestCase {
 
     let configSettings = OpenClawGatewaySettings.resolve(environment: [:], configURL: config)
     XCTAssertEqual(configSettings.bearerToken, "config-secret")
+  }
+
+  func testOpenClawChatErrorDistinguishesGatewayAndProviderAuthentication() {
+    let gatewayError = OpenClawChatError.httpStatus(401, message: "Unauthorized")
+    XCTAssertEqual(
+      gatewayError.localizedDescription,
+      "OpenClaw gateway rejected the saved gateway token. Open Configure, update the gateway token, save, then retry."
+    )
+
+    let providerError = OpenClawChatError.httpStatus(
+      401,
+      message: "403 <html><div id=\"challenge-error-text\">Enable JavaScript and cookies to continue</div></html>"
+    )
+    XCTAssertEqual(
+      providerError.localizedDescription,
+      "OpenClaw reached the gateway, but the selected agent's model provider rejected authentication. On the gateway host, re-authenticate the provider or switch the agent to a working model. Retrying alone won't help."
+    )
   }
 
   func testOpenClawChatCompletionPayloadDecodesAssistantText() throws {
@@ -2973,6 +2997,80 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(store.openClawStatusText, "Added project.org2:13-14 to OpenClaw")
   }
 
+  @MainActor
+  func testAskOpenClawAboutRenderedHTMLHeadingUsesExactSourceBlock() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-html-heading-ai-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let file = root.appendingPathComponent("project.org2")
+    let source = EntrySource(
+      file: file.path,
+      startLine: 20,
+      endLineExclusive: 25,
+      text: """
+      * Parent
+      Parent body
+      ** Target heading
+      Target body
+      """,
+      isSubtree: true
+    )
+    let suiteName = "org2-html-heading-ai-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      legacyDefaultsDomains: []
+    )
+    store.corpusRoot = root
+    store.openClawRemoteCorpusPath = "/remote/org2"
+    store.selectedEntrySource = source
+    store.selectedRenderedBlocks = OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine)
+
+    store.askOpenClawAboutSourceHeading(at: 22)
+
+    let heading = try XCTUnwrap(store.selectedRenderedBlocks.first { $0.startLine == 22 })
+    XCTAssertEqual(store.selectedBlockID, heading.id)
+    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertEqual(store.openClawDraft, "Use selected block at /remote/org2/project.org2:22 as context.\n\n")
+    XCTAssertEqual(store.openClawStatusText, "Added project.org2:22 to OpenClaw")
+  }
+
+  @MainActor
+  func testAskOpenClawAboutRenderedBoldSectionUsesExactSourceBlock() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-html-section-ai-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let file = root.appendingPathComponent("board.org2")
+    let source = EntrySource(
+      file: file.path,
+      startLine: 40,
+      endLineExclusive: 43,
+      text: "*Revenue*\n\nRevenue body",
+      isSubtree: false
+    )
+    let suiteName = "org2-html-section-ai-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = WorkspaceStore(
+      defaults: defaults,
+      openClawTranscriptURL: root.appendingPathComponent("openclaw-chat.json"),
+      legacyDefaultsDomains: []
+    )
+    store.corpusRoot = root
+    store.openClawRemoteCorpusPath = "/remote/org2"
+    store.selectedEntrySource = source
+    store.selectedRenderedBlocks = OrgEntryRenderer.parseEditable(source.text, baseLine: source.startLine)
+
+    store.askOpenClawAboutSourceHeading(at: 40)
+
+    let section = try XCTUnwrap(store.selectedRenderedBlocks.first { $0.startLine == 40 })
+    XCTAssertEqual(store.selectedBlockID, section.id)
+    XCTAssertEqual(store.selectedSurface, .openClaw)
+    XCTAssertEqual(store.openClawDraft, "Use selected block at /remote/org2/board.org2:40 as context.\n\n")
+  }
+
   func testOpenClawFileReferenceExtractsOrgPaths() {
     let refs = OpenClawFileReference.extract(from: """
     Check /srv/org2/notes/alice.org2:42 and notes/daily/2026-06-12.org.
@@ -3867,6 +3965,38 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testSyntaxEditorDefersCaretOnlySelectionPublishing() async throws {
+    var selection = NSRange(location: 0, length: 0)
+    let editor = OrgSyntaxTextEditor(
+      text: .constant("[[id:abc][Alice]] text"),
+      caretPublishingDelayMilliseconds: 20,
+      selection: Binding(
+        get: { selection },
+        set: { selection = $0 }
+      )
+    )
+    let coordinator = OrgSyntaxTextEditor.Coordinator(parent: editor)
+    let textView = NSTextView()
+    textView.string = "[[id:abc][Alice]] text"
+    textView.setSelectedRange(NSRange(location: 4, length: 0))
+
+    coordinator.textViewDidChangeSelection(
+      Notification(name: NSTextView.didChangeSelectionNotification, object: textView)
+    )
+
+    XCTAssertEqual(selection, NSRange(location: 0, length: 0))
+    try await waitForCondition {
+      selection == NSRange(location: 4, length: 0)
+    }
+
+    textView.setSelectedRange(NSRange(location: 4, length: 3))
+    coordinator.textViewDidChangeSelection(
+      Notification(name: NSTextView.didChangeSelectionNotification, object: textView)
+    )
+    XCTAssertEqual(selection, NSRange(location: 4, length: 3))
+  }
+
+  @MainActor
   func testSyntaxEditorAdaptivePublishingCanBypassDeferredText() {
     var boundText = "old"
     let editor = OrgSyntaxTextEditor(
@@ -4194,6 +4324,109 @@ final class Org2ModelsTests: XCTestCase {
       (plannedText as NSString).replacingCharacters(in: cleared.range, with: cleared.replacement),
       "* TODO Parent\nBody"
     )
+  }
+
+  func testSourceEditorGutterModelSurfacesHeadingWorkflowMetadata() throws {
+    let text = """
+    * TODO [#A] Parent
+    SCHEDULED: <2026-07-11 Sat>
+    Body
+    ** WAIT Child
+    DEADLINE: <2026-07-12 Sun>
+    Child body
+    """
+    let fallback = OrgSourceTextEditing.fallbackSemanticSnapshot(in: text)
+    let snapshot = OrgSourceEditorSemanticSnapshot(
+      regions: fallback.regions,
+      diagnostics: [Org2EditorDiagnostic(message: "Problem", line: 6, column: 1)]
+    )
+
+    let items = OrgSourceEditorGutterModel.items(
+      text: text,
+      snapshot: snapshot,
+      foldedHeadlineStartLines: [1]
+    )
+
+    XCTAssertEqual(items.count, 2)
+    XCTAssertEqual(items[0].title, "Parent")
+    XCTAssertEqual(items[0].todo, "TODO")
+    XCTAssertEqual(items[0].priority, "A")
+    XCTAssertTrue(items[0].hasScheduled)
+    XCTAssertFalse(items[0].hasDeadline)
+    XCTAssertTrue(items[0].isFolded)
+    XCTAssertEqual(items[1].todo, "WAIT")
+    XCTAssertTrue(items[1].hasDeadline)
+    XCTAssertTrue(items[1].hasDiagnostic)
+    XCTAssertFalse(items[0].hasDiagnostic)
+  }
+
+  func testSourceEditorPriorityCommandStaysInNativeBuffer() throws {
+    let text = "* TODO Parent\nBody"
+    let snapshot = OrgSourceTextEditing.fallbackSemanticSnapshot(in: text)
+    let insertion = try XCTUnwrap(OrgSourceTextEditing.priorityReplacement(
+      in: text,
+      selectedRange: NSRange(location: (text as NSString).length, length: 0),
+      priority: "A",
+      snapshot: snapshot
+    ))
+    let prioritized = (text as NSString).replacingCharacters(in: insertion.range, with: insertion.replacement)
+    XCTAssertEqual(prioritized, "* TODO [#A] Parent\nBody")
+
+    let removal = try XCTUnwrap(OrgSourceTextEditing.priorityReplacement(
+      in: prioritized,
+      selectedRange: NSRange(location: 0, length: 0),
+      priority: nil,
+      snapshot: OrgSourceTextEditing.fallbackSemanticSnapshot(in: prioritized)
+    ))
+    XCTAssertEqual(
+      (prioritized as NSString).replacingCharacters(in: removal.range, with: removal.replacement),
+      text
+    )
+
+    let literalPriorityText = "* TODO Discuss [#A] notation"
+    XCTAssertNil(OrgSourceTextEditing.priorityReplacement(
+      in: literalPriorityText,
+      selectedRange: NSRange(location: 0, length: 0),
+      priority: nil,
+      snapshot: OrgSourceTextEditing.fallbackSemanticSnapshot(in: literalPriorityText)
+    ))
+  }
+
+  @MainActor
+  func testSourceEditorPresentationPreferencePersists() {
+    let suiteName = "org2-source-editor-presentation-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let first = WorkspaceStore(defaults: defaults, legacyDefaultsDomains: [])
+    first.sourceEditorPresentation = .split
+    let restored = WorkspaceStore(defaults: defaults, legacyDefaultsDomains: [])
+    XCTAssertEqual(restored.sourceEditorPresentation, .split)
+  }
+
+  @MainActor
+  func testSourceEditorLivePreviewRendersLatestInMemoryBuffer() async throws {
+    let store = WorkspaceStore(legacyDefaultsDomains: [])
+    let source = EntrySource(
+      file: "/tmp/source-preview.org2",
+      startLine: 1,
+      endLineExclusive: 3,
+      text: "* Original\nBody",
+      isSubtree: false
+    )
+    store.selectedEntrySource = source
+    store.beginEditingSelectedEntry()
+    store.sourceEditorPresentation = .split
+    store.editableEntryText = "* Latest preview\nA [[https://example.com][link]]."
+    store.scheduleSourceEditorPreview(immediate: true)
+
+    try await waitForCondition(timeout: 10) {
+      store.sourceEditorPreviewHTML?.contains("Latest preview") == true
+        && !store.isRenderingSourceEditorPreview
+    }
+
+    XCTAssertTrue(store.sourceEditorPreviewHTML?.contains("href=\"https://example.com\"") == true)
+    XCTAssertFalse(store.sourceEditorPreviewHTML?.contains("Original") == true)
   }
 
   @MainActor
@@ -11694,6 +11927,39 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
+  func testWorkspaceRefreshReloadsExternallyChangedSelectedFileAndHTML() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-refresh-selected-file-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("board-meeting.org2")
+    let original = "#+TITLE: Board Meeting\n\n* Update\nOriginal summary\n"
+    let external = "#+TITLE: Board Meeting\n\n* Update\nRevised by OpenClaw\n"
+    try original.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.selectCorpusFile(CorpusFile(
+      path: note.path,
+      relativePath: note.lastPathComponent,
+      modifiedAt: nil,
+      byteCount: nil
+    ))
+    let location = try XCTUnwrap(store.selectedLocation)
+    await store.loadEntrySource(for: location)
+    try await waitForEntryRender(store)
+    XCTAssertTrue(store.selectedEntryHTML?.contains("Original summary") == true)
+
+    try external.write(to: note, atomically: true, encoding: .utf8)
+    await store.refreshWorkspace()
+    try await waitForCondition {
+      store.selectedEntrySource?.text == external
+        && store.selectedEntryHTML?.contains("Revised by OpenClaw") == true
+    }
+
+    XCTAssertFalse(store.selectedEntryHTML?.contains("Original summary") == true)
+  }
+
+  @MainActor
   func testLiveFileEditorReloadDoesNotDiscardUnsavedDraft() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-reload-live-file-\(UUID().uuidString)", isDirectory: true)
@@ -11738,7 +12004,7 @@ final class Org2ModelsTests: XCTestCase {
   }
 
   @MainActor
-  func testActiveSourceEditorReloadDoesNotReplaceCleanBuffer() async throws {
+  func testWorkspaceRefreshDoesNotReplaceActiveSourceEditorBuffer() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-workspace-reload-clean-source-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -11762,7 +12028,7 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertFalse(store.entryEditorHasUnsavedChanges)
 
     try external.write(to: note, atomically: true, encoding: .utf8)
-    await store.loadEntrySource(for: location)
+    await store.refreshWorkspace()
 
     XCTAssertTrue(store.isEditingEntry)
     XCTAssertEqual(store.editableEntryText, original)
