@@ -7,8 +7,6 @@ import {
   HeadlineNode,
   Node,
   ListNode,
-  BlockNode,
-  SrcBlockNode,
   ListItemNode,
   type ParseError,
 } from "./parser.js";
@@ -844,12 +842,23 @@ class LSPServer {
     return symbols;
   }
 
-  private extractFoldingRanges(node: any, text: string, ranges: FoldingRange[] = [], tracker?: LineTracker): FoldingRange[] {
+  private foldingRangeChildren(node: DocumentNode | Node): Node[] {
+    switch (node.type) {
+      case "Document":
+      case "Headline":
+      case "ListItem":
+        return node.children;
+      case "List":
+        return node.items;
+      default:
+        return [];
+    }
+  }
+
+  private extractFoldingRanges(node: DocumentNode | Node, text: string, ranges: FoldingRange[] = [], tracker?: LineTracker): FoldingRange[] {
     if (!tracker) {
       tracker = new LineTracker(text);
     }
-
-    if (!node) return ranges;
 
     if (node.type === "Document") {
       // Document itself does not contribute a folding range; recurse via the generic children-walk below.
@@ -899,10 +908,9 @@ class LSPServer {
       }
 
     } else if (node.type === "SrcBlock" || node.type === "Block") {
-      const block = node as any;
-      if (block.terminated) {
-        const beginKeyword = node.type === "SrcBlock" ? "BEGIN_SRC" : `BEGIN_${block.kind.toUpperCase()}`;
-        const endKeyword = node.type === "SrcBlock" ? "END_SRC" : `END_${block.kind.toUpperCase()}`;
+      if (node.terminated) {
+        const beginKeyword = node.type === "SrcBlock" ? "BEGIN_SRC" : `BEGIN_${node.kind.toUpperCase()}`;
+        const endKeyword = node.type === "SrcBlock" ? "END_SRC" : `END_${node.kind.toUpperCase()}`;
 
         let beginLine = -1;
         let endLine = -1;
@@ -948,10 +956,8 @@ class LSPServer {
       }
     }
 
-    if (node.children) {
-      for (const child of node.children) {
-        this.extractFoldingRanges(child, text, ranges, tracker);
-      }
+    for (const child of this.foldingRangeChildren(node)) {
+      this.extractFoldingRanges(child, text, ranges, tracker);
     }
 
     return ranges;
