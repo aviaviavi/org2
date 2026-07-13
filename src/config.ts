@@ -77,7 +77,7 @@ export interface Org2Config {
 export function findConfigFile(startDir: string): string | null {
   let currentDir = path.resolve(startDir);
 
-  for (let i = 0; i < 10; i++) {
+  while (true) {
     const configPath = path.join(currentDir, "org2.json");
     if (fs.existsSync(configPath)) {
       return configPath;
