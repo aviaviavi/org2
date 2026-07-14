@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { parseNonNegativeIntegerArgument } from "./cliArguments.js";
 import { parseOrgToCanonicalAst } from "./parser.js";
 
 function usage(exitCode = 2): never {
@@ -28,16 +29,17 @@ function main() {
     }
     if (arg === "--source-line-offset") {
       const raw = args[index + 1];
-      if (raw === undefined) usage();
-      sourceLineOffset = Number.parseInt(raw, 10);
-      if (!Number.isFinite(sourceLineOffset) || sourceLineOffset < 0) usage();
+      const parsed = parseNonNegativeIntegerArgument(raw);
+      if (parsed === null) usage();
+      sourceLineOffset = parsed;
       index += 1;
       continue;
     }
     if (arg?.startsWith("--source-line-offset=")) {
       const raw = arg.slice("--source-line-offset=".length);
-      sourceLineOffset = Number.parseInt(raw, 10);
-      if (!Number.isFinite(sourceLineOffset) || sourceLineOffset < 0) usage();
+      const parsed = parseNonNegativeIntegerArgument(raw);
+      if (parsed === null) usage();
+      sourceLineOffset = parsed;
       continue;
     }
     positional.push(arg);

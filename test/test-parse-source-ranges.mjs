@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -42,6 +42,17 @@ Child body
     input: "* TODO From stdin\nBody\n",
   }));
   assert.deepEqual(stdinAst.children[0].sourceRange, { startLine: 41, endLine: 42 });
+
+  for (const args of [
+    ["--source-line-offset", "1.5", file],
+    ["--source-line-offset=12px", file],
+    ["--source-line-offset=", file],
+    ["--source-line-offset=9007199254740992", file],
+  ]) {
+    const result = spawnSync(process.execPath, ["dist/parse.js", ...args], { encoding: "utf8" });
+    assert.equal(result.status, 2, `expected usage error for ${args.join(" ")}`);
+    assert.match(result.stderr, /Usage:/);
+  }
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }

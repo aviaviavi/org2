@@ -2,6 +2,7 @@
 
 import fs from "node:fs";
 import process from "node:process";
+import { parseNonNegativeIntegerArgument } from "./cliArguments.js";
 import { parseOrgWithDiagnostics } from "./parser.js";
 
 function usage(exitCode = 2): never {
@@ -18,15 +19,16 @@ function main() {
     const arg = args[index];
     if (arg === "--source-line-offset") {
       const raw = args[index + 1];
-      if (raw === undefined) usage();
-      sourceLineOffset = Number.parseInt(raw, 10);
-      if (!Number.isFinite(sourceLineOffset) || sourceLineOffset < 0) usage();
+      const parsed = parseNonNegativeIntegerArgument(raw);
+      if (parsed === null) usage();
+      sourceLineOffset = parsed;
       index += 1;
       continue;
     }
     if (arg?.startsWith("--source-line-offset=")) {
-      sourceLineOffset = Number.parseInt(arg.slice("--source-line-offset=".length), 10);
-      if (!Number.isFinite(sourceLineOffset) || sourceLineOffset < 0) usage();
+      const parsed = parseNonNegativeIntegerArgument(arg.slice("--source-line-offset=".length));
+      if (parsed === null) usage();
+      sourceLineOffset = parsed;
       continue;
     }
     usage();
