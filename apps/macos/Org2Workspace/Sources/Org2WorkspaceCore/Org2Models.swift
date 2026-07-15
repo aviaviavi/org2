@@ -1,5 +1,114 @@
 import Foundation
 
+public struct AgentRunListPayload: Decodable, Sendable {
+  public let schema: String?
+  public let runs: [AgentRunItem]
+
+  enum CodingKeys: String, CodingKey {
+    case schema
+    case runs
+  }
+}
+
+public struct AgentRunItem: Identifiable, Decodable, Hashable, Sendable {
+  public let id: String
+  public let goal: String
+  public let acceptanceCriteria: [String]
+  public let status: String
+  public let riskClass: String
+  public let owner: String?
+  public let assignee: String?
+  public let workflowId: String?
+  public let workflowVersion: String?
+  public let providerPolicy: String?
+  public let provider: String?
+  public let model: String?
+  public let capabilities: [String]
+  public let context: [AgentRunContextItem]
+  public let plan: [AgentRunStepItem]
+  public let artifacts: [AgentRunArtifactItem]
+  public let approvals: [AgentRunApprovalItem]
+  public let validations: [AgentRunValidationItem]
+  public let comments: [AgentRunCommentItem]
+  public let events: [AgentRunEventItem]
+  public let createdAt: String
+  public let updatedAt: String
+  public let startedAt: String?
+  public let completedAt: String?
+  public let blockedReason: String?
+  public let failure: String?
+
+  public var pendingApprovalCount: Int { approvals.filter { $0.status == "pending" }.count }
+  public var completedStepCount: Int { plan.filter { $0.status == "completed" || $0.status == "skipped" }.count }
+  public var needsAttention: Bool { pendingApprovalCount > 0 || status == "blocked" || status == "failed" || status == "waiting-approval" }
+  public var progressText: String { plan.isEmpty ? "No plan" : "\(completedStepCount)/\(plan.count) steps" }
+}
+
+public struct AgentRunContextItem: Decodable, Hashable, Sendable {
+  public let ref: String
+  public let title: String?
+  public let citation: String?
+  public let sha256: String?
+}
+
+public struct AgentRunStepItem: Identifiable, Decodable, Hashable, Sendable {
+  public let id: String
+  public let title: String
+  public let kind: String
+  public let status: String
+  public let capability: String?
+  public let detail: String?
+}
+
+public struct AgentRunArtifactItem: Identifiable, Decodable, Hashable, Sendable {
+  public let id: String
+  public let path: String
+  public let role: String
+  public let title: String?
+  public let mediaType: String?
+  public let sha256: String?
+  public let reviewStatus: String?
+  public let createdAt: String
+}
+
+public struct AgentRunApprovalItem: Identifiable, Decodable, Hashable, Sendable {
+  public let id: String
+  public let title: String
+  public let action: String
+  public let riskClass: String
+  public let status: String
+  public let requestedRole: String?
+  public let requestedFrom: String?
+  public let requestedAt: String
+  public let decidedAt: String?
+  public let decidedBy: String?
+  public let note: String?
+  public let receipt: String?
+}
+
+public struct AgentRunValidationItem: Identifiable, Decodable, Hashable, Sendable {
+  public let id: String
+  public let name: String
+  public let status: String
+  public let checkedAt: String
+  public let detail: String?
+}
+
+public struct AgentRunCommentItem: Identifiable, Decodable, Hashable, Sendable {
+  public let id: String
+  public let author: String
+  public let body: String
+  public let createdAt: String
+}
+
+public struct AgentRunEventItem: Identifiable, Decodable, Hashable, Sendable {
+  public let id: String
+  public let type: String
+  public let at: String
+  public let actor: String?
+  public let detail: String?
+}
+
 public struct AgendaPayload: Decodable, Sendable {
   public let schema: String?
   public let range: AgendaRange

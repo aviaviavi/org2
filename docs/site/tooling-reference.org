@@ -19,6 +19,7 @@ Main workflows:
 - =search=, =id=, =query=, =backlinks=
 - =index=, =entity=, =approvals=, =clock=
 - =agent capabilities=, =agent context/search/fetch/bundle=, =context=, =brief=
+- =run=, =review=, =workflow=, =artifact=, =runtime=, =mcp=, =eval=
 - =compile corpus=
 - =render-chart=
 - =query-data=
@@ -232,6 +233,104 @@ org2 agent --help
 The capability command emits =org2:capabilities:v1= JSON covering workflows, safety rules, client roles, and canonical documentation entry points. The remaining =agent= subcommands return bounded =org2:agent-context:v1= JSON with citations and source ranges. =org2 context= is the human/prompt-friendly shorthand, =org2 brief= renders a cited synthesis, and =org2 compile corpus= emits a complete schema-versioned corpus artifact.
 
 See [[file:agent-quickstart.org][Agent quickstart]] for the operating contract and common recipes.
+
+* Durable agent runs and review
+
+=org2 run= manages =org2:agent-run:v1= records under =.org2/runs/=. Each record contains readable Org sections plus a canonical JSON block; writes are atomic. The state machine supports queued, running, waiting-approval, blocked, completed, failed, and canceled states. Invalid transitions fail instead of silently rewriting history.
+
+#+begin_src sh
+org2 run create --goal "Prepare the weekly operating review" \
+  --accept "Claims retain citations" --accept "PDF passes export validation" \
+  --risk local-draft --owner avi --assignee analyst \
+  --policy deep-analysis --token-limit 50000 --cost-limit-usd 10 --time-limit-seconds 1800 \
+  --step agent:"Draft cited review" --step validation:"Validate citations and export" \
+  --context notes/operations.org2 --capability agent-context --dir ~/notes
+org2 run list --dir ~/notes --json
+org2 run show RUN_ID --dir ~/notes --json
+org2 run start RUN_ID --dir ~/notes
+org2 run step RUN_ID step-1 --status completed --dir ~/notes
+org2 run validation RUN_ID --name citations --status passed --dir ~/notes
+org2 run approval-request RUN_ID --title "Release report" \
+  --action "publish operating review" --risk external-action --role owner --dir ~/notes
+org2 run approval-decide RUN_ID APPROVAL_ID --decision approved \
+  --actor avi --role owner --receipt approval:local:123 --dir ~/notes
+org2 run complete RUN_ID --dir ~/notes
+#+end_src
+
+Other lifecycle operations include =resume=, =retry=, =block=, =fail=, =cancel=, =fork=, =assign=, =comment=, and =artifact=. =run normalize= converts legacy =AGENT_RUN_ID= headings into shared records while retaining a citation to their source location.
+
+An approval may name both a required role and a specific reviewer. =approval-decide= refuses a mismatched =--role= or =--actor=, and the decision event preserves the asserted role plus any release receipt. This is a durable workflow boundary; operating-system or organizational identity enforcement can sit above it.
+
+=org2 review list= returns =org2:review-queue:v1= JSON combining pending run approvals, review-required artifacts, blocked clarification requests, and warning/failed validation. It complements the existing =org2 approvals= headline workflow; the Mac *Runs & Review* surface presents both.
+
+* Reusable workflows and triggers
+
+=workflow save RUN_ID= converts a completed run into an =org2:workflow:v1= package under =.org2/workflows/=. Packages declare semantic version, compatibility, parameters and defaults, context rules, deterministic/agent/tool/approval steps, capabilities, risk, outputs, validation, approval boundaries, and manual/schedule/file-change/capture/meeting-import triggers.
+
+#+begin_src sh
+org2 workflow save RUN_ID --id weekly-operating-review --version 1.0.0 --dir ~/notes
+org2 workflow validate weekly-operating-review --dir ~/notes
+org2 workflow run weekly-operating-review --input week=2026-W29 --dir ~/notes
+org2 workflow triggers weekly-operating-review --changed data/metrics.csv --dir ~/notes --json
+org2 workflow package weekly-operating-review --dir ~/notes --json
+org2 workflow corpus-template weekly-operating-review --out dist/weekly-review-template.json --dir ~/notes
+#+end_src
+
+Schedule syntax is intentionally deterministic and small: =every 15m=, =every 4h=, or =every 1d=. Event hosts ask =workflow triggers= which declarations are due, then instantiate the workflow; the durable run remains the execution record.
+
+=workflow package= emits distribution metadata for one provider-independent workflow. =workflow corpus-template= wraps that metadata with ordinary starter files and the standard =raw/=, =notes/=, =views/=, =compiled/=, run, and workflow zones as =org2:corpus-template:v1=. The package is data, not an installer: recipients review it, initialize/open a corpus with their client, and place the workflow record in =.org2/workflows/=.
+
+The built-in =meeting-to-controlled-execution= package preserves meeting provenance, extracts cited decisions/tasks/questions, delegates bounded work, refreshes configured data/charts, compiles finished artifacts, requests release review, and gates publication:
+
+#+begin_src sh
+org2 workflow install-builtin meeting-to-controlled-execution --dir ~/notes
+#+end_src
+
+* Artifact dependency and freshness graph
+
+=org2 artifact graph= evaluates a JSON declaration containing artifact =id=, =path=, =sources=, optional previous =sourceHashes=, and optional rebuild =command=. Outputs are fresh, stale, missing, or conflicted. =artifact rebuild= propagates upstream staleness to downstream outputs and emits an ordered reviewable plan; =--apply= on =graph= stores the derived graph at =.org2/artifact-graph.json=.
+
+#+begin_src sh
+org2 artifact graph --manifest compiled/artifacts.json --dir ~/notes --json
+org2 artifact rebuild --manifest compiled/artifacts.json --dir ~/notes
+#+end_src
+
+* Runtime policies, MCP, and connector snapshots
+
+=org2 runtime init= creates =.org2/runtime-policy.json=. Symbolic policies select an eligible descriptor by required capabilities, privacy, transport, context window, and cost class. Built-in policy names are =private-local=, =fast-draft=, =deep-analysis=, =vision=, =regulated-cloud=, and =offline=. Runtime records contain aliases and model metadata, never credentials.
+
+#+begin_src sh
+org2 runtime select private-local --capability text --dir ~/notes --json
+org2 runtime select deep-analysis --capability tool-use --dir ~/notes --json
+org2 runtime verify-paths --capability text --dir ~/notes --json
+#+end_src
+
+=runtime verify-paths= is the portability check used by workflow test suites: it fails unless the configured baseline capability is available through both an enabled local/private descriptor and an enabled hosted descriptor. Execution remains adapter-owned; this check validates that switching paths does not require changing a workflow package or corpus state.
+
+=org2 mcp serve= starts a stdio Model Context Protocol server. It exposes bounded =org2://corpus/= resources, workflow prompts, and typed tools for listing, creating, and transitioning runs. =mcp client-add= records explicitly configured external servers in =.org2/mcp-clients.json=. =mcp discover= performs an initialize/list handshake, reports the server's resources, tools, and prompts, and can persist a provenance-bearing discovery snapshot. =mcp snapshot= writes any external result under =raw/connectors/mcp/= with source URI, retrieval time, identity, freshness, and payload so durable work does not depend on an invisible live response.
+
+#+begin_src sh
+org2 mcp serve --dir ~/notes
+org2 mcp client-add crm --command crm-mcp --arg=--stdio --capability accounts --env CRM_TOKEN --dir ~/notes
+org2 mcp discover crm --snapshot crm-capabilities --dir ~/notes --json
+org2 mcp snapshot account-123 --source mcp://crm/accounts/123 \
+  --identity account:123 --fresh-until 2026-07-15T00:00:00Z \
+  --input /tmp/account.json --dir ~/notes
+#+end_src
+
+Client configuration records environment-variable names for setup and discovery, never their values. The child process inherits credentials from the invoking environment or operating-system credential helper.
+
+* Outcome evaluation and replay fixtures
+
+=org2 eval run= compares an observable run against JSON expectations for terminal status, artifacts, passing validations, citations, approval boundaries, and protected paths. It writes =org2:workflow-eval:v1= results under =.org2/evals/=. Metrics come from inspectable run records: elapsed time, tokens, cost, citation coverage, and artifact review/freshness.
+
+#+begin_src sh
+org2 eval run RUN_ID --expect test/fixtures/weekly-review.expected.json --dir ~/notes
+org2 eval replay weekly-operating-review --fixture test/fixtures/weekly-review.replay.json --dir ~/notes
+org2 eval fixture RUN_ID --output test/fixtures/weekly-review.run.json --dir ~/notes
+#+end_src
+
+=eval replay= deterministically instantiates the declared workflow against fixture inputs and checks version, resolved goal, plan steps, capabilities, and risk boundary without invoking a provider. =eval fixture= replaces people, providers, source locations, and receipts with synthetic values. Review the result before distributing it; free-form artifact contents are not copied by the command.
 
 * Corpus lint
 

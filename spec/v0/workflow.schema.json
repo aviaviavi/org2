@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org2.avi.press/spec/v0/workflow.schema.json",
+  "title": "Org2 reusable workflow",
+  "type": "object",
+  "required": ["schema", "id", "version", "title", "instructions", "capabilities", "riskClass", "inputs", "steps", "outputs", "validations", "approvals", "triggers", "compatibility", "createdAt", "updatedAt"],
+  "properties": {
+    "schema": { "const": "org2:workflow:v1" },
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "version": { "type": "string" },
+    "title": { "type": "string", "minLength": 1 },
+    "instructions": { "type": "string", "minLength": 1 },
+    "capabilities": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "riskClass": { "enum": ["read-only", "local-draft", "canonical-write", "external-action", "high-impact"] },
+    "inputs": { "type": "array" },
+    "steps": { "type": "array" },
+    "outputs": { "type": "array" },
+    "validations": { "type": "array", "items": { "type": "string" } },
+    "approvals": { "type": "array" },
+    "triggers": { "type": "array" },
+    "compatibility": { "type": "object", "required": ["org2", "schema"] },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": true
+}

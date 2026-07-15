@@ -12,6 +12,15 @@ The first command emits the machine-readable `org2:capabilities:v1` manifest. Mu
 
 The native macOS Workspace also exposes a discoverable chat slash-command layer. Its local commands reuse shared search, backlink, lint, render, and publish semantics; agent-assisted `/brief` and `/summarize` receive selected source context with citations. See the macOS Workspace reference for the current command catalog.
 
+Durable delegation uses normal files under `.org2/runs/` and `.org2/workflows/`. Discover the interfaces with:
+
+    org2 run --help
+    org2 workflow --help
+    org2 review list --dir CORPUS --json
+    org2 mcp serve --dir CORPUS
+
+Runs preserve goals, acceptance criteria, cited inputs, plans, risk, provider metadata, budgets, artifacts, approvals, validation, comments, and observable events. Workflow packages declare inputs, capabilities, writes, outputs, triggers, checks, approval boundaries, and compatibility. External MCP/connector data that becomes durable work should be stored as a provenance-bearing snapshot; credentials stay outside the corpus.
+
 ## Agent entry points
 
 - https://org2.avi.press/agent-quickstart.html
