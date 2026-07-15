@@ -411,6 +411,24 @@ final class Org2ModelsTests: XCTestCase {
     }
   }
 
+  func testOrg2CLIBrokenInputPipeDoesNotTerminateHostProcess() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-render-broken-pipe-\(UUID().uuidString)", isDirectory: true)
+    let dist = root.appendingPathComponent("dist", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    try "process.exit(0);\n".write(
+      to: dist.appendingPathComponent("render-html.js"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let cli = Org2CLI(repoRoot: root)
+    let input = String(repeating: "x", count: 8 * 1_024 * 1_024)
+
+    let output = try await cli.renderAppHTML(input, sourcePath: "/tmp/broken-pipe.org2")
+
+    XCTAssertEqual(output, "")
+  }
+
   func testOrgHTMLLinkTargetResolvesRelativeFileAndHeading() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("org2-html-link-\(UUID().uuidString)", isDirectory: true)
@@ -11054,6 +11072,39 @@ final class Org2ModelsTests: XCTestCase {
       "query-data", "--file", notebook.path, "--results", "second", "--apply", "--format", "json"
     ])
     XCTAssertEqual(store.statusText, "Refreshed 2 data results")
+  }
+
+  @MainActor
+  func testSelectedFileDataNotebookDetectionDoesNotReadFromDiskOnEveryAccess() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-data-notebook-detection-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let notebook = root.appendingPathComponent("dashboard.org2")
+    let note = root.appendingPathComponent("note.org2")
+    try "```sql results=summary\nSELECT 1\n```\n".write(to: notebook, atomically: true, encoding: .utf8)
+    try "* Plain note\n".write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.selectedLocation = .openClaw(OpenClawThread(
+      title: "Dashboard",
+      file: notebook.path,
+      line: 1,
+      zone: "test",
+      modifiedAt: nil
+    ))
+
+    XCTAssertTrue(store.selectedFileIsDataNotebook)
+    try FileManager.default.removeItem(at: notebook)
+    XCTAssertTrue(store.selectedFileIsDataNotebook)
+
+    store.selectedLocation = .openClaw(OpenClawThread(
+      title: "Note",
+      file: note.path,
+      line: 1,
+      zone: "test",
+      modifiedAt: nil
+    ))
+    XCTAssertFalse(store.selectedFileIsDataNotebook)
   }
 
   @MainActor

@@ -42,12 +42,24 @@ function main(): void {
   }
 
   const input = fs.readFileSync(0, "utf8").replace(/\r\n/g, "\n");
-  const document = parseOrgToCanonicalAst(input, {
-    sourceRanges: true,
-    sourceLineOffset,
-  });
+  let renderInput = input;
+  let document: ReturnType<typeof parseOrgToCanonicalAst>;
+  try {
+    document = parseOrgToCanonicalAst(renderInput, {
+      sourceRanges: true,
+      sourceLineOffset,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes("Unsupported construct: tab character")) throw error;
+    renderInput = input.replace(/\t/g, "  ");
+    document = parseOrgToCanonicalAst(renderInput, {
+      sourceRanges: true,
+      sourceLineOffset,
+    });
+  }
   const customCss = stylesheetPath ? fs.readFileSync(stylesheetPath, "utf8") : undefined;
-  const charts = renderOrgCharts(input, { file: sourcePath, sourceLineOffset })
+  const charts = renderOrgCharts(renderInput, { file: sourcePath, sourceLineOffset })
     .filter((chart): chart is typeof chart & { svg: string; source: NonNullable<typeof chart.source> } => chart.ok && Boolean(chart.svg && chart.source))
     .map((chart) => ({ svg: chart.svg, source: chart.source, presentation: chart.presentation }));
   const rendered = renderOrgDocumentToAppHtml(document, { title, sourcePath, customCss, charts });

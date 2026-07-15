@@ -2,6 +2,10 @@ import Darwin
 import Foundation
 
 public struct Org2CLI: Sendable {
+  private static let ignoreBrokenPipeSignal: Void = {
+    _ = Darwin.signal(SIGPIPE, SIG_IGN)
+  }()
+
   public let repoRoot: URL
   private let cliPath: URL
   private let nodePath: String?
@@ -145,6 +149,8 @@ public struct Org2CLI: Sendable {
     timeout: TimeInterval? = nil,
     environment: [String: String] = [:]
   ) throws -> Data {
+    _ = Self.ignoreBrokenPipeSignal
+
     guard FileManager.default.fileExists(atPath: scriptPath.path) else {
       throw Org2CLIError.missingCLI(scriptPath.path)
     }
@@ -177,9 +183,13 @@ public struct Org2CLI: Sendable {
     try process.run()
 
     if let standardInput, let stdin {
+      readGroup.enter()
       DispatchQueue.global(qos: .userInitiated).async {
-        stdin.fileHandleForWriting.write(standardInput)
-        stdin.fileHandleForWriting.closeFile()
+        defer {
+          try? stdin.fileHandleForWriting.close()
+          readGroup.leave()
+        }
+        try? stdin.fileHandleForWriting.write(contentsOf: standardInput)
       }
     }
 
