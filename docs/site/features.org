@@ -30,10 +30,14 @@ What already works well today:
 - Shared editor backend features, including LSP where an editor benefits from it
 - Local and remote data notebooks with explicit DuckDB-backed materialization, reusable SQL views, provenance-stamped result tables, and deterministic charts
 - Agent discovery and cited retrieval through =org2 agent capabilities=, =agent context/search/fetch/bundle=, =context=, =brief=, and compiled corpus artifacts
+- Durable agent runs with a validated state machine, plans, assignments, budgets, citations, artifacts, approvals, validation, comments, retries, cancellation, forking, and legacy task/session normalization
+- Reusable, versioned workflow packages with parameters, capability and risk declarations, validation, approval boundaries, schedules, file-change/capture/meeting triggers, packaging metadata, and a built-in meeting-to-controlled-execution recipe
+- A unified CLI review queue plus the Mac *Runs & Review* surface for active, completed, blocked, failed, and approval-needed delegated work
+- Artifact dependency/freshness graphs, rebuild plans, outcome evaluation and sanitized replay fixtures, capability-based hosted/local runtime selection, and MCP server/client snapshot boundaries
 
 * Workspace and context records
 
-Org2 Workspace is the product direction for focused clients over the same local corpus. The macOS app now exists as an alpha client for global capture, agenda and approval review, file and knowledge navigation, source editing with compiler-generated HTML reading, meeting capture, OpenClaw handoff, agent-thread browsing, daily notes, data notebooks, knowledge-node creation, and org-crypt workflows. Entity pages, richer meeting memory, capture/refile workflows, and data-backed reports should continue to use parser/compiler output, so clients share a source of truth.
+Org2 Workspace is the product direction for focused clients over the same local corpus. The macOS app now exists as an alpha client for global capture, agenda and run/approval review, file and knowledge navigation, source editing with compiler-generated HTML reading, meeting capture, OpenClaw handoff, agent-thread browsing, daily notes, data notebooks, knowledge-node creation, and org-crypt workflows. Entity pages, richer meeting memory, capture/refile workflows, and data-backed reports continue to use parser/compiler output, so clients share a source of truth.
 
 The format already has the building blocks for that direction:
 
@@ -57,6 +61,7 @@ The useful properties are concrete:
 - generated drafts live under reviewable artifact metadata,
 - provenance links raw sources, drafts, promoted notes, and published output,
 - policy fields can mark work that needs approval before external side effects.
+- completed work can be saved as a provider-independent workflow, evaluated against fixtures, and selected for an eligible hosted or local runtime by symbolic policy.
 
 That gives Codex, OpenClaw, local models, scripts, and future workspace clients a shared way to coordinate around the same notes.
 
@@ -130,6 +135,7 @@ The native Mac app lives in =apps/macos/Org2Workspace=. It is early, but it is a
 - corpus picker and file scanner,
 - guided first-run choices for opening an existing plain-text corpus or creating a safe starter corpus in an empty folder,
 - agenda surface with filtering, modes, keyboard navigation, and task/planning mutations,
+- Runs & Review surface for durable run progress, evidence, artifacts, validation, handoffs, retry/cancel/resume actions, approval decisions, and Save as Workflow,
 - quick-open and daily-note navigation,
 - search and backlinks-backed detail navigation,
 - ID-backed knowledge-node creation from Search,

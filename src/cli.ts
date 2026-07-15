@@ -28,6 +28,7 @@ import { compileCorpus, compileCorpusIncremental, extractCheckboxProgress, rende
 import { extractClockReport } from "./clock.js";
 import { buildAgentContextPayload, renderAgentContextPack, type AgentInclude } from "./agentContext.js";
 import { buildOrg2CapabilityManifest } from "./capabilities.js";
+import { runAgenticWorkspaceCommand } from "./agenticWorkspaceCli.js";
 import { renderOrgChart, renderOrgCharts } from "./chartRender.js";
 import { applyDataQueryResult, runOrg2DataQuery } from "./dataQuery.js";
 import {
@@ -8288,6 +8289,8 @@ or {metadata:{...}, content:"..."}. Generated view artifacts are review-required
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
+  if (await runAgenticWorkspaceCommand(args)) return;
+
   if (args[0] === "ingest") {
     await runIngestCommand(args.slice(1));
     return;
@@ -10099,6 +10102,13 @@ Usage:
   org2 <command> [options]
 
 Core commands:
+  org2 run <create|list|show|validate|start|resume|retry|cancel|complete|fail|block|fork|normalize> [options]
+  org2 review <list|show> [options]
+  org2 workflow <list|show|validate|save|run|triggers|package|corpus-template|install-builtin> [options]
+  org2 artifact <graph|rebuild> --manifest FILE [--apply]
+  org2 runtime <init|show|select|verify-paths> [POLICY] [--capability ID]...
+  org2 mcp <serve|clients|client-add|discover|snapshot> [options]
+  org2 eval <run|fixture> RUN [options]
   org2 agenda --dir DIR [--recursive] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--tui]
   org2 todo <set|toggle|assign|approve> --file FILE (--line N | --pos LINE[:COL]) [--apply]
   org2 approvals --dir DIR [--recursive] [--include-archives] [--index auto|never|rebuild] [--format text|json]

@@ -28,6 +28,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Run `org2 --help` for command families and `org2 COMMAND --help` for current flags.",
       "Prefer JSON output for integrations (`--format json` or `--json` where supported).",
       "Use `org2 agent context|search|fetch|bundle` for bounded, cited corpus retrieval.",
+      "Use `org2 run --help` for durable delegated work, `org2 workflow` for reusable recipes, and `org2 mcp serve` for MCP discovery.",
     ],
     safety: [
       "Treat corpus files as user-owned source code: make small, reviewable text changes.",
@@ -37,6 +38,18 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
       "Run targeted tests plus `org2 lint` around writes when practical; never put secrets in notes or generated artifacts.",
     ],
     workflows: [
+      {
+        id: "agentic-workspace",
+        purpose: "Create, inspect, resume, review, validate, fork, and package durable agent runs and reusable workflows.",
+        commands: ["org2 run", "org2 review", "org2 workflow", "org2 eval"],
+        writes: "mixed",
+      },
+      {
+        id: "portable-runtime",
+        purpose: "Track artifact dependencies, select eligible model runtimes by capability policy, and expose or snapshot MCP integrations.",
+        commands: ["org2 artifact", "org2 runtime", "org2 mcp"],
+        writes: "mixed",
+      },
       {
         id: "planning",
         purpose: "Build agendas and mutate TODO, approval, planning, effort, habit, and clock state.",

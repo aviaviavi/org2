@@ -59,6 +59,11 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>The technical description is a provider-agnostic agent harness for knowledge work. The product experience should be simpler: people give Org2 an outcome, Org2 assembles the relevant local context, performs bounded work, produces reviewable artifacts, and asks for judgment when a consequential decision or external action is required.</p>
 <p>This roadmap extends the <a href="knowledge-compiler-roadmap.html">knowledge compiler roadmap</a>. Compilation remains the foundation. Agent runs turn compiled knowledge into controlled outcomes.</p>
 <section class="org2-headline level-1">
+<h1 id="implementation-status">Implementation status</h1>
+<p>The first complete vertical slice of all five phases is implemented in the early-alpha runtime. It includes the portable run and workflow schemas, CLI lifecycle and review commands, the native Mac Run Center, workflow triggers and packaging, artifact freshness graphs, the meeting-to-controlled-execution template, capability-based runtime selection, MCP server/client configuration and provenance snapshots, outcome evaluation, sanitized replay fixtures, assignments, role-based approvals, comments, and audit events.</p>
+<p>The roadmap remains active: each surface can become deeper, gain more production adapters, and improve its user experience without changing the ownership boundaries below. The versioned schemas are <code>org2:agent-run:v1</code> and <code>org2:workflow:v1</code>; workflow packages declare their compatible Org2 and schema ranges.</p>
+</section>
+<section class="org2-headline level-1">
 <h1 id="product-thesis">Product thesis</h1>
 <p>Org2 should become a local-first operating environment for knowledge work.</p>
 <p>Its durable value does not come from one editor, chat interface, or model provider. It comes from keeping the complete work lifecycle connected:</p>
@@ -336,19 +341,6 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p>model/provider portability across the same evaluation suite.</p></li>
 </ul>
 <p>Telemetry must be local and opt-in by default. Users should be able to inspect the same run records used to compute their own metrics.</p>
-</section>
-<section class="org2-headline level-1">
-<h1 id="non-goals">Non-goals</h1>
-<ul>
-<li><p>Building a proprietary foundation model.</p></li>
-<li><p>Becoming a generic computer-use or browser agent before the knowledge-work runtime is coherent.</p></li>
-<li><p>Replacing full general-purpose office suites.</p></li>
-<li><p>Adding many shallow connectors without provenance and permission semantics.</p></li>
-<li><p>Using elaborate multi-agent choreography where a deterministic workflow or one agent is sufficient.</p></li>
-<li><p>Making real-time collaborative editing a prerequisite for team workflows.</p></li>
-<li><p>Hiding canonical state, action history, or generated output in an opaque hosted database.</p></li>
-<li><p>Coupling public Org2 semantics to OpenClaw, OpenAI, Anthropic, or any other single runtime or provider.</p></li>
-</ul>
 </section>
 <section class="org2-headline level-1">
 <h1 id="done-means-knowledge-becomes-controlled-outcomes">Done means knowledge becomes controlled outcomes</h1>

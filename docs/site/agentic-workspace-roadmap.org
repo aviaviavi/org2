@@ -7,6 +7,12 @@ The technical description is a provider-agnostic agent harness for knowledge wor
 
 This roadmap extends the [[file:knowledge-compiler-roadmap.org][knowledge compiler roadmap]]. Compilation remains the foundation. Agent runs turn compiled knowledge into controlled outcomes.
 
+* Implementation status
+
+The first complete vertical slice of all five phases is implemented in the early-alpha runtime. It includes the portable run and workflow schemas, CLI lifecycle and review commands, the native Mac Run Center, workflow triggers and packaging, artifact freshness graphs, the meeting-to-controlled-execution template, capability-based runtime selection, MCP server/client configuration and provenance snapshots, outcome evaluation, sanitized replay fixtures, assignments, role-based approvals, comments, and audit events.
+
+The roadmap remains active: each surface can become deeper, gain more production adapters, and improve its user experience without changing the ownership boundaries below. The versioned schemas are =org2:agent-run:v1= and =org2:workflow:v1=; workflow packages declare their compatible Org2 and schema ranges.
+
 * Product thesis
 
 Org2 should become a local-first operating environment for knowledge work.
@@ -291,17 +297,6 @@ Useful product metrics should emphasize completed, trustworthy work rather than 
 - model/provider portability across the same evaluation suite.
 
 Telemetry must be local and opt-in by default. Users should be able to inspect the same run records used to compute their own metrics.
-
-* Non-goals
-
-- Building a proprietary foundation model.
-- Becoming a generic computer-use or browser agent before the knowledge-work runtime is coherent.
-- Replacing full general-purpose office suites.
-- Adding many shallow connectors without provenance and permission semantics.
-- Using elaborate multi-agent choreography where a deterministic workflow or one agent is sufficient.
-- Making real-time collaborative editing a prerequisite for team workflows.
-- Hiding canonical state, action history, or generated output in an opaque hosted database.
-- Coupling public Org2 semantics to OpenClaw, OpenAI, Anthropic, or any other single runtime or provider.
 
 * Done means knowledge becomes controlled outcomes
 

@@ -75,6 +75,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><code>search</code>, <code>id</code>, <code>query</code>, <code>backlinks</code></p></li>
 <li><p><code>index</code>, <code>entity</code>, <code>approvals</code>, <code>clock</code></p></li>
 <li><p><code>agent capabilities</code>, <code>agent context/search/fetch/bundle</code>, <code>context</code>, <code>brief</code></p></li>
+<li><p><code>run</code>, <code>review</code>, <code>workflow</code>, <code>artifact</code>, <code>runtime</code>, <code>mcp</code>, <code>eval</code></p></li>
 <li><p><code>compile corpus</code></p></li>
 <li><p><code>render-chart</code></p></li>
 <li><p><code>query-data</code></p></li>
@@ -238,6 +239,73 @@ cat report.org2 | org2 query-data --stdin --results fetches_by_state</code></pre
 org2 agent --help</code></pre>
 <p>The capability command emits <code>org2:capabilities:v1</code> JSON covering workflows, safety rules, client roles, and canonical documentation entry points. The remaining <code>agent</code> subcommands return bounded <code>org2:agent-context:v1</code> JSON with citations and source ranges. <code>org2 context</code> is the human/prompt-friendly shorthand, <code>org2 brief</code> renders a cited synthesis, and <code>org2 compile corpus</code> emits a complete schema-versioned corpus artifact.</p>
 <p>See <a href="agent-quickstart.html">Agent quickstart</a> for the operating contract and common recipes.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="durable-agent-runs-and-review">Durable agent runs and review</h1>
+<p><code>org2 run</code> manages <code>org2:agent-run:v1</code> records under <code>.org2/runs/</code>. Each record contains readable Org sections plus a canonical JSON block; writes are atomic. The state machine supports queued, running, waiting-approval, blocked, completed, failed, and canceled states. Invalid transitions fail instead of silently rewriting history.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 run create --goal &quot;Prepare the weekly operating review&quot; \
+  --accept &quot;Claims retain citations&quot; --accept &quot;PDF passes export validation&quot; \
+  --risk local-draft --owner avi --assignee analyst \
+  --policy deep-analysis --token-limit 50000 --cost-limit-usd 10 --time-limit-seconds 1800 \
+  --step agent:&quot;Draft cited review&quot; --step validation:&quot;Validate citations and export&quot; \
+  --context notes/operations.org2 --capability agent-context --dir ~/notes
+org2 run list --dir ~/notes --json
+org2 run show RUN_ID --dir ~/notes --json
+org2 run start RUN_ID --dir ~/notes
+org2 run step RUN_ID step-1 --status completed --dir ~/notes
+org2 run validation RUN_ID --name citations --status passed --dir ~/notes
+org2 run approval-request RUN_ID --title &quot;Release report&quot; \
+  --action &quot;publish operating review&quot; --risk external-action --role owner --dir ~/notes
+org2 run approval-decide RUN_ID APPROVAL_ID --decision approved \
+  --actor avi --role owner --receipt approval:local:123 --dir ~/notes
+org2 run complete RUN_ID --dir ~/notes</code></pre>
+<p>Other lifecycle operations include <code>resume</code>, <code>retry</code>, <code>block</code>, <code>fail</code>, <code>cancel</code>, <code>fork</code>, <code>assign</code>, <code>comment</code>, and <code>artifact</code>. <code>run normalize</code> converts legacy <code>AGENT_RUN_ID</code> headings into shared records while retaining a citation to their source location.</p>
+<p>An approval may name both a required role and a specific reviewer. <code>approval-decide</code> refuses a mismatched <code>--role</code> or <code>--actor</code>, and the decision event preserves the asserted role plus any release receipt. This is a durable workflow boundary; operating-system or organizational identity enforcement can sit above it.</p>
+<p><code>org2 review list</code> returns <code>org2:review-queue:v1</code> JSON combining pending run approvals, review-required artifacts, blocked clarification requests, and warning/failed validation. It complements the existing <code>org2 approvals</code> headline workflow; the Mac <strong>Runs &amp; Review</strong> surface presents both.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="reusable-workflows-and-triggers">Reusable workflows and triggers</h1>
+<p><code>workflow save RUN_ID</code> converts a completed run into an <code>org2:workflow:v1</code> package under <code>.org2/workflows/</code>. Packages declare semantic version, compatibility, parameters and defaults, context rules, deterministic/agent/tool/approval steps, capabilities, risk, outputs, validation, approval boundaries, and manual/schedule/file-change/capture/meeting-import triggers.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 workflow save RUN_ID --id weekly-operating-review --version 1.0.0 --dir ~/notes
+org2 workflow validate weekly-operating-review --dir ~/notes
+org2 workflow run weekly-operating-review --input week=2026-W29 --dir ~/notes
+org2 workflow triggers weekly-operating-review --changed data/metrics.csv --dir ~/notes --json
+org2 workflow package weekly-operating-review --dir ~/notes --json
+org2 workflow corpus-template weekly-operating-review --out dist/weekly-review-template.json --dir ~/notes</code></pre>
+<p>Schedule syntax is intentionally deterministic and small: <code>every 15m</code>, <code>every 4h</code>, or <code>every 1d</code>. Event hosts ask <code>workflow triggers</code> which declarations are due, then instantiate the workflow; the durable run remains the execution record.</p>
+<p><code>workflow package</code> emits distribution metadata for one provider-independent workflow. <code>workflow corpus-template</code> wraps that metadata with ordinary starter files and the standard <code>raw/</code>, <code>notes/</code>, <code>views/</code>, <code>compiled/</code>, run, and workflow zones as <code>org2:corpus-template:v1</code>. The package is data, not an installer: recipients review it, initialize/open a corpus with their client, and place the workflow record in <code>.org2/workflows/</code>.</p>
+<p>The built-in <code>meeting-to-controlled-execution</code> package preserves meeting provenance, extracts cited decisions/tasks/questions, delegates bounded work, refreshes configured data/charts, compiles finished artifacts, requests release review, and gates publication:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 workflow install-builtin meeting-to-controlled-execution --dir ~/notes</code></pre>
+</section>
+<section class="org2-headline level-1">
+<h1 id="artifact-dependency-and-freshness-graph">Artifact dependency and freshness graph</h1>
+<p><code>org2 artifact graph</code> evaluates a JSON declaration containing artifact <code>id</code>, <code>path</code>, <code>sources</code>, optional previous <code>sourceHashes</code>, and optional rebuild <code>command</code>. Outputs are fresh, stale, missing, or conflicted. <code>artifact rebuild</code> propagates upstream staleness to downstream outputs and emits an ordered reviewable plan; <code>--apply</code> on <code>graph</code> stores the derived graph at <code>.org2/artifact-graph.json</code>.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 artifact graph --manifest compiled/artifacts.json --dir ~/notes --json
+org2 artifact rebuild --manifest compiled/artifacts.json --dir ~/notes</code></pre>
+</section>
+<section class="org2-headline level-1">
+<h1 id="runtime-policies-mcp-and-connector-snapshots">Runtime policies, MCP, and connector snapshots</h1>
+<p><code>org2 runtime init</code> creates <code>.org2/runtime-policy.json</code>. Symbolic policies select an eligible descriptor by required capabilities, privacy, transport, context window, and cost class. Built-in policy names are <code>private-local</code>, <code>fast-draft</code>, <code>deep-analysis</code>, <code>vision</code>, <code>regulated-cloud</code>, and <code>offline</code>. Runtime records contain aliases and model metadata, never credentials.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 runtime select private-local --capability text --dir ~/notes --json
+org2 runtime select deep-analysis --capability tool-use --dir ~/notes --json
+org2 runtime verify-paths --capability text --dir ~/notes --json</code></pre>
+<p><code>runtime verify-paths</code> is the portability check used by workflow test suites: it fails unless the configured baseline capability is available through both an enabled local/private descriptor and an enabled hosted descriptor. Execution remains adapter-owned; this check validates that switching paths does not require changing a workflow package or corpus state.</p>
+<p><code>org2 mcp serve</code> starts a stdio Model Context Protocol server. It exposes bounded <code>org2://corpus/</code> resources, workflow prompts, and typed tools for listing, creating, and transitioning runs. <code>mcp client-add</code> records explicitly configured external servers in <code>.org2/mcp-clients.json</code>. <code>mcp discover</code> performs an initialize/list handshake, reports the server's resources, tools, and prompts, and can persist a provenance-bearing discovery snapshot. <code>mcp snapshot</code> writes any external result under <code>raw/connectors/mcp/</code> with source URI, retrieval time, identity, freshness, and payload so durable work does not depend on an invisible live response.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 mcp serve --dir ~/notes
+org2 mcp client-add crm --command crm-mcp --arg=--stdio --capability accounts --env CRM_TOKEN --dir ~/notes
+org2 mcp discover crm --snapshot crm-capabilities --dir ~/notes --json
+org2 mcp snapshot account-123 --source mcp://crm/accounts/123 \
+  --identity account:123 --fresh-until 2026-07-15T00:00:00Z \
+  --input /tmp/account.json --dir ~/notes</code></pre>
+<p>Client configuration records environment-variable names for setup and discovery, never their values. The child process inherits credentials from the invoking environment or operating-system credential helper.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="outcome-evaluation-and-replay-fixtures">Outcome evaluation and replay fixtures</h1>
+<p><code>org2 eval run</code> compares an observable run against JSON expectations for terminal status, artifacts, passing validations, citations, approval boundaries, and protected paths. It writes <code>org2:workflow-eval:v1</code> results under <code>.org2/evals/</code>. Metrics come from inspectable run records: elapsed time, tokens, cost, citation coverage, and artifact review/freshness.</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 eval run RUN_ID --expect test/fixtures/weekly-review.expected.json --dir ~/notes
+org2 eval replay weekly-operating-review --fixture test/fixtures/weekly-review.replay.json --dir ~/notes
+org2 eval fixture RUN_ID --output test/fixtures/weekly-review.run.json --dir ~/notes</code></pre>
+<p><code>eval replay</code> deterministically instantiates the declared workflow against fixture inputs and checks version, resolved goal, plan steps, capabilities, and risk boundary without invoking a provider. <code>eval fixture</code> replaces people, providers, source locations, and receipts with synthetic values. Review the result before distributing it; free-form artifact contents are not copied by the command.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="corpus-lint">Corpus lint</h1>

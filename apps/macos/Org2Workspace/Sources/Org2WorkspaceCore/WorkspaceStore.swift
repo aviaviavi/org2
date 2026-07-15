@@ -622,6 +622,10 @@ public final class WorkspaceStore: ObservableObject {
   public private(set) var visibleApprovalItems: [ApprovalItem] = []
   @Published public var selectedApprovalItemID: ApprovalItem.ID?
   @Published public var isLoadingApprovals = false
+  @Published public private(set) var agentRuns: [AgentRunItem] = []
+  @Published public var selectedAgentRunID: AgentRunItem.ID?
+  @Published public private(set) var isLoadingAgentRuns = false
+  @Published public private(set) var mutatingAgentRunIDs: Set<AgentRunItem.ID> = []
   @Published public private(set) var approvingApprovalItemIDs: Set<ApprovalItem.ID> = []
   @Published public private(set) var rejectingApprovalItemIDs: Set<ApprovalItem.ID> = []
   @Published public var corpusFiles: [CorpusFile] = [] {
@@ -1004,6 +1008,7 @@ public final class WorkspaceStore: ObservableObject {
   private var preservesSelectedRenderedBlocksMetadataForNextAssignment = false
   private var isRefreshingAgenda = false
   private var isRefreshingApprovals = false
+  private var isRefreshingAgentRuns = false
   private var isRefreshingAssignedWork = false
   private var isRefreshingOpenClawThreads = false
   private var scheduledAgendaRefreshTask: Task<Void, Never>?
@@ -1400,10 +1405,15 @@ public final class WorkspaceStore: ObservableObject {
     renderedHTMLCacheOrder = []
     isRefreshingAgenda = false
     isRefreshingApprovals = false
+    isRefreshingAgentRuns = false
     isRefreshingAssignedWork = false
     isRefreshingOpenClawThreads = false
     isLoadingAgenda = false
     isLoadingApprovals = false
+    isLoadingAgentRuns = false
+    agentRuns = []
+    selectedAgentRunID = nil
+    mutatingAgentRunIDs = []
     isLoadingAssignedWork = false
     isLoadingOpenClawThreads = false
     scheduledAgendaRefreshTask?.cancel()
@@ -1693,6 +1703,115 @@ public final class WorkspaceStore: ObservableObject {
         statusText = "Approvals failed"
       }
     }
+  }
+
+  public func refreshAgentRuns(updatesStatus: Bool = false) async {
+    guard !isRefreshingAgentRuns else { return }
+    guard let corpusRoot else {
+      if updatesStatus { statusText = "No corpus selected" }
+      return
+    }
+
+    isRefreshingAgentRuns = true
+    isLoadingAgentRuns = true
+    if updatesStatus { statusText = "Loading agent runs..." }
+    defer {
+      isRefreshingAgentRuns = false
+      isLoadingAgentRuns = false
+    }
+
+    do {
+      let payload: AgentRunListPayload = try await cli.runJSON([
+        "run", "list", "--dir", corpusRoot.path, "--json"
+      ])
+      agentRuns = payload.runs
+      if let selectedAgentRunID,
+         !agentRuns.contains(where: { $0.id == selectedAgentRunID }) {
+        self.selectedAgentRunID = nil
+      }
+      if self.selectedAgentRunID == nil {
+        self.selectedAgentRunID = agentRuns.first?.id
+      }
+      if updatesStatus {
+        statusText = "\(agentRuns.count) agent run\(agentRuns.count == 1 ? "" : "s")"
+      }
+    } catch {
+      errorText = error.localizedDescription
+      if updatesStatus { statusText = "Agent runs failed" }
+    }
+  }
+
+  public func mutateAgentRun(_ run: AgentRunItem, action: String, reason: String? = nil) async {
+    guard let corpusRoot, !mutatingAgentRunIDs.contains(run.id) else { return }
+    mutatingAgentRunIDs.insert(run.id)
+    defer { mutatingAgentRunIDs.remove(run.id) }
+    do {
+      var arguments = ["run", action, run.id, "--dir", corpusRoot.path, "--json", "--actor", "Org2Workspace"]
+      if let reason, !reason.isEmpty { arguments.append(contentsOf: ["--reason", reason]) }
+      let updated: AgentRunItem = try await cli.runJSON(arguments)
+      if let index = agentRuns.firstIndex(where: { $0.id == updated.id }) {
+        agentRuns[index] = updated
+      } else {
+        agentRuns.insert(updated, at: 0)
+      }
+      statusText = "\(updated.goal): \(updated.status)"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Run update failed"
+    }
+  }
+
+  public func decideAgentRunApproval(_ run: AgentRunItem, approval: AgentRunApprovalItem, decision: String) async {
+    guard let corpusRoot, !mutatingAgentRunIDs.contains(run.id) else { return }
+    mutatingAgentRunIDs.insert(run.id)
+    defer { mutatingAgentRunIDs.remove(run.id) }
+    do {
+      let updated: AgentRunItem = try await cli.runJSON([
+        "run", "approval-decide", run.id, approval.id,
+        "--decision", decision,
+        "--actor", "Org2Workspace",
+        "--role", approval.requestedRole ?? "owner",
+        "--dir", corpusRoot.path,
+        "--json"
+      ])
+      if let index = agentRuns.firstIndex(where: { $0.id == updated.id }) {
+        agentRuns[index] = updated
+      }
+      statusText = "\(approval.title): \(decision)"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Approval update failed"
+    }
+  }
+
+  public func saveAgentRunAsWorkflow(_ run: AgentRunItem) async {
+    guard let corpusRoot, run.status == "completed", !mutatingAgentRunIDs.contains(run.id) else { return }
+    mutatingAgentRunIDs.insert(run.id)
+    defer { mutatingAgentRunIDs.remove(run.id) }
+    do {
+      _ = try await cli.run([
+        "workflow", "save", run.id,
+        "--id", "workflow-\(run.id)",
+        "--dir", corpusRoot.path,
+        "--json"
+      ])
+      statusText = "Saved \(run.goal) as workflow"
+    } catch {
+      errorText = error.localizedDescription
+      statusText = "Save as workflow failed"
+    }
+  }
+
+  public func openAgentRunRecord(_ run: AgentRunItem) {
+    guard let corpusRoot else { return }
+    openFile(path: corpusRoot.appendingPathComponent(".org2/runs/\(run.id).org2").path, line: 1)
+  }
+
+  public func openAgentRunArtifact(_ artifact: AgentRunArtifactItem) {
+    let path = artifact.path.hasPrefix("/")
+      ? artifact.path
+      : corpusRoot?.appendingPathComponent(artifact.path).path ?? artifact.path
+    openFile(path: path, line: 1)
   }
 
   private func approvalCandidateSources(
@@ -18278,7 +18397,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     switch self {
     case .home: "Home"
     case .agenda: "Agenda"
-    case .approvals: "Approvals"
+    case .approvals: "Runs & Review"
     case .files: "Files"
     case .search: "Search"
     case .meetings: "Meetings"
@@ -18290,7 +18409,7 @@ public enum WorkspaceSurface: String, CaseIterable, Identifiable, Sendable {
     switch self {
     case .home: "house"
     case .agenda: "calendar"
-    case .approvals: "checkmark.seal"
+    case .approvals: "bolt.horizontal.circle"
     case .files: "doc.text"
     case .search: "magnifyingglass"
     case .meetings: "mic"

@@ -41,6 +41,10 @@ The shorthand =org2 context QUERY= renders a cited Markdown/Org context pack for
 
 * Common workflows
 
+- *Delegate durable work*: =run create/list/show/start/resume/cancel/fork= keeps goals, cited context, plans, assignments, artifacts, approvals, validation, and event history in =.org2/runs/*.org2=.
+- *Teach and replay a process*: =workflow save/run/triggers/package= converts a completed run into a versioned recipe with inputs, capabilities, outputs, checks, and approval boundaries.
+- *Review and evaluate*: =review list/show= unifies pending run approvals, review-required artifacts, clarifications, and failed checks; =eval run/fixture= checks observable outcomes and creates sanitized regression fixtures.
+- *Use portable tools and models*: =runtime select= resolves capability/privacy policies, =mcp serve= exposes corpus resources and run tools, and =mcp snapshot= preserves external results with provenance.
 - *Plan and act*: =agenda=, =todo=, =approvals=, =plan=, and =clock=.
 - *Capture and organize*: =capture=, =archive=, and =refile=.
 - *Find and connect knowledge*: =search=, =query=, =id=, =backlinks=, =entity=, =index=, and =roam ...=.
@@ -51,6 +55,32 @@ The shorthand =org2 context QUERY= renders a cited Markdown/Org context pack for
 - *Use editor semantics*: =lsp= exposes shared navigation, completion, diagnostics, formatting, and refactoring behavior.
 
 See [[file:tooling-reference.org][Tooling reference]] for commands, [[file:language-reference.org][Language reference]] for syntax, [[file:corpus-flow.org][Corpus flow]] for artifact zones and trust boundaries, and [[file:features.org][Features]] for how the pieces fit together.
+
+* Durable delegation example
+
+#+begin_src sh
+org2 run create --goal "Prepare a cited launch briefing" \
+  --accept "A reviewed briefing and PDF exist" \
+  --context notes/launch.org2 --capability agent-context --capability publish \
+  --owner avi --dir ~/notes --json
+org2 run start RUN_ID --dir ~/notes
+org2 run artifact RUN_ID --path views/launch-brief.org2 --role view \
+  --review-status review-required --dir ~/notes
+org2 review list --status pending --dir ~/notes --json
+org2 run complete RUN_ID --dir ~/notes
+org2 workflow save RUN_ID --id launch-briefing --dir ~/notes
+#+end_src
+
+The durable record is ordinary Org2 text under =.org2/runs/=. Its human-readable sections and versioned JSON machine-state block describe the same run. Workflow packages use the same pattern under =.org2/workflows/=. Apps and agents may index these files, but they are not allowed to replace them with private state.
+
+Install and execute the built-in flagship recipe with:
+
+#+begin_src sh
+org2 workflow install-builtin meeting-to-controlled-execution --dir ~/notes
+org2 workflow run meeting-to-controlled-execution \
+  --input meeting=raw/meetings/2026-07-14.org2 \
+  --input output=views/meetings/2026-07-14 --dir ~/notes
+#+end_src
 
 * Write examples
 

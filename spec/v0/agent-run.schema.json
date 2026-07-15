@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org2.avi.press/spec/v0/agent-run.schema.json",
+  "title": "Org2 Agent Run",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "goal",
+    "acceptanceCriteria",
+    "status",
+    "riskClass",
+    "capabilities",
+    "context",
+    "plan",
+    "artifacts",
+    "approvals",
+    "validations",
+    "comments",
+    "events",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "schema": { "const": "org2:agent-run:v1" },
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "goal": { "type": "string", "minLength": 1 },
+    "acceptanceCriteria": { "type": "array", "items": { "type": "string" } },
+    "status": { "enum": ["queued", "running", "waiting-approval", "blocked", "completed", "failed", "canceled"] },
+    "riskClass": { "enum": ["read-only", "local-draft", "canonical-write", "external-action", "high-impact"] },
+    "owner": { "type": "string" },
+    "assignee": { "type": "string" },
+    "workflowId": { "type": "string" },
+    "workflowVersion": { "type": "string" },
+    "providerPolicy": { "type": "string" },
+    "provider": { "type": "string" },
+    "model": { "type": "string" },
+    "capabilities": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "context": { "type": "array", "items": { "$ref": "#/$defs/context" } },
+    "plan": { "type": "array", "items": { "$ref": "#/$defs/step" } },
+    "artifacts": { "type": "array", "items": { "$ref": "#/$defs/artifact" } },
+    "approvals": { "type": "array", "items": { "$ref": "#/$defs/approval" } },
+    "validations": { "type": "array", "items": { "$ref": "#/$defs/validation" } },
+    "comments": { "type": "array", "items": { "$ref": "#/$defs/comment" } },
+    "events": { "type": "array", "items": { "$ref": "#/$defs/event" } },
+    "budget": {
+      "type": "object",
+      "properties": {
+        "tokenLimit": { "type": "number", "minimum": 0 },
+        "costLimitUsd": { "type": "number", "minimum": 0 },
+        "timeLimitSeconds": { "type": "number", "minimum": 0 },
+        "tokensUsed": { "type": "number", "minimum": 0 },
+        "costUsedUsd": { "type": "number", "minimum": 0 },
+        "elapsedSeconds": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "parentRunId": { "type": "string" },
+    "forkedFromEventId": { "type": "string" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" },
+    "blockedReason": { "type": "string" },
+    "failure": { "type": "string" }
+  },
+  "$defs": {
+    "context": {
+      "type": "object",
+      "required": ["ref"],
+      "properties": {
+        "ref": { "type": "string" },
+        "title": { "type": "string" },
+        "citation": { "type": "string" },
+        "sha256": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "step": {
+      "type": "object",
+      "required": ["id", "title", "kind", "status"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "kind": { "enum": ["compiler", "agent", "tool", "approval", "artifact", "validation"] },
+        "status": { "enum": ["pending", "running", "completed", "blocked", "failed", "skipped"] },
+        "capability": { "type": "string" },
+        "startedAt": { "type": "string" },
+        "completedAt": { "type": "string" },
+        "detail": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "artifact": { "type": "object", "required": ["id", "path", "role", "createdAt"] },
+    "approval": { "type": "object", "required": ["id", "title", "action", "riskClass", "status", "requestedAt"] },
+    "validation": { "type": "object", "required": ["id", "name", "status", "checkedAt"] },
+    "comment": { "type": "object", "required": ["id", "author", "body", "createdAt"] },
+    "event": { "type": "object", "required": ["id", "type", "at"] }
+  },
+  "additionalProperties": false
+}
