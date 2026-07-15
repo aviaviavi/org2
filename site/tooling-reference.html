@@ -17,6 +17,12 @@
 <meta name="twitter:title" content="Tooling reference" />
 <meta name="twitter:description" content="Tooling reference" />
 <meta name="twitter:image" content="https://org2.avi.press/assets/og/tooling-reference.svg" />
+<style id="org2-chart-style">
+.org2-chart { width: min(100%, 800px); margin: 1rem 0 1.35rem; overflow-x: auto; }
+.org2-chart-compact { width: min(100%, 680px); }
+.org2-chart-wide { width: 100%; }
+.org2-chart svg { display: block; width: 100%; height: auto; margin: 0; }
+</style>
 <link rel="stylesheet" href="assets/site.css" />
 <style>
 :root { color-scheme: light dark; }
@@ -67,12 +73,17 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><code>archive</code>, <code>refile</code></p></li>
 <li><p><code>fmt</code></p></li>
 <li><p><code>search</code>, <code>id</code>, <code>query</code>, <code>backlinks</code></p></li>
+<li><p><code>index</code>, <code>entity</code>, <code>approvals</code>, <code>clock</code></p></li>
+<li><p><code>agent capabilities</code>, <code>agent context/search/fetch/bundle</code>, <code>context</code>, <code>brief</code></p></li>
+<li><p><code>compile corpus</code></p></li>
 <li><p><code>render-chart</code></p></li>
+<li><p><code>query-data</code></p></li>
 <li><p><code>roam ...</code></p></li>
 <li><p><code>crypt ...</code></p></li>
 <li><p><code>export html</code></p></li>
 <li><p><code>publish</code></p></li>
 <li><p><code>lint</code></p></li>
+<li><p><code>graph audit</code></p></li>
 <li><p><code>ai validate-job</code></p></li>
 <li><p><code>lsp</code></p></li>
 </ul>
@@ -155,8 +166,8 @@ source: package_fetches_result
 <p>Add <code>sort: x-asc</code>, <code>sort: x-desc</code>, <code>sort: y-asc</code>, or <code>sort: y-desc</code> when a chart preview should be ordered independently of the table rows. JSON output includes <code>ok</code>, <code>format</code>, <code>artifact</code>, <code>source</code>, <code>diagnostics</code>, and <code>svg</code> so VS Code, Vim, or agent tooling can show useful errors for missing columns, unsupported chart types, missing chart sorts, missing named source tables, or missing chart blocks.</p>
 </section>
 <section class="org2-headline level-1">
-<h1 id="local-data-queries">Local data queries</h1>
-<p><code>org2 query-data</code> is the first DuckDB-backed bridge for local/ad hoc datasets described in org2 notes. It scans fenced <code>```dataset</code> blocks, creates DuckDB views for explicit <code>csv</code>, <code>parquet</code>, or <code>json</code> paths/URLs or named org2 tables, optionally creates reusable SQL views from <code>```sql view=NAME</code> blocks, then runs a fenced <code>```sql results=NAME</code> block and materializes the returned rows.</p>
+<h1 id="data-queries">Data queries</h1>
+<p><code>org2 query-data</code> is the DuckDB-backed bridge for local and remote datasets described in org2 notes. It scans fenced <code>```dataset</code> blocks, creates DuckDB views for explicit <code>csv</code>, <code>parquet</code>, or <code>json</code> paths/URLs, named org2 tables, ClickHouse queries, or saved Metabase questions, optionally creates reusable SQL views from <code>```sql view=NAME</code> blocks, then runs a fenced <code>```sql results=NAME</code> block and materializes the returned rows.</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```dataset fetches
 type: csv
 path: ./data/package-fetches.csv
@@ -216,8 +227,17 @@ FROM fetches
 org2 query-data --file report.org2 --line 42 --format json
 org2 query-data --file report.org2 --inspect --include-script
 org2 query-data --file report.org2 --results fetches_by_state --out views/fetches_by_state.org
+org2 query-data --file report.org2 --results fetches_by_state --apply
 cat report.org2 | org2 query-data --stdin --results fetches_by_state</code></pre>
-<p>The default output is a named org table with <code>#+name: fetches_by_state</code> so it can be pasted or written into the note and consumed by <code>render-chart</code> via <code>source: fetches_by_state</code>. Materialized tables also include a compact <code>#+query-data:</code> provenance line with the result id, row count, optional artifact reference, optional freshness token, selected SQL hash, full DuckDB script hash, and <code>ran_at</code> timestamp so refreshed results can be compared without embedding the full script in the note. Add <code>artifact=PATH</code> to a SQL result block to record the intended materialized output; when <code>--out FILE</code> is used, the actual written artifact path is stamped instead. Add <code>freshness=24h</code>, <code>ttl=24h</code>, or <code>max-age=24h</code> to a SQL result block when editor, agent, or dashboard clients should know how long a materialized result can be treated as fresh. SQL result ids must be unique within the note; duplicate result ids are reported as diagnostics instead of selecting an arbitrary block. Dataset ids and SQL view ids also share DuckDB's relation namespace, so a SQL view cannot reuse a dataset name. URL and table datasets may also include metadata-only <code>credential:</code> or <code>auth:</code> references and <code>config:</code> or <code>profile:</code> references such as <code>env:SCARF_API_TOKEN</code> or <code>profile:product-analytics</code>; inline bearer tokens and passwords are rejected, and these references are not injected into the generated DuckDB SQL. JSON output includes diagnostics, dataset metadata, SQL view metadata, available SQL result block metadata, provenance hashes/artifact/freshness/run timestamp, rows, and the generated org table; <code>--include-script</code> also includes the DuckDB setup SQL for debugging. Use <code>--inspect</code> to emit parsed JSON metadata, structural diagnostics, and selected-query provenance without running DuckDB; add <code>--include-script</code> to preview the generated DuckDB SQL for the selected result in the same dry run. Editor and agent clients can pass an unsaved buffer with <code>--stdin</code> and select the SQL result block containing or after the cursor with <code>--line N</code>; file-backed dataset paths are then resolved relative to the current working directory, while URL datasets are passed through as declared. The command expects a local DuckDB CLI on <code>PATH</code> for execution, or a custom path via <code>--duckdb</code>.</p>
+<p>The default output is a named org table with <code>#+name: fetches_by_state</code> so it can be pasted or written into the note and consumed by <code>render-chart</code> via <code>source: fetches_by_state</code>. <code>--apply</code> inserts that generated block after the selected SQL block or replaces the existing <code>#+query-data: result</code>...= block in place. Materialized tables include a compact provenance line with the result id, row count, explicit source dependencies, optional artifact/freshness, query and script hashes, and <code>ran_at</code> timestamp. Add <code>artifact=PATH</code> to record an intended materialized output and <code>freshness=24h</code>, <code>ttl=24h</code>, or <code>max-age=24h</code> when clients should know how long a result can be treated as fresh. SQL result ids must be unique within the note, and dataset ids and SQL view ids share DuckDB's relation namespace. Inline bearer tokens and passwords are rejected. JSON output includes diagnostics, dataset metadata, SQL views, available result blocks, provenance, rows, and the generated org table; <code>--include-script</code> includes DuckDB setup SQL. Use <code>--inspect</code> to parse without running DuckDB. Org2 uses its bundled DuckDB engine by default; <code>--duckdb PATH</code> is an explicit CLI-engine override. ClickHouse and Metabase datasets resolve named <code>dataSources</code> profiles from the nearest <code>org2.json</code>; secrets are read only from profile-named environment variables or the Mac app's Keychain workflow. Metabase datasets may target saved questions or include reproducible native SQL with a configured database ID. Remote refresh is explicit: HTML export and merely opening a note in the Mac rendered view never execute warehouse queries. See <a href="language-reference.html">the language reference</a> for profile and dataset examples.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="agent-discovery-and-retrieval">Agent discovery and retrieval</h1>
+<p>Agents should begin by querying the installed version rather than relying on remembered documentation:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 agent capabilities
+org2 agent --help</code></pre>
+<p>The capability command emits <code>org2:capabilities:v1</code> JSON covering workflows, safety rules, client roles, and canonical documentation entry points. The remaining <code>agent</code> subcommands return bounded <code>org2:agent-context:v1</code> JSON with citations and source ranges. <code>org2 context</code> is the human/prompt-friendly shorthand, <code>org2 brief</code> renders a cited synthesis, and <code>org2 compile corpus</code> emits a complete schema-versioned corpus artifact.</p>
+<p>See <a href="agent-quickstart.html">Agent quickstart</a> for the operating contract and common recipes.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="corpus-lint">Corpus lint</h1>

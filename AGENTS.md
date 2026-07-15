@@ -30,6 +30,12 @@
 - The macOS app expects `dist/cli.js` and `dist/parse.js` to exist, so run `npm run build` before app testing when parser/CLI code changed.
 - Swift package tests live under `apps/macos/Org2Workspace/Tests/Org2WorkspaceCoreTests/`.
 
+## Documentation contract
+- Treat documentation impact as part of every feature change. Before finishing, decide whether the change affects user workflows, language semantics, CLI/API behavior, app surfaces, configuration, safety boundaries, or the project roadmap.
+- Update canonical sources under `docs/site/`; do not hand-edit generated `site/` HTML. Run `npm run docs:check` for agent/CLI discovery coverage and `npm run check:generated` when committing generated artifacts.
+- Keep `org2 agent capabilities`, `docs/site/agent-quickstart.org`, `docs/site/llms.txt`, `docs/site/features.org`, and the relevant reference/editor page aligned when adding or removing a public capability.
+- If no documentation change is needed, state why in the change summary or pull request. Refactors and tests may legitimately be docs-neutral, but the decision should be explicit.
+
 ## macOS app development workflow
 - The user's daily app is `/Users/avi/Applications/Org2Workspace.app` with bundle identifier `org.org2.workspace`. Do not quit, overwrite, re-sign, or relaunch it during development unless the user explicitly asks to update the main app.
 - Codex development and smoke testing should use `/Users/avi/Applications/Org2Workspace Codex.app` with bundle identifier `org.org2.workspace.codex`.

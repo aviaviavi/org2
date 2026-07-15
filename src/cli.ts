@@ -27,6 +27,7 @@ import { renderOrgDocumentToHtml, renderOrgExportIndexToHtml } from "./export.js
 import { compileCorpus, compileCorpusIncremental, extractCheckboxProgress, renderCompiledCorpus } from "./corpusCompile.js";
 import { extractClockReport } from "./clock.js";
 import { buildAgentContextPayload, renderAgentContextPack, type AgentInclude } from "./agentContext.js";
+import { buildOrg2CapabilityManifest } from "./capabilities.js";
 import { renderOrgChart, renderOrgCharts } from "./chartRender.js";
 import { applyDataQueryResult, runOrg2DataQuery } from "./dataQuery.js";
 import {
@@ -69,7 +70,7 @@ import type {
 function embeddedChartsForSource(raw: string, file?: string) {
   return renderOrgCharts(raw, { file })
     .filter((chart): chart is typeof chart & { svg: string; source: NonNullable<typeof chart.source> } => chart.ok && Boolean(chart.svg && chart.source))
-    .map((chart) => ({ svg: chart.svg, source: chart.source }));
+    .map((chart) => ({ svg: chart.svg, source: chart.source, presentation: chart.presentation }));
 }
 
 // Parse ISO date string to Date
@@ -8527,7 +8528,7 @@ async function main(): Promise<void> {
   let dataQueryResultId = "";
   let dataQueryLine = 0;
   let dataQueryOut = "";
-  let dataQueryDuckdb = "duckdb";
+  let dataQueryDuckdb: string | undefined;
   let dataQueryFormat: "org" | "json" = "org";
   let dataQueryIncludeScript = false;
   let dataQueryInspect = false;
@@ -8538,7 +8539,7 @@ async function main(): Promise<void> {
   let clockFormat: "text" | "json" = "text";
 
   // Agent-ready retrieval/context API
-  let agentAction: "context" | "search" | "fetch" | "bundle" | "" = "";
+  let agentAction: "capabilities" | "context" | "search" | "fetch" | "bundle" | "" = "";
   let agentQuery = "";
   let agentId = "";
   let agentLimitRaw = "10";
@@ -8769,7 +8770,7 @@ async function main(): Promise<void> {
       i++;
       if (i < args.length && !args[i]!.startsWith("--")) {
         const sub = args[i]!;
-        if (sub === "context" || sub === "search" || sub === "fetch" || sub === "bundle") {
+        if (sub === "capabilities" || sub === "context" || sub === "search" || sub === "fetch" || sub === "bundle") {
           agentAction = sub;
           i++;
         }
@@ -10119,12 +10120,15 @@ Roam / IDs:
   org2 index --dir DIR [--recursive] [--include-archives] [--format text|json]
   org2 search QUERY [--dir DIR] [--recursive] [--include-archives] [--format text|json]
   org2 query QUERY [--dir DIR] [--recursive] [--include-archives] [--format text|json]
+  org2 entity show NAME [--dir DIR] [--recursive] [--format text|json]
   org2 query (--id UUID|--text TEXT) [--dir DIR] [--recursive] [--include-archives]
   org2 query clocks --dir DIR [--recursive] [--format text|json]
   org2 clock --dir DIR [--recursive] [--format text|json]
   org2 compile corpus --dir DIR [--recursive] [--out FILE] [--format json|jsonl]
   org2 render-chart --file FILE [--block-id ID|--line N] [--out FILE] [--format svg|json]
   org2 query-data (--file FILE|--stdin) [--results NAME|--line N] [--out FILE|--apply] [--format org|json]
+  org2 agent capabilities
+  org2 agent <context|search|fetch|bundle> [options]
   org2 context QUERY [--dir DIR] [--recursive] [--budget 8k] [--format markdown|org|json]
   org2 brief today [--dir DIR] [--recursive] [--out views/today.org]
   org2 brief project NAME [--dir DIR] [--recursive] [--out views/NAME.org]
@@ -10181,7 +10185,7 @@ function printScopedUsage(
     roamNodeAction: "new";
     roamLinkAction: "insert-backlink";
     aiAction: "validate-job" | "run" | "promote" | "suggest-links" | "review" | "";
-    agentAction: "context" | "search" | "fetch" | "bundle" | "";
+    agentAction: "capabilities" | "context" | "search" | "fetch" | "bundle" | "";
   },
   exitCode: number,
 ): never {
@@ -10490,7 +10494,7 @@ Flags:
   --stdin             Read Org/Org2 input from standard input
   --results NAME      SQL result block to run; optional when the file has one SQL block
   --line N            Select the SQL result block containing or after line N
-  --duckdb PATH       DuckDB CLI path (default: duckdb)
+  --duckdb PATH       Override the bundled DuckDB engine with a CLI path
   --out FILE          Write materialized org table or JSON envelope to FILE
   --apply             Insert or replace the materialized result in the source file
   --format FORMAT     org (default) or json diagnostics envelope
@@ -10547,6 +10551,7 @@ Human-facing briefings from the agent context substrate. Output cites notes/raw 
     text = `org2 agent ${options.agentAction || "context"}
 
 Usage:
+  org2 agent capabilities
   org2 agent bundle --query QUERY [--scope project:NAME] [--since 90d] [--source-type TYPE] [--review-status STATUS] [--max-tokens N]
   org2 agent context --query QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...]
   org2 agent search --query QUERY [--dir DIR] [--recursive] [--file FILE|--files FILE ...]
@@ -10567,6 +10572,7 @@ Flags:
   --salience-weight N Ranking weight for salience metadata, TODOs, backlinks, and scope proximity (default 1)
 
 Output:
+  capabilities emits schema org2:capabilities:v1 with workflows, safety rules, clients, and documentation entry points.
   Schema org2:agent-context:v1 with source ranges, citations, IDs, titles,
   tags, properties, optional backlinks/neighbors, and bounded context text.`;
   } else if (command === "graph") {
@@ -10799,7 +10805,7 @@ Flags:
       ...(dataQueryResultId ? { resultId: dataQueryResultId } : {}),
       ...(dataQueryLine > 0 ? { resultLine: dataQueryLine } : {}),
       ...(dataQueryOut ? { outputArtifact: dataQueryOut } : {}),
-      duckdbPath: dataQueryDuckdb,
+      ...(dataQueryDuckdb ? { duckdbPath: dataQueryDuckdb } : {}),
       includeScript: dataQueryIncludeScript,
       inspectOnly: dataQueryInspect,
     });
@@ -10875,7 +10881,11 @@ Flags:
 
   if (command === "agent" || command === "context") {
     if (command === "context") agentAction = agentId.trim() ? "fetch" : "bundle";
-    if (!agentAction) { console.error("Error: org2 agent requires a subcommand (bundle, context, search, or fetch)"); process.exit(1); }
+    if (!agentAction) { console.error("Error: org2 agent requires a subcommand (capabilities, bundle, context, search, or fetch)"); process.exit(1); }
+    if (agentAction === "capabilities") {
+      process.stdout.write(JSON.stringify(buildOrg2CapabilityManifest(), null, 2) + "\n");
+      return;
+    }
     if (command === "context" && agentQuery.trim() && agentId.trim()) { console.error("Error: org2 context accepts either QUERY/--query or --id ID, not both"); process.exit(1); }
     if ((agentAction === "bundle" || agentAction === "context" || agentAction === "search") && !agentQuery.trim()) {
       console.error(command === "context" ? "Error: org2 context requires QUERY/--query or --id ID" : "Error: org2 agent/context requires --query QUERY");

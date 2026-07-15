@@ -2,6 +2,10 @@
 
 Org2 reference is split into two detailed sections:
 
+- [[file:agent-quickstart.org][Agent quickstart]]
+  - installed capability discovery
+  - cited retrieval commands and safe write contract
+
 - [[file:language-reference.org][Language reference]]
   - every core syntax construct
   - TODO/priority/tags/drawers/planning/timestamps

@@ -27,6 +27,7 @@ export type ChartRenderResult = {
   format: ChartRenderFormat;
   artifact?: string;
   svg?: string;
+  presentation?: ChartPresentation;
   source?: ChartRenderSource;
   diagnostics: ChartRenderDiagnostic[];
 };
@@ -39,6 +40,13 @@ type Keyword = {
 
 type ChartType = "bar" | "line" | "histogram";
 type ChartSort = "none" | "x-asc" | "x-desc" | "y-asc" | "y-desc";
+export type ChartSize = "compact" | "medium" | "wide";
+
+export type ChartPresentation = {
+  size: ChartSize;
+  height: number;
+  interactive: boolean;
+};
 
 type ChartSpec = {
   type: ChartType;
@@ -46,6 +54,7 @@ type ChartSpec = {
   y: string;
   title?: string;
   sort: ChartSort;
+  presentation: ChartPresentation;
 };
 
 type ChartDataSource =
@@ -140,11 +149,47 @@ function parseChartSpec(raw: string, title?: string): { spec?: ChartSpec; diagno
   const y = params.get("y") || "";
   const sortRaw = (params.get("sort") || "none").toLowerCase();
   const sort = parseChartSort(sortRaw);
+  const sizeRaw = (params.get("size") || "medium").toLowerCase();
+  const size = parseChartSize(sizeRaw);
+  const defaultHeight = size === "compact" ? 300 : size === "wide" ? 420 : 360;
+  const rawHeight = params.get("height");
+  const parsedHeight = rawHeight ? Number.parseInt(rawHeight, 10) : defaultHeight;
+  const height = Number.isFinite(parsedHeight) && parsedHeight >= 220 && parsedHeight <= 720
+    ? parsedHeight
+    : undefined;
+  const interactiveRaw = (params.get("interactive") || "true").toLowerCase();
+  const interactive = parseBoolean(interactiveRaw);
   if (!x) diagnostics.push(diagnostic("Chart spec requires x=column"));
   if (!y) diagnostics.push(diagnostic("Chart spec requires y=column"));
   if (!sort) diagnostics.push(diagnostic(`Unsupported chart sort "${sortRaw}". Supported sorts: none, x-asc, x-desc, y-asc, y-desc`));
-  if (!type || !x || !y || !sort) return { diagnostics };
-  return { spec: { type, x, y, sort, ...(title ? { title } : {}) }, diagnostics };
+  if (!size) diagnostics.push(diagnostic(`Unsupported chart size "${sizeRaw}". Supported sizes: compact, medium, wide`));
+  if (!height) diagnostics.push(diagnostic("Chart height must be an integer from 220 to 720 pixels"));
+  if (interactive === undefined) diagnostics.push(diagnostic("Chart interactive must be true or false"));
+  if (!type || !x || !y || !sort || !size || !height || interactive === undefined) return { diagnostics };
+  return {
+    spec: {
+      type,
+      x,
+      y,
+      sort,
+      presentation: { size, height, interactive },
+      ...(title ? { title } : {}),
+    },
+    diagnostics,
+  };
+}
+
+function parseChartSize(raw: string): ChartSize | undefined {
+  if (raw === "compact" || raw === "small") return "compact";
+  if (raw === "medium" || raw === "default") return "medium";
+  if (raw === "wide" || raw === "large" || raw === "full") return "wide";
+  return undefined;
+}
+
+function parseBoolean(raw: string): boolean | undefined {
+  if (raw === "true" || raw === "yes" || raw === "on" || raw === "1") return true;
+  if (raw === "false" || raw === "no" || raw === "off" || raw === "0") return false;
+  return undefined;
 }
 
 function parseChartSort(raw: string): ChartSort | undefined {
@@ -224,10 +269,16 @@ function parseFencedChartSpec(openerRest: string, bodyLines: string[]): ParsedFe
   const sort = bodyParams.get("sort");
   const title = bodyParams.get("title");
   const source = bodyParams.get("source");
+  const size = bodyParams.get("size");
+  const height = bodyParams.get("height");
+  const interactive = bodyParams.get("interactive");
 
   if (x) tokens.push(`x=${x}`);
   if (y) tokens.push(`y=${y}`);
   if (sort) tokens.push(`sort=${sort}`);
+  if (size) tokens.push(`size=${size}`);
+  if (height) tokens.push(`height=${height}`);
+  if (interactive) tokens.push(`interactive=${interactive}`);
 
   for (const arg of openerArgs.slice(firstArg && !firstArg.includes("=") ? 1 : 0)) {
     if (!/^source=/i.test(arg)) tokens.push(arg);
@@ -285,7 +336,7 @@ type ParsedTableBlock = {
 function candidateFromTable(table: ParsedTableBlock, spec: ChartSpec | undefined, diagnostics: ChartRenderDiagnostic[], source?: Partial<ChartRenderSource>): ChartCandidate {
   return {
     source: { ...table.source, ...source },
-    spec: spec || { type: "bar", x: "", y: "", sort: "none" },
+    spec: spec || { type: "bar", x: "", y: "", sort: "none", presentation: { size: "medium", height: 360, interactive: true } },
     headers: table.headers,
     rows: table.rows,
     diagnostics: [...diagnostics, ...table.diagnostics],
@@ -404,7 +455,7 @@ function collectChartCandidates(raw: string, file?: string): ChartCandidate[] {
           } else {
             candidates.push({
               source: { ...(file ? { file } : {}), line: fencedChart?.startLine || tableStartLine, endLine: fencedChart?.endLine || chartEndLine, ...(name ? { blockId: name } : {}), kind: "table" },
-              spec: parsedSpec.spec || { type: "bar", x: "", y: "", sort: "none" },
+              spec: parsedSpec.spec || { type: "bar", x: "", y: "", sort: "none", presentation: { size: "medium", height: 360, interactive: true } },
               headers: [],
               rows: [],
               diagnostics: [
@@ -438,7 +489,7 @@ function collectChartCandidates(raw: string, file?: string): ChartCandidate[] {
         ));
         candidates.push({
           source: { ...(file ? { file } : {}), line: fencedChart.startLine, endLine: fencedChart.endLine, ...(name ? { blockId: name } : {}), kind: "table" },
-          spec: parsedSpec.spec || { type: "bar", x: "", y: "", sort: "none" },
+          spec: parsedSpec.spec || { type: "bar", x: "", y: "", sort: "none", presentation: { size: "medium", height: 360, interactive: true } },
           headers: [],
           rows: [],
           diagnostics,
@@ -491,6 +542,20 @@ function columnIndex(headers: string[], column: string): number {
   return headers.findIndex((header) => header.toLowerCase() === lower);
 }
 
+function niceTickStep(span: number, targetTicks = 4): number {
+  const rough = Math.max(Number.EPSILON, span / Math.max(1, targetTicks));
+  const magnitude = 10 ** Math.floor(Math.log10(rough));
+  const normalized = rough / magnitude;
+  const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  return factor * magnitude;
+}
+
+function formatTick(value: number, step: number): string {
+  if (Number.isInteger(value)) return value.toFixed(0);
+  const digits = step >= 1 ? 1 : Math.min(3, Math.max(1, Math.ceil(-Math.log10(step))));
+  return value.toFixed(digits).replace(/\.0+$/, "");
+}
+
 function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: ChartRenderDiagnostic[] } {
   const diagnostics = [...candidate.diagnostics];
   const xIndex = columnIndex(candidate.headers, candidate.spec.x);
@@ -524,13 +589,17 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
   }
 
   const width = 720;
-  const height = 450;
-  const margin = { top: candidate.spec.title ? 54 : 28, right: 28, bottom: 100, left: 64 };
+  const height = candidate.spec.presentation.height;
+  const margin = { top: candidate.spec.title ? 48 : 20, right: 22, bottom: 72, left: 58 };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
-  const maxValue = Math.max(1, ...sortedPoints.map((point) => point.value));
-  const minValue = Math.min(0, ...sortedPoints.map((point) => point.value));
-  const span = Math.max(1, maxValue - minValue);
+  const rawMaxValue = Math.max(0, ...sortedPoints.map((point) => point.value));
+  const rawMinValue = Math.min(0, ...sortedPoints.map((point) => point.value));
+  const rawSpan = Math.max(1, rawMaxValue - rawMinValue);
+  const tickStep = niceTickStep(rawSpan);
+  const minValue = Math.floor(rawMinValue / tickStep) * tickStep;
+  const maxValue = Math.max(tickStep, Math.ceil(rawMaxValue / tickStep) * tickStep);
+  const span = maxValue - minValue;
   const yFor = (value: number): number => margin.top + plotHeight - ((value - minValue) / span) * plotHeight;
   const zeroY = yFor(0);
   const axisColor = "var(--org2-chart-axis, #334155)";
@@ -538,18 +607,26 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
   const markColor = "var(--org2-chart-mark, #2563eb)";
   const labelColor = "var(--org2-chart-label, #475569)";
 
-  const labelEvery = Math.max(1, Math.ceil(sortedPoints.length / 8));
+  const labelEvery = Math.max(1, Math.ceil(sortedPoints.length / 7));
   const labels = sortedPoints.map((point, index) => {
     if (index % labelEvery !== 0 && index !== sortedPoints.length - 1) return "";
     const x = margin.left + (sortedPoints.length === 1 ? plotWidth / 2 : (plotWidth * index) / (sortedPoints.length - 1));
-    return `<text x="${x.toFixed(1)}" y="${height - 44}" font-size="12" fill="${labelColor}" text-anchor="end" transform="rotate(-35 ${x.toFixed(1)} ${height - 44})">${escapeXml(point.label)}</text>`;
+    return `<text x="${x.toFixed(1)}" y="${height - 38}" font-size="11" fill="${labelColor}" text-anchor="end" transform="rotate(-28 ${x.toFixed(1)} ${height - 38})">${escapeXml(point.label)}</text>`;
   }).filter(Boolean);
 
-  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-    const value = minValue + span * ratio;
+  const tickValues: number[] = [];
+  for (let value = minValue; value <= maxValue + tickStep / 2 && tickValues.length < 12; value += tickStep) {
+    tickValues.push(value);
+  }
+  const yTicks = tickValues.map((value) => {
     const y = yFor(value);
-    return `<line x1="${margin.left}" y1="${y.toFixed(1)}" x2="${width - margin.right}" y2="${y.toFixed(1)}" stroke="${gridColor}" stroke-width="1"/><text x="${margin.left - 10}" y="${(y + 4).toFixed(1)}" font-size="12" fill="${labelColor}" text-anchor="end">${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)}</text>`;
+    return `<line x1="${margin.left}" y1="${y.toFixed(1)}" x2="${width - margin.right}" y2="${y.toFixed(1)}" stroke="${gridColor}" stroke-width="1" vector-effect="non-scaling-stroke"/><text x="${margin.left - 10}" y="${(y + 4).toFixed(1)}" font-size="11" fill="${labelColor}" text-anchor="end">${formatTick(value, tickStep)}</text>`;
   });
+
+  const markAttributes = (point: { label: string; value: number }, x: number): string => {
+    const label = `${point.label}: ${point.value}`;
+    return `class="org2-chart-mark" data-org2-chart-mark="true" data-label="${escapeXml(point.label)}" data-value="${point.value}" data-chart-x="${x.toFixed(1)}" role="graphics-symbol" aria-label="${escapeXml(label)}" tabindex="0"`;
+  };
 
   const marks = candidate.spec.type === "bar" || candidate.spec.type === "histogram"
     ? sortedPoints.map((point, index) => {
@@ -558,34 +635,37 @@ function renderSvg(candidate: ChartCandidate): { svg?: string; diagnostics: Char
         const x = margin.left + band * index + (band - barWidth) / 2;
         const y = yFor(Math.max(0, point.value));
         const h = Math.abs(zeroY - yFor(point.value));
-        return `<rect x="${x.toFixed(1)}" y="${Math.min(y, zeroY).toFixed(1)}" width="${barWidth.toFixed(1)}" height="${h.toFixed(1)}" fill="${markColor}"><title>${escapeXml(point.label)}: ${point.value}</title></rect>`;
+        return `<rect ${markAttributes(point, x + barWidth / 2)} x="${x.toFixed(1)}" y="${Math.min(y, zeroY).toFixed(1)}" width="${barWidth.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${markColor}"><title>${escapeXml(point.label)}: ${point.value}</title></rect>`;
       })
     : [
-        `<polyline fill="none" stroke="${markColor}" stroke-width="3" points="${sortedPoints.map((point, index) => {
+        `<polyline class="org2-chart-line" fill="none" stroke="${markColor}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" points="${sortedPoints.map((point, index) => {
           const x = margin.left + (sortedPoints.length === 1 ? plotWidth / 2 : (plotWidth * index) / (sortedPoints.length - 1));
           return `${x.toFixed(1)},${yFor(point.value).toFixed(1)}`;
         }).join(" ")}"/>`,
         ...sortedPoints.map((point, index) => {
           const x = margin.left + (sortedPoints.length === 1 ? plotWidth / 2 : (plotWidth * index) / (sortedPoints.length - 1));
-          return `<circle cx="${x.toFixed(1)}" cy="${yFor(point.value).toFixed(1)}" r="4" fill="${markColor}"><title>${escapeXml(point.label)}: ${point.value}</title></circle>`;
+          return `<circle ${markAttributes(point, x)} cx="${x.toFixed(1)}" cy="${yFor(point.value).toFixed(1)}" r="3.4" fill="${markColor}" stroke="var(--org2-chart-surface, #ffffff)" stroke-width="1.5" vector-effect="non-scaling-stroke"><title>${escapeXml(point.label)}: ${point.value}</title></circle>`;
         }),
       ];
 
   const title = candidate.spec.title
-    ? `<text x="${margin.left}" y="28" font-size="18" font-weight="600" fill="var(--org2-chart-title, #0f172a)">${escapeXml(candidate.spec.title)}</text>`
+    ? `<text x="${margin.left}" y="27" font-size="16" font-weight="600" fill="var(--org2-chart-title, #0f172a)">${escapeXml(candidate.spec.title)}</text>`
     : "";
   const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" class="org2-chart-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeXml(candidate.spec.title || `${candidate.spec.y} by ${candidate.spec.x}`)}" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" data-org2-chart-size="${candidate.spec.presentation.size}" data-org2-chart-interactive="${candidate.spec.presentation.interactive}" data-org2-chart-y-label="${escapeXml(candidate.spec.y)}" data-org2-plot-top="${margin.top}" data-org2-plot-bottom="${height - margin.bottom}">`,
+    `<title>${escapeXml(candidate.spec.title || `${candidate.spec.y} by ${candidate.spec.x}`)}</title>`,
     `<desc>Org2 ${candidate.spec.type} chart for ${escapeXml(candidate.spec.y)} by ${escapeXml(candidate.spec.x)}</desc>`,
-    `<rect width="${width}" height="${height}" fill="var(--org2-chart-background, #ffffff)"/>`,
     title,
     ...yTicks,
-    `<line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${height - margin.bottom}" stroke="${axisColor}" stroke-width="1.5"/>`,
-    `<line x1="${margin.left}" y1="${zeroY.toFixed(1)}" x2="${width - margin.right}" y2="${zeroY.toFixed(1)}" stroke="${axisColor}" stroke-width="1.5"/>`,
+    `<line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${height - margin.bottom}" stroke="${axisColor}" stroke-width="1" vector-effect="non-scaling-stroke"/>`,
+    `<line x1="${margin.left}" y1="${zeroY.toFixed(1)}" x2="${width - margin.right}" y2="${zeroY.toFixed(1)}" stroke="${axisColor}" stroke-width="1" vector-effect="non-scaling-stroke"/>`,
+    candidate.spec.presentation.interactive
+      ? `<line class="org2-chart-crosshair" x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${height - margin.bottom}" stroke="${labelColor}" stroke-width="1" vector-effect="non-scaling-stroke" visibility="hidden" pointer-events="none"/>`
+      : "",
     ...marks,
     ...labels,
-    `<text x="${(margin.left + plotWidth / 2).toFixed(1)}" y="${height - 10}" font-size="13" fill="${axisColor}" text-anchor="middle">${escapeXml(candidate.spec.x)}</text>`,
-    `<text x="18" y="${(margin.top + plotHeight / 2).toFixed(1)}" font-size="13" fill="${axisColor}" text-anchor="middle" transform="rotate(-90 18 ${(margin.top + plotHeight / 2).toFixed(1)})">${escapeXml(candidate.spec.y)}</text>`,
+    `<text x="${(margin.left + plotWidth / 2).toFixed(1)}" y="${height - 7}" font-size="11" fill="${labelColor}" text-anchor="middle">${escapeXml(candidate.spec.x)}</text>`,
+    `<text x="16" y="${(margin.top + plotHeight / 2).toFixed(1)}" font-size="11" fill="${labelColor}" text-anchor="middle" transform="rotate(-90 16 ${(margin.top + plotHeight / 2).toFixed(1)})">${escapeXml(candidate.spec.y)}</text>`,
     `</svg>`,
   ].filter(Boolean).join("\n");
 
@@ -620,6 +700,7 @@ export function renderOrgChart(raw: string, opts: RenderChartOptions = {}): Char
     format: "svg",
     ...(opts.outputPath ? { artifact: opts.outputPath } : {}),
     ...(rendered.svg ? { svg: rendered.svg } : {}),
+    presentation: selected.spec.presentation,
     source,
     diagnostics: rendered.diagnostics,
   };
@@ -635,6 +716,7 @@ export function renderOrgCharts(raw: string, opts: Pick<RenderChartOptions, "fil
       ok: rendered.diagnostics.every((item) => item.severity !== "error") && Boolean(rendered.svg),
       format: "svg",
       ...(rendered.svg ? { svg: rendered.svg } : {}),
+      presentation: candidate.spec.presentation,
       source,
       diagnostics: rendered.diagnostics,
     };

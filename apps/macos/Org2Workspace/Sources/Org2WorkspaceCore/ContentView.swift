@@ -72,6 +72,10 @@ public struct ContentView: View {
       OrgCryptConfigurationSheet()
         .environmentObject(store)
     }
+    .sheet(isPresented: $store.isDataSourceConfigurationPresented) {
+      DataSourceConfigurationSheet()
+        .environmentObject(store)
+    }
     .sheet(isPresented: $store.isCapturePanelPresented) {
       GlobalCaptureView()
         .environmentObject(store)
@@ -87,7 +91,9 @@ private struct WorkspaceMainArea: View {
   @EnvironmentObject private var store: WorkspaceStore
 
   var body: some View {
-    if store.isWorkspaceSurfacePaneClosed && store.hasWorkspaceDetailContent {
+    if store.corpusRoot == nil {
+      CorpusOnboardingView()
+    } else if store.isWorkspaceSurfacePaneClosed && store.hasWorkspaceDetailContent {
       WorkspaceDetailArea()
     } else if store.isWorkspaceDetailPaneClosed || !store.hasWorkspaceDetailContent {
       WorkspaceSurfaceCacheView(selectedSurface: store.selectedSurface)
@@ -100,6 +106,102 @@ private struct WorkspaceMainArea: View {
           .frame(minWidth: 520, idealWidth: 720)
       }
     }
+  }
+}
+
+private struct CorpusOnboardingView: View {
+  @EnvironmentObject private var store: WorkspaceStore
+
+  var body: some View {
+    ScrollView {
+      VStack(spacing: 26) {
+        VStack(spacing: 12) {
+          WorkspaceIconBadge(systemImage: "text.book.closed", tint: .accentColor, fill: Color.accentColor.opacity(0.12))
+            .scaleEffect(1.45)
+            .padding(.bottom, 4)
+          Text("Welcome to Org2")
+            .font(.largeTitle.weight(.semibold))
+          Text("Connect a folder of Org or Org2 files, or create a small starter corpus. Your files stay ordinary plain text on disk.")
+            .font(.title3)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 650)
+        }
+
+        HStack(alignment: .top, spacing: 18) {
+          onboardingCard(
+            title: "Open an existing corpus",
+            detail: "Choose any folder containing .org2 or .org files. Org2 will scan it and derive agenda, search, graph, and workspace views.",
+            systemImage: "folder",
+            actionTitle: "Choose Folder"
+          ) {
+            store.chooseCorpus()
+          }
+
+          onboardingCard(
+            title: "Create a new corpus",
+            detail: "Choose or create an empty folder. Org2 will add a starter config, inbox, welcome note, daily notes folder, and reviewable output zones.",
+            systemImage: "sparkles.rectangle.stack",
+            actionTitle: "Create Starter Corpus"
+          ) {
+            store.createCorpus()
+          }
+        }
+        .frame(maxWidth: 820)
+
+        VStack(spacing: 5) {
+          Text("Already use Org Mode?")
+            .font(.callout.weight(.semibold))
+          Text("No migration is required. Open the folder you already have and adopt .org2 gradually if you want to.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+        }
+
+        if !store.statusText.isEmpty && store.statusText != "No corpus selected" {
+          Text(store.statusText)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .textSelection(.enabled)
+        }
+      }
+      .padding(.horizontal, 36)
+      .padding(.vertical, 56)
+      .frame(maxWidth: .infinity)
+    }
+    .background(WorkspaceDesign.appBackground)
+  }
+
+  private func onboardingCard(
+    title: String,
+    detail: String,
+    systemImage: String,
+    actionTitle: String,
+    perform: @escaping () -> Void
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 14) {
+      WorkspaceIconBadge(systemImage: systemImage, tint: .accentColor, fill: Color.accentColor.opacity(0.10))
+      Text(title)
+        .font(.title3.weight(.semibold))
+      Text(detail)
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      Spacer(minLength: 4)
+      Button(actionTitle, action: perform)
+        .buttonStyle(WorkspaceActionButtonStyle())
+    }
+    .padding(22)
+    .frame(maxWidth: .infinity, minHeight: 240, alignment: .topLeading)
+    .background(
+      RoundedRectangle(cornerRadius: 16, style: .continuous)
+        .fill(WorkspaceDesign.panelFill)
+        .overlay(
+          RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .stroke(WorkspaceDesign.hairline, lineWidth: 1)
+        )
+    )
   }
 }
 
@@ -270,10 +372,17 @@ private struct SidebarView: View {
             }
           }
         } else {
-          Button {
-            store.chooseCorpus()
-          } label: {
-            Label("Open Corpus", systemImage: "folder")
+          VStack(alignment: .leading, spacing: 8) {
+            Button {
+              store.chooseCorpus()
+            } label: {
+              Label("Open Corpus", systemImage: "folder")
+            }
+            Button {
+              store.createCorpus()
+            } label: {
+              Label("New Corpus", systemImage: "plus.square.on.folder")
+            }
           }
         }
       }
@@ -580,6 +689,12 @@ private struct OpenClawSidebarThreadRow: View {
             .help("OpenClaw is thinking")
         }
         Spacer(minLength: 8)
+        if thread.resource != nil {
+          Image(systemName: "text.bubble.fill")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .help("Canonical resource thread")
+        }
         if thread.isPinned {
           Image(systemName: "pin.fill")
             .font(.caption2.weight(.semibold))
@@ -3972,6 +4087,99 @@ private struct OrgCryptConfigurationSheet: View {
   }
 }
 
+private struct DataSourceConfigurationSheet: View {
+  @EnvironmentObject private var store: WorkspaceStore
+  @Environment(\.dismiss) private var dismiss
+  @State private var apiKey = ""
+  @State private var clearAPIKey = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Data Refresh Credentials")
+          .font(.title3.weight(.semibold))
+        Text("Used when a notebook refreshes the Scarf Metabase data source.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      }
+
+      if let failure = store.dataNotebookRefreshFailure,
+         failure.needsCredentialUpdate {
+        HStack(alignment: .top, spacing: 9) {
+          Image(systemName: failure.kind == .authentication ? "key.slash.fill" : "key.fill")
+            .foregroundStyle(.orange)
+          VStack(alignment: .leading, spacing: 3) {
+            Text(failure.title)
+              .font(.callout.weight(.semibold))
+            Text(failure.message)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+          RoundedRectangle(cornerRadius: 8)
+            .stroke(Color.orange.opacity(0.28), lineWidth: 1)
+        }
+      }
+
+      HStack(alignment: .firstTextBaseline, spacing: 12) {
+        Text("API Key")
+          .font(.caption.weight(.medium))
+          .foregroundStyle(.secondary)
+          .frame(width: 74, alignment: .trailing)
+        SecureField(
+          store.dataNotebookRefreshFailure?.kind == .authentication
+            ? "Paste a new Metabase API key"
+            : (store.scarfMetabaseHasStoredAPIKey ? "Saved key unchanged" : "Metabase API key"),
+          text: $apiKey
+        )
+        .textFieldStyle(.roundedBorder)
+        .frame(width: 360)
+      }
+
+      Toggle("Clear saved API key", isOn: $clearAPIKey)
+        .disabled(!store.scarfMetabaseHasStoredAPIKey)
+
+      Text("The API key is stored in macOS Keychain. Non-secret data-source settings live in org2.json.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+
+      if let configurationError = store.dataSourceConfigurationError {
+        Label(configurationError, systemImage: "exclamationmark.circle.fill")
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
+
+      HStack {
+        Spacer()
+        Button("Cancel") { dismiss() }
+        Button(store.dataNotebookRefreshFailure == nil ? "Save" : "Save & Retry") {
+          let shouldRetry = store.dataNotebookRefreshFailure != nil && store.selectedFileIsDataNotebook
+          if store.saveScarfMetabaseConfiguration(
+            apiKey: apiKey,
+            clearAPIKey: clearAPIKey
+          ) {
+            dismiss()
+            if shouldRetry {
+              Task { await store.refreshSelectedDataNotebook() }
+            }
+          }
+        }
+        .buttonStyle(.borderedProminent)
+      }
+    }
+    .padding(22)
+    .frame(width: 540)
+    .onAppear {
+      apiKey = ""
+      clearAPIKey = false
+    }
+  }
+}
+
 private struct EmptyChatView: View {
   let statusText: String
 
@@ -4134,6 +4342,11 @@ private struct DetailHeader: View {
 
       detailActionBar
 
+      if store.selectedFileIsDataNotebook,
+         let failure = store.dataNotebookRefreshFailure {
+        dataNotebookRefreshFailureBanner(failure)
+      }
+
       if store.isPageSearchPresented {
         HStack(spacing: 8) {
           Image(systemName: "magnifyingglass")
@@ -4196,7 +4409,7 @@ private struct DetailHeader: View {
       WorkspaceIconBadge(systemImage: locationIcon, tint: .accentColor, fill: Color.accentColor.opacity(0.12))
       VStack(alignment: .leading, spacing: 3) {
         Text(location.title)
-          .font(.headline.weight(.semibold))
+          .font(.title2.weight(.semibold))
           .lineLimit(nil)
         if !location.subtitle.isEmpty {
           Text(location.subtitle)
@@ -4244,11 +4457,68 @@ private struct DetailHeader: View {
     .buttonStyle(WorkspaceActionButtonStyle())
   }
 
+  private func dataNotebookRefreshFailureBanner(_ failure: DataNotebookRefreshFailure) -> some View {
+    HStack(alignment: .top, spacing: 10) {
+      Image(systemName: failure.needsCredentialUpdate ? "key.slash.fill" : "exclamationmark.triangle.fill")
+        .foregroundStyle(.orange)
+        .padding(.top, 1)
+
+      VStack(alignment: .leading, spacing: 2) {
+        Text(failure.title)
+          .font(.callout.weight(.semibold))
+        Text(failure.message)
+          .font(.caption)
+          .foregroundStyle(WorkspaceDesign.secondaryText)
+          .lineLimit(3)
+      }
+
+      Spacer(minLength: 12)
+
+      if failure.needsCredentialUpdate {
+        Button("Update Credentials") {
+          store.presentScarfMetabaseConfiguration()
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+      }
+
+      Button {
+        Task { await store.refreshSelectedDataNotebook() }
+      } label: {
+        Label("Retry Refresh", systemImage: "arrow.clockwise")
+      }
+      .labelStyle(.iconOnly)
+      .buttonStyle(.bordered)
+      .controlSize(.small)
+      .help("Retry data refresh")
+      .disabled(store.isRefreshingDataNotebook)
+
+      Button {
+        store.dismissDataNotebookRefreshFailure()
+      } label: {
+        Label("Dismiss", systemImage: "xmark")
+      }
+      .labelStyle(.iconOnly)
+      .buttonStyle(.borderless)
+      .help("Dismiss refresh error")
+    }
+    .padding(10)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 9))
+    .overlay {
+      RoundedRectangle(cornerRadius: 9)
+        .stroke(Color.orange.opacity(0.24), lineWidth: 1)
+    }
+  }
+
   private var fullDetailActionBar: some View {
     HStack(spacing: 7) {
       detailNavigationControls
+      Divider()
+        .frame(height: 18)
+      viewAndResourceControls
       Spacer(minLength: 8)
-      scopeAndEditControls
+      primaryDocumentControls
     }
     .fixedSize(horizontal: true, vertical: false)
   }
@@ -4257,11 +4527,14 @@ private struct DetailHeader: View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 7) {
         detailNavigationControls
+        Divider()
+          .frame(height: 18)
+        viewAndResourceControls
         Spacer(minLength: 0)
       }
 
       HStack(spacing: 7) {
-        scopeAndEditControls
+        primaryDocumentControls
         Spacer(minLength: 0)
       }
     }
@@ -4270,12 +4543,6 @@ private struct DetailHeader: View {
   private var detailNavigationControls: some View {
     HStack(spacing: 7) {
       DetailPaneControlGroup()
-
-      Divider()
-        .frame(height: 18)
-
-      sourceMenu
-      intelligenceControls
 
       if store.hasRenderedSearchHighlight {
         Button {
@@ -4289,13 +4556,36 @@ private struct DetailHeader: View {
     }
   }
 
-  private var scopeAndEditControls: some View {
+  private var viewAndResourceControls: some View {
     HStack(spacing: 7) {
       if !store.isLiveFileEditorSelected && !store.hasActiveEdit {
         scopePicker
       }
       if !store.hasActiveEdit {
         documentLayoutMenu
+      }
+      sourceMenu
+      intelligenceMenu
+    }
+  }
+
+  private var primaryDocumentControls: some View {
+    HStack(spacing: 7) {
+      if store.selectedFileIsDataNotebook {
+        Button {
+          Task { await store.refreshSelectedDataNotebook() }
+        } label: {
+          if store.isRefreshingDataNotebook {
+            HStack(spacing: 5) {
+              WorkspaceActivityIndicator(size: .small)
+              Text("Refreshing Data")
+            }
+          } else {
+            Label("Refresh Data", systemImage: "arrow.triangle.2.circlepath")
+          }
+        }
+        .disabled(!store.canRefreshSelectedDataNotebook)
+        .help("Run every named data result in this notebook and update its generated tables")
       }
       editControls
       organizeMenu
@@ -4335,11 +4625,10 @@ private struct DetailHeader: View {
         }
       }
     } label: {
-      Label("Layout", systemImage: "doc.richtext")
+      Label("View", systemImage: "doc.richtext")
     }
-    .labelStyle(.iconOnly)
     .fixedSize(horizontal: true, vertical: false)
-    .help("Document width and margins")
+    .help("Document width, margins, and stylesheet")
   }
 
   private var sourceMenu: some View {
@@ -4364,30 +4653,49 @@ private struct DetailHeader: View {
         Label("Linkify File", systemImage: "link.badge.plus")
       }
       .disabled(!store.canLinkifyCurrentFile)
+
+      if store.selectedFileIsDataNotebook {
+        Divider()
+
+        Button {
+          store.presentScarfMetabaseConfiguration()
+        } label: {
+          Label("Metabase Credentials…", systemImage: "key")
+        }
+      }
     } label: {
-      Label("Source", systemImage: "doc.text.magnifyingglass")
+      Label("File", systemImage: "doc.text.magnifyingglass")
     }
     .fixedSize(horizontal: true, vertical: false)
     .help("Open, reveal, or linkify this file")
   }
 
-  private var intelligenceControls: some View {
-    HStack(spacing: 6) {
+  private var intelligenceMenu: some View {
+    Menu {
       Button {
         store.askOpenClawAboutCurrentSelection()
       } label: {
         Label("Ask AI", systemImage: "sparkles")
       }
       .disabled(!store.canAskOpenClawAboutCurrentSelection || store.isLoadingEntrySource)
-      .help("Ask OpenClaw about this page or entry")
+
+      Button {
+        store.openCanonicalOpenClawResourceThread()
+      } label: {
+        Label(
+          "AI Thread",
+          systemImage: store.hasCanonicalOpenClawResourceThread ? "text.bubble.fill" : "text.bubble"
+        )
+      }
+      .disabled(!store.canOpenCanonicalOpenClawResourceThread)
+
+      Divider()
 
       Button {
         store.toggleNodeContextPane()
       } label: {
-        Label("Context", systemImage: "sidebar.right")
+        Label(store.isNodeContextPanePresented ? "Hide Context" : "Show Context", systemImage: "sidebar.right")
       }
-      .labelStyle(.iconOnly)
-      .help("Show or hide node context")
 
       Button {
         Task { await store.briefCurrentNodeInOpenClaw() }
@@ -4398,11 +4706,7 @@ private struct DetailHeader: View {
           Label("Brief", systemImage: "text.bubble")
         }
       }
-      .labelStyle(.iconOnly)
       .disabled(!store.canBriefCurrentNodeInOpenClaw)
-      .help(store.openClawBriefsStartNewThread
-        ? "Generate or open the cached node brief. New requests start a new OpenClaw chat thread."
-        : "Generate or open the cached node brief. New requests use the current OpenClaw chat thread.")
 
       if case .meeting = location {
         Button {
@@ -4410,9 +4714,12 @@ private struct DetailHeader: View {
         } label: {
           Label("Meeting", systemImage: "waveform.and.mic")
         }
-        .help("Ask OpenClaw about this meeting")
       }
+    } label: {
+      Label("AI", systemImage: "sparkles")
     }
+    .fixedSize(horizontal: true, vertical: false)
+    .help("Ask AI, open this resource's thread, or inspect context")
   }
 
   private var scopePicker: some View {
@@ -4614,7 +4921,6 @@ private struct DetailHeader: View {
     } label: {
       Label("Organize", systemImage: "ellipsis.circle")
     }
-    .labelStyle(.iconOnly)
     .disabled(!store.canOrganizeCurrentHeadline)
     .help("Status, schedule, deadline, priority, agent handoff, and properties")
   }
@@ -4662,6 +4968,8 @@ private struct LiveFileEditorBody: View {
         } else {
           OrgHTMLLoadingView(label: "Rendering page")
         }
+      } else if let error = store.selectedEntryRenderError {
+        OrgHTMLRenderFailureView(message: error)
       } else {
         EmptyStateView(title: "Source Unavailable", detail: store.statusText, action: "Reveal File") {
           store.revealFile(path: location.file)
@@ -5158,6 +5466,8 @@ private struct EntryBodyView: View {
         } else {
           OrgHTMLLoadingView(label: "Rendering preview")
         }
+      } else if let error = store.selectedEntryRenderError {
+        OrgHTMLRenderFailureView(message: error)
       } else {
         fallbackBody(location)
           .padding(16)

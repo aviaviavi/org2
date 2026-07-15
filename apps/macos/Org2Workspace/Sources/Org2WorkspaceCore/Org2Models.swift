@@ -957,6 +957,36 @@ public struct OpenClawChatAttachment: Identifiable, Hashable, Codable, Sendable 
   }
 }
 
+public struct OpenClawResourceReference: Hashable, Codable, Sendable {
+  public enum Kind: String, Hashable, Codable, Sendable {
+    case heading
+    case file
+  }
+
+  public let key: String
+  public let kind: Kind
+  public let title: String
+  public let file: String
+  public let line: Int
+  public let idValue: String?
+
+  public init(
+    key: String,
+    kind: Kind,
+    title: String,
+    file: String,
+    line: Int,
+    idValue: String? = nil
+  ) {
+    self.key = key
+    self.kind = kind
+    self.title = title
+    self.file = file
+    self.line = max(1, line)
+    self.idValue = idValue
+  }
+}
+
 public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   public let id: UUID
   public let title: String
@@ -967,6 +997,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
   public let isPinned: Bool
   public let isArchived: Bool
   public let unreadMessageCount: Int
+  public let resource: OpenClawResourceReference?
 
   public init(
     id: UUID = UUID(),
@@ -977,7 +1008,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     messages: [OpenClawChatMessage] = [],
     isPinned: Bool = false,
     isArchived: Bool = false,
-    unreadMessageCount: Int = 0
+    unreadMessageCount: Int = 0,
+    resource: OpenClawResourceReference? = nil
   ) {
     self.id = id
     self.title = title
@@ -988,6 +1020,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     self.isPinned = isPinned
     self.isArchived = isArchived
     self.unreadMessageCount = max(0, unreadMessageCount)
+    self.resource = resource
   }
 
   public var messageCount: Int {
@@ -1004,6 +1037,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     case isPinned
     case isArchived
     case unreadMessageCount
+    case resource
   }
 
   public init(from decoder: Decoder) throws {
@@ -1017,6 +1051,7 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
     isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
     isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
     unreadMessageCount = max(0, try container.decodeIfPresent(Int.self, forKey: .unreadMessageCount) ?? 0)
+    resource = try container.decodeIfPresent(OpenClawResourceReference.self, forKey: .resource)
   }
 
   public func replacingOpenClawChatMetadata(
@@ -1034,7 +1069,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       messages: messages,
       isPinned: nextIsPinned ?? isPinned,
       isArchived: nextIsArchived ?? isArchived,
-      unreadMessageCount: nextUnreadMessageCount ?? unreadMessageCount
+      unreadMessageCount: nextUnreadMessageCount ?? unreadMessageCount,
+      resource: resource
     )
   }
 
@@ -1048,7 +1084,8 @@ public struct OpenClawChatThread: Identifiable, Hashable, Codable, Sendable {
       messages: nextMessages,
       isPinned: isPinned,
       isArchived: isArchived,
-      unreadMessageCount: unreadMessageCount
+      unreadMessageCount: unreadMessageCount,
+      resource: resource
     )
   }
 }

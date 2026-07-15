@@ -4,6 +4,20 @@ Docs website: https://org2.avi.press/
 
 For now, the canonical project docs live on the website.
 
+** Agent discovery
+
+After installing the CLI, agents can inspect the exact capabilities of that
+version without relying on model memory:
+
+#+begin_src sh
+org2 agent capabilities
+org2 agent --help
+#+end_src
+
+The first command emits the versioned =org2:capabilities:v1= JSON manifest with
+workflow families, safety rules, client roles, and canonical documentation
+links. See https://org2.avi.press/agent-quickstart.html.
+
 ** Development
 
 Run the full test suite with:

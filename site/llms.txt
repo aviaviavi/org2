@@ -1,0 +1,26 @@
+# Org2
+
+> Org2 is a local-first knowledge compiler and runtime for Org-shaped plain text. Ordinary .org2 and .org files are canonical; agendas, graph data, context packets, reports, editor behavior, apps, and websites derive from the shared compiler/runtime.
+
+Installed agents should begin with:
+
+    org2 agent capabilities
+    org2 --help
+    org2 agent --help
+
+The first command emits the machine-readable `org2:capabilities:v1` manifest. Mutating commands generally preview unless `--apply` is provided. Preserve citations, IDs, provenance, and review state; place generated work in `views/` or `compiled/` before promotion into canonical notes.
+
+## Agent entry points
+
+- https://org2.avi.press/agent-quickstart.html
+- https://org2.avi.press/tooling-reference.html
+- https://org2.avi.press/language-reference.html
+- https://org2.avi.press/corpus-flow.html
+- https://org2.avi.press/features.html
+- https://org2.avi.press/editors-macos.html
+
+## Source and specification
+
+- https://github.com/aviaviavi/org2
+- https://github.com/aviaviavi/org2/blob/main/spec/v0/SPEC.org
+- https://github.com/aviaviavi/org2/blob/main/spec/v0/CONFORMANCE.md

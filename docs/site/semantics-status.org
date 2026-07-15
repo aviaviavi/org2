@@ -76,7 +76,7 @@ That separation matters because users need dry-run reports and safe, reviewable 
 
 ** Useful next steps
 
-- Make cited query/search output available as a stable CLI surface for knowledge-base workflows.
 - Add an acceptance workflow for individual AI-assisted link/entity suggestions while preserving explicit approval.
 - Document which generated artifacts are safe to commit and which are cache-like rebuild outputs.
-- Add maintenance commands that detect duplicate IDs, unresolved aliases, broken links, and stale derived graph artifacts.
+- Continue tightening the schema/stability contract for agent context, capability discovery, compiled corpus artifacts, and data-query provenance.
+- Extend deterministic repair operations while keeping ambiguous graph and AI suggestions review-gated.

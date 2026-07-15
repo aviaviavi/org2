@@ -24,8 +24,12 @@ public struct Org2CLI: Sendable {
     return url.standardizedFileURL
   }
 
-  public func runJSON<T: Decodable>(_ arguments: [String], as type: T.Type = T.self) async throws -> T {
-    let data = try await run(arguments)
+  public func runJSON<T: Decodable>(
+    _ arguments: [String],
+    environment: [String: String] = [:],
+    as type: T.Type = T.self
+  ) async throws -> T {
+    let data = try await run(arguments, environment: environment)
     return try JSONDecoder().decode(T.self, from: data)
   }
 
@@ -124,9 +128,9 @@ public struct Org2CLI: Sendable {
     return try JSONDecoder().decode(T.self, from: data)
   }
 
-  public func run(_ arguments: [String]) async throws -> Data {
+  public func run(_ arguments: [String], environment: [String: String] = [:]) async throws -> Data {
     try await Task.detached(priority: .userInitiated) {
-      try runProcess(scriptPath: cliPath, arguments: arguments)
+      try runProcess(scriptPath: cliPath, arguments: arguments, environment: environment)
     }.value
   }
 
@@ -138,7 +142,8 @@ public struct Org2CLI: Sendable {
     scriptPath: URL,
     arguments: [String],
     standardInput: Data? = nil,
-    timeout: TimeInterval? = nil
+    timeout: TimeInterval? = nil,
+    environment: [String: String] = [:]
   ) throws -> Data {
     guard FileManager.default.fileExists(atPath: scriptPath.path) else {
       throw Org2CLIError.missingCLI(scriptPath.path)
@@ -154,7 +159,7 @@ public struct Org2CLI: Sendable {
       process.arguments = ["node", scriptPath.path] + arguments
     }
     process.currentDirectoryURL = repoRoot
-    process.environment = Self.processEnvironment()
+    process.environment = Self.processEnvironment().merging(environment) { _, override in override }
 
     let stdout = Pipe()
     let stderr = Pipe()
@@ -223,13 +228,48 @@ public struct Org2CLI: Sendable {
     guard process.terminationStatus == 0 else {
       let stderrText = String(data: errData, encoding: .utf8)?
         .trimmingCharacters(in: .whitespacesAndNewlines)
+      let stdoutFailure = Self.commandFailureMessage(from: outData)
       throw Org2CLIError.commandFailed(
         status: Int(process.terminationStatus),
-        message: stderrText?.isEmpty == false ? stderrText! : "org2 exited with status \(process.terminationStatus)"
+        message: stderrText?.isEmpty == false
+          ? stderrText!
+          : (stdoutFailure ?? "org2 exited with status \(process.terminationStatus)")
       )
     }
 
     return outData
+  }
+
+  private static func commandFailureMessage(from stdout: Data) -> String? {
+    guard !stdout.isEmpty else { return nil }
+    if let value = try? JSONSerialization.jsonObject(with: stdout) as? [String: Any] {
+      var messages: [String] = []
+      if let diagnostics = value["diagnostics"] as? [[String: Any]] {
+        messages.append(contentsOf: diagnostics.compactMap { diagnostic in
+          guard let message = diagnostic["message"] as? String,
+                !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+          else { return nil }
+          return message
+        })
+      }
+      for key in ["error", "message"] {
+        if let message = value[key] as? String,
+           !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          messages.append(message)
+        }
+      }
+      let unique = messages.reduce(into: [String]()) { result, message in
+        if !result.contains(message) { result.append(message) }
+      }
+      if !unique.isEmpty {
+        return unique.prefix(3).joined(separator: "\n")
+      }
+    }
+
+    let text = String(data: stdout, encoding: .utf8)?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let text, !text.isEmpty else { return nil }
+    return String(text.prefix(2_000))
   }
 
   private static func resolveNodePath() -> String? {

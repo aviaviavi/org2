@@ -54,7 +54,8 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <h1 class="org2-document-title">macOS Workspace</h1>
 </header>
 <p>Org2 Workspace is the native macOS client for working with an Org2 corpus. It is an alpha app in <code>apps/macos/Org2Workspace</code>, built as a Swift Package, and uses the same parser/CLI output as the rest of Org2 instead of maintaining a private database.</p>
-<p>The app is currently best understood as a local workspace shell for dogfooding the product direction: global capture, agenda review, approval review, file navigation, search, rendered block editing, meeting capture, OpenClaw handoff, knowledge-node creation, and crypt workflows over normal files.</p>
+<p>The app is currently best understood as a local workspace shell for dogfooding the product direction: global capture, agenda review, approval review, file and knowledge navigation, search, compiler-generated HTML reading, native source editing, meeting capture, data notebooks, OpenClaw handoff, knowledge-node creation, and crypt workflows over normal files.</p>
+<p>On first launch, a guided empty state offers <strong>Open an existing corpus</strong> or <strong>Create a new corpus</strong>. Opening accepts an existing folder of Org/Org2 files without migration. Creating asks for an empty folder, writes a minimal <code>org2.json</code> plus an inbox and welcome note, creates <code>notes/</code>, <code>daily/</code>, <code>views/</code>, and <code>compiled/</code>, then opens the welcome note. It refuses to initialize a non-empty folder so existing files are never silently overwritten.</p>
 <section class="org2-headline level-1">
 <h1 id="screenshots">Screenshots</h1>
 <p>These screenshots are captured from the synthetic corpus in <code>examples/macos-workspace-demo</code> so public docs never depend on private notes.</p>
@@ -77,19 +78,31 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><strong>OpenClaw Chat</strong> :: send selected workspace context to a configured OpenClaw endpoint while keeping the conversation state local to the app.</p></li>
 </ul>
 <p>Global capture is available while the app is running. <code>Cmd-Ctrl-Return</code> opens a capture modal from anywhere on macOS, and the in-app <code>Capture</code> command uses the same path. Captures append to today's daily note, using <code>roam.dailiesDir</code> from <code>org2.json</code> when configured. The modal can write notes or TODOs, set TODO state, priority, tags, scheduled/deadline dates, and mark a capture ready for agent handoff. The paste control accepts text, URLs, local files, and pasted image data; local files and images are copied into <code>attachments/</code> and linked from the capture.</p>
-<p>The detail pane can render a selected file, agenda item, approval item, search result, backlink, meeting note, or agent thread. It supports both raw source editing and structured rendered-block editing.</p>
+<p>The detail pane can render a selected file, agenda item, approval item, search result, backlink, meeting note, or agent thread. Read mode uses compiler-generated HTML; the Edit command opens the same entry or page in a native source editor.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="document-editing">Document editing</h1>
-<p>The rendered editor is meant to make Org-shaped text feel native without hiding the source file. Current editing affordances include:</p>
+<p>The writing surface is a native <code>NSTextView</code> over the selected Org2 entry or full page. It keeps normal macOS cursor movement, selection, IME, undo, and save behavior while layering Org2 commands over the visible text buffer.</p>
+<p>Current source-editor affordances include:</p>
 <ul>
-<li><p>heading, planning, keyword, property drawer, paragraph, list item, media, quote, source, and table block editors,</p></li>
-<li><p>block selection, insertion, duplication, deletion, movement, and folding,</p></li>
-<li><p>inline editing for links, timestamps, and markup,</p></li>
-<li><p>TODO, priority, tag, planning, property, and checkbox quick edits,</p></li>
-<li><p>source block execution for supported local languages,</p></li>
-<li><p>syntax-highlighted raw text editing with autosave-oriented block updates.</p></li>
+<li><p>incremental syntax highlighting that remains responsive on large files,</p></li>
+<li><p>native macOS spelling and grammar checking for prose without automatic source-text correction,</p></li>
+<li><p>parser-backed source ranges, heading navigation, folding, semantic region presentation, and inline diagnostics,</p></li>
+<li><p>a semantic heading gutter with fold, TODO, priority, planning, reference, property, and structural actions,</p></li>
+<li><p>Return continuation for unordered, ordered, checkbox, and indented list lines,</p></li>
+<li><p>heading and list insertion, promotion and demotion, TODO cycling, scheduling, deadlines, property insertion, link insertion, and planning cleanup,</p></li>
+<li><p>presentation-only heading folding that never changes the source text,</p></li>
+<li><p>Command-S saving that keeps the editor open and refuses stale writes without discarding the draft.</p></li>
 </ul>
+<p>Read mode is deliberately separate. It renders the selected entry or page as HTML from the shared compiler, including headings, links, property drawers, quotes, tables, citations, media, source blocks, and generated Org2 artifacts. Rendered content is used for reading, navigation, and workflow actions, not as an authoritative editable DOM.</p>
+<p>Source editing can optionally show that HTML renderer in a resizable split view. The preview updates after a short idle delay, follows the source line near the caret, rejects stale render results, and can be paused. Typing never waits for HTML generation.</p>
+<p>Document presentation is customizable without enabling document scripts. Use the document-layout menu to create or edit <code>.org2/app.css</code> at the corpus root; its CSS applies to read mode and the source preview. The app continues to exclude <code>HTML_HEAD</code> scripts and raw export HTML from its safe rendering profile.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="data-notebooks-and-charts">Data notebooks and charts</h1>
+<p>Files containing <code>```dataset</code> and <code>```sql results</code>...= blocks act as explicit data notebooks. The rendered view can refresh a selected result through the shared <code>org2 query-data</code> backend, write the provenance-stamped materialized table back to the ordinary source file, and then render attached chart blocks. Merely opening or rendering a note never contacts a remote warehouse.</p>
+<p>The current app workflow supports local/table datasets plus configured ClickHouse and Metabase profiles. For the Scarf Metabase workflow, the app stores the API key in the macOS Keychain, stores only non-secret profile configuration in <code>org2.json</code>, distinguishes configuration/authentication/query failures, and offers an explicit retry path. Native SQL datasets can identify the configured Metabase database without depending on a mutable saved question.</p>
+<p>Interactive line, bar, and histogram charts remain compiler-described and app-presented: source controls deterministic size/height/sort settings, while the app provides nearest-point hover, exact-value tooltips, keyboard mark navigation, and resizable cards. Notes cannot inject arbitrary JavaScript, and static SVG remains the CLI/export fallback.</p>
 <p>The important product rule is that the app should write ordinary Org2 text. Users should be able to inspect every change in Git or another editor.</p>
 </section>
 <section class="org2-headline level-1">
@@ -125,7 +138,11 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p><code>Cmd-Ctrl-Return</code> for system-wide capture while the app is running,</p></li>
 <li><p><code>Cmd-7</code>, <code>Cmd-8</code>, and <code>Cmd-9</code> for today/yesterday/tomorrow daily notes,</p></li>
 <li><p>agenda-local <code>j</code> / <code>k</code> navigation, <code>/</code> filtering, and TODO/planning shortcuts,</p></li>
-<li><p>document-local block navigation, editing, insertion, folding, duplication, movement, and deletion shortcuts.</p></li>
+<li><p><code>Cmd-Option-Return</code> and <code>Cmd-Option-L</code> for heading and list insertion in source editing,</p></li>
+<li><p><code>Cmd-Option-Left/Right</code> for promote/demote and <code>Cmd-Option-Up/Down</code> for heading navigation,</p></li>
+<li><p><code>Cmd-Option-T</code> for TODO cycling and <code>Cmd-Option-S/D</code> for scheduling or deadlines,</p></li>
+<li><p><code>Cmd-Option-[</code> / <code>Cmd-Option-]</code> for current-heading fold and expand all,</p></li>
+<li><p><code>Cmd-K</code> while the source editor is focused for link insertion.</p></li>
 </ul>
 <p>Use the in-app keyboard shortcuts sheet for the full current map.</p>
 </section>
@@ -150,7 +167,7 @@ swift run Org2Workspace</code></pre>
 <li><p>effort controls and richer templates at capture time,</p></li>
 <li><p>an acceptance path where captured work appears in agenda and the resulting <code>.org2</code> text remains clean.</p></li>
 </ul>
-<p>Meeting promotion, knowledge browsing, and packaging can proceed in parallel as long as they preserve shared write semantics: meeting promotion should create ordinary TODOs/notes, the knowledge browser should reuse IDs/backlinks rather than private graph state, and packaging should verify the same CLI/parser artifacts the app actually calls.</p>
+<p>Meeting promotion, knowledge browsing, broader data-source configuration, and packaging can proceed in parallel as long as they preserve shared write semantics: meeting promotion should create ordinary TODOs/notes, the knowledge browser should reuse IDs/backlinks rather than private graph state, data refresh should remain explicit and provenance-stamped, and packaging should verify the same CLI/parser artifacts the app actually calls.</p>
 </section>
 </main>
 </div>

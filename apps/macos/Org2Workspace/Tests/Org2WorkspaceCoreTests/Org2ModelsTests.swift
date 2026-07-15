@@ -103,6 +103,43 @@ final class Org2ModelsTests: XCTestCase {
     )
   }
 
+  func testInitializeStarterCorpusCreatesPlainTextWorkspace() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-starter-corpus-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let welcomeURL = try WorkspaceStore.initializeStarterCorpus(at: root)
+
+    XCTAssertEqual(welcomeURL.standardizedFileURL.path, root.appendingPathComponent("notes/welcome.org2").path)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("org2.json").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("inbox.org2").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("daily").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("views").path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("compiled").path))
+
+    let welcome = try String(contentsOf: welcomeURL, encoding: .utf8)
+    XCTAssertTrue(welcome.contains("#+TITLE: Welcome to Org2"))
+    XCTAssertTrue(welcome.contains("* TODO Add your first task"))
+
+    let configData = try Data(contentsOf: root.appendingPathComponent("org2.json"))
+    let config = try XCTUnwrap(JSONSerialization.jsonObject(with: configData) as? [String: Any])
+    XCTAssertEqual(config["recursive"] as? Bool, true)
+    XCTAssertNotNil(config["roam"] as? [String: Any])
+  }
+
+  func testInitializeStarterCorpusRefusesNonemptyFolder() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-starter-corpus-nonempty-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let existing = root.appendingPathComponent("keep-me.txt")
+    try "user data\n".write(to: existing, atomically: true, encoding: .utf8)
+
+    XCTAssertThrowsError(try WorkspaceStore.initializeStarterCorpus(at: root))
+    XCTAssertEqual(try String(contentsOf: existing, encoding: .utf8), "user data\n")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("org2.json").path))
+  }
+
   func testDecodesAgendaPayload() throws {
     let json = """
     {
@@ -772,6 +809,94 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(restored.openClawChatThreads.count, 2)
     XCTAssertEqual(restored.selectedOpenClawChatThreadID, secondThreadID)
     XCTAssertEqual(restored.openClawMessages.map(\.content), ["Second thread question"])
+  }
+
+  @MainActor
+  func testCanonicalResourceThreadIsCreatedOnceAndPersists() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-resource-thread-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("launch.org2")
+    try "* TODO Prepare launch\n:PROPERTIES:\n:ID: launch-plan\n:END:\n".write(
+      to: note,
+      atomically: true,
+      encoding: .utf8
+    )
+    let transcript = root.appendingPathComponent("openclaw-chat.json")
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data("""
+    {
+      "todo": "TODO",
+      "headline": "Prepare launch",
+      "kind": "TODO",
+      "file": "\(note.path)",
+      "line": 1,
+      "body": null,
+      "level": 1,
+      "tags": [],
+      "properties": {"ID": "launch-plan"},
+      "id": "launch-plan"
+    }
+    """.utf8))
+
+    let store = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcript
+    )
+    store.select(.agenda(item))
+    XCTAssertTrue(store.canOpenCanonicalOpenClawResourceThread)
+    XCTAssertFalse(store.hasCanonicalOpenClawResourceThread)
+
+    store.openCanonicalOpenClawResourceThread()
+    let threadID = try XCTUnwrap(store.selectedOpenClawChatThreadID)
+    XCTAssertEqual(store.openClawChatThreads.count, 1)
+    XCTAssertEqual(store.selectedOpenClawChatThread?.resource?.key, "id:launch-plan")
+    XCTAssertEqual(store.selectedOpenClawChatThread?.title, "Resource: Prepare launch")
+
+    store.openCanonicalOpenClawResourceThread()
+    XCTAssertEqual(store.openClawChatThreads.count, 1)
+    XCTAssertEqual(store.selectedOpenClawChatThreadID, threadID)
+
+    let restored = try WorkspaceStore(
+      cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()),
+      openClawTranscriptURL: transcript
+    )
+    restored.select(.agenda(item))
+    XCTAssertTrue(restored.hasCanonicalOpenClawResourceThread)
+    restored.openCanonicalOpenClawResourceThread()
+    XCTAssertEqual(restored.selectedOpenClawChatThreadID, threadID)
+    XCTAssertEqual(restored.openClawChatThreads.count, 1)
+  }
+
+  @MainActor
+  func testCanonicalResourceThreadRequiresStableHeadingIdentity() throws {
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data("""
+    {
+      "todo": "TODO",
+      "headline": "Unidentified task",
+      "kind": "TODO",
+      "file": "/tmp/unidentified.org2",
+      "line": 12,
+      "body": null,
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """.utf8))
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.select(.agenda(item))
+
+    XCTAssertFalse(store.canOpenCanonicalOpenClawResourceThread)
+    store.openCanonicalOpenClawResourceThread()
+    XCTAssertTrue(store.openClawChatThreads.isEmpty)
+    XCTAssertTrue(store.statusText.contains("Add an ID"))
+  }
+
+  func testRenderedHTMLCopyHandlerPublishesStyledTableAndPlainText() {
+    let script = OrgHTMLRichCopy.installationScript
+    XCTAssertTrue(script.contains("event.clipboardData.setData('text/html'"))
+    XCTAssertTrue(script.contains("event.clipboardData.setData('text/plain'"))
+    XCTAssertTrue(script.contains("clone.style.borderCollapse = 'collapse'"))
+    XCTAssertTrue(script.contains("join('\\t')"))
   }
 
   func testOpenClawThreadTitleUsesMeaningfulFirstMessageWords() {
@@ -4838,6 +4963,28 @@ final class Org2ModelsTests: XCTestCase {
     XCTAssertEqual(thread.file, note.path)
     XCTAssertEqual(thread.lineForEditor, 3)
     XCTAssertEqual(store.selectedEntrySourceMode, .page)
+    XCTAssertEqual(store.detailScrollRequest?.target, .sourceLine(3))
+  }
+
+  @MainActor
+  func testOpenClawLargePageReferenceRequestsDeepSourceLine() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-chat-link-large-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("large.org2")
+    let source = (1...1_600).map { "* Heading \($0)" }.joined(separator: "\n") + "\n"
+    try source.write(to: note, atomically: true, encoding: .utf8)
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.openChatFileReference(OpenClawFileReference(path: note.path, line: 1_400))
+
+    XCTAssertEqual(store.selectedLocation?.lineForEditor, 1_400)
+    XCTAssertEqual(store.selectedEntrySourceMode, .page)
+    XCTAssertEqual(store.detailScrollRequest?.target, .sourceLine(1_400))
+    try await waitForCondition(timeout: 8) {
+      store.selectedEntryHTML?.contains("data-org2-start-line=\"1400\"") == true
+    }
   }
 
   @MainActor
@@ -6864,6 +7011,100 @@ final class Org2ModelsTests: XCTestCase {
         && !store.isRenderingEntrySource
         && !store.selectedRenderedBlocks.isEmpty
     }
+  }
+
+  @MainActor
+  func testStalledEntrySourceLoadRetriesAutomatically() async throws {
+    actor Attempts {
+      var count = 0
+      func next() -> Int {
+        count += 1
+        return count
+      }
+    }
+
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-source-watchdog-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("watchdog.org2")
+    try "* TODO Recovered source\nBody\n".write(to: note, atomically: true, encoding: .utf8)
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data("""
+    {
+      "todo": "TODO",
+      "headline": "Recovered source",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 1,
+      "body": "Body",
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """.utf8))
+
+    let attempts = Attempts()
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.entrySourceLoadTimeoutNanoseconds = 30_000_000
+    store.entrySourceLoaderForTesting = { file, _, _ in
+      if await attempts.next() == 1 {
+        try await Task.sleep(nanoseconds: 300_000_000)
+      }
+      return EntrySource(
+        file: file,
+        startLine: 1,
+        endLineExclusive: 3,
+        text: "* TODO Recovered source\nBody",
+        isSubtree: true
+      )
+    }
+
+    store.select(.agenda(item))
+
+    try await waitForCondition {
+      store.selectedEntrySource?.text.contains("Recovered source") == true
+        && !store.isLoadingEntrySource
+    }
+    XCTAssertNil(store.selectedEntryRenderError)
+  }
+
+  @MainActor
+  func testRepeatedEntrySourceTimeoutStopsSpinnerAndOffersRetry() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-source-timeout-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let note = root.appendingPathComponent("timeout.org2")
+    try "* TODO Timed out source\n".write(to: note, atomically: true, encoding: .utf8)
+    let item = try JSONDecoder().decode(AgendaItem.self, from: Data("""
+    {
+      "todo": "TODO",
+      "headline": "Timed out source",
+      "kind": "SCHEDULED",
+      "file": "\(note.path)",
+      "line": 1,
+      "body": null,
+      "level": 1,
+      "tags": [],
+      "properties": {}
+    }
+    """.utf8))
+
+    let store = try WorkspaceStore(cli: Org2CLI(repoRoot: Org2CLI.defaultRepoRoot()))
+    store.setCorpusRoot(root)
+    store.entrySourceLoadTimeoutNanoseconds = 20_000_000
+    store.entrySourceLoaderForTesting = { _, _, _ in
+      try await Task.sleep(nanoseconds: 300_000_000)
+      throw CocoaError(.fileReadUnknown)
+    }
+
+    store.select(.agenda(item))
+
+    try await waitForCondition {
+      store.selectedEntryRenderError?.contains("timed out") == true
+        && !store.isLoadingEntrySource
+    }
+    XCTAssertEqual(store.statusText, "Source load failed")
+    XCTAssertNil(store.selectedEntrySource)
   }
 
   @MainActor
@@ -10746,6 +10987,131 @@ final class Org2ModelsTests: XCTestCase {
     let updated = try String(contentsOf: note, encoding: .utf8)
     XCTAssertTrue(updated.contains("[[id:docker-id][Docker]] usage should become linked."))
     XCTAssertTrue(store.statusText.contains("Linkified note.org2"))
+  }
+
+  @MainActor
+  func testRefreshSelectedDataNotebookRunsEveryNamedResultThroughCLI() async throws {
+    let workspace = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-data-refresh-\(UUID().uuidString)", isDirectory: true)
+    let repoRoot = workspace.appendingPathComponent("repo", isDirectory: true)
+    let dist = repoRoot.appendingPathComponent("dist", isDirectory: true)
+    let corpus = workspace.appendingPathComponent("corpus", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: corpus, withIntermediateDirectories: true)
+    let log = workspace.appendingPathComponent("commands.jsonl")
+    let encodedLog = String(data: try JSONEncoder().encode(log.path), encoding: .utf8)!
+    try """
+    const fs = require("fs");
+    const args = process.argv.slice(2);
+    fs.appendFileSync(\(encodedLog), JSON.stringify(args) + "\\n");
+    if (args.includes("--inspect")) {
+      process.stdout.write(JSON.stringify({
+        resultBlocks: [{ resultId: "first" }, { resultId: "second" }]
+      }));
+    } else if (args[0] === "query-data") {
+      process.stdout.write(JSON.stringify({ changed: true }));
+    } else {
+      process.stdout.write(JSON.stringify({}));
+    }
+    """.write(to: dist.appendingPathComponent("cli.js"), atomically: true, encoding: .utf8)
+
+    let notebook = corpus.appendingPathComponent("dashboard.org2")
+    try """
+    #+title: Dashboard
+
+    ```sql results=first
+    SELECT 1
+    ```
+
+    ```sql results=second
+    SELECT 2
+    ```
+    """.write(to: notebook, atomically: true, encoding: .utf8)
+
+    let store = WorkspaceStore(cli: Org2CLI(repoRoot: repoRoot))
+    store.setCorpusRoot(corpus)
+    store.selectedLocation = .openClaw(OpenClawThread(
+      title: "Dashboard",
+      file: notebook.path,
+      line: 1,
+      zone: "test",
+      modifiedAt: nil
+    ))
+
+    XCTAssertTrue(store.selectedFileIsDataNotebook)
+    await store.refreshSelectedDataNotebook()
+
+    let commands = try String(contentsOf: log, encoding: .utf8)
+      .split(separator: "\n")
+      .compactMap { try? JSONDecoder().decode([String].self, from: Data($0.utf8)) }
+      .filter { $0.first == "query-data" }
+    XCTAssertEqual(commands.count, 3)
+    XCTAssertTrue(commands[0].contains("--inspect"))
+    XCTAssertEqual(commands[1], [
+      "query-data", "--file", notebook.path, "--results", "first", "--apply", "--format", "json"
+    ])
+    XCTAssertEqual(commands[2], [
+      "query-data", "--file", notebook.path, "--results", "second", "--apply", "--format", "json"
+    ])
+    XCTAssertEqual(store.statusText, "Refreshed 2 data results")
+  }
+
+  @MainActor
+  func testRefreshSelectedDataNotebookPromptsForRejectedMetabaseKey() async throws {
+    let workspace = FileManager.default.temporaryDirectory
+      .appendingPathComponent("org2-workspace-data-auth-failure-\(UUID().uuidString)", isDirectory: true)
+    let repoRoot = workspace.appendingPathComponent("repo", isDirectory: true)
+    let dist = repoRoot.appendingPathComponent("dist", isDirectory: true)
+    let corpus = workspace.appendingPathComponent("corpus", isDirectory: true)
+    try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: corpus, withIntermediateDirectories: true)
+    try """
+    process.stdout.write(JSON.stringify({
+      ok: false,
+      diagnostics: [{
+        severity: "error",
+        message: 'Data source profile "scarf-metabase" authentication failed (HTTP 401). Check its API key and permissions'
+      }]
+    }));
+    process.exit(1);
+    """.write(to: dist.appendingPathComponent("cli.js"), atomically: true, encoding: .utf8)
+
+    let notebook = corpus.appendingPathComponent("dashboard.org2")
+    try """
+    #+title: Dashboard
+
+    ```sql results=messages
+    SELECT 1
+    ```
+    """.write(to: notebook, atomically: true, encoding: .utf8)
+
+    let store = WorkspaceStore(cli: Org2CLI(repoRoot: repoRoot))
+    store.setCorpusRoot(corpus)
+    store.selectedLocation = .openClaw(OpenClawThread(
+      title: "Dashboard",
+      file: notebook.path,
+      line: 1,
+      zone: "test",
+      modifiedAt: nil
+    ))
+
+    await store.refreshSelectedDataNotebook()
+
+    XCTAssertEqual(store.statusText, "Metabase authentication failed")
+    XCTAssertEqual(store.dataNotebookRefreshFailure?.kind, .authentication)
+    XCTAssertEqual(store.dataNotebookRefreshFailure?.needsCredentialUpdate, true)
+    XCTAssertTrue(store.dataNotebookRefreshFailure?.message.contains("current API key") == true)
+    XCTAssertTrue(store.isDataSourceConfigurationPresented)
+    XCTAssertFalse(store.saveScarfMetabaseConfiguration(apiKey: "", clearAPIKey: false))
+    XCTAssertEqual(
+      store.dataSourceConfigurationError,
+      "Enter a new Metabase API key to replace the key that was rejected."
+    )
+
+    let queryFailure = WorkspaceStore.dataNotebookRefreshFailure(for: "DuckDB could not bind column missing")
+    XCTAssertEqual(queryFailure.kind, .query)
+    XCTAssertFalse(queryFailure.needsCredentialUpdate)
+    XCTAssertEqual(queryFailure.message, "DuckDB could not bind column missing")
   }
 
   @MainActor

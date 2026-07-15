@@ -84,6 +84,24 @@ assert.doesNotMatch(published.html, /org2-app-document-script/);
 assert.match(published.html, /<section class="org2-headline level-1"/);
 assert.match(published.html, /<dl class="org2-properties">/);
 
+const fileMetadataSource = `#+title: Machine report
+#+id: report-id
+#+updated: [2026-07-13 Mon]
+#+property: ORG2_ARTIFACT_ROLE view
+#+property: ORG2_PROVENANCE deterministic-query
+
+Human introduction.
+`;
+const fileMetadataDocument = parseOrgToCanonicalAst(fileMetadataSource, { sourceRanges: true });
+const fileMetadataRendered = renderOrgDocumentToAppHtml(fileMetadataDocument);
+assert.match(fileMetadataRendered.html, /<h1 class="org2-document-title">Machine report<\/h1>/);
+assert.match(fileMetadataRendered.html, /<details class="org2-file-properties">/);
+assert.doesNotMatch(fileMetadataRendered.html, /<details class="org2-file-properties" open/);
+assert.match(fileMetadataRendered.html, /File properties <span class="org2-file-properties-count">4<\/span>/);
+assert.match(fileMetadataRendered.html, /<span class="org2-keyword-name">id<\/span>: report-id/i);
+assert.ok(fileMetadataRendered.html.indexOf("org2-file-properties") < fileMetadataRendered.html.indexOf("Human introduction."));
+assert.doesNotMatch(fileMetadataRendered.html, /org2-keyword-name">title/);
+
 const chartSource = `* Metrics
 
 #+name: package_fetches
@@ -97,20 +115,29 @@ const chartSource = `* Metrics
 x: day
 y: fetches
 source: package_fetches
+size: compact
+height: 280
+interactive: true
 \`\`\`
 `;
 const chartDocument = parseOrgToCanonicalAst(chartSource, { sourceRanges: true, sourceLineOffset: 30 });
 const charts = renderOrgCharts(chartSource, { sourceLineOffset: 30 })
   .filter((chart) => chart.ok && chart.svg && chart.source)
-  .map((chart) => ({ svg: chart.svg, source: chart.source }));
+  .map((chart) => ({ svg: chart.svg, source: chart.source, presentation: chart.presentation }));
 const chartRendered = renderOrgDocumentToAppHtml(chartDocument, { charts });
-assert.match(chartRendered.html, /<figure class="org2-chart" data-org2-start-line="40"/);
+assert.match(chartRendered.html, /<figure class="org2-chart org2-chart-compact" data-org2-chart-interactive="true" data-org2-start-line="40"/);
 assert.match(chartRendered.html, /<svg [^>]*role="img"/);
 assert.match(chartRendered.html, /<polyline /);
+assert.match(chartRendered.html, /tooltip\.className = "org2-chart-tooltip"/);
+assert.match(chartRendered.html, /installInteractiveCharts/);
+assert.match(chartRendered.html, /data-org2-chart-mark="true"/);
+const appScript = chartRendered.html.match(/<script id="org2-app-document-script">\n([\s\S]*?)\n<\/script>/)?.[1];
+assert.ok(appScript);
+new Function(appScript);
 assert.doesNotMatch(chartRendered.html, /<code class="language-chart">/);
-assert.match(chartRendered.html, /\.org2-chart svg \{ display: block; width: 100%;/);
+assert.match(chartRendered.html, /\.org2-chart svg \{ display: block; width: 100%; height: auto;/);
 const chartPublished = renderOrgDocumentToHtml(chartDocument, { charts });
-assert.match(chartPublished.html, /<figure class="org2-chart">/);
+assert.match(chartPublished.html, /<figure class="org2-chart org2-chart-compact" data-org2-chart-interactive="true">/);
 assert.match(chartPublished.html, /<polyline /);
 assert.doesNotMatch(chartPublished.html, /language-chart/);
 

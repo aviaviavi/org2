@@ -50,6 +50,9 @@ x: quarter
 y: revenue
 title: Revenue from named source
 source: quarterly_revenue
+size: compact
+height: 280
+interactive: false
 \`\`\`
 
 #+name: future_source_chart
@@ -121,8 +124,12 @@ assert.equal(namedSourceJson.source.blockId, "named_revenue_chart");
 assert.equal(namedSourceJson.source.dataBlockId, "quarterly_revenue");
 assert.equal(namedSourceJson.source.line, 6);
 assert.equal(namedSourceJson.source.chartLine, 34);
+assert.deepEqual(namedSourceJson.presentation, { size: "compact", height: 280, interactive: false });
 assert.match(namedSourceJson.svg, /Revenue from named source/);
 assert.match(namedSourceJson.svg, /<polyline /);
+assert.match(namedSourceJson.svg, /height="280"/);
+assert.match(namedSourceJson.svg, /data-org2-chart-size="compact"/);
+assert.match(namedSourceJson.svg, /data-org2-chart-interactive="false"/);
 
 const futureSourceJson = JSON.parse(cli(["render-chart", "--file", note, "--block-id", "future_source_chart", "--format", "json"]));
 assert.equal(futureSourceJson.ok, true);

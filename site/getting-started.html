@@ -61,7 +61,8 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <p>For normal command-line use, install the published package:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm install -g @aviaviavi/org2
 org2 --help
-org2 agenda --help</code></pre>
+org2 agenda --help
+org2 agent capabilities</code></pre>
 <p>You can also try it without a global install:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npx @aviaviavi/org2 --help</code></pre>
 <p>For source builds and contribution work, use the repository:</p>
@@ -82,6 +83,12 @@ npm run org2 -- agenda --help</code></pre>
 <li><p>Open the disk image and drag <code>Org2Workspace.app</code> into <code>Applications</code>.</p></li>
 <li><p>Open the app from <code>Applications</code> and choose the folder that contains your Org2 or Org corpus.</p></li>
 </ol>
+<p>On first launch, the Workspace offers two paths:</p>
+<ul>
+<li><p><strong>Open an existing corpus</strong> to point Org2 at any folder of <code>.org</code> or <code>.org2</code> files. No migration is required.</p></li>
+<li><p><strong>Create a new corpus</strong> to choose an empty folder and add a small starter layout: <code>org2.json</code>, <code>inbox.org2</code>, a welcome note, <code>daily/</code>, <code>notes/</code>, <code>views/</code>, and <code>compiled/</code>.</p></li>
+</ul>
+<p>The starter is ordinary plain text and directories, not an app-owned database. You can immediately inspect or edit every generated file in Finder, Git, or another editor.</p>
 <p>The initial downloadable disk image is built for Apple Silicon Macs. Current release builds are developer-signed, not notarized. If macOS blocks the first launch, open <strong>System Settings → Privacy &amp; Security</strong> and allow Org2Workspace, or right-click the app in Finder and choose <strong>Open</strong>.</p>
 <p>For source builds and local dogfooding, build the app from the repository:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">npm ci
@@ -150,6 +157,8 @@ open ~/Applications/Org2Workspace.app</code></pre>
 <li><p><code>archive</code> / <code>refile</code>: reorganize trees</p></li>
 <li><p><code>fmt</code>: canonical formatting</p></li>
 <li><p><code>roam ...</code> / <code>id</code> / <code>query</code> / <code>backlinks</code>: linked-note workflows</p></li>
+<li><p><code>agent capabilities</code> / <code>agent context</code> / <code>context</code> / <code>brief</code>: discover functionality and retrieve cited, bounded context for agents</p></li>
+<li><p><code>query-data</code> / <code>render-chart</code>: materialize explicit datasets/SQL and render deterministic charts</p></li>
 <li><p><code>export html</code> / <code>publish</code>: produce docs and sites</p></li>
 <li><p><code>lsp</code>: optional shared editor backend for clients that use the protocol</p></li>
 </ul>
@@ -170,6 +179,8 @@ open ~/Applications/Org2Workspace.app</code></pre>
 <li><p>roam-style linked-note workflows</p></li>
 <li><p>HTML export + publish pipeline</p></li>
 <li><p>useful editor backend support</p></li>
+<li><p>cited agent retrieval and a machine-readable installed capability manifest</p></li>
+<li><p>local/remote data notebooks with explicit refresh and chart rendering</p></li>
 </ul>
 </section>
 <section class="org2-headline level-2">
@@ -185,6 +196,7 @@ open ~/Applications/Org2Workspace.app</code></pre>
 <h1 id="8-next-docs">8) Next docs</h1>
 <ul>
 <li><p><a href="features.html">Features</a></p></li>
+<li><p><a href="agent-quickstart.html">Agent quickstart</a></p></li>
 <li><p><a href="tooling-reference.html">Tooling reference</a></p></li>
 <li><p><a href="editors.html">Editor integrations</a></p></li>
 <li><p><a href="language-reference.html">Language reference</a></p></li>

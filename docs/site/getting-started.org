@@ -12,6 +12,7 @@ For normal command-line use, install the published package:
 npm install -g @aviaviavi/org2
 org2 --help
 org2 agenda --help
+org2 agent capabilities
 #+end_src
 
 You can also try it without a global install:
@@ -45,6 +46,13 @@ Org2 Workspace is the native macOS app. The easiest install path is the download
 1. Download the latest =Org2Workspace.dmg= from [[https://github.com/aviaviavi/org2/releases][GitHub Releases]].
 2. Open the disk image and drag =Org2Workspace.app= into =Applications=.
 3. Open the app from =Applications= and choose the folder that contains your Org2 or Org corpus.
+
+On first launch, the Workspace offers two paths:
+
+- *Open an existing corpus* to point Org2 at any folder of =.org= or =.org2= files. No migration is required.
+- *Create a new corpus* to choose an empty folder and add a small starter layout: =org2.json=, =inbox.org2=, a welcome note, =daily/=, =notes/=, =views/=, and =compiled/=.
+
+The starter is ordinary plain text and directories, not an app-owned database. You can immediately inspect or edit every generated file in Finder, Git, or another editor.
 
 The initial downloadable disk image is built for Apple Silicon Macs. Current release builds are developer-signed, not notarized. If macOS blocks the first launch, open *System Settings → Privacy & Security* and allow Org2Workspace, or right-click the app in Finder and choose *Open*.
 
@@ -131,6 +139,8 @@ The most useful commands to know first are:
 - =archive= / =refile=: reorganize trees
 - =fmt=: canonical formatting
 - =roam ...= / =id= / =query= / =backlinks=: linked-note workflows
+- =agent capabilities= / =agent context= / =context= / =brief=: discover functionality and retrieve cited, bounded context for agents
+- =query-data= / =render-chart=: materialize explicit datasets/SQL and render deterministic charts
 - =export html= / =publish=: produce docs and sites
 - =lsp=: optional shared editor backend for clients that use the protocol
 
@@ -152,6 +162,8 @@ org2 publish docs-site --config org2.json
 - roam-style linked-note workflows
 - HTML export + publish pipeline
 - useful editor backend support
+- cited agent retrieval and a machine-readable installed capability manifest
+- local/remote data notebooks with explicit refresh and chart rendering
 
 ** Still evolving
 
@@ -162,6 +174,7 @@ org2 publish docs-site --config org2.json
 * 8) Next docs
 
 - [[file:features.org][Features]]
+- [[file:agent-quickstart.org][Agent quickstart]]
 - [[file:tooling-reference.org][Tooling reference]]
 - [[file:editors.org][Editor integrations]]
 - [[file:language-reference.org][Language reference]]

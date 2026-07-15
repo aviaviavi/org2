@@ -252,12 +252,17 @@ This is ergonomic syntax sugar for chart metadata over the preceding table. Fenc
 x: day
 y: fetches
 source: package_fetches_result
+size: compact
+height: 300
+interactive: true
 ```
 #+end_src
 
-The current renderer supports =bar=, =line=, and bucketed =histogram= charts over the previous table or a named table source. Add =sort: x-asc=, =sort: x-desc=, =sort: y-asc=, or =sort: y-desc= when the visual should order marks independently of the table's source row order.
+The current renderer supports =bar=, =line=, and bucketed =histogram= charts over the previous table or a named table source. Add =sort: x-asc=, =sort: x-desc=, =sort: y-asc=, or =sort: y-desc= when the visual should order marks independently of the table's source row order. =size= accepts =compact=, =medium=, or =wide=. =height= accepts 220–720 pixels and defaults according to the size preset. =interactive= defaults to =true=; in the Mac app it enables nearest-point hover, exact-value tooltips, a crosshair, and keyboard navigation between marks. Static SVG remains the canonical CLI and export fallback.
 
-Chart SVG uses CSS custom properties with opinionated defaults: =--org2-chart-mark=, =--org2-chart-background=, =--org2-chart-axis=, =--org2-chart-grid=, =--org2-chart-label=, and =--org2-chart-title=. Set them on =.org2-chart= in a published stylesheet or the Mac app's =.org2/app.css= to customize the visual theme without changing the data declaration.
+The Mac app treats chart interaction as app-owned presentation behavior. Notes cannot provide arbitrary JavaScript. Chart cards can also be resized horizontally in the rendered view; use =size= and =height= when the desired dimensions should remain deterministic in source.
+
+Chart SVG uses CSS custom properties with opinionated defaults: =--org2-chart-mark=, =--org2-chart-surface=, =--org2-chart-axis=, =--org2-chart-grid=, =--org2-chart-label=, and =--org2-chart-title=. Set them on =.org2-chart= in a published stylesheet or the Mac app's =.org2/app.css= to customize the visual theme without changing the data declaration.
 
 The CLI can render chart-affiliated tables directly:
 
@@ -356,6 +361,7 @@ Remote datasets use the same named-dataset and DuckDB result pipeline as local C
       "type": "metabase",
       "url": "https://metabase.example.com/",
       "apiKeyEnv": "SCARF_METABASE_API_KEY",
+      "databaseIdEnv": "SCARF_METABASE_DATABASE_ID",
       "timeoutMs": 300000,
       "maxRows": 10000
     }
@@ -390,7 +396,30 @@ parameters: |
 ```
 #+end_src
 
+For a reproducible notebook, put the native SQL directly in the dataset block instead of relying on a mutable saved question. The profile must provide either a positive =databaseId= or a =databaseIdEnv= naming an environment variable that contains it:
+
+#+begin_src org
+```dataset recent_organizations
+type: metabase
+profile: scarf-metabase
+query: |
+  SELECT name, billing_email, created_at
+  FROM organizations
+  ORDER BY created_at DESC
+  LIMIT 25
+```
+#+end_src
+
 Use either dataset in ordinary DuckDB SQL, materialize the result as an org table with =org2 query-data=, then attach a =```chart= block to that named result. ClickHouse requests set server-side read-only mode, row limits, execution timeouts, and JSON output. Metabase requests use API-key authentication and saved-question JSON export. Both adapters enforce response-size and row limits locally as well.
+
+For notebooks with multiple remote sources, declare each result's dependency edge explicitly with =sources=DATASET_ID[,DATASET_ID...]=. Org2 validates the named sources, loads only those datasets for that result, and records them in materialization provenance:
+
+#+begin_src org
+```sql results=recent_organizations sources=recent_organizations_source freshness=24h
+SELECT * FROM recent_organizations_source
+ORDER BY created_at DESC
+```
+#+end_src
 
 Refreshing data is always explicit. Use =org2 query-data --apply= to insert the selected result after its SQL block or replace the existing provenance-stamped result in place. HTML rendering and opening a note in the Mac app only consume tables already present in the document; they never contact Metabase or ClickHouse. Valid chart declarations over those tables are rendered automatically as responsive inline SVG in the Mac app and static HTML exports.
 

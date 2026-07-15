@@ -69,8 +69,10 @@ th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text
 thead th { background: rgba(127,127,127,0.16); }
 a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }`;
 
-const DOCUMENT_CHART_STYLE = `.org2-chart { margin: 1rem 0 1.35rem; overflow-x: auto; }
-.org2-chart svg { display: block; width: 100%; min-width: 460px; height: auto; margin: 0 auto; }`;
+const DOCUMENT_CHART_STYLE = `.org2-chart { width: min(100%, 800px); margin: 1rem 0 1.35rem; overflow-x: auto; }
+.org2-chart-compact { width: min(100%, 680px); }
+.org2-chart-wide { width: 100%; }
+.org2-chart svg { display: block; width: 100%; height: auto; margin: 0; }`;
 
 const DOCUMENT_TOC_STYLE = `.org2-toc { border: 1px solid rgba(127,127,127,0.35); border-radius: 0.5rem; padding: 0.75rem 1rem; margin: 0.25rem 0 1rem; }
 .org2-toc h2 { margin: 0 0 0.5rem; font-size: 1rem; }
@@ -93,6 +95,12 @@ const APP_DOCUMENT_STYLE = `:root {
   --org2-success: #20804a;
   --org2-danger: #b64238;
   --org2-warning: #966512;
+  --org2-chart-axis: rgba(56, 61, 69, 0.54);
+  --org2-chart-grid: rgba(56, 61, 69, 0.12);
+  --org2-chart-mark: #3478d4;
+  --org2-chart-label: #6c7078;
+  --org2-chart-title: #24262a;
+  --org2-chart-surface: #ffffff;
   --org2-content-width: 960px;
   --org2-page-padding: 28px;
 }
@@ -108,6 +116,12 @@ const APP_DOCUMENT_STYLE = `:root {
     --org2-success: #6ac58c;
     --org2-danger: #ee8178;
     --org2-warning: #e0b361;
+    --org2-chart-axis: rgba(233, 234, 237, 0.5);
+    --org2-chart-grid: rgba(233, 234, 237, 0.12);
+    --org2-chart-mark: #79b8ed;
+    --org2-chart-label: #a4a8b0;
+    --org2-chart-title: #e9eaed;
+    --org2-chart-surface: #202226;
   }
 }
 *, *::before, *::after { box-sizing: border-box; }
@@ -127,6 +141,56 @@ main.org2-document {
   margin: 0 auto;
   padding: 22px min(var(--org2-page-padding), 5vw) 64px;
 }
+.org2-document-header { margin: 0.15rem 0 1.1rem; }
+.org2-document-title {
+  margin: 0;
+  font-size: clamp(1.9rem, 4vw, 2.45rem);
+  font-weight: 700;
+  line-height: 1.14;
+  letter-spacing: -0.025em;
+}
+.org2-document-subtitle { margin: 0.32rem 0 0; color: var(--org2-muted); font-size: 1rem; }
+.org2-file-properties {
+  margin: 0 0 1rem;
+  color: var(--org2-muted);
+  font-size: 0.84rem;
+}
+.org2-file-properties > summary {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  padding-left: 1rem;
+  color: var(--org2-muted);
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+  user-select: none;
+}
+.org2-file-properties > summary::-webkit-details-marker { display: none; }
+.org2-file-properties > summary::before {
+  content: "▶";
+  position: absolute;
+  left: 0;
+  color: var(--org2-muted);
+  font-size: 0.7rem;
+}
+.org2-file-properties[open] > summary::before { content: "▼"; }
+.org2-file-properties-count {
+  min-width: 1.35rem;
+  padding: 0.04rem 0.32rem;
+  border-radius: 999px;
+  background: var(--org2-faint);
+  text-align: center;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+.org2-file-properties-body {
+  margin: 0.55rem 0 0 1rem;
+  padding: 0.5rem 0 0.15rem 0.75rem;
+  border-left: 1px solid var(--org2-rule);
+}
+.org2-file-properties .org2-keyword { margin: 0.16rem 0; font-size: inherit; }
 .org2-headline { margin: 0; }
 .org2-headline + .org2-headline { margin-top: 0.72rem; }
 .org2-headline-summary {
@@ -291,8 +355,47 @@ th { color: var(--org2-muted); background: var(--org2-faint); font-size: 0.82rem
 .org2-table-scroll th, .org2-table-scroll td { overflow-wrap: normal; word-break: normal; hyphens: none; }
 .org2-resizable-table th, .org2-resizable-table td { min-width: 72px; }
 .org2-table-resize-anchor { position: relative; }
-.org2-chart { box-sizing: border-box; width: 100%; margin: 1rem 0 1.35rem; padding: 0.75rem; border: 1px solid color-mix(in srgb, var(--org2-text) 12%, transparent); border-radius: 8px; background: #fff; overflow-x: auto; }
-.org2-chart svg { display: block; width: 100%; min-width: 460px; height: auto; margin: 0 auto; }
+.org2-chart {
+  box-sizing: border-box;
+  position: relative;
+  width: min(100%, 800px);
+  max-width: 100%;
+  min-width: min(360px, 100%);
+  margin: 0.85rem 0 1.25rem;
+  padding: 0.65rem 0.75rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--org2-text) 11%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--org2-chart-surface) 96%, var(--org2-faint));
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--org2-text) 7%, transparent);
+  overflow: hidden;
+  resize: horizontal;
+}
+.org2-chart-compact { width: min(100%, 680px); }
+.org2-chart-wide { width: 100%; }
+.org2-chart svg { display: block; width: 100%; height: auto; margin: 0; overflow: visible; }
+.org2-chart-line { opacity: 0.9; }
+.org2-chart-mark { cursor: crosshair; outline: none; transition: opacity 100ms ease-out, stroke-width 100ms ease-out; }
+.org2-chart-mark:focus-visible { stroke: var(--org2-text); stroke-width: 3; }
+.org2-chart-mark-active { opacity: 1; stroke: var(--org2-text); stroke-width: 3; }
+.org2-chart-crosshair { opacity: 0.42; }
+.org2-chart-tooltip {
+  position: absolute;
+  z-index: 3;
+  min-width: 108px;
+  max-width: min(220px, calc(100% - 20px));
+  padding: 0.42rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--org2-text) 14%, transparent);
+  border-radius: 8px;
+  color: var(--org2-text);
+  background: color-mix(in srgb, var(--org2-chart-surface) 96%, var(--org2-faint));
+  box-shadow: 0 7px 22px color-mix(in srgb, var(--org2-text) 16%, transparent);
+  font-size: 0.78rem;
+  line-height: 1.32;
+  pointer-events: none;
+}
+.org2-chart-tooltip[hidden] { display: none; }
+.org2-chart-tooltip-label { display: block; color: var(--org2-muted); }
+.org2-chart-tooltip-value { display: block; margin-top: 0.08rem; font-weight: 650; font-variant-numeric: tabular-nums; }
 .org2-column-resizer {
   position: absolute;
   top: 0;
@@ -429,14 +532,110 @@ const APP_DOCUMENT_SCRIPT = `(() => {
     });
   }
 
+  function installInteractiveCharts() {
+    document.querySelectorAll("figure.org2-chart[data-org2-chart-interactive='true']").forEach((figure, chartIndex) => {
+      if (figure.dataset.org2ChartEnhanced === "true") return;
+      const svg = figure.querySelector("svg.org2-chart-svg");
+      if (!svg || svg.dataset.org2ChartInteractive !== "true") return;
+      const marks = Array.from(svg.querySelectorAll("[data-org2-chart-mark='true']"));
+      if (marks.length === 0) return;
+
+      figure.dataset.org2ChartEnhanced = "true";
+      const tooltip = document.createElement("div");
+      const tooltipID = "org2-chart-tooltip-" + chartIndex;
+      tooltip.id = tooltipID;
+      tooltip.className = "org2-chart-tooltip";
+      tooltip.setAttribute("role", "tooltip");
+      tooltip.hidden = true;
+      const tooltipLabel = document.createElement("span");
+      tooltipLabel.className = "org2-chart-tooltip-label";
+      const tooltipValue = document.createElement("span");
+      tooltipValue.className = "org2-chart-tooltip-value";
+      tooltip.append(tooltipLabel, tooltipValue);
+      figure.appendChild(tooltip);
+
+      const crosshair = svg.querySelector(".org2-chart-crosshair");
+      let activeMark = null;
+
+      marks.forEach((mark, index) => {
+        const nativeTitle = mark.querySelector(":scope > title");
+        if (nativeTitle) nativeTitle.remove();
+        mark.setAttribute("aria-describedby", tooltipID);
+        mark.addEventListener("focus", () => showMark(mark));
+        mark.addEventListener("blur", hideMark);
+        mark.addEventListener("keydown", (event) => {
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+          event.preventDefault();
+          const direction = event.key === "ArrowRight" ? 1 : -1;
+          const next = marks[Math.max(0, Math.min(marks.length - 1, index + direction))];
+          if (next && typeof next.focus === "function") next.focus();
+        });
+      });
+
+      function showMark(mark) {
+        if (!mark) return;
+        if (activeMark && activeMark !== mark) activeMark.classList.remove("org2-chart-mark-active");
+        activeMark = mark;
+        mark.classList.add("org2-chart-mark-active");
+        tooltipLabel.textContent = mark.dataset.label || "";
+        const yLabel = svg.dataset.org2ChartYLabel || "value";
+        tooltipValue.textContent = yLabel + ": " + (mark.dataset.value || "");
+        tooltip.hidden = false;
+
+        if (crosshair) {
+          const x = mark.dataset.chartX || "0";
+          crosshair.setAttribute("x1", x);
+          crosshair.setAttribute("x2", x);
+          crosshair.setAttribute("visibility", "visible");
+        }
+
+        const figureRect = figure.getBoundingClientRect();
+        const markRect = mark.getBoundingClientRect();
+        const centerX = markRect.left - figureRect.left + markRect.width / 2;
+        let left = centerX - tooltip.offsetWidth / 2;
+        left = Math.max(10, Math.min(left, figure.clientWidth - tooltip.offsetWidth - 10));
+        let top = markRect.top - figureRect.top - tooltip.offsetHeight - 10;
+        if (top < 8) top = markRect.bottom - figureRect.top + 10;
+        tooltip.style.left = left + "px";
+        tooltip.style.top = top + "px";
+      }
+
+      function hideMark() {
+        if (activeMark) activeMark.classList.remove("org2-chart-mark-active");
+        activeMark = null;
+        tooltip.hidden = true;
+        if (crosshair) crosshair.setAttribute("visibility", "hidden");
+      }
+
+      figure.addEventListener("mousemove", (event) => {
+        let nearest = null;
+        let nearestDistance = Infinity;
+        marks.forEach((mark) => {
+          const rect = mark.getBoundingClientRect();
+          const distance = Math.abs(event.clientX - (rect.left + rect.width / 2));
+          if (distance < nearestDistance) {
+            nearest = mark;
+            nearestDistance = distance;
+          }
+        });
+        showMark(nearest);
+      });
+      figure.addEventListener("mouseleave", () => {
+        if (!marks.includes(document.activeElement)) hideMark();
+      });
+    });
+  }
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {
       installHeadingActions();
       installTableResizers();
+      installInteractiveCharts();
     }, { once: true });
   } else {
     installHeadingActions();
     installTableResizers();
+    installInteractiveCharts();
   }
 })();`;
 
@@ -496,6 +695,11 @@ type RenderContext = {
 
 export type OrgEmbeddedChart = {
   svg: string;
+  presentation?: {
+    size: "compact" | "medium" | "wide";
+    height: number;
+    interactive: boolean;
+  };
   source: {
     line: number;
     chartLine?: number;
@@ -1118,7 +1322,10 @@ function renderSrcBlock(node: SrcBlockNode, context: RenderContext): string {
 }
 
 function renderEmbeddedChart(chart: OrgEmbeddedChart, sourceAttributes = ""): string {
-  return `<figure class="org2-chart"${sourceAttributes}>\n${chart.svg.trim()}\n</figure>`;
+  const presentation = chart.presentation;
+  const size = presentation?.size || "medium";
+  const interactive = presentation?.interactive !== false;
+  return `<figure class="org2-chart org2-chart-${size}" data-org2-chart-interactive="${interactive}"${sourceAttributes}>\n${chart.svg.trim()}\n</figure>`;
 }
 
 function renderBlock(node: BlockNode, context: RenderContext): string {
@@ -1249,7 +1456,7 @@ function renderNode(node: Node, context: RenderContext): string {
   if (node.type === "KeywordLine") {
     const key = String(node.keyRaw || "").trim().toUpperCase();
     if (HIDDEN_DOCUMENT_KEYWORDS.has(key)) return "";
-    return `<p class="org2-keyword"><span class="org2-keyword-name">${escapeHtml(node.keyRaw)}</span>: ${escapeHtml(node.valueRaw)}</p>`;
+    return `<p class="org2-keyword"><span class="org2-keyword-name">${escapeHtml(node.keyRaw)}</span>: ${escapeHtml(node.valueRaw.trim())}</p>`;
   }
   if (node.type === "DirectiveLine") {
     return `<pre class="org2-directive">${escapeHtml(node.raw)}</pre>`;
@@ -1268,6 +1475,32 @@ function renderNodes(nodes: Node[], context: RenderContext = {}): string {
     .map((node) => renderNode(node, context))
     .filter((html) => String(html || "").trim().length > 0)
     .join("\n");
+}
+
+function splitAppFileProperties(nodes: Node[]): { properties: Node[]; body: Node[] } {
+  const properties: Node[] = [];
+  const body: Node[] = [];
+  let inPreamble = true;
+
+  for (const node of nodes) {
+    if (inPreamble && node.type === "CommentLine") continue;
+    if (inPreamble && node.type === "KeywordLine") {
+      const key = String(node.keyRaw || "").trim().toUpperCase();
+      if (!HIDDEN_DOCUMENT_KEYWORDS.has(key)) properties.push(node);
+      continue;
+    }
+    inPreamble = false;
+    body.push(node);
+  }
+
+  return { properties, body };
+}
+
+function renderAppFileProperties(nodes: Node[], context: RenderContext): string {
+  if (nodes.length === 0) return "";
+  const rows = renderNodes(nodes, context);
+  if (!rows.trim()) return "";
+  return `<details class="org2-file-properties">\n<summary>File properties <span class="org2-file-properties-count">${nodes.length}</span></summary>\n<div class="org2-file-properties-body">\n${rows}\n</div>\n</details>`;
 }
 
 function findTitleFromKeywords(doc: DocumentNode): string | null {
@@ -1426,13 +1659,18 @@ function renderMainBody(opts: {
   title: string;
   subtitle?: string;
 }): string {
-  const body = renderNodes(opts.doc.children, opts.context);
+  const appDocument = opts.context.profile === "app";
+  const split = appDocument
+    ? splitAppFileProperties(opts.doc.children)
+    : { properties: [] as Node[], body: opts.doc.children };
+  const body = renderNodes(split.body, opts.context);
+  const fileProperties = appDocument ? renderAppFileProperties(split.properties, opts.context) : "";
   const tocHtml = opts.includeToc ? renderToc(opts.tocItems) : "";
   const documentHeader = opts.includeDocumentHeader
     ? renderDocumentHeader({ title: opts.title, subtitle: opts.subtitle })
     : "";
 
-  return [documentHeader, tocHtml, body]
+  return [documentHeader, fileProperties, tocHtml, body]
     .filter((segment) => String(segment || "").trim().length > 0)
     .join("\n");
 }
@@ -1578,7 +1816,7 @@ export function renderOrgDocumentToAppHtml(
     includeDefaultStyle: false,
     includeToc: false,
     includeHeadlineNumbers: false,
-    includeDocumentHeader: false,
+    includeDocumentHeader: true,
     rewriteFileLinks: false,
     headIncludes: [
       `<style id="org2-app-document-style">\n${APP_DOCUMENT_STYLE}\n</style>`,

@@ -14,6 +14,7 @@
       "type": "metabase",
       "url": "https://metabase.example.com/",
       "apiKeyEnv": "SCARF_METABASE_API_KEY",
+      "databaseIdEnv": "SCARF_METABASE_DATABASE_ID",
       "timeoutMs": 300000,
       "maxRows": 10000,
       "maxResponseBytes": 16777216
