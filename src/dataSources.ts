@@ -9,7 +9,8 @@ export type RemoteDatasetRequest =
   | {
       type: "metabase";
       profile: string;
-      questionId: number;
+      questionId?: number;
+      query?: string;
       parameters?: unknown;
     };
 
@@ -57,6 +58,15 @@ function requiredEnvironmentValue(name: string | undefined, profileName: string,
   return value;
 }
 
+function metabaseDatabaseId(profile: Extract<Org2DataSourceConfig, { type: "metabase" }>, profileName: string, env: NodeJS.ProcessEnv): number {
+  const raw = profile.databaseId ?? (profile.databaseIdEnv ? requiredEnvironmentValue(profile.databaseIdEnv, profileName, "a database ID", env) : undefined);
+  const value = typeof raw === "number" ? raw : Number.parseInt(String(raw || ""), 10);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Data source profile "${profileName}" requires a positive Metabase databaseId or databaseIdEnv`);
+  }
+  return value;
+}
+
 async function responseText(response: Response, maxBytes: number, profileName: string): Promise<string> {
   const contentLength = Number.parseInt(response.headers.get("content-length") || "", 10);
   if (Number.isFinite(contentLength) && contentLength > maxBytes) {
@@ -86,6 +96,11 @@ async function responseText(response: Response, maxBytes: number, profileName: s
   }
   if (!response.ok) {
     const summary = body.replace(/\s+/g, " ").trim().slice(0, 500);
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(
+        `Data source profile "${profileName}" authentication failed (HTTP ${response.status}). Check its API key and permissions${summary ? `: ${summary}` : ""}`,
+      );
+    }
     throw new Error(`Data source profile "${profileName}" returned HTTP ${response.status}${summary ? `: ${summary}` : ""}`);
   }
   return body;
@@ -135,6 +150,20 @@ function rowsFromJson(value: unknown, profileName: string, maxRows: number): Rec
   return rows;
 }
 
+function rowsFromMetabaseDataset(value: unknown, profileName: string, maxRows: number): Record<string, unknown>[] {
+  const data = isRecord(value) && isRecord(value.data) ? value.data : undefined;
+  const rows = data && Array.isArray(data.rows) ? data.rows : null;
+  const cols = data && Array.isArray(data.cols) ? data.cols : null;
+  if (!rows || !cols || !rows.every(Array.isArray) || !cols.every(isRecord)) {
+    throw new Error(`Data source profile "${profileName}" returned an invalid Metabase dataset response`);
+  }
+  if (rows.length > maxRows) {
+    throw new Error(`Data source profile "${profileName}" returned ${rows.length} rows; limit is ${maxRows}`);
+  }
+  const names = cols.map((column, index) => String(column.name || column.display_name || `column_${index + 1}`));
+  return rows.map((row) => Object.fromEntries(names.map((name, index) => [name, row[index]])));
+}
+
 async function loadClickHouse(
   request: Extract<RemoteDatasetRequest, { type: "clickhouse" }>,
   profile: Extract<Org2DataSourceConfig, { type: "clickhouse" }>,
@@ -170,22 +199,33 @@ async function loadMetabase(
   const timeoutMs = boundedInteger(profile.timeoutMs, DEFAULT_TIMEOUT_MS, 1_000, 60 * 60_000);
   const maxRows = boundedInteger(profile.maxRows, DEFAULT_MAX_ROWS, 1, 1_000_000);
   const maxResponseBytes = boundedInteger(profile.maxResponseBytes, DEFAULT_MAX_RESPONSE_BYTES, 1_024, 256 * 1024 * 1024);
-  const url = new URL(`api/card/${request.questionId}/query/json`, baseUrl.href.endsWith("/") ? baseUrl : new URL(`${baseUrl.href}/`));
-  url.searchParams.set("format_rows", "false");
+  const nativeQuery = String(request.query || "").trim();
+  const url = nativeQuery
+    ? new URL("api/dataset", baseUrl.href.endsWith("/") ? baseUrl : new URL(`${baseUrl.href}/`))
+    : new URL(`api/card/${request.questionId}/query/json`, baseUrl.href.endsWith("/") ? baseUrl : new URL(`${baseUrl.href}/`));
+  if (!nativeQuery) url.searchParams.set("format_rows", "false");
   const parameters = request.parameters === undefined
-    ? { parameters: [] }
+    ? []
     : isRecord(request.parameters) && Array.isArray(request.parameters.parameters)
-      ? request.parameters
-      : { parameters: request.parameters };
+      ? request.parameters.parameters
+      : request.parameters;
+  const body = nativeQuery
+    ? {
+        database: metabaseDatabaseId(profile, request.profile, env),
+        type: "native",
+        native: { query: nativeQuery },
+        parameters,
+      }
+    : { parameters };
   const value = await requestJson(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "X-API-Key": requiredEnvironmentValue(profile.apiKeyEnv, request.profile, "an API key", env),
     },
-    body: JSON.stringify(parameters),
+    body: JSON.stringify(body),
   }, request.profile, timeoutMs, maxResponseBytes);
-  return rowsFromJson(value, request.profile, maxRows);
+  return nativeQuery ? rowsFromMetabaseDataset(value, request.profile, maxRows) : rowsFromJson(value, request.profile, maxRows);
 }
 
 export async function loadRemoteDataset(

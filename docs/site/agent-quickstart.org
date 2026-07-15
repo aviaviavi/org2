@@ -1,0 +1,73 @@
+#+TITLE: Agent quickstart
+#+SUBTITLE: Discover and use Org2 safely in a few commands
+
+This page is the shortest path for Codex, OpenClaw, local models, scripts, and other agents to understand an Org2 installation. Org2 is a local-first knowledge compiler: ordinary =.org2= and =.org= files are canonical, while indexes, agendas, graph data, context packets, reports, apps, and published pages are derived from the shared compiler/runtime.
+
+* First minute
+
+Ask the installed CLI what it can do instead of relying on model memory:
+
+#+begin_src sh
+org2 agent capabilities
+org2 --help
+org2 agent --help
+#+end_src
+
+=org2 agent capabilities= emits the versioned JSON schema =org2:capabilities:v1=. It summarizes workflow families, write behavior, client roles, safety rules, and deeper documentation URLs. Use =org2 COMMAND --help= for the current flags of a specific command.
+
+When working in a corpus, look for the nearest =org2.json=. It can define file selection, recursion, ignored paths, TODO vocabulary, data-source profiles, publishing projects, and roam/dailies locations. Do not assume a private database or app owns the canonical state.
+
+* Safe operating contract
+
+1. Read normal files and deterministic compiler output before synthesizing an answer.
+2. Prefer bounded JSON interfaces for automation and retain file/line citations, IDs, and source ranges.
+3. Preview mutations. Most write commands require =--apply=; inspect the preview or JSON envelope first.
+4. Keep generated work in =views/= or =compiled/= with provenance and review state before promoting it into canonical =notes/=.
+5. Make small, inspectable text edits. Run targeted tests and =org2 lint= around writes when practical.
+6. Never store credentials in Org2 notes. Config names environment variables or profiles; secret values remain external.
+
+* Agent retrieval
+
+Use the agent namespace for bounded, cited context:
+
+#+begin_src sh
+org2 agent search --query "billing migration" --dir ~/notes --recursive
+org2 agent context --query "billing migration risks" --dir ~/notes --recursive
+org2 agent fetch --id NODE_ID --dir ~/notes --recursive
+org2 agent bundle --query "billing migration" --scope project:billing --since 90d
+#+end_src
+
+The shorthand =org2 context QUERY= renders a cited Markdown/Org context pack for prompt assembly. =org2 compile corpus= emits a schema-versioned JSON or JSONL corpus artifact for larger downstream indexes and tools. =org2 brief= produces a human-facing synthesis from the same context substrate.
+
+* Common workflows
+
+- *Plan and act*: =agenda=, =todo=, =approvals=, =plan=, and =clock=.
+- *Capture and organize*: =capture=, =archive=, and =refile=.
+- *Find and connect knowledge*: =search=, =query=, =id=, =backlinks=, =entity=, =index=, and =roam ...=.
+- *Check corpus health*: =fmt --check=, =lint=, and =graph audit=.
+- *Work with data*: =query-data= materializes explicit dataset/SQL blocks; =render-chart= renders deterministic chart declarations. Remote refresh is always explicit.
+- *Create reviewed AI artifacts*: =ai validate-job=, =ai run=, =ai review=, =ai suggest-links=, and =ai promote= preserve the review boundary.
+- *Publish*: =export html= and =publish= derive HTML without replacing the source corpus.
+- *Use editor semantics*: =lsp= exposes shared navigation, completion, diagnostics, formatting, and refactoring behavior.
+
+See [[file:tooling-reference.org][Tooling reference]] for commands, [[file:language-reference.org][Language reference]] for syntax, [[file:corpus-flow.org][Corpus flow]] for artifact zones and trust boundaries, and [[file:features.org][Features]] for how the pieces fit together.
+
+* Write examples
+
+Preview a planning change, then apply the same operation after review:
+
+#+begin_src sh
+org2 plan set --file projects.org2 --line 42 --kind scheduled --date 2026-07-20 --format diff
+org2 plan set --file projects.org2 --line 42 --kind scheduled --date 2026-07-20 --apply
+#+end_src
+
+Create a cited generated view without silently rewriting canonical notes:
+
+#+begin_src sh
+org2 context "launch risks" --dir ~/notes --recursive --format json > compiled/launch-context.json
+org2 lint --dir ~/notes --recursive --format json
+#+end_src
+
+Agents embedded in the macOS Workspace should still use shared CLI/parser semantics for IDs, links, source ranges, agenda behavior, data queries, and context. App presentation state is not the language implementation.
+
+For a completely new local workspace, the Mac app can initialize an empty folder with a minimal =org2.json=, inbox, welcome note, and =notes/=, =daily/=, =views/=, and =compiled/= zones. Those generated starter files are ordinary corpus text and should be treated like any other user-owned source.

@@ -51,7 +51,8 @@
         },
         "assets": {
           "include": [
-            "assets/**"
+            "assets/**",
+            "llms.txt"
           ],
           "ignore": [
             "**/.DS_Store"

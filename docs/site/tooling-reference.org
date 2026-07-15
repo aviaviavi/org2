@@ -17,12 +17,17 @@ Main workflows:
 - =archive=, =refile=
 - =fmt=
 - =search=, =id=, =query=, =backlinks=
+- =index=, =entity=, =approvals=, =clock=
+- =agent capabilities=, =agent context/search/fetch/bundle=, =context=, =brief=
+- =compile corpus=
 - =render-chart=
+- =query-data=
 - =roam ...=
 - =crypt ...=
 - =export html=
 - =publish=
 - =lint=
+- =graph audit=
 - =ai validate-job=
 - =lsp=
 
@@ -213,7 +218,20 @@ org2 query-data --file report.org2 --results fetches_by_state --apply
 cat report.org2 | org2 query-data --stdin --results fetches_by_state
 #+end_src
 
-The default output is a named org table with =#+name: fetches_by_state= so it can be pasted or written into the note and consumed by =render-chart= via =source: fetches_by_state=. =--apply= inserts that generated block after the selected SQL block or replaces the existing =#+query-data: result=...= block in place. Materialized tables include a compact provenance line with the result id, row count, optional artifact/freshness, query and script hashes, and =ran_at= timestamp. Add =artifact=PATH= to record an intended materialized output and =freshness=24h=, =ttl=24h=, or =max-age=24h= when clients should know how long a result can be treated as fresh. SQL result ids must be unique within the note, and dataset ids and SQL view ids share DuckDB's relation namespace. Inline bearer tokens and passwords are rejected. JSON output includes diagnostics, dataset metadata, SQL views, available result blocks, provenance, rows, and the generated org table; =--include-script= includes DuckDB setup SQL. Use =--inspect= to parse without running DuckDB. The command expects a local DuckDB CLI on =PATH=, or a custom path via =--duckdb=. ClickHouse and Metabase datasets resolve named =dataSources= profiles from the nearest =org2.json=; secrets are read only from profile-named environment variables. Remote refresh is explicit: HTML export and the Mac rendered view never execute warehouse queries. See [[file:language-reference.org][the language reference]] for profile and dataset examples.
+The default output is a named org table with =#+name: fetches_by_state= so it can be pasted or written into the note and consumed by =render-chart= via =source: fetches_by_state=. =--apply= inserts that generated block after the selected SQL block or replaces the existing =#+query-data: result=...= block in place. Materialized tables include a compact provenance line with the result id, row count, explicit source dependencies, optional artifact/freshness, query and script hashes, and =ran_at= timestamp. Add =artifact=PATH= to record an intended materialized output and =freshness=24h=, =ttl=24h=, or =max-age=24h= when clients should know how long a result can be treated as fresh. SQL result ids must be unique within the note, and dataset ids and SQL view ids share DuckDB's relation namespace. Inline bearer tokens and passwords are rejected. JSON output includes diagnostics, dataset metadata, SQL views, available result blocks, provenance, rows, and the generated org table; =--include-script= includes DuckDB setup SQL. Use =--inspect= to parse without running DuckDB. Org2 uses its bundled DuckDB engine by default; =--duckdb PATH= is an explicit CLI-engine override. ClickHouse and Metabase datasets resolve named =dataSources= profiles from the nearest =org2.json=; secrets are read only from profile-named environment variables or the Mac app's Keychain workflow. Metabase datasets may target saved questions or include reproducible native SQL with a configured database ID. Remote refresh is explicit: HTML export and merely opening a note in the Mac rendered view never execute warehouse queries. See [[file:language-reference.org][the language reference]] for profile and dataset examples.
+
+* Agent discovery and retrieval
+
+Agents should begin by querying the installed version rather than relying on remembered documentation:
+
+#+begin_src sh
+org2 agent capabilities
+org2 agent --help
+#+end_src
+
+The capability command emits =org2:capabilities:v1= JSON covering workflows, safety rules, client roles, and canonical documentation entry points. The remaining =agent= subcommands return bounded =org2:agent-context:v1= JSON with citations and source ranges. =org2 context= is the human/prompt-friendly shorthand, =org2 brief= renders a cited synthesis, and =org2 compile corpus= emits a complete schema-versioned corpus artifact.
+
+See [[file:agent-quickstart.org][Agent quickstart]] for the operating contract and common recipes.
 
 * Corpus lint
 

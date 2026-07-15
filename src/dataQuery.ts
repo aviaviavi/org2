@@ -1,6 +1,7 @@
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { DuckDBConnection } from "@duckdb/node-api";
 import { findConfigFile, loadConfig, type Org2DataSourceConfig } from "./config.js";
 import { loadRemoteDataset, type RemoteDatasetRequest } from "./dataSources.js";
 
@@ -37,6 +38,7 @@ export type DataQueryDataset = {
 
 export type DataQuerySqlBlock = {
   resultId: string;
+  sourceIds?: string[];
   artifact?: string;
   freshness?: string;
   line: number;
@@ -46,6 +48,7 @@ export type DataQuerySqlBlock = {
 
 export type DataQueryResultBlock = {
   resultId: string;
+  sourceIds?: string[];
   artifact?: string;
   freshness?: string;
   line: number;
@@ -408,8 +411,10 @@ function parseDataset(block: FencedBlock, baseDir: string, namedTables: Map<stri
     diagnostics.push(diagnostic(`${type} dataset block requires profile: NAME`, { line: block.line, ...(id ? { blockId: id } : {}) }));
   } else if (type === "clickhouse" && !query) {
     diagnostics.push(diagnostic("ClickHouse dataset block requires query: | followed by indented SQL", { line: block.line, ...(id ? { blockId: id } : {}) }));
-  } else if (type === "metabase" && (!questionRaw || !Number.isInteger(questionId) || questionId <= 0)) {
-    diagnostics.push(diagnostic("Metabase dataset block requires a positive question: ID", { line: block.line, ...(id ? { blockId: id } : {}) }));
+  } else if (type === "metabase" && !query && (!questionRaw || !Number.isInteger(questionId) || questionId <= 0)) {
+    diagnostics.push(diagnostic("Metabase dataset block requires either query: | SQL or a positive question: ID", { line: block.line, ...(id ? { blockId: id } : {}) }));
+  } else if (type === "metabase" && query && questionRaw) {
+    diagnostics.push(diagnostic("Metabase dataset block accepts only one of query: | SQL or question: ID", { line: block.line, ...(id ? { blockId: id } : {}) }));
   } else if (type === "table" && !sourceTable) {
     diagnostics.push(diagnostic("Table dataset block requires source: named_table", { line: block.line, ...(id ? { blockId: id } : {}) }));
   } else if (!remoteType && type !== "table" && !sourcePath && !sourceUrl) {
@@ -462,7 +467,7 @@ function parseDataset(block: FencedBlock, baseDir: string, namedTables: Map<stri
         type,
         engine: "duckdb",
         profile: remoteProfile,
-        questionId,
+        ...(query ? { query } : { questionId }),
         ...(parameters !== undefined ? { parameters } : {}),
         ...(configRef ? { configRef } : {}),
       },
@@ -505,6 +510,10 @@ function parseDataset(block: FencedBlock, baseDir: string, namedTables: Map<stri
 
 function parseSqlBlock(block: FencedBlock): { sql?: DataQuerySqlBlock; diagnostics: DataQueryDiagnostic[] } {
   const resultId = argValue(block.args, ["id", "name"]) || argValue(block.args, ["results", "result"], { separated: false }) || positionalArg(block.args) || "";
+  const sourceIds = (argValue(block.args, ["sources", "datasets"], { separated: false }) || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
   const artifact = argValue(block.args, ["artifact", "out", "output"]);
   const freshness = argValue(block.args, ["freshness", "ttl", "max-age"], { separated: false });
   const diagnostics: DataQueryDiagnostic[] = [];
@@ -514,7 +523,7 @@ function parseSqlBlock(block: FencedBlock): { sql?: DataQuerySqlBlock; diagnosti
     diagnostics.push(diagnostic("SQL result freshness metadata must be a compact token such as 1h, 24h, P1D, or manual", { line: block.line, ...(resultId ? { blockId: resultId } : {}) }));
   }
   if (diagnostics.some((item) => item.severity === "error")) return { diagnostics };
-  return { sql: { resultId, ...(artifact ? { artifact } : {}), ...(freshness ? { freshness } : {}), line: block.line, endLine: block.endLine, sql: block.body.trim() }, diagnostics };
+  return { sql: { resultId, ...(sourceIds.length > 0 ? { sourceIds } : {}), ...(artifact ? { artifact } : {}), ...(freshness ? { freshness } : {}), line: block.line, endLine: block.endLine, sql: block.body.trim() }, diagnostics };
 }
 
 function hasSqlViewArg(block: FencedBlock): boolean {
@@ -634,6 +643,16 @@ function parseDuckDbJson(stdout: string): Record<string, unknown>[] {
   return [{ value: parsed }];
 }
 
+async function runBundledDuckDb(script: string): Promise<Record<string, unknown>[]> {
+  const connection = await DuckDBConnection.create();
+  try {
+    const reader = await connection.runAndReadAll(script);
+    return reader.getRowObjectsJson() as Record<string, unknown>[];
+  } finally {
+    connection.closeSync();
+  }
+}
+
 function formatCell(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "object") return JSON.stringify(value);
@@ -708,6 +727,7 @@ function selectSqlBlockByLine(blocks: DataQuerySqlBlock[], line: number): DataQu
 function resultBlockMetadata(blocks: DataQuerySqlBlock[]): DataQueryResultBlock[] {
   return blocks.map((block) => ({
     resultId: block.resultId,
+    ...(block.sourceIds ? { sourceIds: block.sourceIds } : {}),
     ...(block.artifact ? { artifact: block.artifact } : {}),
     ...(block.freshness ? { freshness: block.freshness } : {}),
     line: block.line,
@@ -747,6 +767,14 @@ function remoteDatasetRequest(dataset: DataQueryDataset): RemoteDatasetRequest |
       ...(dataset.parameters !== undefined ? { parameters: dataset.parameters } : {}),
     };
   }
+  if (dataset.type === "metabase" && dataset.profile && dataset.query) {
+    return {
+      type: "metabase",
+      profile: dataset.profile,
+      query: dataset.query,
+      ...(dataset.parameters !== undefined ? { parameters: dataset.parameters } : {}),
+    };
+  }
   return undefined;
 }
 
@@ -760,7 +788,6 @@ function resolveDataSources(file: string | undefined, explicit: Record<string, O
 export async function runOrg2DataQuery(input: string, opts: RunDataQueryOptions = {}): Promise<DataQueryResult> {
   const file = opts.file;
   const baseDir = file ? path.dirname(path.resolve(file)) : process.cwd();
-  const duckdbPath = opts.duckdbPath || "duckdb";
   const diagnostics: DataQueryDiagnostic[] = [];
   const blocks = collectFencedBlocks(input);
   const namedTables = collectNamedOrgTables(input);
@@ -811,13 +838,21 @@ export async function runOrg2DataQuery(input: string, opts: RunDataQueryOptions 
       diagnostics.push(diagnostic(`Duplicate SQL result block "${block.resultId}"`, { line: block.line, blockId: block.resultId }));
     }
     seenResultIds.add(block.resultId);
+    for (const sourceId of block.sourceIds || []) {
+      if (!seenDatasetIds.has(sourceId) && !seenViewIds.has(sourceId)) {
+        diagnostics.push(diagnostic(`SQL result block "${block.resultId}" declares unknown source "${sourceId}"`, { line: block.line, blockId: block.resultId }));
+      }
+    }
   }
 
   const resultBlocks = resultBlockMetadata(sqlBlocks);
   const selectedByLine = opts.resultLine && opts.resultLine > 0 ? selectSqlBlockByLine(sqlBlocks, opts.resultLine) : undefined;
   const resultId = opts.resultId?.trim() || selectedByLine?.resultId || (sqlBlocks.length === 1 ? sqlBlocks[0]?.resultId : "");
   const selected = selectedByLine || (resultId ? sqlBlocks.find((block) => block.resultId === resultId) : undefined);
-  const remoteDatasets = datasets.filter((dataset) => dataset.type === "clickhouse" || dataset.type === "metabase");
+  const activeDatasets = selected?.sourceIds?.length
+    ? datasets.filter((dataset) => selected.sourceIds?.includes(dataset.id))
+    : datasets;
+  const remoteDatasets = activeDatasets.filter((dataset) => dataset.type === "clickhouse" || dataset.type === "metabase");
   let dataSources: Record<string, Org2DataSourceConfig> | undefined;
   if (remoteDatasets.length > 0) {
     try {
@@ -839,8 +874,8 @@ export async function runOrg2DataQuery(input: string, opts: RunDataQueryOptions 
     if (opts.resultLine && opts.resultLine > 0 && !selectedByLine) diagnostics.push(diagnostic(`No SQL result block found at or after line ${opts.resultLine}`, { line: opts.resultLine }));
     if (resultId && !selected) diagnostics.push(diagnostic(`No SQL result block found for "${resultId}"`, { blockId: resultId }));
     const ok = !diagnostics.some((item) => item.severity === "error");
-    const script = ok && selected ? buildDuckDbScript(datasets, views, selected.sql, namedTables) : "";
-    const provenance = ok && selected ? resultProvenance(selected, datasets, views, script, opts.outputArtifact) : undefined;
+    const script = ok && selected ? buildDuckDbScript(activeDatasets, views, selected.sql, namedTables) : "";
+    const provenance = ok && selected ? resultProvenance(selected, activeDatasets, views, script, opts.outputArtifact) : undefined;
     return {
       ok,
       mode: "inspect",
@@ -883,27 +918,33 @@ export async function runOrg2DataQuery(input: string, opts: RunDataQueryOptions 
     return { ok: false, mode: "execute", engine: "duckdb", resultId: selected.resultId, datasets, views, resultBlocks, rowCount: 0, rows: [], diagnostics };
   }
 
-  const script = buildDuckDbScript(datasets, views, selected.sql, namedTables, remoteRows);
-  const provenance = resultProvenance(selected, datasets, views, script, opts.outputArtifact, opts.ranAt || new Date().toISOString());
-  const child = spawnSync(duckdbPath, ["-json", ":memory:"], {
-    encoding: "utf8",
-    input: script,
-    maxBuffer: 1024 * 1024 * 16,
-  });
-
-  if (child.error) {
-    diagnostics.push(diagnostic(`Failed to run DuckDB CLI "${duckdbPath}": ${child.error.message}`, { line: selected.line, blockId: selected.resultId }));
-  } else if (child.status !== 0) {
-    const stderr = String(child.stderr || "").trim();
-    diagnostics.push(diagnostic(`DuckDB query failed${stderr ? `: ${stderr}` : ""}`, { line: selected.line, blockId: selected.resultId }));
-  }
-
+  const script = buildDuckDbScript(activeDatasets, views, selected.sql, namedTables, remoteRows);
+  const provenance = resultProvenance(selected, activeDatasets, views, script, opts.outputArtifact, opts.ranAt || new Date().toISOString());
   let rows: Record<string, unknown>[] = [];
-  if (!diagnostics.some((item) => item.severity === "error")) {
+  if (opts.duckdbPath) {
+    const child = spawnSync(opts.duckdbPath, ["-json", ":memory:"], {
+      encoding: "utf8",
+      input: script,
+      maxBuffer: 1024 * 1024 * 16,
+    });
+    if (child.error) {
+      diagnostics.push(diagnostic(`Failed to run DuckDB CLI "${opts.duckdbPath}": ${child.error.message}`, { line: selected.line, blockId: selected.resultId }));
+    } else if (child.status !== 0) {
+      const stderr = String(child.stderr || "").trim();
+      diagnostics.push(diagnostic(`DuckDB query failed${stderr ? `: ${stderr}` : ""}`, { line: selected.line, blockId: selected.resultId }));
+    }
     try {
-      rows = parseDuckDbJson(String(child.stdout || ""));
+      if (!diagnostics.some((item) => item.severity === "error")) {
+        rows = parseDuckDbJson(String(child.stdout || ""));
+      }
     } catch (err) {
       diagnostics.push(diagnostic(`DuckDB did not return JSON rows: ${err instanceof Error ? err.message : String(err)}`, { line: selected.line, blockId: selected.resultId }));
+    }
+  } else {
+    try {
+      rows = await runBundledDuckDb(script);
+    } catch (error) {
+      diagnostics.push(diagnostic(`DuckDB query failed: ${error instanceof Error ? error.message : String(error)}`, { line: selected.line, blockId: selected.resultId }));
     }
   }
 

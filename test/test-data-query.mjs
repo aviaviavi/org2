@@ -327,6 +327,12 @@ assert.deepEqual(json.resultBlocks, [{
   endLine: 14,
 }]);
 assert.equal(json.rows[0].state, "CA");
+const bundledJson = JSON.parse(cli(["query-data", "--file", note, "--results", "fetches_by_state", "--format", "json"]));
+assert.equal(bundledJson.ok, true);
+assert.deepEqual(bundledJson.rows, [
+  { state: "CA", fetches: "42" },
+  { state: "NY", fetches: "24" },
+]);
 assert.equal(json.provenance.resultId, "fetches_by_state");
 assert.equal(json.provenance.artifact, "views/fetches_by_state.org");
 assert.equal(json.provenance.freshness, "24h");

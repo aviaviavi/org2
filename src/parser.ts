@@ -1276,10 +1276,6 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
       continue;
     }
 
-    if (line.includes("\t")) {
-      fail(makeError("Unsupported construct: tab character", lineNumber, line.indexOf("\t") + 1));
-    }
-
     const listItem = parseListItemLine(line) ?? (() => {
       const trimmed = line.trimStart();
       if (trimmed === line) return null;
@@ -1533,16 +1529,6 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
           item.children.push(table);
           i = nextLineIndex;
           continue;
-        }
-
-        if (contLine.includes("\t")) {
-          fail(
-            makeError(
-              "Unsupported construct: tab character",
-              contLineNumber,
-              contLine.indexOf("\t") + 1,
-            ),
-          );
         }
 
         itemParagraphLines.push(contLine.slice(listItem.indentColumn));

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agent quickstart</title>
+<meta name="subtitle" content="Discover and use Org2 safely in a few commands" />
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Agent quickstart" />
+<meta property="og:description" content="Discover and use Org2 safely in a few commands" />
+<meta property="og:url" content="https://org2.avi.press/agent-quickstart.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/agent-quickstart.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Agent quickstart" />
+<meta name="twitter:description" content="Discover and use Org2 safely in a few commands" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/agent-quickstart.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">macOS Workspace</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a><a href="org2-vs-obsidian.html">Org2 vs Obsidian</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open docs search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">Agent quickstart</h1>
+<p class="org2-document-subtitle" role="doc-subtitle">Discover and use Org2 safely in a few commands</p>
+</header>
+<p>This page is the shortest path for Codex, OpenClaw, local models, scripts, and other agents to understand an Org2 installation. Org2 is a local-first knowledge compiler: ordinary <code>.org2</code> and <code>.org</code> files are canonical, while indexes, agendas, graph data, context packets, reports, apps, and published pages are derived from the shared compiler/runtime.</p>
+<section class="org2-headline level-1">
+<h1 id="first-minute">First minute</h1>
+<p>Ask the installed CLI what it can do instead of relying on model memory:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 agent capabilities
+org2 --help
+org2 agent --help</code></pre>
+<p><code>org2 agent capabilities</code> emits the versioned JSON schema <code>org2:capabilities:v1</code>. It summarizes workflow families, write behavior, client roles, safety rules, and deeper documentation URLs. Use <code>org2 COMMAND --help</code> for the current flags of a specific command.</p>
+<p>When working in a corpus, look for the nearest <code>org2.json</code>. It can define file selection, recursion, ignored paths, TODO vocabulary, data-source profiles, publishing projects, and roam/dailies locations. Do not assume a private database or app owns the canonical state.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="safe-operating-contract">Safe operating contract</h1>
+<ol>
+<li><p>Read normal files and deterministic compiler output before synthesizing an answer.</p></li>
+<li><p>Prefer bounded JSON interfaces for automation and retain file/line citations, IDs, and source ranges.</p></li>
+<li><p>Preview mutations. Most write commands require <code>--apply</code>; inspect the preview or JSON envelope first.</p></li>
+<li><p>Keep generated work in <code>views/</code> or <code>compiled/</code> with provenance and review state before promoting it into canonical <code>notes/</code>.</p></li>
+<li><p>Make small, inspectable text edits. Run targeted tests and <code>org2 lint</code> around writes when practical.</p></li>
+<li><p>Never store credentials in Org2 notes. Config names environment variables or profiles; secret values remain external.</p></li>
+</ol>
+</section>
+<section class="org2-headline level-1">
+<h1 id="agent-retrieval">Agent retrieval</h1>
+<p>Use the agent namespace for bounded, cited context:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 agent search --query &quot;billing migration&quot; --dir ~/notes --recursive
+org2 agent context --query &quot;billing migration risks&quot; --dir ~/notes --recursive
+org2 agent fetch --id NODE_ID --dir ~/notes --recursive
+org2 agent bundle --query &quot;billing migration&quot; --scope project:billing --since 90d</code></pre>
+<p>The shorthand <code>org2 context QUERY</code> renders a cited Markdown/Org context pack for prompt assembly. <code>org2 compile corpus</code> emits a schema-versioned JSON or JSONL corpus artifact for larger downstream indexes and tools. <code>org2 brief</code> produces a human-facing synthesis from the same context substrate.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="common-workflows">Common workflows</h1>
+<ul>
+<li><p><strong>Plan and act</strong>: <code>agenda</code>, <code>todo</code>, <code>approvals</code>, <code>plan</code>, and <code>clock</code>.</p></li>
+<li><p><strong>Capture and organize</strong>: <code>capture</code>, <code>archive</code>, and <code>refile</code>.</p></li>
+<li><p><strong>Find and connect knowledge</strong>: <code>search</code>, <code>query</code>, <code>id</code>, <code>backlinks</code>, <code>entity</code>, <code>index</code>, and <code>roam ...</code>.</p></li>
+<li><p><strong>Check corpus health</strong>: <code>fmt --check</code>, <code>lint</code>, and <code>graph audit</code>.</p></li>
+<li><p><strong>Work with data</strong>: <code>query-data</code> materializes explicit dataset/SQL blocks; <code>render-chart</code> renders deterministic chart declarations. Remote refresh is always explicit.</p></li>
+<li><p><strong>Create reviewed AI artifacts</strong>: <code>ai validate-job</code>, <code>ai run</code>, <code>ai review</code>, <code>ai suggest-links</code>, and <code>ai promote</code> preserve the review boundary.</p></li>
+<li><p><strong>Publish</strong>: <code>export html</code> and <code>publish</code> derive HTML without replacing the source corpus.</p></li>
+<li><p><strong>Use editor semantics</strong>: <code>lsp</code> exposes shared navigation, completion, diagnostics, formatting, and refactoring behavior.</p></li>
+</ul>
+<p>See <a href="tooling-reference.html">Tooling reference</a> for commands, <a href="language-reference.html">Language reference</a> for syntax, <a href="corpus-flow.html">Corpus flow</a> for artifact zones and trust boundaries, and <a href="features.html">Features</a> for how the pieces fit together.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="write-examples">Write examples</h1>
+<p>Preview a planning change, then apply the same operation after review:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 plan set --file projects.org2 --line 42 --kind scheduled --date 2026-07-20 --format diff
+org2 plan set --file projects.org2 --line 42 --kind scheduled --date 2026-07-20 --apply</code></pre>
+<p>Create a cited generated view without silently rewriting canonical notes:</p>
+<pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 context &quot;launch risks&quot; --dir ~/notes --recursive --format json &gt; compiled/launch-context.json
+org2 lint --dir ~/notes --recursive --format json</code></pre>
+<p>Agents embedded in the macOS Workspace should still use shared CLI/parser semantics for IDs, links, source ranges, agenda behavior, data queries, and context. App presentation state is not the language implementation.</p>
+<p>For a completely new local workspace, the Mac app can initialize an empty folder with a minimal <code>org2.json</code>, inbox, welcome note, and <code>notes/</code>, <code>daily/</code>, <code>views/</code>, and <code>compiled/</code> zones. Those generated starter files are ordinary corpus text and should be treated like any other user-owned source.</p>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

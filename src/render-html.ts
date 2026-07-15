@@ -49,7 +49,7 @@ function main(): void {
   const customCss = stylesheetPath ? fs.readFileSync(stylesheetPath, "utf8") : undefined;
   const charts = renderOrgCharts(input, { file: sourcePath, sourceLineOffset })
     .filter((chart): chart is typeof chart & { svg: string; source: NonNullable<typeof chart.source> } => chart.ok && Boolean(chart.svg && chart.source))
-    .map((chart) => ({ svg: chart.svg, source: chart.source }));
+    .map((chart) => ({ svg: chart.svg, source: chart.source, presentation: chart.presentation }));
   const rendered = renderOrgDocumentToAppHtml(document, { title, sourcePath, customCss, charts });
   process.stdout.write(rendered.html);
 }

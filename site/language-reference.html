@@ -17,6 +17,12 @@
 <meta name="twitter:title" content="Language reference" />
 <meta name="twitter:description" content="Language reference" />
 <meta name="twitter:image" content="https://org2.avi.press/assets/og/language-reference.svg" />
+<style id="org2-chart-style">
+.org2-chart { width: min(100%, 800px); margin: 1rem 0 1.35rem; overflow-x: auto; }
+.org2-chart-compact { width: min(100%, 680px); }
+.org2-chart-wide { width: 100%; }
+.org2-chart svg { display: block; width: 100%; height: auto; margin: 0; }
+</style>
 <link rel="stylesheet" href="assets/site.css" />
 <style>
 :root { color-scheme: light dark; }
@@ -286,8 +292,13 @@ source: previous-table
 x: day
 y: fetches
 source: package_fetches_result
+size: compact
+height: 300
+interactive: true
 ```</code></pre>
-<p>The current renderer supports <code>bar</code>, <code>line</code>, and bucketed <code>histogram</code> charts over the previous table or a named table source. Add <code>sort: x-asc</code>, <code>sort: x-desc</code>, <code>sort: y-asc</code>, or <code>sort: y-desc</code> when the visual should order marks independently of the table's source row order.</p>
+<p>The current renderer supports <code>bar</code>, <code>line</code>, and bucketed <code>histogram</code> charts over the previous table or a named table source. Add <code>sort: x-asc</code>, <code>sort: x-desc</code>, <code>sort: y-asc</code>, or <code>sort: y-desc</code> when the visual should order marks independently of the table's source row order. <code>size</code> accepts <code>compact</code>, <code>medium</code>, or <code>wide</code>. <code>height</code> accepts 220–720 pixels and defaults according to the size preset. <code>interactive</code> defaults to <code>true</code>; in the Mac app it enables nearest-point hover, exact-value tooltips, a crosshair, and keyboard navigation between marks. Static SVG remains the canonical CLI and export fallback.</p>
+<p>The Mac app treats chart interaction as app-owned presentation behavior. Notes cannot provide arbitrary JavaScript. Chart cards can also be resized horizontally in the rendered view; use <code>size</code> and <code>height</code> when the desired dimensions should remain deterministic in source.</p>
+<p>Chart SVG uses CSS custom properties with opinionated defaults: <code>--org2-chart-mark</code>, <code>--org2-chart-surface</code>, <code>--org2-chart-axis</code>, <code>--org2-chart-grid</code>, <code>--org2-chart-label</code>, and <code>--org2-chart-title</code>. Set them on <code>.org2-chart</code> in a published stylesheet or the Mac app's <code>.org2/app.css</code> to customize the visual theme without changing the data declaration.</p>
 <p>The CLI can render chart-affiliated tables directly:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 render-chart --file report.org2 --block-id quarterly_revenue --format svg</code></pre>
 </section>
@@ -312,12 +323,13 @@ source: fetches_by_state
 x: state
 y: fetches
 ```</code></pre>
-<p><code>org2 query-data</code> reads these blocks, creates DuckDB views for <code>csv</code>, <code>parquet</code>, <code>json</code>, URL-backed sources, or named org2 table datasets, creates any declared SQL views, runs a selected SQL result block through the local DuckDB CLI, and materializes the returned rows as a named org table or JSON envelope. Materialized org tables include a <code>#+query-data:</code> provenance line with the result id, row count, optional freshness token, selected SQL hash, full DuckDB script hash, and <code>ran_at</code> timestamp:</p>
+<p><code>org2 query-data</code> reads these blocks, creates DuckDB views for local files, URL-backed sources, named org2 tables, or configured remote analytics datasets, creates declared SQL views, runs a selected SQL result block through the local DuckDB CLI, and materializes the returned rows as a named org table or JSON envelope. Materialized org tables include a <code>#+query-data:</code> provenance line with the result id, row count, optional freshness token, selected SQL hash, full DuckDB script hash, and <code>ran_at</code> timestamp:</p>
 <pre class="org2-src language-sh" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-sh">org2 query-data --file report.org2 --results fetches_by_state --out report.fetches.org
+org2 query-data --file report.org2 --results fetches_by_state --apply
 org2 query-data --file report.org2 --line 42 --format json
 org2 query-data --file report.org2 --inspect --include-script
 cat report.org2 | org2 query-data --stdin --results fetches_by_state --format json</code></pre>
-<p>Use <code>--stdin</code> when an editor, agent, or notebook-style client wants to run the current buffer without saving it first. Use <code>--line N</code> to select the SQL result block containing or after the cursor line. JSON output includes <code>resultBlocks</code> with each available SQL result id and source range so clients can populate result pickers or recover from duplicate-id diagnostics without reparsing the file. Use <code>--inspect</code> to return parsed datasets, SQL views, result block metadata, structural diagnostics, and selected-query provenance without running DuckDB; <code>--include-script</code> also returns the generated DuckDB SQL for the selected result. Relative file dataset paths are resolved from the current working directory for stdin input. SQL result ids must be unique within the note so materialized tables and provenance stay deterministic. Dataset ids and SQL view ids must also be distinct because they become DuckDB relation names during execution. Dataset blocks may include metadata-only <code>credential:</code> or <code>auth:</code> references such as <code>env:SCARF_API_TOKEN</code>, <code>secret:analytics-token</code>, or <code>profile:product-analytics</code> and <code>config:</code> or <code>profile:</code> references such as <code>config:dashboard-local</code>; these are exposed as JSON metadata for clients and agents, but are not inserted into the generated DuckDB SQL. Inline bearer tokens, passwords, and other literal secrets are rejected. SQL result blocks can include <code>artifact=PATH</code> to record the intended materialized output in JSON provenance and the <code>#+query-data:</code> line; <code>--out FILE</code> stamps the actual written artifact path. Executed JSON provenance also includes <code>ranAt</code>, and materialized org tables stamp <code>ran_at</code>, so editor, agent, and dashboard clients can compare declared freshness with the actual query run time. Result blocks can also include <code>freshness=24h</code>, <code>ttl=24h</code>, or <code>max-age=24h</code> so clients can decide when materialized rows should be refreshed.</p>
+<p>Use <code>--stdin</code> when an editor, agent, or notebook-style client wants to run the current buffer without saving it first. Use <code>--line N</code> to select the SQL result block containing or after the cursor line. JSON output includes <code>resultBlocks</code> with each available SQL result id and source range. Use <code>--inspect</code> to return parsed datasets, SQL views, result metadata, diagnostics, and selected-query provenance without running DuckDB; <code>--include-script</code> also returns generated DuckDB SQL. Relative file paths are resolved from the working directory for stdin input. SQL result ids must be unique, and dataset ids and SQL view ids must be distinct because they become DuckDB relation names. Local URL/table datasets may carry metadata-only credential/config references such as <code>env:SCARF_API_TOKEN</code> or <code>profile:product-analytics</code>; remote analytics datasets use their named profile operationally but never insert credentials into generated SQL. Inline bearer tokens, passwords, and other literal secrets are rejected. SQL result blocks can include <code>artifact=PATH</code> and <code>freshness=24h</code> / <code>ttl=24h</code> / <code>max-age=24h</code> metadata. Executed results stamp <code>ranAt</code> so clients can evaluate freshness.</p>
 <p>Use <code>sql view=NAME</code> when a report needs a reusable local projection before the final result table:</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```sql view=california_fetches
 SELECT state, fetches
@@ -344,6 +356,66 @@ SELECT state, count(*) AS fetches
 FROM remote_fetches
 GROUP BY state
 ```</code></pre>
+<section class="org2-headline level-2">
+<h2 id="remote-analytics-datasets">Remote analytics datasets</h2>
+<p>Remote datasets use the same named-dataset and DuckDB result pipeline as local CSV files. A note names a profile, but never contains a warehouse URL, API key, username, or password. Profiles live in the nearest <code>org2.json</code> and refer to secrets through environment-variable names:</p>
+<pre class="org2-src language-json" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-json">{
+  &quot;dataSources&quot;: {
+    &quot;scarf-clickhouse&quot;: {
+      &quot;type&quot;: &quot;clickhouse&quot;,
+      &quot;url&quot;: &quot;https://clickhouse.example.com/&quot;,
+      &quot;database&quot;: &quot;analytics&quot;,
+      &quot;userEnv&quot;: &quot;SCARF_CLICKHOUSE_USER&quot;,
+      &quot;passwordEnv&quot;: &quot;SCARF_CLICKHOUSE_PASSWORD&quot;,
+      &quot;timeoutMs&quot;: 300000,
+      &quot;maxRows&quot;: 10000
+    },
+    &quot;scarf-metabase&quot;: {
+      &quot;type&quot;: &quot;metabase&quot;,
+      &quot;url&quot;: &quot;https://metabase.example.com/&quot;,
+      &quot;apiKeyEnv&quot;: &quot;SCARF_METABASE_API_KEY&quot;,
+      &quot;databaseIdEnv&quot;: &quot;SCARF_METABASE_DATABASE_ID&quot;,
+      &quot;timeoutMs&quot;: 300000,
+      &quot;maxRows&quot;: 10000
+    }
+  }
+}</code></pre>
+<p>A ClickHouse dataset carries read-only SQL:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```dataset package_fetches
+type: clickhouse
+profile: scarf-clickhouse
+query: |
+  SELECT toDate(timestamp) AS day, count() AS fetches
+  FROM package_downloads
+  WHERE timestamp &gt;= now() - INTERVAL 30 DAY
+  GROUP BY day
+  ORDER BY day
+```</code></pre>
+<p>A Metabase dataset executes a saved question by numeric question/card ID. Optional <code>parameters: |</code> is JSON using Metabase's parameter payload format:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```dataset revenue
+type: metabase
+profile: scarf-metabase
+question: 123
+parameters: |
+  []
+```</code></pre>
+<p>For a reproducible notebook, put the native SQL directly in the dataset block instead of relying on a mutable saved question. The profile must provide either a positive <code>databaseId</code> or a <code>databaseIdEnv</code> naming an environment variable that contains it:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```dataset recent_organizations
+type: metabase
+profile: scarf-metabase
+query: |
+  SELECT name, billing_email, created_at
+  FROM organizations
+  ORDER BY created_at DESC
+  LIMIT 25
+```</code></pre>
+<p>Use either dataset in ordinary DuckDB SQL, materialize the result as an org table with <code>org2 query-data</code>, then attach a <code>```chart</code> block to that named result. ClickHouse requests set server-side read-only mode, row limits, execution timeouts, and JSON output. Metabase requests use API-key authentication and saved-question JSON export. Both adapters enforce response-size and row limits locally as well.</p>
+<p>For notebooks with multiple remote sources, declare each result's dependency edge explicitly with <code>sources=DATASET_ID[,DATASET_ID...]</code>. Org2 validates the named sources, loads only those datasets for that result, and records them in materialization provenance:</p>
+<pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">```sql results=recent_organizations sources=recent_organizations_source freshness=24h
+SELECT * FROM recent_organizations_source
+ORDER BY created_at DESC
+```</code></pre>
+<p>Refreshing data is always explicit. Use <code>org2 query-data --apply</code> to insert the selected result after its SQL block or replace the existing provenance-stamped result in place. HTML rendering and opening a note in the Mac app only consume tables already present in the document; they never contact Metabase or ClickHouse. Valid chart declarations over those tables are rendered automatically as responsive inline SVG in the Mac app and static HTML exports.</p>
 <p>Use <code>type: table</code> with <code>source: NAME</code> when the source data already lives in a named org2 table:</p>
 <pre class="org2-src language-org" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-org">#+name: raw_fetches
 | state | fetches |
@@ -362,6 +434,7 @@ SELECT sum(fetches) AS fetches
 FROM fetches
 ```</code></pre>
 <p>This is deliberately scoped to explicit local/ad hoc data sources. Org2 stores the source path, read-only URL, table/view name, optional column and primary-key metadata, credential/config reference, query, and materialized result/provenance; secrets, bearer tokens, and remote warehouse credentials belong in external tooling, not in notes.</p>
+</section>
 </section>
 <section class="org2-headline level-1">
 <h1 id="keyworddirective-lines">Keyword/directive lines</h1>

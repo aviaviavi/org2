@@ -9,6 +9,20 @@ public enum WorkspaceKeyboardShortcutScope: Equatable, Sendable {
   case globalOnly
 }
 
+private enum StarterCorpusCreationError: LocalizedError {
+  case notDirectory(String)
+  case notEmpty(String)
+
+  var errorDescription: String? {
+    switch self {
+    case .notDirectory(let path):
+      "Choose a folder for the new Org2 corpus, not a file: \(path)"
+    case .notEmpty(let path):
+      "The starter corpus needs an empty folder. Choose a new folder, or use Open Corpus for \(path)."
+    }
+  }
+}
+
 private struct CanonicalDocumentCacheEntry {
   let modifiedAt: Date?
   let document: Org2CanonicalDocument
@@ -208,6 +222,34 @@ private struct RoamLinkifyPayload: Decodable {
   let ambiguousSkipCount: Int
   let representedSuggestionCount: Int
   let applied: Bool
+}
+
+private struct DataQueryInspectPayload: Decodable {
+  struct ResultBlock: Decodable {
+    let resultId: String
+  }
+
+  let resultBlocks: [ResultBlock]
+}
+
+private struct DataQueryApplyPayload: Decodable {
+  let changed: Bool
+}
+
+public enum DataNotebookRefreshFailureKind: String, Equatable, Sendable {
+  case authentication
+  case configuration
+  case query
+}
+
+public struct DataNotebookRefreshFailure: Equatable, Sendable {
+  public let kind: DataNotebookRefreshFailureKind
+  public let title: String
+  public let message: String
+
+  public var needsCredentialUpdate: Bool {
+    kind == .authentication || kind == .configuration
+  }
 }
 
 private struct SearchIndexBuildPayload: Decodable {
@@ -699,6 +741,8 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var openClawVoiceTranscriptionElapsedText = ""
   @Published public var openClawVoiceStatusText = "Dictate with local transcription."
   @Published public var isOrgCryptConfigurationPresented = false
+  @Published public var isDataSourceConfigurationPresented = false
+  @Published public private(set) var scarfMetabaseHasStoredAPIKey = false
   @Published public var orgCryptEncryptOnSave = true {
     didSet {
       defaults.set(orgCryptEncryptOnSave, forKey: orgCryptEncryptOnSaveKey)
@@ -806,6 +850,9 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var isProcessingMeeting = false
   @Published public var isLoadingOpenClawThreads = false
   @Published public var isLoadingEntrySource = false
+  @Published public private(set) var isRefreshingDataNotebook = false
+  @Published public private(set) var dataNotebookRefreshFailure: DataNotebookRefreshFailure?
+  @Published public private(set) var dataSourceConfigurationError: String?
   @Published public var isRenderingEntrySource = false
   @Published public var isEditingEntry = false
   @Published public var isSavingEntry = false
@@ -925,6 +972,9 @@ public final class WorkspaceStore: ObservableObject {
   private var entrySourceLoadGeneration = 0
   private var entryHTMLRenderGeneration = 0
   private var activeEntrySourceLoadingGeneration: Int?
+  private var entrySourceLoadWatchdogTask: Task<Void, Never>?
+  var entrySourceLoadTimeoutNanoseconds: UInt64 = 3_000_000_000
+  var entrySourceLoaderForTesting: (@Sendable (String, Int, EntrySourceMode) async throws -> EntrySource)?
   private var liveFileEditorAutosaveTask: Task<Void, Never>?
   private var liveFileEditorAutosaveGeneration = 0
   private var sourceEditorCommandGeneration = 0
@@ -1025,6 +1075,7 @@ public final class WorkspaceStore: ObservableObject {
     shouldPersistOpenClawMessages = true
     openClawHasStoredToken = OpenClawKeychain.containsToken()
     orgCryptHasStoredPassphrase = OrgCryptKeychain.containsPassphrase()
+    scarfMetabaseHasStoredAPIKey = DataSourceCredentialsKeychain.containsScarfMetabaseAPIKey()
     openClawStatusText = Self.openClawStatusText(settings: currentOpenClawSettings())
     restoreInterruptedOpenClawSendStatusIfNeeded()
     refreshAudioSettingsStatus()
@@ -1178,6 +1229,127 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func createCorpus() {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = false
+    panel.canChooseDirectories = true
+    panel.canCreateDirectories = true
+    panel.allowsMultipleSelection = false
+    panel.prompt = "Create Corpus"
+    panel.message = "Choose or create an empty folder for the new Org2 corpus"
+
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+
+    do {
+      let welcomeURL = try Self.initializeStarterCorpus(at: url)
+      setCorpusRoot(url)
+      selectedSurface = .files
+      statusText = "Created starter corpus at \(url.standardizedFileURL.path)"
+      Task {
+        await refreshWorkspace()
+        if let welcome = corpusFiles.filter({ $0.path == welcomeURL.path }).first {
+          selectCorpusFile(welcome)
+        }
+      }
+    } catch {
+      statusText = error.localizedDescription
+      errorText = error.localizedDescription
+    }
+  }
+
+  nonisolated static func initializeStarterCorpus(at url: URL) throws -> URL {
+    let fileManager = FileManager.default
+    let root = url.standardizedFileURL
+    var isDirectory: ObjCBool = false
+
+    if fileManager.fileExists(atPath: root.path, isDirectory: &isDirectory) {
+      guard isDirectory.boolValue else {
+        throw StarterCorpusCreationError.notDirectory(root.path)
+      }
+    } else {
+      try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+
+    let visibleEntries = try fileManager.contentsOfDirectory(
+      at: root,
+      includingPropertiesForKeys: nil,
+      options: [.skipsHiddenFiles]
+    )
+    guard visibleEntries.isEmpty else {
+      throw StarterCorpusCreationError.notEmpty(root.path)
+    }
+
+    for directory in ["notes", "daily", "views", "compiled"] {
+      try fileManager.createDirectory(
+        at: root.appendingPathComponent(directory, isDirectory: true),
+        withIntermediateDirectories: true
+      )
+    }
+
+    let config = """
+    {
+      "agendaFiles": [
+        "inbox.org2",
+        "notes/**/*.org2",
+        "notes/**/*.org",
+        "daily/**/*.org2",
+        "daily/**/*.org"
+      ],
+      "recursive": true,
+      "ignorePatterns": [
+        ".git/**",
+        ".#*",
+        "compiled/**"
+      ],
+      "roam": {
+        "indexDir": "notes",
+        "nodesDir": "notes",
+        "dailiesDir": "daily"
+      }
+    }
+    """
+    try (config + "\n").write(
+      to: root.appendingPathComponent("org2.json"),
+      atomically: true,
+      encoding: .utf8
+    )
+
+    let inbox = """
+    #+TITLE: Inbox
+
+    * Inbox
+
+    Capture quick notes and tasks here, then refile them when their destination is clear.
+    """
+    try (inbox + "\n").write(
+      to: root.appendingPathComponent("inbox.org2"),
+      atomically: true,
+      encoding: .utf8
+    )
+
+    let welcomeURL = root.appendingPathComponent("notes/welcome.org2")
+    let welcome = """
+    #+TITLE: Welcome to Org2
+
+    * Start here
+
+    This folder is an Org2 corpus. The plain-text files are the source of truth; agenda, search, graph, agent context, and published views are derived from them.
+
+    * TODO Add your first task
+
+    Give it a scheduled date or deadline, then open Agenda to see it appear.
+
+    * Next steps
+
+    - Use Capture to append a note or TODO to today's daily note.
+    - Keep durable notes in =notes/= and quick intake in =inbox.org2=.
+    - Put generated, reviewable work in =views/= or =compiled/= before promoting it into canonical notes.
+    - Open any file in source mode whenever you want full-fidelity text editing.
+    """
+    try (welcome + "\n").write(to: welcomeURL, atomically: true, encoding: .utf8)
+    return welcomeURL
+  }
+
   public func setCorpusRoot(_ url: URL, persistsDefault: Bool = true) {
     let standardized = url.standardizedFileURL
     corpusRoot = standardized
@@ -1252,6 +1424,8 @@ public final class WorkspaceStore: ObservableObject {
     isEditingEntry = false
     isLoadingEntrySource = false
     isRenderingEntrySource = false
+    entrySourceLoadWatchdogTask?.cancel()
+    entrySourceLoadWatchdogTask = nil
     entrySourceLoadGeneration += 1
     entryHTMLRenderGeneration += 1
     activeEntrySourceLoadingGeneration = nil
@@ -3504,23 +3678,34 @@ public final class WorkspaceStore: ObservableObject {
   public func loadEntrySource(for location: WorkspaceLocation) async {
     entrySourceLoadGeneration += 1
     let generation = entrySourceLoadGeneration
-    await loadEntrySource(for: location, generation: generation)
+    await loadEntrySource(for: location, generation: generation, recoveryAttempt: 0)
   }
 
   private func scheduleEntrySourceLoad(for location: WorkspaceLocation) {
     entrySourceLoadGeneration += 1
     let generation = entrySourceLoadGeneration
     applyCachedEntrySourceIfAvailable(for: location, generation: generation)
-    Task { await loadEntrySource(for: location, generation: generation) }
+    Task { await loadEntrySource(for: location, generation: generation, recoveryAttempt: 0) }
   }
 
-  private func loadEntrySource(for location: WorkspaceLocation, generation: Int) async {
+  private func loadEntrySource(
+    for location: WorkspaceLocation,
+    generation: Int,
+    recoveryAttempt: Int
+  ) async {
     guard generation == entrySourceLoadGeneration else { return }
     activeEntrySourceLoadingGeneration = generation
     isLoadingEntrySource = true
     isRenderingEntrySource = false
+    scheduleEntrySourceLoadWatchdog(
+      for: location,
+      generation: generation,
+      recoveryAttempt: recoveryAttempt
+    )
     defer {
       if activeEntrySourceLoadingGeneration == generation {
+        entrySourceLoadWatchdogTask?.cancel()
+        entrySourceLoadWatchdogTask = nil
         activeEntrySourceLoadingGeneration = nil
         isLoadingEntrySource = false
       }
@@ -3528,7 +3713,11 @@ public final class WorkspaceStore: ObservableObject {
 
     do {
       let mode = selectedEntrySourceMode
+      let testLoader = entrySourceLoaderForTesting
       let source = try await Task.detached(priority: .userInitiated) {
+        if let testLoader {
+          return try await testLoader(location.file, location.lineForEditor, mode)
+        }
         switch mode {
         case .entry:
           return try Self.entrySource(file: location.file, line: location.lineForEditor)
@@ -3564,6 +3753,52 @@ public final class WorkspaceStore: ObservableObject {
       selectedBlockID = nil
       isRenderingEntrySource = false
       errorText = error.localizedDescription
+    }
+  }
+
+  private func scheduleEntrySourceLoadWatchdog(
+    for location: WorkspaceLocation,
+    generation: Int,
+    recoveryAttempt: Int
+  ) {
+    entrySourceLoadWatchdogTask?.cancel()
+    let timeout = entrySourceLoadTimeoutNanoseconds
+    entrySourceLoadWatchdogTask = Task { @MainActor [weak self] in
+      do {
+        try await Task.sleep(nanoseconds: timeout)
+      } catch {
+        return
+      }
+      guard let self,
+            generation == self.entrySourceLoadGeneration,
+            self.isLoadingEntrySource,
+            self.selectedEntrySource == nil,
+            self.selectedLocationMatches(location)
+      else {
+        return
+      }
+
+      self.entrySourceLoadGeneration += 1
+      let nextGeneration = self.entrySourceLoadGeneration
+      self.activeEntrySourceLoadingGeneration = nil
+      self.isLoadingEntrySource = false
+      self.entrySourceLoadWatchdogTask = nil
+
+      if recoveryAttempt == 0 {
+        self.statusText = "Source load stalled; retrying"
+        Task {
+          await self.loadEntrySource(
+            for: location,
+            generation: nextGeneration,
+            recoveryAttempt: 1
+          )
+        }
+      } else {
+        let message = "Source loading timed out. Reload the entry to try again."
+        self.selectedEntryRenderError = message
+        self.errorText = message
+        self.statusText = "Source load failed"
+      }
     }
   }
 
@@ -3611,6 +3846,190 @@ public final class WorkspaceStore: ObservableObject {
     resetBlockState()
     guard let selectedLocation else { return }
     await loadEntrySource(for: selectedLocation)
+  }
+
+  public var selectedFileIsDataNotebook: Bool {
+    guard let file = selectedEntrySource?.file ?? selectedLocation?.file,
+          let text = try? String(contentsOfFile: file, encoding: .utf8)
+    else {
+      return false
+    }
+    return text.range(
+      of: #"```sql[^\n]*\bresults\s*="#,
+      options: [.regularExpression, .caseInsensitive]
+    ) != nil
+  }
+
+  public var canRefreshSelectedDataNotebook: Bool {
+    selectedFileIsDataNotebook
+      && !hasActiveEdit
+      && !liveFileEditorHasUnsavedChanges
+      && !isLoadingEntrySource
+      && !isRefreshingDataNotebook
+  }
+
+  public func refreshSelectedDataNotebook() async {
+    guard canRefreshSelectedDataNotebook,
+          let file = selectedEntrySource?.file ?? selectedLocation?.file
+    else {
+      statusText = "Open a saved data notebook to refresh it"
+      return
+    }
+
+    isRefreshingDataNotebook = true
+    dataNotebookRefreshFailure = nil
+    errorText = nil
+    statusText = "Refreshing data…"
+    defer { isRefreshingDataNotebook = false }
+
+    do {
+      let environment = dataSourceEnvironment()
+      let inspect: DataQueryInspectPayload = try await cli.runJSON([
+        "query-data",
+        "--file", file,
+        "--inspect",
+        "--format", "json"
+      ], environment: environment)
+      guard !inspect.resultBlocks.isEmpty else {
+        statusText = "No named data results found"
+        return
+      }
+
+      var changedCount = 0
+      for (index, block) in inspect.resultBlocks.enumerated() {
+        statusText = "Refreshing data \(index + 1) of \(inspect.resultBlocks.count)…"
+        let result: DataQueryApplyPayload = try await cli.runJSON([
+          "query-data",
+          "--file", file,
+          "--results", block.resultId,
+          "--apply",
+          "--format", "json"
+        ], environment: environment)
+        if result.changed { changedCount += 1 }
+      }
+
+      invalidateCanonicalDocumentCache(for: file)
+      if let selectedLocation {
+        await loadEntrySource(for: selectedLocation)
+      }
+      await refreshCorpusFiles()
+      dataNotebookRefreshFailure = nil
+      statusText = changedCount == 0
+        ? "Data is already current"
+        : "Refreshed \(changedCount) data result\(changedCount == 1 ? "" : "s")"
+    } catch {
+      let message = error.localizedDescription
+      let failure = Self.dataNotebookRefreshFailure(for: message)
+      dataNotebookRefreshFailure = failure
+      errorText = message
+      statusText = failure.title
+      if failure.needsCredentialUpdate {
+        presentScarfMetabaseConfiguration()
+      }
+    }
+  }
+
+  public func presentScarfMetabaseConfiguration() {
+    dataSourceConfigurationError = nil
+    scarfMetabaseHasStoredAPIKey = DataSourceCredentialsKeychain.containsScarfMetabaseAPIKey()
+    isDataSourceConfigurationPresented = true
+  }
+
+  public func dismissDataNotebookRefreshFailure() {
+    dataNotebookRefreshFailure = nil
+  }
+
+  nonisolated static func dataNotebookRefreshFailure(for rawMessage: String) -> DataNotebookRefreshFailure {
+    let message = rawMessage
+      .replacingOccurrences(of: #"^Error:\s*"#, with: "", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalized = message.lowercased()
+    let authenticationFailure = normalized.contains("authentication failed")
+      || normalized.contains("http 401")
+      || normalized.contains("http 403")
+      || normalized.contains("unauthorized")
+      || normalized.contains("invalid api key")
+    if authenticationFailure {
+      return DataNotebookRefreshFailure(
+        kind: .authentication,
+        title: "Metabase authentication failed",
+        message: "Metabase rejected the saved API key or it lacks permission. Enter a current API key, then retry the refresh."
+      )
+    }
+
+    if normalized.contains("scarf_metabase_api_key") {
+      return DataNotebookRefreshFailure(
+        kind: .configuration,
+        title: "Metabase credentials required",
+        message: "Add the Metabase API key used by this notebook, then retry the refresh."
+      )
+    }
+
+    let databaseConfigurationFailure = normalized.contains("scarf_metabase_database_id")
+      || normalized.contains("requires a positive metabase databaseid")
+    if databaseConfigurationFailure {
+      return DataNotebookRefreshFailure(
+        kind: .query,
+        title: "Notebook data source is misconfigured",
+        message: "The Metabase profile needs a positive numeric databaseId in org2.json. Database IDs are non-secret and should not be stored as app credentials."
+      )
+    }
+
+    return DataNotebookRefreshFailure(
+      kind: .query,
+      title: "Data refresh failed",
+      message: message.isEmpty ? "The data query failed without an error message." : message
+    )
+  }
+
+  @discardableResult
+  public func saveScarfMetabaseConfiguration(
+    apiKey: String,
+    clearAPIKey: Bool
+  ) -> Bool {
+    dataSourceConfigurationError = nil
+    let normalizedAPIKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    let requiresNewAPIKey = dataNotebookRefreshFailure?.kind == .authentication
+      || (dataNotebookRefreshFailure?.kind == .configuration && !scarfMetabaseHasStoredAPIKey)
+    if requiresNewAPIKey,
+       (normalizedAPIKey.isEmpty || clearAPIKey) {
+      let message = dataNotebookRefreshFailure?.kind == .authentication
+        ? "Enter a new Metabase API key to replace the key that was rejected."
+        : "Enter a Metabase API key."
+      dataSourceConfigurationError = message
+      errorText = message
+      return false
+    }
+
+    do {
+      if clearAPIKey {
+        try DataSourceCredentialsKeychain.deleteScarfMetabaseAPIKey()
+      } else {
+        if !normalizedAPIKey.isEmpty {
+          try DataSourceCredentialsKeychain.saveScarfMetabaseAPIKey(normalizedAPIKey)
+        }
+      }
+      scarfMetabaseHasStoredAPIKey = DataSourceCredentialsKeychain.containsScarfMetabaseAPIKey()
+      dataNotebookRefreshFailure = nil
+      dataSourceConfigurationError = nil
+      errorText = nil
+      statusText = "Saved data refresh credentials"
+      return true
+    } catch {
+      dataSourceConfigurationError = error.localizedDescription
+      errorText = error.localizedDescription
+      statusText = "Could not save data refresh credentials"
+      return false
+    }
+  }
+
+  private func dataSourceEnvironment() -> [String: String] {
+    var environment: [String: String] = [:]
+    if ProcessInfo.processInfo.environment["SCARF_METABASE_API_KEY"]?.isEmpty != false,
+       let apiKey = DataSourceCredentialsKeychain.readScarfMetabaseAPIKey() {
+      environment["SCARF_METABASE_API_KEY"] = apiKey
+    }
+    return environment
   }
 
   public func linkifyCurrentFile() async {
@@ -8058,19 +8477,67 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public var canOpenCanonicalOpenClawResourceThread: Bool {
+    currentOpenClawResourceReference() != nil
+  }
+
+  public var hasCanonicalOpenClawResourceThread: Bool {
+    guard let resource = currentOpenClawResourceReference() else { return false }
+    return openClawChatThreads.contains { $0.resource?.key == resource.key }
+  }
+
+  public func openCanonicalOpenClawResourceThread() {
+    guard let resource = currentOpenClawResourceReference() else {
+      statusText = "Add an ID to this heading before creating its resource thread"
+      return
+    }
+    let pointer = openClawContextPointerForCurrentSelection()
+
+    if let thread = openClawChatThreads.first(where: { $0.resource?.key == resource.key }) {
+      if thread.isArchived {
+        restoreOpenClawChatThread(thread.id)
+      }
+      navigateToSurface(.openClaw)
+      selectOpenClawChatThread(thread.id)
+      openClawStatusText = "Opened resource thread for \(resource.title)"
+      statusText = "Opened resource thread"
+      return
+    }
+
+    let thread = createOpenClawChatThread(
+      title: "Resource: \(resource.title)",
+      statusText: "New OpenClaw resource thread",
+      resource: resource
+    )
+    if let pointer {
+      addOpenClawContext(pointer, threadMode: .currentThread)
+    }
+    navigateToSurface(.openClaw)
+    selectOpenClawChatThread(thread.id)
+    openClawStatusText = "Created resource thread for \(resource.title)"
+    statusText = "Created resource thread"
+  }
+
   public func createOpenClawChatThread() {
     createOpenClawChatThread(title: "New Chat", statusText: "New OpenClaw chat")
   }
 
-  private func createOpenClawChatThread(title: String, statusText: String) {
+  @discardableResult
+  private func createOpenClawChatThread(
+    title: String,
+    statusText: String,
+    resource: OpenClawResourceReference? = nil
+  ) -> OpenClawChatThread {
     let thread = OpenClawChatThread(
       title: title,
-      sessionKey: Self.makeOpenClawSessionKey()
+      sessionKey: Self.makeOpenClawSessionKey(),
+      resource: resource
     )
     openClawChatThreads.insert(thread, at: 0)
     selectOpenClawChatThread(thread.id, persistsSelection: false)
     persistOpenClawTranscript()
     openClawStatusText = statusText
+    return thread
   }
 
   private func prepareOpenClawThread(mode: OpenClawThreadMode, title: String, statusText: String) {
@@ -8297,7 +8764,8 @@ public final class WorkspaceStore: ObservableObject {
       messages: messages,
       isPinned: current.isPinned,
       isArchived: current.isArchived,
-      unreadMessageCount: unreadMessageCount
+      unreadMessageCount: unreadMessageCount,
+      resource: current.resource
     )
     openClawChatThreads[index] = updated
     sortOpenClawChatThreadsForDisplay()
@@ -8588,6 +9056,9 @@ public final class WorkspaceStore: ObservableObject {
       idValue: nil
     )
     activateDetailLocation(.openClaw(thread), mode: .page, surface: nil, recordsHistory: true)
+    if let line = reference.line {
+      requestDetailScroll(toSourceLine: line)
+    }
     statusText = "Opened \(relativePath(file))"
   }
 
@@ -9118,6 +9589,13 @@ public final class WorkspaceStore: ObservableObject {
     detailScrollRequest = DetailScrollRequest(
       id: (detailScrollRequest?.id ?? 0) + 1,
       target: .revealBlock(blockID)
+    )
+  }
+
+  public func requestDetailScroll(toSourceLine line: Int) {
+    detailScrollRequest = DetailScrollRequest(
+      id: (detailScrollRequest?.id ?? 0) + 1,
+      target: .sourceLine(max(1, line))
     )
   }
 
@@ -11710,6 +12188,30 @@ public final class WorkspaceStore: ObservableObject {
     return nil
   }
 
+  private func currentOpenClawResourceReference() -> OpenClawResourceReference? {
+    guard let location = selectedLocation else { return nil }
+    let file = URL(fileURLWithPath: location.file).standardizedFileURL.path
+    if let rawID = location.idValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !rawID.isEmpty {
+      return OpenClawResourceReference(
+        key: "id:\(rawID)",
+        kind: .heading,
+        title: location.title,
+        file: file,
+        line: location.lineForEditor,
+        idValue: rawID
+      )
+    }
+    guard location.lineForEditor <= 1 else { return nil }
+    return OpenClawResourceReference(
+      key: "file:\(file)",
+      kind: .file,
+      title: location.title,
+      file: file,
+      line: 1
+    )
+  }
+
   private func openClawContextPointer(for block: OpenClawBlockContextPointer?) -> OpenClawContextPointer? {
     guard let block else { return nil }
     let startLine = max(1, block.startLine)
@@ -12168,7 +12670,12 @@ public final class WorkspaceStore: ObservableObject {
   }
 
   public func retrySelectedEntryRendering() {
-    guard let source = selectedEntrySource else { return }
+    guard let source = selectedEntrySource else {
+      guard let selectedLocation else { return }
+      selectedEntryRenderError = nil
+      scheduleEntrySourceLoad(for: selectedLocation)
+      return
+    }
     let key = entryHTMLRenderKey(for: source)
     renderedHTMLCache.removeValue(forKey: key)
     renderedHTMLCacheOrder.removeAll { $0 == key }
@@ -12747,7 +13254,7 @@ public final class WorkspaceStore: ObservableObject {
   nonisolated private static func saveOpenClawTranscript(_ transcript: OpenClawTranscriptState, to url: URL) throws {
     try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     let payload = OpenClawTranscriptPayload(
-      version: 2,
+      version: 3,
       messages: nil,
       threads: transcript.threads,
       selectedThreadID: transcript.selectedThreadID

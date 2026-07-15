@@ -45,6 +45,8 @@ export type Org2MetabaseDataSourceConfig = {
   type: "metabase";
   url: string;
   apiKeyEnv: string;
+  databaseId?: number;
+  databaseIdEnv?: string;
   timeoutMs?: number;
   maxRows?: number;
   maxResponseBytes?: number;

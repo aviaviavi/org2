@@ -1,5 +1,9 @@
 # Org2 Tools
 
+## Documentation coverage check
+
+`npm run docs:check` builds the CLI, verifies that every top-level help family is represented in `org2 agent capabilities`, and checks that the canonical agent/documentation entry points exist. GitHub Pages CI runs the same check before publishing.
+
 ## Generated artifact check
 
 Verifies that source-controlled generated artifacts are current.

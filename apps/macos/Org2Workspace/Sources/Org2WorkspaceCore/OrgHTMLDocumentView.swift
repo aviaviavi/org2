@@ -178,8 +178,13 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
       applyLayout(to: webView)
+      installRichCopyHandler(in: webView)
       applySearch(to: webView, backwards: false)
       applyScrollRequest(scrollRequest, to: webView)
+    }
+
+    func installRichCopyHandler(in webView: WKWebView) {
+      webView.evaluateJavaScript(OrgHTMLRichCopy.installationScript)
     }
 
     func applyLayout(to webView: WKWebView) {
@@ -266,18 +271,23 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
         let script = """
         (() => {
           const line = \(line);
-          const elements = Array.from(document.querySelectorAll('[data-org2-start-line]'));
-          const candidates = elements.filter((element) => {
-            const start = Number(element.dataset.org2StartLine || 0);
-            const end = Number(element.dataset.org2EndLine || start);
-            return start <= line && end >= line;
-          });
-          const target = candidates.sort((lhs, rhs) => {
-            const lhsSpan = Number(lhs.dataset.org2EndLine || 0) - Number(lhs.dataset.org2StartLine || 0);
-            const rhsSpan = Number(rhs.dataset.org2EndLine || 0) - Number(rhs.dataset.org2StartLine || 0);
-            return lhsSpan - rhsSpan;
-          })[0];
-          target?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+          const reveal = () => {
+            const elements = Array.from(document.querySelectorAll('[data-org2-start-line]'));
+            const candidates = elements.filter((element) => {
+              const start = Number(element.dataset.org2StartLine || 0);
+              const end = Number(element.dataset.org2EndLine || start);
+              return start <= line && end >= line;
+            });
+            const target = candidates.sort((lhs, rhs) => {
+              const lhsSpan = Number(lhs.dataset.org2EndLine || 0) - Number(lhs.dataset.org2StartLine || 0);
+              const rhsSpan = Number(rhs.dataset.org2EndLine || 0) - Number(rhs.dataset.org2StartLine || 0);
+              return lhsSpan - rhsSpan;
+            })[0];
+            target?.scrollIntoView({ block: 'center', behavior: 'auto' });
+          };
+          requestAnimationFrame(() => requestAnimationFrame(reveal));
+          setTimeout(reveal, 120);
+          setTimeout(reveal, 350);
         })();
         """
         webView.evaluateJavaScript(script)
@@ -330,6 +340,70 @@ struct OrgHTMLDocumentView: NSViewRepresentable {
       }
     }
   }
+}
+
+enum OrgHTMLRichCopy {
+  nonisolated static let installationScript = #"""
+  (() => {
+    if (window.__org2RichCopyInstalled) return;
+    window.__org2RichCopyInstalled = true;
+
+    const copyPayload = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
+    const range = selection.getRangeAt(0);
+    const selectedText = selection.toString();
+    if (!selectedText) return null;
+
+    const tables = Array.from(document.querySelectorAll('table')).filter((table) => {
+      try { return range.intersectsNode(table); } catch (_) { return false; }
+    });
+    const selectedTable = tables.find((table) => {
+      const cells = Array.from(table.querySelectorAll('th, td')).filter((cell) => {
+        try { return range.intersectsNode(cell); } catch (_) { return false; }
+      });
+      return cells.length >= 2;
+    });
+
+    if (selectedTable) {
+      const clone = selectedTable.cloneNode(true);
+      clone.removeAttribute('id');
+      clone.style.borderCollapse = 'collapse';
+      clone.style.borderSpacing = '0';
+      clone.style.fontFamily = '-apple-system, BlinkMacSystemFont, sans-serif';
+      clone.style.fontSize = '13px';
+      clone.style.color = '#1f2328';
+      clone.style.backgroundColor = '#ffffff';
+      clone.querySelectorAll('th, td').forEach((cell) => {
+        cell.style.border = '1px solid #c8cdd3';
+        cell.style.padding = '6px 10px';
+        cell.style.textAlign = 'left';
+        cell.style.verticalAlign = 'top';
+      });
+      clone.querySelectorAll('th').forEach((cell) => {
+        cell.style.fontWeight = '600';
+        cell.style.backgroundColor = '#f2f4f7';
+      });
+      const text = Array.from(selectedTable.rows).map((row) =>
+        Array.from(row.cells).map((cell) => cell.innerText.trim()).join('\t')
+      ).join('\n');
+      return { html: clone.outerHTML, text };
+    }
+
+    const container = document.createElement('div');
+    container.appendChild(range.cloneContents());
+    return { html: container.innerHTML, text: selectedText };
+    };
+
+    document.addEventListener('copy', (event) => {
+      const payload = copyPayload();
+      if (!payload || !event.clipboardData) return;
+      event.clipboardData.setData('text/html', payload.html);
+      event.clipboardData.setData('text/plain', payload.text);
+      event.preventDefault();
+    });
+  })();
+  """#
 }
 
 struct OrgHTMLResolvedFileTarget: Equatable {
