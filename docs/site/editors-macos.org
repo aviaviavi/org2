@@ -79,6 +79,18 @@ The app includes OpenClaw chat for sending messages with current workspace conte
 
 The chat composer sends with =Return= and inserts a newline with =Cmd-Return=. The =Dictate= control records a short local microphone note, transcribes it with the same local Whisper resolution path used by meeting capture, and sends the transcript as a normal OpenClaw message.
 
+Typing =/= opens a discoverable command menu. Commands that only need compiler or app state run locally and leave their result in the chat transcript; commands marked *Agent* are expanded into a scoped request and sent with the selected document context. Unknown commands are not silently forwarded. Begin a message with =//= to send a literal leading slash.
+
+The first command set is:
+
+- =/help=, =/search QUERY=, =/open PATH=, =/today=, and =/agenda= for discovery and navigation,
+- =/related=, =/spellcheck=, and =/lint= for deterministic document/corpus checks,
+- =/export pdf|html= for a save-panel export of the current document,
+- =/publish preview [PROJECT]= (or =/publish [PROJECT]=) for configured =org2.json= publishing,
+- =/brief= and =/summarize= for agent-assisted, citation-aware reading of the current document.
+
+=/spellcheck= checks parser-identified headline and paragraph prose, avoiding source blocks, tables, properties, planning lines, and other syntax regions. It reports possible corrections without rewriting the source. Export and publish reuse the shared renderer/CLI; the chat surface is orchestration, not a second language implementation. Provider-specific external publishing destinations are intentionally left for later adapters.
+
 This is deliberately a handoff boundary. The corpus stores selected context, transcript references, generated artifacts, and durable outputs; the external agent can act on that context without the Mac app becoming the only source of truth. Generated work stays in normal corpus zones such as =views/= or =compiled/= until a person reviews or promotes it.
 
 * Org-crypt

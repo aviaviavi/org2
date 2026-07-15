@@ -70,4 +70,6 @@ org2 lint --dir ~/notes --recursive --format json
 
 Agents embedded in the macOS Workspace should still use shared CLI/parser semantics for IDs, links, source ranges, agenda behavior, data queries, and context. App presentation state is not the language implementation.
 
+The Mac chat's user-facing slash commands follow that rule: local commands such as =/search=, =/related=, =/lint=, =/spellcheck=, =/export=, and =/publish= call shared compiler/runtime behavior, while =/brief= and =/summarize= hand the selected source context to the configured agent. The app does not expose a separate =/context= command; source selection and cited context assembly remain internal agent plumbing.
+
 For a completely new local workspace, the Mac app can initialize an empty folder with a minimal =org2.json=, inbox, welcome note, and =notes/=, =daily/=, =views/=, and =compiled/= zones. Those generated starter files are ordinary corpus text and should be treated like any other user-owned source.

@@ -7997,6 +7997,209 @@ public final class WorkspaceStore: ObservableObject {
     }
   }
 
+  public func submitOpenClawComposerInput(text rawText: String) {
+    let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty || !openClawPendingAttachments.isEmpty else { return }
+
+    switch OpenClawSlashCommands.parse(text) {
+    case .message(let message):
+      sendComposedOpenClawMessage(text: message)
+    case .unknown(let name):
+      clearOpenClawDraftForSelectedThread()
+      appendLocalOpenClawCommand(
+        text,
+        result: name.isEmpty
+          ? "Type / followed by a command, or use /help to see all commands."
+          : "Unknown command /\(name). Use /help to see all commands."
+      )
+    case .command(let command, let arguments):
+      guard openClawPendingAttachments.isEmpty else {
+        appendLocalOpenClawCommand(
+          text,
+          result: "Slash commands cannot include attachments yet. Remove the attachment and try again."
+        )
+        return
+      }
+      ensureOpenClawChatThread()
+      guard let threadID = selectedOpenClawChatThreadID else { return }
+      clearOpenClawDraftForSelectedThread()
+      openClawStatusText = "Running /\(command.name)…"
+      Task { @MainActor [weak self] in
+        await self?.executeOpenClawSlashCommand(command, arguments: arguments, rawText: text, threadID: threadID)
+      }
+    }
+  }
+
+  private func executeOpenClawSlashCommand(
+    _ command: OpenClawSlashCommand,
+    arguments: String,
+    rawText: String,
+    threadID: UUID
+  ) async {
+    if command.isAgentAssisted {
+      guard enqueueOpenClawMessage(rawText, attachments: [], in: threadID) else { return }
+      await drainOpenClawSendQueue(for: threadID)
+      return
+    }
+
+    do {
+      let result: String
+      switch command.name {
+      case "help":
+        result = OpenClawSlashCommands.helpText
+      case "search":
+        result = await executeOpenClawSearch(arguments)
+      case "open":
+        result = executeOpenClawOpen(arguments)
+      case "today":
+        openDailyNote(.today)
+        result = statusText
+      case "agenda":
+        makeSurfacePrimary(.agenda)
+        await refreshAgenda(preserveSelection: true, updatesStatus: false)
+        if let agenda {
+          result = "Opened Agenda — \(agenda.totalItemCount) item\(agenda.totalItemCount == 1 ? "" : "s"), \(agenda.todayItemCount) today."
+        } else {
+          result = "Opened Agenda."
+        }
+      case "related":
+        result = await executeOpenClawRelated()
+      case "spellcheck":
+        result = await executeOpenClawSpellcheck()
+      case "lint":
+        result = try await executeOpenClawLint()
+      case "export":
+        result = try await executeOpenClawExport(arguments)
+      case "publish":
+        result = try await executeOpenClawPublish(arguments)
+      default:
+        result = "Command /\(command.name) is not implemented yet."
+      }
+      appendLocalOpenClawCommand(rawText, result: result, in: threadID)
+    } catch {
+      appendLocalOpenClawCommand(
+        rawText,
+        result: "Could not run /\(command.name): \(error.localizedDescription)",
+        in: threadID
+      )
+    }
+  }
+
+  private func appendLocalOpenClawCommand(_ command: String, result: String, in threadID: UUID? = nil) {
+    ensureOpenClawChatThread()
+    guard let threadID = threadID ?? selectedOpenClawChatThreadID else { return }
+    var messages = openClawMessages(for: threadID)
+    messages.append(OpenClawChatMessage(role: .user, content: command))
+    messages.append(OpenClawChatMessage(role: .system, content: result))
+    replaceOpenClawMessages(messages, for: threadID, shouldPersist: true)
+    openClawStatusText = "Ran \(command.split(whereSeparator: { $0.isWhitespace }).first ?? "command")"
+  }
+
+  private func executeOpenClawSearch(_ query: String) async -> String {
+    guard !query.isEmpty else { return "Usage: /search QUERY" }
+    searchQuery = query
+    await runSearch()
+    makeSurfacePrimary(.search)
+    guard !searchResults.isEmpty else { return "No corpus results for “\(query)”." }
+    let rows = searchResults.prefix(8).map { result in
+      "• \(relativePath(result.file)):\(result.lineForEditor) — \(result.snippet.replacingOccurrences(of: "\n", with: " "))"
+    }
+    let suffix = searchResults.count > rows.count ? "\n\n\(searchResults.count - rows.count) more results are open in Search." : ""
+    return "Found \(searchResults.count) corpus result\(searchResults.count == 1 ? "" : "s"):\n\n\(rows.joined(separator: "\n"))\(suffix)"
+  }
+
+  private func executeOpenClawOpen(_ query: String) -> String {
+    guard !query.isEmpty else { return "Usage: /open PATH" }
+    let normalized = query.lowercased()
+    let exact = corpusFiles.filter {
+      $0.relativePath.lowercased() == normalized || $0.name.lowercased() == normalized
+    }
+    let matches = exact.isEmpty
+      ? corpusFiles.filter { $0.relativePath.lowercased().contains(normalized) }
+      : exact
+    guard let match = matches.first else { return "No corpus file matches “\(query)”." }
+    guard matches.count == 1 else {
+      return "More than one file matches “\(query)”: \(matches.prefix(8).map(\.relativePath).joined(separator: ", "))"
+    }
+    selectCorpusFile(match)
+    return "Opened \(match.relativePath)."
+  }
+
+  private func executeOpenClawRelated() async -> String {
+    guard let location = selectedLocation else { return "Open a document first, then run /related." }
+    await loadBacklinks(for: location)
+    guard let backlinks, !backlinks.backlinks.isEmpty else { return "No backlinks found for the current document." }
+    let rows = backlinks.backlinks.prefix(12).map {
+      "• \(relativePath($0.file)):\($0.lineForEditor) — \($0.srcTitle)"
+    }
+    return "\(backlinks.backlinks.count) backlink\(backlinks.backlinks.count == 1 ? "" : "s"):\n\n\(rows.joined(separator: "\n"))"
+  }
+
+  private func executeOpenClawSpellcheck() async -> String {
+    guard let source = selectedEntrySource else { return "Open a document first, then run /spellcheck." }
+    guard let snapshot = await analyzeSourceEditorText(source.text) else { return "The document could not be analyzed for spell checking." }
+    let issues = OpenClawSpellchecker.issues(
+      in: source.text,
+      snapshot: snapshot,
+      lineOffset: max(0, source.startLine - 1)
+    )
+    guard !issues.isEmpty else { return "No spelling issues found in prose regions." }
+    let rows = issues.map { issue -> String in
+      let suggestions = issue.suggestions.isEmpty ? "" : " → \(issue.suggestions.joined(separator: ", "))"
+      return "• line \(issue.line): \(issue.word)\(suggestions)"
+    }
+    let suffix = issues.count == 50 ? "\n\nStopped after 50 issues." : ""
+    return "Found \(issues.count) possible spelling issue\(issues.count == 1 ? "" : "s"):\n\n\(rows.joined(separator: "\n"))\(suffix)"
+  }
+
+  private func executeOpenClawLint() async throws -> String {
+    guard let corpusRoot else { return "Open a corpus first, then run /lint." }
+    let data = try await cli.run(["lint", "--dir", corpusRoot.path, "--recursive", "--format", "text"])
+    let output = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+    return output.isEmpty ? "Lint passed with no findings." : String(output.prefix(12_000))
+  }
+
+  private func executeOpenClawExport(_ arguments: String) async throws -> String {
+    guard let source = selectedEntrySource else { return "Open a document first. Usage: /export pdf|html" }
+    let format = arguments.lowercased()
+    guard format == "pdf" || format == "html" else { return "Usage: /export pdf|html" }
+    let html = try await cli.renderAppHTML(
+      source.text,
+      sourcePath: source.file,
+      sourceLineOffset: max(0, source.startLine - 1)
+    )
+    let panel = NSSavePanel()
+    panel.allowedContentTypes = format == "pdf" ? [.pdf] : [.html]
+    panel.nameFieldStringValue = URL(fileURLWithPath: source.file).deletingPathExtension().lastPathComponent + ".\(format)"
+    guard panel.runModal() == .OK, let destination = panel.url else { return "Export cancelled." }
+    if format == "html" {
+      try Data(html.utf8).write(to: destination, options: .atomic)
+    } else {
+      let exporter = Org2PDFExporter()
+      let pdf = try await exporter.data(for: html, baseURL: URL(fileURLWithPath: source.file).deletingLastPathComponent())
+      try pdf.write(to: destination, options: .atomic)
+    }
+    return "Exported \(destination.lastPathComponent)."
+  }
+
+  private func executeOpenClawPublish(_ arguments: String) async throws -> String {
+    guard let corpusRoot else { return "Open a corpus first, then run /publish." }
+    let config = corpusRoot.appendingPathComponent("org2.json")
+    guard FileManager.default.fileExists(atPath: config.path) else {
+      return "Publishing requires org2.json in the corpus root."
+    }
+    var parts = arguments.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+    let preview = parts.first?.lowercased() == "preview"
+    if preview { parts.removeFirst() }
+    var cliArguments = ["publish"]
+    if let project = parts.first { cliArguments.append(project) }
+    cliArguments.append(contentsOf: ["--config", config.path])
+    if preview { cliArguments.append("--preview") }
+    let data = try await cli.run(cliArguments)
+    let output = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+    return output.isEmpty ? (preview ? "Publish preview passed." : "Publish completed.") : String(output.prefix(12_000))
+  }
+
   private func sendOpenClawMessage(_ text: String, attachments: [OpenClawChatAttachment]) async {
     ensureOpenClawChatThread()
     guard let threadID = selectedOpenClawChatThreadID else { return }
@@ -8079,15 +8282,40 @@ public final class WorkspaceStore: ObservableObject {
   private func sendOpenClawRequest(messages: [OpenClawChatMessage], sessionKey: String) async throws -> String {
     let agentID = openClawAgentID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "main" : openClawAgentID
     let workspaceContext = currentOpenClawWorkspaceContext()
+    let requestMessages = messages.map(Self.expandingOpenClawAgentCommand)
     if let openClawSendHandler {
-      return try await openClawSendHandler(messages, agentID, sessionKey, workspaceContext)
+      return try await openClawSendHandler(requestMessages, agentID, sessionKey, workspaceContext)
     }
     let client = OpenClawChatClient(settings: currentOpenClawSettings(allowKeychainRead: true))
     return try await client.send(
-      messages: messages,
+      messages: requestMessages,
       agentID: agentID,
       sessionKey: sessionKey,
       workspaceContext: workspaceContext
+    )
+  }
+
+  private nonisolated static func expandingOpenClawAgentCommand(_ message: OpenClawChatMessage) -> OpenClawChatMessage {
+    guard message.role == .user,
+          case .command(let command, _) = OpenClawSlashCommands.parse(message.content),
+          command.isAgentAssisted
+    else { return message }
+    let instruction: String
+    switch command.name {
+    case "brief":
+      instruction = "Create a concise, cited brief of the currently selected Org2 document. Explain its purpose, main ideas, decisions, open tasks, and important links. Cite source file and line ranges."
+    default:
+      instruction = "Summarize the currently selected Org2 document concisely. Preserve decisions, TODOs, dates, and important links, and cite source file and line ranges."
+    }
+    return OpenClawChatMessage(
+      id: message.id,
+      role: message.role,
+      content: "\(message.content)\n\n\(instruction)",
+      attachments: message.attachments,
+      createdAt: message.createdAt,
+      changeSummary: message.changeSummary,
+      sendFailure: message.sendFailure,
+      deliveryStatus: message.deliveryStatus
     )
   }
 

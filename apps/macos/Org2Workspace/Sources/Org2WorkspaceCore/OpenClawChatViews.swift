@@ -373,6 +373,13 @@ struct OpenClawComposerView: View {
       .frame(minHeight: composerHeight, idealHeight: composerHeight, maxHeight: composerHeight)
       .animation(.easeOut(duration: 0.12), value: composerHeight)
 
+      let slashSuggestions = OpenClawSlashCommands.suggestions(for: localDraft)
+      if !slashSuggestions.isEmpty {
+        OpenClawSlashCommandSuggestions(commands: slashSuggestions) { command in
+          localDraft = command.arguments.isEmpty ? "/\(command.name)" : "/\(command.name) "
+        }
+      }
+
       if !store.openClawPendingAttachments.isEmpty {
         OpenClawPendingAttachmentsView(compact: compact)
       }
@@ -483,7 +490,7 @@ struct OpenClawComposerView: View {
     localDraft = ""
     lastStoreDraft = ""
     store.cacheOpenClawComposerDraft("")
-    store.sendComposedOpenClawMessage(text: text)
+    store.submitOpenClawComposerInput(text: text)
     return true
   }
 
@@ -503,6 +510,49 @@ struct OpenClawComposerView: View {
     } else {
       lastStoreDraft = store.openClawDraft
     }
+  }
+}
+
+private struct OpenClawSlashCommandSuggestions: View {
+  let commands: [OpenClawSlashCommand]
+  let select: (OpenClawSlashCommand) -> Void
+
+  var body: some View {
+    VStack(spacing: 2) {
+      ForEach(commands) { command in
+        Button {
+          select(command)
+        } label: {
+          HStack(spacing: 9) {
+            Image(systemName: command.systemImage)
+              .frame(width: 18)
+              .foregroundStyle(.secondary)
+            Text(command.invocation)
+              .font(.callout.monospaced().weight(.medium))
+            Text(command.summary)
+              .font(.callout)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+            Spacer(minLength: 4)
+            if command.isAgentAssisted {
+              Text("Agent")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            }
+          }
+          .contentShape(Rectangle())
+          .padding(.horizontal, 9)
+          .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+      }
+    }
+    .padding(4)
+    .background(WorkspaceDesign.surfaceBackground, in: RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius))
+    .overlay(
+      RoundedRectangle(cornerRadius: WorkspaceDesign.cornerRadius)
+        .stroke(WorkspaceDesign.hairline)
+    )
   }
 }
 
