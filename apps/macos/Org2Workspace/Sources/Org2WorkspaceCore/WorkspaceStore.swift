@@ -770,8 +770,19 @@ public final class WorkspaceStore: ObservableObject {
   @Published public var selectedOpenClawThreadID: String?
   @Published public var workspaceHealthChecks: [WorkspaceHealthCheck] = []
   @Published public var isCheckingWorkspaceHealth = false
-  @Published public var selectedLocation: WorkspaceLocation?
-  @Published public var selectedEntrySource: EntrySource?
+  @Published public var selectedLocation: WorkspaceLocation? {
+    didSet {
+      guard oldValue?.file != selectedLocation?.file else { return }
+      updateSelectedFileDataNotebookState(for: selectedLocation?.file)
+    }
+  }
+  @Published public var selectedEntrySource: EntrySource? {
+    didSet {
+      guard let file = selectedEntrySource?.file else { return }
+      updateSelectedFileDataNotebookState(for: file)
+    }
+  }
+  public private(set) var selectedFileIsDataNotebook = false
   @Published public private(set) var selectedEntryHTML: String?
   @Published public private(set) var selectedEntryRenderError: String?
   @Published public var renderedDocumentWidth: RenderedDocumentWidth = .comfortable {
@@ -3967,13 +3978,14 @@ public final class WorkspaceStore: ObservableObject {
     await loadEntrySource(for: selectedLocation)
   }
 
-  public var selectedFileIsDataNotebook: Bool {
-    guard let file = selectedEntrySource?.file ?? selectedLocation?.file,
+  private func updateSelectedFileDataNotebookState(for file: String?) {
+    guard let file,
           let text = try? String(contentsOfFile: file, encoding: .utf8)
     else {
-      return false
+      selectedFileIsDataNotebook = false
+      return
     }
-    return text.range(
+    selectedFileIsDataNotebook = text.range(
       of: #"```sql[^\n]*\bresults\s*="#,
       options: [.regularExpression, .caseInsensitive]
     ) != nil

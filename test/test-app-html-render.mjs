@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { renderOrgCharts } from "../dist/chartRender.js";
 import { renderOrgDocumentToAppHtml, renderOrgDocumentToHtml } from "../dist/export.js";
 import { parseOrgToCanonicalAst } from "../dist/parser.js";
@@ -101,6 +103,19 @@ assert.match(fileMetadataRendered.html, /File properties <span class="org2-file-
 assert.match(fileMetadataRendered.html, /<span class="org2-keyword-name">id<\/span>: report-id/i);
 assert.ok(fileMetadataRendered.html.indexOf("org2-file-properties") < fileMetadataRendered.html.indexOf("Human introduction."));
 assert.doesNotMatch(fileMetadataRendered.html, /org2-keyword-name">title/);
+
+const tabIndentedQuoteSource = `#+begin_quote
+\tBest,
+\tAvi
+\t#+end_quote
+`;
+const tabPreview = spawnSync(
+  process.execPath,
+  [fileURLToPath(new URL("../dist/render-html.js", import.meta.url)), "--source-path", "/tmp/tabbed-quote.org2"],
+  { input: tabIndentedQuoteSource, encoding: "utf8" },
+);
+assert.equal(tabPreview.status, 0, tabPreview.stderr);
+assert.match(tabPreview.stdout, /<blockquote class="org2-quote"[^>]*>  Best,\n  Avi<\/blockquote>/);
 
 const chartSource = `* Metrics
 

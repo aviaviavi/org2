@@ -95,6 +95,7 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <li><p>Command-S saving that keeps the editor open and refuses stale writes without discarding the draft.</p></li>
 </ul>
 <p>Read mode is deliberately separate. It renders the selected entry or page as HTML from the shared compiler, including headings, links, property drawers, quotes, tables, citations, media, source blocks, and generated Org2 artifacts. Rendered content is used for reading, navigation, and workflow actions, not as an authoritative editable DOM.</p>
+<p>For legacy or pasted text containing tab-indented structural lines, read mode expands tabs in its rendering input and leaves the source file untouched. The canonical parser and editor diagnostics remain strict, so the source editor can still offer explicit tab cleanup without making preview availability depend on that cleanup.</p>
 <p>Source editing can optionally show that HTML renderer in a resizable split view. The preview updates after a short idle delay, follows the source line near the caret, rejects stale render results, and can be paused. Typing never waits for HTML generation.</p>
 <p>Document presentation is customizable without enabling document scripts. Use the document-layout menu to create or edit <code>.org2/app.css</code> at the corpus root; its CSS applies to read mode and the source preview. The app continues to exclude <code>HTML_HEAD</code> scripts and raw export HTML from its safe rendering profile.</p>
 </section>
