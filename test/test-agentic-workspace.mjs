@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { PassThrough } from "node:stream";
 import {
   addAgentRunArtifact, addAgentRunComment, addAgentRunValidation, createAgentRun,
@@ -27,6 +28,20 @@ try {
   assert.deepEqual(parseAgentRunOrg(renderAgentRunOrg(run)), run);
   saveAgentRun(root, run);
   assert.equal(loadAgentRun(root, run.id).goal, run.goal);
+
+  assert.throws(() => createAgentRun({ goal: "Reject an invalid plan", plan: [{ title: "Broken", kind: "unknown" }] }), /invalid run step kind/);
+  assert.throws(() => updateAgentRunStep(run, "draft", "unknown"), /invalid run step status/);
+  assert.throws(() => addAgentRunArtifact(run, { path: "views/broken.org2", role: "unknown" }), /invalid artifact role/);
+  assert.throws(() => addAgentRunArtifact(run, { path: "views/broken.org2", role: "draft", reviewStatus: "unknown" }), /invalid artifact review status/);
+  assert.throws(() => addAgentRunValidation(run, { name: "broken", status: "unknown" }), /invalid validation status/);
+  assert.throws(() => requestAgentRunApproval(run, { title: "Broken", action: "broken", riskClass: "unknown" }), /invalid approval risk class/);
+  const pendingApproval = requestAgentRunApproval(run, { id: "test", title: "Test", action: "test", riskClass: "local-draft" });
+  assert.throws(() => decideAgentRunApproval(pendingApproval, "test", "unknown", { actor: "Avi" }), /invalid approval decision/);
+
+  const invalidStep = spawnSync(process.execPath, [path.resolve("dist/cli.js"), "run", "step", run.id, "draft", "--status", "unknown", "--dir", root], { encoding: "utf8" });
+  assert.notEqual(invalidStep.status, 0);
+  assert.match(invalidStep.stderr, /invalid step status: unknown/);
+  assert.equal(loadAgentRun(root, run.id).plan[0].status, "pending");
 
   run = transitionAgentRun(run, "running", { now: "2026-07-14T10:00:00Z" });
   run = updateAgentRunStep(run, "draft", "completed", { actor: "research-agent", now: "2026-07-14T10:01:00Z" });
