@@ -22,10 +22,65 @@ export const AGENT_RUN_RISK_CLASSES = [
   "high-impact",
 ] as const;
 
+export const AGENT_RUN_STEP_KINDS = [
+  "compiler",
+  "agent",
+  "tool",
+  "approval",
+  "artifact",
+  "validation",
+] as const;
+
+export const AGENT_RUN_STEP_STATUSES = [
+  "pending",
+  "running",
+  "completed",
+  "blocked",
+  "failed",
+  "skipped",
+] as const;
+
+export const AGENT_RUN_ARTIFACT_ROLES = [
+  "draft",
+  "diff",
+  "compiled",
+  "view",
+  "report",
+  "export",
+  "receipt",
+] as const;
+
+export const AGENT_RUN_ARTIFACT_REVIEW_STATUSES = [
+  "generated",
+  "review-required",
+  "reviewed",
+  "promoted",
+  "rejected",
+] as const;
+
+export const AGENT_RUN_APPROVAL_DECISIONS = [
+  "approved",
+  "rejected",
+  "revised",
+  "canceled",
+] as const;
+
+export const AGENT_RUN_VALIDATION_STATUSES = [
+  "passed",
+  "failed",
+  "warning",
+  "skipped",
+] as const;
+
 export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number];
 export type AgentRunRiskClass = (typeof AGENT_RUN_RISK_CLASSES)[number];
-export type AgentRunStepStatus = "pending" | "running" | "completed" | "blocked" | "failed" | "skipped";
-export type AgentRunApprovalStatus = "pending" | "approved" | "rejected" | "revised" | "canceled";
+export type AgentRunStepKind = (typeof AGENT_RUN_STEP_KINDS)[number];
+export type AgentRunStepStatus = (typeof AGENT_RUN_STEP_STATUSES)[number];
+export type AgentRunArtifactRole = (typeof AGENT_RUN_ARTIFACT_ROLES)[number];
+export type AgentRunArtifactReviewStatus = (typeof AGENT_RUN_ARTIFACT_REVIEW_STATUSES)[number];
+export type AgentRunApprovalDecision = (typeof AGENT_RUN_APPROVAL_DECISIONS)[number];
+export type AgentRunApprovalStatus = "pending" | AgentRunApprovalDecision;
+export type AgentRunValidationStatus = (typeof AGENT_RUN_VALIDATION_STATUSES)[number];
 
 export interface AgentRunContextRef {
   ref: string;
@@ -37,7 +92,7 @@ export interface AgentRunContextRef {
 export interface AgentRunPlanStep {
   id: string;
   title: string;
-  kind: "compiler" | "agent" | "tool" | "approval" | "artifact" | "validation";
+  kind: AgentRunStepKind;
   status: AgentRunStepStatus;
   capability?: string;
   startedAt?: string;
@@ -48,11 +103,11 @@ export interface AgentRunPlanStep {
 export interface AgentRunArtifact {
   id: string;
   path: string;
-  role: "draft" | "diff" | "compiled" | "view" | "report" | "export" | "receipt";
+  role: AgentRunArtifactRole;
   title?: string;
   mediaType?: string;
   sha256?: string;
-  reviewStatus?: "generated" | "review-required" | "reviewed" | "promoted" | "rejected";
+  reviewStatus?: AgentRunArtifactReviewStatus;
   createdAt: string;
 }
 
@@ -74,7 +129,7 @@ export interface AgentRunApproval {
 export interface AgentRunValidation {
   id: string;
   name: string;
-  status: "passed" | "failed" | "warning" | "skipped";
+  status: AgentRunValidationStatus;
   checkedAt: string;
   detail?: string;
 }
@@ -242,14 +297,19 @@ export function createAgentRun(input: AgentRunCreateInput): AgentRun {
       ...(optional(item.citation) ? { citation: optional(item.citation) } : {}),
       ...(optional(item.sha256) ? { sha256: optional(item.sha256)?.toLowerCase() } : {}),
     })).filter((item) => item.ref),
-    plan: (input.plan || []).map((step, index) => ({
-      id: safeId(step.id || `step-${index + 1}`),
-      title: String(step.title || "").trim(),
-      kind: step.kind,
-      status: step.status || "pending",
-      ...(optional(step.capability) ? { capability: optional(step.capability) } : {}),
-      ...(optional(step.detail) ? { detail: optional(step.detail) } : {}),
-    })).filter((step) => step.title),
+    plan: (input.plan || []).map((step, index) => {
+      if (!AGENT_RUN_STEP_KINDS.includes(step.kind)) throw new Error(`invalid run step kind: ${step.kind}`);
+      const status = step.status || "pending";
+      if (!AGENT_RUN_STEP_STATUSES.includes(status)) throw new Error(`invalid run step status: ${status}`);
+      return {
+        id: safeId(step.id || `step-${index + 1}`),
+        title: String(step.title || "").trim(),
+        kind: step.kind,
+        status,
+        ...(optional(step.capability) ? { capability: optional(step.capability) } : {}),
+        ...(optional(step.detail) ? { detail: optional(step.detail) } : {}),
+      };
+    }).filter((step) => step.title),
     artifacts: [],
     approvals: [],
     validations: [],
@@ -346,6 +406,8 @@ export function addAgentRunArtifact(run: AgentRun, input: Omit<AgentRunArtifact,
   const now = isoNow(input.createdAt);
   const artifactPath = String(input.path || "").trim();
   if (!artifactPath) throw new Error("artifact path is required");
+  if (!AGENT_RUN_ARTIFACT_ROLES.includes(input.role)) throw new Error(`invalid artifact role: ${input.role}`);
+  if (input.reviewStatus && !AGENT_RUN_ARTIFACT_REVIEW_STATUSES.includes(input.reviewStatus)) throw new Error(`invalid artifact review status: ${input.reviewStatus}`);
   const artifact: AgentRunArtifact = {
     id: safeId(input.id || crypto.randomUUID()),
     path: artifactPath,
@@ -369,11 +431,13 @@ export function addAgentRunValidation(run: AgentRun, input: Omit<AgentRunValidat
     ...(optional(input.detail) ? { detail: optional(input.detail) } : {}),
   };
   if (!validation.name) throw new Error("validation name is required");
+  if (!AGENT_RUN_VALIDATION_STATUSES.includes(validation.status)) throw new Error(`invalid validation status: ${validation.status}`);
   return { ...run, validations: [...run.validations, validation], updatedAt: now, events: [...run.events, event("validated", now, actor, `${validation.name}: ${validation.status}`)] };
 }
 
 export function requestAgentRunApproval(run: AgentRun, input: Omit<AgentRunApproval, "id" | "status" | "requestedAt"> & { id?: string; requestedAt?: string }, actor?: string): AgentRun {
   if (["completed", "failed", "canceled"].includes(run.status)) throw new Error(`cannot request approval for a ${run.status} run`);
+  if (!AGENT_RUN_RISK_CLASSES.includes(input.riskClass)) throw new Error(`invalid approval risk class: ${input.riskClass}`);
   const now = isoNow(input.requestedAt);
   const approval: AgentRunApproval = {
     id: safeId(input.id || crypto.randomUUID()),
@@ -392,8 +456,9 @@ export function requestAgentRunApproval(run: AgentRun, input: Omit<AgentRunAppro
   return { ...next, approvals: [...next.approvals, approval], updatedAt: now, events: [...next.events, event("approval-requested", now, actor, approval.title, { approvalId: approval.id, riskClass: approval.riskClass })] };
 }
 
-export function decideAgentRunApproval(run: AgentRun, approvalId: string, decision: Exclude<AgentRunApprovalStatus, "pending">, input: { actor: string; actorRole?: string; note?: string; receipt?: string; now?: string }): AgentRun {
+export function decideAgentRunApproval(run: AgentRun, approvalId: string, decision: AgentRunApprovalDecision, input: { actor: string; actorRole?: string; note?: string; receipt?: string; now?: string }): AgentRun {
   const now = isoNow(input.now);
+  if (!AGENT_RUN_APPROVAL_DECISIONS.includes(decision)) throw new Error(`invalid approval decision: ${decision}`);
   const index = run.approvals.findIndex((approval) => approval.id === approvalId);
   if (index < 0) throw new Error(`approval not found: ${approvalId}`);
   if (run.approvals[index]!.status !== "pending") throw new Error(`approval is already ${run.approvals[index]!.status}`);
@@ -418,6 +483,7 @@ export function decideAgentRunApproval(run: AgentRun, approvalId: string, decisi
 
 export function updateAgentRunStep(run: AgentRun, stepId: string, status: AgentRunStepStatus, input: { actor?: string; detail?: string; now?: string } = {}): AgentRun {
   const now = isoNow(input.now);
+  if (!AGENT_RUN_STEP_STATUSES.includes(status)) throw new Error(`invalid run step status: ${status}`);
   const index = run.plan.findIndex((step) => step.id === stepId);
   if (index < 0) throw new Error(`plan step not found: ${stepId}`);
   const plan = [...run.plan];

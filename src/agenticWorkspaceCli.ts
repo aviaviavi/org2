@@ -1,8 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
+  AGENT_RUN_APPROVAL_DECISIONS,
+  AGENT_RUN_ARTIFACT_REVIEW_STATUSES,
+  AGENT_RUN_ARTIFACT_ROLES,
   AGENT_RUN_RISK_CLASSES,
-  AGENT_RUN_STATUSES,
+  AGENT_RUN_STEP_KINDS,
+  AGENT_RUN_STEP_STATUSES,
+  AGENT_RUN_VALIDATION_STATUSES,
   addAgentRunArtifact,
   addAgentRunComment,
   addAgentRunValidation,
@@ -18,7 +23,6 @@ import {
   updateAgentRunAssignment,
   updateAgentRunStep,
   validateAgentRun,
-  type AgentRunRiskClass,
   type AgentRunStatus,
 } from "./agentRun.js";
 import {
@@ -61,6 +65,14 @@ function output(parsed: ParsedArgs, value: unknown, text?: string): void {
   else process.stdout.write(`${text ?? (typeof value === "string" ? value : JSON.stringify(value, null, 2))}\n`);
 }
 function required(value: string | undefined, message: string): string { if (!value) throw new Error(message); return value; }
+function choice<const Choices extends readonly string[]>(value: string | undefined, choices: Choices, label: string): Choices[number] {
+  const selected = required(value, `${label} is required`);
+  if (!choices.includes(selected)) throw new Error(`invalid ${label}: ${selected}; expected one of: ${choices.join(", ")}`);
+  return selected as Choices[number];
+}
+function optionalChoice<const Choices extends readonly string[]>(value: string | undefined, choices: Choices, label: string): Choices[number] | undefined {
+  return value === undefined ? undefined : choice(value, choices, label);
+}
 
 const HELP = `Agentic workspace commands:
   org2 run create --goal TEXT [--accept TEXT] [--risk CLASS] [--owner NAME] [--capability ID] [--dir CORPUS]
@@ -86,10 +98,9 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
   const corpus = root(parsed);
   if (action === "help") { output(parsed, HELP); return; }
   if (action === "create") {
-    const risk = flag(parsed, "risk", "local-draft") as AgentRunRiskClass;
-    if (!AGENT_RUN_RISK_CLASSES.includes(risk)) throw new Error(`invalid risk class: ${risk}`);
+    const risk = choice(flag(parsed, "risk", "local-draft"), AGENT_RUN_RISK_CLASSES, "risk class");
     const tokenLimit = flag(parsed, "token-limit"); const costLimit = flag(parsed, "cost-limit-usd"); const timeLimit = flag(parsed, "time-limit-seconds");
-    const plan = flags(parsed, "step").map((raw, index) => { const colon = raw.indexOf(":"); const kind = colon > 0 ? raw.slice(0, colon) : "agent"; const title = colon > 0 ? raw.slice(colon + 1) : raw; if (!["compiler", "agent", "tool", "approval", "artifact", "validation"].includes(kind) || !title.trim()) throw new Error(`--step ${index + 1} must be [compiler|agent|tool|approval|artifact|validation]:TITLE`); return { id: `step-${index + 1}`, kind: kind as any, title: title.trim() }; });
+    const plan = flags(parsed, "step").map((raw, index) => { const colon = raw.indexOf(":"); const kind = colon > 0 ? raw.slice(0, colon) : "agent"; const title = colon > 0 ? raw.slice(colon + 1) : raw; if (!title.trim()) throw new Error(`--step ${index + 1} must be [${AGENT_RUN_STEP_KINDS.join("|")}]:TITLE`); return { id: `step-${index + 1}`, kind: choice(kind, AGENT_RUN_STEP_KINDS, `--step ${index + 1} kind`), title: title.trim() }; });
     const run = createAgentRun({ id: flag(parsed, "id"), goal: required(flag(parsed, "goal"), "--goal is required"), acceptanceCriteria: flags(parsed, "accept"), riskClass: risk, owner: flag(parsed, "owner"), assignee: flag(parsed, "assignee"), providerPolicy: flag(parsed, "policy"), provider: flag(parsed, "provider"), model: flag(parsed, "model"), capabilities: flags(parsed, "capability"), context: flags(parsed, "context").map((ref) => ({ ref })), plan, ...((tokenLimit || costLimit || timeLimit) ? { budget: { ...(tokenLimit ? { tokenLimit: Number(tokenLimit) } : {}), ...(costLimit ? { costLimitUsd: Number(costLimit) } : {}), ...(timeLimit ? { timeLimitSeconds: Number(timeLimit) } : {}) } } : {}) });
     const file = saveAgentRun(corpus, run); output(parsed, { run, file }, `created ${run.id}\n${file}`); return;
   }
@@ -108,11 +119,11 @@ async function runCommand(parsed: ParsedArgs): Promise<void> {
   if (transitions[action]) run = transitionAgentRun(existing, transitions[action]!, { actor: flag(parsed, "actor"), reason: flag(parsed, "reason") });
   else if (action === "assign") run = updateAgentRunAssignment(existing, { owner: flag(parsed, "owner"), assignee: flag(parsed, "assignee"), actor: flag(parsed, "actor") });
   else if (action === "comment") run = addAgentRunComment(existing, required(flag(parsed, "author"), "--author is required"), required(flag(parsed, "body"), "--body is required"));
-  else if (action === "step") run = updateAgentRunStep(existing, required(parsed.positional[2], "step id is required"), required(flag(parsed, "status"), "--status is required") as any, { actor: flag(parsed, "actor"), detail: flag(parsed, "detail") });
-  else if (action === "artifact") run = addAgentRunArtifact(existing, { path: required(flag(parsed, "path"), "--path is required"), role: (flag(parsed, "role", "draft") as any), title: flag(parsed, "title"), mediaType: flag(parsed, "media-type"), sha256: flag(parsed, "sha256"), reviewStatus: flag(parsed, "review-status") as any }, flag(parsed, "actor"));
-  else if (action === "validation") run = addAgentRunValidation(existing, { name: required(flag(parsed, "name"), "--name is required"), status: required(flag(parsed, "status"), "--status is required") as any, detail: flag(parsed, "detail") }, flag(parsed, "actor"));
-  else if (action === "approval-request") run = requestAgentRunApproval(existing, { title: required(flag(parsed, "title"), "--title is required"), action: required(flag(parsed, "action"), "--action is required"), riskClass: flag(parsed, "risk", existing.riskClass) as any, requestedRole: flag(parsed, "role"), requestedFrom: flag(parsed, "from"), note: flag(parsed, "note") }, flag(parsed, "actor"));
-  else if (action === "approval-decide") run = decideAgentRunApproval(existing, required(parsed.positional[2], "approval id is required"), required(flag(parsed, "decision"), "--decision is required") as any, { actor: required(flag(parsed, "actor"), "--actor is required"), actorRole: flag(parsed, "role"), note: flag(parsed, "note"), receipt: flag(parsed, "receipt") });
+  else if (action === "step") run = updateAgentRunStep(existing, required(parsed.positional[2], "step id is required"), choice(flag(parsed, "status"), AGENT_RUN_STEP_STATUSES, "step status"), { actor: flag(parsed, "actor"), detail: flag(parsed, "detail") });
+  else if (action === "artifact") run = addAgentRunArtifact(existing, { path: required(flag(parsed, "path"), "--path is required"), role: choice(flag(parsed, "role", "draft"), AGENT_RUN_ARTIFACT_ROLES, "artifact role"), title: flag(parsed, "title"), mediaType: flag(parsed, "media-type"), sha256: flag(parsed, "sha256"), reviewStatus: optionalChoice(flag(parsed, "review-status"), AGENT_RUN_ARTIFACT_REVIEW_STATUSES, "artifact review status") }, flag(parsed, "actor"));
+  else if (action === "validation") run = addAgentRunValidation(existing, { name: required(flag(parsed, "name"), "--name is required"), status: choice(flag(parsed, "status"), AGENT_RUN_VALIDATION_STATUSES, "validation status"), detail: flag(parsed, "detail") }, flag(parsed, "actor"));
+  else if (action === "approval-request") run = requestAgentRunApproval(existing, { title: required(flag(parsed, "title"), "--title is required"), action: required(flag(parsed, "action"), "--action is required"), riskClass: choice(flag(parsed, "risk", existing.riskClass), AGENT_RUN_RISK_CLASSES, "approval risk class"), requestedRole: flag(parsed, "role"), requestedFrom: flag(parsed, "from"), note: flag(parsed, "note") }, flag(parsed, "actor"));
+  else if (action === "approval-decide") run = decideAgentRunApproval(existing, required(parsed.positional[2], "approval id is required"), choice(flag(parsed, "decision"), AGENT_RUN_APPROVAL_DECISIONS, "approval decision"), { actor: required(flag(parsed, "actor"), "--actor is required"), actorRole: flag(parsed, "role"), note: flag(parsed, "note"), receipt: flag(parsed, "receipt") });
   else if (action === "fork") { run = forkAgentRun(existing, { id: flag(parsed, "id"), actor: flag(parsed, "actor"), fromEventId: flag(parsed, "event") }); const file = saveAgentRun(corpus, run); output(parsed, { run, file }, `forked ${existing.id} -> ${run.id}`); return; }
   else throw new Error(`unknown run action: ${action}`);
   saveAgentRun(corpus, run); output(parsed, run, `${run.id}: ${run.status}`);
