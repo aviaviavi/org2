@@ -36,6 +36,7 @@ Org2 reference is split into two detailed sections:
   - mixing ID links and title links
 - [[file:features.org][Features]]
 - [[file:knowledge-compiler-roadmap.org][Knowledge compiler roadmap]]
+- [[file:agentic-workspace-roadmap.org][Agentic workspace roadmap]]
 - [[file:org2-vs-org-mode.org][Org2 vs Org Mode]]
 - [[file:org2-vs-markdown.org][Org2 vs Markdown]]
 

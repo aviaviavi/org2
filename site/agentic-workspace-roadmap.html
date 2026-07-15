@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agentic workspace roadmap</title>
+<meta name="subtitle" content="A local-first operating environment for delegated knowledge work" />
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<script type="module" src="assets/shiki-vscode.js"></script>
+<script defer src="assets/nav.js"></script>
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Agentic workspace roadmap" />
+<meta property="og:description" content="A local-first operating environment for delegated knowledge work" />
+<meta property="og:url" content="https://org2.avi.press/agentic-workspace-roadmap.html" />
+<meta property="og:image" content="https://org2.avi.press/assets/og/agentic-workspace-roadmap.svg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Agentic workspace roadmap" />
+<meta name="twitter:description" content="A local-first operating environment for delegated knowledge work" />
+<meta name="twitter:image" content="https://org2.avi.press/assets/og/agentic-workspace-roadmap.svg" />
+<link rel="stylesheet" href="assets/site.css" />
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 860px; padding: 0 1rem; line-height: 1.5; }
+main { display: grid; gap: 0.75rem; }
+section.org2-headline { margin: 0.5rem 0 1rem; }
+h1,h2,h3,h4,h5,h6 { margin: 1rem 0 0.5rem; line-height: 1.25; }
+.org2-todo { font-size: 0.8em; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.9; }
+.org2-tags { font-size: 0.8em; opacity: 0.8; }
+.org2-tag { border: 1px solid currentColor; border-radius: 999px; padding: 0 0.35em; }
+.org2-planning { font-size: 0.95em; opacity: 0.9; }
+.org2-planning-kind { font-weight: 600; }
+.org2-properties { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem 0.75rem; margin: 0.5rem 0; }
+.org2-properties dt { font-weight: 600; }
+.org2-properties dd { margin: 0; }
+.org2-src, .org2-example, .org2-verse, .org2-comment, .org2-directive, pre { overflow-x: auto; padding: 0.75rem; border-radius: 0.5rem; background: rgba(127,127,127,0.12); }
+.org2-center { text-align: center; }
+.org2-underline { text-decoration: underline; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+th, td { border: 1px solid rgba(127,127,127,0.35); padding: 0.35rem 0.5rem; text-align: left; }
+thead th { background: rgba(127,127,127,0.16); }
+a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
+</style>
+<style>
+#content { max-width: 60em; margin: auto; line-height: 1.35; }
+#content li > p { margin: 0; }
+#content li + li { margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<main class="org2-document">
+<div class="org2-nav"><details class="org2-nav-menu" open><summary>Menu</summary><nav aria-label="Docs"><a href="index.html">Home</a><a href="features.html">Features</a><a href="getting-started.html">Getting started</a><details class="org2-nav-dropdown"><summary>Reference</summary><div class="org2-nav-dropdown-menu"><a href="reference.html">Overview</a><a href="corpus-flow.html">Corpus flow</a><a href="language-reference.html">Language reference</a><a href="tooling-reference.html">Tooling reference</a><a href="maintenance-workflows.html">Maintenance and health</a><a href="openclaw-knowledge-layer.html">OpenClaw knowledge layer</a><a href="knowledge-compiler-roadmap.html">Knowledge compiler roadmap</a><a href="semantics-status.html">Semantics and status</a><a href="migration.html">Practical migration</a></div></details><details class="org2-nav-dropdown"><summary>Editors</summary><div class="org2-nav-dropdown-menu"><a href="editors.html">Overview</a><a href="editors-macos.html">macOS Workspace</a><a href="editors-vscode.html">VS Code</a><a href="editors-vim.html">Vim / Neovim</a><a href="editors-emacs.html">Emacs</a></div></details><details class="org2-nav-dropdown"><summary>Comparisons</summary><div class="org2-nav-dropdown-menu"><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a><a href="org2-vs-markdown.html">Org2 vs Markdown</a><a href="org2-vs-obsidian.html">Org2 vs Obsidian</a></div></details><a class="org2-nav-github" href="https://github.com/aviaviavi/org2" target="_blank" rel="noopener noreferrer"><svg class="org2-nav-github-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.57 7.57 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><form class="org2-site-search" role="search"><button class="org2-site-search-toggle" type="button" aria-label="Open docs search" aria-expanded="false">⌕</button><label class="sr-only" for="org2-site-search-input">Search docs</label><input id="org2-site-search-input" type="search" placeholder="Search docs" autocomplete="off" aria-label="Search docs" aria-expanded="false"/><div class="org2-site-search-results" hidden></div></form></nav></details></div>
+<header class="org2-document-header">
+<h1 class="org2-document-title">Agentic workspace roadmap</h1>
+<p class="org2-document-subtitle" role="doc-subtitle">A local-first operating environment for delegated knowledge work</p>
+</header>
+<p>Org2 is growing from a knowledge compiler into an agentic workspace: a system where documents, meetings, tasks, data, decisions, and agents share one inspectable source of truth.</p>
+<p>The technical description is a provider-agnostic agent harness for knowledge work. The product experience should be simpler: people give Org2 an outcome, Org2 assembles the relevant local context, performs bounded work, produces reviewable artifacts, and asks for judgment when a consequential decision or external action is required.</p>
+<p>This roadmap extends the <a href="knowledge-compiler-roadmap.html">knowledge compiler roadmap</a>. Compilation remains the foundation. Agent runs turn compiled knowledge into controlled outcomes.</p>
+<section class="org2-headline level-1">
+<h1 id="product-thesis">Product thesis</h1>
+<p>Org2 should become a local-first operating environment for knowledge work.</p>
+<p>Its durable value does not come from one editor, chat interface, or model provider. It comes from keeping the complete work lifecycle connected:</p>
+<ul>
+<li><p>ordinary files remain the canonical record,</p></li>
+<li><p>shared semantics make the corpus queryable and maintainable,</p></li>
+<li><p>deterministic compiler passes derive agendas, graph data, diagnostics, context, charts, and publications,</p></li>
+<li><p>replaceable agents reason over bounded context and invoke typed tools,</p></li>
+<li><p>generated work lands in reviewable artifacts,</p></li>
+<li><p>approvals protect consequential or external actions,</p></li>
+<li><p>completed work can become a reusable workflow.</p></li>
+</ul>
+<p>The model should be replaceable compute. The corpus, workflow state, provenance, permissions, and artifacts should belong to the user.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="product-layers">Product layers</h1>
+<p>The architecture should preserve clear ownership boundaries:</p>
+<table>
+<thead>
+<tr><th>Layer</th><th>Org2 responsibility</th></tr>
+</thead>
+<tbody>
+<tr><td>Corpus</td><td>Durable, inspectable work state in ordinary files</td></tr>
+<tr><td>Compiler/runtime</td><td>Parsing, IDs, links, planning, provenance, queries, lint, context, data, charts, and publishing</td></tr>
+<tr><td>Agent runtime</td><td>Replaceable planning, reasoning, tool use, and model-provider execution</td></tr>
+<tr><td>Workspace clients</td><td>Human control, navigation, editing, review, visualization, and approvals</td></tr>
+<tr><td>Integrations</td><td>External observations and actions without becoming the canonical memory layer</td></tr>
+</tbody>
+</table>
+<p>The TypeScript compiler/runtime remains canonical. Native apps, editor integrations, agent runtimes, and connectors should consume shared semantics rather than creating private language implementations or hidden sources of truth.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="central-product-primitive-an-agent-run">Central product primitive: an agent run</h1>
+<p>Chat is useful for starting and discussing work, but a durable <strong>run</strong> should be the primary unit of delegated work.</p>
+<p>An agent run should have a portable semantic model containing:</p>
+<ul>
+<li><p>a goal and acceptance criteria,</p></li>
+<li><p>an owner and assigned agent or workflow,</p></li>
+<li><p>cited input context,</p></li>
+<li><p>a plan and current step,</p></li>
+<li><p>allowed tools and capabilities,</p></li>
+<li><p>a risk class and approval policy,</p></li>
+<li><p>provider/model metadata without embedded secrets,</p></li>
+<li><p>optional time, token, or cost budgets,</p></li>
+<li><p>produced artifacts and local file changes,</p></li>
+<li><p>validation results,</p></li>
+<li><p>clarification and approval requests,</p></li>
+<li><p>resumable, retryable, cancelable, and forkable state.</p></li>
+</ul>
+<p>The model should be representable in normal Org2 text and consumable through the CLI. Apps may maintain derived indexes for responsiveness, but the run record and its durable outputs must remain inspectable outside the app.</p>
+<section class="org2-headline level-2">
+<h2 id="run-center">Run Center</h2>
+<p>Workspace clients should expose a Run Center or Activity surface that answers:</p>
+<ul>
+<li><p>What is working now?</p></li>
+<li><p>What completed, and what did it produce?</p></li>
+<li><p>What failed or needs clarification?</p></li>
+<li><p>What is waiting for my approval?</p></li>
+<li><p>Which files, data, and tools did a run use?</p></li>
+<li><p>What changed, and how was the result validated?</p></li>
+<li><p>Can I resume, retry, revise, reassign, or cancel it?</p></li>
+</ul>
+<p>This should unify background agents, explicit chat commands, scheduled workflows, meeting-processing jobs, and external-integration work without forcing users to inspect raw agent logs.</p>
+</section>
+</section>
+<section class="org2-headline level-1">
+<h1 id="reusable-workflows">Reusable workflows</h1>
+<p>A successful one-off run should be convertible into a reusable workflow.</p>
+<p>The user-facing action can be as simple as <strong>Save as workflow</strong>. Org2 should propose a parameterized recipe containing:</p>
+<ul>
+<li><p>required inputs,</p></li>
+<li><p>context-selection rules,</p></li>
+<li><p>deterministic compiler steps,</p></li>
+<li><p>agent instructions,</p></li>
+<li><p>typed tool access,</p></li>
+<li><p>expected outputs,</p></li>
+<li><p>validation checks,</p></li>
+<li><p>approval boundaries,</p></li>
+<li><p>optional schedule or event triggers.</p></li>
+</ul>
+<p>The user reviews and edits the proposal before it becomes durable. This lets nontechnical users teach Org2 a process by completing it once rather than writing an automation from scratch.</p>
+<p>Workflows should be ordinary, versionable packages that agents can discover quickly. They should declare their capabilities, inputs, writes, safety boundaries, and expected artifacts. A workflow must remain understandable without depending on one hosted model or proprietary chat history.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="review-and-control-center">Review and control center</h1>
+<p>Human review is a core product surface, not an exception path.</p>
+<p>The review experience should unify:</p>
+<ul>
+<li><p>proposed source edits,</p></li>
+<li><p>generated documents and data artifacts,</p></li>
+<li><p>messages or publications awaiting release,</p></li>
+<li><p>external tool calls awaiting authorization,</p></li>
+<li><p>low-confidence or conflicting claims,</p></li>
+<li><p>clarification requests,</p></li>
+<li><p>agent-to-human and agent-to-agent handoffs,</p></li>
+<li><p>diffs, citations, validation results, and provenance.</p></li>
+</ul>
+<p>Users should be able to approve, revise, reject, reassign, or narrow the requested action. Risk classes should distinguish read-only retrieval, local drafts, canonical local writes, external communications, production or account changes, and financial or otherwise high-impact actions.</p>
+<p>Org2 should prefer one meaningful approval at the correct boundary over a stream of low-value permission prompts. The approval record should state exactly what will happen and preserve a receipt of what actually happened.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="artifact-pipelines">Artifact pipelines</h1>
+<p>Documents and data should compile together into finished deliverables.</p>
+<p>A single workflow should be able to transform:</p>
+<pre class="org2-src language-text" style="padding: 0.9rem 1rem; border: 1px solid rgba(127,127,127,0.28); border-radius: 0.6rem; background: rgba(127,127,127,0.11); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.92rem; line-height: 1.28;"><code class="language-text">meetings + notes + source files + live or materialized data
+  -&gt; decisions + tasks + entities + metrics
+  -&gt; narrative + tables + charts
+  -&gt; memo + PDF + slides + dashboard + site</code></pre>
+<p>Org2 should not attempt to replace every general-purpose office editor. It should excel at source-backed artifacts whose dependencies, assumptions, citations, and freshness are visible.</p>
+<p>Priority artifact capabilities include:</p>
+<ul>
+<li><p>parameterized reports and briefings,</p></li>
+<li><p>deterministic tables and charts,</p></li>
+<li><p>narrative explanations tied to data and source evidence,</p></li>
+<li><p>PDF, HTML, slides, spreadsheet, and web publication targets,</p></li>
+<li><p>incremental rebuilds when upstream sources change,</p></li>
+<li><p>explicit stale, conflicted, or review-required state,</p></li>
+<li><p>scenario inputs whose assumptions remain inspectable.</p></li>
+</ul>
+<p>The same source graph should support a local interactive view and a portable exported artifact.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="provider-and-runtime-portability">Provider and runtime portability</h1>
+<p>Provider portability is necessary, but it is not the product moat.</p>
+<p>Workflows should request capabilities and constraints rather than hardcoding a vendor. Configuration may expose symbolic policies such as:</p>
+<ul>
+<li><p><code>private-local</code>,</p></li>
+<li><p><code>fast-draft</code>,</p></li>
+<li><p><code>deep-analysis</code>,</p></li>
+<li><p><code>vision</code>,</p></li>
+<li><p><code>regulated-cloud</code>,</p></li>
+<li><p><code>offline</code>.</p></li>
+</ul>
+<p>A policy layer can select an eligible provider or runtime based on privacy, model capability, latency, cost, context size, and tool-use requirements. Org2 should support hosted providers, local inference, and external agent runtimes without requiring the compiler core to make network calls.</p>
+<p>Provider secrets stay outside corpus files and generated artifacts. Run records may preserve provider aliases, model metadata, and cost or latency observations without storing credentials.</p>
+<p>Org2 should not invest in building a foundation model. It should make models replaceable while improving the structured environment in which they work.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="mcp-and-connectors">MCP and connectors</h1>
+<p>Org2 should support the Model Context Protocol in both directions:</p>
+<ul>
+<li><p>as a server exposing cited resources, user-invoked workflows, and typed tools,</p></li>
+<li><p>as a client discovering external resources and tools that a workflow may use.</p></li>
+</ul>
+<p>The boundary should remain explicit:</p>
+<ul>
+<li><p>resources provide bounded context,</p></li>
+<li><p>workflows and prompts express user intent,</p></li>
+<li><p>tools retrieve information or perform actions,</p></li>
+<li><p>approval policy governs consequential effects.</p></li>
+</ul>
+<p>Connectors for communication, project management, files, CRM, support, data warehouses, and other systems should create local snapshots or cited references when their contents become part of durable work. External services remain systems that Org2 observes or acts upon, not silent replacements for the canonical corpus.</p>
+<p>Integration results should record source, retrieval time, identity, and freshness. Secrets must remain in the operating system keychain, environment, or another dedicated credential store.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="evaluation-replay-and-observability">Evaluation, replay, and observability</h1>
+<p>Reliable recurring work requires more than prompt iteration.</p>
+<p>Org2 should be able to replay important workflows against fixture corpora and evaluate outcomes such as:</p>
+<ul>
+<li><p>whether the correct sources were selected,</p></li>
+<li><p>whether claims carry valid citations,</p></li>
+<li><p>whether canonical files and protected zones were preserved,</p></li>
+<li><p>whether expected artifacts were produced,</p></li>
+<li><p>whether unauthorized external actions were avoided,</p></li>
+<li><p>whether the run requested clarification at the right time,</p></li>
+<li><p>whether data, charts, and exported documents validate,</p></li>
+<li><p>whether changing a model, provider, workflow, or compiler pass caused a regression.</p></li>
+</ul>
+<p>Real runs should produce inspectable traces at the level useful to a person: steps, tool calls, artifacts, approvals, validation, elapsed time, and cost. Private model reasoning is neither required nor sufficient; evaluation should focus on observable behavior and outcomes.</p>
+<p>A completed run may become both a reusable workflow example and a regression fixture after sensitive data is removed or replaced with a synthetic equivalent.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="multiplayer-work">Multiplayer work</h1>
+<p>Org2 should support teams without abandoning local-first principles.</p>
+<p>The first collaboration model should build on durable assignments and review queues:</p>
+<ul>
+<li><p>people and agents can own work,</p></li>
+<li><p>work can be delegated or reassigned,</p></li>
+<li><p>approvals can require a particular role,</p></li>
+<li><p>blocked automation can fall through to a person,</p></li>
+<li><p>comments and decisions stay attached to the relevant run or artifact,</p></li>
+<li><p>completed actions preserve an audit trail.</p></li>
+</ul>
+<p>Git and ordinary file synchronization remain valid transport options. Real-time collaborative editing is less important than a coherent ownership, handoff, and approval model and should not become a prerequisite for using the shared runtime.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="signature-workflow-meeting-to-controlled-execution">Signature workflow: meeting to controlled execution</h1>
+<p>A flagship end-to-end workflow should demonstrate the complete product:</p>
+<ol>
+<li><p>Record or import a meeting.</p></li>
+<li><p>Preserve audio/transcript provenance.</p></li>
+<li><p>Produce a cited summary, decisions, open questions, and proposed tasks.</p></li>
+<li><p>Route safe, bounded research or drafting to an agent run.</p></li>
+<li><p>Refresh relevant datasets and visualizations when configured.</p></li>
+<li><p>Compile a finished memo, report, dashboard, or presentation.</p></li>
+<li><p>Surface ambiguous claims and consequential actions for review.</p></li>
+<li><p>Publish or send only after the required approval.</p></li>
+<li><p>Save the successful process as a reusable workflow.</p></li>
+</ol>
+<p>This pattern should generalize to customer calls, research, legal or compliance evidence gathering, operational reviews, and recurring reporting.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="adoption-posture">Adoption posture</h1>
+<p>Org2 should build a broad substrate while proving it through narrow, complete workflows.</p>
+<p>The open-source experience should serve individuals and small teams that want powerful local automation without surrendering their files or accumulated memory. Deeper organizational deployments should begin with one concrete workflow, one responsible owner, one measurable outcome, and explicit data and approval boundaries.</p>
+<p>Product development should favor capabilities that meet at least one of these tests:</p>
+<ul>
+<li><p>materially reduce recurring knowledge-work effort,</p></li>
+<li><p>make a previously fragile workflow reliable and reviewable,</p></li>
+<li><p>improve the quality or speed of a finished artifact,</p></li>
+<li><p>strengthen privacy, portability, provenance, or human control,</p></li>
+<li><p>validate a repeatable workflow with real users.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="delivery-sequence">Delivery sequence</h1>
+<section class="org2-headline level-2">
+<h2 id="phase-1-durable-execution">Phase 1: durable execution</h2>
+<ul>
+<li><p>Define the portable agent-run schema and state machine.</p></li>
+<li><p>Add CLI discovery, inspection, validation, and mutation commands.</p></li>
+<li><p>Build a Workspace Run Center with active, completed, blocked, and approval-needed states.</p></li>
+<li><p>Normalize existing agent-task, session, artifact, and approval metadata into the shared model.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-2">
+<h2 id="phase-2-teachable-workflows-and-review">Phase 2: teachable workflows and review</h2>
+<ul>
+<li><p>Add <strong>Save as workflow</strong> for completed runs.</p></li>
+<li><p>Define workflow package manifests with capabilities and safety boundaries.</p></li>
+<li><p>Unify drafts, diffs, approvals, clarifications, and validation in one review surface.</p></li>
+<li><p>Support schedules and a small set of deterministic event triggers.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-2">
+<h2 id="phase-3-finished-artifact-pipelines">Phase 3: finished artifact pipelines</h2>
+<ul>
+<li><p>Connect meetings, documents, datasets, charts, and publishing in end-to-end recipes.</p></li>
+<li><p>Add dependency and freshness tracking across generated artifacts.</p></li>
+<li><p>Expand portable output targets without making exported formats canonical.</p></li>
+<li><p>Ship the meeting-to-controlled-execution signature workflow.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-2">
+<h2 id="phase-4-portable-tools-and-models">Phase 4: portable tools and models</h2>
+<ul>
+<li><p>Expose Org2 resources, workflows, and tools through MCP.</p></li>
+<li><p>Add an MCP client and a small number of provenance-preserving connectors.</p></li>
+<li><p>Complete capability-based provider/runtime selection.</p></li>
+<li><p>Validate at least one hosted and one local/private execution path.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-2">
+<h2 id="phase-5-reliability-and-collaboration">Phase 5: reliability and collaboration</h2>
+<ul>
+<li><p>Add workflow replay, outcome evaluations, and regression fixtures.</p></li>
+<li><p>Add multiplayer assignment, role-based approvals, comments, and escalation queues.</p></li>
+<li><p>Package reusable workflows and corpus templates for distribution.</p></li>
+<li><p>Define compatibility and versioning rules for the workflow ecosystem.</p></li>
+</ul>
+</section>
+</section>
+<section class="org2-headline level-1">
+<h1 id="measures-of-success">Measures of success</h1>
+<p>Useful product metrics should emphasize completed, trustworthy work rather than chat volume:</p>
+<ul>
+<li><p>time from source capture to reviewed output,</p></li>
+<li><p>recurring operator time removed by workflows,</p></li>
+<li><p>percentage of runs completed without corrective rework,</p></li>
+<li><p>percentage of material claims with valid citations,</p></li>
+<li><p>approval, revision, rejection, and clarification rates,</p></li>
+<li><p>workflow reuse and successful scheduled executions,</p></li>
+<li><p>artifact validation and freshness rates,</p></li>
+<li><p>unauthorized-action and protected-zone violation rate,</p></li>
+<li><p>model/provider portability across the same evaluation suite.</p></li>
+</ul>
+<p>Telemetry must be local and opt-in by default. Users should be able to inspect the same run records used to compute their own metrics.</p>
+</section>
+<section class="org2-headline level-1">
+<h1 id="non-goals">Non-goals</h1>
+<ul>
+<li><p>Building a proprietary foundation model.</p></li>
+<li><p>Becoming a generic computer-use or browser agent before the knowledge-work runtime is coherent.</p></li>
+<li><p>Replacing full general-purpose office suites.</p></li>
+<li><p>Adding many shallow connectors without provenance and permission semantics.</p></li>
+<li><p>Using elaborate multi-agent choreography where a deterministic workflow or one agent is sufficient.</p></li>
+<li><p>Making real-time collaborative editing a prerequisite for team workflows.</p></li>
+<li><p>Hiding canonical state, action history, or generated output in an opaque hosted database.</p></li>
+<li><p>Coupling public Org2 semantics to OpenClaw, OpenAI, Anthropic, or any other single runtime or provider.</p></li>
+</ul>
+</section>
+<section class="org2-headline level-1">
+<h1 id="done-means-knowledge-becomes-controlled-outcomes">Done means knowledge becomes controlled outcomes</h1>
+<p>A mature Org2 workspace should let a person capture ordinary work, delegate a meaningful outcome, observe the run, review the evidence and changes, approve consequential actions, receive a finished artifact, and reuse the process later.</p>
+<p>The result should remain understandable in plain files, executable through shared semantics, portable across models and clients, and safe to inspect with tools that know nothing about the original app session.</p>
+</section>
+</main>
+</div>
+<footer class="org2-footer"><p>Org2 docs</p><img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=e39e0a38-773e-4446-b8b0-804f923e3dc3" alt="" /></footer>
+</body>
+</html>

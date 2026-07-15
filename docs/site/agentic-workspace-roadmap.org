@@ -1,0 +1,310 @@
+#+TITLE: Agentic workspace roadmap
+#+SUBTITLE: A local-first operating environment for delegated knowledge work
+
+Org2 is growing from a knowledge compiler into an agentic workspace: a system where documents, meetings, tasks, data, decisions, and agents share one inspectable source of truth.
+
+The technical description is a provider-agnostic agent harness for knowledge work. The product experience should be simpler: people give Org2 an outcome, Org2 assembles the relevant local context, performs bounded work, produces reviewable artifacts, and asks for judgment when a consequential decision or external action is required.
+
+This roadmap extends the [[file:knowledge-compiler-roadmap.org][knowledge compiler roadmap]]. Compilation remains the foundation. Agent runs turn compiled knowledge into controlled outcomes.
+
+* Product thesis
+
+Org2 should become a local-first operating environment for knowledge work.
+
+Its durable value does not come from one editor, chat interface, or model provider. It comes from keeping the complete work lifecycle connected:
+
+- ordinary files remain the canonical record,
+- shared semantics make the corpus queryable and maintainable,
+- deterministic compiler passes derive agendas, graph data, diagnostics, context, charts, and publications,
+- replaceable agents reason over bounded context and invoke typed tools,
+- generated work lands in reviewable artifacts,
+- approvals protect consequential or external actions,
+- completed work can become a reusable workflow.
+
+The model should be replaceable compute. The corpus, workflow state, provenance, permissions, and artifacts should belong to the user.
+
+* Product layers
+
+The architecture should preserve clear ownership boundaries:
+
+| Layer | Org2 responsibility |
+|-------+---------------------|
+| Corpus | Durable, inspectable work state in ordinary files |
+| Compiler/runtime | Parsing, IDs, links, planning, provenance, queries, lint, context, data, charts, and publishing |
+| Agent runtime | Replaceable planning, reasoning, tool use, and model-provider execution |
+| Workspace clients | Human control, navigation, editing, review, visualization, and approvals |
+| Integrations | External observations and actions without becoming the canonical memory layer |
+
+The TypeScript compiler/runtime remains canonical. Native apps, editor integrations, agent runtimes, and connectors should consume shared semantics rather than creating private language implementations or hidden sources of truth.
+
+* Central product primitive: an agent run
+
+Chat is useful for starting and discussing work, but a durable *run* should be the primary unit of delegated work.
+
+An agent run should have a portable semantic model containing:
+
+- a goal and acceptance criteria,
+- an owner and assigned agent or workflow,
+- cited input context,
+- a plan and current step,
+- allowed tools and capabilities,
+- a risk class and approval policy,
+- provider/model metadata without embedded secrets,
+- optional time, token, or cost budgets,
+- produced artifacts and local file changes,
+- validation results,
+- clarification and approval requests,
+- resumable, retryable, cancelable, and forkable state.
+
+The model should be representable in normal Org2 text and consumable through the CLI. Apps may maintain derived indexes for responsiveness, but the run record and its durable outputs must remain inspectable outside the app.
+
+** Run Center
+
+Workspace clients should expose a Run Center or Activity surface that answers:
+
+- What is working now?
+- What completed, and what did it produce?
+- What failed or needs clarification?
+- What is waiting for my approval?
+- Which files, data, and tools did a run use?
+- What changed, and how was the result validated?
+- Can I resume, retry, revise, reassign, or cancel it?
+
+This should unify background agents, explicit chat commands, scheduled workflows, meeting-processing jobs, and external-integration work without forcing users to inspect raw agent logs.
+
+* Reusable workflows
+
+A successful one-off run should be convertible into a reusable workflow.
+
+The user-facing action can be as simple as *Save as workflow*. Org2 should propose a parameterized recipe containing:
+
+- required inputs,
+- context-selection rules,
+- deterministic compiler steps,
+- agent instructions,
+- typed tool access,
+- expected outputs,
+- validation checks,
+- approval boundaries,
+- optional schedule or event triggers.
+
+The user reviews and edits the proposal before it becomes durable. This lets nontechnical users teach Org2 a process by completing it once rather than writing an automation from scratch.
+
+Workflows should be ordinary, versionable packages that agents can discover quickly. They should declare their capabilities, inputs, writes, safety boundaries, and expected artifacts. A workflow must remain understandable without depending on one hosted model or proprietary chat history.
+
+* Review and control center
+
+Human review is a core product surface, not an exception path.
+
+The review experience should unify:
+
+- proposed source edits,
+- generated documents and data artifacts,
+- messages or publications awaiting release,
+- external tool calls awaiting authorization,
+- low-confidence or conflicting claims,
+- clarification requests,
+- agent-to-human and agent-to-agent handoffs,
+- diffs, citations, validation results, and provenance.
+
+Users should be able to approve, revise, reject, reassign, or narrow the requested action. Risk classes should distinguish read-only retrieval, local drafts, canonical local writes, external communications, production or account changes, and financial or otherwise high-impact actions.
+
+Org2 should prefer one meaningful approval at the correct boundary over a stream of low-value permission prompts. The approval record should state exactly what will happen and preserve a receipt of what actually happened.
+
+* Artifact pipelines
+
+Documents and data should compile together into finished deliverables.
+
+A single workflow should be able to transform:
+
+#+begin_src text
+meetings + notes + source files + live or materialized data
+  -> decisions + tasks + entities + metrics
+  -> narrative + tables + charts
+  -> memo + PDF + slides + dashboard + site
+#+end_src
+
+Org2 should not attempt to replace every general-purpose office editor. It should excel at source-backed artifacts whose dependencies, assumptions, citations, and freshness are visible.
+
+Priority artifact capabilities include:
+
+- parameterized reports and briefings,
+- deterministic tables and charts,
+- narrative explanations tied to data and source evidence,
+- PDF, HTML, slides, spreadsheet, and web publication targets,
+- incremental rebuilds when upstream sources change,
+- explicit stale, conflicted, or review-required state,
+- scenario inputs whose assumptions remain inspectable.
+
+The same source graph should support a local interactive view and a portable exported artifact.
+
+* Provider and runtime portability
+
+Provider portability is necessary, but it is not the product moat.
+
+Workflows should request capabilities and constraints rather than hardcoding a vendor. Configuration may expose symbolic policies such as:
+
+- =private-local=,
+- =fast-draft=,
+- =deep-analysis=,
+- =vision=,
+- =regulated-cloud=,
+- =offline=.
+
+A policy layer can select an eligible provider or runtime based on privacy, model capability, latency, cost, context size, and tool-use requirements. Org2 should support hosted providers, local inference, and external agent runtimes without requiring the compiler core to make network calls.
+
+Provider secrets stay outside corpus files and generated artifacts. Run records may preserve provider aliases, model metadata, and cost or latency observations without storing credentials.
+
+Org2 should not invest in building a foundation model. It should make models replaceable while improving the structured environment in which they work.
+
+* MCP and connectors
+
+Org2 should support the Model Context Protocol in both directions:
+
+- as a server exposing cited resources, user-invoked workflows, and typed tools,
+- as a client discovering external resources and tools that a workflow may use.
+
+The boundary should remain explicit:
+
+- resources provide bounded context,
+- workflows and prompts express user intent,
+- tools retrieve information or perform actions,
+- approval policy governs consequential effects.
+
+Connectors for communication, project management, files, CRM, support, data warehouses, and other systems should create local snapshots or cited references when their contents become part of durable work. External services remain systems that Org2 observes or acts upon, not silent replacements for the canonical corpus.
+
+Integration results should record source, retrieval time, identity, and freshness. Secrets must remain in the operating system keychain, environment, or another dedicated credential store.
+
+* Evaluation, replay, and observability
+
+Reliable recurring work requires more than prompt iteration.
+
+Org2 should be able to replay important workflows against fixture corpora and evaluate outcomes such as:
+
+- whether the correct sources were selected,
+- whether claims carry valid citations,
+- whether canonical files and protected zones were preserved,
+- whether expected artifacts were produced,
+- whether unauthorized external actions were avoided,
+- whether the run requested clarification at the right time,
+- whether data, charts, and exported documents validate,
+- whether changing a model, provider, workflow, or compiler pass caused a regression.
+
+Real runs should produce inspectable traces at the level useful to a person: steps, tool calls, artifacts, approvals, validation, elapsed time, and cost. Private model reasoning is neither required nor sufficient; evaluation should focus on observable behavior and outcomes.
+
+A completed run may become both a reusable workflow example and a regression fixture after sensitive data is removed or replaced with a synthetic equivalent.
+
+* Multiplayer work
+
+Org2 should support teams without abandoning local-first principles.
+
+The first collaboration model should build on durable assignments and review queues:
+
+- people and agents can own work,
+- work can be delegated or reassigned,
+- approvals can require a particular role,
+- blocked automation can fall through to a person,
+- comments and decisions stay attached to the relevant run or artifact,
+- completed actions preserve an audit trail.
+
+Git and ordinary file synchronization remain valid transport options. Real-time collaborative editing is less important than a coherent ownership, handoff, and approval model and should not become a prerequisite for using the shared runtime.
+
+* Signature workflow: meeting to controlled execution
+
+A flagship end-to-end workflow should demonstrate the complete product:
+
+1. Record or import a meeting.
+2. Preserve audio/transcript provenance.
+3. Produce a cited summary, decisions, open questions, and proposed tasks.
+4. Route safe, bounded research or drafting to an agent run.
+5. Refresh relevant datasets and visualizations when configured.
+6. Compile a finished memo, report, dashboard, or presentation.
+7. Surface ambiguous claims and consequential actions for review.
+8. Publish or send only after the required approval.
+9. Save the successful process as a reusable workflow.
+
+This pattern should generalize to customer calls, research, legal or compliance evidence gathering, operational reviews, and recurring reporting.
+
+* Adoption posture
+
+Org2 should build a broad substrate while proving it through narrow, complete workflows.
+
+The open-source experience should serve individuals and small teams that want powerful local automation without surrendering their files or accumulated memory. Deeper organizational deployments should begin with one concrete workflow, one responsible owner, one measurable outcome, and explicit data and approval boundaries.
+
+Product development should favor capabilities that meet at least one of these tests:
+
+- materially reduce recurring knowledge-work effort,
+- make a previously fragile workflow reliable and reviewable,
+- improve the quality or speed of a finished artifact,
+- strengthen privacy, portability, provenance, or human control,
+- validate a repeatable workflow with real users.
+
+* Delivery sequence
+
+** Phase 1: durable execution
+
+- Define the portable agent-run schema and state machine.
+- Add CLI discovery, inspection, validation, and mutation commands.
+- Build a Workspace Run Center with active, completed, blocked, and approval-needed states.
+- Normalize existing agent-task, session, artifact, and approval metadata into the shared model.
+
+** Phase 2: teachable workflows and review
+
+- Add *Save as workflow* for completed runs.
+- Define workflow package manifests with capabilities and safety boundaries.
+- Unify drafts, diffs, approvals, clarifications, and validation in one review surface.
+- Support schedules and a small set of deterministic event triggers.
+
+** Phase 3: finished artifact pipelines
+
+- Connect meetings, documents, datasets, charts, and publishing in end-to-end recipes.
+- Add dependency and freshness tracking across generated artifacts.
+- Expand portable output targets without making exported formats canonical.
+- Ship the meeting-to-controlled-execution signature workflow.
+
+** Phase 4: portable tools and models
+
+- Expose Org2 resources, workflows, and tools through MCP.
+- Add an MCP client and a small number of provenance-preserving connectors.
+- Complete capability-based provider/runtime selection.
+- Validate at least one hosted and one local/private execution path.
+
+** Phase 5: reliability and collaboration
+
+- Add workflow replay, outcome evaluations, and regression fixtures.
+- Add multiplayer assignment, role-based approvals, comments, and escalation queues.
+- Package reusable workflows and corpus templates for distribution.
+- Define compatibility and versioning rules for the workflow ecosystem.
+
+* Measures of success
+
+Useful product metrics should emphasize completed, trustworthy work rather than chat volume:
+
+- time from source capture to reviewed output,
+- recurring operator time removed by workflows,
+- percentage of runs completed without corrective rework,
+- percentage of material claims with valid citations,
+- approval, revision, rejection, and clarification rates,
+- workflow reuse and successful scheduled executions,
+- artifact validation and freshness rates,
+- unauthorized-action and protected-zone violation rate,
+- model/provider portability across the same evaluation suite.
+
+Telemetry must be local and opt-in by default. Users should be able to inspect the same run records used to compute their own metrics.
+
+* Non-goals
+
+- Building a proprietary foundation model.
+- Becoming a generic computer-use or browser agent before the knowledge-work runtime is coherent.
+- Replacing full general-purpose office suites.
+- Adding many shallow connectors without provenance and permission semantics.
+- Using elaborate multi-agent choreography where a deterministic workflow or one agent is sufficient.
+- Making real-time collaborative editing a prerequisite for team workflows.
+- Hiding canonical state, action history, or generated output in an opaque hosted database.
+- Coupling public Org2 semantics to OpenClaw, OpenAI, Anthropic, or any other single runtime or provider.
+
+* Done means knowledge becomes controlled outcomes
+
+A mature Org2 workspace should let a person capture ordinary work, delegate a meaningful outcome, observe the run, review the evidence and changes, approve consequential actions, receive a finished artifact, and reuse the process later.
+
+The result should remain understandable in plain files, executable through shared semantics, portable across models and clients, and safe to inspect with tools that know nothing about the original app session.

@@ -66,3 +66,5 @@ This keeps Org2 useful today while preventing the project from collapsing into e
 * Done means compiled artifacts matter
 
 A mature Org2 setup should make notes feel like source code for a personal knowledge system: easy to edit, but also compilable into agenda views, graph artifacts, maintenance reports, and published outputs.
+
+The next product layer is described in the [[file:agentic-workspace-roadmap.org][agentic workspace roadmap]]: durable agent runs, reusable workflows, review and approval surfaces, finished artifact pipelines, provider portability, and multiplayer work over the same compiler-backed corpus.

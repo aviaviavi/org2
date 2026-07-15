@@ -20,6 +20,7 @@ The native macOS Workspace also exposes a discoverable chat slash-command layer.
 - https://org2.avi.press/corpus-flow.html
 - https://org2.avi.press/features.html
 - https://org2.avi.press/editors-macos.html
+- https://org2.avi.press/agentic-workspace-roadmap.html
 
 ## Source and specification
 
