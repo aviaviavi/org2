@@ -135,7 +135,7 @@ The native Mac app lives in =apps/macos/Org2Workspace=. It is early, but it is a
 - ID-backed knowledge-node creation from Search,
 - rendered document view with structured block editors,
 - meeting recording/import with local-first transcription artifacts,
-- OpenClaw chat with selected workspace context,
+- OpenClaw chat with selected workspace context plus discoverable slash commands for navigation, search, related notes, spellcheck, lint, document export, configured publishing, briefs, and summaries,
 - GPG-backed org-crypt configuration and encrypt/decrypt actions.
 - explicit refresh of data notebooks, Keychain-backed Metabase credentials, materialized tables, and interactive chart presentation without document-supplied JavaScript.
 

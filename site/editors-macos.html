@@ -115,6 +115,16 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <h1 id="openclaw-and-agents">OpenClaw and agents</h1>
 <p>The app includes OpenClaw chat for sending messages with current workspace context.</p>
 <p>The chat composer sends with <code>Return</code> and inserts a newline with <code>Cmd-Return</code>. The <code>Dictate</code> control records a short local microphone note, transcribes it with the same local Whisper resolution path used by meeting capture, and sends the transcript as a normal OpenClaw message.</p>
+<p>Typing <code>/</code> opens a discoverable command menu. Commands that only need compiler or app state run locally and leave their result in the chat transcript; commands marked <strong>Agent</strong> are expanded into a scoped request and sent with the selected document context. Unknown commands are not silently forwarded. Begin a message with <code>//</code> to send a literal leading slash.</p>
+<p>The first command set is:</p>
+<ul>
+<li><p><code>/help</code>, <code>/search QUERY</code>, <code>/open PATH</code>, <code>/today</code>, and <code>/agenda</code> for discovery and navigation,</p></li>
+<li><p><code>/related</code>, <code>/spellcheck</code>, and <code>/lint</code> for deterministic document/corpus checks,</p></li>
+<li><p><code>/export pdf|html</code> for a save-panel export of the current document,</p></li>
+<li><p><code>/publish preview [PROJECT]</code> (or <code>/publish [PROJECT]</code>) for configured <code>org2.json</code> publishing,</p></li>
+<li><p><code>/brief</code> and <code>/summarize</code> for agent-assisted, citation-aware reading of the current document.</p></li>
+</ul>
+<p><code>/spellcheck</code> checks parser-identified headline and paragraph prose, avoiding source blocks, tables, properties, planning lines, and other syntax regions. It reports possible corrections without rewriting the source. Export and publish reuse the shared renderer/CLI; the chat surface is orchestration, not a second language implementation. Provider-specific external publishing destinations are intentionally left for later adapters.</p>
 <p>This is deliberately a handoff boundary. The corpus stores selected context, transcript references, generated artifacts, and durable outputs; the external agent can act on that context without the Mac app becoming the only source of truth. Generated work stays in normal corpus zones such as <code>views/</code> or <code>compiled/</code> until a person reviews or promotes it.</p>
 </section>
 <section class="org2-headline level-1">

@@ -10,6 +10,8 @@ Installed agents should begin with:
 
 The first command emits the machine-readable `org2:capabilities:v1` manifest. Mutating commands generally preview unless `--apply` is provided. Preserve citations, IDs, provenance, and review state; place generated work in `views/` or `compiled/` before promotion into canonical notes.
 
+The native macOS Workspace also exposes a discoverable chat slash-command layer. Its local commands reuse shared search, backlink, lint, render, and publish semantics; agent-assisted `/brief` and `/summarize` receive selected source context with citations. See the macOS Workspace reference for the current command catalog.
+
 ## Agent entry points
 
 - https://org2.avi.press/agent-quickstart.html

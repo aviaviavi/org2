@@ -101,7 +101,7 @@ export function buildOrg2CapabilityManifest(): Org2CapabilityManifest {
     clients: [
       { id: "cli", role: "Canonical automation and integration surface over the shared TypeScript compiler/runtime." },
       { id: "vscode", role: "Best-supported general editing workflow, backed by shared CLI/LSP semantics." },
-      { id: "macos-workspace", role: "Native alpha workspace shell with first-run corpus setup, agenda, capture, reading/editing, meetings, data notebooks, and agent handoffs." },
+      { id: "macos-workspace", role: "Native alpha workspace shell with first-run corpus setup, agenda, capture, reading/editing, meetings, data notebooks, agent handoffs, and discoverable chat slash commands backed by shared compiler semantics." },
       { id: "ios-mobile", role: "Source-distributed mobile corpus and approval client." },
     ],
     docs: [
