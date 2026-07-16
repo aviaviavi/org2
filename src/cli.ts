@@ -39,7 +39,6 @@ import {
   searchPayload,
   writeSearchIndex,
   type Org2SearchIndex,
-  type Org2SearchIndexFile,
   type Org2SearchHit,
   type Org2SearchOptions,
   type Org2SearchResultPayload,
@@ -64,8 +63,6 @@ import type {
   Node,
   PlanningNode,
   PropertyDrawerNode,
-  TimestampNode,
-  TimestampRangeNode,
 } from "./ast.js";
 
 function embeddedChartsForSource(raw: string, file?: string) {
@@ -2515,7 +2512,7 @@ function replaceRoamLinkifyOutsideLinks(
   for (let i = 0; i < parts.length; i += 1) {
     if (parts[i]?.protected) continue;
     const part = parts[i]?.text || "";
-    parts[i]!.text = part.replace(regex, (match, prefix: string, labelText: string) => {
+    parts[i]!.text = part.replace(regex, (_match, prefix: string, labelText: string) => {
       replaced = true;
       count += 1;
       return `${prefix}${renderRoamLink(labelText, { style: "id", id: candidate.id })}`;
@@ -5312,132 +5309,6 @@ function findScheduledItemsInText(
   return deduplicateAgendaPlanningItems(items);
 }
 
-function findScheduledItems(
-  ast: DocumentNode,
-  filePath: string,
-  startDate: Date,
-  endDate: Date,
-  includeOverdue: boolean,
-  statusFilter: AgendaStatusFilter,
-  excludeStatusFilter: AgendaExcludeStatusFilter,
-  planningFilter: AgendaPlanningFilter,
-  excludePlanningFilter: AgendaExcludePlanningFilter,
-  whenFilter: AgendaWhenFilter,
-  excludeWhenFilter: AgendaExcludeWhenFilter,
-  weekdayFilter: AgendaWeekdayFilter,
-  excludeWeekdayFilter: AgendaExcludeWeekdayFilter,
-  dayOfMonthFilter: AgendaDayOfMonthFilter,
-  excludeDayOfMonthFilter: AgendaExcludeDayOfMonthFilter,
-  textFilter: AgendaMatchFilter,
-  excludeTextFilter: AgendaExcludeMatchFilter,
-  tagFilter: AgendaTagFilter,
-  todoFilter: AgendaTodoFilter,
-  priorityFilter: AgendaPriorityFilter,
-  excludeTagFilter: AgendaExcludeTagFilter,
-  excludeTodoFilter: AgendaExcludeTodoFilter,
-  excludePriorityFilter: AgendaExcludePriorityFilter,
-): ScheduledItem[] {
-  const items: ScheduledItem[] = [];
-
-  function traverseNodes(nodes: Node[], currentHeadline: HeadlineNode | null = null): void {
-    for (const node of nodes) {
-      if (node.type === "Headline") {
-        const headline = node as HeadlineNode;
-        // Check for planning nodes in children
-        for (const child of headline.children) {
-          if (child.type === "Planning") {
-            const planning = child as PlanningNode;
-            if (planning.timestamp) {
-              const ts = planning.timestamp as TimestampNode | TimestampRangeNode;
-              const raw = "start" in ts ? ts.start.raw : ts.raw;
-              const planningTime = extractTimeFromTimestamp(raw);
-              const wantsOverdue = agendaWantsOverdue(includeOverdue, whenFilter, excludeWhenFilter);
-              const agendaDates = resolveAgendaDatesFromTimestamp(
-                raw,
-                startDate,
-                endDate,
-                wantsOverdue,
-                planning.kind as AgendaPlanningKind,
-              );
-              if (agendaDates.length === 0) continue;
-
-              const todo = headline.todo;
-              if (!todo) continue;
-
-              const todoBucket = agendaStatusBucketForKeyword(todo);
-              if (statusFilter && (!todoBucket || !statusFilter.has(todoBucket))) continue;
-              if (!matchesAgendaExcludeStatusFilter(todo, excludeStatusFilter)) continue;
-
-              const isDoneLike = todo === "DONE" || todo === "CANCELLED" || todo === "CANCELED";
-              const isProgLike = todo === "PROG" || todo === "IN_PROGRESS";
-
-              const titleText = headline.title
-                .filter((t) => t.type === "Text")
-                .map((t) => t.value)
-                .join("");
-              const { priority, title: agendaTitle } = extractAgendaPriorityFromHeadlineTitle(titleText);
-
-              if (!matchesAgendaTextFilter(agendaTitle, textFilter)) continue;
-              if (!matchesAgendaExcludeTextFilter(agendaTitle, excludeTextFilter)) continue;
-              if (!matchesAgendaTagFilter(headline.tags ?? [], tagFilter)) continue;
-              if (!matchesAgendaTodoFilter(todo, todoFilter)) continue;
-              if (!matchesAgendaPriorityFilter(priority, priorityFilter)) continue;
-              if (!matchesAgendaExcludeTagFilter(headline.tags ?? [], excludeTagFilter)) continue;
-              if (!matchesAgendaExcludeTodoFilter(todo, excludeTodoFilter)) continue;
-              if (!matchesAgendaExcludePriorityFilter(priority, excludePriorityFilter)) continue;
-              if (planning.kind === "CLOSED") continue;
-              if (planningFilter && !planningFilter.has(planning.kind as AgendaPlanningKind)) continue;
-              if (!matchesAgendaExcludeKindFilter(planning.kind as AgendaPlanningKind, excludePlanningFilter)) continue;
-
-              for (const dateStr of agendaDates) {
-                const itemDate = parseIsoDate(dateStr);
-                const inRange = itemDate >= startDate && itemDate <= endDate;
-                const isOverdue = itemDate < startDate;
-
-                if (isDoneLike && isOverdue) continue;
-                if (!(inRange || (isProgLike && isOverdue) || (!isDoneLike && wantsOverdue && isOverdue))) continue;
-                if (!matchesAgendaWhenFilter(itemDate, startDate, whenFilter)) continue;
-                if (!matchesAgendaExcludeWhenFilter(itemDate, startDate, excludeWhenFilter)) continue;
-                if (!matchesAgendaWeekdayFilter(itemDate, weekdayFilter)) continue;
-                if (!matchesAgendaExcludeWeekdayFilter(itemDate, excludeWeekdayFilter)) continue;
-                if (!matchesAgendaDayOfMonthFilter(itemDate, dayOfMonthFilter)) continue;
-                if (!matchesAgendaExcludeDayOfMonthFilter(itemDate, excludeDayOfMonthFilter)) continue;
-
-                items.push({
-                  filePath,
-                  lineNumber: 0, // Line numbers not tracked in AST, using 0
-                  headline: agendaTitle,
-                  body: "",
-                  todo,
-                  priority,
-                  effort: undefined,
-                  id: undefined,
-                  level: headline.level,
-                  date: dateStr,
-                  time: planningTime,
-                  kind: planning.kind,
-                  tags: [...(headline.tags ?? [])],
-                  properties: {},
-                });
-              }
-            }
-          }
-        }
-        // Recursively check children
-        traverseNodes(headline.children, headline);
-      } else if (node.type !== "Paragraph" && node.type !== "List") {
-        // Recursively check other block types that might contain children
-        if ("children" in node) {
-          traverseNodes((node as { children: Node[] }).children, currentHeadline);
-        }
-      }
-    }
-  }
-
-  traverseNodes(ast.children);
-  return items;
-}
-
 function formatDateHeader(dateStr: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
   if (!match) return dateStr;
@@ -5741,10 +5612,6 @@ function stripRoamLinksForAgendaTui(input: string): string {
     .replace(/\s+([,.;:!?])/g, "$1")
     .replace(/\s{2,}/g, " ")
     .trim();
-}
-
-function padTerminalLine(input: string, width: number): string {
-  return truncateForTerminal(input, width).padEnd(Math.max(width, 0), " ");
 }
 
 function agendaTuiStatus(item: ScheduledItem): string {
@@ -6169,7 +6036,6 @@ async function runAgendaTui(options: {
   const collapsedSections = new Set<string>();
 
   const stripAnsi = (input: string): string => input.replace(/\u001b\[[0-9;]*m/g, "");
-  const visibleLength = (input: string): number => stripAnsi(input).length;
   const padPlain = (input: string, width: number): string => truncateForTerminal(input, width).padEnd(Math.max(width, 0), " ");
   const padStyled = (input: string, width: number): string => {
     const plain = truncateForTerminal(stripAnsi(input), width);
@@ -6430,17 +6296,6 @@ async function runAgendaTui(options: {
     process.stdin.setRawMode(false);
     try {
       fn();
-    } finally {
-      process.stdin.setRawMode(true);
-      process.stdin.resume();
-    }
-  };
-
-  const withSuspendedTtyAsync = async <T>(fn: () => Promise<T>): Promise<T> => {
-    process.stdout.write("\u001b[0m\u001b[?25h");
-    process.stdin.setRawMode(false);
-    try {
-      return await fn();
     } finally {
       process.stdin.setRawMode(true);
       process.stdin.resume();
@@ -7918,10 +7773,6 @@ function buildMeetingSummaryJson(sources: AiDraftSource[]): MeetingSummaryJson {
     ? relevantSummaryLines
     : firstUniqueMeetingLines(lines, substantiveSummaryLine, 5);
   const entities = collectMeetingEntities(lines);
-  const citedLines = [...decisionLines, ...actionLines, ...summaryLines]
-    .filter((line, index, arr) => arr.findIndex((candidate) => candidate.source.relativePath === line.source.relativePath && candidate.line === line.line) === index)
-    .slice(0, 20);
-
   return {
     summary: summaryLines.length > 0
       ? summaryLines.slice(0, 3).map((line) => normalizeMeetingItemText(line.text))
@@ -8007,11 +7858,6 @@ async function generateAiDraftResponse(manifest: Record<string, unknown>, source
 
 function bulletOrFallback(items: string[], fallback: string): string {
   return items.length > 0 ? items.map((item) => `- ${item}`).join("\n") + "\n" : `- ${fallback}\n`;
-}
-
-function renderCitedItems(items: Array<{ text: string; citations: string[] }>, fallback: string): string {
-  if (items.length === 0) return `- ${fallback}\n`;
-  return items.map((item) => `- ${item.text} ${item.citations.join(" ")}`).join("\n") + "\n";
 }
 
 function renderTodoItems(items: Array<{ todo: string; citations: string[] }>, fallback: string): string {

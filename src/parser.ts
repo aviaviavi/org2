@@ -1336,7 +1336,6 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
               let nestedItemParaLines: string[] = [];
               
               while (i < lines.length) {
-                const nestedLineNumber = i + 1;
                 const nestedLine = lines[i] ?? "";
                 
                 if (isBlank(nestedLine)) {
@@ -1400,7 +1399,6 @@ export function parseOrgToCanonicalAst(input: string, options: ParseOptions = {}
                 
                 // Process nested item's continuation lines
                 while (i < lines.length) {
-                  const contNestedLineNumber = i + 1;
                   const contNestedLine = lines[i] ?? "";
                   
                   if (isBlank(contNestedLine)) {
