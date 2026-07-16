@@ -95,10 +95,6 @@ function collectFilePropertyDrawers(lines: string[]): Array<{ startLine: number;
   return drawers;
 }
 
-function parseTopFilePropertyDrawer(lines: string[]): { startLine: number; properties: Map<string, string> } | null {
-  return collectFilePropertyDrawers(lines)[0] || null;
-}
-
 function collectHeadlinePropertyDrawers(lines: string[]): Array<{ startLine: number; properties: Map<string, string> }> {
   const drawers: Array<{ startLine: number; properties: Map<string, string> }> = [];
 

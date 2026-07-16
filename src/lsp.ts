@@ -7,8 +7,6 @@ import {
   HeadlineNode,
   Node,
   ListNode,
-  ListItemNode,
-  type ParseError,
 } from "./parser.js";
 import { printCanonicalAstToOrg } from "./printer.js";
 import { protectPgpBlocks, restorePgpBlocks } from "./pgp.js";
@@ -308,7 +306,6 @@ class LineTracker {
 
 class LSPServer {
   private documents: Map<string, TextDocument> = new Map();
-  private initialized = false;
   private workspaceRoots: string[] = [];
 
   async start(): Promise<void> {
@@ -363,7 +360,6 @@ class LSPServer {
 
     try {
       if (method === "initialize") {
-        this.initialized = true;
         this.workspaceRoots = this.extractWorkspaceRoots(params);
         this.sendResponse(id, {
           capabilities: {

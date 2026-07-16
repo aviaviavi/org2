@@ -137,7 +137,6 @@ export function findBacklinksInText(
       if (currentHeadlineLine !== null) {
         // allow up to 1 blank line between headline and :PROPERTIES:
         const prev = (lines[i - 1] ?? "").trim();
-        const prev2 = (lines[i - 2] ?? "").trim();
         if (i - 1 === currentHeadlineLine || (prev === "" && i - 2 === currentHeadlineLine)) {
           belongsToHeadline = true;
         }
