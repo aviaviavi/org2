@@ -1,0 +1,17 @@
+{
+  "id": "org2-lifecycle",
+  "name": "Org2 Lifecycle",
+  "description": "Synchronizes substantial OpenClaw executions into Org2 Run Center.",
+  "activation": { "onStartup": true },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "corpusDir": { "type": "string" },
+      "stateFile": { "type": "string" },
+      "trackMainTurns": { "type": "boolean" },
+      "trackCron": { "type": "boolean" },
+      "trackSubagents": { "type": "boolean" }
+    }
+  }
+}
