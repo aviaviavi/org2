@@ -1,138 +1,102 @@
 #+TITLE: Org2 vs Markdown
 
-Markdown won lightweight prose. It is excellent when the unit of work is a document: a README, a blog post, a design note, a help page.
+Markdown and Org2 both keep work in readable plain text, but they solve problems at different layers. Markdown is a compact writing format with an enormous rendering ecosystem. Org2 adds a shared semantic runtime for planning, linked knowledge, data, publishing, and agent work across a corpus.
 
-Org2 is for the moment your notes stop being just documents. When the same folder needs to hold tasks, deadlines, source material, durable IDs, backlinks, generated drafts, diagnostics, editor intelligence, and published output, Org2 becomes the more obvious choice.
+The practical question is how much behavior the files need to carry.
 
-* The short decision
+* At a glance
 
-Use Markdown when you mostly need readable pages that render everywhere.
-
-Use Org2 when you want a local plain-text corpus that you can write in, plan from, query, lint, refactor, hand to tools or agents, and publish from without moving the work into a hosted app.
-
-* Feature scan
-
-| Capability | Markdown | Org2 |
+| Concern | Markdown | Org2 |
 |---|---|---|
-| Best default use | Prose documents and rendered pages | Local knowledge corpus and workflow runtime |
+| Natural starting point | Documents, messages, READMEs, and web content | Notes, tasks, sources, and workflows that form a corpus |
 | Plain-text storage | Yes | Yes |
-| Core task semantics | Checklists or conventions | TODO states, planning lines, priorities, effort, repeaters |
-| Agenda/work views | App or plugin conventions | First-class compiler output |
-| Stable note identity | File paths and headings by convention | IDs, =id:= links, wiki links, backlinks, node creation |
-| Structured metadata | Front matter or app-specific extensions | Drawers, properties, tags, artifact roles, provenance |
-| Graph/link health | App-specific | Backlink, graph, lint, and ambiguity checks |
-| Editor independence | High for prose, weaker for app semantics | CLI/compiler model designed for many editors |
-| Automation boundary | Usually parse Markdown or app conventions | Query, agenda, graph, lint, compile, and export outputs |
-| AI/provenance workflows | Possible, usually custom | Designed around raw sources, drafts, citations, and promotion |
-| Publishing | Excellent ecosystem | Built-in HTML export and multi-file publishing |
+| Structure | Headings, links, lists, code, and implementation-specific extensions | Org-shaped headings plus TODOs, planning lines, properties, IDs, blocks, tables, and artifact metadata |
+| Planning | Checklists and tool-specific conventions | Shared TODO, schedule, deadline, repeater, priority, effort, habit, clock, and agenda semantics |
+| Links and identity | File paths, anchors, and wiki-link extensions | File links, wiki links, stable IDs, backlinks, graph operations, and link-health checks |
+| Data views | Usually supplied by a site generator, notebook, or app | Declared datasets and SQL, materialized results, provenance, and deterministic charts |
+| Automation | Excellent libraries, with semantics chosen by each tool | Standalone CLI, JSON outputs, compiler artifacts, MCP, and shared editor/runtime behavior |
+| Agent coordination | Built from conventions or application features | Cited context, durable runs, approvals, validation, workflows, and reviewable artifacts |
+| Publishing | Very broad ecosystem | Built-in HTML export and multi-file project publishing |
 
-* Where Org2 is the obvious choice
+* Markdown is a good fit when
 
-** Your tasks need to be data, not decoration
+- the document is the main unit of work,
+- broad renderer and platform compatibility matters most,
+- a checklist is enough task structure,
+- a framework or application already supplies the metadata model,
+- contributors should need almost no syntax beyond headings, links, lists, and code fences.
 
-A Markdown checkbox is easy to read, but it is usually just a line of text. Org2 has first-class TODO states, scheduled dates, deadlines, repeaters, priorities, effort, tags, and planning edits. That means the same plain files can drive agenda views, status filters, date windows, grouping, sorting, and editor commands.
+READMEs, help pages, blog posts, chat messages, and most repository documentation remain natural Markdown territory.
 
-That difference matters when you stop asking "what did I write?" and start asking "what is due, blocked, stale, delegated, high effort, or connected to this project?"
+* Org2 becomes useful as the folder becomes a system
 
-** Your notes need stable identity
+** Planning spans many files
 
-Markdown links are great for pages. Knowledge work also needs durable nodes. Org2 supports stable IDs, =id:= links, wiki links, backlinks, node creation, graph reports, and health checks around broken or ambiguous references.
+An Org2 task carries state that the parser understands directly: TODO status, scheduled and deadline timestamps, repeaters, priority, effort, tags, assignments, and properties. The CLI, VS Code integration, agenda TUI, and Mac Workspace derive their planning views from the same model.
 
-That makes Org2 a better fit for long-lived research notes, project memory, meeting trails, and roam-style workflows where a heading can be a real addressable object inside the corpus.
+A Markdown application can define comparable conventions. Org2 ships one coherent interpretation so the files behave consistently outside a particular application.
 
-** You want structure without leaving plain text
+** Notes need durable identity and health checks
 
-Markdown can grow extensions forever: front matter, task-list syntax, wiki links, callouts, custom attributes, app metadata, and fenced conventions. Each app then chooses a different subset, which makes shared semantics fragile.
+File links work well for page-oriented collections. Longer-lived knowledge often needs stable IDs, links to individual headings, backlinks, aliases, graph queries, and diagnostics for broken or ambiguous references.
 
-Org2 makes the important structure explicit in one syntax family:
+Org2 treats those relationships as compiler input. Link maintenance, cited search, refactoring, and editor navigation can therefore share the same source ranges and resolved graph.
 
-- headlines and nested outlines
-- TODO states and planning lines
-- drawers and properties
-- timestamps and repeaters
-- tags, priorities, effort, and IDs
-- blocks, tables, lists, links, and source ranges
+** Rich views should remain connected to their declarations
 
-The payoff is that tools can read the text with a shared model.
+Org2 data notebooks keep dataset and SQL declarations in plain text, materialize explicit results, record freshness and provenance, and render tables or interactive charts in the Mac app. Meeting recordings and transcripts, agenda items, graph reports, and published pages follow the same source-backed pattern.
 
-** AI changes the verbosity tradeoff
+HTML is used where a richer presentation helps; the durable declaration and result metadata remain inspectable files.
 
-Org2 structure can look heavy if you imagine typing every property, date, source pointer, and provenance trail by hand. That is no longer the right default assumption.
+** Agents need more than a text box
 
-Humans should still be able to write terse notes:
+Plain Markdown is a perfectly good prompt and response format. A workspace that delegates consequential work also needs bounded context, citations, durable state, outputs, validation, clarification, and approval boundaries.
 
-#+begin_src org
-* TODO Follow up with design by Friday
-#+end_src
+Org2 represents those parts as portable run and workflow records. The current native integration is OpenClaw, while the CLI, context interfaces, run files, MCP surface, and artifact conventions are available to other agents and scripts.
 
-Then tools and agents can enrich the note when the extra structure is useful: assign an ID, normalize the date, connect it to a project, cite the source transcript, add provenance, or prepare a reviewable draft. The human keeps the capture surface small; the corpus gains the audit trail and machine-readable context when it matters.
+* A small example
 
-That makes Org2's explicitness a durable target format for collaboration between humans, editors, scripts, and agents.
-
-** You want one corpus to produce many views
-
-Markdown's strongest default output is rendered prose. Org2 treats prose as one output among several. The same source tree can compile into:
-
-- agenda and work views
-- TODO and planning edits
-- backlink and graph views
-- lint and corpus-health diagnostics
-- formatter output
-- cited search/query results
-- HTML export and published sites
-- editor features through shared parser, CLI, and optional LSP surfaces
-
-That is the core pitch: Org2 is a compiler/runtime for personal and team knowledge.
-
-** You expect editors, CLIs, and agents to share the same model
-
-Markdown workflows often depend on one app's interpretation of your files. Org2 puts the semantic model underneath the editor. VS Code, the CLI, publishing, graph tools, JSON output, linting, and future integrations can all read the same corpus model.
-
-That matters for automation. A script or agent should be able to ask the corpus for tasks, links, sources, provenance, generated artifacts, and publishable output through stable commands and JSON output.
-
-** You need AI workflows with a trail
-
-AI makes the Markdown-vs-Org2 distinction sharper. If generated summaries, extracted tasks, source transcripts, and reviewed notes all live as loose prose, the trail gets fuzzy fast.
-
-Org2 gives those workflows natural boundaries: raw source material, reviewed notes, compiled semantics, derived views, generated drafts, and published output. Properties such as artifact role and provenance keep generated work inspectable before it becomes durable knowledge.
-
-* A concrete difference
-
-In Markdown, a task might look like this:
+Markdown can express a lightweight task clearly:
 
 #+begin_src markdown
 - [ ] Follow up with design by Friday #product
 #+end_src
 
-Readable, portable, and perfectly fine for a lightweight note.
-
-In Org2, the same work can become a real corpus object:
+An Org2 entry can make the same work directly available to agenda, query, link, and agent workflows:
 
 #+begin_src org
 * TODO Follow up with design :product:
-  SCHEDULED: <2026-06-01 Mon>
-  DEADLINE:  <2026-06-05 Fri>
+  DEADLINE: <2026-06-05 Fri>
   :PROPERTIES:
   :ID: design-followup
   :EFFORT: 30m
+  :ASSIGNEE: avi
   :END:
 
-  See [[id:design-review][design review]].
+  Review [[id:design-review][the design decision]] before replying.
 #+end_src
 
-That entry is still plain text. But now it is also schedulable, queryable, linkable, refactorable, publishable, and available to editor and automation workflows.
+The added fields are useful only when something consumes them. Org2 is a good trade when agendas, queries, editors, automation, or agents do.
 
-* Where Markdown still wins
+* Costs and current limits
 
-- Simple README files and docs pages
-- Blog posts and content that only needs to render
-- Teams already standardized on a Markdown-based static site stack
-- Low-syntax writing where tasks, graph structure, provenance, and automation do not matter
+Org2 asks contributors to learn more syntax and a more opinionated semantic model. Its ecosystem is young, and its long-tail renderer and integration coverage is much smaller than Markdown's. The Mac and iOS clients are early, and editor depth is uneven outside VS Code and the native Mac workspace.
 
-Markdown is the right default for prose. Org2 is the better bet when your plain-text notes are becoming operating infrastructure.
+Markdown also remains easier when a document must render predictably across many unrelated services.
 
-* Bottom line
+* Using both
 
-Choose Markdown for documents.
+Many Org2 workspaces include Markdown files for repository-facing prose and Org/Org2 files for structured work. The Mac app can browse Markdown alongside the corpus, and Org2 can publish HTML documentation from its own source tree.
 
-Choose Org2 when your notes are a working system: a local corpus that carries plans, sources, relationships, generated artifacts, health checks, editor behavior, and publishable knowledge without giving up plain text.
+There is no need to convert a README merely to make it part of an Org2 workspace. Choose the format per file based on the semantics it needs.
+
+* Practical choice
+
+Choose Markdown for broadly portable documents and lightweight conventions. Choose Org2 when the files need to support shared planning, graph, data, review, agent, and publishing behavior across a local workspace.
+
+* Related
+
+- [[file:features.org][Org2 features]]
+- [[file:getting-started.org][Getting started]]
+- [[file:org2-vs-obsidian.org][Org2 vs Obsidian]]
+- [[file:org2-vs-org-mode.org][Org2 vs Org Mode]]

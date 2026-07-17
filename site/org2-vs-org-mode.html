@@ -53,94 +53,108 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <header class="org2-document-header">
 <h1 class="org2-document-title">Org2 vs Org Mode</h1>
 </header>
-<p>Short version: Org2 is a local-first knowledge compiler that keeps Org's durable plain-text strengths while making the semantic/runtime layer portable across editors, automation, and publishing workflows.</p>
+<p>Org2 grows directly from the Org tradition: outlines, TODO states, planning lines, properties, links, tables, source blocks, agendas, and publishing all belong in readable files. Org Mode remains the reference implementation and the deepest environment for that style of work.</p>
+<p>Org2 carries those ideas into a standalone compiler/runtime and builds native workspace, data, and agent-review surfaces around the shared semantics.</p>
 <section class="org2-headline level-1">
-<h1 id="feature-scan">Feature scan</h1>
+<h1 id="at-a-glance">At a glance</h1>
 <table>
 <tbody>
-<tr><td>Capability</td><td>Org Mode</td><td>Org2</td></tr>
+<tr><td>Concern</td><td>Org Mode</td><td>Org2</td></tr>
 <tr><td>---</td><td>---</td><td>---</td></tr>
-<tr><td>Best default use</td><td>Deep Org workflows inside Emacs</td><td>Portable Org-shaped corpus across editors/tools</td></tr>
-<tr><td>Runtime center</td><td>Emacs Lisp and Emacs buffers</td><td>Standalone parser, CLI, compiler, optional LSP</td></tr>
-<tr><td>Editor experience</td><td>Best-in-class inside Emacs</td><td>Strongest today in VS Code; designed for more editors</td></tr>
-<tr><td>Existing ecosystem</td><td>Mature, broad, battle-tested</td><td>Early, focused on portable shared infrastructure</td></tr>
-<tr><td>File compatibility</td><td>Native <code>.org</code></td><td>Reads <code>.org</code>; recommends <code>.org2</code> for new files</td></tr>
-<tr><td>Compatibility goal</td><td>Defines the historical behavior</td><td>Practical compatibility with clearer modern semantics</td></tr>
-<tr><td>Planning/agenda</td><td>Deep, mature, highly configurable</td><td>Core TODO/planning/agenda model with rich filters</td></tr>
-<tr><td>Publishing</td><td>Mature Org export ecosystem</td><td>Built-in HTML export and project publishing</td></tr>
-<tr><td>Automation boundary</td><td>Usually Emacs runtime or exported data</td><td>CLI/JSON/compiler outputs usable outside an editor</td></tr>
-<tr><td>AI/provenance workflows</td><td>Possible through user configuration</td><td>Explicit corpus-flow, artifact metadata, and source-citation direction</td></tr>
-<tr><td>Portability</td><td>Files are portable; runtime strongest in Emacs</td><td>Runtime designed to be portable from day one</td></tr>
+<tr><td>Natural home</td><td>GNU Emacs</td><td>Mac Workspace, VS Code, CLI, and other runtime clients</td></tr>
+<tr><td>Runtime</td><td>Emacs Lisp, buffers, and Emacs batch mode</td><td>TypeScript parser/compiler, standalone CLI, JSON artifacts, and optional LSP</td></tr>
+<tr><td>Files</td><td>Native <code>.org</code></td><td>Reads <code>.org</code> and recommends <code>.org2</code> for new work</td></tr>
+<tr><td>Planning</td><td>Exceptionally deep agenda, TODO, clock, habit, repeater, and customization support</td><td>Shared core planning model with agenda UI/TUI, queries, edits, runs, and approvals</td></tr>
+<tr><td>Literate work</td><td>Mature Babel language ecosystem and reproducible research workflows</td><td>Source blocks plus explicit data notebooks, DuckDB materialization, and chart rendering</td></tr>
+<tr><td>Publishing</td><td>Broad, extensible export backend ecosystem</td><td>Built-in HTML export and multi-file project publishing</td></tr>
+<tr><td>Automation</td><td>Emacs Lisp APIs and Emacs batch commands</td><td>CLI/JSON/compiler outputs, MCP, workflow packages, and client APIs</td></tr>
+<tr><td>Agent coordination</td><td>Available through Emacs packages and custom workflows</td><td>Cited context, durable runs, validation, approvals, and artifact provenance in the core project</td></tr>
+<tr><td>Maturity</td><td>Decades of use and a broad ecosystem</td><td>Early alpha with a deliberately smaller semantic standard</td></tr>
 </tbody>
 </table>
 </section>
 <section class="org2-headline level-1">
-<h1 id="high-level-differences">High-level differences</h1>
+<h1 id="what-the-projects-share">What the projects share</h1>
+<p>Both projects treat plain text as a durable interface rather than an export format. A heading can be prose, a task, an addressable node, or part of a larger workflow. Dates, properties, links, tables, and source blocks remain visible to the person editing the file.</p>
+<p>Org2 also inherits several important habits from Org:</p>
 <ul>
-<li>
-<p><strong>Runtime model</strong></p>
-<ul>
-<li><p>Org Mode: deeply integrated with Emacs runtime.</p></li>
-<li><p>Org2: standalone parser/CLI/compiler model, with editor integrations on top.</p></li>
-</ul>
-</li>
-</ul>
-<ul>
-<li>
-<p><strong>Workflow center</strong></p>
-<ul>
-<li><p>Org Mode: Emacs commands and buffers first.</p></li>
-<li><p>Org2: editor integrations, workspace clients, publishing, and agents share one backend.</p></li>
-</ul>
-</li>
-</ul>
-<ul>
-<li>
-<p><strong>Portability</strong></p>
-<ul>
-<li><p>Org Mode: strongest inside Emacs.</p></li>
-<li><p>Org2: designed for cross-editor usage from day one.</p></li>
-</ul>
-</li>
+<li><p>capture quickly and organize later,</p></li>
+<li><p>derive agendas from tasks distributed across normal notes,</p></li>
+<li><p>keep publishing close to source,</p></li>
+<li><p>allow simple files to grow structure only when useful,</p></li>
+<li><p>preserve a raw-text escape hatch for every higher-level interface.</p></li>
 </ul>
 </section>
 <section class="org2-headline level-1">
-<h1 id="compatibility-stance">Compatibility stance</h1>
+<h1 id="where-org-mode-remains-deeper">Where Org Mode remains deeper</h1>
+<section class="org2-headline level-2">
+<h2 id="emacs-editing-and-customization">Emacs editing and customization</h2>
+<p>Org Mode's folding, structural editing, agenda commands, capture/refile system, tables, export dispatcher, and keyboard workflow have been refined for years. Emacs Lisp makes nearly every part of that environment programmable.</p>
+<p>Org2 does not reproduce that depth. Its native Mac editor is a focused workspace surface with source editing as the full-fidelity fallback; VS Code is the most complete general editor integration.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="planning-breadth">Planning breadth</h2>
+<p>Org2 supports practical TODO states, dates, repeaters, habits, effort, clocking, filters, and planning mutations. Org Mode still offers far more configuration, reporting depth, log behavior, column views, custom agenda composition, and accumulated edge-case handling.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="babel-and-exports">Babel and exports</h2>
+<p>Org Babel supports a large language ecosystem for literate programming and reproducible research. Org's export system covers many built-in and third-party targets. Org2 currently concentrates on executable blocks used by its workflows, data notebooks, deterministic charts, HTML export, and project publishing.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="ecosystem-and-stability">Ecosystem and stability</h2>
+<p>Org Mode has a mature package ecosystem, extensive documentation, and well-understood long-term behavior. Org2's APIs and standard are still evolving.</p>
+</section>
+</section>
+<section class="org2-headline level-1">
+<h1 id="the-path-org2-is-exploring">The path Org2 is exploring</h1>
+<section class="org2-headline level-2">
+<h2 id="a-standalone-runtime-below-every-client">A standalone runtime below every client</h2>
+<p>The Org2 parser and compiler run without Emacs or a GUI application. They expose source ranges, agenda results, graph data, diagnostics, cited context, publishing output, and durable workflow records through the CLI and structured data.</p>
+<p>Native and editor clients are expected to use that layer rather than develop private interpretations of the language. This gives a Mac app, VS Code, CI job, script, and agent the same semantic boundary.</p>
+<p>Org Mode can also run in batch mode and offers rich APIs. Org2 makes standalone, language-neutral consumption the default packaging model.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="native-workspace-surfaces">Native workspace surfaces</h2>
+<p>The Mac app combines agenda planning, files and knowledge navigation, rendered reading, source editing, meetings, OpenClaw chat, data notebooks, interactive charts, and <strong>Runs &amp; Review</strong>. These surfaces still write ordinary files and call the shared runtime.</p>
+<p>The HTML-capable app is especially useful for rich data presentation. Chart interaction and rendered reports can be more elaborate than would be ergonomic in a traditional text buffer, while their declarations and materialized evidence remain plain text.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="agent-work-with-explicit-control-points">Agent work with explicit control points</h2>
+<p>Org2 treats cited context, durable runs, outputs, validation, clarification, approval, and reusable workflows as part of the project. The current OpenClaw plugin records substantial agent work into the Run Center, and the Mac app exposes the review loop.</p>
+<p>This does not make agent use mandatory. Deterministic parsing, planning, graph, lint, data, and publishing capabilities work independently of any AI provider.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="a-smaller-standard">A smaller standard</h2>
+<p>Org2 aims for a clear portable interpretation of the most useful Org-shaped semantics. It does not promise bug-for-bug compatibility with every Emacs configuration or historical edge case.</p>
+<p>That narrower scope makes independent clients easier to build, at the cost of incomplete compatibility with the full Org ecosystem.</p>
+</section>
+</section>
+<section class="org2-headline level-1">
+<h1 id="compatibility-in-practice">Compatibility in practice</h1>
 <ul>
-<li><p>Existing <code>.org</code> files are supported as an everyday workflow.</p></li>
-<li><p>New files are recommended as <code>.org2</code>.</p></li>
-<li><p>Org Mode compatibility is valuable, especially for migration and shared plain-text habits.</p></li>
-<li><p>Org2 favors clear portable behavior over feature-for-feature cloning.</p></li>
+<li><p>Existing <code>.org</code> files are supported as normal compiler input.</p></li>
+<li><p><code>.org2</code> is recommended for new files when the workspace depends on Org2-specific behavior.</p></li>
+<li><p>Common headings, TODOs, planning lines, properties, tags, links, blocks, lists, tables, and timestamps should feel familiar.</p></li>
+<li><p>Complex Babel setups, custom Emacs Lisp, specialized export backends, and highly customized agenda behavior should remain in Org Mode unless their Org2 behavior has been verified.</p></li>
+<li><p>Raw source remains authoritative, so the same corpus can be inspected or edited with Emacs even when an Org2 client supplies the workflow surface.</p></li>
 </ul>
 </section>
 <section class="org2-headline level-1">
-<h1 id="what-org2-has-today">What Org2 has today</h1>
-<ul>
-<li><p>Core syntax parsing: headings, drawers/properties, links, lists, blocks, tables, timestamps.</p></li>
-<li><p>Task workflows: TODO state changes, planning updates.</p></li>
-<li><p>Agenda querying with rich filtering.</p></li>
-<li><p>Roam-adjacent workflows (IDs, backlinks, node creation, wiki links).</p></li>
-<li><p>HTML export/publish pipeline.</p></li>
-</ul>
+<h1 id="a-practical-choice">A practical choice</h1>
+<p>Org Mode is the natural choice for people who want the deepest Org experience and are comfortable making Emacs the runtime for editing, planning, literate programming, and automation.</p>
+<p>Org2 is useful when Org-shaped files need a standalone open-source runtime, native non-Emacs clients, rich data presentation, or a built-in run-and-approval workflow for agents.</p>
+<p>Using both is reasonable: Org Mode can remain a full-fidelity editor while Org2 compiles the same ordinary files into shared views and automation, within the documented compatibility boundary.</p>
 </section>
 <section class="org2-headline level-1">
-<h1 id="current-gaps">Current gaps</h1>
+<h1 id="related">Related</h1>
 <ul>
-<li><p>Full Org Mode feature parity.</p></li>
-<li><p>Mature habits/clocking/recurrence ecosystem.</p></li>
-<li><p>Equivalent depth of ecosystem integrations.</p></li>
-</ul>
-</section>
-<section class="org2-headline level-1">
-<h1 id="direction">Direction</h1>
-<p>Org2 is meant to make a plain-text knowledge corpus more computable, maintainable, and portable.</p>
-<ul>
-<li><p>Keep the battle-tested core ideas that made Org great.</p></li>
-<li><p>Make structured semantics, derived artifacts, and local knowledge operations the primary value proposition.</p></li>
-<li><p>Drop accumulated cruft that slows down portability and adoption.</p></li>
-<li><p>Support more editors natively, while also supporting Emacs well.</p></li>
-<li><p>Keep portability as the non-negotiable center.</p></li>
-<li><p>Treat CLI capabilities as shared infrastructure for editor integrations, publishing, health checks, and automation.</p></li>
+<li><p><a href="https://orgmode.org/">Org Mode</a></p></li>
+<li><p><a href="https://orgmode.org/manual/">The Org Manual</a></p></li>
+<li><p><a href="https://orgmode.org/features.html">Org Mode features</a></p></li>
+<li><p><a href="migration.html">Migration guidance</a></p></li>
+<li><p><a href="semantics-status.html">Semantics and status</a></p></li>
+<li><p><a href="org2-vs-markdown.html">Org2 vs Markdown</a></p></li>
+<li><p><a href="org2-vs-obsidian.html">Org2 vs Obsidian</a></p></li>
 </ul>
 </section>
 </main>
