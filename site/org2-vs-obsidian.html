@@ -53,111 +53,91 @@ a { text-decoration-thickness: 0.08em; text-underline-offset: 0.15em; }
 <header class="org2-document-header">
 <h1 class="org2-document-title">Org2 vs Obsidian</h1>
 </header>
-<p>Obsidian is one of the best products in the plain-text knowledge space. It stores notes in a local Markdown vault, has polished backlinks and graph views, ships useful core plugins, supports Bases for database-like note views, and has a large plugin ecosystem.</p>
-<p>Org2 is aimed at a different center of gravity. Obsidian is primarily an excellent app for working with Markdown notes. Org2 is a portable compiler/runtime for a knowledge corpus that should work across editors, CLIs, scripts, publishing jobs, and agents.</p>
+<p>Obsidian and Org2 share a useful premise: important knowledge should remain in local, readable files. Obsidian has developed that premise into a mature Markdown application and ecosystem. Org2 is developing an open-source compiler/runtime and a set of clients around Org-shaped files.</p>
+<p>Both can support serious knowledge work. The main difference is where each system places its shared runtime and how much workflow state it defines.</p>
 <section class="org2-headline level-1">
-<h1 id="the-short-decision">The short decision</h1>
-<p>Use Obsidian when you want a polished, batteries-included knowledge app with a mature UI, mobile story, themes, sync/publish options, and a huge plugin ecosystem.</p>
-<p>Use Org2 when you want your notes to behave more like source code for a local knowledge system: parseable, lintable, queryable, refactorable, schedulable, publishable, fully open source, and available to automation without depending on one app's runtime.</p>
-</section>
-<section class="org2-headline level-1">
-<h1 id="feature-scan">Feature scan</h1>
+<h1 id="at-a-glance">At a glance</h1>
 <table>
 <tbody>
-<tr><td>Capability</td><td>Obsidian</td><td>Org2</td></tr>
+<tr><td>Concern</td><td>Obsidian</td><td>Org2</td></tr>
 <tr><td>---</td><td>---</td><td>---</td></tr>
-<tr><td>Best default use</td><td>Polished personal knowledge app</td><td>Portable knowledge compiler/runtime</td></tr>
-<tr><td>Storage model</td><td>Local Markdown vault</td><td>Local Org/Org2 corpus</td></tr>
-<tr><td>License/runtime</td><td>Proprietary app with plugin APIs</td><td>Apache-2.0 open source parser, CLI, compiler, optional LSP</td></tr>
-<tr><td>Product maturity</td><td>Strong desktop/mobile app, themes, sync, publish</td><td>Early but usable CLI + VS Code workflow</td></tr>
-<tr><td>Plugin ecosystem</td><td>Huge community plugin ecosystem</td><td>Early ecosystem, focused on shared semantic core</td></tr>
-<tr><td>Visual knowledge browsing</td><td>Strong graph, local graph, Canvas, previews</td><td>Graph reports and editor views, less visual-app focused today</td></tr>
-<tr><td>Planning semantics</td><td>Markdown tasks/properties/plugins/Bases</td><td>Core TODO, schedule, deadline, priority, effort, agenda model</td></tr>
-<tr><td>Database-like views</td><td>Bases and plugins</td><td>Compiler/query outputs and structured corpus artifacts</td></tr>
-<tr><td>Automation boundary</td><td>Mostly app/plugin runtime or Markdown conventions</td><td>CLI/JSON/compiler outputs below any editor</td></tr>
-<tr><td>AI/provenance workflows</td><td>Possible through plugins and conventions</td><td>Corpus-flow model for raw sources, drafts, citations, provenance</td></tr>
-<tr><td>Long-term forkability</td><td>Notes are portable; app is not OSS</td><td>Notes and runtime are forkable and auditable</td></tr>
+<tr><td>Primary experience</td><td>Polished Markdown knowledge application</td><td>Shared knowledge runtime with Mac, VS Code, CLI, and other clients</td></tr>
+<tr><td>Source files</td><td>Local Markdown, properties, Bases files, and open JSON Canvas files</td><td>Local <code>.org</code> and <code>.org2</code> files plus explicit generated artifacts</td></tr>
+<tr><td>Runtime and license</td><td>Proprietary desktop/mobile app with public plugin APIs</td><td>Apache-2.0 parser, CLI, compiler, clients, and integrations</td></tr>
+<tr><td>Maturity</td><td>Established desktop and mobile products with a large community</td><td>Early alpha with working CLI, Mac app, VS Code integration, and source-distributed iOS app</td></tr>
+<tr><td>Linked knowledge</td><td>Backlinks, outgoing links, graph, local graph, Canvas</td><td>IDs, wiki/file links, backlinks, graph reports, cited queries, and link-health operations</td></tr>
+<tr><td>Structured views</td><td>Bases tables, lists, cards, maps, formulas, and community views</td><td>Agenda/query outputs, data notebooks, materialized SQL views, tables, and deterministic charts</td></tr>
+<tr><td>Planning</td><td>Markdown tasks, properties, Bases, core features, and plugins</td><td>Parser-defined TODO, planning, repeater, priority, effort, habit, clock, and agenda semantics</td></tr>
+<tr><td>Command line</td><td>First-party CLI controlling a running Obsidian app</td><td>Standalone CLI and JSON/compiler outputs that do not require a GUI client</td></tr>
+<tr><td>Agent workflow</td><td>Core and plugin features can operate on the vault</td><td>Cited context, durable runs, approvals, validation, workflows, and artifact provenance</td></tr>
+<tr><td>Hosted services</td><td>Optional Sync and Publish services</td><td>Bring-your-own file sync and site hosting</td></tr>
 </tbody>
 </table>
 </section>
 <section class="org2-headline level-1">
-<h1 id="where-obsidian-is-stronger">Where Obsidian is stronger</h1>
+<h1 id="obsidians-established-strengths">Obsidian's established strengths</h1>
 <section class="org2-headline level-2">
-<h2 id="product-maturity">Product maturity</h2>
-<p>Obsidian is a mature daily-use application. It has a refined editor, graph surfaces, backlinks, search, Canvas, Publish, Sync, mobile apps, themes, and community plugins. For many people, that is the whole point: install one app and get a strong personal knowledge environment immediately.</p>
-<p>Org2 is earlier and more infrastructure-shaped. The best current path is CLI plus VS Code, with the shared compiler model underneath.</p>
+<h2 id="a-mature-daily-application">A mature daily application</h2>
+<p>Obsidian offers refined desktop and mobile editing, fast search, backlinks, graph views, Canvas, themes, embeds, PDF and media handling, and a large body of learning material. Optional Sync and Publish services provide supported paths for cross-device use and hosted sites.</p>
+<p>That completeness matters. Someone who wants a polished personal knowledge app can assemble a sophisticated workflow with little infrastructure work.</p>
 </section>
 <section class="org2-headline level-2">
-<h2 id="plugin-ecosystem">Plugin ecosystem</h2>
-<p>Obsidian's plugin ecosystem is enormous. If your workflow depends on a very specific UI behavior, visualization, import path, dashboard, spaced-repetition setup, or custom Markdown extension, there is a real chance the Obsidian ecosystem already has something close.</p>
-<p>Org2's ecosystem bet is different: build a stable semantic core first so future integrations can share the same parser, compiler, and corpus model.</p>
+<h2 id="bases-and-visual-organization">Bases and visual organization</h2>
+<p>Bases stores database-like views over Markdown properties. Current core layouts include tables, lists, cards, and maps, with filtering, sorting, grouping, and formulas. Canvas supplies a visual workspace saved in the open JSON Canvas format.</p>
+<p>Org2's data views focus more on explicit datasets, SQL materialization, freshness, and report evidence. It does not currently offer an equivalent general-purpose canvas.</p>
 </section>
 <section class="org2-headline level-2">
-<h2 id="visual-thinking">Visual thinking</h2>
-<p>Obsidian is strong for interactive knowledge browsing. Graph view, local graph, Canvas, page preview, backlinks, and plugin-driven visualizations are useful when you want to explore a vault directly.</p>
-<p>Org2 already produces graph reports and editor views. Its current strength is portable infrastructure for planning, publishing, corpus health, and agent workflows.</p>
+<h2 id="plugins-and-customization">Plugins and customization</h2>
+<p>Obsidian's community ecosystem covers task management, calendars, diagrams, spaced repetition, data views, imports, publishing, and many specialized interfaces. Org2 has a much smaller integration surface today.</p>
+</section>
+<section class="org2-headline level-2">
+<h2 id="a-real-command-line-surface">A real command-line surface</h2>
+<p>Obsidian's first-party CLI can search and edit files, inspect tasks and links, query Bases, manage properties and plugins, and invoke application commands. The old version of this page understated Obsidian's automation support.</p>
+<p>The architectural distinction is narrower now: Obsidian CLI controls the Obsidian runtime and requires the app to be running, while Org2's CLI is the shared standalone runtime used by its clients and automation.</p>
 </section>
 </section>
 <section class="org2-headline level-1">
-<h1 id="where-org2-is-the-obvious-choice">Where Org2 is the obvious choice</h1>
+<h1 id="org2s-current-strengths">Org2's current strengths</h1>
 <section class="org2-headline level-2">
-<h2 id="you-want-a-standard-shaped-knowledge-layer">You want a standard-shaped knowledge layer</h2>
-<p>Obsidian stores Markdown files locally, which is excellent. But much of the richer behavior lives in Obsidian's interpretation of those files, its app configuration, and its plugin conventions.</p>
-<p>Org2 puts more of the meaning into a standalone language and compiler model. Headings, TODO states, planning lines, timestamps, IDs, drawers, properties, links, source ranges, artifact roles, and provenance are meant to be understood outside any one editor.</p>
-<p>The practical difference: a CLI command, VS Code extension, future Vim or Emacs integration, publishing job, or agent can all consume the same corpus semantics.</p>
+<h2 id="one-semantic-layer-across-clients">One semantic layer across clients</h2>
+<p>Org2 parsing, source ranges, agenda behavior, links, IDs, context retrieval, and artifact metadata live in the TypeScript compiler/runtime. The Mac app, VS Code integration, publishing pipeline, CLI, and agents consume that shared model.</p>
+<p>This is useful when deterministic behavior outside the desktop app matters: CI checks, batch publishing, editor tooling, scripts, or an agent can operate on the same semantics through commands and JSON outputs.</p>
 </section>
 <section class="org2-headline level-2">
-<h2 id="you-want-open-source-infrastructure">You want open-source infrastructure</h2>
-<p>Obsidian is local-first, but the app itself is not open-source software. Its official license page reserves rights to the app's code, and its terms restrict modifying, building on, or deriving competing software from Obsidian itself.</p>
-<p>Org2 is Apache-2.0 open source. That matters if the tool becomes part of your long-term knowledge infrastructure. You can inspect the parser, fork the compiler, embed the runtime, build competing clients, audit behavior, and keep the project alive even if maintainership or product priorities change.</p>
-<p>Open source is a structural advantage for a standard-shaped project whose goal is editor-independent knowledge tooling.</p>
+<h2 id="planning-and-review-are-part-of-the-corpus-model">Planning and review are part of the corpus model</h2>
+<p>Org2 defines TODO and planning behavior directly, then builds agenda views and mutations on top. It also keeps delegated work in durable run records with plans, citations, outputs, validation, clarifications, comments, retries, cancellation, and approvals.</p>
+<p>The Mac <strong>Runs &amp; Review</strong> surface presents that state as a workflow for coordinating with agents. OpenClaw is the current end-to-end integration; the underlying records and interfaces are provider-independent.</p>
 </section>
 <section class="org2-headline level-2">
-<h2 id="planning-is-first-class-corpus-data">Planning is first-class corpus data</h2>
-<p>Obsidian can support tasks and project workflows through Markdown conventions, properties, Bases, and plugins. That can work well inside the app.</p>
-<p>Org2 makes planning part of the core data model: TODO state, scheduled dates, deadlines, repeaters, priority, effort, tags, and planning edits feed agenda queries and editor commands directly. The result is an actionable planning surface compiled from the workspace.</p>
+<h2 id="data-meetings-and-generated-work-keep-an-evidence-trail">Data, meetings, and generated work keep an evidence trail</h2>
+<p>Data notebook declarations, materialized query results, charts, meeting transcripts, generated drafts, and published output can all carry explicit provenance and review state. Files under <code>views/</code> or <code>compiled/</code> remain inspectable before a result is promoted into durable notes.</p>
+<p>That structure is helpful when the workspace holds operational context as well as personal notes.</p>
 </section>
 <section class="org2-headline level-2">
-<h2 id="automation-needs-a-stable-interface">Automation needs a stable interface</h2>
-<p>If your notes are going to drive scripts, agents, CI checks, publish previews, corpus-health reports, or external tools, you want a stable interface below the editor.</p>
-<p>Org2's CLI and compiler outputs are designed for that boundary. The same corpus can produce agenda JSON, graph/backlink reports, lint diagnostics, formatted source, published HTML, and source-cited query results.</p>
-<p>That makes Org2 a better fit when other tools need to safely operate on the knowledge base.</p>
-</section>
-<section class="org2-headline level-2">
-<h2 id="ai-makes-explicit-structure-cheaper">AI makes explicit structure cheaper</h2>
-<p>The strongest objection to Org-shaped text is verbosity. Obsidian keeps Markdown capture lightweight, and that is a real advantage.</p>
-<p>Org2 keeps capture lightweight. A human can write a brief note; editors, scripts, and agents can later add IDs, normalized dates, backlinks, source citations, artifact roles, and provenance when those details become useful.</p>
-<p>In that world, Org2's explicit structure becomes a durable target format for human-plus-agent workflows.</p>
-</section>
-<section class="org2-headline level-2">
-<h2 id="generated-work-needs-provenance">Generated work needs provenance</h2>
-<p>Obsidian is excellent for personal knowledge capture and browsing. Org2 is being shaped around a slightly harder problem: keeping raw sources, reviewed notes, compiled semantics, generated drafts, and published output connected without blurring their trust levels.</p>
-<p>That matters for AI workflows. Meeting transcripts, extracted actions, draft summaries, cited answers, and promoted notes need a trail. Org2's artifact metadata and corpus-flow conventions give generated work a place to live before it becomes durable knowledge.</p>
+<h2 id="the-complete-stack-is-open-source">The complete stack is open source</h2>
+<p>Obsidian keeps vault content portable and publishes several open formats and developer interfaces. Org2 additionally makes the parser, runtime, Mac client, editor integration, and agent workflow implementation available under Apache-2.0.</p>
+<p>This matters for teams that need to audit, fork, embed, or run the knowledge layer without a proprietary application dependency.</p>
 </section>
 </section>
 <section class="org2-headline level-1">
-<h1 id="a-useful-mental-model">A useful mental model</h1>
-<p>Obsidian is a great place to live in your notes.</p>
-<p>Org2 is a way to compile your notes.</p>
-<p>A future Org2 ecosystem could learn from Obsidian's UI strengths, and Obsidian users already prove the demand for local-first linked knowledge. The difference is where each project puts the hard boundary:</p>
-<ul>
-<li><p>Obsidian centers the proprietary app experience over local Markdown files.</p></li>
-<li><p>Org2 centers an open-source semantic corpus, with editors and apps as clients.</p></li>
-</ul>
+<h1 id="current-tradeoffs">Current tradeoffs</h1>
+<p>Org2 is early alpha. Its Mac app is useful but still evolving, the iOS app is distributed as source, VS Code has the strongest general editor integration, and the plugin/theme ecosystem is small. Packaging, capture/refile depth, visual graph exploration, and cross-platform polish remain behind Obsidian.</p>
+<p>Obsidian's rich behavior often comes from the application, installed plugins, and vault configuration. Its files remain portable, but reproducing a complete workflow elsewhere may require reproducing those conventions and extensions as well.</p>
 </section>
 <section class="org2-headline level-1">
-<h1 id="bottom-line">Bottom line</h1>
-<p>Choose Obsidian if you want the best polished local-first note app today.</p>
-<p>Choose Org2 if you want the knowledge base itself to become portable open-source infrastructure: a corpus that can support planning, graph maintenance, publishing, linting, source-cited AI workflows, and editor-independent automation.</p>
+<h1 id="a-practical-choice">A practical choice</h1>
+<p>Obsidian is a strong choice for a mature local Markdown application, broad visual tools, mobile polish, and a deep plugin ecosystem.</p>
+<p>Org2 fits workspaces that need an open standalone semantic layer, Org-style planning, source-backed data and meeting artifacts, and durable agent runs with explicit review and approval boundaries.</p>
+<p>The projects also point toward each other in useful ways: Obsidian demonstrates how approachable local-file knowledge software can be, while Org2 explores how much shared behavior can live below any individual client.</p>
 </section>
 <section class="org2-headline level-1">
 <h1 id="related">Related</h1>
 <ul>
-<li><p><a href="https://help.obsidian.md/obsidian">Obsidian overview</a></p></li>
-<li><p><a href="https://help.obsidian.md/data-storage">How Obsidian stores data</a></p></li>
-<li><p><a href="https://help.obsidian.md/bases">Obsidian Bases</a></p></li>
+<li><p><a href="https://obsidian.md/help">Obsidian Help</a></p></li>
+<li><p><a href="https://obsidian.md/help/bases">Obsidian Bases</a></p></li>
+<li><p><a href="https://obsidian.md/help/plugins/canvas">Obsidian Canvas</a></p></li>
+<li><p><a href="https://obsidian.md/help/cli">Obsidian CLI</a></p></li>
 <li><p><a href="https://obsidian.md/license">Obsidian license overview</a></p></li>
-<li><p><a href="https://obsidian.md/terms">Obsidian terms of service</a></p></li>
 <li><p><a href="org2-vs-markdown.html">Org2 vs Markdown</a></p></li>
 <li><p><a href="org2-vs-org-mode.html">Org2 vs Org Mode</a></p></li>
 </ul>
